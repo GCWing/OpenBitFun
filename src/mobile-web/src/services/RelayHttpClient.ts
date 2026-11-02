@@ -35,6 +35,12 @@ type RelayRequestOptions = { retryable?: boolean; timeoutMs?: number };
 export interface RelayDeviceInfo {
   device_id: string;
   device_name: string;
+  /**
+   * Kind the device reported to the Relay: `desktop`, `cli`, `mobile` or
+   * `watch`. Absent on an older Relay or a client that never reported one, so
+   * every reader has to keep a neutral answer for "unknown".
+   */
+  device_kind?: string | null;
   device_alias?: string | null;
   device_model?: string | null;
   device_os?: string | null;

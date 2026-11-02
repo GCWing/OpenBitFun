@@ -4,7 +4,7 @@ import "./styles/scrollbars.css";
 export { VoiceCallPanel, type VoiceCallPanelProps, type VoiceCallLabels, type VoiceCallPhase } from "./components/VoiceCallPanel";
 export { VoiceCallTranscript, VoiceCallControls, VoiceCallIdentity, type VoiceTranscriptEntry, type VoiceCallTranscriptProps, type VoiceCallControlsProps, type VoiceCallIdentityProps } from "./components/VoiceCallPanel";
 export { VoiceCallHeader, type VoiceCallHeaderProps } from "./components/VoiceCallPanel";
-export { VoiceParticleLogo, type VoiceParticleLogoProps, type VoiceParticleAudio, type VoiceParticleAudioReader } from "./components/VoiceParticleLogo";
+export { VoiceParticleLogo, type VoiceParticleLogoProps, type VoiceParticleAudio, type VoiceParticleAudioReader } from "./brand/VoiceParticleLogo";
 
 export {
   DesignSystemProvider,
@@ -57,7 +57,9 @@ export {
 export { Alert, type AlertProps, type AlertTone } from "./components/Alert";
 export { Avatar, AvatarGroup, type AvatarGroupProps, type AvatarProps, type AvatarSize } from "./components/Avatar";
 export { Button, type ButtonProps } from "./components/Button";
+export { Capsule, type CapsuleProps } from "./components/Capsule";
 export { Checkbox, type CheckboxProps, type CheckboxSize } from "./components/Checkbox";
+export { ColorPicker, type ColorPickerProps, type ColorPickerLabels } from "./components/ColorPicker";
 export {
   Card,
   CardBody,
@@ -138,6 +140,7 @@ export {
   type IconTone,
 } from "./components/Icon";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
+export { ThinkingIndicator, type ThinkingIndicatorProps } from "./components/ThinkingIndicator";
 export { Input, type InputProps } from "./components/Input";
 export { KeyHint, type KeyHintProps } from "./components/KeyHint";
 export {
@@ -184,6 +187,7 @@ export {
   DialogFooter,
   DialogHeader,
   DialogHeaderActions,
+  DialogHeaderLeading,
   DialogHeading,
   DialogTitle,
   Sheet,
@@ -193,6 +197,7 @@ export {
   type DialogFooterAppearance,
   type DialogFooterProps,
   type DialogHeaderProps,
+  type DialogPreset,
   type DialogProps,
   type DialogSize,
   type SheetPlacement,
@@ -219,11 +224,15 @@ export {
   type NavigationPanelSeparatorProps,
 } from "./components/NavigationPanel";
 export { PageHeader, type PageHeaderProps } from "./components/PageHeader";
+export { SetupWizard, type SetupWizardProps, type SetupWizardStep } from "./components/SetupWizard";
 export { Radio, type RadioProps, type RadioSize } from "./components/Radio";
 export { RollingText, type RollingTextProps } from "./components/RollingText";
+export { ShimmerText, type ShimmerTextProps } from "./components/ShimmerText";
 export {
   ScrollArea,
+  type ScrollAreaEdgeFade,
   type ScrollAreaOrientation,
+  type ScrollAreaOverscrollBehaviorY,
   type ScrollAreaProps,
   type ScrollbarVisibility,
 } from "./components/ScrollArea";
@@ -298,3 +307,9 @@ export {
   type TokenOverrideName,
   type TokenOverrides,
 } from "./primitives/ThemeRoot";
+
+export { LayersPlusIcon } from "./components/Icon";
+export { SplitView, SplitViewPrimaryDock, SplitViewSurface } from './components/SplitView';
+export type { SplitViewProps, SplitViewMode, SplitViewHeaderGeometry } from './components/SplitView';
+
+export { FieldAccessibilityProvider } from "./components/Field/FieldAccessibility";

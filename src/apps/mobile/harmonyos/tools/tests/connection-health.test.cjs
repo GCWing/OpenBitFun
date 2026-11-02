@@ -216,3 +216,32 @@ test('recovery keeps selected device header geometry while unbound home stays em
   assert.equal(RemoteCompactHomePolicy.headerSubtitle('idle', 'Studio'), '');
   assert.equal(RemoteCompactHomePolicy.headerSubtitle('reconnecting', ''), '');
 });
+
+const { ChatComposerPolicy } = load('services/ChatComposerPolicy');
+test('a retained active turn can be stopped only while its host is connected', () => {
+  for (const phase of ['idle', 'reconnecting', 'disconnected', 'failed']) {
+    assert.equal(ChatComposerPolicy.canStop(true, true, phase), false, phase);
+  }
+  assert.equal(ChatComposerPolicy.canStop(true, true, 'connected'), true);
+  assert.equal(ChatComposerPolicy.canStop(false, true, 'connected'), false);
+  assert.equal(ChatComposerPolicy.canStop(true, false, 'disconnected'), true);
+});
+test('failed host probe retains the transcript and restores its stream when the host returns', async () => {
+  const f = activityFixture(); let connected = true, reconnecting = false;
+  f.hooks.isConnected = () => connected; f.hooks.isReconnecting = () => reconnecting;
+  f.hooks.isRemoteChat = () => true;
+  f.hooks.onConnectionState = state => { connected = state === 'connected'; reconnecting = state === 'reconnecting'; f.events.push(['state', state]); };
+  f.hooks.onStopPolling = () => f.events.push(['stop-stream']);
+  f.hooks.onStartPolling = () => f.events.push(['resume-stream']);
+  const pending = f.vm.checkConnectionHealth(); f.probe.reject(Error('Host offline')); await pending;
+  assert.equal(reconnecting, true); assert.ok(f.events.some(e => e[0] === 'stop-stream'));
+  f.connection.ping = async () => true; await f.vm.checkConnectionHealth();
+  assert.equal(connected, true); assert.ok(f.events.some(e => e[0] === 'resume-stream'));
+});
+test('remote sending requires connected host and remains available during a live turn', () => {
+  for (const phase of ['idle', 'pairing', 'connected', 'reconnecting', 'disconnected', 'failed']) {
+    assert.equal(ChatComposerPolicy.canSend('draft', 0, false, true, phase), phase === 'connected', phase);
+    assert.equal(ChatComposerPolicy.primaryAction('draft', 0, false, false, true, true, true, phase, true),
+      phase === 'connected' ? 'send' : 'send_blocked', phase);
+  }
+});

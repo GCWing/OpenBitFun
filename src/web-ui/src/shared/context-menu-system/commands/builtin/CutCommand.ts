@@ -2,8 +2,11 @@
 
 import { BaseCommand } from '../BaseCommand';
 import { CommandResult } from '../../types/command.types';
-import { MenuContext, ContextType, SelectionContext, EditorContext } from '../../types/context.types';
+import { MenuContext, ContextType, SelectionContext, EditorContext, TextInputContext } from '../../types/context.types';
 import { MonacoHelper } from '@/shared/helpers/MonacoHelper';
+import { clearTextInputSelection, executeNativeEditAction, hasNativeTextSelection, isContentEditableHost } from '@/shared/utils/nativeTextEditing';
+import { copyTextToClipboard } from '@/shared/utils/textSelection';
+import { focusTextInputTarget } from '../../utils/textInputActions';
 import { createLogger } from '@/shared/utils/logger';
 import { i18nService } from '@/infrastructure/i18n';
 
@@ -33,6 +36,11 @@ export class CutCommand extends BaseCommand {
       const editorContext = context as EditorContext;
       return !!editorContext.selectedText && !editorContext.isReadOnly;
     }
+
+    if (context.type === ContextType.TEXT_INPUT) {
+      const inputContext = context as TextInputContext;
+      return inputContext.hasSelection && !inputContext.isReadOnly;
+    }
     
     return false;
   }
@@ -43,6 +51,10 @@ export class CutCommand extends BaseCommand {
       
       if (context.type === ContextType.EDITOR) {
         return await this.executeForEditor(context as EditorContext);
+      }
+
+      if (context.type === ContextType.TEXT_INPUT) {
+        return await this.executeForTextInput(context as TextInputContext);
       }
       
       
@@ -81,6 +93,51 @@ export class CutCommand extends BaseCommand {
     }
   }
   
+  /**
+   * Cutting in a field keeps the browser's own editing pipeline when possible so
+   * rich editors stay consistent with their undo stack and input events.
+   */
+  private async executeForTextInput(context: TextInputContext): Promise<CommandResult> {
+    const t = i18nService.getT();
+    const text = context.selectedText;
+
+    if (!text) {
+      return this.failure(t('errors:contextMenu.noSelection'));
+    }
+
+    if (context.isReadOnly) {
+      return this.failure(t('errors:contextMenu.notEditable'));
+    }
+
+    const element = focusTextInputTarget(context);
+    if (!element) {
+      return this.failure(t('errors:contextMenu.cutFailed'));
+    }
+
+    // Rich editors serialize their own clipboard payload on copy, so a cut reuses
+    // that pipeline and deletes the selection afterwards instead of pasting DOM
+    // label text into the clipboard.
+    const copiedThroughEditor = isContentEditableHost(element)
+      && hasNativeTextSelection(element)
+      && executeNativeEditAction(element, 'copy');
+
+    if (!copiedThroughEditor) {
+      if (executeNativeEditAction(element, 'cut')) {
+        return this.success(t('common:contextMenu.status.cutSuccess'), { text });
+      }
+
+      if (!(await copyTextToClipboard(text))) {
+        return this.failure(t('errors:contextMenu.cutFailed'));
+      }
+    }
+
+    if (!clearTextInputSelection(element)) {
+      return this.failure(t('errors:contextMenu.cutFailed'));
+    }
+
+    return this.success(t('common:contextMenu.status.cutSuccess'), { text });
+  }
+
    
   private async executeForEditor(context: EditorContext): Promise<CommandResult> {
     try {

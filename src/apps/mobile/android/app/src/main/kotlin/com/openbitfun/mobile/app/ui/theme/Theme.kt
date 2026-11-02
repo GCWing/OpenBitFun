@@ -25,7 +25,7 @@ import com.openbitfun.mobile.app.ui.theme.generated.MobileTextScale
  * literals, so aligning the two clients is a matter of what those roles resolve
  * to — nothing below this file had to change to get the new colours.
  *
- * Additional semantic colors cover app-owned surfaces, including the inline scanner.
+ * Additional semantic colors cover app-owned surfaces such as media and toasts.
  */
 private val LightTokens = MobileDesignColors.Light
 private val DarkTokens = MobileDesignColors.Dark
@@ -133,7 +133,6 @@ internal data class OpenBitFunColors(
     val mediaScrim: Color,
     val mediaControlBackground: Color,
     val toastBackground: Color,
-    val scanAccent: Color,
     val shadowSubtle: Color,
     val shadowMedium: Color,
     val shadowStrong: Color,
@@ -198,7 +197,6 @@ private val LightExtras = OpenBitFunColors(
     mediaScrim = LightTokens.MediaScrim,
     mediaControlBackground = LightTokens.MediaControlBackground,
     toastBackground = LightTokens.ToastBackground,
-    scanAccent = LightTokens.ConnectScanAccent,
     shadowSubtle = LightTokens.ShadowSubtle,
     shadowMedium = LightTokens.ShadowMedium,
     shadowStrong = LightTokens.ShadowStrong,
@@ -239,7 +237,6 @@ private val DarkExtras = OpenBitFunColors(
     mediaScrim = DarkTokens.MediaScrim,
     mediaControlBackground = DarkTokens.MediaControlBackground,
     toastBackground = DarkTokens.ToastBackground,
-    scanAccent = DarkTokens.ConnectScanAccent,
     shadowSubtle = DarkTokens.ShadowSubtle,
     shadowMedium = DarkTokens.ShadowMedium,
     shadowStrong = DarkTokens.ShadowStrong,

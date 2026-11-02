@@ -28,6 +28,8 @@ describe('GalleryDetailModal presentation contract', () => {
     expect(styles).toContain('container-name: gallery-detail-modal;');
     expect(styles).not.toContain('width: min(900px, 100%);');
     expect(styles).toContain('height: min(540px, calc(100vh - 48px));');
+    expect(styles).toContain('overflow-y: auto;');
+    expect(styles).toContain('overscroll-behavior: contain;');
     expect(styles).toContain('@container gallery-detail-modal (max-width: 360px)');
     expect(styles).not.toContain('@media (max-width: 720px)');
   });

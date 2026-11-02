@@ -1,4 +1,6 @@
 import React, { act } from 'react';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +9,27 @@ import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './types';
 import { ContextMenuRenderer } from '../ContextMenuRenderer';
 import { useContextMenuStore } from '../../store/ContextMenuStore';
+
+const contextMenuSourceRoot = path.resolve(__dirname, '../..');
+
+function contextMenuSourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) return contextMenuSourceFiles(file);
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [file] : [];
+  });
+}
+
+/** Icon names are strings until the renderer maps them, so every referenced name must resolve. */
+function referencedIconNames(): string[] {
+  const names = new Set<string>();
+  for (const file of contextMenuSourceFiles(contextMenuSourceRoot)) {
+    for (const match of readFileSync(file, 'utf8').matchAll(/\bicon:\s*'([^']+)'/g)) {
+      names.add(match[1]);
+    }
+  }
+  return Array.from(names).sort();
+}
 
 vi.mock('@/shared/utils/logger', () => ({
   createLogger: () => ({ error: vi.fn() }),
@@ -267,6 +290,13 @@ describe('ContextMenu presence', () => {
     expect(document.querySelector('[data-openbitfun-product-part="item"][data-openbitfun-state="submenu-active"]')?.getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('sizes the surface to its own rows within the shared menu bounds', () => {
+    act(() => root.render(<ContextMenu visible position={{ x: 20, y: 20 }} onClose={vi.fn()} items={[
+      { id: 'copy', label: 'Copy', icon: <svg />, shortcut: 'Ctrl+Shift+C' },
+    ]} />));
+    expect(document.querySelector('[data-openbitfun-component="menu"]')?.getAttribute('data-openbitfun-inline-size')).toBe('content');
+  });
+
   it('resolves the file explorer terminal icon and forwards layout classes through product slots', () => {
     useContextMenuStore.setState({
       visible: true,
@@ -312,5 +342,26 @@ describe('ContextMenu presence', () => {
     }
     expect(document.querySelector('[data-menu-id="configure"] [data-openbitfun-name="gear"]')).not.toBeNull();
     expect(document.querySelector('[data-menu-id="remove"] [data-openbitfun-name="delete"]')).not.toBeNull();
+  });
+
+  it('resolves every icon name referenced by menu providers and commands', () => {
+    const names = referencedIconNames();
+    expect(names).toContain('SelectAll');
+    expect(names.length).toBeGreaterThan(10);
+
+    useContextMenuStore.setState({
+      visible: true,
+      position: { x: 20, y: 20 },
+      items: names.map(name => ({ id: `icon-${name}`, label: name, icon: name })),
+    });
+
+    act(() => root.render(<ContextMenuRenderer />));
+
+    for (const name of names) {
+      const item = document.querySelector(`[data-menu-id="icon-${name}"]`);
+      expect(item, `unresolved menu item for icon ${name}`).not.toBeNull();
+      expect(item?.querySelector('svg'), `unresolved icon ${name}`).not.toBeNull();
+      expect(item?.querySelector('i'), `untranslated icon name ${name}`).toBeNull();
+    }
   });
 });

@@ -39,8 +39,7 @@
   },
   "toolbar": {
     "searchPlaceholder": "搜索技能...",
-    "addTooltip": "添加技能",
-    "hideDuplicates": "隐藏重复项"
+    "addTooltip": "添加技能"
   },
   "filters": {
     "source": "{{source}}",
@@ -163,8 +162,7 @@
       "canvas": "画布",
       "debugging": "调试",
       "coordination": "协作调度",
-      "planning": "规划",
-      "gstack": "gstack"
+      "planning": "规划"
     }
   },
   "form": {
@@ -231,7 +229,13 @@
       "globalToggleLabel": "切换 {{name}} 的全局可用状态"
     },
     "scanIncomplete": "部分技能扫描失败，已成功读取的技能仍可使用。",
-    "diagnosticsUnavailable": "当前主机不提供技能扫描诊断。"
+    "unsupportedSkills": "部分技能依赖暂不支持的能力，未加载。",
+    "unsupportedField": "当前主机暂不支持技能内的 {{field}} 声明，该技能未加载。",
+    "diagnosticsUnavailable": "当前主机不提供技能扫描诊断。",
+    "diagnostics": {
+      "title": "扫描详情（{{count}} 项）",
+      "description": "已成功加载的技能可以继续使用。修复以下文件后，重新扫描即可更新结果。"
+    }
   },
   "deleteModal": {
     "title": "确认删除",
@@ -255,5 +259,11 @@
     "disabled": "禁用",
     "revealPathFailed": "无法在资源管理器中打开: {{error}}",
     "copyPathFailed": "复制路径失败: {{error}}"
+  },
+  "pagination": {
+    "label": "技能分页",
+    "page": "第 {{page}} 页",
+    "range": "第 {{start}}–{{end}} 项，共 {{total}} 个技能",
+    "rangeMore": "第 {{start}}–{{end}} 项 · 已加载 {{total}} 项"
   }
 }

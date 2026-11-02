@@ -11,6 +11,7 @@ import { SessionExecutionState } from '../state-machine/types';
 import { driverForSession, sessionDriverNavigationStatusSources } from '../session-drivers/registry';
 import { deriveSessionNavStatus, type SessionNavStatus } from '../utils/sessionNavStatus';
 import { SessionNavOrdering } from '../utils/sessionNavOrdering';
+import { isUnmaterializedSessionDraft } from '../utils/sessionDraft';
 import type { Session } from '../types/flow-chat';
 import { ensureActivePermissionMailbox, liveSessionInteractionStore } from './liveSessionInteractionStore';
 import { SessionActivitySync, type ActivityTarget } from './sessionActivitySync';
@@ -80,7 +81,9 @@ function publish(sessionId: string): void {
 
 function targetFor(sessionId: string): ActivityTarget | undefined {
   const session = flowChatStore.getState().sessions.get(sessionId);
-  if (!session || session.isTransient || session.config.dispatchJobId) return;
+  // Draft IDs are reserved by the view before the host has a persisted Session.
+  // An absent activity during editing/creation is expected, not a failed read.
+  if (!session || session.isTransient || session.config.dispatchJobId || isUnmaterializedSessionDraft(session)) return;
   const workspaceId = session.projectWorkspaceId || session.workspaceId || session.config.workspaceId;
   if (!workspaceId) return;
   return { sessionId, workspaceId };
@@ -205,7 +208,9 @@ export function installSessionNavStatusService(): () => void {
       if (prior?.needsUserAttention !== session?.needsUserAttention) {
         sessionActivityStore.invalidate(sessionId);
       }
-      if (!prior && session) refresh(sessionId);
+      if (!prior || (isUnmaterializedSessionDraft(prior) && !isUnmaterializedSessionDraft(session))) {
+        refresh(sessionId);
+      }
     }
   }));
   const machineTurns = new Map<string, string>();

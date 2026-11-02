@@ -13,9 +13,17 @@ impl GeminiMessageConverter {
     ) -> (Option<Value>, Vec<Value>) {
         let mut system_texts = Vec::new();
         let mut contents = Vec::new();
+        let mut pending_tool_images = Vec::new();
         let is_gemini_3 = model_name.contains("gemini-3");
 
         for msg in messages {
+            if msg.role != "tool" && !pending_tool_images.is_empty() {
+                Self::push_content(
+                    &mut contents,
+                    "user",
+                    std::mem::take(&mut pending_tool_images),
+                );
+            }
             match msg.role.as_str() {
                 "system" => {
                     if let Some(content) = msg.content.filter(|content| !content.trim().is_empty())
@@ -113,12 +121,27 @@ impl GeminiMessageConverter {
                     } else {
                         Self::parse_tool_response(msg.content.as_deref())
                     };
-                    let parts = vec![json!({
-                        "functionResponse": {
-                            "name": tool_name,
-                            "response": response,
+                    let mut function_response = json!({ "name": tool_name, "response": response });
+                    if let Some(images) = msg
+                        .tool_image_attachments
+                        .filter(|images| !images.is_empty())
+                    {
+                        let image_parts: Vec<Value> = images.into_iter().map(|image| json!({
+                            "inlineData": { "mimeType": image.mime_type, "data": image.data_base64 }
+                        })).collect();
+                        // Gemini 3 accepts binary function-response parts. Older
+                        // models need ordinary image parts after the tool batch.
+                        // Never stringify bytes inside response JSON.
+                        if is_gemini_3 {
+                            function_response["parts"] = json!(image_parts);
+                        } else {
+                            pending_tool_images.push(json!({ "text": format!(
+                                "Images returned by tool {} (tool_call_id: {}):", tool_name,
+                                msg.tool_call_id.as_deref().unwrap_or("unknown")) }));
+                            pending_tool_images.extend(image_parts);
                         }
-                    })];
+                    }
+                    let parts = vec![json!({ "functionResponse": function_response })];
 
                     Self::push_content(&mut contents, "user", parts);
                 }
@@ -126,6 +149,10 @@ impl GeminiMessageConverter {
                     warn!("Unknown Gemini message role: {}", msg.role);
                 }
             }
+        }
+
+        if !pending_tool_images.is_empty() {
+            Self::push_content(&mut contents, "user", pending_tool_images);
         }
 
         let system_instruction = if system_texts.is_empty() {
@@ -489,6 +516,11 @@ impl GeminiMessageConverter {
                 }
 
                 if let Some(schema_type) = normalized_type {
+                    if schema_type == "array" && !sanitized.contains_key("items") {
+                        // Gemini rejects array schemas without an item schema. An empty
+                        // schema preserves the caller's unconstrained element type.
+                        sanitized.insert("items".to_string(), json!({}));
+                    }
                     sanitized.insert("type".to_string(), Value::String(schema_type));
                 }
                 if nullable {
@@ -853,6 +885,26 @@ mod tests {
     }
 
     #[test]
+    fn adds_items_to_array_schemas_without_restricting_elements() {
+        let schema = GeminiMessageConverter::sanitize_schema(json!({
+            "type": "object",
+            "properties": {
+                "value_array": { "type": "array" },
+                "typed_array": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            }
+        }));
+
+        assert_eq!(schema["properties"]["value_array"]["items"], json!({}));
+        assert_eq!(
+            schema["properties"]["typed_array"]["items"]["type"],
+            json!("string")
+        );
+    }
+
+    #[test]
     fn maps_web_search_to_native_google_search_tool() {
         let tools = Some(vec![ToolDefinition {
             name: "WebSearch".to_string(),
@@ -928,5 +980,39 @@ mod tests {
         let converted = GeminiMessageConverter::convert_tools(tools).expect("converted tools");
         assert_eq!(converted.len(), 1);
         assert_eq!(converted[0]["urlContext"], json!({}));
+    }
+}
+
+#[cfg(test)]
+mod tool_image_tests {
+    use super::*;
+    #[test]
+    fn computer_use_images_reach_gemini_wire_without_splitting_parallel_results() {
+        for model in ["gemini-2.5-pro", "gemini-3-pro"] {
+            let messages: Vec<Message> = serde_json::from_value(json!([
+                {"role":"tool","name":"ComputerUse","tool_call_id":"observe-1","content":"{\"screenshot_id\":\"shot-a\",\"image_width\":2,\"image_height\":1}","tool_image_attachments":[{"mime_type":"image/png","data_base64":"pixels-a"}]},
+                {"role":"tool","name":"ComputerUse","tool_call_id":"observe-2","content":"{\"screenshot_id\":\"shot-b\",\"image_width\":4,\"image_height\":3}","tool_image_attachments":[{"mime_type":"image/png","data_base64":"pixels-b"}]}
+            ])).unwrap();
+            let (_, contents) = GeminiMessageConverter::convert_messages(messages, model);
+            let parts = contents[0]["parts"].as_array().unwrap();
+            assert_eq!(
+                parts[0]["functionResponse"]["response"]["screenshot_id"],
+                "shot-a"
+            );
+            assert_eq!(parts[1]["functionResponse"]["response"]["image_width"], 4);
+            if model.contains("gemini-3") {
+                assert_eq!(
+                    parts[0]["functionResponse"]["parts"][0]["inlineData"]["data"],
+                    "pixels-a"
+                );
+                assert_eq!(
+                    parts[1]["functionResponse"]["parts"][0]["inlineData"]["data"],
+                    "pixels-b"
+                );
+            } else {
+                assert_eq!(parts[3]["inlineData"]["data"], "pixels-a");
+                assert_eq!(parts[5]["inlineData"]["data"], "pixels-b");
+            }
+        }
     }
 }

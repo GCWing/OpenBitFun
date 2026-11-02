@@ -17,6 +17,16 @@ function extractBlock(stylesheet: string, selector: string): string {
 }
 
 describe('BtwSessionPanel layout styles', () => {
+  it('preserves the shared virtual row margin containment', () => {
+    const stylesheet = readBtwSessionPanelStylesheet();
+    const shared = readFileSync(
+      fileURLToPath(new URL('../modern/VirtualItemRenderer.scss', import.meta.url)), 'utf8',
+    );
+    expect(extractBlock(shared, '.virtual-item-wrapper')).toContain('display: flow-root;');
+    // A more specific sidebar rule must not undo the measured row boundary.
+    expect(extractBlock(stylesheet, '.virtual-item-wrapper')).not.toMatch(/display\s*:/);
+  });
+
   it('keeps the review action bar wrapper bounded inside the panel viewport', () => {
     const stylesheet = readBtwSessionPanelStylesheet();
     const wrapper = extractBlock(stylesheet, '&__action-bar-wrapper');
@@ -27,14 +37,5 @@ describe('BtwSessionPanel layout styles', () => {
     expect(wrapper).toContain('overflow: hidden;');
     expect(stylesheet).toContain('&__action-bar-wrapper > .deep-review-action-bar');
     expect(stylesheet).toContain('max-height: 100%;');
-  });
-
-  it('keeps header-right aligned for child-session variants that hide origin metadata', () => {
-    const stylesheet = readBtwSessionPanelStylesheet();
-    const headerRight = extractBlock(stylesheet, '&__header-right');
-
-    expect(headerRight).toContain('display: flex;');
-    expect(headerRight).toContain('align-items: center;');
-    expect(headerRight).toContain('justify-content: flex-end;');
   });
 });

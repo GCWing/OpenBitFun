@@ -1657,10 +1657,9 @@ impl ProductPluginSourceStore {
             .and_then(|version| u16::try_from(version).ok())
         {
             if schema_version != PLUGIN_TRUST_STORE_SCHEMA_VERSION {
-                return Err(PluginSourceContractError::UnsupportedTrustStoreSchema(
-                    schema_version,
-                )
-                .into());
+                return Err(
+                    PluginSourceContractError::UnsupportedTrustStoreSchema(schema_version).into(),
+                );
             }
         }
         let store = serde_json::from_value::<PluginTrustStore>(persisted).map_err(|source| {
@@ -3540,12 +3539,9 @@ mod tests {
             .await
             .expect("create trust state directory");
         let original = br#"{"schemaVersion":1,"epoch":7,"records":[]}"#;
-        tokio::fs::write(
-            &fixture.trust_path,
-            original,
-        )
-        .await
-        .expect("write pre-OpenBitFun trust store");
+        tokio::fs::write(&fixture.trust_path, original)
+            .await
+            .expect("write pre-OpenBitFun trust store");
 
         let snapshot = fixture.service().refresh(&fixture.workspace).await;
         let persisted = tokio::fs::read(&fixture.trust_path)

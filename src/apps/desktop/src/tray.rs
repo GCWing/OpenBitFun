@@ -368,9 +368,13 @@ fn macos_tray_icon() -> Result<tauri::image::Image<'static>, image::ImageError> 
     ))
 }
 
-
 pub fn show_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
+    #[cfg(target_os = "macos")]
+    {
+        crate::cancel_main_window_close_request_on_macos(app);
+        crate::mark_main_window_hidden_on_macos(false);
+    }
+    if let Some(window) = app.get_window("main") {
         // Restore before showing: Win+D can leave a visible window minimized.
         if let Err(error) = window.unminimize() {
             log::warn!("Failed to unminimize main window via tray: {}", error);
@@ -388,13 +392,13 @@ pub fn show_main_window(app: &tauri::AppHandle) {
         }
         log::info!("Main window shown via tray");
     } else {
-        log::warn!("Tray: show_main_window called but main window not found");
+        crate::handle_secondary_launch(app);
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 fn toggle_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         // Minimized windows may still be visible according to the OS. Never
         // hide them here: restore them while their normal placement is intact.
         match window.is_minimized() {
@@ -428,6 +432,6 @@ fn toggle_main_window(app: &tauri::AppHandle) {
             show_main_window(app);
         }
     } else {
-        log::warn!("Tray toggle requested but main window not found");
+        crate::handle_secondary_launch(app);
     }
 }

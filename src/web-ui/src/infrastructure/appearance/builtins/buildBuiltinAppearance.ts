@@ -3,6 +3,7 @@ import { themeCssVariables, themes, type ThemeTokenName } from '@openbitfun/them
 import type { AppearancePalette } from './AppearancePalette';
 import { withLegacyButtonTokens } from './buttonThemeCompatibility';
 import { DEFAULT_DARK_APPEARANCE_ID, DEFAULT_LIGHT_APPEARANCE_ID } from './palettes';
+import { createSubagentAvatarTokens } from './subagentAvatarTokens';
 import type {
   AppearanceColorValue,
   AppearanceDurationValue,
@@ -298,6 +299,7 @@ function createAppearanceOwnedTokens(
     ?? (palette.type === 'dark' ? colors.element.base : colors.element.soft);
   return {
     ...themeValuesToCssTokens(createThemeTokenValues(palette), palette),
+    ...createSubagentAvatarTokens(palette),
     '--openbitfun-component-config-page-section-background': configPage?.section.background ?? colors.background.tertiary,
     '--openbitfun-component-config-page-section-border': configPage?.section.border ?? colors.border.subtle,
     '--openbitfun-component-config-page-section-border-width': configPage?.section.borderWidth ?? '1px',
@@ -311,6 +313,9 @@ function createAppearanceOwnedTokens(
     '--openbitfun-component-conversation-excerpt-accent': String(themes.light['color.accent.default']),
     // Update glass retains its cyan companion when a dark theme's accent becomes blue.
     '--openbitfun-component-update-material-cyan': String(themes.light['color.accent.default']),
+    // Token series stay chromatic even when a product theme uses neutral accents.
+    '--openbitfun-component-session-usage-input': String(themes[palette.type]['color.status.info.emphasis']),
+    '--openbitfun-component-session-usage-output': String(themes[palette.type]['color.accent.secondary']),
     '--openbitfun-domain-context-compression': purple[500],
     '--openbitfun-domain-generative-ui': '#06b6d4',
     '--openbitfun-domain-mini-app': purple[500],

@@ -1906,6 +1906,7 @@ mod tests {
             agent_type: None,
             model_id: None,
             focused_review_display_label: None,
+            continuation_policy: None,
         };
         assert_eq!(
             route_agent_event(&linked, "child-session", &routes),
@@ -1921,6 +1922,7 @@ mod tests {
             agent_type: None,
             model_id: None,
             focused_review_display_label: None,
+            continuation_policy: None,
         };
         let nested_route = route_agent_event(&nested, "grandchild-session", &routes);
         assert_eq!(nested_route, root_route);
@@ -1964,6 +1966,7 @@ mod tests {
             success: Some(true),
             finish_reason: None,
             has_final_response: Some(true),
+            background_delivery: None,
         };
         route_agent_event(&completed, "parent-session", &routes);
         assert_eq!(routes.lock().expect("routes").len(), 2);
@@ -2000,6 +2003,7 @@ mod tests {
                 agent_type: None,
                 model_id: None,
                 focused_review_display_label: None,
+                continuation_policy: None,
             };
             route_agent_event(&linked, "child-session", &routes);
         }

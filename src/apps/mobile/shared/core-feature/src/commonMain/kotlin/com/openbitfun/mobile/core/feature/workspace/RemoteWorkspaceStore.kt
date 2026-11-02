@@ -66,11 +66,23 @@ public class RemoteWorkspaceStore internal constructor(
     private var catalogSubscription: Job? = null
     private var catalogRefresh: Job? = null
     private var catalogDirty = false
+    private var pendingWorkspacesRevision: Long? = null
+    private var appliedWorkspacesRevision: Long? = null
     internal fun bindCatalog(changes: kotlinx.coroutines.flow.Flow<HostCatalogNotice>) {
         catalogSubscription?.cancel()
         catalogSubscription = scope.launch { changes.collect { notice ->
-            if (notice == HostCatalogNotice.Changed) refreshCatalog()
-            else updateReady { it.copy(loadFailure = true) }
+            when (notice) {
+                is HostCatalogNotice.Changed -> {
+                    // Session metadata changes do not alter the workspace picker.
+                    val changed = (notice.sessionsRevision == null && notice.workspacesRevision == null) ||
+                        (notice.workspacesRevision != null && notice.workspacesRevision != appliedWorkspacesRevision)
+                    if (changed) {
+                        pendingWorkspacesRevision = notice.workspacesRevision
+                        refreshCatalog()
+                    }
+                }
+                HostCatalogNotice.Failed -> updateReady { it.copy(loadFailure = true) }
+            }
         } }
     }
     private fun refreshCatalog() {
@@ -80,6 +92,7 @@ public class RemoteWorkspaceStore internal constructor(
             while (catalogDirty) {
                 catalogDirty = false
                 if (_state.value !is RemoteWorkspaceUiState.Ready) { catalogDirty = true; return@launch }
+                val refreshingRevision = pendingWorkspacesRevision
                 try {
                     val (recent, assistants) = coroutineScope {
                         val a = async { transport.send<RecentWorkspaceListResponse>(RemoteCommand(cmd = "list_recent_workspaces")) }
@@ -90,6 +103,8 @@ public class RemoteWorkspaceStore internal constructor(
                         RecentWorkspace(item.path.orEmpty(), item.name ?: basename(item.path.orEmpty()), item.lastOpened, item.workspaceKind.orEmpty(), item.remoteSshHost, item.remoteConnectionId, item.workspaceId)
                     }, assistants = assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId, item.workspaceId) },
                         catalog = recent.sidebarCatalog(assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId, item.workspaceId) }), loadFailure = false) }
+                    appliedWorkspacesRevision = refreshingRevision ?: appliedWorkspacesRevision
+                    if (pendingWorkspacesRevision == refreshingRevision) pendingWorkspacesRevision = null
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Throwable) { updateReady { it.copy(loadFailure = true) } }
             }

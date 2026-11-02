@@ -6,10 +6,11 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { FilePlus, SearchCheck, Zap, GitPullRequest } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useI18n } from '@/infrastructure/i18n';
 import { createOverlayPortal, useDismissibleLayer, OverflowText, Icon, IconButton, Menu, MenuItem, MenuSeparator, Tooltip } from '@openbitfun/ui';
 import { useSnapshotState } from '../../../tools/snapshot_system/hooks/useSnapshotState';
 import { createDiffEditorTab } from '../../../shared/utils/tabUtils';
-import { snapshotAPI } from '../../../infrastructure/api';
+import { snapshotAPI } from '../../../infrastructure/api/service-api/SnapshotAPI';
 import { useWorkspaceContext } from '../../../infrastructure/contexts/WorkspaceContext';
 import { notificationService } from '../../../shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
@@ -155,6 +156,7 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
   disabled = false,
 }) => {
   const { t } = useTranslation('flow-chat');
+  const { t: tQuickActions } = useI18n('settings/quick-actions');
   const canLaunchReview = isTauriRuntime();
   const { files } = useSnapshotState(sessionId);
   const { currentWorkspace } = useWorkspaceContext();
@@ -710,7 +712,7 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
   const handleQuickActionClick = useCallback(async (action: QuickAction) => {
     if (!sessionId || isSessionProcessing) return;
     setIsReviewMenuOpen(false);
-    const actionText = resolveQuickActionText(action, t);
+    const actionText = resolveQuickActionText(action, tQuickActions);
     try {
       const { FlowChatManager } = await import('../../services/FlowChatManager');
       await FlowChatManager.getInstance().sendMessage(
@@ -721,12 +723,12 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
     } catch (error) {
       log.error('Failed to trigger quick action', { actionId: action.id, error });
     }
-  }, [sessionId, isSessionProcessing, t]);
+  }, [sessionId, isSessionProcessing, tQuickActions]);
 
   const getOperationIcon = (operationType: 'write' | 'edit' | 'delete') => {
     switch (operationType) {
       case 'write':
-        return <FilePlus size={12} className="icon-write" />;
+        return <Icon glyph={FilePlus} size="xs" className="icon-write" />;
       case 'delete':
         return <Icon name="delete" size="xs" className="icon-delete" />;
       default:
@@ -820,7 +822,7 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
             )}
 
             {quickActions.filter(a => a.enabled).map(action => {
-              const actionText = resolveQuickActionText(action, t);
+              const actionText = resolveQuickActionText(action, tQuickActions);
               return (
                 <MenuItem data-openbitfun-component="session-files-badge" data-openbitfun-part="reviewItem"
                   key={action.id}

@@ -7,12 +7,12 @@
  *
  * Scenes without a registered nav component fall back to MainNav (the default sidebar).
  */
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 
-import { lazy } from 'react';
 import type { ComponentType } from 'react';
 import type { SceneTabId } from '../components/SceneBar/types';
 
-type LazyNavComponent = ReturnType<typeof lazy<ComponentType>>;
+type LazyNavComponent = ReturnType<typeof lazyWithRecovery<ComponentType>>;
 
 interface SceneNavRegistration {
   component: LazyNavComponent;
@@ -34,17 +34,19 @@ const loadSettingsNav = async () => {
   return navModule;
 };
 const loadFileViewerNav = () => import('./file-viewer/FileViewerNav');
+const SettingsNav = lazyWithRecovery(loadSettingsNav);
+const FileViewerNav = lazyWithRecovery(loadFileViewerNav);
 
 const SCENE_NAV_REGISTRY: Partial<Record<SceneTabId, SceneNavRegistration>> = {
   settings: {
-    component: lazy(loadSettingsNav),
+    component: SettingsNav,
     titleKey: 'shared:features.settings',
-    preload: loadSettingsNav,
+    preload: SettingsNav.preload,
   },
   'file-viewer': {
-    component: lazy(loadFileViewerNav),
+    component: FileViewerNav,
     titleKey: 'nav.resources.title',
-    preload: loadFileViewerNav,
+    preload: FileViewerNav.preload,
   },
 };
 

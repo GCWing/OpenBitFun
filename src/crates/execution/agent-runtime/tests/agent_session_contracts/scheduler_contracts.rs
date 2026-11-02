@@ -192,7 +192,7 @@ fn thread_goal_objective_updated_delivery_plan_preserves_follow_up_and_metadata(
     );
     assert!(plan
         .injection_prompt
-        .contains("The active thread goal objective was edited by the user."));
+        .contains("The active thread goal has been set or updated by the user."));
     assert_eq!(
         plan.prepended_reminders[0].kind,
         ThreadGoalDeliveryReminderKind::GoalObjectiveUpdated
@@ -652,6 +652,30 @@ fn round_injection_buffer_drains_only_messages_for_the_active_turn() {
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].content, "other");
     assert_eq!(buffer.pending_count("s1"), 0);
+}
+
+#[test]
+fn human_turn_handoff_leaves_runtime_reminders_and_other_targets_intact() {
+    let buffer = SessionRoundInjectionBuffer::default();
+    buffer.push("s1", exact_turn_msg("turn-a", "first"));
+    buffer.push("s1", current_turn_msg("background"));
+    buffer.push("s1", exact_turn_msg("turn-b", "other"));
+    buffer.push("s1", exact_turn_msg("turn-a", "second"));
+    let human = buffer.drain_matching_for_turn("s1", "turn-a", |message| {
+        message.kind == RoundInjectionKind::UserSteering
+    });
+    assert_eq!(
+        human
+            .iter()
+            .map(|message| message.content.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first", "second"]
+    );
+    assert_eq!(
+        buffer.drain_for_turn("s1", "turn-a")[0].content,
+        "background"
+    );
+    assert_eq!(buffer.drain_for_turn("s1", "turn-b")[0].content, "other");
 }
 
 #[test]

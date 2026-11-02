@@ -1,6 +1,7 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import React from 'react';
+import { EyeOff } from 'lucide-react';
 import {
-  Button,
   Card,
   CardFooter,
   CardHeader,
@@ -19,12 +20,15 @@ import type { WorkspaceInfo } from '@/shared/types';
 interface AssistantCardProps {
   workspace: WorkspaceInfo;
   onClick: () => void;
-  onNewSession?: () => void;
+  onOpen?: () => void;
+  isOpening?: boolean;
+  onClose?: () => void;
+  isClosing?: boolean;
+  closeDisabledReason?: string;
   onDelete?: () => void;
   onSetPrimary?: () => void;
   isPrimary?: boolean;
   isDeleting?: boolean;
-  isStartingSession?: boolean;
   isSettingPrimary?: boolean;
   style?: React.CSSProperties;
 }
@@ -32,25 +36,31 @@ interface AssistantCardProps {
 const AssistantCard: React.FC<AssistantCardProps> = ({
   workspace,
   onClick,
-  onNewSession,
+  onOpen,
+  isOpening = false,
+  onClose,
+  isClosing = false,
+  closeDisabledReason,
   onDelete,
   onSetPrimary,
   isPrimary,
   isDeleting = false,
-  isStartingSession = false,
   isSettingPrimary = false,
   style,
 }) => {
   const { t } = useTranslation('scenes/profile');
   const identity = workspace.identity;
 
-  const name = identity?.name?.trim() || workspace.name || t('nursery.card.unnamed');
+  const name = resolveAssistantName(workspace, t('shared:agents.Claw'));
   const avatar = identity?.avatar?.trim() ?? '';
   const emoji = identity?.emoji?.trim() ?? '';
   const creature = identity?.creature?.trim() || '';
   const vibe = identity?.vibe?.trim() || '';
-  const isBusy = isDeleting || isStartingSession || isSettingPrimary;
-  const hasActions = Boolean(onNewSession || onSetPrimary || onDelete);
+  const isBusy = isDeleting || isSettingPrimary || isOpening || isClosing;
+  const hasActions = Boolean(onOpen || onClose || onSetPrimary || onDelete);
+  const isOpened = Boolean(onClose);
+  const visibilityAction = onClose ?? onOpen;
+  const visibilityLabel = t(isOpened ? 'nursery.card.close' : 'nursery.card.open');
 
   return (
     <article
@@ -78,11 +88,12 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
           className="assistant-card__main"
           onClick={onClick}
           aria-label={`${t('nursery.card.configure')}: ${name}`}
-          disabled={isDeleting || isSettingPrimary}
+          disabled={isDeleting || isSettingPrimary || isOpening || isClosing}
         />
 
         <CardHeader
           align="center"
+          contentAlign={isPrimary ? 'center' : 'start'}
           className="assistant-card__header"
           data-openbitfun-component="assistant-card"
           data-openbitfun-part="header"
@@ -93,7 +104,7 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
                 emoji={emoji}
                 stableKey={workspace.assistantId || workspace.id}
                 name={name}
-                size={44}
+                size={isPrimary ? 80 : 44}
               />
             </span>
           )}
@@ -126,32 +137,25 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
               ) : null}
             </span>
           )}
-          actions={(
-            <Icon
-              name="chevron-right"
-              size="sm"
-              data-openbitfun-component="assistant-card"
-              data-openbitfun-part="chevron"
-              className="assistant-card__chevron"
-              aria-hidden="true"
-            />
-          )}
         />
 
         {hasActions ? (
           <CardFooter align="end" className="assistant-card__footer" data-openbitfun-component="assistant-card" data-openbitfun-part="footer">
-            <span className="assistant-card__session-actions">
-              {onNewSession ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  leadingIcon={<Icon name="side-chat" size="sm" />}
-                  loading={isStartingSession}
-                  onClick={onNewSession}
-                  disabled={isStartingSession || isDeleting || isSettingPrimary}
-                >
-                  {t(isStartingSession ? 'nursery.card.startingSession' : 'nursery.card.newSession')}
-                </Button>
+            <span className="assistant-card__workspace-actions">
+              {visibilityAction ? (
+                <Tooltip content={isOpened && closeDisabledReason ? closeDisabledReason : visibilityLabel}>
+                  <IconButton
+                    data-openbitfun-component="assistant-card"
+                    data-openbitfun-part="visibility"
+                    size="sm"
+                    aria-label={visibilityLabel}
+                    aria-pressed={isOpened}
+                    loading={isOpening || isClosing}
+                    disabled={isBusy || (isOpened && Boolean(closeDisabledReason))}
+                    onClick={visibilityAction}
+                    icon={isOpened ? <Icon name="eye" size="sm" /> : <Icon glyph={EyeOff} size="sm" />}
+                  />
+                </Tooltip>
               ) : null}
 
               <span className="assistant-card__footer-actions">
@@ -164,7 +168,7 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
                       onClick={onSetPrimary}
                       aria-label={t('nursery.card.setPrimary')}
                       loading={isSettingPrimary}
-                      disabled={isDeleting || isStartingSession || isSettingPrimary}
+                      disabled={isBusy}
                       icon={<Icon name="pin" size="sm" aria-hidden="true" />}
                     />
                   </Tooltip>
@@ -180,7 +184,7 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
                       onClick={onDelete}
                       aria-label={t('nursery.card.delete')}
                       loading={isDeleting}
-                      disabled={isDeleting || isStartingSession || isSettingPrimary}
+                      disabled={isBusy}
                       icon={<Icon name="delete" size="sm" aria-hidden="true" />}
                     />
                   </Tooltip>

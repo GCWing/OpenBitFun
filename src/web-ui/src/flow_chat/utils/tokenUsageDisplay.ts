@@ -1,3 +1,4 @@
+import { formatDuration } from '@/shared/utils/format';
 import type { DialogTurn, Session, TokenUsage } from '../types/flow-chat';
 import { LONG_CONTEXT_WARNING_THRESHOLD_TOKENS } from '@/shared/constants/modelContext';
 import { i18nService } from '@/infrastructure/i18n';
@@ -80,6 +81,8 @@ export function buildModelSelectorTooltipDetails(params: {
   modelName?: string;
   contextWindow?: number;
   configuredMaxOutputTokens?: number;
+  /** null hides the member threshold when a pool owns input admission. */
+  compressionTriggerTokens?: number | null;
   usage?: ContextUsageDisplay;
   t: TranslationFn;
 }): ModelSelectorTooltipDetails {
@@ -88,6 +91,7 @@ export function buildModelSelectorTooltipDetails(params: {
     modelName,
     contextWindow,
     configuredMaxOutputTokens,
+    compressionTriggerTokens,
     usage,
     t,
   } = params;
@@ -115,11 +119,11 @@ export function buildModelSelectorTooltipDetails(params: {
       label: t('modelSelector.tooltip.contextWindow'),
       value: formatCompactTokenCount(contextWindow),
     });
-    rows.push({
+    if (compressionTriggerTokens !== null) rows.push({
       key: 'compressionTrigger',
       label: t('modelSelector.tooltip.compressionTrigger'),
       value: formatCompactTokenCount(
-        getCompressionTriggerTokens(contextWindow, configuredMaxOutputTokens),
+        compressionTriggerTokens ?? getCompressionTriggerTokens(contextWindow, configuredMaxOutputTokens),
       ),
     });
   }
@@ -143,10 +147,6 @@ export function buildModelSelectorTooltipDetails(params: {
       ? t('modelSelector.tooltip.longContextWarning')
       : undefined,
   };
-}
-
-function formatCompactNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
 }
 
 /**
@@ -238,26 +238,7 @@ export function buildContextUsageTooltip(params: {
 }
 
 export function formatElapsedDuration(durationMs: number): string {
-  const safeMs = Math.max(0, Math.round(durationMs));
-  if (safeMs < 1000) {
-    return `${safeMs}ms`;
-  }
-
-  const seconds = safeMs / 1000;
-  if (seconds < 60) {
-    return `${formatCompactNumber(Math.round(seconds * 10) / 10)}s`;
-  }
-
-  const wholeSeconds = Math.round(seconds);
-  const minutes = Math.floor(wholeSeconds / 60);
-  const remainingSeconds = wholeSeconds % 60;
-  if (minutes < 60) {
-    return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m${remainingSeconds}s`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes === 0 ? `${hours}h` : `${hours}h${remainingMinutes}m`;
+  return formatDuration(durationMs);
 }
 
 export function buildModelRoundCompletionMeta(params: {
@@ -270,7 +251,7 @@ export function buildModelRoundCompletionMeta(params: {
   const { completedAt, durationMs, status, formatTime, t } = params;
   const items: ModelRoundCompletionMetaItem[] = [];
 
-  if (typeof completedAt === 'number') {
+  if (typeof completedAt === 'number' && Number.isFinite(completedAt)) {
     items.push({
       key: 'completed',
       label: status === 'cancelled'
@@ -280,7 +261,7 @@ export function buildModelRoundCompletionMeta(params: {
     });
   }
 
-  if (typeof durationMs === 'number') {
+  if (typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0) {
     items.push({
       key: 'duration',
       label: t('modelRound.meta.duration'),

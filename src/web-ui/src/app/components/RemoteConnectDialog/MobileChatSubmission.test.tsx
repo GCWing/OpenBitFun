@@ -4,14 +4,20 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatPage from '../../../../../mobile-web/src/pages/ChatPage';
 import { useMobileStore } from '../../../../../mobile-web/src/services/store';
+import type ChatTranscript from '../../../../../mobile-web/src/components/ChatTranscript';
+import type ChatMessageActions from '../../../../../mobile-web/src/components/ChatMessageActions';
 import type { RemoteSessionManager } from '../../../../../mobile-web/src/services/RemoteSessionManager';
 
 vi.mock('../../../../../mobile-web/src/i18n', () => ({
   useI18n: () => ({ lang: 'en', t: (key: string) => key }),
 }));
 vi.mock('../../../../../mobile-web/src/components/ChatHeader', () => ({ default: () => null }));
-vi.mock('../../../../../mobile-web/src/components/ChatTranscript', () => ({ default: () => null }));
-vi.mock('../../../../../mobile-web/src/components/ChatMessageActions', () => ({ default: () => null }));
+vi.mock('../../../../../mobile-web/src/components/ChatTranscript', () => ({
+  default: ({ messages, onMessageContextMenu }: React.ComponentProps<typeof ChatTranscript>) => <button data-testid="message-menu" onClick={event => onMessageContextMenu(messages[0], event)}>message</button>,
+}));
+vi.mock('../../../../../mobile-web/src/components/ChatMessageActions', () => ({
+  default: ({ message, rollbackSupported, onEdit }: React.ComponentProps<typeof ChatMessageActions>) => message && rollbackSupported ? <button data-testid="edit-message" onClick={onEdit}>edit</button> : null,
+}));
 vi.mock('../../../../../mobile-web/src/services/imageCompressor', () => ({
   compressImageFile: async (file: File) => ({ name: file.name, dataUrl: 'data:image/png;base64,dGVzdA==' }),
 }));
@@ -67,6 +73,8 @@ describe('mobile chat submission acknowledgement', () => {
       subscribeSessionStream: vi.fn().mockResolvedValue({ close() {}, wake() {}, async loadOlder() {} }),
       getSessionMessages: vi.fn().mockResolvedValue({ messages: [], has_more: false }),
       getModelCatalog: vi.fn().mockResolvedValue({ version: 1, models: [], default_models: {}, session_model_id: 'auto' }),
+      supportsHostCapability: vi.fn((capability: string) => capability === 'session_rollback_v1'),
+      rollbackSessionToTurn: vi.fn(),
       sendMessage,
     } as unknown as RemoteSessionManager;
   });
@@ -141,4 +149,62 @@ describe('mobile chat submission acknowledgement', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(send().disabled).toBe(false);
   });
+
+  async function openEdit(images?: { name: string; data_url: string }[]) {
+    await act(async () => {
+      useMobileStore.getState().setMessages('fixture', [{ id: 'user-a', role: 'user', content: 'original prompt', timestamp: '1', turn_id: 'turn-a', turn_index: 7, images }]);
+    });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-testid="message-menu"]')!.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-testid="edit-message"]')!.click(); });
+    const draft = document.querySelector<HTMLTextAreaElement>('.chat-msg__rollback-input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(draft, 'edited prompt');
+      draft.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  async function confirmEdit() {
+    await act(async () => {
+      [...document.querySelectorAll('button')].find(button => button.textContent === 'chat.editAction')!.click();
+    });
+  }
+
+  it('retains the edit sheet draft when rollback fails before sending', async () => {
+    const rollback = deferred<never>();
+    vi.mocked(manager.rollbackSessionToTurn).mockReturnValue(rollback.promise);
+    await mount();
+    await openEdit();
+    await confirmEdit();
+    expect(manager.rollbackSessionToTurn).toHaveBeenCalledWith('fixture', 'turn-a', 7);
+    await act(async () => { rollback.reject(new Error('stale history')); });
+    expect(document.querySelector<HTMLTextAreaElement>('.chat-msg__rollback-input')?.value).toBe('edited prompt');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('restores attachments with the edited text if sending after rollback fails', async () => {
+    vi.mocked(manager.rollbackSessionToTurn).mockResolvedValue({ retired_turn_ids: ['turn-a'], restored_files: [], changed: true });
+    await mount();
+    await openEdit([{ name: 'original.png', data_url: 'data:image/png;base64,b3JpZ2luYWw=' }]);
+    await confirmEdit();
+    await act(async () => { pending.reject(new Error('connection lost')); });
+    expect(editor().value).toBe('edited prompt');
+    expect(container.querySelector('img')?.getAttribute('src')).toContain('b3JpZ2luYWw=');
+    expect(document.querySelector('.chat-msg__rollback-input')).toBeNull();
+  });
+
+  it('does not clear a new target edit sheet when an old rollback fails', async () => {
+    const rollback = deferred<never>();
+    vi.mocked(manager.rollbackSessionToTurn).mockReturnValue(rollback.promise);
+    await mount();
+    await openEdit();
+    await confirmEdit();
+    await act(async () => { epoch = 1; listeners.forEach(fn => fn()); });
+    await flush();
+    await openEdit();
+    await act(async () => { rollback.reject(new Error('old rollback failure')); });
+    expect(document.querySelector<HTMLTextAreaElement>('.chat-msg__rollback-input')?.value).toBe('edited prompt');
+    expect(useMobileStore.getState().error).toBeNull();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
 });

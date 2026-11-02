@@ -116,6 +116,7 @@ pub struct BotStrings {
     pub resume_you_label: &'static str,
     pub resume_continue_hint: &'static str,
     pub resume_first_message_hint: &'static str,
+    pub resume_list_failed_prefix: &'static str,
 
     pub switch_model_title: &'static str,
     pub switch_model_pick: &'static str,
@@ -174,6 +175,12 @@ pub struct BotStrings {
     pub auto_push_intro_many_fmt: &'static str,
     pub auto_push_skip_too_large_fmt: &'static str,
     pub auto_push_failed_fmt: &'static str,
+    pub weixin_remote_push_unsupported: &'static str,
+    pub inbound_media_unsupported: &'static str,
+    pub inbound_image_failed_prefix: &'static str,
+    pub inbound_file_failed_prefix: &'static str,
+    pub inbound_file_message: &'static str,
+    pub inbound_file_pending: &'static str,
 
     // ── Multi-device control ─────────────────────────────────────
     pub devices_title: &'static str,
@@ -278,6 +285,7 @@ const STRINGS_ZH: BotStrings = BotStrings {
     resume_you_label: "你",
     resume_continue_hint: "可以继续对话。",
     resume_first_message_hint: "发送一条消息即可开始。",
+    resume_list_failed_prefix: "读取会话列表失败：",
 
     switch_model_title: "选择模型",
     switch_model_pick: "请选择要使用的模型：",
@@ -336,6 +344,12 @@ const STRINGS_ZH: BotStrings = BotStrings {
     auto_push_intro_many_fmt: "正在为你发送 {n} 个文件……",
     auto_push_skip_too_large_fmt: "已跳过「{name}」：{size} 超过 {limit} 上限，请改用桌面端获取。",
     auto_push_failed_fmt: "发送「{name}」失败：{err}",
+    weixin_remote_push_unsupported: "微信暂不支持主动推送其他设备上的定时任务或桌面会话结果。你从微信发起的请求仍会正常回复。",
+    inbound_media_unsupported: "此消息含有暂不支持的附件或内容为空，尚未发送给 Agent。请发送文字、图片、视频或普通文件。",
+    inbound_image_failed_prefix: "图片接收失败，此消息尚未发送给 Agent：",
+    inbound_file_failed_prefix: "文件接收失败，尚未发送给 Agent：",
+    inbound_file_message: "[用户发送了文件]",
+    inbound_file_pending: "请先完成当前的选择或确认，再重新发送文件。文件尚未发送给 Agent。",
 
     devices_title: "多设备控制",
     devices_account_required: "所连接的桌面端尚未使用 GitHub 登录，无法使用多设备控制。请在桌面端的账号登录对话框中登录，机器人会自动继承账号身份。",
@@ -439,6 +453,7 @@ const STRINGS_ZH_TW: BotStrings = BotStrings {
     resume_you_label: "你",
     resume_continue_hint: "可以繼續對話。",
     resume_first_message_hint: "發送一條消息即可開始。",
+    resume_list_failed_prefix: "讀取會話列表失敗：",
 
     switch_model_title: "選擇模型",
     switch_model_pick: "請選擇要使用的模型：",
@@ -497,6 +512,12 @@ const STRINGS_ZH_TW: BotStrings = BotStrings {
     auto_push_intro_many_fmt: "正在為你發送 {n} 個文件……",
     auto_push_skip_too_large_fmt: "已跳過「{name}」：{size} 超過 {limit} 上限，請改用桌面端獲取。",
     auto_push_failed_fmt: "發送「{name}」失敗：{err}",
+    weixin_remote_push_unsupported: "微信暫不支援主動推送其他裝置上的排程任務或桌面會話結果。你從微信發起的請求仍會正常回覆。",
+    inbound_media_unsupported: "此訊息含有暫不支援的附件或內容為空，尚未傳送給 Agent。請傳送文字、圖片、影片或一般檔案。",
+    inbound_image_failed_prefix: "圖片接收失敗，此訊息尚未傳送給 Agent：",
+    inbound_file_failed_prefix: "檔案接收失敗，尚未傳送給 Agent：",
+    inbound_file_message: "[使用者傳送了檔案]",
+    inbound_file_pending: "請先完成目前的選擇或確認，再重新傳送檔案。檔案尚未傳送給 Agent。",
 
     devices_title: "多裝置控制",
     devices_account_required: "所連接的桌面端尚未使用 GitHub 登入，無法使用多裝置控制。請在桌面端的帳號登入對話框中登入，機器人會自動繼承帳號身份。",
@@ -601,6 +622,7 @@ Open Remote Connect in OpenBitFun Desktop and send the 6-digit pairing code here
     resume_you_label: "You",
     resume_continue_hint: "You can continue the conversation.",
     resume_first_message_hint: "Send a message to start.",
+    resume_list_failed_prefix: "Failed to list sessions: ",
 
     switch_model_title: "Select Model",
     switch_model_pick: "Pick a model to use:",
@@ -659,6 +681,12 @@ Open Remote Connect in OpenBitFun Desktop and send the 6-digit pairing code here
     auto_push_intro_many_fmt: "Sending {n} files for you…",
     auto_push_skip_too_large_fmt: "Skipping \"{name}\": {size} exceeds the {limit} limit. Please grab it from OpenBitFun Desktop instead.",
     auto_push_failed_fmt: "Failed to send \"{name}\": {err}",
+    weixin_remote_push_unsupported: "WeChat cannot proactively push scheduled-job or desktop-session results from another device yet. Requests you send from WeChat still receive replies.",
+    inbound_media_unsupported: "This message contains unsupported media or no usable content and was not sent to the Agent. Send text, images, videos, or ordinary files.",
+    inbound_image_failed_prefix: "Image could not be received; this message was not sent to the Agent: ",
+    inbound_file_failed_prefix: "File could not be received and was not sent to the Agent: ",
+    inbound_file_message: "[User sent a file]",
+    inbound_file_pending: "Complete the pending selection or confirmation, then resend the file. It has not been sent to the Agent.",
 
     devices_title: "Multi-device Control",
     devices_account_required: "The paired desktop is not logged into a GitHub account, so multi-device control is unavailable. Log in via the desktop's Account Login dialog and the bot will inherit the account identity.",

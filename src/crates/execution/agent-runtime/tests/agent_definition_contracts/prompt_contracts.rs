@@ -50,6 +50,7 @@ fn tool_listing_sections_render_only_present_sections() {
                 .to_string(),
         ),
         deferred_tool_listing: Some("Search: summary".to_string()),
+        ptc_tool_calling_guide: None,
     };
 
     assert!(!sections.is_empty());
@@ -70,9 +71,12 @@ fn tool_listing_sections_render_only_present_sections() {
     assert!(deferred_tool_listing
         .contains("Their definitions are not loaded at the start of the conversation."));
     assert!(deferred_tool_listing
-        .contains("You must obtain the tool definition using GetToolSpec before you first invoke a deferred tool."));
+        .contains("Use GetToolSpec to read a deferred tool's full definition before invoking it through CallDeferredTool."));
     assert!(deferred_tool_listing.contains(
-        "Once its definition is available in the conversation, you can call it through CallDeferredTool."
+        "Reuse it while the successful GetToolSpec result remains in the current context."
+    ));
+    assert!(deferred_tool_listing.contains(
+        "If compaction or truncation removed that result, load it again; a summary or a past call does not keep the definition loaded."
     ));
     assert!(deferred_tool_listing
         .contains("Each entry below is a deferred tool name with an optional short description."));
@@ -80,7 +84,7 @@ fn tool_listing_sections_render_only_present_sections() {
         "## Direct tools\nTheir definitions are already available. You can call them directly.\nEach entry below is a directly callable tool name.\n\n<direct_tools>\n- Read\n- GetToolSpec\n- CallDeferredTool\n</direct_tools>"
     ));
     assert!(deferred_tool_listing.contains(
-        "## Deferred tools\nTheir definitions are not loaded at the start of the conversation.\nYou must obtain the tool definition using GetToolSpec before you first invoke a deferred tool. Once its definition is available in the conversation, you can call it through CallDeferredTool."
+        "## Deferred tools\nTheir definitions are not loaded at the start of the conversation.\nUse GetToolSpec"
     ));
     assert!(deferred_tool_listing.ends_with("Search: summary"));
 }
@@ -89,6 +93,7 @@ fn tool_listing_sections_render_only_present_sections() {
 fn prepended_prompt_reminders_keep_runtime_injection_order() {
     let reminders = PrependedPromptReminders {
         deferred_tool_listing: Some("deferred-tools".to_string()),
+        ptc_tool_calling_guide: None,
         skill_listing: Some("skills".to_string()),
         agent_listing: Some("agents".to_string()),
         runtime_context: Some("runtime-context".to_string()),
@@ -111,6 +116,23 @@ fn prepended_prompt_reminders_keep_runtime_injection_order() {
 }
 
 #[test]
+fn ptc_sdk_is_injected_as_a_separate_tool_calling_reminder() {
+    let reminders = PrependedPromptReminders {
+        ptc_tool_calling_guide: Some(
+            "# Tool Calling Guide\nGenerated SDK:\n```ts\nexport type ToolArgsMap = {};\n```"
+                .to_string(),
+        ),
+        ..Default::default()
+    };
+    assert_eq!(
+        reminders.ptc_tool_calling_guide.as_deref(),
+        Some("# Tool Calling Guide\nGenerated SDK:\n```ts\nexport type ToolArgsMap = {};\n```")
+    );
+    assert_eq!(reminders.ordered_reminders().len(), 1);
+    assert!(reminders.ordered_reminders()[0].contains("ToolArgsMap"));
+}
+
+#[test]
 fn prompt_environment_info_preserves_local_and_remote_guidance() {
     let local = render_prompt_environment_info(PromptEnvironmentFacts {
         host_os: "windows",
@@ -119,8 +141,10 @@ fn prompt_environment_info_preserves_local_and_remote_guidance() {
         remote_execution_active: false,
     });
     assert!(local.contains("- Operating System: windows (windows)"));
-    assert!(local.contains("Computer use / `key_chord`"));
-    assert!(local.contains("PowerShell"));
+    assert!(local.contains("Computer use / keyboard"));
+    assert!(local.contains("Windows app-scoped keyboard chords are unavailable"));
+    assert!(local.contains("requires authorized foreground control"));
+    assert!(!local.contains("PowerShell"));
 
     let remote = render_prompt_environment_info(PromptEnvironmentFacts {
         host_os: "linux",
@@ -147,7 +171,6 @@ fn runtime_context_renderer_preserves_local_exec_and_computer_use_guidance() {
             invocation: "powershell.exe -NoLogo".to_string(),
         }),
         supports_image_understanding: None,
-        inline_markdown_image_display: false,
     })
     .expect("runtime context should render");
 
@@ -185,7 +208,6 @@ fn runtime_context_renderer_preserves_remote_workspace_split() {
             invocation: "powershell.exe".to_string(),
         }),
         supports_image_understanding: None,
-        inline_markdown_image_display: false,
     })
     .expect("remote runtime context should render");
 
@@ -208,7 +230,6 @@ fn runtime_context_renderer_adds_text_only_computer_use_guidance_for_non_visual_
         remote_execution: None,
         local_shell: None,
         supports_image_understanding: Some(false),
-        inline_markdown_image_display: false,
     })
     .expect("runtime context should render");
 
@@ -217,6 +238,25 @@ fn runtime_context_renderer_adds_text_only_computer_use_guidance_for_non_visual_
     assert!(reminder.contains("primary model does not accept image inputs"));
     assert!(reminder.contains("do not use `screenshot`"));
     assert!(reminder.contains("prefer `snapshot` then click by `@e*` ref"));
+    assert!(reminder.contains("selected or bound app"));
+    assert!(reminder.contains("`include_image: false`"));
+    assert!(reminder.contains("`app_batch`"));
+    assert!(reminder.contains("never replay completed steps after partial failure"));
+    assert!(reminder.contains("background-only/no-disruption"));
+    assert!(reminder.contains("`activate_app`"));
+    assert!(reminder.contains("Never replay uncertain input"));
+    assert!(reminder.contains("Respect Stop, cancellation and permission denial"));
+    for obsolete in [
+        "frontmost app",
+        "again after an action to confirm `ax_state_digest` changed",
+        "Action priority:",
+        "`paste` with `submit: true`",
+    ] {
+        assert!(
+            !reminder.contains(obsolete),
+            "legacy desktop guidance: {obsolete}"
+        );
+    }
 }
 
 #[test]
@@ -230,7 +270,6 @@ fn runtime_context_renderer_omits_text_only_guidance_for_visual_or_unknown_model
             remote_execution: None,
             local_shell: None,
             supports_image_understanding,
-            inline_markdown_image_display: false,
         })
         .expect("runtime context should render");
 
@@ -238,38 +277,6 @@ fn runtime_context_renderer_omits_text_only_guidance_for_visual_or_unknown_model
         assert!(!reminder.contains("## Computer Use Input Strategy"));
         assert!(!reminder.contains("primary model does not accept image inputs"));
     }
-}
-
-#[test]
-fn runtime_context_renderer_scopes_inline_image_guidance_to_capable_surfaces() {
-    let reminder = render_runtime_context_reminder(&RuntimeContextFacts {
-        needs: RuntimeContextNeeds::default(),
-        host_os: "linux".to_string(),
-        host_family: "unix".to_string(),
-        host_arch: "x86_64".to_string(),
-        remote_execution: None,
-        local_shell: None,
-        supports_image_understanding: None,
-        inline_markdown_image_display: true,
-    })
-    .expect("output-surface context should render without tool runtime facts");
-
-    assert!(reminder.contains("## Chat Image Display"));
-    assert!(reminder.contains("`![concise alt text](source)`"));
-    assert!(reminder.contains("workspace-relative image paths"));
-    assert!(reminder.contains("do not call image-analysis tools solely to display an image"));
-
-    assert!(render_runtime_context_reminder(&RuntimeContextFacts {
-        needs: RuntimeContextNeeds::default(),
-        host_os: "linux".to_string(),
-        host_family: "unix".to_string(),
-        host_arch: "x86_64".to_string(),
-        remote_execution: None,
-        local_shell: None,
-        supports_image_understanding: None,
-        inline_markdown_image_display: false,
-    })
-    .is_none());
 }
 
 #[test]

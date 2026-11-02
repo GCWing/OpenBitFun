@@ -1,19 +1,18 @@
 {
   "title": "记忆",
-  "subtitle": "控制自动记忆的生成、使用与整理范围",
-  "scopeNotice": "这里的配置、会话候选和记忆文件都属于当前执行 OpenBitFun 的主机。切换到其他设备或 Peer 主机后，其记忆数据与设置可能不同。",
+  "subtitle": "控制智能体如何从会话中生成和使用记忆",
   "sections": {
     "basic": {
-      "title": "基础",
-      "description": "控制是否生成新记忆，以及是否在会话中使用已整理的记忆"
+      "title": "记忆",
+      "description": "关闭记忆会保留已有数据；如需清空，请在“记忆操作”中单独执行"
     },
     "models": {
-      "title": "模型",
-      "description": "选择用于抽取和整理记忆的模型"
+      "title": "记忆模型",
+      "description": "未单独指定时，抽取跟随主模型，整理跟随抽取模型"
     },
     "advanced": {
-      "title": "高级设置",
-      "description": "调整记忆抽取和整理的限制参数，通常无需修改"
+      "title": "记忆处理",
+      "description": "限制记忆处理的会话范围和工作量；通常无需修改"
     },
     "extraction": {
       "title": "抽取",
@@ -27,11 +26,11 @@
   "fields": {
     "memoryEnabled": {
       "label": "记忆",
-      "description": "启用后将自动生成记忆，并在会话中使用记忆"
+      "description": "从已完成会话中自动生成记忆，供后续会话参考"
     },
     "memoryActions": {
       "label": "记忆操作",
-      "description": "打开记忆目录、恢复默认设置，或永久清空当前执行主机上的记忆数据"
+      "description": "管理当前执行主机的记忆；清空操作会永久删除记忆数据"
     },
     "generateMemories": {
       "label": "自动生成记忆",
@@ -43,31 +42,31 @@
     },
     "generateForBtwSessions": {
       "label": "从 BTW 会话生成记忆",
-      "description": "允许 BTW 会话贡献全局记忆"
+      "description": "将侧问会话（BTW）也纳入记忆生成范围"
     },
     "externalContextPolicy": {
       "label": "外部上下文处理",
-      "description": "选择记忆抽取如何处理使用过 Web 搜索、网页读取等工具的会话"
+      "description": "决定抽取记忆时如何处理网页搜索、网页读取等外部工具结果"
     },
     "minRolloutIdleHours": {
       "label": "最小空闲时间",
       "description": "会话结束后等待多久才允许抽取"
     },
     "maxRolloutAgeDays": {
-      "label": "会话最大年龄",
-      "description": "超过该天数的会话不会再进入抽取，且不能大于候选保留天数"
+      "label": "会话回溯天数",
+      "description": "仅抽取最近这些天内的会话；不能超过候选保留天数"
     },
     "maxRolloutsPerStartup": {
       "label": "单次抽取上限",
-      "description": "每次启动记忆任务时最多领取多少个会话进行记忆抽取"
+      "description": "每次记忆任务最多抽取的会话数"
     },
     "maxRolloutsScanLimit": {
       "label": "单次扫描上限",
-      "description": "寻找抽取候选时，最多检查多少个已完成会话"
+      "description": "每次寻找候选时最多检查的已完成会话数"
     },
     "phase1MaxConcurrency": {
       "label": "抽取并发数",
-      "description": "符合条件的会话最多同时抽取多少个"
+      "description": "最多同时抽取记忆的会话数"
     },
     "extractModel": {
       "label": "抽取模型",
@@ -75,11 +74,11 @@
     },
     "maxRawMemories": {
       "label": "整理候选上限",
-      "description": "每次长期记忆整理最多使用多少条抽取结果"
+      "description": "每次整理长期记忆时最多合并的抽取结果数"
     },
     "maxUnusedDays": {
       "label": "候选保留天数",
-      "description": "未被使用的抽取结果超过该天数后不再参与整理，需不小于会话最大年龄"
+      "description": "未使用的抽取结果超过此天数后不再参与整理；不能小于会话回溯天数"
     },
     "consolidationModel": {
       "label": "整理模型",
@@ -122,7 +121,7 @@
     "retry": "重新加载",
     "saved": "记忆配置已保存",
     "saveFailed": "保存记忆配置失败",
-    "rolloutAgeExceedsRetention": "会话最大年龄不能大于候选保留天数",
+    "rolloutAgeExceedsRetention": "会话回溯天数不能超过候选保留天数",
     "settingsReset": "记忆设置已重置",
     "settingsResetFailed": "重置记忆设置失败",
     "openDirectoryFailed": "打开记忆目录失败",

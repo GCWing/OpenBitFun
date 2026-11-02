@@ -21,6 +21,8 @@ class FakeHost {
     return {
       readStream: async request => {
         this.reads.push(request);
+        // A forward catch-up can be parked so a test can queue hints behind it.
+        if (request.after !== undefined && options.forwardGate) await options.forwardGate;
         if (options.fail?.(request)) throw new Error(options.fail(request));
         if (request.subscribe) this.subscribers.add(request.stream_id);
         const limit = request.limit ?? 2;
@@ -55,7 +57,9 @@ async function open(host, extra = {}) {
 }
 
 test('opening reads the latest page and reports history state; older pages walk backwards', async () => {
-  const host = new FakeHost([{ id: 'turn/1' }, { id: 'turn/2' }, { id: 'turn/3' }, { id: 'turn/4' }, { id: 'turn/5' }]);
+  // One turn per record: every older page shows a turn the transcript does not
+  // have yet, so each request reads exactly the page it was asked for.
+  const host = new FakeHost([1, 2, 3, 4, 5].map(n => ({ id: `turn/${n}`, turn: { turnId: `t${n}` } })));
   const f = await open(host);
   assert.deepEqual(f.seen.map(e => e.payload.id), ['turn/4', 'turn/5']);
   assert.equal(f.seen[0].session_id, 's1');
@@ -77,6 +81,39 @@ test('opening reads the latest page and reports history state; older pages walk 
   assert.equal(f.sig.size, 0, 'closing releases hint and reconnect listeners');
 });
 
+test('one history request reads past pages of the turn already on screen', async () => {
+  const host = new FakeHost([
+    ...[1, 2].map(n => ({ id: `a${n}`, turn: { turnId: 't1' } })),
+    ...[1, 2, 3, 4, 5, 6].map(n => ({ id: `b${n}`, turn: { turnId: 't2' } })),
+  ]);
+  const f = await open(host);
+  assert.deepEqual(f.seen.map(e => e.payload.id), ['b5', 'b6']);
+  await f.stream.loadOlder();
+  // The newest pages are more of t2, the turn already on screen: one request
+  // reads through them instead of reporting a load that shows nothing new.
+  assert.deepEqual(host.reads.slice(1).map(read => read.before), [7, 5, 3]);
+  assert.deepEqual(f.seen.map(e => e.payload.turn.turnId), ['t2', 't2', 't2', 't2', 't2', 't2', 't1', 't1']);
+  assert.equal(f.history.at(-1).hasMore, false);
+  f.stream.close();
+});
+
+test('a history request stops at its page budget and the next one continues', async () => {
+  const host = new FakeHost([
+    ...[1, 2].map(n => ({ id: `a${n}`, turn: { turnId: 't1' } })),
+    ...Array.from({ length: 16 }, (_, i) => ({ id: `b${i + 1}`, turn: { turnId: 't2' } })),
+  ]);
+  const f = await open(host);
+  await f.stream.loadOlder();
+  assert.deepEqual(host.reads.slice(1).map(read => read.before), [17, 15, 13, 11]);
+  assert.equal(f.seen.some(e => e.payload.turn.turnId === 't1'), false, 'the budget stops before t1 is reached');
+  assert.equal(f.history.at(-1).hasMore, true);
+  await f.stream.loadOlder();
+  assert.deepEqual(host.reads.slice(5).map(read => read.before), [9, 7, 5, 3]);
+  assert.ok(f.seen.some(e => e.payload.turn.turnId === 't1'), 'the next request continues where the budget stopped');
+  assert.equal(f.history.at(-1).hasMore, false);
+  f.stream.close();
+});
+
 test('hints for this host and stream trigger a forward catch-up across pages; foreign or stale hints do not', async () => {
   const host = new FakeHost([{ id: 'turn/1' }]);
   const f = await open(host);
@@ -94,6 +131,41 @@ test('hints for this host and stream trigger a forward catch-up across pages; fo
   const after = host.reads.slice(reads).map(r => r.after);
   assert.deepEqual(after, [1, 3], 'catch-up pages continue after the last delivered sequence');
   f.stream.close();
+});
+
+test('a hint burst costs one catch-up and does not delay a queued history request', async t => {
+  const host = new FakeHost([1, 2, 3, 4, 5].map(n => ({ id: `turn/${n}`, turn: { turnId: `t${n}` } })));
+  const gate = {};
+  const forwardGate = new Promise(resolve => { gate.open = resolve; });
+  const f = await open(host, { forwardGate });
+  t.after(() => f.stream.close());
+  // A streaming host fans out one hint per event. Park the catch-up the first
+  // hint starts, so the rest pile up behind it exactly as they do while a turn
+  // is streaming, and queue a history request behind all of them.
+  host.append({ id: 'turn/6', turn: { turnId: 't6' } });
+  f.sig.hint({ sourceDeviceId: 'desktop', stream_id: 's1', epoch: host.epoch, cursor: host.cursor });
+  await tick();
+  for (let n = 7; n <= 10; n++) {
+    host.append({ id: `turn/${n}`, turn: { turnId: `t${n}` } });
+    f.sig.hint({ sourceDeviceId: 'desktop', stream_id: 's1', epoch: host.epoch, cursor: host.cursor });
+  }
+  await tick();
+  assert.equal(host.reads.filter(read => read.after !== undefined).length, 1, 'the hints queue behind one catch-up read');
+
+  const loading = f.stream.loadOlder();
+  await tick();
+  gate.open();
+  await loading;
+  await settle();
+
+  const history = host.reads.findIndex(read => read.before !== undefined);
+  assert.ok(history > 0, 'the request reached the host');
+  // One catch-up over five new events is three pages at this page size, so the
+  // history request waits for exactly those reads: the four hints that arrived
+  // while it was parked merged into it and into a single later refresh.
+  assert.deepEqual(host.reads.slice(0, history).filter(read => read.after !== undefined).map(read => read.after), [5, 7, 9]);
+  assert.equal(host.reads[history].before, 4, 'the history request runs right after that catch-up');
+  assert.deepEqual(host.reads.slice(history + 1).map(read => read.after), [10], 'the burst left one merged refresh, not one per hint');
 });
 
 test('a host restart is announced as a gap before the latest page is replayed', async () => {
@@ -165,4 +237,71 @@ test('loadOlder that lands on a restarted host resyncs and reports the restart',
   assert.equal(f.seen.at(-1).payload.id, 'turn/7');
   f.stream.close();
   await assert.doesNotReject(f.stream.loadOlder(), 'a closed stream answers immediately');
+});
+
+test('formal steering turns render once with stable message ownership after history replay', async () => {
+  async function load(path) {
+    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    const compiled = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+    return import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  }
+  const {SessionRecordReplica} = await load('../../shared/relay-transport/SessionRecordReplica.ts');
+  const {presentSessionTurn} = await load('../src/services/SessionRecordPresentation.ts');
+  const turn = (id, index, content) => ({sessionId:'s1',turnId:id,turnIndex:index,status:'completed',timestamp:index,
+    userMessage:{id:`user-${id}`,content,timestamp:index}});
+  const first=turn('original',0,'Original request'), next=turn('steered',1,'New direction');
+  const records=[
+    {sessionId:'s1',id:'turn/original',revision:1,turn:first},
+    {sessionId:'s1',id:'item/tool-old',revision:2,turn:first,
+      round:{id:'round-old',turnId:'original',roundIndex:0},
+      item:{type:'tool',data:{id:'tool-old',toolName:'Read',status:'completed',toolCall:{id:'call-old',input:{}},toolResult:{success:true,result:'old result'}}}},
+    {sessionId:'s1',id:'turn/steered',revision:3,turn:next},
+    {sessionId:'s1',id:'item/text-new',revision:4,turn:next,
+      round:{id:'round-new',turnId:'steered',roundIndex:0},
+      item:{type:'text',data:{id:'text-new',content:'New answer'}}},
+  ];
+  function render(events) {
+    const replica=new SessionRecordReplica('s1'),turns=new Map();
+    for (const record of events) {const change=replica.apply(record);if(change?.turn)turns.set(change.turnId,change.turn);}
+    return [...turns.values()].sort((a,b)=>a.turnIndex-b.turnIndex).flatMap(presentSessionTurn);
+  }
+  const live=render(records);
+  assert.deepEqual(live.filter(message=>message.role==='user').map(message=>[message.id,message.content]),
+    [['user-original','Original request'],['user-steered','New direction']]);
+  assert.equal(live[1].tools[0].id,'call-old');
+  assert.equal(live[3].tools.length,0);
+  assert.equal(live[3].content,'New answer');
+  assert.deepEqual(render([...records].reverse().concat(records)),live,'newest-first reconnect and duplicate replay retain the same transcript');
+});
+
+
+test('streamed user turns project attachment pixels for transcript and draft restore', async () => {
+  async function load(path) {
+    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    const compiled = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+    return import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  }
+  const {presentSessionTurn} = await load('../src/services/SessionRecordPresentation.ts');
+  const metadata = {images: [
+    {id: 'img-1', name: 'screen.png', mime_type: 'image/png', data_url: ' data:image/png;base64,YQ== '},
+    {id: 'img-2', name: 'path-only.png', mime_type: 'image/png'},
+    null,
+    {data_url: 'data:image/jpeg;base64,YWI='},
+  ]};
+  const [user] = presentSessionTurn({
+    turnId: 'turn-a', turnIndex: 3, status: 'completed', timestamp: 1,
+    userMessage: {id: 'user-a', content: '', timestamp: 1, metadata},
+    modelRounds: [],
+  });
+  assert.deepEqual(user.images, [
+    {name: 'screen.png', data_url: 'data:image/png;base64,YQ=='},
+    {name: 'image', data_url: 'data:image/jpeg;base64,YWI='},
+  ], 'only attachments whose pixels arrived reach the composer');
+  assert.equal(user.metadata, metadata, 'protocol metadata stays intact for other projections');
+  const [withoutImages] = presentSessionTurn({
+    turnId: 'turn-b', turnIndex: 4, status: 'completed', timestamp: 2,
+    userMessage: {id: 'user-b', content: 'hello', timestamp: 2},
+    modelRounds: [],
+  });
+  assert.equal(withoutImages.images, undefined);
 });

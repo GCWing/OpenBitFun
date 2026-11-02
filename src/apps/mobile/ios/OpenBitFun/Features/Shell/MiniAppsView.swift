@@ -95,7 +95,7 @@ private struct MiniAppsView: View {
                         if let failure {
                             Text(failure).font(MobileDesignTypography.bodyMedium.font)
                                 .foregroundStyle(OpenBitFunTheme.muted).padding(.vertical, 16)
-                            Button(model.localized("重试")) { loadApps() }
+                            Button(model.localized("重试")) { Task { await loadApps() } }
                             Spacer()
                         } else {
                             ScrollView {
@@ -141,16 +141,20 @@ private struct MiniAppsView: View {
         }
         .foregroundStyle(OpenBitFunTheme.ink)
         .background(OpenBitFunTheme.page.ignoresSafeArea())
-        .task { loadApps() }
+        .task { await loadApps() }
     }
 
-    private func loadApps() {
+    private func loadApps() async {
         failure = nil
         do {
             guard let url = Bundle.main.url(forResource: "catalog", withExtension: "json", subdirectory: "MiniApps") else {
                 throw CocoaError(.fileNoSuchFile)
             }
-            apps = try JSONDecoder().decode([BuiltinMiniApp].self, from: Data(contentsOf: url))
+            let loaded = try await Task.detached(priority: .userInitiated) {
+                try JSONDecoder().decode([BuiltinMiniApp].self, from: Data(contentsOf: url))
+            }.value
+            guard !Task.isCancelled else { return }
+            apps = loaded
         } catch { failure = model.localized("无法加载小应用，请重试") }
     }
 }
@@ -167,14 +171,20 @@ private struct MiniAppWebView: UIViewRepresentable {
         let web = WKWebView(frame: .zero, configuration: configuration)
         web.navigationDelegate = context.coordinator
         context.coordinator.web = web
-        if let url = Bundle.main.url(forResource: "\(appID).\(locale)", withExtension: "html", subdirectory: "MiniApps"),
-           let html = try? String(contentsOf: url, encoding: .utf8) {
-            web.loadHTMLString(html, baseURL: URL(string: "https://miniapp.local/"))
+        if let url = Bundle.main.url(forResource: "\(appID).\(locale)", withExtension: "html", subdirectory: "MiniApps") {
+            context.coordinator.loadTask = Task { @MainActor [weak web] in
+                let html = await Task.detached(priority: .userInitiated) {
+                    try? String(contentsOf: url, encoding: .utf8)
+                }.value
+                guard !Task.isCancelled, let html else { return }
+                web?.loadHTMLString(html, baseURL: URL(string: "https://miniapp.local/"))
+            }
         }
         return web
     }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.loadTask?.cancel()
         uiView.stopLoading()
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "miniappNative")
         uiView.navigationDelegate = nil
@@ -183,6 +193,7 @@ private struct MiniAppWebView: UIViewRepresentable {
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         let appID: String
         weak var web: WKWebView?
+        var loadTask: Task<Void, Never>?
         private static let storageQueue = DispatchQueue(label: "com.openbitfun.miniapps.storage")
         init(appID: String) { self.appID = appID }
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

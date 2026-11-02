@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
 import { RunCodeToolCard } from './RunCodeToolCard';
+import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import type { FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -109,6 +110,21 @@ describe('RunCodeToolCard', () => {
     render(runCodeItem());
 
     expect(container.textContent).toContain('Explore project root structure');
+  });
+
+  it('renders imported Codex programs through the same code card with failure output', () => {
+    const original = runCodeItem({
+      importedSource: 'codex', toolName: 'exec',
+      toolCall: { id: 'codex-call', input: 'text(await tools.exec_command({cmd: "pwd"}));' },
+      toolResult: { success: true, result: [{ type: 'input_text', text: 'Script failed\nWall time 0.1 seconds\nOutput:\npermission denied' }] },
+    });
+    render(projectEffectiveToolItem(original));
+    expand();
+    expect(container.querySelector('[data-openbitfun-adapter="run-code-tool-card"]')).not.toBeNull();
+    expect(container.textContent).toContain('text(await tools.exec_command');
+    expect(container.textContent).toContain('permission denied');
+    expect(container.querySelector('[data-openbitfun-status="error"]')).not.toBeNull();
+    expect(original.toolName).toBe('exec');
   });
 
   it('falls back to the first real line of the program when there is no description', () => {

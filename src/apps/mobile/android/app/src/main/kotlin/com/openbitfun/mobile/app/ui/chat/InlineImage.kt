@@ -22,3 +22,16 @@ internal fun decodeInlineImage(dataUrl: String): Bitmap? {
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }.getOrNull()
 }
+
+/** Pure projection work belongs off the Compose/UI thread. Key changes cancel
+ * the old delivery, so a reused row cannot receive another message's bitmap. */
+@androidx.compose.runtime.Composable
+internal fun rememberInlineImage(dataUrl: String): Bitmap? {
+    val state = androidx.compose.runtime.produceState<Bitmap?>(null, dataUrl) {
+        value = null
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            decodeInlineImage(dataUrl)
+        }
+    }
+    return state.value
+}

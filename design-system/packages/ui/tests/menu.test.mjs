@@ -143,3 +143,24 @@ test("Menu keeps equal item insets while its scrollbar stays on the surface edge
   );
   assert.doesNotMatch(styles, /scrollbar-gutter:\s*stable/);
 });
+
+test("content-sized menus hug their widest row inside the shared menu bounds", async () => {
+  const styles = await readFile(new URL("../src/components/Menu/Menu.module.css", import.meta.url), "utf8");
+  const popover = await readFile(new URL("../src/components/Menu/MenuPopover.tsx", import.meta.url), "utf8");
+  const contentRule = styles.match(/\.root\[data-openbitfun-inline-size="content"\]\s*\{[^}]*\}/)?.[0] ?? "";
+
+  assert.notEqual(contentRule, "");
+  assert.match(contentRule, /inline-size:\s*max-content/);
+  assert.match(contentRule, /min-inline-size:\s*var\(--openbitfun-overlay-menu-min-inline-size\)/);
+  assert.match(contentRule, /max-inline-size:\s*min\(var\(--openbitfun-overlay-menu-inline-size\), 100%\)/);
+  // The default surface keeps the fixed token instead of hugging content.
+  assert.match(styles, /\.root\s*\{[^}]*inline-size:\s*var\(--openbitfun-overlay-menu-inline-size\)/);
+
+  const contentMarkup = renderToStaticMarkup(createElement(Menu, { inlineSize: "content" }, createElement(MenuItem, null, "Paste")));
+  const defaultMarkup = renderToStaticMarkup(createElement(Menu, null, createElement(MenuItem, null, "Paste")));
+  assert.match(contentMarkup, /data-openbitfun-inline-size="content"/);
+  assert.match(defaultMarkup, /data-openbitfun-inline-size="fixed"/);
+  // Submenus are separate surfaces and must inherit the requested sizing mode.
+  assert.match(popover, /items=\{activeEntry\.submenu!\}[^>]*inlineSize=\{inlineSize\}/);
+});
+

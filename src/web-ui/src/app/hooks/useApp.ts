@@ -13,6 +13,7 @@ import {
   PanelType
 } from '../types';
 import { appManager } from '../services/AppManager';
+import { sessionPaneLayoutStore } from '../scenes/session/sessionPaneLayoutStore';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('useApp');
@@ -41,10 +42,8 @@ export const useApp = (): UseAppReturn => {
   }, [state.layout.leftPanelCollapsed]);
 
   const toggleRightPanel = useCallback(() => {
-    appManager.updateLayout({
-      rightPanelCollapsed: !state.layout.rightPanelCollapsed
-    });
-  }, [state.layout.rightPanelCollapsed]);
+    sessionPaneLayoutStore.getState().toggleContent();
+  }, []);
 
   const toggleBottomTerminalPanel = useCallback(() => {
     appManager.updateLayout({
@@ -53,14 +52,8 @@ export const useApp = (): UseAppReturn => {
   }, [state.layout.bottomTerminalPanelCollapsed]);
 
   const toggleChatPanel = useCallback(() => {
-    const nextChatCollapsed = !state.layout.chatCollapsed;
-    appManager.updateLayout({
-      chatCollapsed: nextChatCollapsed,
-      // Keep behavior aligned with editor-mode layout:
-      // when chat is hidden, ensure the right panel is visible to occupy center space.
-      rightPanelCollapsed: nextChatCollapsed ? false : state.layout.rightPanelCollapsed
-    });
-  }, [state.layout.chatCollapsed, state.layout.rightPanelCollapsed]);
+    sessionPaneLayoutStore.getState().toggleMaximized();
+  }, []);
 
   const switchLeftPanelTab = useCallback((tab: PanelType) => {
     appManager.updateLayout({
@@ -90,14 +83,7 @@ export const useApp = (): UseAppReturn => {
   }, []);
 
   const updateRightPanelWidth = useCallback((width: number) => {
-    // Clamp width: 200px min, 1200px max
-    const MIN_WIDTH = 200;
-    const MAX_WIDTH = 1200;
-    const clampedWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width));
-    
-    appManager.updateLayout({
-      rightPanelWidth: clampedWidth
-    });
+    sessionPaneLayoutStore.getState().resizeRightPane(width);
   }, []);
 
   const updateBottomTerminalPanelHeight = useCallback((height: number) => {
@@ -111,10 +97,8 @@ export const useApp = (): UseAppReturn => {
   }, []);
 
   const toggleCenterPanel = useCallback(() => {
-    appManager.updateLayout({
-      centerPanelCollapsed: !state.layout.centerPanelCollapsed
-    });
-  }, [state.layout.centerPanelCollapsed]);
+    sessionPaneLayoutStore.getState().toggleMaximized();
+  }, []);
 
   const updateAgentConfig = useCallback(async (agentId: string, config: Partial<AgentConfig>): Promise<void> => {
     try {

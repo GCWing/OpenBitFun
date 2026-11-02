@@ -30,11 +30,10 @@ interface CompactSettingsSheetProps {
   isDark: boolean;
   onClose: () => void;
   onDisconnectRequest: () => void;
-  onOpenDevices?: () => void;
   onSelectDevice: (device: SettingsDevice) => void;
   onToggleTheme: () => void;
   open: boolean;
-  renderDeviceIcon: (name: string) => React.ReactNode;
+  renderDeviceIcon: (device: SettingsDevice) => React.ReactNode;
   selectedDeviceId: string | null;
 }
 
@@ -54,7 +53,6 @@ export default function CompactSettingsSheet({
   isDark,
   onClose,
   onDisconnectRequest,
-  onOpenDevices,
   onSelectDevice,
   onToggleTheme,
   open,
@@ -62,6 +60,7 @@ export default function CompactSettingsSheet({
   selectedDeviceId,
 }: CompactSettingsSheetProps) {
   const { t, language, setLanguage } = useI18n();
+  const sortedDevices = [...devices].sort((left, right) => Number(right.online) - Number(left.online));
 
   return (
     <MobileSheet
@@ -84,12 +83,6 @@ export default function CompactSettingsSheet({
           </span>
           {accountLabel && <MobileBadge className="harmony-sidebar__verified" tone="success">{t('settings.signedIn')}</MobileBadge>}
         </MobileCard>
-
-        {onOpenDevices && (
-          <MobileButton appearance="plain" block onClick={onOpenDevices} aria-label={t('devices.title')}>
-            {t('devices.title')}
-          </MobileButton>
-        )}
 
         <h3>{t('settings.generalSection')}</h3>
         <MobileCard padding="none" className="harmony-sidebar__settings-card">
@@ -129,7 +122,7 @@ export default function CompactSettingsSheet({
 
         <h3>{t('settings.devicesSection')}</h3>
         <MobileCard padding="none" className="harmony-sidebar__settings-card harmony-sidebar__settings-card--devices">
-          {devices.map((device) => {
+          {sortedDevices.map((device) => {
             const current = device.device_id === selectedDeviceId;
             // A confirmed-incompatible device stays listed but is never a target.
             const controllable = isDeviceControllable(device);
@@ -140,7 +133,7 @@ export default function CompactSettingsSheet({
                 disabled={!device.online || !controllable}
                 key={device.device_id}
                 label={deviceDisplayName(device)}
-                leading={<span className="harmony-sidebar__settings-device-icon">{renderDeviceIcon(deviceDisplayName(device))}</span>}
+                leading={<span className="harmony-sidebar__settings-device-icon">{renderDeviceIcon(device)}</span>}
                 onClick={() => onSelectDevice(device)}
                 selected={current}
                 supportingText={!controllable

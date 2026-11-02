@@ -12,7 +12,7 @@ use tokio::task;
 use uuid::Uuid;
 
 const SWARM_MAX_NODES: i64 = 128;
-const SWARM_MAX_DEPTH: i64 = 4;
+pub(super) const SWARM_MAX_DEPTH: i64 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BackgroundTaskStatus {
@@ -94,6 +94,14 @@ pub(crate) struct DirectChildAgentRecord {
     pub agent_id: String,
     pub child_session_id: String,
     pub status: BackgroundTaskStatus,
+    pub background_turn_id: Option<String>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct BackgroundTaskSelection {
+    pub records: Vec<BackgroundTaskRecord>,
+    pub missing_bg_task_ids: Vec<String>,
+    pub already_delivered_bg_task_ids: Vec<String>,
 }
 
 pub(crate) struct CoordinationStore {
@@ -220,26 +228,26 @@ impl CoordinationStore {
     ) -> OpenBitFunResult<Vec<DirectChildAgentRecord>> {
         let parent_session_id = parent_session_id.to_string();
         self.with_connection(move |connection| {
+            // Foreground Task registers its agent after completion. Live Session
+            // state and later user-turn summaries are projected by the caller.
             let mut statement = connection
                 .prepare(
                     r#"
 WITH latest_tasks AS (
-    SELECT agent_pk, status,
+    SELECT agent_pk, status, child_dialog_turn_id,
            ROW_NUMBER() OVER (PARTITION BY agent_pk ORDER BY task_pk DESC) AS row_number
     FROM background_tasks
 )
 SELECT agents.agent_id, agents.child_session_id,
-       COALESCE(latest_tasks.status, 'running')
+       COALESCE(latest_tasks.status, 'completed'), latest_tasks.child_dialog_turn_id
 FROM agents
-JOIN swarm_nodes
-  ON swarm_nodes.session_id = agents.child_session_id
- AND swarm_nodes.parent_session_id = agents.parent_session_id
 LEFT JOIN latest_tasks
   ON latest_tasks.agent_pk = agents.agent_pk
  AND latest_tasks.row_number = 1
 WHERE agents.parent_session_id = ?1
   AND agents.state = 'active'
-ORDER BY swarm_nodes.created_at_ms ASC, agents.agent_pk ASC
+  AND agents.child_session_id IS NOT NULL
+ORDER BY agents.created_at_ms ASC, agents.agent_pk ASC
                     "#,
                 )
                 .map_err(db_error)?;
@@ -249,20 +257,38 @@ ORDER BY swarm_nodes.created_at_ms ASC, agents.agent_pk ASC
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
                     ))
                 })
                 .map_err(db_error)?;
             rows.map(|row| {
-                let (agent_id, child_session_id, status) = row.map_err(db_error)?;
+                let (agent_id, child_session_id, status, background_turn_id) =
+                    row.map_err(db_error)?;
                 Ok(DirectChildAgentRecord {
                     agent_id,
                     child_session_id,
                     status: BackgroundTaskStatus::parse(&status)?,
+                    background_turn_id,
                 })
             })
             .collect()
         })
         .await
+    }
+
+    pub(crate) async fn reserved_agent_ids(
+        &self,
+        parent_session_id: &str,
+    ) -> OpenBitFunResult<Vec<String>> {
+        let parent_session_id = parent_session_id.to_string();
+        self.with_connection(move |connection| {
+            let mut statement = connection.prepare(
+                "SELECT agent_id FROM agents WHERE parent_session_id = ?1 AND state = 'historical' ORDER BY created_at_ms ASC, agent_pk ASC",
+            ).map_err(db_error)?;
+            let rows = statement.query_map(params![parent_session_id], |row| row.get::<_, String>(0))
+                .map_err(db_error)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)
+        }).await
     }
 
     pub(crate) async fn resolve_direct_child_agent_id(
@@ -275,7 +301,7 @@ ORDER BY swarm_nodes.created_at_ms ASC, agents.agent_pk ASC
         self.with_connection(move |connection| {
             connection
                 .query_row(
-                    "SELECT agents.child_session_id FROM agents JOIN swarm_nodes ON swarm_nodes.session_id = agents.child_session_id AND swarm_nodes.parent_session_id = agents.parent_session_id WHERE agents.parent_session_id = ?1 AND agents.agent_id = ?2 AND agents.state = 'active'",
+                    "SELECT child_session_id FROM agents WHERE parent_session_id = ?1 AND agent_id = ?2 AND state = 'active' AND child_session_id IS NOT NULL",
                     params![parent_session_id, agent_id],
                     |row| row.get::<_, String>(0),
                 )
@@ -293,35 +319,27 @@ ORDER BY swarm_nodes.created_at_ms ASC, agents.agent_pk ASC
         parent_agent_type: &str,
         child_agent_type: &str,
         child_depth: u8,
+        parent_can_delegate: bool,
     ) -> OpenBitFunResult<()> {
         let parent_session_id = parent_session_id.to_string();
         let child_session_id = child_session_id.to_string();
         let parent_agent_type = parent_agent_type.to_string();
         let child_agent_type = child_agent_type.to_string();
         self.with_connection(move |connection| {
+            if !parent_can_delegate {
+                return Err(OpenBitFunError::tool(
+                    "Recursive subagent delegation is blocked for this Swarm node".to_string(),
+                ));
+            }
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(db_error)?;
-            if !matches!(
-                child_agent_type.as_str(),
-                "SwarmPlanner" | "SwarmWorker" | "SwarmReviewer"
-            ) {
-                return Err(OpenBitFunError::tool(format!(
-                    "Swarm cannot launch agent_type={child_agent_type}"
-                )));
-            }
             let child_depth = i64::from(child_depth);
             if child_depth == 0 || child_depth > SWARM_MAX_DEPTH {
                 return Err(OpenBitFunError::tool(format!(
                     "Swarm tree height limit exceeded: child depth {child_depth}, maximum {SWARM_MAX_DEPTH}"
                 )));
             }
-            if child_depth == SWARM_MAX_DEPTH && child_agent_type == "SwarmPlanner" {
-                return Err(OpenBitFunError::tool(
-                    "SwarmPlanner cannot be launched at the final tree level".to_string(),
-                ));
-            }
-
             let root_session_id = transaction
                 .query_row(
                     "SELECT root_session_id FROM swarm_nodes WHERE session_id = ?1",
@@ -376,11 +394,6 @@ ORDER BY swarm_nodes.created_at_ms ASC, agents.agent_pk ASC
             if parent.0 != root_session_id || parent.1.saturating_add(1) != child_depth {
                 return Err(OpenBitFunError::tool(
                     "Swarm child depth does not match its parent lineage".to_string(),
-                ));
-            }
-            if !matches!(parent.2.as_str(), "Ultimate" | "SwarmPlanner") {
-                return Err(OpenBitFunError::tool(
-                    "Only a Swarm planner can launch child agents".to_string(),
                 ));
             }
             let node_count = transaction
@@ -443,50 +456,27 @@ ORDER BY swarm_nodes.created_at_ms ASC, agents.agent_pk ASC
         .await
     }
 
-    pub(crate) async fn swarm_descendant_session_ids(
+    pub(crate) async fn agent_subtree_session_ids_postorder(
         &self,
         session_id: &str,
     ) -> OpenBitFunResult<Vec<String>> {
         let session_id = session_id.to_string();
         self.with_connection(move |connection| {
+            // Ordinary agents use the agent registry; include Swarm reservations
+            // as well so nodes awaiting task registration remain in the subtree.
             let mut statement = connection
                 .prepare(
                     r#"
-WITH RECURSIVE descendants(session_id) AS (
-    SELECT session_id
-    FROM swarm_nodes
-    WHERE parent_session_id = ?1
+WITH RECURSIVE lineage(parent_session_id, session_id) AS (
+    SELECT parent_session_id, child_session_id FROM agents
+    WHERE state = 'active' AND child_session_id IS NOT NULL
+    UNION
+    SELECT parent_session_id, session_id FROM swarm_nodes
+), subtree(session_id, depth) AS (
+    SELECT DISTINCT session_id, 0 FROM lineage WHERE session_id = ?1
     UNION ALL
-    SELECT child.session_id
-    FROM swarm_nodes child
-    JOIN descendants parent ON child.parent_session_id = parent.session_id
-)
-SELECT session_id FROM descendants
-                    "#,
-                )
-                .map_err(db_error)?;
-            let rows = statement
-                .query_map(params![session_id], |row| row.get::<_, String>(0))
-                .map_err(db_error)?;
-            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)
-        })
-        .await
-    }
-
-    pub(crate) async fn swarm_subtree_session_ids_postorder(
-        &self,
-        session_id: &str,
-    ) -> OpenBitFunResult<Vec<String>> {
-        let session_id = session_id.to_string();
-        self.with_connection(move |connection| {
-            let mut statement = connection
-                .prepare(
-                    r#"
-WITH RECURSIVE subtree(session_id, depth) AS (
-    SELECT session_id, depth FROM swarm_nodes WHERE session_id = ?1
-    UNION ALL
-    SELECT child.session_id, child.depth
-    FROM swarm_nodes child
+    SELECT child.session_id, parent.depth + 1
+    FROM lineage child
     JOIN subtree parent ON child.parent_session_id = parent.session_id
 )
 SELECT session_id FROM subtree ORDER BY depth DESC, session_id ASC
@@ -637,11 +627,12 @@ WHERE task_pk = ?5 AND status = 'running'
         &self,
         parent_session_id: &str,
         requested_bg_task_ids: &[String],
-    ) -> OpenBitFunResult<Vec<BackgroundTaskRecord>> {
+        select_all_when_empty: bool,
+    ) -> OpenBitFunResult<BackgroundTaskSelection> {
         let parent_session_id = parent_session_id.to_string();
         let requested_bg_task_ids = requested_bg_task_ids.to_vec();
         self.with_connection(move |connection| {
-            if requested_bg_task_ids.is_empty() {
+            if requested_bg_task_ids.is_empty() && select_all_when_empty {
                 let mut statement = connection
                     .prepare(&format!(
                         "{} WHERE tasks.parent_session_id = ?1 AND tasks.delivered_at_ms IS NULL ORDER BY tasks.task_pk",
@@ -651,10 +642,16 @@ WHERE task_pk = ?5 AND status = 'running'
                 let rows = statement
                     .query_map(params![parent_session_id], background_task_from_row)
                     .map_err(db_error)?;
-                return collect_rows(rows);
+                return Ok(BackgroundTaskSelection {
+                    records: collect_rows(rows)?,
+                    ..BackgroundTaskSelection::default()
+                });
             }
 
-            let mut records = Vec::with_capacity(requested_bg_task_ids.len());
+            let mut selection = BackgroundTaskSelection {
+                records: Vec::with_capacity(requested_bg_task_ids.len()),
+                ..BackgroundTaskSelection::default()
+            };
             for bg_task_id in requested_bg_task_ids {
                 let record = connection
                     .query_row(
@@ -666,15 +663,18 @@ WHERE task_pk = ?5 AND status = 'running'
                         background_task_from_row,
                     )
                     .optional()
-                    .map_err(db_error)?
-                    .ok_or_else(|| {
-                        OpenBitFunError::tool(format!("Background task was not found: {bg_task_id}"))
-                    })?;
-                if record.delivered_at_ms.is_none() {
-                    records.push(record);
+                    .map_err(db_error)?;
+                match record {
+                    Some(record) if record.delivered_at_ms.is_none() => {
+                        selection.records.push(record);
+                    }
+                    Some(_) => selection
+                        .already_delivered_bg_task_ids
+                        .push(bg_task_id.clone()),
+                    None => selection.missing_bg_task_ids.push(bg_task_id.clone()),
                 }
             }
-            Ok(records)
+            Ok(selection)
         })
         .await
     }
@@ -1188,6 +1188,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wait_candidates_classifies_missing_and_delivered_ids_without_dropping_valid_ids() {
+        let (_root, store) = test_store();
+        let pending = store
+            .register_background_task(registration("parent", "child-pending", "spawn-1", None))
+            .await
+            .expect("register pending task");
+        let delivered = store
+            .register_background_task(registration("parent", "child-delivered", "spawn-2", None))
+            .await
+            .expect("register delivered task");
+        store
+            .update_task_status(
+                delivered.task_pk,
+                BackgroundTaskStatus::Completed,
+                None,
+                None,
+            )
+            .await
+            .expect("complete delivered task");
+        store
+            .claim_terminal_tasks("parent", &[delivered.task_pk], "delivered-turn")
+            .await
+            .expect("deliver task");
+
+        let selection = store
+            .wait_candidates(
+                "parent",
+                &[
+                    pending.bg_task_id.clone(),
+                    delivered.bg_task_id.clone(),
+                    "bg-missing".to_string(),
+                ],
+                false,
+            )
+            .await
+            .expect("classify selected ids");
+
+        assert_eq!(selection.records.len(), 1);
+        assert_eq!(selection.records[0].bg_task_id, pending.bg_task_id);
+        assert_eq!(
+            selection.already_delivered_bg_task_ids,
+            vec![delivered.bg_task_id]
+        );
+        assert_eq!(selection.missing_bg_task_ids, vec!["bg-missing"]);
+
+        let empty_selection = store
+            .wait_candidates("parent", &[], false)
+            .await
+            .expect("an explicit empty selection should not select all tasks");
+        assert!(empty_selection.records.is_empty());
+        assert!(empty_selection.missing_bg_task_ids.is_empty());
+        assert!(empty_selection.already_delivered_bg_task_ids.is_empty());
+    }
+
+    #[tokio::test]
     async fn schema_v2_repairs_missing_delivery_columns_idempotently() {
         let root = test_tempdir();
         let db_path = root.path().join("coordination.sqlite");
@@ -1251,12 +1306,12 @@ PRAGMA user_version = 2;
 
         let store = CoordinationStore::new(db_path.clone());
         let candidates = store
-            .wait_candidates("parent", &[])
+            .wait_candidates("parent", &[], true)
             .await
             .expect("repaired database should support current reads");
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].bg_task_id, "helper_bg1");
-        assert!(candidates[0].delivered_at_ms.is_none());
+        assert_eq!(candidates.records.len(), 1);
+        assert_eq!(candidates.records[0].bg_task_id, "helper_bg1");
+        assert!(candidates.records[0].delivered_at_ms.is_none());
         drop(store);
 
         let connection = Connection::open(&db_path).expect("reopen repaired database");
@@ -1452,7 +1507,14 @@ PRAGMA user_version = 2;
             .expect("seed a legacy tree");
 
         store
-            .reserve_swarm_child("legacy-root", "new-planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child(
+                "legacy-root",
+                "new-planner",
+                "Ultimate",
+                "SwarmPlanner",
+                1,
+                true,
+            )
             .await
             .expect("a legacy root remains usable after an upgrade");
         store
@@ -1462,6 +1524,7 @@ PRAGMA user_version = 2;
                 "Ultimate",
                 "SwarmPlanner",
                 1,
+                true,
             )
             .await
             .expect("create a tree with the canonical identity");
@@ -1497,7 +1560,7 @@ PRAGMA user_version = 2;
     async fn swarm_admission_enforces_depth_and_tree_size_budgets() {
         let (_root, store) = test_store();
         store
-            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1, true)
             .await
             .expect("reserve planner");
         store
@@ -1507,23 +1570,45 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmWorker",
                 1,
+                true,
             )
             .await
             .expect_err("a non-Ultra session cannot create a new Swarm tree");
         store
-            .reserve_swarm_child("planner", "spoofed-worker", "Ultimate", "SwarmWorker", 2)
+            .reserve_swarm_child(
+                "planner",
+                "spoofed-worker",
+                "Ultimate",
+                "SwarmWorker",
+                2,
+                true,
+            )
             .await
             .expect_err("the runtime parent type must match the persisted tree node");
         store
-            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2)
+            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2, true)
             .await
             .expect("reserve worker");
         store
-            .reserve_swarm_child("worker", "invalid-child", "SwarmWorker", "SwarmWorker", 3)
+            .reserve_swarm_child(
+                "worker",
+                "invalid-child",
+                "SwarmWorker",
+                "SwarmWorker",
+                3,
+                false,
+            )
             .await
             .expect_err("worker cannot launch children");
         store
-            .reserve_swarm_child("worker", "leaf-reviewer", "SwarmWorker", "SwarmReviewer", 3)
+            .reserve_swarm_child(
+                "worker",
+                "leaf-reviewer",
+                "SwarmWorker",
+                "SwarmReviewer",
+                3,
+                false,
+            )
             .await
             .expect_err("a worker cannot launch a reviewer either");
         store
@@ -1533,6 +1618,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmPlanner",
                 2,
+                true,
             )
             .await
             .expect("reserve nested planner");
@@ -1543,6 +1629,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmPlanner",
                 3,
+                true,
             )
             .await
             .expect("reserve planner on the penultimate level");
@@ -1553,6 +1640,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmWorker",
                 4,
+                true,
             )
             .await
             .expect("reserve worker on the final level");
@@ -1563,9 +1651,10 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmPlanner",
                 4,
+                true,
             )
             .await
-            .expect_err("final tree level cannot contain a planner");
+            .expect("final-level nodes are admitted but cannot delegate beyond the depth limit");
         store
             .reserve_swarm_child(
                 "final-worker",
@@ -1573,6 +1662,7 @@ PRAGMA user_version = 2;
                 "SwarmWorker",
                 "SwarmWorker",
                 5,
+                false,
             )
             .await
             .expect_err("a sixth tree level must be rejected");
@@ -1583,21 +1673,24 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmWorker",
                 3,
+                true,
             )
             .await
             .expect("reserve nested worker");
         assert_eq!(
             store
-                .swarm_descendant_session_ids("planner")
+                .agent_subtree_session_ids_postorder("planner")
                 .await
                 .expect("load persisted descendants")
                 .into_iter()
                 .collect::<std::collections::HashSet<_>>(),
             [
+                "planner".to_string(),
                 "worker".to_string(),
                 "nested-planner".to_string(),
                 "deep-planner".to_string(),
                 "final-worker".to_string(),
+                "final-planner".to_string(),
                 "nested-worker".to_string(),
             ]
             .into_iter()
@@ -1605,8 +1698,8 @@ PRAGMA user_version = 2;
         );
 
         // A planner may use the rest of the tree budget for direct children.
-        // The seven existing nodes plus these 121 fill the 128-node tree.
-        for index in 0..121 {
+        // The eight existing nodes plus these 120 fill the 128-node tree.
+        for index in 0..120 {
             store
                 .reserve_swarm_child(
                     "planner",
@@ -1614,6 +1707,7 @@ PRAGMA user_version = 2;
                     "SwarmPlanner",
                     "SwarmReviewer",
                     2,
+                    true,
                 )
                 .await
                 .expect("reserve direct planner child");
@@ -1625,6 +1719,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmReviewer",
                 2,
+                true,
             )
             .await
             .expect_err("whole-tree node budget should be enforced");
@@ -1666,14 +1761,187 @@ PRAGMA user_version = 2;
     }
 
     #[tokio::test]
-    async fn direct_child_agents_use_latest_status_and_ignore_delivery() {
-        let (_root, store) = test_store();
+    async fn direct_child_agents_without_swarm_nodes_survive_reopen_and_cleanup() {
+        let (root, store) = test_store();
+        let task = store
+            .register_background_task(registration("parent", "child", "spawn", Some("helper")))
+            .await
+            .expect("register ordinary background agent");
         store
-            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1)
+            .register_background_task(registration(
+                "other-parent",
+                "other-child",
+                "spawn",
+                Some("helper"),
+            ))
+            .await
+            .expect("register same agent id under another parent");
+        let agents = store
+            .direct_child_agents("parent")
+            .await
+            .expect("list running agent");
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].status, BackgroundTaskStatus::Running);
+        store
+            .update_task_status(task.task_pk, BackgroundTaskStatus::Completed, None, None)
+            .await
+            .expect("complete ordinary task");
+        store
+            .claim_terminal_tasks("parent", &[task.task_pk], "wait")
+            .await
+            .expect("deliver ordinary task result");
+        drop(store);
+
+        // Existing agents-only records must work after reopening, without a data migration.
+        let store = CoordinationStore::new(root.path().join("coordination.sqlite"));
+        let agents = store
+            .direct_child_agents("parent")
+            .await
+            .expect("list persisted agent");
+        assert_eq!(
+            agents,
+            vec![DirectChildAgentRecord {
+                agent_id: "helper".to_string(),
+                child_session_id: "child".to_string(),
+                status: BackgroundTaskStatus::Completed,
+                background_turn_id: Some("turn-child-spawn".to_string()),
+            }]
+        );
+        assert_eq!(
+            store
+                .resolve_direct_child_agent_id("parent", "helper")
+                .await
+                .expect("resolve ordinary child"),
+            "child"
+        );
+        assert_eq!(
+            store
+                .resolve_direct_child_agent_id("other-parent", "helper")
+                .await
+                .expect("resolve other parent's child"),
+            "other-child"
+        );
+        store
+            .resolve_direct_child_agent_id("unrelated", "helper")
+            .await
+            .expect_err("reject unrelated parent");
+        store
+            .delete_session_references("child")
+            .await
+            .expect("clean up child");
+        assert!(store
+            .direct_child_agents("parent")
+            .await
+            .expect("list after cleanup")
+            .is_empty());
+        store
+            .resolve_direct_child_agent_id("parent", "helper")
+            .await
+            .expect_err("reject historical child");
+        assert_eq!(
+            store
+                .direct_child_agents("other-parent")
+                .await
+                .expect("keep other parent's child")
+                .len(),
+            1
+        );
+        drop(store);
+        let store = CoordinationStore::new(root.path().join("coordination.sqlite"));
+        assert_eq!(
+            store.reserved_agent_ids("parent").await.unwrap(),
+            vec!["helper"]
+        );
+        assert!(store
+            .reserved_agent_ids("other-parent")
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(store
+            .reserved_agent_ids("unrelated")
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn direct_child_subtree_includes_ordinary_agents_and_reserved_swarm_nodes() {
+        let (_root, store) = test_store();
+        for (parent, child, agent_id) in [
+            ("root", "child", "helper"),
+            ("child", "grandchild", "nested"),
+            ("root", "sibling", "sibling"),
+        ] {
+            store
+                .agent_id_for_session_with_requested_id(parent, child, Some(agent_id))
+                .await
+                .expect("register ordinary foreground agent");
+        }
+        store
+            .resolve_direct_child_agent_id("root", "nested")
+            .await
+            .expect_err("reject grandchild");
+        assert_eq!(
+            store
+                .agent_subtree_session_ids_postorder("child")
+                .await
+                .expect("ordinary subtree"),
+            ["grandchild", "child"]
+        );
+        assert_eq!(
+            store
+                .agent_subtree_session_ids_postorder("sibling")
+                .await
+                .expect("ordinary leaf"),
+            ["sibling"]
+        );
+        assert!(store
+            .agent_subtree_session_ids_postorder("missing")
+            .await
+            .expect("unknown subtree")
+            .is_empty());
+
+        store
+            .reserve_swarm_child("swarm-root", "planner", "Ultimate", "SwarmPlanner", 1, true)
             .await
             .expect("reserve planner");
         store
-            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2)
+            .register_background_task(registration("swarm-root", "planner", "spawn", None))
+            .await
+            .expect("register planner");
+        store
+            .reserve_swarm_child(
+                "planner",
+                "reserved-worker",
+                "SwarmPlanner",
+                "SwarmWorker",
+                2,
+                true,
+            )
+            .await
+            .expect("reserve worker before task registration");
+        store
+            .agent_id_for_session_with_requested_id("planner", "ordinary-worker", None)
+            .await
+            .expect("register ordinary child alongside swarm child");
+        assert_eq!(
+            store
+                .agent_subtree_session_ids_postorder("planner")
+                .await
+                .expect("mixed subtree"),
+            ["ordinary-worker", "reserved-worker", "planner"]
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_child_agents_use_latest_status_and_ignore_delivery() {
+        let (_root, store) = test_store();
+        store
+            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1, true)
+            .await
+            .expect("reserve planner");
+        store
+            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2, true)
             .await
             .expect("reserve nested worker");
         let first = store
@@ -1741,11 +2009,11 @@ PRAGMA user_version = 2;
     async fn direct_child_resolution_and_subtree_postorder_are_lineage_scoped() {
         let (_root, store) = test_store();
         store
-            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1, true)
             .await
             .expect("reserve planner");
         store
-            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2)
+            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2, true)
             .await
             .expect("reserve worker");
         let planner = store
@@ -1775,7 +2043,7 @@ PRAGMA user_version = 2;
             .expect_err("a grandchild is not a direct child of root");
         assert_eq!(
             store
-                .swarm_subtree_session_ids_postorder("planner")
+                .agent_subtree_session_ids_postorder("planner")
                 .await
                 .expect("load subtree"),
             ["worker", "planner"]
@@ -1848,12 +2116,12 @@ PRAGMA user_version = 2;
             .expect("rollback parent turns");
         assert_eq!(deleted, vec![removed.task_pk]);
         let candidates = store
-            .wait_candidates("parent", &[])
+            .wait_candidates("parent", &[], true)
             .await
             .expect("load restored candidates");
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].task_pk, delivered.task_pk);
-        assert!(candidates[0].delivered_at_ms.is_none());
+        assert_eq!(candidates.records.len(), 1);
+        assert_eq!(candidates.records[0].task_pk, delivered.task_pk);
+        assert!(candidates.records[0].delivered_at_ms.is_none());
     }
 
     #[tokio::test]
@@ -1873,9 +2141,10 @@ PRAGMA user_version = 2;
             .expect("initialize fork reservations");
 
         assert!(store
-            .wait_candidates("target", &[])
+            .wait_candidates("target", &[], true)
             .await
             .expect("load fork tasks")
+            .records
             .is_empty());
         let target = store
             .register_background_task(registration("target", "target-child", "spawn-turn", None))
@@ -1884,6 +2153,16 @@ PRAGMA user_version = 2;
         assert_eq!(first.agent_id, "a1");
         assert_eq!(target.agent_id, "a3");
         assert_eq!(target.bg_task_id, "a3_bg1");
+        assert_eq!(
+            store.reserved_agent_ids("target").await.unwrap(),
+            vec!["a1", "a2"]
+        );
+        assert!(store.reserved_agent_ids("source").await.unwrap().is_empty());
+        assert!(store
+            .reserved_agent_ids("unrelated")
+            .await
+            .unwrap()
+            .is_empty());
         assert!(store
             .register_background_task(registration(
                 "target",
@@ -1922,9 +2201,10 @@ PRAGMA user_version = 2;
             vec![second.task_pk]
         );
         assert!(store
-            .wait_candidates("parent", &[])
+            .wait_candidates("parent", &[], true)
             .await
             .expect("load remaining tasks")
+            .records
             .is_empty());
     }
 }

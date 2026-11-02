@@ -23,6 +23,7 @@ describe('resolveWsMethod', () => {
     expect(resolveWsMethod('list_sessions')).toBe('agent/listSessions');
     expect(resolveWsMethod('delete_session')).toBe('agent/deleteSession');
     expect(resolveWsMethod('fork_session')).toBe('session/forkAtTurn');
+    expect(resolveWsMethod('copy_session')).toBe('session/fork');
     expect(resolveWsMethod('archive_session')).toBe('session/setArchived');
     expect(resolveWsMethod('unarchive_session')).toBe('session/setArchived');
     // `start_dialog_turn` -> `agent/submitDialogTurn` (NOT `agent/submitTurn`):
@@ -160,7 +161,8 @@ describe('resolveWsMethod', () => {
     expect(AGENT_COMMAND_SCHEMA.start_dialog_turn.method).toBe(
       'agent/submitDialogTurn'
     );
-    expect(Object.keys(AGENT_COMMAND_SCHEMA).length).toBe(39);
+    expect(AGENT_COMMAND_SCHEMA.copy_session.method).toBe('session/fork');
+    expect(Object.keys(AGENT_COMMAND_SCHEMA).length).toBe(40);
 
     // Touch the locals so noUnusedLocals does not flag them under vitest's
     // transformed build (tsc --noEmit is the real gate; this is belt-and-suspenders).
@@ -295,6 +297,19 @@ describe('encodeRequestBody', () => {
       workspaceId: 'workspace-1',
       sessionId: 's1',
       archived: true,
+    });
+  });
+
+  it('encodes a whole-session copy without a source turn id', () => {
+    // The copy action lets the host resolve the boundary from the session's own
+    // latest persisted turn; inventing a turn id would move that decision into
+    // the controller.
+    expect(encodeRequestBody('copy_session', {
+      workspace_id: 'workspace-1',
+      source_session_id: 's1',
+    })).toEqual({
+      workspaceId: 'workspace-1',
+      sourceSessionId: 's1',
     });
   });
 

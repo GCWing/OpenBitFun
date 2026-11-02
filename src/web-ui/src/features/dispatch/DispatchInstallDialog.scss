@@ -100,15 +100,19 @@
     display: grid;
     gap: 0;
 
+    // The former div + div rule invalidated unrelated transcript divs in Chromium.
+    // Match owned check-row classes instead. Equal-DOM trace sample after the
+    // metadata fix: 93 added / 1161 retained elements, style 46 -> 23ms and
+    // elementCount 3111 -> 1432 (single desktop run, not a performance guarantee).
+    > .dispatch-install-dialog__check-row + .dispatch-install-dialog__check-row {
+      border-top: 1px solid var(--openbitfun-color-border-subtle);
+    }
+
     > div {
       display: grid;
       grid-template-columns: minmax(104px, auto) minmax(0, 1fr);
       gap: var(--openbitfun-space-2);
       padding: var(--openbitfun-space-2) 0;
-
-      + div {
-        border-top: 1px solid var(--openbitfun-color-border-subtle);
-      }
 
       > span {
         color: var(--openbitfun-color-content-muted);

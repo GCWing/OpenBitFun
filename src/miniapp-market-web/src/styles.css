@@ -1311,8 +1311,8 @@ main {
   color: var(--openbitfun-color-status-warning-content);
 }
 
-.rating-control span {
-  margin-left: 7px;
+.rating-summary {
+  margin-inline-start: 7px;
   color: var(--openbitfun-color-content-muted);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;

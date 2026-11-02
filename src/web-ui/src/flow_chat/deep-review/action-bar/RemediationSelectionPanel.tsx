@@ -93,17 +93,19 @@ export const RemediationSelectionPanel: React.FC<RemediationSelectionPanelProps>
         className="deep-review-action-bar__remediation-toggle"
         onClick={onToggleList}
       >
-        <Checkbox
-          checked={allSelected}
-          indeterminate={!allSelected && selectedCount > 0}
-          onChange={() => {
-            if (!selectionDisabled) {
-              onToggleAll();
-            }
-          }}
-          disabled={selectionDisabled || totalCount === 0}
-          size="sm"
-        />
+        <span onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            checked={allSelected}
+            indeterminate={!allSelected && selectedCount > 0}
+            onChange={() => {
+              if (!selectionDisabled) {
+                onToggleAll();
+              }
+            }}
+            disabled={selectionDisabled || totalCount === 0}
+            size="sm"
+          />
+        </span>
         <span className="deep-review-action-bar__remediation-label">
           {t('toolCards.codeReview.remediationActions.selectionCount', {
             selected: selectedCount,
@@ -189,7 +191,7 @@ export const RemediationSelectionPanel: React.FC<RemediationSelectionPanelProps>
                             <Icon name="check-circle" size="xs" className="deep-review-action-bar__completed-icon" />
                           )}
                           {isFixing && (
-                            <Loader2 size={12} className="deep-review-action-bar__fixing-icon" />
+                            <Icon glyph={Loader2} size="xs" className="deep-review-action-bar__fixing-icon" />
                           )}
                           {(isCompleted || isFixing) && (
                             <span className="deep-review-action-bar__remediation-status">

@@ -46,6 +46,12 @@
     "linux": {
       "deb": {
         "depends": [
+          "libgstreamer1.0-0",
+          "libgstreamer-plugins-base1.0-0",
+          "gstreamer1.0-pipewire",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "xdg-desktop-portal",
           "libc6",
           "libcairo2",
           "libgcc-s1",

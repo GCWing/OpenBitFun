@@ -17,11 +17,6 @@ function Icon({ name }: { name: string }) {
   return <svg data-icon={name} />;
 }
 
-vi.mock('lucide-react', async importOriginal => ({
-  ...await importOriginal<typeof import('lucide-react')>(),
-  Loader2: () => <Icon name="loader" />,
-}));
-
 vi.mock('@openbitfun/ui', async importOriginal => ({
   IconButton: (await importOriginal<typeof import('@openbitfun/ui')>()).IconButton,
   Button: ({
@@ -88,6 +83,33 @@ describe('CodeReviewReportExportActions', () => {
     delete (window as Window & { __TAURI__?: unknown }).__TAURI__;
   });
 
+  it('keeps pending export controls visible and enables them when a report arrives', async () => {
+    (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
+    vi.mocked(save).mockResolvedValue('/review.md');
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(<CodeReviewReportExportActions reviewData={null} actions={['copy', 'save']} />);
+      });
+      const buttons = [...container.querySelectorAll<HTMLButtonElement>('button')];
+      expect(buttons).toHaveLength(2);
+      expect(buttons.every(button => button.disabled)).toBe(true);
+      expect(formatCodeReviewReportMarkdownMock).not.toHaveBeenCalled();
+      await act(async () => {
+        root.render(<CodeReviewReportExportActions
+          reviewData={{ summary: { recommended_action: 'approve' } }}
+          actions={['copy', 'save']}
+        />);
+      });
+      expect(buttons.every(button => !button.disabled)).toBe(true);
+      await act(async () => { buttons[1].click(); });
+      expect(writeFile).toHaveBeenCalledWith('/review.md', new TextEncoder().encode('# Review'));
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
   it('uses the same copy icon as other copy buttons', () => {
     const html = renderToStaticMarkup(
       <CodeReviewReportExportActions reviewData={{ summary: { recommended_action: 'approve' } }} />,
@@ -144,7 +166,7 @@ describe('CodeReviewReportExportActions', () => {
     expect(save).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('data-loading')).toBe('false');
-    expect(button.querySelector('[data-icon="loader"]')).not.toBeNull();
+    expect(button.querySelector('[data-icon="progress-25"]')).not.toBeNull();
     act(() => button.click());
     expect(save).toHaveBeenCalledTimes(1);
     expect(parentClick).not.toHaveBeenCalled();

@@ -114,6 +114,54 @@ struct StartupBrandReveal: View {
     private func ease(_ x: Double) -> Double { 1-pow(1-max(0,min(1,x)),3) }
 }
 
+/// Short transition for an authenticated cold launch. The home view remains
+/// mounted underneath so the cover can dissolve into its existing mark.
+struct ColdStartHomeTransition: View {
+    let target: CGRect?
+    let onFinished: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var started = Date()
+    private let duration = Double(MobileDesignMotion.coldStartHome) / 1000
+
+    var body: some View {
+        GeometryReader { geometry in
+            TimelineView(.animation(minimumInterval: 1.0 / 60)) { timeline in
+                let p = reduceMotion ? 1 : min(1, max(0, timeline.date.timeIntervalSince(started) / duration))
+                let travel = smooth((p - 0.16) / 0.52)
+                let targetY = target?.midY ?? geometry.size.height * 0.53
+                let centerY = geometry.size.height * 0.53
+                let y = centerY + (targetY - centerY) * travel - sin(travel * .pi) * (target == nil ? 0 : 9)
+                let size = 56 + ((target?.width ?? 56) - 56) * travel
+                ZStack {
+                    OpenBitFunTheme.page
+                    WelcomeBrandFlowView(sweep: true)
+                        .frame(width: size, height: size)
+                        .position(x: geometry.size.width / 2 + ((target?.midX ?? geometry.size.width / 2) - geometry.size.width / 2) * travel, y: y)
+                        .opacity(min(1, p / 0.13))
+                }
+                .opacity(1 - smooth((p - 0.68) / 0.32))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { }
+        .accessibilityHidden(true)
+        .task {
+            guard !reduceMotion else { onFinished(); return }
+            do {
+                try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+                onFinished()
+            } catch { }
+        }
+        .onChange(of: reduceMotion) { if $0 { onFinished() }
+        }
+    }
+
+    private func smooth(_ x: Double) -> Double {
+        let v = min(1, max(0, x))
+        return v * v * (3 - 2 * v)
+    }
+}
+
 
 /// Same fixed contour ribbon as desktop AboutBrandMark, with slow highlights.
 struct WelcomeBrandFlowView: View {
@@ -170,5 +218,12 @@ struct WelcomeBrandFlowView: View {
                 }
             }
         }.accessibilityHidden(true)
+    }
+}
+
+struct ColdStartHomeMarkPreference: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = nextValue() ?? value
     }
 }

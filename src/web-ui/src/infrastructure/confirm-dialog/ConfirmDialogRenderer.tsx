@@ -19,6 +19,7 @@ export function ConfirmDialogRenderer() {
       onConfirm={confirm}
       onSecondary={secondary}
       preview={options.preview}
+      secondaryActionPlacement={options.secondaryActionPlacement}
       secondaryText={options.secondaryText}
       showCancel={options.showCancel}
       title={options.title}

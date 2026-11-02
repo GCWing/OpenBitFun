@@ -144,7 +144,7 @@ async fn list_devices(
         let db = &state.db;
         if let Ok(db_devices) = crate::db::DeviceRow::list_by_user(db, &user_id).await {
             for row in db_devices {
-                if !crate::db::device_kind_is_desktop(row.device_kind.as_deref()) {
+                if !crate::db::device_kind_is_host(row.device_kind.as_deref()) {
                     hidden_ids.insert(row.device_id);
                     continue;
                 }
@@ -841,11 +841,24 @@ mod tests {
         DeviceRow::upsert(&ctx.db, "mac", "owner", "MacBook", Some("desktop"), None)
             .await
             .unwrap();
+        DeviceRow::upsert(
+            &ctx.db,
+            "headless",
+            "owner",
+            "Build host",
+            Some("cli"),
+            None,
+        )
+        .await
+        .unwrap();
 
         let ids = listed_device_ids(&ctx.app, &ctx.owner_token).await;
 
         assert!(!ids.contains(&"phone".to_string()));
         assert!(ids.contains(&"mac".to_string()));
+        // A CLI host runs the same control plane as a desktop, so it stays a
+        // control target instead of being hidden like a controller.
+        assert!(ids.contains(&"headless".to_string()));
         // owner-device and target-device were registered before the kind
         // existed; a NULL kind must still be offered as a control target.
         assert!(ids.contains(&"owner-device".to_string()));

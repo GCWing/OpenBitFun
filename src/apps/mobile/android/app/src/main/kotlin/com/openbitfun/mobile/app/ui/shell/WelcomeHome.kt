@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -32,7 +31,7 @@ import kotlin.math.*
 
 /** A welcome layout, C text motion. Only presentation state is kept here. */
 @Composable
-internal fun WelcomeHome(onLogin: () -> Unit, onScan: () -> Unit, signedIn: Boolean = false, modifier: Modifier = Modifier) {
+internal fun WelcomeHome(onLogin: () -> Unit, signedIn: Boolean = false, modifier: Modifier = Modifier) {
     val phrases = listOf("OpenBitFun", stringResource(R.string.welcome_work), stringResource(R.string.welcome_play), stringResource(R.string.welcome_yours))
     var moving by remember { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -77,21 +76,30 @@ internal fun WelcomeHome(onLogin: () -> Unit, onScan: () -> Unit, signedIn: Bool
                     }
                 }
             }
-            Column(Modifier.fillMaxWidth().background(MobileDesignColors.Light.WelcomeDock, RoundedCornerShape(topStart = G.WelcomeDockRadius, topEnd = G.WelcomeDockRadius))
-                .padding(start = G.WelcomeGutter, end = G.WelcomeGutter, top = G.WelcomeGutter, bottom = G.WelcomeDockBottom), verticalArrangement = Arrangement.spacedBy(G.WelcomeButtonGap)) {
-                WelcomeAction(stringResource(if (signedIn) R.string.sidebar_connect_desktop else R.string.welcome_login), onLogin)
-                WelcomeAction(stringResource(R.string.welcome_scan), onScan, scan = true)
-                com.openbitfun.mobile.app.ui.miniapps.MiniAppsButton(contentColor = MobileDesignColors.Light.WelcomeButton)
+            Column(
+                Modifier.fillMaxWidth().background(
+                    MobileDesignColors.Light.WelcomeDock,
+                    RoundedCornerShape(topStart = G.WelcomeDockRadius, topEnd = G.WelcomeDockRadius),
+                ),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .padding(start = G.WelcomeGutter, end = G.WelcomeGutter, top = G.WelcomeGutter, bottom = G.WelcomeDockBottom)
+                        .navigationBarsPadding(),
+                    verticalArrangement = Arrangement.spacedBy(G.WelcomeButtonGap),
+                ) {
+                    WelcomeAction(stringResource(if (signedIn) R.string.sidebar_connect_desktop else R.string.welcome_login), onLogin)
+                    com.openbitfun.mobile.app.ui.miniapps.MiniAppsButton(contentColor = MobileDesignColors.Light.WelcomeButton)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun WelcomeAction(label: String, onClick: () -> Unit, scan: Boolean = false) {
+private fun WelcomeAction(label: String, onClick: () -> Unit) {
     Button(onClick, Modifier.fillMaxWidth().height(G.WelcomeButtonHeight), shape = RoundedCornerShape(28.dp),
         colors = ButtonDefaults.buttonColors(containerColor = MobileDesignColors.Light.WelcomeButton, contentColor = MobileDesignColors.Light.WelcomeButtonLabel)) {
-        if(scan) { Icon(painterResource(R.drawable.ic_symbol_qrcode_viewfinder), null, Modifier.size(20.dp)); Spacer(Modifier.width(10.dp)) }
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
 }

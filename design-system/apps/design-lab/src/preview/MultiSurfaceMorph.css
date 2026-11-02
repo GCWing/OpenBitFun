@@ -1,0 +1,222 @@
+/* One frame, four surfaces. Only the frame's box moves — its width, height and corner radius are
+   registered as lengths so the browser can animate a shape change instead of a class swap, and the
+   surfaces inside it cross-fade while the box travels. Registering the three properties is what makes
+   the difference: without them a length cannot be transitioned, and the frame would jump.
+   The durations and easings are the motion tokens, so the reduced-motion token block collapses the
+   whole morph to nothing on its own. */
+@property --_morph-w { syntax: "<length>"; inherits: false; initial-value: 1120px; }
+@property --_morph-h { syntax: "<length>"; inherits: false; initial-value: 560px; }
+@property --_morph-r { syntax: "<length>"; inherits: false; initial-value: 12px; }
+
+/* The stage: the area the page gives the picture. It keeps the page's rhythm — the height is the
+   frame's largest state — and it measures itself, because the desktop geometry has to be handed to
+   the frame as lengths and a length cannot be interpolated with a percentage. */
+.design-morph {
+  --_morph-stage-w: 1120px;
+  --_morph-stage-h: 560px;
+
+  position: relative;
+  display: grid;
+  place-items: center;
+  block-size: 100%;
+  min-block-size: 0;
+  font-family: var(--openbitfun-type-body-md-font-family);
+}
+
+.design-morph-frame {
+  position: relative;
+  inline-size: var(--_morph-w);
+  block-size: var(--_morph-h);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--_morph-r);
+  overflow: hidden;
+  background: var(--openbitfun-color-surface-canvas);
+  transition:
+    --_morph-w var(--openbitfun-motion-duration-lazy) var(--openbitfun-motion-easing-smooth),
+    --_morph-h var(--openbitfun-motion-duration-lazy) var(--openbitfun-motion-easing-smooth),
+    --_morph-r var(--openbitfun-motion-duration-lazy) var(--openbitfun-motion-easing-smooth);
+}
+
+/* The four geometries. The desktop window is the stage itself; the phone keeps the height and loses
+   the width; the watch is the only square one and becomes a circle; the glasses are the widest and
+   the shortest. Every one of them is clamped by the stage, so a narrow page shows the same devices
+   rather than four cropped ones. */
+.design-morph[data-surface="web"] .design-morph-frame {
+  --_morph-w: var(--_morph-stage-w);
+  --_morph-h: var(--_morph-stage-h);
+  --_morph-r: var(--openbitfun-radius-lg);
+}
+
+.design-morph[data-surface="phone"] .design-morph-frame {
+  --_morph-w: min(300px, var(--_morph-stage-w));
+  --_morph-h: var(--_morph-stage-h);
+  --_morph-r: var(--openbitfun-radius-4xl);
+}
+
+.design-morph[data-surface="watch"] .design-morph-frame {
+  --_morph-w: min(276px, var(--_morph-stage-w), var(--_morph-stage-h));
+  --_morph-h: min(276px, var(--_morph-stage-w), var(--_morph-stage-h));
+  --_morph-r: calc(min(276px, var(--_morph-stage-w), var(--_morph-stage-h)) / 2);
+}
+
+.design-morph[data-surface="glasses"] .design-morph-frame {
+  --_morph-w: min(780px, var(--_morph-stage-w));
+  /* A visor, not a window: the shallowest of the four, so the frame hugs the strip it carries. */
+  --_morph-h: min(168px, var(--_morph-stage-h));
+  --_morph-r: var(--openbitfun-radius-3xl);
+}
+
+/* A surface is a stage of its own, laid out at the size it will be read at and never stretched: the
+   one in play is visible, the other three are gone. The incoming surface settles a little as it
+   arrives and the outgoing one holds still, which is what makes the change read as one object
+   turning into another rather than as two pictures swapping. */
+.design-morph-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(1.03);
+  transition:
+    opacity var(--openbitfun-motion-duration-slow) linear,
+    transform var(--openbitfun-motion-duration-lazy) var(--openbitfun-motion-easing-smooth);
+}
+
+.design-morph-surface[data-active="true"] {
+  opacity: 1;
+  transform: none;
+  /* Arrives after the box has mostly arrived, so the shape is read before the content is. */
+  transition:
+    opacity var(--openbitfun-motion-duration-slow) linear var(--openbitfun-motion-duration-slow),
+    transform var(--openbitfun-motion-duration-lazy) var(--openbitfun-motion-easing-smooth);
+}
+
+/* ------------------------------------------------------------------------------ phone surface
+   The mobile kit's own reading order: a page header, the transcript, the composer, then the bottom
+   navigation. Sample data is product data and stays English, like the desktop picture's. */
+.design-morph-phone {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  block-size: 100%;
+  min-block-size: 0;
+  /* The phone's frame has a phone's corners: the bottom bar has to clear them, the way the system
+     safe area would on the device. */
+  padding-block-end: var(--openbitfun-space-4);
+}
+
+.design-morph-phone-head {
+  border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+
+.design-morph-phone-thread {
+  display: grid;
+  align-content: start;
+  gap: var(--openbitfun-space-3);
+  padding: var(--openbitfun-space-4);
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.design-morph-phone-composer {
+  margin-inline: var(--openbitfun-space-3);
+}
+
+.design-morph-phone-tabs {
+  margin-block-start: var(--openbitfun-space-3);
+}
+
+/* ------------------------------------------------------------------------------ watch surface
+   Nothing from a window survives this size except the state, so the face is the mark, the signal,
+   and the one control the surface has room for. */
+.design-morph-watch {
+  display: grid;
+  place-items: center;
+  block-size: 100%;
+}
+
+.design-morph-watch-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: var(--openbitfun-space-3);
+  inline-size: 100%;
+  block-size: 100%;
+  padding: var(--openbitfun-space-8);
+}
+
+/* The bezel: one hairline inside the frame's own edge, which is what says "device" at this size. */
+.design-morph-watch-face::before {
+  content: "";
+  position: absolute;
+  inset: var(--openbitfun-space-3);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-pill);
+}
+
+.design-morph-watch-mark {
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.design-morph-watch-wave {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--openbitfun-space-1) / 2);
+  block-size: var(--openbitfun-space-12);
+}
+
+.design-morph-watch-wave > i {
+  inline-size: 3px;
+  block-size: var(--_morph-wave);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-accent-default);
+}
+
+/* ------------------------------------------------------------------------------ glasses surface
+   A heads-up display: not a screen to fill but a strip of glass to write on. The band behind the
+   panel is the lens, the panel is where the answer would appear. */
+.design-morph-glasses {
+  position: relative;
+  display: grid;
+  place-items: center;
+  block-size: 100%;
+}
+
+/* The lens: a soft band rather than a rectangle, so the glass has no visible edge of its own. */
+.design-morph-glasses-lens {
+  position: absolute;
+  inset-inline: 0;
+  block-size: 78%;
+  background: radial-gradient(58% 100% at 50% 50%, var(--openbitfun-color-surface-subtle), transparent);
+}
+
+.design-morph-glasses-hud {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-4);
+  inline-size: min(calc(100% - var(--openbitfun-space-16)), 640px);
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-5);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-2xl);
+  background: var(--openbitfun-color-surface-panel);
+  color: var(--openbitfun-color-content-primary);
+}
+
+.design-morph-glasses-line {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--openbitfun-color-content-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.design-morph-glasses-mic {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--openbitfun-space-8);
+  block-size: var(--openbitfun-space-8);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-selection-surface);
+}

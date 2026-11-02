@@ -49,6 +49,7 @@ const DEFAULT_ITEM_ORDER: &[&str] = &[
     "toggle_tool_details",
     "fork_session",
     "workspace_diff",
+    "goal",
     "compact_session",
     "usage",
     "editor",

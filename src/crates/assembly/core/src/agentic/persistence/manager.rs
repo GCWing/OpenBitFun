@@ -2,6 +2,14 @@
 //!
 //! Responsible for project-scoped session persistence.
 
+#[cfg(feature = "external-sources")]
+mod external_history;
+#[cfg(feature = "external-sources")]
+pub(crate) use external_history::external_history_catalog;
+mod session_catalog;
+mod usage_context;
+pub(crate) use usage_context::SessionUsageContextSnapshot;
+
 use crate::agentic::core::{
     sanitize_persisted_session_state, CompressionState, Message, MessageContent,
     PersistedSessionStateFile as StoredSessionStateFile, Session, SessionConfig, SessionState,
@@ -46,7 +54,7 @@ use openbitfun_services_core::session_search::SessionSearchSqliteIndex;
 use openbitfun_services_core::{
     json_store::{JsonFileStore, JsonFileStoreError},
     session::{
-        build_session_metadata as build_persisted_session_metadata, empty_session_metadata_page,
+        build_session_metadata as build_persisted_session_metadata,
         refresh_session_metadata_from_turns, try_refresh_session_metadata_for_saved_turn,
         DialogTurnKind, SessionLastTurn, SessionMemoryMode, SessionMetadataBuildFacts,
         SessionMetadataStore, SessionMetadataStoreError, SessionStorageLayout, SessionWriteLock,
@@ -565,6 +573,7 @@ struct ParsedTranscriptTurnSelector {
 pub struct PersistenceManager {
     path_manager: Arc<PathManager>,
     runtime_service: Arc<WorkspaceRuntimeService>,
+    catalog_cache: Mutex<session_catalog::CatalogCache>,
     #[cfg(test)]
     fail_next_session_state_write: std::sync::Mutex<Option<String>>,
     #[cfg(test)]
@@ -582,6 +591,7 @@ impl PersistenceManager {
         Ok(Self {
             runtime_service: Arc::new(WorkspaceRuntimeService::new(path_manager.clone())),
             path_manager,
+            catalog_cache: Mutex::new(session_catalog::CatalogCache::default()),
             #[cfg(test)]
             fail_next_session_state_write: std::sync::Mutex::new(None),
             #[cfg(test)]
@@ -651,8 +661,8 @@ impl PersistenceManager {
     /// Resolve the on-disk sessions directory for `workspace_path`.
     ///
     /// Callers may pass either a logical workspace root or an already-resolved
-    /// managed sessions directory. Local workspace roots are slugified under
-    /// `~/.openbitfun/projects/`; already-resolved local/remote sessions
+    /// managed sessions directory. Local workspace roots use compact runtime
+    /// keys under `~/.openbitfun/projects/`; already-resolved local/remote sessions
     /// directories are used as-is.
     fn project_sessions_dir(&self, workspace_path: &Path) -> PathBuf {
         if self.is_resolved_sessions_dir(workspace_path) {
@@ -1124,7 +1134,7 @@ impl PersistenceManager {
         }
     }
 
-    async fn build_session_metadata(
+    pub(super) async fn build_session_metadata(
         &self,
         workspace_path: &Path,
         session: &Session,
@@ -1331,10 +1341,21 @@ impl PersistenceManager {
             return Ok(Vec::new());
         }
 
-        self.session_metadata_store(workspace_path)
+        let metadata = self
+            .session_metadata_store(workspace_path)
             .list_metadata()
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        let metadata = crate::external_session_import::deferred::merge_metadata(
+            &self.project_sessions_dir(workspace_path),
+            metadata,
+        )
+        .await?
+        .into_iter()
+        .filter(|metadata| !metadata.should_hide_from_user_lists())
+        .collect();
+        Ok(metadata)
     }
 
     pub async fn session_metadata_by_ids(
@@ -1342,10 +1363,31 @@ impl PersistenceManager {
         workspace_path: &Path,
         session_ids: &[String],
     ) -> OpenBitFunResult<Vec<SessionMetadata>> {
-        self.session_metadata_store(workspace_path)
+        let mut metadata = self
+            .session_metadata_store(workspace_path)
             .metadata_by_ids(session_ids)
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        crate::external_session_import::deferred::refresh_metadata_titles(
+            &self.project_sessions_dir(workspace_path),
+            &mut metadata,
+        )
+        .await;
+        #[cfg(feature = "external-sources")]
+        for id in session_ids {
+            if !metadata.iter().any(|metadata| &metadata.session_id == id) {
+                if let Some(reference) = crate::external_session_import::deferred::metadata(
+                    &self.project_sessions_dir(workspace_path),
+                    id,
+                )
+                .await?
+                {
+                    metadata.push(reference);
+                }
+            }
+        }
+        Ok(metadata)
     }
 
     /// Lazily repair one legacy activity summary on a targeted navigation read.
@@ -1454,16 +1496,81 @@ impl PersistenceManager {
         cursor: Option<&str>,
         limit: usize,
     ) -> OpenBitFunResult<SessionMetadataPage> {
+        self.list_session_metadata_page_with_query(workspace_path, cursor, limit, None)
+            .await
+    }
+
+    pub async fn list_session_metadata_page_with_query(
+        &self,
+        workspace_path: &Path,
+        cursor: Option<&str>,
+        limit: usize,
+        query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+    ) -> OpenBitFunResult<SessionMetadataPage> {
+        use openbitfun_services_core::session::page::build_session_metadata_page_with_query;
         if !workspace_path.exists() {
-            return Ok(empty_session_metadata_page());
+            return Ok(build_session_metadata_page_with_query(
+                Vec::new(),
+                cursor,
+                limit,
+                query,
+            ));
         }
 
         if self.existing_project_sessions_dir(workspace_path).is_none() {
-            return Ok(empty_session_metadata_page());
+            return Ok(build_session_metadata_page_with_query(
+                Vec::new(),
+                cursor,
+                limit,
+                query,
+            ));
         }
 
+        if let Some(query) = query {
+            return self
+                .list_cached_session_catalog_page(workspace_path, cursor, limit, query)
+                .await;
+        }
+
+        self.list_uncached_session_metadata_page(workspace_path, cursor, limit, None)
+            .await
+    }
+
+    async fn list_uncached_session_metadata_page(
+        &self,
+        workspace_path: &Path,
+        cursor: Option<&str>,
+        limit: usize,
+        query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+    ) -> OpenBitFunResult<SessionMetadataPage> {
+        use openbitfun_services_core::session::page::build_session_metadata_page_with_query;
+
+        #[cfg(feature = "external-sources")]
+        {
+            let root = self.project_sessions_dir(workspace_path);
+            let references = crate::external_session_import::deferred::has_references(&root).await;
+            if !matches!(references, Ok(false)) {
+                let native = self
+                    .session_metadata_store(workspace_path)
+                    .list_indexed_metadata()
+                    .await
+                    .map_err(Self::session_metadata_store_error)?;
+                if let Err(error) = references {
+                    warn!("External session references could not be paged: {error}");
+                    let mut page =
+                        build_session_metadata_page_with_query(native, cursor, limit, query);
+                    page.discovery_warnings.push("External session index could not be read; existing native sessions remain available".into());
+                    return Ok(page);
+                }
+                let metadata =
+                    crate::external_session_import::deferred::merge_metadata(&root, native).await?;
+                return Ok(build_session_metadata_page_with_query(
+                    metadata, cursor, limit, query,
+                ));
+            }
+        }
         self.session_metadata_store(workspace_path)
-            .list_metadata_page(cursor, limit)
+            .list_metadata_page_with_query(cursor, limit, query)
             .await
             .map_err(Self::session_metadata_store_error)
     }
@@ -1480,10 +1587,18 @@ impl PersistenceManager {
             return Ok(Vec::new());
         }
 
-        self.session_metadata_store(workspace_path)
+        let metadata = self
+            .session_metadata_store(workspace_path)
             .list_metadata_including_internal()
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        let metadata = crate::external_session_import::deferred::merge_metadata(
+            &self.project_sessions_dir(workspace_path),
+            metadata,
+        )
+        .await?;
+        Ok(metadata)
     }
 
     pub async fn save_session_metadata(
@@ -1520,6 +1635,15 @@ impl PersistenceManager {
                     "Injected session metadata write failure",
                 ));
             }
+        }
+        #[cfg(feature = "external-sources")]
+        if crate::external_session_import::deferred::save_metadata(
+            &self.project_sessions_dir(workspace_path),
+            metadata,
+        )
+        .await?
+        {
+            return Ok(());
         }
         self.session_metadata_store(workspace_path)
             .save_metadata(metadata)
@@ -1580,6 +1704,7 @@ impl PersistenceManager {
         session_id: &str,
         session_name: &str,
         last_active_at: u64,
+        user_edited: bool,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(session_id)?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
@@ -1596,7 +1721,26 @@ impl PersistenceManager {
             })?;
         let mut updated = original.clone();
         updated.session_name = session_name.to_string();
+        openbitfun_services_core::session::naming::clear_default_title(&mut updated, user_edited);
         updated.last_active_at = last_active_at;
+        if updated.session_name != original.session_name {
+            if let Some(custom) = updated
+                .custom_metadata
+                .as_mut()
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                if custom
+                    .get("importedFrom")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some()
+                {
+                    custom.insert(
+                        "externalSessionTitleOverride".into(),
+                        serde_json::json!(true),
+                    );
+                }
+            }
+        }
 
         let Err(write_error) = self
             .save_session_metadata_locked(workspace_path, &updated)
@@ -1774,10 +1918,113 @@ impl PersistenceManager {
         session_id: &str,
     ) -> OpenBitFunResult<Option<SessionMetadata>> {
         Self::validate_session_id(session_id)?;
-        self.session_metadata_store(workspace_path)
+        let metadata = self
+            .session_metadata_store(workspace_path)
             .load_metadata(session_id)
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        {
+            let root = self.project_sessions_dir(workspace_path);
+            return match metadata {
+                Some(mut metadata) => {
+                    crate::external_session_import::deferred::refresh_metadata_titles(
+                        &root,
+                        std::slice::from_mut(&mut metadata),
+                    )
+                    .await;
+                    Ok(Some(metadata))
+                }
+                None => crate::external_session_import::deferred::metadata(&root, session_id).await,
+            };
+        }
+        #[cfg(not(feature = "external-sources"))]
+        Ok(metadata)
+    }
+
+    /// History access promotes one lightweight external reference through the
+    /// same writer locks as rename/delete/continuation. Metadata-only reads do
+    /// not enter this path, so navigation never reads transcript bodies.
+    #[cfg(feature = "external-sources")]
+    async fn ensure_external_session_materialized(
+        &self,
+        workspace_path: &Path,
+        session_id: &str,
+    ) -> OpenBitFunResult<()> {
+        use crate::external_session_import::deferred;
+        let root = self.project_sessions_dir(workspace_path);
+        let native = self
+            .session_metadata_store(workspace_path)
+            .load_metadata(session_id)
+            .await
+            .map_err(Self::session_metadata_store_error)?;
+        if native
+            .as_ref()
+            .is_some_and(|metadata| !deferred::needs_legacy_history_repair(metadata))
+        {
+            return Ok(());
+        }
+        if native.is_none() {
+            let reference = deferred::metadata(&root, session_id).await?;
+            if reference.is_none()
+                || reference
+                    .as_ref()
+                    .is_some_and(deferred::tracking::is_followed)
+            {
+                return Ok(());
+            }
+        }
+        if deferred::has_native_view(&root, session_id).await? {
+            return Ok(());
+        }
+        let _writer = match self.lock_session_write_operation(workspace_path, session_id) {
+            Ok(writer) => writer,
+            Err(OpenBitFunError::SessionInUse { .. }) if native.is_some() => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let lock = self
+            .get_session_persistence_lock(workspace_path, session_id)
+            .await;
+        // Native writes call history helpers while holding this lock. Skip the
+        // optional legacy repair in that case instead of re-entering the lock.
+        let _guard = if native.is_some() {
+            let Ok(guard) = lock.try_lock() else {
+                return Ok(());
+            };
+            guard
+        } else {
+            lock.lock().await
+        };
+        let current = self
+            .session_metadata_store(workspace_path)
+            .load_metadata(session_id)
+            .await
+            .map_err(Self::session_metadata_store_error)?;
+        if current
+            .as_ref()
+            .is_some_and(|metadata| !deferred::needs_legacy_history_repair(metadata))
+        {
+            return Ok(());
+        }
+        // Legacy history decoding has a large future even when no repair is
+        // needed. Keep it off the nested native restore/admission futures.
+        Box::pin(deferred::materialize(&root, session_id)).await?;
+        if native.is_some() {
+            // The catalog is derived from Turn files and must include the
+            // repaired assistant content and any newly restored Turns.
+            match tokio::fs::remove_file(self.turn_catalog_path(workspace_path, session_id)).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => warn!(
+                    "Failed to invalidate repaired Session Turn catalog: session_id={} error={}",
+                    session_id, error
+                ),
+            }
+            #[cfg(feature = "product-search")]
+            self.invalidate_session_search(workspace_path, session_id)
+                .await;
+        }
+        Ok(())
     }
 
     async fn load_stored_session_state(
@@ -1795,7 +2042,7 @@ impl PersistenceManager {
         &self,
         workspace_path: &Path,
         session_id: &str,
-        state: &StoredSessionStateFile,
+        state: &(impl serde::Serialize + Sync),
     ) -> OpenBitFunResult<()> {
         #[cfg(test)]
         {
@@ -2041,6 +2288,8 @@ impl PersistenceManager {
         state: &SessionRevertState,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, session_id)).await?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
         self.ensure_runtime_for_write(workspace_path).await?;
         self.ensure_session_dir(workspace_path, session_id).await?;
@@ -2492,12 +2741,146 @@ impl PersistenceManager {
         Ok(())
     }
 
+    /// Persist only selector facts. Historical sessions need neither transcript
+    /// loading nor runtime restoration, and unknown future state fields survive.
+    pub(crate) async fn save_session_model_selection(
+        &self,
+        workspace_path: &Path,
+        session: &Session,
+    ) -> OpenBitFunResult<()> {
+        let session_id = &session.session_id;
+        Self::validate_session_id(session_id)?;
+        let _writer = self.lock_session_write_operation(workspace_path, session_id)?;
+        self.ensure_runtime_for_write(workspace_path).await?;
+        let lock = self
+            .get_session_persistence_lock(workspace_path, session_id)
+            .await;
+        let _guard = lock.lock().await;
+        let original_metadata = self
+            .load_session_metadata(workspace_path, session_id)
+            .await?
+            .ok_or_else(|| OpenBitFunError::NotFound(format!("Session not found: {session_id}")))?;
+        let state_path = self.state_path(workspace_path, session_id);
+        let original_state = self
+            .read_json_optional::<serde_json::Value>(&state_path)
+            .await?;
+        let mut state = match original_state.as_ref() {
+            Some(value) => value.clone(),
+            None => serde_json::to_value(StoredSessionStateFile {
+                schema_version: SESSION_STORAGE_SCHEMA_VERSION,
+                config: session.config.clone(),
+                snapshot_session_id: session.snapshot_session_id.clone(),
+                last_user_dialog_agent_type: session.last_user_dialog_agent_type.clone(),
+                last_submitted_agent_type: session.last_submitted_agent_type.clone(),
+                compression_state: session.compression_state.clone(),
+                runtime_state: sanitize_persisted_session_state(&session.state),
+            })?,
+        };
+        let object = state
+            .as_object_mut()
+            .ok_or_else(|| OpenBitFunError::session("Invalid session state object"))?;
+        let config = object
+            .entry("config")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+            .ok_or_else(|| OpenBitFunError::session("Invalid session config object"))?;
+        config.insert(
+            "model_id".into(),
+            serde_json::to_value(&session.config.model_id)?,
+        );
+        config.insert(
+            "model_routing".into(),
+            serde_json::to_value(&session.config.model_routing)?,
+        );
+        config.insert(
+            "reasoning_preset".into(),
+            serde_json::to_value(&session.config.reasoning_preset)?,
+        );
+        config.insert(
+            "model_pool_selection_revision".into(),
+            serde_json::to_value(session.config.model_pool_selection_revision)?,
+        );
+        config.insert(
+            "model_pool_id".into(),
+            serde_json::to_value(&session.config.model_pool_id)?,
+        );
+        config.insert(
+            "model_pool_binding".into(),
+            serde_json::to_value(&session.config.model_pool_binding)?,
+        );
+        config.insert(
+            "model_binding_policy".into(),
+            serde_json::to_value(session.config.model_binding_policy)?,
+        );
+        config.insert(
+            "max_context_tokens".into(),
+            serde_json::to_value(session.config.max_context_tokens)?,
+        );
+        let mut metadata = original_metadata.clone();
+        metadata.model_name = session.config.model_id.clone().unwrap_or_default();
+        metadata.last_active_at = Self::system_time_to_unix_ms(session.last_activity_at);
+        if original_state.as_ref() == Some(&state)
+            && original_metadata.model_name == metadata.model_name
+            && original_metadata.last_active_at == metadata.last_active_at
+        {
+            return Ok(());
+        }
+        let write_result = async {
+            self.save_stored_session_state(workspace_path, session_id, &state)
+                .await?;
+            self.save_session_metadata_locked(workspace_path, &metadata)
+                .await
+        }
+        .await;
+        if let Err(error) = write_result {
+            // An IO error can be reported before or after an atomic rename.
+            // Avoid unnecessary rollback writes when the original is intact.
+            if self
+                .read_json_optional::<serde_json::Value>(&state_path)
+                .await
+                .is_ok_and(|state| state == original_state)
+                && self
+                    .load_session_metadata(workspace_path, session_id)
+                    .await
+                    .is_ok_and(|value| {
+                        value.is_some_and(|value| {
+                            value.model_name == original_metadata.model_name
+                                && value.last_active_at == original_metadata.last_active_at
+                        })
+                    })
+            {
+                return Err(error);
+            }
+            let state_rollback = match original_state {
+                Some(state) => {
+                    self.save_stored_session_state(workspace_path, session_id, &state)
+                        .await
+                }
+                None => tokio::fs::remove_file(&state_path)
+                    .await
+                    .map_err(Into::into),
+            };
+            let metadata_rollback = self
+                .save_session_metadata_locked(workspace_path, &original_metadata)
+                .await;
+            if state_rollback.is_err() || metadata_rollback.is_err() {
+                return Err(OpenBitFunError::OutcomeUnknown(format!(
+                    "Session model update rollback failed: session_id={session_id}, error={error}, state={state_rollback:?}, metadata={metadata_rollback:?}"
+                )));
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
     /// Save session
     pub async fn save_session(
         &self,
         workspace_path: &Path,
         session: &Session,
     ) -> OpenBitFunResult<()> {
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, &session.session_id)).await?;
         Self::validate_session_id(&session.session_id)?;
         let _session_write =
             self.lock_session_write_operation(workspace_path, &session.session_id)?;
@@ -2584,6 +2967,11 @@ impl PersistenceManager {
         if config.model_id.is_none() && !metadata.model_name.is_empty() {
             config.model_id = Some(metadata.model_name.clone());
         }
+        if let Some(model_id) = config.model_id.as_mut() {
+            if metadata.compatible_model_selector(model_id) != model_id.as_str() {
+                *model_id = "primary".to_string();
+            }
+        }
 
         let compression_state = stored_state
             .as_ref()
@@ -2667,6 +3055,15 @@ impl PersistenceManager {
         session_id: &str,
     ) -> OpenBitFunResult<(Session, Vec<DialogTurnData>, SessionTurnLoadTiming)> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some((session, turns, _, timing)) =
+            Box::pin(self.load_external_history_view(workspace_path, session_id, None)).await?
+        {
+            return Ok((session, turns, timing));
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let request = SessionTurnLoadRequest {
             workspace_path: workspace_path.to_path_buf(),
             session_id: session_id.to_string(),
@@ -2766,6 +3163,19 @@ impl PersistenceManager {
         tail_turn_count: usize,
     ) -> OpenBitFunResult<(Session, Vec<DialogTurnData>, usize, SessionTurnLoadTiming)> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(view) = Box::pin(self.load_external_history_view(
+            workspace_path,
+            session_id,
+            Some(tail_turn_count),
+        ))
+        .await?
+        {
+            return Ok(view);
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let request = SessionTurnLoadRequest {
             workspace_path: workspace_path.to_path_buf(),
             session_id: session_id.to_string(),
@@ -2907,6 +3317,7 @@ impl PersistenceManager {
             .unwrap_or(StoredSessionStateFile {
                 schema_version: SESSION_STORAGE_SCHEMA_VERSION,
                 config: SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: None,
                     ..Default::default()
                 },
@@ -2934,6 +3345,12 @@ impl PersistenceManager {
             .get_session_persistence_lock(workspace_path, session_id)
             .await;
         let _persistence_guard = persistence_lock.lock().await;
+        #[cfg(feature = "external-sources")]
+        crate::external_session_import::deferred::dismiss(
+            &self.project_sessions_dir(workspace_path),
+            session_id,
+        )
+        .await?;
         #[cfg(feature = "product-search")]
         self.remove_session_from_search(workspace_path, session_id)
             .await;
@@ -3040,6 +3457,19 @@ impl PersistenceManager {
         visible_total_turn_count: usize,
     ) -> OpenBitFunResult<SessionTurnCatalog> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) = Box::pin(self.external_history_for_loaded_turns(
+            workspace_path,
+            session_id,
+            loaded_turns,
+        ))
+        .await?
+        {
+            return Ok(bundle.catalog().clone());
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
 
         let (physical_indices, can_persist_physical_projection) = match self
@@ -3191,6 +3621,13 @@ impl PersistenceManager {
         request: &SessionTurnWindowRequest,
     ) -> OpenBitFunResult<SessionTurnWindowResponse> {
         Self::validate_session_id(&request.session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(window) = Box::pin(self.external_history_window(request)).await? {
+            return Ok(window);
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(&request.workspace_path, &request.session_id)
+            .await?;
         let _session_write =
             self.lock_session_write_operation(&request.workspace_path, &request.session_id)?;
         let boundary_turn = self
@@ -3466,6 +3903,8 @@ impl PersistenceManager {
         turn: &DialogTurnData,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(&turn.session_id)?;
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, &turn.session_id)).await?;
         #[cfg(test)]
         {
             let mut fault = self
@@ -3539,6 +3978,67 @@ impl PersistenceManager {
         self.invalidate_session_search(workspace_path, &turn.session_id)
             .await;
 
+        // An observer checkpoint may carry the initial pending descriptor even
+        // after the host resolved delivery. Preserve that host-owned decision
+        // while keeping every raw message and other projected field unchanged.
+        let mut committed_turn = turn.clone();
+        if let Some(delivery) = previous_turn
+            .as_ref()
+            .and_then(|previous| {
+                openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                    previous.user_message.metadata.as_ref(),
+                    &previous.turn_id,
+                )
+            })
+            .filter(|delivery| {
+                delivery.resolved_at_ms.is_some()
+                    && delivery.execution_generation == turn.recovery_epoch.unwrap_or(0)
+            })
+        {
+            let incoming =
+                openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                    turn.user_message.metadata.as_ref(),
+                    &turn.turn_id,
+                );
+            if incoming.as_ref().is_none_or(|incoming| {
+                incoming.resolved_at_ms.is_none()
+                    || incoming.execution_generation < delivery.execution_generation
+            }) {
+                let metadata = committed_turn
+                    .user_message
+                    .metadata
+                    .get_or_insert_with(|| serde_json::json!({}));
+                if let Some(object) = metadata.as_object_mut() {
+                    object.insert(openbitfun_core_types::background_delivery::BACKGROUND_DELIVERY_METADATA_KEY.to_owned(), serde_json::to_value(delivery).map_err(OpenBitFunError::Serialization)?);
+                }
+            }
+        }
+        if let Some(history) = previous_turn
+            .as_ref()
+            .and_then(|previous| previous.user_message.metadata.as_ref())
+            .and_then(|metadata| metadata.get("backgroundDeliveryHistory"))
+        {
+            let incoming = committed_turn
+                .user_message
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("backgroundDeliveryHistory"));
+            if incoming
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len)
+                < history.as_array().map_or(0, Vec::len)
+            {
+                if let Some(object) = committed_turn
+                    .user_message
+                    .metadata
+                    .get_or_insert_with(|| serde_json::json!({}))
+                    .as_object_mut()
+                {
+                    object.insert("backgroundDeliveryHistory".to_owned(), history.clone());
+                }
+            }
+        }
+        let turn = &committed_turn;
         let file = StoredDialogTurnFile::new(turn.clone());
         let write_started_at = Instant::now();
         self.write_json_atomic(
@@ -3625,6 +4125,17 @@ impl PersistenceManager {
         turn_index: usize,
     ) -> OpenBitFunResult<Option<DialogTurnData>> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) =
+            Box::pin(self.external_history_snapshot(workspace_path, session_id, false)).await?
+        {
+            return Ok(bundle
+                .turn_position(turn_index)
+                .and_then(|position| bundle.copy_turns(position..position + 1).pop()));
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         Ok(self
             .read_json_optional::<StoredDialogTurnFile>(&self.turn_path(
                 workspace_path,
@@ -3719,6 +4230,15 @@ impl PersistenceManager {
         session_id: &str,
     ) -> OpenBitFunResult<Vec<DialogTurnData>> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) =
+            Box::pin(self.external_history_snapshot(workspace_path, session_id, false)).await?
+        {
+            return Ok(bundle.into_bundle().turns);
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let started_at = Instant::now();
         let scan_started_at = Instant::now();
         let indexed_paths = self
@@ -3785,6 +4305,103 @@ impl PersistenceManager {
             .await
     }
 
+    /// Read one historical turn by storage position without parsing unrelated bodies.
+    /// Filename indices remain authoritative even when a legacy sidecar is absent
+    /// or stale. `next` is exclusive, and respects the current undo boundary.
+    pub async fn load_visible_history_turn(
+        &self,
+        workspace_path: &Path,
+        session_id: &str,
+        before: Option<usize>,
+    ) -> OpenBitFunResult<(Vec<DialogTurnData>, Option<usize>)> {
+        Self::validate_session_id(session_id)?;
+        let _writer = match self.lock_session_write_operation(workspace_path, session_id) {
+            Ok(lock) => Some(lock),
+            Err(OpenBitFunError::SessionInUse { .. }) => None,
+            Err(error) => return Err(error),
+        };
+        let boundary = self
+            .load_session_revert_state(workspace_path, session_id)
+            .await?
+            .map(|state| state.boundary_turn)
+            .unwrap_or(usize::MAX);
+        let ceiling = before.unwrap_or(usize::MAX).min(boundary);
+        let mut paths = self
+            .list_indexed_turn_paths(workspace_path, session_id)
+            .await?;
+        paths.retain(|(index, _)| *index < ceiling);
+        paths.sort_by_key(|(index, _)| *index);
+        let Some((index, path)) = paths.pop() else {
+            return Ok((Vec::new(), None));
+        };
+        let file = self
+            .read_json_optional::<StoredDialogTurnFile>(&path)
+            .await?
+            .ok_or_else(|| OpenBitFunError::NotFound("History changed during page read".into()))?;
+        if file.turn.session_id != session_id || file.turn.turn_index != index {
+            return Err(OpenBitFunError::Validation(
+                "History turn identity mismatch".into(),
+            ));
+        }
+        Ok((vec![file.turn], (!paths.is_empty()).then_some(index)))
+    }
+
+    /// Load one visible turn through the derived catalog when its entry is available.
+    ///
+    /// A missing or stale catalog deliberately returns `None` so callers can
+    /// preserve the full transcript fallback. Persisted turn files and the
+    /// revert boundary remain authoritative.
+    pub async fn load_visible_session_turn(
+        &self,
+        workspace_path: &Path,
+        session_id: &str,
+        turn_id: &str,
+    ) -> OpenBitFunResult<Option<DialogTurnData>> {
+        Self::validate_session_id(session_id)?;
+        let _session_write = match self.lock_session_write_operation(workspace_path, session_id) {
+            Ok(lock) => Some(lock),
+            Err(OpenBitFunError::SessionInUse { .. }) => None,
+            Err(error) => return Err(error),
+        };
+        let boundary_turn = self
+            .load_session_revert_state(workspace_path, session_id)
+            .await?
+            .map(|state| state.boundary_turn);
+        let Some(catalog) = self
+            .read_session_turn_catalog_cache(workspace_path, session_id)
+            .await
+        else {
+            return Ok(None);
+        };
+        let Some(entry) = catalog
+            .entries
+            .iter()
+            .find(|entry| entry.turn_id.as_deref() == Some(turn_id))
+        else {
+            return Ok(None);
+        };
+        if boundary_turn.is_some_and(|boundary| entry.storage_turn_index >= boundary) {
+            return Ok(None);
+        }
+        let Some(file) = self
+            .read_json_optional::<StoredDialogTurnFile>(&self.turn_path(
+                workspace_path,
+                session_id,
+                entry.storage_turn_index,
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+        if file.turn.session_id != session_id
+            || file.turn.turn_id != turn_id
+            || file.turn.turn_index != entry.storage_turn_index
+        {
+            return Ok(None);
+        }
+        Ok(Some(file.turn))
+    }
+
     async fn project_visible_session_turns(
         &self,
         workspace_path: &Path,
@@ -3811,6 +4428,20 @@ impl PersistenceManager {
         if count == 0 {
             return Ok(Vec::new());
         }
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) =
+            Box::pin(self.external_history_snapshot(workspace_path, session_id, false)).await?
+        {
+            let start = bundle.turns().len().saturating_sub(count);
+            return Ok(if start == 0 {
+                bundle.into_bundle().turns
+            } else {
+                bundle.copy_turns(start..bundle.turns().len())
+            });
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
 
         let started_at = Instant::now();
         let metadata_started_at = Instant::now();
@@ -3902,6 +4533,8 @@ impl PersistenceManager {
         turn_index: usize,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, session_id)).await?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
         let persistence_lock = self
             .get_session_persistence_lock(workspace_path, session_id)
@@ -4875,6 +5508,7 @@ mod tests {
             "Model summary".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 model_id: Some("fast".to_string()),
                 reasoning_preset: Some("high".to_string()),
@@ -4907,6 +5541,7 @@ mod tests {
         );
         let session_id = format!("concurrent-session-{}", Uuid::new_v4());
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some(workspace.path().to_string_lossy().to_string()),
             ..Default::default()
         };
@@ -5430,6 +6065,7 @@ mod tests {
             "Load once".to_string(),
             "agent".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -5547,6 +6183,7 @@ mod tests {
             "Observer history".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -5666,9 +6303,11 @@ mod tests {
             provider_id: None,
             model_config_id: None,
             effective_model_name: None,
+            routing: None,
             first_chunk_ms: None,
             first_visible_output_ms: None,
             stream_duration_ms: None,
+            ttft_ms: None,
             attempt_count: None,
             attempt_diagnostics: vec![],
             failure_category: None,
@@ -5759,6 +6398,7 @@ mod tests {
             "Catalog persistence".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -5839,6 +6479,7 @@ mod tests {
             "Catalog restore".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -5930,6 +6571,7 @@ mod tests {
             "Legacy catalog window".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6020,6 +6662,7 @@ mod tests {
             "Catalog missing file".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6075,6 +6718,7 @@ mod tests {
             "Incremental catalog repair".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6184,6 +6828,7 @@ mod tests {
             "Catalog rebuild fallback".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6242,6 +6887,185 @@ mod tests {
         assert_eq!(rebuilt.entries[2].preview.as_deref(), Some("prompt 2"));
     }
 
+    /// Opt-in measurement: real persisted files, identical first-page content,
+    /// and fresh stream hubs on each sample. No timing assertion in CI.
+    #[cfg(feature = "remote-connect")]
+    #[tokio::test]
+    #[ignore = "local first-page performance comparison"]
+    async fn history_page_benchmark_against_full_materialization() {
+        use openbitfun_services_integrations::remote_connect::{
+            host_stream::{HistoryBatch, HostStreamHub, HostStreamNotifier, StreamReadRequest},
+            session_records::records_from_turns,
+        };
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        struct Quiet;
+        impl HostStreamNotifier for Quiet {
+            fn notify(&self, _: &str, _: serde_json::Value) {}
+        }
+        let workspace = TestWorkspace::new();
+        let manager = PersistenceManager::new(workspace.path_manager()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let session = Session::new_with_id(
+            id.clone(),
+            "History benchmark".into(),
+            "Standard".into(),
+            SessionConfig {
+                tool_presentation_mode: Default::default(),
+                workspace_path: Some(workspace.path().to_string_lossy().into()),
+                ..Default::default()
+            },
+        );
+        manager
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        for index in 0..128 {
+            manager
+                .save_dialog_turn(
+                    workspace.path(),
+                    &DialogTurnData::new(
+                        format!("turn-{index}"),
+                        index,
+                        id.clone(),
+                        user_message(&"x".repeat(128 * 1024)),
+                    ),
+                )
+                .await
+                .unwrap();
+        }
+        let request = StreamReadRequest {
+            stream_id: id.clone(),
+            subscribe: true,
+            ..Default::default()
+        };
+        let mut old_times = Vec::new();
+        let mut new_times = Vec::new();
+        for _ in 0..5 {
+            let legacy = HostStreamHub::start(Arc::new(Quiet));
+            legacy.activate(&id);
+            let start = std::time::Instant::now();
+            legacy
+                .synchronize_records(id.clone(), true, || async {
+                    let turns = manager
+                        .load_visible_session_turns(workspace.path(), &id)
+                        .await?;
+                    records_from_turns(&turns, &|_| None)
+                })
+                .await
+                .unwrap();
+            let old_page = legacy.read("phone", &request).unwrap();
+            old_times.push(start.elapsed().as_micros());
+            let paged = HostStreamHub::start(Arc::new(Quiet));
+            let reads = AtomicUsize::new(0);
+            let start = std::time::Instant::now();
+            let new_page = paged
+                .read_history("phone", &request, |before| {
+                    reads.fetch_add(1, Ordering::SeqCst);
+                    let manager = &manager;
+                    let workspace = &workspace;
+                    let id = &id;
+                    async move {
+                        let (turns, before) = manager
+                            .load_visible_history_turn(workspace.path(), id, before)
+                            .await?;
+                        Ok(HistoryBatch {
+                            records: records_from_turns(&turns, &|_| None)?,
+                            before,
+                        })
+                    }
+                })
+                .await
+                .unwrap();
+            new_times.push(start.elapsed().as_micros());
+            let content = |events: Vec<
+                openbitfun_services_integrations::remote_connect::host_stream::StreamEvent,
+            >| {
+                events
+                    .into_iter()
+                    .map(|event| {
+                        let mut payload = event.payload;
+                        payload.as_object_mut().unwrap().remove("revision");
+                        payload
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(content(old_page.events), content(new_page.events));
+            assert_eq!(old_page.has_more, new_page.has_more);
+            assert!(reads.load(Ordering::SeqCst) < 128);
+            eprintln!(
+                "history comparison: full_us={} paged_us={} full_turns=128 paged_turns={}",
+                old_times.last().unwrap(),
+                new_times.last().unwrap(),
+                reads.load(Ordering::SeqCst)
+            );
+        }
+        old_times.sort_unstable();
+        new_times.sort_unstable();
+        eprintln!(
+            "history median: full_us={} paged_us={}",
+            old_times[2], new_times[2]
+        );
+    }
+
+    #[tokio::test]
+    async fn history_page_reads_only_selected_body_without_a_catalog() {
+        let workspace = TestWorkspace::new();
+        let manager = PersistenceManager::new(workspace.path_manager()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let session = Session::new_with_id(
+            id.clone(),
+            "Paged".into(),
+            "Standard".into(),
+            SessionConfig {
+                tool_presentation_mode: Default::default(),
+                workspace_path: Some(workspace.path().to_string_lossy().into()),
+                ..Default::default()
+            },
+        );
+        manager
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        for index in [0, 3, 9] {
+            manager
+                .save_dialog_turn(
+                    workspace.path(),
+                    &DialogTurnData::new(
+                        format!("turn-{index}"),
+                        index,
+                        id.clone(),
+                        user_message("page"),
+                    ),
+                )
+                .await
+                .unwrap();
+        }
+        std::fs::remove_file(manager.turn_catalog_path(workspace.path(), &id)).unwrap();
+        std::fs::write(manager.turn_path(workspace.path(), &id, 0), "invalid json").unwrap();
+        let (latest, next) = manager
+            .load_visible_history_turn(workspace.path(), &id, None)
+            .await
+            .unwrap();
+        assert_eq!(latest[0].turn_index, 9);
+        assert_eq!(next, Some(9));
+        let (older, next) = manager
+            .load_visible_history_turn(workspace.path(), &id, next)
+            .await
+            .unwrap();
+        assert_eq!(older[0].turn_index, 3);
+        assert_eq!(next, Some(3));
+        assert!(
+            manager
+                .load_visible_history_turn(workspace.path(), &id, next)
+                .await
+                .is_err(),
+            "corrupt selected history must not silently disappear"
+        );
+    }
+
     #[tokio::test]
     async fn staged_revert_catalog_projection_hides_the_physical_suffix() {
         let workspace = TestWorkspace::new();
@@ -6253,6 +7077,7 @@ mod tests {
             "Catalog staged revert".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6296,6 +7121,37 @@ mod tests {
             .await
             .expect("staged revert should save");
 
+        assert!(manager
+            .load_visible_session_turn(workspace.path(), &session_id, "turn-1")
+            .await
+            .expect("hidden lookup")
+            .is_none());
+        std::fs::write(
+            manager.turn_path(workspace.path(), &session_id, 1),
+            "invalid json",
+        )
+        .unwrap();
+        assert_eq!(
+            manager
+                .load_visible_session_turn(workspace.path(), &session_id, "turn-0")
+                .await
+                .expect("indexed lookup")
+                .expect("visible turn")
+                .turn_id,
+            "turn-0"
+        );
+        assert!(manager
+            .load_visible_session_turn(workspace.path(), &session_id, "unknown")
+            .await
+            .expect("missing lookup")
+            .is_none());
+        let (page, next) = manager
+            .load_visible_history_turn(workspace.path(), &session_id, None)
+            .await
+            .unwrap();
+        assert_eq!(page[0].turn_id, "turn-0");
+        assert_eq!(next, None);
+
         let projected = manager
             .load_session_turn_catalog(
                 workspace.path(),
@@ -6328,6 +7184,7 @@ mod tests {
             "Turn window".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6483,6 +7340,7 @@ mod tests {
             "Compression transcripts".to_string(),
             "agent".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6624,6 +7482,7 @@ mod tests {
             "Concurrent metadata".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6699,6 +7558,7 @@ mod tests {
             "Incremental metadata".to_string(),
             "agent".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6776,6 +7636,7 @@ mod tests {
             "Transactional deletion".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6848,6 +7709,7 @@ mod tests {
             "Transactional session deletion".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6894,6 +7756,7 @@ mod tests {
             "Canonical metadata lock".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6927,6 +7790,7 @@ mod tests {
             "Finished timestamp metadata".to_string(),
             "agent".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -6975,6 +7839,7 @@ mod tests {
             "Concurrent metadata".to_string(),
             "agent".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                 ..Default::default()
             },
@@ -7503,6 +8368,155 @@ mod tests {
         );
     }
 
+    #[test]
+    #[ignore = "invoked by the catalog cross-process writer test"]
+    fn catalog_cross_process_writer_child() {
+        let root = std::env::var_os("OPENBITFUN_CATALOG_WRITER_ROOT").expect("writer root");
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let store = openbitfun_services_core::session::SessionMetadataStore::new(
+                    PathBuf::from(root),
+                );
+                let mut metadata = store.load_metadata("catalog-11").await.unwrap().unwrap();
+                metadata.session_name = "Renamed by another process".into();
+                store.save_metadata(&metadata).await.unwrap();
+            });
+    }
+
+    #[tokio::test]
+    async fn catalog_snapshot_reuses_pages_and_invalidates_after_another_process_writes() {
+        use openbitfun_services_core::session::page::{
+            SessionCatalogOrdering, SessionCatalogQuery,
+        };
+        let workspace = TestWorkspace::new();
+        let manager = PersistenceManager::new(workspace.path_manager()).unwrap();
+        for index in 0..12 {
+            let mut metadata = SessionMetadata::new(
+                format!("catalog-{index}"),
+                format!("Entry {index}"),
+                "agent".into(),
+                "model".into(),
+            );
+            metadata.workspace_id = Some("main".into());
+            metadata.created_at = index;
+            manager
+                .save_session_metadata(workspace.path(), &metadata)
+                .await
+                .unwrap();
+        }
+        let query = SessionCatalogQuery {
+            workspace_id: "main".into(),
+            ordering: SessionCatalogOrdering::Created,
+            source: "all".into(),
+            sort_timestamps: Default::default(),
+        };
+        let first = manager
+            .list_session_metadata_page_with_query(workspace.path(), None, 5, Some(&query))
+            .await
+            .unwrap();
+        let second = manager
+            .list_session_metadata_page_with_query(
+                workspace.path(),
+                first.next_cursor.as_deref(),
+                5,
+                Some(&query),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.sessions[0].session_id, "catalog-6");
+        assert_eq!(second.catalog_revision, first.catalog_revision);
+        assert_eq!(manager.session_catalog_build_count_for_test().await, 1);
+
+        let executable = std::env::current_exe().unwrap();
+        let mut child = openbitfun_services_core::process_manager::create_command(
+            executable.to_string_lossy().as_ref(),
+        );
+        let output = child
+            .args([
+                "--exact",
+                "agentic::persistence::manager::tests::catalog_cross_process_writer_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env(
+                "OPENBITFUN_CATALOG_WRITER_ROOT",
+                manager.project_sessions_dir(workspace.path()),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let refreshed = manager
+            .list_session_metadata_page_with_query(
+                workspace.path(),
+                second.next_cursor.as_deref(),
+                5,
+                Some(&query),
+            )
+            .await
+            .unwrap();
+        assert!(refreshed.catalog_reset);
+        assert_eq!(
+            refreshed.sessions[0].session_name,
+            "Renamed by another process"
+        );
+        assert_ne!(refreshed.catalog_revision, first.catalog_revision);
+        assert_eq!(manager.session_catalog_build_count_for_test().await, 2);
+        let next = manager
+            .list_session_metadata_page_with_query(
+                workspace.path(),
+                refreshed.next_cursor.as_deref(),
+                5,
+                Some(&query),
+            )
+            .await
+            .unwrap();
+        assert!(!next.catalog_reset);
+        assert_eq!(next.sessions[0].session_id, "catalog-6");
+        assert_eq!(manager.session_catalog_build_count_for_test().await, 2);
+
+        let mut changed_query = query.clone();
+        changed_query.source = "codex".into();
+        let filtered = manager
+            .list_session_metadata_page_with_query(
+                workspace.path(),
+                next.next_cursor.as_deref(),
+                5,
+                Some(&changed_query),
+            )
+            .await
+            .unwrap();
+        assert!(filtered.catalog_reset);
+        assert_eq!(filtered.total_top_level_count, 0);
+        let replay = manager
+            .list_session_metadata_page_with_query(workspace.path(), None, 5, Some(&query))
+            .await
+            .unwrap();
+        assert_eq!(replay.catalog_revision, refreshed.catalog_revision);
+        assert_eq!(manager.session_catalog_build_count_for_test().await, 3);
+
+        // A deleted selected entry still triggers the existing index repair.
+        std::fs::remove_file(
+            manager
+                .session_layout(workspace.path())
+                .metadata_path("catalog-11"),
+        )
+        .unwrap();
+        let repaired = manager
+            .list_session_metadata_page_with_query(workspace.path(), None, 5, Some(&query))
+            .await
+            .unwrap();
+        assert_eq!(repaired.total_top_level_count, 11);
+        assert_eq!(repaired.sessions[0].session_id, "catalog-10");
+        assert_eq!(manager.session_catalog_build_count_for_test().await, 4);
+    }
+
     #[tokio::test]
     async fn list_session_metadata_page_rebuilds_stale_visible_page_entry() {
         let workspace = TestWorkspace::new();
@@ -7760,7 +8774,7 @@ mod tests {
         assert!(runtime.snapshot_by_hash_dir.exists());
         assert!(runtime.snapshot_metadata_dir.exists());
         assert!(runtime.snapshot_operations_dir.exists());
-        assert!(runtime.plans_dir.exists());
+        assert!(!runtime.runtime_root.join("plans").exists());
         assert!(runtime.layout_state_file.exists());
     }
 
@@ -7830,6 +8844,7 @@ mod tests {
             .context_for_remote_workspace("dev-host", &remote_path)
             .sessions_dir;
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_id: Some(remote_workspace.id.clone()),
             workspace_path: Some(remote_path.clone()),
             remote_connection_id: Some("ssh-1".to_string()),
@@ -7956,6 +8971,7 @@ mod tests {
                 description: "desc-a".to_string(),
                 default_tools: vec!["Read".to_string()],
             }],
+            deferred_tools: None,
         };
 
         manager

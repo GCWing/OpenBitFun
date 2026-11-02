@@ -8,6 +8,7 @@ pub mod mode_overrides;
 pub mod policy;
 pub mod registry;
 pub mod resolver;
+mod runtime_settings;
 #[cfg(feature = "file-watch")]
 mod source_cache;
 pub mod types;

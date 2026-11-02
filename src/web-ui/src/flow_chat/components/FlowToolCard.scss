@@ -18,15 +18,42 @@
   opacity: var(--openbitfun-opacity-muted);
 }
 
-.flow-tool-card-wrapper--permission-pending > :first-child {
+$tool-card-root: '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="root"]';
+
+// The inline row owns capsule width; the header and retained detail body must
+// follow the same width instead of shrinking again when the body unmounts.
+.flow-tool-card-wrapper[data-capsule-row='true'] #{$tool-card-root}[data-tool-capsule='true'] {
+  inline-size: 100%;
+}
+
+// Separate consecutive parallel batches without reparenting their card nodes.
+.flowchat-capsule-row-break {
+  display: block;
+  block-size: 0;
+}
+
+// Public cards own their border and radius; adapter wrappers also include the
+// card's margins, so outlining a wrapper creates a second, offset frame.
+.flow-tool-card-wrapper--permission-pending #{$tool-card-root} {
+  &[data-openbitfun-attention="prominent"] {
+    border-color: var(--openbitfun-color-status-warning-border);
+  }
+}
+
+.flow-tool-card-wrapper--permission-pending[data-openbitfun-attention="prominent"]:not([data-openbitfun-presentation="relation"]) > :first-child:not(#{$tool-card-root}):not(:has(#{$tool-card-root})) {
   outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-status-warning-border);
   outline-offset: calc(-1 * var(--openbitfun-border-width-default));
   border-radius: var(--openbitfun-radius-lg);
-  background: var(--openbitfun-color-status-warning-surface);
 }
 
 @media (forced-colors: active) {
-  .flow-tool-card-wrapper--permission-pending > :first-child {
+  .flow-tool-card-wrapper--permission-pending #{$tool-card-root} {
+    &[data-openbitfun-attention="prominent"] {
+      border-color: Highlight;
+    }
+  }
+
+  .flow-tool-card-wrapper--permission-pending[data-openbitfun-attention="prominent"]:not([data-openbitfun-presentation="relation"]) > :first-child:not(#{$tool-card-root}):not(:has(#{$tool-card-root})) {
     outline-color: Highlight;
   }
 }

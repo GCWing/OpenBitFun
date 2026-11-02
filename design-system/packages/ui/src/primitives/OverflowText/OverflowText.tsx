@@ -15,6 +15,7 @@ import { classNames } from "../../internal/classNames";
 import { TooltipTriggerContext } from "../../internal/tooltipTriggerContext";
 import { Tooltip } from "../../components/Tooltip";
 import styles from "./OverflowText.module.css";
+import { cancelOverflowMeasurement, scheduleOverflowMeasurement } from "./overflowMeasurementQueue";
 
 const useIsomorphicLayoutEffect = typeof window === "undefined"
   ? useEffect
@@ -31,6 +32,8 @@ const MARQUEE_PIXELS_PER_SECOND = 36;
 export type OverflowTextBehavior = "fade" | "marquee";
 
 export interface OverflowTextProps extends HTMLAttributes<HTMLElement> {
+  /** Full application-tooltip text, even when the label fits. Empty opts out. Never a native title. */
+  title?: string;
   /** Preserve paragraph/div semantics when adopting the shared text behavior. */
   as?: "span" | "p" | "div";
   /** Clamp a multiline preview; its full text uses the same hover/focus tooltip. */
@@ -86,7 +89,7 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
       assignRef(forwardedRef, element);
     }, [forwardedRef]);
 
-    const updateOverflow = useCallback(() => {
+    const readOverflow = useCallback(() => {
       const element = elementRef.current;
       const content = contentRef.current ?? element;
       if (!element || !content) return;
@@ -104,9 +107,16 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
       if (current.distance === distance && current.isOverflowing === isOverflowing) return;
 
       const next = { distance, isOverflowing };
-      measurementRef.current = next;
-      setMeasurement(next);
+      return () => {
+        measurementRef.current = next;
+        setMeasurement(next);
+      };
     }, [lines]);
+
+    const updateOverflow = useCallback(() => {
+      const view = elementRef.current?.ownerDocument.defaultView;
+      if (view) scheduleOverflowMeasurement(view, readOverflow);
+    }, [readOverflow]);
 
     const prepareTooltip = useCallback(() => {
       const element = elementRef.current;
@@ -130,10 +140,12 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
 
     useIsomorphicLayoutEffect(() => {
       updateOverflow();
-    }, [behavior, children, lines, overflowStyle, updateOverflow]);
+      const view = elementRef.current?.ownerDocument.defaultView;
+      return () => { if (view) cancelOverflowMeasurement(view, readOverflow); };
+    }, [behavior, children, lines, overflowStyle, readOverflow, updateOverflow]);
 
     useEffect(() => {
-      if (measurementRef.current.isOverflowing) prepareTooltip();
+      if (measurementRef.current.isOverflowing || title) prepareTooltip();
     }, [children, title, prepareTooltip]);
 
     useEffect(() => {
@@ -181,7 +193,7 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
       } : {}),
     } as CSSProperties;
 
-    const hasOverflowTooltip = measurement.isOverflowing && !hasExplicitTooltip && title !== "";
+    const hasOverflowTooltip = (measurement.isOverflowing || Boolean(title)) && !hasExplicitTooltip && title !== "";
 
     return (
       <>
@@ -198,7 +210,6 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
         data-overflow-text={title}
         ref={setElementRef}
         style={resolvedStyle}
-        title={hasOverflowTooltip ? undefined : title}
       >
         {behavior === "marquee" || ((textOnly || overflowStyle === "ellipsis") && lines === undefined) ? (
           <span className={styles.content} data-openbitfun-part="content" data-overflow-content="" ref={contentRef}>

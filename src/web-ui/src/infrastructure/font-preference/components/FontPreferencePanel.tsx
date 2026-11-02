@@ -77,11 +77,9 @@ export function FontPreferencePanel() {
       <ConfigPageSection
         className="font-pref-panel__section"
         title={t('appearance.fontSize.title')}
-        description={t('appearance.fontSize.hint')}
       >
         <ConfigPageRow
           label={t('appearance.fontSize.uiSizeLabel')}
-          description={t('appearance.fontSize.uiSizeHint')}
           align="center"
         >
           <Select

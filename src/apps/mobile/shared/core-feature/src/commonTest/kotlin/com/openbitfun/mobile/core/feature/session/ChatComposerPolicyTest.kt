@@ -8,6 +8,15 @@ import kotlin.test.assertTrue
 
 class ChatComposerPolicyTest {
     @Test
+    fun retainedTurnCannotBeCancelledWhileHostIsUnavailable() {
+        for (phase in ConnectionPhase.entries) {
+            assertEquals(phase == ConnectionPhase.CONNECTED, ChatComposerPolicy.canStop(true, true, phase))
+        }
+        assertFalse(ChatComposerPolicy.canStop(false, true, ConnectionPhase.CONNECTED))
+        assertTrue(ChatComposerPolicy.canStop(true, false, ConnectionPhase.DISCONNECTED))
+    }
+
+    @Test
     fun whitespaceIsNotContent() {
         assertFalse(canSend(text = "   "))
         assertTrue(canSend(text = "ship it"))
@@ -25,10 +34,9 @@ class ChatComposerPolicyTest {
     }
 
     @Test
-    fun aBlipDoesNotBlockARemoteSend() {
-        // Reconnecting queues the message rather than refusing it — the same
-        // rule the sidebar uses to decide a session is still reachable.
-        assertTrue(canSend(text = "ship it", phase = ConnectionPhase.RECONNECTING))
+    fun reconnectingRetainsTheDraftUntilTheHostIsConnected() {
+        // Keeping the conversation visible does not authorize an offline send.
+        assertFalse(canSend(text = "ship it", phase = ConnectionPhase.RECONNECTING))
         assertFalse(canSend(text = "ship it", phase = ConnectionPhase.DISCONNECTED))
         assertFalse(canSend(text = "ship it", phase = ConnectionPhase.FAILED))
     }

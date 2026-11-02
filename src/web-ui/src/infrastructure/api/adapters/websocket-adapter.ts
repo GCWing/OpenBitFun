@@ -81,6 +81,10 @@ export const AGENT_COMMAND_SCHEMA = {
     request: null as unknown as AgentSessionForkAtTurnRequest,
     response: null as unknown as ForkSessionResponse,
   },
+  copy_session: {
+    method: 'session/fork',
+    response: null as unknown as ForkSessionResponse,
+  },
   archive_session: {
     method: 'session/setArchived',
     request: null as unknown as AgentSessionArchiveStateRequest,
@@ -265,13 +269,14 @@ export function encodeRequestBody(action: string, body: any): any {
     case 'respond_permission_batch':
       return encodePermissionResponseBody(body);
     case 'fork_session':
+    case 'copy_session':
       return {
         // The workspace ID selects the session's owner; the path and SSH
         // fields are the upgrade-only projection for pre-ID hosts.
         ...(body.workspace_id !== undefined ? { workspaceId: body.workspace_id } : {}),
         ...(body.workspace_path !== undefined ? { workspacePath: body.workspace_path } : {}),
         sourceSessionId: body.source_session_id,
-        sourceTurnId: body.source_turn_id,
+        ...(action === 'fork_session' ? { sourceTurnId: body.source_turn_id } : {}),
         ...(body.remote_connection_id !== undefined
           ? { remoteConnectionId: body.remote_connection_id }
           : {}),
@@ -664,9 +669,6 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
       await this.ensureConnected();
     }
 
-    // Translate the frontend snake_case command to the app-server JSON-RPC
-    // method so agent-kernel requests reach the app-server surface in web mode.
-    const method = resolveWsMethod(action);
     // The service layer calls `api.invoke('cmd', { request: {...} })` (Tauri
     // convention). ACP `on_receive_request` deserializes the bare body, so
     // unwrap the `{request}` envelope here.
@@ -675,6 +677,9 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
       && Object.keys(params).length === 1)
       ? params.request ?? {}
       : params ?? {};
+    // Translate the frontend snake_case command to the app-server JSON-RPC
+    // method so agent-kernel requests reach the app-server surface in web mode.
+    const method = resolveWsMethod(action);
     // Encode the frontend body into the app-server schema wire shape (field
     // names, tagged enums, attachment projection). Mirrors the conversions the
     // desktop host does in Rust (`agentic_api.rs`).

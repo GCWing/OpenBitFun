@@ -32,6 +32,12 @@ xcrun --sdk macosx swiftc \
 "$OUTPUT_DIR/streaming-text-state-tests"
 
 xcrun --sdk macosx swiftc \
+  "$IOS_DIR/OpenBitFun/Infrastructure/ComposerDismissGesture.swift" \
+  "$SCRIPT_DIR/ComposerDismissGestureTests.swift" \
+  -o "$OUTPUT_DIR/composer-dismiss-gesture-tests"
+"$OUTPUT_DIR/composer-dismiss-gesture-tests"
+
+xcrun --sdk macosx swiftc \
   "$IOS_DIR/OpenBitFun/Presentation/Models/MobilePresentationModels.swift" \
   "$SCRIPT_DIR/MobileProcessGroupTests.swift" \
   -o "$OUTPUT_DIR/mobile-process-group-tests"
@@ -44,3 +50,9 @@ xcrun --sdk macosx swiftc \
   "$SCRIPT_DIR/StartupRevealPreferenceTests.swift" \
   -o "$OUTPUT_DIR/startup-reveal-preference-tests"
 "$OUTPUT_DIR/startup-reveal-preference-tests"
+
+xcrun --sdk macosx swiftc \
+  "$IOS_DIR/OpenBitFun/Features/Chat/HistoryPageArrivalTracker.swift" \
+  "$SCRIPT_DIR/HistoryPageArrivalTrackerTests.swift" \
+  -o "$OUTPUT_DIR/history-page-arrival-tracker-tests"
+"$OUTPUT_DIR/history-page-arrival-tracker-tests"

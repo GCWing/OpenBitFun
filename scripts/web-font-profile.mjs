@@ -8,39 +8,19 @@ export const HARMONY_BUNDLED_FONT_PROFILE = 'harmony-bundled';
 
 export const HARMONY_FONT_ASSETS = Object.freeze([
   {
-    relativePath: 'base/HarmonyOS_Sans_Regular.ttf',
-    bytes: 146_616,
-    sha256: '4F00C7E80329238D0B6FC58E5C829C4086432BA9FA1A8C5CA3DA9A0442CE0452',
+    relativePath: 'base/HarmonyOS_Sans.ttf',
+    bytes: 342_076,
+    sha256: '72D5ADB60242FAE60686CA94C27E10B89CB7ED2008531390D3F22AC61AD64593',
   },
   {
-    relativePath: 'base/HarmonyOS_Sans_Medium.ttf',
-    bytes: 146_164,
-    sha256: 'F6B009D07D8D894D55EADEB7080B4916C3A2C83FF3EE60BBE851E6698D73BAFD',
-  },
-  {
-    relativePath: 'base/HarmonyOS_Sans_Bold.ttf',
-    bytes: 145_860,
-    sha256: '7F973862C42353C9CC372DC2AE891D12C9EA5FE2A01B449ADAF1EADE9B469B47',
-  },
-  {
-    relativePath: 'sc/HarmonyOS_Sans_SC_Regular.ttf',
-    bytes: 8_261_128,
-    sha256: '297B088424BE212207DF2CE8B98E335468B782AA6B96832AF0B8B773D711E2B1',
-  },
-  {
-    relativePath: 'sc/HarmonyOS_Sans_SC_Medium.ttf',
-    bytes: 8_227_312,
-    sha256: '6ED1553EDCCDDC48EB27FF25D134A4A715CF54211238D4840B3038576CBA1944',
-  },
-  {
-    relativePath: 'sc/HarmonyOS_Sans_SC_Bold.ttf',
-    bytes: 8_158_996,
-    sha256: '43A424B85E47FB53A17B3B32026A71801F86F8E022CA6798D186B47D39FA5F01',
+    relativePath: 'sc/HarmonyOS_Sans_SC.ttf',
+    bytes: 20_617_156,
+    sha256: '8978E05044E7089AD6A9DE38C505C8148305607983487435A916D2610700A7CA',
   },
   {
     relativePath: 'LICENSE.txt',
-    bytes: 32_768,
-    sha256: 'B2FFEC0E6269EE41C3B5FC0345AB37600B46D66EBEA6C9C58FF37F517BDFA164',
+    bytes: 32_766,
+    sha256: '7D7ACF8E3AC928AE7F34AAA9F8E348DD0476DBB52CAAA058E402894D4F6EFE73',
   },
 ]);
 
@@ -137,7 +117,7 @@ export function assertWebFontProfileBundle(profile, bundleFileNames) {
   const matchesByStem = new Map(
     expectedStems.map((stem) => [
       stem,
-      productFonts.filter((name) => name.includes(stem)),
+      productFonts.filter((name) => matchesFontStem(name, stem)),
     ]),
   );
   const missing = expectedStems.filter((stem) => matchesByStem.get(stem).length === 0);
@@ -151,7 +131,7 @@ export function assertWebFontProfileBundle(profile, bundleFileNames) {
   }
 
   const unexpectedFonts = productFonts.filter(
-    (name) => !expectedStems.some((stem) => name.includes(stem)),
+    (name) => !expectedStems.some((stem) => matchesFontStem(name, stem)),
   );
   if (unexpectedFonts.length > 0) {
     throw new Error(
@@ -180,6 +160,13 @@ export function assertWebFontProfileBundle(profile, bundleFileNames) {
       throw new Error(`Harmony Web bundle is missing legal asset: ${legalFile}`);
     }
   }
+}
+
+function matchesFontStem(path, stem) {
+  const fileName = path.split('/').at(-1);
+  // Match the asset/hash boundary so the base family cannot also match SC or
+  // the retired per-weight faces.
+  return fileName.startsWith(`${stem}-`) || fileName.startsWith(`${stem}.`);
 }
 
 function listFontFiles(root, current = root, prefix = '') {

@@ -1,7 +1,6 @@
-const STARTUP_MODULE_RELOAD_KEY = 'openbitfun:startup-module-reload-attempted';
+import { isModuleLoadError } from '@/shared/utils/moduleLoader';
 
-const DYNAMIC_MODULE_LOAD_ERROR =
-  /(?:importing a module script failed|failed to fetch dynamically imported module|error loading dynamically imported module|load failed)/i;
+const STARTUP_MODULE_RELOAD_KEY = 'openbitfun:startup-module-reload-attempted';
 
 type StartupModuleRecoveryStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -24,10 +23,7 @@ function browserRuntime(): StartupModuleRecoveryRuntime | null {
 }
 
 export function isRecoverableStartupModuleLoadError(error: unknown): boolean {
-  if (!(error instanceof Error) || error.name !== 'TypeError') {
-    return false;
-  }
-  return DYNAMIC_MODULE_LOAD_ERROR.test(error.message);
+  return isModuleLoadError(error);
 }
 
 /**

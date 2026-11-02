@@ -29,7 +29,7 @@ impl PrimaryModelFacts {
     pub fn multimodal_tool_output_supported(&self) -> bool {
         matches!(
             self.api_format.to_lowercase().as_str(),
-            "anthropic" | "openai" | "response" | "responses"
+            "anthropic" | "openai" | "response" | "responses" | "gemini"
         )
     }
 }
@@ -249,6 +249,27 @@ mod tests {
             }
         );
         assert!(PrimaryModelFacts::default().supports_image_inputs);
+    }
+
+    #[test]
+    fn multimodal_tool_output_matches_supported_wire_formats() {
+        for format in [
+            "anthropic",
+            "openai",
+            "response",
+            "responses",
+            "gemini",
+            "Gemini",
+        ] {
+            assert!(
+                PrimaryModelFacts::new("m", "m", format, true).multimodal_tool_output_supported()
+            );
+        }
+        for format in ["", "unknown"] {
+            assert!(
+                !PrimaryModelFacts::new("m", "m", format, true).multimodal_tool_output_supported()
+            );
+        }
     }
 
     #[test]

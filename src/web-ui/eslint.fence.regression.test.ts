@@ -16,7 +16,7 @@
  * `adapters/**`. Run via `pnpm vitest run`.
  */
 import { describe, expect, it } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { ESLint } from 'eslint';
 import { resolve } from 'node:path';
 
 const webUiRoot = resolve(__dirname);
@@ -69,43 +69,27 @@ const cases: ProbeCase[] = [
   },
 ];
 
-/**
- * Resolve the eslint CLI entry as an absolute path and run it with `node`,
- * without a shell. Going through `pnpm`/`pnpm.cmd` needed `shell: true` on
- * Windows (a `.cmd` shim cannot be spawned with `shell: false`), which triggers
- * Node's DEP0190 security deprecation. Running the eslint JS entry directly
- * via `node` keeps `shell: false` on every platform and avoids the warning.
- */
-function eslintBinPath(): string {
-  return resolve(webUiRoot, 'node_modules/eslint/bin/eslint.js');
-}
+// Exercise the real file-selected config with one ESLint instance. Spawning a
+// fresh CLI for each probe made cold Node/config loading exceed the test budget
+// under the full suite's worker load. Load config during module collection,
+// like the other imports, and keep assertions about the actual rule outcomes.
+const eslint = new ESLint({ cwd: webUiRoot });
+await eslint.calculateConfigForFile(cases[0].filename);
 
-function lintProbe(probe: ProbeCase): { hasError: boolean; output: string } {
-  // --stdin + --stdin-filename make the rule's path selectors see the probe as
-  // if it lived at that path, so the fence applies per the probe's location.
-  const args = [
-    eslintBinPath(),
-    '--stdin',
-    '--stdin-filename',
-    probe.filename,
-  ];
-  const result = spawnSync(process.execPath, args, {
-    cwd: webUiRoot,
-    input: probe.source,
-    encoding: 'utf8',
-    shell: false,
-  });
-  const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  // ESLint exits non-zero and reports the restricted-imports/syntax error when
-  // the fence fires; a clean probe exits 0 with no error lines.
-  const hasError = /no-restricted-(imports|syntax)/.test(combined);
-  return { hasError, output: combined };
+async function lintProbe(probe: ProbeCase): Promise<{ hasError: boolean; errorCount: number; output: string }> {
+  const results = await eslint.lintText(probe.source, { filePath: probe.filename });
+  const messages = results.flatMap(result => result.messages);
+  return {
+    hasError: messages.some(message => /^no-restricted-(imports|syntax)$/.test(message.ruleId ?? '')),
+    errorCount: results.reduce((count, result) => count + result.errorCount, 0),
+    output: messages.map(message => `${message.ruleId ?? 'config'}: ${message.message}`).join('\n'),
+  };
 }
 
 describe('adapter fence regression', () => {
   for (const probe of cases) {
-    it(probe.name, () => {
-      const { hasError, output } = lintProbe(probe);
+    it(probe.name, async () => {
+      const { hasError, errorCount, output } = await lintProbe(probe);
       if (probe.expectError) {
         expect(
           hasError,
@@ -116,6 +100,7 @@ describe('adapter fence regression', () => {
           hasError,
           `expected the adapter exception to allow invoke at ${probe.filename}, but the fence fired:\n${output}`,
         ).toBe(false);
+        expect(errorCount, output).toBe(0);
       }
     });
   }

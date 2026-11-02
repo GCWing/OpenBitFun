@@ -1,18 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import girlManifest from '../../../../public/agent-companion-pets/openbitfun-girl/pet.json';
+import bitblobManifest from '../../../../public/agent-companion-pets/bitblob/pet.json';
 
 const invoke = vi.fn();
+const isTauriRuntimeMock = vi.fn(() => false);
 
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
   api: { invoke },
 }));
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  readFile: vi.fn(),
-}));
-
 vi.mock('@/infrastructure/runtime', () => ({
-  isTauriRuntime: () => false,
+  isTauriRuntime: () => isTauriRuntimeMock(),
 }));
 
 describe('AgentCompanionPetService built-in presets', () => {
@@ -20,14 +18,23 @@ describe('AgentCompanionPetService built-in presets', () => {
     invoke.mockReset();
   });
 
-  it('defaults to the blue-golden cat while retaining the previous OpenBitFun preset', async () => {
-    const { DEFAULT_AGENT_COMPANION_PET, listAgentCompanionPets } = await import('./AgentCompanionPetService');
+  it('defaults to BitBlob v2 while retaining previous presets', async () => {
+    const { DEFAULT_AGENT_COMPANION_PET, listAgentCompanionPets, resolveAgentCompanionPet } = await import('./AgentCompanionPetService');
 
     const pets = await listAgentCompanionPets();
     const blueGolden = pets.find(pet => pet.id === 'blue-golden');
     const openbitfun = pets.find(pet => pet.id === 'openbitfun');
 
     expect(DEFAULT_AGENT_COMPANION_PET).toMatchObject({
+      id: 'bitblob',
+      displayName: 'BitBlob',
+      source: 'preset',
+      packagePath: '/agent-companion-pets/bitblob',
+      spritesheetPath: '/agent-companion-pets/bitblob/spritesheet.webp',
+      spritesheetMimeType: 'image/webp',
+      spriteVersionNumber: 2,
+    });
+    expect(blueGolden).toMatchObject({
       id: 'blue-golden',
       displayName: '困困',
       source: 'preset',
@@ -35,11 +42,14 @@ describe('AgentCompanionPetService built-in presets', () => {
       spritesheetPath: '/agent-companion-pets/blue-golden/spritesheet.png',
       spritesheetMimeType: 'image/png',
     });
-    expect(blueGolden).toMatchObject({
-      ...DEFAULT_AGENT_COMPANION_PET,
-      previewSrc: '/agent-companion-pets/blue-golden/spritesheet.png',
-    });
     expect(pets[0]).toMatchObject(DEFAULT_AGENT_COMPANION_PET);
+    expect(pets[0]).toMatchObject({
+      ...bitblobManifest,
+      spritesheetPath: `/agent-companion-pets/${bitblobManifest.id}/${bitblobManifest.spritesheetPath}`,
+    });
+    expect((await resolveAgentCompanionPet(pets[0])).layout).toMatchObject({
+      version: 2, columns: 8, rows: 11, supportsLook: true,
+    });
     expect(openbitfun).toMatchObject({
       displayName: 'OpenBitFun',
       packagePath: '/agent-companion-pets/openbitfun',
@@ -48,13 +58,13 @@ describe('AgentCompanionPetService built-in presets', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
-  it('lists Fangling second and resolves its packaged v2 layout without host access', async () => {
+  it('retains Fangling and resolves its packaged v2 layout without host access', async () => {
     const { listAgentCompanionPets, resolveAgentCompanionPet } = await import('./AgentCompanionPetService');
     const pets = await listAgentCompanionPets();
-    const girl = pets[1];
+    const girl = pets[2];
 
-    expect(pets.slice(0, 3).map(pet => pet.id)).toEqual([
-      'blue-golden', 'openbitfun-girl', 'deepseek-goldwhale',
+    expect(pets.slice(0, 4).map(pet => pet.id)).toEqual([
+      'bitblob', 'blue-golden', 'openbitfun-girl', 'deepseek-goldwhale',
     ]);
     expect(girl).toMatchObject({
       ...girlManifest,
@@ -132,5 +142,56 @@ describe('bundled pet compatibility', () => {
     expect(invoke).toHaveBeenLastCalledWith('import_agent_companion_pet_package', {
       request: { path: '/installed/app.asar', builtinId: 'codex', expectedFingerprint: 'reviewed' },
     });
+  });
+});
+
+describe('user pet spritesheet reads', () => {
+  const userPet = {
+    id: 'pet-abc',
+    displayName: 'Imported',
+    source: 'user' as const,
+    packagePath: '/home/user/.config/openbitfun/data/agent-companions/pet-abc',
+    spritesheetPath: '/home/user/.config/openbitfun/data/agent-companions/pet-abc/spritesheet.webp',
+    spritesheetMimeType: 'image/webp',
+    spriteVersionNumber: 2,
+  };
+
+  beforeEach(() => {
+    invoke.mockReset();
+    isTauriRuntimeMock.mockReturnValue(true);
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn((_blob: Blob) => 'blob:pet-spritesheet'),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    isTauriRuntimeMock.mockReturnValue(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('reads the spritesheet through the host instead of the filesystem plugin scope', async () => {
+    const { resolveAgentCompanionPetSrc } = await import('./AgentCompanionPetService');
+    invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]).buffer);
+
+    await expect(resolveAgentCompanionPetSrc(userPet)).resolves.toBe('blob:pet-spritesheet');
+    expect(invoke).toHaveBeenCalledWith('load_agent_companion_pet_spritesheet', {
+      request: { spritesheetPath: userPet.spritesheetPath },
+    });
+  });
+
+  it('accepts a raw byte response and reuses the cached blob URL', async () => {
+    const { resolveAgentCompanionPetSrc } = await import('./AgentCompanionPetService');
+    const otherPet = {
+      ...userPet,
+      id: 'pet-def',
+      packagePath: '/home/user/.config/openbitfun/data/agent-companions/pet-def',
+      spritesheetPath: '/home/user/.config/openbitfun/data/agent-companions/pet-def/spritesheet.webp',
+    };
+    invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
+
+    await expect(resolveAgentCompanionPetSrc(otherPet)).resolves.toBe('blob:pet-spritesheet');
+    await expect(resolveAgentCompanionPetSrc(otherPet)).resolves.toBe('blob:pet-spritesheet');
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

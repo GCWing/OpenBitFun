@@ -35,6 +35,14 @@ function SearchHarness({
 }
 
 describe('buildFlowChatSearchMatches', () => {
+  it('searches retained quiet execution content through its folded receipt', () => {
+    const items = [{ type: 'background-run', turnId: 'run', turn: { userMessage: { content: 'Generic task needle' }, modelRounds: [{ items: [{ id: 'text', type: 'text', content: 'Original needle output' }, { id: 'thinking', type: 'thinking', content: 'needle reasoning' }] }] } }] as unknown as VirtualItem[];
+    expect(buildFlowChatSearchMatches(items, 'needle')).toMatchObject([
+      { virtualItemIndex: 0, type: 'background-run', turnId: 'run' },
+      { virtualItemIndex: 0, flowItemId: 'text' },
+      { virtualItemIndex: 0, flowItemId: 'thinking', expandableIds: ['thinking'] },
+    ]);
+  });
   it('keeps the concrete model text source used for exact navigation', () => {
     const virtualItems = [{
       type: 'model-round',
@@ -108,6 +116,23 @@ describe('buildFlowChatSearchMatches', () => {
     expect(buildFlowChatSearchMatches(virtualItems, 'needle')[0]).toMatchObject({
       flowItemId: 'thinking-1',
       expandableIds: ['group-1', 'thinking-1'],
+    });
+  });
+
+  it('opens the collection before the reasoning disclosure when locating a folded thought', () => {
+    const virtualItems = [{
+      type: 'model-round', turnId: 'turn-1', isLastRound: true, isTurnComplete: true,
+      data: {
+        id: 'mixed', index: 0, startTime: 1, status: 'completed', isComplete: true, isStreaming: false,
+        items: [
+          { id: 'text', type: 'text', content: 'Visible narrative', status: 'completed', timestamp: 1, isStreaming: false },
+          { id: 'thinking', type: 'thinking', content: 'hidden needle', status: 'completed', timestamp: 2, isStreaming: false, isCollapsed: true },
+          { id: 'grep', type: 'tool', toolName: 'Grep', status: 'completed', timestamp: 3, toolCall: { id: 'grep', input: {} } },
+        ],
+      },
+    }] as VirtualItem[];
+    expect(buildFlowChatSearchMatches(virtualItems, 'needle')[0]).toMatchObject({
+      flowItemId: 'thinking', expandableIds: ['mixed:explore:grep', 'thinking'],
     });
   });
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, type FC } from 'react';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
+import { activeSessionTerminalDirectory } from '@/app/hooks/useSessionTerminalDirectory';
 import { createManualTerminalSession } from '@/shared/services/createManualTerminalSession';
 import { openShellSessionTarget } from '@/shared/services/openShellSessionTarget';
 import { createLogger } from '@/shared/utils/logger';
@@ -44,12 +45,18 @@ export const TerminalActionBridge: FC = () => {
       if (origin && (origin.surfaceId !== scope.surfaceId || !target)) return;
       const targetPath = target?.rootPath ?? activePath;
       const remote = target?.workspaceKind === 'remote';
+      const requestedDirectory = detail?.workingDirectory;
       // The requested cwd is an IO operand and must stay inside the target root.
-      if (detail?.workingDirectory && !isTerminalPathInside(detail.workingDirectory, targetPath, remote)) return;
+      if (requestedDirectory && !isTerminalPathInside(requestedDirectory, targetPath, remote)) return;
       if (remote && !target?.connectionId) {
         notificationService.error(t('nav.resources.unavailable'));
         return;
       }
+      // An explicit directory (file explorer) wins; otherwise the terminal
+      // follows the active session, which may execute in a worktree.
+      const workingDirectory = requestedDirectory
+        ?? activeSessionTerminalDirectory(target?.id)
+        ?? targetPath;
       const browseTarget = useNavSceneStore.getState().resourceWorkspace;
       const isCurrent = () => active && scope.isCurrent() && (origin
         ? useNavSceneStore.getState().resourceWorkspace === browseTarget
@@ -60,7 +67,7 @@ export const TerminalActionBridge: FC = () => {
 
       void createManualTerminalSession({
         workspaceId: target.id,
-        workspacePath: detail?.workingDirectory ?? targetPath,
+        workspacePath: workingDirectory,
       })
         .then((session) => {
           if (!isCurrent()) return;

@@ -1,5 +1,8 @@
 use super::manager::PersistenceManager;
-use crate::agentic::core::{MessageContent, Session, SessionKind};
+use crate::agentic::core::{Message, MessageContent, Session, SessionKind};
+use crate::agentic::session::{EvidenceLedgerEvent, SessionPromptCache};
+use crate::agentic::skill_agent_snapshot::TurnSkillAgentSnapshot;
+use crate::service::session::DialogTurnData;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use openbitfun_services_core::session::SessionBranchBoundary;
 use openbitfun_services_core::session::{
@@ -9,6 +12,18 @@ use openbitfun_services_core::session::{
 pub use openbitfun_services_core::session::{SessionBranchRequest, SessionBranchResult};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Runtime-owned history; saving a fork never persists its temporary source.
+pub(crate) struct TransientSessionBranchSource {
+    pub session: Session,
+    pub metadata: Option<crate::service::session::SessionMetadata>,
+    pub turns: Vec<DialogTurnData>,
+    pub context_snapshots: Vec<(usize, Vec<Message>)>,
+    pub prompt_cache: Option<SessionPromptCache>,
+    pub skill_agent_snapshots: Vec<(usize, TurnSkillAgentSnapshot)>,
+    pub baseline_override: Option<TurnSkillAgentSnapshot>,
+    pub evidence_events: Vec<EvidenceLedgerEvent>,
+}
 
 fn clear_inherited_snapshot_capability(result: &mut serde_json::Value) {
     if let Some(result) = result.as_object_mut() {
@@ -25,6 +40,27 @@ impl PersistenceManager {
         workspace_path: &Path,
         request: &SessionBranchRequest,
     ) -> OpenBitFunResult<SessionBranchResult> {
+        Box::pin(self.branch_session_with_transient_source(workspace_path, request, None)).await
+    }
+
+    pub(crate) async fn branch_transient_session(
+        &self,
+        workspace_path: &Path,
+        request: &SessionBranchRequest,
+        source: TransientSessionBranchSource,
+    ) -> OpenBitFunResult<SessionBranchResult> {
+        // Both native and external history forks copy complete persisted state.
+        // Do not embed that future into each nested runtime facade.
+        Box::pin(self.branch_session_with_transient_source(workspace_path, request, Some(source)))
+            .await
+    }
+
+    async fn branch_session_with_transient_source(
+        &self,
+        workspace_path: &Path,
+        request: &SessionBranchRequest,
+        transient_source: Option<TransientSessionBranchSource>,
+    ) -> OpenBitFunResult<SessionBranchResult> {
         openbitfun_core_types::validate_session_id(&request.source_session_id)
             .map_err(OpenBitFunError::Validation)?;
         let branch_allocation_lock = self
@@ -32,18 +68,37 @@ impl PersistenceManager {
             .await;
         let _branch_allocation_guard = branch_allocation_lock.lock().await;
 
-        let source_session = self
-            .load_session(workspace_path, &request.source_session_id)
-            .await?;
-        let source_metadata = self
-            .load_session_metadata(workspace_path, &request.source_session_id)
-            .await?
-            .ok_or_else(|| {
-                OpenBitFunError::NotFound(format!(
-                    "Source session metadata not found: {}",
-                    request.source_session_id
-                ))
-            })?;
+        let (source_session, source_metadata) = if let Some(source) = transient_source.as_ref() {
+            if source.session.session_id != request.source_session_id {
+                return Err(OpenBitFunError::Validation(
+                    "Transient fork source identity mismatch".to_string(),
+                ));
+            }
+            (
+                source.session.clone(),
+                match &source.metadata {
+                    Some(metadata) => metadata.clone(),
+                    None => {
+                        self.build_session_metadata(workspace_path, &source.session, None)
+                            .await
+                    }
+                },
+            )
+        } else {
+            let session = self
+                .load_session(workspace_path, &request.source_session_id)
+                .await?;
+            let metadata = self
+                .load_session_metadata(workspace_path, &request.source_session_id)
+                .await?
+                .ok_or_else(|| {
+                    OpenBitFunError::NotFound(format!(
+                        "Source session metadata not found: {}",
+                        request.source_session_id
+                    ))
+                })?;
+            (session, metadata)
+        };
         let metadata_list = self
             .list_session_metadata_including_internal(workspace_path)
             .await?;
@@ -52,12 +107,18 @@ impl PersistenceManager {
             &source_session.session_name,
             &metadata_list,
         );
-        let source_turns = self
-            .load_session_turns(workspace_path, &request.source_session_id)
-            .await?;
-        let source_prompt_cache = self
-            .load_prompt_cache(workspace_path, &request.source_session_id)
-            .await?;
+        let source_turns = if let Some(source) = transient_source.as_ref() {
+            source.turns.clone()
+        } else {
+            self.load_session_turns(workspace_path, &request.source_session_id)
+                .await?
+        };
+        let source_prompt_cache = if let Some(source) = transient_source.as_ref() {
+            source.prompt_cache.clone()
+        } else {
+            self.load_prompt_cache(workspace_path, &request.source_session_id)
+                .await?
+        };
 
         if source_turns.is_empty() {
             return Err(OpenBitFunError::Validation(
@@ -81,6 +142,9 @@ impl PersistenceManager {
         let target_agent_type = source_session.agent_type.clone();
 
         let mut target_config = source_session.config.clone();
+        // A copied chat retains intent but obtains its own affinity and cursor assignment.
+        target_config.model_pool_binding = None;
+        target_config.model_pool_selection_revision = 0;
         target_config.prompt_cache_lineage_id = Some(
             source_session
                 .effective_prompt_cache_lineage_id()
@@ -127,14 +191,21 @@ impl PersistenceManager {
 
             for (new_index, source_turn) in source_turns.iter().take(copied_turn_count).enumerate()
             {
-                if let Some(mut messages) = self
-                    .load_turn_context_snapshot(
+                let context_snapshot = if let Some(source) = transient_source.as_ref() {
+                    source
+                        .context_snapshots
+                        .iter()
+                        .find(|(index, _)| *index == source_turn.turn_index)
+                        .map(|(_, messages)| messages.clone())
+                } else {
+                    self.load_turn_context_snapshot(
                         workspace_path,
                         &request.source_session_id,
                         source_turn.turn_index,
                     )
                     .await?
-                {
+                };
+                if let Some(mut messages) = context_snapshot {
                     for message in &mut messages {
                         if let MessageContent::ToolResult { result, .. } = &mut message.content {
                             clear_inherited_snapshot_capability(result);
@@ -148,14 +219,21 @@ impl PersistenceManager {
                     )
                     .await?;
                 }
-                if let Some(snapshot) = self
-                    .load_turn_skill_agent_snapshot(
+                let skill_snapshot = if let Some(source) = transient_source.as_ref() {
+                    source
+                        .skill_agent_snapshots
+                        .iter()
+                        .find(|(index, _)| *index == source_turn.turn_index)
+                        .map(|(_, snapshot)| snapshot.clone())
+                } else {
+                    self.load_turn_skill_agent_snapshot(
                         workspace_path,
                         &request.source_session_id,
                         source_turn.turn_index,
                     )
                     .await?
-                {
+                };
+                if let Some(snapshot) = skill_snapshot {
                     self.save_turn_skill_agent_snapshot(
                         workspace_path,
                         &target_session_id,
@@ -170,7 +248,10 @@ impl PersistenceManager {
                 self.save_dialog_turn(workspace_path, turn).await?;
             }
 
-            if let Some(last_copied_turn_index) = copied_turn_count.checked_sub(1) {
+            if let Some(last_copied_turn_index) = copied_turn_count
+                .checked_sub(1)
+                .filter(|_| transient_source.is_none())
+            {
                 self.copy_compression_transcripts_through(
                     workspace_path,
                     &request.source_session_id,
@@ -184,13 +265,16 @@ impl PersistenceManager {
                 self.save_prompt_cache(workspace_path, &target_session_id, cache)
                     .await?;
             }
-            if let Some(snapshot) = self
-                .load_skill_agent_baseline_override_snapshot(
+            let baseline_snapshot = if let Some(source) = transient_source.as_ref() {
+                source.baseline_override.clone()
+            } else {
+                self.load_skill_agent_baseline_override_snapshot(
                     workspace_path,
                     &request.source_session_id,
                 )
                 .await?
-            {
+            };
+            if let Some(snapshot) = baseline_snapshot {
                 self.save_skill_agent_baseline_override_snapshot(
                     workspace_path,
                     &target_session_id,
@@ -202,9 +286,12 @@ impl PersistenceManager {
             // Copy evidence ledger events for the branched turns, rewriting
             // session_id to the target session so the fork inherits
             // checkpoints, failed commands, and partial subagent results.
-            let source_evidence_events = self
-                .load_evidence_ledger_events(workspace_path, &request.source_session_id)
-                .await?;
+            let source_evidence_events = if let Some(source) = transient_source.as_ref() {
+                source.evidence_events.clone()
+            } else {
+                self.load_evidence_ledger_events(workspace_path, &request.source_session_id)
+                    .await?
+            };
             if !source_evidence_events.is_empty() {
                 let copied_turn_ids: std::collections::HashSet<String> = branched_turns
                     .iter()
@@ -232,19 +319,27 @@ impl PersistenceManager {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            let branched_metadata = build_branched_session_metadata(BranchSessionMetadataFacts {
-                source_metadata: &source_metadata,
-                target_session_id: target_session_id.clone(),
-                target_session_name: target_session_name.clone(),
-                target_agent_type: target_agent_type.clone(),
-                source_session_id: &request.source_session_id,
-                source_turn_id: &request.source_turn_id,
-                source_turn_index,
-                boundary: request.boundary,
-                branched_turns: &branched_turns,
-                branch_lineage: &branch_lineage,
-                now_ms,
-            });
+            #[allow(unused_mut)]
+            let mut branched_metadata =
+                build_branched_session_metadata(BranchSessionMetadataFacts {
+                    source_metadata: &source_metadata,
+                    target_session_id: target_session_id.clone(),
+                    target_session_name: target_session_name.clone(),
+                    target_agent_type: target_agent_type.clone(),
+                    source_session_id: &request.source_session_id,
+                    source_turn_id: &request.source_turn_id,
+                    source_turn_index,
+                    boundary: request.boundary,
+                    branched_turns: &branched_turns,
+                    branch_lineage: &branch_lineage,
+                    now_ms,
+                });
+
+            #[cfg(feature = "external-sources")]
+            crate::external_session_import::deferred::tracking::branch_metadata(
+                &source_metadata,
+                &mut branched_metadata,
+            );
 
             self.save_session_metadata(workspace_path, &branched_metadata)
                 .await?;
@@ -600,7 +695,7 @@ mod tests {
 
         let source_prompt_cache = SessionPromptCache {
             system_prompt: Some(CachedSystemPrompt::new(
-                SystemPromptCacheIdentity::new("template:agentic_mode"),
+                SystemPromptCacheIdentity::new("template:standard_mode"),
                 "system prompt",
             )),
             user_context: Some(CachedUserContext::new(
@@ -1170,6 +1265,7 @@ mod tests {
                 location: "/skills/interactive-debug".to_string(),
             }],
             subagents: Vec::new(),
+            deferred_tools: None,
         };
         manager
             .save_skill_agent_baseline_override_snapshot(

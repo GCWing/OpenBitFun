@@ -1,4 +1,4 @@
-// Tool cards — aligned with desktop BaseToolCard
+// Transcript cards use the mobile surface radius and spacing scale.
 .chat-tool-list {
   display: flex;
   flex-direction: column;
@@ -75,9 +75,9 @@
 }
 
 .chat-tool-card {
-  border-radius: var(--size-radius-base);
-  border: 1px solid var(--openbitfun-color-border-default);
-  background: var(--openbitfun-color-surface-scene);
+  border-radius: var(--size-radius-lg);
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  background: var(--openbitfun-color-surface-panel);
   overflow: hidden;
   transition: all var(--motion-fast) var(--easing-standard);
 }
@@ -598,9 +598,9 @@
 // ─── TodoWrite card ────────────────────────────────────────────────────────
 
 .chat-todo-card {
-  border-radius: var(--size-radius-base);
-  border: 1px solid var(--openbitfun-color-border-default);
-  background: var(--openbitfun-color-surface-scene);
+  border-radius: var(--size-radius-lg);
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  background: var(--openbitfun-color-surface-panel);
   overflow: hidden;
   width: 100%;
 }
@@ -759,8 +759,10 @@
 
 .chat-tool-card[data-prominent='true'],
 .chat-task-card[data-prominent='true'] {
-  border-radius: 16px;
+  border-radius: var(--size-radius-lg);
   background: var(--openbitfun-color-surface-panel);
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .chat-tool-approval__label { font-weight: var(--openbitfun-type-label-lg-font-weight); }
@@ -795,50 +797,113 @@
   line-height: var(--openbitfun-type-flow-body-line-height);
 }
 
-/* Transcript activity rows share one compact text column. */
+/* Keep card and disclosure content on the same icon/text columns. */
 .chat-page__messages {
-  gap: 8px;
-  .chat-thinking > [data-openbitfun-part="trigger"] {
-    min-block-size: 36px;
-    padding: 6px 0 6px 24px;
-    gap: 8px;
-    font-size: var(--openbitfun-type-body-sm-font-size);
+  gap: var(--size-gap-2);
+
+  .chat-tool-list { gap: var(--size-gap-2); }
+
+  .chat-todo-card,
+  .chat-tool-card[data-prominent='true'],
+  .chat-task-card[data-prominent='true'] {
+    margin-block: var(--size-gap-1);
+    flex-shrink: 0;
   }
+
+  .chat-tool-card--error[data-prominent='true'],
+  .chat-task-card--error[data-prominent='true'] {
+    border-color: color-mix(in srgb, var(--openbitfun-color-status-danger-border) 35%, var(--openbitfun-color-border-subtle));
+  }
+
+  .chat-thinking > [data-openbitfun-part="trigger"],
   .chat-tool-card__row,
   .chat-task-card__header,
   .chat-todo-card__header {
-    min-height: 36px;
-    min-block-size: 36px;
-    padding: 0;
-    gap: 8px;
+    min-height: 48px;
+    min-block-size: 48px;
+    padding: 0 var(--size-gap-3);
+    gap: var(--size-gap-2);
+    text-align: start;
+    border-radius: var(--size-radius-lg);
   }
+
+  // The surface border is included in the shared 48px collapsed height.
+  .chat-todo-card__header,
+  .chat-tool-card[data-prominent='true'] > .chat-tool-card__row,
+  .chat-task-card[data-prominent='true'] > .chat-task-card__header {
+    min-height: 46px;
+    min-block-size: 46px;
+  }
+
+  .chat-thinking > [data-openbitfun-part="trigger"] {
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+
+    &:not(:has([data-openbitfun-part="leading"])) {
+      padding-inline-start: calc(var(--size-gap-3) + 20px + var(--size-gap-2));
+    }
+  }
+
+  .chat-thinking > [data-openbitfun-part="body"] {
+    padding-inline: calc(var(--size-gap-3) + 20px + var(--size-gap-2)) var(--size-gap-3);
+  }
+
+  .chat-tool-card__cancel {
+    height: 44px;
+    min-block-size: 44px;
+  }
+
   .chat-tool-details__trigger--inline {
-    min-block-size: 36px;
-    padding: 6px 0;
+    min-block-size: 44px;
+    padding: var(--size-gap-1) 0;
     box-shadow: none;
-    border-radius: 0;
+    border-radius: var(--size-radius-sm);
   }
+
   .chat-tool-card__icon,
-  .chat-task-card__icon,
-  .chat-todo-card__icon {
-    flex: 0 0 16px;
-    width: 16px;
+  .chat-todo-card__icon,
+  .chat-thinking > [data-openbitfun-part="trigger"] > [data-openbitfun-part="leading"] {
+    display: grid;
+    place-items: center;
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
     margin: 0;
   }
+
   .chat-tool-card:not([data-prominent='true']),
   .chat-task-card:not([data-prominent='true']) {
     border-width: 0;
     margin: 0;
   }
+
+  .chat-todo-card__header,
+  .chat-task-card__summary {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .chat-todo-card__header:focus-visible,
+  .chat-task-card__summary:focus-visible {
+    outline-offset: calc(-1 * var(--openbitfun-focus-width));
+  }
+
+  .chat-todo-card__current { text-align: start; }
+  .chat-todo-card__dots {
+    max-width: 54px;
+    overflow: hidden;
+  }
+  .chat-todo-card__dot { flex-shrink: 0; }
+  .chat-tool-card__type {
+    max-width: 30%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
-.chat-page__messages .chat-thinking > [data-openbitfun-part="trigger"]:has([data-openbitfun-part="leading"]) {
-  padding-left: 0;
-  [data-openbitfun-part="leading"] {
-    flex: 0 0 16px;
-    width: 16px;
-    height: 16px;
-    display: grid;
-    place-items: center;
-  }
+@media (prefers-reduced-motion: reduce) {
+  .chat-todo-card__dot,
+  .chat-tool-card__spinner,
+  .chat-task-card__step-spinner { animation: none; }
 }

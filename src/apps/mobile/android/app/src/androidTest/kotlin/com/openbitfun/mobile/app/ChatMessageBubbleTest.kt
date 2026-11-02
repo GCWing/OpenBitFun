@@ -40,6 +40,21 @@ class ChatMessageBubbleTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun userAndAssistantTimesRenderBelowTheirMessages() {
+        var kind by mutableStateOf(ConversationRowKind.USER)
+        composeRule.setContent {
+            Bubble(row(kind, text = "Dated message").copy(timestampMs = 1700000000000L))
+        }
+        for (role in listOf(ConversationRowKind.USER, ConversationRowKind.ASSISTANT)) {
+            composeRule.runOnIdle { kind = role }
+            composeRule.onNodeWithTag("chat-message-timestamp").assertIsDisplayed()
+            val content = composeRule.onNodeWithText("Dated message").getUnclippedBoundsInRoot()
+            val time = composeRule.onNodeWithTag("chat-message-timestamp").getUnclippedBoundsInRoot()
+            assertTrue(time.top >= content.bottom)
+        }
+    }
+
+    @Test
     fun aTurnThatWorkedInStepsIsDrawnInSteps() {
         composeRule.setContent {
             Bubble(
@@ -137,6 +152,22 @@ class ChatMessageBubbleTest {
         composeRule.onNodeWithText("Build step finished.").assertIsDisplayed()
         composeRule.onNodeWithText("Inspect the build").performClick()
         assertTrue(composeRule.onAllNodesWithText("Build step finished.").fetchSemanticsNodes().isEmpty())
+    }
+
+
+    @Test
+    fun anOpenSubagentReceivesNewStepsWithoutClosing() {
+        var block by mutableStateOf(MessageBlock.Subagent("live-owner", "Live task", true, "",
+            listOf(MessageBlock.Text("first", "First step", false))))
+        composeRule.setContent { Bubble(row(kind = ConversationRowKind.ASSISTANT, blocks = listOf(block))) }
+        composeRule.onNodeWithText("Live task").performClick()
+        composeRule.runOnIdle {
+            block = block.copy(children = block.children + MessageBlock.Text("second", "Later step", false))
+        }
+        composeRule.onNodeWithText("Later step").assertIsDisplayed()
+        composeRule.runOnIdle { block = block.copy(running = false, status = "completed") }
+        composeRule.onNodeWithText("First step").assertIsDisplayed()
+        composeRule.onNodeWithText("Later step").assertIsDisplayed()
     }
 
     @Test
@@ -258,11 +289,11 @@ class ChatMessageBubbleTest {
         tools = emptyList(),
         blocks = blocks,
         streaming = streaming,
-        pending = false,
         typing = typing,
         showRetry = showRetry,
         error = null,
         live = false,
+        timestampMs = null,
     )
 
     private fun runningTool(): ToolCard = ToolCard(

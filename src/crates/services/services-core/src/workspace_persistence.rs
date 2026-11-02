@@ -25,12 +25,15 @@ pub struct WorkspacePersistenceData {
     pub recent_assistant_workspaces: Vec<String>,
     #[serde(default)]
     pub primary_assistant_key: Option<PrimaryAssistantKey>,
+    /// High-water mark: deleting an assistant must not recycle its name number.
+    #[serde(default)]
+    pub assistant_name_sequence: u64,
     pub saved_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub fn validate_workspace_persistence_data(
     data: &WorkspacePersistenceData,
-    miniapps_root: &Path,
+    _miniapps_root: &Path,
 ) -> OpenBitFunResult<()> {
     if data.format_version != WORKSPACE_PERSISTENCE_FORMAT_VERSION {
         return Err(unsupported_workspace_persistence(format!(
@@ -85,11 +88,9 @@ pub fn validate_workspace_persistence_data(
                 "recent_workspaces contains assistant workspace '{id}'"
             )));
         }
-        if workspace.root_path.starts_with(miniapps_root) {
-            return Err(unsupported_workspace_persistence(format!(
-                "recent_workspaces contains MiniApp-owned workspace '{id}'"
-            )));
-        }
+        // Older current-format catalogs included MiniApp directories in recent
+        // history. This is a presentation concern, not an invalid record: the
+        // runtime filters that history while preserving the workspace identity.
     }
     for id in &data.recent_assistant_workspaces {
         if data.workspaces[id].workspace_kind != WorkspaceKind::Assistant {
@@ -167,6 +168,7 @@ mod tests {
     #[test]
     fn old_remote_record_without_credentials_survives_registry_round_trip() {
         let data = legacy_catalog();
+        assert_eq!(data.assistant_name_sequence, 0);
         validate_workspace_persistence_data(&data, Path::new("/miniapps")).unwrap();
         let round_trip: WorkspacePersistenceData =
             serde_json::from_value(serde_json::to_value(&data).unwrap()).unwrap();
@@ -178,6 +180,7 @@ mod tests {
         );
         assert_eq!(record.id, "saved-id");
         assert_eq!(round_trip.recent_workspaces, vec!["saved-id"]);
+        assert_eq!(round_trip.assistant_name_sequence, 0);
     }
 
     #[test]
@@ -197,6 +200,22 @@ mod tests {
             None
         );
         assert_eq!(data.workspaces["saved-id"].id, "saved-id");
+    }
+
+    #[test]
+    fn legacy_miniapp_recent_record_survives_round_trip() {
+        let mut payload = serde_json::to_value(legacy_catalog()).unwrap();
+        payload["workspaces"]["saved-id"]["workspaceKind"] = "normal".into();
+        payload["workspaces"]["saved-id"]["rootPath"] = "/miniapps/deck/appdata".into();
+        let data: WorkspacePersistenceData = serde_json::from_value(payload).unwrap();
+        validate_workspace_persistence_data(&data, Path::new("/miniapps")).unwrap();
+        let round_trip: WorkspacePersistenceData =
+            serde_json::from_value(serde_json::to_value(&data).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&round_trip).unwrap(),
+            serde_json::to_value(&data).unwrap()
+        );
+        assert_eq!(round_trip.recent_workspaces, vec!["saved-id"]);
     }
 
     #[test]

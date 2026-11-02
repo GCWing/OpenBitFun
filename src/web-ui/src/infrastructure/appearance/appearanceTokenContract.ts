@@ -17,6 +17,7 @@ const domainTokenSuffixes = [
   'tool-mcp',
   'tool-assistant-action',
   'tool-review-summary',
+  ...Array.from({ length: 20 }, (_, index) => `subagent-robot-${String(index + 1).padStart(2, '0')}` as const),
   'capability-docs',
   'capability-testing',
   'capability-creative',
@@ -87,6 +88,8 @@ const prismTokenSuffixes = [
 const componentTokenSuffixes = [
   'conversation-excerpt-accent',
   'update-material-cyan',
+  'session-usage-input',
+  'session-usage-output',
   'config-page-section-background',
   'config-page-section-border',
   'config-page-section-border-width',

@@ -6,9 +6,11 @@ import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer
 export type SessionImageReader = (path: string, refresh?: boolean) => Promise<string>;
 
 /** Session providers own these bytes; neither loading nor fallback may read local files. */
-export function SessionMarkdownImage({ path, alt, title, read, download }: {
+export function SessionMarkdownImage({ path, alt, title, read, download, onPreview, thumbnail }: {
   path: string; alt?: string; title?: string; read: SessionImageReader;
   download?: (path: string) => Promise<void>;
+  onPreview?: (source: string, alt?: string) => void;
+  thumbnail?: boolean;
 }) {
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [attempt, setAttempt] = useState(0);
@@ -30,7 +32,23 @@ export function SessionMarkdownImage({ path, alt, title, read, download }: {
     return () => { cancelled = true; };
   }, [path, read, scope, attempt]);
 
-  if (current?.src) return <img src={current.src} alt={alt || ''} title={title} loading="lazy"
+  const source = current?.src;
+  if (source) return <img src={source} alt={alt || ''} title={title} loading="lazy"
+    className={onPreview ? 'markdown-image--previewable' : undefined}
+    role={onPreview && thumbnail ? 'button' : undefined} tabIndex={onPreview && thumbnail ? 0 : undefined}
+    onKeyDown={(event) => {
+      if (!onPreview || event.currentTarget.closest('a, button') || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onPreview(source, alt || undefined);
+    }}
+    onClick={(event) => {
+      // An image owned by a link or a file link keeps that owner's behavior.
+      if (!onPreview || event.currentTarget.closest('a, button')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onPreview(source, alt || undefined);
+    }}
     onError={() => setResult({ read, path, epoch: scope.epoch, error: i18nService.t('components:markdown.imageUnavailable') })} />;
   return <span className="markdown-image-fallback" data-openbitfun-component="markdown" data-openbitfun-part="imageFallback" title={current?.error}>
     {alt || path.split('/').pop()} · {i18nService.t(current?.error ? 'components:markdown.imageUnavailable' : 'common:status.loading')}

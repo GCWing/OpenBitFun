@@ -8,6 +8,7 @@ use super::mode_overrides::{
     load_globally_disabled_project_skills, load_globally_disabled_user_skills,
     load_user_mode_skill_overrides, SkillPolicyWorkspace, UserModeSkillOverrides,
 };
+use super::runtime_settings::apply_builtin_runtime_settings;
 #[cfg(feature = "file-watch")]
 use super::source_cache::{LocalSkillWatchMonitor, LocalSkillWatchRoot, VersionedSnapshotCache};
 use super::types::{
@@ -306,6 +307,44 @@ mod local_skill_scan_tests {
             )),
             home.join("custom/skills")
         );
+    }
+
+    #[tokio::test]
+    async fn claude_scan_distinguishes_unsupported_fields_from_invalid_markdown() {
+        let temp = tempfile::tempdir().unwrap();
+        let root_path = temp.path().join("skills");
+        write_skill(&root_path.join("good"));
+        for (name, markdown) in [
+            (
+                "guard",
+                "---\nname: guard\ndescription: Guard tools.\ncontext: fork\n---\n",
+            ),
+            ("broken", "---\nname: broken\n---\n"),
+        ] {
+            let directory = root_path.join(name);
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(directory.join("SKILL.md"), markdown).unwrap();
+        }
+        let mut root = test_root(root_path);
+        root.slot = "home.claude";
+        root.source_id = "claude-code";
+        let scan = SkillRegistry::scan_skills_in_dir(&root).await;
+        assert_eq!(scan.candidates.len(), 1);
+        assert_eq!(scan.diagnostics.len(), 2);
+        let unsupported = scan
+            .diagnostics
+            .iter()
+            .find(|item| item.unsupported_field.is_some())
+            .unwrap();
+        assert_eq!(unsupported.unsupported_field.as_deref(), Some("context"));
+        assert!(unsupported.path.ends_with("guard/SKILL.md"));
+        let failure = scan
+            .diagnostics
+            .iter()
+            .find(|item| item.unsupported_field.is_none())
+            .unwrap();
+        assert!(failure.path.ends_with("broken/SKILL.md"));
+        assert!(failure.message.contains("description"));
     }
 
     #[tokio::test]
@@ -1116,6 +1155,7 @@ impl SkillRegistry {
                     path,
                     source_id: "pi".into(),
                     message,
+                    unsupported_field: None,
                 }
             }));
             let pi_scan =
@@ -1133,6 +1173,7 @@ impl SkillRegistry {
                     path,
                     source_id: "opencode".to_string(),
                     message,
+                    unsupported_field: None,
                 }
             }));
             let configured_scan =
@@ -1956,6 +1997,7 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
+        apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
 
@@ -2000,6 +2042,7 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
+        apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
 
@@ -2035,6 +2078,7 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
+        apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
 
@@ -2078,6 +2122,7 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
+        apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
 
@@ -2501,6 +2546,7 @@ mod remote_scan_tests {
         calls: AtomicUsize,
         installation_lock: Option<String>,
         pi_settings: Option<String>,
+        claude_hooks: bool,
     }
 
     impl DelayedFs {
@@ -2537,6 +2583,11 @@ mod remote_scan_tests {
             if path.ends_with("openai.yaml") {
                 return Ok("policy:\n  allow_implicit_invocation: false\n".into());
             }
+            if self.claude_hooks && path.ends_with("/.claude/skills/skill-00/SKILL.md") {
+                return Ok(
+                    "---\nname: skill-00\ndescription: Guard tools.\ncontext: fork\n---\n".into(),
+                );
+            }
             let name = path.rsplit('/').nth(1).unwrap();
             Ok(format!(
                 "---\nname: {name}\ndescription: {path}\n---\nBody\n"
@@ -2562,6 +2613,7 @@ mod remote_scan_tests {
             self.round_trip().await;
             Ok(path.contains("/.openbitfun/")
                 || path.contains("/.codex/")
+                || (self.claude_hooks && path.contains("/.claude/"))
                 || (self.installation_lock.is_some() && path.contains("/.agents/")))
         }
         async fn read_dir(&self, path: &str) -> anyhow::Result<Vec<WorkspaceDirEntry>> {
@@ -2577,6 +2629,27 @@ mod remote_scan_tests {
                 })
                 .collect())
         }
+    }
+
+    #[tokio::test]
+    async fn remote_claude_scan_reports_unsupported_fields_without_loading_the_skill() {
+        let fs = DelayedFs {
+            claude_hooks: true,
+            ..Default::default()
+        };
+        let scan = SkillRegistry::scan_remote_project_skills(&fs, "/remote/project").await;
+        assert_eq!(scan.candidates.len(), 38);
+        assert_eq!(scan.diagnostics.len(), 1);
+        let diagnostic = &scan.diagnostics[0];
+        assert_eq!(
+            diagnostic.path,
+            "/remote/project/.claude/skills/skill-00/SKILL.md"
+        );
+        assert_eq!(diagnostic.unsupported_field.as_deref(), Some("context"));
+        assert!(!scan
+            .candidates
+            .iter()
+            .any(|candidate| candidate.info.path == "/remote/project/.claude/skills/skill-00"));
     }
 
     #[tokio::test]

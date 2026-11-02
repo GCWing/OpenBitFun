@@ -283,7 +283,11 @@ internal fun OpenBitFunCompactDrawer(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(androidx.compose.material3.MaterialTheme.colorScheme.background)
+                        // Use the semantic scrim token. Using the page
+                        // background here makes a light-theme drawer paint a
+                        // white sheet over the entire detail page, so opening
+                        // the sidebar looks like the page disappeared.
+                        .background(androidx.compose.material3.MaterialTheme.colorScheme.scrim)
                         .graphicsLayer { alpha = scrimProgress.value }
                         .clickable(
                             enabled = open,

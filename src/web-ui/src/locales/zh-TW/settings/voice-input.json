@@ -1,10 +1,10 @@
 {
-  "title": "語音輸入",
-  "subtitle": "本機轉寫會在目前裝置處理且不會上傳音訊；即時語音通話使用獨立的雲端設定",
+  "title": "語音",
+  "subtitle": "設定目前裝置的語音輸入",
   "loading": "正在載入語音輸入設定...",
   "sections": {
     "basic": "語音輸入",
-    "basicDescription": "語音輸入會在目前裝置完成辨識，錄音和轉寫音訊不會上傳。"
+    "basicDescription": "在目前裝置辨識並轉為文字，錄音不會上傳"
   },
   "languages": {
     "auto": "自動",
@@ -41,8 +41,7 @@
   },
   "composer": {
     "enabled": {
-      "label": "在輸入框中顯示語音按鈕",
-      "description": "在對話輸入框中使用麥克風輸入文字"
+      "label": "在輸入框中顯示語音按鈕"
     },
     "language": {
       "label": "辨識語言",
@@ -51,15 +50,15 @@
   },
   "voiceCall": {
     "title": "即時語音通話",
-    "description": "啟用後，麥克風音訊會從目前控制端傳送到火山引擎即時處理；此功能與本機轉寫相互獨立。",
+    "description": "麥克風音訊由目前控制端傳送至火山引擎即時處理，與本機語音輸入獨立",
     "loading": "正在載入即時語音設定…",
     "enabled": {
       "label": "啟用客戶端語音助理",
-      "description": "從客戶端右下角與火山引擎端到端即時語音模型通話，並允許它理解工作區狀態和啟動 OpenBitFun 任務。"
+      "description": "允許語音助理瞭解工作區狀態並啟動任務；從用戶端右下角開始通話"
     },
     "apiKey": {
       "label": "火山引擎 API Key",
-      "description": "僅由目前控制端建立語音連線，不會隨任務傳送到遠端工作區或 Peer 裝置。",
+      "description": "僅由目前控制端用於語音連線，不會隨任務傳送至遠端工作區或 Peer 裝置",
       "placeholder": "輸入端到端即時語音 API Key"
     },
     "voice": {
@@ -68,7 +67,7 @@
     },
     "status": {
       "label": "連線設定",
-      "description": "儲存只會寫入設定，不會驗證 API Key 或連線；接著開啟客戶端右下角的 Hello，即可從文字聊天切換到即時語音。"
+      "description": "儲存不會驗證金鑰或連線；開啟右下角的 Hello 可切換至即時語音並測試"
     },
     "save": "儲存即時語音",
     "messages": {
@@ -76,7 +75,8 @@
       "saved": "即時語音設定已儲存",
       "saveFailed": "儲存即時語音設定失敗",
       "required": "啟用即時語音前，請填寫 API Key 和語音角色。",
-      "unsaved": "即時語音設定有尚未儲存的修改。"
+      "unsaved": "即時語音設定有尚未儲存的修改。",
+      "unsupported": "即時語音通話僅在 OpenBitFun 桌面端中可用。"
     },
     "call": {
       "title": "即時通話",

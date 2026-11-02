@@ -1,3 +1,8 @@
+import { useState } from "react";
+import { ComponentDetailPage } from "./ComponentDetailPage";
+import { BrandPreview } from "../preview/BrandPreview";
+import { CapsulePreview } from "../preview/CapsulePreview";
+import { ColorPickerPreview } from "../preview/ColorPickerPreview";
 import { AppWindow, Heading, Keyboard, List, Rows3, MousePointerClick, PanelTop, ToggleLeft } from "lucide-react";
 import { VoiceCallPreview, VoiceParticlePreview } from "../components/VoiceCallPreview";
 import {
@@ -65,10 +70,12 @@ import {
   type TokenOverrides,
 } from "@openbitfun/ui";
 import {
+  MobileAvatar,
   MobileBadge,
   MobileBanner,
   MobileButton,
   MobileCard,
+  MobileCheckbox,
   MobileComposer,
   MobileDisclosure,
   MobileFileButton,
@@ -78,22 +85,26 @@ import {
   MobileListRow,
   MobileMessage,
   MobilePageHeader,
+  MobileRadioGroup,
   MobileScrim,
   MobileSection,
   MobileSegmentedControl,
+  MobileSelect,
   MobileStatus,
+  MobileStepper,
+  MobileSwitch,
+  MobileTabBar,
+  MobileTag,
   MobileTextField,
   MobileTextarea,
-} from "@openbitfun/ui/mobile";
-import { componentRegistry, type ComponentMeta } from "@openbitfun/ui/registry";
+  MobileToolbar,
+}
+from "@openbitfun/ui/mobile";
+import { type ComponentMeta } from "@openbitfun/ui/registry";
 import { useI18n } from "../i18n";
-import {
-  getComponentCategoryLabel,
-  getComponentDescription,
-} from "../i18n/componentMetadata";
+import { defaultComponent } from "../componentNavigation";
 import {
   FlowChatComponentPreview,
-  flowChatPreviewRegistry,
   getFlowChatPreviewDefinition,
 } from "../preview/FlowChatPreviewRegistry";
 import { FlowChatToolGallery } from "../preview/FlowChatToolGallery";
@@ -102,9 +113,10 @@ import { RollingTextPreview } from "../preview/RollingTextPreview";
 interface ComponentsPageProps {
   category?: ComponentMeta["category"];
   colorScheme: ColorScheme;
+  component?: ComponentMeta;
   contrast: ContrastMode;
   density: DensityMode;
-  onInspectTokens: () => void;
+  onInspectTokens: (name?: string) => void;
   onOpenComponent: (name: string) => void;
   tokenOverrides: TokenOverrides;
 }
@@ -127,10 +139,12 @@ const componentIcons = {
   LoadingState: <AppWindow aria-hidden="true" size={19} />,
   Menu: <List aria-hidden="true" size={19} />,
   MobileActionSheet: <List aria-hidden="true" size={19} />,
+  MobileAvatar: <CatalogIcon name="session" style={{ width: 19, height: 19 }} />,
   MobileBadge: <CatalogIcon name="check-line" style={{ width: 19, height: 19 }} />,
   MobileBanner: <AppWindow aria-hidden="true" size={19} />,
   MobileButton: <MousePointerClick aria-hidden="true" size={19} />,
   MobileCard: <Rows3 aria-hidden="true" size={19} />,
+  MobileCheckbox: <CatalogIcon name="check-line" style={{ width: 19, height: 19 }} />,
   MobileChoiceSheet: <List aria-hidden="true" size={19} />,
   MobileConfirmSheet: <AppWindow aria-hidden="true" size={19} />,
   MobileComposer: <CatalogIcon name="arrow-up" style={{ width: 19, height: 19 }} />,
@@ -142,14 +156,21 @@ const componentIcons = {
   MobileListRow: <Rows3 aria-hidden="true" size={19} />,
   MobileMessage: <CatalogIcon name="session" style={{ width: 19, height: 19 }} />,
   MobilePageHeader: <Heading aria-hidden="true" size={19} />,
+  MobileRadioGroup: <List aria-hidden="true" size={19} />,
   MobileScrim: <AppWindow aria-hidden="true" size={19} />,
   MobileSection: <Rows3 aria-hidden="true" size={19} />,
   MobileSegmentedControl: <ToggleLeft aria-hidden="true" size={19} />,
+  MobileSelect: <Rows3 aria-hidden="true" size={19} />,
   MobileSheet: <AppWindow aria-hidden="true" size={19} />,
   MobileStatus: <AppWindow aria-hidden="true" size={19} />,
+  MobileStepper: <CatalogIcon name="plus" style={{ width: 19, height: 19 }} />,
+  MobileSwitch: <ToggleLeft aria-hidden="true" size={19} />,
+  MobileTabBar: <PanelTop aria-hidden="true" size={19} />,
+  MobileTag: <CatalogIcon name="check-line" style={{ width: 19, height: 19 }} />,
   MobileTextField: <CatalogIcon name="search" style={{ width: 19, height: 19 }} />,
   MobileTextarea: <CatalogIcon name="arrow-up" style={{ width: 19, height: 19 }} />,
   Dialog: <AppWindow aria-hidden="true" size={19} />,
+  MobileToolbar: <Heading aria-hidden="true" size={19} />,
   Sheet: <AppWindow aria-hidden="true" size={19} />,
   MultiSelect: <List aria-hidden="true" size={19} />,
   NavigationPanel: <CatalogIcon name="sidebar-left" style={{ width: 19, height: 19 }} />,
@@ -167,8 +188,10 @@ const componentIcons = {
   Tooltip: <CatalogIcon name="session" style={{ width: 19, height: 19 }} />,
 } as const;
 
-function ComponentCardPreview({ component }: { component: ComponentMeta }) {
+export function ComponentCardPreview({ component }: { component: ComponentMeta }) {
   const { t } = useI18n();
+  if (component.name === "ColorPicker") return <ColorPickerPreview />;
+  if (component.category === "brand") return <BrandPreview name={component.name} active={false} />;
   if (component.name === "VoiceCallPanel") return <VoiceCallPreview compact />;
   if (component.name === "VoiceParticleLogo") return <VoiceParticlePreview />;
   if (component.name === "Combobox") return <Combobox label={t("components.preview.modalProviderName")} defaultValue="openbitfun" options={[{ value: "openbitfun", label: "OpenBitFun" }, { value: "custom", label: t("components.preview.add") }]} />;
@@ -350,6 +373,100 @@ function ComponentCardPreview({ component }: { component: ComponentMeta }) {
       return <MobileStatus description={t("components.preview.fieldDescription")} title={t("components.preview.cardTitle")} />;
     case "MobileTextarea":
       return <MobileTextarea aria-label={t("components.preview.composerPlaceholder")} placeholder={t("components.preview.composerPlaceholder")} readOnly />;
+    case "MobileAvatar":
+      return (
+        <Stack align="center" direction="horizontal" gap="3">
+          <MobileAvatar name={t("components.preview.session")} status="online" />
+          <MobileAvatar shape="rounded">BF</MobileAvatar>
+          <MobileAvatar size="sm">UI</MobileAvatar>
+        </Stack>
+      );
+    case "MobileCheckbox":
+      return (
+        <MobileCheckbox
+          defaultChecked
+          description={t("components.preview.fieldDescription")}
+          label={t("components.preview.notifications")}
+          tabIndex={-1}
+        />
+      );
+    case "MobileRadioGroup":
+      return (
+        <MobileRadioGroup
+          appearance="surface"
+          name="catalog-mobile-radio"
+          options={[
+            { label: t("components.preview.segmentedChat"), value: "chat" },
+            { label: t("components.preview.segmentedAgent"), value: "agent" },
+          ]}
+          tabIndex={-1}
+          value="chat"
+        />
+      );
+    case "MobileSelect":
+      return (
+        <MobileSelect
+          label={t("components.preview.mobileSelectLabel")}
+          options={[
+            { label: "deepseek-v4-pro", value: "pro" },
+            { label: "deepseek-v4-flash", value: "flash" },
+          ]}
+          sheetTitle={t("components.preview.mobileSelectLabel")}
+          tabIndex={-1}
+          value="pro"
+        />
+      );
+    case "MobileStepper":
+      return (
+        <MobileStepper
+          decrementLabel={t("components.preview.mobileDecrease")}
+          incrementLabel={t("components.preview.mobileIncrease")}
+          label={t("components.preview.mobileStepperLabel")}
+          max={5}
+          min={0}
+          value={3}
+        />
+      );
+    case "MobileSwitch":
+      return (
+        <MobileSwitch
+          defaultChecked
+          description={t("components.preview.fieldDescription")}
+          label={t("components.preview.notifications")}
+          tabIndex={-1}
+        />
+      );
+    case "MobileTabBar":
+      return (
+        <MobileTabBar
+          items={[
+            { icon: <CatalogIcon name="session" aria-hidden="true" />, label: t("components.preview.segmentedChat"), value: "chat" },
+            { icon: <CatalogIcon name="folder" aria-hidden="true" />, label: t("components.preview.segmentedAgent"), value: "agent" },
+            { icon: <CatalogIcon name="gear" aria-hidden="true" />, label: t("components.preview.settings"), value: "settings" },
+          ]}
+          label={t("components.preview.segmentedLabel")}
+          tabIndex={-1}
+          value="chat"
+        />
+      );
+    case "MobileTag":
+      return (
+        <Stack align="center" direction="horizontal" gap="2">
+          <MobileTag selected>Design</MobileTag>
+          <MobileTag>Frontend</MobileTag>
+          <MobileTag size="sm">Tokens</MobileTag>
+        </Stack>
+      );
+    case "MobileToolbar":
+      return (
+        <MobileToolbar
+          leading={<MobileIconButton appearance="plain" aria-label={t("components.preview.close")} icon={<CatalogIcon name="chevron-left" aria-hidden="true" />} size="sm" tabIndex={-1} />}
+          trailing={<MobileIconButton appearance="plain" aria-label={t("components.preview.more")} icon={<CatalogIcon name="more" aria-hidden="true" />} size="sm" tabIndex={-1} />}
+        >
+          {t("components.preview.mobileToolbarSelection")}
+        </MobileToolbar>
+      );
+
     case "Input":
       return (
         <Input
@@ -582,6 +699,7 @@ function ComponentCardPreview({ component }: { component: ComponentMeta }) {
         <ScrollArea
           aria-label={t("components.preview.scrollAreaLabel")}
           className="component-scroll-area-card-preview"
+          edgeFade="vertical"
         >
           <div className="component-scroll-area-example__content">
             {Array.from({ length: 5 }, (_, index) => (
@@ -601,6 +719,8 @@ function ComponentCardPreview({ component }: { component: ComponentMeta }) {
           shortcut={<KeyHint icon={<CatalogIcon name="command-mac" size="lg" aria-hidden="true" />}>K</KeyHint>}
         />
       );
+    case "Capsule":
+      return <CapsulePreview state="hover" />;
     case "StatusPill":
       return (
         <StatusPill leading={<CatalogIcon name="unselected" />}>
@@ -716,6 +836,7 @@ function ComponentCardPreview({ component }: { component: ComponentMeta }) {
 export function ComponentsPage({
   category,
   colorScheme,
+  component,
   contrast,
   density,
   onInspectTokens,
@@ -723,121 +844,30 @@ export function ComponentsPage({
   tokenOverrides,
 }: ComponentsPageProps) {
   const { t } = useI18n();
-  const isFlowChatCategory = category === "flow-chat";
-  const isMobileCategory = category === "mobile";
-  const visibleComponents = componentRegistry.filter((component) =>
-    category
-      ? component.category === category
-      : component.category !== "flow-chat" && component.category !== "mobile",
-  );
-  const catalogComponents = isFlowChatCategory
-    ? flowChatPreviewRegistry
-      .filter(({ definition }) => definition.section === "framework")
-      .map(({ component }) => component)
-    : visibleComponents;
+  const [toolReferenceOpen, setToolReferenceOpen] = useState(false);
+  const selectedComponent = component ?? defaultComponent(category);
 
   return (
-    <main className="lab-page" id={isFlowChatCategory ? "flow-chat" : isMobileCategory ? "mobile" : "components"}>
-      <header className="page-heading page-heading--split">
-        <div>
-          <span className="page-kicker">{t(isFlowChatCategory
-            ? "components.flowChat.kicker"
-            : isMobileCategory
-              ? "components.mobile.kicker"
-              : "components.kicker")}</span>
-          <h1>{t(isFlowChatCategory
-            ? "components.flowChat.title"
-            : isMobileCategory
-              ? "components.mobile.title"
-              : "components.title")}</h1>
-          <p>{t(isFlowChatCategory
-            ? "components.flowChat.description"
-            : isMobileCategory
-              ? "components.mobile.description"
-              : "components.description")}</p>
+    <main className="lab-page design-component-library" id="components">
+      {/* The component directory is the rail's tree now, so this column is the preview alone:
+          one index for the whole section instead of a second one inside the page. */}
+      {selectedComponent && (
+        <div className="design-library-content">
+          <ComponentDetailPage key={selectedComponent.name} embedded component={selectedComponent}
+            colorScheme={colorScheme} contrast={contrast} density={density}
+            onInspectTokens={onInspectTokens} tokenOverrides={tokenOverrides} />
+          {selectedComponent.category === "flow-chat" && (
+            <details className="design-tool-reference" onToggle={event => setToolReferenceOpen(event.currentTarget.open)}>
+              <summary>{t("components.flowChat.templatesTitle")}</summary>
+              {toolReferenceOpen && <ThemeRoot colorScheme={colorScheme} contrast={contrast} density={density} tokenOverrides={tokenOverrides}>
+                <FlowChatToolGallery onOpenComponent={onOpenComponent} />
+              </ThemeRoot>}
+            </details>
+          )}
+          <div className="design-directory-footer">
+            <Button onClick={() => onInspectTokens(selectedComponent.name)} trailingIcon={<CatalogIcon name="arrow-right" size="sm" />}>{t("design.tokens")}</Button>
+          </div>
         </div>
-        <button className="lab-button" onClick={onInspectTokens} type="button">
-          {t("components.inspectAllTokens")}
-        </button>
-      </header>
-
-      <div className="component-summary-strip" aria-label={t("components.summaryLabel")}>
-        <span><strong>{visibleComponents.length}</strong> {t("components.registeredCount")}</span>
-        <span><strong>{visibleComponents.reduce((total, item) => total + item.states.length, 0)}</strong> {t("components.statesCount")}</span>
-        <span><CatalogIcon name="check-line" aria-hidden="true" style={{ width: 15, height: 15 }} /> {t("components.accessibilityContracts")}</span>
-      </div>
-
-      {isFlowChatCategory && (
-        <section className="component-catalog-section-heading">
-          <div>
-            <span className="page-kicker">{t("components.flowChat.templatesKicker")}</span>
-            <h2>{t("components.flowChat.templatesTitle")}</h2>
-          </div>
-          <p>{t("components.flowChat.templatesDescription")}</p>
-        </section>
-      )}
-
-      <ThemeRoot
-        className="component-catalog-grid"
-        colorScheme={colorScheme}
-        contrast={contrast}
-        density={density}
-        tokenOverrides={tokenOverrides}
-      >
-        {catalogComponents.map((component) => {
-          const FlowIcon = getFlowChatPreviewDefinition(component.name)?.icon;
-          const glyph = FlowIcon ? <FlowIcon aria-hidden="true" size={19} />
-            : componentIcons[component.name as keyof typeof componentIcons];
-          return (
-            <button
-              className="component-card"
-              key={component.name}
-              onClick={() => onOpenComponent(component.name)}
-              type="button"
-            >
-              <span className="component-card__topline">
-                <span className="component-card__icon">
-                  {glyph ?? null}
-                </span>
-              </span>
-              <span className="component-card__preview">
-                <ComponentCardPreview component={component} />
-              </span>
-              <span className="component-card__body">
-                <span className="component-card__category">{getComponentCategoryLabel(component.category, t)}</span>
-                <strong>{component.name}</strong>
-                <span>{getComponentDescription(component.name, component.description, t)}</span>
-              </span>
-              <span className="component-card__footer">
-                {t("components.cardStats", {
-                  states: component.states.length,
-                  tokens: component.tokens.length,
-                })}
-                <CatalogIcon name="arrow-right" size="md" aria-hidden="true" />
-              </span>
-            </button>
-          );
-        })}
-      </ThemeRoot>
-
-      {isFlowChatCategory ? (
-        <ThemeRoot
-          className="flow-chat-tool-gallery-theme"
-          colorScheme={colorScheme}
-          contrast={contrast}
-          density={density}
-          tokenOverrides={tokenOverrides}
-        >
-          <FlowChatToolGallery onOpenComponent={onOpenComponent} />
-        </ThemeRoot>
-      ) : (
-        <section className="primitive-note">
-          <div>
-            <span className="page-kicker">{t("components.primitivesKicker")}</span>
-            <h2>{t("components.primitivesTitle")}</h2>
-          </div>
-          <p>{t("components.primitivesDescription")}</p>
-        </section>
       )}
     </main>
   );

@@ -15,6 +15,7 @@ use openbitfun_agent_runtime::sdk::{
     PermissionReply, PermissionReplySource, PermissionRequest, PermissionRequestEvent,
     PortErrorKind, RuntimeError, TurnTokenUsage,
 };
+use openbitfun_agent_runtime::thread_goal::{ThreadGoalRunDisposition, ThreadGoalRunTracker};
 use openbitfun_agent_tools::effective_tool_invocation;
 use openbitfun_events::{AgenticEvent, ToolEventIdentity};
 use tokio::time::Instant;
@@ -37,6 +38,24 @@ pub(super) fn effective_event_invocation<'a>(
     let (derived_name, effective_input) = effective_tool_invocation(&identity.tool_name, params);
     debug_assert_eq!(identity.effective_name(), derived_name);
     (derived_name, effective_input)
+}
+
+pub(super) fn observed_model_backfill_target<'a>(
+    stored_routing_mode: Option<&str>,
+    observed_model_id: &'a str,
+) -> Option<&'a str> {
+    // Observing an actual model is not a user model selection. Retain saved
+    // Smart intent even when this release disables its runtime routing.
+    if stored_routing_mode == Some("smart")
+        || openbitfun_core::agentic::execution::round_model_routing::configuration::routing_enabled(
+            stored_routing_mode,
+        )
+        .unwrap_or(true)
+    {
+        return None;
+    }
+    let trimmed = observed_model_id.trim();
+    (!trimmed.is_empty() && !matches!(trimmed, "default" | "primary" | "fast")).then_some(trimmed)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -599,7 +618,19 @@ impl ExecMode {
             eprintln!("Thinking...");
         });
 
-        let turn_id = match self
+        let mut goal_run = ThreadGoalRunTracker::new(
+            self.runtime
+                .agent_runtime()
+                .get_thread_goal(openbitfun_agent_runtime::sdk::AgentThreadGoalGetRequest {
+                    session_id: session_id.clone(),
+                    workspace_path: self.workspace_display(),
+                    remote_connection_id: None,
+                    remote_ssh_host: None,
+                })
+                .await
+                .map_err(|error| anyhow::anyhow!(error.into_message()))?,
+        );
+        let mut turn_id = match self
             .agent
             .send_message(self.message.clone(), &self.agent_type)
             .await
@@ -687,6 +718,7 @@ impl ExecMode {
         // Observe the shared Agentic event stream without consuming other clients' events.
         let mut total_tool_calls = 0usize;
         let mut subagent_parent_turns: HashMap<String, (String, String)> = HashMap::new();
+        let mut pending_goal_turn: Option<openbitfun_events::AgenticEventEnvelope> = None;
         let mut terminal_outcome: Option<Result<()>> = None;
         let mut terminal_status: Option<ExecTerminalStatus> = None;
         let mut terminal_message: Option<String> = None;
@@ -759,10 +791,31 @@ impl ExecMode {
                         Ok(()) => "Execution cancelled by interrupt".to_string(),
                         Err(error) => format!("Failed to listen for execution interrupt: {error}"),
                     };
-                    if let Err(error) = self.agent.cancel_current_turn().await {
+                    let cancellation = if pending_goal_turn.is_some() {
+                        self.runtime.agent_runtime().cancel_turn(openbitfun_agent_runtime::sdk::AgentTurnCancellationRequest {
+                            session_id: session_id.clone(), turn_id: None,
+                            source: Some(openbitfun_agent_runtime::sdk::AgentSubmissionSource::Cli),
+                            requester_session_id: None, reason: Some("user_cancelled".into()),
+                            wait_timeout_ms: None, cancel_descendants: true,
+                        }).await.map(|_| ()).map_err(|error| anyhow::anyhow!(error.into_message()))
+                    } else {
+                        self.agent.cancel_current_turn().await
+                    };
+                    if let Err(error) = cancellation {
                         message.push_str(&format!("; failed to cancel active turn: {error}"));
                     }
-                    if interrupted {
+                    if pending_goal_turn.is_some() {
+                        if let Err(error) = self.runtime.agent_runtime().update_thread_goal_status(
+                            openbitfun_agent_runtime::sdk::AgentThreadGoalUpdateStatusRequest {
+                                session_id: session_id.clone(), workspace_path: self.workspace_display(),
+                                status: openbitfun_agent_runtime::sdk::ThreadGoalStatus::Paused,
+                                turn_id: None,
+                            }
+                        ).await {
+                            message.push_str(&format!("; failed to pause goal: {}", error.into_message()));
+                        }
+                    }
+                    if interrupted && pending_goal_turn.is_none() {
                         self.print_text(|| eprintln!("\nCancelling execution..."));
                         let (drain_result, settlement_result) = self
                             .observe_cancelled_turn_settlement(
@@ -799,7 +852,42 @@ impl ExecMode {
             let events = [envelope];
 
             for envelope in events {
+                let mut goal_disposition = None;
+                if let AgenticEvent::ThreadGoalUpdated {
+                    session_id: owner,
+                    goal,
+                } = &envelope.event
+                {
+                    if owner == &session_id {
+                        let goal = goal.clone().map(serde_json::from_value).transpose()?;
+                        goal_disposition = goal_run.observe_goal(goal);
+                    }
+                }
+                let envelope = if goal_disposition.is_some() && pending_goal_turn.is_some() {
+                    self.emit_stream_envelope(&envelope)?;
+                    pending_goal_turn.take().expect("checked pending goal turn")
+                } else {
+                    envelope
+                };
                 let event = &envelope.event;
+                if let AgenticEvent::DialogTurnStarted {
+                    session_id: owner,
+                    turn_id: next_turn,
+                    user_message_metadata,
+                    ..
+                } = event
+                {
+                    if owner == &session_id
+                        && goal_run.accept_continuation(user_message_metadata.as_ref())
+                    {
+                        if let Some(completed) = pending_goal_turn.take() {
+                            self.emit_stream_envelope(&completed)?;
+                        }
+                        turn_id = next_turn.clone();
+                        self.agent.observe_active_turn(&session_id, &turn_id).await;
+                        assistant_text.clear();
+                    }
+                }
 
                 if let AgenticEvent::SubagentSessionLinked {
                     session_id: subagent_session_id,
@@ -888,7 +976,22 @@ impl ExecMode {
                     continue;
                 }
 
-                if let Some(decision) = exec_terminal_decision(event, &turn_id) {
+                if let Some(mut decision) = exec_terminal_decision(event, &turn_id) {
+                    if decision.status == ExecTerminalStatus::Success {
+                        match goal_disposition.unwrap_or_else(|| goal_run.after_successful_turn()) {
+                            ThreadGoalRunDisposition::Continue => {
+                                pending_goal_turn = Some(envelope.clone());
+                                continue;
+                            }
+                            ThreadGoalRunDisposition::Complete => {}
+                            ThreadGoalRunDisposition::Stopped(status) => {
+                                decision.status = ExecTerminalStatus::Error;
+                                decision.exit_kind = Some(ExitKind::DialogTurnFailed);
+                                decision.message = Some(format!("Thread goal stopped with status {status:?}; the objective is not complete"));
+                                final_stream_error = decision.message.clone();
+                            }
+                        }
+                    }
                     deferred_terminal_envelope = Some(envelope.clone());
                     self.print_exec_terminal(event, &decision, total_tool_calls);
                     terminal_status = Some(decision.status);
@@ -1308,10 +1411,22 @@ impl ExecMode {
     }
 
     async fn record_resolved_model_config_id(&self, session_id: &str, model_config_id: &str) {
-        let trimmed = model_config_id.trim();
-        if trimmed.is_empty() || matches!(trimmed, "default" | "primary" | "fast") {
+        // A routed round reports the model that actually executed that round. It
+        // must not replace the session's admitted primary model with the fast
+        // candidate merely because the latest round happened to be simple.
+        let Ok(Some(session)) = self
+            .runtime
+            .compatibility()
+            .loaded_session_snapshot(session_id)
+        else {
             return;
-        }
+        };
+        let Some(trimmed) = observed_model_backfill_target(
+            session.config.model_routing.as_deref(),
+            model_config_id,
+        ) else {
+            return;
+        };
 
         if let Err(error) = self.agent.update_session_model(session_id, trimmed).await {
             tracing::debug!(

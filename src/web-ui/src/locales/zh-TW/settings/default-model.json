@@ -1,6 +1,6 @@
 {
   "title": "默認模型設定",
-  "subtitle": "設定各場景使用的 AI 模型",
+  "subtitle": "未另行指定模型時，各類任務使用以下預設值",
   "loading": "載入中...",
   "sections": {
     "defaults": "預設模型",
@@ -13,15 +13,21 @@
     "optional": "可選",
     "primary": {
       "label": "主力模型",
-      "description": "用於複雜推理、代碼生成、多步驟任務",
+      "description": "未單獨指定時使用主力模型，適合日常對話與複雜任務",
       "placeholder": "請選擇主力模型"
     },
     "fast": {
       "label": "快速模型",
-      "description": "用於簡單問答、快速響應場景，節省成本",
+      "description": "用於輕量任務；未選擇時使用主力模型",
       "hint": "未設定時，所有任務都使用主力模型",
       "placeholder": "請選擇快速模型",
-      "notSet": "不設置（使用主力模型）"
+      "notSet": "跟隨主力模型"
+    },
+    "economy": {
+      "label": "經濟模型",
+      "description": "智慧模式的輕量步驟使用，與子任務的快速模型獨立",
+      "placeholder": "請選擇經濟模型",
+      "notSet": "尚未設定"
     }
   },
   "optional": {
@@ -32,7 +38,7 @@
         "description": "當主模型不支持圖片輸入時，用於分析圖片和截圖內容"
       },
       "image_generation": {
-        "label": "圖像生成",
+        "label": "圖像生成模型",
         "description": "根據文字描述生成圖片"
       },
       "speech_recognition": {
@@ -52,7 +58,7 @@
     "notConfigured": "未設定，將使用主力模型"
   },
   "empty": {
-    "noModels": "暫無可用模型，請先在「模型列表」中新增模型"
+    "noModels": "尚無可用模型"
   },
   "messages": {
     "loadFailed": "載入設定失敗",
@@ -61,5 +67,7 @@
     "modelCleared": "{{slot}}已取消設定",
     "fastModelCleared": "快速模型已取消設定，將使用主力模型",
     "capabilityUpdated": "能力模型已更新"
-  }
+  },
+  "router": "智慧路由",
+  "routerConfigure": "設定服務"
 }

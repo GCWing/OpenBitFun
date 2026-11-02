@@ -50,6 +50,11 @@ pub struct AccountInfo {
 pub struct AccountDevice {
     pub device_id: String,
     pub device_name: String,
+    /// Kind the device reported to the Relay (`desktop`, `cli`, `mobile`,
+    /// `watch`). Absent for a device that never reported one and for Relays that
+    /// predate the field: absent stays "unknown", which is not "not a host".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_alias: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

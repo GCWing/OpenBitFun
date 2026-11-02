@@ -10,6 +10,8 @@ export const miniAppAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   parts: [
     { id: 'root' },
     { id: 'header' },
+    { id: 'titlebar' },
+    { id: 'actionHint' },
     { id: 'content' },
     { id: 'loading' },
     { id: 'error' },

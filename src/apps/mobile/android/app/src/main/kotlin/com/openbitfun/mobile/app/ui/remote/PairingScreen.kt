@@ -52,7 +52,7 @@ import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceIntent
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
 
-/** The account-device route, which bypasses the QR pairing form entirely. */
+/** The account-device route: the only way this app reaches a desktop. */
 @Composable
 internal fun AccountRemoteScreen(
     remoteState: RemoteSessionUiState,
@@ -75,6 +75,10 @@ internal fun AccountRemoteScreen(
     requestedSessionId: String? = null,
     creatingSession: Boolean = false,
     onOpenSession: (String) -> Unit = {},
+    // CreateSession is already opened by the shared store. Keep its route
+    // callback separate from the sidebar callback, which also dispatches an
+    // Open intent for an existing row.
+    onCreatedSession: (String) -> Unit = onOpenSession,
     onCreateSession: () -> Unit = {},
     onRemoteHome: () -> Unit = {},
     modifier: Modifier,
@@ -99,6 +103,7 @@ internal fun AccountRemoteScreen(
         requestedSessionId = requestedSessionId,
         creatingSession = creatingSession,
         onOpenSession = onOpenSession,
+        onCreatedSession = onCreatedSession,
         onCreateSession = onCreateSession,
         onRemoteHome = onRemoteHome,
         connectionDetails = {
@@ -129,6 +134,7 @@ private fun RemoteConnectedScreen(
     requestedSessionId: String?,
     creatingSession: Boolean,
     onOpenSession: (String) -> Unit,
+    onCreatedSession: (String) -> Unit,
     onCreateSession: () -> Unit,
     onRemoteHome: () -> Unit,
     connectionDetails: @Composable () -> Unit,
@@ -207,7 +213,7 @@ private fun RemoteConnectedScreen(
             compact = compact,
             onDevicePick = onCreateDevicePick,
             onBack = onRemoteHome,
-            onCreated = onOpenSession,
+            onCreated = onCreatedSession,
             onWorkspaceIntent = onWorkspaceIntent,
             onIntent = onSessionIntent,
             modifier = modifier,
@@ -249,7 +255,7 @@ internal fun RemoteCompactHome(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = MobileDesignGeometry.RecentHomeGutter, vertical = 24.dp),
         ) {
-            WelcomeBrandFlow(Modifier.align(Alignment.CenterHorizontally).size(MobileDesignGeometry.RecentHomeMarkSize), sweep = true)
+            com.openbitfun.mobile.app.ui.shell.ColdStartHomeMark(Modifier.align(Alignment.CenterHorizontally).size(MobileDesignGeometry.RecentHomeMarkSize))
             Text(stringResource(R.string.home_recent_title), fontSize = 25.sp,
                 fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 32.dp))
@@ -266,7 +272,7 @@ internal fun RemoteCompactHome(
                 ) { Text(stringResource(R.string.home_recent_all), fontSize = 12.sp) }
             }
             recent.forEach { session ->
-                Column(Modifier.fillMaxWidth().clickable(enabled = !ready!!.busy) { onOpen(session.id) }
+                Column(Modifier.fillMaxWidth().clickable { onOpen(session.id) }
                     .padding(vertical = MobileDesignGeometry.RecentHomeRowPadding)) {
                     Text(session.title, fontSize = 15.sp, maxLines = 2)
                     val workspace = session.workspaceName?.takeIf { it.isNotBlank() }
@@ -334,7 +340,7 @@ private fun RemoteShellHeader(
         if (onOpenRemoteSettings != null) CircleControl(
             icon = R.drawable.ic_symbol_gearshape,
             glyphSize = 19,
-            contentDescription = stringResource(R.string.remote_settings_title),
+            contentDescription = stringResource(R.string.navigation_settings),
             onClick = onOpenRemoteSettings,
             modifier = Modifier,
         ) else Box(Modifier.size(com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry.ControlTouchSize))

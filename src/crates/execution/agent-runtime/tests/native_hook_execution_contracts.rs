@@ -12,7 +12,8 @@
 use openbitfun_agent_runtime::native_hooks::{
     AgentHookEngine, AgentHookEventPayload, AgentHookOutcome, AgentHookPayload,
     AgentHookPayloadCommon, AgentHookPermissionMode, AgentHookPermissionOutcome, AgentHookScope,
-    AgentHookSettings, AgentHookSettingsLayer, MAX_HOOK_MODEL_OUTPUT_BYTES,
+    AgentHookSettings, AgentHookSettingsLayer, CommandHookOptions, RuntimeHookRegistry,
+    MAX_HOOK_MODEL_OUTPUT_BYTES,
 };
 use serde_json::json;
 use std::path::Path;
@@ -495,4 +496,424 @@ async fn events_without_configured_rules_execute_nothing() {
 
     assert_eq!(outcome.executed_handlers, 0);
     assert!(outcome.additional_context.is_empty());
+}
+
+#[cfg(feature = "agent-runtime")]
+mod skill_hooks {
+    use super::*;
+    use openbitfun_agent_runtime::native_hooks::{
+        AgentHookEvent, RuntimeHookKind, RuntimeHookRegistry,
+    };
+    use openbitfun_agent_runtime::skills::SkillHooks;
+
+    fn install(
+        registry: &RuntimeHookRegistry,
+        command: &str,
+        once: bool,
+        matcher: &str,
+        workspace: Option<&str>,
+    ) -> SkillHooks {
+        let hooks = SkillHooks::from_yaml(
+            &serde_yaml::to_value(json!({"PreToolUse":[{
+                "matcher": matcher, "hooks":[{"type":"command", "command":command, "once":once}]
+            }]}))
+            .unwrap(),
+        )
+        .unwrap();
+        registry
+            .register_session_skill(
+                "session-1",
+                "guard",
+                hooks.fingerprint(),
+                hooks.registrations("session-1", "guard", "/skills/guard", workspace, "/"),
+            )
+            .unwrap();
+        hooks
+    }
+
+    #[tokio::test]
+    async fn invocation_is_idempotent_isolated_and_cleanup_invalidates_snapshots() {
+        let registry = RuntimeHookRegistry::default();
+        let hooks = install(
+            &registry,
+            "echo blocked >&2; exit 2",
+            false,
+            "Bash",
+            Some("w1"),
+        );
+        assert_eq!(
+            registry
+                .register_session_skill(
+                    "session-1",
+                    "guard",
+                    hooks.fingerprint(),
+                    hooks.registrations("session-1", "guard", "/skills/guard", Some("w1"), "/")
+                )
+                .unwrap(),
+            1
+        );
+        assert!(registry
+            .register_session_skill(
+                "session-1",
+                "guard",
+                "changed",
+                hooks.registrations("session-1", "guard", "/skills/guard", Some("w1"), "/")
+            )
+            .is_err());
+        let engine = AgentHookEngine::with_registry(registry.clone());
+        let payload = pre_tool_use_payload("ExecCommand");
+        assert_eq!(
+            engine
+                .dispatch_for_workspace(&payload, Path::new("."), Some("w1"))
+                .await
+                .block_reason
+                .as_deref(),
+            Some("blocked")
+        );
+        assert_eq!(
+            engine
+                .dispatch_for_workspace(&payload, Path::new("."), Some("w2"))
+                .await
+                .executed_handlers,
+            0
+        );
+        let mut other = payload.clone();
+        other.common.session_id = "session-2".into();
+        assert_eq!(
+            engine
+                .dispatch_for_workspace(&other, Path::new("."), Some("w1"))
+                .await
+                .executed_handlers,
+            0
+        );
+        let snapshot = registry.registrations_for_session(
+            RuntimeHookKind::Lifecycle(AgentHookEvent::PreToolUse),
+            Some("w1"),
+            "session-1",
+        );
+        registry.clear_session("session-1");
+        let detached = RuntimeHookRegistry::default();
+        detached.register_batch(snapshot.to_vec()).unwrap();
+        assert_eq!(
+            AgentHookEngine::with_registry(detached)
+                .dispatch_for_workspace(&payload, Path::new("."), Some("w1"))
+                .await
+                .executed_handlers,
+            0
+        );
+        assert!(!engine.has_rules_for_session(AgentHookEvent::PreToolUse, Some("w1"), "session-1"));
+    }
+
+    #[tokio::test]
+    async fn bash_input_environment_and_updated_input_round_trip() {
+        let registry = RuntimeHookRegistry::default();
+        install(
+            &registry,
+            r#"python3 -c 'import json,sys,os; d=json.load(sys.stdin); assert d["tool_name"]=="Bash"; assert d["tool_input"]["command"]=="echo before"; assert "cmd" not in d["tool_input"]; assert os.environ["CLAUDE_SESSION_ID"]=="session-1"; assert os.environ["CLAUDE_SKILL_DIR"]=="/skills/guard"; print(json.dumps({"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"review command","updatedInput":{"command":"echo after","yield_time_ms":1000}}}))'"#,
+            false,
+            "Bash",
+            None,
+        );
+        let engine = AgentHookEngine::with_registry(registry);
+        let mut payload = pre_tool_use_payload("ExecCommand");
+        if let AgentHookEventPayload::PreToolUse { tool_input, .. } = &mut payload.event {
+            *tool_input = json!({"cmd":"echo before"});
+        }
+        let result = dispatch(&engine, &payload).await;
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert_eq!(
+            result.permission,
+            Some(AgentHookPermissionOutcome::Ask {
+                reason: Some("review command".into())
+            })
+        );
+        assert_eq!(
+            result.updated_input,
+            Some(json!({"cmd":"echo after","yield_time_ms":1000}))
+        );
+    }
+
+    #[tokio::test]
+    async fn write_input_round_trip_and_ambiguous_destination_blocks() {
+        let registry = RuntimeHookRegistry::default();
+        install(
+            &registry,
+            r#"python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["tool_input"]=={"file_path":"/tmp/a","content":"before"}; print(json.dumps({"hookSpecificOutput":{"updatedInput":{"file_path":"/tmp/b","content":"after"}}}))'"#,
+            false,
+            "Write",
+            None,
+        );
+        let engine = AgentHookEngine::with_registry(registry);
+        let mut payload = pre_tool_use_payload("Write");
+        if let AgentHookEventPayload::PreToolUse { tool_input, .. } = &mut payload.event {
+            *tool_input = json!({"payload":"+++ /tmp/a\r\nbefore"});
+        }
+        let result = dispatch(&engine, &payload).await;
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert_eq!(
+            result.updated_input,
+            Some(json!({"payload":"+++ /tmp/b\nafter"}))
+        );
+        if let AgentHookEventPayload::PreToolUse { tool_input, .. } = &mut payload.event {
+            *tool_input = json!({"payload":"no path"});
+        }
+        assert!(dispatch(&engine, &payload).await.is_blocked());
+    }
+
+    #[tokio::test]
+    async fn once_is_atomic_and_failed_commands_remain_eligible() {
+        for command in ["exit 2", "exit 7"] {
+            let registry = RuntimeHookRegistry::default();
+            install(&registry, command, true, "Read", None);
+            let engine = AgentHookEngine::with_registry(registry);
+            let payload = pre_tool_use_payload("Read");
+            assert_eq!(dispatch(&engine, &payload).await.executed_handlers, 1);
+            assert_eq!(dispatch(&engine, &payload).await.executed_handlers, 1);
+        }
+        let registry = RuntimeHookRegistry::default();
+        let hooks = install(&registry, "sleep 0.02; exit 0", true, "Read", None);
+        let engine = AgentHookEngine::with_registry(registry.clone());
+        let payload = pre_tool_use_payload("Read");
+        let (a, b) = tokio::join!(dispatch(&engine, &payload), dispatch(&engine, &payload));
+        assert_eq!(a.executed_handlers + b.executed_handlers, 1);
+        registry
+            .register_session_skill(
+                "session-1",
+                "guard",
+                hooks.fingerprint(),
+                hooks.registrations("session-1", "guard", "/skills/guard", None, "/"),
+            )
+            .unwrap();
+        assert_eq!(dispatch(&engine, &payload).await.executed_handlers, 0);
+    }
+
+    #[tokio::test]
+    async fn project_gate_applies_to_already_registered_skills() {
+        let registry = RuntimeHookRegistry::default();
+        let hooks = SkillHooks::from_yaml(
+            &serde_yaml::from_str("PreToolUse: [{hooks: [{type: command, command: 'exit 2'}]}]")
+                .unwrap(),
+        )
+        .unwrap();
+        let mut entries = hooks.registrations("session-1", "project", "/", None, "/");
+        entries[0].requires_project_trust = true;
+        registry
+            .register_session_skill("session-1", "project", hooks.fingerprint(), entries)
+            .unwrap();
+        let engine = AgentHookEngine::with_registry(registry);
+        assert!(dispatch(&engine, &pre_tool_use_payload("Read"))
+            .await
+            .is_blocked());
+        assert_eq!(
+            dispatch(
+                &engine.with_project_hooks_enabled(false),
+                &pre_tool_use_payload("Read")
+            )
+            .await
+            .executed_handlers,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn clearing_a_session_cancels_an_in_flight_handler() {
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let root =
+            Scratch(std::env::temp_dir().join(format!("skill-hook-{}", uuid::Uuid::new_v4())));
+        std::fs::create_dir(&root.0).unwrap();
+        let registry = RuntimeHookRegistry::default();
+        install(
+            &registry,
+            "touch started; exec sleep 10",
+            false,
+            "Read",
+            None,
+        );
+        let engine = AgentHookEngine::with_registry(registry.clone());
+        let cwd = root.0.clone();
+        let running =
+            tokio::spawn(async move { engine.dispatch(&pre_tool_use_payload("Read"), &cwd).await });
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !root.0.join("started").exists() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        registry.clear_session("session-1");
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), running)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(result.is_blocked());
+        assert!(
+            !AgentHookEngine::with_registry(registry).has_rules_for_session(
+                AgentHookEvent::PreToolUse,
+                None,
+                "session-1"
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn native_settings_do_not_acquire_skill_ask_semantics() {
+        let native = engine(
+            r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"printf '%s' '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}'"}]}]}}"#,
+        );
+        assert!(dispatch(&native, &pre_tool_use_payload("Read"))
+            .await
+            .permission
+            .is_none());
+    }
+}
+
+/// A host that knows its launch environment (a Linux GUI launch without the
+/// login-shell PATH) hands the engine defaults every handler inherits.
+#[tokio::test]
+async fn host_environment_defaults_reach_the_handler() {
+    let engine = engine(
+        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"printf '%s' \"$OPENBITFUN_HOOK_ENV_PROBE\""}]}]}}"#,
+    )
+    .with_environment_defaults(std::collections::BTreeMap::from([(
+        "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+        "from-host".to_string(),
+    )]));
+
+    let outcome = dispatch(&engine, &session_start_payload()).await;
+
+    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    assert_eq!(outcome.additional_context, vec!["from-host".to_string()]);
+}
+
+/// A handler that sets the same key keeps its own value: host defaults only
+/// fill gaps, so a hook can still pin the environment it needs.
+#[tokio::test]
+async fn handler_environment_overrides_the_host_defaults() {
+    let (settings, issues) = AgentHookSettings::from_layers(&[AgentHookSettingsLayer {
+        scope: AgentHookScope::User,
+        source: "test hooks.json".to_string(),
+        bytes: br#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"printf '%s' \"$OPENBITFUN_HOOK_ENV_PROBE\""}]}]}}"#.to_vec(),
+    }]);
+    assert!(issues.is_empty(), "unexpected settings issues: {issues:?}");
+    let mut registration = settings
+        .registrations()
+        .pop()
+        .expect("one command registration");
+    registration = registration.with_command_options(CommandHookOptions {
+        environment: std::collections::BTreeMap::from([(
+            "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+            "from-handler".to_string(),
+        )]),
+        ..Default::default()
+    });
+    let registry = RuntimeHookRegistry::default();
+    registry
+        .register_batch(vec![registration])
+        .expect("valid registration");
+    let engine = AgentHookEngine::with_registry(registry).with_environment_defaults(
+        std::collections::BTreeMap::from([(
+            "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+            "from-host".to_string(),
+        )]),
+    );
+
+    let outcome = dispatch(&engine, &session_start_payload()).await;
+
+    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    assert_eq!(outcome.additional_context, vec!["from-handler".to_string()]);
+}
+
+/// A timed-out handler must stop the processes it started, not just the shell.
+///
+/// The handler here starts an inner shell that records its pid and sleeps. The
+/// outer `wait` keeps the handler alive past its timeout; the inner shell is a
+/// descendant in the handler's process group. If only the direct child were
+/// killed, the recorded pid would survive as an orphan.
+#[tokio::test]
+async fn timeout_kills_descendants_of_the_handler() {
+    let directory = std::env::temp_dir().join(format!(
+        "openbitfun-hook-tree-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&directory).expect("create hook fixture directory");
+    let pid_file = directory.join("descendant.pid");
+
+    let command = format!(
+        "sh -c 'echo $$ > {pid_file}; sleep 30' & wait",
+        pid_file = pid_file.display()
+    );
+    let hooks = json!({
+        "hooks": {
+            "PreToolUse": [{
+                "hooks": [{"type": "command", "command": command, "timeout": 1}]
+            }]
+        }
+    })
+    .to_string();
+
+    let outcome = dispatch(&engine(&hooks), &pre_tool_use_payload("Bash")).await;
+
+    assert_eq!(outcome.warnings.len(), 1, "{:?}", outcome.warnings);
+    assert!(
+        outcome.warnings[0].contains("timed out"),
+        "{:?}",
+        outcome.warnings
+    );
+
+    let pid = wait_for_descendant_pid(&pid_file);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if !hook_fixture_process_is_alive(pid) {
+            let _ = std::fs::remove_dir_all(&directory);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+
+    let _ = std::fs::remove_dir_all(&directory);
+    panic!("hook descendant {pid} survived the handler timeout");
+}
+
+fn wait_for_descendant_pid(pid_file: &std::path::Path) -> i32 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(pid_file) {
+            if let Ok(pid) = text.trim().parse::<i32>() {
+                return pid;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "handler descendant never recorded its pid"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn hook_fixture_process_is_alive(pid: i32) -> bool {
+    // A killed descendant can linger as a zombie until its reaper runs, so the
+    // process state matters more than mere entry presence.
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    let state = stat
+        .rsplit_once(')')
+        .and_then(|(_, rest)| rest.split_whitespace().next());
+    !matches!(state, Some("Z") | Some("X"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn hook_fixture_process_is_alive(pid: i32) -> bool {
+    // SAFETY: signal 0 only probes whether the pid still exists.
+    unsafe { libc::kill(pid, 0) == 0 }
 }

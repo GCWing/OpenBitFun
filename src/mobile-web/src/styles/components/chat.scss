@@ -379,3 +379,47 @@
 .chat-msg--menu-active {
   opacity: 0.7;
 }
+
+// ── Rollback / edit confirmation ──────────────────────────────────
+.chat-msg__rollback {
+  display: flex;
+  // Confirm sheets center their children; message fields need the full body width.
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--openbitfun-space-2);
+  text-align: start;
+}
+
+.chat-msg__rollback-quote {
+  margin: 0;
+  max-height: 96px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--openbitfun-color-surface-subtle);
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-msg__rollback-input {
+  min-height: 96px;
+  font-size: var(--openbitfun-type-body-md-font-size);
+  line-height: var(--openbitfun-type-body-md-line-height);
+}
+
+.chat-msg__menu-note {
+  margin: 0;
+  padding: 0 var(--openbitfun-space-2);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.chat-msg__timestamp {
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-label-sm-font-size);
+  line-height: var(--openbitfun-type-label-sm-line-height);
+}

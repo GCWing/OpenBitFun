@@ -2,13 +2,13 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const iconButtonMeta = {
   category: "action",
-  description: "A labeled icon-only action with quiet, outlined, filled, and primary variants, including 22px square and 30px circle compositions.",
+  description: "A labeled icon-only action with annotation, quiet, glass, outlined, filled, and primary variants. Glass floats over intact content; capsule and tab action slots select it automatically.",
   maturity: "stable",
   name: "IconButton",
   props: [
     { name: "aria-label", type: "string" },
     { name: "icon", type: "ReactNode" },
-    { defaultValue: "quiet", name: "variant", type: "quiet | outline | fill | primary" },
+    { defaultValue: "quiet", name: "variant", type: "annotation | quiet | glass | outline | fill | primary" },
     { defaultValue: "square", name: "shape", type: "square | circle" },
     { defaultValue: "sm", name: "size", type: "xs | standard | sm | md | lg" },
     { defaultValue: "neutral", name: "tone", type: "neutral | danger" },
@@ -16,8 +16,13 @@ export const iconButtonMeta = {
   ],
   states: ["default", "hover", "active", "focus-visible", "disabled", "loading"],
   tokens: [
+    "color.surface.raised",
+    "color.border.subtle",
+    "effect.blur.subtle",
     "opacity.iconArtwork",
     "color.content.primary",
+    "color.content.secondary",
+    "color.content.muted",
     "color.action.neutral.contentDisabled",
     "color.action.neutral.surface",
     "color.action.neutral.surfaceHover",
@@ -35,6 +40,7 @@ export const iconButtonMeta = {
     "control.height.lg",
     "control.iconButton.xsSize",
     "control.iconButton.xsIconSize",
+    "control.icon.sizeXs",
     "control.iconButton.standardSize",
     "control.iconButton.standardIconSize",
     "radius.xs",

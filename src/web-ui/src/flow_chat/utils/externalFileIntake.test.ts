@@ -6,6 +6,7 @@ import {
   normalizeExternalFilePath,
   partitionExternalDropFiles,
   resolveExternalFileIntakeAvailability,
+  shouldAttemptNativeClipboardImageRead,
 } from './externalFileIntake';
 
 const metadata = (isDir: boolean, size = 12): FileMetadata => ({
@@ -175,5 +176,15 @@ describe('buildExternalFileContexts', () => {
     });
     expect(result.contexts.map((context) => context.type)).toEqual(['image', 'image', 'file']);
     expect(result.failures).toEqual([{ path: '/tmp/c.gif', reason: 'image-limit' }]);
+  });
+
+  it('attempts the native clipboard image read only for empty-typed pastes', () => {
+    // WebKitGTK delivers paste with no types at all; only that shape falls
+    // back to the host clipboard read.
+    expect(shouldAttemptNativeClipboardImageRead([])).toBe(true);
+    // Engines that report anything (files or text) deliver images in-band.
+    expect(shouldAttemptNativeClipboardImageRead(['Files'])).toBe(false);
+    expect(shouldAttemptNativeClipboardImageRead(['text/plain'])).toBe(false);
+    expect(shouldAttemptNativeClipboardImageRead(['Files', 'text/plain'])).toBe(false);
   });
 });

@@ -22,9 +22,11 @@ describe('NotificationItem accessibility', () => {
   let root: Root;
 
   beforeEach(() => {
-    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
-    globalThis.window = dom.window as unknown as Window & typeof globalThis;
-    globalThis.document = dom.window.document;
+    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
+      pretendToBeVisual: true,
+    });
+    vi.stubGlobal('window', dom.window);
+    vi.stubGlobal('document', dom.window.document);
     container = document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);
   });
@@ -32,6 +34,7 @@ describe('NotificationItem accessibility', () => {
   afterEach(() => {
     act(() => root.unmount());
     dom.window.close();
+    vi.unstubAllGlobals();
   });
 
   it('announces an actionable error while focus remains in the composer', () => {

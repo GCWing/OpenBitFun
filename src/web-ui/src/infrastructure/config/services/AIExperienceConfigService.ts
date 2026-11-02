@@ -4,6 +4,7 @@ import { configManager } from './ConfigManager';
 import { DEFAULT_AGENT_COMPANION_PET } from './AgentCompanionPetService';
 import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { createLogger } from '@/shared/utils/logger';
+import { getActiveSurfaceScope, isSurfaceChangedError, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import type { VoiceInputSettings } from '../types';
 
 const log = createLogger('AIExperienceConfig');
@@ -18,7 +19,6 @@ export interface QuickAction {
 
 export interface AIExperienceSettings {
   enable_session_title_generation: boolean;
-  enable_visual_mode: boolean;
   /** Whether to show the desktop Agent companion. */
   enable_agent_companion: boolean;
   /** Optional Petdex-compatible companion package selected by the user. */
@@ -29,6 +29,12 @@ export interface AIExperienceSettings {
   voice_input: VoiceInputSettings;
   /** User-defined quick actions shown in the post-coding actions menu. */
   quick_actions?: QuickAction[];
+  /** Absent on older execution hosts; their commit co-author policy is not configurable. */
+  enable_git_commit_coauthor?: boolean;
+  /** Absent on older execution hosts, which never offer next-input suggestions. */
+  enable_prompt_suggestion?: boolean;
+  /** Absent on older execution hosts, which have no desktop cards. */
+  enable_desktop_cards?: boolean;
 }
 
 export type AIExperienceSettingsPatch = Partial<Omit<AIExperienceSettings, 'voice_input'>> & {
@@ -50,6 +56,8 @@ export interface AgentCompanionPetSelection {
 const CONFIG_PATH = 'app.ai_experience';
 
 type PersistedAIExperienceSettings = AIExperienceSettings & {
+  /** Retired visual mode setting from older builds. */
+  enable_visual_mode?: unknown;
   /** Retired in favor of the desktop-only companion surface. */
   agent_companion_display_mode?: unknown;
 };
@@ -71,7 +79,6 @@ export const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
 
 const defaultSettings: AIExperienceSettings = {
   enable_session_title_generation: true,
-  enable_visual_mode: false,
   enable_agent_companion: true,
   agent_companion_pet: DEFAULT_AGENT_COMPANION_PET,
   enable_workspace_search: false,
@@ -91,6 +98,7 @@ function normalizeSettings(settings: PersistedAIExperienceSettings | null | unde
   // longer exists, so discard the retired field and let the enable flag own
   // the single desktop companion surface.
   const {
+    enable_visual_mode: _legacyVisualMode,
     agent_companion_display_mode: _legacyDisplayMode,
     ...currentSettings
   } = settings ?? {} as PersistedAIExperienceSettings;
@@ -102,6 +110,16 @@ function normalizeSettings(settings: PersistedAIExperienceSettings | null | unde
       ...currentSettings.voice_input,
     },
     quick_actions: currentSettings.quick_actions ?? DEFAULT_QUICK_ACTIONS,
+    // Older hosts omit the field; keep it absent so the UI can gate unsupported writes.
+    enable_git_commit_coauthor: typeof currentSettings.enable_git_commit_coauthor === 'boolean'
+      ? currentSettings.enable_git_commit_coauthor
+      : undefined,
+    enable_prompt_suggestion: typeof currentSettings.enable_prompt_suggestion === 'boolean'
+      ? currentSettings.enable_prompt_suggestion
+      : undefined,
+    enable_desktop_cards: typeof currentSettings.enable_desktop_cards === 'boolean'
+      ? currentSettings.enable_desktop_cards
+      : undefined,
   };
   // Legacy configs used null to mean the built-in SVG panda. Resolve null to the current preset.
   if (!merged.agent_companion_pet) {
@@ -114,17 +132,33 @@ function normalizeSettings(settings: PersistedAIExperienceSettings | null | unde
 export class AIExperienceConfigService {
   private static instance: AIExperienceConfigService;
   private cachedSettings: AIExperienceSettings | null = null;
+  private hasTrustedSettings = false;
+  private trustedEpoch = getActiveSurfaceScope().epoch;
   private listeners: Set<(settings: AIExperienceSettings) => void> = new Set();
   private unwatchConfig: (() => void) | null = null;
 
-  private constructor() {}
+  private constructor() {
+    onSurfaceActivated(() => {
+      this.cachedSettings = null;
+      this.hasTrustedSettings = false;
+    });
+  }
+
+  getCachedSettings(): AIExperienceSettings | null {
+    if (configManager.hasCachedConfig(CONFIG_PATH)) {
+      return normalizeSettings(configManager.getCachedConfig<PersistedAIExperienceSettings>(CONFIG_PATH));
+    }
+    return this.hasTrustedSettings && this.trustedEpoch === getActiveSurfaceScope().epoch ? this.cachedSettings : null;
+  }
 
   private ensureConfigWatcher(): void {
     if (this.unwatchConfig) {
       return;
     }
     this.unwatchConfig = configManager.watch(CONFIG_PATH, () => {
-      void this.reload();
+      void this.reload().catch(error => {
+        if (!isSurfaceChangedError(error)) log.warn('Failed to refresh AI experience settings', error);
+      });
     });
   }
 
@@ -138,14 +172,20 @@ export class AIExperienceConfigService {
 
    
   private async loadSettings(): Promise<void> {
+    const scope = getActiveSurfaceScope();
     this.ensureConfigWatcher();
     try {
       const settings = await configManager.getConfig<PersistedAIExperienceSettings>(CONFIG_PATH);
+      scope.assertCurrent('load AI experience settings');
       const merged = normalizeSettings(settings);
       this.cachedSettings = merged;
+      this.hasTrustedSettings = true;
+      this.trustedEpoch = scope.epoch;
     } catch (error) {
-      log.warn('Failed to load config, using defaults', error);
-      this.cachedSettings = { ...defaultSettings };
+      if (isSurfaceChangedError(error)) throw error;
+      log.warn('Failed to reload AI experience settings', error);
+      // A failed refresh must not replace a trusted setting with a default.
+      if (!this.hasTrustedSettings) this.cachedSettings = { ...defaultSettings };
     }
   }
 
@@ -159,16 +199,22 @@ export class AIExperienceConfigService {
   }
 
    
-  async getSettingsAsync(options?: { forceRefresh?: boolean }): Promise<AIExperienceSettings> {
+  async getSettingsAsync(options?: { forceRefresh?: boolean; requireLoaded?: boolean }): Promise<AIExperienceSettings> {
+    const scope = getActiveSurfaceScope();
     this.ensureConfigWatcher();
     try {
       const settings = options?.forceRefresh
         ? await configAPI.getConfig(CONFIG_PATH) as PersistedAIExperienceSettings
         : await configManager.getConfig<PersistedAIExperienceSettings>(CONFIG_PATH);
+      scope.assertCurrent('read AI experience settings');
       this.cachedSettings = normalizeSettings(settings);
+      this.hasTrustedSettings = true;
+      this.trustedEpoch = scope.epoch;
       return this.cachedSettings;
     } catch (error) {
+      if (isSurfaceChangedError(error)) throw error;
       log.error('Failed to get config', error);
+      if (options?.requireLoaded) throw error;
       return this.getSettings(); 
     }
   }

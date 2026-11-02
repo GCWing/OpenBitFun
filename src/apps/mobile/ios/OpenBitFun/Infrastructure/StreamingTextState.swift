@@ -12,11 +12,10 @@ struct StreamingTextState: Equatable {
     }
 
     mutating func update(_ text: String, active: Bool) {
-        // A shorter prefix while streaming is a delayed snapshot, not a new target.
-        // Final snapshots remain authoritative even when they remove text.
-        if active, target.hasPrefix(text), text.count < target.count { return }
-        // Non-prefix edits are authoritative corrections.
-        guard active, text.hasPrefix(visible) else {
+        // The transcript owner already resolves record revisions. Rewrites and
+        // deletions are authoritative even while active; only append-only growth
+        // may keep animating from the previous reveal buffer.
+        guard active, text.hasPrefix(target), text.hasPrefix(visible) else {
             visible = text
             target = text
             ticksRemaining = 0

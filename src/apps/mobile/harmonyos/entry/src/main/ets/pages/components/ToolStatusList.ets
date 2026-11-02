@@ -29,6 +29,7 @@ import { ToolConfirmationPanel, ToolQuestionAnswerPanel } from './ToolInteractio
 
 interface TodoPreviewItem {
   content?: string;
+  status?: string;
 }
 
 interface ToolInputSummaryPayload {
@@ -216,13 +217,15 @@ export struct ToolStatusList {
 
   @Builder
   ToolRow(tool: ConversationUiToolStatus, index: number) {
+    if (this.isTodoTool(tool)) {
+      this.TodoCard(tool, index)
+    } else {
     Column({ space: 4 }) {
       Row({ space: 8 }) {
         this.ToolStatusIcon(tool)
         Text(this.toolLineLabel(tool))
           .fontSize(MobileDesignTypography.bodySmall.size)
-          .fontColor(this.hasToolError(tool) ? STATUS_DANGER :
-            (this.toolFilePath(tool).length > 0 ? FILE_LINK : MUTED))
+          .fontColor(this.toolFilePath(tool).length > 0 ? FILE_LINK : MUTED)
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -307,6 +310,72 @@ export struct ToolStatusList {
     .backgroundColor(this.toolRowBg(tool, index))
     .borderRadius(this.toolRowRadius(tool, index))
     .border({ width: this.toolRowBorderWidth(tool, index), color: LINE })
+    }
+  }
+
+  @Builder
+  TodoCard(tool: ConversationUiToolStatus, index: number) {
+    Column({ space: 8 }) {
+      Row({ space: 9 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          ToolGlyph({ kind: 'todo', color: STATUS_SUCCESS })
+        }.width(22).height(22).backgroundColor(STATUS_SUCCESS).opacity(0.14).borderRadius(6)
+        Column({ space: 2 }) {
+          Text(this.operationLabel(tool)).fontSize(MobileDesignTypography.bodySmall.size).fontWeight(FontWeight.Medium).fontColor(INK)
+          Text(this.todoSummary(tool)).fontSize(MobileDesignTypography.labelSmall.size)
+            .fontColor(MUTED).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+        if (this.todoItems(tool).length > 0) { Text(`${this.todoDone(tool)}/${this.todoItems(tool).length}`).fontSize(MobileDesignTypography.labelSmall.size).fontColor(MUTED) }
+        this.ChevronIcon(this.expandedToolKey === this.toolKey(tool, index) ? 'down' : 'right')
+      }.width('100%').height(32).onClick(() => { this.expandedToolKey = this.expandedToolKey === this.toolKey(tool, index) ? '' : this.toolKey(tool, index); })
+      if (this.expandedToolKey === this.toolKey(tool, index) && this.todoItems(tool).length > 0) {
+        Column({ space: 8 }) {
+          Row() {
+            Blank().width(`${this.todoItems(tool).length > 0 ? this.todoDone(tool) * 100 / this.todoItems(tool).length : 0}%`).height(2).backgroundColor(MUTED)
+          }.width('100%').height(2).backgroundColor(LINE).borderRadius(2)
+
+          ForEach(this.todoItems(tool), (item: TodoPreviewItem, itemIndex: number) => {
+            Row({ space: 8 }) {
+              Text((item.status || '').toLowerCase() === 'completed' ? '✓' : (item.status || '').toLowerCase() === 'in_progress' ? '•' : '○')
+                .fontSize(MobileDesignTypography.bodySmall.size).fontColor((item.status || '').toLowerCase() === 'completed' ? STATUS_SUCCESS : MUTED)
+              Text(item.content || '').fontSize(MobileDesignTypography.bodySmall.size).fontColor(INK).layoutWeight(1).maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+          }, (item: TodoPreviewItem, itemIndex: number) => `${this.toolKey(tool, index)}-${itemIndex}`)
+        }.width('100%').padding({ left: 31 })
+      }
+      if (this.expandedToolKey === this.toolKey(tool, index) && this.todoItems(tool).length === 0 && this.toolResultPreview(tool).length > 0) {
+        this.ToolDetail(RemoteI18n.t('chat.output'), this.toolResultPreview(tool), this.hasToolError(tool))
+      }
+    }.width('100%').padding({ left: 10, right: 10, top: 10, bottom: 10 }).backgroundColor(SOFT).borderRadius(14).border({ width: 1, color: LINE })
+  }
+
+  private todoSummary(tool: ConversationUiToolStatus): string {
+    let items = this.todoItems(tool);
+    let active = items.find((item: TodoPreviewItem) => (item.status || '').toLowerCase() === 'in_progress') ||
+      items.find((item: TodoPreviewItem) => (item.status || '').toLowerCase() === 'pending');
+    if (items.length === 0) return this.summaryLabel(tool);
+    if (this.todoDone(tool) === items.length) return RemoteI18n.t('chat.thinkingDone');
+    return active?.content || items[0].content || RemoteI18n.t('chat.toolTodoFallback');
+  }
+
+  private todoDone(tool: ConversationUiToolStatus): number {
+    return this.todoItems(tool).filter((item: TodoPreviewItem) => (item.status || '').toLowerCase() === 'completed').length;
+  }
+
+  private todoItems(tool: ConversationUiToolStatus): TodoPreviewItem[] {
+    let values: string[] = [];
+    if (tool.tool_input) values.push(JSON.stringify(tool.tool_input));
+    if (tool.input_preview) values.push(tool.input_preview);
+    if (tool.tool_output) values.push(JSON.stringify(tool.tool_output));
+    if (tool.result_preview) values.push(tool.result_preview);
+    for (let value of values) {
+      try {
+        let parsed = JSON.parse(value) as ToolInputSummaryPayload;
+        if (parsed.todos && parsed.todos.length > 0) return parsed.todos;
+      } catch (_error) {}
+    }
+    return [];
   }
 
   @Builder
@@ -432,7 +501,6 @@ export struct ToolStatusList {
 
   private isEmphasizedToolRow(tool: ConversationUiToolStatus, index: number): boolean {
     return this.expandedToolKey === this.toolKey(tool, index) ||
-      this.hasToolError(tool) ||
       this.isPendingConfirmation(tool) ||
       this.isQuestionTool(tool) ||
       this.isRunningTool(tool);
@@ -472,7 +540,7 @@ export struct ToolStatusList {
     const entries: ToolRenderEntry[] = [];
     ActivityGroupPolicy.weaveRows(groups, parts, showThinking).forEach((row: ActivityRowPlan) => {
       if (row.kind === 'thinking') {
-        entries.push(this.thinkingEntry(parts[row.index], row.index));
+        entries.push(this.thinkingEntry(parts[row.index]));
         return;
       }
       entries.push(this.entryFromGroup(groups[row.index]));
@@ -480,10 +548,10 @@ export struct ToolStatusList {
     return entries;
   }
 
-  private thinkingEntry(part: ActivityThinkingPart, index: number): ToolRenderEntry {
+  private thinkingEntry(part: ActivityThinkingPart): ToolRenderEntry {
     return {
       type: 'thinking',
-      key: `thinking-${index}-${part.beforeToolIndex}-${part.streamKey}`,
+      key: part.streamKey,
       thinking: part,
       tools: [],
       readCount: 0,
@@ -782,14 +850,10 @@ export struct ToolStatusList {
     if (this.isRunningTool(tool)) {
       return `${RemoteI18n.t('chat.toolRunning')} “${this.compactText(this.operationTarget(tool), 24)}”`;
     }
-    if (this.hasToolError(tool)) {
-      return `${RemoteI18n.f('chat.toolFailed', this.operationLabel(tool))} · ` +
-        `${this.compactText(this.operationTarget(tool), 24)}`;
-    }
     if (this.isPendingConfirmation(tool) || this.isQuestionTool(tool)) {
       return `${this.displayStatus(tool.status || 'pending')} · ${this.operationLabel(tool)}`;
     }
-    if (this.isCompletedTool(tool) || this.isCancelledTool(tool)) {
+    if (this.isCompletedTool(tool) || this.isCancelledTool(tool) || this.hasToolError(tool)) {
       return `${this.operationLabel(tool)} · ${this.compactText(this.operationTarget(tool), 28)}`;
     }
     return `${this.displayStatus(tool.status || 'pending')} · ${this.operationLabel(tool)}`;
@@ -845,16 +909,10 @@ export struct ToolStatusList {
   }
 
   private toolTypeBorderColor(tool: ConversationUiToolStatus): ResourceColor {
-    if (this.hasToolError(tool)) {
-      return STATUS_DANGER;
-    }
     return LINE;
   }
 
   private toolStatusIcon(tool: ConversationUiToolStatus): string {
-    if (this.hasToolError(tool)) {
-      return '!';
-    }
     const normalized = (tool.status || '').toLowerCase();
     if (normalized === 'running' || normalized === 'active') {
       return '•';
@@ -869,15 +927,11 @@ export struct ToolStatusList {
   }
 
   private toolStatusColor(tool: ConversationUiToolStatus): ResourceColor {
-    if (this.hasToolError(tool)) {
-      return STATUS_DANGER;
-    }
     return MUTED;
   }
 
   private shouldShowStatusBadge(tool: ConversationUiToolStatus): boolean {
-    return this.hasToolError(tool) ||
-      this.isPendingConfirmation(tool) ||
+    return this.isPendingConfirmation(tool) ||
       this.isQuestionTool(tool) ||
       this.isRunningTool(tool) ||
       this.isCancelledTool(tool);

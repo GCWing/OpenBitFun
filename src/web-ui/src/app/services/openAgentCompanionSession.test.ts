@@ -55,10 +55,14 @@ vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
   },
 }));
 
-vi.mock('@/flow_chat/utils/sessionOrdering', () => ({
-  sessionBelongsToWorkspaceNavRow: (...args: unknown[]) =>
-    mocks.sessionBelongsToWorkspaceNavRow(...args),
-}));
+vi.mock('@/flow_chat/utils/sessionOrdering', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/flow_chat/utils/sessionOrdering')>();
+  return {
+    ...actual,
+    sessionBelongsToWorkspaceNavRow: (...args: unknown[]) =>
+      mocks.sessionBelongsToWorkspaceNavRow(...args),
+  };
+});
 
 function createSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -190,6 +194,32 @@ describe('openAgentCompanionSession', () => {
       workspaceId: 'ws-fast',
       activateWorkspace: expect.any(Function),
     });
+  });
+
+  it('jumps to a worktree session through its project, not the opened worktree', async () => {
+    mocks.sessions.set('tree-session', createSession({
+      sessionId: 'tree-session',
+      workspaceId: 'ws-worktree',
+      projectWorkspaceId: 'ws-project',
+      workspacePath: '/projects/main/.worktrees/task',
+      projectWorkspacePath: '/projects/main',
+      config: {
+        executionTarget: {
+          kind: 'managedWorktree', worktreeId: 'wt-1', rootPath: '/projects/main/.worktrees/task',
+        },
+      },
+    }));
+    mocks.openedWorkspaces.set('ws-project', { id: 'ws-project', rootPath: '/projects/main' });
+    mocks.openedWorkspaces.set('ws-worktree', { id: 'ws-worktree', rootPath: '/projects/main/.worktrees/task' });
+    mocks.activeWorkspaceId = 'ws-project';
+
+    await openAgentCompanionSession('tree-session');
+
+    expect(mocks.openMainSession).toHaveBeenCalledWith('tree-session', {
+      workspaceId: 'ws-project',
+      activateWorkspace: undefined,
+    });
+    expect(mocks.setActiveWorkspace).not.toHaveBeenCalled();
   });
 
   it('returns false when session does not exist', async () => {

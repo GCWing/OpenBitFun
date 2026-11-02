@@ -12,27 +12,26 @@
     },
     "subagents": {
       "title": "Subagents",
-      "description": "Configure the default subagent model, task parallelism, and concurrency limits"
+      "description": "Regular subagents and Swarm use separate concurrency limits"
     }
   },
   "config": {
     "autoExecute": "Auto Execute",
     "autoExecuteDesc": "Skip user confirmation before tool execution.",
     "subagentMaxConcurrency": "Concurrent task limit",
-    "subagentMaxConcurrencyDesc": "Maximum number of tasks that can run at the same time.",
+    "subagentMaxConcurrencyDesc": "Maximum number of regular subagent tasks running at once",
     "swarmMaxConcurrency": "Swarm worker concurrency",
-    "swarmMaxConcurrencyDesc": "How many Swarm Workers and Reviewers may run in parallel. This is independent of the ordinary subagent limit.",
+    "swarmMaxConcurrencyDesc": "Concurrency limit for worker and reviewer agents in Swarm",
     "confirmTimeout": "Confirm Timeout",
     "confirmTimeoutDesc": "Maximum seconds to wait for user confirmation of tool calls.",
     "confirmTimeoutHint": "Set 0 to disable confirmation timeout.",
     "executionTimeout": "Tool timeout",
-    "executionTimeoutDesc": "Maximum time for a single tool operation. Set 0 for no limit.",
+    "executionTimeoutDesc": "Maximum time a single tool operation can run",
     "executionTimeoutHint": "Set 0 for no limit.",
     "userQuestionTimeout": "Question timeout",
-    "userQuestionTimeoutDesc": "Maximum seconds to wait for the user to start answering. Set 0 for no limit; default is 180 seconds.",
+    "userQuestionTimeoutDesc": "Maximum time to wait for you to start answering a question",
     "subagentBatchPolicy": {
       "label": "Task concurrency",
-      "desc": "Choose how multiple tasks run when they start together.",
       "tooltipLabel": "Task concurrency details",
       "safeOnly": "Safe parallel",
       "safeOnlyDesc": "Run tasks together only when they do not modify content",
@@ -42,7 +41,7 @@
     "seconds": "sec",
     "subagentModelSettings": "Go to the Agents page to set models for individual subagents",
     "subagentModelInherit": "Inherit parent session",
-    "subagentDefaultModel": "Subagent default model",
+    "subagentDefaultModel": "Default subagent model",
     "subagentDefaultModelDesc": "Used by subagents without an individual model override."
   },
   "filters": {

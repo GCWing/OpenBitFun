@@ -1,7 +1,7 @@
 // The transcript reserves a lane for turn navigation before sizing its column.
 // Keep the lane geometry shared with the rail so narrow panes cannot overlap it.
-$turn-rail-offset: 4px;
-$turn-rail-width: 20px;
+$turn-rail-offset: var(--openbitfun-control-flow-chat-turn-rail-offset);
+$turn-rail-width: var(--openbitfun-control-flow-chat-turn-rail-width);
 
 @mixin viewport {
   container: flow-chat-transcript / inline-size;
@@ -11,17 +11,14 @@ $turn-rail-width: 20px;
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
-  max-width: 900px;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
   margin-inline: auto;
 
-  // Reserve only the rail side plus a small opposite inset. Wide columns stay
-  // centered; neither the composer nor the welcome surface needs this lane.
+  // Share the panel axis with the composer, header, and welcome surface.
+  // The width still reserves the tokenized turn-rail lane, while auto margins
+  // split the remaining space evenly instead of shifting the reading column.
   @container flow-chat-transcript (min-width: 0px) {
-    width: calc(100% - #{$turn-rail-offset + $turn-rail-width} - var(--openbitfun-space-1) - var(--openbitfun-space-2));
-    margin-inline-start: max(
-      calc(#{$turn-rail-offset + $turn-rail-width} + var(--openbitfun-space-1)),
-      calc((100% - 900px) / 2)
-    );
+    width: calc(100% - #{$turn-rail-offset} - #{$turn-rail-width} - var(--openbitfun-space-1) - var(--openbitfun-space-2));
   }
 }
 
@@ -36,7 +33,7 @@ $turn-rail-width: 20px;
   }
 }
 
-$action-size: 28px;
+$action-size: var(--openbitfun-control-flow-chat-metadata-action-size);
 
 @mixin metadata-row {
   box-sizing: border-box;

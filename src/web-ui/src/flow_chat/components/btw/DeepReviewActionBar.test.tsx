@@ -32,6 +32,16 @@ const persistReviewActionStateMock = vi.hoisted(() => vi.fn());
 const openBtwSessionInAuxPaneMock = vi.hoisted(() => vi.fn());
 const notificationWarningMock = vi.hoisted(() => vi.fn());
 
+vi.mock('@/infrastructure/i18n', async (importOriginal) => {
+  const { default: errors } = await import('@/locales/zh-CN/errors.json');
+  return {
+    ...await importOriginal<typeof import('@/infrastructure/i18n')>(),
+    useI18n: () => ({
+      t: (key: string) => key.replace(/^errors:/, '').split('.').reduce<any>((value, part) => value?.[part], errors) ?? key,
+    }),
+  };
+});
+
 vi.mock('react-i18next', async () => {
   const { createTestI18nT } = await import('@/test/i18nTestUtils');
   return {
@@ -183,16 +193,6 @@ vi.mock('../../services/DeepReviewContinuationService', () => ({
   continueDeepReviewSession: continueDeepReviewSessionMock,
 }));
 
-vi.mock('@/shared/ai-errors/aiErrorPresenter', () => ({
-  getAiErrorPresentation: () => ({
-    category: 'network',
-    titleKey: 'test',
-    messageKey: 'test',
-    diagnostics: 'test diagnostics',
-    actions: [],
-  }),
-}));
-
 let JSDOMCtor: (new (
   html?: string,
   options?: { pretendToBeVisual?: boolean; url?: string }
@@ -299,7 +299,7 @@ describeWithJsdom('DeepReviewActionBar', () => {
     expect(container.querySelector('[role="status"]')).toBeTruthy();
   });
 
-  it('localizes the stable dialog-start prefix without translating provider details', async () => {
+  it('localizes the dialog-start summary while preserving the complete original diagnostic', async () => {
     const store = useReviewActionBarStore.getState();
     store.showActionBar({
       childSessionId: 'child-session',
@@ -320,10 +320,13 @@ describeWithJsdom('DeepReviewActionBar', () => {
       root.render(<ReviewActionBar childSessionId="child-session" />);
     });
 
-    expect(container.textContent).toContain(
+    const displayedError = container.querySelector('.deep-review-action-bar__error-message');
+    expect(displayedError?.firstElementChild?.textContent).toBe(
       'Unable to start this action: provider quota exhausted',
     );
-    expect(container.textContent).not.toContain('Failed to start dialog turn:');
+    expect(displayedError?.lastElementChild?.textContent).toBe(
+      'Failed to start dialog turn: provider quota exhausted',
+    );
   });
 
   it.each([
@@ -351,7 +354,7 @@ describeWithJsdom('DeepReviewActionBar', () => {
     await act(async () => {
       startFixButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
-    expect(notificationService.error).toHaveBeenCalledWith(message, { duration: 5000 });
+    expect(notificationService.error).toHaveBeenCalledWith(message, { duration: 5000, metadata: { rawError: error.message } });
     expect(container.textContent).toContain(message);
     expect(container.textContent).not.toContain('Failed to start dialog turn:');
   });
@@ -413,6 +416,35 @@ describeWithJsdom('DeepReviewActionBar', () => {
     );
     expect(itemCheckbox?.disabled).toBe(true);
   });
+
+  it.each([new Error('network timeout: upstream did not respond'), 'network timeout: upstream did not respond'])(
+    'localizes remediation failures and retains complete diagnostics: %s', async (failure) => {
+      const { notificationService } = await import('@/shared/notification-system');
+      sendMessageMock.mockRejectedValueOnce(failure);
+      useReviewActionBarStore.getState().showActionBar({
+        childSessionId: 'review-session',
+        parentSessionId: 'parent-session',
+        reviewMode: 'standard',
+        reviewData: {
+          summary: { recommended_action: 'request_changes' },
+          remediation_plan: ['Fix the finding.'],
+        },
+        phase: 'review_completed',
+      });
+      await act(async () => root.render(<ReviewActionBar />));
+      const button = Array.from(container.querySelectorAll('button'))
+        .find(item => item.textContent?.includes('Start fixing'))!;
+      await act(async () => button.click());
+      const [message, options] = vi.mocked(notificationService.error).mock.calls.at(-1)!;
+      expect(message).toMatch(/[\u3400-\u9fff]/);
+      expect(message).not.toContain('upstream did not respond');
+      expect(options?.metadata?.rawError).toBe('network timeout: upstream did not respond');
+      const displayedError = container.querySelector('.deep-review-action-bar__error-message');
+      expect(displayedError?.textContent).toContain(message);
+      expect(displayedError?.lastElementChild?.textContent).toBe(options?.metadata?.rawError);
+      expect(useReviewActionBarStore.getState().phase).toBe('fix_timeout');
+    },
+  );
 
   it('uses a separate ReviewFixer agent for standard review remediation', async () => {
     useReviewActionBarStore.getState().showActionBar({
@@ -633,7 +665,7 @@ describeWithJsdom('DeepReviewActionBar', () => {
     });
 
     const { useSettingsStore } = await import('@/app/scenes/settings/settingsStore');
-    expect(useSettingsStore.getState().activePageId).toBe('tools.execution');
+    expect(useSettingsStore.getState().activePageId).toBe('ai.execution');
     expect(useSettingsStore.getState().activeViewId).toBeNull();
   });
 

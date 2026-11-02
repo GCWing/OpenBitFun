@@ -7,8 +7,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatInputWorkspaceStrip } from './ChatInputWorkspaceStrip';
+import type { WorkspaceInfo } from '@/shared/types';
+import { formatDuration } from '@/shared/utils/format';
 
 const mocks = vi.hoisted(() => ({
+  openContextPreview: vi.fn(),
   refreshBasic: vi.fn(async () => undefined),
   setActiveWorkspace: vi.fn(async () => undefined),
   useGitState: vi.fn(() => ({
@@ -22,20 +25,47 @@ const mocks = vi.hoisted(() => ({
   useOptionalWorkspaceContext: vi.fn((): object | null => null),
 }));
 
+vi.mock('../services/openSessionContextPreview', () => ({ openSessionContextPreview: mocks.openContextPreview }));
+
 vi.mock('react-i18next', () => ({
   initReactI18next: {
     type: '3rdParty',
     init: vi.fn(),
   },
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) => ({
-      'deepReviewConsent.strategyLabels.normal': 'Standard',
-      'reasoningSelector.auto': 'Auto',
-      'chatInput.permissionMode.ask.label': 'Ask',
-      'strip.newWorktree': 'New Worktree',
-      'workspaceStrip.primaryAssistant': 'Primary assistant',
-      'workspaceStrip.personalAssistant': 'Personal assistant',
-    } as Record<string, string>)[key] ?? options?.defaultValue ?? key,
+    // Mapped keys resolve like the real catalogs do, placeholders included, so
+    // a case can assert the string the user reads instead of the key.
+    t: (key: string, options?: Record<string, unknown>) => {
+      const template = ({
+        'deepReviewConsent.strategyLabels.normal': 'Standard',
+        'reasoningSelector.auto': 'Auto',
+        'chatInput.permissionMode.ask.label': 'Ask',
+        'strip.newWorktree': 'New Worktree',
+        'threadGoal.stripOpenWithGoal': 'Open thread goal',
+        'threadGoal.stripPauseGoal': 'Pause goal',
+        'threadGoal.stripResumeGoal': 'Resume goal',
+        'threadGoal.stripClearGoal': 'Clear goal',
+        'threadGoal.stripTooltipWithGoal': '{{status}}: {{objective}}',
+        'threadGoal.status.active': 'Active',
+        'threadGoal.status.paused': 'Paused',
+        'usage.duration.seconds': '{{value}}s',
+        'usage.duration.minutes': '{{value}}m',
+        'usage.duration.hoursMinutes': '{{hours}}h {{minutes}}m',
+        'usage.percent': '{{value}}%',
+        'usage.context.full': '{{value}} Full',
+        'usage.context.title': 'Context composition',
+        'usage.context.tokenCapacity': '{{used}} / {{size}} Tokens',
+        'usage.context.approximateTokens': '~{{value}}',
+        'workspaceStrip.primaryAssistant': 'Primary assistant',
+        'workspaceStrip.personalAssistant': 'Personal assistant',
+      } as Record<string, string>)[key] ?? (options?.defaultValue as string | undefined) ?? key;
+      return template.replace(
+        /\{\{(\w+)\}\}/g,
+        (placeholder, name: string) => (
+          options?.[name] === undefined ? placeholder : String(options[name])
+        ),
+      );
+    },
   }),
 }));
 
@@ -147,6 +177,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     });
     mocks.useOptionalWorkspaceContext.mockReturnValue(null);
     mocks.setActiveWorkspace.mockClear();
+    mocks.openContextPreview.mockResolvedValue('opened');
   });
 
   afterEach(() => {
@@ -242,9 +273,8 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     ).toBe('main');
   });
 
-  it('switches the active workspace from the strip menu when several are open', async () => {
-    mocks.useOptionalWorkspaceContext.mockReturnValue({
-      openedWorkspacesList: [
+  it('selects the draft target without switching the global workspace', async () => {
+    const options = [
         {
           id: 'ws-1',
           name: 'OpenBitFun',
@@ -270,22 +300,15 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
           workspaceKind: 'assistant',
           assistantId: 'assistant-4',
         },
-      ],
-      activeWorkspace: {
-        id: 'ws-1',
-        name: 'OpenBitFun',
-        rootPath: 'D:/workspace/OpenBitFun',
-        workspaceKind: 'normal',
-      },
-      primaryAssistantWorkspaceId: 'ws-3',
-      setActiveWorkspace: mocks.setActiveWorkspace,
-    });
+      ] as WorkspaceInfo[];
+    const onSelect = vi.fn();
 
     await act(async () => {
       root.render(
         <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
+          workspaceControl={{ selectedId: 'ws-1', options, locked: false, onSelect }}
         />
       );
     });
@@ -327,8 +350,41 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
       other?.click();
     });
 
-    expect(mocks.setActiveWorkspace).toHaveBeenCalledWith('ws-2');
+    expect(onSelect).toHaveBeenCalledWith('ws-2');
+    expect(mocks.setActiveWorkspace).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="chat-input-workspace-menu"]')).toBeNull();
+  });
+
+  it('closes a stale directory menu when first submission locks its target', async () => {
+    const options = ['a', 'b'].map(id => ({ id, name: id, workspaceKind: 'normal' })) as WorkspaceInfo[];
+    const onSelect = vi.fn();
+    const render = (locked: boolean) => <ChatInputWorkspaceStrip workspaceId="a" repositoryPath="/a"
+      workspaceLabel="A" workspaceControl={{ selectedId: 'a', options, locked, onSelect }} />;
+    await act(async () => { root.render(render(false)); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-testid="chat-input-workspace-trigger"]')?.click(); });
+    expect(document.querySelector('[data-testid="chat-input-workspace-menu"]')).not.toBeNull();
+    await act(async () => { root.render(render(true)); });
+    expect(container.querySelector('[data-testid="chat-input-workspace-trigger"]')).toBeNull();
+    expect(document.querySelector('[data-testid="chat-input-workspace-menu"]')).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(mocks.setActiveWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('can replace a closed target with the only remaining workspace', async () => {
+    const onSelect = vi.fn();
+    const options = [{ id: 'a', name: 'A', rootPath: '/a', workspaceKind: 'normal' }] as WorkspaceInfo[];
+    await act(async () => root.render(
+      <ChatInputWorkspaceStrip workspaceId="closed" repositoryPath="" workspaceLabel="Unavailable"
+        workspaceControl={{ selectedId: 'closed', options, locked: false, onSelect }} />,
+    ));
+    const trigger = container.querySelector<HTMLButtonElement>('[data-testid="chat-input-workspace-trigger"]');
+    expect(trigger).not.toBeNull();
+    await act(async () => trigger?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[data-testid="chat-input-workspace-option-a"]')?.click();
+    });
+    expect(onSelect).toHaveBeenCalledWith('a');
+    expect(mocks.setActiveWorkspace).not.toHaveBeenCalled();
   });
 
   it('splits the situation from the contract for the next turn', async () => {
@@ -372,6 +428,122 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     expect(container.querySelector('[data-testid="harness-profile-selector"]')).toBeNull();
     expect(container.querySelector('[data-openbitfun-part="harness"]')).toBeNull();
     expect(container.querySelector('[data-openbitfun-part="runtime"]')).toBeNull();
+  });
+
+  it('opens the overview from the context ring, highlights categories and offers explicit preview and report actions', async () => {
+    const onOpen = vi.fn();
+    const loadContext = vi.fn(async () => ({
+      systemPrompt: 1600, toolDefinitions: 3900, rules: 8300, skills: 1700,
+      mcpTools: 2700, subagentDefinitions: 1100, summarizedConversation: 0,
+      conversation: 114000, contextWindow: 256000,
+    }));
+    await act(async () => root.render(
+      <ChatInputWorkspaceStrip workspaceId="workspace-1" repositoryPath="/project" workspaceLabel="Project"
+        usageReport={{ visible: true, currentTokens: 133300, maxTokens: 256000, onOpen, loadContext,
+          previewSession: { sessionId: 'session-1', workspaceId: 'workspace-1' } }} />,
+    ));
+    const trigger = container.querySelector<HTMLButtonElement>('[data-openbitfun-part="usageAction"]')!;
+    await act(async () => trigger.click());
+    const overview = document.querySelector<HTMLElement>('[data-testid="context-usage-popover"]')!;
+    expect(overview).not.toBeNull();
+    expect(overview.getAttribute('aria-label')).toBe('Context composition');
+    expect(overview.querySelector('.context-usage-popover__header')?.textContent).toContain('Context composition');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(loadContext).toHaveBeenCalledOnce();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(overview.querySelectorAll('dl [data-usage-category]')).toHaveLength(7);
+    expect(overview.querySelector('[data-usage-category="conversation"] dd')?.textContent).toBe('114K');
+    expect(overview.querySelector<HTMLElement>('.context-usage-popover__bar [data-usage-category="unused"]')?.style.flexGrow)
+      .toBe('122700');
+    expect(overview.textContent).toContain('133.3K');
+    expect(overview.textContent).toContain('52% Full');
+    const rules = overview.querySelector<HTMLElement>('dl [data-usage-category="rules"]')!;
+    const rulesSegment = overview.querySelector('.context-usage-popover__bar [data-usage-category="rules"]')!;
+    await act(async () => rules.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    expect(rulesSegment.hasAttribute('data-usage-active')).toBe(true);
+    expect(overview.querySelector('.context-usage-popover__bar [data-usage-category="conversation"]')?.hasAttribute('data-usage-muted'))
+      .toBe(true);
+    await act(async () => rules.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+    expect(rulesSegment.hasAttribute('data-usage-active')).toBe(false);
+    await act(async () => rules.focus());
+    expect(rulesSegment.hasAttribute('data-usage-active')).toBe(true);
+    expect(overview.querySelectorAll('.context-usage-popover__preview')).toHaveLength(6);
+    await act(async () => rules.querySelector<HTMLButtonElement>('button')!.click());
+    expect(mocks.openContextPreview).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-1', reportSessionId: 'session-1', workspaceId: 'workspace-1', category: 'rules',
+    }));
+    expect(onOpen).not.toHaveBeenCalled();
+    await act(async () => overview.querySelector<HTMLButtonElement>('[data-testid="context-usage-view-report"]')!.click());
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-testid="context-usage-popover"]')).toBeNull();
+  });
+
+  it('dismisses the overview with Escape, the collapse button and outside clicks without opening the report', async () => {
+    const onOpen = vi.fn();
+    await act(async () => root.render(
+      <ChatInputWorkspaceStrip workspaceId="workspace-1" repositoryPath="/project" workspaceLabel="Project"
+        usageReport={{ visible: true, currentTokens: 0, maxTokens: 256000, onOpen }} />,
+    ));
+    const trigger = container.querySelector<HTMLButtonElement>('[data-openbitfun-part="usageAction"]')!;
+    await act(async () => trigger.click());
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(document.querySelector('[data-testid="context-usage-popover"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    await act(async () => trigger.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="usage.context.collapse"]')!.click());
+    expect(document.querySelector('[data-testid="context-usage-popover"]')).toBeNull();
+    await act(async () => trigger.click());
+    await act(async () => document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
+    expect(document.querySelector('[data-testid="context-usage-popover"]')).toBeNull();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('shows unavailable legacy counts and loading errors instead of a fabricated category chart', async () => {
+    const loadContext = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('offline'));
+    await act(async () => root.render(
+      <ChatInputWorkspaceStrip workspaceId="workspace-1" repositoryPath="/project" workspaceLabel="Project"
+        usageReport={{ visible: true, currentTokens: 480, maxTokens: 4000, onOpen: vi.fn(), loadContext }} />,
+    ));
+    const trigger = container.querySelector<HTMLButtonElement>('[data-openbitfun-part="usageAction"]')!;
+    await act(async () => trigger.click());
+    expect(document.querySelector('[data-testid="context-usage-popover"]')?.textContent).toContain('usage.context.unavailable');
+    expect(document.querySelector('.context-usage-popover__bar')).toBeNull();
+    await act(async () => trigger.click());
+    await act(async () => trigger.click());
+    expect(document.querySelector('[data-testid="context-usage-popover"]')?.textContent).toContain('usage.context.loadFailed');
+    expect(document.querySelector('.context-usage-popover__bar')).toBeNull();
+  });
+
+  it('keeps legacy category counts without treating the composer default as reported capacity', async () => {
+    const loadContext = vi.fn(async () => ({
+      systemPrompt: 100, toolDefinitions: 20, rules: 0, skills: 0, mcpTools: 0,
+      subagentDefinitions: 0, summarizedConversation: 40, conversation: 840,
+    }));
+    await act(async () => root.render(
+      <ChatInputWorkspaceStrip workspaceId="workspace-1" repositoryPath="/project" workspaceLabel="Project"
+        usageReport={{ visible: true, currentTokens: 1000, maxTokens: 128128, onOpen: vi.fn(), loadContext }} />,
+    ));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="usageAction"]')!.click());
+    const overview = document.querySelector('[data-testid="context-usage-popover"]')!;
+    expect(overview.querySelectorAll('dl [data-usage-category]')).toHaveLength(8);
+    expect(overview.textContent).toContain('usage.context.capacityUnavailable');
+    expect(overview.querySelector('.context-usage-popover__bar')).toBeNull();
+  });
+
+  it('closes on a session or peer activation switch and ignores the old in-flight overview', async () => {
+    let resolve!: (value: undefined) => void;
+    const loadContext = vi.fn(() => new Promise<undefined>(done => { resolve = done; }));
+    const render = (sessionKey: string) => <ChatInputWorkspaceStrip workspaceId="workspace-1"
+      repositoryPath="/project" workspaceLabel="Project" usageReport={{
+        visible: true, currentTokens: 480, maxTokens: 4000, onOpen: vi.fn(), loadContext, sessionKey,
+      }} />;
+    await act(async () => root.render(render('peer-a:session-1')));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="usageAction"]')!.click());
+    expect(document.querySelector('[data-testid="context-usage-popover"]')?.textContent).toContain('usage.context.loading');
+    await act(async () => root.render(render('peer-b:session-1')));
+    expect(document.querySelector('[data-testid="context-usage-popover"]')).toBeNull();
+    await act(async () => resolve(undefined));
+    expect(document.querySelector('[data-testid="context-usage-popover"]')).toBeNull();
   });
 
   it('keeps an ask-mode permission entry visible and switches without a hide action', async () => {
@@ -864,6 +1036,44 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     ).toBeNull();
   });
 
+  it('reports an unreadable session mode instead of passing the default off as its own', async () => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath=""
+          workspaceLabel=""
+          permissionControl={{
+            // The read failed, so this is the user-level default, not a choice
+            // the Session made.
+            mode: 'ask',
+            overridden: false,
+            unread: true,
+            onChange: vi.fn(),
+          }}
+        />
+      );
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-input-permission-trigger"]',
+    );
+    expect(trigger?.dataset.permissionUnread).toBe('true');
+    expect(trigger?.getAttribute('data-tooltip')).toBe('chatInput.permissionMode.unreadTooltip');
+
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    // No radio is marked, because the Session's own mode is unknown; the notice
+    // says why the list is bare.
+    expect(
+      document.querySelector('[data-testid="chat-input-permission-selected-ask"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-testid="chat-input-permission-unread-notice"]'),
+    ).not.toBeNull();
+  });
+
   it('shows ACP ownership without exposing native permission choices', async () => {
     await act(async () => {
       root.render(
@@ -1214,5 +1424,343 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     );
     expect(dispatchTrigger).not.toBeNull();
     expect(dispatchTrigger?.dataset.locked).toBe('true');
+  });
+
+  // The goal entry appears only while a goal exists, so "no goal" is the
+  // absence of the control rather than a control that says so.
+  it('omits the goal control while the session has no goal', async () => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-openbitfun-part="goal"]')).toBeNull();
+  });
+
+  it('reads the goal as its state and its elapsed time, not as its objective', async () => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{
+            goal: {
+              objective: 'Ship the goal entry',
+              status: 'active',
+              timeUsedSeconds: 5_400,
+            },
+            onOpen: vi.fn(),
+          }}
+        />
+      );
+    });
+
+    const control = container.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-input-thread-goal"]',
+    );
+    expect(control).not.toBeNull();
+    expect(control?.dataset.openbitfunPart).toBe('goal');
+    expect(control?.dataset.openbitfunState).toBe('active');
+    expect(control?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(control?.getAttribute('aria-label')).toBe('Open thread goal');
+    expect(control?.textContent).toContain('Active');
+    expect(control?.textContent).toContain(formatDuration(5_400_000));
+    // The objective is long-form, so it stays in the tooltip rather than
+    // competing with the state for the width of the track.
+    expect(control?.textContent).not.toContain('Ship the goal entry');
+    expect(control?.dataset.tooltip).toContain('Ship the goal entry');
+  });
+
+  // A goal that has not driven a turn yet has nothing to report, and "0s"
+  // would read as a stalled goal rather than a new one.
+  it('omits the elapsed time until the goal has driven a turn', async () => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{
+            goal: { objective: 'Ship the goal entry', status: 'active', timeUsedSeconds: 0 },
+            onOpen: vi.fn(),
+          }}
+        />
+      );
+    });
+
+    const control = container.querySelector('[data-testid="chat-input-thread-goal"]');
+    expect(control?.textContent).toContain('Active');
+    expect(control?.textContent).not.toContain('0s');
+  });
+
+  // A goal that stopped driving turns must not look like one that is running:
+  // the state channel is the tone, so the runtime's five non-running statuses
+  // have to land on the three tones this track can show.
+  it.each([
+    ['paused', 'paused'],
+    ['blocked', 'blocked'],
+    ['usageLimited', 'blocked'],
+    ['budgetLimited', 'blocked'],
+    ['complete', 'complete'],
+  ])('carries %s as the %s state', async (status, tone) => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{ goal: { objective: 'Ship the goal entry', status }, onOpen: vi.fn() }}
+        />
+      );
+    });
+
+    expect(
+      container.querySelector('[data-testid="chat-input-thread-goal"]')?.getAttribute(
+        'data-openbitfun-state',
+      ),
+    ).toBe(tone);
+  });
+
+  it('opens the goal from the control', async () => {
+    const onOpen = vi.fn();
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{ goal: { objective: 'Ship the goal entry', status: 'active' }, onOpen }}
+        />
+      );
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="chat-input-thread-goal"]')?.click();
+    });
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the rail to the right of the execution target', async () => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{
+            goal: { objective: 'Ship the goal entry', status: 'active' },
+            onOpen: vi.fn(),
+          }}
+          dispatchControl={{
+            target: { kind: 'local' },
+            locked: false,
+            onSelectTarget: vi.fn(),
+          }}
+        />
+      );
+    });
+
+    const children = Array.from(
+      container.querySelector('[data-openbitfun-part="context"]')?.children ?? [],
+    );
+    const locationIndex = children.indexOf(
+      container.querySelector('.openbitfun-chat-input-workspace-strip__location') as Element,
+    );
+    const goalIndex = children.indexOf(
+      container.querySelector('[data-testid="chat-input-thread-goal"]') as Element,
+    );
+    const dispatchIndex = children.indexOf(
+      container.querySelector('[data-testid="chat-input-dispatch-trigger"]') as Element,
+    );
+
+    expect(locationIndex).toBeGreaterThanOrEqual(0);
+    expect(dispatchIndex).toBeGreaterThan(locationIndex);
+    expect(goalIndex).toBeGreaterThan(dispatchIndex);
+  });
+
+  // The runtime accounts the goal's wall clock at turn accounting points, so the
+  // value arrives in steps. A goal that is running keeps spending time between
+  // those snapshots, so the track counts on instead of standing still.
+  it('counts the goal elapsed time while the goal runs', async () => {
+    const readout = () => container
+      .querySelector('[data-testid="chat-input-thread-goal"]')
+      ?.textContent;
+
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        root.render(
+          <ChatInputWorkspaceStrip workspaceId="workspace-1"
+            repositoryPath="/repo"
+            workspaceLabel="repo"
+            threadGoal={{
+              goal: { objective: 'Ship the goal entry', status: 'active', timeUsedSeconds: 5 },
+              actions: ['edit', 'pause', 'clear'],
+              onOpen: vi.fn(),
+              onAction: vi.fn(),
+            }}
+          />
+        );
+      });
+
+      expect(readout()).toContain(formatDuration(5_000));
+
+      act(() => {
+        vi.advanceTimersByTime(3_000);
+      });
+
+      expect(readout()).toContain(formatDuration(8_000));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A goal that stopped running is not spending time, so its readout holds the
+  // accounted value even though it is the same track.
+  it('freezes the elapsed time while the goal is not running', async () => {
+    const readout = () => container
+      .querySelector('[data-testid="chat-input-thread-goal"]')
+      ?.textContent;
+
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        root.render(
+          <ChatInputWorkspaceStrip workspaceId="workspace-1"
+            repositoryPath="/repo"
+            workspaceLabel="repo"
+            threadGoal={{
+              goal: { objective: 'Ship the goal entry', status: 'paused', timeUsedSeconds: 5 },
+              actions: ['edit', 'resume', 'clear'],
+              onOpen: vi.fn(),
+              onAction: vi.fn(),
+            }}
+          />
+        );
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(3_000);
+      });
+
+      expect(readout()).toContain(formatDuration(5_000));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A paused goal is one the user has to release, so the run control becomes the
+  // action that releases it — the same list the menu is built from.
+  it('offers resume in place of pause while the goal waits on the user', async () => {
+    const onAction = vi.fn();
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{
+            goal: { objective: 'Ship the goal entry', status: 'paused' },
+            actions: ['edit', 'resume', 'clear'],
+            onOpen: vi.fn(),
+            onAction,
+          }}
+        />
+      );
+    });
+
+    const run = container.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-input-thread-goal-run"]',
+    );
+    expect(run?.getAttribute('aria-label')).toBe('Resume goal');
+
+    await act(async () => {
+      run?.click();
+    });
+
+    expect(onAction).toHaveBeenCalledWith('resume');
+  });
+
+  it('runs the goal actions the menu offers from the track', async () => {
+    const onOpen = vi.fn();
+    const onAction = vi.fn();
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{
+            goal: { objective: 'Ship the goal entry', status: 'active' },
+            actions: ['edit', 'pause', 'clear'],
+            onOpen,
+            onAction,
+          }}
+        />
+      );
+    });
+
+    const run = container.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-input-thread-goal-run"]',
+    );
+    const clear = container.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-input-thread-goal-clear"]',
+    );
+    expect(run?.dataset.openbitfunPart).toBe('goalRun');
+    expect(run?.getAttribute('aria-label')).toBe('Pause goal');
+    expect(clear?.dataset.openbitfunPart).toBe('goalClear');
+    expect(clear?.getAttribute('aria-label')).toBe('Clear goal');
+
+    await act(async () => {
+      run?.click();
+    });
+    await act(async () => {
+      clear?.click();
+    });
+
+    expect(onAction.mock.calls.map(([action]) => action)).toEqual(['pause', 'clear']);
+    // Acting on the goal is not opening it, so the readout stays untouched.
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  // A finished or budget-limited goal has nothing left to stop: only the exit.
+  it('offers no run control for a goal that no longer runs', async () => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{
+            goal: { objective: 'Ship the goal entry', status: 'complete' },
+            actions: ['edit', 'clear'],
+            onOpen: vi.fn(),
+            onAction: vi.fn(),
+          }}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-testid="chat-input-thread-goal-run"]')).toBeNull();
+    expect(container.querySelector('[data-testid="chat-input-thread-goal-clear"]')).not.toBeNull();
+  });
+
+  // A surface that cannot run goal actions gets the fact, not a control that
+  // would do nothing when pressed.
+  it('keeps the quick controls away where the surface cannot run them', async () => {
+    await act(async () => {
+      root.render(
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
+          repositoryPath="/repo"
+          workspaceLabel="repo"
+          threadGoal={{
+            goal: { objective: 'Ship the goal entry', status: 'active' },
+            actions: ['edit', 'pause', 'clear'],
+            onOpen: vi.fn(),
+          }}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-testid="chat-input-thread-goal-run"]')).toBeNull();
+    expect(container.querySelector('[data-testid="chat-input-thread-goal-clear"]')).toBeNull();
   });
 });

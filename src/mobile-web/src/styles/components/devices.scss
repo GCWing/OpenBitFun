@@ -54,14 +54,29 @@
   background: var(--openbitfun-color-surface-panel);
 }
 
+.devices-page__device-line {
+  display: flex;
+  align-items: center;
+
+  & + & {
+    border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  }
+}
+
 .devices-page__device {
   min-height: 72px;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
 
-  & + & { border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); }
+/* The row is the selection target; renaming is a second target beside it, never
+   inside it, because a button cannot hold another button. */
+.devices-page__device-edit {
+  flex-shrink: 0;
+  margin-right: var(--size-gap-1);
+  color: var(--openbitfun-color-content-muted);
 }
 
 .devices-page__device-icon {
@@ -84,8 +99,22 @@
 .devices-page__device-name-row {
   display: flex;
   align-items: center;
-  gap: var(--size-gap-2);
+  flex-wrap: wrap;
+  gap: var(--size-gap-1) var(--size-gap-2);
   min-width: 0;
+}
+
+/* The model and system line is the secondary half of the row. On a wide row it
+   sits beside the name; when it does not fit it moves to its own line rather
+   than eating the name, which is the device's identity. */
+.devices-page__device-name-row > small {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-body-xs-font-size);
 }
 
 .devices-page__device-name {
@@ -152,13 +181,11 @@
   box-shadow: var(--openbitfun-shadow-xs);
 }
 
+/* Save and cancel under the alias editor, which owns its own spacing. */
 .devices-page__alias-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--size-gap-2);
-  padding: var(--size-gap-2) var(--size-gap-4) var(--size-gap-3);
-
-  .devices-page__alias-editor & { padding: 0; }
 }
 
 .devices-page__device-spinner {

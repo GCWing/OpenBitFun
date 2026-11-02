@@ -32,3 +32,6 @@
 
 # Generated from shared desktop MiniApp sources by entry/hvigorfile.ts
 /entry/src/main/resources/rawfile/miniapps/
+
+# Generated from en_US/zh_CN element string catalogs by entry/hvigorfile.ts
+/entry/src/main/resources/rawfile/string.json

@@ -1,10 +1,10 @@
 {
   "title": "智能體 Hooks",
-  "subtitle": "在智能體生命週期事件中執行自訂命令",
+  "subtitle": "在指定的智能體事件發生時自動執行命令",
   "loading": "正在載入 Hook 設定...",
   "activation": {
-    "title": "啟用",
-    "description": "Hooks 會以你的使用者權限執行，請只啟用你信任的命令"
+    "title": "智慧體 Hooks",
+    "description": "命令以執行 OpenBitFun 的使用者權限執行，僅啟用可信來源的 Hooks"
   },
   "fields": {
     "enabled": {
@@ -12,7 +12,7 @@
     },
     "projectHooks": {
       "label": "啟用專案 Hook 檔案",
-      "description": "讀取並執行工作區內的 .openbitfun/config/hooks.json；僅對可信任的儲存庫開啟"
+      "description": "允許執行工作區 .openbitfun/config/hooks.json 中的命令；僅對可信專案開啟"
     }
   },
   "projectHooksRisk": {
@@ -100,7 +100,7 @@
   },
   "discovery": {
     "title": "探索到的外部 Hook",
-    "description": "檢視 DeepSeek Harness、PI 和 OpenCode 的本機 Hook 宣告。探索不會執行或匯入這些 Hook。",
+    "description": "檢視 DeepSeek Harness、PI 與 OpenCode 的 Hook 宣告；發現的 Hook 不會自動匯入或執行",
     "disabled": "來源中已停用",
     "unsupported": "來源橋接不支援",
     "opaque": "需要原生執行階段確認",

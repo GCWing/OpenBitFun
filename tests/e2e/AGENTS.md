@@ -38,6 +38,58 @@ pnpm --dir tests/e2e exec wdio run ./config/wdio.conf.ts --spec "./specs/<file>.
 
 Prefer the narrowest relevant spec first, then broaden only if needed.
 
+For historical FlowChat scroll continuity, build Desktop and current frontend
+assets, then run:
+
+```bash
+pnpm --dir tests/e2e exec wdio run ./config/wdio.flowchat-scroll-native.ts
+```
+
+This creates an isolated 80-Turn session, copies the completed packaged frontend,
+and checks slow/fast bidirectional scrolling, reading-position restoration,
+draft preservation and search navigation. The printed temporary directory keeps
+`result.json`, per-phase frame data and screenshots. Set
+`OPENBITFUN_E2E_FRONTEND_DIR` to a completed build with `frontend-revision.json`,
+or `OPENBITFUN_E2E_WEBDRIVER_PORT` for a free driver port. Optional
+`OPENBITFUN_SCROLL_DIAGNOSTICS=1` records row geometry and write stacks with
+additional overhead. Wheel actions exercise the real WebView layout, not OS
+trackpad inertia; local results do not establish remote or other-platform behavior.
+
+For embedded WebDriver reveal/focus and shell scroll geometry, build Desktop
+and current frontend assets, then run:
+
+```bash
+node tests/e2e/scripts/run-interaction-scroll.mjs
+```
+
+This runner uses real production controls, an independent packaged frontend
+snapshot, temporary application storage and a private WebView store. It checks
+click, pointer/wheel actions, element screenshot, input clear/send, offscreen reveal
+and oversized click targets, and retains `result.json` in its printed temporary
+directory. It does not use a mock page or establish remote/platform coverage.
+Set `OPENBITFUN_E2E_FRONTEND_DIR` to a completed build directory with
+`frontend-revision.json` to reuse an existing snapshot during concurrent builds.
+The runner also snapshots the executable; `OPENBITFUN_E2E_DESKTOP_BINARY` can
+select a freshly linked artifact when a development instance locks the default exe.
+
+For pet/bubble main-window activation after opening an embedded browser, build
+Desktop and run `node tests/e2e/scripts/run-browser-window-activation.mjs`.
+It uses completed frontend assets and isolated storage to exercise native window
+activation, focus, tray hiding, geometry persistence, main-view command routing
+and remote child-view ACL rejection with multiple browser children. The same
+binary/frontend snapshot overrides above are supported. This is native command
+coverage, not a pet-pointer or remote-session integration test.
+
+For conversation-owned browser pages, build Desktop and Web UI and run
+`node tests/e2e/scripts/run-browser-session-isolation.mjs`. The fixture uses
+isolated storage and loopback model/page servers. It drives the actual session
+controls and Agent tool dispatcher to check background opening, concurrent reads,
+native visibility and document preservation across repeated session switches.
+Inspect its `result.json`; local native coverage does not prove remote behavior.
+Full visibility coverage needs an unlocked desktop. For a locked/headless display,
+`OPENBITFUN_E2E_BACKGROUND_ONLY=1` runs background execution and panel binding;
+the report explicitly excludes foreground native visibility in that mode.
+
 Markdown editor browser interaction tests (no desktop binary required):
 
 ```bash
@@ -52,6 +104,16 @@ For the real desktop Markdown workflow, build the desktop and current frontend,
 then run `pnpm --dir tests/e2e exec wdio run ./config/wdio.markdown-native.ts`
 from the repository root. This focused runner uses packaged frontend assets and
 a fresh temporary application profile; it does not use another checkout's dev server.
+
+For Windows live application-update discovery, reminder deferral and signed download completion,
+build the current frontend, then run `node tests/e2e/scripts/run-app-update.mjs --build`.
+The build uses the public verification key from `docs/verify-downloads.md`; the test
+requires a genuinely newer public release. `OPENBITFUN_E2E_FRONTEND_DIR` can select
+an independent build containing `frontend-revision.json`. The runner uses isolated
+application, updater-cache and WebView storage, downloads the real signed package,
+and never confirms installation. It retains `result.json` under its printed temporary
+directory. Only persisted reminder timestamps are aged to cover the 24-hour boundary;
+no network response, update store, package or system clock is mocked.
 
 For Gitee list filters and pagination against the public `dromara/sa-token`
 repository, build the desktop and current frontend, then run
@@ -75,3 +137,55 @@ OPENBITFUN_E2E_HUAWEI_MCP=1 OPENBITFUN_E2E_STORAGE_ROOT="$(mktemp -d /tmp/openbi
 The spec is skipped by default, uses no account credentials, and restores the
 isolated MCP configuration after the run. Internet access and availability of
 the public endpoint are required.
+
+### Native subscription and channel pool (isolated mock)
+
+The model settings UI was restored to upstream/main on 2026-10-16. This runner's
+account/channel editor workflow is retained for reference and currently paused;
+it requires a matching pre-rollback frontend snapshot. Do not run it against the
+current baseline page or present its historical results as current UI acceptance.
+Use the owner tests for retained backend behavior until the minimal UI returns.
+
+After building the debug Desktop binary and a current packaged frontend:
+
+```bash
+node tests/e2e/scripts/run-subscription-pool.mjs
+```
+
+The runner requires OpenSSL, uses loopback OAuth/quota/model services and a
+fixture CA, and drives the actual native commands, channel settings editor,
+chat, tools, statistics and product restart. The debug E2E storage guard must
+redirect subscription metadata and the encrypted fixture vault before account
+discovery. It never copies or uses real subscription credentials. The two
+`OPENBITFUN_E2E_FRONTEND_DIR` / `OPENBITFUN_E2E_DESKTOP_BINARY` snapshot overrides
+are supported. Read the retained `result.json`; the existence of the runner is
+not evidence of a passing application scenario or any physical remote host.
+The additional service fixture models Antigravity browser authorization and
+OpenCode Zen/Grok/Hermes device authorization, with independent account subjects,
+refresh tokens and account catalogs. Each provider pool must recover a rejected
+primary credential once, observe quota rejection, then use its declared backup;
+assert actual HTTP identities, ledger attribution and independent sign-out.
+Keep vendor HTTP behavior in the service fixture and native orchestration in
+`verify-provider-account-pools.mjs`; neither may replace internal selection,
+config commands or usage projections. Screenshots come from the real webview
+after overlay rendering settles, not from a recreated mock page.
+The runner records the copied binary SHA-256 and frontend revision, then removes
+only its copied binary/frontend after stopping the app. Logs, result and the
+isolated profile remain; set `OPENBITFUN_E2E_KEEP_SNAPSHOT=1` to retain the copies.
+
+For workspace HTML preview resource loading, build Desktop and Web UI, then run:
+
+```bash
+node tests/e2e/scripts/run-html-preview.mjs
+```
+
+The native browser fixture uses isolated product storage and completed binary /
+frontend snapshots. It verifies nested build output with root-relative CSS,
+relative JavaScript modules and dynamic imports, parent-relative styles, images,
+encoded filenames, and reloading one preview after opening another. Inspect its
+`result.json`. It also opens a nested site index at `/`, follows a real page link,
+reloads a history route, loads a deep link with a query, and verifies images/modules
+plus a true 404 for a missing image. Views are shown and an image entrance
+animation must finish, so decoding in a hidden view cannot satisfy the check.
+This is native local browser coverage. The services-integrations
+OpenSSH fixture separately covers the SSH/SFTP resource provider.

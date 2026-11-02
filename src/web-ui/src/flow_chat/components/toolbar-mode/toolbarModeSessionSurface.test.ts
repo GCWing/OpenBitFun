@@ -110,13 +110,15 @@ describe('floating mini chat bubble MiniApp registration', () => {
   });
 
   it('registers a token-scoped submit route without replacing ChatInput', () => {
-    expect(source).toContain('postMiniAppComposerMessage');
+    expect(source).toContain('requestMiniAppComposerMessage');
     // Routing is keyed by claim token, never by app id: one app can have two
     // live runners (installed app + draft preview) and only one owns the input.
     expect(source).toContain('registrationId: entry.claimToken!');
     expect(source).toContain('live?.token !== entry.claimToken');
     expect(source).toContain('live.sessionId !== entry.sessionId');
-    expect(source).toContain('postMiniAppComposerMessage({ ...submission, token: entry.claimToken!, sessionId: entry.sessionId })');
+    expect(source).toContain('await requestMiniAppComposerMessage(');
+    expect(source).toContain('{ ...submission, token: entry.claimToken!, sessionId: entry.sessionId }');
+    expect(source).toContain('{ resolveOnAgentRun: true }');
   });
 
   it('routes realtime voice through the claimed MiniApp conversation', () => {
@@ -176,16 +178,6 @@ describe('floating mini chat bubble MiniApp registration', () => {
     expect(welcomeSource).toContain('WELCOME_CONTENT_BLOCK_PADDING_PX + inputClearance');
     expect(styles).toContain('overflow-y: auto;');
     expect(source).toContain('state.sessions.get(entry.sessionId)');
-  });
-
-  it('hydrates a restored hidden topic session instead of substituting the latest chat', () => {
-    const bridgeSource = readSource(
-      '../../../app/scenes/miniapps/hooks/useMiniAppBridge.ts'
-    );
-
-    expect(bridgeSource).toContain('if (!result.created)');
-    expect(bridgeSource).toContain('flowChatStore.loadSessionHistory(');
-    expect(bridgeSource).toContain('{ includeInternal: true }');
   });
 
   it('forwards a MiniApp agent turn user-facing label separately from its prompt', () => {

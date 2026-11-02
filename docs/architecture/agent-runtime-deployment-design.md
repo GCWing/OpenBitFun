@@ -80,6 +80,7 @@ flowchart LR
 | 范围 | 当前状态 |
 |---|---|
 | Embedded Desktop GUI | 当前继续使用 Desktop 事件投影和 Tauri adapter；按实际打开的本机 workspace 延迟取得并持有 Embedded ownership，不增加后台进程；Embedded direct Runtime 是后续 Host/infrastructure 目标，不在此处宣称已接线 |
+| MiniApp 本机独立窗口 | `apps/miniapp-shell` 是单独构建的窗口进程，不链接 Desktop、Core 或 Agent Runtime；通过 `adapters/miniapp-ipc` 的私有 v1 UDS/Named Pipe 使用同一 Desktop host 的实例、Agent、存储、任务与权限 owner。主界面未启动时可后台启动 Desktop host，但不会按 MiniApp 复制 Runtime。窗口／标签页切换期间保留实例，最后一个已提交或待就绪视图关闭后停止该 MiniApp 的 Worker、Agent 和流；断连、刷新或切换设备不等于显式关闭。这不是 Shared TUI v18 或通用 Shared App Server，远程四种场景不提供本机窗口回退 |
 | Embedded interactive TUI | 当前直接通过 `CliAgentRuntimeClient` 调用 `AgentRuntime` typed API，并直接调用对应 owner/service API；不创建 App Server client/server、in-memory transport、JSON-RPC handshake 或 App Server 线程 |
 | Embedded Headless CLI/Peer Host | 保留各自独立 Runtime adapter、展示和断流策略；不因交互式 TUI 迁移而强制使用 App Server |
 | ACP/SDK Host | 使用同一个 Runtime 事件入口的 session-scoped 订阅；各自协议和进程生命周期保持独立 |
@@ -94,6 +95,14 @@ flowchart LR
 前者不再经过或启动 App Server，后者仍不是通用本机 Server。
 具体 `EventQueue` 仍由 Core 产品装配；当前 Shared IPC 只把 TUI 必需的强类型操作和事件映射到同一个 Runtime owner，
 没有公开协议承诺。是否以 App Server Shared transport 替换并删除它，由行为等价、性能、安全和回滚证据决定。
+
+Desktop 开发启动器默认使用日常产品数据目录，安装版与一个开发版 Embedded host 可共用已有配置与会话。
+`--shared-data` 保留为默认模式的显式写法；`--isolated-data` 才选择当前仓库的独立测试目录，已有隔离数据保持原位。
+开发版通过仅在 debug/devtools 构建生效的 `development` MiniApp host channel 分离宿主锁、
+私有 IPC discovery 和 native launcher 记录；默认安装版路径与 v1 记录不变，开发版使用 v2
+启动记录让旧 Shell 明确拒绝，而不是忽略 channel 后连错宿主。配置、模型、MiniApp 内容与
+workspace/session 存储仍由原 owner 读写；不增加跨进程内存状态同步，也不放宽 Session 单写
+或 scheduler 独占 lease。这不是 Shared GUI Runtime transport，远程四种场景不由本机 channel 获得新能力。
 
 ## 2. 最少名词
 

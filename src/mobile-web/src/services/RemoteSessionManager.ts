@@ -1,4 +1,5 @@
-import { normalizeWorkspaceRouting } from './workspaceIdentity';
+import { HostDialogQueue, type QueueSnapshot } from '../../../shared/dialog-queue/HostDialogQueue';
+import { normalizeWorkspaceRouting, workspaceDisplayName } from './workspaceIdentity';
 import {
   REMOTE_CAPABILITY_HOST_STREAM_V1, UNSUPPORTED_HOST_MESSAGE,
   type HostStreamOptions, type SessionStreamHandle,
@@ -53,6 +54,7 @@ export function isWorkspaceIdReferencesUnsupportedError(
 }
 
 const RETRYABLE_REMOTE_READ_COMMANDS = new Set([
+  'get_workspace_icon',
   'get_workspace_info',
   'list_recent_workspaces',
   'list_assistants',
@@ -64,6 +66,19 @@ const RETRYABLE_REMOTE_READ_COMMANDS = new Set([
   'get_file_info',
   'read_file_chunk',
 ]);
+
+/** RemoteCommand aliases are not runtime mode IDs. Queue RPCs bypass the
+ * host's create/send alias resolver; harness dialect translation follows below. */
+function remoteQueueAgentType(agentType: string): string {
+  switch (agentType) {
+    case 'code': return 'Standard';
+    case 'cowork': return 'Cowork';
+    case 'claw':
+    case 'assistant':
+    case 'chat': return 'Claw';
+    default: return agentType;
+  }
+}
 
 // Session settings are small, idempotent writes. Keeping their deadline well
 // below turn execution prevents a lost relay response from making the selector
@@ -81,6 +96,15 @@ export interface RuntimeFileWorkspace {
   /** Root or browsed directory used as the legacy projection / IO operand. */
   path: string;
   remoteConnectionId?: string;
+}
+
+export interface MobileWorkspaceIcon {
+  workspaceId: string;
+  icon: { version: number; revision: number; mode: string; color: string; glyph?: string };
+  imageData?: string;
+  imageUnavailable: boolean;
+  darkImageData?: string;
+  darkImageUnavailable?: boolean;
 }
 
 export interface WorkspaceInfo {
@@ -214,6 +238,8 @@ export interface ChatImageAttachment {
 
 export interface ChatMessage {
   turn_id?: string;
+  /** Storage turn index for `turn_id`, used as the rollback staleness guard. */
+  turn_index?: number;
   status?: string;
   error?: string;
   id: string;
@@ -227,6 +253,13 @@ export interface ChatMessage {
   images?: ChatImageAttachment[];
 }
 
+export interface SessionRollbackResult {
+  retired_turn_ids: string[];
+  restored_files: string[];
+  composer_text?: string;
+  changed: boolean;
+}
+
 export interface ActiveTurnSnapshot {
   turn_id: string;
   status: string;
@@ -235,6 +268,7 @@ export interface ActiveTurnSnapshot {
   tools: RemoteToolStatus[];
   round_index: number;
   items?: ChatMessageItem[];
+  backgroundDelivery?: unknown;
 }
 
 export interface RemoteToolStatus {
@@ -261,6 +295,8 @@ export interface PollResponse {
   message_snapshot?: ChatMessage[];
   active_turn?: ActiveTurnSnapshot | null;
   model_catalog?: RemoteModelCatalog;
+  /** Next-input suggestion for the settled latest turn; `null` retires it, absence keeps it. */
+  prompt_suggestion?: string | null;
 }
 
 export interface InitialSyncData {
@@ -494,6 +530,25 @@ export class RemoteSessionManager {
     }
   }
 
+  async getWorkspaceIcon(workspaceId: string): Promise<MobileWorkspaceIcon | null> {
+    const target = this.client.getControlTargetSnapshot();
+    await this.ensureHostCapabilitiesKnown(target);
+    if (!this.supportsHostCapability('workspace_icon_read_v1')) return null;
+    const response = await this.request<{ snapshot: MobileWorkspaceIcon }>({ cmd: 'get_workspace_icon', workspace_id: workspaceId }, target);
+    const snapshot = response.snapshot;
+    if (!snapshot || !snapshot.workspaceId || snapshot.icon?.version !== 1
+      || !Number.isSafeInteger(snapshot.icon.revision) || snapshot.icon.revision < 0
+      || !['default', 'image'].includes(snapshot.icon.mode)
+      || (snapshot.icon.glyph !== undefined && typeof snapshot.icon.glyph !== 'string')
+      || !/^(default|blue|cyan|green|yellow|orange|red|purple|pink|#[\da-f]{6})$/i.test(snapshot.icon.color)
+      || (snapshot.darkImageUnavailable !== undefined && typeof snapshot.darkImageUnavailable !== 'boolean')
+      || [snapshot.imageData, snapshot.darkImageData].some(image => image !== undefined
+        && (typeof image !== 'string' || !image.startsWith('data:image/png;base64,') || image.length > 720_000))) {
+      throw new Error('Unsupported workspace icon response');
+    }
+    return snapshot;
+  }
+
   async getWorkspaceInfo(): Promise<WorkspaceInfo> {
     const target = this.client.getControlTargetSnapshot();
     const resp = await this.request<{ resp: string } & WorkspaceInfo>({
@@ -504,7 +559,7 @@ export class RemoteSessionManager {
       workspace_id: resp.workspace_id,
       has_workspace: resp.has_workspace,
       path: resp.path,
-      project_name: resp.project_name,
+      project_name: workspaceDisplayName(resp.project_name, resp.path, resp.remote_ssh_host, resp.remote_connection_id),
       git_branch: resp.git_branch,
       workspace_kind: resp.workspace_kind,
       assistant_id: resp.assistant_id,
@@ -519,7 +574,15 @@ export class RemoteSessionManager {
       resp: string;
       workspaces: RecentWorkspaceEntry[];
     }>({ cmd: 'list_recent_workspaces' });
-    return (resp.workspaces || []).map(normalizeWorkspaceRouting);
+    return (resp.workspaces || []).map((workspace) => ({
+      ...workspace,
+      name: workspaceDisplayName(
+        workspace.name,
+        workspace.path,
+        workspace.remote_ssh_host,
+        workspace.remote_connection_id,
+      ),
+    })).map(normalizeWorkspaceRouting);
   }
 
   async listWorkspaceCatalog(): Promise<WorkspaceCatalog> {
@@ -547,7 +610,24 @@ export class RemoteSessionManager {
       remoteConnectionId: workspace.remote_connection_id,
       remoteSshHost: workspace.remote_ssh_host,
     }, 'path', target);
-    return this.request({ cmd: 'set_workspace', ...reference }, target);
+    const response = await this.request<{
+      success: boolean;
+      workspace_id?: string;
+      path?: string;
+      project_name?: string;
+      remote_connection_id?: string;
+      remote_ssh_host?: string;
+      error?: string;
+    }>({ cmd: 'set_workspace', ...reference }, target);
+    return {
+      ...response,
+      project_name: workspaceDisplayName(
+        response.project_name,
+        response.path || workspace.path,
+        response.remote_ssh_host ?? workspace.remote_ssh_host,
+        response.remote_connection_id ?? workspace.remote_connection_id,
+      ),
+    };
   }
 
   /** True when the connected host serves session, terminal and catalog
@@ -744,6 +824,34 @@ export class RemoteSessionManager {
     };
   }
 
+  private queueClients = new Map<string, HostDialogQueue>();
+
+  dialogQueue(sessionId: string): HostDialogQueue {
+    const target = this.client.getControlTargetSnapshot();
+    const account = this.client.accountUserId;
+    const epoch = this.controlTargetEpoch;
+    const scope = JSON.stringify([account, target.deviceId, sessionId]);
+    const key = JSON.stringify([scope, this.controlTargetEpoch]);
+    let queue = this.queueClients.get(key);
+    if (!queue) {
+      queue = new HostDialogQueue(scope, sessionId, async request => {
+        if (this.client.accountUserId !== account || this.controlTargetEpoch !== epoch) throw new Error('Queue target changed');
+        if (!this.supportsHostCapability('dialog_queue_v1')) throw new Error('Host message queue is unsupported');
+        // Translate at the transport boundary so pre-fix outbox retries are
+        // repaired too, without rewriting stored drafts or their stable IDs.
+        const wireRequest = request.action === 'submit' ? {
+          ...request,
+          message: { ...request.message, agentType: remoteQueueAgentType(request.message.agentType) },
+        } : request;
+        const response = await this.request<{ snapshot: QueueSnapshot }>({ cmd: 'dialog_queue', request: wireRequest }, target);
+        if (this.client.accountUserId !== account || this.controlTargetEpoch !== epoch) throw new Error('Queue target changed');
+        return response.snapshot;
+      });
+      this.queueClients.set(key, queue);
+    }
+    return queue;
+  }
+
   async sendMessage(
     sessionId: string,
     content: string,
@@ -756,6 +864,15 @@ export class RemoteSessionManager {
       metadata?: Record<string, unknown>;
     }>,
   ): Promise<string> {
+    if (this.supportsHostCapability('dialog_queue_v1')) {
+      const result = await this.dialogQueue(sessionId).submit({ content, agentType: agentType || 'Standard',
+        attachments: (imageContexts ?? []).map(image => ({ kind: 'remote_image', id: image.id,
+          metadata: { ...(image.data_url ? { dataUrl: image.data_url } : {}),
+            ...(image.image_path ? { imagePath: image.image_path } : {}), mimeType: image.mime_type,
+            metadata: image.metadata } })), metadata: {} });
+      if (!result.receipt) throw new Error('Host did not acknowledge the submitted message');
+      return result.receipt.turnId;
+    }
     const resp = await this.request<{ resp: string; turn_id: string }>({
       cmd: 'send_message',
       session_id: sessionId,
@@ -796,6 +913,49 @@ export class RemoteSessionManager {
 
   async deleteSession(sessionId: string): Promise<void> {
     await this.request({ cmd: 'delete_session', session_id: sessionId });
+  }
+
+  /**
+   * Retire `targetTurnId` and every turn after it on the host and restore the files
+   * those turns wrote. `expectedStorageTurnIndex` comes from the same message
+   * the user targeted, so a transcript that moved since it was loaded fails
+   * instead of rolling back a different turn.
+   */
+  async rollbackSessionToTurn(
+    sessionId: string,
+    targetTurnId: string,
+    expectedStorageTurnIndex?: number,
+  ): Promise<SessionRollbackResult> {
+    if (!this.supportsHostCapability('session_rollback_v1')) {
+      throw new Error('This host does not support session rollback. Update the host to use this action.');
+    }
+    const resp = await this.request<{
+      resp: string;
+      session_id: string;
+      retired_turn_ids?: string[];
+      restored_files?: string[];
+      composer_text?: string;
+      changed?: boolean;
+    }>({
+      cmd: 'rollback_session_to_turn',
+      session_id: sessionId,
+      target_turn_id: targetTurnId,
+      expected_storage_turn_index: expectedStorageTurnIndex,
+    });
+    if (resp.resp !== 'session_rolled_back' || resp.session_id !== sessionId
+      || !Array.isArray(resp.retired_turn_ids) || !Array.isArray(resp.restored_files)
+      || !resp.retired_turn_ids.every(id => typeof id === 'string')
+      || !resp.restored_files.every(path => typeof path === 'string')
+      || (resp.composer_text !== undefined && typeof resp.composer_text !== 'string')
+      || typeof resp.changed !== 'boolean') {
+      throw new Error('Invalid session rollback response');
+    }
+    return {
+      retired_turn_ids: resp.retired_turn_ids,
+      restored_files: resp.restored_files,
+      composer_text: resp.composer_text,
+      changed: resp.changed ?? false,
+    };
   }
 
   async renameSession(sessionId: string, title: string): Promise<void> {

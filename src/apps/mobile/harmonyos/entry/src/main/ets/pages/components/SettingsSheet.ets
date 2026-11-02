@@ -1,12 +1,16 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { SettingsSheetState } from '../state/SettingsSheetState';
-import { CARD, INK, LINE, MUTED, PAGE_BG, SOFT, STATUS_DANGER } from './Theme';
+import { CARD, INK, LINE, MUTED, PAGE_BG } from './Theme';
+import { CurrentControlSection } from './CurrentControlSection';
 import { AccountProfilePanel } from './AccountProfilePanel';
 import { LanguageSettingsPanel } from './LanguageSettingsPanel';
 import { SheetCloseHeader } from './SheetCloseHeader';
 import { SHEET_HORIZONTAL_PADDING, SHEET_TOP_RADIUS } from './SheetLayout';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
+import { RemotePermissionMode } from '../../model/RemoteModels';
+import { RemotePermissionSection } from './RemotePermissionSection';
 
 @ComponentV2
 export struct SettingsSheet {
@@ -21,6 +25,7 @@ export struct SettingsSheet {
   @Param controlTargetType: string = 'none';
   @Param controlTargetDeviceId: string = '';
   @Param connectionState: string = 'idle';
+  @Param statusText: string = '';
   @Event onClose: () => void = () => {};
   @Event onOpenAccount: () => void = () => {};
   @Event onDisconnect: () => void = () => {};
@@ -31,7 +36,24 @@ export struct SettingsSheet {
     async (): Promise<CloudAccountDevice[]> => [];
   @Event cloudSelectDevice: (device: CloudAccountDevice) => Promise<void> =
     async (_device: CloudAccountDevice): Promise<void> => {};
+  @Event getPermissionMode: () => Promise<RemotePermissionMode> = async (): Promise<RemotePermissionMode> => 'ask';
+  @Event setPermissionMode: (mode: RemotePermissionMode) => Promise<RemotePermissionMode> =
+    async (mode: RemotePermissionMode): Promise<RemotePermissionMode> => mode;
   @Event onSetLanguage: (language: string) => Promise<void> = async (_language: string) => {};
+  /** The sheet's own bottom edge, so its scrolling rows can run under the bar and still rest above it. */
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       if (this.sheetState.page === 'language') {
@@ -42,6 +64,14 @@ export struct SettingsSheet {
     }
     .width('100%')
     .height('100%')
+    // The sheet's fill is the shell's bottom edge and runs to the screen edge,
+    // and so does its scrolling viewport: the rows are content, and they roll
+    // under the navigation indicator while they are still moving instead of
+    // stopping short of it above a band of bare page colour. What stops above
+    // the bar is the column's own tail padding, which brings the last row to
+    // rest there once the sheet is scrolled to its end. The framework does not
+    // inset a bottom sheet for the app while the window is immersive, so the
+    // sheet does it itself.
     .backgroundColor(PAGE_BG)
     .borderRadius({ topLeft: SHEET_TOP_RADIUS, topRight: SHEET_TOP_RADIUS })
   }
@@ -72,9 +102,9 @@ export struct SettingsSheet {
             onReconnect: this.onReconnect,
             onOpenAccount: this.onOpenAccount,
             onLoggedOut: this.onClose,
-            embeddedInSettings: true,
             connection: () => {
               this.CurrentConnectionSection()
+              this.PermissionSection()
             },
             preferences: () => {
               this.GeneralSettingsSection()
@@ -89,7 +119,9 @@ export struct SettingsSheet {
           left: SHEET_HORIZONTAL_PADDING,
           right: SHEET_HORIZONTAL_PADDING,
           top: 22,
-          bottom: 34
+          // The sheet's tail spacer: the strip plus its own breathing, so the
+          // last row rests above the navigation bar once the scroll ends.
+          bottom: this.insets.tailSpacing(34)
         })
       }
       .width('100%')
@@ -102,83 +134,25 @@ export struct SettingsSheet {
 
   @Builder
   private CurrentConnectionSection() {
-    if (this.hasControlTarget()) {
-      this.SectionTitle(RemoteI18n.t('remote.settings.currentControl'))
-      Column() {
-        Row({ space: 14 }) {
-          Stack({ alignContent: Alignment.Center }) {
-            SymbolGlyph($r('sys.symbol.desktop'))
-              .fontSize(22)
-              .fontColor([MUTED])
-              .opacity(0.68)
-          }
-          .width(28)
-          .height(28)
+    CurrentControlSection({
+      desktopName: this.desktopName,
+      desktopId: this.desktopId,
+      controlTargetType: this.controlTargetType,
+      connectionState: this.connectionState,
+      statusText: this.statusText,
+      onDisconnect: this.onDisconnect,
+      onClearPairing: this.onClearPairing,
+      onReconnect: this.onReconnect
+    })
+  }
 
-          Column({ space: 3 }) {
-            Text(this.connectionTitle())
-              .fontSize(MobileDesignTypography.bodyLarge.size)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(INK)
-              .width('100%')
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(this.connectionDetail())
-              .fontSize(MobileDesignTypography.bodySmall.size)
-              .fontColor(MUTED)
-              .width('100%')
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-        }
-        .width('100%')
-        .constraintSize({ minHeight: 68 })
-        .padding({ left: 18, right: 18, top: 12, bottom: 12 })
-        .alignItems(VerticalAlign.Center)
-
-        Divider().strokeWidth(1).color(LINE).margin({ left: 18, right: 18 })
-
-        Row({ space: 8 }) {
-          Text(this.connectionSourceLabel())
-            .fontSize(MobileDesignTypography.bodySmall.size)
-            .fontColor(MUTED)
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .backgroundColor(SOFT)
-            .borderRadius(12)
-          Blank()
-          if (!this.isConnectedOrConnecting()) {
-            Text(RemoteI18n.t('remote.settings.reconnect'))
-              .fontSize(MobileDesignTypography.bodyMedium.size)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(INK)
-              .padding({ left: 10, right: 10, top: 8, bottom: 8 })
-              .onClick(this.onReconnect)
-          }
-          Text(this.controlTargetType === 'room' ?
-            RemoteI18n.t('remote.settings.disconnectTemporary') :
-            RemoteI18n.t('remote.settings.disconnect'))
-            .fontSize(MobileDesignTypography.bodyMedium.size)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(STATUS_DANGER)
-            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
-            .onClick(() => {
-              if (this.controlTargetType === 'room') {
-                this.onClearPairing();
-              } else {
-                this.onDisconnect();
-              }
-            })
-        }
-        .width('100%')
-        .constraintSize({ minHeight: 54 })
-        .padding({ left: 18, right: 10 })
-        .alignItems(VerticalAlign.Center)
-      }
-      .width('100%')
-      .backgroundColor(CARD)
-      .borderRadius(MobileDesignGeometry.settingsCardRadius)
-      .margin({ bottom: 24 })
-    }
+  @Builder
+  private PermissionSection() {
+    RemotePermissionSection({
+      connectionState: this.connectionState,
+      getPermissionMode: this.getPermissionMode,
+      setPermissionMode: this.setPermissionMode
+    })
   }
 
   @Builder
@@ -302,33 +276,4 @@ export struct SettingsSheet {
       }
     })
   }
-
-  private hasControlTarget(): boolean {
-    return this.controlTargetType === 'room' || this.controlTargetType === 'account_device';
-  }
-
-  private isConnectedOrConnecting(): boolean {
-    return this.connectionState === 'connected' || this.connectionState === 'reconnecting' ||
-      this.connectionState === 'pairing' || this.connectionState === 'parsing';
-  }
-
-  private connectionTitle(): string {
-    return this.desktopName || this.desktopId || RemoteI18n.t('remote.settings.noDesktop');
-  }
-
-  private connectionDetail(): string {
-    if (this.connectionState === 'connected') {
-      return RemoteI18n.t('connection.connected');
-    }
-    if (this.connectionState === 'reconnecting') {
-      return RemoteI18n.t('connection.reconnecting');
-    }
-    return RemoteI18n.t('connection.disconnected');
-  }
-
-  private connectionSourceLabel(): string {
-    return this.controlTargetType === 'room' ? RemoteI18n.t('remote.settings.qrPairing') :
-      RemoteI18n.t('remote.settings.accountDevice');
-  }
-
 }

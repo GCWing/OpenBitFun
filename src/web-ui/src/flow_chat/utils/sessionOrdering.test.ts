@@ -6,7 +6,9 @@ import {
   compareSessionsForNavStable,
   getSessionMetadataSortTimestamp,
   getSessionSortTimestamp,
+  requireSessionOwningWorkspaceId,
   sessionBelongsToWorkspaceNavRow,
+  sessionOwningWorkspaceId,
 } from './sessionOrdering';
 
 function createSession(overrides: Partial<Session> = {}): Session {
@@ -104,9 +106,87 @@ describe('sessionOrdering', () => {
     expect(sessionBelongsToWorkspaceNavRow({ workspaceId: 'host-b-project' }, 'host-a-project')).toBe(false);
   });
 
+  it('keeps a session whose execution workspace is not a worktree in its own group', () => {
+    const session = {
+      workspaceId: 'worktree-cli',
+      projectWorkspaceId: 'main-project',
+    };
+    expect(sessionBelongsToWorkspaceNavRow(session, 'worktree-cli')).toBe(true);
+    expect(sessionBelongsToWorkspaceNavRow(session, 'main-project')).toBe(false);
+    expect(sessionBelongsToWorkspaceNavRow(session, 'sibling-worktree')).toBe(false);
+  });
+
+  it('keeps a worktree-isolated session under the project that owns it', () => {
+    const worktreeSession = {
+      workspaceId: 'worktree-cli',
+      projectWorkspaceId: 'main-project',
+      config: {
+        executionTarget: {
+          kind: 'managedWorktree' as const,
+          worktreeId: 'worktree-cli',
+          rootPath: '/tmp/worktrees/cli',
+        },
+      },
+    };
+    expect(sessionBelongsToWorkspaceNavRow(worktreeSession, 'main-project')).toBe(true);
+    expect(sessionBelongsToWorkspaceNavRow(worktreeSession, 'worktree-cli')).toBe(false);
+    expect(sessionBelongsToWorkspaceNavRow(worktreeSession, 'sibling-worktree')).toBe(false);
+  });
+
+  it('falls back to the execution workspace when a worktree session has no project ID', () => {
+    const worktreeSession = {
+      workspaceId: 'worktree-only',
+      config: {
+        executionTarget: {
+          kind: 'existingWorktree' as const,
+          worktreeId: 'worktree-only',
+          rootPath: '/tmp/worktrees/only',
+        },
+      },
+    };
+    expect(sessionBelongsToWorkspaceNavRow(worktreeSession, 'worktree-only')).toBe(true);
+    expect(sessionBelongsToWorkspaceNavRow(worktreeSession, 'main-project')).toBe(false);
+  });
+
+  it('still attributes a legacy record that only carries the project ID', () => {
+    const legacySession = { projectWorkspaceId: 'main-project' };
+    expect(sessionBelongsToWorkspaceNavRow(legacySession, 'main-project')).toBe(true);
+    expect(sessionBelongsToWorkspaceNavRow(legacySession, 'other-project')).toBe(false);
+  });
+
   it('does not guess membership from a missing or stale ID', () => {
     expect(sessionBelongsToWorkspaceNavRow({}, 'known')).toBe(false);
     expect(sessionBelongsToWorkspaceNavRow({ workspaceId: 'stale' }, 'known')).toBe(false);
     expect(sessionBelongsToWorkspaceNavRow({ workspaceId: 'known' }, undefined)).toBe(false);
+  });
+
+  it('names one owning workspace ID per session shape', () => {
+    expect(sessionOwningWorkspaceId({
+      workspaceId: 'worktree-cli', projectWorkspaceId: 'main-project',
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'worktree-cli', rootPath: '/tmp/tree' },
+      },
+    })).toBe('main-project');
+    expect(sessionOwningWorkspaceId({
+      workspaceId: 'worktree-ws', projectWorkspaceId: 'main-project',
+      config: { executionTarget: { kind: 'local', rootPath: '/tmp/tree' } },
+    })).toBe('worktree-ws');
+    expect(sessionOwningWorkspaceId({ config: { projectWorkspaceId: 'main-project' } }))
+      .toBe('main-project');
+    expect(sessionOwningWorkspaceId({})).toBeUndefined();
+  });
+
+  it('addresses session commands through the owning project, not the execution worktree', () => {
+    expect(requireSessionOwningWorkspaceId({
+      workspaceId: 'worktree-cli', projectWorkspaceId: 'main-project',
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'worktree-cli', rootPath: '/tmp/tree' },
+      },
+    })).toBe('main-project');
+    expect(requireSessionOwningWorkspaceId({ workspaceId: 'main-project' })).toBe('main-project');
+  });
+
+  it('refuses to address session commands when the session carries no workspace identity', () => {
+    expect(() => requireSessionOwningWorkspaceId({})).toThrow('Session workspace ID is unavailable');
   });
 });

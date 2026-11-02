@@ -61,6 +61,26 @@ describe('createGlobalStateAPI workspace startup bootstrap', () => {
     delete bootstrapGlobals.__OPENBITFUN_BOOTSTRAP_WORKSPACE_STARTUP_STATE__;
   });
 
+  it('maps the complete assistant catalog without marking closed assistants opened', async () => {
+    const snapshot = createWorkspaceSnapshot();
+    snapshot.assistantWorkspaces = [{
+      ...snapshot.openedWorkspaces[0], id: 'closed-assistant', workspaceKind: 'assistant',
+      identity: { name: 'Mira', emoji: null },
+    }];
+    bootstrapGlobals.__OPENBITFUN_BOOTSTRAP_WORKSPACE_STARTUP_STATE__ = snapshot;
+    const state = await createGlobalStateAPI().initializeWorkspaceStartupState();
+    expect(state.assistantWorkspaces?.[0].workspaceKind).toBe(WorkspaceKind.Assistant);
+    expect(state.assistantWorkspaces?.[0].identity).toMatchObject({ name: 'Mira', emoji: undefined });
+    expect(state.openedWorkspaces.map(workspace => workspace.id)).toEqual(['workspace-1']);
+  });
+
+  it('accepts old snapshots without the optional assistant catalog', async () => {
+    bootstrapGlobals.__OPENBITFUN_BOOTSTRAP_WORKSPACE_STARTUP_STATE__ = createWorkspaceSnapshot();
+    const state = await createGlobalStateAPI().initializeWorkspaceStartupState();
+    expect(state.assistantWorkspaces).toBeUndefined();
+    expect(state.openedWorkspaces).toHaveLength(1);
+  });
+
   it('uses the injected startup workspace snapshot once without a startup IPC', async () => {
     bootstrapGlobals.__OPENBITFUN_BOOTSTRAP_WORKSPACE_STARTUP_STATE__ = createWorkspaceSnapshot();
     globalApiMocks.initializeWorkspaceStartupState.mockResolvedValue({

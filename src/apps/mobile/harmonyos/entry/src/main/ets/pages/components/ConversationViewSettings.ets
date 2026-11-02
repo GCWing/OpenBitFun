@@ -2,6 +2,7 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { RecentWorkspaceEntry, RemoteSession } from '../../model/RemoteModels';
 import { RemoteLogger } from '../../services/RemoteLogger';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { ConversationSessionFilterPolicy } from '../policy/ConversationSessionFilterPolicy';
 import {
   CARD,
@@ -105,9 +106,21 @@ export struct ConversationViewSettings {
   @Event onUpdatedMetadataChange: (value: boolean) => void = (_value: boolean) => {};
   @Event onStatusMetadataChange: (value: boolean) => void = (_value: boolean) => {};
   @Event onClose: () => void = () => {};
+  // In its compact placement this surface is a bottom sheet under the immersive
+  // shell: the scrolling column runs to the screen edge and ends in a tail that
+  // rests the last control above the navigation bar.
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
 
   aboutToAppear(): void {
     this.syncSelectionState();
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
   }
 
   build() {
@@ -176,7 +189,7 @@ export struct ConversationViewSettings {
             this.onStatusMetadataChange)
         }
         .width('100%')
-        .padding({ left: 20, right: 20, bottom: 24 })
+        .padding({ left: 20, right: 20, bottom: this.insets.tailSpacing(24) })
       }
       .width('100%')
       .layoutWeight(1)

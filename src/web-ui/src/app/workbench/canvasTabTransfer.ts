@@ -1,7 +1,9 @@
 import { useSceneStore } from '../stores/sceneStore';
+import type { WorkbenchPane } from './scenePaneModel';
 import type { SceneTabId } from '../components/SceneBar/types';
 import { useAgentCanvasStore, useGitCanvasStore, useBottomTerminalCanvasStore } from '../components/panels/content-canvas/stores';
 import type { CanvasStoreMode } from '../components/panels/content-canvas/stores/canvasStore';
+import { canvasTabDocumentId } from '../components/panels/content-canvas/types';
 import type { EditorGroupId } from '../components/panels/content-canvas/types';
 import { useContentResourceStore } from './contentResourceStore';
 import { captureContentScope, openWorkbenchContent } from '@/shared/services/workbenchContentService';
@@ -24,7 +26,7 @@ export function popOutCanvasTab(mode: CanvasStoreMode, tabId: string, groupId: E
   const group = groupId === 'primary' ? store.primaryGroup : groupId === 'secondary' ? store.secondaryGroup : store.tertiaryGroup;
   const tab = group.tabs.find(candidate => candidate.id === tabId);
   if (!tab) return null;
-  const documentId = `canvas:${tab.id}`;
+  const documentId = canvasTabDocumentId(tab);
   const document = getEditorDocument(documentId, tab.content.metadata?.resourceScope
     ?? captureContentScope({ ...tab.content.data, workspacePath: tab.content.data?.workspacePath ?? options.workspacePath }), tab.content.data?.filePath);
   if (!document.isCurrent()) return null;
@@ -64,7 +66,7 @@ export function isSessionTabDrag(transfer: DataTransfer): boolean {
     && Boolean(store.draggingTabId && store.draggingFromGroupId);
 }
 
-export function dropSessionTabOnWorkbench(transfer: DataTransfer, target?: WorkbenchTabDropTarget): string | null {
+export function dropSessionTabOnWorkbench(transfer: DataTransfer, target?: WorkbenchTabDropTarget, pane: WorkbenchPane = 'primary'): string | null {
   if (!isSessionTabDrag(transfer)) return null;
   const store = useAgentCanvasStore.getState();
   try {
@@ -74,7 +76,9 @@ export function dropSessionTabOnWorkbench(transfer: DataTransfer, target?: Workb
     const scope = getActiveSurfaceScope();
     if (payload?.surfaceId !== scope.surfaceId || payload?.epoch !== scope.epoch
       || payload?.tabId !== store.draggingTabId || payload?.groupId !== store.draggingFromGroupId) return null;
-    return popOutCanvasTab('agent', store.draggingTabId!, store.draggingFromGroupId!, { target });
+    const id = popOutCanvasTab('agent', store.draggingTabId!, store.draggingFromGroupId!, { target });
+    if (id && pane === 'secondary') void useSceneStore.getState().moveScene(`content:${id}`, pane, target?.tabId, target?.placement);
+    return id;
   } finally {
     store.endDrag();
   }

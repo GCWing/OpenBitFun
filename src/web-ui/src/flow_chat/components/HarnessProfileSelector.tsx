@@ -180,7 +180,7 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
   useEffect(() => {
     if (!open) return;
 
-    const handlePointerDown = (event: PointerEvent) => {
+    const handlePointerInteraction = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (!target || triggerRef.current?.contains(target) || menuRef.current?.contains(target)) {
         return;
@@ -191,11 +191,14 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
       if (event.key === 'Escape') close();
     };
 
-    const removeOverlayPointerdown0 = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerDown);
-    const removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
+    const removePointerDown = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerInteraction);
+    // The add menu also listens for mousedown; a portalled child must own both events.
+    const removeMouseDown = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerInteraction);
+    const removeKeyDown = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     return () => {
-      removeOverlayPointerdown0?.();
-      removeOverlayKeydown1?.();
+      removePointerDown();
+      removeMouseDown();
+      removeKeyDown();
     };
   }, [close, open]);
 
@@ -263,7 +266,12 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
       : knownSelectedProfile
         ? t(`chatInput.harness.profiles.${knownSelectedProfile}.name`)
         : t('chatInput.harness.unsupportedProfile', { id: selectedProfile });
-  const triggerLabel = primaryLabel;
+  const triggerLabel = presentation === 'standalone'
+    && !legacySession
+    && knownSelectedProfile
+    && isSelectableProfile(knownSelectedProfile)
+    ? t('chatInput.harness.modeLabel', { name: primaryLabel })
+    : primaryLabel;
   const triggerTooltip = legacySession
     ? t('chatInput.harness.legacySessionNotice')
     : !selectedProfileAvailable
@@ -417,7 +425,7 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
                         leading={<HarnessProfileMark profile={id} />}
                         metadata={(
                           <span className="openbitfun-harness-selector__profile-status">
-                            {connected ? <Icon name="check-line" size="sm" style={{ width: 13, height: 13 }} aria-hidden /> : null}
+                            {connected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
                             {id === 'other' ? (
                               <>
                                 <span className="openbitfun-harness-selector__agent-count">
@@ -477,7 +485,7 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
                         leading={<Icon name="user" size="md" aria-hidden />}
                         metadata={(
                           <span className="openbitfun-harness-selector__profile-status">
-                            {connected ? <Icon name="check-line" size="sm" style={{ width: 13, height: 13 }} aria-hidden /> : null}
+                            {connected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
                             {agent.available === false
                               ? t('chatInput.harness.unavailable')
                               : null}

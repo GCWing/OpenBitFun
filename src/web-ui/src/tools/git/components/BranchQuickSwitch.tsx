@@ -4,6 +4,7 @@ import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI'
 import React, {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -12,6 +13,7 @@ import React, {
 import { createOverlayPortal, OverflowText,
   Button,
   Icon,
+  IconButton,
   Input,
   Listbox,
   ListboxEmpty,
@@ -87,7 +89,9 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   const [loadFailed, setLoadFailed] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Current checkout and keyboard focus are separate: opening/searching must
+  // not activate the first row's overflow tooltip while focus is in search.
+  const [activeBranchName, setActiveBranchName] = useState<string | null>(null);
   const [blocker, setBlocker] = useState<BranchSwitchBlocker | null>(null);
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
@@ -104,6 +108,9 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const switchInFlightRef = useRef(false);
+  const branchRequestRef = useRef(0);
+  const refreshButtonRef = useRef<HTMLButtonElement>(null);
+  const listId = useId();
 
   // The "current" marker comes from the shared branch (passed in by the
   // composer strip) rather than from the fetched list's own flag, so a switch
@@ -131,6 +138,8 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
       return left.name.localeCompare(right.name);
     });
   }, [displayBranches, searchTerm]);
+  const activeIndex = filteredBranches.findIndex(branch => branch.name === activeBranchName);
+  const activeOptionId = activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined;
 
   const popoverLayout = useAnchoredPopoverPosition({
     open: present,
@@ -164,50 +173,40 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   }, [focusReady]);
 
   const loadBranches = useCallback(async () => {
+    const request = ++branchRequestRef.current;
     setIsLoading(true);
     setLoadFailed(false);
     try {
-      const cachedBranches = branchListFromCache(repositoryPath);
-      if (cachedBranches?.length) setBranches(cachedBranches);
-
-      await gitStateManager.refresh(repositoryPath, {
-        layers: ['detailed'],
-        force: true,
-        silent: true,
-        reason: 'manual',
-        source: 'branch_quick_switch',
-      });
-      const refreshedBranches = branchListFromCache(repositoryPath);
-      if (refreshedBranches) {
-        setBranches(refreshedBranches);
-        return;
-      }
-
-      const serviceBranches = await gitService.getBranches(repositoryPath, false);
-      setBranches(serviceBranches);
+      // Read only branches through the workspace-aware service. The passive
+      // detailed cache also loads commits and turns branch failures into [].
+      const serviceBranches = await gitService.getBranches(repositoryPath, true, { throwOnError: true });
+      if (request === branchRequestRef.current) setBranches(serviceBranches);
     } catch (error) {
+      if (request !== branchRequestRef.current) return;
       log.error('Failed to load branches', { repositoryPath, error });
       setLoadFailed(true);
-      if (!branchListFromCache(repositoryPath)?.length) setBranches([]);
     } finally {
-      setIsLoading(false);
+      if (request === branchRequestRef.current) setIsLoading(false);
     }
   }, [repositoryPath]);
 
   useEffect(() => {
     if (!present) {
       setSearchTerm('');
-      setSelectedIndex(0);
+      setActiveBranchName(null);
       setInputCompositionActive(false);
     }
   }, [present]);
 
   useEffect(() => {
     if (!isOpen) return;
+    setBranches(branchListFromCache(repositoryPath) ?? []);
     void loadBranches();
-  }, [isOpen, loadBranches]);
+    return () => { branchRequestRef.current += 1; };
+  }, [isOpen, loadBranches, repositoryPath]);
 
   useEffect(() => {
+    setActiveBranchName(null);
     setBlocker(null);
     setCommitDialogOpen(false);
     setCommitMessage('');
@@ -216,18 +215,18 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   }, [repositoryPath]);
 
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [filteredBranches.length, searchTerm]);
+    if (activeIndex < 0) setActiveBranchName(null);
+  }, [activeIndex]);
 
   useEffect(() => {
     const items = listRef.current?.querySelectorAll<HTMLElement>(
       '[data-openbitfun-part="option"]',
     );
-    const selectedItem = items?.[selectedIndex];
-    if (typeof selectedItem?.scrollIntoView === 'function') {
-      selectedItem.scrollIntoView({ block: 'nearest' });
+    const activeItem = items?.[activeIndex];
+    if (typeof activeItem?.scrollIntoView === 'function') {
+      activeItem.scrollIntoView({ block: 'nearest' });
     }
-  }, [filteredBranches.length, selectedIndex]);
+  }, [activeIndex]);
 
   const completeSwitch = useCallback((branchName: string) => {
     notificationService.success(
@@ -343,24 +342,30 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
       return;
     }
     if (event.key === 'Tab') {
-      // Resume the page's tab order at the trigger, outside the portal.
-      closePicker();
+      // Search and refresh are the two tab stops in this virtual-focus picker.
+      const leaving = event.shiftKey
+        ? event.target === inputRef.current
+        : event.target !== inputRef.current || refreshButtonRef.current?.disabled;
+      if (leaving) closePicker();
       return;
     }
+    // Enter on the refresh button must not also check out the active option.
+    if (event.target !== inputRef.current) return;
     if (filteredBranches.length === 0) return;
 
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setSelectedIndex(current => Math.min(current + 1, filteredBranches.length - 1));
+      setActiveBranchName(filteredBranches[Math.min(activeIndex + 1, filteredBranches.length - 1)].name);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setSelectedIndex(current => Math.max(current - 1, 0));
+      const previousIndex = activeIndex < 0 ? filteredBranches.length - 1 : Math.max(activeIndex - 1, 0);
+      setActiveBranchName(filteredBranches[previousIndex].name);
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      const selected = filteredBranches[selectedIndex];
+      const selected = filteredBranches[Math.max(activeIndex, 0)];
       if (selected && !selected.current) void handleSwitchBranch(selected.name);
     }
-  }, [closePicker, filteredBranches, handleSwitchBranch, inputCompositionActive, selectedIndex]);
+  }, [activeIndex, closePicker, filteredBranches, handleSwitchBranch, inputCompositionActive]);
 
   const closeRecoveryDialogs = useCallback(() => {
     if (isCommitting) return;
@@ -468,20 +473,45 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
           className="branch-quick-switch__input-field"
           leadingIcon={<Icon name="search" size="sm" aria-hidden />}
           aria-label={t('quickSwitch.searchLabel')}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={isOpen}
+          aria-controls={listId}
+          aria-activedescendant={isOpen ? activeOptionId : undefined}
           placeholder={t('quickSwitch.searchPlaceholder')}
           value={searchTerm}
-          onValueChange={setSearchTerm}
+          onValueChange={value => {
+            setSearchTerm(value);
+            setActiveBranchName(null);
+          }}
+          onBlur={() => setActiveBranchName(null)}
           onCompositionStart={() => setInputCompositionActive(true)}
           onCompositionEnd={() => setInputCompositionActive(false)}
           data-openbitfun-product-component="branch-quick-switch"
           data-openbitfun-product-part="input"
         />
+        <IconButton
+          ref={refreshButtonRef}
+          aria-label={t('quickSwitch.refresh')}
+          title={t('quickSwitch.refresh')}
+          icon={<Icon name="refresh" size="sm" />}
+          loading={isLoading}
+          disabled={isSwitching}
+          onClick={() => void loadBranches()}
+        />
       </div>
+      {loadFailed && branches.length > 0 && (
+        <div className="branch-quick-switch__error" role="status">
+          {t('quickSwitch.errors.refreshFailed')}
+        </div>
+      )}
       <Listbox
+        id={listId}
         ref={listRef}
         aria-label={t('quickSwitch.menuLabel')}
         className="branch-quick-switch__list"
         focusMode="virtual"
+        aria-busy={isLoading}
       >
         {isLoading && branches.length === 0 ? (
           <ListboxEmpty
@@ -512,7 +542,8 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
         ) : (
           filteredBranches.map((branch, index) => (
             <ListboxOption
-              active={index === selectedIndex}
+              id={`${listId}-option-${index}`}
+              active={isOpen && index === activeIndex}
               className="branch-quick-switch__item"
               data-index={index}
               data-openbitfun-state={branch.current ? 'current' : undefined}
@@ -522,7 +553,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
                 ? <Loader2 size={14} className="branch-quick-switch__spinner" aria-hidden />
                 : undefined}
               key={branch.name}
-              leading={<Icon name="git" size="sm" aria-hidden />}
+              leading={<Icon name={branch.remote ? 'cloud-git' : 'git'} size="sm" aria-hidden />}
               onClick={() => void handleSwitchBranch(branch.name)}
               selected={branch.current}
               value={branch.name}
@@ -557,6 +588,8 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
           {popover}
         </div>,
         getAppearanceOverlayHost(),
+        null,
+        { open: isOpen, ownerRef: anchorRef },
       )}
 
       <Dialog

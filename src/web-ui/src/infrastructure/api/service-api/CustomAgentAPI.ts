@@ -1,6 +1,7 @@
-import { api } from './ApiClient';
+import { invokePrepared } from './invokePrepared';
 import { workspaceScopedRequest } from './legacyWorkspaceCompatibility';
 import { globalEventBus } from '@/infrastructure/event-bus';
+import { getActiveSurfaceScope, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 
 export type AgentSource = 'builtin' | 'project' | 'user' | 'external';
 export type CustomAgentKind = 'mode' | 'subagent';
@@ -58,11 +59,12 @@ export interface UpdateCustomAgentPayload {
   workspaceId?: string;
 }
 
-function emitCustomAgentCatalogUpdated(payload: {
+function emitCustomAgentCatalogUpdated(scope: SurfaceScope, payload: {
   agentId?: string;
   kind?: CustomAgentKind;
   workspaceId?: string;
 }) {
+  scope.assertCurrent('publish custom agent catalog update');
   globalEventBus.emit('custom-agent:updated', payload);
   globalEventBus.emit('mode:config:updated', {
     reason: 'custom-agent-catalog-updated',
@@ -74,16 +76,17 @@ export const CustomAgentAPI = {
   async getCustomAgentDetail(
     payload: GetCustomAgentDetailPayload,
   ): Promise<CustomAgentDetail> {
-    return api.invoke<CustomAgentDetail>('get_custom_agent_detail', {
+    return invokePrepared<CustomAgentDetail>('get_custom_agent_detail', async () => ({
       request: await workspaceScopedRequest(payload),
-    });
+    }));
   },
 
   async createCustomAgent(payload: CreateCustomAgentPayload): Promise<void> {
-    await api.invoke('create_custom_agent', {
+    const scope = getActiveSurfaceScope();
+    await invokePrepared('create_custom_agent', async () => ({
       request: await workspaceScopedRequest(payload),
-    });
-    emitCustomAgentCatalogUpdated({
+    }));
+    emitCustomAgentCatalogUpdated(scope, {
       agentId: payload.id,
       kind: payload.kind,
       workspaceId: payload.workspaceId,
@@ -91,26 +94,29 @@ export const CustomAgentAPI = {
   },
 
   async updateCustomAgent(payload: UpdateCustomAgentPayload): Promise<void> {
-    await api.invoke('update_custom_agent', {
+    const scope = getActiveSurfaceScope();
+    await invokePrepared('update_custom_agent', async () => ({
       request: await workspaceScopedRequest(payload),
-    });
-    emitCustomAgentCatalogUpdated({
+    }));
+    emitCustomAgentCatalogUpdated(scope, {
       agentId: payload.agentId,
       workspaceId: payload.workspaceId,
     });
   },
 
   async deleteCustomAgent(agentId: string, workspaceId?: string): Promise<void> {
-    await api.invoke('delete_custom_agent', {
+    const scope = getActiveSurfaceScope();
+    await invokePrepared('delete_custom_agent', async () => ({
       request: await workspaceScopedRequest({ agentId, workspaceId }),
-    });
-    emitCustomAgentCatalogUpdated({ agentId, workspaceId });
+    }));
+    emitCustomAgentCatalogUpdated(scope, { agentId, workspaceId });
   },
 
   async reloadCustomAgents(workspaceId?: string): Promise<void> {
-    await api.invoke('reload_custom_agents', {
+    const scope = getActiveSurfaceScope();
+    await invokePrepared('reload_custom_agents', async () => ({
       request: await workspaceScopedRequest({ workspaceId }),
-    });
-    emitCustomAgentCatalogUpdated({ workspaceId });
+    }));
+    emitCustomAgentCatalogUpdated(scope, { workspaceId });
   },
 };

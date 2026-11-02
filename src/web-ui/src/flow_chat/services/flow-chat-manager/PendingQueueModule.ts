@@ -1,7 +1,10 @@
 /**
  * Pending queue module
  *
- * Frontend-side message queue used while a session's current dialog turn is
+ * Legacy/fallback frontend queue and explicit recovery drafts. Native hosts
+ * advertising dialog_queue_v1 use HostDialogQueue for new submissions.
+ *
+ * This frontend queue is used while a session's current dialog turn is
  * still running. Items are kept here (NOT submitted to the backend scheduler)
  * until the session returns to IDLE, at which point the head item is drained
  * via the regular `sendMessage` path. Users may also pop an item early through
@@ -58,6 +61,7 @@ export function queuedItemDuplicatesLiveTurn(
 
 export interface EnqueueInput {
   sessionId: string;
+  turnId?: string;
   content: string;
   displayMessage?: string;
   agentType?: string;
@@ -216,6 +220,7 @@ class PendingQueueManager {
     const item: QueuedMessage = {
       id: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       sessionId: input.sessionId,
+      turnId: input.turnId,
       content: input.content,
       displayMessage: input.displayMessage,
       timestamp: Date.now(),

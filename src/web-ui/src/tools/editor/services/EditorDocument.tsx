@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react';
 import { getActiveSurfaceId, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { ContentResourceScope } from '@/shared/types/contentResource';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
-import { api } from '@/infrastructure/api/service-api/ApiClient';
+import { invokePrepared } from '@/infrastructure/api/service-api/invokePrepared';
 import { upgradeLegacyEditorWorkspaceId, workspaceIdRequest } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { monacoModelManager } from './MonacoModelManager';
 import { resourcePathKey } from '@/shared/utils/resourcePath';
@@ -77,14 +77,13 @@ export class EditorDocument {
     },
   };
   readonly invoke = <T,>(command: string, args: { request: Record<string, unknown> }): Promise<T> =>
-    this.run(async assertCurrent => {
+    this.run(() => invokePrepared<T>(command, async scope => {
       const workspaceId = await this.workspaceId();
-      assertCurrent();
+      scope.assertCurrent(command);
       const reference = await workspaceIdRequest(workspaceId, 'workspacePath');
-      assertCurrent();
       const { workspacePath: _legacyRoot, remoteConnectionId: _legacyConnection, workspaceId: _callerId, ...request } = args.request;
-      return api.invoke<T>(command, { ...args, request: { ...request, ...reference } });
-    });
+      return { ...args, request: { ...request, ...reference } };
+    }));
 }
 
 const documents = new Map<string, EditorDocument>();

@@ -10,6 +10,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,7 +42,23 @@ public const val REMOTE_CAPABILITY_HOST_STREAM_V1: String = "host_stream_v1"
 /** Hosts keep hint subscriptions alive for 10 minutes; renew well before. */
 internal const val HOST_STREAM_KEEPALIVE_MS: Long = 4 * 60 * 1000L
 
+/**
+ * How many pages one history request may read while it has not yet shown the
+ * reader anything it did not already have.
+ *
+ * Host pages are cut by sequence, and a record's sequence is the moment it was
+ * last updated, so one long turn owns every record it produced: a page of
+ * history can be nothing but more records of the turn that is already on
+ * screen. Reading exactly one page per request then looks like "history loaded"
+ * while the transcript above stayed the same, and the newest turn of a long
+ * session can hold several pages by itself. The budget keeps that walk bounded
+ * (a request is a user gesture, not an unbounded download); the next request
+ * continues from where this one stopped.
+ */
+internal const val MAX_HISTORY_PAGES_PER_REQUEST: Int = 4
+
 /** Pseudo events the stream emits around the host's own records. */
+public const val STREAM_EVENT_HISTORY_STARTED: String = "relay://session-history-started"
 public const val STREAM_EVENT_READY: String = "relay://session-ready"
 public const val STREAM_EVENT_RESUMED: String = "relay://session-resumed"
 public const val STREAM_EVENT_GAP: String = "relay://session-gap"
@@ -125,6 +142,17 @@ internal interface HostStreamReads {
     suspend fun unsubscribe()
 }
 
+/**
+ * The turn a stream event belongs to, for the reader's "is this older than what
+ * the caller already has" check. `session-record` payloads always carry
+ * `turn.turnId`; control events belong to no turn and are ignored.
+ */
+internal fun streamEventTurnId(event: StreamEventWire): String? {
+    if (event.event != "session-record") return null
+    val turn = (event.payload as? JsonObject)?.get("turn") as? JsonObject ?: return null
+    return (turn["turnId"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+}
+
 private class HostStreamReader(
     private val streamId: String,
     private val reads: HostStreamReads,
@@ -136,12 +164,16 @@ private class HostStreamReader(
     var hasMore = false
     var truncated = false
 
+    /** Turns already emitted to the caller, i.e. already part of the transcript. */
+    private val emittedTurns = mutableSetOf<String>()
+
     private suspend fun read(after: Long? = null, before: Long? = null, epoch: Long? = null): StreamPageWire =
         checkStreamPage(streamId, reads.read(after, before, epoch))
 
     private suspend fun emitPage(page: StreamPageWire) {
         for (event in page.events) {
             emit(buildJsonObject { put("session_id", streamId); put("event", event.event); put("payload", event.payload) })
+            streamEventTurnId(event)?.let { emittedTurns += it }
         }
     }
 
@@ -194,18 +226,35 @@ private class HostStreamReader(
     }
 
     suspend fun loadOlder() {
-        if (!hasMore) return
-        val page = read(before = oldest, epoch = epoch)
-        if (page.epoch != epoch) {
-            emitGap()
-            resync()
-            throw IllegalStateException("Session history restarted on the host; reloaded from its latest page")
+        var pages = 0
+        try {
+            while (hasMore && pages < MAX_HISTORY_PAGES_PER_REQUEST) {
+                val page = read(before = oldest, epoch = epoch)
+                if (page.epoch != epoch) {
+                    emitGap()
+                    resync()
+                    throw IllegalStateException("Session history restarted on the host; reloaded from its latest page")
+                }
+                // A page that only repeats turns the transcript already has is not
+                // progress: keep reading until the caller gets an older turn, the
+                // host runs out of history, or this request's budget is spent.
+                val showsAnOlderTurn = page.events.any { event ->
+                    streamEventTurnId(event)?.let { it !in emittedTurns } == true
+                }
+                if (pages == 0) emit(buildJsonObject {
+                    put("session_id", streamId); put("event", STREAM_EVENT_HISTORY_STARTED)
+                    put("payload", JsonObject(emptyMap()))
+                })
+                emitPage(page)
+                page.events.firstOrNull()?.let { oldest = it.seq }
+                hasMore = page.hasMore
+                truncated = page.truncated
+                pages++
+                if (showsAnOlderTurn) break
+            }
+        } finally {
+            if (pages > 0) emitReady()
         }
-        emitPage(page)
-        page.events.firstOrNull()?.let { oldest = it.seq }
-        hasMore = page.hasMore
-        truncated = page.truncated
-        emitReady()
     }
 
     fun hintIsNew(hint: StreamHint, target: String): Boolean =
@@ -217,6 +266,8 @@ private sealed interface Wake {
     class Dirty(val announce: Boolean) : Wake
     class Older(val request: CompletableDeferred<Unit>) : Wake
 }
+
+private data class StreamDelivery(val event: JsonObject? = null, val consumed: CompletableDeferred<Unit>? = null)
 
 /**
  * One host stream as a flow of `{session_id, event, payload}` objects.
@@ -230,6 +281,14 @@ private sealed interface Wake {
  * Every wake that re-reads the host after a recovery emits
  * [STREAM_EVENT_RESUMED] first; a host restart emits [STREAM_EVENT_GAP] before
  * the latest page is replayed, and each completed catch-up calls [onCaughtUp].
+ *
+ * Every request on [olderRequests] is answered: one the lane cannot serve is
+ * failed before the flow ends, never left awaiting, because the caller waits for
+ * that answer independently of this flow.
+ *
+ * Wakes coalesce before the lane serves them: any number of pending hints cost
+ * one catch-up read, and a history request already queued is served in that same
+ * pass instead of behind one refresh per hint.
  */
 internal fun hostStream(
     streamId: String,
@@ -241,8 +300,20 @@ internal fun hostStream(
     onError: (Throwable) -> Unit,
     onCaughtUp: () -> Unit,
     keepaliveMs: Long = HOST_STREAM_KEEPALIVE_MS,
-): Flow<JsonObject> = channelFlow {
-    val reader = HostStreamReader(streamId, reads) { send(it) }
+): Flow<JsonObject> = channelFlow<StreamDelivery> {
+    val reader = HostStreamReader(streamId, reads) { send(StreamDelivery(event = it)) }
+    // channelFlow.send only enqueues a record. Completion must follow reduction
+    // of all preceding records, including when the UI collector is slower.
+    suspend fun awaitConsumption() {
+        val consumed = CompletableDeferred<Unit>()
+        send(StreamDelivery(consumed = consumed))
+        consumed.await()
+    }
+    // Declared outside the lane so closing it can answer what the lane left.
+    val wakes = Channel<Wake>(Channel.UNLIMITED)
+    // Requests the lane took off [wakes] and has not served yet. One sweep can
+    // hand it several, and every one of them is owed an answer.
+    val waiting = ArrayDeque<CompletableDeferred<Unit>>()
     // Set once a page was read with `subscribe`; before that there is nothing
     // on the host to release.
     var subscribed = false
@@ -262,9 +333,9 @@ internal fun hostStream(
                 retryMs = (retryMs * 2).coerceAtMost(30_000L)
             }
         }
+        awaitConsumption()
         onCaughtUp()
 
-        val wakes = Channel<Wake>(Channel.UNLIMITED)
         launch { hints.collect { hint -> if (reader.hintIsNew(hint, target)) wakes.send(Wake.Dirty(false)) } }
         launch { reconnects.collect { wakes.send(Wake.Dirty(true)) } }
         launch { while (currentCoroutineContext().isActive) { delay(keepaliveMs); wakes.send(Wake.Dirty(false)) } }
@@ -274,23 +345,43 @@ internal fun hostStream(
         var dirty = false
         var announce = false
         while (currentCoroutineContext().isActive) {
-            var older: CompletableDeferred<Unit>? = null
-            when (val wake = wakes.receive()) {
-                is Wake.Dirty -> { dirty = true; announce = announce || wake.announce }
-                is Wake.Older -> older = wake.request
+            // Sweep whatever is already queued before serving anything. A
+            // streaming session fans out one hint per host event, and every hint
+            // carries the same meaning: read forward once. Serving exactly one
+            // wake per refresh turned a hint burst into a queue of refreshes, and
+            // a history request that arrived during the burst waited behind the
+            // whole queue, one catch-up read at a time.
+            var older = waiting.removeFirstOrNull()
+            var gathered = older != null
+            while (true) {
+                val queued = wakes.tryReceive().getOrNull() ?: break
+                gathered = true
+                when (queued) {
+                    is Wake.Dirty -> { dirty = true; announce = announce || queued.announce }
+                    is Wake.Older -> if (older == null) older = queued.request else waiting.addLast(queued.request)
+                }
+            }
+            // Nothing was queued: wait for a wake instead of re-running a refresh
+            // that just failed. Its retry wake is what carries the backoff.
+            if (!gathered) {
+                when (val wake = wakes.receive()) {
+                    is Wake.Dirty -> { dirty = true; announce = announce || wake.announce }
+                    is Wake.Older -> older = wake.request
+                }
             }
             try {
                 if (dirty) {
                     if (announce) {
-                        send(buildJsonObject { put("session_id", streamId); put("event", STREAM_EVENT_RESUMED); put("payload", JsonObject(emptyMap())) })
+                        send(StreamDelivery(event = buildJsonObject { put("session_id", streamId); put("event", STREAM_EVENT_RESUMED); put("payload", JsonObject(emptyMap())) }))
                     }
                     reader.refresh()
                     dirty = false
                     announce = false
+                    awaitConsumption()
                     onCaughtUp()
                 }
                 older?.let { request ->
-                    try { reader.loadOlder(); request.complete(Unit) } catch (cancelled: CancellationException) { throw cancelled } catch (error: Throwable) { request.completeExceptionally(error) }
+                    try { reader.loadOlder(); awaitConsumption(); request.complete(Unit) } catch (cancelled: CancellationException) { throw cancelled } catch (error: Throwable) { awaitConsumption(); request.completeExceptionally(error) }
                 }
                 backoffMs = 1000L
             } catch (cancelled: CancellationException) {
@@ -308,11 +399,36 @@ internal fun hostStream(
             }
         }
     } finally {
-        // Best effort: the host also drops idle subscriptions on its own.
-        if (subscribed) withContext(NonCancellable) {
-            try { withTimeout(5_000L) { reads.unsubscribe() } } catch (_: Throwable) {}
+        // The caller of a history request waits outside this flow, so the lane
+        // owes every request an answer: one left queued here would suspend its
+        // caller for the life of the app, and every later request would sit
+        // behind it. Both queues close first, so a request sent during this
+        // cleanup is rejected rather than parked in a lane that has ended.
+        withContext(NonCancellable) {
+            val closed = IllegalStateException("Session history stream is closed")
+            wakes.close()
+            while (true) {
+                val wake = wakes.tryReceive().getOrNull() ?: break
+                if (wake is Wake.Older) wake.request.completeExceptionally(closed)
+            }
+            while (true) {
+                val swept = waiting.removeFirstOrNull() ?: break
+                swept.completeExceptionally(closed)
+            }
+            olderRequests.close()
+            while (true) {
+                val queued = olderRequests.tryReceive().getOrNull() ?: break
+                queued.completeExceptionally(closed)
+            }
+            // Best effort: the host also drops idle subscriptions on its own.
+            if (subscribed) {
+                try { withTimeout(5_000L) { reads.unsubscribe() } } catch (_: Throwable) {}
+            }
         }
     }
+}.transform { delivery ->
+    delivery.event?.let { emit(it) }
+    delivery.consumed?.complete(Unit)
 }
 
 /** Streams that a command transport can also read on demand from its device. */

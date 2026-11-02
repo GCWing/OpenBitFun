@@ -41,6 +41,7 @@ test("form grouping composes semantic sections, grouped surfaces, and independen
   );
 
   assert.match(markup, /<section[^>]+data-openbitfun-component="form-section"/);
+  assert.match(markup, /data-description-layout="stacked"/);
   assert.match(markup, /<h3[^>]+data-openbitfun-part="title"[^>]*>Provider<\/h3>/);
   assert.match(markup, /data-openbitfun-part="heading-region"/);
   assert.match(markup, /data-openbitfun-part="leading"[^>]*><svg aria-hidden="true"><\/svg>/);
@@ -54,6 +55,25 @@ test("form grouping composes semantic sections, grouped surfaces, and independen
   assert.match(markup, /data-align="center"[^>]+data-openbitfun-part="row"[^>]+data-padding="md"/);
   assert.match(markup, /data-align="start"[^>]+data-openbitfun-part="row"[^>]+data-padding="none"/);
   assert.match(markup, /data-control-width="fill"/);
+});
+
+test("inline summaries preserve separate headings, descriptions, and actions", () => {
+  const markup = renderToStaticMarkup(
+    createElement(FormSection, {
+      actions: createElement("button", { type: "button", "aria-expanded": false }, "Expand"),
+      description: "Connection settings",
+      descriptionLayout: "inline",
+      headingAs: "h3",
+      title: "Provider",
+    }),
+  );
+
+  assert.match(markup, /data-description-layout="inline"/);
+  assert.match(markup, /<h3[^>]+data-openbitfun-part="title"[^>]*>Provider<\/h3>/);
+  assert.match(markup, /data-openbitfun-part="description"/);
+  assert.match(markup, /Connection settings/);
+  assert.match(markup, /data-openbitfun-part="actions"[^>]*><button[^>]*aria-expanded="false"/);
+  assert.doesNotMatch(markup, /<h3[^>]*>[\s\S]*Connection settings[\s\S]*<\/h3>/);
 });
 
 test("form grouping styles consume only shared public composition tokens", async () => {
@@ -75,19 +95,21 @@ test("field surface context reaches canonical field shells and resets for nested
     ["number-input", createElement(NumberInput, { onValueChange() {}, value: 1 })],
   ];
 
-  controls.forEach(([component, control]) => {
-    const markup = renderToStaticMarkup(
-      createElement(FieldGroup, { fieldSurface: "ambient" }, control),
-    );
-    assert.match(markup, new RegExp(`data-openbitfun-component="${component}"[^>]+data-field-surface="ambient"`));
-  });
+  for (const fieldSurface of ["ambient", "filled"]) {
+    controls.forEach(([component, control]) => {
+      const markup = renderToStaticMarkup(
+        createElement(FieldGroup, { fieldSurface }, control),
+      );
+      assert.match(markup, new RegExp(`data-openbitfun-component="${component}"[^>]+data-field-surface="${fieldSurface}"`));
+    });
 
-  const nestedMarkup = renderToStaticMarkup(
-    createElement(FieldGroup, { fieldSurface: "ambient" },
-      createElement(FieldGroup, { fieldSurface: "default" }, createElement(Input)),
-    ),
-  );
-  assert.match(nestedMarkup, /data-openbitfun-component="input"[^>]+data-field-surface="default"/);
+    const nestedMarkup = renderToStaticMarkup(
+      createElement(FieldGroup, { fieldSurface },
+        createElement(FieldGroup, { fieldSurface: "default" }, createElement(Input)),
+      ),
+    );
+    assert.match(nestedMarkup, /data-openbitfun-component="input"[^>]+data-field-surface="default"/);
+  }
 });
 
 test("ambient field groups preserve opaque overlays while field shells reuse the group surface", async () => {

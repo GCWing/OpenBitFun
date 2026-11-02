@@ -12,17 +12,18 @@ import { sessionComposerStore } from '../store/sessionComposerStore';
 import { createBtwSessionPlaceholder } from '../services/BtwThreadService';
 import { openBtwSessionInAuxPane } from '../services/btwSessionPane';
 import { resolveSessionDriverId } from '../session-drivers/resolve';
+import { getSessionConversationCapability } from '../session-drivers/conversationCapability';
 import { isAcpFlowSession } from '../utils/acpSession';
 import { useConversationViewScope } from '../contexts/conversationViewScope';
 import { openMainSession } from '../services/sessionActivation';
 import { FLOWCHAT_EXCERPT_ACTION, type ExcerptActionRequest } from './excerptActions';
 
 /** Only the visible primary composer may commit a selection action into a session draft. */
-export function useExcerptComposerActions({ mainSessionId, targetSessionId, active, setInputTarget, focus }: {
+export function useExcerptComposerActions({ mainSessionId, targetSessionId, active, selectTargetSession, focus }: {
   mainSessionId: string | null;
   targetSessionId: string | null;
   active: boolean;
-  setInputTarget: (target: 'main' | 'btw') => void;
+  selectTargetSession: (sessionId: string) => void;
   focus: () => void;
 }) {
   const peer = usePeerDeviceModeOptional();
@@ -43,6 +44,7 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
       const source = state.sessions.get(request.excerpt.source.sessionId);
       if (!parent || !source || (!viewScope && state.activeSessionId !== mainSessionId)
         || (source.sessionId !== mainSessionId && source.parentSessionId !== mainSessionId)) return;
+      if (getSessionConversationCapability(mainSessionId, parent).access !== 'available') return;
       let destination = mainSessionId;
       if (request.action === 'ask') {
         if (!parent.workspacePath || isAcpFlowSession(parent) || resolveSessionDriverId(mainSessionId, parent) === 'dispatch'
@@ -61,6 +63,7 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
           }).childSessionId;
         }
       }
+      if (getSessionConversationCapability(destination, flowChatStore.getState().sessions.get(destination)).access !== 'available') return;
       const composer = sessionComposerStore.getState();
       const currentTargetSessionId = targetRef.current;
       const visibleContexts = contextsStore.getState().contexts;
@@ -83,7 +86,7 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
           workspacePath: parent.workspacePath, expand: false });
         expandSessionAuxPane();
       }
-      if (!viewScope || destination === mainSessionId) setInputTarget(destination === mainSessionId ? 'main' : 'btw');
+      if (!viewScope || destination === mainSessionId) selectTargetSession(destination);
       request.onAccepted?.();
       // The draft changes synchronously; focus follows React's target activation.
       cancelAnimationFrame(frame);
@@ -91,5 +94,5 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
     };
     window.addEventListener(FLOWCHAT_EXCERPT_ACTION, handle);
     return () => { cancelAnimationFrame(frame); window.removeEventListener(FLOWCHAT_EXCERPT_ACTION, handle); };
-  }, [active, mainSessionId, setInputTarget, focus, peer, contextsStore, viewScope]);
+  }, [active, mainSessionId, selectTargetSession, focus, peer, contextsStore, viewScope]);
 }

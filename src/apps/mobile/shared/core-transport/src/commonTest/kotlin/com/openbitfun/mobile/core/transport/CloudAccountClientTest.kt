@@ -134,17 +134,19 @@ class CloudAccountClientTest {
     }
 
     /**
-     * Only desktops can be driven, so only desktops are offered. A row without a
-     * kind comes from a relay that predates them: this device's own row and the
-     * names our own builds register under are dropped anyway, and anything else
-     * is kept rather than risk hiding a real desktop.
+     * Only hosts can be driven, so only hosts are offered: a desktop and a CLI
+     * host both run the control plane, while a phone or a watch is a controller.
+     * A row without a kind comes from a relay that predates them: this device's
+     * own row and the names our own builds register under are dropped anyway, and
+     * anything else is kept rather than risk hiding a real host.
      */
     @Test
-    fun listDevicesOffersDesktopsAndDropsPhones() = runTest {
+    fun listDevicesOffersHostsAndDropsPhones() = runTest {
         val engine = MockEngine {
             json(
                 """[
                   {"device_id":"desktop-1","device_name":"Studio Mac","online":true,"device_kind":"desktop"},
+                  {"device_id":"cli-1","device_name":"Build host","online":true,"device_kind":"cli"},
                   {"device_id":"phone-2","device_name":"Pixel 8","online":true,"device_kind":"mobile"},
                   {"device_id":"watch-1","device_name":"Watch","online":false,"device_kind":"watch"},
                   {"device_id":"phone-1","device_name":"Pixel 8","online":true},
@@ -167,9 +169,10 @@ class CloudAccountClientTest {
             "phone-1",
         )
 
-        assertEquals(listOf("desktop-1", "legacy-1"), devices.map { it.deviceId })
+        assertEquals(listOf("desktop-1", "cli-1", "legacy-1"), devices.map { it.deviceId })
         assertEquals("desktop", devices[0].deviceKind)
-        assertEquals(null, devices[1].deviceKind)
+        assertEquals("cli", devices[1].deviceKind)
+        assertEquals(null, devices[2].deviceKind)
     }
 
     @Test
@@ -413,7 +416,7 @@ class CloudAccountClientTest {
             assertTrue(request.url.encodedPath.endsWith("/key"), "HTTP must only read the authenticated public key")
             onKeyRead()
             json("""{"public_key":"${Base64.Default.encode(peerPublic)}"}""")
-        }), realtimeFactory = { _, _, token ->
+        }), processingDispatcher = kotlinx.coroutines.Dispatchers.Unconfined, realtimeFactory = { _, _, token ->
             assertEquals("token-1", token)
             FakeRpc(notifications, reply)
         })

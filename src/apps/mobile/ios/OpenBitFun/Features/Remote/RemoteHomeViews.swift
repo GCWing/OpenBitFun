@@ -69,6 +69,7 @@ struct RemoteConnectedHomeView: View {
             VStack(alignment: .leading, spacing: 0) {
                 WelcomeBrandFlowView(sweep: true)
                     .frame(width: MobileDesignGeometry.recentHomeMarkSize, height: MobileDesignGeometry.recentHomeMarkSize)
+                    .anchorPreference(key: ColdStartHomeMarkPreference.self, value: .bounds) { $0 }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 20)
                 Text(model.localized("今天，想做点什么？"))
@@ -159,10 +160,8 @@ struct WelcomeHomeView: View {
                     }
                     VStack(spacing: MobileDesignGeometry.welcomeButtonGap) {
                         welcomeAction(model.accountUser == nil ? "登录账号" : "连接电脑", symbol: nil) {
-                            if model.accountUser == nil { model.accountSheetOpen = true }
-                            else { model.connectRemote() }
+                            model.connectRemote()
                         }
-                        welcomeAction("扫码连接电脑", symbol: "viewfinder") { model.scanRemote() }
                         MiniAppsButton(model: model).foregroundStyle(MobileDesignColors.welcomeButton)
                     }
                     .padding(.horizontal, MobileDesignGeometry.welcomeGutter)

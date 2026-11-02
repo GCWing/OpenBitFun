@@ -5,6 +5,7 @@ mod command_source;
 mod hook_source;
 mod instruction_source;
 mod mcp_source;
+pub mod session;
 
 pub use agent_source::{ClaudeCodeSubagentProvider, ClaudeCodeSubagentProviderOptions};
 pub use command_source::{ClaudeCodeCommandProvider, ClaudeCodeCommandProviderOptions};

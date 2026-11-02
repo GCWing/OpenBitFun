@@ -196,6 +196,34 @@ fn enqueue_failure_preserves_retry_and_missing_session_disable_semantics() {
 }
 
 #[test]
+fn trigger_delivered_elsewhere_clears_pending_and_stops_retrying() {
+    let mut state = ScheduledJobRuntimeState {
+        next_run_at_ms: Some(300),
+        pending_trigger_at_ms: Some(100),
+        retry_at_ms: Some(200),
+        last_run_status: Some(ScheduledJobRunStatus::Error),
+        last_error: Some(
+            "Dialog turn ID is already active or completed: session_id=session_1, turn_id=turn-1"
+                .to_string(),
+        ),
+        consecutive_failures: 416,
+        ..Default::default()
+    };
+
+    state.mark_trigger_delivered_elsewhere(250);
+
+    assert_eq!(state.pending_trigger_at_ms, None);
+    assert_eq!(state.retry_at_ms, None);
+    assert_eq!(state.next_run_at_ms, Some(300));
+    assert_eq!(state.last_run_status, Some(ScheduledJobRunStatus::Ok));
+    assert_eq!(state.last_error, None);
+    assert_eq!(state.last_run_finished_at_ms, Some(250));
+    assert_eq!(state.consecutive_failures, 0);
+    assert!(!state.pending_is_due(1_000));
+    assert_eq!(state.next_wakeup_at_ms(), Some(300));
+}
+
+#[test]
 fn turn_completion_failure_and_cancel_preserve_legacy_status_fields() {
     let mut completed = ScheduledJobRuntimeState {
         active_turn_id: Some("turn-1".to_string()),

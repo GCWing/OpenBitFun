@@ -6,6 +6,7 @@ import React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { JSDOM } from 'jsdom';
 
 import GenerativeWidgetFrame, { GENERATIVE_WIDGET_SHELL_HTML } from './GenerativeWidgetFrame';
 import { widgetAppearanceAdapter } from '@/infrastructure/appearance/adapters/WidgetAppearanceAdapter';
@@ -39,6 +40,43 @@ describe('GenerativeWidgetFrame shell', () => {
     );
 
     expect(values).toEqual(['13px']);
+  });
+
+  it('acknowledges each applied code version and runs completed scripts only once', () => {
+    const postMessage = vi.fn();
+    const dom = new JSDOM(GENERATIVE_WIDGET_SHELL_HTML, {
+      runScripts: 'dangerously',
+      beforeParse(window) {
+        window.postMessage = postMessage;
+        window.requestAnimationFrame = () => 0;
+      },
+    });
+    const streamedCode = '<p>Partial</p>';
+    const completedCode = '<p>Complete</p><script>window.executionCount = (window.executionCount || 0) + 1;</script>';
+    const update = (html: string, runScripts: boolean) => {
+      dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+        data: { type: 'openbitfun-widget:update', widgetId: 'widget_1', html, runScripts },
+      }));
+    };
+    try {
+      expect(postMessage.mock.calls.map(([message]) => message.type)).toEqual(['openbitfun-widget:ready']);
+      update(streamedCode, false);
+      expect(dom.window.document.querySelector('#root')?.textContent).toBe('Partial');
+      expect(postMessage).toHaveBeenLastCalledWith({
+        source: 'openbitfun-widget', type: 'openbitfun-widget:rendered',
+        widgetId: 'widget_1', widgetCode: streamedCode,
+      }, '*');
+      update(completedCode, true);
+      expect(dom.window.document.querySelector('#root > p')?.textContent).toBe('Complete');
+      expect(postMessage).toHaveBeenLastCalledWith({
+        source: 'openbitfun-widget', type: 'openbitfun-widget:rendered',
+        widgetId: 'widget_1', widgetCode: completedCode,
+      }, '*');
+      update(completedCode, true);
+      expect(Reflect.get(dom.window, 'executionCount')).toBe(1);
+    } finally {
+      dom.window.close();
+    }
   });
 
   it('writes the widget shell into about:blank instead of relying on srcdoc', async () => {

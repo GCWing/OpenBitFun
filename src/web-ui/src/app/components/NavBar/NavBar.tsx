@@ -9,13 +9,15 @@
  * - Non-interactive space remains a drag region for moving the window.
  */
 
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 
-import { useNavSceneStore } from '../../stores/navSceneStore';
+import { resolveResourceWorkspace, useNavSceneStore } from '../../stores/navSceneStore';
 import { getSceneNavTitleKey } from '../../scenes/nav-registry';
 import { useI18n } from '../../../infrastructure/i18n';
+import { getWorkspaceDisplayName, useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
+import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
-import { isMacOSDesktopRuntime, supportsNativeWindowDragging } from '@/infrastructure/runtime';
+import { isMacOSDesktopRuntime, startNativeWindowDragging, supportsNativeWindowDragging } from '@/infrastructure/runtime';
 import './NavBar.scss';
 import { Icon, OverflowText, Tooltip } from '@openbitfun/ui';
 
@@ -48,8 +50,14 @@ const NavBar: React.FC<NavBarProps> = ({
   const goForward    = useNavSceneStore(s => s.goForward);
   const canGoBack    = showSceneNav && !!navSceneId;
   const canGoForward = !showSceneNav && !!navSceneId;
+  const resourceTarget = useNavSceneStore(s => s.resourceWorkspace);
+  const { activeWorkspace, openedWorkspaces } = useWorkspaceContext();
+  const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
+  const resourceWorkspace = resolveResourceWorkspace(resourceTarget, scope.surfaceId, openedWorkspaces, activeWorkspace);
   const titleKey = showSceneNav && navSceneId ? getSceneNavTitleKey(navSceneId) : null;
-  const title = titleKey ? t(titleKey) : null;
+  const title = showSceneNav && navSceneId === 'file-viewer'
+    ? getWorkspaceDisplayName(resourceWorkspace)
+    : titleKey ? t(titleKey) : null;
   const lastMouseDownTimeRef = useRef<number>(0);
 
   const handleBarMouseDown = useCallback((e: React.MouseEvent) => {
@@ -65,14 +73,9 @@ const NavBar: React.FC<NavBarProps> = ({
     if (target.closest(INTERACTIVE_SELECTOR)) return;
     if (timeSinceLastMouseDown < 500 && timeSinceLastMouseDown > 50) return;
 
-    void (async () => {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        await getCurrentWindow().startDragging();
-      } catch (error) {
-        log.debug('startDragging failed', error);
-      }
-    })();
+    void startNativeWindowDragging().catch(error => {
+      log.debug('startDragging failed', error);
+    });
   }, [canDragWindow]);
 
   const handleBarDoubleClick = useCallback((e: React.MouseEvent) => {

@@ -52,6 +52,12 @@ export type SharedI18nTerms = {
 
 export const SHARED_TERMS_BY_APP_LANGUAGE = {
   "en-US": {
+    "window": {
+      "minimize": "Minimize app window",
+      "maximize": "Maximize app window",
+      "restore": "Restore app window",
+      "close": "Close app window"
+    },
     "product": {
       "name": "OpenBitFun",
       "remote": "OpenBitFun Remote"
@@ -102,9 +108,18 @@ export const SHARED_TERMS_BY_APP_LANGUAGE = {
       "done": "Done",
       "failed": "Failed",
       "cancelled": "Cancelled"
+    },
+    "sessions": {
+      "new": "New Session"
     }
   },
   "zh-CN": {
+    "window": {
+      "minimize": "最小化应用窗口",
+      "maximize": "最大化应用窗口",
+      "restore": "还原应用窗口",
+      "close": "关闭应用窗口"
+    },
     "product": {
       "name": "OpenBitFun",
       "remote": "OpenBitFun Remote"
@@ -155,9 +170,18 @@ export const SHARED_TERMS_BY_APP_LANGUAGE = {
       "done": "已完成",
       "failed": "失败",
       "cancelled": "已取消"
+    },
+    "sessions": {
+      "new": "新会话"
     }
   },
   "zh-TW": {
+    "window": {
+      "minimize": "最小化應用視窗",
+      "maximize": "最大化應用視窗",
+      "restore": "還原應用視窗",
+      "close": "關閉應用視窗"
+    },
     "product": {
       "name": "OpenBitFun",
       "remote": "OpenBitFun Remote"
@@ -208,6 +232,9 @@ export const SHARED_TERMS_BY_APP_LANGUAGE = {
       "done": "已完成",
       "failed": "失敗",
       "cancelled": "已取消"
+    },
+    "sessions": {
+      "new": "新會話"
     }
   }
 } as const satisfies Record<AppLanguage, SharedI18nTerms>;

@@ -1,361 +1,49 @@
-/**
- * ModelThinking tool styles.
- * Shows internal model reasoning.
- *
- * Single DOM structure for both streaming and completed states.
- * Expanded: max-height with scroll; streaming uses slightly brighter muted text.
- * Completed: auto-collapses via CSS grid-template-rows animation.
- */
-
-@use './_tool-card-common.scss';
-@use '@/infrastructure/markdown/layout' as markdown;
-@use '../markdown-typography' as markdownTypography;
-
-/* Minimal, borderless layout.
- * WebKit (Tauri/macOS) baseline-quirk fix:
- * — Collapsed summary uses `--openbitfun-type-flow-control-font-size` + shared support line-height to match
- *   `.explore-region--collapsible` (e.g. “执行了 N 个命令”).
- * — Keep the fixed-size leading-icon swap box and the label in simple `inline`
- *   flow so flex `align-items: center` stays stable. */
-.flow-thinking-item {
-  padding: 0;
-  /* The enclosing transcript composition owns the gap to the next item. */
-  margin: 0;
-  background: transparent;
-  border: 0;
-  box-sizing: border-box;
-  /* Collapsed summary line: match `.explore-region--collapsible` (e.g. command count). */
-  font-size: var(--openbitfun-type-flow-control-font-size);
-  line-height: var(--openbitfun-type-flow-support-line-height);
-  transition: padding 0.2s ease;
-}
-
-.thinking-collapsed-header {
-  min-block-size: max(1lh, var(--openbitfun-control-tool-card-ambient-row-min-block-size));
-  display: flex;
-  align-items: center;
-  gap: var(--openbitfun-control-flow-chat-row-icon-gap);
-  padding: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  background: transparent;
-  font-size: var(--openbitfun-type-flow-control-font-size);
-  line-height: var(--openbitfun-type-flow-support-line-height);
-
-  &:hover {
-    .thinking-label {
-      color: var(--openbitfun-color-content-secondary);
-      opacity: 1;
-    }
-
-    .thinking-leading-icon {
-      opacity: 1;
-    }
-
-    .thinking-leading-icon__default {
-      opacity: 0;
-    }
-
-    .thinking-leading-icon__collapsed-hover {
-      opacity: 1;
-    }
-  }
-
-  .thinking-leading-icon {
-    position: relative;
-    width: var(--openbitfun-control-flow-chat-row-icon-size);
-    height: var(--openbitfun-control-flow-chat-row-icon-size);
-    flex-shrink: 0;
-    color: var(--openbitfun-color-content-secondary);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: opacity 0.15s ease;
-
-    > [data-openbitfun-component='icon'] {
-      position: absolute;
-      inset: 0;
-      transition: opacity 0.15s ease;
-    }
-
-    &__default {
-      opacity: 1;
-    }
-
-    &__collapsed-hover,
-    &__expanded {
-      opacity: 0;
-    }
-  }
-
-  .thinking-label {
-    min-width: 0;
-    font-size: var(--openbitfun-type-flow-control-font-size);
-    font-weight: var(--openbitfun-type-body-sm-font-weight);
-    color: var(--openbitfun-color-content-secondary);
-    line-height: var(--openbitfun-type-flow-support-line-height);
-  }
-}
-
-/* Reasoning summaries use their latest provider part as a compact live status. */
-.flow-thinking-item.summary.collapsed {
-  .thinking-collapsed-header {
-    min-width: 0;
-  }
-
-  .thinking-label {
-    overflow: hidden;
-    white-space: nowrap;
-  }
-}
-
-.flow-thinking-item.summary .thinking-label {
-  color: var(--openbitfun-color-content-secondary);
-}
-
-.flow-thinking-item.expanded {
-  .thinking-leading-icon__default,
-  .thinking-leading-icon__collapsed-hover {
-    opacity: 0;
-  }
-
-  .thinking-leading-icon__expanded {
-    opacity: 1;
-  }
-}
-
-/* Expand container with animation — duration matches FLOWCHAT_COLLAPSE_DURATION_MS. */
-.thinking-expand-container {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1);
-
-  &--open {
-    grid-template-rows: 1fr;
-  }
-
-  > .thinking-content-wrapper {
-    overflow: hidden;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .thinking-expand-container {
-    transition: none;
-  }
-}
-
-.thinking-content {
-  @include markdownTypography.apply;
-
-  font-size: var(--openbitfun-type-flow-control-font-size);
-  font-weight: var(--openbitfun-type-flow-control-font-weight);
-  line-height: var(--openbitfun-type-flow-body-line-height);
-  /* Match FlowChat body text (sans); mono stack + generic monospace yields Songti-like CJK on Windows. */
-  font-family:var(--openbitfun-type-body-sm-font-family);
-  word-break: break-word;
-  color: var(--openbitfun-color-content-muted);
-  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline) 0 0;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  margin-top: 0;
-  /* Cap height when expanded so long thinking stays compact; scroll inside */
-  max-height: 300px;
-  overflow-y: auto;
-  min-height: 0;
-  cursor: text;
-  user-select: text;
-}
-
-.flow-thinking-item.streaming .thinking-content {
-  color: var(--openbitfun-color-content-muted);
-}
-
-/* Content wrapper with fade gradients */
-.thinking-content-wrapper {
+// The design system owns the shell. Reasoning keeps the shared Markdown
+// typography and controls, with secondary content tone for its reading surface.
+.thinking-details-panel {
   position: relative;
-  min-height: 0; /* Required for the 0fr grid trick */
-  /*
-   * Match FlowChat list surface, not app chrome primary.
-   * Use a solid fill + mask fade so we never interpolate theme colors with `transparent` in sRGB
-   * (that pulls toward black and looks wrong on near-black themes).
-   */
-  --thinking-scroll-fade-base: var(--openbitfun-color-surface-scene);
-
-  /* Top fade */
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 24px;
-    pointer-events: none;
-    z-index: 1;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-
-    background: var(--thinking-scroll-fade-base);
-    -webkit-mask-image: linear-gradient(to bottom, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
-    mask-image: linear-gradient(to bottom, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-size: 100% 100%;
-    mask-size: 100% 100%;
-  }
-
-  /* Bottom fade */
-  &::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 24px;
-    pointer-events: none;
-    z-index: 1;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-
-    background: var(--thinking-scroll-fade-base);
-    -webkit-mask-image: linear-gradient(to top, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
-    mask-image: linear-gradient(to top, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-size: 100% 100%;
-    mask-size: 100% 100%;
-  }
-
-  /* Show gradients when content scrolls */
-  &.has-scroll {
-    &::before,
-    &::after {
-      opacity: 1;
-    }
-  }
-
-  /* Hide top fade at the top */
-  &.at-top::before {
-    opacity: 0;
-  }
-
-  /* Hide bottom fade at the bottom */
-  &.at-bottom::after {
-    opacity: 0;
-  }
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
 }
 
-/* Markdown body: same sans as rest of chat; code stays mono via Appearance. */
-.thinking-content .markdown-renderer.thinking-markdown {
-  --markdown-font-heading: var(--openbitfun-type-flow-title-font-family);
-  --markdown-font-size: var(--openbitfun-type-flow-control-font-size);
-  --markdown-font-size-sm: var(--openbitfun-type-flow-control-font-size);
-  --markdown-code-font-size: var(--openbitfun-type-flow-support-font-size);
-  --markdown-line-height: var(--openbitfun-type-flow-body-line-height);
-  --markdown-block-gap: #{markdown.$block-gap};
-  --markdown-paragraph-gap: #{markdown.$paragraph-gap};
+.thinking-details-panel__actions {
+  position: absolute;
+  inset-block-start: var(--openbitfun-space-2);
+  inset-inline-end: var(--openbitfun-space-4);
+  z-index: 1;
+  display: flex;
+}
 
-  font-family:var(--openbitfun-type-body-sm-font-family);
-  line-height: var(--openbitfun-type-flow-body-line-height);
-  color: var(--openbitfun-color-content-muted);
+.thinking-details-panel__viewport {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+  // Leave room beneath the floating locate action.
+  padding: var(--openbitfun-space-10) var(--openbitfun-space-4);
+}
+
+.thinking-details-panel__viewport > .thinking-details-markdown {
+  flex: 0 0 auto;
+  margin-block: 0;
+}
+
+.markdown-renderer.thinking-details-markdown,
+.thinking-content .markdown-renderer.thinking-markdown {
+  color: var(--openbitfun-color-content-secondary);
   animation: none;
 
-  h1, h2, h3, h4, h5, h6,
-  strong {
-    color: var(--openbitfun-color-content-secondary);
+  h1, h2, h3, h4, h5, h6 {
+    color: inherit;
   }
 
-  p,
-  ol,
-  ul,
-  li,
-  blockquote,
-  .custom-blockquote {
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  em {
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  hr {
-    background: color-mix(in srgb, var(--openbitfun-color-content-muted) 25%, transparent);
-  }
-
-  blockquote,
-  .custom-blockquote {
-    border-left: 2px solid color-mix(in srgb, var(--openbitfun-color-content-muted) 35%, transparent);
-    background: transparent;
-  }
-
-  .inline-code {
-    font-family:var(--openbitfun-type-code-md-font-family);
-    border-radius: 0;
-    background: transparent;
-    border: none;
-    color: var(--openbitfun-color-content-secondary);
-  }
-
-  .code-block-wrapper {
-    border-radius: 6px;
-    border: 1px solid color-mix(in srgb, var(--openbitfun-color-content-muted) 18%, transparent);
-    background: color-mix(in srgb, var(--openbitfun-color-content-muted) 8%, transparent);
-  }
-
-  .code-block-toolbar {
-    min-height: 1.5rem;
-    padding: 0.15rem 0.4rem 0.15rem 0.5rem;
-  }
-
-  .code-block-lang {
-    font-size: var(--openbitfun-type-micro-font-size);
-    line-height: var(--openbitfun-type-flow-meta-line-height);
-  }
-
-  .code-block-wrapper pre[class*='language-'],
-  .code-block-wrapper pre[style] {
-    font-size: var(--openbitfun-type-flow-support-font-size) !important;
-    line-height: var(--openbitfun-type-flow-support-line-height) !important;
-    border-radius: 6px !important;
-  }
-
-  .code-block-wrapper .copy-button {
-    transform: scale(0.85);
-    transform-origin: top right;
-    transition:
-      opacity 0.2s ease;
-  }
-
-  .code-block-wrapper .copy-button:hover {
-    background: transparent !important;
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  .code-block-wrapper .copy-button:active {
-    background: transparent !important;
-  }
-
-  .code-block-wrapper .copy-button.copy-success:hover {
-    color: var(--openbitfun-color-status-success-content);
-  }
-
-  .table-wrapper {
-    font-size: var(--openbitfun-type-flow-control-font-size);
-  }
-
-  .table-wrapper th,
+  .inline-code,
   .table-wrapper td {
-    color: var(--openbitfun-color-content-muted);
-    border-color: color-mix(in srgb, var(--openbitfun-color-content-muted) 22%, transparent);
-  }
-
-  .table-wrapper th {
-    color: var(--openbitfun-color-content-secondary);
-    background: color-mix(in srgb, var(--openbitfun-color-content-muted) 6%, transparent);
-  }
-
-  .table-wrapper tbody tr:nth-child(2n) {
-    background: color-mix(in srgb, var(--openbitfun-color-content-muted) 5%, transparent);
+    color: inherit;
   }
 }

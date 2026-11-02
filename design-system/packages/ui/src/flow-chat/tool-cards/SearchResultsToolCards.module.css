@@ -1,4 +1,15 @@
 @layer openbitfun.components {
+  .searchDetails {
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-3);
+    container: tool-card-results / inline-size;
+  }
+
+  .resultViewport {
+    min-inline-size: 0;
+    max-block-size: 25rem;
+  }
   .details {
     display: flex;
     min-inline-size: 0;
@@ -29,38 +40,53 @@
     overflow-wrap: anywhere;
   }
 
+  [data-openbitfun-tool-card="glob-search"] .detail,
+  [data-openbitfun-tool-card="glob-search"] .detailLabel {
+    color: var(--openbitfun-color-content-primary);
+  }
+
   .results {
     display: flex;
-    max-block-size: 25rem;
     min-inline-size: 0;
     flex-direction: column;
-    overflow: auto;
   }
 
   .result {
     display: grid;
     min-inline-size: 0;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: var(--openbitfun-control-flow-chat-row-icon-size) minmax(0, 1fr) auto;
     align-items: start;
     gap: var(--openbitfun-space-2);
     padding-block: var(--openbitfun-space-2);
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-md-line-height);
   }
 
   .result + .result {
     border-block-start: 1px solid var(--openbitfun-color-border-subtle);
   }
 
+  [data-openbitfun-tool-card="glob-search"] .details,
+  [data-openbitfun-tool-card="grep-search"] .details {
+    padding-block-end: 0;
+    border-block-end: 0;
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .result + .result {
+    border-block-start: 0;
+  }
+
   .resultIcon {
+    block-size: 1lh;
     display: inline-flex;
     align-items: center;
     color: var(--openbitfun-color-content-muted);
   }
 
-  .resultIcon > svg {
-    inline-size: 0.875rem;
-    block-size: 0.875rem;
+  .resultIcon > :is(svg, [data-openbitfun-component="icon"]) {
+    inline-size: var(--openbitfun-control-flow-chat-row-icon-size);
+    block-size: var(--openbitfun-control-flow-chat-row-icon-size);
   }
 
   .resultBody {
@@ -68,6 +94,30 @@
     min-inline-size: 0;
     flex-direction: column;
     gap: var(--openbitfun-space-1);
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .result {
+    grid-template-columns: var(--openbitfun-control-flow-chat-row-icon-size) minmax(0, 1fr);
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .resultBody {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: baseline;
+    gap: var(--openbitfun-space-2);
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .resultBody:not(:has(> .resultDescription)) > :is(.resultTitle, .resultButton) {
+    grid-column: 1 / -1;
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .resultMeta {
+    grid-column: 2;
+    white-space: normal;
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .resultUrl {
+    grid-column: 1 / -1;
   }
 
   .resultTitle,
@@ -78,6 +128,12 @@
     font-weight: var(--openbitfun-type-label-lg-font-weight);
     text-align: start;
     overflow-wrap: anywhere;
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .resultTitle,
+  [data-openbitfun-tool-card="glob-search"] .resultButton,
+  [data-openbitfun-tool-card="glob-search"] .resultDescription {
+    color: var(--openbitfun-color-content-secondary);
   }
 
   .resultButton {
@@ -111,15 +167,94 @@
   }
 
   .resultText {
-    max-block-size: 25rem;
     margin: 0;
-    overflow: auto;
     color: var(--openbitfun-color-content-secondary);
-    font-family: inherit;
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-md-line-height);
+    font-family: var(--openbitfun-type-flow-code-font-family);
+    font-size: var(--openbitfun-type-flow-code-font-size);
+    font-weight: var(--openbitfun-type-flow-code-font-weight);
+    line-height: var(--openbitfun-type-flow-code-line-height);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .resultText[data-variant="prose"] {
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-md-line-height);
+  }
+
+  .grepResults {
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-4);
+  }
+
+  .grepFile {
+    min-inline-size: 0;
+    margin: 0;
+  }
+
+  .grepFilePath {
+    margin-block-end: var(--openbitfun-space-2);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    overflow-wrap: anywhere;
+  }
+
+  .grepDirectory {
+    color: var(--openbitfun-color-content-primary);
+  }
+
+  .grepFilename {
+    color: var(--openbitfun-color-content-primary);
+    font-weight: var(--openbitfun-type-label-sm-font-weight);
+  }
+
+  .grepLines {
+    display: grid;
+    min-inline-size: 0;
+    grid-template-columns: var(--_grep-line-number-width) minmax(0, 1fr);
+    column-gap: var(--openbitfun-space-3);
+  }
+
+  .grepLine {
+    display: contents;
+  }
+
+  .grepLineNumber {
+    color: var(--openbitfun-color-content-muted);
+    text-align: end;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  .grepLineContent {
+    min-inline-size: 0;
+    min-block-size: 1lh;
+    margin: 0;
+    color: var(--openbitfun-color-content-secondary);
+    font: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .grepLine[data-kind="context"] .grepLineContent {
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .grepLine[data-gap-before="true"] > .grepLineNumber,
+  .grepLine[data-gap-before="true"] > .grepLineContent {
+    padding-block-start: var(--openbitfun-space-2);
+  }
+
+  @container tool-card-results (max-width: 28rem) {
+    .result { grid-template-columns: var(--openbitfun-control-flow-chat-row-icon-size) minmax(0, 1fr); }
+    .resultMeta { grid-column: 2; white-space: normal; }
+    [data-openbitfun-tool-card="glob-search"] .resultBody {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--openbitfun-space-1);
+    }
   }
 
   .overflowLabel {

@@ -3,6 +3,7 @@ import { LINE, SOFT } from './Theme';
 @ComponentV2
 export struct ConversationLoadingState {
   @Param maxContentWidth: number = 0;
+  @Param topInset: number = 0;
 
   build() {
     Row() {
@@ -13,7 +14,7 @@ export struct ConversationLoadingState {
       }
       .width('100%')
       .constraintSize({ maxWidth: this.maxContentWidth > 0 ? this.maxContentWidth : '100%' })
-      .padding({ left: 22, right: 22, top: 28, bottom: 28 })
+      .padding({ left: 22, right: 22, top: this.topInset + 28, bottom: 28 })
     }
     .width('100%')
     .height('100%')

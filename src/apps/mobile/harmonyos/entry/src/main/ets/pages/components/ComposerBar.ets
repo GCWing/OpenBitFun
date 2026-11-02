@@ -8,7 +8,10 @@ import {
   ConversationUiModelCatalog,
   ConversationUiSelectedImage
 } from '../state/ConversationUiModels';
-import { ConversationModelPresentationPolicy } from '../policy/ConversationModelPresentationPolicy';
+import {
+  ConversationModelPresentationPolicy,
+  ConversationUiModelRoleEntry
+} from '../policy/ConversationModelPresentationPolicy';
 import { TemplateIcon } from './TemplateIcon';
 import {
   CARD,
@@ -46,6 +49,10 @@ const COMPOSER_IMAGE_STRIP_TOP_GAP: number = 6;
 /** Strip height plus its top gap and the parent Column's 2vp row spacing. */
 const COMPOSER_IMAGE_STRIP_BLOCK: number =
   COMPOSER_IMAGE_CARD_SIZE + COMPOSER_IMAGE_STRIP_TOP_GAP + 2;
+/** Gap the model popover keeps between its defaults section and the list. */
+const COMPOSER_MODEL_SELECTOR_SECTION_SPACE: number = 10;
+const COMPOSER_MODEL_DEFAULTS_DIVIDER_STROKE: number = 0.5;
+const COMPOSER_MODEL_DEFAULTS_DIVIDER_MARGIN_TOP: number = 4;
 
 @ComponentV2
 export struct ComposerBar {
@@ -53,6 +60,7 @@ export struct ComposerBar {
   @Param capabilities: ChatComposerCapabilities = REMOTE_CHAT_COMPOSER_CAPABILITIES;
   @Param inputId: string = 'conversation-composer-input';
   @Param chatInput: string = '';
+  @Param promptSuggestion: string = '';
   @Local inputText: string = '';
   @Local inputFocused: boolean = false;
   @Local primaryActionPressed: boolean = false;
@@ -111,6 +119,29 @@ export struct ComposerBar {
 
   build() {
     Column() {
+      if (this.canAcceptPromptSuggestion()) {
+        Button({ type: ButtonType.Normal }) {
+          Text(this.promptSuggestion)
+            .fontSize(MobileDesignTypography.bodyMedium.size)
+            .fontColor(MUTED)
+            .width('100%')
+            .textAlign(TextAlign.Start)
+        }
+        .id('composer-prompt-suggestion')
+        .width('100%')
+        .constraintSize({ minHeight: MobileDesignGeometry.controlTouchSize })
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .backgroundColor(TRANSPARENT)
+        .borderRadius(MobileDesignGeometry.controlTouchSize / 2)
+        .accessibilityText(this.promptSuggestion)
+        .accessibilityDescription(RemoteI18n.t('chat.promptSuggestionAccept'))
+        .onClick(() => {
+          if (!this.canAcceptPromptSuggestion()) return;
+          this.inputText = this.promptSuggestion;
+          this.onChatInputChange(this.promptSuggestion);
+          this.getUIContext().getFocusController().requestFocus(this.inputId);
+        })
+      }
       this.AdaptiveComposer()
     }
     .width('100%')
@@ -125,6 +156,11 @@ export struct ComposerBar {
       bottom: this.presentation === ComposerPresentation.Floating ? 16 : 12
     })
     .backgroundColor(TRANSPARENT)
+  }
+
+  private canAcceptPromptSuggestion(): boolean {
+    return this.promptSuggestion.length > 0 && this.inputText.length === 0 && this.chatInput.length === 0 &&
+      !this.isBusy && !this.canStop && !this.isVoiceListening && this.connectionState === 'connected';
   }
 
   @Builder
@@ -171,6 +207,8 @@ export struct ComposerBar {
             this.ModelControl()
           }
           Blank()
+          // The draft keeps the collapsed field's one line to itself, so the
+          // supplemental slot is mounted in this row alone.
           if (this.shouldShowSupplementalVoice()) {
             this.SupplementalVoiceButton()
           }
@@ -265,7 +303,20 @@ export struct ComposerBar {
 
   @Builder
   ModelSelector() {
-    Column({ space: 10 }) {
+    Column({ space: COMPOSER_MODEL_SELECTOR_SECTION_SPACE }) {
+      if (this.roleEntries().length > 0) {
+        Column({ space: MobileDesignGeometry.composerModelSelectorRowGap }) {
+          ForEach(this.roleEntries(), (entry: ConversationUiModelRoleEntry) => {
+            this.ModelRoleRow(entry)
+          }, (entry: ConversationUiModelRoleEntry) => entry.role)
+          Divider()
+            .strokeWidth(COMPOSER_MODEL_DEFAULTS_DIVIDER_STROKE)
+            .color(LINE)
+            .width('100%')
+            .margin({ top: COMPOSER_MODEL_DEFAULTS_DIVIDER_MARGIN_TOP })
+        }
+        .width('100%')
+      }
       List({ space: MobileDesignGeometry.composerModelSelectorRowGap }) {
         ForEach(this.selectorModels(), (model: ConversationUiModel) => {
           ListItem() {
@@ -292,10 +343,10 @@ export struct ComposerBar {
   }
 
   @Builder
-  ModelRow(model: ConversationUiModel) {
+  ModelRoleRow(entry: ConversationUiModelRoleEntry) {
     Row({ space: 10 }) {
       Stack({ alignContent: Alignment.Center }) {
-        if (this.isSelectedModel(model)) {
+        if (this.isSelectedRole(entry.role)) {
           SymbolGlyph($r('sys.symbol.checkmark_circle'))
             .fontSize(16)
             .fontColor([INK])
@@ -305,10 +356,71 @@ export struct ComposerBar {
       .height(20)
 
       Column({ space: 2 }) {
-        Text(ConversationModelPresentationPolicy.primaryLabel(model, RemoteI18n.t('chat.model')))
+        Text(RemoteI18n.t(entry.labelKey))
           .fontSize(MobileDesignTypography.bodySmall.size)
           .fontWeight(FontWeight.Medium)
           .fontColor(INK)
+        if (this.roleMetaText(entry).length > 0) {
+          Text(this.roleMetaText(entry))
+            .fontSize(MobileDesignTypography.labelSmall.size)
+            .fontColor(MUTED)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .constraintSize({ minHeight: MobileDesignGeometry.composerModelSelectorRowHeight })
+    .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+    .backgroundColor(this.isSelectedRole(entry.role) ? SOFT : TRANSPARENT)
+    .borderRadius(MobileDesignGeometry.composerModelSelectorRowRadius)
+    .accessibilityText(RemoteI18n.t(entry.labelKey))
+    .onClick(() => {
+      this.closeModelSelector(true);
+      this.onSelectModel(entry.role);
+    })
+  }
+
+  @Builder
+  ModelRoleBadge(role: string) {
+    Text(RemoteI18n.t(ConversationModelPresentationPolicy.roleBadgeLabelKey(role)))
+      .fontSize(MobileDesignTypography.labelSmall.size)
+      .fontColor(MUTED)
+      .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+      .backgroundColor(SOFT)
+      .borderRadius(4)
+  }
+
+  @Builder
+  ModelRow(model: ConversationUiModel) {
+    Row({ space: 10 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        if (this.isSelectedConcreteModel(model)) {
+          SymbolGlyph($r('sys.symbol.checkmark_circle'))
+            .fontSize(16)
+            .fontColor([INK])
+        }
+      }
+      .width(20)
+      .height(20)
+
+      Column({ space: 2 }) {
+        Row({ space: 6 }) {
+          Text(ConversationModelPresentationPolicy.primaryLabel(model, RemoteI18n.t('chat.model')))
+            .fontSize(MobileDesignTypography.bodySmall.size)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(INK)
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          ForEach(this.modelRoles(model), (role: string) => {
+            this.ModelRoleBadge(role)
+          }, (role: string) => role)
+        }
+        .width('100%')
+
         Text(ConversationModelPresentationPolicy.secondaryLabel(model, RemoteI18n.t('chat.model')))
           .fontSize(MobileDesignTypography.labelSmall.size)
           .fontColor(MUTED)
@@ -319,7 +431,7 @@ export struct ComposerBar {
     .width('100%')
     .constraintSize({ minHeight: MobileDesignGeometry.composerModelSelectorRowHeight })
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })
-    .backgroundColor(this.isSelectedModel(model) ? SOFT : TRANSPARENT)
+    .backgroundColor(this.isSelectedConcreteModel(model) ? SOFT : TRANSPARENT)
     .borderRadius(MobileDesignGeometry.composerModelSelectorRowRadius)
     .onClick(() => {
       this.closeModelSelector(true);
@@ -371,9 +483,14 @@ export struct ComposerBar {
           top: this.isComposerExpanded() ? 10 : 0,
           bottom: this.isComposerExpanded() ? 8 : 0
         })
-        // Limit the viewport, not the editable text; keep overflow scrollable.
-        .textOverflow(TextOverflow.Clip)
-        .maxLines(this.isComposerExpanded() ? 4 : 1, { overflowMode: MaxLinesMode.SCROLL })
+        // Limit the viewport, not the editable text. The collapsed field is one
+        // line tall, so what it cannot show is marked with an ellipsis instead of
+        // scrolling sideways under the reader's finger; the expanded field keeps
+        // its scrollable multi-line viewport.
+        .textOverflow(this.isComposerExpanded() ? TextOverflow.Clip : TextOverflow.Ellipsis)
+        .maxLines(this.isComposerExpanded() ? 4 : 1, {
+          overflowMode: this.isComposerExpanded() ? MaxLinesMode.SCROLL : MaxLinesMode.CLIP
+        })
         .defaultFocus(false)
         .onFocus(() => {
           this.inputFocused = true;
@@ -391,9 +508,6 @@ export struct ComposerBar {
           this.inputText = value;
           this.onChatInputChange(value);
         })
-      if (this.shouldShowSupplementalVoice() && !this.isComposerExpanded()) {
-        this.SupplementalVoiceButton()
-      }
     }
     .layoutWeight(1)
     .constraintSize({
@@ -456,6 +570,8 @@ export struct ComposerBar {
     .stateEffect(false)
     .accessibilityText(RemoteI18n.t(ChatComposerPolicy.primaryActionAccessibilityKey(
       this.primaryAction(), this.isVoiceListening)))
+    .enabled(this.primaryAction() !== ComposerPrimaryAction.Stop || this.isVoiceListening ||
+      ChatComposerPolicy.canStop(this.canStop, this.capabilities.requiresRemoteConnection, this.connectionState))
     .onTouch((event: TouchEvent) => {
       if (!this.shouldShowActiveActionSurface()) {
         return;
@@ -473,7 +589,7 @@ export struct ComposerBar {
       if (action === ComposerPrimaryAction.Stop) {
         if (this.isVoiceListening) {
           this.onVoiceInput();
-        } else if (this.canStop) {
+        } else if (ChatComposerPolicy.canStop(this.canStop, this.capabilities.requiresRemoteConnection, this.connectionState)) {
           this.onStop();
         }
         return;
@@ -683,12 +799,36 @@ export struct ComposerBar {
     return ConversationModelPresentationPolicy.selectedModel(this.modelCatalog, this.selectedModelId);
   }
 
-  private isSelectedModel(model: ConversationUiModel): boolean {
-    const selected = this.selectedModel();
-    return !!selected && selected.id === model.id;
+  private roleEntries(): ConversationUiModelRoleEntry[] {
+    return ConversationModelPresentationPolicy.roleEntries(this.modelCatalog);
+  }
+
+  private isSelectedRole(role: string): boolean {
+    return ConversationModelPresentationPolicy.resolvedSelectedRole(
+      this.modelCatalog, this.selectedModelId) === role;
+  }
+
+  private isSelectedConcreteModel(model: ConversationUiModel): boolean {
+    return ConversationModelPresentationPolicy.isConcreteModelSelected(this.selectedModelId, model.id);
+  }
+
+  private modelRoles(model: ConversationUiModel): string[] {
+    return ConversationModelPresentationPolicy.modelRoles(this.modelCatalog, model.id);
+  }
+
+  private roleMetaText(entry: ConversationUiModelRoleEntry): string {
+    const noticeKey = ConversationModelPresentationPolicy.roleMetaNoticeKey(entry);
+    if (noticeKey.length > 0) {
+      return RemoteI18n.t(noticeKey);
+    }
+    return ConversationModelPresentationPolicy.roleMetaLabel(entry.model, RemoteI18n.t('chat.model'));
   }
 
   private displaySelectedModel(): string {
+    const roleKey = ConversationModelPresentationPolicy.selectedModelLabelKey(this.modelCatalog, this.selectedModelId);
+    if (roleKey.length > 0) {
+      return RemoteI18n.t(roleKey);
+    }
     const selected = this.selectedModel();
     return selected ? ConversationModelPresentationPolicy.primaryLabel(selected, RemoteI18n.t('chat.model')) :
       RemoteI18n.t('chat.model');
@@ -696,11 +836,36 @@ export struct ComposerBar {
 
   private modelListHeight(): number {
     // Five rows fit comfortably above the compact composer while the keyboard
-    // remains visible. Larger catalogs scroll inside the anchored menu.
+    // remains visible. The defaults section takes its share of that budget
+    // first, so the concrete models only get what is left. Larger catalogs
+    // scroll inside the anchored menu.
     const maxVisibleRows = this.presentation === ComposerPresentation.Compact ? 5 : 7;
-    const visibleRows = Math.min(this.enabledModels().length, maxVisibleRows);
-    return visibleRows * MobileDesignGeometry.composerModelSelectorRowHeight +
-      Math.max(0, visibleRows - 1) * MobileDesignGeometry.composerModelSelectorRowGap;
+    const rowHeight = MobileDesignGeometry.composerModelSelectorRowHeight;
+    const rowGap = MobileDesignGeometry.composerModelSelectorRowGap;
+    const budgetHeight = maxVisibleRows * rowHeight + Math.max(0, maxVisibleRows - 1) * rowGap;
+    const availableHeight = Math.max(0, budgetHeight - this.modelDefaultsBlockHeight());
+    const fittingRows = Math.floor((availableHeight + rowGap) / (rowHeight + rowGap));
+    const visibleRows = Math.max(0, Math.min(this.enabledModels().length, fittingRows));
+    const rowsHeight = visibleRows * rowHeight + Math.max(0, visibleRows - 1) * rowGap;
+    // A budget too small for one full row still leaves the list a scrollable
+    // viewport instead of collapsing it away. The remaining budget is the cap,
+    // so the popover can never grow past the footprint it had before.
+    return Math.max(0, Math.min(availableHeight, Math.max(rowHeight, rowsHeight)));
+  }
+
+  /** Height the defaults section takes above the concrete list, chrome included. */
+  private modelDefaultsBlockHeight(): number {
+    const roleRows = this.roleEntries().length;
+    if (roleRows === 0) {
+      return 0;
+    }
+    const rowsHeight = roleRows * MobileDesignGeometry.composerModelSelectorRowHeight +
+      Math.max(0, roleRows - 1) * MobileDesignGeometry.composerModelSelectorRowGap;
+    const chrome = MobileDesignGeometry.composerModelSelectorRowGap +
+      COMPOSER_MODEL_DEFAULTS_DIVIDER_STROKE +
+      COMPOSER_MODEL_DEFAULTS_DIVIDER_MARGIN_TOP +
+      COMPOSER_MODEL_SELECTOR_SECTION_SPACE;
+    return rowsHeight + chrome;
   }
 
   private selectorModels(): ConversationUiModel[] {

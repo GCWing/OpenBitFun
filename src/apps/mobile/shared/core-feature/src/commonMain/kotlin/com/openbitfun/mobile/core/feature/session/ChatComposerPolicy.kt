@@ -1,7 +1,6 @@
 package com.openbitfun.mobile.core.feature.session
 
 import com.openbitfun.mobile.core.feature.connection.ConnectionPhase
-import com.openbitfun.mobile.core.feature.connection.ConnectionStatusPresenter
 
 /**
  * When the composer's two primary actions are available.
@@ -11,11 +10,13 @@ import com.openbitfun.mobile.core.feature.connection.ConnectionStatusPresenter
  * rejects the rest, and a rejection after the fact reads as a lost message.
  */
 public object ChatComposerPolicy {
+    public fun canStop(streaming: Boolean, requiresRemoteConnection: Boolean, phase: ConnectionPhase): Boolean =
+        streaming && (!requiresRemoteConnection || phase == ConnectionPhase.CONNECTED)
+
     /**
      * Send needs something to send, no command in flight, and — for a remote session —
-     * a reachable desktop. Reconnecting counts as reachable: a send during a
-     * blip queues rather than bouncing the user back to the connect screen,
-     * matching [ConnectionStatusPresenter.canReachSessions].
+     * a connected desktop. Navigation may retain an offline session, but that
+     * does not authorize commands against its last-known execution state.
      */
     public fun canSend(
         text: String,
@@ -26,7 +27,7 @@ public object ChatComposerPolicy {
     ): Boolean {
         val hasContent = text.trim().isNotEmpty() || attachmentCount > 0
         val remoteAvailable =
-            !requiresRemoteConnection || ConnectionStatusPresenter.canReachSessions(phase)
+            !requiresRemoteConnection || phase == ConnectionPhase.CONNECTED
         return hasContent && !busy && remoteAvailable
     }
 

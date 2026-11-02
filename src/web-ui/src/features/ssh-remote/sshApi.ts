@@ -23,6 +23,20 @@ import type {
 // API adapter for Tauri/Server Mode compatibility
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 
+/**
+ * Deadline override for the remote file transfers that expose a stop action.
+ *
+ * These commands are already bounded where the work happens: every SFTP request
+ * has its own response timeout, the SSH transport drops a stalled connection,
+ * and the transfer itself can be stopped from its card. A wall-clock deadline
+ * here only guaranteed failure for slow-but-healthy links, which is how a
+ * completed transfer used to surface as "Request timeout".
+ *
+ * Commands without a progress or stop surface keep the default deadline: it is
+ * what keeps an unresponsive host from freezing the UI with no way out.
+ */
+const NO_REQUEST_DEADLINE = { timeout: 0 } as const;
+
 export const sshApi = {
   // === Connection Management ===
 
@@ -212,6 +226,7 @@ export const sshApi = {
     localPath: string,
     onProgress?: (downloaded: number, total: number) => void,
     transferId?: string,
+    isCancelled?: () => boolean,
   ): Promise<void> {
     const tid = transferId ?? crypto.randomUUID();
     let unlisten: (() => void) | null = null;
@@ -229,12 +244,17 @@ export const sshApi = {
     }
 
     try {
+      // The stop action can run while the progress listener is being installed,
+      // before the backend has registered this transfer id.
+      if (isCancelled?.()) {
+        throw new Error('Transfer cancelled');
+      }
       await api.invoke('remote_download_to_local_path', {
         connectionId,
         remotePath,
         localPath,
         transferId: tid,
-      });
+      }, transferId ? NO_REQUEST_DEADLINE : undefined);
     } finally {
       unlisten?.();
     }
@@ -258,6 +278,7 @@ export const sshApi = {
     remotePath: string,
     onProgress?: (uploaded: number, total: number) => void,
     transferId?: string,
+    isCancelled?: () => boolean,
   ): Promise<{ wasDirectory: boolean }> {
     const tid = transferId ?? crypto.randomUUID();
     let unlisten: (() => void) | null = null;
@@ -275,12 +296,15 @@ export const sshApi = {
     }
 
     try {
+      if (isCancelled?.()) {
+        throw new Error('Transfer cancelled');
+      }
       return await api.invoke('remote_upload_from_local_path', {
         connectionId,
         localPath,
         remotePath,
         transferId: tid,
-      });
+      }, transferId ? NO_REQUEST_DEADLINE : undefined);
     } finally {
       unlisten?.();
     }

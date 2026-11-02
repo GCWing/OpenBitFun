@@ -1,3 +1,4 @@
+import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../hostDialogQueue';
 /**
  * Message handling module
  * Shared submission choreography: busy-gate planning, queueing, mode
@@ -20,6 +21,7 @@ import type { FlowChatContext } from './types';
 import { isProjectedSessionEmpty } from '../../utils/flowChatTurnIdentity';
 import type { ImageContextData as ImageInputContextData } from '@/infrastructure/api/service-api/ImageContextTypes';
 import { pendingQueueManager } from './PendingQueueModule';
+import { isBtwSessionClosing, trackBtwSessionSubmission } from '../btwSessionSubmission';
 import {
   isRuntimeSessionAttachmentInFlight,
   isRuntimeSessionProjectionStale,
@@ -28,11 +30,25 @@ import {
 import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
 import { i18nService } from '@/infrastructure/i18n';
 import { driverForSession } from '../../session-drivers/registry';
+import { assertSessionConversationCanSubmit, getSessionConversationCapability } from '../../session-drivers/conversationCapability';
 import type { SendMessageOptions, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
 import { assertSessionSubmissionAllowed } from '../../store/sessionMutationStore';
 import { hasInterruptedTurnHoldingQueue } from '../../utils/interruptedTurnRecovery';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
 import { hasPendingVoiceExchanges, replayVoiceExchanges } from '../controlConversation';
+import { submitSteeringMessage } from '../steeringSubmission';
+import { promoteAcceptedHostMessage } from '../hostQueueSubmission';
+import { isAcpFlowSession } from '../../utils/acpSession';
+import { updateSessionDraft } from '../sessionDraftService';
+import {
+  beginSubmittedMessagePreview,
+  failSubmittedMessagePreview,
+  finishSubmittedMessagePreview,
+} from '../submittedMessagePresentation';
+import { finishSubmittedMessageScrollIntent, peekSubmittedMessageScrollIntent } from '../submittedMessageScrollIntent';
+import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../../events/flowchatNavigation';
+import { forkChatSession } from './SessionModule';
+import { viewedExternalForkTurn } from '../../utils/externalHistory';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -47,6 +63,8 @@ interface SessionConflictRetry {
 
 const sessionConflictRetries = new Map<string, SessionConflictRetry>();
 const latestSendBySession = new Map<string, symbol>();
+const draftSubmissions = new Set<string>();
+const externalForks = new Map<string, Promise<string>>();
 
 function clearSessionConflictRetry(sendKey: string): void {
   const current = sessionConflictRetries.get(sendKey);
@@ -223,11 +241,81 @@ export async function sendMessage(
   switchToMode?: string,
   options?: SendMessageOptions
 ): Promise<void> {
-  const session = context.flowChatStore.getState().sessions.get(sessionId);
+  const submit = () => sendMessageInternal(context, message, sessionId, displayMessage, agentType, switchToMode, options);
+  return context.flowChatStore.getState().sessions.get(sessionId)?.sessionKind === 'btw'
+    ? trackBtwSessionSubmission(sessionId, submit)
+    : submit();
+}
+
+async function sendMessageInternal(
+  context: FlowChatContext,
+  message: string,
+  sessionId: string,
+  displayMessage?: string,
+  agentType?: string,
+  switchToMode?: string,
+  options?: SendMessageOptions
+): Promise<void> {
+  let session = context.flowChatStore.getState().sessions.get(sessionId);
   if (!session) {
     throw new Error(`Session does not exist: ${sessionId}`);
   }
   const surfaceScopeAtSend = getActiveSurfaceScope();
+  if (session.externalHistory?.mode === 'follow') {
+    if (surfaceScopeAtSend.surfaceId !== 'local') throw new Error(i18nService.t('flow-chat:externalHistory.unsupportedSurface'));
+    assertSessionConversationCanSubmit(sessionId, session, i18nService.t('flow-chat:chatInput.targetUnavailable'));
+    assertSessionSubmissionAllowed(sessionId, options?.sessionMutationLeaseId);
+    const sourceTurnId = viewedExternalForkTurn(session);
+    if (!sourceTurnId) throw new Error(i18nService.t('flow-chat:externalHistory.openBeforeContinue'));
+    const key = surfaceScopeAtSend.key('external-history-fork', surfaceScopeAtSend.epoch, sessionId);
+    let fork = externalForks.get(key);
+    if (!fork) {
+      fork = forkChatSession(context, sessionId, sourceTurnId);
+      externalForks.set(key, fork);
+    }
+    try {
+      const branchId = await fork;
+      surfaceScopeAtSend.assertCurrent('continue external history in native branch');
+      options?.onSessionForked?.(sessionId, branchId);
+      // Do not replay the retired source placeholder over the host's corrected
+      // branch mode. Keep valid composer selections, even when stored locally.
+      const continuationAgentType = agentType?.trim() === 'primary'
+        && (session.mode || session.config.agentType)?.trim() === 'primary'
+        ? undefined : agentType;
+      return await sendMessageInternal(context, message, branchId, displayMessage, continuationAgentType, switchToMode, options);
+    } finally {
+      if (externalForks.get(key) === fork) externalForks.delete(key);
+    }
+  }
+  // A failed queue entry can retain the old source placeholder after the host
+  // has repaired its native branch. Retry with the branch's current mode.
+  const importedSource = session.externalBranchOf?.ecosystemId ?? session.importedSource;
+  if ((importedSource === 'codex' || importedSource === 'zcode')
+    && (!session.sessionKind || session.sessionKind === 'normal')
+    && agentType?.trim() === 'primary' && session.mode && session.mode !== 'primary') {
+    agentType = session.mode;
+  }
+  if (session.sessionKind === 'subagent'
+    && getSessionConversationCapability(sessionId, session).reason === 'metadata_pending') {
+    const parent = session.parentSessionId
+      ? context.flowChatStore.getState().sessions.get(session.parentSessionId) : undefined;
+    const ownerId = session.projectWorkspaceId ?? session.config.projectWorkspaceId
+      ?? parent?.projectWorkspaceId ?? parent?.config.projectWorkspaceId
+      ?? parent?.workspaceId ?? parent?.config.workspaceId
+      ?? session.workspaceId ?? session.config.workspaceId;
+    if (ownerId) {
+      await context.flowChatStore.ensurePersistedSessionMetadata(sessionId, ownerId);
+      surfaceScopeAtSend.assertCurrent('resolve conversation capability');
+    }
+    session = context.flowChatStore.getState().sessions.get(sessionId);
+  }
+  const assertConversation = () => assertSessionConversationCanSubmit(
+    sessionId, context.flowChatStore.getState().sessions.get(sessionId),
+    i18nService.t('flow-chat:chatInput.targetUnavailable'),
+  );
+  // Reject before either queue owns the message or any mode/draft changes occur.
+  assertConversation();
+  if (!session) throw new Error(`Session does not exist: ${sessionId}`);
   const sendCoordinationKey = surfaceScopeAtSend.key(
     'session-send',
     surfaceScopeAtSend.epoch,
@@ -268,9 +356,44 @@ export async function sendMessage(
         await driverForSession(sessionId, session).steer(context, sessionId, draft);
         return;
       }
+      if (hostQueueSupported(sessionId)) {
+        beginSubmission();
+        try {
+          const queue = hostDialogQueue(sessionId);
+          const accepted = await queue.submit({ content: message, displayContent: displayMessage,
+            agentType: agentType?.trim() || session.mode || 'Standard',
+            attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} },
+            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
+          surfaceScopeAtSend.assertCurrent('accept queued message');
+          if (options?.sendImmediately) {
+            await promoteAcceptedHostMessage(queue, accepted);
+            surfaceScopeAtSend.assertCurrent('accept immediate message');
+          }
+          completeSessionSend(sendCoordinationKey, sendAttempt);
+          return;
+        } finally { endSubmission(); }
+      }
+      const dialogTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
+      if (options?.sendImmediately && dialogTurnId && !isAcpFlowSession(session)
+        && driverForSession(sessionId, session).id === 'local') {
+        beginSubmission();
+        try {
+          await submitSteeringMessage({
+            sessionId,
+            dialogTurnId,
+            content: message,
+            displayContent: displayMessage ?? message,
+            imageContexts: options.imageContexts,
+            userMessageMetadata: options.userMessageMetadata,
+          }, options.imageDisplayData);
+          completeSessionSend(sendCoordinationKey, sendAttempt);
+          return;
+        } finally { endSubmission(); }
+      }
       try {
         const item = pendingQueueManager.enqueue({
           sessionId,
+          turnId: options?.turnId,
           content: message,
           displayMessage,
           agentType,
@@ -318,6 +441,12 @@ export async function sendMessage(
   // Anything read back after an await belongs to the surface captured here.
   const surfaceGenerationAtSend = context.flowChatStore.getSurfaceGeneration();
   const surfaceIdAtSend = surfaceScopeAtSend.surfaceId;
+  const draftSubmissionKey = session.draft ? surfaceScopeAtSend.key('draft-submit', sessionId) : undefined;
+  let previewTurnId: string | undefined;
+  if (draftSubmissionKey) {
+    if (draftSubmissions.has(draftSubmissionKey)) throw new Error('Draft submission is already in progress');
+    draftSubmissions.add(draftSubmissionKey);
+  }
   beginSubmission();
 
   try {
@@ -328,6 +457,7 @@ export async function sendMessage(
       surfaceScopeAtSend.assertCurrent('restore conversation history before submission');
     }
     const refreshedSession = context.flowChatStore.getState().sessions.get(sessionId) ?? session;
+    assertConversation();
     const currentAgentType = (agentType?.trim() || refreshedSession.mode || 'Standard').trim();
     const acpClientId = acpClientIdFromMode(currentAgentType);
     const driver = driverForSession(sessionId, refreshedSession);
@@ -354,6 +484,27 @@ export async function sendMessage(
       throw new Error('Session history is still restoring, please retry once loading finishes');
     }
 
+    if (options?.foregroundSubmission
+      && !options.bypassPendingQueue
+      && context.flowChatStore.getState().activeSessionId === sessionId) {
+      previewTurnId = refreshedSession.draft?.turnId || options.turnId?.trim()
+        || `dialog_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      const messageId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      options = { ...options, turnId: previewTurnId };
+      // A locally submitted Turn gives up a detached history window at the send boundary.
+      window.dispatchEvent(new CustomEvent(FLOWCHAT_MESSAGE_SUBMITTED_EVENT, {
+        detail: { sessionId },
+      }));
+      beginSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId, {
+        id: messageId,
+        content: displayMessage || message,
+        timestamp: Date.now(),
+        hasImages: (options.imageDisplayData?.length ?? 0) > 0,
+        images: options.imageDisplayData,
+        metadata: options.userMessageMetadata,
+      });
+    }
+
     if (!acpClientId) {
       // A driver with nothing to prepare returns void; awaiting only real
       // promises keeps the projection's optimistic turn synchronous with the
@@ -369,9 +520,15 @@ export async function sendMessage(
     if (!readySession) {
       throw new Error(`Session lost before starting dialog turn: ${sessionId}`);
     }
+    assertConversation();
 
     const isFirstMessage = isProjectedSessionEmpty(readySession)
       && readySession.titleStatus !== 'generated';
+
+    if (readySession.draft) {
+      options = { ...options, turnId: readySession.draft.turnId };
+      updateSessionDraft(context, sessionId, { phase: 'submitting' });
+    }
 
     const outcome = await driver.startTurn(
       context,
@@ -389,9 +546,34 @@ export async function sendMessage(
       turnTracker,
     );
     if (outcome === 'detached') {
+      if (previewTurnId) finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
       // The message steered or continued target-owned work; the shared
       // post-submission bookkeeping does not apply.
       return;
+    }
+    if (outcome === 'queued' && previewTurnId) {
+      finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
+      const intent = peekSubmittedMessageScrollIntent(surfaceScopeAtSend, sessionId, previewTurnId);
+      if (intent) finishSubmittedMessageScrollIntent(intent);
+    }
+
+    if (readySession.draft && turnTracker.hostAcceptedTurn) {
+      context.flowChatStore.setState(state => {
+        const current = state.sessions.get(sessionId);
+        return current ? { ...state, sessions: new Map(state.sessions).set(sessionId, {
+          ...current, draft: undefined,
+        }) } : state;
+      });
+      // Navigation failure cannot undo an accepted message or cause it to be resent.
+      try {
+        const { activateMainSession } = await import('../sessionActivation');
+        if (surfaceScopeAtSend.isCurrent() && context.flowChatStore.getState().activeSessionId === sessionId) {
+          await activateMainSession(sessionId, { isCurrent: () => surfaceScopeAtSend.isCurrent()
+            && context.flowChatStore.getState().activeSessionId === sessionId });
+        }
+      } catch (error) {
+        log.warn('Accepted draft could not activate its workspace', { sessionId, error });
+      }
     }
 
     completeSessionSend(
@@ -411,6 +593,7 @@ export async function sendMessage(
       isSurfaceChangedError(error)
       || context.flowChatStore.getSurfaceGeneration() !== surfaceGenerationAtSend
     ) {
+      if (previewTurnId) finishSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId);
       recoverSubmissionAfterSurfaceSwitch(context, surfaceIdAtSend, sessionId, turnTracker, {
         message,
         displayMessage,
@@ -425,7 +608,16 @@ export async function sendMessage(
 
     log.error('Failed to send message', { sessionId: sessionId, error });
 
+    if (!turnTracker.hostSubmitStarted) {
+      const draft = context.flowChatStore.getState().sessions.get(sessionId)?.draft;
+      if (draft?.phase === 'submitting') updateSessionDraft(context, sessionId, { phase: 'ready' });
+    }
     const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+    if (previewTurnId) {
+      failSubmittedMessagePreview(surfaceScopeAtSend, sessionId, previewTurnId, errorMessage);
+      const intent = peekSubmittedMessageScrollIntent(surfaceScopeAtSend, sessionId, previewTurnId);
+      if (intent) finishSubmittedMessageScrollIntent(intent);
+    }
 
     const currentState = stateMachineManager.getCurrentState(sessionId);
     const activeDialogTurnId = stateMachineManager
@@ -505,6 +697,7 @@ export async function sendMessage(
 
     throw error;
   } finally {
+    if (draftSubmissionKey) draftSubmissions.delete(draftSubmissionKey);
     endSubmission();
   }
 }
@@ -540,6 +733,8 @@ export async function drainPendingQueue(
   sessionId: string,
   options?: { allowInterruptedRecoveryAbandon?: boolean },
 ): Promise<void> {
+  if (isBtwSessionClosing(sessionId)) return;
+  if (hostQueueSupported(sessionId) && !options?.allowInterruptedRecoveryAbandon) return;
   if (isRuntimeSessionAttachmentInFlight(getActiveSurfaceId(), sessionId) ||
       isRuntimeSessionProjectionStale(getActiveSurfaceId(), sessionId)) {
     return;
@@ -612,6 +807,7 @@ export async function drainPendingQueue(
               mimeType?: string;
             }>
           | undefined,
+        turnId: next.turnId,
         pendingQueueDraft: next.composerDraft,
         userMessageMetadata: next.userMessageMetadata,
         bypassPendingQueue: true,

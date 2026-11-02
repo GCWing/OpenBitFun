@@ -6,7 +6,36 @@ use super::registry::RuntimeHookPlan;
 use super::settings::{AgentHookHandler, AgentHookMatcher};
 use async_trait::async_trait;
 use serde_json::Value;
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+/// A host-supplied translation for a command hook's tool vocabulary. Native
+/// command registrations have no mapping and retain their existing contract.
+#[derive(Debug, Clone)]
+pub struct HookToolMapping {
+    pub runtime_name: String,
+    pub hook_name: String,
+    /// Runtime argument name -> hook argument name; reversed for updatedInput.
+    pub input_fields: BTreeMap<String, String>,
+    pub input_adapter: Option<Arc<dyn HookInputAdapter>>,
+}
+
+/// Provider-owned transformations for tools with different input encodings.
+pub trait HookInputAdapter: Send + Sync + std::fmt::Debug {
+    fn to_hook(&self, input: &mut Value) -> Result<(), String>;
+    fn to_runtime(&self, input: &mut Value) -> Result<(), String>;
+}
+
+#[derive(Debug, Default)]
+pub struct CommandHookOptions {
+    pub environment: BTreeMap<String, String>,
+    pub tool_mappings: Vec<HookToolMapping>,
+    /// Opt-in for sources whose contract supports a PreToolUse ask decision.
+    pub supports_ask: bool,
+    /// Shared across dispatch snapshots; failures leave this false for retry.
+    pub once: Option<tokio::sync::Mutex<bool>>,
+}
 
 #[derive(Clone)]
 pub enum HookHandler {
@@ -96,6 +125,10 @@ pub struct RuntimeHookRegistration {
     pub handler: HookHandler,
     pub matcher: AgentHookMatcher,
     pub workspace_scope: Option<String>,
+    pub command_options: Arc<CommandHookOptions>,
+    pub requires_project_trust: bool,
+    pub(crate) active: Option<Arc<AtomicBool>>,
+    pub(crate) cancellation: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 impl RuntimeHookRegistration {
@@ -105,7 +138,32 @@ impl RuntimeHookRegistration {
             handler,
             matcher,
             workspace_scope: None,
+            command_options: Arc::default(),
+            requires_project_trust: false,
+            active: None,
+            cancellation: None,
         }
+    }
+
+    pub fn with_command_options(mut self, options: CommandHookOptions) -> Self {
+        self.command_options = Arc::new(options);
+        self
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+            .as_ref()
+            .is_none_or(|active| active.load(Ordering::Acquire))
+    }
+
+    pub(crate) async fn cancelled(&self) {
+        let Some(mut cancellation) = self.cancellation.clone() else {
+            return std::future::pending().await;
+        };
+        if *cancellation.borrow() {
+            return;
+        }
+        let _ = cancellation.changed().await;
     }
 
     pub fn with_workspace_scope(mut self, workspace_scope: impl Into<String>) -> Self {

@@ -1,19 +1,4 @@
-const SEARCH_HIGHLIGHT_CURRENT_NAME = 'openbitfun-flowchat-search-current';
-const SEARCH_HIGHLIGHT_MATCH_NAME = 'openbitfun-flowchat-search-match';
-
-type HighlightRegistryLike = {
-  set: (name: string, highlight: unknown) => void;
-  delete: (name: string) => void;
-};
-
-type HighlightConstructorLike = new (...ranges: Range[]) => unknown;
-
-interface SearchHighlightRanges {
-  current: Range | null;
-  matches: readonly Range[];
-}
-
-const documentHighlights = new WeakMap<Document, Map<object, SearchHighlightRanges>>();
+import { createFlowChatHighlightOwner } from '../../selection/flowChatHighlights';
 
 interface FoldedTextOffset {
   start: number;
@@ -31,6 +16,18 @@ function isSearchableTextNode(node: Node): node is Text {
   }
 
   return !parent.closest('script, style, button, input, textarea, [contenteditable="true"], [hidden], [aria-hidden="true"]');
+}
+
+/** Source navigation has no query: use its first readable text line as the marker. */
+export function findFlowChatFocusTextRange(root: HTMLElement): Range | null {
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!isSearchableTextNode(node) || !node.textContent?.trim()) continue;
+    const range = root.ownerDocument.createRange();
+    range.selectNodeContents(node);
+    return range;
+  }
+  return null;
 }
 
 function foldTextWithOriginalOffsets(text: string): {
@@ -134,62 +131,18 @@ export function findFlowChatSearchTextRange(root: HTMLElement, query: string): R
   return findFlowChatSearchTextRanges(root, query)[0] ?? null;
 }
 
-function publishSearchHighlights(ownerDocument: Document): void {
-  const view = ownerDocument.defaultView;
-  const cssWithHighlights = view?.CSS as (typeof CSS & {
-    highlights?: HighlightRegistryLike;
-  }) | undefined;
-  const HighlightConstructor = (view as (Window & {
-    Highlight?: HighlightConstructorLike;
-  }) | null)?.Highlight;
-
-  if (!cssWithHighlights?.highlights) {
-    return;
-  }
-
-  cssWithHighlights.highlights.delete(SEARCH_HIGHLIGHT_CURRENT_NAME);
-  cssWithHighlights.highlights.delete(SEARCH_HIGHLIGHT_MATCH_NAME);
-  if (!HighlightConstructor) {
-    return;
-  }
-  const owners = documentHighlights.get(ownerDocument)?.values() ?? [];
-  const current: Range[] = [];
-  const matches: Range[] = [];
-  for (const ranges of owners) {
-    if (ranges.current?.startContainer.isConnected) current.push(ranges.current);
-    matches.push(...ranges.matches.filter(range => range.startContainer.isConnected));
-  }
-  if (matches.length > 0) {
-    cssWithHighlights.highlights.set(
-      SEARCH_HIGHLIGHT_MATCH_NAME,
-      new HighlightConstructor(...matches),
-    );
-  }
-  // Register current last so it wins if two presentations share a text range.
-  if (current.length > 0) {
-    cssWithHighlights.highlights.set(SEARCH_HIGHLIGHT_CURRENT_NAME, new HighlightConstructor(...current));
-  }
-}
-
 /** Each mounted row releases only its own ranges, including across chat panes. */
 export function createFlowChatSearchHighlightOwner(ownerDocument: Document) {
-  const owner = {};
-  let disposed = false;
+  const currentOwner = createFlowChatHighlightOwner(ownerDocument, 'search-current');
+  const matchOwner = createFlowChatHighlightOwner(ownerDocument, 'search-match');
   return {
     update(current: Range | null, matches: readonly Range[]) {
-      if (disposed) return;
-      let owners = documentHighlights.get(ownerDocument);
-      if (!owners) {
-        owners = new Map();
-        documentHighlights.set(ownerDocument, owners);
-      }
-      owners.set(owner, { current, matches });
-      publishSearchHighlights(ownerDocument);
+      matchOwner.update(matches);
+      currentOwner.update(current ? [current] : []);
     },
     dispose() {
-      disposed = true;
-      documentHighlights.get(ownerDocument)?.delete(owner);
-      publishSearchHighlights(ownerDocument);
+      currentOwner.dispose();
+      matchOwner.dispose();
     },
   };
 }
@@ -215,7 +168,10 @@ export function getFlowChatSearchTextRoot(
 
     const thinkingItem = findElementWithDataValue(wrapper, 'data-tool-card-id', flowItemId);
     const thinkingText = thinkingItem?.querySelector<HTMLElement>('.thinking-markdown');
-    if (thinkingText) {
+    // The lazy reasoning renderer initially paints plain source. Its line
+    // positions differ from the parsed Markdown, so navigation must wait for
+    // that source to materialize before revealing an inner scroll range.
+    if (thinkingText && !thinkingText.querySelector('[data-markdown-pending="true"]')) {
       return thinkingText;
     }
 

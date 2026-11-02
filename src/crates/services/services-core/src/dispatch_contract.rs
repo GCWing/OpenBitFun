@@ -47,6 +47,22 @@ pub const DISPATCH_BASE_TARGET_CAPABILITIES: &[&str] = &[
 /// required by every controller: a target that cannot detach cannot dispatch.
 pub const DISPATCH_DETACHED_WORKER_CAPABILITY: &str = "detached_worker";
 
+/// Optional runtime capabilities for copying explicit subscription bindings.
+/// Credentials and account slots remain owned by the target. These do not imply
+/// account-management commands, and ordinary API-key dispatch does not require them.
+pub const DISPATCH_SUBSCRIPTION_ACCOUNT_BINDINGS_CAPABILITY: &str =
+    "subscription_account_bindings_v1";
+pub const DISPATCH_SUBSCRIPTION_ACCOUNT_FAILOVER_CAPABILITY: &str =
+    "subscription_account_failover_v1";
+pub const DISPATCH_SUBSCRIPTION_PROVIDER_ACCOUNTS_CAPABILITY: &str =
+    "subscription_provider_accounts_v1";
+pub const DISPATCH_MODEL_CHANNEL_ROUTING_CAPABILITY: &str = "model_channel_routing_v1";
+pub const DISPATCH_SUBSCRIPTION_ACCOUNT_CAPABILITIES: &[&str] = &[
+    DISPATCH_SUBSCRIPTION_ACCOUNT_BINDINGS_CAPABILITY,
+    DISPATCH_SUBSCRIPTION_ACCOUNT_FAILOVER_CAPABILITY,
+    DISPATCH_SUBSCRIPTION_PROVIDER_ACCOUNTS_CAPABILITY,
+];
+
 /// Optional capability for an SSH controller to turn a freshly installed CLI
 /// into an account-backed, always-on device. It is deliberately not part of
 /// [`dispatch_required_target_capabilities`]: detached SSH jobs work without
@@ -214,6 +230,25 @@ pub fn validate_dispatch_attachments(attachments: &[DispatchAttachment]) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subscription_runtime_capabilities_are_optional_and_do_not_imply_management() {
+        let required: Vec<_> = dispatch_required_target_capabilities().collect();
+        for capability in DISPATCH_SUBSCRIPTION_ACCOUNT_CAPABILITIES {
+            assert!(!DISPATCH_BASE_TARGET_CAPABILITIES.contains(capability));
+            assert!(!required.contains(capability));
+        }
+        assert_eq!(
+            DISPATCH_SUBSCRIPTION_ACCOUNT_CAPABILITIES,
+            &[
+                DISPATCH_SUBSCRIPTION_ACCOUNT_BINDINGS_CAPABILITY,
+                DISPATCH_SUBSCRIPTION_ACCOUNT_FAILOVER_CAPABILITY,
+                DISPATCH_SUBSCRIPTION_PROVIDER_ACCOUNTS_CAPABILITY,
+            ]
+        );
+        assert!(!DISPATCH_SUBSCRIPTION_ACCOUNT_CAPABILITIES
+            .contains(&"subscription_account_management_v1"));
+    }
 
     #[test]
     fn required_capabilities_are_base_plus_detached_worker() {

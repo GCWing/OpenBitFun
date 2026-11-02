@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CanvasStoreModeContext,
   clearAgentCanvasForPeerSwitch,
-  switchAgentCanvasWorkspace,
+  switchAgentCanvasScope,
   useAgentCanvasStore,
   useBottomTerminalCanvasStore,
   useCanvasStore,
@@ -19,7 +19,9 @@ import {
   collapseSessionBottomTerminalPane,
   expandSessionAuxPane,
   expandSessionBottomTerminalPane,
+  hideSessionAuxPane,
 } from '@/app/scenes/session/sessionPanelLayout';
+import { useApp } from '@/app/hooks/useApp';
 import { fileTabManager } from '@/shared/services/FileTabManager';
 import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { useSceneStore } from '@/app/stores/sceneStore';
@@ -56,7 +58,7 @@ function CanvasProbe({ mode, onReveal }: { mode: CanvasStoreMode; onReveal?: () 
 const expandBottom = () => expandSessionBottomTerminalPane(240);
 
 function PanelProbe({ bottom = false }: { bottom?: boolean }) {
-  const scopeKey = useCanvasStore(state => state.workspaceKey);
+  const scopeKey = useCanvasStore(state => state.scopeKey);
   const visibleTabCount = useCanvasStore(state => (
     [state.primaryGroup, state.secondaryGroup, state.tertiaryGroup]
       .reduce((count, group) => count + group.tabs.filter(tab => !tab.isHidden).length, 0)
@@ -116,6 +118,49 @@ describe('canvas host panel ownership', () => {
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     stores.forEach(store => store.getState().reset());
     container.remove();
+  });
+
+  it('preserves tabs and width through fullscreen, restore, hide and reopen', async () => {
+    let toggleFullscreen: () => void;
+    function LayoutProbe() {
+      toggleFullscreen = useApp().toggleChatPanel;
+      return null;
+    }
+    const tabId = useAgentCanvasStore.getState().addTab(content('unfinished'), 'active');
+    useAgentCanvasStore.getState().setTabDirty(tabId, 'primary', true);
+    const originalTabs = useAgentCanvasStore.getState().primaryGroup;
+    expandSessionAuxPane();
+    await act(async () => root.render(<LayoutProbe />));
+
+    const flushLayout = async (action: () => void) => act(async () => {
+      action();
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    });
+    await flushLayout(() => toggleFullscreen());
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: true, rightPanelCollapsed: false, rightPanelWidth: 520 });
+    await flushLayout(() => toggleFullscreen());
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: false, rightPanelCollapsed: false, rightPanelWidth: 520 });
+
+    await flushLayout(() => toggleFullscreen());
+    await flushLayout(hideSessionAuxPane);
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: false, rightPanelCollapsed: true });
+    await flushLayout(expandSessionAuxPane);
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: false, rightPanelCollapsed: false, rightPanelWidth: 520 });
+    expect(useAgentCanvasStore.getState().primaryGroup).toBe(originalTabs);
+  });
+
+  it('reveals the bottom terminal from fullscreen without opening hidden content from chat-only', () => {
+    expandSessionBottomTerminalPane(260);
+    expect(appManager.getState().layout).toMatchObject({
+      chatCollapsed: false, rightPanelCollapsed: true, bottomTerminalPanelCollapsed: false,
+    });
+    appManager.updateLayout({ chatCollapsed: true });
+    collapseSessionBottomTerminalPane();
+    expandSessionBottomTerminalPane(260);
+    expect(appManager.getState().layout).toMatchObject({
+      chatCollapsed: false, rightPanelCollapsed: false, bottomTerminalPanelCollapsed: false,
+      bottomTerminalPanelHeight: 260, rightPanelWidth: 520,
+    });
   });
 
   it.each([true, false])('preserves a session panel with collapsed=%s through file-view lifetime', async collapsed => {
@@ -206,21 +251,23 @@ describe('canvas host panel ownership', () => {
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
   });
 
-  it('preserves manual collapse across content changes, workspace restore and host remount', async () => {
-    switchAgentCanvasWorkspace(null, 'workspace-a');
+  it('restores a scope snapshot without opening the panel for the host', async () => {
+    switchAgentCanvasScope('session-a');
     useAgentCanvasStore.getState().addTab(content('session'), 'active');
     await act(async () => root.render(<Hosts />));
     const tab = useAgentCanvasStore.getState().primaryGroup.tabs[0];
     await act(async () => useAgentCanvasStore.getState().updateTabContent(tab.id, 'primary', content('updated')));
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
     await act(async () => {
-      switchAgentCanvasWorkspace('workspace-a', 'workspace-b');
+      switchAgentCanvasScope('session-b');
       root.render(<Hosts />);
     });
     await act(async () => {
-      switchAgentCanvasWorkspace('workspace-b', 'workspace-a');
+      switchAgentCanvasScope('session-a');
       root.render(<Hosts />);
     });
+    // The entered scope owns its own open state; content returning with a scope
+    // swap must not reopen a panel the host restored as collapsed.
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
     await act(async () => root.render(null));
@@ -245,18 +292,19 @@ describe('canvas host panel ownership', () => {
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
   });
 
-  it('preserves an open panel when workspace snapshots change before the shell rerenders', async () => {
-    switchAgentCanvasWorkspace(null, 'workspace-a');
-    useAgentCanvasStore.getState().addTab(content('workspace-a'), 'active');
+  it('keeps canvas content per scope instead of sharing it between scopes', async () => {
+    switchAgentCanvasScope('session-a');
+    useAgentCanvasStore.getState().addTab(content('session-a'), 'active');
     appManager.updateLayout({ rightPanelCollapsed: false });
     await act(async () => root.render(<Hosts />));
-    await act(async () => switchAgentCanvasWorkspace('workspace-a', 'workspace-b'));
-    expect(useAgentCanvasStore.getState().workspaceKey).toBe('workspace-b');
+    await act(async () => switchAgentCanvasScope('session-b'));
+    expect(useAgentCanvasStore.getState().scopeKey).toBe('session-b');
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
-    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
-    await act(async () => switchAgentCanvasWorkspace('workspace-b', 'workspace-a'));
-    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
-    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
+    await act(async () => useAgentCanvasStore.getState().addTab(content('session-b'), 'active'));
+    await act(async () => switchAgentCanvasScope('session-a'));
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs.map(tab => tab.content.title)).toEqual(['session-a']);
+    await act(async () => switchAgentCanvasScope('session-b'));
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs.map(tab => tab.content.title)).toEqual(['session-b']);
   });
 
   it('keeps Git and bottom terminal operations scoped to their hosts', async () => {

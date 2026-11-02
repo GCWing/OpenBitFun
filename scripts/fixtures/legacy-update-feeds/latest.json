@@ -1,0 +1,33 @@
+{
+  "version": "0.2.20",
+  "pub_date": "2026-08-28T18:44:04.013Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSMm84QnN2bnowVVBEQ2I5UEhtZVpqcGV5d0VwMkFXWTM0NVJSTWFOaDJuaXlEU3JWSmZHTHgwTHYxNGJFa0xkRk5RY29OQ29SVEtVVTQ4ZUtBZVdQQi9nbTFrSEFBTFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3OTQwMTEyCWZpbGU6Qml0RnVuLmFwcC50YXIuZ3oKL2VWSjdQTGo1OG5MRXc4ZDJDeTVpT1R1ZXJiM1JaNkQvK2JiL2VCd1hhYktyUkliL0I0b25uZGd3S0ZLVWFpcWZOL0V4RE1OWmxjc3FIaXNrWE1WQ0E9PQo=",
+      "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/BitFun_0.2.19_darwin-aarch64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSMm84QnN2bnowVVBZZ05RTitIMlVrOC9MRzlSSVhVVEsxLytsTGlKR01uRFBpby9sYjdxOFZuVFdQSTdrR2NRSEN5Zk04SVZpSVpzcDdxL2NXYjU0UU9PemRJNURqTkFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3OTQyMzU0CWZpbGU6Qml0RnVuLmFwcC50YXIuZ3oKN0hLbXBQMTEwdlNUMk9za3hyai9PWTlZQWk1U1RMQ0RLeTVrNWR4RFh1TVFDVzlrQnFQVmVBQ1lqMG1SQlBwcndoRWoxTFJQbTBJQlRDeFNFN21OQVE9PQo=",
+      "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/BitFun_0.2.19_darwin-x86_64.app.tar.gz"
+    },
+    "linux-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSMm84QnN2bnowVU9zSVlkQmw2elhNU3VIZGhTYzBHc1VDcGtscUUxT0lWRXhTcXcrcjlJVW01VnBsK1FOTldUZ0wrSFlUSXRUTnl6RmtaVFV0MEt2OCsydk10R1pkV0FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3OTM5NTY3CWZpbGU6Qml0RnVuXzAuMi4xOV9hYXJjaDY0LkFwcEltYWdlCllIQkk2bUZQRjU1NHVxb3VwdnFZV0pkZTd4TVArT0p6VzVORFI0Zm1JQ2laUm1VVVFKRjlZQjJsSmJIM01nMkRGeWRJRW5DcGtvaEw0dTJRaUU1SkNBPT0K",
+      "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/BitFun_0.2.19_linux-aarch64.AppImage"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSMm84QnN2bnowVUFDUjZEanVGc0t3RVJzR2FIT3pKWTZWUGZ2MXVuNWxoQnVzTWNkYnZjUkFCT1N6cnhZMmdBc1VMdVJENGxjREhiYnB4U3hQV3Jua3hVQUUyU0Q2dlE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3OTQwNjQ3CWZpbGU6Qml0RnVuXzAuMi4xOV9hbWQ2NC5BcHBJbWFnZQpURlB6NGRvRFZzR3p5VXJGTVpOZmZydThiT1JIeTN4NERPRStKdSttaWlzRXcyU3FsM2p4VXY5NTB1SXNmR1FwczF4MDM0S0dJVExaMHh1TG5CMjBEZz09Cg==",
+      "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/BitFun_0.2.19_linux-x86_64.AppImage"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSMm84QnN2bnowVU44Z0RCZjNqdGxmTWN2d1hEM2pubWU5YWFQdDBWVWU1bktqT1hvSXJ1djhBMXV1bmw3L3ZYUVpKZWF3RktaaUVwd09yWEtsK1pFdkJRbmFIcXdxNVFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3OTQxMDIyCWZpbGU6Qml0RnVuXzAuMi4xOV94NjQtc2V0dXAuZXhlCmRKblNlTUpvb0FXM2gvWXlkOENqNUpla2VrdzgxTzI1K3JtaGlzOGFid01JaDZMNTRkYktrbzNSUThtelJKdFMvQnZ3V2JDQmNPQXN3SEFuZFVKU0J3PT0K",
+      "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/BitFun_0.2.19_windows-x86_64-setup.exe"
+    }
+  },
+  "manual_installers": {
+    "windows-x86_64": {
+      "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/BitFun_0.2.19_windows-x86_64-installer.exe",
+      "signature_url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/BitFun_0.2.19_windows-x86_64-installer.exe.sig"
+    }
+  },
+  "notes": "全新版本上线！\nOpenBitFun 1.0.x 正式发布，欢迎升级！\n新版本无法从当前版本直接更新，手动下载地址：\n  官网 https://www.openbitfun.com/download\n  GitHub https://github.com/GCWing/OpenBitFun/releases\n重要：两个版本数据相互独立，需使用官方数据迁移工具：\n  https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.1\n注意：\n1. 请勿点击下方「后台下载」按钮。\n2. 点击「跳过此版本」即可关闭本提示，不影响继续使用。\n3. 官网访问异常时，请在 VPN 工具中将 *.openbitfun.com 加入白名单。\n\nNew version available!\nOpenBitFun 1.0.x is now officially released — you are welcome to upgrade!\nThis new version cannot be updated directly from the current one. Download manually at:\n  Official site: https://www.openbitfun.com/download\n  GitHub: https://github.com/GCWing/OpenBitFun/releases\nImportant: the two versions keep their data completely separate. Use the official\nData Migrator to carry your data over:\n  https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.1\nNotes:\n1. Do NOT click the \"Download in background\" button below.\n2. Click \"Skip this version\" to dismiss this notice — it does not affect your\n   continued use of the app.\n3. If the official site is unreachable, whitelist *.openbitfun.com in your VPN tool."
+}

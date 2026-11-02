@@ -52,7 +52,7 @@ const error = new TauriCommandError('Command failed', {
 
 beforeEach(async () => {
   const { JSDOM } = await import('jsdom');
-  dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' });
+  dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost', pretendToBeVisual: true });
   vi.stubGlobal('window', dom.window);
   vi.stubGlobal('document', dom.window.document);
   vi.stubGlobal('localStorage', dom.window.localStorage);

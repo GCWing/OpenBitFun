@@ -9,6 +9,29 @@ import kotlin.test.assertTrue
 
 class MessageBlockPresentationTest {
     @Test
+    fun markedOwnerKeepsLiveChildrenAndStableIdentity() {
+        val owner = item(tool = tool("owner", name = "Task", status = "running")).copy(isSubagent = true)
+        val thought = item(type = "thinking", content = "Inspecting").copy(isSubagent = true)
+        val before = messageBlocks(message(items = listOf(owner)), true).single() as MessageBlock.Subagent
+        val after = messageBlocks(message(items = listOf(owner, thought)), true).single() as MessageBlock.Subagent
+        assertEquals(before.id, after.id)
+        assertEquals("Inspecting", (after.children.single() as MessageBlock.Thinking).text)
+        val completed = messageBlocks(message(items = listOf(owner.copy(tool = owner.tool!!.copy(status = "completed")), thought)), false).single() as MessageBlock.Subagent
+        assertEquals(after.id, completed.id)
+        assertEquals(1, completed.children.size)
+        assertEquals(false, completed.running)
+    }
+
+    @Test
+    fun orphanReasoningHasOnlyOneCopyInsideItsBranch() {
+        val orphan = item(type = "thinking", content = "Early reasoning").copy(isSubagent = true)
+        val block = messageBlocks(message(items = listOf(orphan)), true).single() as MessageBlock.Subagent
+        assertEquals("", block.title)
+        assertEquals("", block.text)
+        assertEquals("Early reasoning", (block.children.single() as MessageBlock.Thinking).text)
+    }
+
+    @Test
     fun markedFlatChildrenBelongToTheirTaskNotTheMainTranscript() {
         val task1 = item(tool = tool("task1", name = "Task", status = "running"))
         val task2 = item(tool = tool("task2", name = "Task", status = "completed"))
@@ -267,6 +290,105 @@ class MessageBlockPresentationTest {
         )
 
         assertEquals(1, blocks.filterIsInstance<MessageBlock.Tools>().flatMap { it.tools }.size)
+    }
+
+    @Test
+    fun aRunningTaskDoesNotDrawItsChildrenTwiceWhenTheyAlsoArriveFlat() {
+        val task = item(
+            tool = tool("task", name = "Task", status = "running"),
+            subItems = listOf(
+                item(type = "thinking", content = "child reasoning"),
+                item(tool = tool("read", status = "completed")),
+            ),
+        )
+        val flatCopies = listOf(
+            item(type = "thinking", content = "child reasoning"),
+            item(tool = tool("read", status = "completed")),
+        )
+
+        val subagent = messageBlocks(message(items = listOf(task) + flatCopies), true).single() as MessageBlock.Subagent
+
+        assertEquals(2, subagent.children.size)
+    }
+
+    @Test
+    fun aChildThatRepeatsInsideTheTaskIsNotTreatedAsARestatement() {
+        val task = item(
+            tool = tool("task", name = "Task", status = "running"),
+            subItems = listOf(item(type = "thinking", content = "checking")),
+        )
+        val flatTail = listOf(
+            item(type = "thinking", content = "checking"),
+            item(type = "thinking", content = "checking"),
+        )
+
+        val subagent = messageBlocks(message(items = listOf(task) + flatTail), true).single() as MessageBlock.Subagent
+
+        assertEquals(2, subagent.children.size)
+    }
+
+    @Test
+    fun repeatedFlatChildrenOnlyConsumeOriginalNestedOccurrences() {
+        for (marked in listOf(true, false)) {
+            for (nestedCount in listOf(0, 1, 2)) {
+                val child = item(type = "text", content = "Checking again").copy(isSubagent = marked)
+                val task = item(tool = tool("task", name = "Task", status = "running"),
+                    subItems = List(nestedCount) { child })
+                val shown = messageBlocks(message(items = listOf(task) + List(5) { child }), true)
+                    .single() as MessageBlock.Subagent
+                assertEquals(5, shown.children.size, "Only $nestedCount nested copies may be matched")
+                assertEquals(nestedCount, task.subItems!!.size, "Projection must not mutate the source")
+            }
+        }
+    }
+
+    @Test
+    fun flatToolRestatementUpdatesStatusOutputAndContentWithoutLosingNestedDetails() {
+        for (marked in listOf(true, false)) {
+            val nested = item(type = "tool", content = "old", tool = tool("read", status = "running", inputPreview = "original input"),
+                subItems = listOf(item(type = "text", content = "nested detail")))
+            val task = item(tool = tool("task", name = "Task", status = "running"), subItems = listOf(nested))
+            val complete = item(type = "tool", content = "new", tool = tool("read", status = "completed")
+                .copy(name = null, resultPreview = "new output")).copy(isSubagent = marked)
+            val shown = messageBlocks(message(items = listOf(task, complete)), true).single() as MessageBlock.Subagent
+            val card = (shown.children.single() as MessageBlock.Tools).tools.single()
+            assertEquals(ToolPhase.COMPLETED, card.phase)
+            assertEquals("new output", card.output)
+            assertEquals("Read", card.name)
+            assertEquals("original input", card.input)
+            assertEquals("running", task.subItems!!.single().tool!!.status)
+        }
+    }
+
+    @Test
+    fun thinkingBlocksKeepTheirIdsWhenAToolArrivesBeforeThem() {
+        val reasoning = (1..3).map { item(type = "thinking", content = "reasoning $it") }
+
+        val before = messageBlocks(message(items = reasoning), true).filterIsInstance<MessageBlock.Thinking>()
+        val after = messageBlocks(
+            message(items = listOf(item(tool = tool("read", status = "running"))) + reasoning),
+            true,
+        ).filterIsInstance<MessageBlock.Thinking>()
+
+        assertEquals(before.map { it.id }, after.map { it.id })
+        assertEquals(before.map { it.text }, after.map { it.text })
+    }
+
+    @Test
+    fun aTaskKeepsItsIdAndItsChildrenWhenAnEarlierItemArrivesLate() {
+        val task = item(
+            tool = tool("task", name = "Task", status = "running"),
+            subItems = listOf(item(type = "thinking", content = "child reasoning")),
+        )
+
+        val first = messageBlocks(message(items = listOf(task)), true).single() as MessageBlock.Subagent
+        val later = messageBlocks(
+            message(items = listOf(item(type = "thinking", content = "parent note"), task)),
+            true,
+        ).filterIsInstance<MessageBlock.Subagent>().single()
+
+        assertEquals(first.id, later.id)
+        assertEquals(first.children.map { it.id }, later.children.map { it.id })
     }
 
     @Test

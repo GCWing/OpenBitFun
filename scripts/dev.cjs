@@ -59,14 +59,34 @@ function isDesktopMode(mode) {
   return mode === 'desktop' || mode === 'desktop-preview';
 }
 
+function resolveDesktopDevDataMode(args = []) {
+  if (args.includes('--shared-data') && args.includes('--isolated-data')) {
+    throw new Error('Choose only one of --shared-data or --isolated-data');
+  }
+  return args.includes('--isolated-data') ? 'isolated' : 'shared';
+}
+
+function resolveDesktopDevStorageEnvironment(env = process.env, rootDir = ROOT_DIR, dataMode = 'shared') {
+  // Shared mode leaves path selection to the app, including caller overrides.
+  if (dataMode === 'shared') {
+    return { OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development' };
+  }
+  // Keep both user settings and workspace/session storage separate from the
+  // installed app. Each checkout reuses its own persistent development data.
+  const storageDir = path.join(rootDir, '.openbitfun', 'desktop-dev');
+  return {
+    OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development',
+    OPENBITFUN_USER_ROOT: env.OPENBITFUN_USER_ROOT || env.OPENBITFUN_E2E_USER_ROOT || path.join(storageDir, 'user'),
+    OPENBITFUN_HOME: env.OPENBITFUN_HOME || env.OPENBITFUN_E2E_HOME || path.join(storageDir, 'home'),
+  };
+}
+
 function getDesktopBinaryPath() {
   const suffix = process.platform === 'win32' ? '.exe' : '';
   const binaryName = `openbitfun-desktop${suffix}`;
 
-  if (process.platform === 'darwin') {
-    return path.join(ROOT_DIR, 'target', 'debug', 'OpenBitFun.app', 'Contents', 'MacOS', 'OpenBitFun');
-  }
-
+  // Preview rebuilds use cargo build, which emits this executable on macOS
+  // as well; it does not create an application bundle.
   return path.join(ROOT_DIR, 'target', 'debug', binaryName);
 }
 
@@ -144,6 +164,23 @@ function spawnCommand(cmd, args, cwd = ROOT_DIR, envOverrides = {}, shell = fals
   });
 }
 
+function resolveCommandInvocation(cmd, args, env = process.env, platform = process.platform) {
+  // Avoid the Windows batch shim, which workspace installs may rewrite while
+  // preparation is running. Keep paths and arguments out of shell parsing.
+  if (platform === 'win32' && cmd === 'pnpm') {
+    const entry = env.npm_execpath && /\.(?:c?js|mjs)$/i.test(env.npm_execpath)
+      ? env.npm_execpath
+      : path.join(ROOT_DIR, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs');
+    return {
+      cmd: process.execPath,
+      args: [entry, ...args],
+      shell: false,
+    };
+  }
+
+  return { cmd: cmd === 'node' ? process.execPath : cmd, args, shell: false };
+}
+
 /**
  * Run a command asynchronously with piped output, prefixing every line so
  * parallel preparation steps stay distinguishable. Resolves (never rejects)
@@ -151,15 +188,14 @@ function spawnCommand(cmd, args, cwd = ROOT_DIR, envOverrides = {}, shell = fals
  */
 function runCommandPrefixed(prefix, cmd, args, cwd = ROOT_DIR, envOverrides = {}) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, {
+    const env = { ...process.env, ...envOverrides };
+    const invocation = resolveCommandInvocation(cmd, args, env);
+    const child = spawn(invocation.cmd, invocation.args, {
       cwd,
-      shell: process.platform === 'win32',
+      shell: invocation.shell,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        ...envOverrides,
-      },
+      env,
     });
 
     const forward = (stream, out) => {
@@ -371,10 +407,7 @@ function getNewestTrackedInput(entryPath) {
       return null;
     }
 
-    const isEmbeddedMarkdown = entryPath.includes(`${path.sep}prompts${path.sep}`)
-      || entryPath.includes(
-        `${path.sep}service${path.sep}announcement${path.sep}content${path.sep}`,
-      );
+    const isEmbeddedMarkdown = entryPath.includes(`${path.sep}prompts${path.sep}`);
     if (ext === '.md' && !isEmbeddedMarkdown) {
       return null;
     }
@@ -600,6 +633,12 @@ async function main() {
   }
 
   const desktopMode = isDesktopMode(mode);
+  const desktopDataMode = desktopMode ? resolveDesktopDevDataMode(extraArgs) : null;
+  if (desktopMode) {
+    // Set this before spawning any preparation, build, or app process so both
+    // desktop launch paths and their children inherit the same storage scope.
+    Object.assign(process.env, resolveDesktopDevStorageEnvironment(process.env, ROOT_DIR, desktopDataMode));
+  }
   const modeLabelMap = {
     desktop: 'Desktop',
     'desktop-preview': 'Desktop Debug Preview',
@@ -609,23 +648,40 @@ async function main() {
   
   printHeader(`OpenBitFun ${modeLabel} Development`);
   printBlank();
+  if (desktopMode) {
+    printInfo(`Desktop data mode: ${desktopDataMode}`);
+    printInfo(`Desktop user data: ${process.env.OPENBITFUN_USER_ROOT || process.env.OPENBITFUN_E2E_USER_ROOT || '(system default)'}`);
+    printInfo(`Desktop home: ${process.env.OPENBITFUN_HOME || process.env.OPENBITFUN_E2E_HOME || '(system default)'}`);
+    if (desktopDataMode === 'shared') {
+      printInfo('Shared product data with a separate development host; session writer leases remain active');
+    }
+  }
 
   const totalSteps = 2;
   let currentStep = 1;
 
-  // Step 1: Run all independent preparation tasks in parallel.
-  // copy-monaco / generate-version / mobile-web / flashgrep / plugin-host have no
-  // dependencies on each other; each task's output is line-prefixed so the
-  // interleaved logs stay attributable. The DeepSeek bridge is not prepared
+  // mobile-web may install workspace dependencies and rewrite node_modules/.bin.
+  // Finish it before launching consumers of those shims and dependencies.
+  // The remaining preparations can run in parallel with prefixed output.
+  // The DeepSeek bridge is not prepared
   // here: it is not a compile-time Tauri resource. Official desktop:build
   // compiles it; local DeepSeek sessions run `pnpm run prepare:dsh-profile`.
   printStep(
     currentStep++,
     totalSteps,
     desktopMode
-      ? 'Prepare resources (parallel: monaco, version, mobile-web, flashgrep, plugin-host)'
+      ? 'Prepare resources (mobile-web first; then parallel: monaco, version, flashgrep, plugin-host)'
       : 'Prepare resources (parallel: monaco, version)'
   );
+
+  if (desktopMode) {
+    const result = await runCommandPrefixed('mobile-web', 'node', ['scripts/mobile-web-build.cjs', '--install']);
+    if (!result.ok) {
+      printError('Build mobile-web failed');
+      if (result.error?.message) printError(result.error.message);
+      process.exit(1);
+    }
+  }
 
   const prepTasks = [
     {
@@ -644,6 +700,11 @@ async function main() {
   ];
 
   if (desktopMode) {
+    prepTasks.push({
+      name: 'Prepare lightweight MiniApp shell',
+      hint: 'Hint: run `pnpm run prepare:miniapp-shell`',
+      promise: runCommandPrefixed('miniapp-shell', 'node', ['scripts/prepare-miniapp-shell.mjs']),
+    });
     prepTasks.push({
       name: 'Prepare OpenCode extension Host',
       hint: 'Hint: install Bun, then run `pnpm run plugin-host:prepare`',
@@ -674,10 +735,6 @@ async function main() {
           return { ok: false, code: null, error };
         }
       })(),
-    });
-    prepTasks.push({
-      name: 'Build mobile-web',
-      promise: runCommandPrefixed('mobile-web', 'node', ['scripts/mobile-web-build.cjs', '--install']),
     });
   }
 
@@ -795,7 +852,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  printError('Startup failed: ' + error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    printError('Startup failed: ' + error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { resolveCommandInvocation, resolveDesktopDevDataMode, resolveDesktopDevStorageEnvironment, runCommandPrefixed };

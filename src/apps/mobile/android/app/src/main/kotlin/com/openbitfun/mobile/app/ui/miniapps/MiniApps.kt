@@ -61,7 +61,25 @@ internal fun MiniAppsButton(
             Icon(painterResource(R.drawable.ic_symbol_square_grid_2x2), contentDescription = null, modifier = Modifier.size(24.dp))
             Text(stringResource(R.string.miniapps_title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
         }
-    } else TextButton(onClick = { open = true }, colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) { Text(stringResource(R.string.miniapps_title)) }
+    } else TextButton(
+        onClick = { open = true },
+        modifier = Modifier.fillMaxWidth().height(44.dp),
+        contentPadding = PaddingValues(0.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = contentColor),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.miniapps_title))
+            Icon(
+                painter = painterResource(R.drawable.ic_symbol_chevron_right),
+                contentDescription = null,
+                modifier = Modifier.padding(start = 5.dp).size(16.dp),
+            )
+        }
+    }
     if (open) MiniAppsDialog { open = false }
 }
 

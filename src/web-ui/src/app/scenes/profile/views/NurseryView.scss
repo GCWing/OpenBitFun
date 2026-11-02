@@ -1,10 +1,9 @@
 @use '@/shared/styles/surface-recipes' as surfaces;
+@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
 @use '../../../styles/surface-stagger';
 
 // Same as GalleryLayout.scss — nursery sub-pages align with Agents / gallery lists
 $nursery-scene-gutter: clamp(var(--openbitfun-space-4), 3cqi, var(--openbitfun-space-8));
-$nursery-gallery-content-max: 936px;
-$nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
 
 // ── Gallery overview ───────────────────────────────────────────────────────
 
@@ -14,17 +13,22 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
 
   &__header,
   .gallery-zones {
-    box-sizing: border-box;
-    width: min(100%, $nursery-gallery-content-max);
-    margin-inline: auto;
-    padding-inline: $nursery-gallery-gutter;
+    @include configLayout.content-frame;
+    padding-inline: 0;
   }
 
   &__header {
     flex: 0 0 auto;
-    flex-wrap: wrap;
     gap: var(--openbitfun-space-4);
-    padding-block: var(--openbitfun-space-6);
+    padding-block: var(--openbitfun-space-8);
+  }
+
+  .gallery-layout__body {
+    scrollbar-gutter: stable both-edges;
+  }
+
+  .gallery-layout__body-inner {
+    justify-content: center;
   }
 
   .gallery-zones {
@@ -32,14 +36,54 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
     padding-block: 0 var(--openbitfun-space-8);
   }
 
-  &__assistant-grid {
+  .gallery-grid {
     align-items: stretch;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(152px, 1fr);
     gap: var(--openbitfun-space-4);
+  }
+
+  &__skeleton > .gallery-skeleton-card {
+    height: auto;
+
+    &:first-child {
+      grid-row: span 2;
+    }
+  }
+
+  &__create-card {
+    display: flex;
+    min-width: 0;
+
+    &--tall {
+      grid-row: span 2;
+    }
+  }
+
+  &__create-button {
+    flex: 1;
+    block-size: auto;
+    padding: var(--openbitfun-layout-card-padding-md);
+    border-radius: var(--openbitfun-layout-card-radius-md);
+
+    > [data-openbitfun-part='content'] {
+      flex-direction: column;
+      gap: var(--openbitfun-space-3);
+    }
   }
 
   &__assistant-zone {
     min-width: 0;
+
+    .gallery-zone__header {
+      flex-direction: row;
+      align-items: center;
+    }
+
+    .gallery-zone__tools {
+      width: auto;
+      margin-left: auto;
+    }
   }
 
   &__empty {
@@ -68,100 +112,43 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
   }
 }
 
-// ── Assistant defaults ─────────────────────────────────────────────────────
-
-.nursery-defaults {
-  min-width: 0;
-  animation: nursery-card-in var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-decelerate) both;
-
-  &__surface {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-  }
-
-  &__content {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: var(--openbitfun-space-2);
-  }
-
-  &__title-row {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: var(--openbitfun-space-2);
-    flex-wrap: wrap;
-  }
-
-  &__title {
-    margin: 0;
-    color: var(--openbitfun-color-content-primary);
-    font-family: var(--openbitfun-type-heading-section-font-family);
-    font-size: var(--openbitfun-type-heading-section-font-size);
-    font-weight: var(--openbitfun-type-heading-section-font-weight);
-    line-height: var(--openbitfun-type-heading-section-line-height);
-    letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
-  }
-
-  &__subtitle {
-    margin: 0;
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-  }
-
-  &__stats {
-    display: flex;
-    min-height: 20px;
-    align-items: center;
-    gap: var(--openbitfun-space-4);
-    flex-wrap: wrap;
-  }
-
-  &__stat {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--openbitfun-space-1);
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-meta-font-size);
-    white-space: nowrap;
-
-    &--error {
-      color: var(--openbitfun-color-status-danger-content);
-    }
-  }
-
-  &__stat-skeleton {
-    width: 72px;
-    height: 16px;
-    border-radius: var(--openbitfun-radius-sm);
-    background: var(--openbitfun-color-action-neutral-surface);
-    animation: nursery-skeleton-pulse 1.2s ease-in-out infinite;
-
-    &:last-child {
-      width: 64px;
-    }
-  }
-
-  &__action {
-    justify-self: end;
-    max-width: 100%;
-  }
-}
-
 // ── Assistant card ─────────────────────────────────────────────────────────
 
 .assistant-card {
   display: flex;
   min-width: 0;
-  align-self: start;
+  align-self: stretch;
   animation: nursery-card-in var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-decelerate) both;
   @include surface-stagger.animation-delay(40ms);
 
   &--busy {
     opacity: var(--openbitfun-opacity-disabled);
+  }
+
+  &[data-openbitfun-primary='true'] {
+    grid-row: span 2;
+
+    .assistant-card__header {
+      flex: 1;
+      flex-direction: column;
+      justify-content: center;
+      gap: var(--openbitfun-space-4);
+      padding-block: var(--openbitfun-space-4);
+
+      > [data-openbitfun-part='header-content'] {
+        flex: 0 1 auto;
+        width: 100%;
+      }
+    }
+
+    .assistant-card__title-row {
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .assistant-card__name {
+      flex: 0 1 auto;
+    }
   }
 
   &__surface {
@@ -240,11 +227,6 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
     gap: var(--openbitfun-space-1);
   }
 
-  &__chevron {
-    flex: 0 0 auto;
-    color: var(--openbitfun-color-content-muted);
-  }
-
   &__vibe {
     flex: 1 1 auto;
     min-width: 0;
@@ -275,11 +257,12 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
     position: relative;
     z-index: 2;
     flex-wrap: wrap;
+    margin-top: auto;
     padding-block-start: var(--openbitfun-space-1);
     pointer-events: none;
   }
 
-  &__session-actions {
+  &__workspace-actions {
     display: inline-flex;
     min-width: 0;
     align-items: center;
@@ -296,7 +279,7 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
   }
 }
 
-// ── Sub-page chrome (shared by AssistantDefaultsPage / AssistantConfigPage) ───
+// ── Sub-page chrome (AssistantConfigPage) ───
 
 .nursery-page {
   display: flex;
@@ -847,17 +830,6 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
   }
 }
 
-@keyframes nursery-skeleton-pulse {
-  0%,
-  100% {
-    opacity: 0.56;
-  }
-
-  50% {
-    opacity: 1;
-  }
-}
-
 @keyframes nursery-page-in {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -865,83 +837,81 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
 
 @media (prefers-reduced-motion: reduce) {
   .assistant-card,
-  .nursery-defaults,
-  .nursery-defaults__stat-skeleton,
   .nursery-page {
     animation: none;
     transition: none;
   }
 
-  .assistant-card__chevron {
-    transition: none;
-  }
 }
 
-// ── Responsive ────────────────────────────────────────────────────────────
+// ── Assistant detail: centered page ─────────────────────────────────────────
 
-@container assistant-scene (max-width: 680px) {
-  .nursery-gallery__header,
-  .nursery-gallery .gallery-zones {
-    padding-inline: var(--openbitfun-space-4);
+.acp-page {
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+    scrollbar-gutter: stable both-edges;
   }
 
-  .nursery-defaults__surface {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--openbitfun-space-4);
+  &__toolbar {
+    display: flex;
+    justify-content: flex-start;
+    flex-shrink: 0;
+    padding: var(--openbitfun-space-4) configLayout.$config-page-content-inline-padding 0;
   }
 
-  .nursery-defaults__action {
-    justify-self: start;
-  }
+  &__back {
+    padding-inline: var(--openbitfun-space-3);
+    border-color: transparent;
+    border-radius: var(--openbitfun-radius-base);
+    color: var(--openbitfun-color-content-secondary);
 
+    &:is(:hover, :active):not(:disabled) {
+      border-color: var(--openbitfun-color-border-default);
+      color: var(--openbitfun-color-content-primary);
+      text-decoration: none;
+    }
+  }
 }
-
-// ── Top bar ─────────────────────────────────────────────────────────────────
 
 .acp-layout {
-  box-sizing: border-box;
-  flex: 1;
-  width: min(100%, 1280px);
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
-  overflow: hidden;
-  margin-inline: auto;
-  padding: var(--openbitfun-space-6) $nursery-scene-gutter;
-  gap: var(--openbitfun-space-6);
-
-  &__left,
-  &__right {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+  @include configLayout.content-frame;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-10);
+  padding-block: var(--openbitfun-space-8) var(--openbitfun-space-12);
 }
 
-// ── Left: identity header ────────────────────────────────────────────────────
-
-.acp-left-header {
+.acp-identity {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: var(--openbitfun-space-4);
-  padding: var(--openbitfun-space-2) var(--openbitfun-space-1) var(--openbitfun-space-3);
-  flex: 0 0 auto;
+  padding-inline: var(--openbitfun-space-10);
+  text-align: center;
 
   &__info {
-    flex: 1;
     min-width: 0;
+    max-width: 100%;
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 0;
+  }
+
+  &__title {
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    font: inherit;
   }
 
   &__name,
   &__meta-tag {
     display: flex;
     align-items: center;
+    justify-content: center;
     min-width: 0;
     max-width: 100%;
     margin: 0;
@@ -951,7 +921,7 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
     background: transparent;
     color: var(--openbitfun-color-content-primary);
     font: inherit;
-    text-align: start;
+    text-align: center;
     cursor: pointer;
     transition: background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
@@ -966,7 +936,6 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
   }
 
   &__name {
-    align-self: flex-start;
     font-size: var(--openbitfun-type-heading-page-font-size);
     font-weight: var(--openbitfun-type-heading-page-font-weight);
     line-height: var(--openbitfun-type-heading-page-line-height);
@@ -975,12 +944,22 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
 
   &__name-input {
     width: 100%;
+    text-align: center;
   }
 
   &__meta {
     display: flex;
     align-items: center;
+    justify-content: center;
     flex-wrap: wrap;
+    gap: var(--openbitfun-space-1);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  &__meta-item {
+    display: flex;
+    align-items: center;
     gap: var(--openbitfun-space-1);
     min-width: 0;
   }
@@ -989,20 +968,12 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-body-sm-font-size);
     line-height: var(--openbitfun-type-body-sm-line-height);
-
-    &.is-empty {
-      color: var(--openbitfun-color-content-muted);
-    }
   }
 
-  &__meta-dot {
-    color: var(--openbitfun-color-content-muted);
-    user-select: none;
-  }
-
-  &__meta-input {
-    min-width: 0;
-    max-width: 220px;
+  &__meta-divider {
+    flex-shrink: 0;
+    block-size: var(--openbitfun-space-3);
+    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
   }
 }
 
@@ -1014,8 +985,8 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
   &__trigger {
     position: relative;
     display: flex;
-    width: 64px;
-    height: 64px;
+    width: 80px;
+    height: 80px;
     align-items: center;
     justify-content: center;
     padding: 0;
@@ -1208,42 +1179,29 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
   }
 }
 
-// ── Left: quick input area — handled by AssistantQuickInput component ────────
-// (No overrides needed; AssistantQuickInput has its own scoped SCSS)
-
-// ── Left: sessions area ──────────────────────────────────────────────────────
+// ── Sessions ────────────────────────────────────────────────────────────────
 
 .acp-sessions-area {
-  flex: 1;
-  min-height: 0;
-  overflow-x: hidden;
-  padding: var(--openbitfun-space-4) var(--openbitfun-space-1) var(--openbitfun-space-2);
-
-  &__title {
-    margin-bottom: var(--openbitfun-space-3);
-  }
-
-  // Override SessionsSection's built-in NavPanel indentation so rows
-  // align flush with the chat input above; slightly roomier than nav but not loose.
+  // Keep text aligned with the heading while hover surfaces extend to the left.
   .openbitfun-nav-panel__inline-list {
+    max-width: none;
     padding-inline: 0;
-    padding-block: var(--openbitfun-space-1);
-    margin-inline: 0;
-    margin-left: 0;
+    padding-block: 0;
+    margin-inline: calc(-1 * var(--openbitfun-space-2)) 0;
     gap: var(--openbitfun-space-1);
   }
 
   .openbitfun-nav-panel__inline-item {
     height: auto;
-    min-height: 34px;
+    min-height: var(--openbitfun-control-height-sm);
     padding: var(--openbitfun-space-1) var(--openbitfun-space-2);
     border-radius: var(--openbitfun-radius-lg);
     font-size: var(--openbitfun-type-body-md-font-size);
   }
 
   .openbitfun-nav-panel__inline-item.is-child {
-    min-height: 30px;
-    padding-left: calc(var(--openbitfun-space-2) + 22px);
+    min-height: var(--openbitfun-control-height-sm);
+    padding-left: calc(var(--openbitfun-space-2) + 14px);
     font-size: var(--openbitfun-type-label-md-font-size);
   }
 
@@ -1254,257 +1212,37 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
 
 }
 
-// ── Right: info panel ────────────────────────────────────────────────────────
-
-.acp-right-info {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.acp-right-shell {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.acp-right-shell__divider {
-  flex: 0 0 auto;
-  height: 1px;
-  background: var(--openbitfun-color-border-subtle);
-}
-
-// ── Identity card ────────────────────────────────────────────────────────────
-
-.acp-identity-card {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-3) var(--openbitfun-space-3);
-  border-radius: var(--openbitfun-radius-base);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--openbitfun-color-status-success-content) 6%, transparent) 0%,
-    color-mix(in srgb, var(--openbitfun-color-accent-hover) 4%, transparent) 55%,
-    color-mix(in srgb, var(--openbitfun-color-accent-secondary) 6%, transparent) 100%
-  );
-  border: 1px solid var(--openbitfun-color-border-subtle);
-
-  &__avatar {
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 10px;
-    background: var(--openbitfun-color-action-neutral-surface-hover);
-    border: 1px solid var(--openbitfun-color-border-subtle);
-  }
-
-  &__emoji {
-    font-size: var(--openbitfun-type-heading-dialog-font-size);
-    line-height: var(--openbitfun-type-modifier-leading-none-line-height);
-    cursor: pointer;
-    border-radius: var(--openbitfun-radius-sm);
-    padding: 2px;
-    transition: background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &:hover {
-      background: var(--openbitfun-color-action-neutral-surface);
-    }
-  }
-
-  &__emoji-input {
-    width: 38px;
-    font-size: var(--openbitfun-type-flow-title-font-size);
-    text-align: center;
-  }
-
-  &__info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--openbitfun-space-1);
-    padding-top: 1px;
-  }
-
-  &__name {
-    font-size: var(--openbitfun-type-label-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    color: var(--openbitfun-color-content-primary);
-    cursor: pointer;
-    border-radius: var(--openbitfun-radius-sm);
-    padding: 1px 4px;
-    margin-left: -4px;
-    letter-spacing: var(--openbitfun-type-flow-title-letter-spacing);
-    line-height: var(--openbitfun-type-label-md-line-height);
-    transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &:hover {
-      color: var(--openbitfun-color-accent-default);
-      background: var(--openbitfun-color-surface-subtle);
-    }
-  }
-
-  &__name-input {
-    font-size: var(--openbitfun-type-label-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    width: 100%;
-  }
-
-  &__meta {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: 2px;
-  }
-
-  &__meta-row {
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-2);
-    min-width: 0;
-  }
-
-  &__meta-label {
-    flex-shrink: 0;
-    font-size: var(--openbitfun-type-micro-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    text-transform: uppercase;
-    letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
-    color: var(--openbitfun-color-content-muted);
-    width: 44px;
-  }
-
-  &__meta-value {
-    flex: 1;
-    min-width: 0;
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    color: var(--openbitfun-color-content-secondary);
-    cursor: pointer;
-    padding: 1px var(--openbitfun-space-1);
-    border-radius: var(--openbitfun-radius-sm);
-    overflow: hidden;
-    white-space: nowrap;
-    transition: background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &:hover {
-      background: var(--openbitfun-color-action-neutral-surface);
-    }
-
-    &.is-empty {
-      color: var(--openbitfun-color-content-muted);
-      font-style: italic;
-    }
-  }
-
-  &__meta-input {
-    flex: 1;
-    min-width: 0;
-  }
-
-  &__reset {
-    flex-shrink: 0;
-    align-self: flex-start;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border: none;
-    border-radius: var(--openbitfun-radius-sm);
-    background: transparent;
-    color: var(--openbitfun-color-content-muted);
-    cursor: pointer;
-    transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &:hover {
-      color: var(--openbitfun-color-content-secondary);
-      background: var(--openbitfun-color-action-neutral-surface);
-    }
-  }
-}
-
-// ── Section (stacked inside .acp-right-shell) ─────────────────────────────────
+// ── Detail chapters ─────────────────────────────────────────────────────────
 
 .acp-section {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-width: 0;
+  gap: var(--openbitfun-space-4);
 
-  &--nested {
-    flex-shrink: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  &--nested.acp-section--schedule {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-
-  &__head {
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-2);
-    padding: var(--openbitfun-space-4);
-    background: transparent;
-  }
-
-  &__title {
-    flex: 1;
-    font-size: var(--openbitfun-type-meta-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    text-transform: uppercase;
-    letter-spacing: var(--openbitfun-type-modifier-tracking-widest-letter-spacing);
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  &__body {
-    padding: var(--openbitfun-space-3);
-    display: flex;
-    flex-direction: column;
+  &.acp-sessions-area {
     gap: var(--openbitfun-space-2);
   }
 
-  &__schedule-body {
-    flex: 1;
-    min-height: 0;
-    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+  &--schedule {
+    .asv__head {
+      padding-bottom: 0;
+    }
 
-    // Outer frame is .acp-right-shell — drop nested list chrome
-    .asv__list {
-      border: none;
-      border-radius: 0;
+    .asv__head-title {
+      color: var(--openbitfun-color-content-primary);
+      font-family: var(--openbitfun-type-heading-section-font-family);
+      font-size: var(--openbitfun-type-heading-section-font-size);
+      font-weight: var(--openbitfun-type-heading-section-font-weight);
+      line-height: var(--openbitfun-type-heading-section-line-height);
+      letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+      text-transform: none;
     }
   }
 }
 
-// ── Persona doc list ─────────────────────────────────────────────────────────
-
-.acp-persona-doc-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--openbitfun-space-2);
-  padding: 0 var(--openbitfun-space-4) var(--openbitfun-space-4);
-}
-
-.acp-persona-doc-row {
-  min-width: 0;
-
-  &__control {
-    width: 100%;
-  }
+.acp-persona-dialog {
+  block-size: min(720px, 80vh);
 }
 
 // ── Empty / loading states ────────────────────────────────────────────────────
@@ -1535,13 +1273,10 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
 
   &__head {
     flex: 0 0 auto;
-    padding: var(--openbitfun-space-4);
-    border-bottom: 1px solid var(--openbitfun-color-border-subtle);
   }
 
-  &__heading {
-    width: 100%;
-    gap: var(--openbitfun-space-3);
+  &__footer {
+    justify-content: center;
   }
 
   &__body {
@@ -1631,38 +1366,5 @@ $nursery-gallery-gutter: clamp(16px, 2.5vw, 28px);
       flex: 1;
       min-height: 0;
     }
-  }
-}
-
-// ── Responsive ────────────────────────────────────────────────────────────────
-
-@container assistant-scene (max-width: 820px) {
-  .acp-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: max-content max-content;
-    align-content: start;
-    overflow-y: auto;
-    gap: var(--openbitfun-space-5);
-    padding-block: var(--openbitfun-space-4);
-
-    &__left,
-    &__right {
-      overflow: visible;
-    }
-  }
-
-  .acp-sessions-area {
-    flex: none;
-    max-height: 320px;
-  }
-
-  .acp-right-info {
-    flex: none;
-    min-height: 320px;
-  }
-
-  .acp-right-shell--editor {
-    height: 480px;
-    flex: none;
   }
 }

@@ -1,11 +1,13 @@
 //! Scheduled job service.
 
+mod events;
 mod schedule;
 mod service;
 mod store;
 mod subscriber;
 mod types;
 
+pub use events::{CronJobsChangedEvent, CronJobsChangedReason, CRON_JOBS_CHANGED_EVENT};
 pub use service::{get_global_cron_service, set_global_cron_service, CronService};
 pub use subscriber::CronEventSubscriber;
 pub use types::{

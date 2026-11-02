@@ -20,9 +20,10 @@ import { sendDebugProbe } from '@/shared/utils/debugProbe';
 import { nowMs } from '@/shared/utils/timing';
 import {
   getTypographyTokenNumber,
-  getTypographyTokenPx,
-  getTypographyTokenValue,
+  readActiveTypographyTokenValue,
+  readActiveTypographyTokenPx,
 } from '@/infrastructure/design-system/typographyRuntime';
+import { fontPreferenceService } from '@/infrastructure/font-preference';
 import '@xterm/xterm/css/xterm.css';
 import './Terminal.scss';
 
@@ -97,12 +98,19 @@ export interface TerminalProps {
   sessionId?: string;
   options?: TerminalOptions;
   autoFocus?: boolean;
+  /** Presentation visibility only; output, buffer and PTY ownership are unchanged. */
+  renderingActive?: boolean;
   onData?: (data: string) => void;
   onBinary?: (data: string) => void;
   onTitleChange?: (title: string) => void;
   /** Notify backend PTY about size changes. */
   onResize?: (cols: number, rows: number) => void;
   onReady?: (terminal: XTerm) => void;
+  /**
+   * Link activation (Ctrl/Cmd+click). When omitted the link opens externally
+   * as-is; remote terminals use this to forward loopback ports first.
+   */
+  onLinkActivate?: (uri: string) => void;
   /**
    * Keyboard paste shortcut interceptor. Return true when the shortcut was
    * handled without reading clipboard text, for example by sending Ctrl+V to a
@@ -174,9 +182,19 @@ function normalizePasteDecision(
   return decision;
 }
 
+/**
+ * The interactive terminal shares the `xs` code step with chat code blocks so a
+ * shell panel never renders larger than the code beside it, and it follows the
+ * global font size preference because xterm takes a pixel size instead of a CSS
+ * custom property.
+ */
+const TERMINAL_FONT_SIZE_TOKEN = 'font.size.xs' as const;
+
+function readTerminalFontSize(): number {
+  return readActiveTypographyTokenPx(TERMINAL_FONT_SIZE_TOKEN);
+}
+
 const DEFAULT_OPTIONS: TerminalOptions = {
-  fontSize: getTypographyTokenPx('font.size.base'),
-  fontFamily: getTypographyTokenValue('font.family.mono'),
   lineHeight: getTypographyTokenNumber('lineHeight.tight'),
   minimumContrastRatio: DEFAULT_XTERM_MINIMUM_CONTRAST_RATIO,
   cursorStyle: 'block',
@@ -190,11 +208,13 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   sessionId,
   options = {},
   autoFocus = false,
+  renderingActive = true,
   onData,
   onBinary,
   onTitleChange,
   onResize,
   onReady,
+  onLinkActivate,
   onPasteShortcut,
   onPaste,
   preventShrinkBelowColsRef,
@@ -204,6 +224,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const webglAddonRef = useRef<WebglAddon | null>(null);
+  const resumeRendererRef = useRef<() => void>(() => {});
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
   const resizeDebouncerRef = useRef<TerminalResizeDebouncer | null>(null);
@@ -218,6 +239,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   const onTitleChangeRef = useRef(onTitleChange);
   const onResizeRef = useRef(onResize);
   const onReadyRef = useRef(onReady);
+  const onLinkActivateRef = useRef(onLinkActivate);
   const onPasteShortcutRef = useRef(onPasteShortcut);
   const onPasteRef = useRef(onPaste);
   const resizeSuspendedRef = useRef(resizeSuspended);
@@ -229,12 +251,19 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   // _keyPressHandled, to avoid duplicates in the safety net.
   const keyPressHandledRef = useRef(false);
   const [isReady, setIsReady] = useState(false);
+  const [fontSize, setFontSize] = useState(readTerminalFontSize);
+  useEffect(() => {
+    const syncFontSize = () => setFontSize(readTerminalFontSize());
+    return fontPreferenceService.on('font:after-change', syncFontSize);
+  }, []);
   // Merge options. Appearance is resolved at render time so that the
   // initial XTerm instance is created with the correct background color and avoids
   // the black-background flash that occurs when a light theme is active.
   const mergedOptions = {
     ...DEFAULT_OPTIONS,
+    fontSize,
     ...options,
+    fontFamily: options?.fontFamily?.trim() || readActiveTypographyTokenValue('font.family.mono'),
     theme: getInitialXtermColors(),
   };
   const mergedOptionsRef = useRef(mergedOptions);
@@ -246,6 +275,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   onTitleChangeRef.current = onTitleChange;
   onResizeRef.current = onResize;
   onReadyRef.current = onReady;
+  onLinkActivateRef.current = onLinkActivate;
   onPasteShortcutRef.current = onPasteShortcut;
   onPasteRef.current = onPaste;
   resizeSuspendedRef.current = resizeSuspended;
@@ -478,6 +508,11 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
     const webLinksAddon = new WebLinksAddon(
       (event, uri) => {
         if (event.ctrlKey || event.metaKey) {
+          const activate = onLinkActivateRef.current;
+          if (activate) {
+            activate(uri);
+            return;
+          }
           systemAPI.openExternal(uri).catch((error) => {
             log.error('Failed to open external link', { uri, error });
           });
@@ -527,21 +562,25 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    // WebGL renderer must be loaded after terminal.open().
-    try {
-      const webglAddon = new WebglAddon();
-      
-      webglAddon.onContextLoss(() => {
-        log.warn('WebGL context lost, falling back to canvas');
-        webglAddon.dispose();
-        webglAddonRef.current = null;
-      });
-      
-      terminal.loadAddon(webglAddon);
-      webglAddonRef.current = webglAddon;
-    } catch (error) {
-      log.debug('WebGL not available, using canvas', error);
-    }
+    // WebGL renderer must be loaded after terminal.open(). A dormant terminal
+    // keeps its parser and buffer, releasing only the renderer's GPU resources.
+    const resumeRenderer = () => {
+      if (webglAddonRef.current) return;
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          log.warn('WebGL context lost, falling back to canvas');
+          webglAddon.dispose();
+          webglAddonRef.current = null;
+        });
+        terminal.loadAddon(webglAddon);
+        webglAddonRef.current = webglAddon;
+      } catch (error) {
+        log.debug('WebGL not available, using canvas', error);
+      }
+    };
+    resumeRendererRef.current = resumeRenderer;
+    resumeRenderer();
 
     const resizeDebouncer = new TerminalResizeDebouncer({
       getTerminal: () => terminalRef.current,
@@ -810,12 +849,36 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
       terminalRef.current = null;
       fitAddonRef.current = null;
       webglAddonRef.current = null;
+      resumeRendererRef.current = () => {};
       resizeObserverRef.current = null;
       intersectionObserverRef.current = null;
       resizeDebouncerRef.current = null;
       lastBackendSizeRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const update = () => {
+      if (idle !== undefined) clearTimeout(idle);
+      if (renderingActive && document.visibilityState !== 'hidden') {
+        resumeRendererRef.current();
+        const terminal = terminalRef.current;
+        if (terminal) terminal.refresh(0, terminal.rows - 1);
+      } else {
+        idle = setTimeout(() => {
+          webglAddonRef.current?.dispose();
+          webglAddonRef.current = null;
+        }, 30_000);
+      }
+    };
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      if (idle !== undefined) clearTimeout(idle);
+      document.removeEventListener('visibilitychange', update);
+    };
+  }, [renderingActive]);
 
   useEffect(() => {
     const terminal = terminalRef.current;

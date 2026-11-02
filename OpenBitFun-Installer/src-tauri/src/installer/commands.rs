@@ -1498,11 +1498,14 @@ fn preflight_validate_payload_zip_archive<R: std::io::Read + std::io::Seek>(
         let file = archive
             .by_index(i)
             .map_err(|e| format!("Failed to read payload entry ({source_label}): {e}"))?;
-        if file.name().ends_with('/') {
+        let name = file
+            .name()
+            .map_err(|e| format!("Failed to decode payload entry name ({source_label}): {e}"))?;
+        if name.ends_with('/') {
             continue;
         }
-        archive_paths.insert(normalize_payload_path(file.name()));
-        let file_name = zip_entry_file_name(file.name());
+        archive_paths.insert(normalize_payload_path(&name));
+        let file_name = zip_entry_file_name(&name);
         if file_name.eq_ignore_ascii_case(MAIN_APP_EXE) {
             exe_size = Some(file.size());
         }
@@ -1575,7 +1578,10 @@ fn read_payload_manifest_from_zip_archive<R: std::io::Read + std::io::Seek>(
         let mut file = archive
             .by_index(i)
             .map_err(|e| format!("Failed to read payload entry ({source_label}): {e}"))?;
-        let file_name = zip_entry_file_name(file.name());
+        let name = file
+            .name()
+            .map_err(|e| format!("Failed to decode payload entry name ({source_label}): {e}"))?;
+        let file_name = zip_entry_file_name(&name);
         if !file_name.eq_ignore_ascii_case(PAYLOAD_MANIFEST_FILE) {
             continue;
         }
@@ -1903,7 +1909,7 @@ mod tests {
         InstallerConfigHandoff, INSTALLER_CONFIG_HANDOFF_FILE_NAME,
     };
     use std::io::{Cursor, Write};
-    use zip::write::FileOptions;
+    use zip::write::SimpleFileOptions;
 
     #[test]
     fn legacy_migration_command_reports_the_independent_distribution() {
@@ -1991,7 +1997,7 @@ mod tests {
         let mut bytes = Cursor::new(Vec::new());
         {
             let mut writer = zip::ZipWriter::new(&mut bytes);
-            let options = FileOptions::default();
+            let options = SimpleFileOptions::default();
 
             // The production payload is sorted, so the executable appears before
             // the required nested directories. Preflight must still scan the rest.

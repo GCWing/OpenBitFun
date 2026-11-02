@@ -33,16 +33,21 @@ export const PEER_EVENT_WRAPPED_PAYLOAD_KEY = '__openbitfunSourcePayload';
  */
 const SURFACE_SCOPED_EVENTS = new Set<string>([
   'terminal_event',
+  'terminal-output',
+  'terminal-exit',
+  'terminal-closed',
   'relay://session-gap',
   'relay://session-ready',
   'session-record',
   'session-state',
   'file-system-changed',
+  'file-watch-status-changed',
   'permission://event',
   'account://settings-applied',
   'ai://model-catalog-updated',
   'session_title_generated',
   'workspace-catalog-changed',
+  'cron://jobs-changed',
 ]);
 
 const SURFACE_SCOPED_PREFIXES = ['agentic://', 'backend-event-'];

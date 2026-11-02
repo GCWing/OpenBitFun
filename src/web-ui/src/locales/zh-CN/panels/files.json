@@ -128,6 +128,7 @@
     "downloading": "正在下载",
     "uploading": "正在上传",
     "missingConnection": "远程工作区缺少 SSH 连接信息。",
+    "cancelled": "传输已取消",
     "failed": "文件传输失败：{{error}}",
     "dropHint": "将文件拖放到此处以上传",
     "stop": "停止"
@@ -160,5 +161,15 @@
     "selectWorkspaceFirst": "请先打开工作区",
     "searchIndexBuildStarted": "已开始建立工作区索引。",
     "searchIndexRebuildStarted": "已开始重建工作区索引。"
+  },
+  "watch": {
+    "title": "文件变更监听已停止",
+    "reason": {
+      "watchLimitExceeded": "系统 watch 配额已用尽，此视图不会再自动刷新。",
+      "backendUnavailable": "系统文件监听不可用，此视图不会再自动刷新。"
+    },
+    "hintLabel": "解除限制后点击重试：",
+    "retry": "重试",
+    "retrying": "重试中…"
   }
 }

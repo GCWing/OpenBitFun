@@ -150,6 +150,23 @@ impl ScheduledJobRuntimeState {
         }
     }
 
+    /// The trigger's dialog turn already exists, so the trigger was delivered by
+    /// another owner: a second application instance racing the same trigger, or
+    /// this instance before a restart that lost the enqueue result.
+    ///
+    /// A trigger's turn ID is derived from its scheduled timestamp, so every
+    /// later delivery attempt for that trigger is rejected the same way.
+    /// Retrying can never succeed, so record the trigger as delivered and stop
+    /// counting failures instead of retrying until the process exits.
+    pub fn mark_trigger_delivered_elsewhere(&mut self, delivered_at_ms: i64) {
+        self.pending_trigger_at_ms = None;
+        self.retry_at_ms = None;
+        self.last_run_status = Some(ScheduledJobRunStatus::Ok);
+        self.last_error = None;
+        self.last_run_finished_at_ms = Some(delivered_at_ms);
+        self.consecutive_failures = 0;
+    }
+
     pub fn mark_turn_started(&mut self, started_at_ms: i64) {
         self.last_run_status = Some(ScheduledJobRunStatus::Running);
         self.last_run_started_at_ms = Some(started_at_ms);

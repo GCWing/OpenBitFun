@@ -16,6 +16,7 @@ import {
   Navigation,
   Scissors,
   Square,
+  SquareCheckBig,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -59,6 +60,7 @@ const CONTEXT_MENU_ICONS = {
   List,
   Navigation,
   Scissors,
+  SelectAll: SquareCheckBig,
   Square,
 } satisfies Record<string, LucideIcon>;
 

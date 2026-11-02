@@ -234,6 +234,26 @@ pub struct AccountClient {
     http: reqwest::Client,
 }
 
+/// Older Desktop builds persisted the temporary embedded LAN credential into
+/// the shared account slot. Re-establish the official route from shared identity
+/// instead of dialing a stale DHCP address on startup. Other custom endpoints
+/// retain their legacy behavior.
+pub fn persisted_relay_requires_migration(relay_url: &str) -> bool {
+    if is_retired_official_relay(relay_url) {
+        return true;
+    }
+    let Ok(url) = validate_relay_base_url(relay_url) else {
+        return false;
+    };
+    url.scheme() == "http"
+        && url.port() == Some(9700)
+        && url.path() == "/"
+        && url
+            .host_str()
+            .and_then(|host| host.parse::<std::net::Ipv4Addr>().ok())
+            .is_some_and(|ip| ip.is_private() || ip.is_loopback() || ip.is_link_local())
+}
+
 /// Check whether an account/relay error message indicates an invalid or
 /// expired account token (relay auth failure). Shared by Desktop, CLI, and
 /// account surfaces so they all react to the same relay wording.
@@ -271,14 +291,28 @@ impl Default for AccountClient {
     }
 }
 
+/// Device kinds a host may report. Mirrors
+/// `relay-service/src/db.rs::DEVICE_KINDS`, which is what validates them.
+pub const DEVICE_KIND_DESKTOP: &str = "desktop";
+/// A headless host: the CLI and TUI delivery profiles.
+pub const DEVICE_KIND_CLI: &str = "cli";
+
+/// Relay capability advertising that a host may report [`DEVICE_KIND_CLI`].
+pub const RELAY_CAPABILITY_DEVICE_KIND_CLI: &str = "device_kind_cli_v1";
+
 /// The GitHub/relay login request body.
 ///
 /// `clientVersion`/`clientProtocol` are optional from the Relay's point of view,
 /// but a current build always reports both so the Relay can gate control
 /// compatibility instead of treating this device as legacy.
+///
+/// `device_kind` is validated by the Relay against its own kind list, so callers
+/// must pass a value that Relay accepts — see
+/// [`AccountClient::reported_device_kind`].
 fn login_request_body(
     access_token: &str,
     device: &DeviceIdentity,
+    device_kind: &str,
     public_key: String,
     request_id: String,
 ) -> serde_json::Value {
@@ -286,7 +320,7 @@ fn login_request_body(
         "access_token": access_token,
         "device_id": device.device_id,
         "device_name": device.device_name,
-        "device_kind": "desktop",
+        "device_kind": device_kind,
         "public_key": public_key,
         "request_id": request_id,
         "clientVersion": openbitfun_product_domains::account::client_version(),
@@ -295,11 +329,45 @@ fn login_request_body(
 }
 
 impl AccountClient {
+    /// The device kind to report to this Relay for a host that is not a desktop.
+    ///
+    /// A CLI host may only report [`DEVICE_KIND_CLI`] to a Relay that advertises
+    /// [`RELAY_CAPABILITY_DEVICE_KIND_CLI`]: an older Relay validates the kind
+    /// against a shorter list and rejects the whole login, which would strand the
+    /// user on a host that used to work. Such a Relay gets [`DEVICE_KIND_DESKTOP`]
+    /// instead, which every Relay accepts, so the device still registers — only
+    /// its artwork falls back. An unreadable capability list counts as
+    /// unsupported, never as a guess.
+    pub async fn reported_device_kind(&self, relay_url: &str, host_is_cli: bool) -> &'static str {
+        if !host_is_cli {
+            return DEVICE_KIND_DESKTOP;
+        }
+        match self.relay_capabilities(relay_url).await {
+            Ok(capabilities) => {
+                if capabilities
+                    .iter()
+                    .any(|name| name == RELAY_CAPABILITY_DEVICE_KIND_CLI)
+                {
+                    DEVICE_KIND_CLI
+                } else {
+                    DEVICE_KIND_DESKTOP
+                }
+            }
+            Err(error) => {
+                log::warn!(
+                    "Failed to read relay capabilities ({error}); reporting a desktop device"
+                );
+                DEVICE_KIND_DESKTOP
+            }
+        }
+    }
+
     /// Reuse the shared GitHub login used by the OpenBitFun marketplaces.
     pub async fn login_with_identity(
         &self,
         relay_url: &str,
         device: &DeviceIdentity,
+        device_kind: &str,
     ) -> Result<(
         AccountSession,
         openbitfun_product_domains::account::GitHubUser,
@@ -323,6 +391,7 @@ impl AccountClient {
         let body = login_request_body(
             &access_token,
             device,
+            device_kind,
             device_crypto::public_key_base64(&device_secret),
             uuid::Uuid::new_v4().to_string(),
         );
@@ -734,6 +803,11 @@ impl AccountClient {
 pub struct DeviceInfo {
     pub device_id: String,
     pub device_name: String,
+    /// Kind the device reported (`desktop`, `cli`, `mobile`, `watch`). Absent
+    /// for a device that never reported one and for Relays that predate the
+    /// field: absent stays "unknown", which is not the same as "not a host".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_kind: Option<String>,
     #[serde(default)]
     pub device_alias: Option<String>,
     #[serde(default)]
@@ -778,6 +852,9 @@ impl DeviceInfo {
 struct DeviceListEntry {
     device_id: String,
     device_name: String,
+    /// Relay field `device_kind`; absent on legacy Relays.
+    #[serde(default)]
+    device_kind: Option<String>,
     #[serde(default)]
     device_alias: Option<String>,
     #[serde(default)]
@@ -807,6 +884,7 @@ fn project_device_list_entry(entry: DeviceListEntry) -> DeviceInfo {
     DeviceInfo {
         device_id: entry.device_id,
         device_name: entry.device_name,
+        device_kind: entry.device_kind,
         device_alias: entry.device_alias,
         device_model: entry.device_model,
         device_os: entry.device_os,
@@ -824,6 +902,28 @@ fn project_device_list_entry(entry: DeviceListEntry) -> DeviceInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_embedded_session_migrates_without_capturing_other_private_relays() {
+        for url in [
+            "http://192.168.1.2:9700",
+            "http://10.1.2.3:9700/",
+            "http://127.0.0.1:9700",
+        ] {
+            assert!(persisted_relay_requires_migration(url), "{url}");
+        }
+        for url in [
+            "https://remote.openbitfun.com/v/1.0.2",
+            "http://192.168.1.2:8080",
+            "http://192.168.1.2:9700/custom",
+            "http://relay.example:9700",
+            "http://8.8.8.8:9700",
+            "http://user:secret@192.168.1.2:9700",
+            "http://192.168.1.2:9700?other=1",
+        ] {
+            assert!(!persisted_relay_requires_migration(url), "{url}");
+        }
+    }
 
     #[test]
     fn device_directory_accepts_legacy_nullable_and_extended_payloads() {
@@ -852,7 +952,13 @@ mod tests {
             device_name: "Laptop".to_string(),
             mac_address: "aa:bb:cc:dd:ee:ff".to_string(),
         };
-        let body = login_request_body("token-1", &device, "public-key".to_string(), "req-1".into());
+        let body = login_request_body(
+            "token-1",
+            &device,
+            DEVICE_KIND_CLI,
+            "public-key".to_string(),
+            "req-1".into(),
+        );
         assert_eq!(
             body["clientProtocol"].as_u64(),
             Some(openbitfun_product_domains::account::CLIENT_PROTOCOL_VERSION as u64)
@@ -863,6 +969,8 @@ mod tests {
         );
         assert_eq!(body["device_id"], device.device_id);
         assert_eq!(body["request_id"], "req-1");
+        // Pins the wire value the Relay validates against its own kind list.
+        assert_eq!(body["device_kind"], "cli");
     }
 
     #[test]
@@ -877,16 +985,21 @@ mod tests {
         assert!(projected.device_client_protocol.is_none());
         assert!(projected.compatible.is_none());
         assert!(projected.is_compatible());
+        // A legacy row carries no kind, which must stay unknown rather than be
+        // read as "not a host".
+        assert!(projected.device_kind.is_none());
 
         // A current Relay reports the build fields and the computed flag.
         let extended: DeviceListEntry = serde_json::from_value(serde_json::json!({
             "device_id": "id", "device_name": "technical", "online": true,
-            "client_version": "1.0.1", "client_protocol": 2, "compatible": false
+            "client_version": "1.0.1", "client_protocol": 2, "compatible": false,
+            "device_kind": "cli"
         }))
         .unwrap();
         let projected = project_device_list_entry(extended);
         assert_eq!(projected.device_client_version.as_deref(), Some("1.0.1"));
         assert_eq!(projected.device_client_protocol, Some(2));
+        assert_eq!(projected.device_kind.as_deref(), Some("cli"));
         assert!(!projected.is_compatible());
 
         // A device that never reported a version is judged incompatible by the
@@ -963,6 +1076,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cli_kind_is_reported_only_to_a_relay_that_advertises_it() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            for reply in [
+                // A Relay that learned the kind.
+                Some(r#"{"capabilities":["device_alias_v1","device_kind_cli_v1"]}"#),
+                // An older Relay validates kinds against a shorter list and
+                // would reject the whole login, so the CLI must stay a desktop.
+                Some(r#"{"capabilities":["device_alias_v1"]}"#),
+                // No capability list at all: unknown, so unsupported.
+                None,
+            ] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut buffer = [0; 4096];
+                assert!(socket.read(&mut buffer).await.unwrap() > 0);
+                let response = match reply {
+                    Some(body) => format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    ),
+                    None => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+                };
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+
+        let client = AccountClient::new();
+        assert_eq!(
+            client.reported_device_kind(&url, true).await,
+            DEVICE_KIND_CLI
+        );
+        assert_eq!(
+            client.reported_device_kind(&url, true).await,
+            DEVICE_KIND_DESKTOP
+        );
+        assert_eq!(
+            client.reported_device_kind(&url, true).await,
+            DEVICE_KIND_DESKTOP
+        );
+        // A Desktop host issues no probe at all: it already reports the value
+        // every Relay accepts.
+        assert_eq!(
+            client.reported_device_kind(&url, false).await,
+            DEVICE_KIND_DESKTOP
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn slow_peer_lookup_does_not_block_another_device_or_invalidation() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::time::{timeout, Duration};
@@ -973,10 +1138,12 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut slow, _) = listener.accept().await.unwrap();
             let mut request = [0; 4096];
-            slow.read(&mut request).await.unwrap();
+            // The fixture only needs each request to have arrived before it
+            // answers; the reply does not depend on the bytes received.
+            assert!(slow.read(&mut request).await.unwrap() > 0);
             started_tx.send(()).unwrap();
             let (mut fast, _) = listener.accept().await.unwrap();
-            fast.read(&mut request).await.unwrap();
+            assert!(fast.read(&mut request).await.unwrap() > 0);
             let reply = |device: &str| {
                 let body = serde_json::json!({
                     "device_id": device,

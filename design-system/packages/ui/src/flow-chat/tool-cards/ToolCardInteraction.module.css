@@ -1,0 +1,30 @@
+@layer openbitfun.components {
+  .root {
+    display: inline-flex;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .participant {
+    display: inline-flex;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+    flex: 0 1 auto;
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
+  }
+
+  .participantIcon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+  }
+
+  .direction {
+    flex: 0 0 auto;
+    color: var(--openbitfun-color-content-muted);
+  }
+}

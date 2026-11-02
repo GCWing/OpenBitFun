@@ -1,3 +1,6 @@
+import { computerUseControlAppearanceDescriptor } from '@/app/components/ComputerUseControlCard.appearance';
+import { splitViewAppearanceDescriptor } from '@/infrastructure/design-system/SplitView.appearance';
+import { setupWizardAppearanceDescriptor } from '@/infrastructure/design-system/SetupWizard.appearance';
 import { confirmDialogAppearanceDescriptor } from '@/infrastructure/confirm-dialog';
 import { inputDialogAppearanceDescriptor } from '@/app/components/InputDialog/appearance';
 import { windowControlsAppearanceDescriptor } from '@/app/components/WindowControls/appearance';
@@ -6,7 +9,7 @@ import { markdownAppearanceDescriptor } from '@/infrastructure/markdown/appearan
 import { chatInputAppearanceDescriptor } from '@/flow_chat/components/ChatInput.appearance';
 import { harnessProfileSelectorAppearanceDescriptor } from '@/flow_chat/components/HarnessProfileSelector.appearance';
 import { composerVoiceInputAppearanceDescriptor } from '@/flow_chat/components/voice/ComposerVoiceInputButton.appearance';
-import { sessionUsagePanelAppearanceDescriptor } from '@/flow_chat/components/usage/appearance';
+import { contextUsagePopoverAppearanceDescriptor, sessionUsagePanelAppearanceDescriptor, toolDefinitionsPreviewAppearanceDescriptor } from '@/flow_chat/components/usage/appearance';
 import { richTextInputAppearanceDescriptor } from '@/flow_chat/components/RichTextInput.appearance';
 import { modelRoundItemAppearanceDescriptor } from '@/flow_chat/components/modern/ModelRoundItem.appearance';
 import { deepReviewActionBarAppearanceDescriptor } from '@/flow_chat/deep-review/action-bar/appearance';
@@ -15,44 +18,46 @@ import { modelSelectorAppearanceDescriptor } from '@/flow_chat/components/ModelS
 import { reasoningPresetSelectorAppearanceDescriptor } from '@/flow_chat/components/ReasoningPresetSelector.appearance';
 import { acpModeSelectorAppearanceDescriptor } from '@/flow_chat/components/AcpModeSelector.appearance';
 import { flowChatHeaderAppearanceDescriptor } from '@/flow_chat/components/modern/FlowChatHeader.appearance';
+import { trajectoryAppearanceDescriptor } from '@/flow_chat/trajectory/Trajectory.appearance';
 import { flowChatTurnRailAppearanceDescriptor } from '@/flow_chat/components/modern/FlowChatTurnRail.appearance';
 import { sessionFilesBadgeAppearanceDescriptor } from '@/flow_chat/components/modern/SessionFilesBadge.appearance';
 import { codeReviewToolCardAppearanceDescriptor } from '@/flow_chat/tool-cards/CodeReviewToolCard.appearance';
 import { createAgentPageAppearanceDescriptor } from '@/app/scenes/agents/components/CreateAgentPage.appearance';
-import { keyboardShortcutsAppearanceDescriptor } from '@/app/scenes/settings/components/KeyboardShortcutsTab.appearance';
+import { keyboardShortcutsAppearanceDescriptor } from '@/app/scenes/settings/pages/application/KeyboardShortcutsSection.appearance';
 import { taskToolDisplayAppearanceDescriptor } from '@/flow_chat/tool-cards/TaskToolDisplay.appearance';
-import { applicationSettingsAppearanceDescriptor } from '@/infrastructure/config/components/ApplicationSettingsPages.appearance';
+import { applicationSettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/shared/ApplicationSettings.appearance';
 import { markdownEditorAppearanceDescriptor } from '@/tools/editor/components/MarkdownEditor.appearance';
 import { planViewerAppearanceDescriptor } from '@/tools/editor/components/PlanViewer.appearance';
 import { appLayoutAppearanceDescriptor } from '@/app/layout/AppLayout.appearance';
 import { skillGroupPickerAppearanceDescriptor } from '@/app/scenes/agents/components/SkillGroupPicker.appearance';
 import { workingCopyViewAppearanceDescriptor } from '@/app/scenes/git/views/WorkingCopyView.appearance';
 import { assistantConfigPageAppearanceDescriptor } from '@/app/scenes/profile/views/AssistantConfigPage.appearance';
-import { assistantDefaultsPageAppearanceDescriptor } from '@/app/scenes/profile/views/AssistantDefaultsPage.appearance';
 import { taskDetailPanelAppearanceDescriptor } from '@/flow_chat/components/TaskDetailPanel/TaskDetailPanel.appearance';
 import { toolbarModeAppearanceDescriptor } from '@/flow_chat/components/toolbar-mode/ToolbarMode.appearance';
 import { mcpToolDisplayAppearanceDescriptor } from '@/flow_chat/tool-cards/MCPToolDisplay.appearance';
 import { skillsConfigAppearanceDescriptor } from '@/infrastructure/config/components/SkillsConfig.appearance';
 import { diffEditorAppearanceDescriptor } from '@/tools/editor/components/DiffEditor.appearance';
 import { agentCompanionDesktopPetAppearanceDescriptor } from '@/app/components/AgentCompanionDesktopPet/AgentCompanionDesktopPet.appearance';
+import { desktopCardAppearanceDescriptor } from '@/app/components/DesktopCard/DesktopCardWindow.appearance';
 import { toolGroupPickerAppearanceDescriptor } from '@/app/scenes/agents/components/ToolGroupPicker.appearance';
 import { inlineDiffPreviewAppearanceDescriptor } from '@/flow_chat/components/InlineDiffPreview.appearance';
 import { exportImageAppearanceDescriptor } from '@/flow_chat/components/modern/ExportImageButton.appearance';
 import { userMessageItemAppearanceDescriptor } from '@/flow_chat/components/modern/UserMessageItem.appearance';
+import { externalHistoryNoticeAppearanceDescriptor } from '@/flow_chat/components/ExternalHistoryNotice.appearance';
 import { sessionUsageReportCardAppearanceDescriptor } from '@/flow_chat/components/usage/SessionUsageReportCard.appearance';
-import { sessionUsageModalAppearanceDescriptor } from '@/flow_chat/components/usage/SessionUsageModal.appearance';
 import { createPlanDisplayAppearanceDescriptor } from '@/flow_chat/tool-cards/CreatePlanDisplay.appearance';
-import { editorConfigAppearanceDescriptor } from '@/infrastructure/config/components/EditorConfig.appearance';
-import { appearanceSettingsAppearanceDescriptor } from '@/infrastructure/config/components/AppearanceSettingsPage.appearance';
+import { editorConfigAppearanceDescriptor } from '@/app/scenes/settings/pages/development/EditorSettingsPage.appearance';
+import { appearanceSettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/application/AppearanceSettingsPage.appearance';
 import { configAppearanceDescriptor } from '@/infrastructure/config/appearance';
 import { fontPreferenceAppearanceDescriptor } from '@/infrastructure/font-preference/appearance';
 import { languageSelectorAppearanceDescriptor } from '@/infrastructure/i18n/appearance';
 import { peerDeviceAppearanceDescriptor } from '@/infrastructure/peer-device/appearance';
 import { updateAppearanceDescriptor } from '@/infrastructure/update/appearance';
-import { announcementAppearanceDescriptor } from '@/shared/announcement-system/appearance';
 import { contextMenuAppearanceDescriptor } from '@/shared/context-menu-system/appearance';
 import { contextListAppearanceDescriptor } from '@/shared/context-system/appearance';
 import { notificationAppearanceDescriptor } from '@/shared/notification-system/appearance';
+import { imageLightboxAppearanceDescriptor } from '@/shared/ui/ImageLightbox.appearance';
+import { productBrandIconAppearanceDescriptor } from '@/shared/ui/ProductBrandIcon.appearance';
 import { canvasToolAppearanceDescriptor } from '@/tools/openbitfun-canvas/appearance';
 import { generativeWidgetAppearanceDescriptor } from '@/tools/generative-widget/appearance';
 import { editorToolAppearanceDescriptor } from '@/tools/editor/appearance';
@@ -73,6 +78,9 @@ import { miniAppAppearanceDescriptor, miniAppGalleryAppearanceDescriptor } from 
 import { insightsAppearanceDescriptor } from '@/app/scenes/my-agent/appearance';
 import { pagesAppearanceDescriptor } from '@/app/scenes/pages/appearance';
 import { profileAppearanceDescriptor } from '@/app/scenes/profile/appearance';
+import { personalOverviewAppearanceDescriptor } from '@/app/scenes/personal-overview/appearance';
+import { projectResourcesAppearanceDescriptor } from '@/app/scenes/project-resources/appearance';
+import { usageActivityGridAppearanceDescriptor } from '@/infrastructure/config/components/UsageActivityGrid.appearance';
 import { sessionAppearanceDescriptor } from '@/app/scenes/session/appearance';
 import { settingsAppearanceDescriptor } from '@/app/scenes/settings/appearance';
 import { ecosystemCompatibilityAppearanceDescriptor } from '@/app/scenes/ecosystem-compatibility/appearance';
@@ -97,13 +105,13 @@ import { flexiblePanelAppearanceDescriptor } from '@/app/components/panels/base/
 import { btwSessionPanelAppearanceDescriptor } from '@/flow_chat/components/btw/BtwSessionPanel.appearance';
 import { conversationExcerptAppearanceDescriptor } from '@/flow_chat/selection/ConversationExcerpt.appearance';
 import { modernFlowChatAppearanceDescriptor, virtualMessageListAppearanceDescriptor } from '@/flow_chat/components/modern/appearance';
-import { modelSettingsAppearanceDescriptor } from '@/infrastructure/config/components/ModelSettingsPage.appearance';
+import { modelSettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/ai/ModelSettingsPage.appearance';
 import { reasoningConfigPanelAppearanceDescriptor } from '@/infrastructure/config/components/ReasoningConfigPanel.appearance';
 import { reasoningPresetEditorAppearanceDescriptor } from '@/infrastructure/config/components/ReasoningPresetEditor.appearance';
 import { externalSourcesConfigAppearanceDescriptor } from '@/infrastructure/config/components/ExternalSourcesConfig.appearance';
 import { acpAgentsConfigAppearanceDescriptor } from '@/infrastructure/config/components/AcpAgentsConfig.appearance';
-import { runtimeSettingsAppearanceDescriptor } from '@/infrastructure/config/components/RuntimeSettingsPages.appearance';
-import { sessionTitleConfigAppearanceDescriptor } from '@/infrastructure/config/components/SessionTitleConfig.appearance';
+import { runtimeSettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/shared/RuntimeSettings.appearance';
+import { sessionTitleConfigAppearanceDescriptor } from '@/app/scenes/settings/pages/ai/SessionTitleSection.appearance';
 import { mcpToolsConfigAppearanceDescriptor } from '@/infrastructure/config/components/McpToolsConfig.appearance';
 import { mcpServerConfigDialogAppearanceDescriptor } from '@/infrastructure/config/components/MCPServerConfigDialog.appearance';
 import { externalMcpOverviewAppearanceDescriptor } from '@/infrastructure/config/components/ExternalMcpOverview.appearance';
@@ -120,11 +128,10 @@ import { themeTokenAppearanceAdapter } from '../adapters/ThemeTokenAppearanceAda
 import { tiptapEditorAppearanceDescriptor } from '@/tools/editor/meditor/components/TiptapEditor.appearance';
 import { workspaceProjectPermissionsDialogAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceProjectPermissionsDialog.appearance';
 import { workspaceSessionBatchModalAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceSessionBatchModal.appearance';
-import { archivedSessionsConfigAppearanceDescriptor } from '@/app/scenes/settings/components/ArchivedSessionsConfig.appearance';
-import { settingsViewPageAppearanceDescriptor } from '@/app/scenes/settings/components/SettingsViewPage.appearance';
+import { archivedSessionsConfigAppearanceDescriptor } from '@/app/scenes/settings/pages/data/ArchivedSessionsSettingsPage.appearance';
 import {
   automationSettingsPageAppearanceDescriptor,
-} from '@/app/scenes/settings/pages/appearance';
+} from '@/app/scenes/settings/pages/tools/AutomationSettingsPage.appearance';
 import { settingsNavAppearanceDescriptor } from '@/app/scenes/settings/SettingsNav.appearance';
 import { backgroundCommandOutputPanelAppearanceDescriptor } from '@/flow_chat/components/background-command/BackgroundCommandOutputPanel.appearance';
 import { agentCompanionPetAppearanceDescriptor } from '@/flow_chat/components/AgentCompanionPet.appearance';
@@ -139,7 +146,7 @@ import { editorBreadcrumbAppearanceDescriptor } from '@/tools/editor/components/
 import { gitBranchHistoryAppearanceDescriptor } from '@/tools/git/components/GitBranchHistoryView/GitBranchHistoryView.appearance';
 import { gitDiffViewAppearanceDescriptor } from '@/tools/git/components/GitDiffView/GitDiffView.appearance';
 import { gitSettingsViewAppearanceDescriptor } from '@/tools/git/components/GitSettingsView/GitSettingsView.appearance';
-import { quickActionsConfigAppearanceDescriptor } from '@/infrastructure/config/components/QuickActionsConfig.appearance';
+import { quickActionsConfigAppearanceDescriptor } from '@/app/scenes/settings/pages/tools/QuickActionsSettingsSection.appearance';
 import { statusBarPopoversAppearanceDescriptor } from '@/tools/editor/components/StatusBarPopovers/StatusBarPopovers.appearance';
 import { mEditorAppearanceDescriptor } from '@/tools/editor/meditor/components/MEditor.appearance';
 import { globalSearchAppearanceDescriptor } from '@/app/global-search/GlobalSearchRoot.appearance';
@@ -156,7 +163,7 @@ import { canvasTabAppearanceDescriptor } from '@/app/components/panels/content-c
 import { canvasTabBarAppearanceDescriptor } from '@/app/components/panels/content-canvas/tab-bar/TabBar.appearance';
 import { chatInputWorkspaceStripAppearanceDescriptor } from '@/flow_chat/components/ChatInputWorkspaceStrip.appearance';
 import { codePreviewAppearanceDescriptor } from '@/flow_chat/components/CodePreview.appearance';
-import { exploreGroupAppearanceDescriptor } from '@/flow_chat/components/modern/ExploreGroupRenderer.appearance';
+import { contextLoadGroupAppearanceDescriptor, exploreGroupAppearanceDescriptor, fileEditGroupAppearanceDescriptor, interfaceObservationGroupAppearanceDescriptor, shellGroupAppearanceDescriptor } from '@/flow_chat/components/modern/ExploreGroupRenderer.appearance';
 import { pendingQueuePanelAppearanceDescriptor } from '@/flow_chat/components/PendingQueuePanel.appearance';
 import { subagentProjectionAppearanceDescriptor } from '@/flow_chat/components/subagent/SubagentProjectionView.appearance';
 import { threadGoalDialogsAppearanceDescriptor } from '@/flow_chat/components/thread-goal/ThreadGoalDialogs.appearance';
@@ -165,6 +172,8 @@ import { generativeWidgetToolCardAppearanceDescriptor } from '@/flow_chat/tool-c
 import { snapshotFullscreenDiffViewerAppearanceDescriptor } from '@/flow_chat/tool-cards/SnapshotFullscreenDiffViewer.appearance';
 import { mermaidBlockAppearanceDescriptor } from '@/infrastructure/markdown/MermaidBlock.appearance';
 import { defaultModelConfigAppearanceDescriptor } from '@/infrastructure/config/components/DefaultModelConfig.appearance';
+import { modelBillingAppearanceDescriptor } from '@/infrastructure/config/components/ModelBilling.appearance';
+import { modelRouterSettingsAppearanceDescriptor } from '@/infrastructure/config/components/ModelRouterSettings.appearance';
 import { globalPermissionRulesDialogAppearanceDescriptor } from '@/infrastructure/config/components/GlobalPermissionRulesDialog.appearance';
 import { mcpResourceBrowserAppearanceDescriptor } from '@/infrastructure/config/components/MCPResourceBrowser.appearance';
 import { editorStatusBarAppearanceDescriptor } from '@/tools/editor/components/EditorStatusBar.appearance';
@@ -172,8 +181,10 @@ import { imageViewerAppearanceDescriptor } from '@/tools/editor/components/Image
 import { pdfViewerAppearanceDescriptor } from '@/tools/editor/components/PdfViewer.appearance';
 import { branchQuickSwitchAppearanceDescriptor } from '@/tools/git/components/BranchQuickSwitch.appearance';
 import { workspaceListSectionAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceListSection.appearance';
+import { workspaceIconAppearanceDescriptor, workspaceIconEditorAppearanceDescriptor } from '@/app/components/WorkspaceIcon/appearance';
 import { workspaceItemAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceItem.appearance';
 import { newProjectDialogAppearanceDescriptor } from '@/app/components/NewProjectDialog/NewProjectDialog.appearance';
+import { projectFolderListAppearanceDescriptor } from '@/app/components/ProjectFolderList/ProjectFolderList.appearance';
 import { canvasEditorAreaAppearanceDescriptor } from '@/app/components/panels/content-canvas/editor-area/EditorArea.appearance';
 import { canvasEditorGroupAppearanceDescriptor } from '@/app/components/panels/content-canvas/editor-area/EditorGroup.appearance';
 import { canvasThumbnailAppearanceDescriptor } from '@/app/components/panels/content-canvas/mission-control/ThumbnailCard.appearance';
@@ -242,9 +253,10 @@ import {
   dispatchResultDialogAppearanceDescriptor,
   dispatchTargetPickerAppearanceDescriptor,
 } from '@/features/dispatch/appearance';
-import { voiceInputConfigAppearanceDescriptor } from '@/infrastructure/config/components/VoiceInputConfig.appearance';
-import { worktreeSettingsAppearanceDescriptor } from '@/infrastructure/config/components/WorktreeSettingsPage.appearance';
-import { usageStatisticsConfigAppearanceDescriptor } from '@/infrastructure/config/components/UsageStatisticsConfig.appearance';
+import { voiceInputConfigAppearanceDescriptor } from '@/app/scenes/settings/pages/application/VoiceSettingsSection.appearance';
+import { worktreeSettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/development/WorktreeSettingsSection.appearance';
+import { usageStatisticsConfigAppearanceDescriptor } from '@/app/scenes/settings/pages/data/UsageStatisticsSettingsPage.appearance';
+import { backgroundRunAppearanceDescriptor } from '@/flow_chat/components/modern/BackgroundRunItem.appearance';
 import { turnCompletionNoticeAppearanceDescriptor } from '@/flow_chat/components/modern/TurnCompletionNoticeItem.appearance';
 import { turnFailureNoticeAppearanceDescriptor } from '@/flow_chat/components/modern/TurnFailureNoticeItem.appearance';
 import { virtualItemAppearanceDescriptor } from '@/flow_chat/components/modern/VirtualItemRenderer.appearance';
@@ -252,6 +264,8 @@ import { AppearanceRegistry } from './AppearanceRegistry';
 
 export function createDefaultAppearanceRegistry(): AppearanceRegistry {
   return new AppearanceRegistry()
+    .registerComponent(splitViewAppearanceDescriptor)
+    .registerComponent(setupWizardAppearanceDescriptor)
     .registerComponent(confirmDialogAppearanceDescriptor)
     .registerComponent(inputDialogAppearanceDescriptor)
     .registerComponent(windowControlsAppearanceDescriptor)
@@ -261,6 +275,8 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(harnessProfileSelectorAppearanceDescriptor)
     .registerComponent(composerVoiceInputAppearanceDescriptor)
     .registerComponent(sessionUsagePanelAppearanceDescriptor)
+    .registerComponent(contextUsagePopoverAppearanceDescriptor)
+    .registerComponent(toolDefinitionsPreviewAppearanceDescriptor)
     .registerComponent(richTextInputAppearanceDescriptor)
     .registerComponent(modelRoundItemAppearanceDescriptor)
     .registerComponent(deepReviewActionBarAppearanceDescriptor)
@@ -270,6 +286,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(acpModeSelectorAppearanceDescriptor)
     .registerComponent(flowChatHeaderAppearanceDescriptor)
     .registerComponent(flowChatTurnRailAppearanceDescriptor)
+    .registerComponent(trajectoryAppearanceDescriptor)
     .registerComponent(sessionFilesBadgeAppearanceDescriptor)
     .registerComponent(codeReviewToolCardAppearanceDescriptor)
     .registerComponent(createAgentPageAppearanceDescriptor)
@@ -282,19 +299,20 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(skillGroupPickerAppearanceDescriptor)
     .registerComponent(workingCopyViewAppearanceDescriptor)
     .registerComponent(assistantConfigPageAppearanceDescriptor)
-    .registerComponent(assistantDefaultsPageAppearanceDescriptor)
     .registerComponent(taskDetailPanelAppearanceDescriptor)
     .registerComponent(toolbarModeAppearanceDescriptor)
     .registerComponent(mcpToolDisplayAppearanceDescriptor)
     .registerComponent(skillsConfigAppearanceDescriptor)
     .registerComponent(diffEditorAppearanceDescriptor)
+    .registerComponent(computerUseControlAppearanceDescriptor)
     .registerComponent(agentCompanionDesktopPetAppearanceDescriptor)
+    .registerComponent(desktopCardAppearanceDescriptor)
     .registerComponent(toolGroupPickerAppearanceDescriptor)
     .registerComponent(inlineDiffPreviewAppearanceDescriptor)
     .registerComponent(exportImageAppearanceDescriptor)
     .registerComponent(userMessageItemAppearanceDescriptor)
+    .registerComponent(externalHistoryNoticeAppearanceDescriptor)
     .registerComponent(sessionUsageReportCardAppearanceDescriptor)
-    .registerComponent(sessionUsageModalAppearanceDescriptor)
     .registerComponent(createPlanDisplayAppearanceDescriptor)
     .registerComponent(editorConfigAppearanceDescriptor)
     .registerComponent(appearanceSettingsAppearanceDescriptor)
@@ -308,10 +326,11 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(sessionNavigationAppearanceDescriptor)
     .registerComponent(harnessProfileStepAppearanceDescriptor)
     .registerComponent(subagentAvatarAppearanceDescriptor)
-    .registerComponent(announcementAppearanceDescriptor)
     .registerComponent(contextMenuAppearanceDescriptor)
     .registerComponent(contextListAppearanceDescriptor)
     .registerComponent(notificationAppearanceDescriptor)
+    .registerComponent(imageLightboxAppearanceDescriptor)
+    .registerComponent(productBrandIconAppearanceDescriptor)
     .registerComponent(canvasToolAppearanceDescriptor)
     .registerComponent(generativeWidgetAppearanceDescriptor)
     .registerComponent(editorToolAppearanceDescriptor)
@@ -383,7 +402,6 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(archivedSessionsConfigAppearanceDescriptor)
     .registerComponent(usageStatisticsConfigAppearanceDescriptor)
     .registerComponent(settingsNavAppearanceDescriptor)
-    .registerComponent(settingsViewPageAppearanceDescriptor)
     .registerComponent(automationSettingsPageAppearanceDescriptor)
     .registerComponent(backgroundCommandOutputPanelAppearanceDescriptor)
     .registerComponent(agentCompanionPetAppearanceDescriptor)
@@ -414,6 +432,10 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(chatInputWorkspaceStripAppearanceDescriptor)
     .registerComponent(codePreviewAppearanceDescriptor)
     .registerComponent(exploreGroupAppearanceDescriptor)
+    .registerComponent(contextLoadGroupAppearanceDescriptor)
+    .registerComponent(fileEditGroupAppearanceDescriptor)
+    .registerComponent(shellGroupAppearanceDescriptor)
+    .registerComponent(interfaceObservationGroupAppearanceDescriptor)
     .registerComponent(pendingQueuePanelAppearanceDescriptor)
     .registerComponent(subagentProjectionAppearanceDescriptor)
     .registerComponent(threadGoalDialogsAppearanceDescriptor)
@@ -422,6 +444,8 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(snapshotFullscreenDiffViewerAppearanceDescriptor)
     .registerComponent(mermaidBlockAppearanceDescriptor)
     .registerComponent(defaultModelConfigAppearanceDescriptor)
+    .registerComponent(modelBillingAppearanceDescriptor)
+    .registerComponent(modelRouterSettingsAppearanceDescriptor)
     .registerComponent(globalPermissionRulesDialogAppearanceDescriptor)
     .registerComponent(mcpResourceBrowserAppearanceDescriptor)
     .registerComponent(editorStatusBarAppearanceDescriptor)
@@ -429,8 +453,11 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(pdfViewerAppearanceDescriptor)
     .registerComponent(branchQuickSwitchAppearanceDescriptor)
     .registerComponent(workspaceListSectionAppearanceDescriptor)
+    .registerComponent(workspaceIconAppearanceDescriptor)
+    .registerComponent(workspaceIconEditorAppearanceDescriptor)
     .registerComponent(workspaceItemAppearanceDescriptor)
     .registerComponent(newProjectDialogAppearanceDescriptor)
+    .registerComponent(projectFolderListAppearanceDescriptor)
     .registerComponent(canvasEditorAreaAppearanceDescriptor)
     .registerComponent(canvasEditorGroupAppearanceDescriptor)
     .registerComponent(canvasThumbnailAppearanceDescriptor)
@@ -472,9 +499,11 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(dispatchTargetPickerAppearanceDescriptor)
     .registerComponent(voiceInputConfigAppearanceDescriptor)
     .registerComponent(worktreeSettingsAppearanceDescriptor)
+    .registerComponent(backgroundRunAppearanceDescriptor)
     .registerComponent(turnCompletionNoticeAppearanceDescriptor)
     .registerComponent(turnFailureNoticeAppearanceDescriptor)
     .registerComponent(virtualItemAppearanceDescriptor)
+    .registerComponent(usageActivityGridAppearanceDescriptor)
     .registerScene(workbenchAppearanceDescriptor)
     .registerScene(welcomeAppearanceDescriptor)
     .registerScene(shellAppearanceDescriptor)
@@ -487,6 +516,8 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerScene(insightsAppearanceDescriptor)
     .registerScene(pagesAppearanceDescriptor)
     .registerScene(profileAppearanceDescriptor)
+    .registerScene(personalOverviewAppearanceDescriptor)
+    .registerScene(projectResourcesAppearanceDescriptor)
     .registerScene(sessionAppearanceDescriptor)
     .registerScene(settingsAppearanceDescriptor)
     .registerScene(ecosystemCompatibilityAppearanceDescriptor)

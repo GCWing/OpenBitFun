@@ -1,0 +1,1239 @@
+{
+  "source": "computer-use-rust/src/cursor.rs",
+  "sha256": "1697cfb36b59b5985f82229e88af6c88f749c657c309139b81ec323d32e69e08",
+  "viewport": [
+    1200,
+    800
+  ],
+  "samples": [
+    {
+      "operation": {
+        "kind": "move",
+        "x": 100,
+        "y": 100,
+        "sequence": 1,
+        "animate": true
+      },
+      "values": [
+        100,
+        100,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": 1,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        100,
+        100,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 130,
+        "y": 110,
+        "sequence": 2,
+        "animate": true
+      },
+      "values": [
+        100,
+        100,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.004166666666666667
+      },
+      "values": [
+        100,
+        100,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.016666666666666666
+      },
+      "values": [
+        104.31884762325916,
+        101.43961587441973,
+        1,
+        1,
+        1,
+        320.08537574021614,
+        5.514631125124721,
+        0.9952884902466079,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.05
+      },
+      "values": [
+        121.4568637860828,
+        107.15228792869426,
+        1,
+        1,
+        1,
+        348.67431454784037,
+        16.74635882735372,
+        0.8883345870978311,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        129.66345562230362,
+        109.88781854076787,
+        1,
+        1,
+        1,
+        318.3184340097324,
+        18.422057461215463,
+        0.9781008420536365,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.2
+      },
+      "values": [
+        130,
+        110,
+        1,
+        1,
+        1,
+        316.97251823439217,
+        0,
+        1,
+        0
+      ],
+      "arrival": 2,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.3
+      },
+      "values": [
+        130,
+        110,
+        1,
+        1,
+        1,
+        313.2494027248712,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.5
+      },
+      "values": [
+        130,
+        110,
+        1,
+        1,
+        1,
+        326.99810280762375,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        130,
+        110,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 1100,
+        "y": 700,
+        "sequence": 3,
+        "animate": true
+      },
+      "values": [
+        130,
+        110,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.004166666666666667
+      },
+      "values": [
+        130,
+        110,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.016666666666666666
+      },
+      "values": [
+        129.40972970294672,
+        109.40599266551472,
+        1,
+        0.9997254442158489,
+        1,
+        315.75721418015627,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.05
+      },
+      "values": [
+        96.87901895278081,
+        88.79074379538143,
+        1,
+        0.9345130929192998,
+        1,
+        288.5406605150116,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        257.4237093066806,
+        333.77394688160194,
+        1,
+        0.7120223153084017,
+        1,
+        135.07427570192988,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.2
+      },
+      "values": [
+        1108.6306282539665,
+        752.4895633786314,
+        1,
+        0.724778116578228,
+        1,
+        53.054179878018545,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.3
+      },
+      "values": [
+        1101.42935914879,
+        701.5072149008679,
+        1,
+        0.9833193034101931,
+        1,
+        316.6973249516415,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.5
+      },
+      "values": [
+        1100,
+        700,
+        1,
+        1,
+        1,
+        307.44186610910157,
+        0,
+        1,
+        0
+      ],
+      "arrival": 3,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        1100,
+        700,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 0,
+        "y": 0,
+        "sequence": 4,
+        "animate": true
+      },
+      "values": [
+        1100,
+        700,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.004166666666666667
+      },
+      "values": [
+        1100,
+        700,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.016666666666666666
+      },
+      "values": [
+        1097.1654763445488,
+        697.1308130050305,
+        1,
+        0.9986102921337549,
+        1,
+        315.82085047513436,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.05
+      },
+      "values": [
+        951.4306815260063,
+        577.8422841521942,
+        1,
+        0.8292334879732557,
+        1,
+        308.9419580645302,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        305.9053310792572,
+        185.6686236059912,
+        1,
+        0.6555933987034142,
+        1,
+        299.4179300066613,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.2
+      },
+      "values": [
+        6.92491621304973,
+        6.449648157724449,
+        1,
+        0.8879761366651977,
+        1,
+        310.49170916095306,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.3
+      },
+      "values": [
+        0,
+        0,
+        1,
+        1,
+        1,
+        319.7850253065613,
+        0,
+        1,
+        0
+      ],
+      "arrival": 4,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.5
+      },
+      "values": [
+        0,
+        0,
+        1,
+        1,
+        1,
+        313.8509730214803,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        0,
+        0,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 1199,
+        "y": 799,
+        "sequence": 5,
+        "animate": true
+      },
+      "values": [
+        0,
+        0,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.004166666666666667
+      },
+      "values": [
+        0,
+        0,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.016666666666666666
+      },
+      "values": [
+        0.02477299989061179,
+        0.016515785827116165,
+        1,
+        0.9999678731026449,
+        1,
+        350.99948519501805,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.05
+      },
+      "values": [
+        20.70607247471314,
+        13.80420862605632,
+        1,
+        0.9702694379139236,
+        1,
+        105.1107916316207,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        449.34303514584167,
+        299.5427675734694,
+        1,
+        0.6784222422822395,
+        1,
+        123.54210725954002,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.2
+      },
+      "values": [
+        1152.3968837436807,
+        768.0392269319169,
+        1,
+        0.6765692700703217,
+        1,
+        123.64350430618472,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.3
+      },
+      "values": [
+        1198.9878842491908,
+        798.9936302720228,
+        1,
+        0.9986917013350738,
+        1,
+        106.85683539398833,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.5
+      },
+      "values": [
+        1199,
+        799,
+        1,
+        1,
+        1,
+        306.41597776602634,
+        0,
+        1,
+        0
+      ],
+      "arrival": 5,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        1199,
+        799,
+        1,
+        1,
+        1,
+        315.99999999999693,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 200,
+        "y": 600,
+        "sequence": 6,
+        "animate": true
+      },
+      "values": [
+        1199,
+        799,
+        1,
+        1,
+        1,
+        315.99999999999693,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.004166666666666667
+      },
+      "values": [
+        1199,
+        799,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.016666666666666666
+      },
+      "values": [
+        1196.8985959900492,
+        796.9381715682404,
+        1,
+        0.9989859151671615,
+        1,
+        315.5719451426812,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.05
+      },
+      "values": [
+        1078.4317089494868,
+        730.7224595477165,
+        1,
+        0.8442057960883358,
+        1,
+        298.15608089575534,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        493.774122455905,
+        642.008834178981,
+        1,
+        0.6567820803854153,
+        1,
+        274.18180544942027,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.2
+      },
+      "values": [
+        206.38143459046339,
+        604.9321735362892,
+        1,
+        0.9056026718638067,
+        1,
+        300.9376794427882,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.3
+      },
+      "values": [
+        200,
+        600,
+        1,
+        1,
+        1,
+        319.4940685292799,
+        0,
+        1,
+        0
+      ],
+      "arrival": 6,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.5
+      },
+      "values": [
+        200,
+        600,
+        1,
+        1,
+        1,
+        312.90058782541786,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        200,
+        600,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 1100,
+        "y": 100,
+        "sequence": 7,
+        "animate": true
+      },
+      "values": [
+        200,
+        600,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.05
+      },
+      "values": [
+        186.48752209611035,
+        574.793460441997,
+        1,
+        0.96294374134441,
+        1,
+        333.075250566818,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 200,
+        "y": 500,
+        "sequence": 8,
+        "animate": true
+      },
+      "values": [
+        186.48752209611035,
+        574.793460441997,
+        1,
+        0.96294374134441,
+        1,
+        333.075250566818,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        197.47105810643924,
+        504.2726559463436,
+        1,
+        0.9851351719130229,
+        1,
+        333.3131062974058,
+        -77.9147496308234,
+        0.9243272825773521,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        200,
+        500,
+        1,
+        1,
+        1,
+        327.6551637647318,
+        0,
+        1,
+        0
+      ],
+      "arrival": 8,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "hide"
+      },
+      "values": [
+        200,
+        500,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        200,
+        500,
+        0.5245954696741741,
+        0.7147572818045045,
+        0.7147572818045045,
+        316,
+        0,
+        1,
+        2.3770226516291295
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 1
+      },
+      "values": [
+        200,
+        500,
+        0,
+        0.4,
+        0.4,
+        316,
+        0,
+        1,
+        5
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "resize",
+        "width": 320,
+        "height": 180
+      },
+      "values": [
+        186,
+        99,
+        0,
+        0.4,
+        0.4,
+        316,
+        0,
+        1,
+        5
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 1,
+        "y": 1,
+        "sequence": 9,
+        "animate": true
+      },
+      "values": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": 9,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 300,
+        "y": 160,
+        "sequence": 10,
+        "animate": true
+      },
+      "values": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 2.5
+      },
+      "values": [
+        0.9953479729087459,
+        0.9989143833459582,
+        1,
+        0.9999467293025432,
+        1,
+        310.01388989350966,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.1
+      },
+      "values": [
+        17.972932393912306,
+        55.99319086647497,
+        1,
+        0.9034303253056806,
+        1,
+        157.19044538584123,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": true
+    },
+    {
+      "operation": {
+        "kind": "move",
+        "x": 50,
+        "y": 40,
+        "sequence": 11,
+        "animate": false
+      },
+      "values": [
+        50,
+        40,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": 11,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "advance",
+        "dt": 0.2
+      },
+      "values": [
+        50,
+        40,
+        1,
+        1,
+        1,
+        316,
+        0,
+        1,
+        0
+      ],
+      "arrival": null,
+      "animating": false
+    },
+    {
+      "operation": {
+        "kind": "reset"
+      },
+      "values": [
+        186,
+        99,
+        0,
+        0.4,
+        0.4,
+        316,
+        0,
+        1,
+        5
+      ],
+      "arrival": null,
+      "animating": false
+    }
+  ]
+}

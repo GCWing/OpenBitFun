@@ -1,4 +1,6 @@
 import { agentAPI, btwAPI } from '@/infrastructure/api';
+import type { BtwInitialModelTarget } from '@/infrastructure/api/service-api/BtwAPI';
+import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine';
@@ -13,6 +15,8 @@ import type { ImagePayload } from '../utils/imagePayload';
 import { absoluteSessionTurnIndexForId } from '../utils/flowChatTurnOrdinal';
 import { requireSessionWorkspaceId, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { assertSessionConversationCanSubmit } from '../session-drivers/conversationCapability';
+import { trackBtwSessionSubmission } from './btwSessionSubmission';
 
 export function createBtwRequestId(prefix = 'btw'): string {
   try {
@@ -183,11 +187,16 @@ export async function createBtwChildSession(params: {
       reviewTargetFilePaths: params.reviewTargetFilePaths,
       projectWorkspacePath:
         createdSession?.projectWorkspacePath || projectWorkspacePath,
+      // The child owns the parent's project, so navigation and persistence
+      // resolve both to the same group.
+      projectWorkspaceId:
+        parentSession?.projectWorkspaceId
+        || parentSession?.config.projectWorkspaceId,
       executionTarget:
         createdSession?.executionTarget || inheritedExecutionTarget,
       workspaceId: createdSession?.workspaceId || workspaceId,
-      isTransient: params.isTransient ?? false,
-      agentBackedTransient: params.isTransient ?? false,
+      isTransient: childSessionKind === 'btw' || (params.isTransient ?? false),
+      agentBackedTransient: childSessionKind === 'btw' || (params.isTransient ?? false),
     },
     remoteConnectionId,
     remoteSshHost
@@ -256,12 +265,14 @@ export function createBtwSessionPlaceholder(params: {
         parentDialogTurnId,
         parentTurnIndex,
       },
-      isTransient: false,
-      agentBackedTransient: false,
+      isTransient: true,
+      agentBackedTransient: true,
       projectWorkspacePath:
         parentSession.projectWorkspacePath
         || parentSession.config.projectWorkspacePath
         || workspacePath,
+      projectWorkspaceId:
+        parentSession.projectWorkspaceId || parentSession.config.projectWorkspaceId,
       executionTarget: parentSession.config.executionTarget,
       workspaceId,
     },
@@ -277,6 +288,12 @@ export function createBtwSessionPlaceholder(params: {
     flowChatStore.updateSessionModelName(childSessionId, parentSession.config.modelName);
   }
   flowChatStore.updateSessionReasoningPreset(childSessionId, parentSession.config.reasoningPreset);
+  if (parentSession.config.modelPoolId) {
+    // Mirror inherited intent for the selector, but let the host snapshot its
+    // current binding at first submission. This is not an explicit pool change.
+    flowChatStore.updateSessionModelPool(childSessionId, parentSession.config.modelPoolId,
+      parentSession.config.modelPoolBinding);
+  }
 
   return { childSessionId, parentDialogTurnId, parentTurnIndex };
 }
@@ -292,6 +309,7 @@ export async function sendMessageToBtwSession(params: {
   parentTurnIndex?: number;
   userMessageMetadata?: Record<string, unknown>;
   initialModelSelection?: { modelId: string; reasoningPreset?: string };
+  initialModelTarget?: BtwInitialModelTarget;
   requestId?: string;
 }): Promise<{ requestId: string }> {
   const question = params.question.trim();
@@ -301,9 +319,11 @@ export async function sendMessageToBtwSession(params: {
   }
 
   const childSession = requireSession(params.childSessionId);
-  if (childSession.sessionKind !== 'btw' || childSession.isTransient) {
-    throw new Error(`Session is not a persistent /btw session: ${params.childSessionId}`);
+  if (childSession.sessionKind !== 'btw') {
+    throw new Error(`Session is not a /btw session: ${params.childSessionId}`);
   }
+  assertSessionConversationCanSubmit(params.childSessionId, childSession,
+    i18nService.t('flow-chat:chatInput.targetUnavailable'));
 
   const scope = getActiveSurfaceScope();
   const requestId = params.requestId ?? createBtwRequestId('btw');
@@ -315,7 +335,7 @@ export async function sendMessageToBtwSession(params: {
     parentTurnIndex: params.parentTurnIndex ?? childSession.btwOrigin?.parentTurnIndex,
   }, 'btw');
   const modelId = params.modelId?.trim();
-  await btwAPI.askStream({
+  await trackBtwSessionSubmission(params.childSessionId, () => btwAPI.askStream({
     requestId,
     sessionId: params.parentSessionId,
     childSessionId: params.childSessionId,
@@ -327,7 +347,17 @@ export async function sendMessageToBtwSession(params: {
     imageContexts: params.imagePayload?.imageContexts,
     ...(params.userMessageMetadata ? { userMessageMetadata: params.userMessageMetadata } : {}),
     ...(params.initialModelSelection ? { initialModelSelection: params.initialModelSelection } : {}),
-  });
+    ...(params.initialModelTarget ? { initialModelTarget: params.initialModelTarget } : {}),
+  }));
+  if (scope.isCurrent() && params.initialModelTarget?.selection.kind === 'pool') {
+    const current = flowChatStore.getState().sessions.get(params.childSessionId);
+    if (current?.config.modelPoolId === params.initialModelTarget.selection.pool_id) {
+      // The first turn already committed this choice. Follow-ups must not reset
+      // the accepted member by replaying the draft selection.
+      flowChatStore.updateSessionModelPool(params.childSessionId, current.config.modelPoolId,
+        current.config.modelPoolBinding);
+    }
+  }
   if (modelId && scope.isCurrent()) {
     flowChatStore.updateSessionModelName(params.childSessionId, modelId);
   }

@@ -29,9 +29,18 @@ import {
   type ComposerPresentation,
   type ComposerPresentationSegment,
 } from '../utils/composerPresentation';
+import {
+  getComposerInlineTokenMatches,
+  readComposerClipboardTokens,
+  writeComposerClipboardData,
+} from '../utils/composerClipboard';
 import './RichTextInput.scss';
+import { stripKeyboardControlCharacters } from '../../../../shared/text-input/textInputGuard';
 
 const SKILL_REFERENCE_BADGE_ICON = renderToStaticMarkup(
+  <Icon name="book-open" size="xs" aria-hidden="true" />,
+);
+const ADDITIONAL_MODE_REFERENCE_BADGE_ICON = renderToStaticMarkup(
   <Icon name="extension" size="xs" aria-hidden="true" />,
 );
 const SESSION_REFERENCE_BADGE_ICON = renderToStaticMarkup(
@@ -135,6 +144,43 @@ function isWhitespaceCharacter(char: string | undefined): boolean {
 
 function trimEdgeLineBreaks(text: string): string {
   return text.replace(/^[\r\n]+/, '').replace(/[\r\n]+$/, '');
+}
+
+/**
+ * Serializes editor-shaped DOM back into composer token text. Capsules carry
+ * their canonical token in `data-tag-format`, so reading it keeps copy and
+ * paste lossless instead of leaking label text and remove buttons.
+ */
+function readComposerDomText(root: Node): string {
+  let text = '';
+  const traverse = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent || '';
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+
+    const element = node as HTMLElement;
+    const isBlock = element.tagName === 'DIV' || element.tagName === 'P';
+    if (isBlock && text.length > 0 && !text.endsWith('\n')) {
+      text += '\n';
+    }
+
+    if (element.hasAttribute('data-tag-format')) {
+      text += element.getAttribute('data-tag-format') || '';
+      return;
+    }
+    if (element.tagName === 'BR') {
+      text += '\n';
+      return;
+    }
+    node.childNodes.forEach(traverse);
+  };
+
+  root.childNodes.forEach(traverse);
+  return text;
 }
 
 function getContextDisplayName(context: ContextItem): string {
@@ -545,6 +591,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
           title: `Additional mode: ${payload.displayText}`,
           displayText: payload.displayText,
           modifierClass: 'rich-text-tag-pill--additional-mode-ref',
+          badgeIcon: ADDITIONAL_MODE_REFERENCE_BADGE_ICON,
         })
       : null;
   }, [createSkillStyledReferenceElement]);
@@ -821,45 +868,17 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   }, []);
 
   function sanitizeText(text: string): string {
-    // Strip zero-width and control characters that WebKit/WebView may inject
-    // (e.g. from dead-key sequences, function keys, arrow keys, etc.)
-    // Preserve normal whitespace: space (0x20), tab (0x09), newline (0x0A), carriage return (0x0D).
-    // eslint-disable-next-line no-control-regex -- This intentionally removes specific ASCII control-character ranges.
-    return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200F\u2028\u2029\uFEFF\u2060\u00AD]/g, '');
+    // U+200B is the composer's capsule caret anchor, not authored text. Other
+    // Unicode format characters can be meaningful (emoji ZWJ, Persian ZWNJ,
+    // bidi marks), so do not treat every invisible character as a stray key.
+    return stripKeyboardControlCharacters(text).replace(/\u200B/g, '');
   }
 
   // Extract plain text including # tag format
   const extractTextContent = useCallback((): string => {
     if (!internalRef.current) return '';
-    
-    let text = '';
-    const traverse = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        text += node.textContent || '';
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const element = node as HTMLElement;
-        
-        const isBlock = element.tagName === 'DIV' || element.tagName === 'P';
-        if (isBlock && text.length > 0 && !text.endsWith('\n')) {
-          text += '\n';
-        }
-        
-        // For tag elements, use the stored full format with # prefix
-        if (element.hasAttribute('data-tag-format')) {
-          const tagFormat = element.getAttribute('data-tag-format');
-          if (tagFormat) {
-            text += tagFormat;
-          }
-        } else if (element.tagName === 'BR') {
-          text += '\n';
-        } else {
-          node.childNodes.forEach(traverse);
-        }
-      }
-    };
-    
-    internalRef.current.childNodes.forEach(traverse);
-    const sanitizedText = sanitizeText(text);
+
+    const sanitizedText = sanitizeText(readComposerDomText(internalRef.current));
     const extractedText = sanitizedText.startsWith('/')
       ? trimEdgeLineBreaks(sanitizedText)
       : sanitizedText.trim();
@@ -1079,20 +1098,65 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
 
   triggerSyncRef.current = handleInput;
 
-  const handleBeforeInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
-    const inputEvent = e.nativeEvent as InputEvent;
-    const inputType = inputEvent.inputType;
-
-    // Only act on insertText – block attempts to insert purely-invisible content.
-    // We intentionally avoid a blanket whitelist so that we never accidentally
-    // block browser-internal input types (cursor movement, spellcheck, etc.).
-    if (inputType === 'insertText' && inputEvent.data != null) {
-      const cleaned = sanitizeText(inputEvent.data);
-      if (cleaned.length === 0) {
-        e.preventDefault();
-      }
+  /**
+   * Inserts pasted text at the caret, rebuilding capsule elements for the
+   * inline tokens it carries. Returns false when the text has no token, so the
+   * caller can keep the browser's native plain-text insertion.
+   */
+  const insertTextWithInlineTokens = useCallback((text: string): boolean => {
+    const editor = internalRef.current;
+    const matches = getComposerInlineTokenMatches(text);
+    if (!editor || matches.length === 0) {
+      return false;
     }
-  }, []);
+
+    const selection = window.getSelection();
+    const selectedRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const range = selectedRange && editor.contains(selectedRange.commonAncestorContainer)
+      ? selectedRange
+      : (() => {
+          const fallback = document.createRange();
+          fallback.selectNodeContents(editor);
+          fallback.collapse(false);
+          return fallback;
+        })();
+    range.deleteContents();
+
+    const fragment = document.createDocumentFragment();
+    const appendText = (value: string) => {
+      value.split('\n').forEach((line, index) => {
+        if (index > 0) fragment.appendChild(document.createElement('br'));
+        if (line) fragment.appendChild(document.createTextNode(line));
+      });
+    };
+
+    let cursor = 0;
+    for (const match of matches) {
+      if (match.start < cursor) continue;
+      if (match.start > cursor) appendText(text.slice(cursor, match.start));
+      const tokenElement = createInlineTokenElement(match.token);
+      if (tokenElement) {
+        fragment.appendChild(tokenElement);
+      } else {
+        appendText(match.token);
+      }
+      cursor = match.end;
+    }
+    if (cursor < text.length) appendText(text.slice(cursor));
+
+    const lastInserted = fragment.lastChild;
+    range.insertNode(fragment);
+    if (selection && lastInserted) {
+      const caretRange = document.createRange();
+      caretRange.setStartAfter(lastInserted);
+      caretRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(caretRange);
+    }
+
+    handleInput();
+    return true;
+  }, [createInlineTokenElement, handleInput, internalRef]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     e.preventDefault();
@@ -1128,7 +1192,11 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     closeContextPicker();
     closeInlineTrigger();
     
-    const text = e.clipboardData.getData('text/plain');
+    // A composer payload keeps its canonical tokens, so pasted capsules survive
+    // the trip through the system clipboard.
+    const payloadTokens = readComposerClipboardTokens(e.clipboardData.getData('text/html'));
+    const text = sanitizeText(payloadTokens || e.clipboardData.getData('text/plain'));
+    if (!text) return;
     const largePastePlaceholder = onLargePaste?.(text);
     if (largePastePlaceholder && internalRef.current) {
       const selection = window.getSelection();
@@ -1154,7 +1222,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       selection?.removeAllRanges();
       selection?.addRange(range);
       handleInput();
-    } else {
+    } else if (!insertTextWithInlineTokens(text)) {
       document.execCommand('insertText', false, text);
     }
     
@@ -1163,7 +1231,41 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     requestAnimationFrame(() => {
       isComposingRef.current = false;
     });
-  }, [closeContextPicker, closeInlineTrigger, createLargePasteElement, handleInput, internalRef, onLargePaste, onPasteFiles]);
+  }, [closeContextPicker, closeInlineTrigger, createLargePasteElement, handleInput, insertTextWithInlineTokens, internalRef, onLargePaste, onPasteFiles]);
+
+  /**
+   * Copies the selection as composer token text, so capsules keep their
+   * canonical form instead of exposing their label and remove button. The
+   * matching HTML flavor marks the payload for an in-app paste.
+   */
+  const handleCopy = useCallback((e: React.ClipboardEvent) => {
+    const editor = internalRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) {
+      return;
+    }
+
+    const body = document.createElement('div');
+    body.appendChild(range.cloneContents());
+    body.querySelectorAll('[data-openbitfun-part="tagRemove"]').forEach(node => node.remove());
+
+    const sanitizedText = sanitizeText(readComposerDomText(body));
+    const tokens = sanitizedText.startsWith('/')
+      ? trimEdgeLineBreaks(sanitizedText)
+      : sanitizedText.trim();
+    if (!tokens) {
+      return;
+    }
+
+    if (writeComposerClipboardData(e.clipboardData, { text: tokens, tokens, body })) {
+      e.preventDefault();
+    }
+  }, [internalRef]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const nativeEvent = e.nativeEvent as KeyboardEvent;
@@ -1631,9 +1733,9 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         ref={internalRef}
         className={`rich-text-input ${isFocused ? 'rich-text-input--focused' : ''} ${className}`}
         contentEditable={!disabled}
-        onBeforeInput={handleBeforeInput}
         onInput={handleInput}
         onPaste={handlePaste}
+        onCopy={handleCopy}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
         onBlur={handleBlur}

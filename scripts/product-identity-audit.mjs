@@ -6,6 +6,12 @@
  * The normal product is OpenBitFun-only. Legacy exceptions are restricted to
  * the exact data-directory ignore entry and the one-time migration documents,
  * migrator app/service boundary, and fixtures used for in-place upgrades.
+ *
+ * The retired token also survives inside two external GitHub identifiers that
+ * must keep their published spelling: the committed-by attribution email and
+ * the organization profile URL. Those are allowed only as whole-line matches
+ * where every retired token on the line belongs to one of those identifiers; a
+ * line that pairs an identifier with any other retired token still fails.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -21,8 +27,11 @@ const productIdentityOwner = 'src/crates/contracts/core-types/src/product_identi
 const retiredIdentityDataBoundaryFiles = new Set([
   'OPENBITFUN_LEGACY_DATA_MIGRATION_IMPLEMENTATION_PLAN.md',
   'OPENBITFUN_LEGACY_DATA_MIGRATION_INVENTORY.md',
-  'deploy/openbitfun-host/README.md',
-  'deploy/openbitfun-host/migrate-market-data-v1.py',
+  'deploy/market-data-migration/migrate-market-data-v1.py',
+  // Offline recovery must recognize the pre-rename assistant data location.
+  'scripts/recovery/repair-session-storage.py',
+  'scripts/recovery/repair-session-storage.test.py',
+  'scripts/recovery/repair-session-storage.md',
   'src/apps/relay-server/README.md',
   // HarmonyOS must keep its published bundle id and encrypted-storage names
   // for in-place upgrades. Runtime identifiers are centralized in one source;
@@ -32,15 +41,52 @@ const retiredIdentityDataBoundaryFiles = new Set([
   'src/apps/mobile/harmonyos/entry/src/main/resources/base/profile/backup_config.json',
 ]);
 const retiredIdentityDataBoundaryPrefixes = Object.freeze([
-  'src/apps/data-migrator/',
+  'src/apps/data-tools/',
   'src/crates/assembly/core/src/legacy_migration/',
   'src/crates/services/legacy-migration/',
   'src/crates/services/legacy-migration-adapters/',
+  'src/crates/services/services-core/src/session_recovery/',
+  // Pinned legacy updater feeds reproduce the historical 0.2.x manifests
+  // (download URLs and file names included) so old clients keep resolving
+  // their last real release; they must not be rewritten to the new identity.
+  'scripts/fixtures/legacy-update-feeds/',
 ]);
 const noncanonicalIdentityDataBoundaryFiles = new Set([
   'OPENBITFUN_LEGACY_DATA_MIGRATION_INVENTORY.md',
-  'deploy/openbitfun-host/migrate-market-data-v1.py',
+  'deploy/market-data-migration/migrate-market-data-v1.py',
 ]);
+
+// Published external GitHub identifiers that embed the retired token. These are
+// names GitHub owns, not product identity, so renaming them would break commit
+// attribution and the repository link instead of removing a legacy product name.
+const attributedExternalIdentities = Object.freeze([
+  `318544290+${retiredProductToken}-ai@users.noreply.github.com`,
+  `https://github.com/${retiredProductToken}-ai`,
+]);
+
+const retiredProductPatternSource = `(?<!open)${retiredProductToken}`;
+
+function isExternalAttributionOnlyLine(lineText) {
+  if (typeof lineText !== 'string') {
+    return false;
+  }
+
+  let remaining = lineText;
+  let foundIdentity = false;
+  for (const identity of attributedExternalIdentities) {
+    if (remaining.includes(identity)) {
+      foundIdentity = true;
+      remaining = remaining.split(identity).join('');
+    }
+  }
+
+  if (!foundIdentity) {
+    return false;
+  }
+
+  // Only the retired tokens that live inside an allowed identifier may remain.
+  return !new RegExp(retiredProductPatternSource, 'iu').test(remaining);
+}
 
 const identityRules = Object.freeze([
   Object.freeze({
@@ -58,10 +104,16 @@ const identityRules = Object.freeze([
   Object.freeze({
     id: 'retired-product-name',
     description: 'retired product name',
-    pattern: new RegExp(`(?<!open)${retiredProductToken}`, 'giu'),
-    allowedMatch: ({ location }) => location.file === '.gitignore'
-      && location.location === 'content'
-      && location.lineText?.trim() === `.${retiredProductToken}/`,
+    pattern: new RegExp(retiredProductPatternSource, 'giu'),
+    allowedMatch: ({ location }) => {
+      if (location.file === '.gitignore'
+        && location.location === 'content'
+        && location.lineText?.trim() === `.${retiredProductToken}/`) {
+        return true;
+      }
+      return location.location === 'content'
+        && isExternalAttributionOnlyLine(location.lineText);
+    },
     allowedFiles: retiredIdentityDataBoundaryFiles,
     allowedFilePrefixes: retiredIdentityDataBoundaryPrefixes,
   }),

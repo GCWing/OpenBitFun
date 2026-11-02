@@ -74,6 +74,37 @@ mod tests {
     }
 
     #[test]
+    fn goal_prompts_use_normal_runtime_submission_and_pending_guards() {
+        use crate::actions::ActionContext;
+        for input in [
+            "/goal finish tests",
+            " /GOAL\nship feature ",
+            "/goal pause\nthen verify",
+        ] {
+            assert!(super::is_runtime_goal_prompt(input));
+            assert!(!super::is_local_slash_command(input));
+            assert!(session_update_blocks_typed_submission(true, input));
+        }
+        for input in [
+            "/goal",
+            "/goal pause",
+            "/goal resume",
+            "/goal clear",
+            "/goalie work",
+            "/compact",
+        ] {
+            assert!(super::is_local_slash_command(input));
+        }
+        assert_eq!(
+            selected_command_prefill(ActionHandler::GoalPrompt),
+            Some("/goal ")
+        );
+        let action = crate::actions::action_for_alias("/goal", ActionContext::Chat).unwrap();
+        assert_eq!(action.handler, ActionHandler::GoalPrompt);
+        assert!(action.handler.available_in_shared_tui(ActionContext::Chat));
+    }
+
+    #[test]
     fn explicit_same_id_agent_selection_rebinds_through_the_runtime_owner() {
         let source = include_str!("selection.rs").replace("\r\n", "\n");
         let selection = source

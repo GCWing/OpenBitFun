@@ -23,12 +23,14 @@ import { useDismissibleLayer } from "../../overlay/useDismissibleLayer";
 import { useFocusScope } from "../../overlay/useFocusScope";
 import { usePresence } from "../../overlay/usePresence";
 import { IconButton, type IconButtonProps } from "../IconButton";
+import { inertProps } from "../../internal/inert";
 import styles from "./Dialog.module.css";
 
 const EXIT_DURATION_MS = 180;
 
 export type DialogCloseReason = "close-button" | "escape-key" | "pointer-outside";
 export type DialogFooterAppearance = "attached" | "floating";
+export type DialogPreset = "default" | "panel";
 export type DialogSize = "sm" | "md" | "lg" | "xl" | "2xl";
 export type SheetPlacement = "left" | "right" | "bottom";
 export type SheetSize = "sm" | "md" | "lg";
@@ -72,6 +74,7 @@ interface OverlaySurfaceProps
   onExitComplete?: () => void;
   open: boolean;
   placement?: SheetPlacement;
+  preset?: DialogPreset;
   preventScroll?: boolean;
   role?: "dialog" | "alertdialog";
   size: DialogSize | SheetSize;
@@ -96,9 +99,11 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
   onExitComplete,
   open,
   placement,
+  preset,
   preventScroll = true,
   role = "dialog",
   size,
+  style,
   trapFocus = true,
   ...surfaceProps
 }, forwardedRef) {
@@ -110,20 +115,22 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
   const titleId = `openbitfun-dialog-title-${useId()}`;
   const descriptionId = `openbitfun-dialog-description-${useId()}`;
   const { present, state } = usePresence(open, EXIT_DURATION_MS);
-  const lastOpenChildren = useRef<ReactNode>(null);
+  const presentation = { children, className, overlayProps, placement, preset, size, style };
+  const lastOpenPresentation = useRef<typeof presentation | null>(null);
   const wasPresent = useRef(present);
   // Owners often clear selection or form state in the same update as closing.
-  // Keep the last committed content until the exit finishes to preserve geometry.
+  // Retain the content and its geometry together until the exit finishes.
   useLayoutEffect(() => {
-    if (open) lastOpenChildren.current = children;
-    else if (!present) lastOpenChildren.current = null;
-  }, [children, open, present]);
+    if (open) lastOpenPresentation.current = { children, className, overlayProps, placement, preset, size, style };
+    else if (!present) lastOpenPresentation.current = null;
+  }, [children, className, open, overlayProps, placement, preset, present, size, style]);
   useEffect(() => {
     const completed = wasPresent.current && !present && !open;
     wasPresent.current = present;
     if (completed) onExitComplete?.();
   }, [onExitComplete, open, present]);
-  const renderedChildren = open ? children : lastOpenChildren.current;
+  const rendered = open ? presentation : lastOpenPresentation.current ?? presentation;
+  const renderedChildren = rendered.children;
   const hasTitle = containsType(renderedChildren, DialogTitle);
   const hasDescription = containsType(renderedChildren, DialogDescription);
 
@@ -169,31 +176,33 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
   return (
     <Portal target={resolvedPortalHost} open={open} modal preventScroll={preventScroll}>
       <div
-        {...overlayProps}
-        className={classNames(styles.overlay, overlayProps?.className)}
+        {...rendered.overlayProps}
+        className={classNames(styles.overlay, rendered.overlayProps?.className)}
         data-openbitfun-component={kind}
         data-openbitfun-part="overlay"
         data-openbitfun-native-webview-occlusion
-        data-placement={placement}
+        data-placement={rendered.placement}
         data-state={exiting ? "exiting" : "open"}
       >
         <DialogContext.Provider value={context}>
           <div
             {...surfaceProps}
-            {...(!open ? { inert: "" } : {})}
+            {...inertProps(!open)}
             aria-describedby={ariaDescribedBy ?? (hasDescription ? descriptionId : undefined)}
             aria-hidden={exiting || undefined}
             aria-label={ariaLabel}
             aria-labelledby={ariaLabelledBy ?? (!ariaLabel && hasTitle ? titleId : undefined)}
             aria-modal="true"
-            className={classNames(styles.surface, className)}
+            className={classNames(styles.surface, rendered.className)}
             data-openbitfun-component={kind}
             data-openbitfun-part="surface"
-            data-placement={placement}
-            data-size={size}
+            data-placement={rendered.placement}
+            data-preset={rendered.preset}
+            data-size={rendered.size}
             data-state={exiting ? "exiting" : "open"}
             ref={setSurfaceRef}
             role={role}
+            style={rendered.style}
             tabIndex={-1}
           >
             {renderedChildren}
@@ -210,14 +219,15 @@ export interface DialogProps
 }
 
 export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog({
+  preset = "default",
   size = "md",
   ...props
 }, ref) {
-  return <OverlaySurface {...props} kind="dialog" ref={ref} size={size} />;
+  return <OverlaySurface {...props} kind="dialog" preset={preset} ref={ref} size={preset === "panel" ? "xl" : size} />;
 });
 
 export interface SheetProps
-  extends Omit<OverlaySurfaceProps, "kind" | "placement" | "size"> {
+  extends Omit<OverlaySurfaceProps, "kind" | "placement" | "preset" | "size"> {
   placement?: SheetPlacement;
   size?: SheetSize;
 }
@@ -275,6 +285,12 @@ export const DialogDescription = forwardRef<HTMLParagraphElement, HTMLAttributes
 export const DialogHeaderActions = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   function DialogHeaderActions({ className, ...props }, ref) {
     return <div {...props} className={classNames(styles.headerActions, className)} data-openbitfun-part="header-actions" ref={ref} />;
+  },
+);
+
+export const DialogHeaderLeading = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function DialogHeaderLeading({ className, ...props }, ref) {
+    return <div {...props} className={classNames(styles.headerLeading, className)} data-openbitfun-part="header-leading" ref={ref} />;
   },
 );
 

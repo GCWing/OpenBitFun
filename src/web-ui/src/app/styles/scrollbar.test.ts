@@ -25,9 +25,13 @@ describe('shared native scrollbar presentation', () => {
     );
   });
 
-  it('hides idle mouse viewports through paint without changing their geometry', () => {
+  it('preserves automatic track geometry and only releases explicitly opted-in hover tracks', () => {
     const interactionRules = stylesheet.slice(
       stylesheet.indexOf('@media (hover: hover)'),
+      stylesheet.indexOf('/* Opt-in hover viewports'),
+    );
+    const hoverRules = stylesheet.slice(
+      stylesheet.indexOf('/* Opt-in hover viewports'),
       stylesheet.indexOf('/* Explicit hidden viewports'),
     );
 
@@ -38,6 +42,14 @@ describe('shared native scrollbar presentation', () => {
     expect(interactionRules).toContain('background: transparent;');
     expect(interactionRules).toContain('scrollbar-color: transparent transparent;');
     expect(interactionRules).not.toMatch(/(?:overflow|width|height|display|scrollbar-gutter)\s*:/);
+    expect(hoverRules).toContain('@media (hover: hover) and (pointer: fine) and (forced-colors: none)');
+    expect(hoverRules).toMatch(
+      /\[data-openbitfun-scrollbar-visibility="hover"\]:not\(:hover, :focus-visible, :has\(:focus-visible\)\)\s*\{\s*scrollbar-width:\s*none;/,
+    );
+    expect(hoverRules).toMatch(
+      /\[data-openbitfun-scrollbar-visibility="hover"\]:not\(:hover, :focus-visible, :has\(:focus-visible\)\)::-webkit-scrollbar\s*\{\s*display:\s*none;/,
+    );
+    expect(hoverRules).not.toMatch(/(?:overflow(?:-[xy])?|scrollbar-gutter)\s*:/);
     expect(stylesheet).not.toMatch(/\.is-scrolling|:focus-within|!important/);
   });
 

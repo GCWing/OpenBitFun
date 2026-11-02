@@ -8,15 +8,14 @@ import { useRuntimeStatusStore } from '../../store/runtimeStatusStore';
 import { activateSurface, getActiveSurfaceScope, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/deviceSurface';
 import { registerSubmittedMessage } from '../../services/submittedMessagePresentation';
 
-vi.mock('@openbitfun/ui', () => ({
-  Spinner: () => <span data-testid="dot-matrix" />,
-  OverflowText: ({ children, behavior: _behavior, marqueeActive: _marqueeActive, ...props }: any) => <span {...props}>{children}</span>,
+const translationMock = vi.hoisted(() => ({
+  t: vi.fn(() => ['Working on it']),
+  i18n: { language: 'en-US', resolvedLanguage: 'en-US' },
+  ready: true,
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: () => ['Working on it'],
-  }),
+  useTranslation: () => translationMock,
 }));
 
 describe('RuntimeStatusSlot', () => {
@@ -28,6 +27,7 @@ describe('RuntimeStatusSlot', () => {
     vi.useFakeTimers();
     activateSurface(LOCAL_SURFACE_ID);
     useRuntimeStatusStore.getState().reset();
+    translationMock.t.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -67,7 +67,7 @@ describe('RuntimeStatusSlot', () => {
     });
     const slot = container.querySelector<HTMLElement>('.runtime-status-slot');
     const iconSlot = container.querySelector('[data-openbitfun-part="leadingIcon"]');
-    expect(iconSlot?.querySelector('[data-testid="dot-matrix"]')).not.toBeNull();
+    expect(iconSlot?.querySelector('[data-openbitfun-component="spinner"]')).not.toBeNull();
     expect(slot).not.toBeNull();
     expect(slot?.dataset.runtimeStatusVisible).toBe('false');
 
@@ -99,5 +99,30 @@ describe('RuntimeStatusSlot', () => {
     expect(container.querySelector('.runtime-status-slot')).toBe(slot);
     expect(slot?.dataset.runtimeStatusVisible).toBe('false');
     expect(container.querySelector('[data-openbitfun-part="leadingIcon"]')).toBe(iconSlot);
+  });
+
+  it('only translates generated hints when an unlabeled status is visible', () => {
+    translationMock.i18n.language = 'test-hints';
+    translationMock.i18n.resolvedLanguage = 'test-hints';
+    act(() => root.render(<RuntimeStatusSlot sessionId="session-1" />));
+    expect(translationMock.t).not.toHaveBeenCalled();
+
+    act(() => useRuntimeStatusStore.getState().show({
+      sessionId: 'session-1', turnId: 'turn-1', roundId: 'round-1',
+    }));
+    expect(translationMock.t).toHaveBeenCalledTimes(1);
+
+    act(() => useRuntimeStatusStore.getState().show({
+      sessionId: 'session-1', turnId: 'turn-2', roundId: 'round-2',
+    }));
+    expect(translationMock.t).toHaveBeenCalledTimes(1);
+
+    act(() => useRuntimeStatusStore.getState().show({
+      sessionId: 'session-1',
+      turnId: 'turn-3',
+      roundId: 'round-3',
+      label: 'Transferring workspace',
+    }));
+    expect(translationMock.t).toHaveBeenCalledTimes(1);
   });
 });

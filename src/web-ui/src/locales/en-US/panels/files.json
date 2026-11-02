@@ -128,6 +128,7 @@
     "downloading": "Downloading",
     "uploading": "Uploading",
     "missingConnection": "Remote workspace has no SSH connection id.",
+    "cancelled": "Transfer cancelled",
     "failed": "File transfer failed: {{error}}",
     "dropHint": "Drop files here to upload",
     "stop": "Stop"
@@ -160,5 +161,15 @@
     "selectWorkspaceFirst": "Please open a workspace first",
     "searchIndexBuildStarted": "Workspace index build started.",
     "searchIndexRebuildStarted": "Workspace index rebuild started."
+  },
+  "watch": {
+    "title": "File change watching stopped",
+    "reason": {
+      "watchLimitExceeded": "The system watch quota is exhausted, so this view no longer refreshes on its own.",
+      "backendUnavailable": "The system file watcher is unavailable, so this view no longer refreshes on its own."
+    },
+    "hintLabel": "Fix the limit, then retry:",
+    "retry": "Retry",
+    "retrying": "Retrying…"
   }
 }

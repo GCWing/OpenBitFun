@@ -9,7 +9,7 @@ import styles from "./Card.module.css";
 export type CardAppearance = "neutral" | "raised" | "subtle";
 export type CardGap = "none" | "sm" | "md" | "lg";
 export type CardPadding = "none" | "sm" | "md";
-export type CardRadius = "sm" | "md" | "lg";
+export type CardRadius = "none" | "sm" | "md" | "lg";
 export type CardAlignment = "start" | "center";
 export type CardContentAlignment = "start" | "center" | "end";
 export type CardBodyAlignment = CardContentAlignment | "stretch";

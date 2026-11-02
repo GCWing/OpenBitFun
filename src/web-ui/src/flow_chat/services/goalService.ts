@@ -7,6 +7,8 @@ import { pendingQueueManager } from './flow-chat-manager/PendingQueueModule';
 import type { GoalCommandAction } from './goalCommandParser';
 import { sessionProjectWorkspacePath, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { sessionWorktreeMaterializationPlan } from '../utils/sessionWorktree';
+import { isUnmaterializedSessionDraft } from '../utils/sessionDraft';
+import { prepareSessionDraftForCommand } from './sessionDraftService';
 
 export { isGoalSlashCommand, parseGoalCommand } from './goalCommandParser';
 export type { GoalCommandAction } from './goalCommandParser';
@@ -124,7 +126,7 @@ async function sessionRequestBase(session: Session) {
  */
 async function prepareSessionForGoalTurn(session: Session): Promise<Session> {
   const sessionId = session.sessionId;
-  const latest = flowChatStore.getState().sessions.get(sessionId) ?? session;
+  const latest = await prepareSessionDraftForCommand(flowChatStore.getState().sessions.get(sessionId) ?? session);
   if (latest.config.worktreeIsolationRequested === undefined) {
     return latest;
   }
@@ -152,7 +154,7 @@ async function prepareSessionForGoalTurn(session: Session): Promise<Session> {
 export async function fetchSessionThreadGoal(
   session: Session
 ): Promise<ThreadGoalSnapshot | null> {
-  if (!session.workspacePath) {
+  if (!session.workspacePath || isUnmaterializedSessionDraft(session)) {
     return null;
   }
   const base = await sessionRequestBase(session);
@@ -171,6 +173,7 @@ export async function runGoalCommand(params: GoalCommandParams): Promise<ThreadG
     throw new Error('A workspace is required to use /goal.');
   }
 
+  params = { ...params, session: await prepareSessionDraftForCommand(params.session) };
   const base = await sessionRequestBase(params.session);
 
   switch (params.action.kind) {

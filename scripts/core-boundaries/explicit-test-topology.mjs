@@ -41,6 +41,7 @@ export const servicesCoreIntegrationTestTargets = [
   { name: 'permission_store_contracts', path: 'tests/permission_store_contracts.rs' },
   { name: 'workspace_instruction_contracts', path: 'tests/workspace_instruction_contracts.rs' },
   { name: 'session_write_lock_contracts', path: 'tests/session_write_lock_contracts.rs' },
+  { name: 'exclusive_file_lease_contracts', path: 'tests/exclusive_file_lease_contracts.rs' },
   { name: 'process_runtime_contracts', path: 'tests/process_runtime_contracts.rs' },
   { name: 'service_contracts', path: 'tests/service_contracts.rs' },
   { name: 'storage_owner_contracts', path: 'tests/storage_owner_contracts.rs' },
@@ -50,7 +51,6 @@ export const servicesCoreIntegrationTestTargets = [
 
 export const servicesIntegrationsIntegrationTestTargets = [
   { name: 'script_tool_runtime', path: 'tests/script_tool_runtime.rs' },
-  { name: 'announcement_contracts', path: 'tests/announcement_contracts.rs' },
   { name: 'file_watch_contracts', path: 'tests/file_watch_contracts.rs' },
   { name: 'function_agent_contracts', path: 'tests/function_agent_contracts.rs' },
   { name: 'git_contracts', path: 'tests/git_contracts.rs' },
@@ -162,6 +162,11 @@ export const runtimePortsIntegrationTestTargets = [
     name: 'script_tool_port_contracts',
     path: 'tests/script_tool_port_contracts.rs',
     requiredFeatures: ['script-tool-runtime'],
+  },
+  {
+    name: 'ptc_tool_port_contracts',
+    path: 'tests/ptc_tool_port_contracts.rs',
+    requiredFeatures: ['ptc-runtime'],
   },
   {
     name: 'session_store_contracts',

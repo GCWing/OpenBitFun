@@ -20,11 +20,14 @@ import type { ImageContextData as ImageInputContextData } from '@/infrastructure
 import type { SessionDriverId } from './resolve';
 import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { LineRange } from '@/shared/editor/LineRange';
+import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 
 export type { SessionDriverId } from './resolve';
 
 /** Options accepted by FlowChatManager.sendMessage, threaded to the driver. */
 export interface SendMessageOptions {
+  /** A followed source becomes an independent native submission target. */
+  onSessionForked?: (sourceSessionId: string, branchSessionId: string) => void;
   imageContexts?: ImageInputContextData[];
   imageDisplayData?: Array<{
     id: string;
@@ -38,12 +41,16 @@ export interface SendMessageOptions {
    * submission. Session drivers must not interpret it as transport input.
    */
   pendingQueueDraft?: QueuedComposerDraft;
+  /** Only an active composer submission may show the temporary user-message shell. */
+  foregroundSubmission?: boolean;
   /**
    * When true, bypass the pending-queue check. Used by the queue drain path
    * to actually start a new dialog turn after the previous one finished.
    * Callers should not set this directly.
    */
   bypassPendingQueue?: boolean;
+  /** Use the existing send-now path to steer running work when supported. */
+  sendImmediately?: boolean;
   userMessageMetadata?: Record<string, unknown>;
   execution?: import('@/infrastructure/api/service-api/AgentAPI').AgentDialogTurnExecution;
   turnId?: string;
@@ -119,11 +126,14 @@ export interface TurnTracker {
  * `detached` means the message was steered into (or continued) target-owned
  * work and the shared epilogue must be skipped.
  */
-export type StartTurnResult = 'completed' | 'detached';
+export type StartTurnResult = 'completed' | 'detached' | 'queued';
 
-/** Localized strings the usage-report flow surfaces; supplied by the caller. */
+/** Presentation and localized strings supplied by the usage-report caller. */
 export interface UsageReportUiParams {
   isProcessing: boolean;
+  /** Present an inline overview without opening a side-panel tab. False discards a stale request. */
+  presentReport?: (report: SessionUsageReport) => boolean;
+  reportTitle?: string;
   busyMessage: string;
   noWorkspaceMessage: string;
   failedTitle: string;
@@ -162,6 +172,11 @@ export interface SessionDriverNavigationStatusSource {
   getSnapshot: (sessionId: string) => SessionDriverNavigationStatus;
 }
 
+/** Driver-owned changes that can affect conversation ownership before session metadata arrives. */
+export interface SessionDriverOwnershipSource {
+  subscribe: (listener: () => void) => () => void;
+}
+
 /**
  * Structural stand-in for AgentAPI's PermissionRequest wire shape. `object`
  * so both the typed interface and raw store records assign without casts.
@@ -175,6 +190,8 @@ export type PermissionReplyKindLike = 'once' | 'always' | 'reject';
  * driver takes over: workspace identity, agent type, and the initial title.
  */
 export interface SessionCreationSeed {
+  /** Reserve the future session identity without creating a host session yet. */
+  draftId?: string;
   /** Device activation that owns the created session projection. */
   surfaceScope: SurfaceScope;
   config: SessionConfig;
@@ -206,6 +223,9 @@ export interface SessionDriver {
 
   /** Optional driver-owned facts used by the shared session navigation UI. */
   readonly navigationStatusSource?: SessionDriverNavigationStatusSource;
+
+  /** Notify shared composer selection when a driver's ownership facts change. */
+  readonly ownershipSource?: SessionDriverOwnershipSource;
 
   /** Create the flavor's session and return its id. */
   createSession(context: FlowChatContext, seed: SessionCreationSeed): Promise<string>;

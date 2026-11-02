@@ -126,6 +126,16 @@
     white-space: nowrap;
   }
 
+  /* A text shortcut hint is secondary text, so it must not inherit the surface body size. */
+  .shortcut {
+    font-family: var(--openbitfun-type-meta-font-family);
+    font-size: var(--openbitfun-type-meta-font-size);
+    font-weight: var(--openbitfun-type-meta-font-weight);
+    line-height: var(--openbitfun-type-meta-line-height);
+    letter-spacing: var(--openbitfun-type-meta-letter-spacing);
+    white-space: nowrap;
+  }
+
   .root[data-disabled="true"] .metadata {
     color: inherit;
   }

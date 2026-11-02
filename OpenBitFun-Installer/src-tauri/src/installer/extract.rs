@@ -38,13 +38,15 @@ fn extract_zip_archive<R: io::Read + io::Seek>(
 ) -> Result<()> {
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let rel_path: PathBuf = file.mangled_name();
+        let rel_path: PathBuf = file
+            .mangled_name()
+            .context("Failed to decode zip entry path")?;
         if !should_extract(&rel_path) {
             continue;
         }
         let out_path = target_dir.join(&rel_path);
 
-        if file.name().ends_with('/') {
+        if file.is_dir() {
             fs::create_dir_all(&out_path)?;
         } else {
             if let Some(parent) = out_path.parent() {
@@ -99,4 +101,42 @@ fn copy_directory_internal(
     }
 
     Ok(bytes_copied)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_zip_bytes_with_filter, extract_zip_with_filter};
+    use std::{fs, path::Path};
+
+    #[test]
+    fn reads_legacy_payload_from_file_and_embedded_bytes() {
+        // Frozen output from zip 0.6.6: directories, Stored/Deflated entries,
+        // and a UTF-8 filename. Keep these bytes independent of the current writer.
+        let payload = include_bytes!("fixtures/legacy-payload-zip-0.6.6.zip");
+        for embedded in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let target = root.path().join("installed");
+            let filter = |path: &Path| path != Path::new("skip.txt");
+            if embedded {
+                extract_zip_bytes_with_filter(payload, &target, filter).unwrap();
+            } else {
+                let archive = root.path().join("payload.zip");
+                fs::write(&archive, payload).unwrap();
+                extract_zip_with_filter(&archive, &target, filter).unwrap();
+            }
+            assert_eq!(
+                fs::read(target.join("frontend/dist/index.html")).unwrap(),
+                b"<html>legacy installer payload</html>"
+            );
+            assert_eq!(
+                fs::read(target.join("resources/readme.txt")).unwrap(),
+                b"legacy resource"
+            );
+            assert_eq!(
+                fs::read(target.join("resources/\u{7528}\u{6237}.txt")).unwrap(),
+                b"legacy unicode path"
+            );
+            assert!(!target.join("skip.txt").exists());
+        }
+    }
 }

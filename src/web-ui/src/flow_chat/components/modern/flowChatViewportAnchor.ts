@@ -19,6 +19,7 @@
  * what the reader is looking for when they scroll back through history.
  */
 const TURN_ANCHOR_SELECTOR = '.virtual-item-wrapper[data-item-type="user-message"]';
+const BLOCK_ANCHOR_SELECTOR = '.virtual-item-wrapper[data-virtual-item-key]';
 
 /**
  * Where the user is reading, expressed as a Turn rather than an offset.
@@ -29,11 +30,13 @@ const TURN_ANCHOR_SELECTOR = '.virtual-item-wrapper[data-item-type="user-message
  */
 export interface ViewportAnchor {
   turnId: string;
+  itemKey?: string;
   offsetFromScrollerTop: number;
 }
 
 export interface ViewportAnchorCandidate {
   turnId: string | null;
+  itemKey?: string;
   offsetFromScrollerTop: number;
   bottomOffsetFromScrollerTop: number;
 }
@@ -100,18 +103,6 @@ export const ANCHOR_MISSING_TURN_ATTEMPTS = 20;
 export const ANCHOR_CORRECTION_EPSILON_PX = 0.5;
 
 /**
- * Above this a correction is something the reader can feel.
- *
- * Used to keep the two apart in the trail, and only there. Corrections repeat
- * at frame rate so they are coalesced, and a single run collapses whatever it
- * spans into its first sample: two rounds of diagnosis in a row read `0.7px`
- * against a suppressed travel of 458.7px over seven samples, which is a
- * different fault entirely and could not be attributed to any anchor. A run
- * that a real correction can fall into unseen is not a trail.
- */
-export const ANCHOR_NOTABLE_CORRECTION_PX = 8;
-
-/**
  * The topmost Turn the viewport still shows any part of.
  *
  * A candidate that has not reached the top edge yet is the one the reader is
@@ -148,6 +139,7 @@ export function selectViewportAnchor(
   if (!candidate?.turnId) return null;
   return {
     turnId: candidate.turnId,
+    ...(candidate.itemKey ? { itemKey: candidate.itemKey } : {}),
     offsetFromScrollerTop: candidate.offsetFromScrollerTop,
   };
 }
@@ -204,11 +196,12 @@ export function shouldCaptureViewportAnchorOnScroll(
 export function readViewportAnchorCandidates(scroller: HTMLElement): ViewportAnchorCandidate[] {
   const scrollerTop = scroller.getBoundingClientRect().top;
   return Array.from(
-    scroller.querySelectorAll<HTMLElement>(TURN_ANCHOR_SELECTOR),
+    scroller.querySelectorAll<HTMLElement>(`${BLOCK_ANCHOR_SELECTOR}, ${TURN_ANCHOR_SELECTOR}`),
   ).map(element => {
     const rect = element.getBoundingClientRect();
     return {
       turnId: element.dataset.turnId ?? null,
+      itemKey: element.dataset.virtualItemKey,
       offsetFromScrollerTop: rect.top - scrollerTop,
       bottomOffsetFromScrollerTop: rect.bottom - scrollerTop,
     };
@@ -218,10 +211,11 @@ export function readViewportAnchorCandidates(scroller: HTMLElement): ViewportAnc
 export function findRenderedTurnAnchorElement(
   scroller: HTMLElement | null,
   turnId: string,
+  itemKey?: string,
 ): HTMLElement | null {
   return Array.from(
-    scroller?.querySelectorAll<HTMLElement>(TURN_ANCHOR_SELECTOR) ?? [],
-  ).find(element => element.dataset.turnId === turnId) ?? null;
+    scroller?.querySelectorAll<HTMLElement>(itemKey ? BLOCK_ANCHOR_SELECTOR : TURN_ANCHOR_SELECTOR) ?? [],
+  ).find(element => itemKey ? element.dataset.virtualItemKey === itemKey : element.dataset.turnId === turnId) ?? null;
 }
 
 export function readTurnAnchorOffsetPx(scroller: HTMLElement, element: HTMLElement): number {

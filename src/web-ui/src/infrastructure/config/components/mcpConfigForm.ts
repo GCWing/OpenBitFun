@@ -90,9 +90,11 @@ function transportFromConfig(entry: McpConfigObject): McpServerDraft['transport'
     'streamable-http': 'streamable-http', streamable_http: 'streamable-http',
     streamablehttp: 'streamable-http', sse: 'sse',
   };
-  const type = optionalString(entry, 'type').trim();
-  const explicitTransport = optionalString(entry, 'transport').trim();
-  const explicitSource = optionalString(entry, 'source').trim();
+  // Lowercase before lookup so camelCase spellings emitted by other clients
+  // (for example `streamableHttp`) match the canonical aliases below.
+  const type = optionalString(entry, 'type').trim().toLowerCase();
+  const explicitTransport = optionalString(entry, 'transport').trim().toLowerCase();
+  const explicitSource = optionalString(entry, 'source').trim().toLowerCase();
   if ((type && !Object.prototype.hasOwnProperty.call(aliases, type))
     || (explicitTransport && (!Object.prototype.hasOwnProperty.call(aliases, explicitTransport)
       || explicitTransport === 'local' || explicitTransport === 'remote'))

@@ -90,7 +90,26 @@ struct RecordIndexEntry {
     turn: String,
 }
 
+// Two disjoint, JS-safe sequence ranges keep historical backfill below every
+// live update. They are opaque cursors on the existing wire, not timestamps or
+// array indices. Backfill never advances a subscriber's forward cursor.
+const HISTORY_SEQUENCE_CEILING: u64 = 1 << 52;
+
+pub struct HistoryBatch {
+    pub records: Vec<Value>,
+    pub before: Option<usize>,
+}
+
+struct HistoryReader {
+    before: Option<usize>,
+    exhausted: bool,
+    pending: Vec<Value>,
+    next_seq: u64,
+    newer_evicted: bool,
+}
+
 struct StreamLog {
+    history: Option<HistoryReader>,
     epoch: u64,
     next_seq: u64,
     events: BTreeMap<u64, (StreamEvent, usize)>,
@@ -105,6 +124,7 @@ struct StreamLog {
 impl StreamLog {
     fn new() -> Self {
         Self {
+            history: None,
             epoch: fresh_epoch(),
             next_seq: 1,
             events: BTreeMap::new(),
@@ -164,7 +184,17 @@ impl StreamLog {
             }
         }
         while self.bytes > STREAM_BYTES_BUDGET && self.events.len() > 1 {
-            let Some((&seq, _)) = self.events.iter().next() else {
+            // A controller scrolling backward already has newer history. Evict
+            // those bodies first, retaining this requested page. Reopening or a
+            // slower reader crossing the evicted range gets a fresh epoch and
+            // reloads from disk; no unread suffix is silently skipped.
+            let historical = self.history.as_ref().and_then(|_| {
+                self.events
+                    .range(..HISTORY_SEQUENCE_CEILING)
+                    .next_back()
+                    .map(|(&seq, _)| seq)
+            });
+            let Some(seq) = historical.or_else(|| self.events.keys().next().copied()) else {
                 break;
             };
             if let Some((event, size)) = self.events.remove(&seq) {
@@ -174,7 +204,11 @@ impl StreamLog {
                         self.record_seq.remove(id);
                     }
                 }
-                self.truncated = true;
+                if historical.is_some() {
+                    self.history.as_mut().unwrap().newer_evicted = true;
+                } else {
+                    self.truncated = true;
+                }
             }
         }
     }
@@ -226,7 +260,12 @@ impl StreamLog {
             stream_id: stream_id.to_owned(),
             epoch: self.epoch,
             events,
-            has_more,
+            has_more: has_more
+                || (request.after.is_none()
+                    && self
+                        .history
+                        .as_ref()
+                        .is_some_and(|history| !history.exhausted || !history.pending.is_empty())),
             cursor: self.latest(),
             oldest_seq: self.oldest(),
             truncated: self.truncated,
@@ -406,6 +445,219 @@ impl HostStreamHub {
             .last_activity = Instant::now();
     }
 
+    async fn source_gate(&self, session_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.source_gates
+            .lock()
+            .await
+            .entry(session_id.to_owned())
+            .or_default()
+            .clone()
+    }
+
+    /// Undo/import invalidate the chronological source. Reusing old backfill
+    /// positions would resurrect deleted turns; an epoch fence makes all readers
+    /// discard their derived view and request the latest bounded page again.
+    pub async fn invalidate_paged_history(&self, session_id: &str) -> bool {
+        let gate = self.source_gate(session_id).await;
+        let _source = gate.lock().await;
+        let mut state = self.lock();
+        let Some(log) = state.streams.get_mut(session_id) else {
+            return false;
+        };
+        if log.history.is_none() {
+            return false;
+        }
+        let subscribers = std::mem::take(&mut log.subscribers);
+        let previous = log.epoch;
+        *log = Self::paged_log();
+        if log.epoch == previous {
+            log.epoch = (previous + 1) & JS_MAX_SAFE_INTEGER;
+        }
+        log.subscribers = subscribers;
+        state.dirty.insert(session_id.to_owned());
+        drop(state);
+        self.wake.notify_one();
+        true
+    }
+
+    fn paged_log() -> StreamLog {
+        let mut log = StreamLog::new();
+        log.next_seq = HISTORY_SEQUENCE_CEILING;
+        log.history = Some(HistoryReader {
+            before: None,
+            exhausted: false,
+            pending: Vec::new(),
+            next_seq: HISTORY_SEQUENCE_CEILING,
+            newer_evicted: false,
+        });
+        log
+    }
+
+    /// Materialize only enough source records to answer this backward page.
+    /// The same source gate covers reads and live publication, so stale disk
+    /// records cannot replace newer updates or resurrect a tombstone.
+    pub async fn read_history<F, Fut>(
+        &self,
+        device: &str,
+        request: &StreamReadRequest,
+        mut load: F,
+    ) -> Result<StreamPage>
+    where
+        F: FnMut(Option<usize>) -> Fut,
+        Fut: std::future::Future<Output = Result<HistoryBatch>>,
+    {
+        if request.after.is_some() && request.before.is_some() {
+            bail!("read_stream accepts either after or before, not both");
+        }
+        let gate = self.source_gate(&request.stream_id).await;
+        let _source = gate.lock().await;
+        {
+            let mut state = self.lock();
+            state
+                .streams
+                .entry(request.stream_id.clone())
+                .or_insert_with(Self::paged_log);
+            let log = state.streams.get_mut(&request.stream_id).unwrap();
+            let missing_history = request.after.is_none()
+                && log.history.as_ref().is_some_and(|history| {
+                    history.newer_evicted
+                        && request.before.is_none_or(|before| {
+                            log.events
+                                .range(..HISTORY_SEQUENCE_CEILING)
+                                .next_back()
+                                .is_none_or(|(&last, _)| before > last.saturating_add(1))
+                        })
+                });
+            if missing_history {
+                let subscribers = std::mem::take(&mut log.subscribers);
+                let previous = log.epoch;
+                *log = Self::paged_log();
+                if log.epoch == previous {
+                    log.epoch = (previous + 1) & JS_MAX_SAFE_INTEGER;
+                }
+                log.subscribers = subscribers;
+                state.dirty.insert(request.stream_id.clone());
+                self.wake.notify_one();
+            }
+        }
+        // A forward read never loads historical bodies. On epoch mismatch the
+        // reader observes the new fence and reopens through the latest page.
+        if request.after.is_some()
+            || request.epoch.is_some_and(|epoch| {
+                self.lock()
+                    .streams
+                    .get(&request.stream_id)
+                    .is_some_and(|log| log.epoch != epoch)
+            })
+        {
+            return self.read(device, request);
+        }
+        let started = Instant::now();
+        let mut source_reads = 0;
+        let limit = request
+            .limit
+            .unwrap_or(DEFAULT_PAGE_EVENTS)
+            .clamp(1, MAX_PAGE_EVENTS);
+        loop {
+            let next = {
+                let mut state = self.lock();
+                let log = state
+                    .streams
+                    .get_mut(&request.stream_id)
+                    .context("History stream expired")?;
+                let before = request.before.unwrap_or(u64::MAX);
+                let mut count = 0;
+                let mut bytes = 0;
+                let mut page_full = false;
+                // Inspect sizes by reference. Cloning the growing page once per
+                // inserted record turns a bounded read into quadratic copying.
+                for (_, (_, size)) in log.events.range(..before).rev() {
+                    if count > 0 && (count >= limit || bytes + size > PAGE_BYTES) {
+                        page_full = true;
+                        break;
+                    }
+                    count += 1;
+                    bytes += size;
+                }
+                if count >= limit || bytes >= PAGE_BYTES || page_full {
+                    break;
+                }
+                if log.truncated && count == 0 {
+                    bail!("Older history exceeded the host stream memory budget; reopen the session to reload its latest page");
+                }
+                let Some(history) = log.history.as_mut() else {
+                    break;
+                };
+                if let Some(mut record) = history.pending.pop() {
+                    let id = record["id"]
+                        .as_str()
+                        .context("record identity missing")?
+                        .to_owned();
+                    // A live value (including a tombstone) wins over backfill.
+                    if log.record_index.contains_key(&id) || log.record_seq.contains_key(&id) {
+                        continue;
+                    }
+                    let turn = record["turn"]["turnId"]
+                        .as_str()
+                        .context("record turn missing")?
+                        .to_owned();
+                    if record["sessionId"].as_str() != Some(request.stream_id.as_str()) {
+                        bail!("record session mismatch");
+                    }
+                    let hash = record_hash(&record)?;
+                    history.next_seq = history
+                        .next_seq
+                        .checked_sub(1)
+                        .filter(|seq| *seq > 0)
+                        .context("History sequence space exhausted")?;
+                    let seq = history.next_seq;
+                    record["revision"] = Value::from(seq);
+                    let size = estimate_bytes(&record) + "session-record".len() + 32;
+                    log.bytes += size;
+                    log.record_seq.insert(id.clone(), seq);
+                    log.record_index.insert(id, RecordIndexEntry { hash, turn });
+                    log.events.insert(
+                        seq,
+                        (
+                            StreamEvent {
+                                seq,
+                                event: "session-record".into(),
+                                payload: record,
+                            },
+                            size,
+                        ),
+                    );
+                    log.evict();
+                    continue;
+                }
+                if history.exhausted {
+                    break;
+                }
+                history.before
+            };
+            let batch = load(next).await?;
+            source_reads += 1;
+            if let (Some(previous), Some(next)) = (next, batch.before) {
+                if next >= previous {
+                    bail!("History source did not advance");
+                }
+            }
+            let mut state = self.lock();
+            let history = state
+                .streams
+                .get_mut(&request.stream_id)
+                .and_then(|log| log.history.as_mut())
+                .context("History stream expired")?;
+            history.before = batch.before;
+            history.exhausted = batch.before.is_none();
+            history.pending = batch.records;
+        }
+        let page = self.read(device, request)?;
+        log::debug!("Read paged session history: stream_id={} source_turns={} events={} has_more={} elapsed_ms={}",
+            request.stream_id, source_reads, page.events.len(), page.has_more, started.elapsed().as_millis());
+        Ok(page)
+    }
+
     pub fn read(&self, source_device_id: &str, request: &StreamReadRequest) -> Result<StreamPage> {
         if request.stream_id.is_empty() {
             bail!("stream id is required");
@@ -490,13 +742,13 @@ impl HostStreamHub {
             .into_iter()
             .filter(|id| id != HOST_CATALOG_ID && !id.starts_with("terminal-"))
             .collect();
-        let events = sessions
-            .into_iter()
-            .map(|session| {
+        let mut events = Vec::new();
+        for session in sessions {
+            if !self.invalidate_paged_history(&session).await {
                 let payload = serde_json::json!({"sessionId":session,"reason":reason});
-                (session, "relay://session-gap".to_string(), payload)
-            })
-            .collect();
+                events.push((session, "relay://session-gap".to_string(), payload));
+            }
+        }
         self.append_batch(events).await
     }
 
@@ -546,6 +798,14 @@ impl Drop for HostStreamHub {
     }
 }
 
+fn record_hash(record: &Value) -> Result<String> {
+    let body = record
+        .get("item")
+        .or_else(|| record.get("round"))
+        .unwrap_or(&record["turn"]);
+    Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(body)?)))
+}
+
 /// Parent status changes get their own small header record; they must not
 /// re-send every unchanged large tool body. Removed records become tombstones,
 /// scoped to the loaded turns unless the load was a full snapshot.
@@ -555,6 +815,17 @@ fn diff_records(
     records: Vec<Value>,
     full: bool,
 ) -> Result<bool> {
+    if let Some(history) = log.history.as_mut() {
+        let updated_turns: HashSet<_> = records
+            .iter()
+            .filter_map(|record| record["turn"]["turnId"].as_str())
+            .collect();
+        // The pending batch was captured before this update. All current records
+        // of these turns are published below; never replay removed old items.
+        history.pending.retain(|record| {
+            !updated_turns.contains(record["turn"]["turnId"].as_str().unwrap_or(""))
+        });
+    }
     let mut changed = Vec::new();
     let mut present = HashSet::new();
     let mut scope = HashSet::new();
@@ -572,11 +843,7 @@ fn diff_records(
         if record["sessionId"].as_str() != Some(session_id) {
             bail!("record session identity mismatch");
         }
-        let body = record
-            .get("item")
-            .or_else(|| record.get("round"))
-            .unwrap_or(&record["turn"]);
-        let hash = format!("{:x}", Sha256::digest(serde_json::to_vec(body)?));
+        let hash = record_hash(&record)?;
         let old_hash = log.record_index.get(&id).map(|entry| entry.hash.as_str());
         if old_hash != Some(hash.as_str()) {
             log.record_index.insert(id, RecordIndexEntry { hash, turn });
@@ -623,6 +890,271 @@ mod tests {
             subscribe: true,
             ..Default::default()
         }
+    }
+
+    fn history_record(turn: usize, item: usize) -> Value {
+        serde_json::json!({"sessionId":"s", "id":format!("item/{turn}-{item}"),
+            "turn":{"turnId":format!("t{turn}"), "turnIndex":turn},
+            "item":{"type":"text","data":{"id":format!("{turn}-{item}"),"content":"original"}}})
+    }
+
+    async fn history_fixture(before: Option<usize>) -> Result<HistoryBatch> {
+        let turn = before.unwrap_or(100).saturating_sub(1);
+        Ok(HistoryBatch {
+            records: (0..3).map(|item| history_record(turn, item)).collect(),
+            before: (turn > 0).then_some(turn),
+        })
+    }
+
+    #[tokio::test]
+    async fn paged_history_reads_only_needed_turns_and_preserves_legacy_wire() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let load = |before| {
+            reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            history_fixture(before)
+        };
+        let request = StreamReadRequest {
+            limit: Some(2),
+            ..request("s")
+        };
+        let first = hub.read_history("phone", &request, load).await.unwrap();
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(first.events.len(), 2);
+        assert!(first.has_more);
+        assert_eq!(first.events[0].payload["id"], "item/99-1");
+        assert!(first.cursor < JS_MAX_SAFE_INTEGER);
+        let wire = serde_json::to_string(&first).unwrap();
+        assert_eq!(serde_json::from_str::<StreamPage>(&wire).unwrap(), first);
+        let older = hub
+            .read_history(
+                "phone",
+                &StreamReadRequest {
+                    before: Some(first.events[0].seq),
+                    epoch: Some(first.epoch),
+                    ..request.clone()
+                },
+                load,
+            )
+            .await
+            .unwrap();
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(
+            older.cursor, first.cursor,
+            "backfill must never advance live cursor"
+        );
+        assert!(older
+            .events
+            .iter()
+            .all(|event| event.seq < first.events[0].seq));
+        let forward = hub
+            .read_history(
+                "phone",
+                &StreamReadRequest {
+                    after: Some(first.cursor),
+                    epoch: Some(first.epoch),
+                    ..request
+                },
+                load,
+            )
+            .await
+            .unwrap();
+        assert!(forward.events.is_empty());
+        assert!(!forward.has_more, "disk history is not forward catch-up");
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn paged_history_live_updates_remove_stale_pending_records() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        let request = StreamReadRequest {
+            limit: Some(1),
+            ..request("s")
+        };
+        let first = hub
+            .read_history("phone", &request, history_fixture)
+            .await
+            .unwrap();
+        // Two old items still wait in the pending batch. The live turn deletes
+        // them, and changes the item already delivered in the first page.
+        let mut updated = history_record(99, 2);
+        updated["item"]["data"]["content"] = Value::from("updated");
+        hub.synchronize_records("s".into(), false, || async { Ok(vec![updated]) })
+            .await
+            .unwrap();
+        let forward = hub
+            .read_history(
+                "phone",
+                &StreamReadRequest {
+                    after: Some(first.cursor),
+                    ..request.clone()
+                },
+                history_fixture,
+            )
+            .await
+            .unwrap();
+        assert_eq!(forward.events.len(), 1);
+        assert!(forward.events[0].seq > first.cursor);
+        assert_eq!(
+            forward.events[0].payload["item"]["data"]["content"],
+            "updated"
+        );
+        let older = hub
+            .read_history(
+                "phone",
+                &StreamReadRequest {
+                    before: Some(first.events[0].seq),
+                    ..request
+                },
+                history_fixture,
+            )
+            .await
+            .unwrap();
+        assert_eq!(older.events[0].payload["turn"]["turnId"], "t98");
+    }
+
+    #[tokio::test]
+    async fn paged_history_undo_and_restart_fence_old_cursors() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        let first = hub
+            .read_history("phone", &request("s"), history_fixture)
+            .await
+            .unwrap();
+        assert!(hub.invalidate_paged_history("s").await);
+        let reset = hub
+            .read_history(
+                "phone",
+                &StreamReadRequest {
+                    after: Some(first.cursor),
+                    epoch: Some(first.epoch),
+                    ..request("s")
+                },
+                |_| async { panic!("forward read must not materialize history") },
+            )
+            .await
+            .unwrap();
+        assert_ne!(reset.epoch, first.epoch);
+        assert_eq!(hub.subscriber_count("s"), 1);
+        let empty = hub
+            .read_history("phone", &request("s"), |_| async {
+                Ok(HistoryBatch {
+                    records: vec![],
+                    before: None,
+                })
+            })
+            .await
+            .unwrap();
+        assert!(empty.events.is_empty());
+        assert!(!empty.has_more);
+        hub.report_source_gap("runtime journal gap").await.unwrap();
+        let gap = hub
+            .read_history(
+                "phone",
+                &StreamReadRequest {
+                    after: Some(empty.cursor),
+                    epoch: Some(empty.epoch),
+                    ..request("s")
+                },
+                |_| async { panic!("gap must fence before source replay") },
+            )
+            .await
+            .unwrap();
+        assert_ne!(gap.epoch, empty.epoch);
+    }
+
+    #[tokio::test]
+    async fn paged_history_eviction_preserves_backscroll_and_fences_slow_readers() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        let load = |_| async {
+            Ok(HistoryBatch {
+                records: (0..40)
+                    .map(|i| {
+                        let mut record = history_record(0, i);
+                        record["item"]["data"]["content"] = Value::from("x".repeat(1024 * 1024));
+                        record
+                    })
+                    .collect(),
+                before: None,
+            })
+        };
+        let mut request = request("s");
+        let mut seen = HashSet::new();
+        let first = hub.read_history("phone", &request, load).await.unwrap();
+        seen.insert(first.events[0].payload["id"].as_str().unwrap().to_owned());
+        request.before = Some(first.events[0].seq);
+        request.epoch = Some(first.epoch);
+        loop {
+            let page = hub.read_history("phone", &request, load).await.unwrap();
+            assert_eq!(
+                page.epoch, first.epoch,
+                "active backward reader must not loop on eviction"
+            );
+            assert!(!page.events.is_empty());
+            for event in &page.events {
+                assert!(seen.insert(event.payload["id"].as_str().unwrap().to_owned()));
+            }
+            if !page.has_more {
+                break;
+            }
+            request.before = Some(page.events[0].seq);
+        }
+        assert_eq!(seen.len(), 40);
+        assert!(hub.lock().streams["s"].bytes <= STREAM_BYTES_BUDGET);
+        let slow = hub
+            .read_history(
+                "other",
+                &StreamReadRequest {
+                    before: Some(first.events[0].seq),
+                    epoch: Some(first.epoch),
+                    ..request.clone()
+                },
+                load,
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            slow.epoch, first.epoch,
+            "never silently skip evicted records"
+        );
+        let reopened = hub
+            .read_history("other", &super::tests::request("s"), load)
+            .await
+            .unwrap();
+        assert_eq!(
+            reopened.events[0].payload["id"],
+            first.events[0].payload["id"]
+        );
+    }
+
+    #[tokio::test]
+    async fn paged_history_large_turn_resumes_without_reloading_it() {
+        let hub = HostStreamHub::start(Arc::new(Recorder(Default::default())));
+        let reads = std::sync::atomic::AtomicUsize::new(0);
+        let load = |_| {
+            reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async {
+                Ok(HistoryBatch {
+                    records: (0..1000).map(|i| history_record(0, i)).collect(),
+                    before: None,
+                })
+            }
+        };
+        let mut request = request("s");
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            let page = hub.read_history("phone", &request, load).await.unwrap();
+            assert!(!page.events.is_empty());
+            for event in &page.events {
+                assert!(seen.insert(event.payload["id"].as_str().unwrap().to_owned()));
+            }
+            if !page.has_more {
+                break;
+            }
+            request.before = Some(page.events[0].seq);
+            request.epoch = Some(page.epoch);
+        }
+        assert_eq!(seen.len(), 1000);
+        assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

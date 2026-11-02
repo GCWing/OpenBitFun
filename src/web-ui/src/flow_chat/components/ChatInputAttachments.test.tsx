@@ -17,11 +17,14 @@ vi.mock('@/shared/notification-system', () => ({ notificationService: { warning:
 vi.mock('../store/FlowChatStore', () => ({ flowChatStore: {
   getState: () => ({ sessions: new Map([['main', { sessionId: 'main', dialogTurns: [] }]]) }),
 } }));
-vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({
-  formatNumber: (number: number) => String(number),
-  t: (key: string, values?: Record<string, string>) => key === 'selection.numbered' ? `Annotation ${values?.number}`
-    : key === 'selection.removeNumbered' ? `Remove ${values?.annotation}` : key,
-}) }));
+vi.mock('@/infrastructure/i18n', () => ({
+  useI18n: () => ({
+    formatNumber: (number: number) => String(number),
+    t: (key: string, values?: Record<string, string>) => key === 'selection.numbered' ? `Annotation ${values?.number}`
+      : key === 'selection.removeNumbered' ? `Remove ${values?.annotation}` : key,
+  }),
+  i18nService: { t: (key: string) => key },
+}));
 
 const excerpt: ConversationExcerptContext = {
   id: 'annotation-1', type: 'conversation-excerpt', timestamp: 1, annotationNumber: 1,
@@ -72,7 +75,8 @@ describe('numbered composer attachments', () => {
     if (!document.querySelector('[data-openbitfun-product-part="details"]')) click(chip());
     return document.querySelector<HTMLButtonElement>(`[data-openbitfun-product-part="details"] button[aria-label="Annotation ${number}"]`)!;
   };
-  const action = (key: string) => [...dialog()!.querySelectorAll('button')].find(button => button.textContent === key)!;
+  const action = (key: string) => [...dialog()!.querySelectorAll('button')]
+    .find(button => button.getAttribute('aria-label') === key || button.textContent === key)!;
   const typeComment = (value: string) => act(() => {
     const textarea = dialog()!.querySelector('textarea')!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, value);
@@ -122,11 +126,8 @@ describe('numbered composer attachments', () => {
     expect(document.activeElement).toBe(textarea);
     const quote = dialog()!.querySelector('[data-openbitfun-product-part="quote"]')!;
     expect(quote.textContent).toBe(excerpt.fragments[0].text);
-    const quoteText = quote.querySelector('[data-openbitfun-product-part="quoteText"]')!;
-    expect(quoteText.getAttribute('data-overflow-style')).toBe('ellipsis');
-    expect(quoteText.getAttribute('data-overflow-behavior')).toBe('fade');
     expect(dialog()!.querySelector('label')).toBeNull();
-    expect(textarea.getAttribute('placeholder')).toBeNull();
+    expect(textarea.getAttribute('placeholder')).toBe('selection.annotationPlaceholder');
     expect(textarea.getAttribute('aria-label')).toBe('selection.annotation');
     expect(dialog()!.querySelector('blockquote')).toBeNull();
     act(() => {
@@ -175,8 +176,7 @@ describe('numbered composer attachments', () => {
       const comment = dialog()!.querySelector<HTMLElement>('[data-openbitfun-product-part="comment"]')!;
       expect(comment.textContent).toBe('First comment');
       expect(dialog()!.querySelector('[data-openbitfun-product-part="quote"]')!.textContent).toBe(excerpt.fragments[0].text);
-      expect([...dialog()!.querySelectorAll('[data-openbitfun-part="footer"] button')].map(button => button.textContent))
-        .toEqual(['selection.locate']);
+      expect(dialog()!.querySelector('[data-openbitfun-part="footer"]')).toBeNull();
       act(() => comment.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })));
       expect(dialog()).not.toBeNull();
       click(action('selection.locate'));

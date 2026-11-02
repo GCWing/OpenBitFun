@@ -113,7 +113,7 @@ try {
   if (process.argv.includes('--native-ocr')) {
     assert.equal(process.platform, 'darwin', 'native fixture currently exercises macOS Vision');
     await page.setViewport({ width: 800, height: 600 });
-    await page.setContent('<div style="position:absolute;left:100px;top:100px;font:40px Arial;color:black;background:white">Save report</div>');
+    await page.setContent('<div style="position:absolute;left:100px;top:100px;font:40px Arial;color:black;background:white">Save report</div><div style="position:absolute;left:100px;top:300px;font:40px Arial;color:black;background:white">Cancel</div>');
     const bytes = await page.screenshot({ type: 'jpeg', quality: 95 });
     const ocrFixture = join(dir, 'ocr.json');
     await writeFile(ocrFixture, JSON.stringify({
@@ -122,7 +122,8 @@ try {
       vision_scale: 0.5, image_global_bounds: { left: -500, top: 100, width: 400, height: 300 },
     }));
     const nativeCode = await new Promise((resolveExit, reject) => {
-      const child = spawn('cargo', ['test', '-p', 'openbitfun-desktop', '--lib', 'native_vision_reads_rendered_fixture', '--', '--ignored', '--exact', 'computer_use::screen_ocr::native_fixture_tests::native_vision_reads_rendered_fixture'], {
+      const nativeArgs = ['--ignored', '--exact', 'computer_use::screen_ocr::native_fixture_tests::native_vision_reads_rendered_fixture'];
+      const child = spawn(process.env.OPENBITFUN_TEST_BINARY || 'cargo', process.env.OPENBITFUN_TEST_BINARY ? nativeArgs : ['test', '-p', 'openbitfun-computer-use', '--lib', 'native_vision_reads_rendered_fixture', '--', ...nativeArgs], {
         cwd: root, stdio: 'inherit', windowsHide: true,
         env: { ...process.env, OPENBITFUN_OCR_FIXTURE: ocrFixture },
       });

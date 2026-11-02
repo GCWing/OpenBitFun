@@ -29,6 +29,19 @@ struct RefreshState {
     last_attempt: Option<Instant>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileStamp {
+    length: u64,
+    modified: SystemTime,
+}
+
+#[derive(Debug)]
+struct ValidatedSnapshot {
+    stamp: Option<FileStamp>,
+    cache_valid: bool,
+    snapshot: ModelsDevSnapshot,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelsDevSnapshotSource {
     Cache,
@@ -74,6 +87,7 @@ pub struct ModelsDevCatalogService {
     cache_ttl: Duration,
     refresh_state: Arc<Mutex<RefreshState>>,
     refresh_in_progress: Arc<AtomicBool>,
+    validated_snapshot: Arc<Mutex<Option<ValidatedSnapshot>>>,
 }
 
 struct RefreshGuard(Arc<AtomicBool>);
@@ -93,6 +107,7 @@ impl ModelsDevCatalogService {
             cache_ttl: DEFAULT_CACHE_TTL,
             refresh_state: Arc::new(Mutex::new(RefreshState::default())),
             refresh_in_progress: Arc::new(AtomicBool::new(false)),
+            validated_snapshot: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -122,9 +137,21 @@ impl ModelsDevCatalogService {
 
     /// Load the best immediately available source without contacting the network.
     pub async fn load_cached_or_bundled(&self) -> ModelsDevSnapshot {
+        // Share cold reads across consumers. A timestamp controls revalidation,
+        // never the lifetime of the last valid document.
+        let mut cached = self.validated_snapshot.lock().await;
+        let stamp = self.file_stamp().await;
+        if let Some(cached) = cached.as_ref().filter(|cached| cached.stamp == stamp) {
+            return cached.snapshot.clone();
+        }
         if let Ok(body) = fs::read_to_string(&self.cache_file).await {
-            if is_valid_catalog_document(&body) {
-                return snapshot(body, ModelsDevSnapshotSource::Cache);
+            if let Some(snapshot) = checked_snapshot(body, ModelsDevSnapshotSource::Cache).await {
+                *cached = Some(ValidatedSnapshot {
+                    stamp,
+                    cache_valid: true,
+                    snapshot: snapshot.clone(),
+                });
+                return snapshot;
             }
             debug!(
                 "Ignoring invalid models.dev cache at {}",
@@ -132,14 +159,29 @@ impl ModelsDevCatalogService {
             );
         }
 
-        if is_valid_catalog_document(&self.bundled_snapshot) {
-            return snapshot(
+        let snapshot = match cached.as_ref() {
+            Some(cached) => cached.snapshot.clone(),
+            None => checked_snapshot(
                 self.bundled_snapshot.to_string(),
                 ModelsDevSnapshotSource::Bundled,
-            );
-        }
+            )
+            .await
+            .unwrap_or_else(|| snapshot("{}".to_string(), ModelsDevSnapshotSource::Empty)),
+        };
+        *cached = Some(ValidatedSnapshot {
+            stamp,
+            cache_valid: false,
+            snapshot: snapshot.clone(),
+        });
+        snapshot
+    }
 
-        snapshot("{}".to_string(), ModelsDevSnapshotSource::Empty)
+    async fn file_stamp(&self) -> Option<FileStamp> {
+        let metadata = fs::metadata(&self.cache_file).await.ok()?;
+        Some(FileStamp {
+            length: metadata.len(),
+            modified: metadata.modified().ok()?,
+        })
     }
 
     pub async fn cache_metadata(&self) -> ModelsDevCacheMetadata {
@@ -181,17 +223,10 @@ impl ModelsDevCatalogService {
             return ModelsDevRefreshOutcome::Throttled;
         }
         let _refresh_guard = RefreshGuard(self.refresh_in_progress.clone());
-        let body = match &self.runtime_source {
+        let incoming = match &self.runtime_source {
             ModelsDevRuntimeSource::LocalFile(path) => {
                 let body = match fs::read_to_string(path).await {
-                    Ok(body) if is_valid_catalog_document(&body) => body,
-                    Ok(_) => {
-                        warn!(
-                            "Local models.dev catalog at {} failed schema validation",
-                            path.display()
-                        );
-                        return ModelsDevRefreshOutcome::Failed;
-                    }
+                    Ok(body) => body,
                     Err(error) => {
                         warn!(
                             "Failed to read local models.dev catalog at {}: {}",
@@ -201,10 +236,18 @@ impl ModelsDevCatalogService {
                         return ModelsDevRefreshOutcome::Failed;
                     }
                 };
-                if self.cache_matches(&body).await {
+                let Some(incoming) = checked_snapshot(body, ModelsDevSnapshotSource::Cache).await
+                else {
+                    warn!(
+                        "Local models.dev catalog at {} failed schema validation",
+                        path.display()
+                    );
+                    return ModelsDevRefreshOutcome::Failed;
+                };
+                if self.cache_matches(&incoming.body).await {
                     return ModelsDevRefreshOutcome::NotNeeded;
                 }
-                body
+                incoming
             }
             ModelsDevRuntimeSource::Http(endpoint_url) => {
                 if endpoint_url.trim().is_empty() {
@@ -272,14 +315,21 @@ impl ModelsDevCatalogService {
 
         let previous = self.load_cached_or_bundled().await;
 
-        match self.write_cache_atomically(&body).await {
-            Ok(()) if previous.sha256 == sha256_hex(body.as_bytes()) => {
-                ModelsDevRefreshOutcome::Unchanged {
-                    version: previous.version,
-                }
-            }
+        match self.write_cache_atomically(&incoming.body).await {
             Ok(()) => {
-                ModelsDevRefreshOutcome::Updated(snapshot(body, ModelsDevSnapshotSource::Cache))
+                let stamp = self.file_stamp().await;
+                *self.validated_snapshot.lock().await = Some(ValidatedSnapshot {
+                    stamp,
+                    cache_valid: true,
+                    snapshot: incoming.clone(),
+                });
+                if previous.sha256 == incoming.sha256 {
+                    ModelsDevRefreshOutcome::Unchanged {
+                        version: incoming.version,
+                    }
+                } else {
+                    ModelsDevRefreshOutcome::Updated(incoming)
+                }
             }
             Err(error) => {
                 warn!(
@@ -293,19 +343,22 @@ impl ModelsDevCatalogService {
     }
 
     async fn is_cache_fresh(&self) -> bool {
-        let Ok(metadata) = fs::metadata(&self.cache_file).await else {
-            return false;
-        };
-        let Ok(modified) = metadata.modified() else {
+        let Some(stamp) = self.file_stamp().await else {
             return false;
         };
         let age = SystemTime::now()
-            .duration_since(modified)
+            .duration_since(stamp.modified)
             .unwrap_or_default();
-        age < self.cache_ttl
-            && fs::read_to_string(&self.cache_file)
-                .await
-                .is_ok_and(|body| is_valid_catalog_document(&body))
+        if age >= self.cache_ttl {
+            return false;
+        }
+        // Only a document that was validated at this exact file revision is fresh.
+        self.load_cached_or_bundled().await;
+        self.validated_snapshot
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|cached| cached.cache_valid && cached.stamp.as_ref() == Some(&stamp))
     }
 
     async fn cache_matches(&self, expected: &str) -> bool {
@@ -345,6 +398,18 @@ impl ModelsDevCatalogService {
             }
         }
     }
+}
+
+async fn checked_snapshot(
+    body: String,
+    source: ModelsDevSnapshotSource,
+) -> Option<ModelsDevSnapshot> {
+    tokio::task::spawn_blocking(move || {
+        is_valid_catalog_document(&body).then(|| snapshot(body, source))
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 fn runtime_source_from_environment() -> ModelsDevRuntimeSource {
@@ -467,7 +532,7 @@ impl std::fmt::Display for RefreshError {
 async fn fetch_catalog_body(
     client: &reqwest::Client,
     endpoint_url: &str,
-) -> Result<String, RefreshError> {
+) -> Result<ModelsDevSnapshot, RefreshError> {
     let response = client
         .get(endpoint_url)
         .send()
@@ -478,10 +543,9 @@ async fn fetch_catalog_body(
         return Err(RefreshError::Status(status));
     }
     let body = response.text().await.map_err(RefreshError::ResponseBody)?;
-    if !is_valid_catalog_document(&body) {
-        return Err(RefreshError::InvalidDocument);
-    }
-    Ok(body)
+    checked_snapshot(body, ModelsDevSnapshotSource::Cache)
+        .await
+        .ok_or(RefreshError::InvalidDocument)
 }
 
 fn retry_backoff(attempt: usize) -> Duration {
@@ -563,6 +627,29 @@ mod tests {
 
         assert_eq!(snapshot.source, ModelsDevSnapshotSource::Cache);
         assert!(snapshot.body.contains("gpt-test"));
+    }
+
+    #[tokio::test]
+    async fn loaded_snapshot_survives_corruption_and_observes_replacement() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("catalog.json");
+        tokio::fs::write(&file, VALID).await.unwrap();
+        let service = ModelsDevCatalogService::new(&file);
+        let first = service.load_cached_or_bundled().await;
+        assert!(service.is_cache_fresh().await);
+        tokio::fs::write(&file, "invalid").await.unwrap();
+        assert_eq!(service.load_cached_or_bundled().await, first);
+        assert!(!service.is_cache_fresh().await);
+        tokio::fs::remove_file(&file).await.unwrap();
+        assert_eq!(service.load_cached_or_bundled().await, first);
+        tokio::fs::write(
+            &file,
+            r#"{"provider":{"models":{"replacement":{"id":"replacement"}}}}"#,
+        )
+        .await
+        .unwrap();
+        assert_ne!(service.load_cached_or_bundled().await.sha256, first.sha256);
+        assert!(service.is_cache_fresh().await);
     }
 
     #[tokio::test]

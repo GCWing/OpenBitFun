@@ -51,6 +51,25 @@ function sprite() {
 }
 
 describe('pet sprite renderer', () => {
+  it('keeps built-in BitBlob motion in the atlas across session states', async () => {
+    const bitblob = { ...pet, id: 'bitblob' };
+    for (const mood of ['rest', 'hover', 'working', 'waiting', 'analyzing', 'dragging'] as const) {
+      await act(async () => root.render(<AgentCompanionPet pet={bitblob} mood={mood} />));
+      expect(sprite().style.animationName).toBe('openbitfun-petdex-walk');
+      expect(sprite().style.imageRendering).toBe('auto');
+    }
+    await act(async () => root.render(<AgentCompanionPet pet={bitblob} mood="rest" action="jumping" />));
+    expect(sprite().dataset.petAction).toBe('jumping');
+    expect(sprite().style.animationDuration).toBe('1.2s');
+    await act(async () => root.render(<AgentCompanionPet pet={bitblob} mood="rest" lookDirection={4} />));
+    expect(sprite().style.animation).toBe('none');
+    // A user pet with the same id must retain its own/default presentation.
+    await act(async () => root.render(<AgentCompanionPet pet={{ ...bitblob, source: 'user' }} mood="working" />));
+    expect(sprite().style.animationName).toBe('');
+    await act(async () => root.render(<AgentCompanionPet pet={pet} mood="working" />));
+    expect(sprite().style.animationName).toBe('');
+  });
+
   it.each([1, 2])('plays all three standard actions with v%s frame geometry and keeps drag priority', async version => {
     vi.useFakeTimers();
     vi.stubGlobal('Image', class {
@@ -88,6 +107,26 @@ describe('pet sprite renderer', () => {
     expect(sprite().style.backgroundPositionY).toBe('20%');
     expect(sprite().style.getPropertyValue('--openbitfun-petdex-frames')).toBe('8');
     expect(sprite().style.animation).not.toBe('none');
+  });
+
+  it('scales an oversized native cell down into the max box, keeping its aspect ratio', async () => {
+    vi.stubGlobal('Image', class {
+      // v2 atlas with 512x512 cells: 256x256 at half scale, wider than the box.
+      naturalWidth = 8 * 512;
+      naturalHeight = 11 * 512;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    });
+    const onSize = vi.fn();
+    await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" nativePetdexSize petdexScale={0.5} petdexMaxSize={{ width: 168, height: 234 }} onPetFrameSizeChange={onSize} />));
+    expect(onSize).toHaveBeenLastCalledWith({ width: 168, height: 168 });
+    const petRoot = sprite().parentElement!;
+    expect(petRoot.style.getPropertyValue('--openbitfun-petdex-width')).toBe('168px');
+    expect(petRoot.style.getPropertyValue('--openbitfun-petdex-height')).toBe('168px');
+
+    // A cell that already fits keeps the requested scale.
+    await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" nativePetdexSize petdexScale={0.25} petdexMaxSize={{ width: 168, height: 234 }} onPetFrameSizeChange={onSize} />));
+    expect(onSize).toHaveBeenLastCalledWith({ width: 128, height: 128 });
   });
 
   it('shows look frames only during idle and restores the action under reduced motion', async () => {

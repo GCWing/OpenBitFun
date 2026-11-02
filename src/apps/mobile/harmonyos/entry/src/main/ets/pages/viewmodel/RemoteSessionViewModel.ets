@@ -73,12 +73,13 @@ export class RemoteSessionViewModel {
     return `${value.slice(0, 6)}...${value.slice(-4)}`;
   }
 
-  async refreshSessions(): Promise<void> {
+  async refreshSessions(propagateFailure: boolean = false): Promise<void> {
     await this.sessions.refresh(
       this.pageState.sessionQuery,
       this.pageState.sessionFilter,
       this.hooks.remoteAvailable(),
-      this.hooks.isConnected()
+      this.hooks.isConnected(),
+      propagateFailure
     );
   }
 

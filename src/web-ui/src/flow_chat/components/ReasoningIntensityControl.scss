@@ -1,0 +1,182 @@
+.openbitfun-reasoning-control {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-inline-size: 0;
+  min-block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+  overflow: visible;
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  line-height: var(--openbitfun-type-action-row-line-height);
+  letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+
+  &__segments[data-wrap='true'] {
+    display: grid;
+    border-radius: var(--openbitfun-radius-base);
+  }
+
+  &__value {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 0;
+    inline-size: 100%;
+    min-block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+    text-align: center;
+  }
+
+  &__summary,
+  &__options {
+    grid-area: 1 / 1;
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  &__summary {
+    display: flex;
+    justify-content: center;
+    transition: opacity 180ms var(--openbitfun-motion-easing-standard);
+
+    &[aria-hidden='true'] {
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  &__value &__options {
+    // Both faces share one center; height changes move the model, not the choices.
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    transform: none;
+  }
+
+  &__options-content {
+    flex: 0 0 100%;
+    min-inline-size: 0;
+    clip-path: inset(calc(-1 * var(--openbitfun-space-1)) 46% round var(--openbitfun-radius-base));
+    transition-property: clip-path;
+    transition-duration: inherit;
+    transition-timing-function: inherit;
+  }
+
+  &__options[aria-hidden='false'] &__options-content {
+    // Reveal sideways without stretching text; leave room for keyboard focus outlines.
+    clip-path: inset(calc(-1 * var(--openbitfun-space-1)) round var(--openbitfun-radius-base));
+
+    @starting-style {
+      clip-path: inset(calc(-1 * var(--openbitfun-space-1)) 46% round var(--openbitfun-radius-base));
+    }
+  }
+
+  &__trigger {
+    inline-size: max-content;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    min-block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+    color: inherit;
+
+    [data-openbitfun-part='trigger'] {
+      justify-content: center;
+      text-align: center;
+    }
+
+    [data-openbitfun-part='label'] {
+      flex: 0 1 auto;
+      inline-size: max-content;
+      min-inline-size: 4em;
+      text-align: center;
+      font-family: var(--openbitfun-type-label-md-font-family);
+      font-size: var(--openbitfun-type-label-md-font-size);
+      font-weight: var(--openbitfun-type-label-md-font-weight);
+      line-height: var(--openbitfun-type-action-row-line-height);
+      letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+    }
+  }
+
+  &__choices {
+    display: grid;
+    gap: var(--openbitfun-space-1);
+    inline-size: 100%;
+    min-inline-size: 0;
+
+    [data-openbitfun-component='segmented-control'] {
+      min-inline-size: 0;
+    }
+
+    [data-openbitfun-part='segment'] {
+      block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+      padding-inline: var(--openbitfun-space-1);
+      font-family: var(--openbitfun-type-label-md-font-family);
+      font-size: var(--openbitfun-type-label-md-font-size);
+      line-height: var(--openbitfun-type-label-md-line-height);
+      letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+
+      &[aria-pressed='false']:hover:not(:disabled) {
+        background: var(--openbitfun-color-action-neutral-surface-hover);
+      }
+    }
+  }
+
+  &[data-presentation='settings-row'] {
+    inline-size: 100%;
+    color: var(--openbitfun-color-content-primary);
+
+    .openbitfun-reasoning-control__value,
+    .openbitfun-reasoning-control__trigger {
+      min-block-size: var(--openbitfun-control-height-md);
+    }
+
+    .openbitfun-reasoning-control__trigger {
+      inline-size: 100%;
+      padding-inline: var(--openbitfun-space-3);
+
+      [data-openbitfun-part='trigger'],
+      [data-openbitfun-part='label'] {
+        text-align: start;
+        justify-content: flex-start;
+      }
+
+      [data-openbitfun-part='label'] {
+        flex: 1 1 auto;
+        inline-size: auto;
+        min-inline-size: 0;
+      }
+
+      [data-openbitfun-part='label'],
+      [data-openbitfun-part='metadata'] {
+        font-family: var(--openbitfun-type-label-md-font-family);
+        font-size: var(--openbitfun-type-label-md-font-size);
+        font-weight: var(--openbitfun-type-label-md-font-weight);
+        line-height: var(--openbitfun-type-action-row-line-height);
+        letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+      }
+
+      [data-openbitfun-part='metadata'] {
+        max-inline-size: 60%;
+        min-inline-size: 0;
+        color: var(--openbitfun-color-content-secondary);
+      }
+
+      [data-openbitfun-part='shortcut'] {
+        color: var(--openbitfun-color-content-muted);
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &__summary,
+    &__options,
+    &__options-content {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    color: CanvasText;
+    background: Canvas;
+  }
+}

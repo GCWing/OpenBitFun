@@ -17,6 +17,56 @@ pub enum FileWatchEventKind {
     Other,
 }
 
+/// Stable machine-readable reason for a native watcher failure.
+///
+/// Product surfaces switch on this code instead of matching error text, and
+/// each platform reports only the codes its backend can actually produce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileWatchFailureCode {
+    /// The OS refused a new watch because a per-user watch quota is exhausted.
+    /// Only inotify backends report this (`fs.inotify.max_user_watches`).
+    WatchLimitExceeded,
+    /// Any other backend failure: permissions, a missing root, or a watcher
+    /// thread that could not start.
+    BackendUnavailable,
+}
+
+/// One failed watch registration or a backend error observed after startup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileWatchFailure {
+    pub code: FileWatchFailureCode,
+    /// English diagnostic for logs and support reports. Not user-facing copy.
+    pub detail: String,
+    /// Platform remediation command, or `None` where the platform has none.
+    /// Callers must show it verbatim: it is not translatable text.
+    pub hint: Option<String>,
+    /// Watched root the backend blamed, when it named one.
+    pub path: Option<String>,
+}
+
+impl FileWatchFailure {
+    pub fn backend_unavailable(detail: impl Into<String>, path: Option<String>) -> Self {
+        Self {
+            code: FileWatchFailureCode::BackendUnavailable,
+            detail: detail.into(),
+            hint: None,
+            path,
+        }
+    }
+}
+
+/// Whether filesystem changes still reach product surfaces, and why not.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileWatchStatus {
+    pub healthy: bool,
+    pub watched_paths: Vec<String>,
+    /// Populated only while `healthy` is false.
+    pub failure: Option<FileWatchFailure>,
+}
+
 #[derive(Debug, Clone)]
 pub struct FileWatcherConfig {
     pub watch_recursively: bool,

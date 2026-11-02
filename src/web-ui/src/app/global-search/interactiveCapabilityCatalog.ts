@@ -3,6 +3,7 @@ import type { SettingsDestination } from '@/app/scenes/settings/settingsTypes';
 import type { ProductActionId } from './productActionCatalog';
 import generatedCatalog from './generated/interactive-capabilities.json';
 import { WORKSPACE_SEARCH_AVAILABLE } from '@/infrastructure/config/workspaceSearchAvailability';
+import { projectSettingsCapabilityDestination } from './settingsCapabilityDestination';
 
 export type InteractiveCapabilityKind = 'feature' | 'setting';
 export type InteractiveCapabilityRisk = 'read' | 'write' | 'ui' | 'execute' | 'destructive';
@@ -12,6 +13,13 @@ export type InteractiveCapabilityDestination =
   | { kind: 'action'; actionId: ProductActionId }
   | { kind: 'scene'; sceneId: SceneTabId }
   | { kind: 'event'; eventName: string; detail?: Record<string, unknown> };
+
+/** Git operations remain host capabilities, but their standalone panel has no entry point. */
+export function isInteractiveCapabilityDestinationAvailable(
+  destination: InteractiveCapabilityDestination,
+): boolean {
+  return destination.kind !== 'scene' || destination.sceneId !== 'git';
+}
 
 export interface InteractiveCapabilityValueSchema {
   type: 'boolean' | 'string' | 'integer' | 'number' | 'object' | 'array';
@@ -142,7 +150,22 @@ export interface InteractiveCapabilityCatalog {
 }
 
 // Keep the host contract intact while filtering controls unavailable for the workspace.
-const catalog = generatedCatalog as InteractiveCapabilityCatalog;
+const hostCatalog = generatedCatalog as InteractiveCapabilityCatalog;
+const catalog: InteractiveCapabilityCatalog = {
+  ...hostCatalog,
+  capabilities: hostCatalog.capabilities.map(capability => ({
+    ...capability,
+    destination: projectSettingsCapabilityDestination(capability.id, capability.destination),
+    items: capability.items.map(item => ({
+      ...item,
+      destination: projectSettingsCapabilityDestination(capability.id, item.destination ?? capability.destination, item.id),
+    })),
+  })),
+  definitions: hostCatalog.definitions.map(definition => ({
+    ...definition,
+    presentationTarget: projectSettingsCapabilityDestination(definition.capabilityId, definition.presentationTarget, definition.itemIds[0]),
+  })),
+};
 const suspendedSearchItems = new Set(['accelerated-search', 'search-index']);
 export function getInteractiveCapabilityCatalog(
   workspaceSearchAvailable = WORKSPACE_SEARCH_AVAILABLE,

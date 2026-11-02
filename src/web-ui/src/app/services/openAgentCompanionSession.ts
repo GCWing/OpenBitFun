@@ -2,18 +2,8 @@ import { FlowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { openBtwSessionInAuxPane } from '@/flow_chat/services/btwSessionPane';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
-import { findWorkspaceForSession as resolveWorkspace } from '@/flow_chat/utils/workspaceScope';
+import { resolveSessionSceneWorkspace } from './sessionSceneTarget';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
-import type { Session } from '@/flow_chat/types/flow-chat';
-import type { WorkspaceInfo } from '@/shared/types/global-state';
-
-/**
- * Resolve the opened workspace that owns this session so the pet-bubble jump
- * can activate it — matching the sidebar's workspace-switch behaviour.
- */
-function findWorkspaceForSession(session: Session): WorkspaceInfo | null {
-  return resolveWorkspace(session, workspaceManager.getState().openedWorkspaces.values()) ?? null;
-}
 
 export async function openAgentCompanionSession(sessionId: string): Promise<boolean> {
   const flowChatStore = FlowChatStore.getInstance();
@@ -25,10 +15,13 @@ export async function openAgentCompanionSession(sessionId: string): Promise<bool
   const relationship = resolveSessionRelationship(session);
   const parentSessionId = relationship.parentSessionId;
 
-  // Activate the session's workspace when it differs from the current one,
-  // mirroring the sidebar handleSwitch path so the chat-input workspace
-  // folder stays consistent after opening from the pet bubble.
-  const workspace = findWorkspaceForSession(session);
+  // Activate the workspace the session is listed under when it differs from the
+  // current one, mirroring the sidebar handleSwitch path so the chat-input
+  // workspace folder stays consistent after opening from the pet bubble.
+  const workspace = resolveSessionSceneWorkspace(
+    session,
+    workspaceManager.getState().openedWorkspaces.values(),
+  );
   const currentWorkspaceId = workspaceManager.getState().activeWorkspaceId;
   const workspaceId = workspace?.id;
   const activateWorkspace =

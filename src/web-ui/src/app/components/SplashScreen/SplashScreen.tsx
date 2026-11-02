@@ -6,6 +6,7 @@
  */
 
 import React, { useEffect, useCallback, useState } from 'react';
+import { OpenBitFunMark } from '@openbitfun/ui/brand';
 import './SplashScreen.scss';
 
 const DEFAULT_LOADING_MESSAGE_DELAY_MS = 1800;
@@ -55,7 +56,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({
     >
       <div className="splash-screen__center" data-openbitfun-component="splash-screen" data-openbitfun-part="center">
         <div className="splash-screen__logo-wrap" data-openbitfun-component="splash-screen" data-openbitfun-part="logo">
-          <span className="splash-screen__logo" aria-hidden="true" />
+          <OpenBitFunMark className="splash-screen__logo" motion="breathe" active={!isExiting} />
         </div>
         {showDelayedMessage && delayedMessage && !isExiting && (
           <div

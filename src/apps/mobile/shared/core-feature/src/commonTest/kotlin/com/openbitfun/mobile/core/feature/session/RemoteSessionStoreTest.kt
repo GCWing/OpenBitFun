@@ -38,6 +38,80 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteSessionStoreTest {
+    private fun suggestion(turn: String, text: JsonElement = JsonPrimitive("  Run the tests  "), session: String = "s-code") = buildJsonObject {
+        put("session_id", session)
+        put("event", "agentic://prompt-suggestion")
+        put("payload", buildJsonObject {
+            put("sessionId", session); put("sourceTurnId", turn); put("suggestion", text)
+        })
+    }
+
+    @Test
+    fun promptSuggestionReplaysUnchangedAndDoesNotWriteTheDraftOrTranscript() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"), suggestion("turn-1"))
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        var ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("  Run the tests  ", ready.promptSuggestion)
+        assertEquals("", ready.draft)
+        assertEquals(listOf("answer"), ready.timeline!!.persistedMessages.filter { it.role == "assistant" }.map { it.text })
+        store.dispatch(RemoteSessionIntent.UpdateDraft("my draft")); runCurrent()
+        transport.streamEvents.emit(suggestion("turn-1", JsonPrimitive("Another idea"))); runCurrent()
+        ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("my draft", ready.draft)
+        assertEquals("Another idea", ready.promptSuggestion)
+        store.stop()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+    }
+
+    @Test
+    fun promptSuggestionRetiresForANewerTurnAndIgnoresLateHints() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"))
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.streamEvents.emit(suggestion("turn-1")); runCurrent()
+        assertNotNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(richRecord("s-code", "turn-2", 1, 2, "inprogress", "working")); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(richRecord("s-code", "turn-2", 1, 3, "completed", "done"))
+        transport.streamEvents.emit(suggestion("turn-1")); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(suggestion("turn-2", JsonPrimitive(42))); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(suggestion("turn-2", JsonPrimitive("Current idea"))); runCurrent()
+        transport.streamEvents.emit(suggestion("turn-1", JsonPrimitive("Old replay"))); runCurrent()
+        assertEquals("Current idea", assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        store.stop()
+    }
+
+    @Test
+    fun promptSuggestionIsClearedOnHostRestartAndSessionSwitch() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"), suggestion("turn-1"))
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        assertNotNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(buildJsonObject {
+            put("session_id", "s-code"); put("event", "relay://session-gap"); put("payload", buildJsonObject {})
+        }); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"))
+        transport.streamEvents.emit(historyReady(false)); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(suggestion("turn-1")); runCurrent()
+        transport.initialEvents = emptyList()
+        store.dispatch(RemoteSessionIntent.Open("s-cowork")); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-cowork", ready.selectedSessionId)
+        assertNull(ready.promptSuggestion)
+        store.stop()
+    }
+
     @Test
     fun firstHistoryReadDoesNotPublishAnEmptyOrPartialConversation() = runTest {
         val transport = FakeSessionTransport().apply {
@@ -114,6 +188,7 @@ class RemoteSessionStoreTest {
             put("session_id", "s-code"); put("event", "relay://session-gap"); put("payload", buildJsonObject { put("reason", "host stream restarted") })
         })
         transport.streamEvents.emit(richRecord("s-code", "new", 0, 1, "completed", "after restart"))
+        transport.streamEvents.emit(historyReady(false))
         runCurrent()
         val timeline = assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline!!
         assertEquals(listOf("after restart"), timeline.persistedMessages.filter { it.role == "assistant" }.map { it.text })
@@ -545,9 +620,9 @@ class RemoteSessionStoreTest {
         val gate = CompletableDeferred<Unit>()
         transport.commandGates["get_model_catalog"] = gate
         transport.commands.clear()
-        notices.emit(com.openbitfun.mobile.core.feature.relay.HostCatalogNotice.Changed)
+        notices.emit(com.openbitfun.mobile.core.feature.relay.HostCatalogNotice.Changed())
         runCurrent()
-        notices.emit(com.openbitfun.mobile.core.feature.relay.HostCatalogNotice.Changed)
+        notices.emit(com.openbitfun.mobile.core.feature.relay.HostCatalogNotice.Changed())
         runCurrent()
         gate.complete(Unit)
         runCurrent()
@@ -556,6 +631,30 @@ class RemoteSessionStoreTest {
         assertEquals("model-from-another-controller", ready.timeline?.selectedModelId)
         assertEquals("keep this draft", ready.draft)
         assertTrue(transport.commands.any { it.cmd == "get_model_catalog" && it.sessionId == "s-code" })
+        store.stop()
+    }
+
+    @Test
+    fun hostCatalogInvalidationWaitsForActiveTurnToSettle() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "active", 1, 1, "inprogress", "partial"), historyReady(false))
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        assertNotNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline?.activeTurn)
+        val notices = MutableSharedFlow<com.openbitfun.mobile.core.feature.relay.HostCatalogNotice>()
+        store.bindCatalog(notices); runCurrent()
+        transport.commands.clear()
+        notices.emit(com.openbitfun.mobile.core.feature.relay.HostCatalogNotice.Changed(7, null)); runCurrent()
+        assertTrue(transport.commands.none { it.cmd == "list_sessions" || it.cmd == "get_model_catalog" })
+
+        transport.streamEvents.emit(buildJsonObject {
+            put("session_id", "s-code"); put("event", "session-state")
+            put("payload", buildJsonObject { put("status", "completed") })
+        })
+        runCurrent()
+        assertTrue(transport.commands.any { it.cmd == "list_sessions" })
+        assertTrue(transport.commands.any { it.cmd == "get_model_catalog" })
         store.stop()
     }
 
@@ -701,7 +800,7 @@ class RemoteSessionStoreTest {
         runCurrent()
 
         val create = transport.commands.first { it.cmd == "create_session" }
-        assertEquals("Remote Code Session", create.sessionName)
+        assertEquals("", create.sessionName)
         assertEquals("/repo", create.workspacePath)
         assertEquals("code", create.agentType)
         assertEquals("review the parser", transport.commands.first { it.cmd == "send_message" }.content)
@@ -1465,7 +1564,7 @@ class RemoteSessionStoreTest {
         for (supported in listOf(false, true)) {
             val transport = FakeSessionTransport().apply {
                 capabilitiesJson = if (supported) "[\"host_stream_v1\",\"dialog_steer_v1\"]" else "[\"host_stream_v1\"]"
-                initialEvents = listOf(richRecord("s-code", "active-1", 0, 1, "inprogress", "Working"))
+                initialEvents = listOf(richRecord("s-code", "t-1", 0, 1, "inprogress", "Working"))
             }
             val store = RemoteSessionStore(this, transport)
             store.dispatch(RemoteSessionIntent.Load); advanceUntilIdle()
@@ -1475,12 +1574,23 @@ class RemoteSessionStoreTest {
             store.dispatch(RemoteSessionIntent.SendMessage("s-code", "steer me", listOf(image))); runCurrent()
             val sent = transport.commands.last { it.cmd in listOf("send_message", "steer_turn") }
             assertEquals(if (supported) "steer_turn" else "send_message", sent.cmd)
-            assertEquals(if (supported) "active-1" else null, sent.turnId)
+            assertEquals(if (supported) "t-1" else null, sent.turnId)
             assertEquals(if (supported) "steer me" else null, sent.displayContent)
             assertEquals(image.dataUrl, sent.imageContexts!!.single().dataUrl)
             val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
             assertEquals("", ready.draft)
-            assertEquals("active-1", ready.timeline?.activeTurn?.turnId)
+            assertEquals("t-1", ready.timeline?.activeTurn?.turnId)
+            assertEquals(1, ready.timeline!!.conversationRows().count {
+                it.kind == ConversationRowKind.USER && it.text == "steer me"
+            })
+            // A second submission into the same running turn is a distinct bubble.
+            store.dispatch(RemoteSessionIntent.SendMessage("s-code", "steer me", listOf(image))); runCurrent()
+            transport.streamEvents.emit(richRecord("s-code", "t-1", 0, 2, "inprogress", "Still working"))
+            runCurrent()
+            val twice = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+            assertEquals(2, twice.timeline!!.conversationRows().count {
+                it.kind == ConversationRowKind.USER && it.text == "steer me"
+            })
             store.stop()
         }
     }
@@ -1549,6 +1659,26 @@ class RemoteSessionStoreTest {
         assertFalse(ready.busy)
         assertEquals(listOf("photo-1"), ready.lastSentMessage?.imageIds)
         assertEquals("s-code", ready.lastSentMessage?.sessionId)
+        store.stop()
+    }
+
+    @Test
+    fun deleteSessionDropsNonCurrentRowAndKeepsTheOpenConversation() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Load)
+        advanceUntilIdle()
+        store.dispatch(RemoteSessionIntent.Open("s-code"))
+        runCurrent()
+
+        store.dispatch(RemoteSessionIntent.DeleteSession("s-cowork"))
+        runCurrent()
+
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(listOf("s-code", "s-agentic"), ready.sessions.map { it.id })
+        assertEquals("s-code", ready.selectedSessionId)
+        assertEquals("s-code", ready.timeline?.sessionId)
+        assertEquals("s-cowork", transport.commands.first { it.cmd == "delete_session" }.sessionId)
         store.stop()
     }
 
@@ -1877,6 +2007,79 @@ class RemoteSessionStoreTest {
         store.stop()
     }
 
+
+    @Test
+    fun hostTerminalRecordSettlesRetainedRunningTurnWithoutLosingPartialOutput() = runTest {
+        for (status in listOf("cancelled", "error", "completed")) {
+            val transport = FakeSessionTransport()
+            val store = RemoteSessionStore(this, transport)
+            store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+            transport.streamEvents.emit(richRecord("s-code", "t-1", 0, 1, "inprogress", "partial")); runCurrent()
+            assertNotNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline?.activeTurn)
+            store.dispatch(RemoteSessionIntent.UpdateDraft("continue after restart"))
+            transport.pingFailure = RelayFailure.NetworkUnreachable
+            store.dispatch(RemoteSessionIntent.SetForeground(true)); runCurrent()
+            assertEquals(ConnectionPhase.RECONNECTING, store.connectionPhase.value)
+            transport.commands.clear()
+            store.dispatch(RemoteSessionIntent.SendMessage("s-code", "continue after restart")); runCurrent()
+            assertTrue(transport.commands.none { it.cmd == "send_message" || it.cmd == "steer_turn" })
+            assertEquals("continue after restart", assertIs<RemoteSessionUiState.Ready>(store.state.value).draft)
+            transport.pingFailure = null
+            transport.streamEvents.emit(richRecord("s-code", "t-1", 0, 2, status, "partial")); runCurrent()
+            val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+            assertNull(ready.timeline?.activeTurn)
+            assertEquals("partial", ready.timeline?.persistedMessages?.last()?.text)
+            assertFalse(ready.busy)
+            transport.commands.clear()
+            store.dispatch(RemoteSessionIntent.SendMessage("s-code", "continue after restart")); runCurrent()
+            assertEquals(1, transport.commands.count { it.cmd == "send_message" && it.content == "continue after restart" })
+            assertTrue(transport.commands.none { it.cmd == "steer_turn" })
+            store.stop()
+        }
+    }
+
+    @Test
+    fun durableProjectionReplacesReorderedCorrectedAndDeletedItems() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        fun event(revision: Long, id: String, type: String, order: Int, text: String): JsonObject {
+            val base = richRecord("s-code", "t-1", 0, revision, "inprogress", text)
+            val payload = base.getValue("payload").jsonObject.toMutableMap()
+            payload["id"] = JsonPrimitive("item/$id")
+            payload["item"] = buildJsonObject {
+                put("type", type)
+                put("data", buildJsonObject {
+                    put("id", id); put("content", text); put("orderIndex", order)
+                    if (type == "tool") {
+                        put("toolName", "Read"); put("status", "completed")
+                        put("toolCall", buildJsonObject { put("id", id); put("input", buildJsonObject {}) })
+                    }
+                })
+            }
+            return JsonObject(base + ("payload" to JsonObject(payload)))
+        }
+        suspend fun emit(event: JsonObject) { transport.streamEvents.emit(event); runCurrent() }
+        fun active() = assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline!!.activeTurn!!
+        emit(event(1, "reason", "thinking", 0, "old reasoning"))
+        emit(event(2, "answer", "text", 2, "old answer"))
+        emit(event(3, "tool", "tool", 1, ""))
+        repeat(30) {
+            emit(event(4L + it, "tool", "tool", 1, ""))
+            assertEquals(listOf("thinking", "tool", "text"), active().items!!.map { it.type })
+        }
+        emit(event(40, "answer", "text", 2, "fixed"))
+        assertEquals("fixed", active().text)
+        emit(buildJsonObject {
+            put("session_id", "s-code"); put("event", "session-record")
+            put("payload", buildJsonObject {
+                put("sessionId", "s-code"); put("id", "item/reason"); put("revision", 41); put("deleted", true)
+            })
+        })
+        assertEquals(listOf("tool", "text"), active().items!!.map { it.type })
+        assertTrue(active().thinking.isNullOrEmpty())
+        store.stop()
+    }
 
     @Test
     fun durableCompletionPreservesLoadedOlderRecords() = runTest {

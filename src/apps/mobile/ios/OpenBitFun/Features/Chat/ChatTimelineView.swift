@@ -4,6 +4,11 @@ import OpenBitFunMobileCore
 import SwiftUI
 import UIKit
 
+private let timelinePerfLog = Logger(
+    subsystem: "com.openbitfun.mobile.ios",
+    category: "performance"
+)
+
 struct ChatTimelineView: View {
     @ObservedObject var model: MobileAppModel
     var onLoadOlderMessages: (() -> Void)? = nil
@@ -13,10 +18,23 @@ struct ChatTimelineView: View {
     /// is why this one number still has to be passed in.
     var bottomOverlayInset: CGFloat = 0
     @StateObject private var scrollController = TimelineScrollController()
-    @State private var historyAnchor: (id: String, top: CGFloat, firstID: String)?
 
-    var body: some View {
-        ScrollViewReader { proxy in
+    var body: some View { timelineContent() }
+
+    /// Temporary perf scaffolding: the transcript's view graph is built eagerly, so
+    /// one state update costs one full pass over the loaded rows.
+    private func timelineContent() -> some View {
+        #if DEBUG
+        let renderStartedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            let milliseconds = Int((ProcessInfo.processInfo.systemUptime - renderStartedAt) * 1_000)
+            let blocks = model.timelineRows.reduce(0) { $0 + $1.blocks.count }
+            timelinePerfLog.info(
+                "Timeline body render rows=\(model.timelineRows.count, privacy: .public) blocks=\(blocks, privacy: .public) ms=\(milliseconds, privacy: .public)"
+            )
+        }
+        #endif
+        return ScrollViewReader { _ in
             ScrollView(showsIndicators: false) {
                 VStack(spacing: MobileDesignGeometry.messageSpacing) {
                     // History is already paged by the session store. Measure the
@@ -24,25 +42,24 @@ struct ChatTimelineView: View {
                     // eager tail can repeatedly invalidate its own placement phases
                     // during keyboard dismissal and long streamed replies.
                     VStack(spacing: MobileDesignGeometry.messageSpacing) {
+                        if model.surface == .remote && model.remoteTranscriptUnconfirmed {
+                            // These rows are this device's stored copy, which stops
+                            // wherever its last write stopped — inside the turn that
+                            // was running when the app went away. Say the rest is on
+                            // its way instead of letting a half-finished turn read as
+                            // the session.
+                            HStack(spacing: 7) {
+                                ProgressView().controlSize(.small)
+                                Text(model.localized("正在同步"))
+                                    .font(MobileDesignTypography.labelSmall.font)
+                            }
+                            .foregroundStyle(OpenBitFunTheme.muted)
+                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .accessibilityIdentifier("timeline.syncing")
+                        }
                         if model.surface == .remote && model.remoteHasMoreMessages {
                             Button {
-                                #if DEBUG
-                                Logger(subsystem: "com.openbitfun.mobile.ios", category: "timeline-scroll").info("History capture frames=\(scrollController.rowFrames.count)")
-                                #endif
-                                if let row = scrollController.rowFrames.filter({ $0.value.maxY > 0 })
-                                    .min(by: { $0.value.minY < $1.value.minY })
-                                {
-                                    historyAnchor = (row.key, row.value.minY, model.timelineRows.first?.id ?? "")
-                                    #if DEBUG
-                                    Logger(subsystem: "com.openbitfun.mobile.ios", category: "timeline-scroll").info("History capture top=\(row.value.minY) height=\(row.value.height)")
-                                    #endif
-                                }
-                                scrollController.stopFollowing()
-                                if let onLoadOlderMessages {
-                                    onLoadOlderMessages()
-                                } else {
-                                    model.loadOlderRemoteMessages()
-                                }
+                                requestOlderHistoryPage()
                             } label: {
                                 HStack(spacing: 7) {
                                     if model.remoteHistoryLoading { ProgressView().controlSize(.small) }
@@ -69,59 +86,41 @@ struct ChatTimelineView: View {
                     OpenBitFunTheme.transparent.frame(height: 1).id("timeline-bottom")
                 }
                 .padding(.horizontal, MobileDesignGeometry.contentGutter)
-                .padding(.top, MobileDesignGeometry.timelineTopPadding)
-                .padding(.bottom, 14)
+                // No top padding of its own: the top overlay's inset already ends
+                // where the header's fade does, which is the same content start
+                // Android's contentPadding and HarmonyOS's contentStartOffset use.
+                .padding(.bottom, 14 + scrollController.historyBottomSpace)
                 .background(TimelineScrollProbe(controller: scrollController))
             }
             .coordinateSpace(name: "chat-timeline")
             .onPreferenceChange(TimelineRowFramesKey.self) { frames in
                 scrollController.rowFrames = frames
-                // Apply corrections from this measurement directly. Publishing
-                // frames into State adds a second, potentially stale layout pass.
-                guard let anchor = historyAnchor else { return }
-                if scrollController.isUserScrolling {
-                    historyAnchor = nil
-                } else if historyRestoreRequest != nil, model.timelineRows.first?.id != anchor.firstID,
-                    let frame = frames[anchor.id]
-                {
-                    // Preserve the actual visible row, including its partial offset,
-                    // rather than guessing from a lazy stack's total height.
-                    scrollController.preserveAnchor(displacement: frame.minY - anchor.top)
-                }
+                scrollController.restoreHistoryAnchor()
             }
-            .task(id: historyRestoreRequest) {
-                #if DEBUG
-                Logger(subsystem: "com.openbitfun.mobile.ios", category: "timeline-scroll").info("History task available=\(historyRestoreRequest != nil)")
-                #endif
-                guard let request = historyRestoreRequest else { return }
-                await Task.yield()
-                guard !Task.isCancelled, !scrollController.isUserScrolling,
-                    historyRestoreRequest == request
-                else { return }
-                // Explicitly key restoration by both the captured anchor and the
-                // new transcript. State used only inside callbacks may otherwise
-                // arrive after the list's first layout notification.
-                proxy.scrollTo(scrollTargetID(request.id), anchor: .top)
-                await Task.yield()
-                guard !Task.isCancelled, historyRestoreRequest == request else { return }
-                if let frame = scrollController.rowFrames[request.id] {
-                    scrollController.preserveAnchor(displacement: frame.minY - request.top)
-                }
+            .onChange(of: model.remoteHistoryLoading) { loading in
+                scrollController.historyLoadingChanged(loading)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onAppear { scrollController.open(session: model.selectedSessionID) }
+            .onAppear {
+                scrollController.open(session: model.selectedSessionID)
+                // Reaching the start of the loaded transcript asks for the next
+                // page by itself; the row stays as the loading and retry state.
+                // Layout changes and busy gestures do not queue another page.
+                scrollController.onHistoryStartReached = {
+                    guard canRequestOlderHistoryPage else { return false }
+                    requestOlderHistoryPage()
+                    return true
+                }
+            }
             .onChange(of: model.selectedSessionID) { session in
-                historyAnchor = nil
                 scrollController.open(session: session)
             }
             .onChange(of: model.composerSendGeneration) { _ in
-                historyAnchor = nil
                 scrollController.followBottom()
             }
             .overlay(alignment: .bottomTrailing) {
                 if !scrollController.followsBottom {
                     Button {
-                        historyAnchor = nil
                         scrollController.followBottom()
                     } label: {
                         Image(systemName: "chevron.down")
@@ -142,22 +141,6 @@ struct ChatTimelineView: View {
             }
             .background(OpenBitFunTheme.page)
         }
-    }
-
-    private struct HistoryRestoreRequest: Equatable {
-        let session: String
-        let firstID: String
-        let id: String
-        let top: CGFloat
-    }
-
-    private var historyRestoreRequest: HistoryRestoreRequest? {
-        guard let anchor = historyAnchor, let first = model.timelineRows.first?.id,
-            first != anchor.firstID
-        else { return nil }
-        return HistoryRestoreRequest(
-            session: model.selectedSessionID, firstID: first,
-            id: anchor.id, top: anchor.top)
     }
 
     private var currentTurnStart: Int {
@@ -193,6 +176,33 @@ struct ChatTimelineView: View {
 
     private var historyRows: ArraySlice<MobileConversationRow> {
         model.timelineRows.prefix(currentTurnStart)
+    }
+
+    /// Whether the store would accept another page right now.
+    ///
+    /// A failed page stays a tap on the row: an automatic retry would keep
+    /// asking a host that has already said no, and the row is on screen saying so.
+    private var canRequestOlderHistoryPage: Bool {
+        model.surface == .remote && (onLoadOlderMessages != nil || model.remoteConnected) && model.remoteHasMoreMessages
+            && !model.remoteHistoryLoading && !model.remoteHistoryFailed && !model.busy
+    }
+
+    /// The one place a history page is asked for, from the row and from arriving
+    /// at the start of the loaded transcript.
+    ///
+    /// The anchor is captured before the request so the page that lands above the
+    /// reader does not move what they were reading, and following the bottom is
+    /// dropped so a page arriving cannot drag the viewport away from it.
+    private func requestOlderHistoryPage() {
+        guard onLoadOlderMessages != nil || model.remoteConnected,
+              model.remoteHasMoreMessages, !model.busy, !model.remoteHistoryLoading,
+              scrollController.beginHistoryRequest() else { return }
+        if let onLoadOlderMessages {
+            onLoadOlderMessages()
+            scrollController.historyLoadingChanged(model.remoteHistoryLoading)
+        } else {
+            model.loadOlderRemoteMessages()
+        }
     }
 
     private func timelineRow(_ row: MobileConversationRow, identity: String? = nil) -> some View {
@@ -317,11 +327,7 @@ private struct ConversationRowView: View, Equatable {
                 .background(OpenBitFunTheme.soft)
                 .clipShape(RoundedRectangle(cornerRadius: MobileDesignGeometry.messageBubbleRadius))
             }
-            if row.pending {
-                Text(model.localized("正在发送"))
-                    .font(MobileDesignTypography.labelSmall.font)
-                    .foregroundStyle(OpenBitFunTheme.muted)
-            }
+            messageTimestamp
             if row.showRetry {
                 Button { model.retryMessage(row.text, images: row.images) } label: {
                     Label(model.localized("重新发送"), systemImage: "arrow.clockwise")
@@ -359,8 +365,19 @@ private struct ConversationRowView: View, Equatable {
                 }
                 .buttonStyle(.plain)
             }
+            messageTimestamp
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var messageTimestamp: some View {
+        if let timestamp = row.timestamp {
+            Text(MobileLocalization.messageTime(timestamp, language: model.appLanguage))
+                .font(MobileDesignTypography.labelSmall.font)
+                .foregroundStyle(OpenBitFunTheme.muted)
+                .accessibilityIdentifier("chat.messageTimestamp")
+        }
     }
 
     private func assistantFailure(_ error: String) -> some View {
@@ -1092,15 +1109,9 @@ private struct TimelineImageGrid: View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 7) {
             ForEach(images) { image in
                 Button { selected = image } label: {
-                    if let uiImage = image.uiImage {
-                        Image(uiImage: uiImage).resizable().scaledToFill()
-                            .frame(height: images.count == 1 ? 180 : 112).frame(maxWidth: .infinity)
-                            .clipped().clipShape(RoundedRectangle(cornerRadius: 14))
-                    } else {
-                        Image(systemName: "photo").foregroundStyle(OpenBitFunTheme.muted)
-                            .frame(maxWidth: .infinity, minHeight: 112).background(OpenBitFunTheme.soft)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                    }
+                    AsyncDecodedImage(dataURL: image.dataURL, fill: true)
+                        .frame(height: images.count == 1 ? 180 : 112).frame(maxWidth: .infinity)
+                        .clipped().clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
             }
@@ -1116,7 +1127,7 @@ private struct FullScreenTimelineImage: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             OpenBitFunTheme.mediaBackground.ignoresSafeArea()
-            if let uiImage = image.uiImage { Image(uiImage: uiImage).resizable().scaledToFit().ignoresSafeArea() }
+            AsyncDecodedImage(dataURL: image.dataURL).ignoresSafeArea()
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(OpenBitFunTheme.contentOnAction)
                     .frame(width: 44, height: 44).background(OpenBitFunTheme.mediaControlBackground).clipShape(Circle())
@@ -1126,10 +1137,42 @@ private struct FullScreenTimelineImage: View {
     }
 }
 
-private extension MobileTimelineImage {
-    var uiImage: UIImage? {
-        guard let marker = dataURL.range(of: "base64,") else { return nil }
-        return Data(base64Encoded: String(dataURL[marker.upperBound...])).flatMap(UIImage.init(data:))
+/// Decode once off the UI executor, and discard results after source changes.
+struct AsyncDecodedImage: View {
+    var data: Data? = nil
+    var dataURL: String? = nil
+    var fill = false
+    @State private var image: UIImage?
+    @State private var loading = true
+    private struct Source: Equatable { let data: Data?; let url: String? }
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: fill ? .fill : .fit)
+            } else if loading {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Image(systemName: "photo").foregroundStyle(OpenBitFunTheme.muted)
+            }
+        }
+        .task(id: Source(data: data, url: dataURL)) {
+            image = nil
+            loading = true
+            let bytes = data
+            let url = dataURL
+            let decoded = await Task.detached(priority: .userInitiated) {
+                let source: Data?
+                if let bytes { source = bytes }
+                else if let url, let marker = url.range(of: "base64,") {
+                    source = Data(base64Encoded: String(url[marker.upperBound...]))
+                } else { source = nil }
+                guard let source, let original = UIImage(data: source) else { return nil as UIImage? }
+                return original.preparingForDisplay() ?? original
+            }.value
+            guard !Task.isCancelled else { return }
+            image = decoded
+            loading = false
+        }
     }
 }
 
@@ -1229,6 +1272,85 @@ private struct CollapsedToolsRow: View {
     }
 }
 
+
+private struct MobileTodoItem: Identifiable {
+    let id: String
+    let content: String
+    let status: String
+}
+
+private struct TodoToolCard: View {
+    let tool: MobileTimelineTool
+    @ObservedObject var model: MobileAppModel
+    @Binding var expandedToolID: String?
+    private var expanded: Bool { expandedToolID == tool.id }
+
+    private var items: [MobileTodoItem] {
+        let values = [tool.input, tool.output]
+        for value in values {
+            guard let data = value.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let todos = object["todos"] as? [[String: Any]] else { continue }
+            let parsed = todos.enumerated().compactMap { index, raw -> MobileTodoItem? in
+                guard let content = raw["content"] as? String, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                return MobileTodoItem(id: "\(tool.id)-\(index)", content: content, status: raw["status"] as? String ?? "pending")
+            }
+            if !parsed.isEmpty { return parsed }
+        }
+        return []
+    }
+
+    var body: some View {
+        let done = items.filter { $0.status.lowercased() == "completed" }.count
+        let active = items.first(where: { $0.status.lowercased() == "in_progress" }) ?? items.first(where: { $0.status.lowercased() == "pending" })
+        let summary = items.isEmpty ? tool.target : (done == items.count ? model.localized("已完成") : active?.content ?? items[0].content)
+        VStack(alignment: .leading, spacing: 9) {
+            Button { withAnimation(.easeOut(duration: 0.18)) { expandedToolID = expanded ? nil : tool.id } } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "checklist").font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(OpenBitFunTheme.statusSuccess).frame(width: 22, height: 22)
+                        .background(OpenBitFunTheme.statusSuccess.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.localized("更新待办")).font(MobileDesignTypography.bodySmall.font.weight(.semibold))
+                        Text(summary).font(MobileDesignTypography.labelSmall.font)
+                            .foregroundStyle(OpenBitFunTheme.muted).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if !items.isEmpty { Text("\(done)/\(items.count)").font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted) }
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right").font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted)
+                }.frame(minHeight: 32).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("tool.toggle.\(tool.id)")
+            if expanded && !items.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(OpenBitFunTheme.line)
+                            Capsule().fill(OpenBitFunTheme.muted).frame(width: geometry.size.width * CGFloat(done) / CGFloat(max(items.count, 1)))
+                        }
+                    }.frame(height: 2)
+
+                    ForEach(items) { item in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(item.status.lowercased() == "completed" ? "✓" : item.status.lowercased() == "cancelled" ? "×" : item.status.lowercased() == "in_progress" ? "•" : "○")
+                                .foregroundStyle(OpenBitFunTheme.muted)
+                            Text(item.content).font(MobileDesignTypography.bodySmall.font)
+                                .foregroundStyle(item.status.lowercased() == "in_progress" ? OpenBitFunTheme.ink : OpenBitFunTheme.muted)
+                        }
+                    }
+                }.padding(.leading, 31)
+            }
+            if expanded && items.isEmpty && !tool.output.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.localized("输出")).font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted)
+                    Text(tool.output).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(OpenBitFunTheme.muted).lineLimit(5)
+                }
+            }
+        }
+        .padding(10).background(OpenBitFunTheme.soft, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(OpenBitFunTheme.line, lineWidth: 1))
+    }
+}
+
 private struct ToolStatusRow: View {
     let tool: MobileTimelineTool
     @ObservedObject var model: MobileAppModel
@@ -1246,7 +1368,7 @@ private struct ToolStatusRow: View {
             .subtracting(tool.actions.contains("ANSWER") ? ["CANCEL"] : [])
     }
 
-    private var emphasized: Bool { !transcriptActions.isEmpty || expanded || tool.phase == "FAILED" }
+    private var emphasized: Bool { !transcriptActions.isEmpty || expanded }
 
     var mailboxQuestion = false
 
@@ -1260,7 +1382,11 @@ private struct ToolStatusRow: View {
         }
     }
 
+    @ViewBuilder
     private var toolRow: some View {
+        if isTodoTool {
+            TodoToolCard(tool: tool, model: model, expandedToolID: $expandedToolID)
+        } else {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 if !tool.input.isEmpty || !tool.output.isEmpty || !tool.filePath.isEmpty {
@@ -1343,6 +1469,11 @@ private struct ToolStatusRow: View {
         .padding(emphasized ? 10 : 0).background(emphasized ? OpenBitFunTheme.soft : OpenBitFunTheme.transparent)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay { if emphasized { RoundedRectangle(cornerRadius: 14).stroke(OpenBitFunTheme.line, lineWidth: 1) } }
+        }
+    }
+
+    private var isTodoTool: Bool {
+        tool.kind == "TODO" || tool.operation == "UPDATE_TODOS" || tool.name.lowercased() == "todowrite"
     }
 
     private func compactApprovalAction(_ title: String, primary: Bool, action: @escaping () -> Void) -> some View {
@@ -1519,7 +1650,6 @@ private struct ToolStatusRow: View {
         let target = tool.target.isEmpty ? "" : " · \(tool.target)"
         return switch tool.phase {
         case "RUNNING": model.localizedFormat("正在%@%@", operationLabel, target)
-        case "FAILED": model.localizedFormat("%@失败%@", operationLabel, target)
         case "PENDING_CONFIRMATION": model.localizedFormat("等待确认 · %@", operationLabel)
         case "WAITING": model.localizedFormat("等待执行 · %@", operationLabel)
         default: "\(operationLabel)\(target)"
@@ -1546,11 +1676,11 @@ private struct ToolStatusRow: View {
     }
 
     private var statusColor: Color {
-        switch tool.phase { case "FAILED": OpenBitFunTheme.statusDanger; case "COMPLETED": OpenBitFunTheme.statusSuccess; default: OpenBitFunTheme.muted }
+        switch tool.phase { case "COMPLETED": OpenBitFunTheme.statusSuccess; default: OpenBitFunTheme.muted }
     }
 
     private var statusMark: String {
-        switch tool.phase { case "FAILED": "!"; case "PENDING_CONFIRMATION": "?"; case "CANCELLED": "×"; case "COMPLETED": "✓"; default: "•" }
+        switch tool.phase { case "PENDING_CONFIRMATION": "?"; case "CANCELLED": "×"; case "COMPLETED": "✓"; default: "•" }
     }
 }
 

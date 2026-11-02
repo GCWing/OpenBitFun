@@ -1,3 +1,8 @@
+import { Icon, LayersPlusIcon } from "@openbitfun/ui";
+import { toolsForComponent } from '@openbitfun/flow-chat-presentation/registry';
+import { semanticToolCardPreviews } from './SemanticToolCardPreview';
+import { createScenarioClock, execScenarios, execSnapshot, type ExecToolName } from '@openbitfun/flow-chat-presentation/scenarios';
+import { ScenarioCommand, FlowGroupPreview, ThinkingPreview, ExplorePreview, ContextLoadPreview, RuntimeStatusPreview } from './FlowChatScenarios';
 import {
   Fragment,
   useState,
@@ -7,9 +12,11 @@ import {
   Archive,
   ArrowDownToLine,
   ArrowUp,
-  CheckCircle2,
+  BookOpen,
+  CalendarClock,
   Circle,
   Code2,
+  Cpu,
   FileEdit,
   FileText,
   FolderOpen,
@@ -26,18 +33,16 @@ import {
   MessageSquare,
   Mic,
   Monitor,
+  MousePointer,
   Plus,
-  Pencil,
   Rocket,
   Search,
   SearchCheck,
   Shield,
   SquareTerminal,
   Terminal,
-  Timer,
   Trash2,
   User,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { IconButton } from "@openbitfun/ui";
@@ -57,12 +62,16 @@ import {
   ChatComposerQueueItemContent,
   ChatComposerQueueList,
   ChatComposerQueueTitle,
-  CommandToolCard,
   ContextCompressionToolCard,
+  ControlHubToolCard,
+  ListModelsToolCard,
+  CronToolCard,
   DefaultToolCard,
   DirectoryListToolCard,
   FileDiffToolCard,
   FileOperationToolCard,
+  FlowChatMetricDetails,
+  FlowChatTurnMetrics,
   GetToolSpecToolCard,
   GitToolCard,
   GlobSearchToolCard,
@@ -82,6 +91,7 @@ import {
   ToolCardChangeSummary,
   ToolCardActions,
   ToolCardCopyButton,
+  ToolRelationRow,
   ViewImageToolCard,
   WebFetchToolCard,
   WebSearchToolCard,
@@ -92,6 +102,7 @@ import {
 } from "@openbitfun/ui/flow-chat";
 import { componentRegistry } from "@openbitfun/ui/registry";
 import { useI18n } from "../i18n";
+import { usePresentationFormatNumber, usePresentationTranslate } from "./flowChatTranslation";
 import "./FlowChatPreviewRegistry.css";
 
 type RegisteredComponent = (typeof componentRegistry)[number];
@@ -131,6 +142,44 @@ type FlowChatPreviewDefinitionMap = {
 };
 
 type PreviewProps = FlowChatPreviewRenderOptions;
+
+function TurnMetricsPreview({ state, interactive }: PreviewProps) {
+  const t = usePresentationTranslate();
+  const formatNumber = usePresentationFormatNumber();
+  const unknown = state === "unknown";
+  const tokenValue = formatNumber(24800);
+  const rateValue = t("modelRound.metrics.rateValue", { value: formatNumber(42) });
+  const tokenRows = [
+    { label: t("modelRound.metrics.total"), value: tokenValue },
+    { label: t("modelRound.metrics.input"), value: formatNumber(22400) },
+    { label: t("modelRound.metrics.output"), value: formatNumber(2400) },
+    ...(!unknown ? [{ label: t("modelRound.metrics.cache"), value: `${formatNumber(62.5)}%` }] : []),
+  ];
+  const rateRows = [{ label: t("modelRound.metrics.averageRate"), value: rateValue }];
+
+  return <FlowChatTurnMetrics
+    label={t("modelRound.metrics.label")}
+    tokenValue={tokenValue}
+    tokenDescription={tokenRows.map(row => `${row.label}: ${row.value}`).join(" · ")}
+    tokenDetails={<FlowChatMetricDetails rows={tokenRows} />}
+    cacheHitRate={unknown ? null : 0.625}
+    rateValue={unknown ? null : rateValue}
+    rateDescription={rateRows.map(row => `${row.label}: ${row.value}`).join(" · ")}
+    rateDetails={<FlowChatMetricDetails rows={rateRows} note={t("modelRound.metrics.rateBasis")} />}
+    speedLevel={unknown ? null : 3}
+    focusable={interactive}
+  />;
+}
+
+function RelationPreview({ state, interactive }: PreviewProps) {
+  const t = usePresentationTranslate();
+  const result = state === 'error' ? t('toolCards.default.failed') : state === 'loading'
+    ? t('toolCards.interaction.sendingMessage') : t('toolCards.interaction.messageSent');
+  return <ToolRelationRow status={resolveStatus(state)} result={result}
+    interaction={{ operation: 'send', source: { kind: 'session', label: t('toolCards.interaction.currentSession') },
+      target: { kind: 'agent', label: 'Maintainer' } }}
+    details={interactive ? result : undefined} resultLabel={t('toolCards.interaction.inspectMessage')} />;
+}
 
 function ChatComposerPreview({ interactive, state }: PreviewProps) {
   const [value, setValue] = useState(state === "expanded" ? "Review the attached project notes and explain how the implementation should behave across narrow and wide windows." : "");
@@ -207,7 +256,7 @@ function ChatComposerPreview({ interactive, state }: PreviewProps) {
                   />
                   <IconButton
                     aria-label="Edit"
-                    icon={<Pencil />}
+                    icon={<Icon name="edit" />}
                     size="xs"
                   />
                 </ChatComposerQueueItemActions>
@@ -385,99 +434,15 @@ function ContextCompressionPreview({ state }: PreviewProps) {
   );
 }
 
-const COMMAND_SAMPLES = {
-  Bash: {
-    actionKey: "components.preview.flowChat.runCommand",
-    command: "pnpm run design-system:check",
-    output: "✓ packages built\n✓ public contracts verified",
-  },
-  ExecCommand: {
-    actionKey: "components.preview.flowChat.runCommand",
-    command: "pnpm --dir design-system --filter @openbitfun/ui test",
-    output: "57 tests passed",
-  },
-  ExecControl: {
-    actionKey: "components.preview.flowChat.interruptProcess",
-    command: "interrupt session 9182",
-    output: "Process interrupted · exit 130",
-  },
-  WriteStdin: {
-    actionKey: "components.preview.flowChat.pollProcess",
-    command: "poll session 9182",
-    output: "Process is still running",
-  },
-} as const;
-
 function CommandPreview({ interactive, specimen, state }: PreviewProps) {
-  const { t } = useI18n();
-  const sample = COMMAND_SAMPLES[
-    specimen?.tool && specimen.tool in COMMAND_SAMPLES
-      ? specimen.tool as keyof typeof COMMAND_SAMPLES
-      : "Bash"
-  ];
-  const [isExpanded, setIsExpanded] = useState(
-    state === "expanded" || state === "loading",
-  );
-  const status = resolveStatus(state);
-  const loading = state === "loading";
-  const completed = status === "completed";
-  const footerItems = completed ? [
-    {
-      label: t("components.preview.flowChat.exitCode"),
-      tone: "success" as const,
-      value: "0",
-    },
-    {
-      label: t("components.preview.flowChat.duration"),
-      value: "1.24s",
-    },
-  ] : [];
-  const statusSummary = completed || loading ? (
-    <span
-      className="flow-chat-tool-card-preview__duration"
-      data-status={completed ? "completed" : "running"}
-    >
-      {completed
-        ? <CheckCircle2 aria-hidden="true" />
-        : <Timer aria-hidden="true" />}
-      <span>{completed ? "1.24s" : "1.2s"}</span>
-    </span>
-  ) : undefined;
-
-  return (
-    <div className="flow-chat-tool-card-preview">
-      <CommandToolCard
-        action={t(sample.actionKey)}
-        command={sample.command}
-        copyAction={interactive ? {
-          label: t("components.preview.flowChat.copy"),
-          onPress: () => undefined,
-        } : undefined}
-        data-openbitfun-preview-state={state === "hover" ? "hover" : undefined}
-        emptyCommand={t("components.preview.flowChat.emptyCommand")}
-        error={state === "error"
-          ? t("components.preview.flowChat.commandFailed")
-          : undefined}
-        footerItems={footerItems}
-        isExpanded={isExpanded}
-        onToggle={interactive ? () => setIsExpanded((expanded) => !expanded) : undefined}
-        output={completed ? (
-          <pre className="flow-chat-tool-card-preview__output">{sample.output}</pre>
-        ) : undefined}
-        outputDensity={loading ? "compact" : "expanded"}
-        requiresConfirmation={state === "confirmation"}
-        status={status}
-        statusLabel={state === "error"
-          ? t("components.preview.flowChat.failed")
-          : undefined}
-        statusSummary={statusSummary}
-        statusTone={state === "error" ? "danger" : undefined}
-        waitingContent={loading
-          ? t("components.preview.flowChat.commandWaiting")
-          : undefined}
-      />
-    </div>
-  );
+  const [clock] = useState(createScenarioClock);
+  const toolName: ExecToolName = specimen?.tool === 'WriteStdin' || specimen?.tool === 'ExecControl' ? specimen.tool : 'ExecCommand';
+  const scenario = execScenarios.find(({ id }) => id === `${toolName}-lifecycle`)!;
+  const item = state === 'confirmation' ? execSnapshot(toolName, { status: 'pending_confirmation' })
+    : state === 'error' ? execScenarios.find(({ id }) => id === `${toolName}-error`)!.steps[1]!.item
+    : state === 'loading' ? scenario.steps[1]!.item : scenario.steps.at(-1)!.item;
+  return <ScenarioCommand item={item} clock={clock} interactive={interactive}
+    initialExpanded={state === 'expanded' ? true : undefined} previewState={state === 'hover' ? 'hover' : undefined} />;
 }
 
 function resolveFileOperation(tool?: string): FileOperationKind {
@@ -678,7 +643,7 @@ function SessionPreview({
 
 const PREVIEW_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320' viewBox='0 0 320 320'%3E%3Crect width='320' height='320' rx='32' fill='%23232a35'/%3E%3Cpath d='M60 235l64-76 42 45 31-36 63 67z' fill='%237e8ca3'/%3E%3Ccircle cx='224' cy='91' r='25' fill='%23c6cfdb'/%3E%3C/svg%3E";
 
-type StandardAmbientPreviewKind = "default" | "run-code" | "todo" | "view-image" | "web-fetch";
+type StandardAmbientPreviewKind = "cron" | "default" | "run-code" | "todo" | "view-image" | "web-fetch" | "list-models" | "control-hub";
 
 function StandardAmbientPreview({
   interactive,
@@ -697,7 +662,19 @@ function StandardAmbientPreview({
   };
 
   let card: ReactNode;
-  if (kind === "run-code") {
+  if (kind === "list-models") {
+    card = <ListModelsToolCard {...common} action={t("runtimeCards.modelsTitle")}
+      models={[]} modelsLabel={t("runtimeCards.modelsTitle")} modelIdLabel={t("runtimeCards.modelId")}
+      emptyContent={state === "loading" ? undefined : t("runtimeCards.emptyModels")}
+      error={state === "error" ? t("components.preview.flowChat.failed") : undefined}
+      summary={state === "loading" ? t("components.preview.flowChat.running") : t("runtimeCards.modelsTitle")} />;
+  } else if (kind === "control-hub") {
+    card = <ControlHubToolCard {...common} action={t("runtimeCards.controlTitle")} domain="meta" attention="ambient"
+      resultLabel={t("runtimeCards.result")} fields={[{ label: t("runtimeCards.controlTitle"), value: "meta.capabilities" }]}
+      requiresConfirmation={state === "confirmation"}
+      error={state === "error" ? t("components.preview.flowChat.failed") : undefined}
+      summary={state === "loading" ? t("components.preview.flowChat.running") : "meta.capabilities"} />;
+  } else if (kind === "run-code") {
     card = (
       <RunCodeToolCard
         {...common}
@@ -753,6 +730,25 @@ function StandardAmbientPreview({
         statusText={state === "loading" ? t("components.preview.flowChat.running") : "Viewed image"}
       />
     );
+  } else if (kind === "cron") {
+    card = (
+      <CronToolCard
+        {...common}
+        action="Scheduled job:"
+        error={state === "error" ? t("components.preview.flowChat.failed") : undefined}
+        fields={[
+          { label: "Schedule:", value: "Every 30 minutes" },
+          { label: "Next run:", value: "Today 14:30" },
+          { label: "Enabled:", value: "Yes" },
+          { label: "Job id:", value: "job_7f3a91" },
+        ]}
+        message={isExpanded ? "Summarize the open pull requests and report blockers." : undefined}
+        messageLabel="Payload"
+        summary={state === "error"
+          ? t("components.preview.flowChat.failed")
+          : "Created Nightly repository review"}
+      />
+    );
   } else {
     card = (
       <TodoToolCard
@@ -797,18 +793,12 @@ function ConcreteProminentPreview({
   if (kind === "agent") {
     card = (
       <AgentControlToolCard
-        {...common}
+        status={status}
         agentName="reviewer"
-        agentModel="gpt-5.6"
-        interruptAction={state === "loading" ? {
-          label: "Stop agent",
-          onPress: () => undefined,
-        } : undefined}
         onOpenAgent={interactive ? () => undefined : undefined}
         openAgentLabel="Open agent"
-        prompt={<p>Review the FlowChat migration boundary and public contracts.</p>}
-        statusLabel={state === "error" ? t("components.preview.flowChat.failed") : undefined}
-        statusMeta={<span><Timer aria-hidden="true" />{state === "loading" ? "4s" : "12s"}</span>}
+        statusLabel={state === "error" ? t("components.preview.flowChat.failed")
+          : state === "loading" ? t("components.preview.flowChat.running") : undefined}
         statusTone={state === "error" ? "danger" : "neutral"}
         summary="Review the shared FlowChat card boundary"
       />
@@ -884,8 +874,10 @@ function concreteCodeSample(name: string) {
 
 function AskUserPreview({ interactive, state }: PreviewProps) {
   const { t } = useI18n();
-  const completed = state === "completed" || state === "expanded";
+  const formatNumber = usePresentationFormatNumber();
+  const completed = state === "completed";
   const startsSelected = completed
+    || state === "submitted"
     || state === "selected"
     || state === "submitting"
     || state === "disabled";
@@ -893,7 +885,7 @@ function AskUserPreview({ interactive, state }: PreviewProps) {
     startsSelected ? { version: ["beta"] } : {},
   );
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
-  const [isExpanded, setIsExpanded] = useState(state === "expanded");
+  const [submitted, setSubmitted] = useState(state === "submitted");
   const componentState: AskUserState = state === "loading"
     ? "loading"
     : state === "error"
@@ -902,7 +894,7 @@ function AskUserPreview({ interactive, state }: PreviewProps) {
         ? "submitting"
         : completed
           ? "completed"
-          : "asking";
+          : submitted ? "submitted" : "asking";
   const questions = [{
     customOption: {
       description: t("components.preview.flowChat.askUserOtherDescription"),
@@ -912,6 +904,7 @@ function AskUserPreview({ interactive, state }: PreviewProps) {
       value: "other",
     },
     id: "version",
+    label: t("components.preview.flowChat.askUserSummaryPrefix"),
     options: [
       {
         description: t("components.preview.flowChat.askUserBetaDescription"),
@@ -933,13 +926,7 @@ function AskUserPreview({ interactive, state }: PreviewProps) {
     selectionMode: "single" as const,
   }];
   const selectedValue = answers.version?.[0];
-  const selectedLabel = selectedValue === "stable"
-    ? "v0.2.18"
-    : selectedValue === "nightly"
-      ? t("components.preview.flowChat.askUserNightly")
-      : selectedValue === "other"
-        ? customAnswers.version || t("components.preview.flowChat.askUserOther")
-        : "v0.2.19-beta.1 (Recommended)";
+  const hasAnswer = Boolean(selectedValue && (selectedValue !== "other" || customAnswers.version?.trim()));
   const statusLabel = componentState === "loading"
     ? t("components.preview.flowChat.askUserLoading")
     : componentState === "error"
@@ -954,48 +941,87 @@ function AskUserPreview({ interactive, state }: PreviewProps) {
         answers={answers}
         customAnswers={customAnswers}
         disabled={state === "disabled"}
-        expanded={completed ? isExpanded : undefined}
-        header={completed ? undefined : t("components.preview.flowChat.askUserHeader")}
+        navigation={{
+          backLabel: t("components.preview.flowChat.askUserBack"),
+          nextLabel: t("components.preview.flowChat.askUserNext"),
+          progressLabel: (current, total) => t("components.preview.flowChat.askUserProgress", {
+            current: formatNumber(current), total: formatNumber(total),
+          }),
+          selectionLabel: (selected, total) => t("components.preview.flowChat.askUserSelection", {
+            selected: formatNumber(selected), total: formatNumber(total),
+          }),
+        }}
         onAnswersChange={interactive ? (questionId, values) => {
           setAnswers((current) => ({ ...current, [questionId]: values }));
         } : undefined}
         onCustomAnswerChange={interactive ? (questionId, value) => {
           setCustomAnswers((current) => ({ ...current, [questionId]: value }));
         } : undefined}
-        onExpandedChange={interactive ? setIsExpanded : undefined}
-        onSubmit={interactive ? () => undefined : undefined}
+        onSubmit={interactive ? () => setSubmitted(true) : undefined}
         questions={componentState === "error" ? [] : questions}
         state={componentState}
-        statusLabel={completed ? undefined : statusLabel}
-        submitDisabled={!answers.version?.length}
-        submitLabel={completed || componentState === "loading" || componentState === "error"
+        statusLabel={completed || submitted || componentState === "asking" ? undefined : statusLabel}
+        submitDisabled={!hasAnswer}
+        submitLabel={completed || submitted || componentState === "loading" || componentState === "error"
           ? undefined
           : t("components.preview.flowChat.askUserSubmit")}
         submittingLabel={t("components.preview.flowChat.askUserSubmitting")}
-        summaryDetail={completed
-          ? `${t("components.preview.flowChat.askUserSummaryPrefix")}: ${selectedLabel}`
-          : undefined}
-        summaryLabel={completed
-          ? t("components.preview.flowChat.askUserAnswered")
-          : undefined}
       />
     </div>
   );
 }
 
 export const flowChatPreviewDefinitions = {
+  ...semanticToolCardPreviews,
+  ListModelsToolCard: {
+    attention: "ambient", icon: Cpu, section: "tool-card",
+    codeSample: () => '<ListModelsToolCard status={status} action={label} models={models} modelsLabel={label} modelIdLabel={idLabel} isExpanded={expanded} onToggle={toggle} />',
+    render: (options) => <StandardAmbientPreview {...options} kind="list-models" />,
+    specimens: toolsForComponent("ListModelsToolCard").map((tool) => ({ tool })),
+  },
+  ControlHubToolCard: {
+    attention: "adaptive", icon: MousePointer, section: "tool-card",
+    codeSample: () => '<ControlHubToolCard status={status} action={label} attention={attention} domain={domain} resultLabel={resultLabel} fields={fields} isExpanded={expanded} onToggle={toggle} />',
+    render: (options) => <StandardAmbientPreview {...options} kind="control-hub" />,
+    specimens: toolsForComponent("ControlHubToolCard").map((tool) => ({ tool })),
+  },
+  ThinkingBlock: {
+    attention: "ambient", icon: Info, section: "framework", specimens: [],
+    codeSample: () => '<ThinkingBlock expanded={expanded} label={label} onToggle={toggle}>{content}</ThinkingBlock>',
+    render: (options) => <ThinkingPreview {...options} />,
+  },
+  FlowGroup: {
+    attention: "ambient", icon: LayersPlusIcon, section: "framework", specimens: [],
+    codeSample: () => '<FlowGroup expanded={expanded} summary={summary} onExpandedChange={setExpanded}>{items}</FlowGroup>',
+    render: (options) => <FlowGroupPreview {...options} />,
+  },
+  ExploreGroup: {
+    attention: "ambient", icon: Search, section: "framework", specimens: [],
+    codeSample: () => '<ExploreGroup expanded={expanded} summary={summary} onToggle={toggle}>{items}</ExploreGroup>',
+    render: (options) => <ExplorePreview {...options} />,
+  },
+  ContextLoadGroup: {
+    attention: "ambient", icon: LayersPlusIcon, section: "framework", specimens: [],
+    codeSample: () => '<ContextLoadGroup expanded={expanded} summary={summary} itemCount={count} onToggle={toggle}>{items}</ContextLoadGroup>',
+    render: (options) => <ContextLoadPreview {...options} />,
+  },
+  FlowChatRuntimeStatus: {
+    attention: "ambient", icon: Hourglass, section: "framework", specimens: [],
+    codeSample: () => '<FlowChatRuntimeStatus label={hint} visible={visible} />',
+    render: (options) => <RuntimeStatusPreview {...options} />,
+  },
+  FlowChatTurnMetrics: {
+    attention: "ambient", icon: Cpu, section: "framework", specimens: [],
+    codeSample: () => '<FlowChatTurnMetrics label={label} tokenValue={tokens} tokenDescription={tokenDescription} cacheHitRate={cacheHitRate} rateValue={rate} rateDescription={rateDescription} speedLevel={speedLevel} />',
+    render: (options) => <TurnMetricsPreview {...options} />,
+  },
   AgentControlToolCard: {
     attention: "prominent",
     codeSample: concreteCodeSample("AgentControlToolCard"),
     icon: User,
     render: (options) => <ConcreteProminentPreview {...options} kind="agent" />,
     section: "tool-card",
-    specimens: [
-      { tool: "AgentSpawn" },
-      { tool: "AgentSendInput" },
-      { tool: "Task" },
-      { tool: "LaunchReviewAgent" },
-    ],
+    specimens: toolsForComponent("AgentControlToolCard").map((tool) => ({ tool })),
   },
   AgentWaitToolCard: {
     attention: "ambient",
@@ -1003,7 +1029,13 @@ export const flowChatPreviewDefinitions = {
     icon: Hourglass,
     render: (options) => <ActivityPreview {...options} kind="agent-wait" />,
     section: "tool-card",
-    specimens: [{ tool: "AgentWait" }],
+    specimens: toolsForComponent("AgentWaitToolCard").map((tool) => ({ tool })),
+  },
+  ToolRelationRow: {
+    attention: 'adaptive', icon: MessageSquare, section: 'framework',
+    codeSample: () => '<ToolRelationRow interaction={relationship} result={outcome} status="completed" details={message} />',
+    render: (options) => <RelationPreview {...options} />,
+    specimens: toolsForComponent('ToolRelationRow').map((tool) => ({ tool })),
   },
   AmbientToolCard: {
     attention: "ambient",
@@ -1011,15 +1043,15 @@ export const flowChatPreviewDefinitions = {
     icon: FileText,
     render: (options) => <FrameworkPreview {...options} kind="ambient" />,
     section: "framework",
-    specimens: [],
+    specimens: toolsForComponent("AmbientToolCard").map((tool) => ({ tool })),
   },
   AskUser: {
     attention: "prominent",
-    codeSample: (t) => `import { AskUser } from "@openbitfun/ui/flow-chat";\n\n<AskUser\n  answers={answers}\n  expanded\n  onAnswersChange={setAnswer}\n  questions={questions}\n  state="completed"\n  summaryLabel="${t("components.preview.flowChat.askUserAnswered")}"\n  summaryDetail="${t("components.preview.flowChat.askUserSummaryPrefix")}: v0.2.19-beta.1 (Recommended)"\n/>`,
+    codeSample: () => `import { AskUser } from "@openbitfun/ui/flow-chat";\n\n<AskUser\n  answers={answers}\n  customAnswers={customAnswers}\n  questions={questions}\n  state="completed"\n/>`,
     icon: MessageSquare,
     render: (options) => <AskUserPreview {...options} />,
     section: "tool-card",
-    specimens: [{ tool: "AskUserQuestion" }],
+    specimens: toolsForComponent("AskUser").map((tool) => ({ tool })),
   },
   ChatComposer: {
     attention: "adaptive",
@@ -1027,7 +1059,7 @@ export const flowChatPreviewDefinitions = {
     icon: MessageSquare,
     render: (options) => <ChatComposerPreview {...options} />,
     section: "framework",
-    specimens: [],
+    specimens: toolsForComponent("ChatComposer").map((tool) => ({ tool })),
   },
   CommandToolCard: {
     attention: "prominent",
@@ -1035,12 +1067,7 @@ export const flowChatPreviewDefinitions = {
     icon: Terminal,
     render: (options) => <CommandPreview {...options} />,
     section: "tool-card",
-    specimens: [
-      { tool: "Bash" },
-      { tool: "ExecCommand" },
-      { tool: "WriteStdin" },
-      { tool: "ExecControl" },
-    ],
+    specimens: toolsForComponent("CommandToolCard").map((tool) => ({ tool })),
   },
   ContextCompressionToolCard: {
     attention: "prominent",
@@ -1048,7 +1075,15 @@ export const flowChatPreviewDefinitions = {
     icon: Archive,
     render: (options) => <ContextCompressionPreview {...options} />,
     section: "tool-card",
-    specimens: [{ tool: "ContextCompression" }],
+    specimens: toolsForComponent("ContextCompressionToolCard").map((tool) => ({ tool })),
+  },
+  CronToolCard: {
+    attention: "ambient",
+    codeSample: concreteCodeSample("CronToolCard"),
+    icon: CalendarClock,
+    render: (options) => <StandardAmbientPreview {...options} kind="cron" />,
+    section: "tool-card",
+    specimens: toolsForComponent("CronToolCard").map((tool) => ({ tool })),
   },
   DefaultToolCard: {
     attention: "ambient",
@@ -1056,13 +1091,7 @@ export const flowChatPreviewDefinitions = {
     icon: Info,
     render: (options) => <StandardAmbientPreview {...options} kind="default" />,
     section: "tool-card",
-    specimens: [
-      { tool: "ControlHub" },
-      { tool: "FinalizeMiniApp" },
-      { tool: "PublishMiniApp" },
-      { tool: "PublishAppearance" },
-      { tool: "UnregisteredTool" },
-    ],
+    specimens: toolsForComponent("DefaultToolCard").map((tool) => ({ tool })),
   },
   DirectoryListToolCard: {
     attention: "ambient",
@@ -1070,7 +1099,7 @@ export const flowChatPreviewDefinitions = {
     icon: FolderOpen,
     render: (options) => <SearchPreview {...options} kind="directory" />,
     section: "tool-card",
-    specimens: [{ tool: "LS" }],
+    specimens: toolsForComponent("DirectoryListToolCard").map((tool) => ({ tool })),
   },
   FileDiffToolCard: {
     attention: "prominent",
@@ -1078,7 +1107,7 @@ export const flowChatPreviewDefinitions = {
     icon: GitCompare,
     render: (options) => <ConcreteProminentPreview {...options} kind="diff" />,
     section: "tool-card",
-    specimens: [{ tool: "GetFileDiff" }],
+    specimens: toolsForComponent("FileDiffToolCard").map((tool) => ({ tool })),
   },
   FileOperationToolCard: {
     attention: "adaptive",
@@ -1086,11 +1115,7 @@ export const flowChatPreviewDefinitions = {
     icon: FileEdit,
     render: (options) => <FileOperationPreview {...options} />,
     section: "tool-card",
-    specimens: [
-      { tool: "Write" },
-      { tool: "Edit" },
-      { tool: "Delete" },
-    ],
+    specimens: toolsForComponent("FileOperationToolCard").map((tool) => ({ tool })),
   },
   GetToolSpecToolCard: {
     attention: "ambient",
@@ -1098,7 +1123,7 @@ export const flowChatPreviewDefinitions = {
     icon: SearchCheck,
     render: (options) => <ActivityPreview {...options} kind="get-tool-spec" />,
     section: "tool-card",
-    specimens: [{ tool: "GetToolSpec" }],
+    specimens: toolsForComponent("GetToolSpecToolCard").map((tool) => ({ tool })),
   },
   GitToolCard: {
     attention: "prominent",
@@ -1106,7 +1131,7 @@ export const flowChatPreviewDefinitions = {
     icon: GitBranch,
     render: (options) => <ConcreteProminentPreview {...options} kind="git" />,
     section: "tool-card",
-    specimens: [{ tool: "Git" }],
+    specimens: toolsForComponent("GitToolCard").map((tool) => ({ tool })),
   },
   GlobSearchToolCard: {
     attention: "ambient",
@@ -1114,7 +1139,7 @@ export const flowChatPreviewDefinitions = {
     icon: FolderSearch,
     render: (options) => <SearchPreview {...options} kind="glob" />,
     section: "tool-card",
-    specimens: [{ tool: "Glob" }],
+    specimens: toolsForComponent("GlobSearchToolCard").map((tool) => ({ tool })),
   },
   GrepSearchToolCard: {
     attention: "ambient",
@@ -1122,7 +1147,7 @@ export const flowChatPreviewDefinitions = {
     icon: Search,
     render: (options) => <SearchPreview {...options} kind="grep" />,
     section: "tool-card",
-    specimens: [{ tool: "Grep" }],
+    specimens: toolsForComponent("GrepSearchToolCard").map((tool) => ({ tool })),
   },
   PageDeployToolCard: {
     attention: "prominent",
@@ -1130,7 +1155,7 @@ export const flowChatPreviewDefinitions = {
     icon: ArrowDownToLine,
     render: (options) => <ConcreteProminentPreview {...options} kind="page-deploy" />,
     section: "tool-card",
-    specimens: [{ tool: "PageDeploy" }],
+    specimens: toolsForComponent("PageDeployToolCard").map((tool) => ({ tool })),
   },
   PagePublishToolCard: {
     attention: "prominent",
@@ -1138,7 +1163,7 @@ export const flowChatPreviewDefinitions = {
     icon: Rocket,
     render: (options) => <ConcreteProminentPreview {...options} kind="page-publish" />,
     section: "tool-card",
-    specimens: [{ tool: "PagePublish" }],
+    specimens: toolsForComponent("PagePublishToolCard").map((tool) => ({ tool })),
   },
   ProminentToolCard: {
     attention: "prominent",
@@ -1146,7 +1171,7 @@ export const flowChatPreviewDefinitions = {
     icon: SquareTerminal,
     render: (options) => <FrameworkPreview {...options} kind="prominent" />,
     section: "framework",
-    specimens: [],
+    specimens: toolsForComponent("ProminentToolCard").map((tool) => ({ tool })),
   },
   ReadFileToolCard: {
     attention: "ambient",
@@ -1154,7 +1179,7 @@ export const flowChatPreviewDefinitions = {
     icon: FileText,
     render: (options) => <ReadFilePreview {...options} />,
     section: "tool-card",
-    specimens: [{ tool: "Read" }],
+    specimens: toolsForComponent("ReadFileToolCard").map((tool) => ({ tool })),
   },
   ReviewSummaryToolCard: {
     attention: "prominent",
@@ -1162,7 +1187,7 @@ export const flowChatPreviewDefinitions = {
     icon: SearchCheck,
     render: (options) => <ConcreteProminentPreview {...options} kind="review" />,
     section: "tool-card",
-    specimens: [{ tool: "ReviewSessionSummary" }],
+    specimens: toolsForComponent("ReviewSummaryToolCard").map((tool) => ({ tool })),
   },
   RunCodeToolCard: {
     attention: "ambient",
@@ -1170,7 +1195,7 @@ export const flowChatPreviewDefinitions = {
     icon: Code2,
     render: (options) => <StandardAmbientPreview {...options} kind="run-code" />,
     section: "tool-card",
-    specimens: [{ tool: "RunCode" }],
+    specimens: toolsForComponent("RunCodeToolCard").map((tool) => ({ tool })),
   },
   SessionControlToolCard: {
     attention: "ambient",
@@ -1178,7 +1203,7 @@ export const flowChatPreviewDefinitions = {
     icon: Layers,
     render: (options) => <SessionPreview {...options} kind="control" />,
     section: "tool-card",
-    specimens: [{ tool: "SessionControl" }],
+    specimens: toolsForComponent("SessionControlToolCard").map((tool) => ({ tool })),
   },
   SessionMessageToolCard: {
     attention: "ambient",
@@ -1186,15 +1211,15 @@ export const flowChatPreviewDefinitions = {
     icon: MessageSquare,
     render: (options) => <SessionPreview {...options} kind="message" />,
     section: "tool-card",
-    specimens: [{ tool: "SessionMessage" }],
+    specimens: toolsForComponent("SessionMessageToolCard").map((tool) => ({ tool })),
   },
   SkillToolCard: {
     attention: "ambient",
     codeSample: concreteCodeSample("SkillToolCard"),
-    icon: Zap,
+    icon: BookOpen,
     render: (options) => <ActivityPreview {...options} kind="skill" />,
     section: "tool-card",
-    specimens: [{ tool: "Skill" }],
+    specimens: toolsForComponent("SkillToolCard").map((tool) => ({ tool })),
   },
   TerminalControlToolCard: {
     attention: "ambient",
@@ -1202,7 +1227,7 @@ export const flowChatPreviewDefinitions = {
     icon: SquareTerminal,
     render: (options) => <ActivityPreview {...options} kind="terminal-control" />,
     section: "tool-card",
-    specimens: [{ tool: "TerminalControl" }],
+    specimens: toolsForComponent("TerminalControlToolCard").map((tool) => ({ tool })),
   },
   TodoToolCard: {
     attention: "ambient",
@@ -1210,7 +1235,7 @@ export const flowChatPreviewDefinitions = {
     icon: ListTodo,
     render: (options) => <StandardAmbientPreview {...options} kind="todo" />,
     section: "tool-card",
-    specimens: [{ tool: "TodoWrite" }],
+    specimens: toolsForComponent("TodoToolCard").map((tool) => ({ tool })),
   },
   ViewImageToolCard: {
     attention: "ambient",
@@ -1218,7 +1243,7 @@ export const flowChatPreviewDefinitions = {
     icon: ImageIcon,
     render: (options) => <StandardAmbientPreview {...options} kind="view-image" />,
     section: "tool-card",
-    specimens: [{ tool: "view_image" }],
+    specimens: toolsForComponent("ViewImageToolCard").map((tool) => ({ tool })),
   },
   WebFetchToolCard: {
     attention: "ambient",
@@ -1226,7 +1251,7 @@ export const flowChatPreviewDefinitions = {
     icon: Globe,
     render: (options) => <StandardAmbientPreview {...options} kind="web-fetch" />,
     section: "tool-card",
-    specimens: [{ tool: "WebFetch" }],
+    specimens: toolsForComponent("WebFetchToolCard").map((tool) => ({ tool })),
   },
   WebSearchToolCard: {
     attention: "ambient",
@@ -1234,7 +1259,7 @@ export const flowChatPreviewDefinitions = {
     icon: Search,
     render: (options) => <SearchPreview {...options} kind="web" />,
     section: "tool-card",
-    specimens: [{ tool: "WebSearch" }],
+    specimens: toolsForComponent("WebSearchToolCard").map((tool) => ({ tool })),
   },
 } as const satisfies FlowChatPreviewDefinitionMap;
 

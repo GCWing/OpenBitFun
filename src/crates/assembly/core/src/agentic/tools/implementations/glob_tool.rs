@@ -204,6 +204,23 @@ impl Tool for GlobTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "path": {"type": "string"},
+                "matches_relative_to": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "matches": {"type": "array", "items": {"type": "string"}},
+                "match_count": {"type": "integer"},
+                "total_matches": {"type": "integer"},
+                "truncated": {"type": "boolean"}
+            },
+            "required": ["pattern", "path", "matches", "match_count", "total_matches", "truncated"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -309,15 +326,17 @@ impl Tool for GlobTool {
                         data: json!({
                             "pattern": pattern,
                             "path": resolved.logical_path,
-                            "effective_pattern": effective_pattern,
                             "matches_relative_to": relative_json_field(result_relative_base.as_deref()),
                             "matches": glob_result.paths,
                             "match_count": match_count,
                             "total_matches": total_matches,
                             "truncated": truncated,
-                            "repo_phase": glob_result.repo_status.phase,
-                            "base_advance_in_progress": glob_result.repo_status.base_advance_in_progress,
-                            "workspace_probe_pending": glob_result.repo_status.workspace_probe_pending
+                            "diagnostics": {
+                                "effective_pattern": effective_pattern,
+                                "repo_phase": glob_result.repo_status.phase,
+                                "base_advance_in_progress": glob_result.repo_status.base_advance_in_progress,
+                                "workspace_probe_pending": glob_result.repo_status.workspace_probe_pending
+                            }
                         }),
                         result_for_assistant: Some(annotate_workspace_probe_pending(
                             result_text,
@@ -414,8 +433,10 @@ impl Tool for GlobTool {
                     "match_count": match_count,
                     "total_matches": total_matches,
                     "truncated": truncated,
-                    "search_backend": if uses_ripgrep { "rg" } else { "workspace_io" },
-                    "ignore_scope": if uses_ripgrep { "target_git_configuration" } else { "search_path" }
+                    "diagnostics": {
+                        "search_backend": if uses_ripgrep { "rg" } else { "workspace_io" },
+                        "ignore_scope": if uses_ripgrep { "target_git_configuration" } else { "search_path" }
+                    }
                 }),
                 result_for_assistant: Some(result_text),
                 image_attachments: None,
@@ -467,15 +488,17 @@ impl Tool for GlobTool {
                                 data: json!({
                                     "pattern": pattern,
                                     "path": resolved_str,
-                                    "effective_pattern": effective_pattern,
                                     "matches_relative_to": relative_json_field(result_relative_base.as_deref()),
                                     "matches": glob_result.paths,
                                     "match_count": match_count,
                                     "total_matches": total_matches,
                                     "truncated": truncated,
-                                    "repo_phase": glob_result.repo_status.phase,
-                                    "base_advance_in_progress": glob_result.repo_status.base_advance_in_progress,
-                                    "workspace_probe_pending": glob_result.repo_status.workspace_probe_pending
+                                    "diagnostics": {
+                                        "effective_pattern": effective_pattern,
+                                        "repo_phase": glob_result.repo_status.phase,
+                                        "base_advance_in_progress": glob_result.repo_status.base_advance_in_progress,
+                                        "workspace_probe_pending": glob_result.repo_status.workspace_probe_pending
+                                    }
                                 }),
                                 result_for_assistant: Some(annotate_workspace_probe_pending(
                                     result_text,
@@ -486,7 +509,7 @@ impl Tool for GlobTool {
                         }
                         Err(error) => {
                             warn!(
-                                "Glob tool workspace-search failed; falling back to local rg: {}",
+                                "Glob tool workspace-search failed; falling back to local filesystem glob: {}",
                                 error
                             );
                         }
@@ -495,12 +518,12 @@ impl Tool for GlobTool {
             }
         }
 
-        let resolved_str_for_rg = effective_glob.search_path.clone();
-        let pattern_for_rg = effective_glob.pattern.clone();
+        let local_search_path = effective_glob.search_path.clone();
+        let local_pattern = effective_glob.pattern.clone();
         let glob_result = tokio::task::spawn_blocking(move || {
             execute_local_glob(LocalGlobRequest {
-                search_path: PathBuf::from(resolved_str_for_rg),
-                pattern: pattern_for_rg,
+                search_path: PathBuf::from(local_search_path),
+                pattern: local_pattern,
                 limit,
             })
         })
@@ -677,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn absolute_pattern_searches_its_external_parent_with_local_rg() {
+    fn absolute_pattern_searches_its_external_parent_with_local_walk() {
         let workspace_root = make_temp_dir("absolute-pattern-workspace");
         let transcript_dir = make_temp_dir("absolute-pattern-transcripts");
         fs::write(transcript_dir.join("session.log"), "transcript").unwrap();
@@ -758,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_shallowest_matches_from_rg_results() {
+    fn keeps_shallowest_matches_from_local_results() {
         let root = make_temp_dir("limit");
         fs::create_dir_all(root.join("src/deep")).unwrap();
         fs::create_dir_all(root.join("tests")).unwrap();
@@ -1057,8 +1080,8 @@ mod tests {
         else {
             panic!("expected glob result");
         };
-        assert_eq!(data["search_backend"], "workspace_io");
-        assert_eq!(data["ignore_scope"], "search_path");
+        assert_eq!(data["diagnostics"]["search_backend"], "workspace_io");
+        assert_eq!(data["diagnostics"]["ignore_scope"], "search_path");
         assert_eq!(data["matches"], json!(["line\nname\\file.rs"]));
         assert!(result_for_assistant
             .as_deref()

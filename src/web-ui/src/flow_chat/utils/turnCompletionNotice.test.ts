@@ -9,6 +9,12 @@ describe('getTurnCompletionNotice', () => {
     } as any)).toBeNull();
   });
 
+  it.each([true, false, undefined])('does not warn on user steering (final response: %s)', (hasFinalResponse) => {
+    expect(getTurnCompletionNotice({
+      status: 'completed', finishReason: 'user_steering', hasFinalResponse,
+    })).toBeNull();
+  });
+
   it('returns null for non-completed turns', () => {
     expect(getTurnCompletionNotice({
       status: 'processing',
@@ -69,4 +75,8 @@ describe('getTurnCompletionNotice', () => {
       titleKey: 'turnCompletionNotice.generic.title',
     });
   });
+  it('treats an admitted empty background ending as normal completion', () => {
+    expect(getTurnCompletionNotice({ status: 'completed', finishReason: 'background_quiet', hasFinalResponse: false })).toBeNull();
+  });
+
 });

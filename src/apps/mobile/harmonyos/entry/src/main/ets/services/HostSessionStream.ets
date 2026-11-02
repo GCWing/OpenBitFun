@@ -1,3 +1,4 @@
+import { RemoteLogger } from './RemoteLogger';
 import { CommandStatusResponse } from '../model/RemoteModels';
 
 /** Stream id of the host's workspace/session catalog. */
@@ -6,6 +7,21 @@ export const HOST_STREAM_CHANGED_EVENT: string = 'host-stream-changed';
 export const REMOTE_CAPABILITY_HOST_STREAM_V1: string = 'host_stream_v1';
 /** Hosts keep hint subscriptions alive for 10 minutes; renew well before. */
 const HOST_STREAM_KEEPALIVE_MS: number = 4 * 60 * 1000;
+
+/**
+ * How many pages one history request may read while it has not yet shown the
+ * reader anything it did not already have.
+ *
+ * Host pages are cut by sequence, and a record's sequence is the moment it was
+ * last updated, so one long turn owns every record it produced: a page of
+ * history can be nothing but more records of the turn that is already on
+ * screen. Reading exactly one page per request then looks like "history loaded"
+ * while the transcript above stayed the same. The budget keeps that walk bounded
+ * (a request is a user gesture, not an unbounded download); the next request
+ * continues from where this one stopped. Mirrors `MAX_HISTORY_PAGES_PER_REQUEST`
+ * in the shared core transport.
+ */
+export const MAX_HISTORY_PAGES_PER_REQUEST: number = 4;
 
 /** One record as consumed by reducers; `session_id` is the stream id. */
 export interface HostSessionEvent { session_id: string; event: string; payload: Object; }
@@ -40,6 +56,8 @@ export interface HostSessionCallbacks {
   onResumed?: () => Promise<void>;
   onError: (error: Error) => void;
   onHistory?: (hasMore: boolean) => void;
+  /** Local reducer boundary; separate from time spent awaiting the history RPC. */
+  onHistoryReplay?: (active: boolean) => void;
   onHistoryState?: (loading: boolean, failed: boolean) => void;
   /** The host restarted the stream; drop derived state before the latest page is replayed. */
   onGap?: (reason: string) => Promise<void>;
@@ -66,6 +84,21 @@ export function parseHostStreamHint(sourceDeviceId: string, plaintext: HostStrea
   if (!payload || typeof payload.stream_id !== 'string' || typeof payload.epoch !== 'number' ||
     typeof payload.cursor !== 'number') return undefined;
   return { sourceDeviceId: sourceDeviceId, streamId: payload.stream_id, epoch: payload.epoch, cursor: payload.cursor };
+}
+
+/** The part of a host record this reader needs: the turn it belongs to. */
+interface HostStreamTurnHeader { turnId?: string; }
+interface HostStreamRecordTurn { turn?: HostStreamTurnHeader; }
+
+/**
+ * The turn a stream event belongs to, for the reader's "is this older than what
+ * the caller already has" check. `session-record` payloads always carry
+ * `turn.turnId`; control events belong to no turn and are ignored.
+ */
+export function hostStreamEventTurnId(event: HostStreamEventWire): string | undefined {
+  if (event.event !== 'session-record') return undefined;
+  const turnId = (event.payload as HostStreamRecordTurn).turn?.turnId;
+  return typeof turnId === 'string' ? turnId : undefined;
 }
 
 /** Rejects a page the host did not accept and asserts it answers this stream. */
@@ -106,6 +139,8 @@ export class HostSessionStream {
   private oldest: number = 1;
   private hasOlder: boolean = false;
   private truncated: boolean = false;
+  /** Turns already emitted to the caller, i.e. already part of the transcript. */
+  private emittedTurns: Set<string> = new Set<string>();
   private historyRequested: boolean = false;
   private retryTimer: number = -1;
   private keepaliveTimer: number = -1;
@@ -178,6 +213,8 @@ export class HostSessionStream {
     for (const event of page.events) {
       if (this.stopped) return;
       await this.callbacks.onEvent({ session_id: this.streamId, event: event.event, payload: event.payload });
+      const turnId = hostStreamEventTurnId(event);
+      if (turnId !== undefined) this.emittedTurns.add(turnId);
     }
   }
 
@@ -218,19 +255,38 @@ export class HostSessionStream {
   }
 
   private async older(): Promise<void> {
-    if (!this.hasOlder) return;
-    const page = await this.read({ before: this.oldest, epoch: this.epoch });
-    if (this.stopped) return;
-    if (page.epoch !== this.epoch) {
-      await this.gap();
-      await this.resync();
-      throw new Error('Session history restarted on the host; reloaded from its latest page');
+    let pages = 0;
+    try {
+      while (this.hasOlder && pages < MAX_HISTORY_PAGES_PER_REQUEST && !this.stopped) {
+        const before = this.oldest;
+        RemoteLogger.info(`history page request stream=${this.streamId} before=${before} epoch=${this.epoch}`);
+        const page = await this.read({ before: before, epoch: this.epoch });
+        RemoteLogger.info(`history page received stream=${this.streamId} before=${before} events=${page.events.length} first=${page.events[0]?.seq} hasMore=${page.has_more} epoch=${page.epoch}`);
+        if (this.stopped) return;
+        if (page.epoch !== this.epoch) {
+          await this.gap();
+          await this.resync();
+          throw new Error('Session history restarted on the host; reloaded from its latest page');
+        }
+        // A page that only repeats turns the transcript already has is not
+        // progress: keep reading until the caller gets an older turn, the host
+        // runs out of history, or this request's budget is spent.
+        const showsAnOlderTurn = page.events.some((event) => {
+          const turnId = hostStreamEventTurnId(event);
+          return turnId !== undefined && !this.emittedTurns.has(turnId);
+        });
+        if (pages === 0) this.callbacks.onHistoryReplay?.(true);
+        await this.emitPage(page);
+        if (page.events.length > 0) this.oldest = page.events[0].seq;
+        this.hasOlder = page.has_more;
+        this.truncated = page.truncated === true;
+        pages++;
+        if (showsAnOlderTurn) break;
+      }
+    } finally {
+      if (pages > 0) this.callbacks.onHistory?.(this.hasOlder);
+      this.callbacks.onHistoryReplay?.(false);
     }
-    await this.emitPage(page);
-    if (page.events.length > 0) this.oldest = page.events[0].seq;
-    this.hasOlder = page.has_more;
-    this.truncated = page.truncated === true;
-    this.callbacks.onHistory?.(this.hasOlder);
   }
 
   private async catchUp(): Promise<void> {
@@ -262,7 +318,7 @@ export class HostSessionStream {
       if (error instanceof HostStreamUnsupportedError) {
         // Nothing on this side can make an older host answer; stop instead of
         // polling it every 30 seconds.
-        this.callbacks.onError(error);
+        this.callbacks.onError(error as Error);
         this.close();
         return;
       }

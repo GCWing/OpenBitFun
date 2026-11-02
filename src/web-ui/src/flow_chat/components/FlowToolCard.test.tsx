@@ -9,41 +9,49 @@ import type { FlowToolItem } from '../types/flow-chat';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+vi.mock('@/infrastructure/i18n', () => ({
+  useI18n: () => ({ t: (key: string) => key, formatNumber: String }),
+}));
 
 vi.mock('../tool-cards', async () => {
   const ReactModule = await import('react');
+  const { useToolCapsulePresentation } = await import('@openbitfun/ui/flow-chat');
   return {
     getToolCardComponent: (toolName: string) => ({
       toolItem,
       isLastItem,
+      onOpenInEditor,
+      onOpenInPanel,
     }: {
       toolItem: FlowToolItem;
       isLastItem?: boolean;
-    }) =>
-      ReactModule.createElement('div', {
+      onOpenInEditor?: unknown;
+      onOpenInPanel?: unknown;
+    }) => {
+      const capsule = useToolCapsulePresentation();
+      return ReactModule.createElement('div', {
         'data-selected-card': toolName,
         'data-card-tool-name': toolItem.toolName,
         'data-is-last-item': String(isLastItem === true),
-      }),
+        'data-input': JSON.stringify(toolItem.toolCall.input),
+        'data-has-file-actions': String(Boolean(onOpenInEditor || onOpenInPanel)),
+        'data-capsule-has-fallback': String(Boolean(capsule?.fallbackContent)),
+      });
+    },
   };
 });
-
-vi.mock('../tool-cards/toolCardMetadata', () => ({
-  getToolItemCardConfig: ({ toolName }: { toolName: string }) => ({
-    toolName,
-    displayName: toolName,
-    icon: 'TOOL',
-    requiresConfirmation: false,
-    resultDisplayType: 'summary',
-    description: toolName,
-  }),
-}));
 
 vi.mock('./FlowToolCardErrorBoundary', () => ({
   FlowToolCardErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 vi.mock('./ToolApprovalBar', () => ({ ToolApprovalBar: () => null }));
+
+vi.mock('../tool-cards/DefaultToolCard', () => ({
+  DefaultToolCard: ({ toolItem }: { toolItem: FlowToolItem }) => (
+    <div data-selected-card="DefaultToolCard" data-original-tool={toolItem.toolName} />
+  ),
+}));
 
 const permissionContextMock = vi.hoisted(() => ({
   pendingPermissionToolCallIds: new Set<string>(),
@@ -72,6 +80,53 @@ describe('FlowToolCard deferred identity', () => {
     act(() => root.unmount());
     container.remove();
     permissionContextMock.pendingPermissionToolCallIds.clear();
+  });
+
+  it('reuses the native Read card on hydration without granting imported calls a native approval', () => {
+    const item: FlowToolItem = {
+      id: 'imported', type: 'tool', toolName: 'Read', status: 'error', timestamp: 1,
+      toolCall: { id: 'imported', input: { file_path: '/remote/a' } },
+      toolResult: { success: false, error: 'failed', result: 'partial output' },
+    };
+    act(() => root.render(<FlowToolCard toolItem={item} />));
+    expect(container.querySelector('.flow-tool-card-wrapper')).toBeNull();
+    permissionContextMock.pendingPermissionToolCallIds.add('imported');
+    act(() => root.render(<FlowToolCard toolItem={{ ...item, importedSource: 'zcode' }} />));
+    expect(container.querySelector('[data-selected-card="Read"]')).not.toBeNull();
+    expect(container.querySelector('.flow-tool-card-wrapper--permission-pending')).toBeNull();
+    expect(container.querySelector('[data-card-tool-name="Read"]')).not.toBeNull();
+  });
+
+  it.each([
+    ['codex', 'exec', 'RunCode'], ['codex', 'exec_command', 'ExecCommand'],
+    ['codex', 'write_stdin', 'WriteStdin'], ['zcode', 'Bash', 'ExecCommand'],
+    ['zcode', 'Read', 'Read'], ['zcode', 'Write', 'Write'], ['zcode', 'Edit', 'Edit'],
+    ['zcode', 'WebSearch', 'WebSearch'], ['zcode', 'WebFetch', 'WebFetch'],
+    ['codex', 'update_plan', 'TodoWrite'],
+    ['cursor', 'Read', 'Read'], ['cursor', 'Write', 'Write'], ['cursor', 'StrReplace', 'Edit'],
+    ['cursor', 'Shell', 'ExecCommand'], ['cursor', 'read_file_v2', 'Read'],
+  ] as const)('selects the registered %s %s native card', (importedSource, toolName, nativeName) => {
+    const item: FlowToolItem = {
+      id: 'imported', type: 'tool', importedSource, toolName, status: 'completed', timestamp: 1,
+      toolCall: { id: 'imported', input: toolName === 'exec' ? 'text(1)' : { command: 'pwd' } },
+      toolResult: { success: true, result: 'done' },
+    };
+    act(() => root.render(<FlowToolCard toolItem={item} onOpenInEditor={vi.fn()} onOpenInPanel={vi.fn()} />));
+    const card = container.querySelector(`[data-selected-card="${nativeName}"]`);
+    expect(card).not.toBeNull();
+    expect(card?.getAttribute('data-has-file-actions')).toBe('false');
+    if (nativeName === 'RunCode') expect(JSON.parse(card!.getAttribute('data-input')!).code).toBe('text(1)');
+    if (nativeName === 'ExecCommand') expect(JSON.parse(card!.getAttribute('data-input')!).cmd).toBe('pwd');
+  });
+
+  it.each(['unknown', 'mcp__example__exec', 'clock.sleep', 'functions.wait', 'apply_patch', 'AskUserQuestion'])('uses the common card for unmatched imported %s', toolName => {
+    const item: FlowToolItem = {
+      id: 'unmatched', type: 'tool', importedSource: 'codex', toolName, status: 'completed', timestamp: 1,
+      toolCall: { id: 'unmatched', input: {} }, toolResult: { success: true, result: 'recorded output' },
+    };
+    act(() => root.render(<FlowToolCard toolItem={item} />));
+    expect(container.querySelector('[data-selected-card="DefaultToolCard"]')).not.toBeNull();
+    expect(container.querySelector('[data-original-tool]')?.getAttribute('data-original-tool')).toBe(toolName);
   });
 
   it('switches to the effective card once the deferred tool name is available', () => {
@@ -174,5 +229,76 @@ describe('FlowToolCard deferred identity', () => {
 
     act(() => root.render(<FlowToolCard toolItem={tool} isLastItem={false} />));
     expect(container.querySelector('[data-is-last-item="false"]')).not.toBeNull();
+  });
+
+  it('keeps agent wait identities on a full row even when timing overlaps', () => {
+    const tool: FlowToolItem = {
+      id: 'wait', type: 'tool', toolName: 'AgentWait',
+      toolCall: { id: 'wait', input: { agent_ids: ['agent'] } }, status: 'completed', timestamp: 1,
+    };
+    act(() => root.render(<FlowToolCard toolItem={tool} />));
+    const card = container.querySelector('.flow-tool-card-wrapper');
+    expect(card?.hasAttribute('data-capsule-row')).toBe(false);
+    expect(card?.hasAttribute('data-capsule-parallel')).toBe(false);
+
+    act(() => root.render(<FlowToolCard toolItem={tool} parallel />));
+    expect(container.querySelector('.flow-tool-card-wrapper')).toBe(card);
+    expect(card?.hasAttribute('data-capsule-parallel')).toBe(false);
+
+    act(() => root.render(<FlowToolCard toolItem={tool} parallel={false} />));
+    expect(card?.hasAttribute('data-capsule-parallel')).toBe(false);
+    expect(card?.hasAttribute('data-capsule-row')).toBe(false);
+  });
+
+  it('keeps AgentWait as a relationship row without capsule expansion', () => {
+    const tool: FlowToolItem = {
+      id: 'wait-static', type: 'tool', toolName: 'AgentWait',
+      toolCall: { id: 'wait-static', input: { bg_task_ids: ['a1_bg1'] } },
+      status: 'running', timestamp: 1,
+    };
+    act(() => root.render(<FlowToolCard toolItem={tool} />));
+    expect(container.querySelector('[data-selected-card="AgentWait"]')?.getAttribute('data-capsule-has-fallback')).toBe('false');
+    expect(container.querySelector('.flow-tool-card-wrapper')?.getAttribute('data-capsule-expanded')).toBeNull();
+    expect(container.querySelector('.flow-tool-card-wrapper')?.getAttribute('data-openbitfun-presentation')).toBe('relation');
+  });
+
+  it.each(['Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch', 'view_image', 'Skill', 'GetToolSpec'])('uses the native %s card for direct and deferred calls', toolName => {
+    const tool: FlowToolItem = {
+      id: 'native', type: 'tool', toolName,
+      toolCall: { id: 'native', input: {} }, status: 'completed', timestamp: 1,
+    };
+    for (const item of [tool, {
+      ...tool, toolName: 'CallDeferredTool',
+      toolCall: { ...tool.toolCall, input: { tool_name: toolName, args: {} } },
+    }]) {
+      act(() => root.render(<FlowToolCard toolItem={item} parallel />));
+      expect(container.querySelector(`[data-selected-card="${toolName}"]`)).not.toBeNull();
+      expect(container.querySelector('[data-tool-capsule]')).toBeNull();
+      expect(container.querySelector('[data-capsule-row]')).toBeNull();
+      expect(container.querySelector('[data-capsule-parallel]')).toBeNull();
+    }
+  });
+
+  it.each(['Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch', 'view_image'])('hides failed %s cards while keeping approvals and interruption notes', toolName => {
+    const tool: FlowToolItem = {
+      id: 'hidden', type: 'tool', toolName,
+      toolCall: { id: 'hidden', input: {} }, status: 'running', timestamp: 1,
+    };
+    act(() => root.render(<FlowToolCard toolItem={tool} />));
+    expect(container.querySelector('.flow-tool-card-wrapper')).not.toBeNull();
+
+    act(() => root.render(<FlowToolCard toolItem={{ ...tool, status: 'error' }} parallel />));
+    expect(container.childElementCount).toBe(0);
+
+    act(() => root.render(<FlowToolCard toolItem={{ ...tool, status: 'completed', toolResult: { success: false, result: null } }} />));
+    expect(container.childElementCount).toBe(0);
+
+    act(() => root.render(<FlowToolCard toolItem={{ ...tool, status: 'pending_confirmation' }} parallel />));
+    expect(container.querySelector('.flow-tool-card-wrapper--permission-pending')).not.toBeNull();
+    expect(container.querySelector('[data-tool-capsule="true"]')).toBeNull();
+    expect(container.querySelector('[data-capsule-parallel="true"]')).toBeNull();
+
+    act(() => root.render(<FlowToolCard toolItem={{ ...tool, status: 'cancelled', interruptionReason: 'app_restart' }} />));
+    expect(container.querySelector('[role="note"]')?.textContent).toBe('toolCards.common.interruptedByRestart');
   });
 });

@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 
 import { DefaultToolCard } from './DefaultToolCard';
 import { getToolCardConfig } from './toolCardMetadata';
+import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import type { FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -125,8 +126,19 @@ describe('DefaultToolCard', () => {
       );
     });
 
-    expect(container.textContent).toContain('toolCards.default.completed');
+    expect(container.textContent).toContain('large fetched page content');
+    expect(container.textContent).not.toContain('toolCards.default.completed');
     expect(toJSON).not.toHaveBeenCalled();
+  });
+
+  it('keeps missing error payloads accessible and hidden results out of the summary', () => {
+    const failed = { ...completedWebFetchItem(undefined), status: 'error' as const, toolResult: undefined };
+    act(() => root.render(<DefaultToolCard toolItem={failed} config={config} />));
+    expect(container.querySelector('[aria-label^="toolCards.default.failed"]')).not.toBeNull();
+    act(() => root.render(<DefaultToolCard toolItem={completedWebFetchItem({ title: 'Hidden result' })}
+      config={{ ...config, resultDisplayType: 'hidden' }} />));
+    expect(container.textContent).not.toContain('Hidden result');
+    expect(container.querySelector('[data-openbitfun-part="resultSummary"]')).toBeNull();
   });
 
   it('stringifies detailed result payloads after the card is expanded', () => {
@@ -159,5 +171,16 @@ describe('DefaultToolCard', () => {
 
     expect(toJSON).toHaveBeenCalled();
     expect(container.textContent).toContain('large fetched page content');
+  });
+
+  it('retains recorded output for an imported failed tool in the common card', () => {
+    const toolItem: FlowToolItem = { ...completedWebFetchItem('Partial recorded output'), toolName: 'unknown', importedSource: 'codex', status: 'error',
+      toolResult: { success: false, result: 'Partial recorded output', error: 'Recorded failure' } };
+    act(() => root.render(<DefaultToolCard toolItem={projectEffectiveToolItem(toolItem)} config={getToolCardConfig('unknown')} />));
+    const surface = container.querySelector<HTMLElement>('[data-openbitfun-part="surface"]');
+    act(() => surface!.click());
+    expect(container.querySelector('[data-openbitfun-adapter="default-tool-card"]')).not.toBeNull();
+    expect(container.textContent).toContain('Partial recorded output');
+    expect(container.textContent).toContain('Recorded failure');
   });
 });

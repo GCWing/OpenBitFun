@@ -34,26 +34,6 @@ export function describeUserMessageEditImpact(_sessionId: string): UserMessageEd
   };
 }
 
-export function canEditUserMessage(request: {
-  sessionId?: string | null;
-  turnIndex: number;
-  hasImages?: boolean;
-  isUsageReportMessage?: boolean;
-  steeringStatus?: string;
-  isRemoteSession?: boolean;
-  isSubmitting?: boolean;
-}): boolean {
-  return Boolean(
-    request.sessionId &&
-      request.turnIndex >= 0 &&
-      !request.hasImages &&
-      !request.isUsageReportMessage &&
-      !request.steeringStatus &&
-      !request.isRemoteSession &&
-      !request.isSubmitting,
-  );
-}
-
 export async function editAndRerunUserMessage(
   request: EditAndRerunUserMessageRequest,
 ): Promise<void> {

@@ -37,6 +37,7 @@ import {
 const log = createLogger('DispatchJobObserver');
 
 export const DISPATCH_JOB_POLL_INTERVAL_MS = 1800;
+export const DISPATCH_IDLE_DISCOVERY_INTERVAL_MS = 30_000;
 const BASELINE_WORKTREE_CHECK_INTERVAL_MS = 30_000;
 const baselineWorktreeChecks = new Map<string, { path: string; checkedAt: number }>();
 
@@ -1049,9 +1050,13 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
 
   let disposed = false;
   let inFlight = false;
-  let queuedJobId: string | undefined;
+  // A full refresh (jobId undefined) is still a request. Coalesce different
+  // targeted requests into a full refresh instead of losing an approval wakeup.
+  let pendingRefresh: { jobId?: string } | null = null;
   let immediateTimer: ReturnType<typeof setTimeout> | null = null;
   let interval: ReturnType<typeof setInterval> | null = null;
+  let pollIntervalMs = 0;
+  let unsubscribeJobs: (() => void) | null = null;
   let handleVisibilityChanged: (() => void) | null = null;
   const lease: DispatchObserverLease = {
     requestRefresh: schedule,
@@ -1063,11 +1068,7 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
   );
 
   async function run(requestedJobId?: string): Promise<void> {
-    if (!ownsLease() || isPeerDeviceModeActive()) return;
-    if (inFlight) {
-      queuedJobId = requestedJobId;
-      return;
-    }
+    if (!ownsLease() || isPeerDeviceModeActive() || inFlight) return;
 
     inFlight = true;
     try {
@@ -1112,22 +1113,46 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
       log.warn('Failed to reconcile outbound dispatch jobs', { error });
     } finally {
       inFlight = false;
-      if (queuedJobId !== undefined && ownsLease()) {
-        const next = queuedJobId;
-        queuedJobId = undefined;
-        schedule(next);
+      if (ownsLease()) {
+        updatePollingInterval();
+        if (pendingRefresh) schedule(pendingRefresh.jobId);
       }
     }
   }
 
+  function updatePollingInterval(): void {
+    if (!ownsLease()) return;
+    const hasUnsettledJobs = Object.values(dispatchJobStore.getState().jobs).some(job => (
+      !isDispatchJobTerminal(job.state) || !job.terminalDrained
+    ));
+    const nextIntervalMs = hasUnsettledJobs
+      ? DISPATCH_JOB_POLL_INTERVAL_MS
+      : DISPATCH_IDLE_DISCOVERY_INTERVAL_MS;
+    if (interval !== null && pollIntervalMs === nextIntervalMs) return;
+    if (interval !== null) clearInterval(interval);
+    pollIntervalMs = nextIntervalMs;
+    // Idle discovery remains active while hidden: another controller process
+    // can submit a job without updating this renderer's store or sending events.
+    interval = setInterval(() => { void run(); }, nextIntervalMs);
+  }
+
   function schedule(jobId?: string): void {
     if (!ownsLease()) return;
+    pendingRefresh = pendingRefresh === null || pendingRefresh.jobId === jobId
+      ? { jobId }
+      : {};
+    // Keep explicit refreshes queued across a slow read. Periodic ticks never
+    // overwrite this queue or start a second in-flight reconciliation.
+    if (inFlight) return;
     if (immediateTimer !== null) {
       clearTimeout(immediateTimer);
     }
     immediateTimer = setTimeout(() => {
       immediateTimer = null;
-      void run(jobId);
+      if (inFlight) return;
+      const requestedJobId = pendingRefresh?.jobId;
+      pendingRefresh = null;
+      void run(requestedJobId);
     }, 0);
   }
 
@@ -1147,6 +1172,9 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
       clearInterval(interval);
       interval = null;
     }
+    pendingRefresh = null;
+    unsubscribeJobs?.();
+    unsubscribeJobs = null;
     if (typeof document !== 'undefined' && handleVisibilityChanged) {
       document.removeEventListener('visibilitychange', handleVisibilityChanged);
     }
@@ -1157,9 +1185,15 @@ export function installDispatchJobObserver(context: FlowChatContext): () => void
   }
   observerGlobal.__openbitfunDispatchJobObserverLease__ = lease;
 
-  interval = setInterval(() => {
-    void run();
-  }, DISPATCH_JOB_POLL_INTERVAL_MS);
+  updatePollingInterval();
+  unsubscribeJobs = dispatchJobStore.subscribe(() => {
+    // run() updates the store repeatedly while replaying events. Re-evaluate
+    // once in finally, rather than treating its own writes as new work.
+    if (inFlight || !ownsLease()) return;
+    const wasIdle = pollIntervalMs === DISPATCH_IDLE_DISCOVERY_INTERVAL_MS;
+    updatePollingInterval();
+    if (wasIdle && pollIntervalMs === DISPATCH_JOB_POLL_INTERVAL_MS) schedule();
+  });
   handleVisibilityChanged = () => {
     if (typeof document === 'undefined' || document.visibilityState === 'visible') {
       schedule();

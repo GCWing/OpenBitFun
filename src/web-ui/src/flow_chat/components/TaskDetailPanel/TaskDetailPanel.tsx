@@ -1,27 +1,22 @@
-import { Disclosure } from '@openbitfun/ui';
 /**
  * TaskDetailPanel - Subtask detail panel.
  * Minimal layout to match the FlowChat background.
  */
 
-import { OverflowText, Button } from '@openbitfun/ui';
+import { Disclosure, OverflowText, Icon, IconButton, Spinner, Toolbar, ToolbarGroup, Tooltip } from '@openbitfun/ui';
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { 
-  Split,
-  AlertCircle,
-  Square
-} from 'lucide-react';
+import { AlertCircle, Square } from 'lucide-react';
 import type { FlowToolItem, FlowItem, FlowChatState } from '../../types/flow-chat';
 import { FlowChatStore } from '../../store/FlowChatStore';
 import { ToolTimeoutIndicator } from '../../tool-cards/ToolTimeoutIndicator';
-import { Spinner } from '@openbitfun/ui';
 import { createLogger } from '@/shared/utils/logger';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import type { ReviewerContext } from '@/shared/services/reviewTeamService';
 import { SubagentProjectionView } from '../subagent/SubagentProjectionView';
 import { getSubagentProjectionState } from '../../utils/subagentProjection';
 import { useSessionGoalModeActive } from '../../hooks/useSessionGoalModeActive';
+import { SubagentDelegationAvatar, resolveSubagentNameKey } from '../../subagent-identity';
 import './TaskDetailPanel.scss';
 
 const log = createLogger('TaskDetailPanel');
@@ -34,6 +29,7 @@ interface TaskDetailSnapshot {
   toolItem: FlowToolItem | null;
   subagentSessionId?: string;
   subagentDialogTurnId?: string;
+  subagentModelName?: string;
   subagentItems: FlowItem[];
   isSubagentRunning: boolean;
 }
@@ -84,6 +80,7 @@ function areSnapshotsEqual(prev: TaskDetailSnapshot, next: TaskDetailSnapshot): 
     prev.toolItem === next.toolItem &&
     prev.subagentSessionId === next.subagentSessionId &&
     prev.subagentDialogTurnId === next.subagentDialogTurnId &&
+    prev.subagentModelName === next.subagentModelName &&
     prev.isSubagentRunning === next.isSubagentRunning &&
     areFlowItemsEqual(prev.subagentItems, next.subagentItems)
   );
@@ -141,6 +138,7 @@ function collectTaskDetailSnapshot(
       toolItem,
       subagentSessionId: projection.session?.sessionId,
       subagentDialogTurnId: projection.turn?.id,
+      subagentModelName: projection.session?.config?.modelName,
       subagentItems: projection.items,
       isSubagentRunning: projection.isRunning,
     };
@@ -157,6 +155,7 @@ function collectTaskDetailSnapshot(
     toolItem,
     subagentSessionId: fallbackProjection.session?.sessionId,
     subagentDialogTurnId: fallbackProjection.turn?.id,
+    subagentModelName: fallbackProjection.session?.config?.modelName,
     subagentItems: fallbackProjection.items,
     isSubagentRunning: fallbackProjection.isRunning,
   };
@@ -168,6 +167,7 @@ export interface TaskDetailData {
     description: string;
     prompt: string;
     agentType: string;
+    modelName?: string;
     reviewerContext?: ReviewerContext | null;
     isReviewCoverageTask?: boolean;
   } | null;
@@ -486,9 +486,9 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
     return (
       <div data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="root" data-openbitfun-state="empty" className="task-detail-panel task-detail-panel--empty">
         <div className="task-detail-panel__header" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="header">
-          <OverflowText className="task-detail-panel__header-title">
+          <Toolbar size="sm" leading={<OverflowText className="task-detail-panel__header-title">
             {t('toolCards.taskDetailPanel.untitled')}
-          </OverflowText>
+          </OverflowText>} />
         </div>
         <div className="task-detail-panel__empty-content" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="empty">
           {t('toolCards.taskDetailPanel.noData')}
@@ -498,50 +498,62 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
   }
 
   const rc = taskInput?.isReviewCoverageTask ? null : taskInput?.reviewerContext;
+  const agentName = isReviewCoverageTask
+    ? t('toolCards.taskTool.reviewCoverageLabel')
+    : t(resolveSubagentNameKey(subagentSessionId || `${sessionId ?? ''}:${parentTaskToolCallId || parentTaskToolId}`));
+  const modelName = toolItem?.subagentModelDisplayName?.trim()
+    || taskSnapshot.subagentModelName?.trim()
+    || taskInput?.modelName?.trim()
+    || toolItem?.subagentModelId?.trim();
+  const stopLabel = stoppingSubagent
+    ? t('toolCards.taskDetailPanel.stoppingSubagent')
+    : taskInput?.isReviewCoverageTask
+      ? t('toolCards.taskDetailPanel.stopReviewWork')
+      : t('toolCards.taskDetailPanel.stopSubagent');
 
   return (
     <div data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="root" className="task-detail-panel">
       <div className="task-detail-panel__header" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="header">
-        <Split size={14} className="task-detail-panel__header-icon" />
-        <OverflowText className="task-detail-panel__header-title">
-          {taskInput?.description || t('toolCards.taskDetailPanel.untitled')}
-        </OverflowText>
-        {taskInput?.agentType && (
-          <span className="task-detail-panel__header-badge">
-            {taskInput.isReviewCoverageTask
-              ? t('toolCards.taskTool.reviewCoverageLabel')
-              : rc
-              ? tAgents(`reviewTeams.members.${rc.definitionKey}.funName`, {
-                  defaultValue: rc.roleName,
-                })
-              : taskInput.agentType}
-          </span>
-        )}
-        <ToolTimeoutIndicator
-          startTime={toolItem?.startTime}
-          isRunning={isRunning}
-          timeoutMs={
-            typeof toolItem?.toolCall?.input?.timeout_seconds === 'number' && toolItem.toolCall.input.timeout_seconds > 0
-              ? toolItem.toolCall.input.timeout_seconds * 1000
-              : undefined
-          }
-          showControls={true}
-          subagentSessionId={subagentSessionId}
-          defaultTimeoutDisabled={defaultTimeoutDisabled}
-          completedDurationMs={taskDurationMs}
-          completedStatus={isFailed ? 'error' : status === 'cancelled' ? 'cancelled' : isCompleted ? 'success' : undefined}
-          completedFailureReason={isFailed ? getErrorMessage() : undefined}
-        />
-        {isRunning && (
-          <span className="task-detail-panel__header-loading">
-            <Spinner size="sm" />
-          </span>
-        )}
+        <Toolbar size="sm" leading={(
+          <div className="task-detail-panel__header-main">
+            <SubagentDelegationAvatar sessionId={subagentSessionId} name={agentName} pending={isRunning} size={24} motion={false} showStatus={false} />
+            <OverflowText className="task-detail-panel__header-title">
+              {agentName}
+            </OverflowText>
+            {modelName && <OverflowText className="task-detail-panel__header-model">{modelName}</OverflowText>}
+          </div>
+        )} trailing={(
+          <div data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="actions">
+            <ToolbarGroup>
+              <ToolTimeoutIndicator
+                startTime={toolItem?.startTime}
+                isRunning={isRunning}
+                timeoutMs={
+                  typeof toolItem?.toolCall?.input?.timeout_seconds === 'number' && toolItem.toolCall.input.timeout_seconds > 0
+                    ? toolItem.toolCall.input.timeout_seconds * 1000
+                    : undefined
+                }
+                showControls={true}
+                subagentSessionId={subagentSessionId}
+                defaultTimeoutDisabled={defaultTimeoutDisabled}
+                completedDurationMs={taskDurationMs}
+                completedStatus={isFailed ? 'error' : status === 'cancelled' ? 'cancelled' : isCompleted ? 'success' : undefined}
+                completedFailureReason={isFailed ? getErrorMessage() : undefined}
+              />
+              {canStopSubagent && <Tooltip content={`${stopLabel} · ${taskInput?.isReviewCoverageTask
+                ? t('toolCards.taskDetailPanel.stopReviewWorkHint')
+                : t('toolCards.taskDetailPanel.stopSubagentHint')}`}>
+                <IconButton size="sm" tone="danger" icon={<Icon glyph={Square} size="sm" />}
+                  aria-label={stopLabel} loading={stoppingSubagent} onClick={() => void handleStopSubagent()} />
+              </Tooltip>}
+            </ToolbarGroup>
+          </div>
+        )} />
       </div>
 
       {isFailed && (
         <div className="task-detail-panel__error-banner" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="errorBanner" data-openbitfun-state="error">
-          <AlertCircle size={14} className="task-detail-panel__error-banner-icon" />
+          <Icon glyph={AlertCircle} size="sm" className="task-detail-panel__error-banner-icon" />
           <span className="task-detail-panel__error-banner-text">{getErrorMessage()}</span>
         </div>
       )}
@@ -553,7 +565,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
         data-openbitfun-product-part="content"
       >
         {rc ? (
-          <Disclosure presentation="native" className="task-detail-panel__reviewer-section" open data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="reviewer" summary={t('toolCards.taskDetailPanel.reviewerContextLabel')}>
+          <Disclosure className="task-detail-panel__reviewer-section" contentInnerClassName="task-detail-panel__details-content" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="reviewer" summary={t('toolCards.taskDetailPanel.reviewerContextLabel')}>
             <div className="task-detail-panel__reviewer-context">
               <div className="task-detail-panel__reviewer-role" style={{ color: rc.accentColor }}>
                 {tAgents(`reviewTeams.members.${rc.definitionKey}.role`, {
@@ -577,37 +589,14 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ data }) => {
             </div>
           </Disclosure>
         ) : taskInput?.prompt && taskInput.prompt !== 'Not provided' && (
-          <Disclosure presentation="native" className="task-detail-panel__prompt-section" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="prompt" summary={t('toolCards.taskDetailPanel.promptLabel')}>
-            <pre className="task-detail-panel__prompt-content">{taskInput.prompt}</pre>
+          <Disclosure className="task-detail-panel__prompt-section" contentInnerClassName="task-detail-panel__details-content" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="prompt" summary={t('toolCards.taskDetailPanel.promptLabel')}>
+            <div className="task-detail-panel__prompt-content">{taskInput.prompt}</div>
           </Disclosure>
-        )}
-
-        {canStopSubagent && (
-          <div className="task-detail-panel__actions" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="actions">
-            <Button
-              variant="outline"
-              size="sm"
-              leadingIcon={<Square />}
-              onClick={() => void handleStopSubagent()}
-              disabled={stoppingSubagent}
-            >
-              {stoppingSubagent
-                ? t('toolCards.taskDetailPanel.stoppingSubagent')
-                : taskInput?.isReviewCoverageTask
-                  ? t('toolCards.taskDetailPanel.stopReviewWork')
-                  : t('toolCards.taskDetailPanel.stopSubagent')}
-            </Button>
-            <span className="task-detail-panel__actions-hint">
-              {taskInput?.isReviewCoverageTask
-                ? t('toolCards.taskDetailPanel.stopReviewWorkHint')
-                : t('toolCards.taskDetailPanel.stopSubagentHint')}
-            </span>
-          </div>
         )}
 
         {stopError && (
           <div className="task-detail-panel__error" data-openbitfun-product-component="task-detail-panel" data-openbitfun-product-part="error" data-openbitfun-state="error">
-            <AlertCircle size={14} />
+            <Icon glyph={AlertCircle} size="sm" />
             <span>{stopError}</span>
           </div>
         )}

@@ -3,7 +3,6 @@ import {
 } from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ConnectionErrorPolicy } from '../../services/ConnectionErrorPolicy';
-import { ClipboardService } from '../../services/ClipboardService';
 import { Encoding } from '../../services/Encoding';
 import { MobileIdentitySnapshot, MobileIdentityStore } from '../../services/MobileIdentityStore';
 import { RemoteFileDownloadController } from '../../services/RemoteFileDownloadController';
@@ -11,7 +10,6 @@ import { RemoteModelController } from '../../services/RemoteModelController';
 import { RemoteSessionController } from '../../services/RemoteSessionController';
 import { accountDeviceLink } from '../../services/AccountDeviceLink';
 import { RemoteUiState } from '../../services/RemoteUiState';
-import { QrScanService } from '../../services/QrScanService';
 import { RemoteConnectionCoordinator } from '../../services/RemoteConnectionCoordinator';
 import { RemotePageState } from '../state/RemotePageState';
 import { AppRoute } from '../navigation/AppRouteContract';
@@ -34,8 +32,6 @@ export class RemoteConnectionController {
   private readonly sessions: RemoteSessionController;
   private readonly models: RemoteModelController;
   private readonly files: RemoteFileDownloadController;
-  private readonly clipboard: ClipboardService;
-  private readonly scanner: QrScanService;
   private readonly resetTimeline: (sessionId: string) => void;
   private readonly resetKnownState: () => void;
   private readonly startHeartbeat: () => void;
@@ -59,8 +55,6 @@ export class RemoteConnectionController {
     sessions: RemoteSessionController,
     models: RemoteModelController,
     files: RemoteFileDownloadController,
-    clipboard: ClipboardService,
-    scanner: QrScanService,
     resetTimeline: (sessionId: string) => void,
     resetKnownState: () => void,
     startHeartbeat: () => void,
@@ -78,8 +72,6 @@ export class RemoteConnectionController {
     this.sessions = sessions;
     this.models = models;
     this.files = files;
-    this.clipboard = clipboard;
-    this.scanner = scanner;
     this.resetTimeline = resetTimeline;
     this.resetKnownState = resetKnownState;
     this.startHeartbeat = startHeartbeat;
@@ -157,7 +149,11 @@ export class RemoteConnectionController {
     this.files.clear();
     this.pageState.setWorkspace(RemoteI18n.t('status.notConnected'), '', '', '', 'normal');
     this.pageState.setAuthenticatedUserId('');
-    this.pageState.clearControlTarget();
+    // Same rule as Android and iOS: leaving an account device keeps it as the
+    // selection, so the settings card can offer it again. Only unpairing ends it.
+    if (clearPairing || this.pageState.controlTargetType !== 'account_device') {
+      this.pageState.clearControlTarget();
+    }
     this.pageState.clearWorkspaceActions();
     this.setState(RemoteConnectionState.Disconnected);
     this.pageState.setConnectionFailureKind('');
@@ -180,44 +176,6 @@ export class RemoteConnectionController {
     }
   }
 
-  async paste(context: Context): Promise<void> {
-    try {
-      this.pageState.setStatusText(RemoteI18n.t('status.readClipboard'));
-      const text = (await this.clipboard.readText(context)).trim();
-      if (text.length === 0) {
-        this.pageState.setRemoteUrlInputVisible(true);
-        this.pageState.setStatusText(RemoteI18n.t('status.clipboardEmpty'));
-        return;
-      }
-      this.applyRemoteUrl(text);
-      try {
-        if (!accountDeviceLink(text)) throw new Error(RemoteI18n.t('connect.deviceLinkInvalid'));
-        this.pageState.setStatusText(RemoteI18n.t('status.clipboardUrlFilled'));
-      } catch (_err) {
-        this.pageState.setStatusText(RemoteI18n.t('status.clipboardNeedsConfirm'));
-      }
-    } catch (err) {
-      this.pageState.setRemoteUrlInputVisible(true);
-      this.pageState.setStatusText(ConnectionErrorPolicy.errorText(err));
-    }
-  }
-
-  async scan(context: Context): Promise<string> {
-    try {
-      this.pageState.setStatusText(RemoteI18n.t('status.openScanner'));
-      const text = (await this.scanner.scanRemoteUrl(context)).trim();
-      if (text.length === 0) {
-        this.pageState.setStatusText(RemoteI18n.t('status.scanEmpty'));
-        return '';
-      }
-      return text;
-    } catch (err) {
-      this.pageState.setRemoteUrlInputVisible(true);
-      this.pageState.setStatusText(ConnectionErrorPolicy.errorText(err));
-      return '';
-    }
-  }
-
   ensureAvailable(): boolean {
     if (RemoteUiState.canUseRemote(this.pageState.connectionState)) {
       return true;
@@ -231,14 +189,6 @@ export class RemoteConnectionController {
       workspace.workspaceKind || 'normal', workspace.remoteConnectionId || '', workspace.remoteSshHost || '',
       workspace.workspaceId || '');
   }
-
-  private applyRemoteUrl(remoteUrl: string): void {
-    this.pageState.setRemoteUrl(remoteUrl);
-    this.pageState.setConnectionFailureKind('');
-    this.pageState.setRemoteUrlInputVisible(true);
-  }
-
-
 
   private setState(state: RemoteConnectionState): void {
     this.pageState.setConnectionState(state);

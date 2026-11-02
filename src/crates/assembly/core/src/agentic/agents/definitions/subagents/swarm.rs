@@ -1,6 +1,5 @@
+use crate::agentic::agents::Agent;
 use crate::agentic::agents::UserContextPolicy;
-use crate::agentic::agents::{Agent, AgentToolPolicyOverrides};
-use crate::agentic::tools::framework::ToolExposure;
 use async_trait::async_trait;
 
 pub struct SwarmPlannerAgent;
@@ -37,9 +36,8 @@ impl Agent for SwarmPlannerAgent {
         [
             "AgentSpawn",
             "AgentSendInput",
-            "AgentInterrupt",
+            "AgentControl",
             "AgentList",
-            "AgentDelete",
             "AgentWait",
             "Read",
             "Grep",
@@ -56,19 +54,11 @@ impl Agent for SwarmPlannerAgent {
         crate::agentic::agents::UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
-}
-
-fn reviewer_tool_exposure_overrides() -> AgentToolPolicyOverrides {
-    let mut overrides = AgentToolPolicyOverrides::default();
-    overrides.insert("GetFileDiff".to_string(), ToolExposure::Direct);
-    overrides
 }
 
 pub struct SwarmReviewerAgent {
     default_tools: Vec<String>,
-    tool_exposure_overrides: AgentToolPolicyOverrides,
 }
 
 impl Default for SwarmReviewerAgent {
@@ -91,7 +81,6 @@ impl SwarmReviewerAgent {
             .into_iter()
             .map(str::to_string)
             .collect(),
-            tool_exposure_overrides: reviewer_tool_exposure_overrides(),
         }
     }
 }
@@ -128,10 +117,6 @@ impl Agent for SwarmReviewerAgent {
             .with_workspace_instructions()
     }
 
-    fn tool_exposure_overrides(&self) -> &AgentToolPolicyOverrides {
-        &self.tool_exposure_overrides
-    }
-
     fn is_readonly(&self) -> bool {
         true
     }
@@ -152,6 +137,7 @@ impl SwarmWorkerAgent {
                 "Read",
                 "view_image",
                 "analyze_image",
+                "generate_image",
                 "Glob",
                 "Grep",
                 "Write",
@@ -194,6 +180,5 @@ impl Agent for SwarmWorkerAgent {
         crate::agentic::agents::UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 }

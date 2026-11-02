@@ -6,7 +6,9 @@ const ts = require('typescript');
 const source = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/services/HostSessionStream.ets'), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const exportsObject = {};
-new Function('require', 'exports', compiled)(() => ({}), exportsObject);
+new Function('require', 'exports', compiled)(name =>
+  name.endsWith('RemoteLogger') ? { RemoteLogger: { info() {}, warn() {}, error() {} } } : {},
+  exportsObject);
 const { HostSessionStream, parseHostStreamHint, checkHostStreamPage, HostStreamUnsupportedError, HOST_STREAM_CHANGED_EVENT } = exportsObject;
 
 async function settle(predicate, label = 'stream did not settle') {
@@ -18,7 +20,7 @@ const tick = (ms = 5) => new Promise(resolve => setTimeout(resolve, ms));
 /** An in-memory desktop: one stream log with an epoch, paged like `HostStreamHub`. */
 function fakeHost(streamId, pageSize = 2) {
   const host = {
-    epoch: 1, events: [], reads: [], unsubscribed: 0, hints: new Set(), reconnects: new Set(), failNext: null,
+    epoch: 1, events: [], reads: [], unsubscribed: 0, hints: new Set(), reconnects: new Set(), failNext: null, gate: null,
     append(event, payload = {}) { host.events.push({ seq: host.events.length + 1, event, payload }); return host.events[host.events.length - 1].seq; },
     restart() { host.epoch++; host.events = []; },
     hint() { for (const fn of host.hints) fn({ sourceDeviceId: 'desktop', streamId, epoch: host.epoch, cursor: host.events.length }); },
@@ -43,6 +45,8 @@ function fakeHost(streamId, pageSize = 2) {
       target: 'desktop',
       read: async request => {
         host.reads.push({ ...request });
+        // A forward catch-up can be parked so a test can queue hints behind it.
+        if (request.after !== undefined && host.gate) await host.gate;
         if (host.failNext) { const failure = host.failNext; host.failNext = null; throw failure; }
         return host.page(request);
       },
@@ -96,7 +100,9 @@ test('opens on the latest page, applies hints forward and ignores stale or forei
 
 test('loadOlder walks history backwards while the forward cursor stays monotonic', async () => {
   const host = fakeHost('session');
-  for (const id of ['1', '2', '3', '4', '5']) host.append('session-record', { id });
+  // One turn per record: every older page shows a turn the transcript does not
+  // have yet, so each request reads exactly the page it was asked for.
+  for (const id of ['1', '2', '3', '4', '5']) host.append('session-record', { id, turn: { turnId: `t${id}` } });
   const c = callbacks();
   const stream = new HostSessionStream('session', host.source, c.hooks);
   try {
@@ -118,6 +124,81 @@ test('loadOlder walks history backwards while the forward cursor stays monotonic
     assert.equal(c.resumed, 1);
     assert.deepEqual(c.applied.map(e => e.payload.id), ['4', '5', '2', '3', '1', '6']);
     assert.deepEqual(host.reads.at(-1), { after: 5, epoch: 1 }, 'reconnect catches up forward, never replaying history');
+  } finally { stream.close(); }
+});
+
+test('one history request reads past pages of the turn already on screen', async () => {
+  const host = fakeHost('session');
+  for (let i = 1; i <= 2; i++) host.append('session-record', { id: `a${i}`, turn: { turnId: 't1' } });
+  for (let i = 1; i <= 6; i++) host.append('session-record', { id: `b${i}`, turn: { turnId: 't2' } });
+  const c = callbacks();
+  const stream = new HostSessionStream('session', host.source, c.hooks);
+  try {
+    await settle(() => c.caught === 1);
+    assert.deepEqual(c.applied.map(e => e.payload.id), ['b5', 'b6']);
+    stream.loadOlder();
+    await settle(() => c.applied.length === 8);
+    // The newest pages are more of t2, the turn already on screen: one request
+    // reads through them instead of reporting a load that shows nothing new.
+    assert.deepEqual(host.reads.slice(1).map(read => read.before), [7, 5, 3]);
+    assert.deepEqual(c.applied.map(e => e.payload.turn.turnId),
+      ['t2', 't2', 't2', 't2', 't2', 't2', 't1', 't1']);
+    assert.equal(c.history.at(-1), false);
+  } finally { stream.close(); }
+});
+
+test('a history request stops at its page budget and the next one continues', async () => {
+  const host = fakeHost('session');
+  for (let i = 1; i <= 2; i++) host.append('session-record', { id: `a${i}`, turn: { turnId: 't1' } });
+  for (let i = 1; i <= 16; i++) host.append('session-record', { id: `b${i}`, turn: { turnId: 't2' } });
+  const c = callbacks();
+  const stream = new HostSessionStream('session', host.source, c.hooks);
+  try {
+    await settle(() => c.caught === 1);
+    stream.loadOlder();
+    await settle(() => c.applied.length === 10);
+    assert.deepEqual(host.reads.slice(1).map(read => read.before), [17, 15, 13, 11]);
+    assert.equal(c.applied.some(e => e.payload.turn.turnId === 't1'), false, 'the budget stops before t1 is reached');
+    assert.equal(c.history.at(-1), true);
+    stream.loadOlder();
+    await settle(() => c.applied.some(e => e.payload.turn.turnId === 't1'));
+    assert.deepEqual(host.reads.slice(5).map(read => read.before), [9, 7, 5, 3]);
+    assert.equal(c.history.at(-1), false);
+  } finally { stream.close(); }
+});
+
+test('a hint burst costs one catch-up and does not delay a queued history request', async () => {
+  const host = fakeHost('session');
+  for (const id of ['1', '2', '3', '4', '5']) host.append('session-record', { id, turn: { turnId: `t${id}` } });
+  let openGate;
+  host.gate = new Promise(resolve => { openGate = resolve; });
+  const c = callbacks();
+  const stream = new HostSessionStream('session', host.source, c.hooks);
+  try {
+    await settle(() => c.caught === 1);
+    // A streaming host fans out one hint per event. Park the catch-up the first
+    // hint starts, so the rest pile up behind it exactly as they do while a turn
+    // is streaming, and queue a history request behind all of them.
+    host.append('session-record', { id: '6', turn: { turnId: 't6' } }); host.hint();
+    await tick();
+    for (const id of ['7', '8', '9', '10']) { host.append('session-record', { id, turn: { turnId: `t${id}` } }); host.hint(); }
+    await tick();
+    assert.equal(host.reads.filter(read => read.after !== undefined).length, 1, 'the hints queue behind one catch-up read');
+
+    stream.loadOlder();
+    openGate();
+    await settle(() => c.historyState.some(([loading]) => loading === false));
+    await tick(); await tick();
+
+    const history = host.reads.findIndex(read => read.before !== undefined);
+    assert.ok(history > 0, 'the request reached the host');
+    // One catch-up over five new events is three pages at this page size, so the
+    // history request waits for exactly those reads: the four hints that arrived
+    // while it was parked merged into it and into a single later refresh.
+    assert.deepEqual(host.reads.slice(0, history).filter(read => read.after !== undefined).map(read => read.after), [5, 7, 9]);
+    assert.equal(host.reads[history].before, 4, 'the history request runs right after that catch-up');
+    assert.deepEqual(host.reads.slice(history + 1).filter(read => read.after !== undefined).map(read => read.after), [10],
+      'the burst left one merged refresh, not one per hint');
   } finally { stream.close(); }
 });
 
@@ -191,4 +272,35 @@ test('wire parsers reject foreign pages, invalid shapes, and non-hint device eve
   assert.throws(() => checkHostStreamPage('s', { resp: 'error', message: 'stream is closed' }), /stream is closed/);
   assert.throws(() => checkHostStreamPage('s', { resp: 'error', message: 'invalid RPC command' }), HostStreamUnsupportedError);
   assert.throws(() => checkHostStreamPage('s', { resp: 'ok' }), /Unexpected stream response/);
+});
+
+
+test('lazy disk history keeps JS-safe backward cursors separate from live updates', async () => {
+  const ceiling = 2 ** 52;
+  const c = callbacks(); const reads = []; let hint;
+  const record = (seq, id, turn) => ({ seq, event: 'session-record', payload: { id, revision: seq, turn: { turnId: turn } } });
+  const source = {
+    target: 'desktop', unsubscribe: async () => {},
+    onHint: listener => { hint = listener; return () => {}; }, onReconnect: () => () => {},
+    read: async request => {
+      reads.push({ ...request });
+      const events = request.before !== undefined ? [record(ceiling - 3, 'old', 'old-turn')]
+        : request.after !== undefined ? [record(ceiling, 'new', 'new-turn')]
+        : [record(ceiling - 2, 'a', 'turn'), record(ceiling - 1, 'b', 'turn')];
+      return { resp: 'stream_page', stream_id: 'session', epoch: 8, events,
+        cursor: request.after !== undefined ? ceiling : ceiling - 1,
+        oldest_seq: events[0].seq, has_more: request.before === undefined && request.after === undefined, truncated: false };
+    }
+  };
+  const stream = new HostSessionStream('session', source, c.hooks);
+  try {
+    await settle(() => c.caught === 1);
+    stream.loadOlder(); await settle(() => c.applied.length === 3);
+    assert.deepEqual(reads[1], { before: ceiling - 2, epoch: 8 });
+    hint({ sourceDeviceId: 'desktop', streamId: 'session', epoch: 8, cursor: ceiling });
+    await settle(() => c.applied.length === 4);
+    assert.deepEqual(reads[2], { after: ceiling - 1, epoch: 8 });
+    assert.deepEqual(c.applied.map(e => e.payload.id), ['a', 'b', 'old', 'new']);
+    assert.equal(c.errors.length, 0);
+  } finally { stream.close(); }
 });

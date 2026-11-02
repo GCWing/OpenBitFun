@@ -6,6 +6,62 @@ const LAST_DAILY_PROMPT_DATE_KEY = 'openbitfun:update:lastDailyPromptDate';
 const LAST_PROMPTED_LATEST_KEY = 'openbitfun:update:lastPromptedLatestVersion';
 const SKIPPED_VERSION_KEY = 'openbitfun:update:skippedVersion';
 const CHECK_SNAPSHOT_KEY = 'openbitfun:update:checkSnapshot';
+const REMINDERS_KEY = 'openbitfun:update:reminders';
+export const APP_UPDATE_REMINDER_INTERVAL = 24 * 60 * 60 * 1000;
+export type AppUpdateReminderStage = 'available' | 'ready';
+interface ReminderRecord { version: string; presentedAt?: number; deferredAt?: number }
+
+function readReminders(): Partial<Record<AppUpdateReminderStage, ReminderRecord>> | null {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(REMINDERS_KEY) ?? '{}');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch { return null; }
+}
+
+/** A future timestamp from a clock correction must not lock out reminders. */
+function validTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= Date.now();
+}
+
+export function getAppUpdateReminderAt(stage: AppUpdateReminderStage, version: string): number | null {
+  if (stage === 'available' && getSkippedVersion() === version) return null;
+  const record = readReminders()?.[stage];
+  if (record) {
+    return record.version === version && validTimestamp(record.deferredAt)
+      ? record.deferredAt + APP_UPDATE_REMINDER_INTERVAL : 0;
+  }
+  // Old clients only recorded a local calendar date. Honor that day, never a permanent dismissal.
+  if (stage === 'available') {
+    try {
+      const date = localStorage.getItem(LAST_DAILY_PROMPT_DATE_KEY);
+      if (localStorage.getItem(LAST_PROMPTED_LATEST_KEY) === version && date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        const timestamp = new Date(`${date}T00:00:00`).getTime();
+        if (validTimestamp(timestamp)) return timestamp + APP_UPDATE_REMINDER_INTERVAL;
+      }
+    } catch { /* The in-memory reminder remains usable. */ }
+  }
+  return 0;
+}
+
+function writeReminder(stage: AppUpdateReminderStage, version: string, deferred: boolean): void {
+  try {
+    const records = readReminders();
+    if (!records) return;
+    const previous = records[stage]?.version === version ? records[stage] : undefined;
+    // A storage event in another window must not start a presentation-write loop.
+    if (!deferred && validTimestamp(previous?.presentedAt)) return;
+    records[stage] = { ...previous, version, [deferred ? 'deferredAt' : 'presentedAt']: Date.now() };
+    localStorage.setItem(REMINDERS_KEY, JSON.stringify(records));
+  } catch { /* Best effort persistence; never remove an unreadable record. */ }
+}
+
+export function recordAppUpdatePresented(stage: AppUpdateReminderStage, version: string): void {
+  writeReminder(stage, version, false);
+}
+
+export function deferAppUpdateReminder(stage: AppUpdateReminderStage, version: string): void {
+  writeReminder(stage, version, true);
+}
 
 export interface AppUpdateSnapshot {
   result: CheckForUpdatesResponse;
@@ -17,14 +73,13 @@ export function getSkippedVersion(): string | null {
 }
 
 export function shouldShowDailyUpdatePrompt(latestVersion: string): boolean {
-  if (getSkippedVersion() === latestVersion) return false;
-  try {
-    return localStorage.getItem(LAST_PROMPTED_LATEST_KEY) !== latestVersion;
-  } catch { return true; }
+  const due = getAppUpdateReminderAt('available', latestVersion);
+  return due !== null && due <= Date.now();
 }
 
-/** Record actual presentation, including opening the update details. */
+/** Explicit dismissal starts the cooldown; presentation alone does not. */
 export function recordDailyPromptDismissed(latestVersion: string): void {
+  deferAppUpdateReminder('available', latestVersion);
   try {
     const date = new Date();
     const localDate = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');

@@ -104,6 +104,35 @@ describe('public Combobox product integration', () => {
     expect(control.querySelector('[data-openbitfun-part="tags"]')).toBe(tags);
   });
 
+  it('supports a compact selection summary while preserving selection and the empty placeholder', () => {
+    function SummaryPicker() {
+      const [value, setValue] = React.useState(['a', 'c']);
+      return <MultiSelect
+        label="Models"
+        options={options}
+        value={value}
+        onValueChange={setValue}
+        selectionSummary={`${value.length} models selected`}
+        placeholder="Choose models"
+      />;
+    }
+    act(() => root.render(<SummaryPicker />));
+    expect(trigger().textContent).toBe('2 models selected');
+    expect(host.querySelector('[data-openbitfun-part="tags"]')).toBeNull();
+
+    act(() => trigger().click());
+    const selectedOptions = () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"][aria-selected="true"]')];
+    expect(selectedOptions()).toHaveLength(2);
+    act(() => selectedOptions()[0].click());
+    key(input(), 'Escape');
+    expect(trigger().textContent).toBe('1 models selected');
+
+    act(() => trigger().click());
+    act(() => selectedOptions()[0].click());
+    key(input(), 'Escape');
+    expect(trigger().textContent).toBe('Choose models');
+  });
+
   it.each([false, true])('restores the native tab starting position before leaving the popup (shift=%s)', (shiftKey) => {
     render();
     const anchor = trigger();

@@ -1,0 +1,32 @@
+{
+  "aliases": {
+    "zh": "zh-CN",
+    "zh-hans": "zh-CN",
+    "zh-cn": "zh-CN",
+    "en": "en-US",
+    "en-us": "en-US",
+    "zh-tw": "zh-TW",
+    "zh-hant": "zh-TW",
+    "zh-hk": "zh-TW",
+    "zh-mo": "zh-TW"
+  },
+  "fallbackLocale": "en-US",
+  "zh-CN": {
+    "minimize": "最小化应用窗口",
+    "maximize": "最大化应用窗口",
+    "restore": "还原应用窗口",
+    "close": "关闭应用窗口"
+  },
+  "en-US": {
+    "minimize": "Minimize app window",
+    "maximize": "Maximize app window",
+    "restore": "Restore app window",
+    "close": "Close app window"
+  },
+  "zh-TW": {
+    "minimize": "最小化應用視窗",
+    "maximize": "最大化應用視窗",
+    "restore": "還原應用視窗",
+    "close": "關閉應用視窗"
+  }
+}

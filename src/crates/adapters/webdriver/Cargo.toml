@@ -16,10 +16,10 @@ tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
-tauri = { workspace = true }
+tauri = { workspace = true, features = ["unstable"] }
 uuid = { workspace = true }
 base64 = { workspace = true }
-image = { workspace = true, features = ["png"] }
+image = { workspace = true, features = ["jpeg", "png"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = { workspace = true }

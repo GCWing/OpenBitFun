@@ -11,7 +11,7 @@ import { flowChatStore } from '../store/FlowChatStore';
 import { buildSessionMetadata } from '../utils/sessionMetadata';
 import type { ReviewActionBarState } from '../store/deepReviewActionBarStore';
 import type { ReviewActionPersistedState, SessionMetadata } from '@/shared/types/session-history';
-import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
+import { requireSessionOwningWorkspaceId } from '../utils/sessionOrdering';
 
 const log = createLogger('ReviewActionBarPersistence');
 
@@ -20,7 +20,7 @@ export async function persistReviewActionState(state: ReviewActionBarState): Pro
 
   const session = flowChatStore.getState().sessions.get(state.childSessionId);
   if (!session) return;
-  const workspaceId = requireSessionWorkspaceId(session);
+  const workspaceId = requireSessionOwningWorkspaceId(session);
 
   const stateReviewTargetFilePaths = state.reviewTargetFilePaths ?? [];
   const remediationModifiedFilePaths = state.remediationModifiedFilePaths ?? [];

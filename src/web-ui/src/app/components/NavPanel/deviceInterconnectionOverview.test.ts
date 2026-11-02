@@ -5,6 +5,7 @@ import {
   connectionServiceFromRelayUrl,
   formatDeviceDisplayName,
   projectDeviceInterconnectionOverview,
+  reportedHostKind,
   selectActivityFacts,
   selectAttachedGroups,
   type DeviceInterconnectionOverviewInput,
@@ -80,6 +81,16 @@ describe('projectDeviceInterconnectionOverview', () => {
     expect(overview.connectionService?.kind).toBe('official');
   });
 
+  it('includes controllers from both Relay routes without duplicating one browser', () => {
+    const overview = projectDeviceInterconnectionOverview(baseInput({ remoteStatus: {
+      ...disconnectedStatus, connections: [
+        { method: 'openbitfun_server', relay_connected: true, relay_url: 'https://remote.openbitfun.com/v/1.0.2', clients: [{ id: 'same', name: 'Shared browser' }] },
+        { method: 'lan', relay_connected: true, relay_url: 'http://192.168.1.2:9700', clients: [{ id: 'same', name: 'Shared browser' }, { id: 'lan', name: 'LAN phone' }] },
+      ],
+    } }));
+    expect(overview.connectedDevices.map(device => device.name).sort()).toEqual(['LAN phone', 'Shared browser']);
+  });
+
   it('names a paired bot once, as a controller rather than a second connection service', () => {
     const overview = projectDeviceInterconnectionOverview(baseInput({
       remoteStatus: { ...disconnectedStatus, bot_connected: 'Weixin(wxid_9f3a)' },
@@ -131,6 +142,53 @@ describe('projectDeviceInterconnectionOverview', () => {
       }),
     ]);
     expect(overview.connectionService?.kind).toBe('self-hosted');
+  });
+
+  it('carries the system each device reported, never the controller platform', () => {
+    const overview = projectDeviceInterconnectionOverview(baseInput({
+      localDeviceOs: 'Windows',
+      peer: { deviceId: 'linux-1', deviceName: 'Linux Workstation' },
+      peerDeviceOs: 'Linux',
+    }));
+
+    expect(overview.primaryDevice.os).toBe('Linux');
+    expect(overview.devices.find(device => device.id === 'device:local')?.os).toBe('Windows');
+  });
+
+  it('leaves a device system unknown until that device reports one', () => {
+    expect(projectDeviceInterconnectionOverview(baseInput()).primaryDevice.os).toBeNull();
+  });
+
+  it('reads only the host kinds it can draw, and never guesses', () => {
+    expect(reportedHostKind('cli')).toBe('cli');
+    expect(reportedHostKind(' CLI ')).toBe('cli');
+    expect(reportedHostKind('Desktop')).toBe('desktop');
+    // A controller is not a host profile, and an absent or unknown kind must
+    // stay unknown rather than be read as a desktop.
+    expect(reportedHostKind('mobile')).toBeNull();
+    expect(reportedHostKind('watch')).toBeNull();
+    expect(reportedHostKind('')).toBeNull();
+    expect(reportedHostKind(null)).toBeNull();
+  });
+
+  it('carries the host kind each side reported', () => {
+    expect(projectDeviceInterconnectionOverview(baseInput({
+      localDeviceKind: 'cli',
+    })).primaryDevice.hostKind).toBe('cli');
+
+    const peer = projectDeviceInterconnectionOverview(baseInput({
+      localDeviceKind: 'desktop',
+      peer: { deviceId: 'linux-1', deviceName: 'Linux Workstation' },
+      peerDeviceKind: 'cli',
+    }));
+    expect(peer.primaryDevice.hostKind).toBe('cli');
+    expect(peer.devices.find(device => device.id === 'device:local')?.hostKind).toBe('desktop');
+
+    // A controller kind names no host profile; the desktop row stays unclassified.
+    const controller = projectDeviceInterconnectionOverview(baseInput({
+      localDeviceKind: 'watch',
+    }));
+    expect(controller.primaryDevice.hostKind).toBeNull();
   });
 
   it('shows same-account distributed hosts but excludes ordinary SSH targets', () => {

@@ -9,37 +9,41 @@
   "loading": "加载中…",
   "page": {
     "title": "智能体",
-    "subtitle": "配置四种智能体执行框架、面向任务的智能体与受委派的子智能体",
+    "subtitle": "执行模式体现默认智能体的工作风格，专用智能体独立或协作完成任务。",
     "searchPlaceholder": "搜索智能体名称或描述…",
     "newAgent": "新建智能体"
   },
   "nav": {
-    "harness": "智能体执行框架",
+    "harness": "执行模式",
     "coreAgents": "已接入智能体",
     "agents": "智能体"
   },
   "harnessZone": {
-    "title": "智能体执行框架",
-    "subtitle": "定义会话如何执行任务，各自管理工具与协作策略",
+    "title": "执行模式",
     "flowCaption": "同一任务 · 四种策略 · 一个结果",
     "task": "任务",
     "result": "结果",
+    "replay": "重播动画",
     "profiles": {
       "Minimal": {
         "name": "$t(shared:agents.Minimal)",
-        "purpose": "精简流程，快速推进"
+        "purpose": "更少干预，更多自主",
+        "description": "侧重自主推进，减少流程干预，让模型自行判断如何完成编程等任务。"
       },
       "Standard": {
         "name": "$t(shared:agents.Standard)",
-        "purpose": "平衡效率与质量"
+        "purpose": "工具齐备，支持编程与日常工作",
+        "description": "覆盖编程与日常工作，以清晰的任务指导和完整工具处理开发、资料整理与内容写作。"
       },
       "Ultimate": {
         "name": "$t(shared:agents.Ultimate)",
-        "purpose": "深度拆解与智能协同"
+        "purpose": "分工协作，完成复杂项目",
+        "description": "强调分工协作，通过多个智能体并行执行与独立审查，推进复杂项目和大型改造。"
       },
       "Creative": {
         "name": "$t(shared:agents.Creative)",
-        "purpose": "OpenBitFun 的定制与创造"
+        "purpose": "创作内容与应用，定制你的体验",
+        "description": "用自然语言把想法变成成品：按需加载创意技能，制作动效视频、幻灯片、交互原型与网页，也能创建小应用、定制 OpenBitFun。"
       }
     }
   },
@@ -63,7 +67,7 @@
     "computerUseDisabledBadge": "已在设置中禁用"
   },
   "agentsZone": {
-    "title": "智能体",
+    "title": "专用智能体",
     "subtitle": "统一查看内置、用户、项目和外部智能体，点击卡片查看与配置能力",
     "empty": {
       "noAgents": "当前没有可用的智能体",
@@ -123,6 +127,14 @@
     "filterProject": "项目级",
     "backToOverview": "返回总览",
     "detail": {
+      "overview": "概览",
+      "backToOverview": "返回概览",
+      "cards": {
+        "tools": "查看与管理智能体可使用的工具",
+        "skills": "选择智能体可使用的 Skills",
+        "subagents": "配置任务委派与协作成员",
+        "model": "选择子智能体执行任务时使用的模型"
+      },
       "configuration": "配置",
       "basicInfo": "基本信息",
       "basicInfoHint": "智能体的身份、用途与运行属性",
@@ -161,8 +173,6 @@
     "selectAll": "全选",
     "selectionSaveHint": "保存后生效",
     "capabilityEnabled": "已启用",
-    "subagentsSelectedCount": "已选择 {{count}} 个子智能体",
-    "subagentsEnabledCount": "已启用 {{count}} 个子智能体",
     "noEnabledSubagents": "未启用任何子智能体",
     "reset": "重置",
     "cancel": "取消",
@@ -191,7 +201,6 @@
       "sourceLevel": "来源/层级",
       "status": "状态",
       "savedStatus": "已保存配置的状态",
-      "subagentId": "ID",
       "source": "来源",
       "toolCount": "工具数",
       "externalManaged": "由外部提供方管理"
@@ -205,16 +214,12 @@
       "debugging": "调试",
       "coordination": "协作调度",
       "planning": "规划",
-      "gstack": "gstack",
       "other": "其他"
     },
     "skillGroupPicker": {
       "builtin": "内置分组",
       "myGroups": "我的分组",
       "otherSkills": "其他 Skill",
-      "selectedCount": "已选择 {{count}} 个技能",
-      "enabledCount": "已启用 {{count}} 个技能",
-      "runtimeCount": "运行时采用 {{count}} 个",
       "unavailableCount": "{{count}} 个不可用",
       "enableGroupSkills": "选择 {{name}} 中的所有技能",
       "clearGroupSkills": "取消选择 {{name}} 中的技能",
@@ -237,7 +242,6 @@
       "extension": "扩展 · {{provider}}",
       "other": "其他",
       "selectedCount": "已选择 {{count}} 个工具",
-      "enabledCount": "已启用 {{count}} 个工具",
       "manageGroups": "管理分组",
       "manageTitle": "管理我的工具分组",
       "manageSubtitle": "整理可复用的个人工具选择。",
@@ -272,13 +276,29 @@
     "editAgent": "编辑",
     "deleteAgent": "删除",
     "externalActions": "外部智能体",
-    "manageExternalAgent": "前往生态兼容管理",
+    "manageExternalAgent": "前往外部导入管理",
     "deleteConfirm": "确定删除自定义智能体「{{name}}」？此操作不可恢复。",
     "deleteSuccess": "已删除「{{name}}」",
     "deleteFailed": "删除失败：",
     "form": {
+      "wizard": {
+        "navigation": "创建步骤",
+        "progress": "{{current}} / {{total}}",
+        "next": "下一步",
+        "back": "上一步",
+        "basicsTitle": "决定协作方式",
+        "basicsDescription": "智能体由你直接使用，子智能体由其他智能体委派任务。用户级可跨项目复用，项目级仅在当前项目生效。",
+        "promptTitle": "建立稳定的工作规则",
+        "promptDescription": "提示词会在每次任务中作为行为指导。明确判断标准和完成条件，能让执行过程与结果更一致。",
+        "toolsTitle": "界定可执行的操作",
+        "toolsDescription": "工具决定它能实际执行哪些操作。仅开放任务所需的能力；调用时仍受当前权限策略约束。",
+        "loadingTools": "正在加载可用工具…",
+        "toolsLoadFailed": "无法加载当前设备的工具，请重试。",
+        "retry": "重试",
+        "noTools": "当前没有可供选择的工具，将使用默认工具配置。"
+      },
       "createThroughChatHint": "也可以在对话中描述你的需求，让智能体帮你创建自定义智能体。",
-      "title": "新建自定义智能体",
+      "title": "新建智能体",
       "subtitle": "创建智能体或子智能体，定义提示词、工具和运行时上下文策略。",
       "titleEdit": "编辑自定义智能体",
       "subtitleEdit": "可修改显示名称、描述、系统提示词、工具和运行时上下文策略。",
@@ -292,19 +312,15 @@
       "kind": "类型",
       "kindAgentTooltip": "创建后可在会话输入框的选择器中选择该智能体，直接向它分配任务。",
       "kindSubagentTooltip": "由主智能体委派子任务并接收执行结果。",
-      "id": "智能体 ID",
-      "idPlaceholder": "用于模型识别、配置和路由，创建后不可修改",
-      "idRequired": "ID 不能为空",
-      "idFormat": "只能以字母开头，包含字母/数字/下划线/连字符",
-      "name": "名称（选填）",
-      "namePlaceholder": "仅用于展示，留空时使用智能体 ID",
+      "name": "名称",
+      "namePlaceholder": "例如：资料研究助手",
       "level": "级别",
       "modeUserOnly": "当前版本中，直接承接任务的自定义智能体仅支持用户级。",
-      "description": "描述",
+      "description": "任务目标",
       "descPlaceholder": "简要描述该智能体的用途",
       "descRequired": "描述不能为空",
       "prompt": "系统提示词",
-      "promptPlaceholder": "输入系统提示词，定义智能体的行为...\n\n支持以下占位符\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: 语言偏好",
+      "promptPlaceholder": "请输入智能体系统提示词",
       "promptRequired": "系统提示词不能为空",
       "readonly": "只读模式",
       "model": "模型",
@@ -329,7 +345,16 @@
       "createSuccess": "已创建智能体「{{name}}」",
       "createFailed": "创建失败：",
       "review": "评审",
-      "reviewToolsHint": "补充检查仅使用只读工具。"
+      "reviewToolsHint": "补充检查仅使用只读工具。",
+      "readonlyToolsRequired": "只读模式下请至少选择一个只读工具。",
+      "nameRequired": "请给智能体起个名字。",
+      "promptGuide": "写清楚工作方法、约束和交付要求。也可以先按任务目标生成一份提示词骨架，再补充细节。",
+      "usePromptTemplate": "按任务目标生成骨架",
+      "promptTemplate": "## 目标\n{{goal}}\n\n## 工作方法\n先阅读已有上下文，识别缺失信息，再逐步完成任务。缺少会影响结果的关键决策时，先询问。\n\n## 约束\n遵守项目说明和已授予的权限。明确区分证据与假设。\n\n## 交付要求\n给出结果、支持结论的证据，以及尚未解决的问题。",
+      "permissionsReadonly": "只读访问 · 调整权限",
+      "permissionsStandard": "标准权限 · 调整访问范围",
+      "customizeTools": "调整已选工具",
+      "createNamePlaceholder": "例如：资料研究助手"
     }
   },
   "reviewTeams": {
@@ -369,16 +394,17 @@
     "Cowork": "办公协作智能体：协助处理办公与研究任务，在关键步骤与您确认。",
     "ComputerUse": "电脑操作子智能体：受委派操作浏览器、桌面应用和文件系统。",
     "DeepResearch": "深度研究智能体：对复杂主题进行系统性调研和分析",
+    "ResearchSpecialist": "聚焦网络调研，检索可靠资料并整理有来源依据的研究结论。",
+    "GeneralPurpose": "结合检索、分析与编程能力，独立完成多步骤任务。",
     "Explore": "探索子智能体：快速浏览代码库，理解项目结构和关键文件",
     "CodeReview": "代码审查子智能体：对代码进行质量检查和改进建议",
     "DeepReview": "严格审查兼容子智能体：用于历史会话或命令中的审查流程。",
-    "GenerateDoc": "文档生成子智能体：自动生成代码文档和说明",
     "Init": "初始化智能体：帮助设置项目结构和初始配置",
     "ReviewFixer": "审查修复子智能体：根据审查结果自动修复代码问题",
     "Claw": "个人助理：结合您的偏好与上下文，协助处理日常任务。",
-    "Standard": "通过规划、工具与子智能体协作完成通用任务。",
-    "Ultimate": "拆解复杂任务，协调并行子智能体并审查结果。",
-    "Minimal": "使用精简执行流程与固定的小型工具集。",
-    "Creative": "创造与定制 OpenBitFun 体验及能力。"
+    "Standard": "以清晰的任务指导和完整工具，支持编程，也胜任信息处理、内容创作等日常工作。",
+    "Ultimate": "多个智能体并行推进、独立审查，适合复杂项目与大型改造。",
+    "Minimal": "精简提示词与工具，让新一代旗舰模型充分发挥，适合编程等任务。",
+    "Creative": "借助创意技能制作视频、幻灯片、原型与网页，或用自然语言创建小应用、定制界面。"
   }
 }

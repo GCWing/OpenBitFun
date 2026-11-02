@@ -27,6 +27,7 @@ import { getMotionAwareScrollBehavior } from '@/shared/utils/motionPreference';
 import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTargetService';
 import { MarkdownAlignmentExtension } from '../extensions/MarkdownAlignmentExtension';
 import { BlockIdExtension } from '../extensions/BlockIdExtension';
+import { BlockHighlightExtension, blockHighlightPluginKey } from '../extensions/BlockHighlightExtension';
 import { SoftBreakExtension } from '../extensions/SoftBreakExtension';
 import { MarkdownImage } from '../extensions/MarkdownImageExtension';
 import {
@@ -50,6 +51,7 @@ import {
 import { getCachedLocalImageDataUrl, loadLocalImages } from '../utils/loadLocalImages';
 import { isLocalPath, resolveImagePath } from '../utils/rehype-local-images';
 import { markdownToEditableTiptapDoc, tiptapDocToMarkdown, tiptapDocToTopLevelMarkdownBlocks } from '../utils/tiptapMarkdown';
+import { handleMarkdownSourcePaste, parseMarkdownClipboardText } from '../utils/markdownClipboard';
 import '@/infrastructure/markdown/Markdown.scss';
 import './TiptapEditor.scss';
 
@@ -74,6 +76,7 @@ interface TiptapEditorProps {
   onFocus?: () => void;
   onBlur?: () => void;
   placeholder?: string;
+  emptyDocumentPlaceholder?: string;
   readonly?: boolean;
   autofocus?: boolean;
   onDirtyChange?: (isDirty: boolean) => void;
@@ -396,6 +399,7 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
   onFocus,
   onBlur,
   placeholder,
+  emptyDocumentPlaceholder,
   readonly = false,
   autofocus = false,
   onDirtyChange,
@@ -419,10 +423,13 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
   const targetIdRef = useRef(`markdown-ir-tiptap-${Math.random().toString(36).slice(2, 10)}`);
   const inlineAiInputRef = useRef<HTMLInputElement | null>(null);
   const inlineAiInputComposingRef = useRef(false);
+  const plainTextPasteRef = useRef(false);
   const [inlineAiState, setInlineAiState] = useState<InlineAiState | null>(null);
 
   const [initialContent] = useState(() => markdownToEditableTiptapDoc(value));
   const inlineAiTriggerHint = t('editor.meditor.inlineAi.triggerHint');
+  const placeholderOptionsRef = useRef({ placeholder, emptyDocumentPlaceholder, inlineAiTriggerHint });
+  placeholderOptionsRef.current = { placeholder, emptyDocumentPlaceholder, inlineAiTriggerHint };
 
   useEffect(() => {
     inlineAiStateRef.current = inlineAiState;
@@ -565,16 +572,21 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
       // Placeholder decorations keep hints outside the document mutation path.
       // Direct paragraph DOM changes can reparse and destroy active embed editors.
       Placeholder.configure({
-        placeholder: ({ node, hasAnchor }) => {
+        placeholder: ({ editor: instance, node, hasAnchor }) => {
+          const hints = placeholderOptionsRef.current;
+          if (instance.isEmpty && hints.emptyDocumentPlaceholder !== undefined) {
+            return hints.emptyDocumentPlaceholder;
+          }
           if (!hasAnchor || node.type.name !== 'paragraph') {
-            return placeholder ?? '';
+            return hints.placeholder ?? '';
           }
 
-          return inlineAiTriggerHint;
+          return hints.inlineAiTriggerHint;
         },
       }),
       MarkdownAlignmentExtension,
       BlockIdExtension,
+      BlockHighlightExtension,
       SoftBreakExtension,
       MarkdownImage.configure({
         fileAccess,
@@ -635,6 +647,21 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
     ],
     editorProps: {
       attributes: { class: 'markdown-renderer' },
+      handleDOMEvents: {
+        paste: () => {
+          plainTextPasteRef.current = false;
+          return false;
+        },
+      },
+      clipboardTextParser: (text, context, plain, view) => {
+        plainTextPasteRef.current = plain;
+        return parseMarkdownClipboardText(text, context, plain, view);
+      },
+      handlePaste: (view, event) => {
+        const plain = plainTextPasteRef.current;
+        plainTextPasteRef.current = false;
+        return handleMarkdownSourcePaste(view, event, plain);
+      },
       handleKeyDown: (_view, event) => {
         if (readonlyRef.current || inlineAiStateRef.current?.isOpen) {
           return false;
@@ -704,6 +731,12 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
       onDirtyChange?.(markdown !== savedContentRef.current);
     },
   });
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    // Refresh placeholder decorations without changing document content or undo history.
+    editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false));
+  }, [editor, placeholder, emptyDocumentPlaceholder, inlineAiTriggerHint]);
 
   useEffect(() => {
     if (!editor) {
@@ -886,24 +919,38 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
       return;
     }
 
+    let blockPosition = 0;
+    instance.state.doc.forEach((node, offset) => {
+      if (node.attrs.blockId === blockId) blockPosition = offset;
+    });
+    // Move the selection and highlight through editor state, without rewriting
+    // the editable DOM or adding navigation to the document's undo history.
+    instance.view.dispatch(instance.state.tr
+      .setSelection(Selection.near(instance.state.doc.resolve(blockPosition + 1)))
+      .setMeta(blockHighlightPluginKey, highlight ? blockId : null)
+      .setMeta('addToHistory', false));
+    focusEditorWithoutScroll(instance);
+
     element.scrollIntoView({
       behavior: getMotionAwareScrollBehavior('smooth'),
       block: 'center',
     });
 
-    if (highlight) {
-      element.classList.add('m-editor-tiptap-block-highlighted');
-
-      if (highlightTimerRef.current) {
-        window.clearTimeout(highlightTimerRef.current);
-      }
-
-      highlightTimerRef.current = window.setTimeout(() => {
-        element.classList.remove('m-editor-tiptap-block-highlighted');
-      }, 3000);
+    if (highlightTimerRef.current) {
+      window.clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
     }
 
-    instance.commands.focus();
+    if (highlight) {
+      highlightTimerRef.current = window.setTimeout(() => {
+        highlightTimerRef.current = null;
+        if (!instance.isDestroyed) {
+          instance.view.dispatch(instance.state.tr
+            .setMeta(blockHighlightPluginKey, null)
+            .setMeta('addToHistory', false));
+        }
+      }, 3000);
+    }
   }, []);
 
   const handleContinueWriting = useCallback(async (

@@ -37,13 +37,17 @@ export function resolveLegacySessionWorkspace<T extends {
   remoteConnectionId?: string; remoteSshHost?: string;
 }, records: T[]): T | undefined {
   if (session.workspaceId) return records.find(record => record.id === session.workspaceId);
-  const roots = [session.workspacePath, session.projectWorkspacePath].filter(Boolean);
-  const candidates = records.filter(record => {
+  // Execution and project roots are different roles. A stale execution root
+  // must not silently select the project (or a similarly named local folder).
+  const root = session.workspacePath || session.projectWorkspacePath;
+  if (!root) return undefined;
+  const uniqueRecords = [...new Map(records.map(record => [record.id, record])).values()];
+  const candidates = uniqueRecords.filter(record => {
     const normalize = record.workspaceKind === 'remote' ? normalizeRemoteWorkspacePath : normalizePath;
-    const matchesPath = roots.some(root => root && normalize(root).replace(/\/$/, '') === normalize(record.rootPath).replace(/\/$/, ''));
+    const matchesPath = normalize(root).replace(/\/$/, '') === normalize(record.rootPath).replace(/\/$/, '');
     return matchesPath
     && (!session.remoteConnectionId || (record.workspaceKind === 'remote' && record.connectionId === session.remoteConnectionId))
-    && (!session.remoteSshHost || session.remoteSshHost === 'localhost'
+    && (!session.remoteSshHost || (session.remoteSshHost === 'localhost' && !session.remoteConnectionId)
       || (record.workspaceKind === 'remote' && record.sshHost === session.remoteSshHost));
   });
   return candidates.length === 1 ? candidates[0] : undefined;
@@ -66,7 +70,8 @@ export async function workspaceIdRequest(workspaceId: string, legacyPathField: '
 export async function sessionWorkspaceIdRequest(workspaceId: string) {
   const request = await workspaceIdRequest(workspaceId, 'workspacePath');
   if ('workspaceId' in request) return { workspace_id: request.workspaceId };
-  return { workspace_path: request.workspacePath, remote_connection_id: request.remoteConnectionId };
+  return { workspace_path: request.workspacePath, remote_connection_id: request.remoteConnectionId,
+    remote_ssh_host: request.remoteSshHost };
 }
 
 /** Upgrade-only migration of 1.0.0 controller-local terminal profile keys.

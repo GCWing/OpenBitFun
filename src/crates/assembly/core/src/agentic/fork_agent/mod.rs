@@ -7,6 +7,12 @@
 use crate::agentic::core::{Message, Session, SessionConfig};
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 
+mod context_normalization;
+
+pub(crate) use context_normalization::{
+    normalize_fork_context_messages, normalize_incomplete_tool_calls,
+};
+
 /// Immutable snapshot of a parent session's runtime context at fork time.
 #[derive(Debug, Clone)]
 pub struct ForkAgentContextSnapshot {
@@ -79,6 +85,7 @@ mod tests {
 
     fn parent_session() -> Session {
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some("/workspace/project".to_string()),
             remote_connection_id: Some("remote-1".to_string()),
             remote_ssh_host: Some("prod-box".to_string()),

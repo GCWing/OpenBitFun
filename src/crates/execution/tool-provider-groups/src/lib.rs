@@ -15,6 +15,7 @@ pub enum ToolPackFeatureGroup {
     BrowserWeb,
     ComputerUse,
     ImageAnalysis,
+    ImageGeneration,
     MiniApp,
     Pages,
     Creation,
@@ -31,6 +32,7 @@ impl ToolPackFeatureGroup {
             Self::BrowserWeb => "browser-web",
             Self::ComputerUse => "computer-use",
             Self::ImageAnalysis => "image-analysis",
+            Self::ImageGeneration => "image-generation",
             Self::MiniApp => "miniapp",
             Self::Pages => "pages",
             Self::Creation => "creation",
@@ -47,6 +49,7 @@ pub const ALL_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[
     ToolPackFeatureGroup::BrowserWeb,
     ToolPackFeatureGroup::ComputerUse,
     ToolPackFeatureGroup::ImageAnalysis,
+    ToolPackFeatureGroup::ImageGeneration,
     ToolPackFeatureGroup::MiniApp,
     ToolPackFeatureGroup::Pages,
     ToolPackFeatureGroup::Creation,
@@ -75,6 +78,10 @@ pub fn enabled_feature_groups() -> Vec<ToolPackFeatureGroup> {
             cfg!(feature = "image-analysis"),
             ToolPackFeatureGroup::ImageAnalysis,
         ),
+        (
+            cfg!(feature = "image-generation"),
+            ToolPackFeatureGroup::ImageGeneration,
+        ),
         (cfg!(feature = "miniapp"), ToolPackFeatureGroup::MiniApp),
         (cfg!(feature = "pages"), ToolPackFeatureGroup::Pages),
         (cfg!(feature = "creation"), ToolPackFeatureGroup::Creation),
@@ -102,18 +109,21 @@ pub fn tool_feature_group(tool_name: &str) -> Option<ToolPackFeatureGroup> {
         "WebSearch" | "WebFetch" | "ControlHub" => Some(ToolPackFeatureGroup::BrowserWeb),
         "ComputerUse" => Some(ToolPackFeatureGroup::ComputerUse),
         "view_image" | "analyze_image" => Some(ToolPackFeatureGroup::ImageAnalysis),
+        "generate_image" => Some(ToolPackFeatureGroup::ImageGeneration),
         "GenerativeUI" | "InitMiniApp" | "FinalizeMiniApp" | "PublishMiniApp"
-        | "PublishAppearance" | "Playbook" => Some(ToolPackFeatureGroup::MiniApp),
-        "PageDeploy" | "PagePublish" => Some(ToolPackFeatureGroup::Pages),
+        | "MiniAppBrowser" | "PublishAppearance" | "Playbook" => {
+            Some(ToolPackFeatureGroup::MiniApp)
+        }
+        "PageManage" | "PageDeploy" | "PagePublish" => Some(ToolPackFeatureGroup::Pages),
         "FrontendWorkbench" => Some(ToolPackFeatureGroup::Creation),
         "CreateCanvas" | "ReadCanvas" | "UpdateCanvas" | "PatchCanvas" => {
             Some(ToolPackFeatureGroup::Canvas)
         }
-        "Task" | "AgentSpawn" | "AgentSendInput" | "AgentInterrupt" | "AgentList"
-        | "AgentDelete" | "AgentWait" | "LaunchReviewAgent" | "Skill" | "AskUserQuestion"
-        | "TodoWrite" | "get_goal" | "create_goal" | "update_goal" | "submit_code_review"
-        | "GetToolSpec" | "CallDeferredTool" | "SessionControl" | "SessionMessage"
-        | "SessionHistory" | "Cron" | "PortForward" | "OpenBitFunControl" => {
+        "Task" | "AgentSpawn" | "AgentSendInput" | "AgentControl" | "AgentList" | "AgentWait"
+        | "LaunchReviewAgent" | "Skill" | "AskUserQuestion" | "TodoWrite" | "get_goal"
+        | "create_goal" | "update_goal" | "submit_code_review" | "GetToolSpec"
+        | "CallDeferredTool" | "ListWorkspaces" | "SessionControl" | "SessionMessage"
+        | "SessionHistory" | "Cron" | "PortForward" | "DesktopCard" | "OpenBitFunControl" => {
             Some(ToolPackFeatureGroup::AgentControl)
         }
         _ => None,
@@ -155,6 +165,7 @@ impl ToolProviderGroupPlan {
 const CORE_BASIC_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[
     ToolPackFeatureGroup::Basic,
     ToolPackFeatureGroup::ImageAnalysis,
+    ToolPackFeatureGroup::ImageGeneration,
 ];
 const CORE_AGENT_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[ToolPackFeatureGroup::AgentControl];
 const CORE_REVIEW_FEATURE_GROUPS: &[ToolPackFeatureGroup] = &[ToolPackFeatureGroup::AgentControl];
@@ -177,6 +188,7 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
             "Read",
             "view_image",
             "analyze_image",
+            "generate_image",
             "Glob",
             "Grep",
             "Write",
@@ -196,9 +208,8 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
             "Task",
             "AgentSpawn",
             "AgentSendInput",
-            "AgentInterrupt",
+            "AgentControl",
             "AgentList",
-            "AgentDelete",
             "AgentWait",
             "Skill",
             "AskUserQuestion",
@@ -215,11 +226,13 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
         provider_id: "core.session",
         feature_groups: CORE_SESSION_FEATURE_GROUPS,
         tool_names: &[
+            "ListWorkspaces",
             "SessionControl",
             "SessionMessage",
             "SessionHistory",
             "Cron",
             "PortForward",
+            "DesktopCard",
         ],
     },
     ToolProviderGroupPlan {
@@ -260,6 +273,7 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
             "InitMiniApp",
             "FinalizeMiniApp",
             "PublishMiniApp",
+            "MiniAppBrowser",
             "PublishAppearance",
             "Playbook",
         ],
@@ -267,7 +281,9 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
     ToolProviderGroupPlan {
         provider_id: "core.pages",
         feature_groups: &[ToolPackFeatureGroup::Pages],
-        tool_names: &["PageDeploy", "PagePublish"],
+        // Legacy names remain available for persisted Agent allowlists and old calls.
+        // New Agent defaults expose only PageManage.
+        tool_names: &["PageManage", "PageDeploy", "PagePublish"],
     },
     ToolProviderGroupPlan {
         provider_id: "core.creation",
@@ -353,6 +369,7 @@ mod tests {
                 "browser-web",
                 "computer-use",
                 "image-analysis",
+                "image-generation",
                 "miniapp",
                 "pages",
                 "creation",
@@ -389,6 +406,10 @@ mod tests {
         assert_eq!(
             groups.contains(&ToolPackFeatureGroup::ImageAnalysis),
             cfg!(feature = "image-analysis")
+        );
+        assert_eq!(
+            groups.contains(&ToolPackFeatureGroup::ImageGeneration),
+            cfg!(feature = "image-generation")
         );
         assert_eq!(
             groups.contains(&ToolPackFeatureGroup::MiniApp),
@@ -435,6 +456,20 @@ mod tests {
     }
 
     #[test]
+    fn generation_and_inspection_have_independent_feature_owners() {
+        assert_eq!(
+            tool_feature_group("generate_image"),
+            Some(ToolPackFeatureGroup::ImageGeneration)
+        );
+        for tool_name in ["view_image", "analyze_image"] {
+            assert_eq!(
+                tool_feature_group(tool_name),
+                Some(ToolPackFeatureGroup::ImageAnalysis)
+            );
+        }
+    }
+
+    #[test]
     fn every_provider_declares_exactly_its_tool_owner_groups() {
         for provider in product_tool_provider_group_plan() {
             let declared = provider
@@ -475,6 +510,10 @@ mod tests {
         assert_eq!(ToolPackFeatureGroup::BrowserWeb.id(), "browser-web");
         assert_eq!(ToolPackFeatureGroup::ComputerUse.id(), "computer-use");
         assert_eq!(ToolPackFeatureGroup::ImageAnalysis.id(), "image-analysis");
+        assert_eq!(
+            ToolPackFeatureGroup::ImageGeneration.id(),
+            "image-generation"
+        );
         assert_eq!(ToolPackFeatureGroup::MiniApp.id(), "miniapp");
         assert_eq!(ToolPackFeatureGroup::Creation.id(), "creation");
         assert_eq!(ToolPackFeatureGroup::Canvas.id(), "canvas");
@@ -521,6 +560,7 @@ mod tests {
                 "Read",
                 "view_image",
                 "analyze_image",
+                "generate_image",
                 "Glob",
                 "Grep",
                 "Write",
@@ -534,9 +574,8 @@ mod tests {
                 "Task",
                 "AgentSpawn",
                 "AgentSendInput",
-                "AgentInterrupt",
+                "AgentControl",
                 "AgentList",
-                "AgentDelete",
                 "AgentWait",
                 "Skill",
                 "AskUserQuestion",
@@ -547,11 +586,13 @@ mod tests {
                 "GetToolSpec",
                 "CallDeferredTool",
                 "OpenBitFunControl",
+                "ListWorkspaces",
                 "SessionControl",
                 "SessionMessage",
                 "SessionHistory",
                 "Cron",
                 "PortForward",
+                "DesktopCard",
                 "GetFileDiff",
                 "Worktree",
                 "ReviewPlatform",
@@ -569,8 +610,10 @@ mod tests {
                 "InitMiniApp",
                 "FinalizeMiniApp",
                 "PublishMiniApp",
+                "MiniAppBrowser",
                 "PublishAppearance",
                 "Playbook",
+                "PageManage",
                 "PageDeploy",
                 "PagePublish",
                 "FrontendWorkbench",
@@ -601,7 +644,10 @@ mod tests {
         assert_eq!(
             feature_groups,
             vec![
-                ("core.basic", vec!["basic", "image-analysis"]),
+                (
+                    "core.basic",
+                    vec!["basic", "image-analysis", "image-generation"]
+                ),
                 ("core.agent", vec!["agent-control"]),
                 ("core.session", vec!["agent-control"]),
                 ("core.git", vec!["git"]),

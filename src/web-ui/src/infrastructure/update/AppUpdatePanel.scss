@@ -109,13 +109,13 @@
       grid-area: 1 / 1;
       z-index: 1;
       inline-size: min(60%, 192px);
+      block-size: auto;
       aspect-ratio: 1;
       background: linear-gradient(
         145deg,
         var(--openbitfun-color-content-secondary),
         var(--openbitfun-color-content-muted)
       );
-      mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
     }
   }
 

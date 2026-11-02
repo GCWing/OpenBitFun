@@ -16,7 +16,7 @@ struct StreamingTextStateTests {
         }
         assert(state.visible == text)
         state.update("中文", active: true)
-        assert(state.visible == text && state.target == text)
+        assert(state.visible == "中文" && state.target == "中文" && state.ticksRemaining == 0)
         state.update(text + " tail", active: true)
         state.advance()
         state.update("corrected", active: true)
@@ -37,6 +37,18 @@ struct StreamingTextStateTests {
         assert(resumed.visible == "partial")
         resumed.advance()
         assert(resumed.visible.hasPrefix("partial"))
+        // A same-row cached reveal must not resurrect content removed by the host.
+        var shortened = StreamingTextState(text: "partial obsolete")
+        shortened.update("partial", active: true)
+        assert(shortened.visible == "partial" && shortened.target == "partial")
+        shortened.update("", active: true)
+        assert(shortened.visible.isEmpty && shortened.ticksRemaining == 0)
+        // Corrections may still share the visible prefix while changing the
+        // unrevealed target; the old animation must not remain in flight.
+        var pending = StreamingTextState(text: "prefix")
+        pending.update("prefix obsolete", active: true)
+        pending.update("prefix fixed", active: true)
+        assert(pending.visible == "prefix fixed" && pending.ticksRemaining == 0)
         print("Streaming text state tests passed")
     }
 }

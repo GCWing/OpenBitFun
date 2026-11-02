@@ -288,12 +288,18 @@ export class GitService {
     }
   }
 
-  async getBranches(repositoryPath: GitWorkspaceScope, includeRemote: boolean = false): Promise<GitBranch[]> {
+  async getBranches(
+    repositoryPath: GitWorkspaceScope,
+    includeRemote: boolean = false,
+    options: { throwOnError?: boolean } = {},
+  ): Promise<GitBranch[]> {
     try {
       const result = await gitAPI.getBranches(repositoryPath, includeRemote);
       return this.adaptBranches(result);
     } catch (error) {
       log.error('Failed to get branches', error);
+      // Interactive callers must distinguish a failed read from an empty repository.
+      if (options.throwOnError) throw error;
       return [];
     }
   }

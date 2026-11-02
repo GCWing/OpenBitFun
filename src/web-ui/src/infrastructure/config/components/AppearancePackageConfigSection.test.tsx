@@ -6,7 +6,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppearancePackageValidationError } from '@/infrastructure/appearance';
+import { AppearancePackageValidationError, builtinAppearanceCatalog } from '@/infrastructure/appearance';
 import {
   AppearancePackageConfigSection,
   AppearancePackageFailurePanel,
@@ -25,47 +25,35 @@ vi.mock('react-i18next', async importOriginal => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@/infrastructure/appearance', async importOriginal => ({
-  ...await importOriginal<typeof import('@/infrastructure/appearance')>(),
-  SYSTEM_APPEARANCE_ID: 'system',
-  useAppearance: () => ({
-    appearances: [
-      {
-        id: 'openbitfun-dark',
-        name: 'Dark',
-        description: 'Default dark appearance',
-        version: '1.0.0',
-        mode: 'dark',
-        source: 'builtin',
-      },
-      {
-        id: 'openbitfun-light',
-        name: 'Light',
-        description: 'Default light appearance',
-        version: '1.0.0',
-        mode: 'light',
-        source: 'builtin',
-      },
-      {
-        id: 'sample.appearance',
-        name: 'Sample Appearance',
-        version: '1.0.0',
-        author: 'Studio',
-        mode: 'dark',
-        source: 'imported',
-        importedAt: '2026-07-28T00:00:00.000Z',
-      },
-    ],
-    selectedAppearanceId: appearanceStateMock.selectedAppearanceId,
-    initialized: true,
-    status: 'ready',
-    getPreviewAsset: getPreviewAssetMock,
-    importPackage: vi.fn(),
-    exportPackage: vi.fn(),
-    select: selectAppearanceMock,
-    deletePackage: vi.fn(),
-  }),
-}));
+vi.mock('@/infrastructure/appearance', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/infrastructure/appearance')>();
+  return {
+    ...actual,
+    SYSTEM_APPEARANCE_ID: 'system',
+    useAppearance: () => ({
+      appearances: [
+        ...actual.builtinAppearanceCatalog,
+        {
+          id: 'sample.appearance',
+          name: 'Sample Appearance',
+          version: '1.0.0',
+          author: 'Studio',
+          mode: 'dark',
+          source: 'imported',
+          importedAt: '2026-07-28T00:00:00.000Z',
+        },
+      ],
+      selectedAppearanceId: appearanceStateMock.selectedAppearanceId,
+      initialized: true,
+      status: 'ready',
+      getPreviewAsset: getPreviewAssetMock,
+      importPackage: vi.fn(),
+      exportPackage: vi.fn(),
+      select: selectAppearanceMock,
+      deletePackage: vi.fn(),
+    }),
+  };
+});
 
 describe('AppearancePackageConfigSection', () => {
   beforeEach(() => {
@@ -89,21 +77,28 @@ describe('AppearancePackageConfigSection', () => {
     expect(html).toContain('data-openbitfun-package-type="native"');
     expect(html).toContain('data-openbitfun-package-type="imported"');
     expect(html).toContain('data-testid="appearance-builtin-theme-select"');
-    expect(html.match(/data-testid="appearance-builtin-theme-option"/g)).toHaveLength(3);
+    expect(html.match(/data-testid="appearance-builtin-theme-option"/g))
+      .toHaveLength(builtinAppearanceCatalog.length + 1);
     expect(html.match(/class="appearance-package-config__selected-mark"/g)).toHaveLength(1);
-    expect(html).toContain('package.market.open');
-    expect(html).toContain('package.import');
     expect(html).toContain('aria-label="package.export"');
     expect(html).toContain('aria-label="package.delete"');
-    expect(html).toContain('accept=".openbitfun-appearance,.zip,application/zip"');
     expect(html).toContain('data-openbitfun-part="packageSection"');
     expect(html).toContain('data-openbitfun-part="packageActions"');
-    expect(html).toContain('data-openbitfun-component="button"');
-    expect(html.match(/data-openbitfun-variant="outline"/g)).toHaveLength(2);
-    expect(html).not.toContain('data-size="md"');
+    expect(html).toContain('data-openbitfun-component="icon-button"');
     expect(html).toContain('openbitfun-config-page-section');
     expect(html).not.toContain('appearance-package-config__action-button');
     expect(html).not.toContain('.openbitfun-skin');
+  });
+
+  it('hides the Skin market and appearance package import entry points', () => {
+    const html = renderToStaticMarkup(<AppearancePackageConfigSection />);
+
+    expect(html).not.toContain('package.market.open');
+    expect(html).not.toContain('package.import');
+    expect(html).not.toContain('accept=".openbitfun-appearance,.zip,application/zip"');
+    expect(html).not.toContain('appearance-package-config__file-input');
+    expect(html).toContain('aria-label="package.export"');
+    expect(html).toContain('aria-label="package.delete"');
   });
 
   it('uses high-density artwork and a separate selection mark for the built-in package card', () => {
@@ -129,7 +124,7 @@ describe('AppearancePackageConfigSection', () => {
 
   it('keeps cards borderless and the default package copy beside its theme selector', () => {
     const styles = readFileSync(
-      resolve(process.cwd(), 'src', 'infrastructure', 'config', 'components', 'AppearanceSettingsPage.scss'),
+      resolve(process.cwd(), 'src', 'app', 'scenes', 'settings', 'pages', 'application', 'AppearanceSettingsPage.scss'),
       'utf8',
     );
     const galleryRule = styles.match(/&__gallery \{([\s\S]*?)\n  \}/)?.[1] ?? '';
@@ -220,12 +215,27 @@ describe('AppearancePackageConfigSection', () => {
   it('selects built-in themes inside the default card and installed skins from peer cards', async () => {
     appearanceStateMock.selectedAppearanceId = 'system';
     const container = document.createElement('div');
+    document.body.appendChild(container);
     const root = createRoot(container);
 
     try {
       await act(async () => {
         root.render(<AppearancePackageConfigSection />);
       });
+
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[role="combobox"]')?.click();
+      });
+      const listbox = document.querySelector('[role="listbox"]');
+      const groups = Array.from(listbox?.querySelectorAll('[role="group"]') ?? []);
+      expect(groups.map(group => Array.from(group.querySelectorAll('[role="option"]'))
+        .map(option => option.getAttribute('data-appearance-id')))).toEqual([
+        ['system', 'openbitfun-light', 'openbitfun-dark'],
+        builtinAppearanceCatalog
+          .filter(appearance => !['openbitfun-light', 'openbitfun-dark'].includes(appearance.id))
+          .map(appearance => appearance.id),
+      ]);
+      expect(listbox?.querySelector('[data-openbitfun-part="group-label"]')).toBeNull();
 
       const builtinSelect = container.querySelector<HTMLSelectElement>(
         'select[data-testid="appearance-builtin-theme-select"]',
@@ -251,6 +261,7 @@ describe('AppearancePackageConfigSection', () => {
       expect(selectAppearanceMock.mock.calls).toEqual([['openbitfun-light'], ['sample.appearance']]);
     } finally {
       act(() => root.unmount());
+      container.remove();
     }
   });
 

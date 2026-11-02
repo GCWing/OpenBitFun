@@ -18,6 +18,9 @@ export interface DesignSystemMessages {
   searchOptions: string;
   selectAll: string;
   selectPlaceholder: string;
+  toolCardOpenDetails: string;
+  toolCardExpandDetails: string;
+  toolCardCollapseDetails: string;
 }
 
 export interface DesignSystemContextValue {
@@ -41,6 +44,9 @@ export const defaultDesignSystemMessages: DesignSystemMessages = {
   searchOptions: "Search options",
   selectAll: "Select all",
   selectPlaceholder: "Select an option",
+  toolCardOpenDetails: "Open details",
+  toolCardExpandDetails: "Expand details",
+  toolCardCollapseDetails: "Collapse details",
 };
 
 export const defaultDesignSystemContext: DesignSystemContextValue = {

@@ -73,6 +73,9 @@ export interface PeerDeviceSurfaceControllerDependencies {
   setPeerControllerActive: (active: boolean, required: boolean) => Promise<void>;
   commitSurface: (target: ResolvedSurfaceTarget) => SurfaceScope;
   invalidateCurrentSurface: () => SurfaceScope;
+  /** Keep non-React polling on the transport target while workspace state hydrates. */
+  setPeerDeviceModeActiveFlag: (active: boolean) => void;
+  /** Notify React consumers only after the target workspace is ready. */
   emitPeerModeChanged: (detail: { active: boolean; deviceId?: string }) => void;
   markSurfaceSwitched: () => void;
   discardSurfaceState: (surfaceId: DeviceSurfaceId) => void;
@@ -418,11 +421,11 @@ export class PeerDeviceSurfaceController {
     this.currentTarget = target;
     this.currentTargetReady = false;
     this.dependencies.markSurfaceSwitched();
-    this.dependencies.emitPeerModeChanged({
-      active: target.deviceId !== null,
-      deviceId: target.deviceId ?? fromTarget.deviceId ?? undefined,
-    });
-    this.publish();
+    // The adapter has already moved, but the workspace catalog still belongs
+    // to the surface being left. Keep non-React polling in peer mode while the
+    // new catalog hydrates; React consumers are notified only after that
+    // catalog is authoritative.
+    this.dependencies.setPeerDeviceModeActiveFlag(true);
 
     await this.awaitIntent(
       intent,
@@ -447,6 +450,14 @@ export class PeerDeviceSurfaceController {
     }
 
     this.currentTargetReady = true;
+    if (target.deviceId === null) {
+      this.dependencies.setPeerDeviceModeActiveFlag(false);
+    }
+    this.dependencies.emitPeerModeChanged({
+      active: target.deviceId !== null,
+      deviceId: target.deviceId ?? fromTarget.deviceId ?? undefined,
+    });
+    this.publish();
 
     log.info('Device surface switched', {
       from: fromTarget.deviceId,

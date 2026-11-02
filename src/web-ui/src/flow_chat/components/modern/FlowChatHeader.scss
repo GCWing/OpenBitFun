@@ -232,7 +232,14 @@
     min-height: 0;
     overflow-y: auto;
     padding: 2px var(--openbitfun-space-2) var(--openbitfun-space-1);
-    scrollbar-gutter: stable;
+    /*
+     * No reserved scrollbar gutter. `scrollbar-gutter: stable` reserves the
+     * platform scrollbar width on the inline end only, so the section dividers
+     * ended 8px from the leading edge and 23px from the trailing one. The list
+     * inset (space-2) plus the row inset (space-1) is exactly the panel header's
+     * space-3 inset, and that chain, not scrollbar geometry, owns this panel's
+     * insets.
+     */
   }
 
   &__session-overview-section {
@@ -527,6 +534,11 @@
     gap: var(--openbitfun-space-1);
     flex-shrink: 0;
 
+    &--searching {
+      flex-shrink: 1;
+      min-width: 0;
+    }
+
     &--left {
       margin-right: var(--openbitfun-space-2);
       overflow: visible;
@@ -535,7 +547,7 @@
 
   @media (max-width: 900px) {
     &__search {
-      min-width: min(220px, 52vw);
+      width: min(220px, 52vw);
       max-width: min(300px, 56vw);
     }
   }

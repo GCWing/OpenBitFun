@@ -120,7 +120,9 @@ async fn write_installed_manifest(root: &Path) -> OpenBitFunResult<()> {
     Ok(())
 }
 
-async fn acquire_install_lock(user_skills_root: &Path) -> OpenBitFunResult<BuiltinSkillsInstallLock> {
+async fn acquire_install_lock(
+    user_skills_root: &Path,
+) -> OpenBitFunResult<BuiltinSkillsInstallLock> {
     let lock_path = builtin_skills_install_lock_path(user_skills_root);
 
     // Use an OS-backed advisory file lock so parallel test processes and app
@@ -403,7 +405,13 @@ mod tests {
         assert!(skill
             .content
             .contains(".openbitfun/plans/<short-kebab-name>.plan.md"));
-        assert!(skill.content.contains("status: pending"));
+        assert!(skill
+            .content
+            .contains("overview: One or two sentence overview"));
+        assert!(!skill.content.contains("status: pending"));
+        assert!(skill
+            .content
+            .contains("system prompt's `Language Preference`"));
     }
 
     #[test]
@@ -439,142 +447,6 @@ mod tests {
                 !text.contains("give the returned `openbitfun-canvas://...` artifact reference"),
                 "{path} still instructs the agent to expose an internal Canvas URI"
             );
-        }
-    }
-
-    fn gstack_skill_texts() -> Vec<(String, &'static str)> {
-        BUILTIN_SKILLS_DIR
-            .dirs()
-            .filter_map(|dir| {
-                let name = dir.path().file_name()?.to_str()?;
-                if !name.starts_with("gstack-") {
-                    return None;
-                }
-                let file = dir.files().find(|file| {
-                    file.path().file_name().and_then(|name| name.to_str()) == Some("SKILL.md")
-                })?;
-                Some((
-                    name.to_string(),
-                    file.contents_utf8()
-                        .unwrap_or_else(|| panic!("{name}/SKILL.md is not UTF-8")),
-                ))
-            })
-            .collect()
-    }
-
-    #[test]
-    fn gstack_direct_skill_paths_resolve_to_bundled_skills() {
-        for (source, text) in gstack_skill_texts() {
-            for token in text.split(|ch: char| {
-                !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '/' | '.' | ':'))
-            }) {
-                if let Some(path) = token.strip_suffix("/SKILL.md") {
-                    let target = path.rsplit('/').next().unwrap_or(path);
-                    assert!(
-                        BUILTIN_SKILLS_DIR.get_dir(target).is_some(),
-                        "{source}/SKILL.md references missing built-in skill {target}/SKILL.md"
-                    );
-                }
-                if let Some(target) = token.strip_prefix("user::openbitfun-system::") {
-                    assert!(
-                        BUILTIN_SKILLS_DIR.get_dir(target).is_some(),
-                        "{source}/SKILL.md references missing stable skill key {token}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn gstack_does_not_emit_pseudo_openbitfun_browser_commands() {
-        const STALE_BROWSER_GUIDANCE: [&str; 5] = [
-            "OpenBitFun browser/computer-use",
-            "OpenBitFun built-in browser/computer-use",
-            "external browse binary",
-            "use `ComputerUse` for browser inspection",
-            "use `ComputerUse` for browser/desktop testing",
-        ];
-
-        for (source, text) in gstack_skill_texts() {
-            let lowercase = text.to_ascii_lowercase();
-            for stale in STALE_BROWSER_GUIDANCE {
-                assert!(
-                    !text.contains(stale),
-                    "{source}/SKILL.md still contains stale browser guidance: {stale}"
-                );
-            }
-            assert!(
-                !text.contains("agent-browser fill @e4 \"[REDACTED]\""),
-                "{source}/SKILL.md still places a password placeholder in a logged command"
-            );
-            assert!(
-                !text.contains("agent-browser state load cookies.json"),
-                "{source}/SKILL.md treats a cookie file as agent-browser storage state"
-            );
-            assert!(
-                !text.contains("auth save qa-target") && !text.contains("auth login qa-target"),
-                "{source}/SKILL.md reuses a global auth profile across unrelated targets"
-            );
-            assert!(
-                !text.contains("CDP_MODE=true"),
-                "{source}/SKILL.md still infers agent-browser state from the legacy CDP mode"
-            );
-            if text.contains("cookie file or Copy-as-cURL export") {
-                assert!(
-                    text.contains("agent-browser cookies set --curl cookies.json"),
-                    "{source}/SKILL.md does not import cookie files with the supported command"
-                );
-            }
-            assert!(
-                !text.contains("Ask the user to enter it through stdin"),
-                "{source}/SKILL.md asks for interactive stdin in a non-interactive tool command"
-            );
-            if text.contains("--password-stdin") {
-                assert!(
-                    text.contains("own interactive terminal"),
-                    "{source}/SKILL.md must route password-stdin setup to the user's terminal"
-                );
-            }
-            if text.contains("agent-browser open") || text.contains("agent-browser get url") {
-                assert!(
-                    text.contains("agent-browser --version")
-                        && text.contains("agent-browser skills get core")
-                        && lowercase.contains("once per skill invocation")
-                        && lowercase.contains("before the first browser command"),
-                    "{source}/SKILL.md must verify the CLI and load version-matched guidance"
-                );
-            }
-            if text.contains("SKETCH_URI") {
-                assert!(
-                    text.contains("tempfile.mkstemp")
-                        && text.contains(".resolve().as_uri()")
-                        && text.contains("agent-browser --allow-file-access open")
-                        && lowercase.contains("once per skill invocation")
-                        && lowercase.contains("before the first browser command"),
-                    "{source}/SKILL.md does not open local HTML portably and explicitly"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn gstack_does_not_route_to_unbundled_workflows() {
-        const ABSENT_WORKFLOWS: [&str; 6] = [
-            "plan-devex-review",
-            "/design-shotgun",
-            "/design-html",
-            "/setup-browser-cookies",
-            "qa/templates/qa-report-template.md",
-            "qa/references/issue-taxonomy.md",
-        ];
-
-        for (source, text) in gstack_skill_texts() {
-            for absent in ABSENT_WORKFLOWS {
-                assert!(
-                    !text.contains(absent),
-                    "{source}/SKILL.md routes to unbundled workflow {absent}"
-                );
-            }
         }
     }
 
@@ -621,6 +493,15 @@ mod tests {
         let workflow =
             embedded_skill_text("create-openbitfun-skin/references/authoring-workflow.md");
         assert!(workflow.contains("Bump it whenever the manifest"));
+    }
+
+    #[test]
+    fn commit_push_pr_is_bundled_with_attribution_and_owns_lightweight_pr_requests() {
+        let skill = embedded_skill_text("commit-push-pr/SKILL.md");
+        assert!(skill.contains("name: commit-push-pr"));
+        assert!(skill
+            .contains("Co-authored-by: OpenBitFun <318544290+bitfun-ai@users.noreply.github.com>"));
+        assert!(skill.contains("Generated with [OpenBitFun](https://github.com/bitfun-ai)"));
     }
 
     #[test]

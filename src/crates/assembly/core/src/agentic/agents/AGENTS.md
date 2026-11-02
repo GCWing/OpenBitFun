@@ -12,3 +12,19 @@
   append a tool merely because it is registered, or restore it after explicit
   mode configuration has excluded it. Preserve the existing explicit dynamic
   MCP opt-in policy; it is not a precedent for injecting built-in tools.
+
+## Desktop tool exposure verification
+
+Main-mode desktop defaults and explicit user exclusions:
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,tools-computer-use --lib direct_desktop_policy_tests
+```
+
+Prompt routing and optional delegation are checked in the owning content crate:
+
+```bash
+cargo test -p openbitfun-agent-content --test prompt_catalog_contracts
+# Verify the assembled mode/subagent prompts as well as their source templates:
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,tools-browser-web,tools-computer-use --lib agentic::agents::
+```

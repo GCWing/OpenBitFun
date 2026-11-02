@@ -54,6 +54,17 @@ extension MobileAppModel {
     }
 
     func selectModel(_ modelID: String) {
+        #if DEBUG
+        if composerModelPickerPreview {
+            modelOptions = modelOptions.map { option in
+                ComposerModelOption(id: option.id, primaryLabel: option.primaryLabel,
+                    secondaryLabel: option.secondaryLabel, source: option.source,
+                    selected: option.id == modelID, role: option.role, roles: option.roles,
+                    fallsBackToPrimary: option.fallsBackToPrimary)
+            }
+            return
+        }
+        #endif
         guard surface == .remote, remoteSessionSelected,
               let sessionID = RemoteAuthorityGate.sendSessionID(
                 selectedSessionID: selectedSessionID, openedSessionID: remoteOpenedSessionID,
@@ -83,7 +94,6 @@ extension MobileAppModel {
             blocks: [],
             streaming: false,
             typing: false,
-            pending: false,
             showRetry: false,
             error: nil
         )
@@ -102,10 +112,10 @@ extension MobileAppModel {
             blocks: row.blocks.map(mapBlock),
             streaming: row.streaming,
             typing: row.typing,
-            pending: row.pending,
             showRetry: row.showRetry,
             error: row.error,
-            live: row.live
+            live: row.live,
+            timestamp: row.timestampMs.map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
         )
     }
 

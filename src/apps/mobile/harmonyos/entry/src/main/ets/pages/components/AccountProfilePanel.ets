@@ -4,7 +4,6 @@ import { CloudAccountDevice } from '../../services/CloudAccountClient';
 import { AccountDeviceSelectionPolicy } from '../policy/AccountDeviceSelectionPolicy';
 import { CARD, STATUS_SUCCESS, INK, LINE, MUTED, PAGE_BG, STATUS_DANGER, SOFT } from './Theme';
 import { DefaultAccountAvatar } from './DefaultAccountAvatar';
-import { SheetCloseHeader } from './SheetCloseHeader';
 
 /** Account identity and device management shared by Settings and account entry. */
 @ComponentV2
@@ -17,12 +16,9 @@ export struct AccountProfilePanel {
   @Param controlTargetType: string = 'none';
   @Param controlTargetDeviceId: string = '';
   @Param connectionState: string = 'idle';
-  @Param showNavigationHeader: boolean = false;
-  @Param embeddedInSettings: boolean = false;
   @BuilderParam preferences: () => void = this.EmptyBuilder;
   @BuilderParam connection: () => void = this.EmptyBuilder;
   @BuilderParam about: () => void = this.EmptyBuilder;
-  @Event onBack: () => void = () => {};
   @Event onLoggedOut: () => void = () => {};
   @Event onOpenAccount: () => void = () => {};
   @Event onReconnect: () => void = () => {};
@@ -45,26 +41,13 @@ export struct AccountProfilePanel {
 
   build() {
     Column({ space: 0 }) {
-      if (this.embeddedInSettings) {
-        this.CompactIdentityCard()
-        this.connection()
-        this.preferences()
-        this.DeviceManagementSection()
-        this.about()
-        if (this.isAccountAuthenticated()) {
-          this.LogoutAction()
-        }
-      } else {
-        if (this.showNavigationHeader) {
-          this.NavigationHeader()
-        }
-        this.ProfileHero()
-        this.AccountStatusCard()
-        this.DeviceManagementSection()
-        this.ProfileDetails()
-        if (this.isAccountAuthenticated()) {
-          this.LogoutAction()
-        }
+      this.CompactIdentityCard()
+      this.connection()
+      this.preferences()
+      this.DeviceManagementSection()
+      this.about()
+      if (this.isAccountAuthenticated()) {
+        this.LogoutAction()
       }
     }
     .width('100%')
@@ -76,7 +59,7 @@ export struct AccountProfilePanel {
     Row({ space: 14 }) {
       DefaultAccountAvatar({ avatarSize: 46, avatarUrl: this.accountAvatarUrl })
       Column({ space: 4 }) {
-        Text(this.isAccountAuthenticated() ? RemoteI18n.t('settings.account.current') :
+        Text(this.isAccountAuthenticated() ? this.profileName() :
           RemoteI18n.t('settings.account.currentIdentity'))
           .fontSize(MobileDesignTypography.bodyLarge.size)
           .fontWeight(FontWeight.Medium)
@@ -84,7 +67,8 @@ export struct AccountProfilePanel {
           .width('100%')
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.isAccountAuthenticated() ? this.profileName() : this.shortProfileIdentifier())
+        Text(this.isAccountAuthenticated() ? RemoteI18n.f('remote.settings.githubId', this.accountUserId) :
+          this.shortProfileIdentifier())
           .fontSize(MobileDesignTypography.bodySmall.size)
           .fontColor(MUTED)
           .width('100%')
@@ -131,76 +115,10 @@ export struct AccountProfilePanel {
   }
 
   @Builder
-  private NavigationHeader() {
-    SheetCloseHeader({
-      title: RemoteI18n.t('remote.settings.profile'),
-      onClose: this.onBack
-    })
-    .margin({ bottom: 30 })
-  }
-
-  @Builder
-  private ProfileHero() {
-    Column({ space: 10 }) {
-      DefaultAccountAvatar({ avatarSize: 70, avatarUrl: this.accountAvatarUrl })
-      Text(this.profileName())
-        .fontSize(MobileDesignTypography.headlineLarge.size)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(INK)
-        .width('88%')
-        .textAlign(TextAlign.Center)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-      Text(this.isAccountAuthenticated() ? RemoteI18n.f('remote.settings.githubId', this.accountUserId) : this.profileIdentifier())
-        .fontSize(MobileDesignTypography.bodyMedium.size)
-        .fontColor(MUTED)
-        .width('88%')
-        .textAlign(TextAlign.Center)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-    .width('100%')
-    .padding({ top: 24, bottom: 24 })
-    .backgroundColor(CARD)
-    .borderRadius(MobileDesignGeometry.settingsProminentCardRadius)
-    .margin({ bottom: 24 })
-  }
-
-  @Builder
-  private AccountStatusCard() {
-    Column({ space: 10 }) {
-      Row({ space: 10 }) {
-        Text(RemoteI18n.t('remote.settings.account'))
-          .fontSize(MobileDesignTypography.titleMedium.size)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(INK)
-        Blank()
-        Text(this.isAccountAuthenticated() ? RemoteI18n.t('remote.settings.accountSignedIn') :
-          RemoteI18n.t('remote.settings.accountNotSignedIn'))
-          .fontSize(MobileDesignTypography.bodyMedium.size)
-          .fontColor(this.isAccountAuthenticated() ? STATUS_SUCCESS : MUTED)
-      }
-      .width('100%')
-
-      Text(this.accountStatusBody())
-        .fontSize(MobileDesignTypography.bodyMedium.size)
-        .lineHeight(MobileDesignTypography.bodyMedium.lineHeight)
-        .fontColor(MUTED)
-        .width('100%')
-    }
-    .width('100%')
-    .padding({ left: 18, right: 18, top: 16, bottom: 16 })
-    .backgroundColor(CARD)
-    .borderRadius(MobileDesignGeometry.settingsCardRadius)
-    .margin({ bottom: 24 })
-  }
-
-  @Builder
   private DeviceManagementSection() {
     Column({ space: 8 }) {
       Row() {
-        Text(this.embeddedInSettings ? RemoteI18n.t('settings.devices.section') :
-          RemoteI18n.t('remote.settings.deviceManagement'))
+        Text(RemoteI18n.t('settings.devices.section'))
           .fontSize(MobileDesignTypography.titleSmall.size)
           .lineHeight(MobileDesignTypography.titleSmall.lineHeight)
           .fontWeight(FontWeight.Medium)
@@ -298,50 +216,11 @@ export struct AccountProfilePanel {
   }
 
   @Builder
-  private ProfileDetails() {
-    Text(RemoteI18n.t('remote.settings.profileDetails'))
-      .fontSize(MobileDesignTypography.titleSmall.size)
-      .lineHeight(MobileDesignTypography.titleSmall.lineHeight)
-      .fontWeight(FontWeight.Bold)
-      .fontColor(MUTED)
-      .width('100%')
-      .margin({ left: 18, bottom: 8 })
-
-    Column() {
-      this.ProfileDetailRow(RemoteI18n.t('remote.settings.userId'), this.profileIdentifier())
-      Divider().strokeWidth(1).color(LINE).margin({ left: 18, right: 18 })
-      this.ProfileDetailRow(RemoteI18n.t('remote.settings.deviceId'), this.deviceId || '-')
-    }
-    .width('100%')
-    .backgroundColor(CARD)
-    .borderRadius(MobileDesignGeometry.settingsCardRadius)
-  }
-
-  @Builder
-  private ProfileDetailRow(label: string, value: string) {
-    Row({ space: 16 }) {
-      Text(label).fontSize(MobileDesignTypography.bodyLarge.size).fontColor(INK)
-      Blank()
-      Text(value)
-        .fontSize(MobileDesignTypography.bodyMedium.size)
-        .fontColor(MUTED)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: 190 })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 58 })
-    .padding({ left: 18, right: 18, top: 12, bottom: 12 })
-  }
-
-  @Builder
   private LogoutAction() {
-    if (this.embeddedInSettings) {
-      Divider()
-        .strokeWidth(1)
-        .color(LINE)
-        .margin({ left: 8, right: 8, top: 24 })
-    }
+    Divider()
+      .strokeWidth(1)
+      .color(LINE)
+      .margin({ left: 8, right: 8, top: 24 })
     Row({ space: 14 }) {
       SymbolGlyph($r('sys.symbol.arrow_right_and_square'))
         .fontSize(22).fontColor([STATUS_DANGER]).width(24).height(24)
@@ -352,9 +231,8 @@ export struct AccountProfilePanel {
     .width('100%')
     .constraintSize({ minHeight: 62 })
     .padding({ left: 20, right: 20, top: 12, bottom: 12 })
-    .backgroundColor(this.embeddedInSettings ? PAGE_BG : CARD)
-    .borderRadius(this.embeddedInSettings ? 0 : MobileDesignGeometry.settingsCardRadius)
-    .margin({ top: this.embeddedInSettings ? 4 : 32, bottom: 8 })
+    .backgroundColor(PAGE_BG)
+    .margin({ top: 4, bottom: 8 })
     .opacity(this.logoutBusy ? 0.55 : 1)
     .enabled(!this.logoutBusy)
     .onClick(async () => {
@@ -468,13 +346,6 @@ export struct AccountProfilePanel {
       return RemoteI18n.t('remote.settings.accountTemporary');
     }
     return RemoteI18n.t('remote.settings.accountNotSignedIn');
-  }
-
-  private accountStatusBody(): string {
-    if (!this.isAccountAuthenticated()) {
-      return RemoteI18n.t('remote.settings.accountNotSignedInBody');
-    }
-    return RemoteI18n.f('remote.settings.accountSignedInBody', this.profileName());
   }
 
   private isAccountAuthenticated(): boolean {

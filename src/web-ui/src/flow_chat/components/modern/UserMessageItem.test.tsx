@@ -2,6 +2,8 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
+import { fileURLToPath } from 'node:url';
+import { compile } from 'sass';
 
 import { FlowChatContext } from './FlowChatContext';
 import { UserMessageItem } from './UserMessageItem';
@@ -24,6 +26,14 @@ const rollbackServiceMock = vi.hoisted(() => ({
     fromTurnIndex: 0,
     composerText: 'restored prompt',
   })),
+}));
+const imagePayloadMock = vi.hoisted(() => ({
+  buildImagePayload: vi.fn(async (_contexts: unknown) => undefined as
+    | { imageContexts: unknown[]; imageDisplayData: unknown[] }
+    | undefined),
+}));
+const flowChatManagerMock = vi.hoisted(() => ({
+  sendMessage: vi.fn(async () => undefined),
 }));
 const componentLibraryMock = vi.hoisted(() => ({
   confirmDanger: vi.fn(async () => true),
@@ -151,6 +161,16 @@ vi.mock('../../store/FlowChatStore', () => ({
 
 vi.mock('../../services/SessionRollbackService', () => rollbackServiceMock);
 
+vi.mock('../../utils/imagePayload', async importOriginal => ({
+  ...await importOriginal<typeof import('../../utils/imagePayload')>(),
+  buildImagePayload: imagePayloadMock.buildImagePayload,
+}));
+
+vi.mock('../../services/FlowChatManager', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/FlowChatManager')>(),
+  flowChatManager: flowChatManagerMock,
+}));
+
 vi.mock('@/shared/notification-system', () => ({
   notificationService: {
     success: vi.fn(),
@@ -197,6 +217,16 @@ describe('UserMessageItem steering tag', () => {
   let container: HTMLDivElement;
   let root: Root;
 
+  function openMessageActionMenu() {
+    const trigger = container.querySelector<HTMLButtonElement>('.user-message-item__edit-rollback-btn');
+    act(() => { trigger?.click(); });
+    return trigger;
+  }
+
+  function getMessageAction(action: 'edit' | 'rollback') {
+    return document.querySelector<HTMLButtonElement>(`[role="menu"]:not([aria-hidden="true"]) [data-menu-id="${action}"]`);
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     flowChatStoreMock.getState.mockReturnValue({
@@ -211,6 +241,8 @@ describe('UserMessageItem steering tag', () => {
       composerText: 'restored prompt',
     });
     editServiceMock.editAndRerunUserMessage.mockResolvedValue(undefined);
+    imagePayloadMock.buildImagePayload.mockResolvedValue(undefined);
+    flowChatManagerMock.sendMessage.mockResolvedValue(undefined);
     stateMachineManager.clear();
     useMessageEditStore.getState().cancelEdit();
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -219,6 +251,8 @@ describe('UserMessageItem steering tag', () => {
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
+    vi.stubGlobal('Element', dom.window.Element);
+    vi.stubGlobal('Node', dom.window.Node);
     vi.stubGlobal('CustomEvent', dom.window.CustomEvent);
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -241,6 +275,39 @@ describe('UserMessageItem steering tag', () => {
     });
     useMessageEditStore.getState().cancelEdit();
     vi.unstubAllGlobals();
+  });
+
+  it.each(['completed', 'error'] as const)('sizes only the preview while retaining complete %s message text', async turnStatus => {
+    const stylesheet = document.createElement('style');
+    stylesheet.textContent = compile(fileURLToPath(new URL('./UserMessageItem.scss', import.meta.url))).css;
+    document.head.append(stylesheet);
+    const preview = 'A short introduction\n\nA short question';
+    const hidden = '\nA much longer explanation that must not widen the preview.';
+    const text = preview + hidden;
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: false }}>
+        <UserMessageItem message={{ id: 'long-message', content: text, timestamp: 1000 }}
+          turnId="long-turn" turnStatus={turnStatus} />
+      </FlowChatContext.Provider>,
+    ));
+
+    const content = container.querySelector<HTMLElement>('[data-testid="chat-user-message-content"]')!;
+    const tail = content.querySelector<HTMLElement>('.user-message-item__content-overflow')!;
+    expect(content.querySelector('.user-message-item__content-preview')?.textContent).toBe(preview);
+    expect(tail.textContent).toBe(hidden);
+    expect(dom.window.getComputedStyle(tail).display).toBe('none');
+    expect(content.textContent).toBe(text);
+    expect(content.title).toBe('message.clickToExpand');
+
+    act(() => content.click());
+    expect(dom.window.getComputedStyle(tail).display).toBe('contents');
+    expect(content.textContent).toBe(text);
+    expect(content.title).toBe('message.clickToCollapse');
+
+    act(() => content.click());
+    expect(dom.window.getComputedStyle(tail).display).toBe('none');
+    await act(async () => container.querySelector<HTMLButtonElement>('.user-message-item__copy-btn')!.click());
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(text);
   });
 
   it('uses the shared image dialog without changing image or background click behavior', () => {
@@ -302,8 +369,9 @@ describe('UserMessageItem steering tag', () => {
       </FlowChatContext.Provider>,
     ));
 
+    openMessageActionMenu();
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.user-message-item__edit-btn')?.click();
+      getMessageAction('edit')?.click();
     });
 
     const shell = container.querySelector('.user-message-item-shell');
@@ -416,6 +484,32 @@ describe('UserMessageItem steering tag', () => {
     const meta = container.querySelector('.user-message-item__meta');
     expect(meta?.parentElement).toBe(container.querySelector('.user-message-item-shell'));
     expect(container.querySelector('.user-message-item__actions')?.parentElement).toBe(meta);
+  });
+
+  it.each(['pending', 'failed'] as const)('shows host queue %s feedback without edit or rollback actions', status => {
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: true, allowUserMessageEdit: true }}>
+        <UserMessageItem message={{ id: 'preview', content: 'Accepted instruction', timestamp: 1000 }}
+          turnId="queued-turn" hostQueueStatus={status} hostQueueAttachmentCount={2} />
+      </FlowChatContext.Provider>,
+    ));
+    if (status === 'failed') expect(container.querySelector('.user-message-item__steering-tag')?.textContent)
+      .toContain('steering.statusNotApplied');
+    expect(container.querySelector('.user-message-item__steering-tag')?.textContent).toContain('hostQueue.attachments');
+    expect(container.querySelector('.user-message-item__edit-rollback-btn')).toBeNull();
+    expect(container.querySelector('.user-message-item__copy-btn')).not.toBeNull();
+  });
+
+  it('renders an accepted text message without a pending status label', () => {
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: true, allowUserMessageEdit: true }}>
+        <UserMessageItem message={{ id: 'preview-text', content: 'Accepted instruction', timestamp: 1000 }}
+          turnId="queued-turn" hostQueueStatus="pending" />
+      </FlowChatContext.Provider>,
+    ));
+    expect(container.querySelector('.user-message-item__steering-tag')).toBeNull();
+    expect(container.textContent).toContain('Accepted instruction');
+    expect(container.querySelector('.user-message-item__edit-rollback-btn')).toBeNull();
   });
 
   it('does not render a steering tag after steering is triggered', () => {
@@ -550,6 +644,50 @@ describe('UserMessageItem steering tag', () => {
     expect(content?.querySelectorAll('.user-message-item__reference')).toHaveLength(2);
   });
 
+  it('copies a message with the readable text and a restorable token payload', async () => {
+    const writeText = vi.fn(async () => {});
+    const write = vi.fn(async (_items: unknown[]) => {});
+    vi.stubGlobal('navigator', { clipboard: { writeText, write } });
+    vi.stubGlobal('ClipboardItem', class {
+      constructor(readonly items: Record<string, Blob>) {}
+    });
+
+    act(() => {
+      root.render(
+        <FlowChatContext.Provider value={{ allowUserMessageRollback: false }}>
+          <UserMessageItem
+            message={{
+              id: 'user-copy-1',
+              content: '[$pdf] summarize it',
+              timestamp: 1000,
+              metadata: {
+                composerPresentation: {
+                  version: 1,
+                  segments: [
+                    { kind: 'inline-token', token: '[$pdf]', tokenType: 'skill', label: 'pdf' },
+                    { kind: 'text', text: ' summarize it' },
+                  ],
+                },
+              },
+            }}
+            turnId="turn-copy-1"
+          />
+        </FlowChatContext.Provider>,
+      );
+    });
+
+    const copyButton = container.querySelector<HTMLButtonElement>('.user-message-item__copy-btn')!;
+    await act(async () => {
+      copyButton.click();
+    });
+
+    expect(write).toHaveBeenCalledTimes(1);
+    const item = write.mock.calls[0][0][0] as { items: Record<string, Blob> };
+    expect(await item.items['text/plain'].text()).toBe('[Skill: pdf] summarize it');
+    const html = await item.items['text/html'].text();
+    expect(html).toContain('data-openbitfun-composer-clipboard-tokens="[$pdf] summarize it"');
+  });
+
   it('restores persisted references and images from a failed message to the input', () => {
     const composerPresentation = {
       version: 1,
@@ -654,13 +792,15 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
-    expect(container.querySelector('.user-message-item__rollback-btn')).toBeNull();
+    openMessageActionMenu();
+    expect(getMessageAction('rollback')).toBeNull();
   });
 
-  it('renders the rollback button for normal sessions when rollback is allowed', () => {
+  it('combines edit and rollback behind the edit icon for normal sessions', () => {
     activeSessionRef.current = {
       sessionId: 'main-session',
       sessionKind: 'normal',
+      workspaceId: workspaceRecords.local.id,
       dialogTurns: [
         {
           id: 'turn-1',
@@ -684,7 +824,23 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
-    expect(container.querySelector('.user-message-item__rollback-btn')).not.toBeNull();
+    expect(container.querySelectorAll('.user-message-item__actions button')).toHaveLength(2);
+    const trigger = openMessageActionMenu();
+    expect(trigger?.getAttribute('aria-label')).toBe('message.editAndRollback');
+    expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    expect(trigger?.querySelector('[data-openbitfun-component="icon"][data-openbitfun-name="edit"]')).not.toBeNull();
+    expect(getMessageAction('edit')).not.toBeNull();
+    expect(getMessageAction('rollback')).not.toBeNull();
+    expect(rollbackServiceMock.rollbackSessionToTurn).not.toHaveBeenCalled();
+    expect(useMessageEditStore.getState().editingTurnId).toBeNull();
+
+    act(() => {
+      document.activeElement?.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(trigger?.getAttribute('aria-expanded')).toBe('false');
+    expect(getMessageAction('edit')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('restores image attachments to the composer after rollback', async () => {
@@ -716,8 +872,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
+    openMessageActionMenu();
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.user-message-item__rollback-btn')?.click();
+      getMessageAction('rollback')?.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -736,6 +893,7 @@ describe('UserMessageItem steering tag', () => {
   });
 
   it.each([
+    { binding: { workspaceId: workspaceRecords.local.id, externalHistory: { mode: 'follow' }, config: {} }, reason: 'Source' },
     { binding: { workspaceId: workspaceRecords.remote.id, config: {} }, reason: 'Remote' },
     { binding: { workspaceId: workspaceRecords.local.id, config: { dispatchJobId: 'job-a100' } }, reason: 'Dispatch' },
     { binding: { workspaceId: workspaceRecords.local.id, config: { dispatchTarget: { kind: 'device', deviceId: 'target', workspacePath: '/w', displayName: 'Target' } } }, reason: 'Dispatch' },
@@ -773,16 +931,15 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
-    const rollbackButton = container.querySelector<HTMLButtonElement>(
-      '.user-message-item__rollback-btn',
-    );
-    const editButton = container.querySelector<HTMLButtonElement>('.user-message-item__edit-btn');
+    openMessageActionMenu();
+    const rollbackButton = getMessageAction('rollback');
+    const editButton = getMessageAction('edit');
 
     expect(rollbackButton?.disabled).toBe(true);
-    expect(rollbackButton?.getAttribute('aria-label')).toContain(`message.rollbackDisabled${reason}`);
+    expect(rollbackButton?.getAttribute('aria-label')).toContain(reason === 'Source' ? 'externalHistory.forkBeforeEdit' : `message.rollbackDisabled${reason}`);
     expect(rollbackButton?.hasAttribute('title')).toBe(false);
     expect(editButton?.disabled).toBe(true);
-    expect(editButton?.getAttribute('aria-label')).toContain(`message.editDisabled${reason}`);
+    expect(editButton?.getAttribute('aria-label')).toContain(reason === 'Source' ? 'externalHistory.forkBeforeEdit' : `message.editDisabled${reason}`);
     expect(editButton?.hasAttribute('title')).toBe(false);
   });
 
@@ -819,7 +976,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
-    expect(container.querySelector('.user-message-item__edit-btn')).toBeNull();
+    openMessageActionMenu();
+    expect(getMessageAction('edit')).toBeNull();
+    expect(getMessageAction('rollback')).not.toBeNull();
   });
 
   it('keeps edit and rollback available for on-demand hydration in a partial history tail', () => {
@@ -860,8 +1019,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
-    expect(container.querySelector<HTMLButtonElement>('.user-message-item__edit-btn')?.disabled).toBe(false);
-    expect(container.querySelector<HTMLButtonElement>('.user-message-item__rollback-btn')?.disabled).toBe(false);
+    openMessageActionMenu();
+    expect(getMessageAction('edit')?.disabled).toBe(false);
+    expect(getMessageAction('rollback')?.disabled).toBe(false);
   });
 
   it('rolls back partial history by stable Turn identity without full hydration', async () => {
@@ -917,8 +1077,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
+    openMessageActionMenu();
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.user-message-item__rollback-btn')?.click();
+      getMessageAction('rollback')?.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -952,8 +1113,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
-    expect(container.querySelector<HTMLButtonElement>('.user-message-item__edit-btn')?.disabled).toBe(false);
-    expect(container.querySelector<HTMLButtonElement>('.user-message-item__rollback-btn')?.disabled).toBe(false);
+    openMessageActionMenu();
+    expect(getMessageAction('edit')?.disabled).toBe(false);
+    expect(getMessageAction('rollback')?.disabled).toBe(false);
   });
 
   it('disables edit and rollback while the Session is not idle', async () => {
@@ -978,8 +1140,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
-    expect(container.querySelector<HTMLButtonElement>('.user-message-item__edit-btn')?.disabled).toBe(true);
-    expect(container.querySelector<HTMLButtonElement>('.user-message-item__rollback-btn')?.disabled).toBe(true);
+    openMessageActionMenu();
+    expect(getMessageAction('edit')?.disabled).toBe(true);
+    expect(getMessageAction('rollback')?.disabled).toBe(true);
   });
 
   it('rolls back a cataloged history-window Turn by stable identity', async () => {
@@ -1005,8 +1168,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
+    openMessageActionMenu();
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.user-message-item__rollback-btn')?.click();
+      getMessageAction('rollback')?.click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1037,8 +1201,9 @@ describe('UserMessageItem steering tag', () => {
       );
     });
 
+    openMessageActionMenu();
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.user-message-item__edit-btn')?.click();
+      getMessageAction('edit')?.click();
     });
     await act(async () => {
       useMessageEditStore.getState().setDraft('edited older window prompt');
@@ -1058,5 +1223,142 @@ describe('UserMessageItem steering tag', () => {
       editedContent: 'edited older window prompt',
     }));
     expect(flowChatStoreMock.loadSessionHistory).not.toHaveBeenCalled();
+  });
+
+  it('resubmits the original image attachments when editing a message', async () => {
+    activeSessionRef.current = {
+      sessionId: 'main-session',
+      sessionKind: 'normal',
+      workspaceId: workspaceRecords.local.id,
+      dialogTurns: [{ id: 'turn-1', status: 'completed' }],
+    };
+    imagePayloadMock.buildImagePayload.mockResolvedValueOnce({
+      imageContexts: [{ id: 'image-1', image_path: 'E:/uploads/preview.png', mime_type: 'image/png' }],
+      imageDisplayData: [{ id: 'image-1', name: 'preview.png', imagePath: 'E:/uploads/preview.png' }],
+    });
+    editServiceMock.editAndRerunUserMessage.mockImplementationOnce(async (request: any) => {
+      await request.rerun(request.editedContent, request.agentType, 'lease-1');
+      return undefined;
+    });
+
+    act(() => {
+      root.render(
+        <FlowChatContext.Provider
+          value={{
+            sessionId: 'main-session',
+            allowUserMessageEdit: true,
+            allowUserMessageRollback: true,
+          }}
+        >
+          <UserMessageItem
+            message={{
+              id: 'user-image-1',
+              content: 'Describe this image',
+              timestamp: 1000,
+              images: [{
+                id: 'image-1',
+                name: 'preview.png',
+                imagePath: 'E:/uploads/preview.png',
+                mimeType: 'image/png',
+              }],
+            }}
+            turnId="turn-1"
+          />
+        </FlowChatContext.Provider>,
+      );
+    });
+
+    openMessageActionMenu();
+    await act(async () => {
+      getMessageAction('edit')?.click();
+    });
+    await act(async () => {
+      useMessageEditStore.getState().setDraft('Describe this image in detail');
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('.user-message-edit-composer__icon-button--confirm')
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(imagePayloadMock.buildImagePayload).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'image-1',
+        type: 'image',
+        imageName: 'preview.png',
+        imagePath: 'E:/uploads/preview.png',
+        mimeType: 'image/png',
+        isLocal: true,
+      }),
+    ]);
+    expect(flowChatManagerMock.sendMessage).toHaveBeenCalledWith(
+      'Describe this image in detail',
+      'main-session',
+      undefined,
+      undefined,
+      undefined,
+      expect.objectContaining({
+        imageContexts: [{ id: 'image-1', image_path: 'E:/uploads/preview.png', mime_type: 'image/png' }],
+        imageDisplayData: [{ id: 'image-1', name: 'preview.png', imagePath: 'E:/uploads/preview.png' }],
+        sessionMutationLeaseId: 'lease-1',
+      }),
+    );
+  });
+
+  it('reruns an edit without attachments when the message has no images', async () => {
+    activeSessionRef.current = {
+      sessionId: 'main-session',
+      sessionKind: 'normal',
+      workspaceId: workspaceRecords.local.id,
+      dialogTurns: [{ id: 'turn-1', status: 'completed' }],
+    };
+    editServiceMock.editAndRerunUserMessage.mockImplementationOnce(async (request: any) => {
+      await request.rerun(request.editedContent, request.agentType, 'lease-2');
+      return undefined;
+    });
+
+    act(() => {
+      root.render(
+        <FlowChatContext.Provider
+          value={{
+            sessionId: 'main-session',
+            allowUserMessageEdit: true,
+            allowUserMessageRollback: true,
+          }}
+        >
+          <UserMessageItem
+            message={{ id: 'user-text-1', content: 'Describe this', timestamp: 1000 }}
+            turnId="turn-1"
+          />
+        </FlowChatContext.Provider>,
+      );
+    });
+
+    openMessageActionMenu();
+    await act(async () => {
+      getMessageAction('edit')?.click();
+    });
+    await act(async () => {
+      useMessageEditStore.getState().setDraft('Describe this more precisely');
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('.user-message-edit-composer__icon-button--confirm')
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(imagePayloadMock.buildImagePayload).toHaveBeenCalledWith([]);
+    expect(flowChatManagerMock.sendMessage).toHaveBeenCalledWith(
+      'Describe this more precisely',
+      'main-session',
+      undefined,
+      undefined,
+      undefined,
+      { sessionMutationLeaseId: 'lease-2' },
+    );
   });
 });

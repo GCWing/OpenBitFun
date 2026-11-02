@@ -27,10 +27,8 @@ Manage app-level preferences for startup, updates, close behavior, notifications
   - Choose whether OpenBitFun prevents the computer from sleeping while it runs
 - **智能体可直接控制 / Direct Agent control** · 选择关闭主窗口时退出、最小化到托盘或每次询问
   - Choose whether closing the main window quits, minimizes to tray, or asks each time
-- **智能体可直接控制 / Direct Agent control** · 分别控制任务完成、权限请求和启动提示通知
-  - Control completion, permission-request, and startup-tip notifications independently
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看、标记已读、忽略或永久隐藏产品公告与提示
-  - Review, mark seen, dismiss, or permanently hide product announcements and tips
+- **智能体可直接控制 / Direct Agent control** · 分别控制任务完成和权限请求通知
+  - Control completion and permission-request notifications independently
 
 ## 怎么用 / How to use it
 
@@ -59,7 +57,6 @@ Manage app-level preferences for startup, updates, close behavior, notifications
 | 关闭按钮行为 / Close button behavior | `ask` / `minimize_to_tray` / `quit` | 选择退出应用或最小化到托盘。 | Choose whether closing quits the app or minimizes it to the tray. |
 | 任务完成通知 / Completion notifications | `boolean` | 会话任务完成时发送系统通知。 | Send an OS notification when session work completes. |
 | 权限请求通知 / Permission request notifications | `boolean` | 智能体等待权限确认时发送系统通知。 | Send an OS notification when an agent waits for permission. |
-| 启动提示 / Startup tips | `boolean` | 启动后显示功能提示。 | Show product tips after startup. |
 
 ## 可以直接对智能体说 / Try saying
 

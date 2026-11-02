@@ -13,7 +13,6 @@ export const modelRoundItemAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'diagnosticToggle' },
     { id: 'diagnosticDetails' },
     { id: 'diagnosticSection' },
-    { id: 'subagent' },
     { id: 'toolItem' },
     { id: 'canvasAttachments' },
     { id: 'footer' },

@@ -1,25 +1,27 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Display component for MCP tools.
  * Supports MCP Apps: when tool result contains ui:// resource, renders interactive UI in sandboxed iframe.
  */
 
 import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { OverflowText, Disclosure, Spinner } from '@openbitfun/ui';
+import { Icon, OverflowText, Spinner } from '@openbitfun/ui';
 import type { ToolCardProps } from '../types/flow-chat';
-import { ProminentToolCard, ProminentToolCardSummary, ToolProcessingDots } from '@openbitfun/ui/flow-chat';
+import { ProminentToolCard, ProminentToolCardSummary, ToolProcessingDots, ToolCardDisclosure, ToolCardSection, ToolCardText } from '@openbitfun/ui/flow-chat';
 import { createLogger } from '@/shared/utils/logger';
 import { MCPAPI, MCP_APPS_PROTOCOL_VERSION, type McpUiResourceCsp, type McpUiResourcePermissions, type McpUiMessageParams, type McpUiMessageResult, type McpAppMessageEvent, type McpAppMessageResponseEvent } from '@/infrastructure/api/service-api/MCPAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { globalEventBus } from '@/infrastructure/event-bus';
-import { isMcpToolName } from '@/infrastructure/mcp/toolName';
+import { isMcpToolName, parseMcpToolName } from '@/infrastructure/mcp/toolName';
 import { getCachedToolInfo } from '@/infrastructure/mcp/toolInfoCache';
 import { APPEARANCE_DOMAIN_TOKENS } from '@/infrastructure/appearance/appearanceDomainTokens';
 import type { ToolInfo } from '@/shared/types/agent-api';
 import { ToolCardCopyAction } from './ToolCardCopyAction';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
+import { getToolCardStatus } from './toolCardStatus';
 import { useFlowChatContext } from '../components/modern/FlowChatContext';
+import { ImageLightbox, type ImageLightboxState } from '@/shared/ui/ImageLightbox';
 import './MCPToolDisplay.scss';
 
 const log = createLogger('MCPToolDisplay');
@@ -59,6 +61,7 @@ interface MCPToolResultContent {
 interface MCPToolResult {
   content?: MCPToolResultContent[];
   is_error?: boolean;
+  isError?: boolean;
 }
 
 const parseMcpToolInput = (input: unknown): unknown => {
@@ -195,15 +198,16 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
   const { t } = useTranslation('flow-chat');
   const { sessionId } = useFlowChatContext();
   const {
-    status,
     toolCall,
     toolResult,
     requiresConfirmation,
     userConfirmed,
     isParamsStreaming,
   } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isInputExpanded, setIsInputExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
+  const [isInputExpanded, setIsInputExpanded] = useToolCardDisclosure('isInputExpanded');
+  // Tool-result images are inline content of this card, so the card owns their overlay.
+  const [imagePreview, setImagePreview] = useState<ImageLightboxState | null>(null);
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState, dispatchToolCardToggle } = useToolCardHeightContract({
     toolId,
@@ -228,21 +232,21 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
     [displayToolInput, hasToolInput, isExpanded, isInputExpanded],
   );
 
-  const getResultData = (): MCPToolResult | null => {
-    if (!toolResult?.result) return null;
+  const rawResult = toolResult?.result;
+  const resultData = useMemo((): MCPToolResult | null => {
+    if (!rawResult) return null;
     
     try {
-      if (typeof toolResult.result === 'string') {
-        return JSON.parse(toolResult.result);
+      if (typeof rawResult === 'string') {
+        return JSON.parse(rawResult);
       }
-      return toolResult.result as MCPToolResult;
+      return rawResult as MCPToolResult;
     } catch (e) {
       log.error('Failed to parse MCP tool result', e);
       return null;
     }
-  };
-
-  const resultData = getResultData();
+  }, [rawResult]);
+  const status = getToolCardStatus(toolItem, resultData?.is_error === true || resultData?.isError === true);
 
   useEffect(() => {
     let cancelled = false;
@@ -270,12 +274,11 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
   }, [config.toolName]);
 
   const resolvedMcpToolName = resolvedToolInfo?.dynamic_info?.mcp?.toolName ?? null;
-  const toolName = resolvedMcpToolName ?? config.toolName;
+  const toolName = resolvedMcpToolName ?? parseMcpToolName(config.toolName)?.toolName ?? config.toolName;
   const serverId = resolvedToolInfo?.dynamic_info?.mcp?.serverId ?? null;
   const isFailed = status === 'error';
 
   const mcpAppIframeRef = useRef<HTMLIFrameElement | null>(null);
-  const autoExpandedMcpAppRef = useRef<{ toolId: string | undefined; uri: string } | null>(null);
   const [mcpAppHeight, setMcpAppHeight] = useState<number | undefined>(undefined);
   const bridgeDataRef = useRef({ config, toolCall, resultData, status, isFailed });
   bridgeDataRef.current = { config, toolCall, resultData, status, isFailed };
@@ -317,22 +320,6 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
       .then((uri) => setToolMetaUiUri(uri))
       .catch(() => setToolMetaUiUri(null));
   }, [config.toolName, uiResourceUriFromResult, status, isFailed, toolId]);
-
-  // Auto-expand once when this tool call's MCP App UI becomes ready. Mark an
-  // already-open card as handled too, so a later user collapse is preserved.
-  useLayoutEffect(() => {
-    if (!mcpAppState?.html) return;
-
-    const autoExpandedApp = autoExpandedMcpAppRef.current;
-    if (autoExpandedApp?.toolId === toolId && autoExpandedApp.uri === mcpAppState.uri) {
-      return;
-    }
-
-    autoExpandedMcpAppRef.current = { toolId, uri: mcpAppState.uri };
-    if (!isExpanded) {
-      applyExpandedState(isExpanded, true, setIsExpanded);
-    }
-  }, [applyExpandedState, isExpanded, mcpAppState?.html, mcpAppState?.uri, toolId]);
 
   // Iframe <-> parent postMessage bridge (MCP App protocol). Register in useLayoutEffect so listener is attached before iframe script runs.
   useLayoutEffect(() => {
@@ -648,9 +635,14 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
 
     const parts = [];
     if (hasUiApp) parts.push(t('toolCards.mcp.interactiveApp'));
-    if (counts.text > 0) parts.push(`${counts.text} text`);
-    if (counts.image > 0) parts.push(`${counts.image} images`);
-    if (counts.resource > 0 && !hasUiApp) parts.push(`${counts.resource} resources`);
+    const textResult = resultData?.content?.find(item => item.type === 'text')?.text?.trim();
+    if (!hasUiApp && counts.text === 1 && counts.image === 0 && counts.resource === 0
+      && textResult && !/^[{[]/.test(textResult)) {
+      return textResult.split(/\r?\n/, 1)[0].slice(0, 160);
+    }
+    if (counts.text > 0) parts.push(t('toolCards.mcp.textCount', { count: counts.text }));
+    if (counts.image > 0) parts.push(t('toolCards.mcp.imageCount', { count: counts.image }));
+    if (counts.resource > 0 && !hasUiApp) parts.push(t('toolCards.mcp.resourceCount', { count: counts.resource }));
 
     return parts.length > 0 ? parts.join(' · ') : null;
   };
@@ -659,7 +651,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
   const hasResultContent =
     status === 'completed' &&
     (!!uiResourceUri || (resultData?.content && resultData.content.length > 0));
-  const hasExpandableDetails = hasToolInput || hasResultContent;
+  const hasExpandableDetails = hasToolInput || hasResultContent || isFailed;
   const isLoading = status === 'preparing' || status === 'streaming' || status === 'running';
   const needsConfirmation =
     requiresConfirmation && !userConfirmed && status !== 'completed' && status !== 'cancelled' && status !== 'rejected' && status !== 'error';
@@ -670,12 +662,12 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
       setIsInputExpanded(false);
     }
     applyExpandedState(isExpanded, nextExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
+  }, [applyExpandedState, isExpanded, setIsExpanded, setIsInputExpanded]);
 
   const handleInputOpenChange = useCallback((open: boolean) => {
     setIsInputExpanded(open);
     dispatchToolCardToggle();
-  }, [dispatchToolCardToggle]);
+  }, [dispatchToolCardToggle, setIsInputExpanded]);
 
   const getErrorMessage = () => {
     if (toolResult && 'error' in toolResult) {
@@ -685,7 +677,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
   };
 
   const renderToolIcon = () => {
-    return <Package size={16} />;
+    return <Icon name="plug" size="md" />;
   };
 
   const renderStatusIcon = () => {
@@ -701,7 +693,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
       action={isFailed ? t('toolCards.mcp.failedLabel') : t('toolCards.mcp.actionLabel')}
       content={
         <span className="mcp-tool-info" data-openbitfun-component="mcp-tool-display" data-openbitfun-part="info">
-          <OverflowText className="tool-name">{toolName}</OverflowText>
+          <OverflowText className="tool-name" title={config.toolName}>{toolName}</OverflowText>
         </span>
       }
       extra={
@@ -713,7 +705,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
           )}
           {isFailed && (
             <div className="error-expand-indicator">
-              <span className="error-text">Failed</span>
+              <span className="error-text">{t('toolCards.default.failed')}</span>
             </div>
           )}
         </>
@@ -725,7 +717,6 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
   const renderExpandedContent = () => {
     const hasRenderableResultContent = resultData?.content && resultData.content.length > 0;
     const hasMcpApp = mcpAppState?.html;
-    const hasMcpAppState = Boolean(mcpAppState);
     if (!hasRenderableResultContent && !hasMcpApp && !hasToolInput) {
       return null;
     }
@@ -736,34 +727,30 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
         data-openbitfun-component="mcp-tool-display"
         data-openbitfun-part="input"
       >
-        <Disclosure
+        <ToolCardDisclosure
           className="mcp-input-disclosure"
           open={isInputExpanded}
           onOpenChange={handleInputOpenChange}
           summary={t('toolCards.common.inputParams')}
+          actions={formattedToolInput !== null ? (
+            <ToolCardCopyAction
+              getText={() => formattedToolInput}
+              tooltip={t('toolCards.common.copy')}
+              copiedTooltip={t('toolCards.common.copied')}
+              successMessage={t('toolCards.common.copied')}
+              failureMessage={t('toolCards.common.copyFailed')}
+              ariaLabel={t('toolCards.mcp.copyInputParams')}
+              showSuccessNotification={false}
+            />
+          ) : undefined}
         >
-          {formattedToolInput !== null && (
-            <div className="mcp-copyable-content">
-              <pre className="mcp-input-code">{formattedToolInput}</pre>
-              <ToolCardCopyAction
-                getText={() => formattedToolInput}
-                tooltip={t('toolCards.common.copy')}
-                copiedTooltip={t('toolCards.common.copied')}
-                successMessage={t('toolCards.common.copied')}
-                failureMessage={t('toolCards.common.copyFailed')}
-                ariaLabel={t('toolCards.mcp.copyInputParams')}
-                className="mcp-copy-action"
-                showSuccessNotification={false}
-              />
-            </div>
-          )}
-        </Disclosure>
+          {formattedToolInput !== null && <ToolCardText className="mcp-input-code">{formattedToolInput}</ToolCardText>}
+        </ToolCardDisclosure>
       </div>
     ) : null;
 
     return (
       <div data-openbitfun-component="mcp-tool-display" data-openbitfun-part="expanded" data-openbitfun-state="expanded" className="mcp-expanded-content">
-        {!hasMcpAppState && inputContent}
         {/* MCP App: sandboxed iframe for ui:// resources */}
         {mcpAppState && (
           <div className="content-item content-item-mcp-app" data-openbitfun-component="mcp-tool-display" data-openbitfun-part="item">
@@ -793,7 +780,6 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
             )}
           </div>
         )}
-        {hasMcpAppState && inputContent}
         {/* Text, image, and non-ui resources */}
         {(resultData?.content ?? []).map((item, index) => {
           const isUiResource = item.type === 'resource' && item.resource?.uri?.startsWith('ui://');
@@ -802,9 +788,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
             <div data-openbitfun-component="mcp-tool-display" data-openbitfun-part="item" key={index} className={`content-item content-item-${item.type}`}>
               {item.type === 'text' && (
                 <div className="text-content" data-openbitfun-component="mcp-tool-display" data-openbitfun-part="text">
-                  <div className="mcp-copyable-content">
-                    <pre>{item.text}</pre>
-                    {typeof item.text === 'string' && item.text.length > 0 && (
+                  <ToolCardSection label={t('toolCards.common.executionResult')} actions={typeof item.text === 'string' && item.text.length > 0 ? (
                       <ToolCardCopyAction
                         getText={() => item.text ?? ''}
                         tooltip={t('toolCards.common.copy')}
@@ -812,22 +796,33 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
                         successMessage={t('toolCards.common.copied')}
                         failureMessage={t('toolCards.common.copyFailed')}
                         ariaLabel={t('toolCards.mcp.copyTextResult')}
-                        className="mcp-copy-action"
                         showSuccessNotification={false}
                       />
-                    )}
-                  </div>
+                    ) : undefined}>
+                    <ToolCardText variant={item.text?.trimStart().match(/^[{[]/) ? 'code' : 'prose'}>{item.text}</ToolCardText>
+                  </ToolCardSection>
                 </div>
               )}
               {item.type === 'image' && item.data && (
                 <div className="image-content" data-openbitfun-component="mcp-tool-display" data-openbitfun-part="image">
-                  <img src={`data:${item.mime_type ?? 'image/png'};base64,${item.data}`} alt="" />
+                  <button
+                    type="button"
+                    className="image-content-preview"
+                    aria-label={t('toolCards.common.viewDetails')}
+                    onClick={(event) => {
+                      // The card itself toggles on click; the preview owns this click.
+                      event.stopPropagation();
+                      setImagePreview({ source: `data:${item.mime_type ?? 'image/png'};base64,${item.data}` });
+                    }}
+                  >
+                    <img src={`data:${item.mime_type ?? 'image/png'};base64,${item.data}`} alt="" />
+                  </button>
                 </div>
               )}
               {item.type === 'resource' && item.resource && (
                 <div className="resource-content" data-openbitfun-component="mcp-tool-display" data-openbitfun-part="resource">
                   <div className="resource-name"><OverflowText>{item.resource.name || 'Resource'}</OverflowText></div>
-                  <div className="resource-uri"><OverflowText>{item.resource.uri}</OverflowText></div>
+                  <div className="resource-uri">{item.resource.uri}</div>
                   {item.resource.description && (
                     <div className="resource-description">{item.resource.description}</div>
                   )}
@@ -836,6 +831,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
             </div>
           );
         })}
+        {inputContent}
       </div>
     );
   };
@@ -861,11 +857,13 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
         summary={renderSummary()}
         expandedContent={renderExpandedContent()}
         errorContent={renderErrorContent()}
+        collapsibleErrorContent
         isFailed={isFailed}
-        allowExpandedWhenFailed={isFailed && hasToolInput}
+        allowExpandedWhenFailed
         requiresConfirmation={needsConfirmation}
         toggleTestId="mcp-tool-card-toggle"
       />
+      <ImageLightbox image={imagePreview} onClose={() => setImagePreview(null)} />
     </div>
   );
 };

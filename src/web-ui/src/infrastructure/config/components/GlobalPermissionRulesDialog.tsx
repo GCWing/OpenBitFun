@@ -364,7 +364,7 @@ export const GlobalPermissionRulesDialog: React.FC<GlobalPermissionRulesDialogPr
 
   useSettingsDraft({
     id: 'global-permission-rules',
-    pageId: 'tools.execution',
+    pageId: 'ai.permissions',
     label: t('permissionPolicy.globalRulesDialogTitle'),
     dirty: isOpen && rulesDirty,
     saving: isSaving,

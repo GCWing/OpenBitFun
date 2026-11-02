@@ -1,31 +1,33 @@
-$todos-stack-breakpoint: 880px;
-$todos-compact-breakpoint: 720px;
+@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
+
+$todos-compact-breakpoint: 600px;
 
 .openbitfun-todos {
-  display: grid;
-  // Row 2 is reserved for the editor boundary even when the modal portals or
-  // renders nothing. Keeping the board explicitly on row 3 prevents an
-  // implicit auto row from opening a gap below the header.
-  grid-template-rows: auto auto minmax(0, 1fr);
   width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   box-sizing: border-box;
-  container: todos-scene / inline-size;
+  scrollbar-gutter: stable both-edges;
+
+  &__content {
+    @include configLayout.content-frame;
+    container: todos-scene / inline-size;
+    padding-block: 12px 64px;
+  }
 
   // ── Header ────────────────────────────────────────────────────────────────
 
   &__head {
-    grid-row: 1;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--openbitfun-space-4);
     min-width: 0;
     min-height: 96px;
-    padding: var(--openbitfun-space-5) var(--openbitfun-space-6);
+    padding-block: var(--openbitfun-space-5);
     box-sizing: border-box;
-    border-bottom: 1px solid var(--openbitfun-color-border-subtle);
   }
 
   &__head-main {
@@ -66,6 +68,7 @@ $todos-compact-breakpoint: 720px;
   }
 
   &__head-actions,
+  &__calendar-actions,
   &__month-navigation,
   &__month-label {
     display: flex;
@@ -73,6 +76,7 @@ $todos-compact-breakpoint: 720px;
   }
 
   &__head-actions {
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--openbitfun-space-2);
     flex: 0 0 auto;
@@ -99,36 +103,18 @@ $todos-compact-breakpoint: 720px;
   // ── Main board ────────────────────────────────────────────────────────────
 
   &__panes {
-    grid-row: 3;
-    display: grid;
-    grid-template-columns: minmax(352px, 34%) minmax(0, 1fr);
-    align-self: stretch;
-    align-items: stretch;
-    height: 100%;
-    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-12);
   }
 
   &__pane {
     display: flex;
     flex-direction: column;
+    gap: var(--openbitfun-space-5);
     min-width: 0;
     min-height: 0;
     box-sizing: border-box;
-
-    &--list {
-      gap: var(--openbitfun-space-4);
-      padding: var(--openbitfun-space-4);
-      height: 100%;
-      border-right: 1px solid var(--openbitfun-color-border-subtle);
-    }
-
-    &--calendar {
-      gap: var(--openbitfun-space-3);
-      padding: var(--openbitfun-space-4) var(--openbitfun-space-5) var(--openbitfun-space-5);
-      overflow: hidden;
-      overscroll-behavior-y: contain;
-      scroll-padding-block: var(--openbitfun-space-4);
-    }
   }
 
   &__pane-head {
@@ -138,23 +124,10 @@ $todos-compact-breakpoint: 720px;
   &__pane-title,
   &__list-title {
     margin: 0;
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    font-size: var(--openbitfun-type-heading-section-font-size);
+    font-weight: var(--openbitfun-type-heading-section-font-weight);
+    line-height: var(--openbitfun-type-heading-section-line-height);
     color: var(--openbitfun-color-content-primary);
-  }
-
-  &__pane-title {
-    font-size: var(--openbitfun-type-body-md-font-size);
-  }
-
-  &__list-title {
-    font-size: var(--openbitfun-type-body-md-font-size);
-  }
-
-  &__pane-hint {
-    margin: 2px 0 0;
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-    color: var(--openbitfun-color-content-muted);
   }
 
   &__empty {
@@ -186,22 +159,12 @@ $todos-compact-breakpoint: 720px;
     align-items: center;
     justify-content: space-between;
     gap: var(--openbitfun-space-2);
-    padding-bottom: var(--openbitfun-space-3);
-    border-bottom: 1px solid var(--openbitfun-color-border-subtle);
     color: var(--openbitfun-color-content-secondary);
-  }
-
-  &__overview-title {
-    margin: 0;
-    font-size: var(--openbitfun-type-label-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    color: var(--openbitfun-color-content-primary);
   }
 
   &__overview-metrics {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding-top: var(--openbitfun-space-3);
   }
 
   &__overview-metric {
@@ -424,28 +387,27 @@ $todos-compact-breakpoint: 720px;
 
   &__calendar {
     display: flex;
-    flex: 1 1 auto;
     flex-direction: column;
-    container-type: inline-size;
     gap: var(--openbitfun-space-3);
     min-width: 0;
     min-height: 0;
-    overscroll-behavior-y: contain;
-    scroll-padding-block: var(--openbitfun-space-3);
   }
 
   &__calendar-head {
     display: flex;
-    align-items: flex-start;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
     gap: var(--openbitfun-space-3);
     flex: 0 0 auto;
   }
 
-  &__calendar-heading {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
+  &__calendar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--openbitfun-space-2);
+    margin-inline-start: auto;
+    max-width: 100%;
   }
 
   &__calendar-weekdays {
@@ -465,10 +427,9 @@ $todos-compact-breakpoint: 720px;
   &__calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    // WebKit can retain auto row heights after aspect-ratio cells resize.
-    // Size the tracks from the current calendar width, including column gaps,
-    // and let cells stretch into them so rows and cells always resize together.
-    grid-template-rows: repeat(6, calc((100cqi - 6 * var(--openbitfun-space-2)) / 7 / 1.06));
+    // Explicit equal tracks keep day cells consistent as the content frame resizes.
+    aspect-ratio: 7.42 / 6;
+    grid-template-rows: repeat(6, minmax(0, 1fr));
     gap: var(--openbitfun-space-2);
     flex: 0 0 auto;
     min-height: 0;
@@ -567,9 +528,6 @@ $todos-compact-breakpoint: 720px;
   &__day-detail-presence {
     display: block;
     flex: 0 0 auto;
-    min-height: max-content;
-    max-height: 42%;
-    overscroll-behavior-y: contain;
     transform-origin: top center;
     transition:
       opacity 120ms ease,
@@ -969,53 +927,11 @@ $todos-compact-breakpoint: 720px;
   overflow: hidden;
 }
 
-@media (min-width: #{$todos-stack-breakpoint + 1px}) {
-  .openbitfun-todos {
-    overflow: hidden;
-  }
-}
-
-@container todos-scene (max-width: #{$todos-stack-breakpoint}) {
-  .openbitfun-todos {
-
-    &__head {
-      align-items: flex-start;
-    }
-
-    &__head-actions {
-      flex-wrap: wrap;
-    }
-
-    &__panes {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto auto;
-      align-content: start;
-      overflow-y: auto;
-      height: 100%;
-    }
-
-    &__pane {
-      overflow-y: visible;
-
-      &--list {
-        height: auto;
-        border-right: 0;
-        border-bottom: 1px solid var(--openbitfun-color-border-subtle);
-      }
-    }
-
-    &__calendar-grid {
-      min-height: 0;
-    }
-
-  }
-}
-
 @container todos-scene (max-width: #{$todos-compact-breakpoint}) {
   .openbitfun-todos {
     &__head {
       flex-direction: column;
-      padding: var(--openbitfun-space-4);
+      align-items: flex-start;
     }
 
     &__head-actions {
@@ -1029,13 +945,6 @@ $todos-compact-breakpoint: 720px;
 
     &__new-button {
       margin-left: auto;
-    }
-
-    &__pane {
-      &--list,
-      &--calendar {
-        padding: var(--openbitfun-space-4);
-      }
     }
 
     &__overview-metric {
@@ -1052,26 +961,16 @@ $todos-compact-breakpoint: 720px;
       align-items: center;
     }
 
-    &__calendar {
-      min-height: 0;
-    }
-
     &__calendar-grid {
-      grid-template-rows: repeat(6, calc((100cqi - 6 * var(--openbitfun-space-1)) / 7 / 1.06));
-      min-height: 0;
       gap: var(--openbitfun-space-1);
     }
-
-    &__calendar-cell {
-      padding: var(--openbitfun-space-2);
-    }
-
-    &__calendar-chip-name {
-      display: none;
-    }
-
   }
+}
 
+@container todos-scene (max-width: 440px) {
+  .openbitfun-todos__calendar-chip-name {
+    display: none;
+  }
 }
 
 @media (max-width: 720px) {

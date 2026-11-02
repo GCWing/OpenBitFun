@@ -13,13 +13,28 @@ import {
 } from './index';
 import { TaskToolDisplay } from './TaskToolDisplay';
 import { AgentControlToolCard } from './AgentControlToolCard';
+import { AgentInteractionToolCard } from './AgentInteractionToolCard';
 import { OpenBitFunControlToolCard } from './OpenBitFunControlToolCard';
+import { DefaultToolCard } from './DefaultToolCard';
+import { compatibilityToolPresentationOwners, genericToolNames } from '@openbitfun/flow-chat-presentation/registry';
+import { GenerateImageToolCard } from './GenerateImageToolCard';
+
+// These cards remain available for rendering historical or explicitly
+// configured tool calls, but are no longer part of the current presentation
+// registry: AgentControl replaced the AgentInterrupt/AgentDelete tools, and
+// Task remains only as a compatibility tool.
+const COMPATIBILITY_ONLY_TOOL_CARD_NAMES = new Set(Object.keys(compatibilityToolPresentationOwners));
 
 describe('tool card registry', () => {
   it('keeps OpenBitFun controls visible through their dedicated product card', () => {
     expect(getToolCardComponent('OpenBitFunControl')).toBe(OpenBitFunControlToolCard);
     expect(usesDefaultToolCard('OpenBitFunControl')).toBe(false);
     expect(isCollapsibleTool('OpenBitFunControl')).toBe(false);
+  });
+
+  it('uses the dedicated always-open image card for generated images', () => {
+    expect(getToolCardComponent('generate_image')).toBe(GenerateImageToolCard);
+    expect(isCollapsibleTool('generate_image')).toBe(false);
   });
   it('projects managed Review workers through the unified coverage card', () => {
     expect(getToolCardComponent('LaunchReviewAgent')).toBe(TaskToolDisplay);
@@ -28,12 +43,21 @@ describe('tool card registry', () => {
   it('renders AgentSpawn and AgentSendInput with the shared agent control card', () => {
     expect(getToolCardComponent('AgentSpawn')).toBe(AgentControlToolCard);
     expect(getToolCardComponent('AgentSendInput')).toBe(AgentControlToolCard);
+    expect(getToolCardComponent('AgentInterrupt')).toBe(AgentInteractionToolCard);
   });
 
-  it('keeps lightweight dedicated-card classification aligned with the component registry', () => {
+  it('keeps current lightweight dedicated-card classification aligned with the component registry', () => {
     expect([...DEDICATED_TOOL_CARD_NAMES].sort()).toEqual(
-      Object.keys(TOOL_CARD_COMPONENTS).sort(),
+      Object.keys(TOOL_CARD_COMPONENTS)
+        .filter((toolName) => !COMPATIBILITY_ONLY_TOOL_CARD_NAMES.has(toolName))
+        .sort(),
     );
+  });
+
+  it.each([...genericToolNames])('keeps %s on its explicit generic-card path', (toolName) => {
+    expect(getToolCardComponent(toolName)).toBe(DefaultToolCard);
+    expect(usesDefaultToolCard(toolName)).toBe(true);
+    expect(TOOL_CARD_COMPONENTS).not.toHaveProperty(toolName);
   });
 
   it('keeps standard design-system adapters separate from bespoke product cards', () => {
@@ -50,8 +74,11 @@ describe('tool card registry', () => {
       'LS',
       'WebSearch',
       'WebFetch',
+      'ListModels',
+      'ControlHub',
       'AgentSpawn',
       'AgentSendInput',
+      'AgentInterrupt',
       'AgentWait',
       'TodoWrite',
       'ContextCompression',
@@ -61,13 +88,37 @@ describe('tool card registry', () => {
       'GetFileDiff',
       'SessionControl',
       'SessionMessage',
+      'Cron',
       'RunCode',
       'ExecCommand',
       'WriteStdin',
       'ExecControl',
+      'PageManage',
       'PageDeploy',
       'PagePublish',
       'view_image',
+      'get_goal',
+      'create_goal',
+      'update_goal',
+      'AgentList',
+      'AgentDelete',
+      'SessionHistory',
+      'analyze_image',
+      'generate_image',
+      'GetTime',
+      'ListMCPResources',
+      'ReadMCPResource',
+      'ListMCPPrompts',
+      'GetMCPPrompt',
+      'Worktree',
+      'PortForward',
+      'ReviewPlatform',
+      'FrontendWorkbench',
+      'FinalizeMiniApp',
+      'PublishMiniApp',
+      'PublishAppearance',
+      'Playbook',
+      'DesktopCard',
     ]);
     expect(productOwnedNames).toEqual([
       'Task',
@@ -98,11 +149,11 @@ describe('tool card registry', () => {
     },
   );
 
-  it.each(['ControlHub', 'FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance'])(
-    'treats %s as a default-card explore tool',
+  it.each(['FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance'])(
+    'keeps consequential %s dedicated cards outside exploration',
     (toolName) => {
-      expect(usesDefaultToolCard(toolName)).toBe(true);
-      expect(isCollapsibleTool(toolName)).toBe(true);
+      expect(usesDefaultToolCard(toolName)).toBe(false);
+      expect(isCollapsibleTool(toolName)).toBe(false);
     },
   );
 

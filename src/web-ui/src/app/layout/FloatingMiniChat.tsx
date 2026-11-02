@@ -20,13 +20,17 @@ import { beginConversationTransfer, endConversationTransfer, isConversationTrans
 import { sessionSceneWorkspaceKey } from '../services/sessionSceneTarget';
 import { useMiniAppStore, MINIAPP_COMPOSER_DRAFT_EVENT, MINIAPP_COMPOSER_FOCUS_EVENT, type MiniAppDraftEventDetail, type MiniAppFocusEventDetail } from '../scenes/miniapps/miniAppStore';
 import { useSceneStore } from '../stores/sceneStore';
+import { isSessionSceneId } from '../components/SceneBar/types';
+import { selectedScene } from '../workbench/scenePaneModel';
+import { useSessionPaneLayout } from '../scenes/session/sessionPaneLayoutStore';
 import { getMiniAppIdFromSceneId, getMiniAppSceneId } from '../scenes/miniapps/miniAppActivity';
 import { followMiniAppConversation, openMiniAppConversation, openMiniAppFromConversation, resolveMiniAppConversation, syncMiniAppConversations } from '../scenes/miniapps/miniAppConversation';
-import { postMiniAppComposerMessage } from '../scenes/miniapps/miniAppComposerMessages';
+import { requestMiniAppComposerMessage } from '../scenes/miniapps/miniAppComposerMessages';
 import { pickLocalizedString } from '../scenes/miniapps/utils/pickLocalizedString';
 import { resolveDisplayTitle } from '@/flow_chat/components/session-menu/useFlowChatSessions';
 import MiniAppBubbleWelcome from './MiniAppBubbleWelcome';
 import { createLogger } from '@/shared/utils/logger';
+import { notificationService } from '@/shared/notification-system';
 import './FloatingMiniChat.scss';
 const log = createLogger('ConversationDock');
 
@@ -60,11 +64,24 @@ function DockConversationView({ entry, active, onCollapse, renderHeader, onVoice
     placeholder: claim?.customization?.composer?.placeholder || claim?.placeholder || t('miniAppComposer.placeholder', { app: appName }),
     draft,
     onDraftConsumed: id => useConversationDockStore.getState().consumeDraft(key, id),
-    onSubmit: submission => {
-      const live = useMiniAppStore.getState().composerClaims[entry.appId!];
-      if (getActiveSurfaceId() !== entry.surfaceId || live?.surfaceId !== entry.surfaceId
-        || live?.token !== entry.claimToken || live.sessionId !== entry.sessionId) throw new Error('The MiniApp no longer owns this conversation');
-      postMiniAppComposerMessage({ ...submission, token: entry.claimToken!, sessionId: entry.sessionId });
+    onSubmit: async submission => {
+      try {
+        const live = useMiniAppStore.getState().composerClaims[entry.appId!];
+        if (getActiveSurfaceId() !== entry.surfaceId || live?.surfaceId !== entry.surfaceId
+          || live?.token !== entry.claimToken || live.sessionId !== entry.sessionId) throw new Error('The MiniApp no longer owns this conversation');
+        await requestMiniAppComposerMessage(
+          { ...submission, token: entry.claimToken!, sessionId: entry.sessionId },
+          undefined,
+          { resolveOnAgentRun: true },
+        );
+      } catch (error) {
+        if (getActiveSurfaceId() === entry.surfaceId && !isSurfaceChangedError(error)) {
+          const reason = error instanceof Error ? error.message : t('errors.sendFailed');
+          notificationService.error(reason.startsWith('miniapp_agent_images_v1_unsupported:')
+            ? t('miniAppComposer.imagesUnsupportedPeer') : reason);
+        }
+        throw error;
+      }
     },
   }), [appName, claim, draft, entry, session, t, key]);
   const voiceTarget = useMemo<VoiceCallTarget | undefined>(() => !session ? undefined : entry.kind === 'miniapp' ? {
@@ -73,7 +90,10 @@ function DockConversationView({ entry, active, onCollapse, renderHeader, onVoice
   } : { kind: entry.kind, surfaceId: entry.surfaceId, sessionId: entry.sessionId,
     workspaceId: session.workspaceId ?? session.config.workspaceId, workspacePath: session.workspacePath || '' }, [entry, session, appName]);
   const unavailable = <div className="openbitfun-fmc__miniapp-session-pending" role="status"
-    data-openbitfun-component="floating-mini-chat" data-openbitfun-part="pending">{t('dock.unavailable')}</div>;
+    data-openbitfun-component="floating-mini-chat" data-openbitfun-part="pending">{t(
+      entry.kind === 'miniapp' && claim && claim.token === entry.claimToken
+        && claim.surfaceId === entry.surfaceId && !claim.sessionId ? 'dock.loading' : 'dock.unavailable',
+    )}</div>;
   if (entry.kind === 'control' && session && voiceTarget) return <ConversationViewProvider
     scope={{ ...entry, viewId: key, presentation: 'compact' }}>
     <ControlConversation session={session} sessionRef={entry} voiceTarget={voiceTarget} active={active}
@@ -101,6 +121,10 @@ export function FloatingMiniChat() {
   const claims = useMiniAppStore(s => s.composerClaims);
   const apps = useMiniAppStore(s => s.apps);
   const activeSceneId = useSceneStore(s => s.activeTabId);
+  const paneSelections = useSceneStore(s => s.paneSelections);
+  const paneLayout = useSessionPaneLayout();
+  const sessionVisible = (paneLayout.mode !== 'content-only' && isSessionSceneId(selectedScene(paneSelections.primary)))
+    || (paneLayout.mode !== 'chat-only' && isSessionSceneId(selectedScene(paneSelections.secondary)));
   const openScenes = useSceneStore(s => s.openTabs);
   const activeMiniAppId = activeSceneId ? getMiniAppIdFromSceneId(activeSceneId) : null;
   const activeMiniAppClaim = activeMiniAppId ? claims[activeMiniAppId] : undefined;
@@ -259,10 +283,10 @@ export function FloatingMiniChat() {
     data-openbitfun-communication-mode={immersiveVoice ? 'voice' : 'chat'}
     onDragOver={event => { if (isConversationTransfer(event.dataTransfer)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDrop(true); dock.setOpen(true); } }}
     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDrop(false); }} onDrop={acceptDrop}>
-    <LauncherButton className="openbitfun-fmc__button" aria-expanded={dock.open} aria-label={t('dock.open')}
+    {!sessionVisible && <LauncherButton className="openbitfun-fmc__button" aria-expanded={dock.open} aria-label={t('dock.open')}
       onClick={() => dock.setOpen(true)} onPointerDown={event => { if (event.button === 0) dock.setOpen(true); }}>
       {live ? <Phone size={16} /> : tv('voiceCall.call.launcherCompactLabel')}
-    </LauncherButton>
+    </LauncherButton>}
     <div ref={panelRef} role="dialog" aria-modal="false" aria-label={t('dock.open')} aria-hidden={!dock.open} data-motion="presence"
       {...(!dock.open ? { inert: '' } : {})}
       className={['openbitfun-fmc__panel', dock.open && 'openbitfun-fmc__panel--open', drop && 'openbitfun-fmc__panel--drop'].filter(Boolean).join(' ')}

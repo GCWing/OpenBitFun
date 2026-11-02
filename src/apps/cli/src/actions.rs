@@ -100,6 +100,7 @@ pub(crate) enum ActionHandler {
     Status,
     WorkspaceDiff,
     CompactSession,
+    GoalPrompt,
     Usage,
     Editor,
     PromptStash,
@@ -168,6 +169,7 @@ impl ActionHandler {
                 | Self::Status
                 | Self::WorkspaceDiff
                 | Self::CompactSession
+                | Self::GoalPrompt
                 | Self::Editor
                 | Self::PromptStash
                 | Self::PromptStashPop
@@ -682,6 +684,21 @@ static ACTION_SPECS: &[ActionSpec] = &[
         contexts: CHAT,
         availability: ActionAvailability::Idle,
         handler: ActionHandler::WorkspaceDiff,
+        default_bindings: &[],
+        fallback_bindings: &[],
+        shortcut_field: None,
+        palette: palette("Session", false),
+        shortcut_label: None,
+        slash_on_startup: false,
+    },
+    ActionSpec {
+        id: "goal",
+        name: "Set a goal",
+        aliases: &["/goal"],
+        description: "Send /goal <objective> to start goal mode",
+        contexts: CHAT,
+        availability: ActionAvailability::Always,
+        handler: ActionHandler::GoalPrompt,
         default_bindings: &[],
         fallback_bindings: &[],
         shortcut_field: None,

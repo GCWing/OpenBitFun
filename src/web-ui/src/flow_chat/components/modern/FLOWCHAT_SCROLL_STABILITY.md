@@ -13,7 +13,7 @@ That is this document. Four siblings carry the rest.
 |---|---|
 | the tail spacer, the follow target, new-Turn reveal, holding, resizing, the footer | this file |
 | history paging, the prepend, the viewport anchor, history presentation | `FLOWCHAT_HISTORY_PAGING.md` |
-| anything that writes `scrollTop`, one-shot navigation, the diagnostic trail | `FLOWCHAT_VIEWPORT_REGISTER.md` |
+| anything that writes `scrollTop`, one-shot navigation | `FLOWCHAT_VIEWPORT_REGISTER.md` |
 | the virtualizer, item measurement, item keys, anything a row renders | `FLOWCHAT_VIRTUALIZATION.md` |
 | what to run before claiming it works | `FLOWCHAT_VERIFICATION.md` |
 
@@ -31,7 +31,63 @@ to content, it stops being a reservation and becomes the compensation engine
 that was removed in "remove synthetic tail-space scrolling" — do not rebuild
 that under a new name.
 
+## Opening Reveal
+
+The opening transcript uses opacity and `aria-hidden` until its existing reveal
+condition settles. `FlowChatOpeningBoundary` provides a local pointer shield,
+non-passive scroll interception, and focus guards that skip the transcript in
+both Tab directions. Programmatic focus is returned outside the transcript with
+`preventScroll`; React capture handlers also block descendant portal activation.
+The sidebar and composer remain available. Focus candidate checks run only in
+response to interaction and prune opening transcript subtrees before measuring.
+
+Avoid inherited `visibility` and whole-transcript `inert` transitions here: a
+visibility reveal measured 260.9ms of style work, and a staged opacity/inert
+trace isolated 177.6ms to removing inert (aria-hidden 0.2ms, opacity 0.4ms).
+The boundary replacement still needs runtime performance and keyboard/reader
+validation. It does not reproduce inert's browser find-in-page exclusion. A new
+auto-opening portal must coordinate its presentation with opening; ancestor
+aria-hidden and the pointer shield cannot hide a portalled surface. Removing a
+geometry read alone only moves pending style/layout work. Read-only probes now
+measure before and after the actual React reveal commit. A staged diagnostic
+measured 176.7ms and 177.7ms of style work when removing the before/after focus
+guards. Both guards now remain mounted after reveal with `tabIndex=-1` and focus
+redirection disabled, preserving transcript sibling structure. The intrusive
+staged diagnostic has been removed; the saving from stable guards still needs
+runtime confirmation using the read-only reveal probes.
+
 ## Transcript Width
+
+`FlowChatWidthBoundary` projects the controller-local Appearance width preference
+onto the ChatPane's transcript-width token, shared by the transcript and composer.
+The existing default is 900px and the preference minimum is two thirds (600px).
+The displayed maximum is the pane width minus two lanes, each comprising the
+design-system turn-rail offset, rail width and `space.2` gap. Panes narrower than
+the preference minimum fit their available space and hide the drag handles;
+resizing a pane never rewrites the preference. Settings → Appearance has an
+independent numeric control and reset backed by the same local preference.
+This presentation state does not travel to a workspace, peer or dispatch host.
+
+Both edges resize around the existing centre axis. The visible guide occupies
+the middle half of the boundary, with a taller hit area retained for dragging.
+Pointer capture owns a
+frame-coalesced preview, with persistence only on release; Escape, pointer
+cancellation, capture loss, window blur, pane deactivation/resize and unmount
+cancel it and restore the previous preference. Arrow keys resize in physical
+directions (Shift uses a larger step); Home/End select bounds and double-click
+restores the default. Dragging suspends width-derived measurement through the
+existing pane-resize contract. The committed content width also enters the
+virtualizer's estimate context and layout signature, since a reading column can
+reflow while its full-width scroller keeps the same box. No new viewport writer
+or follow policy is introduced.
+
+The scroller's `--_flow-chat-top-mask-start` is registered as non-inheriting:
+only its own edge mask consumes the value. An opening trace placed a 562.3ms
+forced style/layout read immediately after `data-scroll-at-start` changed this
+variable. The registration isolates that state change from message descendants;
+A same-session follow-up reduced the maximum follow height read from 562.3ms
+to 3.6ms and advanced the second opening frame callback from 1803.3ms to
+1197.7ms. Initial row measurement and reveal-related style/layout stalls remain.
 
 The main transcript scroller uses `overflow-y: scroll` together with
 `scrollbar-gutter: stable`. Its native scrollbar space must remain present when
@@ -39,6 +95,14 @@ collapsing content removes vertical overflow, including desktop WebViews where
 gutter reservation alone does not reserve custom scrollbar space. Overlay
 scrollbars continue to use the platform's zero-width layout. Scrollbar paint
 and hover visibility remain owned by the design system.
+
+When the physical scroll range is zero, the existing edge-fade mask is cropped
+to the scroller's client box. This excludes disabled native track pixels that
+some WebViews paint despite transparent scrollbar styles, while preserving
+both reserved gutters and every layout/scroll metric. The existing resize and
+tail-state updates refresh the mask bounds; overflow removes the crop. No new
+observer, React state, or viewport writer is involved. Forced colors continues
+to disable the mask entirely.
 
 ## How Much To Reserve
 
@@ -493,8 +557,8 @@ content such as history state and `RuntimeStatusSlot`.
   while output streams — 1247 of them in one 120-second session, each an anchor
   stand-down and a visible-Turn pass. It does not show in list commits, and
   nothing here counts the DOM reads themselves, so what is actually known is
-  that the rendering cost did not move. Re-measure with the `tailFollow` probe
-  before changing `TAIL_EASE_ALPHA`.
+  that the rendering cost did not move. Re-measure scroll events and rendering cost
+  before changing the follow easing.
 - Easing is bounded by the frames the display gives it. The step it converges
   on is the content's growth *per frame*, so the same stream smooths less at
   60Hz than on the ~200Hz display these numbers come from, and a fast enough

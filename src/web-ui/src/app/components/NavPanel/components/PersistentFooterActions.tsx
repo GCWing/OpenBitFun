@@ -1,4 +1,5 @@
-import React, { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import React, { Suspense, useState, useCallback, useEffect, useRef } from 'react';
 
 import { createOverlayPortal,
   Icon,
@@ -26,24 +27,27 @@ import {
 } from '../../RemoteConnectDialog/remoteConnectDisclaimerStorage';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
-import { useSettingsStore } from '@/app/scenes/settings/settingsStore';
 import { PeerConnectionStatus } from '@/infrastructure/peer-device/PeerConnectionStatus';
 import DeviceStatusControl from './DeviceStatusControl';
-import AppearanceQuickSwitchMenuItem from './AppearanceQuickSwitchMenuItem';
 import { UpdateIndicator } from '@/infrastructure/update/UpdateIndicator';
 import { useHasAppUpdate } from '@/infrastructure/update/useHasAppUpdate';
 import { UpdateDownloadIndicator } from '@/infrastructure/update/UpdateDownloadIndicator';
 import { UpdateMenuItems } from '@/infrastructure/update/UpdateMenuItems';
 import { useUpdateInstallStore } from '@/infrastructure/update/updateInstallStore';
+import { useAccountIdentity } from '@/infrastructure/account-identity';
+import { buildPublicFeedbackFormUrl } from '@/infrastructure/feedback/publicFeedbackForm';
+import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
+import { notificationService } from '@/shared/notification-system';
+import { getVersionInfo } from '@/shared/utils/version';
 
-const RemoteConnectDialog = lazy(() => import('../../RemoteConnectDialog'));
+const RemoteConnectDialog = lazyWithRecovery(() => import('../../RemoteConnectDialog'));
 
 const PersistentFooterActions: React.FC = () => {
   const { t } = useI18n('common');
   const { enableToolbarMode } = useToolbarModeContext();
+  const accountIdentity = useAccountIdentity();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuClosing, setMenuClosing] = useState(false);
-  const [appearanceSubmenuOpen, setAppearanceSubmenuOpen] = useState(false);
   const [deviceOverviewOpen, setDeviceOverviewOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const menuPopoverRef = useRef<HTMLDivElement>(null);
@@ -80,7 +84,6 @@ const PersistentFooterActions: React.FC = () => {
   }, []);
 
   const closeMenu = useCallback(() => {
-    setAppearanceSubmenuOpen(false);
     setMenuClosing(true);
     setTimeout(() => {
       setMenuOpen(false);
@@ -93,7 +96,6 @@ const PersistentFooterActions: React.FC = () => {
       closeMenu();
     } else {
       setDeviceOverviewOpen(false);
-      setAppearanceSubmenuOpen(false);
       setMenuOpen(true);
     }
   };
@@ -110,31 +112,41 @@ const PersistentFooterActions: React.FC = () => {
     void activateProductAction('settings.open');
   }, [closeMenu]);
 
-  const handleOpenAppearanceSettings = useCallback(() => {
-    closeMenu();
-    useSettingsStore.getState().openPage('application.appearance');
-    void activateProductAction('settings.open');
-  }, [closeMenu]);
-
   const handleShowAbout = () => {
     closeMenu();
     window.dispatchEvent(new Event('nav:show-about'));
   };
+
+  const handleOpenFeedback = useCallback(() => {
+    closeMenu();
+    const account = accountIdentity.status === 'signed-in' ? accountIdentity.me?.user : undefined;
+    const url = buildPublicFeedbackFormUrl(import.meta.env.VITE_OPENBITFUN_FEEDBACK_FORM_URL, {
+      uid: account?.accountId ?? account?.githubId,
+      version: getVersionInfo().version,
+      deviceInfo: typeof navigator === 'undefined' ? undefined : navigator.userAgent,
+    });
+    if (!url) {
+      notificationService.error(t('nav.settingsMenu.feedbackUnavailable'));
+      return;
+    }
+    void systemAPI.openExternal(url).catch(() => {
+      notificationService.error(t('nav.settingsMenu.feedbackOpenFailed'));
+    });
+  }, [accountIdentity.me, accountIdentity.status, closeMenu, t]);
 
   const handleFloatingMode = () => {
     closeMenu();
     enableToolbarMode();
   };
 
-  const handleRemoteConnect = useCallback(() => {
+  const handleRemoteConnect = useCallback((group?: 'account') => {
+    setRemoteInitialGroup(group);
     if (hasAgreedRemoteDisclaimer || getRemoteConnectDisclaimerAgreed()) {
       setHasAgreedRemoteDisclaimer(true);
-      setRemoteInitialGroup(undefined);
       setShowRemoteConnect(true);
       return;
     }
 
-    setRemoteInitialGroup(undefined);
     setShowRemoteDisclaimer(true);
   }, [hasAgreedRemoteDisclaimer]);
 
@@ -207,17 +219,14 @@ const PersistentFooterActions: React.FC = () => {
                 <Menu
                   ref={menuPopoverRef}
                   className={`openbitfun-nav-panel__footer-menu${menuClosing ? ' is-closing' : ''}`}
+                  inlineSize="content"
                   aria-label={t('actions.more')}
                   data-testid="nav-settings-menu"
                   onKeyDown={(event) => {
                     if (event.key !== 'Escape') return;
                     event.preventDefault();
-                    if (appearanceSubmenuOpen) {
-                      setAppearanceSubmenuOpen(false);
-                    } else {
-                      closeMenu();
-                      menuTriggerRef.current?.focus();
-                    }
+                    closeMenu();
+                    menuTriggerRef.current?.focus();
                   }}
                   style={{
                     top: `${menuLayout?.top ?? 0}px`,
@@ -233,12 +242,15 @@ const PersistentFooterActions: React.FC = () => {
                     {t('nav.settingsMenu.floatingWindow')}
                   </MenuItem>
                   <NotificationButton menuItem onActivate={closeMenu} />
-                  <AppearanceQuickSwitchMenuItem
-                    open={appearanceSubmenuOpen}
-                    onOpenChange={setAppearanceSubmenuOpen}
-                    onCloseParentMenu={closeMenu}
-                    onOpenAppearanceSettings={handleOpenAppearanceSettings}
-                  />
+                  <MenuSeparator />
+                  <UpdateMenuItems onCloseMenu={closeMenu} />
+                  <MenuItem
+                    leading={<Icon name="messages-square" size="sm" aria-hidden="true" />}
+                    onClick={handleOpenFeedback}
+                    data-testid="nav-settings-feedback-item"
+                  >
+                    {t('nav.settingsMenu.feedback')}
+                  </MenuItem>
                   <MenuSeparator />
                   <MenuItem
                     leading={<Icon name="gear" size="sm" aria-hidden="true" />}
@@ -247,7 +259,6 @@ const PersistentFooterActions: React.FC = () => {
                   >
                     {t('nav.settingsMenu.openSettings')}
                   </MenuItem>
-                  <UpdateMenuItems onCloseMenu={closeMenu} />
                   <MenuItem
                     leading={<Icon name="info" size="sm" aria-hidden="true" />}
                     onClick={handleShowAbout}

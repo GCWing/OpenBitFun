@@ -10,17 +10,18 @@ struct MobileProcessGroupTests {
 
     static func snapshotTests() {
         func row(_ id: String = "row", text: String = "body", blocks: [MobileTimelineBlock] = [],
-                 tools: [MobileTimelineTool] = [], pending: Bool = false, live: Bool = false,
-                 error: String? = nil) -> MobileConversationRow {
+                 tools: [MobileTimelineTool] = [], live: Bool = false,
+                 error: String? = nil, timestamp: Date? = nil) -> MobileConversationRow {
             MobileConversationRow(id: id, kind: "ASSISTANT", text: text, thinking: nil,
                 images: [], tools: tools, blocks: blocks, streaming: live, typing: false,
-                pending: pending, showRetry: error != nil, error: error, live: live)
+                showRetry: error != nil, error: error, live: live, timestamp: timestamp)
         }
         let original = row()
         let same = row()
         precondition(original != same, "View equality must compare identity without scanning content")
         precondition(MobileConversationRow.reconcile([same], with: [original])[0] === original)
-        for changed in [row(text: "edited"), row(pending: true), row(live: true), row(error: "failed"),
+        for changed in [row(text: "edited"), row(live: true), row(error: "failed"),
+                        row(timestamp: Date(timeIntervalSince1970: 1700000000)),
                         row(blocks: [.thinking(id: "thought", text: "Updated", streaming: true)]),
                         row(tools: [tool("new")])] {
             precondition(MobileConversationRow.reconcile([changed], with: [original])[0] === changed,
@@ -61,7 +62,7 @@ struct MobileProcessGroupTests {
         let live = MobileTimelineBlock.tools(id: "live", tools: [tool("running", fold: false)])
         let blocked = MobileProcessGroup.project([thought, first, live, between, last])
         precondition(blocked.count == 3 && blocked.allSatisfy { !$0.hasSummary },
-            "Running/failed/approval/question/plan tools must break completed activity groups")
+            "Running/approval/question/plan tools must break completed activity groups")
         let child = MobileTimelineBlock.subagent(id: "task", title: "Task", running: true, text: "", children: [])
         precondition(MobileProcessGroup.project([first, child, last]).count == 3)
         let growing = MobileProcessGroup.project([thought, first, between, last,

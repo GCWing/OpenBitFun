@@ -4,6 +4,7 @@ import { useConversationDockStore } from '@/app/stores/conversationDockStore';
 import { createLogger } from '@/shared/utils/logger';
 import { useMiniAppStore } from './miniAppStore';
 import { pickLocalizedString } from './utils/pickLocalizedString';
+import { detachMiniAppTab, useMiniAppPresentationStore } from './miniAppPresentationStore';
 
 const log = createLogger('MiniAppLifecycle');
 const closing = new Map<string, { scope: SurfaceScope; request: Promise<void> }>();
@@ -50,6 +51,21 @@ export function requestMiniAppClose(appId: string, closeView: () => void | Promi
   const request = Promise.resolve().then(async () => {
     await Promise.all(operations.get(key) ?? []);
     scope.assertCurrent('close MiniApp');
+    if (await detachMiniAppTab(appId)) {
+      scope.assertCurrent('close MiniApp');
+      await closeView();
+      scope.assertCurrent('close MiniApp view');
+      const claim = useMiniAppStore.getState().composerClaims[appId];
+      if (claim?.surfaceId === scope.surfaceId) useMiniAppStore.getState().releaseComposer(appId, claim.token);
+      useConversationDockStore.getState().closeMiniApp(scope.surfaceId, appId);
+      useMiniAppPresentationStore.getState().release(appId);
+      const snapshot = useMiniAppPresentationStore.getState().snapshot;
+      if (snapshot && !snapshot.instances.some(instance => instance.appId === appId)) {
+        useMiniAppStore.getState().markWorkerStopped(appId);
+        streams.delete(key);
+      }
+      return;
+    }
     if (!app) streams.delete(key); // Authoritative deletion has already retired the app.
     for (const streamId of streams.get(key) ?? []) {
       await miniAppAPI.aiCancel(appId, streamId);

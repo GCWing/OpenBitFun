@@ -212,6 +212,7 @@ fn validate_overlay(overlay: &ProviderOverlayDocument) -> Result<(), String> {
     let mut provider_ids = BTreeSet::new();
     let mut catalog_provider_owners = BTreeMap::<String, String>::new();
     let mut trusted_urls = BTreeMap::<String, String>::new();
+    let mut trusted_routes = BTreeSet::new();
     for provider in &overlay.providers {
         if provider.id.trim().is_empty() || !provider_ids.insert(provider.id.as_str()) {
             return Err(format!("duplicate or empty provider ID '{}'", provider.id));
@@ -339,11 +340,19 @@ fn validate_overlay(overlay: &ProviderOverlayDocument) -> Result<(), String> {
                             provider.id, endpoint.id
                         ));
                     }
+                    // One provider may expose multiple protocols at the same base,
+                    // but ownership and each protocol's binding must be unambiguous.
+                    let unique_route = trusted_routes.insert((
+                        normalized.clone(),
+                        endpoint.api_format.trim().to_ascii_lowercase(),
+                    ));
                     if let Some(previous) = trusted_urls.insert(normalized, provider.id.clone()) {
-                        return Err(format!(
-                            "trusted endpoint is claimed by providers '{previous}' and '{}'",
-                            provider.id
-                        ));
+                        if previous != provider.id || !unique_route {
+                            return Err(format!(
+                                "trusted endpoint is claimed by providers '{previous}' and '{}'",
+                                provider.id
+                            ));
+                        }
                     }
                 }
             }
@@ -573,9 +582,31 @@ mod tests {
     use openbitfun_ai_adapters::models_dev::ModelsDevCatalog;
 
     #[test]
+    fn trusted_urls_allow_distinct_protocols_only_within_one_provider() {
+        let overlay = parse_overlay().expect("valid overlay with MiMo protocols");
+        let index = overlay
+            .providers
+            .iter()
+            .position(|p| p.id == "xiaomi")
+            .unwrap();
+        let mut duplicate = overlay.clone();
+        // A second spelling of the same protocol/normalized URL is ambiguous.
+        duplicate.providers[index].endpoints[1].api_format = " OpenAI ".into();
+        assert!(super::validate_overlay(&duplicate).is_err());
+
+        let mut cross_provider = overlay.clone();
+        let mut other = overlay.providers[index].clone();
+        other.id = "other-provider".into();
+        other.endpoints.truncate(1);
+        other.endpoints[0].api_format = "gemini".into();
+        cross_provider.providers.push(other);
+        assert!(super::validate_overlay(&cross_provider).is_err());
+    }
+
+    #[test]
     fn overlay_is_valid_and_keeps_product_endpoint_decisions() {
         let overlay = parse_overlay().expect("valid overlay");
-        assert_eq!(overlay.providers.len(), 14);
+        assert_eq!(overlay.providers.len(), 17);
         let go = overlay
             .providers
             .iter()
@@ -587,10 +618,16 @@ mod tests {
         assert_eq!(go.endpoints.len(), 1);
         assert_eq!(go.endpoints[0].base_url, "https://opencode.ai/zen/go/v1");
         assert!(go.endpoints[0].is_default);
-        assert!(!overlay
+        let zen = overlay
             .providers
             .iter()
-            .any(|provider| provider.id == "opencode-zen" || provider.id == "opencode"));
+            .find(|provider| provider.id == "opencode-zen")
+            .expect("Zen preset");
+        assert!(!zen.requires_api_key);
+        // Zen's account-independent model list and wire routes come from the
+        // live OpenCode catalog rather than the bundled models.dev subset.
+        assert!(zen.catalog_provider_ids.is_empty());
+        assert_eq!(zen.endpoints[0].base_url, "https://opencode.ai/zen/v1");
         let openbitfun = overlay
             .providers
             .iter()
@@ -612,8 +649,8 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             [
-                ("default", "https://api.openbitfun.com", "anthropic", true,),
-                ("openai", "https://api.openbitfun.com/v1", "openai", false,),
+                ("openai", "https://api.openbitfun.com/v1", "openai", true,),
+                ("default", "https://api.openbitfun.com", "anthropic", false,),
             ]
         );
         let qwen = overlay
@@ -812,7 +849,7 @@ mod tests {
             "bundle".to_string(),
             ProviderCatalogSource::Bundle,
         );
-        assert_eq!(resolved.providers.len(), 14);
+        assert_eq!(resolved.providers.len(), 17);
         let go = resolved
             .providers
             .iter()
@@ -822,10 +859,15 @@ mod tests {
             !go.models.is_empty(),
             "Go must have an offline model catalog"
         );
-        assert!(!resolved
+        let zen = resolved
             .providers
             .iter()
-            .any(|provider| provider.id == "opencode-zen" || provider.id == "opencode"));
+            .find(|provider| provider.id == "opencode-zen")
+            .expect("bundled Zen provider");
+        assert!(
+            zen.models.is_empty(),
+            "Zen models require live route discovery"
+        );
         assert!(resolved
             .providers
             .iter()

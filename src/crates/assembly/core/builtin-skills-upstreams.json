@@ -12,20 +12,6 @@
         "pin the documented install version and require user approval",
         "preserve explicit missing-prerequisite and no-silent-fallback behavior"
       ]
-    },
-    {
-      "skills": ["gstack-*"],
-      "repository": "https://github.com/garrytan/gstack",
-      "revision": "7e96fe299b085010fb2e34d9c4fbfc7e44b617e1",
-      "revision_basis": "latest upstream commit before the OpenBitFun import timestamp",
-      "openbitfun_import_commit": "6341358703da217c3b2dd8e887ca877c35acaafc",
-      "local_patches": [
-        "preserve existing OpenBitFun Task orchestration, AGENTS.md, and .openbitfun/team conventions",
-        "repair bundled skill references and remove references to absent workflows",
-        "replace pseudo browser commands with version-checked agent-browser commands",
-        "preserve OpenBitFun ComputerUse for native desktop UI",
-        "avoid credential leakage and cross-target auth-profile reuse"
-      ]
     }
   ]
 }

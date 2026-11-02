@@ -62,7 +62,7 @@ pub fn call_deferred_tool_input_schema() -> Value {
         "properties": {
             "tool_name": {
                 "type": "string",
-                "description": "Exact deferred tool name previously loaded with GetToolSpec."
+                "description": "Exact deferred tool name whose full GetToolSpec result is still visible in the current context."
             },
             "args": {
                 "type": "object",
@@ -80,6 +80,7 @@ pub fn call_deferred_tool_short_description() -> String {
 pub fn call_deferred_tool_description() -> String {
     r#"Call a deferred tool after reading its full schema with GetToolSpec.
 
+The full GetToolSpec result must still be visible in the current context. If compaction or truncation removed it, reload it with GetToolSpec first; a summary or a past call is not a loaded definition.
 Pass the exact deferred tool name in tool_name and put only that tool's arguments inside args.
 The order is important. ALWAYS output tool_name first, then args."#
         .to_string()

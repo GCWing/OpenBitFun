@@ -777,6 +777,26 @@ class ChatTimelineStoreTest {
         assertFalse(store.snapshot().selectedModelId.isNotEmpty())
     }
 
+    @Test
+    fun transcriptStartsAsThisDevicesCopyAndResetsBackToIt() {
+        val store = ChatTimelineStore()
+        store.reset("session-1")
+        store.setPersistedMessages(listOf(message("user-1", "user", "Hello")))
+        assertEquals(ChatTranscriptOrigin.CACHE, store.snapshot().origin)
+
+        store.setTranscriptOrigin(ChatTranscriptOrigin.HOST)
+        assertEquals(ChatTranscriptOrigin.HOST, store.snapshot().origin)
+        store.setPersistedMessages(listOf(message("user-1", "user", "Hello"), message("a-1", "assistant", "Hi")))
+        assertEquals(ChatTranscriptOrigin.HOST, store.snapshot().origin)
+
+        // A restarted stream drops everything derived from the previous replay,
+        // including the fact that the host had answered for it.
+        store.reset("session-1")
+        assertEquals(ChatTranscriptOrigin.CACHE, store.snapshot().origin)
+        store.reset()
+        assertEquals(ChatTranscriptOrigin.CACHE, store.snapshot().origin)
+    }
+
     private fun message(
         id: String,
         role: String,

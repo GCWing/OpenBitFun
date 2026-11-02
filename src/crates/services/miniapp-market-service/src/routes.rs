@@ -587,11 +587,11 @@ fn complete_login_response(
             csrf_token,
             expires_at,
         } => {
+            let complete_url = format!("{}/complete", state.config.auth_base_url());
             let mut response = if json {
-                Json(serde_json::json!({"redirectUrl": "https://auth.openbitfun.com/complete"}))
-                    .into_response()
+                Json(serde_json::json!({"redirectUrl": complete_url})).into_response()
             } else {
-                Redirect::to("https://auth.openbitfun.com/complete").into_response()
+                Redirect::to(&complete_url).into_response()
             };
             state.auth.append_web_session_cookies(
                 response.headers_mut(),

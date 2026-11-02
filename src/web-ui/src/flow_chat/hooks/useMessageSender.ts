@@ -9,6 +9,8 @@
  */
 
 import { useCallback } from 'react';
+import { getChatInputSendDuringTurn } from '@/infrastructure/config/services/ChatInputSendPreference';
+import { isAcpFlowSession } from '../utils/acpSession';
 import { FlowChatManager } from '../services/FlowChatManager';
 import { flowChatSessionConfigForCurrentWorkspace } from '@/app/utils/projectSessionWorkspace';
 import { notificationService } from '@/shared/notification-system';
@@ -24,7 +26,9 @@ import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurfac
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { isBtwSessionDraft } from '../utils/modelSelectionTarget';
 import { sendMessageToBtwSession } from '../services/BtwThreadService';
-import { buildImagePayload } from '../utils/imagePayload';
+import { supportsBtwModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
+import type { BtwInitialModelTarget } from '@/infrastructure/api/service-api/BtwAPI';
+import { buildImagePayload, stripImageContextTags } from '../utils/imagePayload';
 import {
   FLOWCHAT_MESSAGE_SUBMITTED_EVENT,
   type FlowChatMessageSubmittedRequest,
@@ -91,6 +95,8 @@ interface UseMessageSenderReturn {
       /** Set false when the caller already cleared the full composer synchronously. */
       clearContextsOnSuccess?: boolean;
       execution?: AgentDialogTurnExecution;
+      /** Explicit submission intent takes precedence over the composer preference. */
+      sendImmediately?: boolean;
     }
   ) => Promise<void>;
   /** Whether a send is in progress */
@@ -100,6 +106,7 @@ interface UseMessageSenderReturn {
 export function useMessageSender(props: UseMessageSenderProps): UseMessageSenderReturn {
   const peer = usePeerDeviceModeOptional();
   const canSetInitialBtwModel = !peer?.peerMode.active || peer.currentPeerCapabilities?.btwInitialModelSelectionV1 === true;
+  const canSetInitialBtwTarget = supportsBtwModelPools();
   const {
     currentSessionId,
     contexts,
@@ -124,6 +131,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
       };
       clearContextsOnSuccess?: boolean;
       execution?: AgentDialogTurnExecution;
+      sendImmediately?: boolean;
     }
   ) => {
     if (!message.trim()) {
@@ -142,13 +150,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
     // below. Leaving the placeholder in the prompt misleads the model into
     // looking up a non-existent file. The display message keeps the tag so
     // the UI can still render the inline pill.
-    const stripImageTags = (text: string): string =>
-      text
-        .replace(/#img:[^\s\n]+\s?/g, '')
-        .replace(/[ \t]+\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-    const aiTrimmedMessage = stripImageTags(trimmedMessage);
+    const aiTrimmedMessage = stripImageContextTags(trimmedMessage);
     let sessionId = currentSessionId;
     log.debug('Send message initiated', {
       textLength: trimmedMessage.length,
@@ -158,6 +160,9 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
     });
 
     try {
+      const sendImmediately = options?.sendImmediately
+        ?? (await getChatInputSendDuringTurn() === 'immediate');
+      surfaceScope.assertCurrent('resolve composer send preference');
       const flowChatManager = FlowChatManager.getInstance();
       let agentTypeForSend = currentAgentType || 'Standard';
       if (options?.execution?.kind === 'fresh_external_subagent' && contexts.length > 0) {
@@ -168,7 +173,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
         const agentType = currentAgentType || 'Standard';
         const sessionConfig = flowChatSessionConfigForCurrentWorkspace();
 
-        sessionId = await flowChatManager.createChatSession(sessionConfig, agentType);
+        sessionId = await flowChatManager.createChatDraft(sessionConfig, agentType);
         agentTypeForSend =
           FlowChatManager.getInstance().getFlowChatState().sessions.get(sessionId)?.mode ||
           agentType;
@@ -245,13 +250,29 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
         if (!parentSessionId) throw new Error('Side question is missing its parent session');
         await flowChatManager.ensureBackendSession(parentSessionId);
         surfaceScope.assertCurrent('prepare side question parent');
+        const { modelPoolId, modelPoolSelectionPending, modelName, reasoningPreset } = targetSession.config;
+        if (modelPoolId && modelPoolSelectionPending && !canSetInitialBtwTarget) {
+          throw new Error('This host does not support btw_model_pool_selection_v1');
+        }
+        // An inherited pool must retain the host's parent binding. Only explicit
+        // changes use typed selection; never flatten pool intent to modelName.
+        let initialModelTarget: BtwInitialModelTarget | undefined;
+        if (modelPoolId && modelPoolSelectionPending) {
+          initialModelTarget = { selection: { kind: 'pool', pool_id: modelPoolId } };
+        } else if (!modelPoolId && canSetInitialBtwTarget) {
+          initialModelTarget = {
+            selection: { kind: 'model', model_ref: modelName || 'primary' }, reasoningPreset,
+          };
+        }
         await sendMessageToBtwSession({ parentSessionId, childSessionId: targetSession.sessionId,
-          question: fullMessage, imagePayload, modelId: targetSession.config.modelName,
+          question: fullMessage, imagePayload,
+          ...(!modelPoolId && !initialModelTarget ? { modelId: modelName,
+            ...(canSetInitialBtwModel ? { initialModelSelection: {
+              modelId: modelName || 'primary', reasoningPreset,
+            } } : {}),
+          } : {}),
+          ...(initialModelTarget ? { initialModelTarget } : {}),
           userMessageMetadata,
-          ...(canSetInitialBtwModel ? { initialModelSelection: {
-            modelId: targetSession.config.modelName || 'primary',
-            reasoningPreset: targetSession.config.reasoningPreset,
-          } } : {}),
           requestId: targetSession.btwOrigin?.requestId,
         });
       } else await flowChatManager.sendMessage(
@@ -267,6 +288,9 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
             contexts: [...contexts],
             pendingLargePastes: { ...(options?.composerDraft?.pendingLargePastes ?? {}) },
           },
+          foregroundSubmission: true,
+          onSessionForked: (_sourceSessionId, branchSessionId) => { sessionId = branchSessionId; },
+          sendImmediately: sendImmediately && !isAcpFlowSession(targetSession),
           ...(userMessageMetadata ? { userMessageMetadata } : {}),
           ...(options?.execution ? { execution: options.execution } : {}),
           onSessionConflictRetryStart: () => {
@@ -326,6 +350,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
     }
   }, [
     canSetInitialBtwModel,
+    canSetInitialBtwTarget,
     currentSessionId,
     contexts,
     onClearContexts,

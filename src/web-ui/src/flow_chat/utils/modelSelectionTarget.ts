@@ -1,4 +1,5 @@
 export type SessionModelSelectionTarget = {
+  draft?: import('./sessionDraft').SessionDraft;
   isTransient?: boolean;
   agentBackedTransient?: boolean;
   sessionKind?: string;
@@ -9,7 +10,7 @@ export type SessionModelSelectionTarget = {
 
 /** A side draft has no Runtime child until its first question forks the parent. */
 export function isBtwSessionDraft(session: SessionModelSelectionTarget | undefined): boolean {
-  return Boolean(session?.sessionKind === 'btw' && !session.isTransient && !session.isHistorical
+  return Boolean(session?.sessionKind === 'btw' && !session.isHistorical
     && !session.lastSubmittedMode && session.dialogTurns?.length === 0);
 }
 
@@ -17,7 +18,7 @@ export function isBtwSessionDraft(session: SessionModelSelectionTarget | undefin
 export function shouldSyncSessionModelSelection<T extends SessionModelSelectionTarget>(
   session: T | undefined,
 ): session is T {
-  return Boolean(session && !isBtwSessionDraft(session) && (!session.isTransient || session.agentBackedTransient));
+  return Boolean(session && !session.draft && !isBtwSessionDraft(session) && (!session.isTransient || session.agentBackedTransient));
 }
 
 /** Whether restoring the target requires access to internal runtime sessions. */

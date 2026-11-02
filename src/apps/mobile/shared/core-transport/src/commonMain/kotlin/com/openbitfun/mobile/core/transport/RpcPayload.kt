@@ -7,6 +7,8 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.*
 
@@ -14,7 +16,7 @@ import kotlinx.serialization.json.*
 internal class RpcPayload(private val http: HttpClient, relayUrl: String, private val token: String) {
     private val endpoint = "${relayUrl.trimEnd('/')}/v1/rpc/payloads"
     suspend fun uploadIfLarge(value: JsonElement): JsonElement {
-        val bytes = value.toString().encodeToByteArray()
+        val bytes = withContext(Dispatchers.Default) { value.toString().encodeToByteArray() }
         if (bytes.size <= INLINE_BYTES) return value
         if (bytes.size > MAX_BYTES) throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
         val response = withTimeout(120_000) {
@@ -48,7 +50,9 @@ internal class RpcPayload(private val http: HttpClient, relayUrl: String, privat
             }
             val extra = ByteArray(1)
             if (offset != expected || channel.readAvailable(extra, 0, 1) != -1) throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
-            Json.parseToJsonElement(bytes.decodeToString(throwOnInvalidSequence = true))
+            withContext(Dispatchers.Default) {
+                Json.parseToJsonElement(bytes.decodeToString(throwOnInvalidSequence = true))
+            }
         }
     }
     private fun reference(value: JsonElement): Pair<String, Int> {

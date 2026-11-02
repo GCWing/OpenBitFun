@@ -12,7 +12,7 @@ const NAV_ENTRY_SELECTORS = [
   '.openbitfun-nav-panel__workspace-item-name-btn',
   '.openbitfun-nav-panel__inline-item',
   '.openbitfun-nav-panel__workspace-create-main',
-  '.openbitfun-nav-panel__miniapp-entry',
+  '.openbitfun-nav-panel__top-action-btn',
 ];
 
 async function getNavigationEntries() {
@@ -202,8 +202,11 @@ describe('L0 Navigation Panel', () => {
         );
         if (!list) return null;
 
+        // The pinned assistant row is a peer group in the same column even
+        // though it never joins the workspace drag order.
         const groups = Array.from(list.querySelectorAll<HTMLElement>(
-          ':scope > [data-testid="nav-workspace-drop-target"]',
+          ':scope > [data-testid="nav-workspace-pinned-item"], '
+          + ':scope > [data-testid="nav-workspace-drop-target"]',
         )).filter(group => group.getBoundingClientRect().height > 0);
         const groupWithSession = groups.find(group => group.querySelector(
           '[data-testid="nav-session-item"][data-session-level="0"]',
@@ -332,61 +335,39 @@ describe('L0 Navigation Panel', () => {
       await saveStepScreenshot('l0-navigation-selected-child-full-width');
     });
 
-    it('should align extension child icons with the parent label', async function () {
+    it('should open External Import from its own group in More', async function () {
       expect(hasWorkspace).toBe(true);
-
-      const extensionsEntry = await $('[data-testid="agent-skill-entry"]');
-      await extensionsEntry.waitForDisplayed({ timeout: 10000 });
-      if (await extensionsEntry.getAttribute('aria-expanded') !== 'true') {
-        await extensionsEntry.click();
+      expect(await $('[data-testid="agent-skill-entry"]').isExisting()).toBe(false);
+      expect(await $('[data-testid="skill-tab"]').isExisting()).toBe(false);
+      expect(await $('[data-testid="nav-miniapps-entry"]').isExisting()).toBe(false);
+      expect(await $('[data-testid="nav-sections"] [data-testid="ecosystem-compatibility-tab"]').isExisting()).toBe(false);
+      await $('[data-testid="nav-footer-settings-item"]').click();
+      const menu = await $('[data-testid="nav-settings-menu"]');
+      await menu.waitForDisplayed({ timeout: 10000 });
+      const ecosystem = await menu.$('[data-testid="ecosystem-compatibility-tab"]');
+      await ecosystem.waitForDisplayed({ timeout: 10000 });
+      const group = await ecosystem.$('./ancestor::*[@role="group"][1]');
+      expect(await group.getAttribute('role')).toBe('group');
+      const updates = await menu.$('[data-testid="nav-check-updates"]');
+      if (await updates.isExisting()) {
+        expect(await ecosystem.getLocation('y')).toBeLessThan(await updates.getLocation('y'));
       }
-
-      await browser.waitUntil(
-        async () => await extensionsEntry.getAttribute('aria-expanded') === 'true',
-        { timeout: 5000, timeoutMsg: 'Extensions group did not expand' },
-      );
-
-      const alignment = await browser.execute(() => {
-        const parent = document.querySelector<HTMLElement>('[data-testid="agent-skill-entry"]');
-        const parentLabel = parent?.querySelector<HTMLElement>(':scope > span:last-child');
-        const childIcons = Array.from(document.querySelectorAll<HTMLElement>(
-          '[data-testid="agent-skill-tabs"] .openbitfun-nav-panel__top-action-icon-slot > svg, [data-testid="agent-skill-tabs"] .openbitfun-nav-panel__top-action-icon-slot > [data-openbitfun-component="icon"]',
-        ));
-        if (!parentLabel || childIcons.length === 0) {
-          return null;
-        }
-
-        return {
-          parentLabelLeft: parentLabel.getBoundingClientRect().left,
-          childIconLefts: childIcons.map(icon => icon.getBoundingClientRect().left),
-        };
-      });
-
-      expect(alignment).not.toBeNull();
-      if (!alignment) {
-        return;
-      }
-
-      expect(alignment.childIconLefts).toHaveLength(3);
-      for (const childIconLeft of alignment.childIconLefts) {
-        expect(Math.abs(childIconLeft - alignment.parentLabelLeft)).toBeLessThanOrEqual(1);
-      }
-      console.log('[L0] Extension child icon alignment:', alignment);
-      await saveStepScreenshot('l0-navigation-extension-child-icon-alignment');
+      await ecosystem.click();
+      const scene = await $('[data-openbitfun-scene="ecosystem-compatibility"][data-openbitfun-part="root"]');
+      await scene.waitForDisplayed({ timeout: 10000 });
+      await menu.waitForDisplayed({ reverse: true, timeout: 10000 });
+      await saveStepScreenshot('l0-navigation-ecosystem-compatibility');
     });
 
-    it('should place Task Board below AI Assistant and open it', async function () {
+    it('should place Task Board below Personal Overview and open it', async function () {
       expect(hasWorkspace).toBe(true);
 
-      const assistantManager = await $('[data-testid="nav-assistant-manager"]');
+      const overview = await $('[data-testid="nav-personal-overview"]');
       const taskBoard = await $('[data-testid="nav-todos-btn"]');
-      const miniApps = await $('.openbitfun-nav-panel__miniapp-entry');
-      await assistantManager.waitForDisplayed({ timeout: 10000 });
+      await overview.waitForDisplayed({ timeout: 10000 });
       await taskBoard.waitForDisplayed({ timeout: 10000 });
-      await miniApps.waitForDisplayed({ timeout: 10000 });
 
-      expect(await assistantManager.getLocation('y')).toBeLessThan(await taskBoard.getLocation('y'));
-      expect(await taskBoard.getLocation('y')).toBeLessThan(await miniApps.getLocation('y'));
+      expect(await overview.getLocation('y')).toBeLessThan(await taskBoard.getLocation('y'));
       expect(['任务看板', 'Task Board', '任務看板']).toContain((await taskBoard.getText()).trim());
       expect(await $('[data-openbitfun-part="footer"] [data-testid="nav-todos-btn"]').isExisting()).toBe(false);
 
@@ -400,17 +381,17 @@ describe('L0 Navigation Panel', () => {
       await saveStepScreenshot('l0-navigation-task-board');
     });
 
-    it('should open assistant management from the item above Task Board', async function () {
+    it('should open assistant management from Personal Overview', async function () {
       expect(hasWorkspace).toBe(true);
 
-      const assistantManager = await $('[data-testid="nav-assistant-manager"]');
-      const taskBoard = await $('[data-testid="nav-todos-btn"]');
-      await assistantManager.waitForDisplayed({ timeout: 10000 });
-      await taskBoard.waitForDisplayed({ timeout: 10000 });
-
-      expect(await assistantManager.getLocation('y')).toBeLessThan(await taskBoard.getLocation('y'));
-
-      await assistantManager.click();
+      expect(await $('[data-testid="nav-assistant-manager"]').isExisting()).toBe(false);
+      expect(await $('[data-testid="agent-tab"]').isExisting()).toBe(false);
+      const overview = await $('[data-testid="nav-personal-overview"]');
+      await overview.waitForDisplayed({ timeout: 10000 });
+      await overview.click();
+      const assistantEntry = await $('[data-testid="personal-overview-assistants"]');
+      await assistantEntry.waitForDisplayed({ timeout: 10000 });
+      await assistantEntry.click();
       const assistantScene = await $('[data-openbitfun-scene="assistant"][data-openbitfun-part="root"]');
       const assistantGallery = await $('[data-openbitfun-component="nursery-gallery"][data-openbitfun-part="root"]');
       await assistantScene.waitForDisplayed({ timeout: 10000 });

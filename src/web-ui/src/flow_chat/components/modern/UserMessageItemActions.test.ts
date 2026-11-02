@@ -28,7 +28,6 @@ describe('UserMessageItem metadata visibility', () => {
       'utf8',
     ).replace(/\r\n?/g, '\n');
     const editLayout = extractBlock(stylesheet, '\n.user-message-item__edit-layout {');
-    const composer = extractBlock(stylesheet, '\n.user-message-edit-composer {');
     const textarea = extractBlock(stylesheet, '\n.user-message-edit-composer__textarea {');
     const richInput = extractBlock(stylesheet, '\n.user-message-edit-composer__rich-input {');
     const bubble = extractBlock(stylesheet, '\n.user-message-item {');
@@ -38,13 +37,11 @@ describe('UserMessageItem metadata visibility', () => {
 
     expect(editLayout).toContain('flex-direction: column;');
     expect(editLayout).toContain('gap: var(--openbitfun-control-flow-chat-inline-gap);');
-    expect(composer).toContain('min-block-size: 0;');
-    expect(composer).toContain('padding: 0;');
     expect(textarea).toContain('min-height: var(--openbitfun-control-height-sm);');
     expect(richInput).toContain('min-height: var(--openbitfun-control-height-sm);');
     expect(bubble).toContain('width: fit-content;');
     expect(bubble).not.toContain('min-width:');
-    expect(bubble).toContain('max-width: min(72%, 48rem);');
+    expect(bubble).toContain('max-width: var(--openbitfun-control-flow-chat-user-message-max-width);');
     expect(bubble).toContain('border: none;');
     expect(main).toContain('justify-content: center;');
     expect(content).toContain('flex: 0 1 auto;');
@@ -56,7 +53,7 @@ describe('UserMessageItem metadata visibility', () => {
     expect(stylesheet).not.toContain('min-height: 5.5rem;');
   });
 
-  it('reveals the copy, edit, and rollback actions as one hover or focus cluster', () => {
+  it('reveals copy and the edit/rollback menu on hover, focus, or an open menu', () => {
     const stylesheet = readFileSync(
       fileURLToPath(new URL('./UserMessageItem.scss', import.meta.url)),
       'utf8',
@@ -69,14 +66,14 @@ describe('UserMessageItem metadata visibility', () => {
     expect(actions).not.toContain('visibility: hidden;');
     expect(shell).not.toContain('.user-message-item__actions');
     expect(stylesheet).toContain('.user-message-item-shell:hover .user-message-item__actions,');
+    expect(stylesheet).toContain('.user-message-item__actions[data-menu-open],');
     expect(stylesheet).toContain('.user-message-item-shell:focus-within .user-message-item__actions {\n  opacity: 1;\n  pointer-events: auto;');
 
     expect(stylesheet).toContain([
       '.user-message-item__copy-btn,',
-      '.user-message-item__edit-btn,',
-      '.user-message-item__rollback-btn {',
+      '.user-message-item__edit-rollback-btn {',
     ].join('\n'));
-    expect(stylesheet).not.toContain('.user-message-item__edit-btn {\n  opacity: 1;');
+    expect(stylesheet).not.toContain('.user-message-item__edit-rollback-btn {\n  opacity: 1;');
   });
 
   it('reveals the timestamp beside the actions without shifting the action cluster', () => {
@@ -104,9 +101,12 @@ describe('UserMessageItem metadata visibility', () => {
     expect(meta + metaLayout).not.toMatch(/(?:^|\n)\s*(?:max-)?height:/);
     expect(metaLayout).toContain('justify-content: flex-end;');
     const bubble = extractBlock(stylesheet, '\n.user-message-item {');
-    expect(bubble).toContain('padding: 0.46rem var(--_user-message-padding-inline);');
+    expect(bubble).toContain('padding: var(--openbitfun-control-flow-chat-user-message-padding-block) var(--_user-message-padding-inline);');
     expect(shell).toContain('--_user-message-padding-inline: var(--_user-message-radius);');
-    expect(bubble).toContain('margin-inline: auto calc(-1 * var(--_user-message-radius));');
+    // The bubble's surface ends on the reading column's content edge instead of
+    // one radius past it, so a sent message lines up with the tool cards and the
+    // composer card that share that edge.
+    expect(bubble).toContain('margin-inline: auto 0;');
     expect(meta).toContain('padding-inline: 0;');
     expect(meta).toContain('padding-block: calc(var(--openbitfun-space-1) / 2) 0;');
     expect(meta).toContain('pointer-events: auto;');

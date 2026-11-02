@@ -89,6 +89,21 @@ impl SessionContextStore {
         }
     }
 
+    /// Append a logically complete group of context messages while holding the
+    /// per-session entry lock.  Fork snapshots can therefore observe either
+    /// the whole group or none of it.
+    pub fn add_messages(&self, session_id: &str, messages: Vec<Message>) {
+        if messages.is_empty() {
+            return;
+        }
+        if let Some(mut cached_messages) = self.session_contexts.get_mut(session_id) {
+            cached_messages.extend(messages);
+        } else {
+            self.session_contexts
+                .insert(session_id.to_string(), messages);
+        }
+    }
+
     pub fn replace_context(&self, session_id: &str, messages: Vec<Message>) {
         self.session_contexts
             .insert(session_id.to_string(), messages);

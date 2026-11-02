@@ -1,188 +1,30 @@
 @use '../../item-rhythm' as itemRhythm;
-@use '../../transcript-layout' as transcriptLayout;
 
-/* Explore region styling for consecutive explore tool calls. */
-
-.explore-region {
-  @include transcriptLayout.content-column;
-  position: relative;
-  overflow: hidden;
-  /* Same column box as .model-round-item so the collapse header (`>`) and the
-   * round's body text share one leading edge. */
-  width: min(100%, 900px);
-  margin: 0 auto;
-  padding-block: 0;
-}
-
-// ==================== Collapsible (header + animated content) ====================
-
+// Desktop collection boundaries use the same rhythm as body paragraphs.
 .explore-region--collapsible {
-  margin: 0 0 var(--openbitfun-control-flow-chat-flow-item-gap) 0;
-  font-size: var(--openbitfun-type-flow-control-font-size);
-  line-height: var(--openbitfun-type-flow-support-line-height);
+  margin-bottom: var(--openbitfun-control-flow-chat-paragraph-gap);
+}
 
-  .explore-region__header {
-    min-block-size: max(1lh, var(--openbitfun-control-tool-card-ambient-row-min-block-size));
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-control-flow-chat-row-icon-gap);
-    padding: 0;
-    background: transparent;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-flow-control-font-size);
-    line-height: var(--openbitfun-type-flow-support-line-height);
-    cursor: pointer;
-    user-select: none;
-    border-radius: var(--openbitfun-radius-sm);
-    transition: color 0.15s ease;
-
-    &:hover {
-      .explore-region__summary {
-        color: var(--openbitfun-color-content-secondary);
-        opacity: 1;
-      }
-
-      .explore-region__leading-icon {
-        opacity: 1;
-      }
-
-      .explore-region__leading-icon--default {
-        opacity: 0;
-      }
-
-      .explore-region__leading-icon--collapsed-hover {
-        opacity: 1;
-      }
-    }
-  }
-
-  .explore-region__leading-icon {
-    position: relative;
-    width: var(--openbitfun-control-flow-chat-row-icon-size);
-    height: var(--openbitfun-control-flow-chat-row-icon-size);
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--openbitfun-color-content-caption);
-    transition: opacity 0.15s ease;
-
-    > [data-openbitfun-component='icon'] {
-      position: absolute;
-      inset: 0;
-      transition: opacity 0.15s ease;
-    }
-  }
-
-  .explore-region__leading-icon--default {
-    opacity: 1;
-  }
-
-  .explore-region__leading-icon--collapsed-hover,
-  .explore-region__leading-icon--expanded {
-    opacity: 0;
-  }
-
-  .explore-region__summary {
-    font-size: var(--openbitfun-type-flow-control-font-size);
-    line-height: var(--openbitfun-type-flow-support-line-height);
-    color: var(--openbitfun-color-content-secondary);
-  }
-
-  // Inner div must have min-height: 0 for height animation clipping to work.
-  .explore-region__content-inner {
-    overflow: hidden;
-    min-height: 0;
-  }
-
+// Whole groups and deferred segments retain the same spacing as flat members.
+// Only a complete group's final member hands its trailing gap to the group.
+.explore-region--collapsible:not(.flowchat-timeline-members) {
   .explore-region__content {
-    @include itemRhythm.apply($enclosed: true);
-    position: relative;
-    // Keep expanded rows on the same leading edge as the collapsed group.
-    // A nested inset makes auto-collapse read as a horizontal jump.
-    padding: var(--openbitfun-space-2) 0 0;
-    box-sizing: border-box;
-    // Hide scrollbar track by default; only show when content actually overflows.
-    overflow: hidden;
+    @include itemRhythm.spacing($enclosed: true);
+    padding-block-start: var(--openbitfun-control-flow-chat-paragraph-gap);
   }
-}
 
-// Expanded state: keep the disclosure arrow visible and reveal content.
-.explore-region--collapsible.explore-region--expanded {
-  .explore-region__header {
-    .explore-region__leading-icon--default,
-    .explore-region__leading-icon--collapsed-hover {
-      opacity: 0;
-    }
+  .flow-group-content-segment {
+    @include itemRhythm.spacing;
 
-    .explore-region__leading-icon--expanded {
-      opacity: 1;
+    &:last-child {
+      @include itemRhythm.spacing($enclosed: true);
     }
   }
-
-  .explore-region__content-wrapper {
-    height: auto;
-  }
 }
 
-// ==================== Streaming adjustments ====================
-
-// Gradient masks: only shown when the group is --bounded (still the tail)
-// and content overflows the fixed-height container.
-.explore-region--expanded.explore-region--bounded.explore-region--has-scroll:not(.explore-region--at-top) {
-  &::before {
-    content: '';
-    position: absolute;
-    // Account for collapsible header height.
-    top: max(1lh, var(--openbitfun-control-tool-card-ambient-row-min-block-size));
-    left: 0;
-    right: 0;
-    height: 16px;
-    pointer-events: none;
-    z-index: 3;
-    background: linear-gradient(
-      to bottom,
-      var(--openbitfun-color-surface-scene) 0%,
-      color-mix(in srgb, var(--openbitfun-color-surface-scene) 60%, transparent) 50%,
-      transparent 100%
-    );
-  }
-}
-
-.explore-region--expanded.explore-region--bounded.explore-region--has-scroll:not(.explore-region--at-bottom) {
-  &::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 16px;
-    pointer-events: none;
-    z-index: 3;
-    background: linear-gradient(
-      to top,
-      var(--openbitfun-color-surface-scene) 0%,
-      color-mix(in srgb, var(--openbitfun-color-surface-scene) 60%, transparent) 50%,
-      transparent 100%
-    );
-  }
-}
-
-// Limit height and enable internal scroll while the group is still the tail.
-// This applies during streaming AND after turn completion (until the group is
-// cut by a critical round), preventing the Virtuoso item from unboundedly growing.
-.explore-region--expanded.explore-region--bounded {
-  .explore-region__content {
-    max-height: 400px;
-    // Add bottom padding so the last line of text isn't obscured by the
-    // gradient overlay or clipped at the container edge.
-    padding-bottom: var(--openbitfun-space-2);
-  }
-}
-
-// Enable scrollbar when content actually overflows.
-.explore-region--has-scroll .explore-region__content {
-  overflow-y: auto;
+// The exposed page edges need space only while the file group is collected.
+.explore-region[data-file-revisions='true'][data-expanded='true'] > [data-openbitfun-part='header'] {
+  padding-block-end: 0;
 }
 
 // ==================== Cross-ModelRound collapse ====================

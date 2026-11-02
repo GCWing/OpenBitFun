@@ -24,6 +24,7 @@ describe('isSurfaceScopedEvent', () => {
     expect(isSurfaceScopedEvent('permission://event')).toBe(true);
     expect(isSurfaceScopedEvent('session_title_generated')).toBe(true);
     expect(isSurfaceScopedEvent('workspace-catalog-changed')).toBe(true);
+    expect(isSurfaceScopedEvent('cron://jobs-changed')).toBe(true);
   });
 
   it('leaves control-plane events unscoped so they always pass', () => {

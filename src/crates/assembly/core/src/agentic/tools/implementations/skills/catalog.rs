@@ -19,7 +19,9 @@ mod tests {
             builtin_skill_group_key("create-openbitfun-skin"),
             Some("meta")
         );
+        assert_eq!(builtin_skill_group_key("commit-push-pr"), Some("meta"));
         assert_eq!(builtin_skill_group_key("find-skills"), Some("meta"));
+        assert_eq!(builtin_skill_group_key("generate-image"), Some("creation"));
         assert_eq!(builtin_skill_group_key("debug"), Some("debugging"));
         assert_eq!(builtin_skill_group_key("multitask"), Some("coordination"));
         assert_eq!(builtin_skill_group_key("plan"), Some("planning"));
@@ -34,7 +36,6 @@ mod tests {
             Some("computer-use")
         );
         assert_eq!(builtin_skill_group_key("agent-eval-canvas"), Some("canvas"));
-        assert_eq!(builtin_skill_group_key("gstack-review"), Some("gstack"));
         assert_eq!(builtin_skill_group_key("unknown-skill"), None);
     }
 

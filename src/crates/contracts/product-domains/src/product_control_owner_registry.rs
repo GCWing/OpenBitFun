@@ -175,6 +175,49 @@ fn empty_input() -> Value {
     json!({ "type": "object", "additionalProperties": false })
 }
 
+fn mcp_input(action: &str) -> Value {
+    if action == "list" {
+        return empty_input();
+    }
+    let mut properties = serde_json::Map::new();
+    let mut required = vec!["serverId"];
+    properties.insert("serverId".into(), json!({ "type": "string", "minLength": 1,
+        "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host." }));
+    if matches!(action, "configure" | "delete") {
+        required.push("expectedFingerprint");
+        properties.insert("expectedFingerprint".into(), json!({ "type": "string", "minLength": 1,
+            "description": "Copy the fingerprint returned by list-servers. Reload after a conflict; never overwrite a concurrent edit." }));
+    }
+    if action == "configure" {
+        required.push("config");
+        let mut fields = serde_json::Map::new();
+        for field in ["name", "command", "url", "type", "source", "transport"] {
+            fields.insert(
+                field.into(),
+                json!({ "anyOf": [{ "type": "string" }, { "type": "null" }] }),
+            );
+        }
+        fields.insert(
+            "args".into(),
+            json!({ "type": "array", "items": { "type": "string" } }),
+        );
+        for field in [
+            "enabled",
+            "autoStart",
+            "inheritParentEnvironment",
+            "oauthEnabled",
+        ] {
+            fields.insert(field.into(), json!({ "type": "boolean" }));
+        }
+        properties.insert("config".into(), json!({ "type": "object", "additionalProperties": false,
+            "properties": fields,
+            "description": "Patch non-secret fields of one server; omitted fields and existing credentials are preserved. New stdio servers require command; HTTP/SSE servers require url. Use null to remove an obsolete string field when switching transport. Credentials, environment and headers are entered through the protected MCP settings flow, never by reading existing secrets or putting secrets in command/args/url. Saving reconciles runtime state; autoStart defaults to true. Inspect the returned status instead of assuming connection succeeded." }));
+        properties.insert("workingDirectory".into(), json!({ "type": "string", "minLength": 1,
+            "description": "Optional directory on the OpenBitFun product host for a local process; never a remote workspace path." }));
+    }
+    json!({ "type": "object", "additionalProperties": false, "properties": properties, "required": required })
+}
+
 fn miniapp_input(action: &str) -> Value {
     let mut properties = serde_json::Map::new();
     let mut required = Vec::new();
@@ -213,6 +256,7 @@ fn miniapp_input(action: &str) -> Value {
             json!({ "type": "array", "items": { "type": "string" } }),
         );
         properties.insert("permissions".into(), json!({ "type": "object" }));
+        properties.insert("chrome".into(), json!({ "type": "object", "description": "Per-app titlebar configuration; see MiniApp chrome.titlebar contract. Use {} to restore defaults." }));
         properties.insert("esmDependencies".into(), json!({ "type": "array", "items": {
             "type": "object", "required": ["name"], "additionalProperties": false,
             "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "url": { "type": "string" } }
@@ -242,9 +286,163 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         AppearanceSelection, FlowChatPermissionModeControl, Language,
     };
     use ProductControlArgumentScope::ProductHostLocal;
-    use ProductControlRisk::{Destructive, Read, Ui, Write};
+    use ProductControlRisk::{Destructive, Execute, Read, Ui, Write};
 
     vec![
+        operation(
+            "feature.detached-dispatch",
+            "list-targets",
+            Read,
+            json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "list-targets"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "submit",
+            Execute,
+            json!({"type": "object", "properties": {
+                "target": {"type": "string", "minLength": 1, "maxLength": 512},
+                "prompt": {"type": "string", "minLength": 1, "maxLength": 32768},
+                "approvalPolicy": {"type": "string", "enum": ["auto", "reject-and-report"]},
+                "workspacePath": {"type": "string", "minLength": 1},
+                "agent": {"type": "string", "minLength": 1, "maxLength": 128},
+                "model": {"type": "string", "minLength": 1, "maxLength": 256},
+                "baseRef": {"type": "string", "minLength": 1, "maxLength": 512},
+                "includeUncommitted": {"type": "boolean"},
+                "title": {"type": "string", "minLength": 1, "maxLength": 200}
+            }, "required": ["target", "prompt", "approvalPolicy", "workspacePath"], "additionalProperties": false}),
+            &[("workspacePath", ProductHostLocal)],
+            operation_provider("detached-dispatch", "submit"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "status",
+            Read,
+            json!({"type": "object", "properties": {"jobId": {"type": "string", "minLength": 1, "maxLength": 128}, "cursor": {"type": "integer", "minimum": 0}}, "required": ["jobId"], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "status"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "list-jobs",
+            Read,
+            json!({"type": "object", "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 512}}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "list-jobs"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "cancel",
+            Destructive,
+            json!({"type": "object", "properties": {"jobId": {"type": "string", "minLength": 1, "maxLength": 128}}, "required": ["jobId"], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "cancel"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "status",
+            Read,
+            json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "status"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "start",
+            Write,
+            json!({"type": "object", "properties": {"method": {"type": "string", "enum": ["weixin", "telegram", "feishu", "mobile_web", "lan"]}, "lanIp": {"type": "string"}}, "required": ["method"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "start"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "stop",
+            Write,
+            json!({"type": "object", "properties": {"method": {"type": "string", "enum": ["weixin", "telegram", "feishu", "mobile_web", "lan"]}}, "required": ["method"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "stop"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "configure-bot",
+            Write,
+            json!({"type": "object", "properties": {"method": {"type": "string", "enum": ["weixin", "telegram", "feishu"]}, "credentialsFile": {"type": "string", "minLength": 1}}, "required": ["method", "credentialsFile"], "additionalProperties": false}),
+            &[("credentialsFile", ProductHostLocal)],
+            operation_provider("remote-connect", "configure-bot"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "weixin-login-start",
+            Write,
+            json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "weixin-login-start"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "weixin-login-poll",
+            Write,
+            json!({"type": "object", "properties": {"sessionKey": {"type": "string", "minLength": 1}, "verifyCode": {"type": "string"}}, "required": ["sessionKey"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "weixin-login-poll"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "set-bot-verbose",
+            Write,
+            json!({"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "set-bot-verbose"),
+        ),
+        operation(
+            "setting.tools.mcp",
+            "list-servers",
+            Read,
+            mcp_input("list"),
+            &[],
+            operation_provider("mcp", "list"),
+        ),
+        operation(
+            "setting.tools.mcp",
+            "configure-server",
+            Write,
+            mcp_input("configure"),
+            &[("workingDirectory", ProductHostLocal)],
+            operation_provider("mcp", "configure"),
+        ),
+        operation(
+            "setting.tools.mcp",
+            "delete-server",
+            Destructive,
+            mcp_input("delete"),
+            &[],
+            operation_provider("mcp", "delete"),
+        ),
+        operation(
+            "setting.tools.mcp",
+            "start-server",
+            Write,
+            mcp_input("start"),
+            &[],
+            operation_provider("mcp", "start"),
+        ),
+        operation(
+            "setting.tools.mcp",
+            "stop-server",
+            Write,
+            mcp_input("stop"),
+            &[],
+            operation_provider("mcp", "stop"),
+        ),
+        operation(
+            "setting.tools.mcp",
+            "restart-server",
+            Write,
+            mcp_input("restart"),
+            &[],
+            operation_provider("mcp", "restart"),
+        ),
         operation(
             "feature.miniapps",
             "list-apps",
@@ -354,12 +552,6 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
             config("app.notifications.permission_request_notify"),
         ),
         option(
-            "setting.application.general",
-            "startup-tips",
-            boolean(),
-            config("app.notifications.enable_startup_tips"),
-        ),
-        option(
             "setting.application.appearance",
             "theme",
             string(),
@@ -376,6 +568,12 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
             "enabled",
             boolean(),
             merge_config("app.ai_experience", &["enable_agent_companion"]),
+        ),
+        option(
+            "setting.application.pet",
+            "desktop-cards-enabled",
+            boolean(),
+            merge_config("app.ai_experience", &["enable_desktop_cards"]),
         ),
         operation(
             "setting.application.pet",
@@ -422,6 +620,12 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
             "voice-enabled",
             boolean(),
             merge_config("app.ai_experience", &["voice_input.enabled"]),
+        ),
+        option(
+            "setting.application.input",
+            "auto-show-selection-toolbar",
+            boolean(),
+            config("app.flow_chat.auto_show_selection_toolbar"),
         ),
         option(
             "setting.application.input",
@@ -684,6 +888,12 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         ),
         option(
             "setting.workspace.session",
+            "prompt-suggestion",
+            boolean(),
+            merge_config("app.ai_experience", &["enable_prompt_suggestion"]),
+        ),
+        option(
+            "setting.workspace.session",
             "workspace-search",
             boolean(),
             merge_config("app.ai_experience", &["enable_workspace_search"]),
@@ -729,6 +939,12 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
             "deferred-tool-loading",
             boolean(),
             config("ai.enable_deferred_tool_loading"),
+        ),
+        option(
+            "setting.tools.execution",
+            "tool-presentation-mode",
+            string_enum(&["native", "ptc", "ptc_python"]),
+            config("ai.tool_presentation_mode"),
         ),
         option(
             "setting.tools.execution",
@@ -787,7 +1003,7 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         option(
             "setting.data.diagnostics",
             "log-level",
-            string_enum(&["error", "warn", "info", "debug", "trace"]),
+            string_enum(&["error", "warn", "info", "debug", "trace", "off"]),
             config("app.logging.level"),
         ),
         option(

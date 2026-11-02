@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Run Code tool card.
  *
@@ -8,9 +9,10 @@
  * file into a terminal card's command line.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { CodePreview } from '../components/CodePreview';
 import { RunCodeToolCard as RunCodeToolCardView } from '@openbitfun/ui/flow-chat';
@@ -51,14 +53,27 @@ function readOutput(result: unknown): string {
   return formatSessionViewPreviewText(asText(record.output) || combined);
 }
 
+function readLanguage(input: unknown, result: unknown): string {
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const language = asText((input as Record<string, unknown>).language);
+    if (language) return language;
+  }
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    const language = asText((result as Record<string, unknown>).__ptc_language);
+    if (language) return language;
+  }
+  return 'typescript';
+}
+
 export const RunCodeToolCard: React.FC<ToolCardProps> = ({
   toolItem,
   config,
   onExpand,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -68,6 +83,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
   const code = asText(toolCall?.input?.code);
   const description = asText(toolCall?.input?.description).trim();
   const output = useMemo(() => readOutput(toolResult?.result), [toolResult?.result]);
+  const language = readLanguage(toolCall?.input, toolResult?.result);
   const errorMessage = status === 'error'
     ? toolResult?.error || t('toolCards.runCode.failed')
     : null;
@@ -79,25 +95,9 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
     if (!canExpand) return;
 
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded, { onExpand });
-  }, [applyExpandedState, canExpand, isExpanded, onExpand]);
+  }, [applyExpandedState, canExpand, isExpanded, onExpand, setIsExpanded]);
 
-  const summary = useMemo(() => {
-    if (errorMessage) return errorMessage;
-
-    const subject = description || firstMeaningfulLine(code);
-    if (status === 'completed') {
-      return subject || t('toolCards.runCode.completed');
-    }
-    if (status === 'cancelled') {
-      return t('toolCards.runCode.cancelled');
-    }
-    if (status === 'rejected') {
-      return t('toolCards.runCode.rejected');
-    }
-    if (subject) return subject;
-
-    return code ? t('toolCards.runCode.running') : t('toolCards.runCode.writing');
-  }, [code, description, errorMessage, status, t]);
+  const summary = description || firstMeaningfulLine(code);
 
   return (
     <div
@@ -111,6 +111,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
         onToggle={canExpand ? handleToggleExpand : undefined}
         action={t('toolCards.runCode.title')}
         summary={summary}
+        statusDescription={getToolCardStatusDescription(status, t, errorMessage)}
         actions={code ? (
           <ToolCardCopyAction
             getText={getCopyCodeText}
@@ -125,7 +126,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
         program={code ? (
           <CodePreview
             content={code}
-            language="typescript"
+            language={language}
             showLineNumbers={false}
             maxHeight={320}
             autoScrollToBottom={false}

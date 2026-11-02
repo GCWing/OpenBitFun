@@ -8,7 +8,11 @@ description = "Runtime-free PI extension source discovery for OpenBitFun"
 [dependencies]
 openbitfun-product-domains = { path = "../../contracts/product-domains", features = ["external-sources"] }
 openbitfun-static-hook-support = { path = "../static-hook-support" }
+openbitfun-services-core = { path = "../../services/services-core" }
 dirs = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
 oxc-parse = { workspace = true, features = ["ast_visit"] }
 serde_json = { workspace = true }
 

@@ -1,191 +1,40 @@
-/**
- * FlowTextBlock styles
- */
-@use '@/infrastructure/markdown/layout' as markdown;
 @use '../flat-markdown-surfaces' as flatMarkdownSurfaces;
-@use '../markdown-typography' as markdownTypography;
 
 .flow-text-block {
   @include flatMarkdownSurfaces.apply;
-  @include markdownTypography.apply;
 
   width: 100%;
+  min-width: 0;
   margin: 0;
-  font-size: var(--openbitfun-type-flow-body-font-size);
-  line-height: var(--openbitfun-type-flow-body-line-height);
   border: 0;
   box-sizing: border-box;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-flow-body-font-family);
+  font-size: var(--openbitfun-type-flow-body-font-size);
+  font-weight: var(--openbitfun-type-flow-body-font-weight);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  letter-spacing: var(--openbitfun-type-flow-body-letter-spacing);
 
-  .markdown-renderer {
-    --markdown-font-size: var(--openbitfun-type-flow-control-font-size);
-    --markdown-font-size-sm: var(--openbitfun-type-flow-control-font-size);
-    --markdown-code-font-size: var(--openbitfun-type-flow-code-font-size);
-    --markdown-line-height: var(--openbitfun-type-flow-body-line-height);
-    --markdown-block-gap: #{markdown.$block-gap};
-    --markdown-paragraph-gap: #{markdown.$paragraph-gap};
-
-    line-height: var(--openbitfun-type-flow-body-line-height);
-  }
-
-  /* Flow Chat's readable answer copy is slightly stronger than the shared
-   * light-theme content-primary anchor, without changing other surfaces. */
-  :root[data-color-scheme='light'][data-contrast='standard'] & .markdown-renderer,
-  :root[data-color-scheme='light'][data-contrast='standard'] & .text-content {
-    color: color-mix(in srgb, var(--openbitfun-color-content-on-light) 90%, transparent);
-
-    &:is(.markdown-renderer) :is(
-      p,
-      h1,
-      h2,
-      h3,
-      ul,
-      ol,
-      summary,
-      .table-wrapper th,
-      .table-wrapper td,
-      strong
-    ) {
-      color: color-mix(in srgb, var(--openbitfun-color-content-on-light) 90%, transparent);
-    }
-  }
-
-  /* Keep all rendered link variants (anchors and button-like local links) visibly link-blue. */
-  .markdown-renderer a,
-  .markdown-renderer .file-link,
-  .markdown-renderer .visualization-link,
-  .markdown-renderer .tab-link {
-    color: var(--openbitfun-color-link-default);
-    text-decoration: underline;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
-  }
-
-  .markdown-renderer a:hover,
-  .markdown-renderer .file-link:hover,
-  .markdown-renderer .visualization-link:hover,
-  .markdown-renderer .tab-link:hover {
-    color: var(--openbitfun-color-link-hover);
-    text-decoration-thickness: 1.5px;
-  }
-
-  .markdown-renderer a .inline-code,
-  .markdown-renderer .file-link .inline-code,
-  .markdown-renderer .visualization-link .inline-code,
-  .markdown-renderer .tab-link .inline-code {
-    color: inherit !important;
-  }
-
-  /* Flow chat keeps code fences one text step below prose. */
-  .markdown-renderer .code-block-wrapper pre[class*='language-'],
-  .markdown-renderer .code-block-wrapper pre code,
-  .markdown-renderer .code-block-wrapper pre[style],
-  .markdown-renderer .code-block-wrapper code[style],
-  .markdown-renderer pre code {
-    font-size: var(--openbitfun-type-flow-code-font-size) !important;
-  }
-
-  .markdown-renderer .table-wrapper table {
-    font-size: var(--openbitfun-type-flow-control-font-size);
-  }
-
-  /* Inline `code`: no chip background in chat (code blocks unchanged). */
-  .markdown-renderer .inline-code {
-    background: transparent;
-    border: none;
-    padding: 0.1em 0.2em;
-    font-size: var(--openbitfun-type-flow-control-font-size);
-  }
-
-  .markdown-renderer .inline-code:hover {
-    background: transparent;
-    border: none;
-  }
-
-  /* Tighter code fence toolbar than global Markdown.scss (flow chat only). */
-  .markdown-renderer .code-block-toolbar {
-    min-height: 1.625rem;
-    padding: 0.2rem 0.45rem 0.2rem 0.6rem;
-  }
-
-  .markdown-renderer .code-block-lang {
-    font-size: var(--openbitfun-type-flow-micro-font-size);
-    line-height: var(--openbitfun-type-flow-meta-line-height);
-  }
-
-  .markdown-renderer .code-block-wrapper .copy-button {
-    width: 26px;
-    height: 26px;
-    padding: 0.2rem;
-    transition:
-      opacity 140ms ease;
-  }
-
-  .markdown-renderer .code-block-wrapper .copy-button:hover {
-    background: transparent;
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  .markdown-renderer .code-block-wrapper .copy-button:active {
-    background: transparent;
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  .markdown-renderer .code-block-wrapper .copy-button.copy-success:hover {
-    color: var(--openbitfun-color-status-success-content);
-  }
-
+  // Markdown owns its type roles and controls; plain responses share its body role.
   .text-content {
-    color: var(--openbitfun-color-content-primary);
-    line-height: var(--openbitfun-type-flow-body-line-height);
     white-space: pre-wrap;
-    word-wrap: break-word;
+    overflow-wrap: anywhere;
   }
-  
-  &.streaming {
-    .markdown-renderer {
-      animation: none;
-    }
+
+  &.streaming .markdown-renderer {
+    animation: none;
   }
 
   &--runtime-status {
     display: flex;
     align-items: center;
     gap: var(--openbitfun-control-flow-chat-control-gap);
-    min-height: 1.5rem;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-flow-body-font-size);
+    min-height: var(--openbitfun-control-tool-card-ambient-row-min-block-size);
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-flow-support-font-family);
+    font-size: var(--openbitfun-type-flow-support-font-size);
+    font-weight: var(--openbitfun-type-flow-support-font-weight);
     line-height: var(--openbitfun-type-flow-support-line-height);
-    opacity: 0.86;
+    letter-spacing: var(--openbitfun-type-flow-support-letter-spacing);
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .flow-text-block .markdown-renderer .code-block-wrapper .copy-button {
-    transition-duration: 0ms;
-  }
-}
-
-/* Light theme: copy button icon color (scoped to flow chat). */
-:root[data-openbitfun-appearance-mode='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button:hover {
-  color: var(--openbitfun-color-overlay-scrim);
-}
-
-:root[data-openbitfun-appearance-mode='light'] .flow-text-block .markdown-renderer .code-block-wrapper .copy-button.copy-success:hover {
-  color: var(--openbitfun-color-status-success-content);
-}
-
-:root[data-openbitfun-appearance-mode='light'] .flow-text-block .markdown-renderer .inline-code {
-  background: transparent;
-  border: none;
-}
-
-:root[data-openbitfun-appearance-mode='light'] .flow-text-block .markdown-renderer .inline-code:hover {
-  background: transparent;
-  border: none;
-}
-
-:root[data-openbitfun-appearance-mode='dark'] .flow-text-block .markdown-renderer .inline-code,
-:root[data-openbitfun-appearance-mode='dark'] .flow-text-block .markdown-renderer .inline-code:hover {
-  background: transparent;
-  border: none;
 }

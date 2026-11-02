@@ -1,0 +1,178 @@
+// Shared layout and typography for every Devices & Connections view.
+// The dialog and the account panel consume these mixins so pages, sections,
+// cards, rows and action bars keep one rhythm.
+
+$page-inline: var(--openbitfun-space-8);
+$page-inline-compact: var(--openbitfun-space-5);
+$page-inline-narrow: var(--openbitfun-space-4);
+$page-block-start: var(--openbitfun-space-8);
+$page-content-gap: var(--openbitfun-space-6);
+$section-gap: var(--openbitfun-space-6);
+$section-heading-gap: var(--openbitfun-space-3);
+$row-block: var(--openbitfun-layout-field-group-row-padding-block);
+$row-inline: var(--openbitfun-layout-field-group-row-padding-inline);
+$row-gap: var(--openbitfun-space-3);
+$icon-slot: 24px;
+$divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+
+@mixin page-title {
+  margin: 0;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-heading-dialog-font-family);
+  font-size: var(--openbitfun-type-heading-dialog-font-size);
+  font-weight: var(--openbitfun-type-heading-dialog-font-weight);
+  line-height: var(--openbitfun-type-heading-dialog-line-height);
+  letter-spacing: var(--openbitfun-type-heading-dialog-letter-spacing);
+}
+
+@mixin section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: $section-heading-gap;
+}
+
+@mixin section-heading {
+  display: flex;
+  min-width: 0;
+  min-block-size: var(--openbitfun-control-button-xs-height);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--openbitfun-space-3);
+}
+
+@mixin section-title {
+  margin: 0;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-heading-section-font-family);
+  font-size: var(--openbitfun-type-heading-section-font-size);
+  font-weight: var(--openbitfun-type-heading-section-font-weight);
+  line-height: var(--openbitfun-type-heading-section-line-height);
+  letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+}
+
+@mixin supporting-text {
+  margin: 0;
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+}
+
+@mixin card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--openbitfun-layout-field-group-radius);
+  background: var(--openbitfun-color-field-group-background);
+}
+
+@mixin card-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: $row-gap;
+  padding: $row-block $row-inline;
+}
+
+@mixin card-divider {
+  border-top: $divider;
+}
+
+@mixin icon-slot {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: $icon-slot;
+  block-size: $icon-slot;
+  color: var(--openbitfun-color-content-secondary);
+}
+
+@mixin row-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--openbitfun-space-1);
+}
+
+@mixin row-title {
+  margin: 0;
+  min-width: 0;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-body-md-font-family);
+  font-size: var(--openbitfun-type-body-md-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+}
+
+@mixin row-trailing {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-width: 0;
+}
+
+@mixin label-text {
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-label-selected-font-family);
+  font-size: var(--openbitfun-type-label-selected-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  line-height: var(--openbitfun-type-label-selected-line-height);
+}
+
+@mixin action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--openbitfun-space-2);
+  padding: var(--openbitfun-space-3) $row-inline;
+  border-top: $divider;
+}
+
+@mixin notice {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--openbitfun-space-2);
+  @include supporting-text;
+
+  > svg,
+  > [data-openbitfun-component='icon'] {
+    margin-top: 2px;
+  }
+}
+
+// Include last in a rule block: it emits nested rules only.
+@mixin interactive-row {
+  & {
+    transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  &:hover:not(:disabled) {
+    background: var(--openbitfun-color-action-neutral-surface);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--openbitfun-color-action-neutral-surface-pressed);
+  }
+
+  &:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(0px - var(--openbitfun-focus-width));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
+@mixin chevron {
+  flex-shrink: 0;
+  color: var(--openbitfun-color-content-muted);
+}

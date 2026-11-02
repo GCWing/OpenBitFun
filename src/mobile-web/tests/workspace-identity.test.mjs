@@ -10,6 +10,8 @@ const code = ts.transpileModule(source, {
 const {
   mergeWorkspaceSessions, sessionMatchesWorkspace, workspaceIdentityKey,
   resolveLegacyWorkspaceReference, sameWorkspace,
+  isClawAgent, isRemoteSessionWorkspace, resolveChatHeaderContext, selectedSessionWorkspaceContext,
+  sessionWorkspaceContext, workspaceContext,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 );
@@ -108,6 +110,7 @@ const controlIdentity = await moduleUrl('../src/services/controlClientIdentity.t
 const hostStream = await moduleUrl('../../shared/relay-transport/HostStream.ts');
 const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   '../../../shared/agent-harness/wire': agentWire,
+  '../../../shared/dialog-queue/HostDialogQueue': 'data:text/javascript,export class HostDialogQueue {}',
   '../../../shared/relay-transport/HostStream': hostStream,
   './controlClientIdentity': controlIdentity,
   './SessionSynchronizer': 'data:text/javascript,export class SessionSynchronizer {}',
@@ -347,4 +350,276 @@ test('ID-less references keep the legacy triple and IDs are refused by hosts wit
   await manager.listSessions(a.path, 30, 0, '', { workspaceId: 'ws-a' });
   assert.deepEqual(calls.slice(switched).map(cmd => cmd.cmd), ['get_workspace_info', 'list_sessions']);
   assert.deepEqual(Object.keys(calls.at(-1)).filter(key => key !== '_request_id' && key !== 'cmd').sort(), ['limit', 'offset', 'query', 'workspace_id']);
+});
+
+test('rollback refuses legacy hosts without sending an unknown mutation', async () => {
+  const calls = [];
+  const manager = new RemoteSessionManager(catalogClient(async (_device, command) => {
+    calls.push(command);
+  }), ['host_stream_v1']);
+  await assert.rejects(manager.rollbackSessionToTurn('session-a', 'turn-a', 7), /does not support/);
+  assert.deepEqual(calls, []);
+});
+
+test('rollback forwards the streamed storage index and validates the acknowledgement', async () => {
+  const { presentSessionTurn } = await import(await moduleUrl('../src/services/SessionRecordPresentation.ts'));
+  const [message] = presentSessionTurn({ turnId: 'turn-a', turnIndex: 7, status: 'completed', timestamp: 1,
+    userMessage: { id: 'user-a', content: 'hello', timestamp: 1 }, modelRounds: [] });
+  let response = { resp: 'session_rolled_back', session_id: 'session-a', retired_turn_ids: ['turn-a'],
+    restored_files: [], composer_text: 'hello', changed: true };
+  const calls = [];
+  const manager = new RemoteSessionManager(catalogClient(async (_device, command) => {
+    calls.push(command);
+    return response;
+  }), ['session_rollback_v1']);
+  assert.equal((await manager.rollbackSessionToTurn('session-a', message.turn_id, message.turn_index)).changed, true);
+  assert.equal(calls[0].expected_storage_turn_index, 7);
+  response = { ...response, session_id: 'session-b' };
+  await assert.rejects(manager.rollbackSessionToTurn('session-a', 'turn-a', 7), /Invalid session rollback response/);
+  response = { ...response, session_id: 'session-a', composer_text: { unexpected: 'object' } };
+  await assert.rejects(manager.rollbackSessionToTurn('session-a', 'turn-a', 7), /Invalid session rollback response/);
+  response = { resp: 'ok' };
+  await assert.rejects(manager.rollbackSessionToTurn('session-a', 'turn-a', 7), /Invalid session rollback response/);
+});
+
+test('rollback completion cannot cross a control target switch', async () => {
+  let finish;
+  const client = catalogClient(() => new Promise(resolve => { finish = resolve; }));
+  const manager = new RemoteSessionManager(client, ['session_rollback_v1']);
+  const pending = manager.rollbackSessionToTurn('session-a', 'turn-a', 7);
+  while (!finish) await new Promise(resolve => setImmediate(resolve));
+  client.controlTargetEpoch = 2;
+  client.targetDeviceId = 'desktop-b';
+  finish({ resp: 'session_rolled_back', session_id: 'session-a', retired_turn_ids: ['turn-a'], restored_files: [], changed: true });
+  await assert.rejects(pending, RemoteControlTargetChangedError);
+  await assert.rejects(manager.rollbackSessionToTurn('session-a', 'turn-a', 7), /does not support/);
+});
+
+test('workspace icons negotiate support and send only the authoritative host workspace ID', async () => {
+  const calls = [];
+  const snapshot = { workspaceId: 'project', icon: { version: 1, revision: 2, mode: 'default', color: 'blue', glyph: 'learning' }, imageUnavailable: false, supportedGlyphs: ['default', 'learning'], darkImageData: 'data:image/png;base64,dark', supportsThemedImages: true };
+  const client = catalogClient(async (device, command) => {
+    calls.push([device, command]);
+    return { resp: 'workspace_icon', snapshot };
+  });
+  assert.equal(await new RemoteSessionManager(client, []).getWorkspaceIcon('project'), null);
+  assert.deepEqual(calls, []);
+  const manager = new RemoteSessionManager(client, ['workspace_icon_read_v1']);
+  assert.deepEqual(await manager.getWorkspaceIcon('project'), snapshot);
+  assert.equal(calls.length, 1);
+  const { _request_id, ...command } = calls[0][1];
+  assert.ok(_request_id);
+  assert.deepEqual([calls[0][0], command], ['desktop-a', { cmd: 'get_workspace_icon', workspace_id: 'project' }]);
+});
+
+test('workspace icon responses cannot cross a device A -> B -> A switch', async () => {
+  let complete;
+  const client = catalogClient(() => new Promise(resolve => { complete = resolve; }));
+  const manager = new RemoteSessionManager(client, ['workspace_icon_read_v1']);
+  const pending = manager.getWorkspaceIcon('same-id');
+  while (!complete) await new Promise(resolve => setImmediate(resolve));
+  client.controlTargetEpoch += 2;
+  complete({ resp: 'workspace_icon', snapshot: { workspaceId: 'same-id', icon: { version: 1, revision: 0, mode: 'default', color: 'red' } } });
+  await assert.rejects(pending, RemoteControlTargetChangedError);
+});
+
+test('workspace icons reject future formats and external image URLs without local fallback', async () => {
+  for (const patch of [{ icon: { version: 2 } }, { imageData: 'file:///controller/private.png' }, { darkImageData: 'file:///controller/private-dark.png' }, { darkImageData: 123 }]) {
+    let calls = 0;
+    const manager = new RemoteSessionManager(catalogClient(async () => {
+      calls++;
+      return { resp: 'workspace_icon', snapshot: { workspaceId: 'project', icon: { version: 1, revision: 0, mode: 'image', color: 'default' }, ...patch } };
+    }), ['workspace_icon_read_v1']);
+    await assert.rejects(manager.getWorkspaceIcon('project'), /Unsupported workspace icon/);
+    assert.equal(calls, 1);
+  }
+});
+
+const home = {
+  workspace_id: 'ws-home', has_workspace: true, path: '/Users/me/home',
+  project_name: 'home', git_branch: 'master', workspace_kind: 'normal',
+};
+const claw = { workspace_id: 'ws-claw', path: '/Users/me/assistant/workspace', name: 'Nova' };
+const header = (overrides) => resolveChatHeaderContext({
+  agentType: 'Standard',
+  currentWorkspace: home,
+  currentAssistant: null,
+  assistantLabel: 'Claw',
+  ...overrides,
+});
+
+test('assistant sessions never inherit the selected normal workspace or its branch', () => {
+  // Issue 2360: Pro mode selected `home / master`, then a Claw session is opened.
+  const owner = workspaceContext({ ...claw, workspace_kind: 'assistant' });
+  const session = sessionWorkspaceContext({
+    workspace_id: 'ws-claw', workspace_path: claw.path, workspace_name: 'workspace',
+  }, owner);
+  assert.deepEqual(header({ agentType: 'Claw', session }), { workspaceName: 'Nova' });
+  // A catalog row may carry the kind without the agent type saying Claw.
+  assert.deepEqual(header({ agentType: 'Cowork', session }), { workspaceName: 'Nova' });
+  // The selected assistant is matched by identity and supplies the current name.
+  assert.deepEqual(
+    header({ agentType: 'claw', session: { path: claw.path }, currentAssistant: claw }),
+    { workspaceName: 'Nova' },
+  );
+});
+
+test('a different selected assistant does not rename an attributed assistant session', () => {
+  const session = { workspace_id: 'ws-claw', path: claw.path, name: 'Nova', workspace_kind: 'assistant' };
+  const other = { workspace_id: 'ws-other', path: '/Users/me/other', name: 'Other' };
+  assert.deepEqual(header({ agentType: 'Claw', session, currentAssistant: other }), { workspaceName: 'Nova' });
+});
+
+test('assistant sessions without workspace facts use the selection, then the localized label', () => {
+  // Navigation restored from an older build only knows the agent type.
+  assert.deepEqual(header({ agentType: 'Claw', currentAssistant: claw }), { workspaceName: 'Nova' });
+  assert.deepEqual(header({ agentType: 'Claw' }), { workspaceName: 'Claw' });
+});
+
+test('normal sessions show their own workspace and a branch only for the current workspace', () => {
+  assert.deepEqual(
+    header({ session: { workspace_id: 'ws-home', path: home.path, name: 'stale label' } }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+  assert.deepEqual(
+    header({ session: { workspace_id: 'ws-api', path: '/Users/me/api', name: 'api' } }),
+    { workspaceName: 'api', gitBranch: undefined },
+  );
+  assert.deepEqual(
+    header({ session: { path: '/Users/me/api/' } }),
+    { workspaceName: 'api', gitBranch: undefined },
+  );
+  // No session facts: show nothing rather than guess from the selection.
+  assert.deepEqual(header({}), { workspaceName: '' });
+});
+
+test('same-path SSH sessions keep their branch scoped to the selected host', () => {
+  const sshA = {
+    has_workspace: true, path: a.path, project_name: 'herdr', git_branch: 'main',
+    workspace_kind: 'remote', remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+  };
+  assert.deepEqual(
+    header({ currentWorkspace: sshA, session: { ...b, name: 'herdr' } }),
+    { workspaceName: 'herdr', gitBranch: undefined },
+  );
+  assert.deepEqual(
+    header({ currentWorkspace: sshA, session: { ...a, name: 'herdr' } }),
+    { workspaceName: 'herdr', gitBranch: 'main' },
+  );
+});
+
+test('legacy localhost markers on the current workspace still match the local session', () => {
+  const legacy = { ...home, workspace_id: undefined, remote_ssh_host: 'localhost' };
+  assert.deepEqual(
+    header({ currentWorkspace: legacy, session: { path: home.path } }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+});
+
+test('session workspace context keeps host identity and takes only display facts from the owner', () => {
+  const owner = workspaceContext({ ...a, workspace_id: 'ws-owner', name: 'Row name', workspace_kind: 'remote' });
+  assert.deepEqual(sessionWorkspaceContext({
+    workspace_id: 'ws-session', workspace_path: '/pinned', workspace_name: 'host label',
+  }, owner), {
+    workspace_id: 'ws-session', path: '/pinned',
+    remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+    name: 'Row name', workspace_kind: 'remote',
+  });
+  // Pre-ID rows carry only the path and root label.
+  assert.deepEqual(sessionWorkspaceContext({ workspace_path: '/p', workspace_name: 'p' }), {
+    workspace_id: undefined, path: '/p', remote_connection_id: undefined, remote_ssh_host: undefined,
+    name: 'p', workspace_kind: undefined,
+  });
+  assert.equal(sessionWorkspaceContext({}), undefined);
+  assert.equal(isClawAgent('claw'), true);
+  assert.equal(isClawAgent('Claw'), true);
+  assert.equal(isClawAgent('Cowork'), false);
+});
+
+test('localhost markers from older hosts on either side keep the branch for the selected workspace', () => {
+  const legacyCurrent = { ...home, workspace_id: undefined };
+  const legacyMarker = { workspace_kind: 'normal', remote_ssh_host: 'localhost' };
+  // A new session in the selected workspace: the created reply carries the marker.
+  assert.deepEqual(
+    header({ currentWorkspace: legacyCurrent, session: { path: home.path, ...legacyMarker } }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+  assert.deepEqual(
+    header({
+      currentWorkspace: { ...legacyCurrent, remote_ssh_host: 'localhost' },
+      session: { path: home.path, ...legacyMarker },
+    }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+});
+
+test('the rollback gate follows the open session, not the selected workspace', () => {
+  const ssh = { ...a, name: 'herdr', workspace_kind: 'remote' };
+  const selectedSsh = {
+    has_workspace: true, path: a.path, workspace_kind: 'remote',
+    remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+  };
+  // Local project selected while the open session is SSH.
+  assert.equal(isRemoteSessionWorkspace('Standard', ssh, home), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: a.path, remote_ssh_host: 'host-a' }, home), true);
+  // SSH project selected while a Claw or local session is open.
+  assert.equal(isRemoteSessionWorkspace('Claw', undefined, selectedSsh), false);
+  assert.equal(isRemoteSessionWorkspace('Claw', { path: claw.path }, selectedSsh), false);
+  assert.equal(isRemoteSessionWorkspace('Cowork', { path: claw.path, workspace_kind: 'assistant' }, selectedSsh), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: home.path, workspace_kind: 'normal' }, selectedSsh), false);
+  // Without session facts the selection still gates, as it did before.
+  assert.equal(isRemoteSessionWorkspace('Standard', undefined, selectedSsh), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', undefined, home), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', undefined, null), false);
+  // A normal record's localhost marker is not SSH; an unknown kind keeps its selector.
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: home.path, workspace_kind: 'normal', remote_ssh_host: 'localhost' }, null), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: home.path, remote_ssh_host: 'localhost' }, null), true);
+});
+
+test('a selection that no longer owns the created session lends it no name or kind', () => {
+  const selection = workspaceContext({ ...claw, workspace_kind: 'assistant' });
+  const facts = (workspace_id, workspace_path, remote = {}) => ({
+    workspace_id, workspace_path, workspace_identity: remote,
+  });
+  assert.equal(selectedSessionWorkspaceContext(facts('ws-claw', claw.path), selection).name, 'Nova');
+  const moved = selectedSessionWorkspaceContext(facts('ws-api', '/Users/me/api'), selection);
+  assert.equal(moved.name, undefined);
+  assert.equal(moved.workspace_kind, undefined);
+  assert.equal(moved.workspace_id, 'ws-api');
+  // ID-less SSH facts on the same path are a different workspace from a local selection.
+  const local = workspaceContext({ path: a.path, name: 'local', workspace_kind: 'normal' });
+  const onHost = selectedSessionWorkspaceContext(
+    facts(undefined, a.path, { remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a' }),
+    local,
+  );
+  assert.equal(onHost.name, undefined);
+  assert.equal(onHost.remote_ssh_host, 'host-a');
+});
+
+test('a path-only session context cannot open the rollback gate over a possibly remote workspace', () => {
+  const pathOnly = { path: a.path };
+  const selectedSsh = {
+    has_workspace: true, path: '/elsewhere', workspace_kind: 'remote',
+    remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+  };
+  const sshRow = { path: `${a.path}/`, name: 'herdr', last_opened: '', workspace_kind: 'remote', remote_ssh_host: 'host-a' };
+  const localRow = { path: a.path, name: 'herdr', last_opened: '', workspace_kind: 'normal' };
+  // Unknown routing stays remote under a remote selection.
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, selectedSsh), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_id: 'ws', name: 'herdr' }, selectedSsh), true);
+  // Unknown routing stays remote if a known workspace with that root is remote, even beside a local one.
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [sshRow]), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [localRow, sshRow]), true);
+  assert.equal(
+    isRemoteSessionWorkspace('Standard', { workspace_id: 'ws-ssh' }, home, [{ ...sshRow, workspace_id: 'ws-ssh', path: '/other' }]),
+    true,
+  );
+  // Nothing known says remote.
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [localRow]), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [{ ...sshRow, path: '/other' }]), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, null), false);
+  // Explicit local facts and Claw/assistant may still override a remote selection.
+  assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_kind: 'normal' }, selectedSsh, [sshRow]), false);
+  assert.equal(isRemoteSessionWorkspace('Claw', pathOnly, selectedSsh, [sshRow]), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_kind: 'assistant' }, selectedSsh, [sshRow]), false);
 });

@@ -193,7 +193,9 @@ impl RealtimeConnection {
         }
     }
     pub async fn close(self) {
-        self.sender.disconnect().await;
+        // A server-initiated close may already have stopped the Socket.IO
+        // manager. Do not let graceful teardown block the reconnect owner.
+        let _ = tokio::time::timeout(Duration::from_secs(5), self.sender.disconnect()).await;
         drop(self.sender);
         drop(self.receiver);
         // Joining releases the Engine.IO heartbeat and socket tasks as well as
@@ -212,7 +214,12 @@ impl RealtimeSender {
             .timeout(Duration::from_secs(10))
             .await?;
         if response.payload.0["ok"] != true {
-            bail!("Relay event rejected");
+            bail!(
+                "Relay event rejected: {}",
+                response.payload.0["error"]
+                    .as_str()
+                    .unwrap_or("no reason provided by relay")
+            );
         }
         Ok(())
     }

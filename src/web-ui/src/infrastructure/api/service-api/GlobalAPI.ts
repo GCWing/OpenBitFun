@@ -1,3 +1,4 @@
+import { invokePrepared } from './invokePrepared';
 import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
  
 
@@ -55,6 +56,7 @@ export interface WorkspaceInfo {
   workspaceType: string;
   workspaceKind: string;
   assistantId?: string | null;
+  defaultNameNumber?: number | null;
   languages: string[];
   openedAt: string;
   lastAccessed: string;
@@ -82,8 +84,18 @@ export interface WorkspaceStartupStateSnapshot {
   currentWorkspace: WorkspaceInfo | null;
   recentWorkspaces: WorkspaceInfo[];
   openedWorkspaces: WorkspaceInfo[];
+  /** Present only on hosts that support reopening closed assistants. */
+  assistantWorkspaces?: WorkspaceInfo[];
   primaryAssistantWorkspaceId?: string | null;
   legacyRemoteWorkspace?: RemoteWorkspaceSnapshot | null;
+}
+
+export interface OpenRemoteWorkspaceOptions {
+  /**
+   * The user confirmed moving an existing record owned by another saved SSH
+   * connection to this connection.
+   */
+  rebindConnection?: boolean;
 }
 
 export interface UpdateAppStatusRequest {
@@ -149,6 +161,7 @@ export class GlobalAPI {
       scope.assertCurrent('upgrade workspace catalog');
       const records = upgradeLegacyWorktreeReferences([
         ...snapshot.openedWorkspaces, ...snapshot.recentWorkspaces,
+        ...(snapshot.assistantWorkspaces ?? []),
         ...(snapshot.currentWorkspace ? [snapshot.currentWorkspace] : []),
       ]);
       const byId = new Map(records.map(record => [record.id, record]));
@@ -158,6 +171,7 @@ export class GlobalAPI {
       return {
         ...snapshot,
         openedWorkspaces: snapshot.openedWorkspaces.map(record => byId.get(record.id)!),
+        assistantWorkspaces: snapshot.assistantWorkspaces?.map(record => byId.get(record.id)!),
         recentWorkspaces: snapshot.recentWorkspaces.map(record => byId.get(record.id)!),
         currentWorkspace: snapshot.currentWorkspace ? byId.get(snapshot.currentWorkspace.id)! : null,
       };
@@ -190,7 +204,7 @@ export class GlobalAPI {
 
    
   async openWorkspaceById(workspaceId: string): Promise<WorkspaceInfo> {
-    return api.invoke('open_workspace', { request: await workspaceIdRequest(workspaceId, 'path') });
+    return invokePrepared('open_workspace', async () => ({ request: await workspaceIdRequest(workspaceId, 'path') }));
   }
 
   async createLocalWorkspace(path: string): Promise<WorkspaceInfo> {
@@ -207,7 +221,8 @@ export class GlobalAPI {
     remotePath: string,
     connectionId: string,
     connectionName: string,
-    sshHost?: string
+    sshHost?: string,
+    options: OpenRemoteWorkspaceOptions = {},
   ): Promise<WorkspaceInfo> {
     try {
       const h = sshHost?.trim();
@@ -217,6 +232,7 @@ export class GlobalAPI {
           connectionId,
           connectionName,
           ...(h ? { sshHost: h } : {}),
+          ...(options.rebindConnection ? { rebindConnection: true } : {}),
         },
       });
     } catch (error) {
@@ -225,6 +241,7 @@ export class GlobalAPI {
         connectionId,
         connectionName,
         sshHost,
+        rebindConnection: options.rebindConnection === true,
       });
     }
   }
@@ -377,12 +394,22 @@ export class GlobalAPI {
     }
   }
 
+  async getAssistantWorkspaces(): Promise<WorkspaceInfo[]> {
+    try {
+      return upgradeLegacyWorktreeReferences(await api.invoke<WorkspaceInfo[]>(
+        'get_assistant_workspaces', { request: {} },
+      ));
+    } catch (error) {
+      throw createTauriCommandError('get_assistant_workspaces', error);
+    }
+  }
+
    
   async scanWorkspaceInfo(workspaceId: string): Promise<WorkspaceInfo | null> {
     try {
-      return await api.invoke('scan_workspace_info', { 
+      return await invokePrepared('scan_workspace_info', async () => ({
         request: await workspaceIdRequest(workspaceId, 'workspacePath')
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('scan_workspace_info', error, { workspaceId });
     }

@@ -9,6 +9,11 @@
   place-items: center;
   overflow: visible;
 
+  &--motion {
+    transform-origin: center;
+    transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
   &__art {
     display: block;
     width: 100%;
@@ -16,13 +21,16 @@
     overflow: visible;
   }
 
-  img {
+  img,
+  &__art > svg {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
     user-select: none;
   }
+
+  &__art > svg { overflow: visible; }
 
   &__status {
     position: absolute;
@@ -52,5 +60,19 @@
 
   &--completed &__status {
     background: var(--openbitfun-color-status-info-emphasis);
+  }
+}
+
+[data-agent-capsule-trigger]:is(:hover, :focus-visible) .subagent-avatar--motion {
+  transform: scale(1.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-avatar--motion {
+    transition: none;
+  }
+
+  [data-agent-capsule-trigger]:is(:hover, :focus-visible) .subagent-avatar--motion {
+    transform: none;
   }
 }

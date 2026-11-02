@@ -20,6 +20,11 @@ import {
   terminalReplayHasScreenText,
 } from '../utils';
 import { createLogger } from '@/shared/utils/logger';
+import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
+import { notificationService } from '@/shared/notification-system';
+import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
+import { sshApi } from '@/features/ssh-remote/sshApi';
+import { openTerminalLink } from '@/features/ssh-remote/openTerminalLink';
 import type { SessionResponse, TerminalReplayEvent } from '../types';
 import type { TerminalPasteDecision } from '../utils';
 import './Terminal.scss';
@@ -45,6 +50,7 @@ export interface ConnectedTerminalProps {
   sessionId: string;
   className?: string;
   autoFocus?: boolean;
+  renderingActive?: boolean;
   showToolbar?: boolean;
   showStatusBar?: boolean;
   /** Optional xterm options (e.g. smaller font in embedded dialogs). */
@@ -63,6 +69,7 @@ const ConnectedTerminal: React.FC<ConnectedTerminalProps> = memo(({
   sessionId,
   className = '',
   autoFocus = true,
+  renderingActive = true,
   showToolbar = false,
   showStatusBar = false,
   options,
@@ -431,6 +438,30 @@ const ConnectedTerminal: React.FC<ConnectedTerminalProps> = memo(({
     }
   }, [isExited]);
 
+  const connectionId = session?.connectionId ?? initialSession?.connectionId;
+  const handleLinkActivate = useCallback((uri: string) => {
+    void openTerminalLink(uri, { connectionId }, {
+      listSavedConnections: () => sshApi.listSavedConnections(),
+      listPortForwards: (id) => sshApi.listPortForwards(id),
+      startPortForward: (request) => sshApi.startPortForward(request),
+      stopPortForward: (forwardId) => sshApi.stopPortForward(forwardId),
+      openExternal: (url) => systemAPI.openExternal(url),
+      isPeerDeviceModeActive,
+      notifyInfo: (message) => {
+        notificationService.info(message);
+      },
+      notifyWarning: (message, action) => {
+        notificationService.warning(message, action
+          ? { actions: [{ label: action.label, onClick: action.onClick }] }
+          : undefined);
+      },
+      t: (key, params) => t(key, params),
+      logError: (message, data) => log.error(message, { sessionId, ...data }),
+    }).catch((error) => {
+      log.error('Failed to open external link', { sessionId, uri, error });
+    });
+  }, [connectionId, sessionId, t]);
+
   const terminalId = `terminal-${sessionId}`;
 
   useEffect(() => {
@@ -531,11 +562,13 @@ const ConnectedTerminal: React.FC<ConnectedTerminalProps> = memo(({
         terminalId={terminalId}
         sessionId={sessionId}
         autoFocus={autoFocus}
+        renderingActive={renderingActive}
         options={options}
         onData={handleData}
         onResize={handleResize}
         onTitleChange={handleTitleChange}
         onReady={handleTerminalReady}
+        onLinkActivate={handleLinkActivate}
         onPasteShortcut={handlePasteShortcut}
         onPaste={handlePaste}
         preventShrinkBelowColsRef={preventShrinkBelowColsRef}

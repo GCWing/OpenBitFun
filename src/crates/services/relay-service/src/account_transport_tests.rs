@@ -335,7 +335,8 @@ async fn official_and_local_layouts_share_authenticated_directory_and_rpc() {
                 json!([
                     "device_alias_v1",
                     "device_metadata_v1",
-                    "device_client_build_v1"
+                    "device_client_build_v1",
+                    "device_kind_cli_v1"
                 ])
             );
             let devices = json_body(

@@ -25,6 +25,7 @@ import type {
   SessionCreationSeed,
   SessionDriver,
   SessionDriverNavigationStatusSource,
+  SessionDriverOwnershipSource,
   StartTurnInput,
   StartTurnResult,
   SubmissionDraft,
@@ -85,6 +86,10 @@ const dispatchNavigationStatusSource: SessionDriverNavigationStatusSource = {
       : undefined;
     return reachability ? { reachability } : {};
   },
+};
+
+const dispatchOwnershipSource: SessionDriverOwnershipSource = {
+  subscribe: listener => dispatchJobStore.subscribe(listener),
 };
 
 /**
@@ -312,8 +317,10 @@ export const dispatchSessionDriver: SessionDriver = {
   fileAccess: { open: openDispatchSessionFile, readImage: readDispatchSessionImage, download: downloadDispatchSessionFile },
   id: 'dispatch',
   navigationStatusSource: dispatchNavigationStatusSource,
+  ownershipSource: dispatchOwnershipSource,
 
   async createSession(context: FlowChatContext, seed: SessionCreationSeed): Promise<string> {
+    if (seed.config.modelPoolId) throw new Error(i18nService.t('flow-chat:modelSelector.pools.surfaceUnsupported'));
     const {
       surfaceScope,
       config,
@@ -678,6 +685,7 @@ export const dispatchSessionDriver: SessionDriver = {
       options,
     } = input;
 
+    if (readySession.config.modelPoolId) throw new Error(i18nService.t('flow-chat:modelSelector.pools.surfaceUnsupported'));
     const targetRequest = readySession.config.dispatchTargetRequest;
     const jobId = readySession.config.dispatchJobId;
     const approvalPolicy = readySession.config.dispatchApprovalPolicy;

@@ -436,6 +436,23 @@ impl DispatchStore {
         Ok((current, true))
     }
 
+    /// Persist the runtime-owned next turn without re-claiming or finishing the job.
+    pub(crate) fn advance_goal_turn(
+        &self,
+        job_id: &str,
+        previous_turn: &str,
+        next_turn: &str,
+    ) -> Result<()> {
+        let job_dir = self.existing_job_dir(job_id)?;
+        let _lock = JobLock::exclusive(&job_dir.join(".lock"))?;
+        let mut current = self.load_state_unlocked(&job_dir)?;
+        if current.state.is_terminal() || current.turn_id.as_deref() != Some(previous_turn) {
+            bail!("cannot advance goal turn: dispatch job owner changed");
+        }
+        current.turn_id = Some(next_turn.to_string());
+        atomic_write_json(&job_dir.join(STATE_FILE), &current)
+    }
+
     pub(crate) fn request_cancel(&self, job_id: &str) -> Result<DispatchStateRecord> {
         let job_dir = self.existing_job_dir(job_id)?;
         let _lock = JobLock::exclusive(&job_dir.join(".lock"))?;
@@ -2679,6 +2696,41 @@ mod tests {
             .queue_follow_up_turn(&continue_request("job-1", "turn-2", "next"))
             .expect_err("a running job cannot take a follow-up");
         assert!(error.to_string().contains("still running"));
+    }
+
+    #[test]
+    fn goal_continuation_persists_its_turn_and_rejects_stale_or_terminal_owners() {
+        let (_dir, store) = store();
+        store
+            .create_job(request("goal-turn"), "Goal".into())
+            .unwrap();
+        store
+            .mark_state("goal-turn", DispatchJobState::Running, Some("turn-1"), None)
+            .unwrap();
+        store
+            .advance_goal_turn("goal-turn", "turn-1", "turn-2")
+            .unwrap();
+        let restored = store.load_state("goal-turn").unwrap();
+        assert_eq!(restored.state, DispatchJobState::Running);
+        assert_eq!(restored.turn_id.as_deref(), Some("turn-2"));
+        assert!(store
+            .advance_goal_turn("goal-turn", "turn-1", "stale")
+            .is_err());
+        store
+            .mark_state(
+                "goal-turn",
+                DispatchJobState::Succeeded,
+                Some("turn-2"),
+                None,
+            )
+            .unwrap();
+        assert!(store
+            .advance_goal_turn("goal-turn", "turn-2", "late")
+            .is_err());
+        assert_eq!(
+            store.load_state("goal-turn").unwrap().turn_id.as_deref(),
+            Some("turn-2")
+        );
     }
 
     #[test]

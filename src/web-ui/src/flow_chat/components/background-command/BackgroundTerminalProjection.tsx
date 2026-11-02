@@ -4,9 +4,9 @@ import { FitAddon } from '@xterm/addon-fit';
 import { xtermAppearanceAdapter } from '@/infrastructure/appearance/adapters/XtermAppearanceAdapter';
 import { registerTerminalActions, unregisterTerminalActions } from '@/tools/terminal/services/TerminalActionManager';
 import {
-  TERMINAL_OUTPUT_FONT_FAMILY, TERMINAL_OUTPUT_FONT_SIZE, TERMINAL_OUTPUT_FONT_WEIGHT,
-  TERMINAL_OUTPUT_FONT_WEIGHT_BOLD, TERMINAL_OUTPUT_LINE_HEIGHT,
+  readTerminalOutputTypography,
 } from '@/tools/terminal/components/terminalOutputPresentation';
+import { terminalOutputHost } from '@/tools/terminal/components/terminalOutputHost';
 import type { TerminalProjection } from './backgroundTerminalReplay';
 import { fitProjectionRows } from './terminalProjectionGeometry';
 import '@xterm/xterm/css/xterm.css';
@@ -26,9 +26,7 @@ export default function BackgroundTerminalProjection({ projection }: {
     const element = host.current!;
     const terminal = new Terminal({
       disableStdin: true, cursorBlink: false, cursorInactiveStyle: 'none',
-      fontFamily: TERMINAL_OUTPUT_FONT_FAMILY, fontSize: TERMINAL_OUTPUT_FONT_SIZE,
-      fontWeight: TERMINAL_OUTPUT_FONT_WEIGHT, fontWeightBold: TERMINAL_OUTPUT_FONT_WEIGHT_BOLD,
-      lineHeight: TERMINAL_OUTPUT_LINE_HEIGHT, scrollback: 5000, convertEol: true,
+      ...readTerminalOutputTypography(element), scrollback: 5000, convertEol: true,
       theme: xtermAppearanceAdapter.getColors('output'),
     });
     const fit = new FitAddon();
@@ -89,9 +87,15 @@ export default function BackgroundTerminalProjection({ projection }: {
     observer.observe(element);
     // Font/DPR changes can alter cell geometry without resizing the CSS host.
     const renderSubscription = terminal.onRender(scheduleRender);
-    const unsubscribe = xtermAppearanceAdapter.subscribe(() => {
+    const syncTypography = () => {
+      Object.assign(terminal.options, readTerminalOutputTypography(element));
+      scheduleRender();
+    };
+    const unsubscribe = terminalOutputHost.subscribe(() => {
       terminal.options.theme = xtermAppearanceAdapter.getColors('output');
+      syncTypography();
     });
+    void document.fonts?.ready.then(() => { if (!disposed) syncTypography(); });
     render();
     return () => {
       disposed = true;

@@ -6,10 +6,18 @@ import {
   findElementWithDataValue,
   findFlowChatSearchTextRange,
   findFlowChatSearchTextRanges,
+  findFlowChatFocusTextRange,
   getFlowChatSearchTextRoot,
 } from './flowChatSearchDom';
 
 describe('FlowChat search DOM navigation', () => {
+  it('waits for lazy reasoning to replace its provisional source before locating a hit', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<div data-tool-card-id="thought"><div class="thinking-markdown"><span data-markdown-pending="true">needle</span></div></div>';
+    expect(getFlowChatSearchTextRoot(root, 'thought')).toBeNull();
+    root.querySelector('.thinking-markdown')!.innerHTML = '<p>needle</p>';
+    expect(getFlowChatSearchTextRoot(root, 'thought')).toBe(root.querySelector('.thinking-markdown'));
+  });
   it('finds a query split across Markdown text nodes', () => {
     const root = document.createElement('div');
     root.innerHTML = '<p>Before <span>key</span><strong>word</strong> after</p>';
@@ -70,6 +78,14 @@ describe('FlowChat search DOM navigation', () => {
 
     expect(range?.startContainer.parentElement?.textContent).toBe('visible needle');
   });
+
+  it('uses the first readable source line for navigation, excluding controls and hidden text', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<button>Copy</button><div aria-hidden="true">hidden</div> <p>Source line</p><p>Later content</p>';
+    expect(findFlowChatFocusTextRange(root)?.toString()).toBe('Source line');
+    root.innerHTML = '<button>Copy</button><div hidden>hidden</div>';
+    expect(findFlowChatFocusTextRange(root)).toBeNull();
+  });
 });
 
 describe('FlowChat search highlight ownership', () => {
@@ -97,6 +113,7 @@ describe('FlowChat search highlight ownership', () => {
     secondOwner.update(null, [second]);
     expect([...registry.get('openbitfun-flowchat-search-current')!]).toEqual([first]);
     expect([...registry.get('openbitfun-flowchat-search-match')!]).toEqual([second]);
+    expect([...registry.keys()].at(-1)).toBe('openbitfun-flowchat-search-current');
 
     firstOwner.dispose();
     expect(registry.has('openbitfun-flowchat-search-current')).toBe(false);

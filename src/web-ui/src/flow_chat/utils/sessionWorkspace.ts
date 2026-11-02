@@ -79,14 +79,19 @@ export function requireSessionProjectWorkspacePath(
   return path;
 }
 
-/** Workspace identity for persistence and routing; `undefined` only for pre-ID sessions. */
+/**
+ * Workspace identity of the directory the session executes in, which is a
+ * linked worktree for an isolated session. Session state that belongs to the
+ * owning project is addressed with `sessionOwningWorkspaceId` instead.
+ * `undefined` only for pre-ID sessions.
+ */
 export function sessionWorkspaceId(
   session: Partial<Pick<Session, 'workspaceId' | 'config'>> | undefined,
 ): string | undefined {
   return session?.workspaceId || session?.config?.workspaceId || undefined;
 }
 
-/** Workspace identity for persistence and routing. Paths are IO projections only. */
+/** Execution workspace identity; `requireSessionOwningWorkspaceId` owns session state. */
 export function requireSessionWorkspaceId(
   session: Partial<Pick<Session, 'workspaceId' | 'config'>>,
 ): string {

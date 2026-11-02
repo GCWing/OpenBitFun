@@ -53,6 +53,10 @@ export function findExcerptSource(root: HTMLElement, fragment: ConversationExcer
 export interface CapturedFlowChatSelection {
   excerpt: ConversationExcerptContext;
   range: Range;
+  anchorNode: Node;
+  anchorOffset: number;
+  focusNode: Node;
+  focusOffset: number;
 }
 
 /** Captures rendered text, preserving whitespace and offsets across Markdown inline nodes. */
@@ -61,7 +65,8 @@ export function captureFlowChatSelection(
   selection: Selection | null,
   source: ConversationExcerptContext['source'],
 ): CapturedFlowChatSelection | null {
-  if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return null;
+  if (!selection || selection.isCollapsed || selection.rangeCount !== 1
+    || !selection.anchorNode || !selection.focusNode) return null;
   const range = selection.getRangeAt(0);
   const startElement = selectionElement(range.startContainer);
   const endElement = selectionElement(range.endContainer);
@@ -103,7 +108,9 @@ export function captureFlowChatSelection(
   if (!fragments.length) return null;
   const id = globalThis.crypto?.randomUUID?.() ?? `excerpt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return { excerpt: { id, timestamp: Date.now(), type: 'conversation-excerpt',
-    source, fragments }, range: range.cloneRange() };
+    source, fragments }, range: range.cloneRange(),
+    anchorNode: selection.anchorNode, anchorOffset: selection.anchorOffset,
+    focusNode: selection.focusNode, focusOffset: selection.focusOffset };
 }
 
 /** Offset first, then an unambiguous text/context match after a source revision. */

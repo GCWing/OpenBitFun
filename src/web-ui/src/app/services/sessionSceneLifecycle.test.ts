@@ -6,10 +6,12 @@ import { useModernFlowChatStore } from '@/flow_chat/store/modernFlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { activateSurface, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/deviceSurface';
 import { selectActiveSceneId, useSceneStore } from '../stores/sceneStore';
+import { getSessionSceneTabId } from '../components/SceneBar/types';
 import { resolveSessionSceneTarget } from './sessionSceneTarget';
 import { workspaceManager, type WorkspaceEventListener } from '@/infrastructure/services/business/workspaceManager';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import { startSessionSceneLifecycle } from './sessionSceneLifecycle';
+import { sceneSelection, selectedSessionTab } from '../workbench/scenePaneModel';
 
 function session(sessionId: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -102,6 +104,48 @@ describe('Session scene resource lifetime with real stores', () => {
     expect(useSceneStore.getState().openTabs.map(tab => tab.session?.sessionId)).toEqual(['a', 'b']);
   });
 
+  it.each(['local', 'peer:history'])('reconciles recent SSH workspace sessions on the %s surface', surfaceId => {
+    stop?.();
+    activateSurface(surfaceId);
+    select([], null);
+    useSceneStore.getState().resetForPeerSwitch();
+    stop = startSessionSceneLifecycle();
+    const sessions = ['one', 'two', 'three'].map(id => session(id, {
+      workspaceId: 'ssh-project', workspacePath: '/srv/project', remoteConnectionId: 'ssh-host',
+    }));
+    select(sessions, 'one');
+    useSceneStore.getState().openScene('session');
+    flowChatStore.switchSession('two');
+    flowChatStore.switchSession('three');
+    const tabId = useSceneStore.getState().activeTabId;
+    expect(useSceneStore.getState().openTabs[0].sessionHistory).toEqual(['three', 'two', 'one']);
+    expect(useSceneStore.getState().openTabs[0].session?.surfaceId).toBe(surfaceId);
+    flowChatStore.removeSession('two');
+    expect(useSceneStore.getState().openTabs[0].sessionHistory).toEqual(['three', 'one']);
+    expect(useSceneStore.getState().activeTabId).toBe(tabId);
+    expect(flowChatStore.getActiveSession()?.sessionId).toBe('three');
+  });
+
+  it.each(['canvas', 'page'] as const)('keeps a moved conversation synchronized while the other pane has %s focus', async focus => {
+    const first = session('a', { workspacePath: '/a' });
+    const second = session('b', { workspacePath: '/b' });
+    select([first, second], 'a');
+    const scenes = useSceneStore.getState();
+    scenes.openScene('session');
+    await scenes.moveScene(useSceneStore.getState().activeTabId!, 'secondary');
+    if (focus === 'canvas') scenes.selectCanvas();
+    else scenes.openScene('git');
+    const before = useSceneStore.getState();
+    flowChatStore.switchSession('b');
+    const after = useSceneStore.getState();
+    expect(selectedSessionTab(after)?.session?.sessionId).toBe('b');
+    expect(selectedSessionTab(after)?.pane).toBe('secondary');
+    expect(after.focusedPane).toBe('primary');
+    expect(after.activeTabId).toBe(before.activeTabId);
+    expect(after.paneSelections.primary).toEqual(focus === 'canvas' ? { kind: 'canvas' } : sceneSelection('git'));
+    expect(after.openTabs.filter(tab => tab.session)).toHaveLength(2);
+  });
+
   it('defers legacy identity changes until pending navigation commits', () => {
     const original = session('legacy');
     select([original], original.sessionId);
@@ -188,6 +232,75 @@ describe('Session scene resource lifetime with real stores', () => {
       expect(useSceneStore.getState().openTabs.map(tab => tab.id)).toEqual(['settings']);
     },
   );
+
+  it('keeps a worktree session active in its project without activating the worktree', async () => {
+    stop?.();
+    const project = {
+      id: 'project', rootPath: '/projects/main', workspaceKind: WorkspaceKind.Normal,
+    } as WorkspaceInfo;
+    const worktree = {
+      id: 'worktree', rootPath: '/projects/tree', workspaceKind: WorkspaceKind.Normal,
+      worktree: { isMain: false, mainRepoPath: project.rootPath, mainWorkspaceId: project.id },
+    } as WorkspaceInfo;
+    const active = session('tree-session', {
+      workspaceId: worktree.id, projectWorkspaceId: project.id,
+      workspacePath: worktree.rootPath, projectWorkspacePath: project.rootPath,
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'wt-1', rootPath: worktree.rootPath },
+      },
+    });
+    const workspaceState = {
+      ...workspaceManager.getState(), currentWorkspace: project, activeWorkspaceId: project.id,
+      openedWorkspaces: new Map([[project.id, project], [worktree.id, worktree]]),
+    };
+    vi.spyOn(workspaceManager, 'getState').mockImplementation(() => workspaceState);
+    const setActiveWorkspace = vi.spyOn(workspaceManager, 'setActiveWorkspace').mockResolvedValue(project);
+    select([active], active.sessionId);
+    stop = startSessionSceneLifecycle();
+
+    useSceneStore.getState().openScene('session');
+
+    expect(useSceneStore.getState().pendingTabId).toBeNull();
+    expect(useSceneStore.getState().openTabs.map(tab => tab.session?.sessionId)).toEqual([active.sessionId]);
+    expect(useSceneStore.getState().activeTabId)
+      .toBe(getSessionSceneTabId(resolveSessionSceneTarget(active, [project], 'local')));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(setActiveWorkspace).not.toHaveBeenCalled();
+    expect(workspaceState.activeWorkspaceId).toBe(project.id);
+    expect(flowChatStore.getActiveSession()).toBe(active);
+  });
+
+  it('keeps a session created in an open worktree workspace in that workspace', async () => {
+    stop?.();
+    const project = {
+      id: 'project', rootPath: '/projects/main', workspaceKind: WorkspaceKind.Normal,
+    } as WorkspaceInfo;
+    const worktree = {
+      id: 'worktree', rootPath: '/projects/tree', workspaceKind: WorkspaceKind.Normal,
+      worktree: { isMain: false, mainRepoPath: project.rootPath, mainWorkspaceId: project.id },
+    } as WorkspaceInfo;
+    const active = session('in-tree-session', {
+      workspaceId: worktree.id, projectWorkspaceId: project.id,
+      workspacePath: worktree.rootPath, projectWorkspacePath: project.rootPath,
+      config: { executionTarget: { kind: 'local', rootPath: worktree.rootPath } },
+    });
+    const workspaceState = {
+      ...workspaceManager.getState(), currentWorkspace: worktree, activeWorkspaceId: worktree.id,
+      openedWorkspaces: new Map([[project.id, project], [worktree.id, worktree]]),
+    };
+    vi.spyOn(workspaceManager, 'getState').mockImplementation(() => workspaceState);
+    const setActiveWorkspace = vi.spyOn(workspaceManager, 'setActiveWorkspace').mockResolvedValue(worktree);
+    select([active], active.sessionId);
+    stop = startSessionSceneLifecycle();
+
+    useSceneStore.getState().openScene('session');
+
+    expect(useSceneStore.getState().activeTabId)
+      .toBe(getSessionSceneTabId(resolveSessionSceneTarget(active, [worktree], 'local')));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(setActiveWorkspace).not.toHaveBeenCalled();
+    expect(workspaceState.activeWorkspaceId).toBe(worktree.id);
+  });
 
   it('does not reopen a closed tab when its session is updated in the background', () => {
     const first = session('a');

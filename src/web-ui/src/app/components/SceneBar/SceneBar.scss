@@ -1,6 +1,6 @@
 /**
  * Scene-level tabs. Tab anatomy and visual states come from @openbitfun/ui;
- * SceneBar owns only product-shell layout, overflow, and label truncation.
+ * SceneBar owns product-shell layout, overflow, label truncation, and close-action emphasis.
  */
 
 .openbitfun-scene-bar {
@@ -18,6 +18,9 @@
     display: flex;
     flex: 0 0 auto;
     min-width: 0;
+
+    // Keep the tab's layout and hit target while its portalled surface expands.
+    &[data-session-history-open='true'] [role='tab'] { opacity: 0; }
 
     &[data-canvas-drop-position]::after {
       content: '';
@@ -134,24 +137,15 @@
       z-index: -1;
       width: var(--_scene-bar-scroll-button-effect-width);
       height: var(--openbitfun-control-tab-group-item-height-sm);
-      background: var(--_scene-bar-scroll-button-surface);
-      backdrop-filter: var(--openbitfun-effect-blur-subtle);
-      -webkit-backdrop-filter: var(--openbitfun-effect-blur-subtle);
       transform: translateY(-50%);
       pointer-events: none;
     }
 
     &[data-openbitfun-part='scrollPrevious']::before {
       inset-inline-start: 0;
-      mask-image: linear-gradient(
+      background: linear-gradient(
         to right,
-        var(--openbitfun-color-content-on-light) 0
-          var(--_scene-bar-scroll-button-control-zone),
-        transparent 100%
-      );
-      -webkit-mask-image: linear-gradient(
-        to right,
-        var(--openbitfun-color-content-on-light) 0
+        var(--_scene-bar-scroll-button-surface) 0
           var(--_scene-bar-scroll-button-control-zone),
         transparent 100%
       );
@@ -159,22 +153,16 @@
 
     &[data-openbitfun-part='scrollNext']::before {
       inset-inline-end: 0;
-      mask-image: linear-gradient(
+      background: linear-gradient(
         to left,
-        var(--openbitfun-color-content-on-light) 0
-          var(--_scene-bar-scroll-button-control-zone),
-        transparent 100%
-      );
-      -webkit-mask-image: linear-gradient(
-        to left,
-        var(--openbitfun-color-content-on-light) 0
+        var(--_scene-bar-scroll-button-surface) 0
           var(--_scene-bar-scroll-button-control-zone),
         transparent 100%
       );
     }
 
     &:disabled {
-      visibility: hidden;
+      display: none;
       pointer-events: none;
     }
 
@@ -189,12 +177,21 @@
   }
 
   &__tabs [data-openbitfun-part='item'] {
-    // Cap the whole tab, including its label padding and close-action reserve.
+    // Cap the resting capsule; TabGroup grows its action area beyond this width.
     max-inline-size: 220px;
+  }
+
+  &__tabs [data-openbitfun-part='label'] {
+    // Reserve three full-width characters, excluding tab padding and actions.
+    min-inline-size: 3em;
   }
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .openbitfun-scene-bar [data-scene-bar-part='closeTab']:hover:not(:disabled) {
+    color: var(--openbitfun-color-status-danger-emphasis);
+  }
+
   .openbitfun-scene-bar__scroll-button:hover {
     background: var(--openbitfun-color-action-neutral-surface-hover);
   }

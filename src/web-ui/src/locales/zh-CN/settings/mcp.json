@@ -1,11 +1,11 @@
 {
   "title": "MCP",
-  "subtitle": "管理 MCP 服务器连接",
+  "subtitle": "连接 MCP 服务，为智能体提供外部工具与数据源",
   "subtitleReadOnly": "查看 MCP 连接",
   "section": {
     "serverList": {
       "title": "MCP 服务列表",
-      "description": "MCP 服务与 JSON 配置",
+      "description": "启用并连接服务后，其工具才可供智能体调用",
       "desktopUnavailable": "请在桌面端管理 OpenBitFun MCP。",
       "remoteUnavailable": "远程连接时暂不支持管理 OpenBitFun MCP。",
       "loadFailed": "无法加载 MCP 服务。"
@@ -13,7 +13,7 @@
   },
   "external": {
     "title": "外部 MCP 服务器",
-    "description": "来自其他 AI 应用",
+    "description": "显示其他 AI 应用中的服务及其在 OpenBitFun 中的启用状态",
     "manage": "管理外部扩展",
     "retry": "重试加载外部 MCP",
     "loading": "正在检查外部 MCP 来源...",
@@ -199,7 +199,7 @@
   "jsonEditor": {
     "title": "高级 JSON 配置",
     "loadFailed": "无法加载 MCP 配置。",
-    "hint1": "使用标准 Cursor 格式的 MCP 配置。配置将自动保存到用户目录下的 app.json 文件中。",
+    "hint1": "使用 mcpServers 对象组织服务配置，修改后点击保存才会生效。",
     "hint2": "使用 command 配置 stdio，使用 url 配置 Streamable HTTP。旧 HTTP+SSE 配置仍可读取；transport 可显式指定传输协议。",
     "secretWarning": "配置中的 env、headers 或 URL 可能包含 API 密钥。请只在 OpenBitFun 内检查和保存，不要粘贴到在线 JSON 校验工具。",
     "discardTitle": "放弃 MCP JSON 修改？",
@@ -209,7 +209,8 @@
     "lintError": "JSON 有语法错误{{location}}：{{message}}",
     "exampleTitle": "配置示例：",
     "localProcess": "本地进程（stdio）：",
-    "remoteService": "远程服务（Streamable HTTP）："
+    "remoteService": "远程服务（Streamable HTTP）：",
+    "description": "直接编辑同一组 MCP 服务配置，适合批量调整或填写高级参数"
   },
   "resourceBrowser": {
     "title": "MCP 资源",
@@ -339,7 +340,7 @@
     "editTitle": "编辑服务",
     "edit": "$t(shared:tools.edit)",
     "importTitle": "导入配置",
-    "scopeHint": "此设备 · 用户配置 · 适用于此设备上的所有工作区",
+    "scopeHint": "执行主机 · 用户配置 · 适用于该主机上的所有工作区",
     "connectionType": "连接方式",
     "http": "服务地址（Streamable HTTP）",
     "stdio": "启动命令（stdio）",
@@ -347,7 +348,7 @@
     "url": "服务 URL",
     "command": "可执行程序",
     "commandPlaceholder": "npx、uvx、docker 或程序路径",
-    "commandHint": "程序与路径均属于此设备。启动参数逐项填写，不会按空格拆分为命令。",
+    "commandHint": "程序和路径属于执行主机。每个启动参数单独填写，不会按空格拆分",
     "arguments": "启动参数",
     "argumentIndex": "参数 {{index}}",
     "addArgument": "添加参数",
@@ -376,9 +377,9 @@
     "defaultTimeout": "使用系统默认值",
     "autoStart": "启用后自动连接",
     "enabled": "启用此服务",
-    "credentialHint": "环境变量与 Header 保存在此设备的配置文件中。已有值默认隐藏，未编辑时保留；删除行可移除对应配置。",
-    "newServerHint": "新服务默认保存为禁用状态。确认配置后，在列表中启用并启动。",
-    "applyHint": "保存会将修改应用到已启用的服务，可能重新连接。配置保存成功不代表连接成功。",
+    "credentialHint": "环境变量与请求头保存在执行主机的配置文件中。已有值默认隐藏，未编辑时保留；删除行可移除",
+    "newServerHint": "新服务保存后保持禁用，需在列表中手动启用",
+    "applyHint": "保存会更新已启用的服务，可能重新连接；保存成功不代表连接成功",
     "editJson": "此服务的高级 JSON",
     "backToForm": "返回表单",
     "saveNew": "保存配置",

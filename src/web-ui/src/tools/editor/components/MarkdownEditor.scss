@@ -41,32 +41,6 @@
   height: 100%;
   background: var(--openbitfun-color-surface-scene);
   color: var(--openbitfun-color-content-primary);
-
-  .error-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--openbitfun-space-4);
-    padding: var(--openbitfun-space-8);
-    text-align: center;
-    background: var(--openbitfun-color-action-neutral-surface);
-    border-radius: var(--openbitfun-radius-lg);
-    border: 1px solid var(--openbitfun-color-border-default);
-    backdrop-filter: blur(8px);
-
-    .error-icon {
-      width: 48px;
-      height: 48px;
-      color: var(--openbitfun-color-status-danger-content);
-    }
-
-    p {
-      margin: 0;
-      font-size: var(--openbitfun-type-label-md-font-size);
-      color: var(--openbitfun-color-content-secondary);
-    }
-
-  }
 }
 
 // Markdown preview inside m-editor only (align with flow-chat markdown chrome via shared Sass values).

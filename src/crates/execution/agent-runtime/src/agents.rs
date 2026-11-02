@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-pub const STANDARD_HARNESS_PROMPT_TEMPLATE: &str = "agentic_mode";
+pub const STANDARD_HARNESS_PROMPT_TEMPLATE: &str = "standard_mode";
 pub const STANDARD_HARNESS_CONFIG_ID: &str = "Standard";
 pub const STANDARD_HARNESS_CONFIG_LABEL: &str = "Standard";
 pub const STANDARD_HARNESS_CONFIG_MEMBERS: &[&str] = &["Standard"];
@@ -53,7 +53,6 @@ pub fn standard_harness_user_context_policy() -> UserContextPolicy {
     UserContextPolicy::empty()
         .with_workspace_context()
         .with_workspace_instructions()
-        .with_project_layout()
         .with_memory_summary()
 }
 
@@ -69,6 +68,7 @@ pub struct BuiltinAgentDefinitionSpec {
     pub id: &'static str,
     pub category: BuiltinAgentCategory,
     pub visibility_policy: SubagentVisibilityPolicy,
+    /// Informational default; execution resolves configuration and inheritance separately.
     pub default_model_id: &'static str,
 }
 
@@ -116,20 +116,23 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
         builtin_agent_spec(
             "SwarmPlanner",
             SubAgent,
-            "primary",
-            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"]),
+            "fast",
+            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"])
+                .with_global_registry_visibility(true),
         ),
         builtin_agent_spec(
             "SwarmWorker",
             SubAgent,
-            "primary",
-            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"]),
+            "fast",
+            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"])
+                .with_global_registry_visibility(true),
         ),
         builtin_agent_spec(
             "SwarmReviewer",
             SubAgent,
             "fast",
-            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"]),
+            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"])
+                .with_global_registry_visibility(true),
         ),
         builtin_agent_spec(
             "ComputerUse",
@@ -140,14 +143,17 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
         builtin_agent_spec(
             "Explore",
             SubAgent,
-            "primary",
-            SubagentVisibilityPolicy::public(),
+            "fast",
+            // Explore remains available to ordinary modes, but Ultimate's
+            // Swarm surface only exposes its built-in Swarm roles by default.
+            // A user override can explicitly enable it for Ultimate.
+            SubagentVisibilityPolicy::public().deny_for(["Ultimate", "SwarmPlanner"]),
         ),
         builtin_agent_spec(
             "GeneralPurpose",
             SubAgent,
-            "primary",
-            SubagentVisibilityPolicy::public(),
+            "fast",
+            SubagentVisibilityPolicy::public().deny_for(["Ultimate", "SwarmPlanner"]),
         ),
         builtin_agent_spec(
             "ResearchSpecialist",
@@ -176,17 +182,11 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
         builtin_agent_spec(
             "CodeReview",
             SubAgent,
-            "primary",
+            "fast",
             SubagentVisibilityPolicy::hidden(["Standard", "Cowork"]),
         ),
         builtin_agent_spec(
             "DeepReview",
-            Hidden,
-            "fast",
-            SubagentVisibilityPolicy::default(),
-        ),
-        builtin_agent_spec(
-            "GenerateDoc",
             Hidden,
             "fast",
             SubagentVisibilityPolicy::default(),
@@ -206,14 +206,13 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
     ]
 }
 
+/// Fallback for sessions without a model; normal delegation resolves configured defaults.
 pub fn default_model_id_for_builtin_agent(agent_type: &str) -> &'static str {
     match agent_type {
         "OpenBitFun" | "Minimal" | "Standard" | "Cowork" | "Creative" | "ComputerUse" | "Claw"
         | "DeepResearch" | "Ultimate" => "primary",
-        "Explore" | "CodeReview" | "GeneralPurpose" | "MemoryPhase2" | "SwarmPlanner"
-        | "SwarmWorker" => "primary",
-        "GenerateDoc"
-        | "ResearchSpecialist"
+        "MemoryPhase2" => "primary",
+        "ResearchSpecialist"
         | "DeepReview"
         | "ReviewWorker"
         | "ReviewBusinessLogic"
@@ -340,6 +339,12 @@ impl SubagentVisibilityPolicy {
         self
     }
 
+    /// Change management visibility without changing parent invocation access.
+    pub fn with_global_registry_visibility(mut self, visible: bool) -> Self {
+        self.show_in_global_registry = visible;
+        self
+    }
+
     pub fn summary(&self) -> SubagentVisibilitySummary {
         let mut allowed_parent_agent_ids: Vec<String> =
             self.allowed_parent_agent_ids.iter().cloned().collect();
@@ -459,6 +464,10 @@ pub fn resolve_subagent_default_enabled(
     visibility: &SubagentVisibilityPolicy,
     parent_agent_type: Option<&str>,
 ) -> bool {
+    if parent_agent_type.is_some_and(is_swarm_planner_agent_type) {
+        return source == SubagentSourceKind::Builtin
+            && visibility.can_access_from_parent(parent_agent_type);
+    }
     match source {
         SubagentSourceKind::Builtin => visibility.can_access_from_parent(parent_agent_type),
         SubagentSourceKind::Project

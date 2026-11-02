@@ -6,6 +6,10 @@ const configApiMocks = vi.hoisted(() => ({
   getRuntimeLoggingInfo: vi.fn(),
 }));
 
+const configManagerMocks = vi.hoisted(() => ({
+  onConfigChange: vi.fn(),
+}));
+
 const loggerMocks = vi.hoisted(() => ({
   getLevel: vi.fn(),
   setLevel: vi.fn(),
@@ -18,6 +22,10 @@ const loggerMocks = vi.hoisted(() => ({
 
 vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({
   configAPI: configApiMocks,
+}));
+
+vi.mock('./ConfigManager', () => ({
+  configManager: configManagerMocks,
 }));
 
 vi.mock('@/shared/utils/logger', () => ({
@@ -99,4 +107,40 @@ describe('FrontendLogLevelSync startup reads', () => {
     expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledWith(true);
     expect(loggerMocks.setFlowChatDiagnosticsEnabled).toHaveBeenCalledWith(false);
   });
+
+  it('defaults sensitive diagnostics to off when the saved value is missing', async () => {
+    configApiMocks.getConfigs.mockResolvedValueOnce({
+      [LOGGING_LEVEL_PATH]: 'debug',
+      [FLOW_CHAT_DIAGNOSTICS_PATH]: false,
+    });
+    configApiMocks.getRuntimeLoggingInfo.mockResolvedValueOnce({ effectiveLevel: 'warn' });
+
+    const { initializeFrontendLogLevelSync } = await importSyncModule();
+    await initializeFrontendLogLevelSync();
+
+    expect(loggerMocks.setLevel).toHaveBeenCalledWith(1);
+    expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledWith(false);
+    expect(loggerMocks.setFlowChatDiagnosticsEnabled).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('FrontendLogLevelSync config changes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([undefined, null, 'true', false, true])(
+    'requires an explicit boolean opt-in for changed value %s',
+    async (newValue) => {
+      const { installFrontendLogLevelConfigWatcher } = await importSyncModule();
+      await installFrontendLogLevelConfigWatcher();
+
+      const onConfigChange = configManagerMocks.onConfigChange.mock.calls[0][0];
+      onConfigChange(LOGGING_INCLUDE_SENSITIVE_PATH, true, newValue);
+
+      expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledExactlyOnceWith(
+        newValue === true,
+      );
+    },
+  );
 });

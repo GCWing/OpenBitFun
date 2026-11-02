@@ -10,13 +10,15 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const sceneState = vi.hoisted(() => ({ openTabs: [{}] as unknown[], selectTab: vi.fn(), closeTab: vi.fn() }));
 const startDragging = vi.hoisted(() => vi.fn(async () => {}));
+const isMaximized = vi.hoisted(() => vi.fn(async () => false));
+const isFullscreen = vi.hoisted(() => vi.fn(async () => false));
 const stylesheet = readFileSync(
   resolve(process.cwd(), 'src/app/components/SceneTopBar/SceneTopBar.scss'),
   'utf8',
 );
 
 vi.mock('@/app/components/WindowControls', () => ({ WindowControls: () => <button>Window controls</button> }));
-vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ startDragging }) }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ startDragging, isMaximized, isFullscreen }) }));
 vi.mock('../../stores/sceneStore', () => ({ useSceneStore: (selector: (state: typeof sceneState) => unknown) => selector(sceneState) }));
 vi.mock('../SceneBar/SceneBar', async () => {
   const { TabGroup } = await import('@openbitfun/ui');
@@ -45,6 +47,8 @@ vi.mock('./SceneChrome', () => ({
 describe('SceneTopBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isMaximized.mockResolvedValue(false);
+    isFullscreen.mockResolvedValue(false);
     vi.stubGlobal('__TAURI_INTERNALS__', {
       invoke: vi.fn(),
       metadata: { currentWindow: { label: 'main' } },
@@ -54,14 +58,12 @@ describe('SceneTopBar', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it('reclaims the left gutter and extends the divider through the remaining right gap', () => {
-    expect(stylesheet).not.toContain('border-block-end: 0;');
-    expect(stylesheet).toContain(
-      'inset-block-end: calc(0px - var(--openbitfun-border-width-default));',
-    );
-    expect(stylesheet).toContain('width: var(--openbitfun-space-4);');
-    expect(stylesheet).toContain('margin-inline-start: calc(0px - var(--openbitfun-space-4));');
-    expect(stylesheet).toContain('inset-inline-start: 100%;');
+  it('uses the shell width without gutter compensation and shares the pane boundary', () => {
+    expect(stylesheet).toContain('width: 100%;');
+    expect(stylesheet).toContain('inset-inline-start: calc(0px - var(--openbitfun-border-width-default))');
+    expect(stylesheet).not.toContain('width: calc(100% +');
+    expect(stylesheet).not.toContain('margin-inline-start: calc(0px -');
+    expect(stylesheet).toContain(":has(.openbitfun-scene-top-bar__actions button, .openbitfun-scene-top-bar__actions [role='button'])");
   });
 
   it('composes the public Toolbar without changing scene actions or window interaction boundaries', () => {
@@ -78,15 +80,16 @@ describe('SceneTopBar', () => {
       expect(toolbar.getAttribute('data-bordered')).toBe('true');
       expect(toolbar.querySelector(':scope > [data-openbitfun-part="leading"] [role="tablist"]')).not.toBeNull();
       const trailing = toolbar.querySelector(':scope > [data-openbitfun-part="trailing"]')!;
-      const actions = trailing.querySelector('[data-openbitfun-part="sceneActions"]')!;
+      const leading = toolbar.querySelector(':scope > [data-openbitfun-part="leading"]')!;
+      const actions = leading.querySelector('[data-openbitfun-part="sceneActions"]')!;
       const divider = trailing.querySelector('.openbitfun-scene-top-bar__actions-divider')!;
       const controls = trailing.querySelector('[data-openbitfun-part="controls"]')!;
-      expect(actions.nextElementSibling).toBe(divider);
+      expect(actions.previousElementSibling?.getAttribute('role')).toBe('tablist');
       expect(divider.getAttribute('data-openbitfun-part')).toBe('separator');
       expect(divider.getAttribute('aria-hidden')).toBe('true');
       expect(divider.nextElementSibling).toBe(controls);
       expect(controls.querySelector('button')).not.toBeNull();
-      expect(stylesheet).toContain('&__actions:empty + &__actions-divider');
+      expect(trailing.querySelector('[data-openbitfun-part="sceneActions"]')).toBeNull();
       act(() => toolbar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
       expect(maximize).toHaveBeenCalledOnce();
       act(() => toolbar.querySelector('[data-openbitfun-part="sceneActions"] button')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
@@ -111,6 +114,29 @@ describe('SceneTopBar', () => {
       host.remove();
       sceneState.openTabs = [{}];
     }
+  });
+
+  it('keeps side tabs after the shell separator and leaves the collapsed panel available as a drop target', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const select = vi.fn();
+    const drop = vi.fn();
+    const render = (panelOpen: boolean) => root.render(<SceneTopBar panelOpen={panelOpen}
+      panelTabs={<button role="tab" onClick={select}>Side file</button>}
+      panelToggle={<button>Toggle panel</button>} onPanelDrop={drop} />);
+    try {
+      act(() => render(true));
+      const region = container.querySelector('.openbitfun-scene-top-bar__panel-region')!;
+      expect(region.previousElementSibling?.classList.contains('openbitfun-scene-top-bar__panel-divider')).toBe(true);
+      expect(region.querySelector('[role="tab"]')).not.toBeNull();
+      act(() => region.querySelector<HTMLButtonElement>('[role="tab"]')!.click());
+      expect(select).toHaveBeenCalledOnce();
+      act(() => render(false));
+      expect(region.querySelector('[role="tab"]')).toBeNull();
+      expect(region.textContent).toBe('Toggle panel');
+      act(() => region.dispatchEvent(new Event('drop', { bubbles: true })));
+      expect(drop).toHaveBeenCalledOnce();
+    } finally { act(() => root.unmount()); }
   });
 
   describe('window gestures', () => {
@@ -152,7 +178,7 @@ describe('SceneTopBar', () => {
       const toolbar = renderBar(tabCount);
       const tabList = toolbar.querySelector('[role="tablist"]')!;
       const leading = toolbar.querySelector(':scope > [data-openbitfun-part="leading"]')!;
-      expect(leading.children).toHaveLength(1);
+      expect(leading.children).toHaveLength(2);
       expect(leading.firstElementChild).toBe(tabList);
 
       for (const target of [toolbar, leading, tabList]) {
@@ -212,6 +238,30 @@ describe('SceneTopBar', () => {
       expect(maximize).toHaveBeenCalledOnce();
 
       await mouseDown(toolbar, { detail: 1 });
+      expect(startDragging).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      { maximized: true, fullscreen: false },
+      { maximized: false, fullscreen: true },
+      { maximized: true, fullscreen: true },
+    ])('blocks dragging while maximized=$maximized/fullscreen=$fullscreen and restores it without rerendering', async ({ maximized, fullscreen }) => {
+      const toolbar = renderBar(2);
+      await mouseDown(toolbar);
+      expect(startDragging).toHaveBeenCalledOnce();
+
+      isMaximized.mockResolvedValue(maximized);
+      isFullscreen.mockResolvedValue(fullscreen);
+      for (const target of [toolbar, toolbar.querySelector('[role="tablist"]')!]) {
+        await mouseDown(target);
+      }
+      expect(startDragging).toHaveBeenCalledOnce();
+      doubleClick(toolbar);
+      expect(maximize).toHaveBeenCalledOnce();
+
+      isMaximized.mockResolvedValue(false);
+      isFullscreen.mockResolvedValue(false);
+      await mouseDown(toolbar);
       expect(startDragging).toHaveBeenCalledTimes(2);
     });
 

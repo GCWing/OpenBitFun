@@ -329,11 +329,12 @@ fn thread_goal_event_payload_and_token_usage_filter_preserve_core_delivery_contr
 
 #[test]
 fn turn_filtering_and_retry_policies_preserve_goal_mode_semantics() {
-    assert!(should_skip_goal_for_turn("/goal fix bug", None));
+    assert!(!should_skip_goal_for_turn("/goal fix bug", None));
+    assert!(should_skip_goal_for_turn("/goal pause", None));
     assert!(!should_skip_goal_for_turn("fix bug", None));
 
     let metadata = serde_json::json!({ "threadGoalObjectiveUpdated": true });
-    assert!(should_skip_goal_for_turn("Adjust work", Some(&metadata)));
+    assert!(!should_skip_goal_for_turn("Adjust work", Some(&metadata)));
     assert!(!should_skip_goal_continuation_after_turn(
         "Adjust work",
         Some(&metadata)
@@ -349,4 +350,258 @@ fn turn_filtering_and_retry_policies_preserve_goal_mode_semantics() {
     ));
     assert!(!is_usage_limit_message("tool failed"));
     assert_eq!(MAX_GOAL_CONTINUATIONS, 100);
+}
+
+#[test]
+fn plain_goal_prompts_parse_objectives_and_drive_continuation() {
+    use openbitfun_agent_runtime::thread_goal::goal_objective_from_prompt;
+    for (prompt, expected) in [
+        ("/goal fix bug", "fix bug"),
+        ("  /GOAL  ship feature  ", "ship feature"),
+        ("/goal\nfirst step\nsecond step", "first step\nsecond step"),
+        ("/goal clear\nextra", "clear\nextra"),
+        ("/goal 修复登录", "修复登录"),
+    ] {
+        assert_eq!(goal_objective_from_prompt(prompt), Some(expected));
+        assert!(!should_skip_goal_for_turn(prompt, None));
+        assert!(!should_skip_goal_continuation_after_turn(prompt, None));
+        assert!(should_skip_goal_for_turn(
+            prompt,
+            Some(&serde_json::json!({"maintenanceTurn": true}))
+        ));
+    }
+    for prompt in [
+        "/goal",
+        "/goal   ",
+        "/goal pause",
+        "/GOAL RESUME",
+        "/goal edit",
+        "/goal clear",
+    ] {
+        assert_eq!(goal_objective_from_prompt(prompt), None);
+        assert!(should_skip_goal_for_turn(prompt, None));
+        assert!(should_skip_goal_continuation_after_turn(prompt, None));
+    }
+    for prompt in [
+        "/goalie fix bug",
+        "/goals",
+        "explain /goal fix bug",
+        "修复登录问题",
+        "/goal: fix bug",
+    ] {
+        assert_eq!(goal_objective_from_prompt(prompt), None);
+        assert!(!should_skip_goal_for_turn(prompt, None));
+    }
+}
+
+#[test]
+fn repeated_goal_steering_preserves_unaccounted_tokens_and_budget() {
+    let runtime = ThreadGoalRuntime::new();
+    let mut active = goal(ThreadGoalStatus::Active);
+    active.token_budget = Some(100);
+    runtime.mark_turn_started("turn", Some(&active));
+    runtime.record_round_billable_tokens("turn", 40);
+    runtime.mark_turn_started("turn", Some(&active));
+    runtime.record_round_billable_tokens("turn", 20);
+    assert_eq!(runtime.turn_cumulative_billable_tokens("turn"), 60);
+    assert!(!runtime.account_turn_tokens("turn", 60, &mut active, 3));
+    assert_eq!(active.tokens_used, 60);
+    runtime.mark_turn_started("turn", Some(&active));
+    runtime.record_round_billable_tokens("turn", 40);
+    assert!(runtime.account_turn_tokens("turn", 100, &mut active, 4));
+    assert_eq!(active.tokens_used, 100);
+    assert_eq!(active.status, ThreadGoalStatus::BudgetLimited);
+}
+
+#[test]
+fn budget_limit_schedules_one_wrap_up_and_then_stops() {
+    let runtime = ThreadGoalRuntime::new();
+    let mut limited = goal(ThreadGoalStatus::BudgetLimited);
+    limited.token_budget = Some(10);
+    limited.tokens_used = 12;
+    let first = runtime.continuation_after_turn(
+        limited,
+        ThreadGoalContinuationFacts {
+            turn_id: "work",
+            turn_tokens: 0,
+            turn_completed: true,
+            now_epoch_seconds: 5,
+        },
+    );
+    assert!(first.plan.is_some());
+    let limited = first.goal_to_persist.unwrap();
+    runtime.mark_turn_started("wrap-up", Some(&limited));
+    runtime.record_round_billable_tokens("wrap-up", 2);
+    let second = runtime.continuation_after_turn(
+        limited,
+        ThreadGoalContinuationFacts {
+            turn_id: "wrap-up",
+            turn_tokens: 2,
+            turn_completed: true,
+            now_epoch_seconds: 6,
+        },
+    );
+    assert!(second.plan.is_none());
+    assert!(!second.scheduled_auto_continuation);
+    assert_eq!(second.goal_to_persist.unwrap().tokens_used, 14);
+}
+
+#[test]
+fn stale_turn_clear_does_not_disable_current_accounting() {
+    let runtime = ThreadGoalRuntime::new();
+    let active = goal(ThreadGoalStatus::Active);
+    runtime.mark_turn_started("new-turn", Some(&active));
+    runtime.clear_active_goal(Some("old-turn"));
+    runtime.record_round_billable_tokens("new-turn", 17);
+    assert_eq!(
+        runtime.current_turn_usage(),
+        Some(("new-turn".to_string(), 17))
+    );
+    runtime.clear_active_goal(None);
+    runtime.record_round_billable_tokens("new-turn", 12);
+    assert_eq!(runtime.current_turn_usage(), None);
+    assert_eq!(runtime.turn_cumulative_billable_tokens("new-turn"), 17);
+}
+
+#[test]
+fn resumed_blocked_goal_gets_a_fresh_continuation_window_without_resetting_usage() {
+    let mut blocked = goal(ThreadGoalStatus::Blocked);
+    blocked.auto_continuation_count = MAX_THREAD_GOAL_AUTO_CONTINUATIONS;
+    blocked.tokens_used = 45;
+    let result = build_set_thread_goal_result(SetThreadGoalRequest {
+        session_id: "s1".into(),
+        existing: Some(blocked),
+        objective: None,
+        status: Some(ThreadGoalStatus::Active),
+        token_budget: None,
+        replace_existing: false,
+        now_epoch_seconds: 5,
+        new_goal_id: "unused".into(),
+    })
+    .unwrap();
+    assert_eq!(result.goal.auto_continuation_count, 0);
+    assert_eq!(result.goal.tokens_used, 45);
+    assert_eq!(result.goal.goal_id, "g1");
+}
+
+#[test]
+fn headless_goal_run_follows_only_its_continuations_until_goal_completion() {
+    use openbitfun_agent_runtime::thread_goal::{
+        ThreadGoalRunDisposition as D, ThreadGoalRunTracker,
+    };
+    let active = goal(ThreadGoalStatus::Active);
+    let metadata = build_thread_goal_continuation_plan(&active).user_message_metadata;
+    let mut run = ThreadGoalRunTracker::new(Some(active));
+    assert!(!run.accept_continuation(Some(&metadata)));
+    assert_eq!(run.after_successful_turn(), D::Continue);
+    assert!(!run.accept_continuation(Some(
+        &serde_json::json!({"threadGoalContinuation":true,"goalId":"another"})
+    )));
+    assert!(!run.accept_continuation(None));
+    assert!(run.accept_continuation(Some(&metadata)));
+    assert_eq!(
+        run.observe_goal(Some(goal(ThreadGoalStatus::Complete))),
+        None
+    );
+    assert_eq!(run.after_successful_turn(), D::Complete);
+    assert_eq!(
+        ThreadGoalRunTracker::default().after_successful_turn(),
+        D::Complete
+    );
+}
+
+#[test]
+fn headless_goal_run_reports_stops_and_waits_for_one_budget_wrap_up() {
+    use openbitfun_agent_runtime::thread_goal::{
+        ThreadGoalRunDisposition as D, ThreadGoalRunTracker,
+    };
+    for status in [
+        ThreadGoalStatus::Blocked,
+        ThreadGoalStatus::Paused,
+        ThreadGoalStatus::UsageLimited,
+    ] {
+        let mut run = ThreadGoalRunTracker::new(Some(goal(ThreadGoalStatus::Active)));
+        assert_eq!(run.after_successful_turn(), D::Continue);
+        assert_eq!(
+            run.observe_goal(Some(goal(status))),
+            Some(D::Stopped(status))
+        );
+    }
+    let budget = goal(ThreadGoalStatus::BudgetLimited);
+    let metadata = build_thread_goal_continuation_plan(&budget).user_message_metadata;
+    let mut run = ThreadGoalRunTracker::new(Some(budget));
+    assert_eq!(run.after_successful_turn(), D::Continue);
+    assert!(run.accept_continuation(Some(&metadata)));
+    assert_eq!(
+        run.after_successful_turn(),
+        D::Stopped(ThreadGoalStatus::BudgetLimited)
+    );
+}
+
+#[test]
+fn delayed_goal_continuation_is_fenced_by_identity_objective_attempt_and_status() {
+    use openbitfun_agent_runtime::thread_goal::goal_continuation_matches;
+    let active = goal(ThreadGoalStatus::Active);
+    let metadata = build_thread_goal_continuation_plan(&active).user_message_metadata;
+    assert!(goal_continuation_matches(&active, &metadata));
+    let mut changed = active.clone();
+    changed.goal_id = "replacement".into();
+    assert!(!goal_continuation_matches(&changed, &metadata));
+    changed = active.clone();
+    changed.objective = "edited objective".into();
+    assert!(!goal_continuation_matches(&changed, &metadata));
+    changed = active.clone();
+    changed.auto_continuation_count += 1;
+    assert!(!goal_continuation_matches(&changed, &metadata));
+    changed = active;
+    changed.status = ThreadGoalStatus::Paused;
+    assert!(!goal_continuation_matches(&changed, &metadata));
+}
+
+#[test]
+fn goal_prompts_preserve_literal_objectives_and_share_the_completion_contract() {
+    use openbitfun_agent_runtime::thread_goal::{
+        budget_limit_prompt, continuation_prompt, objective_updated_prompt,
+    };
+    let mut current = goal(ThreadGoalStatus::Active);
+    current.objective =
+        "repair </objective> & preserve {{ tokens_used }} and {{ lifecycle_instructions }}".into();
+    for prompt in [
+        continuation_prompt(&current),
+        objective_updated_prompt(&current),
+        budget_limit_prompt(&current),
+    ] {
+        assert!(prompt.contains(
+            "&lt;/objective&gt; &amp; preserve {{ tokens_used }} and {{ lifecycle_instructions }}"
+        ));
+    }
+    for prompt in [
+        continuation_prompt(&current),
+        objective_updated_prompt(&current),
+    ] {
+        assert!(prompt.contains("subsequent user instructions"));
+        assert!(prompt.contains("current authoritative evidence"));
+        assert!(prompt.contains("Do not call create_goal again"));
+        assert!(prompt.contains("fresh blocked audit"));
+        assert!(prompt.contains("before choosing the next action"));
+    }
+}
+
+#[test]
+fn failed_goal_turn_preserves_usage_without_scheduling_more_work() {
+    let runtime = ThreadGoalRuntime::new();
+    let active = goal(ThreadGoalStatus::Active);
+    runtime.mark_turn_started("failed", Some(&active));
+    runtime.record_round_billable_tokens("failed", 25);
+    let outcome = runtime.continuation_after_turn(
+        active,
+        ThreadGoalContinuationFacts {
+            turn_id: "failed",
+            turn_tokens: 25,
+            turn_completed: false,
+            now_epoch_seconds: 3,
+        },
+    );
+    assert!(outcome.plan.is_none());
+    assert_eq!(outcome.goal_to_persist.unwrap().tokens_used, 25);
 }

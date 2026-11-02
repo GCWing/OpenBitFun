@@ -51,6 +51,9 @@
     "copyLink": "複製連結",
     "copyFilePath": "複製檔案路徑"
   },
+  "imageLightbox": {
+    "label": "圖片預覽"
+  },
   "mermaidBlock": {
     "renderFailed": "圖表渲染失敗",
     "codeIncomplete": "代碼不完整，等待更多內容...",
@@ -326,6 +329,7 @@
     }
   },
   "tooltip": {
+    "openDetails": "開啟詳情",
     "copy": "複製",
     "copied": "已複製",
     "close": "關閉",
@@ -334,6 +338,11 @@
   },
   "tabs": {
     "close": "關閉",
+    "closeBtwTitle": "關閉側問？",
+    "saveBtwAsFork": "儲存為 Fork 對話",
+    "saveBtwFailed": "儲存失敗，側問已保留，請重試。",
+    "confirmCloseBtw": "關閉後對話將消失，無法復原。",
+    "closeBtwFailed": "暫時無法關閉側問，標籤頁已保留，請重試。",
     "popOut": "彈出為獨立場景",
     "closeOthers": "關閉其他",
     "closeAll": "全部關閉",
@@ -540,6 +549,13 @@
     "devWingExpand": "展開開發工具"
   },
   "canvas": {
+    "resizePanes": "調整窗格寬度",
+    "chatPane": "聊天",
+    "contentPane": "內容",
+    "swapPanes": "交換左右窗格",
+    "hidePanel": "隱藏面板",
+    "maximizePanel": "面板全螢幕",
+    "restorePanel": "退出面板全螢幕",
     "noContentOpen": "暫未開啟任何內容",
     "filesCount": "{{count}} 個檔案",
     "searchPlaceholder": "搜尋檔案名稱或路徑...",
@@ -568,7 +584,15 @@
     "dropRight": "右",
     "dropTop": "上",
     "dropBottom": "下",
-    "dropCenter": "放置"
+    "dropCenter": "放置",
+    "empty": {
+      "title": "尚未開啟內容",
+      "workspaceUnavailable": "工作區已中斷，請重新連線。",
+      "selectWorkspace": "請先選擇工作區。",
+      "browseFiles": "瀏覽檔案",
+      "newTerminal": "新增終端機",
+      "reopen": "重新開啟 {{title}}"
+    }
   },
   "flexiblePanel": {
     "empty": {
@@ -638,5 +662,60 @@
     "unsavedMessage": "關閉前儲存「{{title}}」的變更？",
     "closeOtherContent": "關閉其他內容標籤",
     "closeAllContent": "關閉所有內容標籤"
+  },
+  "desktopCard": {
+    "loading": "載入中…",
+    "loadFailed": "無法載入此卡片。",
+    "unsupportedTemplate": "此卡片需要更新版本的 OpenBitFun。",
+    "updated": "更新於{{time}}",
+    "updatedWithWarning": "更新於{{time}}，部分資料可能缺失",
+    "refreshFailed": "重新整理失敗：{{error}}",
+    "menu": {
+      "more": "更多操作",
+      "refresh": "重新整理",
+      "openLink": "開啟連結",
+      "openSession": "開啟來源會話",
+      "alwaysOnTop": "保持置頂",
+      "hide": "隱藏卡片",
+      "delete": "刪除卡片"
+    },
+    "deleteConfirm": {
+      "title": "刪除卡片",
+      "message": "刪除此卡片？此操作無法復原。",
+      "cancel": "取消",
+      "confirm": "刪除"
+    },
+    "countdown": {
+      "due": "時間到",
+      "days": "{{count}} 天",
+      "dismiss": "知道了"
+    },
+    "checklist": {
+      "empty": "暫無事項"
+    },
+    "chart": {
+      "empty": "暫無可繪製的資料",
+      "other": "其他",
+      "remaining": "剩餘",
+      "ofTotal": "共 {{total}}",
+      "changeSince": "較 {{label}} {{change}}",
+      "range": "{{min}} – {{max}}"
+    },
+    "cron": {
+      "failed": "無法載入定時任務。",
+      "missing": "該定時任務已不存在。",
+      "enabled": "已啟用",
+      "paused": "已暫停",
+      "nextRun": "下次執行",
+      "lastRun": "上次執行",
+      "neverRun": "尚未執行",
+      "status": {
+        "ok": "成功",
+        "error": "$t(shared:statuses.failed)",
+        "running": "$t(shared:statuses.running)",
+        "queued": "排隊中",
+        "cancelled": "$t(shared:statuses.cancelled)"
+      }
+    }
   }
 }

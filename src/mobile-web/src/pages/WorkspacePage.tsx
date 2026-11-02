@@ -1,3 +1,5 @@
+import { WorkspaceIcon } from '../components/WorkspaceIcon';
+import { subscribeHostCatalog } from '../services/HostCatalogSubscription';
 import { Folder as LucideFolder, X as LucideX, Monitor, Server, ChevronDown } from 'lucide-react';
 import React, { useEffect, useState, useCallback } from 'react';
 import { MobileBanner, MobileButton, MobileTextField, MobileIconButton, MobileListRow, MobilePageHeader, MobileStatus, MobileChoiceSheet } from '@openbitfun/ui/mobile';
@@ -65,6 +67,27 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ sessionMgr, onReady, onBa
     void Promise.all([loadWorkspaceInfo(), loadRecentWorkspaces()]).finally(() => setLoading(false));
     void sessionMgr.invokeHost<Array<{ id: string; name: string }>>('ssh_list_saved_connections', {}, false).then(setConnections).catch(cause => setError(String(cause)));
   }, [loadRecentWorkspaces, loadWorkspaceInfo, tool]);
+
+  useEffect(() => {
+    if (tool || loading || !sessionMgr.supportsHostStreams()) return;
+    const epoch = sessionMgr.controlTargetEpoch;
+    let stopped = false;
+    const subscription = subscribeHostCatalog(sessionMgr, async () => {
+      const list = await sessionMgr.listRecentWorkspaces();
+      if (!stopped && epoch === sessionMgr.controlTargetEpoch) setRecentWorkspaces(list);
+    }, cause => {
+      if (!stopped && epoch === sessionMgr.controlTargetEpoch) setError(describeRemoteError(cause, t));
+    });
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void subscription.refresh();
+    };
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      stopped = true;
+      subscription.close();
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [sessionMgr, sessionMgr.controlTargetEpoch, loading, tool, t]);
 
   const handleSelectWorkspace = useCallback(async (workspace: RecentWorkspaceEntry) => {
     if (switching) return;
@@ -160,7 +183,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ sessionMgr, onReady, onBa
                     disabled={switching}
                     selected={selected}
                     leading={<span className="workspace-page__recent-item-icon" aria-hidden="true">
-                      <LucideFolder width="22" height="22" stroke="currentColor" aria-hidden="true" />
+                      <WorkspaceIcon manager={sessionMgr} workspace={ws} size={22} />
                     </span>}
                     label={<span className="workspace-page__recent-item-name">{ws.name}</span>}
                     supportingText={<span className="workspace-page__recent-item-path">{ws.path}</span>}

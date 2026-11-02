@@ -83,6 +83,13 @@ class MonacoModelManager {
   
   private globalListenersInstalled = false;
 
+  /**
+   * Suppress dirty recomputation only for the model being synchronized.
+   * Content listeners may synchronously edit other models; those edits still
+   * participate in dirty tracking. Depth supports nested writes to one model.
+   */
+  private externalSyncDepth = new WeakMap<monaco.editor.ITextModel, number>();
+
   private constructor() {}
 
   public static getInstance(): MonacoModelManager {
@@ -147,14 +154,7 @@ class MonacoModelManager {
       }
       
       if (initialContent && model.getValue() === '') {
-        model.setValue(initialContent);
-        
-        const metadata = this.modelMetadata.get(uriString);
-        if (metadata) {
-          metadata.savedVersionId = model.getAlternativeVersionId();
-          metadata.originalContent = initialContent;
-          metadata.isDirty = false;
-        }
+        this.updateModelContent(modelKey, initialContent, true);
       }
       
       return model;
@@ -215,18 +215,21 @@ class MonacoModelManager {
     const listener = model.onDidChangeContent(() => {
       const metadata = this.modelMetadata.get(uriString);
       if (metadata) {
-        const currentVersionId = model.getAlternativeVersionId();
-        metadata.isDirty = this.documentModels.has(uriString) ? model.getValue() !== metadata.originalContent
-          : currentVersionId !== metadata.savedVersionId;
-        
-        window.dispatchEvent(new CustomEvent('monaco-model-dirty-changed', {
-          detail: {
-            uri: uriString,
-            filePath: metadata.filePath,
-            isDirty: metadata.isDirty
-          }
-        }));
-        
+        if (!this.externalSyncDepth.has(model)) {
+          const currentVersionId = model.getAlternativeVersionId();
+          metadata.isDirty = this.documentModels.has(uriString) ? model.getValue() !== metadata.originalContent
+            : currentVersionId !== metadata.savedVersionId;
+
+          window.dispatchEvent(new CustomEvent('monaco-model-dirty-changed', {
+            detail: {
+              uri: uriString,
+              filePath: metadata.filePath,
+              isDirty: metadata.isDirty
+            }
+          }));
+        }
+
+        // Disk writes change content too, even when dirty tracking is suppressed.
         this.emitModelContentChanged({
           uri: uriString,
           filePath: metadata.filePath,
@@ -345,15 +348,37 @@ class MonacoModelManager {
     const wasEmpty = !metadata || metadata.originalContent === '';
     const isFirstContentSet = wasEmpty && content.length > 0;
     
-    model.setValue(content);
+    // markAsSaved callers push the disk truth into an open model (issue
+    // #3165): bracket the write so the change listener does not recompute the
+    // dirty flag or broadcast a transient "modified" state in between.
+    if (markAsSaved) {
+      this.beginExternalSync(model);
+    }
+    try {
+      model.setValue(content);
+    } finally {
+      if (markAsSaved) {
+        this.endExternalSync(model);
+      }
+    }
     
     if (metadata) {
       if (markAsSaved) {
         metadata.savedVersionId = model.getAlternativeVersionId();
         metadata.originalContent = content;
         metadata.isDirty = false;
+        metadata.lastAccessedAt = Date.now();
+        
+        window.dispatchEvent(new CustomEvent('monaco-model-dirty-changed', {
+          detail: {
+            uri: uriString,
+            filePath: metadata.filePath,
+            isDirty: false
+          }
+        }));
+      } else {
+        metadata.lastAccessedAt = Date.now();
       }
-      metadata.lastAccessedAt = Date.now();
     }
     
     this.markLoadingComplete(uriString);
@@ -368,6 +393,28 @@ class MonacoModelManager {
     }
   }
   
+  /**
+   * Open a programmatic external-sync bracket for one model. While it is open,
+   * its changes skip the dirty recompute and the transient dirty broadcast
+   * (issue #3165). Pair every begin with an end in a finally block.
+   */
+  public beginExternalSync(model: monaco.editor.ITextModel): void {
+    this.externalSyncDepth.set(model, (this.externalSyncDepth.get(model) ?? 0) + 1);
+  }
+
+  /**
+   * Close a bracket for this model. Extra ends are no-ops; callers must still
+   * pair every begin with an end in a finally block.
+   */
+  public endExternalSync(model: monaco.editor.ITextModel): void {
+    const depth = this.externalSyncDepth.get(model) ?? 0;
+    if (depth > 1) {
+      this.externalSyncDepth.set(model, depth - 1);
+    } else {
+      this.externalSyncDepth.delete(model);
+    }
+  }
+
   public markAsSaved(filePath: string, savedContent?: string, savedVersionId?: number): void {
     const uri = this.normalizeUri(filePath);
     const uriString = uri.toString();
@@ -389,7 +436,7 @@ class MonacoModelManager {
       }));
     }
   }
-  
+
   public getModelMetadata(filePath: string): ModelMetadata | undefined {
     if (!getMonacoRuntime()) {
       return undefined;

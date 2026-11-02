@@ -24,7 +24,7 @@ pnpm run motion:audit
 | --- | --- | --- |
 | 动效基础与组件原语 | 时长/曲线不统一；Button、Input、Card、Select 等大量 `transition: all`；hover 放大未限制精确指针；Tooltip 双重入场 | 统一更短的 motion token 与 decelerate 曲线；显式列出属性；hover 仅限 fine pointer；按下反馈约 `.97`；Tooltip 单一动效所有权 |
 | Dialog、Popover、Select、菜单 | 上层条件卸载使 Dialog 退出失效；自定义 overlay 只进不退；placement 翻转后方向错误；快速关闭/重开被 keyframe 抢占 | 统一使用 `RetainedMountBoundary`；Dialog 调用方、自定义 overlay、Select、模型/推理/会话树弹层均保留退出态与最后快照；按实际 placement 设置 origin；改为可中断 transition；退出期 `inert`/`aria-hidden`；键盘打开即时 |
-| 通知与公告 | 通知删除和堆栈重排跳变；进度条动画 width；Feature modal 翻页 `display:none`；toast/弹窗退出计时不一致、动效过弹 | 通知退出 retention 与堆栈收拢；进度改 `scaleX`；公告弹窗/Toast 缩短并对齐计时；Feature modal 方向感知的 8px crossfade；退出禁交互并清理 timer |
+| 通知 | 通知删除和堆栈重排跳变；进度条动画 width | 通知退出 retention 与堆栈收拢；进度改 `scaleX`；退出禁交互并清理 timer |
 | Flow Chat | 选择器/文件弹层无退出；权限、运行状态、BTW 操作条瞬移；滚到底部控件闪现；TokenUsage 改高度/宽度；Pixel Pet 在 reduced-motion 下仍强行动画 | 补齐退出与焦点交接；权限快照绑定 session；BTW 退出期保留布局；运行状态固定槽 crossfade；高频滚动控件仅短 opacity；TokenUsage 固定 hitbox + `scaleX`；无限动效均有静止降级 |
 | 列表、折叠与配置 | Context/Todo/权限规则删除后空间跳变；配置 disclosure 只有入口；Nav 主 section 被覆盖为无动画；Todo 编辑器关闭时内容/高度突变 | Context 行稳定退出；Todo 编辑器/日期详情冻结完整数据并同步收起布局；权限规则增删与排序用可取消 FLIP；配置 disclosure 使用 grid presence；Nav section 恢复 150ms 收拢 |
 | 拖拽与排序 | Tab 与 Workspace 拖拽时邻项不让位、drop 后瞬移；Workspace drop line 作为 flex child 改变布局 | 拖动本体保持 1:1；邻项 120ms transform 让位；drop 后 160ms FLIP；drop line 改绝对定位，不再挤动列表 |
@@ -41,7 +41,6 @@ pnpm run motion:audit
 | 完成 | BranchSelect、Diff fullscreen、Peer directory picker | 自定义 overlay/surface 具备进出场、退出快照、焦点与异步竞态保护 |
 | 完成 | ContextMenu | placement origin、100ms 退出、退出期 inert；补齐 roving focus、方向键、Home/End、Enter/Space、Escape 与子菜单焦点返回 |
 | 完成 | Notification | Toast 退出 retention、焦点先移出再 inert、堆栈收拢；进度条由 width 改为 `scaleX` |
-| 完成 | Announcement Toast、Feature Modal | 取消过度 bounce/ghost 位移；hover 降幅并 gating；翻页方向感知；JS/CSS 退出计时对齐 |
 | 完成 | ModelSelector、ReasoningPreset、SessionTree、输入区弹层 | 根据实际 placement 决定位移和 origin；退出保留、快速重开、兄弟菜单清理与焦点返回 |
 | 完成 | Permission、BTW、RuntimeStatus | 会话切换不残留旧权限卡；操作条退出时不塌布局；运行状态使用固定槽 crossfade |
 | 完成 | ScrollToBottom、ScrollToLatest、TokenUsage | 高频控件只做短 opacity；退出前焦点回到消息滚动区；进度固定 hitbox + `scaleX` |

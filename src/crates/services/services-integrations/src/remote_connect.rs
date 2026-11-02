@@ -16,6 +16,7 @@ pub mod encryption;
 pub mod file_projection;
 pub mod host_stream;
 pub mod host_stream_subscriber;
+pub mod html_preview;
 mod lan;
 mod page_upload;
 pub mod pairing;
@@ -49,10 +50,11 @@ use openbitfun_runtime_ports::{
 };
 pub use openbitfun_runtime_ports::{
     RemoteAssistantWorkspaceFacts, RemoteFileChunkRange, RemoteInitialSyncRuntimeHost,
-    RemoteProjectionPort, RemoteRecentWorkspaceFacts, RemoteSessionMetadata,
-    RemoteSessionWorkspaceIdentity, RemoteWorkspaceFacts, RemoteWorkspaceFileChunk,
-    RemoteWorkspaceFileContent, RemoteWorkspaceFileInfo, RemoteWorkspaceFileRuntimeHost,
-    RemoteWorkspaceKind, RemoteWorkspacePort, RemoteWorkspaceRuntimeHost, RemoteWorkspaceUpdate,
+    RemoteProjectionPort, RemoteRecentWorkspaceFacts, RemoteSessionAttachment,
+    RemoteSessionMetadata, RemoteSessionWorkspaceIdentity, RemoteStoredAttachment,
+    RemoteWorkspaceFacts, RemoteWorkspaceFileChunk, RemoteWorkspaceFileContent,
+    RemoteWorkspaceFileInfo, RemoteWorkspaceFileRuntimeHost, RemoteWorkspaceKind,
+    RemoteWorkspacePort, RemoteWorkspaceRuntimeHost, RemoteWorkspaceUpdate,
 };
 use openbitfun_services_core::product_identity::hidden_data_directory;
 pub use page_upload::{
@@ -60,8 +62,8 @@ pub use page_upload::{
     deploy_page_version_on_relay, join_relay_url, list_page_versions_from_relay,
     list_pages_from_relay, publish_page_content_on_relay, publish_page_to_relay,
     save_page_version_from_inline_files, save_page_version_to_relay, unpublish_page_from_relay,
-    update_page_on_relay, PageContentPublishResult, PageInfo, PageOpenLink, PagePublishResult,
-    PageSaveVersionResult, PageVersionInfo,
+    update_page_content_on_relay, update_page_on_relay, PageContentPublishResult, PageInfo,
+    PageOpenLink, PagePublishResult, PageSaveVersionResult, PageVersionInfo,
 };
 pub use pairing::PairingState;
 pub use qr_generator::QrGenerator;
@@ -557,6 +559,9 @@ pub const REMOTE_FILE_MAX_CHUNK_BYTES: u64 = 3 * 1024 * 1024;
 pub const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: &str = "harness_profiles_v1";
 pub const REMOTE_CAPABILITY_DIALOG_STEER_V1: &str = "dialog_steer_v1";
 pub const REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1: &str = "user_question_interaction_v1";
+pub const REMOTE_CAPABILITY_BACKGROUND_RESULT_DELIVERY_V1: &str = "background_result_delivery_v1";
+pub const REMOTE_CAPABILITY_SESSION_ROLLBACK_V1: &str = "session_rollback_v1";
+pub const REMOTE_CAPABILITY_SESSION_ATTACHMENTS_V1: &str = "session_attachments_v1";
 pub const REMOTE_CAPABILITY_PLAN_BUILD_V1: &str = "plan_build_v1";
 pub use host_stream::REMOTE_CAPABILITY_HOST_STREAM_V1;
 
@@ -565,8 +570,12 @@ fn remote_host_capabilities() -> Vec<String> {
         "workspace_id_references_v1".to_string(),
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1.to_string(),
         REMOTE_CAPABILITY_DIALOG_STEER_V1.to_string(),
+        "dialog_queue_v1".to_string(),
         REMOTE_CAPABILITY_PLAN_BUILD_V1.to_string(),
+        REMOTE_CAPABILITY_SESSION_ATTACHMENTS_V1.to_string(),
+        REMOTE_CAPABILITY_SESSION_ROLLBACK_V1.to_string(),
         REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1.to_string(),
+        REMOTE_CAPABILITY_BACKGROUND_RESULT_DELIVERY_V1.to_string(),
         REMOTE_CAPABILITY_HOST_STREAM_V1.to_string(),
     ]
 }
@@ -845,6 +854,21 @@ where
     H: RemoteWorkspaceFileRuntimeHost + ?Sized,
 {
     match command {
+        RemoteCommand::StoreSessionAttachment {
+            session_id,
+            attachment,
+        } => {
+            match host
+                .store_session_attachment(session_id, attachment.clone())
+                .await
+            {
+                Ok(stored) => RemoteResponse::SessionAttachmentStored {
+                    session_id: session_id.clone(),
+                    attachment: stored,
+                },
+                Err(message) => RemoteResponse::Error { message },
+            }
+        }
         RemoteCommand::ReadFile { path, session_id } => {
             match host
                 .read_remote_file(path, session_id.as_deref(), REMOTE_FILE_MAX_READ_BYTES)
@@ -1245,8 +1269,23 @@ where
 {
     match command {
         RemoteCommand::GetWorkspaceInfo => {
-            remote_workspace_info_response(host.current_workspace().await)
+            let mut response = remote_workspace_info_response(host.current_workspace().await);
+            if host.supports_workspace_icons() {
+                if let RemoteResponse::WorkspaceInfo { capabilities, .. } = &mut response {
+                    capabilities.push("workspace_icon_read_v1".into());
+                }
+            }
+            response
         }
+        RemoteCommand::GetWorkspaceIcon { workspace_id } => {
+            match host.workspace_icon(workspace_id).await {
+                Ok(snapshot) => RemoteResponse::WorkspaceIcon { snapshot },
+                Err(message) => RemoteResponse::Error { message },
+            }
+        }
+        RemoteCommand::SetWorkspaceIcon { .. } => RemoteResponse::Error {
+            message: "Workspace icon editing is not supported on mobile or IM surfaces; use a Desktop controller".into(),
+        },
         RemoteCommand::ListRecentWorkspaces => match host.opened_workspaces().await {
             Ok(opened) => remote_workspace_catalog_response(host.recent_workspaces().await, opened),
             Err(message) => RemoteResponse::Error { message },
@@ -1320,13 +1359,19 @@ where
         (Vec::new(), false)
     };
 
-    remote_initial_sync_response(
+    let mut response = remote_initial_sync_response(
         workspace,
         sessions,
         workspace_name.as_deref(),
         has_more,
         authenticated_user_id,
-    )
+    );
+    if host.supports_workspace_icons() {
+        if let RemoteResponse::InitialSync { capabilities, .. } = &mut response {
+            capabilities.push("workspace_icon_read_v1".into());
+        }
+    }
+    response
 }
 
 pub fn remote_session_created_response(session_id: impl Into<String>) -> RemoteResponse {
@@ -1365,6 +1410,32 @@ pub fn remote_messages_response(
 pub fn remote_session_deleted_response(session_id: impl Into<String>) -> RemoteResponse {
     RemoteResponse::SessionDeleted {
         session_id: session_id.into(),
+    }
+}
+
+/// What the host observed while rolling a session back to a turn.
+///
+/// This mirrors the fields the desktop rollback result exposes that a remote
+/// transcript actually needs, so this crate keeps describing the wire contract
+/// without depending on the runtime port types.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RemoteSessionRollbackOutcome {
+    pub retired_turn_ids: Vec<String>,
+    pub restored_files: Vec<String>,
+    pub composer_text: Option<String>,
+    pub changed: bool,
+}
+
+pub fn remote_session_rolled_back_response(
+    session_id: impl Into<String>,
+    outcome: RemoteSessionRollbackOutcome,
+) -> RemoteResponse {
+    RemoteResponse::SessionRolledBack {
+        session_id: session_id.into(),
+        retired_turn_ids: outcome.retired_turn_ids,
+        restored_files: outcome.restored_files,
+        composer_text: outcome.composer_text,
+        changed: outcome.changed,
     }
 }
 
@@ -1413,6 +1484,16 @@ pub trait RemoteSessionRuntimeHost: Send + Sync {
         session_storage_dir: &Path,
         session_id: &str,
     ) -> Result<(Vec<ChatMessage>, bool), String>;
+    /// Roll the session back to `target_turn_id`, retiring that turn and the
+    /// ones after it and restoring the files those turns wrote. Hosts are
+    /// expected to reuse the same targeted-rollback path the desktop uses rather
+    /// than hiding turns, and to reject sessions whose workspace they do not own.
+    async fn rollback_session_to_turn(
+        &self,
+        session_id: &str,
+        target_turn_id: &str,
+        expected_storage_turn_index: Option<usize>,
+    ) -> Result<RemoteSessionRollbackOutcome, String>;
     async fn delete_session(
         &self,
         session_storage_dir: &Path,
@@ -1555,14 +1636,7 @@ where
         } => {
             let agent = resolve_remote_agent_type(agent_type.as_deref());
             let is_claw = agent == "Claw";
-            let session_name = session_name
-                .as_deref()
-                .filter(|name| !name.is_empty())
-                .unwrap_or(match agent {
-                    "Cowork" => "Remote Cowork Session",
-                    "Claw" => "Remote Claw Session",
-                    _ => "Remote Code Session",
-                });
+            let session_name = session_name.as_deref().map(str::trim).unwrap_or("");
 
             let explicit = match resolve_remote_session_workspace(
                 host,
@@ -1687,6 +1761,29 @@ where
                     host.remove_tracker(session_id);
                     remote_session_deleted_response(session_id.clone())
                 }
+                Err(message) => RemoteResponse::Error { message },
+            }
+        }
+        RemoteCommand::RollbackSessionToTurn {
+            session_id,
+            target_turn_id,
+            expected_storage_turn_index,
+        } => {
+            if target_turn_id.trim().is_empty() {
+                return RemoteResponse::Error {
+                    message: "Rollback requires a target turn id".into(),
+                };
+            }
+
+            match host
+                .rollback_session_to_turn(
+                    session_id,
+                    target_turn_id.trim(),
+                    *expected_storage_turn_index,
+                )
+                .await
+            {
+                Ok(outcome) => remote_session_rolled_back_response(session_id.clone(), outcome),
                 Err(message) => RemoteResponse::Error { message },
             }
         }
@@ -2202,6 +2299,11 @@ pub struct ChatMessage {
     pub metadata: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
+    /// Storage turn index for `turn_id`, carried so a remote rollback can send
+    /// the same optimistic-concurrency guard the desktop sends and cannot
+    /// retire a different turn after the transcript moved underneath it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2234,7 +2336,9 @@ pub struct ChatMessageItem {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteChatHistoryTurn {
+    pub background_delivery: Option<openbitfun_core_types::background_delivery::BackgroundDelivery>,
     pub turn_id: String,
+    pub turn_index: usize,
     pub user_message_id: String,
     pub user_display_content: String,
     pub user_timestamp_ms: u64,
@@ -2293,14 +2397,22 @@ pub fn build_remote_chat_messages(turns: Vec<RemoteChatHistoryTurn>) -> Vec<Chat
     let mut result = Vec::new();
 
     for turn in turns {
+        let delivery_metadata = turn
+            .background_delivery
+            .as_ref()
+            .map(|delivery| serde_json::json!({"backgroundDelivery":delivery}));
         result.push(ChatMessage {
             id: turn.user_message_id,
             role: "user".to_string(),
             content: turn.user_display_content,
             timestamp: (turn.user_timestamp_ms / 1000).to_string(),
-            metadata: None,
+            metadata: delivery_metadata.clone(),
             turn_id: Some(turn.turn_id.clone()),
-            status: None,
+            turn_index: Some(turn.turn_index),
+            status: turn
+                .background_delivery
+                .as_ref()
+                .map(|_| turn.status.clone()),
             error: None,
             tools: None,
             thinking: None,
@@ -2389,10 +2501,15 @@ pub fn build_remote_chat_messages(turns: Vec<RemoteChatHistoryTurn>) -> Vec<Chat
                     duration_ms: item.duration_ms,
                     start_ms: Some(item.start_ms),
                     input_preview: make_slim_tool_params(&item.call.input),
-                    tool_input: if item.name == "AskUserQuestion"
-                        || item.name == "Task"
-                        || item.name == "TodoWrite"
-                    {
+                    tool_input: if matches!(
+                        item.name.as_str(),
+                        "AskUserQuestion"
+                            | "Task"
+                            | "AgentSpawn"
+                            | "AgentSendInput"
+                            | "AgentControl"
+                            | "TodoWrite"
+                    ) {
                         Some(item.call.input.clone())
                     } else {
                         None
@@ -2460,8 +2577,11 @@ pub fn build_remote_chat_messages(turns: Vec<RemoteChatHistoryTurn>) -> Vec<Chat
             role: "assistant".to_string(),
             content: text_parts.join("\n\n"),
             timestamp: (assistant_ts / 1000).to_string(),
-            metadata: None,
+            metadata: delivery_metadata,
             turn_id: Some(turn.turn_id),
+            // Rollback targets user turns only, so the assistant projection
+            // deliberately carries no storage index.
+            turn_index: None,
             status: Some(turn.status),
             error: turn.error,
             tools: if tools_flat.is_empty() {
@@ -2564,6 +2684,9 @@ pub struct RemoteControlClient {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum RemoteCommand {
+    DialogQueue {
+        request: openbitfun_runtime_ports::DialogQueueRequest,
+    },
     /// Retired: relay-stored session history. Kept so older controllers get an
     /// explicit upgrade message instead of an unknown-command failure.
     GetSessionKey {
@@ -2580,6 +2703,13 @@ pub enum RemoteCommand {
         stream_id: String,
     },
     GetWorkspaceInfo,
+    GetWorkspaceIcon {
+        workspace_id: String,
+    },
+    /// Mobile and IM surfaces expose icons read-only in v1.
+    SetWorkspaceIcon {
+        workspace_id: String,
+    },
     ListRecentWorkspaces,
     SetWorkspace {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2680,6 +2810,19 @@ pub enum RemoteCommand {
     DeleteSession {
         session_id: String,
     },
+    /// Retire `target_turn_id` and every turn after it, then restore the
+    /// workspace files those turns touched, matching the desktop targeted
+    /// rollback. The target turn is withdrawn too, and its prompt comes back as
+    /// `composer_text` so the client can offer it for editing. The client reads
+    /// both identity fields off the user `ChatMessage` it is targeting;
+    /// `expected_storage_turn_index` is the stale-view guard, so omitting it
+    /// only widens the race window and never changes which turn is addressed.
+    RollbackSessionToTurn {
+        session_id: String,
+        target_turn_id: String,
+        #[serde(default)]
+        expected_storage_turn_index: Option<usize>,
+    },
     CancelTool {
         tool_id: String,
         reason: Option<String>,
@@ -2710,6 +2853,10 @@ pub enum RemoteCommand {
         since_version: u64,
         known_msg_count: usize,
         known_model_catalog_version: Option<u64>,
+    },
+    StoreSessionAttachment {
+        session_id: String,
+        attachment: RemoteSessionAttachment,
     },
     ReadFile {
         path: String,
@@ -2803,6 +2950,9 @@ pub enum RemoteCommand {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "resp", rename_all = "snake_case")]
 pub enum RemoteResponse {
+    DialogQueue {
+        snapshot: openbitfun_runtime_ports::DialogQueueSnapshot,
+    },
     /// Retired shape; new hosts never produce it but older peers may still send it.
     SessionKey {
         session_id: String,
@@ -2815,6 +2965,9 @@ pub enum RemoteResponse {
     },
     StreamUnsubscribed {
         stream_id: String,
+    },
+    WorkspaceIcon {
+        snapshot: openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot,
     },
     WorkspaceInfo {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2913,6 +3066,19 @@ pub enum RemoteResponse {
     SessionDeleted {
         session_id: String,
     },
+    SessionRolledBack {
+        session_id: String,
+        /// Turns the host retired, including the target turn itself. Reported so
+        /// a client can tell the user what was withdrawn; the transcript itself
+        /// is repaired by the next poll's authoritative `message_snapshot`.
+        retired_turn_ids: Vec<String>,
+        restored_files: Vec<String>,
+        /// Prompt text the desktop would have put back into its composer, so a
+        /// remote client can offer the same "edit and resend" continuation.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        composer_text: Option<String>,
+        changed: bool,
+    },
     InitialSync {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         workspace_id: Option<String>,
@@ -2963,6 +3129,10 @@ pub enum RemoteResponse {
     },
     PermissionMode {
         mode: RemotePermissionMode,
+    },
+    SessionAttachmentStored {
+        session_id: String,
+        attachment: RemoteStoredAttachment,
     },
     FileContent {
         name: String,
@@ -3041,6 +3211,12 @@ pub enum RemoteResponse {
 pub trait RemoteCommandRuntimeHost: Send + Sync {
     type ImageContext: Send + Sync + 'static;
 
+    /// Model-facing language name from the product host's current app setting.
+    /// Hosts without this setting defer to the session's system prompt.
+    async fn plan_build_language(&self) -> Option<String> {
+        None
+    }
+
     async fn handle_workspace_command(&self, command: &RemoteCommand) -> RemoteResponse;
     async fn handle_session_command(&self, command: &RemoteCommand) -> RemoteResponse;
     async fn handle_poll_command(&self, command: &RemoteCommand) -> RemoteResponse;
@@ -3054,6 +3230,13 @@ pub trait RemoteCommandRuntimeHost: Send + Sync {
         RemoteResponse::Error {
             message: "Device-to-device commands are not supported on this device".to_string(),
         }
+    }
+
+    async fn manage_dialog_queue(
+        &self,
+        _request: openbitfun_runtime_ports::DialogQueueRequest,
+    ) -> Result<openbitfun_runtime_ports::DialogQueueSnapshot, String> {
+        Err("dialog_queue_v1 is not supported".into())
     }
 
     async fn submit_dialog(
@@ -3083,9 +3266,17 @@ where
     H: RemoteCommandRuntimeHost + ?Sized,
 {
     match command {
+        RemoteCommand::DialogQueue { request } => {
+            match host.manage_dialog_queue(request.clone()).await {
+                Ok(snapshot) => RemoteResponse::DialogQueue { snapshot },
+                Err(message) => RemoteResponse::Error { message },
+            }
+        }
         RemoteCommand::Ping { .. } => RemoteResponse::Pong,
 
         RemoteCommand::GetWorkspaceInfo
+        | RemoteCommand::GetWorkspaceIcon { .. }
+        | RemoteCommand::SetWorkspaceIcon { .. }
         | RemoteCommand::ListRecentWorkspaces
         | RemoteCommand::SetWorkspace { .. }
         | RemoteCommand::ListAssistants
@@ -3097,11 +3288,13 @@ where
         | RemoteCommand::SetSessionModel { .. }
         | RemoteCommand::UpdateSessionTitle { .. }
         | RemoteCommand::GetSessionMessages { .. }
-        | RemoteCommand::DeleteSession { .. } => host.handle_session_command(command).await,
+        | RemoteCommand::DeleteSession { .. }
+        | RemoteCommand::RollbackSessionToTurn { .. } => host.handle_session_command(command).await,
 
         RemoteCommand::PollSession { .. } => host.handle_poll_command(command).await,
 
-        RemoteCommand::ReadFile { .. }
+        RemoteCommand::StoreSessionAttachment { .. }
+        | RemoteCommand::ReadFile { .. }
         | RemoteCommand::ReadFileChunk { .. }
         | RemoteCommand::GetFileInfo { .. } => host.handle_workspace_file_command(command).await,
 
@@ -3164,10 +3357,11 @@ where
                 };
             }
             info!("Remote build_plan: session={session_id}");
+            let language = host.plan_build_language().await;
             remote_dialog_submit_response(
                 host.submit_dialog(RemoteDialogSubmissionRequest {
                     session_id: session_id.clone(),
-                    content: remote_plan_build_content(plan_file_path),
+                    content: remote_plan_build_content(plan_file_path, language.as_deref()),
                     display_content: Some(remote_plan_build_display(
                         plan_name.as_deref(),
                         plan_file_path,
@@ -3335,9 +3529,11 @@ fn remote_plan_name_from_path(path: &str) -> String {
         .to_string()
 }
 
-pub fn remote_plan_build_content(plan_file_path: &str) -> String {
+pub fn remote_plan_build_content(plan_file_path: &str, language: Option<&str>) -> String {
+    let language =
+        language.unwrap_or("the language specified by the system prompt's Language Preference");
     format!(
-        "Implement the plan at `{plan_file_path}`.\n\nRead the plan file before making changes and treat it as the source of truth. Do not edit the plan file directly. Track progress with TodoWrite using the existing todo IDs from the plan frontmatter; do not rename or invent IDs. Start with the first pending todo and continue until all todos are completed."
+        "Implement the plan at `{plan_file_path}`.\n\nRead the plan file before making changes and treat it as the source of truth. Implement the plan and verify the result. Do not edit the plan file unless the user requests a plan revision.\n\nLanguage Preference: Use {language} for all user-facing communication, including progress updates and the final response, unless the user explicitly requests another language. The language of these instructions or the plan file does not override this preference."
     )
 }
 
@@ -3905,10 +4101,15 @@ impl RemoteSessionStateTracker {
                         "Started" => {
                             let params = effective_params.clone();
                             let input_preview = params.as_ref().and_then(make_slim_tool_params);
-                            let tool_input = if tool_name == "AskUserQuestion"
-                                || tool_name == "Task"
-                                || tool_name == "TodoWrite"
-                            {
+                            let tool_input = if matches!(
+                                tool_name.as_str(),
+                                "AskUserQuestion"
+                                    | "Task"
+                                    | "AgentSpawn"
+                                    | "AgentSendInput"
+                                    | "AgentControl"
+                                    | "TodoWrite"
+                            ) {
                                 params.clone()
                             } else {
                                 None
@@ -4451,6 +4652,124 @@ mod tests {
         }
     }
 
+    struct IconWorkspaceHost;
+
+    #[async_trait::async_trait]
+    impl RemoteWorkspaceRuntimeHost for IconWorkspaceHost {
+        fn supports_workspace_icons(&self) -> bool {
+            true
+        }
+        async fn workspace_icon(
+            &self,
+            workspace_id: &str,
+        ) -> Result<openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot, String> {
+            if workspace_id != "project-id" {
+                return Err("Workspace not found".into());
+            }
+            Ok(
+                openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot {
+                    workspace_id: workspace_id.into(),
+                    icon: openbitfun_core_types::workspace_icon::WorkspaceIcon {
+                        glyph: Some("learning".into()),
+                        ..Default::default()
+                    },
+                    image_data: None,
+                    image_unavailable: false,
+                    dark_image_data: Some("data:image/png;base64,dark".into()),
+                    dark_image_unavailable: false,
+                    supports_themed_images: true,
+                    supported_glyphs: openbitfun_core_types::workspace_icon::WORKSPACE_ICON_GLYPHS
+                        .iter()
+                        .map(|glyph| (*glyph).into())
+                        .collect(),
+                },
+            )
+        }
+        async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts> {
+            FakeWorkspaceHost.current_workspace().await
+        }
+        async fn recent_workspaces(&self) -> Vec<RemoteRecentWorkspaceFacts> {
+            FakeWorkspaceHost.recent_workspaces().await
+        }
+        async fn open_workspace(
+            &self,
+            path: &str,
+            connection: Option<&str>,
+            host: Option<&str>,
+        ) -> Result<RemoteWorkspaceUpdate, String> {
+            FakeWorkspaceHost
+                .open_workspace(path, connection, host)
+                .await
+        }
+        async fn assistant_workspaces(&self) -> Vec<RemoteAssistantWorkspaceFacts> {
+            FakeWorkspaceHost.assistant_workspaces().await
+        }
+        async fn open_assistant_workspace(
+            &self,
+            path: &str,
+        ) -> Result<RemoteWorkspaceUpdate, String> {
+            FakeWorkspaceHost.open_assistant_workspace(path).await
+        }
+    }
+
+    #[tokio::test]
+    async fn workspace_icon_protocol_is_capability_gated_and_round_trips_without_paths() {
+        let legacy = serde_json::to_value(
+            handle_remote_workspace_command(&FakeWorkspaceHost, &RemoteCommand::GetWorkspaceInfo)
+                .await,
+        )
+        .unwrap();
+        assert!(!legacy["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "workspace_icon_read_v1"));
+        let current = serde_json::to_value(
+            handle_remote_workspace_command(&IconWorkspaceHost, &RemoteCommand::GetWorkspaceInfo)
+                .await,
+        )
+        .unwrap();
+        assert!(current["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "workspace_icon_read_v1"));
+        let read: RemoteCommand = serde_json::from_value(
+            serde_json::json!({ "cmd": "get_workspace_icon", "workspace_id": "project-id" }),
+        )
+        .unwrap();
+        let response = handle_remote_workspace_command(&IconWorkspaceHost, &read).await;
+        let wire = serde_json::to_value(&response).unwrap();
+        assert_eq!(wire["resp"], "workspace_icon");
+        assert_eq!(wire["snapshot"]["workspaceId"], "project-id");
+        assert_eq!(wire["snapshot"]["icon"]["glyph"], "learning");
+        assert_eq!(wire["snapshot"]["supportsThemedImages"], true);
+        assert_eq!(
+            wire["snapshot"]["darkImageData"],
+            "data:image/png;base64,dark"
+        );
+        assert!(wire["snapshot"]["supportedGlyphs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|glyph| glyph == "learning"));
+        assert_eq!(
+            serde_json::from_value::<RemoteResponse>(wire).unwrap(),
+            response
+        );
+        assert!(matches!(
+            handle_remote_workspace_command(&FakeWorkspaceHost, &read).await,
+            RemoteResponse::Error { .. }
+        ));
+        let edit = RemoteCommand::SetWorkspaceIcon {
+            workspace_id: "project-id".into(),
+        };
+        let unsupported = handle_remote_workspace_command(&IconWorkspaceHost, &edit).await;
+        assert!(
+            matches!(unsupported, RemoteResponse::Error { message } if message.contains("not supported") && message.contains("Desktop"))
+        );
+    }
+
     #[tokio::test]
     async fn remote_workspace_catalog_advertises_opened_rows_without_repurposing_recent_history() {
         let response = handle_remote_workspace_command(
@@ -4610,6 +4929,7 @@ mod tests {
         model_updates: Mutex<Vec<(String, String, Option<Option<String>>)>>,
         removed_trackers: Mutex<Vec<String>>,
         history_error: Option<String>,
+        rollback_requests: Mutex<Vec<(String, String, Option<usize>)>>,
     }
 
     fn fake_workspace(
@@ -4797,7 +5117,8 @@ mod tests {
                     content: "hello".to_string(),
                     timestamp: "1".to_string(),
                     metadata: None,
-                    turn_id: None,
+                    turn_id: Some("turn-1".to_string()),
+                    turn_index: Some(0),
                     status: None,
                     error: None,
                     images: None,
@@ -4807,6 +5128,25 @@ mod tests {
                 }],
                 false,
             ))
+        }
+
+        async fn rollback_session_to_turn(
+            &self,
+            session_id: &str,
+            target_turn_id: &str,
+            expected_storage_turn_index: Option<usize>,
+        ) -> Result<RemoteSessionRollbackOutcome, String> {
+            self.rollback_requests.lock().unwrap().push((
+                session_id.to_string(),
+                target_turn_id.to_string(),
+                expected_storage_turn_index,
+            ));
+            Ok(RemoteSessionRollbackOutcome {
+                retired_turn_ids: vec!["turn-2".to_string()],
+                restored_files: vec!["src/main.rs".to_string()],
+                composer_text: Some("previous prompt".to_string()),
+                changed: true,
+            })
         }
 
         async fn delete_session(
@@ -4897,7 +5237,7 @@ mod tests {
             }
         );
         let created_requests = host.created_requests.lock().unwrap();
-        assert_eq!(created_requests[0].session_name, "Remote Cowork Session");
+        assert_eq!(created_requests[0].session_name, "");
         assert_eq!(created_requests[0].agent_type, "Cowork");
         assert_eq!(
             created_requests[0].workspace_id.as_deref(),
@@ -5093,6 +5433,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn remote_session_handler_forwards_rollback_target_and_guard() {
+        let host = FakeSessionHost::default();
+
+        let response = handle_remote_session_command(
+            &host,
+            &RemoteCommand::RollbackSessionToTurn {
+                session_id: "session-a".to_string(),
+                target_turn_id: "  turn-1  ".to_string(),
+                expected_storage_turn_index: Some(3),
+            },
+        )
+        .await;
+
+        assert_eq!(
+            response,
+            RemoteResponse::SessionRolledBack {
+                session_id: "session-a".to_string(),
+                retired_turn_ids: vec!["turn-2".to_string()],
+                restored_files: vec!["src/main.rs".to_string()],
+                composer_text: Some("previous prompt".to_string()),
+                changed: true,
+            }
+        );
+        assert_eq!(
+            host.rollback_requests.lock().unwrap().as_slice(),
+            [("session-a".to_string(), "turn-1".to_string(), Some(3))]
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_session_handler_rejects_rollback_without_target_turn() {
+        let host = FakeSessionHost::default();
+
+        let response = handle_remote_session_command(
+            &host,
+            &RemoteCommand::RollbackSessionToTurn {
+                session_id: "session-a".to_string(),
+                target_turn_id: "   ".to_string(),
+                expected_storage_turn_index: None,
+            },
+        )
+        .await;
+
+        assert_eq!(
+            response,
+            RemoteResponse::Error {
+                message: "Rollback requires a target turn id".to_string(),
+            }
+        );
+        assert!(host.rollback_requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn remote_session_handler_propagates_history_outcome_unknown() {
         let host = FakeSessionHost {
             history_error: Some("Session history restore is incomplete".to_string()),
@@ -5132,6 +5525,7 @@ mod tests {
             timestamp: "1".to_string(),
             metadata: None,
             turn_id: Some(turn_id.to_string()),
+            turn_index: None,
             status: status.map(str::to_string),
             error: None,
             tools: None,
@@ -5203,6 +5597,7 @@ mod tests {
             timestamp: "1".to_string(),
             metadata: None,
             turn_id: None,
+            turn_index: None,
             status: None,
             error: None,
             tools: None,
@@ -5268,6 +5663,7 @@ mod tests {
                 timestamp: "1".to_string(),
                 metadata: None,
                 turn_id: None,
+                turn_index: None,
                 status: None,
                 error: None,
                 tools: None,
@@ -5317,6 +5713,7 @@ mod tests {
                     timestamp: "1".to_string(),
                     metadata: None,
                     turn_id: None,
+                    turn_index: None,
                     status: None,
                     error: None,
                     tools: None,
@@ -5353,6 +5750,7 @@ mod tests {
             success: Some(true),
             finish_reason: Some("complete".to_string()),
             has_final_response: Some(true),
+            background_delivery: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::SessionHistoryChanged {
             session_id: "session-a".to_string(),
@@ -5420,6 +5818,7 @@ mod tests {
             success: Some(true),
             finish_reason: Some("complete".to_string()),
             has_final_response: Some(true),
+            background_delivery: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::SessionHistoryChanged {
             session_id: "session-a".to_string(),
@@ -5564,5 +5963,40 @@ mod tests {
         });
         assert_eq!(tracker.session_state(), "idle");
         assert!(tracker.is_history_snapshot_required());
+    }
+}
+
+#[cfg(test)]
+mod session_attachment_contract_tests {
+    use super::*;
+    struct LegacyFileHost;
+    #[async_trait::async_trait]
+    impl RemoteWorkspaceFileRuntimeHost for LegacyFileHost {
+        async fn resolve_remote_file_workspace_root(
+            &self,
+            _: Option<&str>,
+        ) -> Option<std::path::PathBuf> {
+            None
+        }
+    }
+    #[tokio::test]
+    async fn attachment_wire_roundtrip_and_unsupported_host_are_explicit() {
+        let wire = serde_json::json!({"cmd":"store_session_attachment","session_id":"session",
+            "attachment":{"attachment_id":"id","name":"key.pem","content_base64":"c2VjcmV0"}});
+        let command: RemoteCommand = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&command).unwrap(), wire);
+        assert!(!format!("{command:?}").contains("c2VjcmV0"));
+        let result = handle_remote_workspace_file_command(&LegacyFileHost, &command).await;
+        assert!(matches!(result, RemoteResponse::Error { .. }));
+        assert!(remote_host_capabilities()
+            .iter()
+            .any(|capability| capability == REMOTE_CAPABILITY_SESSION_ATTACHMENTS_V1));
+        let legacy: RemoteCommand = serde_json::from_value(
+            serde_json::json!({"cmd":"send_message","session_id":"session","content":"hello"}),
+        )
+        .unwrap();
+        let roundtrip: RemoteCommand =
+            serde_json::from_value(serde_json::to_value(&legacy).unwrap()).unwrap();
+        assert_eq!(legacy, roundtrip);
     }
 }

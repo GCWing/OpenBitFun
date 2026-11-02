@@ -29,7 +29,6 @@ import { SidebarDeviceGroup } from './SidebarDeviceGroup';
 import { SidebarDeviceIcon } from './SidebarNavigationIcons';
 import { SidebarWorkspacePicker } from './SidebarWorkspacePicker';
 import { ConnectionStatusPresenter } from '../../services/ConnectionStatusPresenter';
-import { RemoteUiState } from '../../services/RemoteUiState';
 
 /**
  * Flat device selector followed by the selected device's workspace tree.
@@ -95,7 +94,7 @@ export struct SidebarWorkspaceSection {
           .onClick(() => { void this.onRefreshDevices(); })
       }
       Row() {}.height(0)
-        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), { height: SheetSize.LARGE, onWillDismiss: (action: DismissSheetAction): void => {
+        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), { height: SheetSize.LARGE, showClose: false, onWillDismiss: (action: DismissSheetAction): void => {
           if (this.workspaceTools.dirty) this.onWorkspaceTools({ type: 'close' });
           else { this.onWorkspaceTools({ type: 'close' }); action.dismiss(); }
         }, onDisappear: () => this.onWorkspaceTools({ type: 'close' }) })
@@ -107,11 +106,12 @@ export struct SidebarWorkspaceSection {
           this.MoreDevicesRow()
         }
         // The workspace tree owns projection caches and local disclosure state.
-        // Key the single visible tree by device so switching the flat selector
-        // cannot reuse the outgoing device's component instance and projection.
+        // Include the projection source: a transient control target and its
+        // account directory entry are different observed objects, even when
+        // they identify the same device.
         ForEach(this.selectedEntries(), (entry: DeviceDirectoryEntry) => {
           this.WorkspaceSection(entry)
-        }, (entry: DeviceDirectoryEntry): string => entry.deviceId)
+        }, (entry: DeviceDirectoryEntry): string => this.deviceKey(entry))
       }
     }
     .width('100%')
@@ -263,8 +263,7 @@ export struct SidebarWorkspaceSection {
         onWorkspaceTools: this.onWorkspaceTools,
         device: entry,
         directoryState: this.directoryState,
-        sessions: this.sessionsForDevice(entry),
-        recentWorkspaces: this.workspacesForDevice(entry),
+        sessions: this.usesLiveDirectory(entry) ? this.sessions : [],
         workspaceName: this.liveWorkspaceName(entry),
         workspacePath: this.liveWorkspacePath(entry),
         workspaceConnectionId: this.isActiveDevice(entry.deviceId) ? this.workspaceConnectionId : '',
@@ -433,18 +432,19 @@ export struct SidebarWorkspaceSection {
   }
 
   private liveWorkspaceName(entry: DeviceDirectoryEntry): string {
-    return this.liveWorkspacePath(entry).length > 0 ? this.workspaceName : '';
+    if (this.liveWorkspacePath(entry).length === 0) return '';
+    if (this.workspaceKind === 'remote' && this.workspaceConnectionId.length > 0) {
+      const connection = this.savedConnections.find((item: SavedRuntimeConnection): boolean => {
+        return item.id === this.workspaceConnectionId && item.name.trim().length > 0;
+      });
+      if (connection) return connection.name;
+    }
+    return this.workspaceName;
   }
 
   private liveWorkspaceKind(entry: DeviceDirectoryEntry): string {
     return this.usesLiveDirectory(entry) ? this.workspaceKind : 'normal';
   }
-
-  private sessionsForDevice(entry: DeviceDirectoryEntry): RemoteSession[] {
-    return this.usesLiveDirectory(entry) ?
-      RemoteUiState.mergeSessions(this.sessions, entry.sessions) : entry.sessions;
-  }
-
   private workspacesForDevice(entry: DeviceDirectoryEntry): RecentWorkspaceEntry[] {
     return entry.workspaces;
   }

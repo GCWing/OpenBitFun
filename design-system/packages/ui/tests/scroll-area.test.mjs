@@ -13,20 +13,22 @@ test("ScrollArea defaults to a native vertical viewport with automatic visibilit
   assert.match(markup, /data-openbitfun-component="scroll-area"/);
   assert.match(markup, /data-openbitfun-part="viewport"/);
   assert.match(markup, /data-openbitfun-orientation="vertical"/);
+  assert.match(markup, /data-openbitfun-overscroll-behavior-y="contain"/);
   assert.match(markup, /data-openbitfun-scrollbar-visibility="auto"/);
   assert.match(markup, /aria-label="Activity"/);
 });
 
-test("ScrollArea exposes orientation and scrollbar visibility contracts", () => {
+test("ScrollArea exposes orientation, scroll chaining, and scrollbar visibility contracts", () => {
   const markup = renderToStaticMarkup(
     createElement(
       ScrollArea,
-      { orientation: "both", scrollbarVisibility: "always" },
+      { orientation: "both", overscrollBehaviorY: "auto", scrollbarVisibility: "always" },
       "Content",
     ),
   );
 
   assert.match(markup, /data-openbitfun-orientation="both"/);
+  assert.match(markup, /data-openbitfun-overscroll-behavior-y="auto"/);
   assert.match(markup, /data-openbitfun-scrollbar-visibility="always"/);
 });
 
@@ -52,6 +54,7 @@ test("ScrollArea styling uses public scrollbar tokens and preserves native scrol
   assert.match(styles, /overflow-y: auto/);
   assert.match(styles, /overflow-x: auto/);
   assert.match(styles, /overflow: scroll/);
+  assert.match(styles, /\[data-openbitfun-overscroll-behavior-y="auto"\]\s*\{\s*overscroll-behavior-y:\s*auto/);
   assert.doesNotMatch(styles, /scrollbar-color:|::-webkit-scrollbar/);
 
   // The published stylesheet must carry the shared policy for both ordinary

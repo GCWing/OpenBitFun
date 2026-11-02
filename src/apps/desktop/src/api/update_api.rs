@@ -83,6 +83,11 @@ fn platform() -> String {
 }
 
 fn cache_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    if crate::e2e_storage_guard_enabled() {
+        return Ok(openbitfun_core::infrastructure::get_path_manager_arc()
+            .user_data_dir()
+            .join("app-updates"));
+    }
     app.path()
         .app_cache_dir()
         .map(|p| p.join("app-updates"))

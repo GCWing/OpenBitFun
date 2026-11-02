@@ -3,8 +3,12 @@
 //! This crate owns runtime decisions that can be built and tested without
 //! depending on `openbitfun-core` concrete session or scheduler lifecycle.
 
+#[cfg(feature = "account-routing")]
+pub mod account_routing;
 #[cfg(feature = "agent-runtime")]
 pub mod agents;
+#[cfg(feature = "account-routing")]
+pub mod channel_routing;
 #[cfg(feature = "agent-runtime")]
 pub mod checkpoint;
 #[cfg(feature = "agent-runtime")]
@@ -31,10 +35,10 @@ pub mod event_source;
 pub mod events;
 #[cfg(feature = "agent-runtime")]
 pub mod evidence_ledger;
+#[cfg(feature = "agent-runtime")]
+pub mod model_pool;
 #[cfg(feature = "native-hook-settings")]
 pub mod native_hooks;
-#[cfg(feature = "agent-runtime")]
-pub mod output_surface;
 #[cfg(feature = "agent-runtime")]
 pub mod permission;
 #[cfg(feature = "agent-runtime")]
@@ -46,9 +50,15 @@ pub mod prompt_cache;
 #[cfg(feature = "agent-runtime")]
 pub mod prompt_markup;
 #[cfg(feature = "agent-runtime")]
+pub mod prompt_suggestion;
+#[cfg(feature = "agent-runtime")]
 pub mod remote_file_delivery;
 #[cfg(feature = "agent-runtime")]
 pub mod review_read_receipt;
+#[cfg(feature = "agent-runtime")]
+pub mod router_context;
+#[cfg(feature = "agent-runtime")]
+pub mod router_summary_queue;
 #[cfg(feature = "agent-runtime")]
 pub mod runtime;
 #[cfg(feature = "agent-runtime")]

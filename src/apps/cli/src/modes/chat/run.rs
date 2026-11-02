@@ -591,7 +591,7 @@ impl ChatMode {
                     "The restored session uses fallback settings. Review them, then send the preserved input explicitly."
                         .to_string(),
                 ));
-            } else if draft.text.starts_with('/') {
+            } else if is_local_slash_command(&draft.text) {
                 // Slash commands will be handled in the main loop
                 chat_view.set_draft(draft);
             } else {

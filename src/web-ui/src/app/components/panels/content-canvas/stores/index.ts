@@ -12,7 +12,6 @@ export {
   useActiveTabId,
   useLayout,
   useDragging,
-  switchAgentCanvasWorkspace,
-  removeAgentCanvasSnapshot,
+  switchAgentCanvasScope,
   clearAgentCanvasForPeerSwitch,
 } from './canvasStore';

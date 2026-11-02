@@ -12,6 +12,8 @@ import { isSessionRunning, type ShellEntry } from './shellEntryTypes';
 interface UseTerminalSessionsOptions {
   workspaceId?: string;
   workspacePath?: string;
+  /** cwd of a terminal created without an explicit directory. */
+  defaultDirectory?: string;
   isRemote: boolean;
   currentConnectionId: string | null;
   scope: SurfaceScope;
@@ -27,7 +29,7 @@ interface SessionSnapshot {
 const snapshots = new Map<string, SessionResponse[]>();
 
 export function useTerminalSessions(options: UseTerminalSessionsOptions) {
-  const { workspaceId, workspacePath, isRemote, currentConnectionId, scope, savedSessionIds } = options;
+  const { workspaceId, workspacePath, defaultDirectory, isRemote, currentConnectionId, scope, savedSessionIds } = options;
   const key = scope.key('workspace-terminals', workspaceId);
   const activation = useMemo(() => ({ key, scope }), [key, scope]);
   const currentActivation = useRef<typeof activation | null>(activation);
@@ -147,13 +149,13 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
     assertCurrent();
     const session = await createManualTerminalSession({
       workspaceId: workspaceId!,
-      workspacePath: directory ?? workspacePath, shellType, shellId,
+      workspacePath: directory ?? defaultDirectory ?? workspacePath, shellType, shellId,
     });
     assertCurrent();
     await refreshSessions();
     assertCurrent();
     return session;
-  }, [assertCurrent, refreshSessions, workspacePath, workspaceId]);
+  }, [assertCurrent, defaultDirectory, refreshSessions, workspacePath, workspaceId]);
   const stopEntrySession = useCallback(async (entry: ShellEntry) => {
     if (entry.isRunning) await closeSessionIfPresent(entry.sessionId);
   }, [closeSessionIfPresent]);

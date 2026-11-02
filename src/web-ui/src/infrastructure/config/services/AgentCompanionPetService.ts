@@ -1,6 +1,5 @@
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
-import { readFile } from '@tauri-apps/plugin-fs';
 import type { AgentCompanionPetSelection } from './AIExperienceConfigService';
 import { isTauriRuntime } from '@/infrastructure/runtime';
 import { createLogger } from '@/shared/utils/logger';
@@ -14,26 +13,39 @@ const BUILTIN_PET_DISPLAY_NAMES = builtinPetMetadata.displayNames;
 export const AGENT_COMPANION_PETS_CHANGED = 'agent-companion-pets-changed';
 
 export const DEFAULT_AGENT_COMPANION_PET: AgentCompanionPetSelection = {
-  id: 'blue-golden',
-  displayName: BUILTIN_PET_DISPLAY_NAMES.blueGolden,
-  description:
-    'A sweet, round-faced blue-golden shaded cat with wide bright eyes and soft silver-blue fur warmed by creamy-gold highlights.',
+  id: 'bitblob',
+  displayName: 'BitBlob',
+  description: 'Rounded lavender companion with a soft antenna and curious eyes.',
   source: 'preset',
-  packagePath: `${BUILTIN_PET_BASE}/blue-golden`,
-  spritesheetPath: `${BUILTIN_PET_BASE}/blue-golden/spritesheet.png`,
-  spritesheetMimeType: 'image/png',
+  packagePath: `${BUILTIN_PET_BASE}/bitblob`,
+  spritesheetPath: `${BUILTIN_PET_BASE}/bitblob/spritesheet.webp`,
+  spritesheetMimeType: 'image/webp',
+  spriteVersionNumber: 2,
 };
 
 /** Cache: absolute file path → blob URL (prevents re-reading the same file). */
 const blobUrlCache = new Map<string, string>();
 
+/**
+ * Reads a user pet spritesheet through the host. The host confines the read to
+ * the managed companion directory, which keeps the webview independent of the
+ * filesystem-plugin scope: on Linux every XDG directory starts with a dot and
+ * the scope requires literal leading dots, so the plugin could never resolve
+ * these files (`forbidden path`).
+ */
+async function readSpritesheetBuffer(absolutePath: string): Promise<ArrayBuffer> {
+  const response = await api.invoke<ArrayBuffer | Uint8Array>('load_agent_companion_pet_spritesheet', {
+    request: { spritesheetPath: absolutePath },
+  });
+  return response instanceof ArrayBuffer ? response : new Uint8Array(response).buffer;
+}
+
 async function readFileAsBlobUrl(absolutePath: string, mimeType: string): Promise<string> {
   const cached = blobUrlCache.get(absolutePath);
   if (cached) return cached;
 
-  const bytes = await readFile(absolutePath);
-  const blob = new Blob([bytes], { type: mimeType });
-  const url = URL.createObjectURL(blob);
+  const buffer = await readSpritesheetBuffer(absolutePath);
+  const url = URL.createObjectURL(new Blob([buffer], { type: mimeType }));
   blobUrlCache.set(absolutePath, url);
   return url;
 }
@@ -68,6 +80,16 @@ export function releaseAgentCompanionPetPreviewBlobs(
 const BUILTIN_PETS: AgentCompanionPetSelection[] = [
   {
     ...DEFAULT_AGENT_COMPANION_PET,
+  },
+  {
+    id: 'blue-golden',
+    displayName: BUILTIN_PET_DISPLAY_NAMES.blueGolden,
+    description:
+      'A sweet, round-faced blue-golden shaded cat with wide bright eyes and soft silver-blue fur warmed by creamy-gold highlights.',
+    source: 'preset',
+    packagePath: `${BUILTIN_PET_BASE}/blue-golden`,
+    spritesheetPath: `${BUILTIN_PET_BASE}/blue-golden/spritesheet.png`,
+    spritesheetMimeType: 'image/png',
   },
   {
     id: 'openbitfun-girl',
@@ -213,6 +235,18 @@ export async function listAgentCompanionPets(): Promise<AgentCompanionPetPackage
     log.error('Failed to list Agent companion pets', error);
     return builtinPets;
   }
+}
+
+export async function selectAgentCompanionPetPackage(title: string): Promise<string | null> {
+  if (!isTauriRuntime()) throw new Error('Pet package selection requires the desktop surface');
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title,
+    filters: [{ name: 'Petdex', extensions: ['zip'] }],
+  });
+  return typeof selected === 'string' ? selected : null;
 }
 
 export async function importAgentCompanionPetPackage(path: string): Promise<AgentCompanionPetPackage> {

@@ -13,6 +13,19 @@ export const UNSUPPORTED_HOST_MESSAGE = 'The controlled device runs an older Ope
 /** Hosts keep hint subscriptions alive for 10 minutes; renew well before. */
 const KEEPALIVE_MS = 4 * 60 * 1000;
 
+/** How many pages one history request may read while it has not yet shown the
+ * reader anything it did not already have.
+ *
+ * Host pages are cut by sequence, and a record's sequence is the moment it was
+ * last updated, so one long turn owns every record it produced: a page of
+ * history can be nothing but more records of the turn that is already on
+ * screen. Reading exactly one page per request then looks like "history loaded"
+ * while the transcript above stayed the same. The budget keeps that walk bounded
+ * (a request is a user gesture, not an unbounded download); the next request
+ * continues from where this one stopped. Mirrors `MAX_HISTORY_PAGES_PER_REQUEST`
+ * in the mobile core transport. */
+const MAX_HISTORY_PAGES_PER_REQUEST = 4;
+
 export interface StreamEvent { seq: number; event: string; payload: unknown }
 export interface StreamPage {
   stream_id: string;
@@ -32,6 +45,15 @@ export interface StreamReadRequest {
   subscribe: boolean;
 }
 export interface StreamHint { sourceDeviceId: string; stream_id: string; epoch: number; cursor: number }
+
+/** The turn a stream event belongs to, for the reader's "is this older than what
+ * the caller already has" check. `session-record` payloads always carry
+ * `turn.turnId`; control events belong to no turn and are ignored. */
+export function streamEventTurnId(event: StreamEvent): string | null {
+  if (event.event !== 'session-record') return null;
+  const turn = (event.payload as { turn?: { turnId?: unknown } } | undefined)?.turn;
+  return typeof turn?.turnId === 'string' ? turn.turnId : null;
+}
 
 /** Event as consumed by product reducers; `session_id` is the stream id. */
 export interface SessionEvent { session_id: string; event: string; payload: unknown }
@@ -112,6 +134,8 @@ class Reader {
   oldest = 1;
   hasMore = false;
   truncated = false;
+  /** Turns already emitted to the caller, i.e. already part of the transcript. */
+  private readonly emittedTurns = new Set<string>();
   constructor(private readonly options: HostStreamOptions) {}
 
   private async read(request: Omit<StreamReadRequest, 'stream_id' | 'subscribe'>): Promise<StreamPage> {
@@ -122,6 +146,8 @@ class Reader {
   private emitPage(page: StreamPage): void {
     for (const event of page.events) {
       this.options.onEvent({ session_id: this.options.streamId, event: event.event, payload: event.payload });
+      const turnId = streamEventTurnId(event);
+      if (turnId !== null) this.emittedTurns.add(turnId);
     }
   }
   private emitHistory(): void {
@@ -160,18 +186,31 @@ class Reader {
     await this.resync();
   }
   async loadOlder(): Promise<void> {
-    if (!this.hasMore) return;
-    const page = await this.read({ before: this.oldest, epoch: this.epoch });
-    if (page.epoch !== this.epoch) {
-      this.options.onGap?.('host stream restarted');
-      await this.resync();
-      throw new Error('Session history restarted on the host; reloaded from its latest page');
+    let pages = 0;
+    while (this.hasMore && pages < MAX_HISTORY_PAGES_PER_REQUEST) {
+      const page = await this.read({ before: this.oldest, epoch: this.epoch });
+      if (page.epoch !== this.epoch) {
+        this.options.onGap?.('host stream restarted');
+        await this.resync();
+        throw new Error('Session history restarted on the host; reloaded from its latest page');
+      }
+      // A page that only repeats turns the transcript already has is not
+      // progress: keep reading until the caller gets an older turn, the host
+      // runs out of history, or this request's budget is spent.
+      const showsAnOlderTurn = page.events.some(event => {
+        const turnId = streamEventTurnId(event);
+        return turnId !== null && !this.emittedTurns.has(turnId);
+      });
+      this.emitPage(page);
+      if (page.events[0]) this.oldest = page.events[0].seq;
+      this.hasMore = page.has_more;
+      this.truncated = page.truncated;
+      pages++;
+      if (showsAnOlderTurn) break;
     }
-    this.emitPage(page);
-    if (page.events[0]) this.oldest = page.events[0].seq;
-    this.hasMore = page.has_more;
-    this.truncated = page.truncated;
-    this.emitHistory();
+    // One settled report for the whole request: the caller asked once, so it
+    // hears one history state, not one per page.
+    if (pages > 0) this.emitHistory();
   }
   hintIsNew(hint: StreamHint): boolean {
     return hint.sourceDeviceId === this.options.target && hint.stream_id === this.options.streamId

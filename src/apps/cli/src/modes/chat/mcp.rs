@@ -696,9 +696,16 @@ impl ChatMode {
                 })
                 .unwrap_or_default()
         };
-        let transport = match config.get("type").and_then(serde_json::Value::as_str) {
+        let transport = match config
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .map(|value| value.trim().to_ascii_lowercase())
+            .as_deref()
+        {
             Some("sse") => McpTransport::Sse,
-            Some("streamable-http" | "streamable_http" | "http") => McpTransport::StreamableHttp,
+            Some("streamable-http" | "streamable_http" | "streamablehttp" | "http") => {
+                McpTransport::StreamableHttp
+            }
             _ => McpTransport::Stdio,
         };
         let mutation = McpServerMutation {

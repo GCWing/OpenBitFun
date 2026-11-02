@@ -229,10 +229,18 @@ internal fun FilePreviewSurface(
             }
 
             is RemoteFilePreviewUiState.Image -> {
-                val bitmap = remember(preview.bytes) {
-                    BitmapFactory.decodeByteArray(preview.bytes, 0, preview.bytes.size)
+                val decoded by androidx.compose.runtime.produceState<Pair<Boolean, android.graphics.Bitmap?>>(
+                    initialValue = false to null, key1 = preview.bytes,
+                ) {
+                    value = false to null
+                    value = true to kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        BitmapFactory.decodeByteArray(preview.bytes, 0, preview.bytes.size)
+                    }
                 }
-                if (bitmap != null) {
+                val bitmap = decoded.second
+                if (!decoded.first) {
+                    CenteredState(spacing = 12, gutter = 32) { CircularProgressIndicator() }
+                } else if (bitmap != null) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = preview.name,

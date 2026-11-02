@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, ChevronDown, Globe, Github, KeyRound, Mail, ShieldCheck } from 'lucide-react';
 import { marketApi } from './api';
+import { rememberNativeAuthReturnTo } from './authReturnTo';
 import { useLocale, type MessageKey } from './i18n';
 
 export function AccountSignIn() {
@@ -19,6 +20,8 @@ export function AccountSignIn() {
   const initial = useRef<Promise<void> | null>(null);
   useEffect(() => { document.title = `OpenBitFun · ${t('signIn')}`; }, [t]);
   useEffect(() => {
+    const requestedReturnTo = new URLSearchParams(window.location.search).get('returnTo');
+    const nativeReturnTo = rememberNativeAuthReturnTo(requestedReturnTo);
     // Preserve a desktop ticket across reloads without putting its polling secret in the browser.
     if (!initial.current) initial.current = (async () => {
       const fragmentTicket = new URLSearchParams(window.location.hash.slice(1)).get('ticket');
@@ -28,7 +31,7 @@ export function AccountSignIn() {
         setEmailEnabled(config.emailAuthConfigured === true);
         setGithubEnabled(config.githubAuthConfigured);
       } else {
-        const start = await marketApi.startLogin(new URLSearchParams(window.location.search).get('returnTo') || '/miniapp/');
+        const start = await marketApi.startLogin(nativeReturnTo || requestedReturnTo || '/miniapp/');
         window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#ticket=${encodeURIComponent(start.ticket)}`);
         setTicket(start.ticket); setEmailEnabled(start.emailEnabled); setGithubEnabled(start.githubEnabled);
       }

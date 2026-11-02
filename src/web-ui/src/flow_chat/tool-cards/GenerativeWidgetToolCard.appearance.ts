@@ -3,7 +3,7 @@ export const generativeWidgetToolCardAppearanceDescriptor: AppearanceSurfaceDesc
   id: 'generative-widget-tool-card',
   parts: [
     { id: 'root' }, { id: 'title' }, { id: 'extra' }, { id: 'status' },
-    { id: 'exportAction' }, { id: 'placeholder' }, { id: 'preview' },
+    { id: 'exportAction' }, { id: 'htmlExportAction' }, { id: 'placeholder' }, { id: 'preview' },
     { id: 'captureRoot' }, { id: 'exportStage' },
   ],
   states: [

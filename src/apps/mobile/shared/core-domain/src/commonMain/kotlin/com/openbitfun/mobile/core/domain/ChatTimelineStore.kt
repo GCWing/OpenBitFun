@@ -16,6 +16,25 @@ public enum class ChatSyncPhase {
     ERROR,
 }
 
+/**
+ * Who the rows in a timeline belong to.
+ *
+ * A transcript is published twice on the way into a session: first from the
+ * copy this device wrote last time, then from the host once it answers. The two
+ * are not interchangeable — the stored copy stops wherever the last write
+ * stopped, which is inside the turn that was running when the app went away, and
+ * it is not the host's view of the session until the host says so. Consumers
+ * that would present a transcript as the session, or that gate a wait on "the
+ * transcript arrived", must read this: a wait ends on [HOST], not on rows.
+ */
+public enum class ChatTranscriptOrigin {
+    /** Rows restored from this device's stored copy; the host has not answered yet. */
+    CACHE,
+
+    /** Rows the host replayed or streamed for this session. */
+    HOST,
+}
+
 public data class ChatTimelineState public constructor(
     public val sessionId: String,
     public val persistedMessages: List<ChatMessage>,
@@ -26,6 +45,8 @@ public data class ChatTimelineState public constructor(
     public val modelCatalog: RemoteModelCatalog,
     public val selectedModelId: String,
     public val activeTurnAnchorId: String,
+    /** Who the rows above belong to; see [ChatTranscriptOrigin]. */
+    public val origin: ChatTranscriptOrigin,
 )
 
 public class ChatTimelineStore public constructor() {
@@ -50,6 +71,17 @@ public class ChatTimelineStore public constructor() {
 
     public fun setSyncPhase(syncPhase: ChatSyncPhase) {
         state = state.copy(syncPhase = syncPhase)
+    }
+
+    /**
+     * Records who the rows now held belong to.
+     *
+     * Set to [ChatTranscriptOrigin.HOST] where the host's transcript is applied,
+     * and back to [ChatTranscriptOrigin.CACHE] wherever this store is filled
+     * from this device's stored copy. Nothing else may move it.
+     */
+    public fun setTranscriptOrigin(origin: ChatTranscriptOrigin) {
+        state = state.copy(origin = origin)
     }
 
     public fun setCursor(cursor: ChatSessionCursor) {
@@ -383,6 +415,7 @@ public class ChatTimelineStore public constructor() {
             modelCatalog = RemoteModelCatalog(0, emptyList(), RemoteDefaultModels(), null),
             selectedModelId = "",
             activeTurnAnchorId = "",
+            origin = ChatTranscriptOrigin.CACHE,
         )
 
         private fun emptyMessage(id: String, turnId: String?, status: String): ChatMessage = ChatMessage(
@@ -863,7 +896,7 @@ public class ChatTimelineStore public constructor() {
 
         private fun selectedModelIdForCatalog(catalog: RemoteModelCatalog, current: String): String {
             catalog.sessionModelId?.takeIf(String::isNotEmpty)?.let { return it }
-            if (current.isNotEmpty() && catalog.models.any { it.id == current && it.enabled }) return current
+            if (current.isNotEmpty() && ModelSelectionPolicy.resolve(catalog, current) != null) return current.trim()
             return catalog.defaultModels.primary ?: catalog.defaultModels.fast ?: current
         }
     }

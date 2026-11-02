@@ -3,7 +3,7 @@
  * Used to browse and select remote directory as workspace
  */
 
-import { subscribeOverlayInteraction, createOverlayPortal, Button, Dialog, ConfirmDialog, Icon, IconButton, Input, Menu, MenuItem, MenuSeparator, ScrollArea } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Dialog, DialogHeader, DialogHeading, DialogTitle, DialogClose, DialogBody, DialogFooter, Field, ConfirmDialog, Icon, IconButton, Input, Menu, MenuItem, MenuSeparator, ScrollArea } from '@openbitfun/ui';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
@@ -35,6 +35,11 @@ interface ContextMenuState {
 interface DeleteConfirmState {
   show: boolean;
   entry: RemoteFileEntry | null;
+}
+
+interface ActiveBrowserTransfer {
+  id: string;
+  cancelled: boolean;
 }
 
 function joinRemotePath(dir: string, fileName: string): string {
@@ -85,10 +90,14 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
   const [pathInputValue, setPathInputValue] = useState(initialPath);
   const [isEditingPath, setIsEditingPath] = useState(false);
   const pathInputRef = useRef<HTMLInputElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const textInputCompositionActiveRef = useRef(false);
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedConnectionId, setLoadedConnectionId] = useState<string | null>(null);
+  const directoryRequestRef = useRef(0);
+  const requestedPathRef = useRef(initialPath);
   const [error, setError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -104,15 +113,55 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
     entry: null,
   });
   const [transferBusy, setTransferBusy] = useState(false);
+  const [transferCancelling, setTransferCancelling] = useState(false);
+  const activeTransferRef = useRef<ActiveBrowserTransfer | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  const beginTransfer = (): ActiveBrowserTransfer | null => {
+    if (activeTransferRef.current) return null;
+    const transfer = { id: crypto.randomUUID(), cancelled: false };
+    activeTransferRef.current = transfer;
+    setTransferBusy(true);
+    setTransferCancelling(false);
+    setError(null);
+    return transfer;
+  };
+
+  const endTransfer = (transfer: ActiveBrowserTransfer): void => {
+    if (activeTransferRef.current !== transfer) return;
+    activeTransferRef.current = null;
+    setTransferBusy(false);
+    setTransferCancelling(false);
+  };
+
+  const stopTransfer = (): void => {
+    const transfer = activeTransferRef.current;
+    if (!transfer || transfer.cancelled) return;
+    transfer.cancelled = true;
+    setTransferCancelling(true);
+    void sshApi.cancelTransfer(transfer.id).catch((error: unknown) => {
+      setError(error instanceof Error ? error.message : t('ssh.remote.transferFailed'));
+    });
+  };
+
+  useEffect(() => () => {
+    const transfer = activeTransferRef.current;
+    if (!transfer) return;
+    transfer.cancelled = true;
+    void sshApi.cancelTransfer(transfer.id).catch(() => undefined);
+  }, []);
 
   // One-shot retry: when the SSH session was torn down by a transient network
   // blip, the backend transparently reconnects on the next call but the
   // already-in-flight request still fails. Retrying once gives the recovery
   // path a chance to succeed before surfacing an error to the user.
   const loadDirectory = useCallback(async (path: string) => {
+    const request = ++directoryRequestRef.current;
+    requestedPathRef.current = path;
     setLoading(true);
     setError(null);
+    setSelectedPath(null);
+    setIsEditingPath(false);
     const fetchOnce = () => sshApi.readDir(connectionId, path);
     try {
       let result;
@@ -122,28 +171,41 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
         // Brief pause lets the backend complete its reconnect handshake before
         // we hammer it again.
         await new Promise((resolve) => setTimeout(resolve, 250));
+        if (request !== directoryRequestRef.current) return;
         try {
           result = await fetchOnce();
         } catch {
           throw firstErr;
         }
       }
+      if (request !== directoryRequestRef.current) return;
       result.sort((a, b) => {
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
       setEntries(result);
+      // READDIR follows directory links on the remote host. Commit navigation
+      // only after it succeeds, retaining the link path and last usable listing
+      // when a link is broken, points to a file, or cannot be accessed.
+      setCurrentPath(path);
+      setPathInputValue(path);
+      setLoadedConnectionId(connectionId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load directory');
-      setEntries([]);
+      if (request !== directoryRequestRef.current) return;
+      setError(e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to load directory');
     } finally {
-      setLoading(false);
+      if (request === directoryRequestRef.current) setLoading(false);
     }
   }, [connectionId]);
 
   useEffect(() => {
-    loadDirectory(currentPath);
-  }, [currentPath, loadDirectory]);
+    setEntries([]);
+    setLoadedConnectionId(null);
+    setCurrentPath(initialPath);
+    setPathInputValue(initialPath);
+    void loadDirectory(initialPath);
+    return () => { directoryRequestRef.current += 1; };
+  }, [initialPath, loadDirectory]);
 
   // Close context menu when clicking outside
   useEffect(() => {
@@ -157,10 +219,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
   }, []);
 
   const navigateTo = (path: string) => {
-    setCurrentPath(path);
-    setPathInputValue(path);
-    setSelectedPath(null);
-    setIsEditingPath(false);
+    void loadDirectory(path);
   };
 
   const handlePathInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -193,7 +252,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
   };
 
   const handleEntryClick = (entry: RemoteFileEntry) => {
-    if (entry.isDir) {
+    if (entry.isDir || (selectDirectoriesOnly && entry.isSymlink)) {
       navigateTo(entry.path);
     } else if (!selectDirectoriesOnly) {
       setSelectedPath(entry.path);
@@ -202,7 +261,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
   };
 
   const handleEntryDoubleClick = (entry: RemoteFileEntry) => {
-    if (entry.isDir) {
+    if (entry.isDir || entry.isSymlink) {
       navigateTo(entry.path);
     }
   };
@@ -215,6 +274,28 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
       y: e.clientY,
       entry,
     });
+  };
+
+  const handleEntryKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, entry?: RemoteFileEntry) => {
+    if (entry && (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) {
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      setContextMenu({ show: true, x: rect.left, y: rect.bottom, entry });
+      return;
+    }
+    if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...(event.currentTarget.closest('table')?.querySelectorAll<HTMLButtonElement>('.remote-file-browser__entry-button') ?? [])];
+    const current = buttons.indexOf(event.currentTarget);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : Math.max(0, Math.min(buttons.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
+    event.preventDefault();
+    buttons[next]?.focus();
+  };
+
+  const beginPathEdit = () => {
+    setIsEditingPath(true);
+    setTimeout(() => pathInputRef.current?.select(), 0);
   };
 
   const handleDownloadEntry = async (entry: RemoteFileEntry) => {
@@ -230,14 +311,19 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
     });
     if (localPath === null) return;
 
-    setTransferBusy(true);
-    setError(null);
+    const transfer = beginTransfer();
+    if (!transfer) return;
     try {
-      await sshApi.downloadToLocalPath(connectionId, entry.path, localPath);
+      await sshApi.downloadToLocalPath(
+        connectionId, entry.path, localPath, undefined, transfer.id,
+        () => transfer.cancelled,
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('ssh.remote.transferFailed'));
+      if (!transfer.cancelled) {
+        setError(e instanceof Error ? e.message : t('ssh.remote.transferFailed'));
+      }
     } finally {
-      setTransferBusy(false);
+      endTransfer(transfer);
     }
   };
 
@@ -253,7 +339,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
           setDeleteConfirm({ show: true, entry });
           break;
         case 'open':
-          if (entry.isDir) {
+          if (entry.isDir || entry.isSymlink) {
             navigateTo(entry.path);
           } else if (!selectDirectoriesOnly) {
             onSelect(entry.path);
@@ -322,25 +408,34 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
     const paths = Array.isArray(selected) ? selected : [selected];
     if (paths.length === 0) return;
 
-    setTransferBusy(true);
-    setError(null);
+    const transfer = beginTransfer();
+    if (!transfer) return;
     try {
       for (const localPath of paths) {
+        if (transfer.cancelled) break;
         const segments = localPath.split(/[/\\]/);
         const base = segments.pop();
         if (!base) continue;
         const remotePath = joinRemotePath(currentPath, base);
-        await sshApi.uploadFromLocalPath(connectionId, localPath, remotePath);
+        await sshApi.uploadFromLocalPath(
+          connectionId, localPath, remotePath, undefined, transfer.id,
+          () => transfer.cancelled,
+        );
       }
       await loadDirectory(currentPath);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('ssh.remote.transferFailed'));
+      if (!transfer.cancelled) {
+        setError(e instanceof Error ? e.message : t('ssh.remote.transferFailed'));
+      } else {
+        void loadDirectory(currentPath);
+      }
     } finally {
-      setTransferBusy(false);
+      endTransfer(transfer);
     }
   };
 
   const openSelectedWorkspace = () => {
+    if (loading || loadedConnectionId !== connectionId) return;
     onSelect(selectDirectoriesOnly ? currentPath : (selectedPath || currentPath));
   };
 
@@ -386,24 +481,21 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
   };
 
   const browser = (
-    <div className="remote-file-browser-overlay" data-openbitfun-component="ssh-remote" data-openbitfun-part="browserOverlay">
-      <div ref={surfaceRef} role="dialog" aria-modal="true" tabIndex={-1}
-        className="remote-file-browser" data-openbitfun-component="ssh-remote" data-openbitfun-part="browser">
+    <Dialog ref={surfaceRef} open size="lg" className="remote-file-browser" onOpenChange={() => onCancel()}>
+      {/* Keep product Appearance parts on neutral wrappers; Dialog owns modal anatomy. */}
+      <div className="remote-file-browser__layout" data-openbitfun-component="ssh-remote" data-openbitfun-part="browserOverlay">
+      <div className="remote-file-browser__layout" data-openbitfun-component="ssh-remote" data-openbitfun-part="browser">
         {/* Header */}
-        <div className="remote-file-browser__header" data-openbitfun-component="ssh-remote" data-openbitfun-part="browserHeader">
-          <h2 className="remote-file-browser__header-title">
-            {t('ssh.remote.selectWorkspace')}
-          </h2>
-          <IconButton
-            className="remote-file-browser__close-btn"
-            icon={<Icon name="xmark" size="lg" />}
-            size="md"
-            onClick={onCancel}
-            aria-label={t('actions.close')}
-            data-openbitfun-component="ssh-remote"
-            data-openbitfun-part="browserClose"
-          />
+        <div data-openbitfun-component="ssh-remote" data-openbitfun-part="browserHeader">
+          <DialogHeader separator>
+            <DialogHeading><DialogTitle>{t('ssh.remote.selectWorkspace')}</DialogTitle></DialogHeading>
+            <span data-openbitfun-component="ssh-remote" data-openbitfun-part="browserClose">
+              <DialogClose aria-label={t('actions.close')} />
+            </span>
+          </DialogHeader>
         </div>
+
+        <DialogBody inset="none" className="remote-file-browser__body">
 
         {/* Path Breadcrumb / Input */}
         <ScrollArea
@@ -416,6 +508,8 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
           {isEditingPath ? (
             <Input
               ref={pathInputRef}
+              size="sm"
+              aria-label={t('peerDirectoryPicker.path')}
               className="remote-file-browser__path-input-field"
               value={pathInputValue}
               onValueChange={setPathInputValue}
@@ -433,10 +527,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
           ) : (
             <div
               className="remote-file-browser__breadcrumb-path"
-              onClick={() => {
-                setIsEditingPath(true);
-                setTimeout(() => pathInputRef.current?.select(), 0);
-              }}
+              onClick={beginPathEdit}
               title={t('ssh.remote.clickToEditPath') || 'Click to edit path'}
             >
               <IconButton
@@ -466,6 +557,9 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
                   );
                 })
               )}
+              <IconButton aria-label={t('ssh.remote.clickToEditPath')} size="sm" variant="quiet"
+                icon={<Icon name="edit" size="sm" />}
+                onClick={event => { event.stopPropagation(); beginPathEdit(); }} />
             </div>
           )}
         </ScrollArea>
@@ -486,9 +580,9 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
               const p = getRemoteParentPath(currentPath);
               if (p !== null) navigateTo(p);
             }}
-            title="Go up"
+            title={t('newProject.parentDirectory')}
             disabled={getRemoteParentPath(currentPath) === null || transferBusy}
-            aria-label="Go up"
+            aria-label={t('newProject.parentDirectory')}
             icon={<Icon name="arrow-left" size="md" />}
           />
           <IconButton
@@ -506,17 +600,26 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
           <div className="remote-file-browser__transfer-status">
             <Loader2 size={16} className="remote-file-browser__spinner-inline" />
             <span>{t('ssh.remote.transferring')}</span>
+            <Button
+              variant="fill"
+              size="sm"
+              onClick={stopTransfer}
+              disabled={transferCancelling}
+              style={{ marginLeft: 'auto' }}
+            >
+              {t('actions.cancel')}
+            </Button>
           </div>
         )}
 
         {/* File List */}
         <ScrollArea className="remote-file-browser__content" data-openbitfun-component="ssh-remote" data-openbitfun-part="content">
           {error && (
-            <div className="remote-file-browser__error">
+            <div className="remote-file-browser__error" role="alert">
               <span>{error}</span>
               <IconButton
                 type="button"
-                onClick={() => loadDirectory(currentPath)}
+                onClick={() => loadDirectory(requestedPathRef.current)}
                 title={t('actions.retry') || 'Retry'}
                 style={{ marginLeft: 'auto', marginRight: 8 }}
                 aria-label={t('actions.retry')}
@@ -533,7 +636,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
           {loading ? (
             <div className="remote-file-browser__loading">
               <Loader2 size={32} className="remote-file-browser__spinner" />
-              <span>Loading...</span>
+              <span>{t('app.loading')}</span>
             </div>
           ) : (
             <table className="remote-file-browser__table">
@@ -561,10 +664,16 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
                     className="remote-file-browser__row remote-file-browser__row--parent"
                   >
                     <td colSpan={3} className="remote-file-browser__td remote-file-browser__td--name">
-                      <div className="remote-file-browser__name-cell">
-                        <Icon name="folder" size="md" className="remote-file-browser__entry-icon remote-file-browser__entry-icon--parent" />
+                      <Button variant="quiet" size="sm" className="remote-file-browser__entry-button"
+                        leadingIcon={<Icon name="folder" size="md" className="remote-file-browser__entry-icon remote-file-browser__entry-icon--parent" />}
+                        onKeyDown={event => handleEntryKeyDown(event)}
+                        onClick={event => {
+                          event.stopPropagation();
+                          const parent = getRemoteParentPath(currentPath);
+                          if (parent !== null) navigateTo(parent);
+                        }}>
                         <span className="remote-file-browser__name">..</span>
-                      </div>
+                      </Button>
                     </td>
                   </tr>
                 )}
@@ -577,10 +686,12 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
                     className={`remote-file-browser__row ${selectedPath === entry.path ? 'remote-file-browser__row--selected' : ''}`}
                   >
                     <td className="remote-file-browser__td remote-file-browser__td--name">
-                      <div className="remote-file-browser__name-cell">
-                        {getEntryIcon(entry)}
+                      <Button variant="quiet" size="sm" className="remote-file-browser__entry-button"
+                        leadingIcon={getEntryIcon(entry)}
+                        onKeyDown={event => handleEntryKeyDown(event, entry)}
+                        onClick={event => { event.stopPropagation(); handleEntryClick(entry); }}>
                         <span className="remote-file-browser__name">{entry.name}</span>
-                      </div>
+                      </Button>
                     </td>
                     <td className="remote-file-browser__td remote-file-browser__td--size">
                       {entry.isDir ? '-' : formatFileSize(entry.size)}
@@ -590,7 +701,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
                     </td>
                   </tr>
                 ))}
-                {entries.length === 0 && !loading && (
+                {entries.length === 0 && !loading && !error && loadedConnectionId === connectionId && (
                   <tr>
                     <td colSpan={3} className="remote-file-browser__empty">
                       {t('ssh.remote.emptyDirectory')}
@@ -601,6 +712,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
             </table>
           )}
         </ScrollArea>
+        </DialogBody>
 
         {/* Context Menu */}
         {contextMenu.show && contextMenu.entry && createOverlayPortal(
@@ -641,6 +753,8 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
             </MenuItem>
           </Menu>,
           getAppearanceOverlayHost(),
+          null,
+          { ownerRef: surfaceRef },
         )}
 
         {/* Rename Dialog */}
@@ -650,22 +764,24 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
             onOpenChange={() => setRenameEntry(null)}
             aria-label={t('ssh.remote.rename')}
             className="remote-file-browser__dialog"
-            overlayProps={{ className: 'remote-file-browser__dialog-overlay' }}
             portalTarget={getAppearanceOverlayHost()}
-            autoFocus={false}
-            restoreFocus={false}
-            trapFocus={false}
-            preventScroll={false}
+            initialFocusRef={renameInputRef}
+            size="sm"
             closeOnEscape={false}
             closeOnPointerOutside={false}
           >
-              <h3 className="remote-file-browser__dialog-title">{t('ssh.remote.rename')}</h3>
+              <DialogHeader>
+                <DialogHeading><DialogTitle>{t('ssh.remote.rename')}</DialogTitle></DialogHeading>
+                <DialogClose aria-label={t('actions.close')} />
+              </DialogHeader>
+              <DialogBody>
+              <Field label={t('ssh.remote.name')} controlWidth="fill">
               <Input
+                ref={renameInputRef}
+                size="md"
                 type="text"
                 value={renameValue}
                 onValueChange={setRenameValue}
-                className="remote-file-browser__dialog-input-field"
-                autoFocus
                 onKeyDown={(e) => {
                   if (
                     (e.key === 'Enter' || e.key === 'Escape')
@@ -674,8 +790,12 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
                     e.stopPropagation();
                     return;
                   }
-                  if (e.key === 'Enter') handleRename();
-                  if (e.key === 'Escape') setRenameEntry(null);
+                  if (e.key === 'Enter' || e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.key === 'Enter') void handleRename();
+                    else setRenameEntry(null);
+                  }
                 }}
                 onCompositionStart={() => {
                   textInputCompositionActiveRef.current = true;
@@ -684,7 +804,9 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
                   textInputCompositionActiveRef.current = false;
                 }}
               />
-              <div className="remote-file-browser__dialog-actions">
+              </Field>
+              </DialogBody>
+              <DialogFooter>
                 <Button variant="fill" size="sm" onClick={() => setRenameEntry(null)}>
                   {t('actions.cancel')}
                 </Button>
@@ -696,7 +818,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
                 >
                   {t('actions.confirm')}
                 </Button>
-              </div>
+              </DialogFooter>
           </Dialog>
         )}
 
@@ -717,7 +839,8 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
         />
 
         {/* Footer */}
-        <div className="remote-file-browser__footer" data-openbitfun-component="ssh-remote" data-openbitfun-part="footer">
+        <div data-openbitfun-component="ssh-remote" data-openbitfun-part="footer">
+        <DialogFooter separator className="remote-file-browser__footer">
           <div className="remote-file-browser__footer-info">
             {!selectDirectoriesOnly && selectedPath ? (
               <>
@@ -738,17 +861,19 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
               variant="primary"
               size="sm"
               onClick={openSelectedWorkspace}
-              disabled={false}
+              disabled={loading || loadedConnectionId !== connectionId}
             >
               {t('ssh.remote.openWorkspace')}
             </Button>
           </div>
+        </DialogFooter>
         </div>
       </div>
-    </div>
+      </div>
+    </Dialog>
   );
 
-  return createOverlayPortal(browser, getAppearanceOverlayHost(), null, { modal: true, surfaceRef, onDismiss: onCancel });
+  return browser;
 };
 
 export default RemoteFileBrowser;

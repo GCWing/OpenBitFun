@@ -57,6 +57,7 @@ function createTurns(count: number): FlowChatTurnRailItem[] {
 }
 
 const railCss = compile(resolve(__dirname, 'FlowChatTurnRail.scss')).css;
+const fullBarWidth = 'var(--openbitfun-control-flow-chat-turn-rail-width)';
 
 describe('FlowChatTurnRail', () => {
   let container: HTMLDivElement;
@@ -126,13 +127,13 @@ describe('FlowChatTurnRail', () => {
     expect(onNavigate).not.toHaveBeenCalled();
     for (const item of items) {
       const distance = Math.abs(Number(item.dataset.turnOrdinal) - 6);
-      expect(barWidth(item)).toBe(`${[20, 15, 10, 8][distance] ?? 5}px`);
+      expect(barWidth(item)).toBe(distance === 0 ? fullBarWidth : `${[20, 15, 10, 8][distance] ?? 5}px`);
       expect(getComputedStyle(item.querySelector('.flowchat-turn-rail__bar')!).opacity)
         .toBe(distance === 0 ? '0.8' : '0.2');
     }
     expect(Array.from(items, item => item.style.top)).toEqual(restingPositions);
     // Even the longest bar fits inside its stable hit area and clipped list.
-    expect(parseFloat(barWidth(target))).toBeLessThanOrEqual(parseFloat(getComputedStyle(target).width));
+    expect(barWidth(target)).toBe(getComputedStyle(target).width);
 
     leave(target);
     expect(emphasizedBars()).toHaveLength(1);
@@ -150,10 +151,10 @@ describe('FlowChatTurnRail', () => {
     render('turn-2');
     const items = container.querySelectorAll<HTMLButtonElement>('.flowchat-turn-rail__item');
     hover(items[0]);
-    expect(Array.from(items, barWidth)).toEqual(['20px', '15px', '10px', '8px']);
+    expect(Array.from(items, barWidth)).toEqual([fullBarWidth, '15px', '10px', '8px']);
     leave(items[0]);
     hover(items[3]);
-    expect(Array.from(items, barWidth)).toEqual(['8px', '10px', '15px', '20px']);
+    expect(Array.from(items, barWidth)).toEqual(['8px', '10px', '15px', fullBarWidth]);
     act(() => items[3].click());
     expect(onNavigate).toHaveBeenCalledWith(turns[3]);
     render('turn-4');
@@ -172,7 +173,7 @@ describe('FlowChatTurnRail', () => {
     hover(target, 'touch');
     expect(barWidth(target)).toBe('5px');
     hover(target);
-    expect(barWidth(target)).toBe('20px');
+    expect(barWidth(target)).toBe(fullBarWidth);
     act(() => container.querySelector('.flowchat-turn-rail__list')!
       .dispatchEvent(new Event('scroll', { bubbles: true })));
     expect(barWidth(target)).toBe('5px');
@@ -290,8 +291,8 @@ describe('FlowChatTurnRail', () => {
     expect(tooltip?.textContent).not.toContain('[$pdf]');
     expect(tooltip?.textContent).not.toContain('#file:');
     expect(tooltip?.querySelectorAll('.user-message-item__reference')).toHaveLength(2);
-    expect(tooltip?.querySelector('[data-testid="icon-extension"]')).not.toBeNull();
-    expect(tooltip?.querySelector('[data-testid="icon-extension"]')?.closest('.message-reference-capsule')
+    expect(tooltip?.querySelector('[data-testid="icon-book-open"]')).not.toBeNull();
+    expect(tooltip?.querySelector('[data-testid="icon-book-open"]')?.closest('.message-reference-capsule')
       ?.textContent).toContain('pdf');
   });
 

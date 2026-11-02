@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   useRef,
@@ -18,7 +19,8 @@ export interface InputProps
   invalid?: boolean;
   leading?: ReactNode;
   onValueChange?: (value: string) => void;
-  size?: "sm" | "md" | "lg";
+  shape?: "rounded" | "pill";
+  size?: "xs" | "sm" | "md" | "lg";
   trailing?: ReactNode;
 }
 
@@ -34,11 +36,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
   onCompositionStart,
   onKeyDown,
   onValueChange,
+  shape = "rounded",
   size = "sm",
   trailing,
   type = "text",
   ...props
 }, ref) {
+  const fieldAccessibility = useFieldAccessibility(props);
   const compositionActiveRef = useRef(false);
   const fieldSurface = useFieldSurface();
   const handleChange: ChangeEventHandler<HTMLInputElement> = (event) => {
@@ -57,6 +61,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
       data-disabled={disabled ? "true" : "false"}
       data-field-surface={fieldSurface}
       data-invalid={isInvalid ? "true" : "false"}
+      data-shape={shape}
       data-size={size}
     >
       {leading !== undefined && leading !== null && (
@@ -64,6 +69,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
       )}
       <input
         {...props}
+        {...fieldAccessibility}
         aria-invalid={resolvedAriaInvalid}
         className={styles.input}
         data-hide-native-password-reveal={hideNativePasswordReveal ? "true" : undefined}

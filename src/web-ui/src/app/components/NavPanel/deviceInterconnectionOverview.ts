@@ -12,6 +12,22 @@ export type DeviceOverviewActivity =
   | 'controlling'
   | 'background-execution';
 /**
+ * Host kind a device reports, from the account directory (`device_kind`) or
+ * from a live peer control link (`host_type`). Controllers report `mobile` or
+ * `watch` and are not hosts; anything unrecognized or missing stays `null`
+ * rather than being guessed, so the caller can fall back to weaker evidence.
+ */
+export type DeviceOverviewHostKind = 'desktop' | 'cli';
+
+const HOST_KINDS: Record<string, DeviceOverviewHostKind> = {
+  desktop: 'desktop',
+  cli: 'cli',
+};
+
+export function reportedHostKind(kind: string | null | undefined): DeviceOverviewHostKind | null {
+  return HOST_KINDS[kind?.trim().toLowerCase() ?? ''] ?? null;
+}
+/**
  * A connection service answers "which relay or network carries this link", a
  * fact no device row can state. A message app is not one of those: it is the
  * controller itself, already listed as a device, so reporting it here would only
@@ -31,6 +47,17 @@ export interface DeviceOverviewDevice {
   local: boolean;
   activities: DeviceOverviewActivity[];
   backgroundTaskCount: number;
+  /**
+   * System the device itself reported to the Relay. Absent for devices that
+   * never reported metadata; the controller's own platform never stands in for
+   * it, so an unknown system keeps the neutral artwork.
+   */
+  os?: string | null;
+  /**
+   * Whether this device is a headless host. Read from the kind the device
+   * reported, or from its control link when that link says something newer.
+   */
+  hostKind?: DeviceOverviewHostKind | null;
 }
 
 export interface DeviceOverviewConnectionService {
@@ -146,7 +173,15 @@ export interface DeviceOverviewDispatchJob {
 export interface DeviceInterconnectionOverviewInput {
   localDeviceName: string;
   fallbackMobileDeviceName?: string;
+  /** System reported by this machine's own device info, never the browser's. */
+  localDeviceOs?: string | null;
+  /** Kind this machine's own device info reported to the Relay. */
+  localDeviceKind?: string | null;
   peer: { deviceId: string; deviceName: string } | null;
+  /** System the rendered peer last reported to the Relay. */
+  peerDeviceOs?: string | null;
+  /** Kind the rendered peer last reported to the Relay. */
+  peerDeviceKind?: string | null;
   remoteStatus: RemoteConnectStatus | null;
   remoteStatusState: 'loading' | 'ready' | 'unavailable';
   dispatchJobs: DeviceOverviewDispatchJob[];
@@ -255,6 +290,10 @@ export function projectDeviceInterconnectionOverview(
     local: input.peer === null,
     activities: ['current-use'],
     backgroundTaskCount: 0,
+    os: (input.peer ? input.peerDeviceOs : input.localDeviceOs) ?? null,
+    hostKind: reportedHostKind(
+      input.peer ? input.peerDeviceKind : input.localDeviceKind,
+    ),
   });
 
   if (input.peer) {
@@ -265,14 +304,18 @@ export function projectDeviceInterconnectionOverview(
       local: true,
       activities: ['controlling'],
       backgroundTaskCount: 0,
+      os: input.localDeviceOs ?? null,
+      hostKind: reportedHostKind(input.localDeviceKind),
     });
   }
 
   let connectionService = input.peer ? input.accountService : null;
 
-  const network = selectRemoteNetworkConnection(input.remoteStatus);
-  if (network.connected && input.remoteStatus) {
-    for (const client of input.remoteStatus.clients) {
+  const networks = input.remoteStatus?.connections !== undefined
+    ? input.remoteStatus.connections.map(route => selectRemoteNetworkConnection(input.remoteStatus, null, route.method))
+    : [selectRemoteNetworkConnection(input.remoteStatus)];
+  for (const network of networks.filter(connection => connection.connected)) {
+    for (const client of network.clients) {
       addOrMergeDevice(devices, {
         id: `mobile:${client.id}`,
         name: formatDeviceDisplayName(client.name) || input.fallbackMobileDeviceName || 'Mobile device',

@@ -10,15 +10,18 @@
  *     SceneViewport (flex:1 — active scene content)
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { useCurrentWorkspace } from '../../infrastructure/contexts/WorkspaceContext';
 import { NavBar } from '../components/NavBar';
 import NavPanel from '../components/NavPanel/NavPanel';
-import { SceneChromeProvider, SceneTopBar } from '../components/SceneTopBar';
+import { SceneChromeProvider } from '../components/SceneTopBar';
+import WorkbenchLayout from '../workbench/WorkbenchLayout';
 import { SceneViewport } from '../scenes';
 import TerminalActionBridge from '../scenes/terminal/TerminalActionBridge';
 import { useApp } from '../hooks/useApp';
 import { selectActiveSceneId, useSceneStore } from '../stores/sceneStore';
+import { useI18n } from '@/infrastructure/i18n';
+import { useNavResize } from './useNavResize';
 import './WorkspaceBody.scss';
 
 const NAV_DEFAULT_WIDTH = 300;
@@ -47,6 +50,8 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
   isMaximized = false,
   sceneOverlay,
 }) => {
+  const { t } = useI18n('components');
+  const navId = useId();
   const { workspace: currentWorkspace } = useCurrentWorkspace();
   const { state, toggleLeftPanel } = useApp();
   const activeSceneId = useSceneStore(selectActiveSceneId);
@@ -54,84 +59,19 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
   const [navWidth, setNavWidth] = useState(NAV_DEFAULT_WIDTH);
   const navAreaRef = useRef<HTMLDivElement>(null);
   const navDividerRef = useRef<HTMLDivElement>(null);
-  // Active drag cleanup, so window listeners never leak if we unmount mid-drag.
-  const dragCleanupRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    return () => {
-      dragCleanupRef.current?.();
-    };
-  }, []);
-
-  const handleNavCollapseDragStart = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || isNavCollapsed) return;
-    event.preventDefault();
-
-    const startX = event.clientX;
-    const startWidth = navWidth;
-    let latestWidth = startWidth;
-    let hasCollapsed = false;
-    let frameId: number | null = null;
-
-    document.body.classList.add('openbitfun-is-dragging-nav-collapse');
-    document.body.classList.add('openbitfun-is-resizing-nav');
-
-    // During the drag we bypass React entirely: write the --nav-width CSS
-    // variable straight to the two elements that consume it (rAF-merged).
-    // React state is committed once on mouseup.
-    const applyWidth = () => {
-      frameId = null;
-      const value = `${latestWidth}px`;
-      navAreaRef.current?.style.setProperty('--nav-width', value);
-      navDividerRef.current?.style.setProperty('--nav-width', value);
-    };
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (hasCollapsed) return;
-      const deltaX = moveEvent.clientX - startX;
-      const rawWidth = startWidth + deltaX;
-
-      // Collapse only after the width hits minimum AND continues left by COLLAPSE_THRESHOLD
-      if (rawWidth <= NAV_MIN_WIDTH - COLLAPSE_THRESHOLD) {
-        hasCollapsed = true;
-        toggleLeftPanel();
-        cleanup();
-        return;
-      }
-      latestWidth = Math.min(NAV_MAX_WIDTH, Math.max(NAV_MIN_WIDTH, rawWidth));
-      if (frameId === null) {
-        frameId = requestAnimationFrame(applyWidth);
-      }
-    };
-
-    const handleMouseUp = () => cleanup();
-
-    function cleanup() {
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId);
-        frameId = null;
-      }
-      // Flush the final width synchronously, while `openbitfun-is-resizing-nav`
-      // still suppresses the width transition. Without this, a drop that lands
-      // between two animation frames leaves the DOM at the last painted width:
-      // React only rewrites the inline var when `navWidth` actually changes, so
-      // ending a drag back on the previous width would strand the DOM out of
-      // sync with state, and any other drop would glide to its final width
-      // ($motion-base) while the divider's `left` jumps instantly.
-      applyWidth();
-      document.body.classList.remove('openbitfun-is-dragging-nav-collapse');
-      document.body.classList.remove('openbitfun-is-resizing-nav');
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      dragCleanupRef.current = null;
-      // Commit the final width through React once.
-      setNavWidth(latestWidth);
-    }
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    dragCleanupRef.current = cleanup;
-  }, [isNavCollapsed, navWidth, toggleLeftPanel]);
+  const navGripRef = useRef<SVGPathElement>(null);
+  const navResize = useNavResize({
+    areaRef: navAreaRef,
+    dividerRef: navDividerRef,
+    gripRef: navGripRef,
+    width: navWidth,
+    minWidth: NAV_MIN_WIDTH,
+    maxWidth: NAV_MAX_WIDTH,
+    collapseThreshold: COLLAPSE_THRESHOLD,
+    collapsed: isNavCollapsed,
+    onWidthChange: setNavWidth,
+    onCollapse: toggleLeftPanel,
+  });
 
   return (
     <div
@@ -155,6 +95,7 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
 
       {/* Left: nav history bar + navigation sidebar — always rendered for slide animation */}
       <div
+        id={navId}
         ref={navAreaRef}
         className={`openbitfun-workspace-body__nav-area${isNavCollapsed ? ' is-collapsed' : ''}`}
         style={isNavCollapsed ? undefined : { '--nav-width': `${navWidth}px` } as React.CSSProperties}
@@ -176,12 +117,23 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
           ref={navDividerRef}
           className="openbitfun-workspace-body__nav-divider"
           style={{ '--nav-width': `${navWidth}px` } as React.CSSProperties}
-          onMouseDown={handleNavCollapseDragStart}
+          {...navResize}
           role="separator"
-          aria-hidden="true"
+          tabIndex={0}
+          aria-label={t('canvas.resizePanes')}
+          aria-orientation="vertical"
+          aria-controls={navId}
+          aria-valuemin={NAV_MIN_WIDTH}
+          aria-valuemax={NAV_MAX_WIDTH}
+          aria-valuenow={navWidth}
           data-openbitfun-scene="workbench"
           data-openbitfun-part="navDivider"
-        />
+          data-openbitfun-theme-scope="chrome"
+        >
+          <svg className="openbitfun-workspace-body__nav-grip" viewBox="0 0 48 120" aria-hidden="true" focusable="false">
+            <path ref={navGripRef} d="M 24 44 L 24 76" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          </svg>
+        </div>
       )}
 
       {/* Right: visual scene surface + any shell-level overlay */}
@@ -193,16 +145,18 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
         >
           <SceneChromeProvider activeSceneId={activeSceneId}>
             <div data-openbitfun-creation-slot="scene-header" />
-            <SceneTopBar
+            <WorkbenchLayout
+              workspacePath={currentWorkspace?.rootPath}
               onMinimize={onMinimize}
               onMaximize={onMaximize}
               onClose={onClose}
               isMaximized={isMaximized}
-            />
-            <SceneViewport
-              workspacePath={currentWorkspace?.rootPath}
-              isEntering={isEntering}
-            />
+            >
+              <SceneViewport paned
+                workspacePath={currentWorkspace?.rootPath}
+                isEntering={isEntering}
+              />
+            </WorkbenchLayout>
             <div data-openbitfun-creation-slot="scene-footer" />
           </SceneChromeProvider>
         </div>

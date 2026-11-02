@@ -316,10 +316,15 @@ export const EditorBreadcrumb: React.FC<EditorBreadcrumbProps> = ({
     setCurrentDirPath(dirPath);
     try {
       if (!workspaceId) throw new Error('Workspace ID is required to browse an editor directory');
-      const fileTree = await workspaceAPI.getFileTree(workspaceId, dirPath, 1);
-      const rootNode = fileTree?.[0];
-      const children = rootNode?.children || [];
-      
+      // Root cause: the previous getFileTree(workspace, dir, 1) built a directory
+      // tree and wrapped it in a synthetic root node that the breadcrumb discarded,
+      // so opening the dropdown fetched far more than the single directory level it
+      // renders. explorerGetChildren is the single-level children read already backing
+      // the explorer; it resolves the same workspace connection (local or SSH) and
+      // keeps the same read-failure behavior, so a failed read still surfaces as an
+      // empty menu instead of fabricated segments.
+      const children = await workspaceAPI.explorerGetChildren(workspaceId, dirPath);
+
       const items: FileItem[] = children
         .filter((entry: any) => {
           const name = entry.name || '';

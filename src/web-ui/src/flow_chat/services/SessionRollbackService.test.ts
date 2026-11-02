@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const hostQueueMock = vi.hoisted(() => ({ supported: vi.fn(() => false), refresh: vi.fn() }));
+vi.mock('./hostDialogQueue', () => ({
+  hostQueueSupported: hostQueueMock.supported,
+  hostDialogQueue: () => ({ refresh: hostQueueMock.refresh }),
+}));
+
 const agentApiMock = vi.hoisted(() => ({ rollbackSessionToTurn: vi.fn() }));
 const eventBusMock = vi.hoisted(() => ({ emit: vi.fn() }));
 const loadSessionHistory = vi.hoisted(() => vi.fn(async () => undefined));
@@ -37,6 +43,8 @@ describe('SessionRollbackService', () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
+    hostQueueMock.supported.mockReturnValue(false);
+    hostQueueMock.refresh.mockResolvedValue({ items: [] });
     loadSessionHistory.mockResolvedValue(undefined);
     sessions.clear();
     historyViews.clear();
@@ -57,6 +65,14 @@ describe('SessionRollbackService', () => {
         entries: [{ ordinal: 2, storageTurnIndex: 7, turnId: 'turn-7' }],
       },
     });
+  });
+
+  it('refuses host-owned queued work before invoking rollback', async () => {
+    hostQueueMock.supported.mockReturnValue(true);
+    hostQueueMock.refresh.mockResolvedValue({ items: [{ turnId: 'queued-turn', status: 'blocked' }] });
+    await expect(rollbackSessionToTurn({ sessionId: 'session-1', targetTurnId: 'turn-7', kind: 'rollback' }))
+      .rejects.toThrow('Clear the host message queue');
+    expect(agentApiMock.rollbackSessionToTurn).not.toHaveBeenCalled();
   });
 
   it('refuses path-only mutations until legacy identity has been hydrated', async () => {

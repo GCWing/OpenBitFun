@@ -19,27 +19,41 @@ import { globalEventBus } from '../../infrastructure/event-bus';
 import { createLogger } from '@/shared/utils/logger';
 import { i18nService } from '@/infrastructure/i18n';
 import { loadPanelWidth, savePanelWidth, STORAGE_KEYS } from '../layout/panelConfig';
+import {
+  createSessionPaneLayoutStore,
+  projectLegacySessionPaneLayout,
+  sessionPaneLayoutStore,
+  type LegacySessionPaneLayout,
+  type SessionPaneLayoutStore,
+} from '../scenes/session/sessionPaneLayoutStore';
 
 const log = createLogger('AppManager');
+type ShellLayout = Omit<LayoutState, keyof LegacySessionPaneLayout>;
+type ShellState = Omit<AppState, 'layout'> & { layout: ShellLayout };
 
 export class AppManager implements IAppManager {
-  private state: AppState;
+  private state: ShellState;
+  private readonly paneLayout: SessionPaneLayoutStore;
+  private readonly unsubscribePaneLayout: () => void;
+  private updatingLayout = false;
   private listeners = new Set<(event: AppEvent) => void>();
   /** Coalesce rapid layout/state updates into one event per animation frame (reduces main-thread churn). */
   private pendingStateNotifyRaf: number | null = null;
 
-  constructor() {
+  constructor(paneLayout = createSessionPaneLayoutStore()) {
+    this.paneLayout = paneLayout;
     // Clear legacy panel state data (run once)
     this.clearPersistedPanelState();
     
     // Initialize state
+    const { chatCollapsed: _chat, centerPanelCollapsed: _center, rightPanelCollapsed: _content,
+      rightPanelWidth: _width, ...shellDefaults } = DEFAULT_LAYOUT_STATE;
     this.state = {
       layout: { 
-        ...DEFAULT_LAYOUT_STATE,
+        ...shellDefaults,
         leftPanelWidth: typeof window !== 'undefined' && window.innerWidth > 0 
           ? Math.min(300, Math.floor(window.innerWidth * 0.15)) // Left 15%, max 300px
           : 280,
-        rightPanelWidth: loadPanelWidth(STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH, DEFAULT_LAYOUT_STATE.rightPanelWidth),
         bottomTerminalPanelHeight: loadPanelWidth(
           STORAGE_KEYS.BOTTOM_TERMINAL_PANEL_LAST_HEIGHT,
           DEFAULT_LAYOUT_STATE.bottomTerminalPanelHeight
@@ -53,6 +67,11 @@ export class AppManager implements IAppManager {
       isLoading: false,
       error: null
     };
+    this.unsubscribePaneLayout = this.paneLayout.subscribe(() => {
+      if (this.updatingLayout) return;
+      this.notifyStateChange();
+      this.emitEvent({ type: 'layout:changed', payload: projectLegacySessionPaneLayout(this.paneLayout.getState()) });
+    });
 
     // Set up event listeners
     this.setupEventListeners();
@@ -60,36 +79,41 @@ export class AppManager implements IAppManager {
 
   // State management
   getState(): AppState {
-    return { ...this.state };
+    return {
+      ...this.state,
+      layout: { ...this.state.layout, ...projectLegacySessionPaneLayout(this.paneLayout.getState()) },
+    };
   }
 
-  private updateState(updates: Partial<AppState>): void {
+  private updateState(updates: Partial<ShellState>): void {
     this.state = { ...this.state, ...updates };
     this.notifyStateChange();
   }
 
   updateLayout(layout: Partial<LayoutState>): void {
-    const hasLayoutChange = Object.entries(layout).some(([key, value]) => (
-      this.state.layout[key as keyof LayoutState] !== value
-    ));
-    if (!hasLayoutChange) {
-      return;
+    const previous = this.getState().layout;
+    const { chatCollapsed, centerPanelCollapsed, rightPanelCollapsed, rightPanelWidth, ...shellLayout } = layout;
+    this.updatingLayout = true;
+    try {
+      this.paneLayout.getState().applyLegacyLayout({ chatCollapsed, centerPanelCollapsed, rightPanelCollapsed, rightPanelWidth });
+      this.state = { ...this.state, layout: { ...this.state.layout, ...shellLayout } };
+    } finally {
+      this.updatingLayout = false;
     }
-
-    if (typeof layout.rightPanelWidth === 'number') {
-      savePanelWidth(STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH, layout.rightPanelWidth);
-    }
+    const next = this.getState().layout;
+    if (!Object.keys(next).some(key => previous[key as keyof LayoutState] !== next[key as keyof LayoutState])) return;
     if (typeof layout.bottomTerminalPanelHeight === 'number') {
       savePanelWidth(STORAGE_KEYS.BOTTOM_TERMINAL_PANEL_LAST_HEIGHT, layout.bottomTerminalPanelHeight);
     }
 
-    const newLayout = { ...this.state.layout, ...layout };
-    this.state = { ...this.state, layout: newLayout };
     this.notifyStateChange();
-    
+    const paneProjection = projectLegacySessionPaneLayout(this.paneLayout.getState());
+    const paneChanged = Object.keys(paneProjection).some(key => (
+      previous[key as keyof LegacySessionPaneLayout] !== next[key as keyof LegacySessionPaneLayout]
+    ));
     this.emitEvent({
       type: 'layout:changed',
-      payload: layout
+      payload: paneChanged ? { ...layout, ...paneProjection } : layout
     });
   }
 
@@ -278,14 +302,11 @@ export class AppManager implements IAppManager {
     const newTab: TabInfo = { ...tab, id: tabId };
 
     const updatedTabs = [...this.state.layout.rightPanelTabs, newTab];
-    const newLayout = { 
-      ...this.state.layout, 
+    this.updateLayout({
       rightPanelTabs: updatedTabs,
       rightPanelActiveTabId: tabId,
       rightPanelCollapsed: false // Auto-expand right panel
-    };
-
-    this.updateState({ layout: newLayout });
+    });
 
     this.emitEvent({
       type: 'tab:opened',
@@ -303,14 +324,11 @@ export class AppManager implements IAppManager {
       newActiveTabId = updatedTabs.length > 0 ? updatedTabs[updatedTabs.length - 1].id : null;
     }
 
-    const newLayout = { 
-      ...this.state.layout, 
+    this.updateLayout({
       rightPanelTabs: updatedTabs,
       rightPanelActiveTabId: newActiveTabId,
       rightPanelCollapsed: updatedTabs.length === 0 // Collapse when no tabs remain
-    };
-
-    this.updateState({ layout: newLayout });
+    });
 
     this.emitEvent({
       type: 'tab:closed',
@@ -324,13 +342,10 @@ export class AppManager implements IAppManager {
       throw new Error(`Tab not found: ${tabId}`);
     }
 
-    const newLayout = { 
-      ...this.state.layout, 
+    this.updateLayout({
       rightPanelActiveTabId: tabId,
       rightPanelCollapsed: false
-    };
-
-    this.updateState({ layout: newLayout });
+    });
 
     this.emitEvent({
       type: 'tab:selected',
@@ -367,7 +382,7 @@ export class AppManager implements IAppManager {
 
   private notifyStateChange(): void {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-      globalEventBus.emit('app:state:changed', this.state);
+      globalEventBus.emit('app:state:changed', this.getState());
       return;
     }
     if (this.pendingStateNotifyRaf != null) {
@@ -375,7 +390,7 @@ export class AppManager implements IAppManager {
     }
     this.pendingStateNotifyRaf = window.requestAnimationFrame(() => {
       this.pendingStateNotifyRaf = null;
-      globalEventBus.emit('app:state:changed', this.state);
+      globalEventBus.emit('app:state:changed', this.getState());
     });
   }
 
@@ -440,9 +455,10 @@ export class AppManager implements IAppManager {
 
   // Cleanup resources
   destroy(): void {
+    this.unsubscribePaneLayout();
     this.listeners.clear();
   }
 }
 
 // Default application manager instance
-export const appManager = new AppManager();
+export const appManager = new AppManager(sessionPaneLayoutStore);

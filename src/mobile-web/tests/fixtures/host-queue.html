@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mobile queue layout</title></head>
+<body><script type="module">
+import { mountHostQueueFixture } from './host-queue.tsx';
+const params = new URLSearchParams(location.search);
+localStorage.setItem('openbitfun-mobile-language', params.get('lang') ?? 'zh-CN');
+document.documentElement.setAttribute('data-color-scheme', params.get('theme') ?? 'dark');
+mountHostQueueFixture({ count: Number(params.get('count') ?? 1), expanded: params.get('expanded') !== 'false' });
+</script></body></html>

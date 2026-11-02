@@ -8,17 +8,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 import { createTodoRenderItems } from './todoRenderItems';
 import { TodoWriteDisplay } from './TodoWriteDisplay';
+import { getToolCardConfig } from './toolCardMetadata';
 import { FLOWCHAT_COLLAPSE_DURATION_MS } from '../components/modern/flowChatCollapseMotion';
+import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
+
+const todoHook = vi.hoisted(() => ({
+  read: vi.fn<(...args: unknown[]) => Array<{ content: string; status: string }>>(() => []),
+}));
 
 vi.mock('react-i18next', async (importOriginal) => ({
   ...await importOriginal<typeof import('react-i18next')>(),
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: Record<string, unknown>) => key === 'toolCards.todoWrite.summaryProgress'
+      ? `${options?.task} · ${options?.completed}/${options?.total}` : key,
   }),
 }));
 
 vi.mock('../hooks/useDialogTurnTodos', () => ({
-  useDialogTurnTodos: () => [],
+  useDialogTurnTodos: (...args: unknown[]) => todoHook.read(...args),
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -75,6 +82,7 @@ describe('TodoWriteDisplay expansion', () => {
   let root: Root;
 
   beforeEach(() => {
+    todoHook.read.mockReset().mockReturnValue([]);
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -132,6 +140,20 @@ describe('TodoWriteDisplay expansion', () => {
     expect(container.querySelector('[data-openbitfun-part="todoList"]')).toBeNull();
   });
 
+  it('shows the recorded imported plan through the native todo card without current-session tasks', () => {
+    todoHook.read.mockReturnValue([{ content: 'Current session task', status: 'in_progress' }]);
+    const toolItem = projectEffectiveToolItem({
+      id: 'foreign-plan', type: 'tool', timestamp: 1, status: 'completed', importedSource: 'codex', toolName: 'update_plan',
+      toolCall: { id: 'foreign-plan', input: { plan: [{ step: 'Recorded plan task', status: 'in_progress' }] } },
+      toolResult: { success: true, result: 'Plan updated' },
+    });
+    act(() => root.render(<TodoWriteDisplay toolItem={toolItem} config={config} sessionId="native" turnId="turn" />));
+    expect(container.querySelector('[data-openbitfun-adapter="todo-write"]')).not.toBeNull();
+    expect(container.textContent).toContain('Recorded plan task');
+    expect(container.textContent).not.toContain('Current session task');
+    expect(todoHook.read).toHaveBeenCalledWith(undefined, 'turn');
+  });
+
   it('shows the first task when all tasks are pending', () => {
     act(() => {
       root.render(
@@ -148,5 +170,32 @@ describe('TodoWriteDisplay expansion', () => {
     const summary = container.querySelector('[data-openbitfun-tool-card="todo"] [data-openbitfun-part="summary"]');
     expect(summary?.textContent).toContain('First task');
     expect(summary?.textContent).not.toContain('Second task');
+  });
+
+  it('keeps the next task and expandable list prominent with a legacy compact config', () => {
+    const toolItem = createTodoWriteItem('pending', [
+      { id: 'todo-a', content: 'Finished task', status: 'completed' },
+      { id: 'todo-b', content: 'Next task', status: 'pending' },
+    ]);
+
+    act(() => {
+      root.render(<TodoWriteDisplay toolItem={toolItem} config={config} />);
+    });
+    const summary = container.querySelector('[data-openbitfun-part="summary"]');
+    expect(summary?.textContent).toBe('Next task · 1/2');
+    expect(container.querySelector('[data-openbitfun-component="icon"][data-openbitfun-name="list-todo"]')).not.toBeNull();
+    expect(getToolCardConfig('TodoWrite').attention).toBe('prominent');
+    expect(container.querySelector('[data-openbitfun-tool-card="todo"]')?.getAttribute('data-openbitfun-attention')).toBe('prominent');
+
+    act(() => {
+      root.render(<TodoWriteDisplay toolItem={toolItem} config={{ ...config, displayMode: 'compact' }} />);
+    });
+    expect(container.querySelector('[data-openbitfun-view="compact"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="summary"]')?.textContent).toBe('Next task · 1/2');
+    act(() => {
+      container.querySelector<HTMLElement>('[data-testid="todo-tool-card-toggle"]')?.click();
+    });
+    expect(container.querySelectorAll('[data-openbitfun-part="todoItem"]')).toHaveLength(2);
+    expect(container.querySelector('[data-openbitfun-part="todoProgress"]')?.getAttribute('aria-valuenow')).toBe('1');
   });
 });

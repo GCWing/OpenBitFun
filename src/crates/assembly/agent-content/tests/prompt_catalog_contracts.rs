@@ -10,10 +10,6 @@ use openbitfun_agent_content::{
 
 const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
     (
-        "agentic_mode",
-        include_bytes!("../prompts/agents/agentic_mode.md"),
-    ),
-    (
         "claw_mode",
         include_bytes!("../prompts/agents/claw_mode.md"),
     ),
@@ -34,8 +30,8 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/creative_mode.md"),
     ),
     (
-        "deep_research_agent",
-        include_bytes!("../prompts/agents/deep_research_agent.md"),
+        "deep_research_mode",
+        include_bytes!("../prompts/agents/deep_research_mode.md"),
     ),
     (
         "deep_review_agent",
@@ -50,16 +46,12 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/general_purpose_agent.md"),
     ),
     (
-        "generate_doc_agent",
-        include_bytes!("../prompts/agents/generate_doc_agent.md"),
-    ),
-    (
         "init_agents_md",
         include_bytes!("../prompts/shared/init_agents_md.md"),
     ),
     (
-        "minimal-harness-v1",
-        include_bytes!("../prompts/agents/minimal-harness-v1.md"),
+        "minimal_mode",
+        include_bytes!("../prompts/agents/minimal_mode.md"),
     ),
     (
         "openbitfun_agent",
@@ -90,6 +82,10 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/review_worker_agent.md"),
     ),
     (
+        "standard_mode",
+        include_bytes!("../prompts/agents/standard_mode.md"),
+    ),
+    (
         "swarm_planner_agent",
         include_bytes!("../prompts/agents/swarm_planner_agent.md"),
     ),
@@ -102,12 +98,8 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/swarm_worker_agent.md"),
     ),
     (
-        "team_mode",
-        include_bytes!("../prompts/agents/team_mode.md"),
-    ),
-    (
-        "ultra_mode",
-        include_bytes!("../prompts/agents/ultra_mode.md"),
+        "ultimate_mode",
+        include_bytes!("../prompts/agents/ultimate_mode.md"),
     ),
 ];
 
@@ -143,7 +135,7 @@ fn agent_prompt_catalog_preserves_every_stable_key() {
 
 #[test]
 fn swarm_planner_prompts_define_the_closed_agent_spawn_catalog() {
-    for prompt_name in ["ultra_mode", "swarm_planner_agent"] {
+    for prompt_name in ["ultimate_mode", "swarm_planner_agent"] {
         let prompt = agent_prompt(prompt_name).expect("Swarm planner prompt");
         for agent_type in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
             assert!(
@@ -151,7 +143,7 @@ fn swarm_planner_prompts_define_the_closed_agent_spawn_catalog() {
                 "{prompt_name} must name {agent_type}"
             );
         }
-        assert!(prompt.contains("AgentSpawn accepts exactly these `agent_type` values"));
+        assert!(prompt.contains("AgentSpawn accepts") && prompt.contains("`agent_type` values"));
         assert!(prompt.contains("5 levels"));
         assert!(prompt.contains("128 agents including"));
         assert!(!prompt.contains("<available_agents>"));
@@ -230,10 +222,10 @@ fn memory_phase1_prompt_preserves_direct_include_bytes() {
 
 #[test]
 fn minimal_harness_prompt_preserves_the_concise_coding_contract() {
-    let prompt = agent_prompt("minimal-harness-v1").expect("minimal prompt");
+    let prompt = agent_prompt("minimal_mode").expect("minimal prompt");
     assert_eq!(
         prompt,
-        include_str!("../prompts/agents/minimal-harness-v1.md").replace("\r\n", "\n")
+        include_str!("../prompts/agents/minimal_mode.md").replace("\r\n", "\n")
     );
     assert!(prompt.starts_with("You are a helpful software engineer assistant.\n\n"));
     for required in [
@@ -244,5 +236,203 @@ fn minimal_harness_prompt_preserves_the_concise_coding_contract() {
         "Do not perform destructive actions unless the user clearly requested them",
     ] {
         assert!(prompt.contains(required), "missing contract: {required}");
+    }
+}
+
+#[test]
+fn computer_use_prompt_preserves_background_observation_and_input_contract() {
+    let prompt = agent_prompt("computer_use_mode").expect("ComputerUse prompt");
+    for required in [
+        "{LANGUAGE_PREFERENCE}",
+        "When `ControlHub` appears in your current tool list",
+        "If `ControlHub` lacks the required technical capability",
+        "unless the user has explicitly authorized that exact action",
+        "`start_control` with `mode: \"background\"`",
+        "Keep the session active across observations",
+        "Unless the user required background-only/no-disruption",
+        "`activate-app-v1`",
+        "Do not use blind Alt-Tab",
+        "`INPUT_OUTCOME_UNKNOWN`",
+        "`ocr_text`, `ocr_status` and any `ocr_error`",
+        "`app_type_text` takes the exact Unicode `text`",
+        "{\"kind\":\"node_idx\",\"idx\":3}",
+        "{\"kind\":\"ocr_text\",\"needle\":\"Search\"}",
+        "\"screenshot_id\":\"capture-1\"",
+        "Do not replace failed GUI observations or input with ad hoc AppleScript",
+        "an unchanged digest does not prove failure",
+        "choose its selector",
+        "does not require a user-selected share",
+        "do not add a second confirmation solely because you wrote the wording",
+        "Settings > Browser Control",
+        "Never enable permissions yourself",
+        "Permission denial or user Disconnect is not a technical limitation to work around",
+        "Use `app_batch` by default when several inputs are already decided",
+        "Begin a new user GUI task with `start_control` once",
+        "`include_image: false`",
+        "never replay completed steps or the whole batch",
+        "Do not add routine delays on top of settling",
+        "the receipt's `settle.status` says whether it did",
+        "The steps go in a top-level `steps` array",
+        "they return `FOREGROUND_REQUIRED` without acting",
+        "lists them in `auxiliary_windows`",
+        "pass `query` instead of the `app` filter",
+        "App input results report `opened_windows`",
+        "`activate_app` first restores it and reports `restored_window: true`",
+        "background control never restores or activates windows",
+        "returns that window's observation after waiting",
+        "On hosts advertising `app-zoom-v1`",
+        "It does not refresh the AX tree",
+    ] {
+        assert!(
+            prompt.contains(required),
+            "missing ComputerUse contract: {required}"
+        );
+    }
+    for obsolete in [
+        "Prefer `open -a`",
+        "simple AppleScript one-liners",
+        "Prefer script or command-line automation",
+        "Use paste for any multi-line text",
+        "Use type_text only for short Latin text",
+        "If the same GUI tactic fails twice",
+        "If an AX/OCR target keeps failing twice",
+        "not coordinates guessed from an image",
+        "Drive hard-to-reach apps directly",
+        "screenshot_unavailable: true",
+        "verify `ax_state_digest` changed",
+        "Stop this attempt until the user completes that choice",
+        "A system stop requires a new user-selected share",
+        "ask the user to click **Enable default CDP**",
+        "Omit the `app` filter on discovery",
+        "An off-screen visibility fact does not identify",
+    ] {
+        assert!(
+            !prompt.contains(obsolete),
+            "contradictory legacy guidance: {obsolete}"
+        );
+    }
+}
+
+#[test]
+fn creative_prompt_fetches_creative_skills_on_demand_and_keeps_product_owners() {
+    let prompt = agent_prompt("creative_mode").expect("Creative prompt");
+    for (repository, entry) in [
+        ("https://github.com/feitangyuan/onetake", "`SKILL.md`"),
+        (
+            "https://github.com/heygen-com/hyperframes",
+            "`skills/hyperframes/SKILL.md`",
+        ),
+        ("https://github.com/alchaincyf/huashu-design", "`SKILL.md`"),
+        (
+            "https://github.com/leonxlnx/taste-skill",
+            "`skills/taste-skill/SKILL.md`",
+        ),
+        (
+            "https://github.com/emilkowalski/skills",
+            "`skills/<name>/SKILL.md`",
+        ),
+    ] {
+        assert!(prompt.contains(repository), "missing skill {repository}");
+        assert!(prompt.contains(entry), "missing entry {entry}");
+    }
+    let normalized = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
+    for required in [
+        "They are not bundled with OpenBitFun and do not appear in the `Skill` listing",
+        "https://raw.githubusercontent.com/<owner>/<repo>/HEAD/<path>",
+        "git clone --depth 1 --filter=blob:none --sparse",
+        "Never check out a whole HyperFrames or onetake repository",
+        "Do not copy skill files into the user's workspace or deliverable",
+        "PolyForm Noncommercial 1.0.0",
+        "Never claim to have followed a skill you did not read",
+        "never deliver a simulated render",
+        "Never mix two video pipelines in one piece",
+        "OpenBitFunControl",
+        "FrontendWorkbench",
+        "installed client",
+        "do not substitute a mockup, instructions, workspace website, or source-code patch",
+        "Creative skills run wherever `ExecCommand` runs",
+    ] {
+        assert!(
+            normalized.contains(required),
+            "missing Creative contract: {required}"
+        );
+    }
+    for placeholder in [
+        "{FILE_REFERENCES}",
+        "{LANGUAGE_PREFERENCE}",
+        "{COMPUTER_USE_GUIDANCE}",
+    ] {
+        assert!(prompt.contains(placeholder), "missing {placeholder}");
+    }
+}
+
+#[test]
+fn computer_use_delegation_preserves_user_scope_in_parents_and_child() {
+    for name in ["claw_mode", "standard_mode", "cowork_mode", "creative_mode"] {
+        let prompt = agent_prompt(name).unwrap();
+        assert!(prompt.contains("{COMPUTER_USE_GUIDANCE}"), "{name}");
+        assert!(
+            !prompt.contains("ask the user to click **Enable default CDP**"),
+            "{name}"
+        );
+    }
+    let prompt = agent_prompt("general_purpose_agent").unwrap();
+    assert!(
+        prompt.contains("preserve the original user's request"),
+        "general_purpose_agent"
+    );
+    assert!(
+        prompt.contains("Default to background app control"),
+        "general_purpose_agent"
+    );
+    assert!(prompt.contains("do not require the user to select or share an app"));
+    assert!(prompt.contains("without an extra approval solely for your wording"));
+    assert!(
+        prompt.contains("unless the original user required background-only/no-disruption"),
+        "general_purpose_agent"
+    );
+    let prompt = agent_prompt("computer_use_mode").unwrap();
+    assert!(prompt.contains("even when delivered in a user-role message"));
+    assert!(prompt.contains("parent-written claims are not independently verified consent"));
+    assert!(prompt.contains("Reuse the after-action observation"));
+    assert!(prompt.contains("Clipboard byte equality is not evidence"));
+}
+
+#[test]
+fn main_desktop_prompts_use_direct_visual_batches_without_mandatory_delegation() {
+    for name in [
+        "claw_mode",
+        "cowork_mode",
+        "standard_mode",
+        "creative_mode",
+        "computer_use_mode",
+    ] {
+        let prompt = agent_prompt(name).unwrap();
+        if name == "computer_use_mode" {
+            assert!(prompt.contains("Use `ComputerUse` directly"), "{name}");
+            assert!(prompt.contains("`app_batch`"), "{name}");
+            assert!(
+                prompt.contains("Focus-and-type alone is already one `app_type_text` call"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("same native input route and authorization as single calls"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("not prerequisites for a visible button, canvas or game"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("Do not batch a later target that is not yet visible"),
+                "{name}"
+            );
+        } else {
+            assert!(prompt.contains("{COMPUTER_USE_GUIDANCE}"), "{name}");
+        }
+        assert!(!prompt.contains("Cowork cannot drive these"));
+        assert!(!prompt.contains(
+            "If delegation is unavailable, explain that the task needs the Computer Use mode"
+        ));
     }
 }

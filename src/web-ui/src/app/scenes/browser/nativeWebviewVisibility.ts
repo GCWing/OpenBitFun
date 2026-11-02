@@ -15,13 +15,14 @@ export function rectanglesIntersect(first: Rectangle, second: Rectangle): boolea
     && second.bottom > first.top && second.top < first.bottom;
 }
 
-export function hasNativeWebviewOccluder(viewport: HTMLElement, bounds: Rectangle): boolean {
+export function hasNativeWebviewOccluder(viewport: HTMLElement, bounds: Rectangle, previousBounds?: Rectangle): boolean {
   const doc = viewport.ownerDocument;
   return Array.from(doc.querySelectorAll<HTMLElement>(NATIVE_WEBVIEW_OCCLUSION_SELECTOR)).some(overlay => {
     // A browser hosted inside a dialog must not be hidden by its own host.
     if (overlay.contains(viewport)) return false;
     const rect = overlay.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0 || !rectanglesIntersect(bounds, rect)) return false;
+    if (rect.width <= 0 || rect.height <= 0 ||
+      (!rectanglesIntersect(bounds, rect) && (!previousBounds || !rectanglesIntersect(previousBounds, rect)))) return false;
     const style = doc.defaultView!.getComputedStyle(overlay);
     // Opacity can be zero on the first frame of an entering floating surface.
     // Reserve its bounds through the animation until it is hidden or unmounted.

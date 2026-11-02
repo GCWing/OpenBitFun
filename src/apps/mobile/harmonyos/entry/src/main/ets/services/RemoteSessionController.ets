@@ -86,7 +86,8 @@ export class RemoteSessionController {
     query: string,
     filter: string,
     remoteAvailable: boolean,
-    isConnected: boolean
+    isConnected: boolean,
+    propagateFailure: boolean = false
   ): Promise<void> {
     if (!remoteAvailable) {
       return;
@@ -113,6 +114,7 @@ export class RemoteSessionController {
       if (generation !== this.listGeneration) return;
       this.callbacks.onSessionError(ConnectionErrorPolicy.errorText(err));
       this.callbacks.onConnectionFailed(err);
+      if (propagateFailure) throw new Error(String(err));
     } finally {
       if (generation === this.listGeneration) this.finishListRequest();
     }

@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DISPATCH_JOB_POLL_INTERVAL_MS,
+  DISPATCH_IDLE_DISCOVERY_INTERVAL_MS,
   dispatchEventId,
   installDispatchJobObserver,
   projectDispatchAgentEvent,
@@ -17,6 +18,7 @@ import {
   type DispatchStatusResponse,
 } from './types';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { getTurnOutputDurationMs, getTurnTtftMs } from '@/flow_chat/utils/turnUsageMetrics';
 import { stateMachineManager } from '@/flow_chat/state-machine';
 import {
   SessionExecutionEvent,
@@ -30,6 +32,7 @@ import {
 } from '@/flow_chat/store/runtimeStatusStore';
 
 const mocks = vi.hoisted(() => ({
+  peerModeActive: false,
   listJobs: vi.fn(),
   status: vi.fn(),
   loadTranscript: vi.fn(),
@@ -49,7 +52,7 @@ vi.mock('./dispatchApi', () => ({
 }));
 
 vi.mock('@/infrastructure/peer-device/peerModeFlag', () => ({
-  isPeerDeviceModeActive: () => false,
+  isPeerDeviceModeActive: () => mocks.peerModeActive,
 }));
 
 vi.mock('@/flow_chat/services/AgenticEventListener', () => ({
@@ -330,6 +333,7 @@ function createDeferred<T>() {
 describe('DispatchJobObserver', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    mocks.peerModeActive = false;
     dispatchJobStore.getState().clear();
     useRuntimeStatusStore.getState().reset();
     flowChatStore.setState(() => ({
@@ -358,6 +362,248 @@ describe('DispatchJobObserver', () => {
       activeSessionId: null,
     }));
     vi.useRealTimers();
+  });
+
+  describe('poll scheduling', () => {
+    let cleanup: (() => void) | undefined;
+
+    afterEach(() => {
+      cleanup?.();
+      cleanup = undefined;
+    });
+
+    it.each(['visible', 'hidden'])('discovers idle jobs at a bounded low rate while %s', async visibility => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: visibility });
+      cleanup = installDispatchJobObserver(createContext());
+
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      // One initial discovery and two 30-second checks, previously 34 reads.
+      expect(mocks.listJobs).toHaveBeenCalledTimes(3);
+      expect(mocks.status).not.toHaveBeenCalled();
+      cleanup();
+      registerRunningJob();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(3);
+    });
+
+    it.each(['queued', 'running', 'submission_unknown'] as const)('keeps the fast cadence for %s jobs', async state => {
+      registerRunningJob();
+      dispatchJobStore.getState().registerJob({ ...dispatchJobStore.getState().jobs['job-1'], state });
+      mocks.listJobs.mockResolvedValue([{ ...runningOutboundRecord(), lastState: state }]);
+      mocks.status.mockResolvedValue(status({ state }));
+      cleanup = installDispatchJobObserver(createContext());
+
+      await vi.advanceTimersByTimeAsync(3 * DISPATCH_JOB_POLL_INTERVAL_MS);
+
+      expect(mocks.listJobs).toHaveBeenCalledTimes(4);
+      expect(mocks.status).toHaveBeenCalledTimes(4);
+    });
+
+    it.each(['visible', 'hidden'])('finds another instance\'s durable job without a renderer event while %s', async visibility => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: visibility });
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Only the host response changes: no store mutation, storage event or
+      // explicit refresh from the submitting instance reaches this renderer.
+      mocks.listJobs.mockResolvedValue([{ ...runningOutboundRecord(), lastCursor: 99 }]);
+      mocks.status.mockResolvedValue(status());
+      await vi.advanceTimersByTimeAsync(DISPATCH_IDLE_DISCOVERY_INTERVAL_MS - 1);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(1);
+      expect(mocks.status).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mocks.status).toHaveBeenCalledWith('job-1', 0);
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(mocks.status).toHaveBeenCalledTimes(2);
+    });
+
+    it('wakes immediately when this renderer registers a job during idle discovery', async () => {
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(0);
+      registerRunningJob();
+      mocks.status.mockResolvedValue(status());
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.status).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(mocks.status).toHaveBeenCalledTimes(2);
+    });
+
+    it('waits for terminal event draining before reducing the polling rate', async () => {
+      registerRunningJob();
+      mocks.status.mockResolvedValueOnce(status({
+        state: 'succeeded', cursor: 12,
+        events: [{ type: 'jobState', state: 'succeeded', timestamp: '2026-07-28T00:00:00Z' }],
+      })).mockResolvedValue(status({ state: 'succeeded', cursor: 12 }));
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatchJobStore.getState().jobs['job-1'].terminalDrained).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(mocks.status).toHaveBeenCalledTimes(2);
+      expect(dispatchJobStore.getState().jobs['job-1'].terminalDrained).toBe(true);
+      await vi.advanceTimersByTimeAsync(DISPATCH_IDLE_DISCOVERY_INTERVAL_MS - 1);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(3);
+      expect(mocks.status).toHaveBeenCalledTimes(2);
+
+      // A local follow-up must wake a terminal job without waiting 30 seconds.
+      dispatchJobStore.getState().markFollowUpAccepted('job-1', 'queued');
+      mocks.listJobs.mockResolvedValue([{ ...runningOutboundRecord(), lastState: 'queued' }]);
+      mocks.status.mockResolvedValue(status({ state: 'running', cursor: 12 }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.status).toHaveBeenCalledTimes(3);
+    });
+
+    it('preserves background progress, approval delivery and completion notifications', async () => {
+      registerRunningJob();
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      const context = createContext();
+      const permission = { requestId: 'approval-1', type: 'tool' };
+      context.flowChatStore.getState().sessions.get('session-1').dialogTurns = [];
+      mocks.status.mockResolvedValue(status());
+      cleanup = installDispatchJobObserver(context);
+      await vi.advanceTimersByTimeAsync(0);
+      mocks.status.mockResolvedValueOnce(status({
+        cursor: 10,
+        events: [{
+          type: 'agentEvent', timestamp: '2026-07-28T00:00:00Z',
+          event: { id: 'progress-1', frontendEventName: 'agentic://text-chunk',
+            frontendPayload: { sessionId: 'session-1', turnId: 'turn-1', roundId: 'round-1', text: 'working' } },
+        }],
+        pendingPermissions: [permission],
+      })).mockResolvedValue(status({ cursor: 10, pendingPermissions: [permission] }));
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(mocks.dispatchExternal).toHaveBeenCalledWith('agentic://text-chunk', expect.objectContaining({ text: 'working' }));
+      expect(dispatchJobStore.getState().jobs['job-1'].pendingPermissions).toEqual([permission]);
+      expect(mocks.sendSystemNotification).toHaveBeenCalledTimes(1);
+
+      // Approval acknowledgement requests a refresh immediately, not on the timer.
+      mocks.status.mockResolvedValue(status({ cursor: 10 }));
+      requestDispatchJobRefresh('job-1');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatchJobStore.getState().jobs['job-1'].pendingPermissions).toEqual([]);
+      mocks.status.mockResolvedValue(status({ state: 'succeeded', cursor: 10 }));
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(context.flowChatStore.markSessionUnreadCompletion).toHaveBeenCalledWith('session-1', 'completed');
+      expect(mocks.sendSystemNotification).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.sendSystemNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('retains full refresh requests across a slow read without overlapping polls', async () => {
+      const discovery = createDeferred<ReturnType<typeof runningOutboundRecord>[]>();
+      mocks.listJobs.mockReturnValueOnce(discovery.promise);
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(0);
+      requestDispatchJobRefresh('job-1');
+      requestDispatchJobRefresh();
+      await vi.advanceTimersByTimeAsync(2 * DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(1);
+      discovery.resolve([]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(2);
+    });
+
+    it('coalesces refreshes for different jobs during a slow target read without losing either', async () => {
+      registerRunningJob();
+      dispatchJobStore.getState().registerJob({
+        ...dispatchJobStore.getState().jobs['job-1'], jobId: 'job-2', sessionId: 'session-2',
+      });
+      mocks.listJobs.mockResolvedValue([
+        runningOutboundRecord(),
+        { ...runningOutboundRecord(), jobId: 'job-2', sessionId: 'session-2' },
+      ]);
+      const context = createContext();
+      const sessions = context.flowChatStore.getState().sessions;
+      sessions.set('session-2', {
+        ...sessions.get('session-1'), sessionId: 'session-2',
+        config: { ...sessions.get('session-1').config, dispatchJobId: 'job-2' },
+      });
+      mocks.status.mockResolvedValue(status());
+      cleanup = installDispatchJobObserver(context);
+      await vi.advanceTimersByTimeAsync(0);
+      mocks.status.mockClear();
+      mocks.listJobs.mockClear();
+
+      const targetRead = createDeferred<DispatchStatusResponse>();
+      mocks.status.mockReturnValueOnce(targetRead.promise);
+      requestDispatchJobRefresh('job-1');
+      await vi.advanceTimersByTimeAsync(0);
+      requestDispatchJobRefresh('job-1');
+      requestDispatchJobRefresh('job-2');
+      await vi.advanceTimersByTimeAsync(2 * DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(1);
+      expect(mocks.status).toHaveBeenCalledTimes(1);
+
+      targetRead.resolve(status());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(2);
+      expect(mocks.status.mock.calls).toEqual([
+        ['job-1', 0], ['job-1', 0], ['job-2', 0],
+      ]);
+    });
+
+    it('replays a job submitted and completed by another instance between idle discoveries', async () => {
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(0);
+      mocks.listJobs.mockResolvedValue([{
+        ...runningOutboundRecord(), lastState: 'succeeded', lastCursor: 99,
+      }]);
+      mocks.status.mockResolvedValueOnce(status({
+        state: 'succeeded', cursor: 99,
+        events: [{ type: 'jobState', state: 'succeeded', timestamp: '2026-07-28T00:00:00Z' }],
+      })).mockResolvedValue(status({ state: 'succeeded', cursor: 99 }));
+
+      await vi.advanceTimersByTimeAsync(DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.status).toHaveBeenCalledWith('job-1', 0);
+      await vi.advanceTimersByTimeAsync(DISPATCH_JOB_POLL_INTERVAL_MS);
+      expect(dispatchJobStore.getState().jobs['job-1']).toMatchObject({
+        cursor: 99, state: 'succeeded', terminalDrained: true,
+      });
+    });
+
+    it('does not revive a disposed observer when its discovery or queued refresh finishes', async () => {
+      const discovery = createDeferred<ReturnType<typeof runningOutboundRecord>[]>();
+      mocks.listJobs.mockReturnValueOnce(discovery.promise);
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(0);
+      requestDispatchJobRefresh();
+      cleanup();
+      discovery.resolve([runningOutboundRecord()]);
+
+      await vi.advanceTimersByTimeAsync(2 * DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(1);
+      expect(mocks.status).not.toHaveBeenCalled();
+      expect(dispatchJobStore.getState().jobs).toEqual({});
+    });
+
+    it('refreshes on visibility recovery and retries failed idle discovery', async () => {
+      mocks.listJobs.mockRejectedValueOnce(new Error('temporary index failure'));
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(2);
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(3);
+    });
+
+    it('keeps controller polling suppressed in peer mode and replaces observers cleanly', async () => {
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(0);
+      cleanup = installDispatchJobObserver(createContext());
+      await vi.advanceTimersByTimeAsync(DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(3);
+      mocks.peerModeActive = true;
+      requestDispatchJobRefresh();
+      await vi.advanceTimersByTimeAsync(2 * DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(3);
+      mocks.peerModeActive = false;
+      await vi.advanceTimersByTimeAsync(DISPATCH_IDLE_DISCOVERY_INTERVAL_MS);
+      expect(mocks.listJobs).toHaveBeenCalledTimes(4);
+    });
   });
 
   it.each(['ssh', 'device'] as const)('persists %s generated titles and restores them after projection recreation', async (kind) => {
@@ -462,6 +708,35 @@ describe('DispatchJobObserver', () => {
         text: 'hello',
       },
     });
+  });
+
+  it.each([undefined, 0, 1_500])('preserves optional request TTFT from target replay (%s)', ttftMs => {
+    const timing = ttftMs === undefined ? {} : { ttft_ms: ttftMs };
+    const projected = projectDispatchAgentEvent({
+      type: 'agentEvent',
+      timestamp: '2026-07-28T00:00:00Z',
+      event: {
+        id: 'event-completed',
+        event: {
+          type: 'ModelRoundCompleted',
+          session_id: 'session-1',
+          turn_id: 'turn-1',
+          round_id: 'round-1',
+          first_visible_output_ms: 1_000,
+          stream_duration_ms: 5_000,
+          ...timing,
+        },
+      },
+    });
+    expect(projected).toMatchObject({
+      eventName: 'agentic://model-round-completed',
+      payload: { firstVisibleOutputMs: 1_000, streamDurationMs: 5_000 },
+    });
+    if (ttftMs === undefined) {
+      expect(projected?.payload).not.toHaveProperty('ttftMs');
+    } else {
+      expect(projected?.payload).toHaveProperty('ttftMs', ttftMs);
+    }
   });
 
   it('canonicalizes legacy model migration events from older targets', () => {
@@ -618,6 +893,14 @@ describe('DispatchJobObserver', () => {
         content: expect.stringContaining('1.2.3'),
       }),
     ]);
+    // Replayed setup rows precede model output without contributing tokens or timing.
+    const rounds = [...turn!.modelRounds, {
+      id: 'model-round-0', index: 0, items: [], isStreaming: false, isComplete: true,
+      status: 'completed' as const, startTime: 0,
+      ttftMs: 1_500, firstVisibleOutputMs: 1_000, streamDurationMs: 5_000,
+    }];
+    expect(getTurnTtftMs(rounds)).toBe(1_500);
+    expect(getTurnOutputDurationMs(rounds)).toBe(4_000);
     expect(mocks.dispatchExternal).not.toHaveBeenCalled();
     cleanup();
   });

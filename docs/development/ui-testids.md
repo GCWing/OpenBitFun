@@ -132,7 +132,8 @@ Avoid adding IDs to these surfaces unless there is a clear automated workflow.
 | Workspace card | `nav-workspace-card` | Clickable row body. Pair with `data-workspace-id`. |
 | Workspace sessions toggle | `nav-workspace-sessions-toggle` | Expands/collapses session rows. Pair with `data-workspace-id`. |
 | Workspace name button | `nav-workspace-name-btn` | Activates workspace or toggles sessions. Pair with `data-workspace-id`. |
-| Workspace files button | `nav-workspace-files-btn` | Opens file viewer for workspace. Pair with `data-workspace-id`. |
+| Project resources button | `nav-workspace-project-resources-btn` | Opens project resources management. Pair with `data-workspace-id`. |
+| Open directory menu item | `nav-workspace-menu-open-directory` | Opens the project's file viewer from the workspace More menu. |
 | Workspace search index button | `nav-workspace-search-index-btn` | Opens search index status modal when present. Pair with `data-workspace-id`. |
 | Workspace row menu button | `nav-workspace-menu-btn` | Opens row action menu. Pair with `data-workspace-id`. |
 | Workspace row menu | `nav-workspace-item-menu` | Portal menu for one workspace. Pair with `data-workspace-id`. |
@@ -140,11 +141,11 @@ Avoid adding IDs to these surfaces unless there is a clear automated workflow.
 | Workspace create code session | `nav-workspace-menu-create-code-session` | Normal workspace code session action. |
 | Workspace create cowork session | `nav-workspace-menu-create-cowork-session` | Normal workspace cowork session action. |
 | Workspace create ACP session | `nav-workspace-menu-create-acp-session` | Repeated item. Pair with `data-acp-client-id`. |
-| Workspace create init session | `nav-workspace-menu-create-init-session` | Starts AGENTS.md/init session. |
 | Workspace related paths | `nav-workspace-menu-related-paths` | Opens related paths dialog. |
 | Session worktree toggle | `chat-input-worktree-toggle` | Chat input strip. Toggles worktree isolation for the current session. Pair with `data-worktree-enabled`. |
 | Workspace copy path | `nav-workspace-menu-copy-path` | Copies workspace path. |
 | Workspace reveal | `nav-workspace-menu-reveal` | Reveals workspace in file explorer. |
+| Workspace session storage | `nav-workspace-menu-open-session-storage` | Opens the host-managed sessions root, including a local remote-workspace mirror. Local desktop only. |
 | Workspace close | `nav-workspace-menu-close` | Closes workspace. |
 | Workspace reset assistant | `nav-workspace-menu-reset-assistant` | Resets default assistant workspace. |
 | Workspace delete assistant | `nav-workspace-menu-delete-assistant` | Deletes named assistant workspace. |
@@ -160,6 +161,7 @@ Avoid adding IDs to these surfaces unless there is a clear automated workflow.
 | Session menu | `nav-session-menu` | Portal menu for one session. Pair with `data-session-id`. |
 | Session rename item | `nav-session-menu-rename` | Starts session rename. |
 | Session copy ID item | `nav-session-menu-copy-id` | Copies the session ID. Pair with `data-session-id`. |
+| Session storage | `nav-session-menu-open-storage` | Opens this session's stored directory. Pair with `data-session-id`. Unavailable for peer and detached-dispatch sessions. |
 | Session scheduled jobs item | `nav-session-menu-scheduled-jobs` | Opens scheduled jobs for the session. Pair with `data-session-id`. |
 | Session archive item | `nav-session-menu-archive` | Archives the session. Pair with `data-session-id`. |
 | Session delete item | `nav-session-menu-delete` | Deletes session. |
@@ -308,10 +310,10 @@ Notes:
 | Browser panel title | `browser-panel-title` | Browser toolbar/form region. |
 | Browser URL input | `browser-url-input` | Real URL input field. Press Enter to open the typed URL. |
 | Browser page frame | `browser-page-frame` | iframe/webview host content area. |
-| Browser loading indicator | `browser-loading-indicator` | Refresh/loading icon while a URL is loading. |
+| Browser loading indicator | `browser-loading-indicator` | Address-field spinner that replaces the browser glyph while a URL is loading. |
 | Browser error message | `browser-error-message` | URL validation/connectivity/webview load failure message. |
 | Browser current URL | `browser-current-url` | Current URL display in the webview placeholder. |
-| Browser refresh button | `browser-refresh-button` | Refreshes the current browser page. |
+| Browser refresh button | `browser-refresh-button` | Refreshes the current browser page, and stops the in-flight load while loading. |
 | Browser back button | `browser-back-button` | Navigates browser history back. |
 | Browser forward button | `browser-forward-button` | Navigates browser history forward. |
 

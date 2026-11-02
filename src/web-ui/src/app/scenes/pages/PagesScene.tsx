@@ -1,9 +1,10 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { OverflowText, Button, Icon, Input, Select, type SelectOption } from '@openbitfun/ui';
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CircleStop, FileClock, HardDrive, Lock, PanelsTopLeft, Rocket, Save, Users, type LucideIcon } from 'lucide-react';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { confirmDanger, confirmWarning } from '@/infrastructure/confirm-dialog';
-import { GalleryEmpty, GalleryLayout, GalleryPageHeader } from '@/app/components';
+import { GalleryEmpty, GalleryLayout, GalleryPageHeader } from '@/app/components/GalleryLayout';
 import {
   pageAPI,
   type PageInfo,
@@ -19,7 +20,7 @@ import { createLogger } from '@/shared/utils/logger';
 import './PagesScene.scss';
 
 const log = createLogger('PagesScene');
-const RemoteConnectDialog = lazy(() => import('@/app/components/RemoteConnectDialog'));
+const RemoteConnectDialog = lazyWithRecovery(() => import('@/app/components/RemoteConnectDialog'));
 
 interface PagesSceneProps {
   isActive?: boolean;

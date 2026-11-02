@@ -1,7 +1,9 @@
-import { requireSessionWorkspaceId, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { forgetAgentCanvasSession, removeBtwSessionFromAgentCanvas } from '@/app/components/panels/content-canvas/stores/canvasStore';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { projectUserQuestionTiming } from '../utils/userQuestionTiming';
+import { externalHistoryFromMetadata } from '../utils/externalHistory';
+import { isExternalSessionEcosystem } from '@/shared/types/external-session';
 /**
  * Flow Chat global state store
  * Prevents state loss when components remount
@@ -31,6 +33,7 @@ import {
   TokenUsage,
 } from '../types/flow-chat';
 import { createLogger } from '@/shared/utils/logger';
+import { canonicalAgentId } from '@/shared/agents/identity';
 import { optimisticTurnAdoptionKey } from '../utils/optimisticTurnAdoption';
 import {
   isRemoteTraceContext,
@@ -44,8 +47,10 @@ import { persistedMayWriteTurn } from '@/flow_chat/session-stream/SessionStream'
 import { SessionRecordReplica, type SessionRecord } from '@/flow_chat/session-stream/SessionRecordReplica';
 import { RelaySessionHistory } from '../services/RelaySessionHistory';
 import { stateMachineManager } from '../state-machine';
+import { estimateRetainedBytes, resourceBudget } from '@/shared/utils/resourceBudget';
 import { ProcessingPhase, SessionExecutionState } from '../state-machine/types';
 import { isTurnAwaitingRecovery } from '../utils/interruptedTurnRecovery';
+import { isUnmaterializedSessionDraft } from '../utils/sessionDraft';
 import { sessionActivityStore } from './sessionActivityStore';
 import {
   getActiveSurfaceId,
@@ -75,12 +80,13 @@ import {
   type SessionInfo as AgentSessionInfo,
   type SessionViewRestoreTiming,
 } from '@/infrastructure/api/service-api/AgentAPI';
-import type { SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
+import type { SessionCatalogQuery, SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
 import {
   deriveLastFinishedAtFromMetadata,
   deriveSessionRelationshipFromMetadata,
   normalizeSessionRelationship,
 } from '../utils/sessionMetadata';
+import { sessionOwningWorkspaceId } from '../utils/sessionOrdering';
 import { sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
 import type { SessionTitleDescriptor } from '../utils/sessionTitle';
 import { deriveContextUsageFromTurns } from '../utils/tokenUsageDisplay';
@@ -128,6 +134,15 @@ import {
 } from '../utils/flowChatTurnIdentity';
 
 const log = createLogger('FlowChatStore');
+
+/**
+ * Records that can own a pre-ID session projection. A linked worktree may be
+ * known to the host without being opened, so recent records are candidates too.
+ */
+function legacySessionWorkspaceCandidates(): WorkspaceInfo[] {
+  const state = workspaceManager.getState();
+  return [...state.openedWorkspaces.values(), ...(state.recentWorkspaces ?? [])];
+}
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
   for (const value of values) {
@@ -327,18 +342,6 @@ function sameDispatchTargetIdentity(
   }
 }
 
-// Retired built-in ids remain readable for historical sessions and older peer
-// hosts; new-session selection filters them from the current Agent catalog.
-const VALID_AGENT_TYPES = new Set([
-  'Standard',
-  'Multitask',
-  'debug',
-  'Plan',
-  'Cowork',
-  'Claw',
-  'DeepResearch',
-  'Ultimate',
-]);
 const METADATA_LIST_RECENT_DEDUPE_TTL_MS = 1000;
 const HISTORICAL_SESSION_INITIAL_REMOTE_TAIL_TURN_COUNT = 3;
 const HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT = 3;
@@ -1303,18 +1306,10 @@ function synchronizeRoundAttempts(round: ModelRound): ModelRound {
           }),
     };
   });
-  const disableExploreGrouping = sortedAttempts.length > 1;
-
   return {
     ...round,
     attempts: sortedAttempts,
     items: flattenRoundAttemptItems({ ...round, attempts: sortedAttempts }),
-    renderHints: disableExploreGrouping
-      ? {
-          ...(round.renderHints ?? {}),
-          disableExploreGrouping: true,
-        }
-      : round.renderHints,
   };
 }
 
@@ -1903,8 +1898,9 @@ function restoreCommandSupportKey(
   );
 }
 
-function isValidPersistedAgentType(agentType: string): boolean {
-  return VALID_AGENT_TYPES.has(agentType) || agentType.startsWith('acp:');
+/** Decode built-in aliases without replacing custom, external, or retired bindings. */
+function resolveRestoredAgentType(...agentTypes: (string | null | undefined)[]): string {
+  return canonicalAgentId(firstNonEmptyString(...agentTypes)?.trim() || 'Standard');
 }
 
 interface SelectorListener<T = any> {
@@ -1939,6 +1935,8 @@ interface SurfaceStateContainer {
   readonly relayRecordVersions: Map<string, number>;
   readonly relayMailboxReads: Map<string, Promise<void>>;
   readonly relaySessionRecords: Map<string, SessionRecordReplica>;
+  /** Turns the replica changed that the rendered session does not reflect yet. */
+  readonly relayPendingRecordTurns: Map<string, Set<string>>;
   readonly relaySessionHistory: Map<string, RelaySessionHistory>;
 }
 
@@ -1960,9 +1958,14 @@ function createSurfaceStateContainer(surfaceId: DeviceSurfaceId): SurfaceStateCo
     relayMailboxVersions: new Map(),
     relayMailboxReads: new Map(),
     relaySessionRecords: new Map(),
+    relayPendingRecordTurns: new Map(),
     relaySessionHistory: new Map(),
   };
 }
+
+const isTerminalRelayTurnStatus = (status: DialogTurn['status']): boolean => (
+  status === 'completed' || status === 'cancelled' || status === 'error'
+);
 
 export class FlowChatStore {
   private static instance: FlowChatStore;
@@ -1982,6 +1985,11 @@ export class FlowChatStore {
   private detachedSurfaceGeneration = 0;
   private fullHistoryHydrationRequests = new Map<string, FullHistoryHydrationRequest>();
   private sessionHistoryAccessClock = 0;
+  private readonly persistedHistoryTurns = new WeakSet<DialogTurn>();
+  private readonly historyTurnBytes = new WeakMap<DialogTurn, number>();
+  private readonly historyResidency = new Map<string, { key: object; turns: Set<DialogTurn>; lastUsedAt: number }>();
+  private readonly historyLeases = new Map<string, number>();
+  private historyBudgetTimer: ReturnType<typeof setTimeout> | undefined;
   private sessionTurnWindowRequests = new Map<string, Promise<LoadSessionTurnWindowResponse>>();
   /** Requested intervals remain protected until every deduplicated caller processes the response. */
   private sessionTurnWindowProtections = new Map<string, SessionTurnWindowProtection>();
@@ -2089,6 +2097,101 @@ export class FlowChatStore {
 
   public getState(): FlowChatState {
     return this.state;
+  }
+
+  /** A mounted transcript owns a lease; it never owns an inactive copy of its body. */
+  public retainSessionHistory(sessionId: string): () => void {
+    const key = this.surfaceKey(sessionId);
+    this.historyLeases.set(key, (this.historyLeases.get(key) ?? 0) + 1);
+    this.activeSurface.relaySessionHistory.get(sessionId)?.setVisible(true);
+    const resident = this.historyResidency.get(key);
+    if (resident) { resident.lastUsedAt = Date.now(); resourceBudget.touch(resident.key); }
+    let released = false;
+    const surface = this.activeSurface;
+    return () => {
+      if (released) return;
+      released = true;
+      const count = (this.historyLeases.get(key) ?? 1) - 1;
+      if (count > 0) this.historyLeases.set(key, count);
+      else { this.historyLeases.delete(key); surface.relaySessionHistory.get(sessionId)?.setVisible(false); }
+      const retained = this.historyResidency.get(key);
+      if (retained) { retained.lastUsedAt = Date.now(); resourceBudget.touch(retained.key); }
+      this.scheduleHistoryBudget();
+    };
+  }
+
+  private scheduleHistoryBudget(): void {
+    if (this.historyBudgetTimer !== undefined) return;
+    this.historyBudgetTimer = setTimeout(() => {
+      this.historyBudgetTimer = undefined;
+      this.updateHistoryResidency();
+    }, 500);
+  }
+
+  private updateHistoryResidency(): void {
+    const present = new Set<string>();
+    for (const surface of this.surfaceContainers.values()) {
+      for (const [sessionId, session] of surface.state.sessions) {
+        const id = surfaceScopedKey(surface.surfaceId, sessionId);
+        const view = surface.sessionHistoryViews.get(sessionId);
+        // Canonical tail and ranges alias the same Turns. Count their union.
+        const turns = new Set([...session.dialogTurns, ...(view?.loadedRanges.flatMap(range => range.turns) ?? [])]);
+        if (turns.size === 0) continue;
+        present.add(id);
+        let resident = this.historyResidency.get(id);
+        if (!resident) {
+          resident = { key: {}, turns, lastUsedAt: Date.now() };
+          this.historyResidency.set(id, resident);
+        } else if (turns.size !== resident.turns.size || [...turns].some(turn => !resident!.turns.has(turn))) {
+          resident.lastUsedAt = Date.now();
+          resident.turns = turns;
+        }
+        let bytes = 0;
+        for (const turn of turns) {
+          let size = this.historyTurnBytes.get(turn);
+          if (size === undefined) { size = estimateRetainedBytes(turn); this.historyTurnBytes.set(turn, size); }
+          bytes += size;
+        }
+        resourceBudget.set(resident.key, {
+          kind: 'history', bytes, lastUsedAt: resident.lastUsedAt,
+          protectedReason: () => {
+            const current = surface.state.sessions.get(sessionId);
+            if (!current) return undefined;
+            if (this.historyLeases.has(id)) return 'transcript';
+            if (surface.surfaceId === getActiveSurfaceId() && surface.state.activeSessionId === sessionId) return 'selected-session';
+            // Relay replicas and dispatch observers own live cursors, revisions
+            // and mailboxes. Their optional prefetch is bounded separately.
+            if (surface.surfaceId !== 'local' || dispatchObserverOwnsSession(sessionId, current)) return 'remote-owner';
+            if (current.historyState !== 'ready') return 'hydration';
+            const activity = sessionActivityStore.get(sessionId, surface.surfaceId)?.summary;
+            if (activity && (activity.execution !== 'idle' || activity.pendingApprovals > 0
+              || activity.pendingQuestions > 0)) return 'runtime-interaction';
+            if (surface.deferredFullHistoryProjections.has(sessionId) || surface.fullHistoryProjectionApplyRequests.has(sessionId)
+              || [...this.sessionTurnWindowProtections.values()].some(request => request.surfaceId === surface.surfaceId && request.sessionId === sessionId)
+              || [...this.fullHistoryHydrationRequests.values()].some(request => request.surfaceId === surface.surfaceId && request.sessionId === sessionId)) return 'history-request';
+            // Only exact objects produced by a persisted read are reconstructable.
+            // Editing, replay or a new turn creates a new identity and pins it.
+            if (current.dialogTurns.some(turn => !this.persistedHistoryTurns.has(turn))) return 'live-or-unsaved';
+            return undefined;
+          },
+          evict: () => {
+            this.historyResidency.delete(id);
+            const current = surface.state.sessions.get(sessionId);
+            if (!current) return;
+            surface.sessionHistoryViews.delete(sessionId);
+            surface.sessionHistoryTurnAccessTimes.delete(sessionId);
+            const sessions = new Map(surface.state.sessions);
+            sessions.set(sessionId, { ...current, dialogTurns: [], isHistorical: true,
+              historyState: 'metadata-only', isPartial: true, loadedTurnCount: 0 });
+            surface.state = { ...surface.state, sessions };
+            if (surface.surfaceId === getActiveSurfaceId()) this.notifyListeners();
+          },
+        });
+      }
+    }
+    for (const [id, resident] of this.historyResidency) {
+      if (!present.has(id)) { resourceBudget.delete(resident.key); this.historyResidency.delete(id); }
+    }
   }
 
   public getSessionHistoryViewState(sessionId: string): SessionHistoryViewState | undefined {
@@ -2215,6 +2318,55 @@ export class FlowChatStore {
     view.activeRange = nextRange;
     this.pruneSessionLoadedTurnRanges(sessionId, view);
     return { range: { ...nextRange }, turns: [...turns] };
+  }
+
+  /** Restore a scalar reader bookmark through the existing cache and transport owner. */
+  public async restoreSessionHistoryWindow(
+    sessionId: string,
+    range: ActiveTurnRenderRange,
+    canApply: () => boolean = () => true,
+  ): Promise<SessionHistoryPresentation | null> {
+    const scope = getActiveSurfaceScope();
+    if (!canApply()) return null;
+    const cached = this.reactivateSessionHistoryWindow(sessionId, range);
+    if (cached) return cached;
+    const count = range.endOrdinalExclusive - range.startOrdinal;
+    if (count <= 0 || range.mode !== 'history-window') return null;
+    const release = this.retainSessionTurnWindowProtection(
+      scope.key('reader-restore', sessionId, range.startOrdinal, range.endOrdinalExclusive),
+      { sessionId, startOrdinal: range.startOrdinal, endOrdinalExclusive: range.endOrdinalExclusive },
+    );
+    try {
+      // The normal reader caps each host request at 16 Turns; a remembered
+      // presentation can span 64. Fill every gap without changing that IO cap.
+      let cursor = range.startOrdinal;
+      while (cursor < range.endOrdinalExclusive) {
+        if (!canApply()) return null;
+        let loaded = this.sessionHistoryViews.get(sessionId)?.loadedRanges.find(candidate =>
+          candidate.startOrdinal <= cursor && candidate.endOrdinalExclusive > cursor);
+        if (!loaded) {
+          const result = await this.loadSessionTurnWindow(sessionId, cursor, {
+            before: 0, after: range.endOrdinalExclusive - cursor, source: 'prefetch',
+          });
+          scope.assertCurrent('restore reader history window');
+          if (!canApply()) return null;
+          if (result.status === 'unsupported' && result.fallbackRequested) {
+            await this.ensureSessionFullHistory(sessionId, 'restore-reader-window');
+            scope.assertCurrent('restore compatible reader history window');
+            if (!canApply()) return null;
+          }
+          loaded = this.sessionHistoryViews.get(sessionId)?.loadedRanges.find(candidate =>
+            candidate.startOrdinal <= cursor && candidate.endOrdinalExclusive > cursor);
+        }
+        // An unavailable/mutated range is an explicit restore failure, never
+        // a request loop or a silent jump back to the newest content.
+        if (!loaded) return null;
+        cursor = loaded.endOrdinalExclusive;
+      }
+      return this.reactivateSessionHistoryWindow(sessionId, range);
+    } finally {
+      release();
+    }
   }
 
   public extendSessionHistoryWindow(
@@ -2634,6 +2786,7 @@ export class FlowChatStore {
       );
     }
     this.pruneSessionLoadedTurnRanges(sessionId, view);
+    this.scheduleHistoryBudget();
     return view.loadedRanges.find(candidate =>
       candidate.startOrdinal <= preferredOrdinal
       && candidate.endOrdinalExclusive > preferredOrdinal
@@ -2791,9 +2944,21 @@ export class FlowChatStore {
     }
   }
 
-  private sessionWorkspaceId(sessionId: string): string {
+  /**
+   * Workspace identity every persisted-history read is addressed with.
+   *
+   * The ID is a storage selector, not the execution directory: the backend
+   * resolves the session directory through the workspace record it is given, and
+   * an isolated worktree record resolves to the same directory as the project it
+   * belongs to. A worktree record is created on demand and can be absent from the
+   * open workspace set, which the backend rejects outright, so history is always
+   * read through the owning project the navigation list groups the session under.
+   */
+  private sessionHistoryWorkspaceId(sessionId: string): string {
     const session = this.state.sessions.get(sessionId);
-    const workspaceId = session?.workspaceId ?? session?.config.workspaceId;
+    const workspaceId = session
+      ? sessionOwningWorkspaceId(session)
+      : undefined;
     if (!workspaceId) throw new Error(`Workspace ID is unavailable for session: ${sessionId}`);
     return workspaceId;
   }
@@ -2968,6 +3133,7 @@ export class FlowChatStore {
       this.activeSurface.relaySessionHistory.get(id)?.close();
       this.activeSurface.relaySessionHistory.delete(id);
       this.activeSurface.relaySessionRecords.delete(id);
+      this.activeSurface.relayPendingRecordTurns.delete(id);
       this.activeSurface.relayQuestionMailboxes.delete(id);
       this.activeSurface.relayRecordVersions.delete(id);
       this.activeSurface.relayMailboxVersions.delete(id);
@@ -3036,7 +3202,7 @@ export class FlowChatStore {
     }
 
     const canonicalTurns = canonicalSessionTurns(session);
-    const workspaceId = session.workspaceId ?? session.config.workspaceId;
+    const workspaceId = sessionOwningWorkspaceId(session);
     if (!workspaceId || canonicalTurns.length === 0) {
       return false;
     }
@@ -3106,7 +3272,7 @@ export class FlowChatStore {
     );
     if (!hydrationRequest) {
       const canonicalTurns = canonicalSessionTurns(session);
-      const workspaceId = session.workspaceId ?? session.config.workspaceId;
+      const workspaceId = sessionOwningWorkspaceId(session);
       if (!workspaceId || canonicalTurns.length === 0) {
         this.fullHistoryProjectionApplyRequests.delete(sessionId);
         return false;
@@ -3735,6 +3901,9 @@ export class FlowChatStore {
       );
       remainingBefore = startIndex;
 
+      const restoredAgentType = resolveRestoredAgentType(
+        projection.restoredSessionInfo?.agentType, session.mode, session.config.agentType,
+      );
       const newSessions = new Map(prev.sessions);
       newSessions.set(sessionId, {
         ...session,
@@ -3744,7 +3913,8 @@ export class FlowChatStore {
         totalTurnCount,
         contextRestoreState:
           session.contextRestoreState === 'ready' ? 'ready' : projection.contextRestoreState,
-        mode: projection.restoredSessionInfo?.agentType || session.mode,
+        config: { ...session.config, agentType: restoredAgentType },
+        mode: restoredAgentType,
         lastUserDialogMode: projection.restoredLastUserDialogMode,
         lastSubmittedMode:
           projection.restoredSessionInfo?.lastSubmittedAgentType ?? session.lastSubmittedMode,
@@ -3823,6 +3993,9 @@ export class FlowChatStore {
         (count, turn) => count + (currentDialogTurnsById.get(turn.id) === turn ? 1 : 0),
         0,
       );
+      const restoredAgentType = resolveRestoredAgentType(
+        projection.restoredSessionInfo?.agentType, session.mode, session.config.agentType,
+      );
       const newSessions = new Map(prev.sessions);
       newSessions.set(sessionId, {
         ...session,
@@ -3836,7 +4009,8 @@ export class FlowChatStore {
         ),
         contextRestoreState:
           session.contextRestoreState === 'ready' ? 'ready' : projection.contextRestoreState,
-        mode: projection.restoredSessionInfo?.agentType || session.mode,
+        config: { ...session.config, agentType: restoredAgentType },
+        mode: restoredAgentType,
         lastUserDialogMode: projection.restoredLastUserDialogMode,
         lastSubmittedMode:
           projection.restoredSessionInfo?.lastSubmittedAgentType ?? session.lastSubmittedMode,
@@ -3996,6 +4170,7 @@ export class FlowChatStore {
   public setState(updater: (prevState: FlowChatState) => FlowChatState): void {
     const newState = updater(this.state);
     this.state = newState;
+    this.scheduleHistoryBudget();
     
     if (!this.silentMode) {
       // Notify plain listeners (backward compat)
@@ -4174,6 +4349,7 @@ export class FlowChatStore {
     remoteConnectionId?: string,
     remoteSshHost?: string,
     titleDescriptor?: SessionTitleDescriptor,
+    draft?: Session['draft'],
   ): void {
     import('../state-machine').then(({ stateMachineManager }) => {
       stateMachineManager.getOrCreate(sessionId);
@@ -4205,6 +4381,7 @@ export class FlowChatStore {
         mode: mode || 'Standard',
         lastUserDialogMode: undefined,
         lastSubmittedMode: undefined,
+        draft,
         workspacePath,
         projectWorkspacePath: config.projectWorkspacePath,
         workspaceId: config.workspaceId,
@@ -4215,6 +4392,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwThreads: [],
         btwOrigin: relationship.btwOrigin,
         isTransient: false,
@@ -4246,6 +4424,7 @@ export class FlowChatStore {
       btwOrigin?: Session['btwOrigin'];
       parentToolCallId?: string;
       subagentType?: string;
+      continuationPolicy?: Session['continuationPolicy'];
       isTransient?: boolean;
       agentBackedTransient?: boolean;
       deepReviewRunManifest?: Session['deepReviewRunManifest'];
@@ -4253,6 +4432,7 @@ export class FlowChatStore {
       reviewTargetEvidence?: Session['reviewTargetEvidence'];
       reviewTargetFilePaths?: Session['reviewTargetFilePaths'];
       projectWorkspacePath?: string;
+      projectWorkspaceId?: string;
       executionTarget?: Session['config']['executionTarget'];
       workspaceId?: string;
     },
@@ -4286,6 +4466,7 @@ export class FlowChatStore {
           projectWorkspacePath: meta?.projectWorkspacePath,
           executionTarget: meta?.executionTarget,
           workspaceId: meta?.workspaceId,
+          projectWorkspaceId: meta?.projectWorkspaceId,
         } as any,
         createdAt: Date.now(),
         lastActiveAt: Date.now(),
@@ -4300,12 +4481,14 @@ export class FlowChatStore {
         workspacePath,
         projectWorkspacePath: meta?.projectWorkspacePath,
         workspaceId: meta?.workspaceId,
+        projectWorkspaceId: meta?.projectWorkspaceId,
         remoteConnectionId,
         remoteSshHost,
         parentSessionId: relationship.parentSessionId,
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwThreads: [],
         btwOrigin: relationship.btwOrigin,
         deepReviewRunManifest: meta?.deepReviewRunManifest,
@@ -4496,12 +4679,12 @@ export class FlowChatStore {
     });
   }
 
-  public updateSessionModelName(sessionId: string, modelName: string): void {
+  public updateSessionModelName(sessionId: string, modelName: string | undefined): void {
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session) return prev;
 
-      const normalizedModelName = modelName.trim() || 'primary';
+      const normalizedModelName = modelName === undefined ? undefined : modelName.trim() || 'primary';
       if (session.config.modelName?.trim() === normalizedModelName) {
         return prev;
       }
@@ -4522,6 +4705,24 @@ export class FlowChatStore {
         ...prev,
         sessions: newSessions,
       };
+    });
+  }
+
+  public updateSessionModelPool(
+    sessionId: string, poolId: string | undefined,
+    binding?: import('@/infrastructure/api/service-api/ModelPoolAPI').ModelPoolBinding,
+    pending = false,
+  ): void {
+    this.setState(prev => {
+      const session = prev.sessions.get(sessionId);
+      if (!session) return prev;
+      const sessions = new Map(prev.sessions);
+      sessions.set(sessionId, {
+        ...session,
+        config: { ...session.config, modelPoolId: poolId, modelPoolBinding: binding,
+          modelPoolSelectionPending: pending, ...(poolId ? { reasoningPreset: undefined } : {}) },
+      });
+      return { ...prev, sessions };
     });
   }
 
@@ -4667,7 +4868,10 @@ export class FlowChatStore {
 
   /**
    * Apply a backend session rebind (worktree isolation toggled on or off).
-   * The project root stays put; only the execution directory moves.
+   * The project root stays put; only the execution directory moves. A binding
+   * that reports the owning project fills a project identity the session was
+   * created without, and the workspace a session moves away from supplies it
+   * when the binding reports none.
    */
   public updateSessionExecutionTarget(
     sessionId: string,
@@ -4675,6 +4879,7 @@ export class FlowChatStore {
       workspacePath: string;
       projectWorkspacePath: string;
       workspaceId?: string;
+      projectWorkspaceId?: string;
       executionTarget: Session['config']['executionTarget'];
     },
   ): void {
@@ -4683,16 +4888,28 @@ export class FlowChatStore {
       if (!session) return prev;
 
       const newSessions = new Map(prev.sessions);
+      // A binding that moves this session into an isolated execution directory
+      // must never leave it without an owning project: the worktree record it
+      // then carries is an on-demand execution record that owns no navigation
+      // row the user can open. A backend that reports no project ID is answered
+      // with the workspace the session moved away from, which is that project.
+      const isolated = !!binding.executionTarget && binding.executionTarget.kind !== 'local';
+      const owningProjectWorkspaceId = binding.projectWorkspaceId
+        ?? session.projectWorkspaceId
+        ?? session.config.projectWorkspaceId
+        ?? (isolated ? session.workspaceId ?? session.config.workspaceId : undefined);
       newSessions.set(sessionId, {
         ...session,
         workspacePath: binding.workspacePath,
         projectWorkspacePath: binding.projectWorkspacePath,
         workspaceId: binding.workspaceId ?? session.workspaceId,
+        projectWorkspaceId: owningProjectWorkspaceId,
         config: {
           ...session.config,
           workspacePath: binding.workspacePath,
           projectWorkspacePath: binding.projectWorkspacePath,
           workspaceId: binding.workspaceId ?? session.config.workspaceId,
+          projectWorkspaceId: owningProjectWorkspaceId,
           executionTarget: binding.executionTarget,
         },
         lastActiveAt: Date.now(),
@@ -5014,6 +5231,7 @@ export class FlowChatStore {
       sessionKind?: SessionKind;
       parentToolCallId?: string;
       subagentType?: string;
+      continuationPolicy?: Session['continuationPolicy'];
     }
   ): void {
     this.setState(prev => {
@@ -5032,6 +5250,7 @@ export class FlowChatStore {
           updates.subagentType !== undefined
             ? updates.subagentType
             : session.subagentType,
+        continuationPolicy: updates.continuationPolicy ?? session.continuationPolicy,
       });
       const next: Session = {
         ...session,
@@ -5039,6 +5258,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwOrigin: relationship.btwOrigin,
       };
 
@@ -5174,76 +5394,47 @@ export class FlowChatStore {
   }
 
   public async deleteSession(sessionId: string, options?: RemoveSessionOptions): Promise<void> {
+    const scope = getActiveSurfaceScope();
     const sessionIdsToDelete = this.getCascadeSessionIds(sessionId);
     if (sessionIdsToDelete.length === 0) {
       return;
     }
-    if (options) {
-      this.pendingRemoveSessionOptions.set(sessionId, options);
-    }
-
-    // Snapshot workspace IDs synchronously from the same state that produced
-    // the cascade list: backend deletion is workspace-ID-first and must not
-    // depend on the session still being present once awaited work resolves.
-    // Sessions whose workspace directory disappeared (invalid session
-    // projects) keep their workspace ID and stay deletable; only pre-ID
-    // sessions without any workspace ID fail explicitly instead of silently
-    // skipping the request.
-    const workspaceIdBySessionId = new Map<string, string>();
-    sessionIdsToDelete.forEach(id => {
-      const workspaceId = sessionWorkspaceId(this.state.sessions.get(id));
-      if (workspaceId) {
-        workspaceIdBySessionId.set(id, workspaceId);
-      }
-    });
-
-    const { stateMachineManager } = await import('../state-machine');
-    sessionIdsToDelete.forEach(id => {
-      stateMachineManager.delete(id);
-    });
-
-    const deleteFailures: { sessionId: string; reason: unknown }[] = [];
+    const pendingOptions = this.pendingRemoveSessionOptions;
+    if (options) pendingOptions.set(sessionId, options);
     try {
-      const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
-      const deleteResults = await Promise.allSettled(
-        sessionIdsToDelete.map(async id => {
-          const workspaceId = workspaceIdBySessionId.get(id);
-          if (!workspaceId) {
-            throw new Error(`Session workspace ID is unavailable for session ${id}`);
-          }
-
-          await agentAPI.deleteSession(id, workspaceId);
-        })
-      );
-
-      deleteResults.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          log.error('Failed to delete session on backend', {
-            sessionId: sessionIdsToDelete[index],
-            error: result.reason,
-          });
-          deleteFailures.push({ sessionId: sessionIdsToDelete[index], reason: result.reason });
+      // Children are ordered before their owner. A failed child must keep its
+      // parent, and a rejected mutation must keep the session and its drafts.
+      for (const id of sessionIdsToDelete) {
+        scope.assertCurrent('delete session');
+        const sess = this.state.sessions.get(id);
+        if (sess?.draft?.phase !== 'editing') {
+          // Session storage is resolved by workspace ID, so a session whose
+          // workspace directory is gone must still reach the backend. Pre-ID
+          // sessions fail loudly in sessionHistoryWorkspaceId.
+          await agentAPI.deleteSession(id, this.sessionHistoryWorkspaceId(id));
+          scope.assertCurrent('complete session deletion');
         }
-      });
-    } catch (error) {
-      log.error('Failed to delete session on backend', { sessionId, error });
-      deleteFailures.push({ sessionId, reason: error });
+        stateMachineManager.delete(id);
+        const removedIds = this.removeDeletedSession(id, id === sessionId ? options : undefined);
+        // A host deletion event may already have removed the presentation.
+        const confirmedIds = [...new Set([id, ...removedIds])];
+        sessionComposerStore.getState().removeDrafts(confirmedIds);
+        askUserQuestionDraftStore.getState().removeSessionDrafts(confirmedIds);
+      }
+    } finally {
+      pendingOptions.delete(sessionId);
     }
+  }
 
-    const removedSessionIds = this.removeSession(sessionId, options);
-    sessionComposerStore.getState().removeDrafts(removedSessionIds);
-    askUserQuestionDraftStore.getState().removeSessionDrafts(removedSessionIds);
-    this.pendingRemoveSessionOptions.delete(sessionId);
-
-    if (deleteFailures.length > 0) {
-      const firstFailure = deleteFailures[0];
-      const reasonText = firstFailure.reason instanceof Error
-        ? firstFailure.reason.message
-        : String(firstFailure.reason);
-      throw new Error(
-        `Failed to delete session ${firstFailure.sessionId} on backend: ${reasonText}`
-      );
-    }
+  /** Confirmed deletion retires detail tabs too, including suspended canvases. */
+  public removeDeletedSession(sessionId: string, options?: RemoveSessionOptions): string[] {
+    const removedIds = this.removeSession(sessionId, options);
+    // A deletion event may arrive after the record was already removed.
+    new Set([sessionId, ...removedIds]).forEach(id => {
+      removeBtwSessionFromAgentCanvas(id);
+      forgetAgentCanvasSession(id);
+    });
+    return removedIds;
   }
 
   public removeSession(sessionId: string, options?: RemoveSessionOptions): string[] {
@@ -5361,6 +5552,7 @@ export class FlowChatStore {
   public async cancelRunningSessionsForWorkspace(
     workspace: Pick<WorkspaceInfo, 'id' | 'rootPath' | 'connectionId' | 'sshHost'>
   ): Promise<string[]> {
+    const scope = getActiveSurfaceScope();
     const runningSessions = Array.from(this.state.sessions.values())
       .filter(session => sessionMatchesWorkspace(session, workspace))
       .filter(session => {
@@ -5381,7 +5573,6 @@ export class FlowChatStore {
       return [];
     }
 
-    const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
     await Promise.allSettled(
       runningSessions.map(async session => {
         const sessionId = session.sessionId;
@@ -5394,11 +5585,12 @@ export class FlowChatStore {
             error,
           });
         } finally {
-          this.cancelSessionTask(sessionId);
+          if (scope.isCurrent()) this.cancelSessionTask(sessionId);
         }
       })
     );
 
+    scope.assertCurrent('cancel workspace sessions');
     return runningSessionIds;
   }
 
@@ -5458,6 +5650,11 @@ export class FlowChatStore {
       ? Array.from(container.state.sessions.keys())
       : [];
     this.surfaceContainers.delete(surfaceId);
+    for (const [id, resident] of this.historyResidency) {
+      if (surfaceOfScopedKey(id) !== surfaceId) continue;
+      resourceBudget.delete(resident.key);
+      this.historyResidency.delete(id);
+    }
     sessionComposerStore.getState().removeSurfaceDrafts(surfaceId);
     askUserQuestionDraftStore.getState().removeSurfaceDrafts(surfaceId);
     this.forgetSurfaceMetadataRequests(surfaceId);
@@ -5869,6 +6066,9 @@ export class FlowChatStore {
     const surface = this.activeSurface;
     if (surface.surfaceId === 'local') throw new Error('Local history is owned by the local runtime');
     if (!surface.state.sessions.has(sessionId)) throw new Error('Relay session shell is not loaded');
+    // The host rejects a reserved ID, and that rejection would falsely mark an
+    // empty composer session as a failed history restore. It has no history yet.
+    if (isUnmaterializedSessionDraft(surface.state.sessions.get(sessionId))) return;
     let history = surface.relaySessionHistory.get(sessionId);
     if (!history) {
       history = new RelaySessionHistory(sessionId,
@@ -5895,7 +6095,9 @@ export class FlowChatStore {
             surface.relaySessionHistory.delete(sessionId);
             history?.close();
           }
-        }, () => this.refreshRelayInteractionMailbox(sessionId));
+        }, () => this.refreshRelayInteractionMailbox(sessionId),
+        () => this.flushRelaySessionRecords(sessionId));
+      history.setVisible(this.historyLeases.has(this.surfaceKey(sessionId)));
       surface.relaySessionHistory.set(sessionId, history);
     }
     try { await history.open(); }
@@ -5924,6 +6126,7 @@ export class FlowChatStore {
         // Canonical terminal facts fence an overlapping mailbox response. Do
         // not turn a busy token stream into repeated mailbox requests.
         if (recordVersion !== (surface.relayRecordVersions.get(sessionId) ?? 0)) {
+          this.flushRelaySessionRecords(sessionId);
           const turns = surface.state.sessions.get(sessionId)?.dialogTurns ?? [];
           mailbox.userQuestions = { ...mailbox.userQuestions, questions: mailbox.userQuestions.questions.filter(question => {
             const turn = turns.find(value => value.id === question.dialogTurnId);
@@ -5943,6 +6146,7 @@ export class FlowChatStore {
   }
 
   public async loadOlderRelaySessionHistory(sessionId: string): Promise<boolean> {
+    if (isUnmaterializedSessionDraft(this.state.sessions.get(sessionId))) return false;
     await this.loadRelaySessionHistory(sessionId);
     const history = this.activeSurface.relaySessionHistory.get(sessionId);
     if (!history) throw new Error('Relay session history is no longer active');
@@ -5968,8 +6172,12 @@ export class FlowChatStore {
     this.seedSessionHistoryLoadedRanges(sessionId);
   }
 
-  /** Both realtime delivery and historical pages use the same record owner. */
-  public applyRelaySessionRecord(record: SessionRecord): void {
+  /**
+   * Both realtime delivery and historical pages use the same record owner. This
+   * reduces only; `RelaySessionHistory` owns when the result is rendered, and
+   * true asks it to do so now: a rendered turn just reached a terminal status.
+   */
+  private applyRelaySessionRecord(record: SessionRecord): boolean {
     const surface = this.activeSurface;
     if (surface.surfaceId === 'local') throw new Error('Relay record cannot target the local runtime');
     if (!surface.state.sessions.has(record.sessionId)) throw new Error('Relay session shell is not loaded');
@@ -5978,32 +6186,75 @@ export class FlowChatStore {
       replica = new SessionRecordReplica(record.sessionId);
       surface.relaySessionRecords.set(record.sessionId, replica);
     }
-    const previousTurn = surface.state.sessions.get(record.sessionId)?.dialogTurns;
-    const change = replica.apply(record);
+    const turnId = replica.ingest(record);
     surface.relayRecordVersions.set(record.sessionId, (surface.relayRecordVersions.get(record.sessionId) ?? 0) + 1);
-    if (!change) return;
-    const incoming = change.turn
-      ? this.convertToDialogTurns([change.turn], { activeTurnId: change.turn.turnId })[0]
-      : null;
+    if (turnId === null) return false;
+    const pending = surface.relayPendingRecordTurns.get(record.sessionId);
+    if (pending) pending.add(turnId);
+    else surface.relayPendingRecordTurns.set(record.sessionId, new Set([turnId]));
+    // A replayed page is full of terminal records for turns not rendered yet;
+    // only a running turn that finished has a reader waiting on this record.
+    return !record.deleted && isTerminalRelayTurnStatus(normalizeLiveTurnStatus(record.turn.status))
+      && !!surface.state.sessions.get(record.sessionId)?.dialogTurns
+        .some(turn => turn.id === turnId && !isTerminalRelayTurnStatus(turn.status));
+  }
+
+  /** Direct events amend rendered turns, so they must follow the records received before them. */
+  public settleRelaySessionRecords(sessionId: string): void {
+    try { this.flushRelaySessionRecords(sessionId); }
+    catch (error) { log.error('Relay session records could not be rendered', { sessionId, error }); }
+  }
+
+  /**
+   * Render what the replica received since the last flush as one state update.
+   * The replica already holds these revisions and will not report them again, so
+   * a turn stays pending until it was rendered; one that cannot be converted does
+   * not hold back the others and is retried by the next flush.
+   */
+  private flushRelaySessionRecords(sessionId: string): void {
+    const surface = this.activeSurface;
+    const pending = surface.relayPendingRecordTurns.get(sessionId);
+    const replica = surface.relaySessionRecords.get(sessionId);
+    if (!pending || !replica) return;
+    // Closing the subscription of a removed session must not recreate its state.
+    if (!surface.state.sessions.has(sessionId)) {
+      surface.relayPendingRecordTurns.delete(sessionId);
+      return;
+    }
+    const previousTurn = surface.state.sessions.get(sessionId)?.dialogTurns;
+    // A submission can be painted before the runtime allocates its turn ID.
+    // The stable user-message ID joins that optimistic row to its echo.
+    const incoming = new Map<string, DialogTurn>();
+    const settled = new Set<string>();
+    const failed = new Map<string, unknown>();
+    for (const turnId of pending) {
+      try {
+        const { turn } = replica.snapshot(turnId);
+        const dialogTurn = turn && this.convertToDialogTurns([turn], { activeTurnId: turn.turnId })[0];
+        if (dialogTurn) incoming.set(dialogTurn.userMessage.id, dialogTurn);
+        settled.add(turnId);
+      } catch (error) { failed.set(turnId, error); }
+    }
     this.setState(previous => {
-      const session = previous.sessions.get(record.sessionId);
+      const session = previous.sessions.get(sessionId);
       if (!session) return previous;
-      let dialogTurns = session.dialogTurns.filter(turn => turn.id !== change.turnId);
-      if (incoming) {
-        // A submission can be painted before the runtime allocates its turn ID.
-        // The stable user-message ID joins that optimistic row to its echo.
-        dialogTurns = dialogTurns.filter(turn => turn.userMessage.id !== incoming.userMessage.id);
-        dialogTurns.push(incoming);
+      const dialogTurns = session.dialogTurns.filter(turn => (
+        !settled.has(turn.id) && !incoming.has(turn.userMessage.id)
+      ));
+      if (incoming.size > 0) {
+        dialogTurns.push(...incoming.values());
         dialogTurns.sort((a, b) => a.storageTurnIndex !== undefined && b.storageTurnIndex !== undefined
           ? a.storageTurnIndex - b.storageTurnIndex : a.startTime - b.startTime);
       }
       const sessions = new Map(previous.sessions);
-      sessions.set(record.sessionId, { ...session, dialogTurns });
+      sessions.set(sessionId, { ...session, dialogTurns });
       return { ...previous, sessions };
     });
-    const mailbox = surface.relayQuestionMailboxes.get(record.sessionId);
+    if (failed.size > 0) surface.relayPendingRecordTurns.set(sessionId, new Set(failed.keys()));
+    else surface.relayPendingRecordTurns.delete(sessionId);
+    const mailbox = surface.relayQuestionMailboxes.get(sessionId);
     if (mailbox) {
-      const turns = this.state.sessions.get(record.sessionId)?.dialogTurns ?? [];
+      const turns = this.state.sessions.get(sessionId)?.dialogTurns ?? [];
       const questions = mailbox.questions.filter(question => {
         const turn = turns.find(value => value.id === question.dialogTurnId);
         if (turn && ['completed', 'cancelled', 'error'].includes(turn.status)) return false;
@@ -6012,14 +6263,14 @@ export class FlowChatStore {
         return !item || item.type !== 'tool' || !['completed', 'failed', 'cancelled', 'error'].includes(item.status);
       });
       const currentMailbox = { ...mailbox, questions };
-      surface.relayQuestionMailboxes.set(record.sessionId, currentMailbox);
-      this.reconcilePendingUserQuestions(record.sessionId, currentMailbox);
+      surface.relayQuestionMailboxes.set(sessionId, currentMailbox);
+      this.reconcilePendingUserQuestions(sessionId, currentMailbox);
     }
-    const currentTurns = this.state.sessions.get(record.sessionId)?.dialogTurns ?? [];
+    const currentTurns = this.state.sessions.get(sessionId)?.dialogTurns ?? [];
     if (previousTurn?.length !== currentTurns.length
       || previousTurn?.some((turn, index) => turn.id !== currentTurns[index]?.id
         || turn.storageTurnIndex !== currentTurns[index]?.storageTurnIndex)) {
-      this.refreshRelayTurnCatalog(record.sessionId);
+      this.refreshRelayTurnCatalog(sessionId);
     }
     const latest = currentTurns.at(-1);
     const running = latest && !['completed', 'cancelled', 'error'].includes(latest.status);
@@ -6027,7 +6278,7 @@ export class FlowChatStore {
     const pendingTools = running ? latest.modelRounds.flatMap(modelRound => modelRound.items)
       .filter((item): item is FlowToolItem => item.type === 'tool' && item.status === 'pending_confirmation')
       .map(item => item.toolCall.id) : [];
-    stateMachineManager.getOrCreate(record.sessionId).acceptRuntimeStatus({
+    stateMachineManager.getOrCreate(sessionId).acceptRuntimeStatus({
       state: latest?.status === 'error' ? SessionExecutionState.ERROR
         : running ? SessionExecutionState.PROCESSING : SessionExecutionState.IDLE,
       turnId: latest?.id ?? null, roundId: round?.id ?? null,
@@ -6036,6 +6287,8 @@ export class FlowChatStore {
           ? ProcessingPhase.TOOL_CALLING : ProcessingPhase.THINKING,
       pendingTools, error: latest?.error ?? null,
     });
+    const [failure] = failed.values();
+    if (failed.size > 0) throw failure;
   }
 
   public updateDialogTurn(
@@ -6398,7 +6651,16 @@ export class FlowChatStore {
       const updatedModelRounds = turn.modelRounds.map(modelRound => {
         if (updated) return modelRound;
 
-        const activeAttempts = modelRound.attempts ?? deriveRoundAttemptsFromItems(modelRound.items);
+        const recordedAttempts = modelRound.attempts;
+        if (!recordedAttempts && !modelRound.items.some((item: any) => itemMatchesIdentity(item, itemId))) {
+          // Derived attempts only repackage these same items, so a round that
+          // does not hold the item cannot hold it after derivation either. A
+          // streamed token lands in the last round; without this probe every
+          // earlier round re-derives its attempts on every flush.
+          return modelRound;
+        }
+
+        const activeAttempts = recordedAttempts ?? deriveRoundAttemptsFromItems(modelRound.items);
         if (activeAttempts && activeAttempts.length > 0) {
           let foundInAttempts = false;
           const nextAttempts = activeAttempts.map(attempt => {
@@ -6502,7 +6764,7 @@ export class FlowChatStore {
     sessionId: string, 
     tokenUsage: Pick<
       TokenUsage,
-      'inputTokens' | 'outputTokens' | 'totalTokens' | 'turnId' | 'source'
+      'inputTokens' | 'outputTokens' | 'cachedTokens' | 'totalTokens' | 'turnId' | 'source'
     >,
     dialogTurnId?: string
   ): void {
@@ -6513,6 +6775,7 @@ export class FlowChatStore {
       const nextTokenUsage: TokenUsage = {
         inputTokens: tokenUsage.inputTokens,
         outputTokens: tokenUsage.outputTokens,
+        cachedTokens: tokenUsage.cachedTokens,
         totalTokens: tokenUsage.totalTokens,
         timestamp: Date.now(),
         ...(tokenUsage.turnId ? { turnId: tokenUsage.turnId } : {}),
@@ -6534,6 +6797,10 @@ export class FlowChatStore {
           const accumulatedTurnUsage: TokenUsage = {
             inputTokens: (previousTurnUsage?.inputTokens ?? 0) + nextTokenUsage.inputTokens,
             outputTokens: accumulatedOutputTokens,
+            cachedTokens: previousTurnUsage
+              ? (typeof previousTurnUsage.cachedTokens === 'number' && typeof nextTokenUsage.cachedTokens === 'number'
+                ? previousTurnUsage.cachedTokens + nextTokenUsage.cachedTokens : undefined)
+              : nextTokenUsage.cachedTokens,
             totalTokens: (previousTurnUsage?.totalTokens ?? 0) + nextTokenUsage.totalTokens,
             timestamp: nextTokenUsage.timestamp,
           };
@@ -6607,7 +6874,7 @@ export class FlowChatStore {
   public rollbackTokenUsage(): void {
   }
 
-  public updateSessionMaxContextTokens(sessionId: string, maxContextTokens: number): void {
+  public updateSessionMaxContextTokens(sessionId: string, maxContextTokens: number | undefined): void {
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session) return prev;
@@ -6701,7 +6968,8 @@ export class FlowChatStore {
     let didClear = false;
     // Explicit acknowledgement also works before the transcript is hydrated.
     // Bind it to the host summary so a later status refresh cannot restore it.
-    const acknowledgedSummaryTurn = sessionActivityStore.get(sessionId)?.summary?.lastTurn;
+    const summary = sessionActivityStore.get(sessionId)?.summary;
+    const acknowledgedSummaryTurn = summary?.unreadTurn ?? summary?.lastTurn;
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session || !session.hasUnreadCompletion) return prev;
@@ -6748,8 +7016,9 @@ export class FlowChatStore {
     this.setState(prev => {
       const session = prev.sessions.get(summary.sessionId);
       if (!session || session.config.dispatchJobId) return prev;
-      const turnId = summary.unreadCompletion ? summary.lastTurn?.turnId : undefined;
-      const generation = summary.unreadCompletion ? summary.lastTurn?.executionGeneration : undefined;
+      const unreadTurn = summary.unreadTurn ?? summary.lastTurn;
+      const turnId = summary.unreadCompletion ? unreadTurn?.turnId : undefined;
+      const generation = summary.unreadCompletion ? unreadTurn?.executionGeneration : undefined;
       if (session.hasUnreadCompletion === summary.unreadCompletion && session.unreadCompletionTurnId === turnId
         && session.unreadCompletionGeneration === generation) return prev;
       const sessions = new Map(prev.sessions);
@@ -7006,9 +7275,11 @@ export class FlowChatStore {
             providerId: round.providerId,
             modelConfigId: round.modelConfigId,
             effectiveModelName: round.effectiveModelName,
+          routing: round.routing,
             firstChunkMs: round.firstChunkMs,
             firstVisibleOutputMs: round.firstVisibleOutputMs,
             streamDurationMs: round.streamDurationMs,
+            ttftMs: round.ttftMs,
             attemptCount: round.attemptCount,
             attemptDiagnostics: round.attemptDiagnostics,
             failureCategory: round.failureCategory,
@@ -7025,7 +7296,7 @@ export class FlowChatStore {
 
       await sessionAPI.saveSessionTurn(
         turnData,
-        requireSessionWorkspaceId(session));
+        this.sessionHistoryWorkspaceId(sessionId));
     } catch (error) {
       log.error('Failed to save cancelled dialog turn', { sessionId, turnId, error });
     }
@@ -7164,7 +7435,10 @@ export class FlowChatStore {
         logPersistedDispatchMetadataOverlap(metadata, 'metadata-page');
         scope.assertCurrent('processPersistedSessionMetadata');
         const existingSession = this.state.sessions.get(metadata.sessionId);
-        if (existingSession?.workspaceId || existingSession?.config.workspaceId) {
+        if ((existingSession?.workspaceId || existingSession?.config.workspaceId)
+          && !(existingSession?.sessionKind === 'subagent' && existingSession.continuationPolicy === undefined)
+          && !existingSession?.externalHistory && !existingSession?.externalBranchOf
+          && !metadata.customMetadata?.externalHistoryMode && !metadata.customMetadata?.externalBranchOf) {
           return;
         }
         if (!includeArchived && metadata.status === 'archived') {
@@ -7192,14 +7466,15 @@ export class FlowChatStore {
           }
         }
 
+        const legacyRecords = legacySessionWorkspaceCandidates();
         const workspaceId = metadata.workspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.workspacePath || workspacePath,
           projectWorkspacePath: metadata.projectWorkspacePath,
           remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const projectWorkspaceId = metadata.projectWorkspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.projectWorkspacePath || workspacePath, remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const relationship = deriveSessionRelationshipFromMetadata(metadata);
         const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
         const titleState = deriveSessionTitleStateFromMetadata(metadata);
@@ -7215,10 +7490,23 @@ export class FlowChatStore {
           if (!scope.isCurrent()) return prev;
           const existing = prev.sessions.get(metadata.sessionId);
           if (existing) {
-            if (existing.workspaceId || existing.config.workspaceId || !workspaceId) return prev;
+            const continuationPolicy = existing.continuationPolicy ?? relationship.continuationPolicy;
+            const importedSource = metadata.customMetadata?.importedFrom ?? existing.importedSource;
+            const externalHistory = externalHistoryFromMetadata(metadata.customMetadata);
+            const externalBranchOf = metadata.customMetadata?.externalBranchOf;
+            const followedFields = externalHistory ? { ...titleState, lastActiveAt: metadata.lastActiveAt } : {};
+            if (existing.workspaceId || existing.config.workspaceId || !workspaceId) {
+              if (continuationPolicy === existing.continuationPolicy && importedSource === existing.importedSource
+                && (!externalHistory || (existing.title === titleState.title && existing.lastActiveAt === metadata.lastActiveAt))
+                && JSON.stringify(externalHistory) === JSON.stringify(existing.externalHistory)
+                && JSON.stringify(externalBranchOf) === JSON.stringify(existing.externalBranchOf)) return prev;
+              const sessions = new Map(prev.sessions);
+              sessions.set(metadata.sessionId, { ...existing, ...followedFields, continuationPolicy, importedSource, externalHistory, externalBranchOf });
+              return { ...prev, sessions };
+            }
             const sessions = new Map(prev.sessions);
             sessions.set(metadata.sessionId, {
-              ...existing, workspaceId, projectWorkspaceId,
+              ...existing, ...followedFields, workspaceId, projectWorkspaceId, continuationPolicy, importedSource, externalHistory, externalBranchOf,
               workspacePath: metadata.workspacePath || workspacePath,
               projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
               ...remoteScope,
@@ -7231,15 +7519,10 @@ export class FlowChatStore {
             return { ...prev, sessions };
           }
 
-          const rawAgentType = metadata.agentType || 'Standard';
-          const validatedAgentType = isValidPersistedAgentType(rawAgentType) ? rawAgentType : 'Standard';
-          const restoredCurrentTokenUsage = isAcpAgentType(validatedAgentType)
+          const restoredAgentType = resolveRestoredAgentType(metadata.agentType);
+          const restoredCurrentTokenUsage = isAcpAgentType(restoredAgentType)
             ? undefined
             : deriveRestoredCurrentTokenUsage(persistedCurrentContextUsage);
-
-          if (rawAgentType !== validatedAgentType) {
-            log.warn('Invalid agentType, falling back to agentic', { sessionId: metadata.sessionId, rawAgentType, validatedAgentType });
-          }
 
           const session: Session = {
             sessionId: metadata.sessionId,
@@ -7253,8 +7536,12 @@ export class FlowChatStore {
             dialogTurns: [],
             status: 'idle',
             persistedStatus: metadata.status,
+            persistedTurnCount: metadata.turnCount,
+            importedSource: metadata.customMetadata?.importedFrom,
+            externalHistory: externalHistoryFromMetadata(metadata.customMetadata),
+            externalBranchOf: metadata.customMetadata?.externalBranchOf,
             config: {
-              agentType: validatedAgentType,
+              agentType: restoredAgentType,
               modelName: metadata.modelName,
               workspaceId, projectWorkspaceId,
               workspacePath: metadata.workspacePath || workspacePath,
@@ -7270,7 +7557,7 @@ export class FlowChatStore {
             todos: (metadata as any).todos || [],
             maxContextTokens,
             currentTokenUsage: restoredCurrentTokenUsage,
-            mode: validatedAgentType,
+            mode: restoredAgentType,
             lastUserDialogMode: metadata.lastUserDialogAgentType,
             lastSubmittedMode: metadata.lastSubmittedAgentType,
             workspacePath: (metadata as any).workspacePath || workspacePath,
@@ -7282,6 +7569,7 @@ export class FlowChatStore {
             sessionKind: relationship.sessionKind,
             parentToolCallId: relationship.parentToolCallId,
             subagentType: relationship.subagentType,
+            continuationPolicy: relationship.continuationPolicy,
             btwThreads: [],
             btwOrigin: relationship.btwOrigin,
             hasUnreadCompletion: metadata.unreadCompletion,
@@ -7342,10 +7630,12 @@ export class FlowChatStore {
   public async ensurePersistedSessionMetadata(
     sessionId: string,
     workspaceId: string,
+    force = false,
   ): Promise<boolean> {
     const scope = getActiveSurfaceScope();
     const existing = this.state.sessions.get(sessionId);
-    if (existing?.workspaceId || existing?.config.workspaceId) {
+    if (!force && (existing?.workspaceId || existing?.config.workspaceId)
+      && !(existing?.sessionKind === 'subagent' && existing.continuationPolicy === undefined)) {
       return true;
     }
 
@@ -7371,15 +7661,16 @@ export class FlowChatStore {
     workspaceId: string,
     limit: number,
     cursor?: string,
-    traceSource = 'unknown'
+    traceSource = 'unknown',
+    options?: { fresh?: boolean; query?: SessionCatalogQuery },
   ): Promise<SessionMetadataPage> {
     const { remoteConnectionId, remoteSshHost } = this.workspaceForId(workspaceId);
     const requestKey = this.getMetadataPageRequestKey(
       workspaceId, limit, cursor,
-    );
+    ) + JSON.stringify(options?.query ?? null);
     const existingRequest = this.metadataPageRequests.get(requestKey);
     const remote = isRemoteTraceContext(remoteConnectionId, remoteSshHost);
-    if (existingRequest) {
+    if (existingRequest && !options?.fresh) {
       const completedAtMs = existingRequest.completedAtMs;
       const isRecentCompletedRequest =
         completedAtMs !== undefined &&
@@ -7395,15 +7686,15 @@ export class FlowChatStore {
         });
         return existingRequest.promise;
       }
+    }
 
-      if (existingRequest.cleanupTimer) {
-        clearTimeout(existingRequest.cleanupTimer);
-      }
+    if (existingRequest) {
+      if (existingRequest.cleanupTimer) clearTimeout(existingRequest.cleanupTimer);
       this.metadataPageRequests.delete(requestKey);
     }
 
     const loadPromise = this.loadSessionMetadataPageUncached(
-      workspaceId, limit, cursor, traceSource,
+      workspaceId, limit, cursor, traceSource, options?.query,
     );
 
     const request: MetadataPageRequest = { promise: loadPromise };
@@ -7436,7 +7727,8 @@ export class FlowChatStore {
     workspaceId: string,
     limit: number,
     cursor?: string,
-    traceSource = 'unknown'
+    traceSource = 'unknown',
+    query?: SessionCatalogQuery,
   ): Promise<SessionMetadataPage> {
     const { workspacePath, remoteConnectionId, remoteSshHost } = this.workspaceForId(workspaceId);
     const activityScope = getActiveSurfaceScope();
@@ -7481,6 +7773,7 @@ export class FlowChatStore {
         });
         const pagePromise = sessionAPI.listSessionsPage({
           workspaceId, limit, cursor,
+          ...(query ? { query } : {}),
         });
         modelConfigPromise = this.loadSessionMetadataModelConfig();
         page = await pagePromise;
@@ -7656,14 +7949,15 @@ export class FlowChatStore {
             }
           }
 
+          const legacyRecords = legacySessionWorkspaceCandidates();
           const workspaceId = metadata.workspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.workspacePath || workspacePath,
           projectWorkspacePath: metadata.projectWorkspacePath,
           remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const projectWorkspaceId = metadata.projectWorkspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.projectWorkspacePath || workspacePath, remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const relationship = deriveSessionRelationshipFromMetadata(metadata);
           const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
           const titleState = deriveSessionTitleStateFromMetadata(metadata);
@@ -7680,15 +7974,10 @@ export class FlowChatStore {
               return prev;
             }
 
-            const rawAgentType = metadata.agentType || 'Standard';
-            const validatedAgentType = isValidPersistedAgentType(rawAgentType) ? rawAgentType : 'Standard';
-            const restoredCurrentTokenUsage = isAcpAgentType(validatedAgentType)
+            const restoredAgentType = resolveRestoredAgentType(metadata.agentType);
+            const restoredCurrentTokenUsage = isAcpAgentType(restoredAgentType)
               ? undefined
               : deriveRestoredCurrentTokenUsage(persistedCurrentContextUsage);
-
-            if (rawAgentType !== validatedAgentType) {
-              log.warn('Invalid agentType, falling back to agentic', { sessionId: metadata.sessionId, rawAgentType, validatedAgentType });
-            }
 
             const session: Session = {
               sessionId: metadata.sessionId,
@@ -7702,8 +7991,12 @@ export class FlowChatStore {
               dialogTurns: [],
               status: 'idle',
               persistedStatus: metadata.status,
+              persistedTurnCount: metadata.turnCount,
+              importedSource: metadata.customMetadata?.importedFrom,
+              externalHistory: externalHistoryFromMetadata(metadata.customMetadata),
+              externalBranchOf: metadata.customMetadata?.externalBranchOf,
               config: {
-                agentType: validatedAgentType,
+                agentType: restoredAgentType,
                 modelName: metadata.modelName,
               workspaceId, projectWorkspaceId,
                 workspacePath: metadata.workspacePath || workspacePath,
@@ -7719,7 +8012,7 @@ export class FlowChatStore {
               todos: (metadata as any).todos || [],
               maxContextTokens,
               currentTokenUsage: restoredCurrentTokenUsage,
-              mode: validatedAgentType,
+              mode: restoredAgentType,
               lastUserDialogMode: metadata.lastUserDialogAgentType,
               lastSubmittedMode: metadata.lastSubmittedAgentType,
               workspacePath: (metadata as any).workspacePath || workspacePath,
@@ -7731,6 +8024,7 @@ export class FlowChatStore {
               sessionKind: relationship.sessionKind,
               parentToolCallId: relationship.parentToolCallId,
               subagentType: relationship.subagentType,
+              continuationPolicy: relationship.continuationPolicy,
               btwThreads: [],
               btwOrigin: relationship.btwOrigin,
               hasUnreadCompletion: metadata.unreadCompletion,
@@ -7831,6 +8125,23 @@ export class FlowChatStore {
     });
   }
 
+  /** A reader recovery always reads the owning host; it never starts a dialog turn. */
+  public async synchronizeSessionHistory(sessionId: string, shouldApply?: () => boolean): Promise<PeerSessionSnapshotRefreshResult> {
+    const session = this.state.sessions.get(sessionId);
+    if (session?.config.dispatchJobId) {
+      throw new Error('Detached history synchronization requires the target event replay and cannot use controller storage');
+    }
+    const result = await this.refreshPeerSessionSnapshot(sessionId, {
+      requireActiveSession: true,
+      shouldApply,
+      shouldReplayRuntimeSnapshot: () => false,
+    });
+    if (!result.applied && shouldApply?.() !== false && this.state.sessions.get(sessionId) !== session) {
+      throw new Error('Session history changed during source synchronization');
+    }
+    return result;
+  }
+
   /**
    * Reconcile the active Peer Device session with a small authoritative
    * snapshot from the host.
@@ -7861,7 +8172,7 @@ export class FlowChatStore {
 
     const restored = await agentAPI.restoreSessionView(
       sessionId,
-      this.sessionWorkspaceId(sessionId),
+      this.sessionHistoryWorkspaceId(sessionId),
       `peer-refresh-${sessionId.slice(0, 8)}`,
       undefined,
       PEER_SESSION_REFRESH_TAIL_TURN_COUNT,
@@ -8008,8 +8319,9 @@ export class FlowChatStore {
       const turnCatalog = restored.turnCatalog?.sessionId === sessionId
         ? selectPreferredTurnCatalog(session.turnCatalog, restored.turnCatalog)
         : session.turnCatalog;
-      const restoredAgentType =
-        restored.session.agentType || session.mode || session.config.agentType;
+      const restoredAgentType = resolveRestoredAgentType(
+        restored.session.agentType, session.mode, session.config.agentType,
+      );
       const currentTokenUsage = reconcileRestoreViewCurrentTokenUsage(
         session.currentTokenUsage,
         restored.currentContextUsage,
@@ -8021,6 +8333,7 @@ export class FlowChatStore {
         !turnsChanged
         && turnCatalog === session.turnCatalog
         && restoredAgentType === session.mode
+        && restoredAgentType === session.config.agentType
         && currentTokenUsage === session.currentTokenUsage
       ) {
         return prev;
@@ -8046,6 +8359,7 @@ export class FlowChatStore {
         turnCatalog,
         config: {
           ...session.config,
+          agentType: restoredAgentType,
           ...(restored.session.modelName
             ? { modelName: restored.session.modelName }
             : {}),
@@ -8121,7 +8435,7 @@ export class FlowChatStore {
 
     const restored = await agentAPI.restoreSessionView(
       sessionId,
-      this.sessionWorkspaceId(sessionId),
+      this.sessionHistoryWorkspaceId(sessionId),
       `settled-turn-${turnId.slice(0, 8)}`,
       initialSession.sessionKind === 'subagent',
       SETTLED_TURN_RECONCILE_TAIL_TURN_COUNT,
@@ -8280,6 +8594,8 @@ export class FlowChatStore {
       limit?: number;
       includeInternal?: boolean;
       deferFullHistoryUntilActive?: boolean;
+      /** A background source refresh must not replace a view after drafting starts. */
+      shouldApply?: () => boolean;
     }
   ): Promise<void> {
     const traceStartedAt = nowMs();
@@ -8343,6 +8659,13 @@ export class FlowChatStore {
       return;
     }
     if (scope.surfaceId !== 'local') {
+      if (isUnmaterializedSessionDraft(initialSession)) return;
+      if (initialSession?.externalHistory?.mode === 'follow') {
+        // Relay history has its own cursor/version contract. Until it can pin
+        // immutable source snapshots, do not silently project a stale source.
+        this.setSessionHistoryState(sessionId, 'failed');
+        throw new Error(i18nService.t('flow-chat:externalHistory.unsupportedSurface'));
+      }
       this.setSessionHistoryState(sessionId, 'hydrating');
       await this.loadRelaySessionHistory(sessionId);
       scope.assertCurrent('load relay session history');
@@ -8356,6 +8679,7 @@ export class FlowChatStore {
       initialSession.historyState === 'metadata-only';
     let hydratingStateNotified = false;
     const notifyHydratingState = (): void => {
+      if (options?.shouldApply) return;
       if (suppressInitialHydratingState) {
         return;
       }
@@ -8408,7 +8732,7 @@ export class FlowChatStore {
               try {
                 const restoredPromise = agentAPI.restoreSessionWithTurns(
                   sessionId,
-      this.sessionWorkspaceId(sessionId),
+                  this.sessionHistoryWorkspaceId(sessionId),
                   sessionTraceId,
                   options?.includeInternal,
                 );
@@ -8436,7 +8760,7 @@ export class FlowChatStore {
 
             const restoredSessionPromise = agentAPI.restoreSession(
               sessionId,
-      this.sessionWorkspaceId(sessionId),
+              this.sessionHistoryWorkspaceId(sessionId),
               sessionTraceId,
               options?.includeInternal,
             );
@@ -8452,7 +8776,7 @@ export class FlowChatStore {
             try {
               const restoredPromise = agentAPI.restoreSessionView(
                 sessionId,
-      this.sessionWorkspaceId(sessionId),
+                this.sessionHistoryWorkspaceId(sessionId),
                 sessionTraceId,
                 options?.includeInternal,
                 historicalSessionInitialTailTurnCount(remote),
@@ -8534,7 +8858,7 @@ export class FlowChatStore {
           sessionTraceId,
         });
         const { sessionAPI } = await import('@/infrastructure/api/service-api/SessionAPI');
-        turns = await sessionAPI.loadSessionTurns(sessionId, requireSessionWorkspaceId(initialSession!), options?.limit);
+        turns = await sessionAPI.loadSessionTurns(sessionId, this.sessionHistoryWorkspaceId(sessionId), options?.limit);
         startupTrace.markPhase('historical_session_turns_load_end', {
           remote,
           sessionId,
@@ -8548,6 +8872,7 @@ export class FlowChatStore {
       // machine they are about to drive is shared, so a stale hydrate must stop
       // here rather than commit into whichever surface is rendered now.
       scope.assertCurrent('loadSessionHistory');
+      if (options?.shouldApply && !options.shouldApply()) return;
       // A local restore may have started just before the observer bound this
       // session. Re-check ownership after every restore await and before any
       // commit or state-machine mutation so that late empty history cannot
@@ -8640,8 +8965,9 @@ export class FlowChatStore {
         const session = prev.sessions.get(sessionId);
         if (!session) return prev;
 
-        const restoredAgentType =
-          restoredSessionInfo?.agentType || session.mode || session.config.agentType;
+        const restoredAgentType = resolveRestoredAgentType(
+          restoredSessionInfo?.agentType, session.mode, session.config.agentType,
+        );
         const mergedTurns = dialogTurns.map(loaded => {
           const existing = session.dialogTurns.find(turn => turn.id === loaded.id);
           // Disk hydrate is the persisted record, so the same ownership rule
@@ -8674,6 +9000,7 @@ export class FlowChatStore {
           error: null,
           config: {
             ...session.config,
+            agentType: restoredAgentType,
             ...(restoredSessionInfo?.modelName
               ? { modelName: restoredSessionInfo.modelName }
               : {}),
@@ -8778,7 +9105,7 @@ export class FlowChatStore {
         } else if (!deferFullHistoryUntilActive) {
           this.scheduleCompleteSessionHistoryLoad({
             sessionId,
-            workspaceId: this.sessionWorkspaceId(sessionId),
+            workspaceId: this.sessionHistoryWorkspaceId(sessionId),
             remoteConnectionId,
             remoteSshHost,
             includeInternal: options?.includeInternal,
@@ -8892,7 +9219,7 @@ export class FlowChatStore {
             : undefined;
       const rawTokenUsage = turn.tokenUsage ?? turn.token_usage;
 
-      return {
+      const converted = {
       id: turn.turnId,
       sessionId: turn.sessionId,
       kind: turn.kind || 'user_dialog',
@@ -8933,6 +9260,8 @@ export class FlowChatStore {
               id: tool.id,
               type: 'tool' as const,
               toolName: tool.toolName,
+              importedSource: isExternalSessionEcosystem(metadata?.importedFrom)
+                ? metadata.importedFrom : undefined,
               toolCall: tool.toolCall,
               interruptionReason: normalizePersistedToolInterruptionReason(
                 tool.interruptionReason,
@@ -9017,9 +9346,11 @@ export class FlowChatStore {
           providerId: round.providerId,
           modelConfigId: round.modelConfigId,
           effectiveModelName: round.effectiveModelName,
+          routing: round.routing,
           firstChunkMs: round.firstChunkMs,
           firstVisibleOutputMs: round.firstVisibleOutputMs,
           streamDurationMs: round.streamDurationMs,
+          ttftMs: round.ttftMs,
           attemptCount: round.attemptCount,
           attemptDiagnostics: round.attemptDiagnostics,
           failureCategory: round.failureCategory,
@@ -9049,6 +9380,7 @@ export class FlowChatStore {
         ? {
             inputTokens: rawTokenUsage.inputTokens ?? rawTokenUsage.input_tokens,
             outputTokens: rawTokenUsage.outputTokens ?? rawTokenUsage.output_tokens,
+            cachedTokens: rawTokenUsage.cachedTokens ?? rawTokenUsage.cached_tokens,
             totalTokens: rawTokenUsage.totalTokens ?? rawTokenUsage.total_tokens,
             timestamp: rawTokenUsage.timestamp,
           }
@@ -9056,6 +9388,8 @@ export class FlowChatStore {
       storageTurnIndex: turn.turnIndex,
       backendTurnIndex: turn.turnIndex,
     };
+      if (!isLiveTurn) this.persistedHistoryTurns.add(converted);
+      return converted;
     });
   }
 

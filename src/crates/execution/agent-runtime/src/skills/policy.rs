@@ -65,11 +65,6 @@ const DISABLE_OFFICE: SkillPolicyRule = SkillPolicyRule {
     effect: PolicyEffect::Disable,
 };
 
-const DISABLE_GSTACK: SkillPolicyRule = SkillPolicyRule {
-    selector: SkillSelector::Group(BuiltinSkillGroup::Gstack),
-    effect: PolicyEffect::Disable,
-};
-
 const DISABLE_MINIAPP: SkillPolicyRule = SkillPolicyRule {
     selector: SkillSelector::Group(BuiltinSkillGroup::MiniApp),
     effect: PolicyEffect::Disable,
@@ -131,6 +126,11 @@ const ENABLE_PLAN: SkillPolicyRule = SkillPolicyRule {
     effect: PolicyEffect::Enable,
 };
 
+const ENABLE_GENERATE_IMAGE: SkillPolicyRule = SkillPolicyRule {
+    selector: SkillSelector::DirName("generate-image"),
+    effect: PolicyEffect::Enable,
+};
+
 const OPEN_META_ONLY_POLICY: ModeSkillPolicy = ModeSkillPolicy {
     builtin_default: PolicyEffect::Disable,
     rules: &[ENABLE_META],
@@ -140,11 +140,11 @@ const AGENTIC_POLICY: ModeSkillPolicy = ModeSkillPolicy {
     builtin_default: PolicyEffect::Enable,
     rules: &[
         DISABLE_OFFICE,
-        DISABLE_GSTACK,
         DISABLE_COMPUTER_USE,
         DISABLE_MINIAPP,
         DISABLE_CREATION,
         DISABLE_CANVAS,
+        ENABLE_GENERATE_IMAGE,
     ],
 };
 
@@ -152,12 +152,12 @@ const CLAW_POLICY: ModeSkillPolicy = ModeSkillPolicy {
     builtin_default: PolicyEffect::Enable,
     rules: &[
         DISABLE_OFFICE,
-        DISABLE_GSTACK,
         DISABLE_COMPUTER_USE,
         DISABLE_MINIAPP,
         DISABLE_CREATION,
         DISABLE_DEBUGGING,
         DISABLE_CANVAS,
+        ENABLE_GENERATE_IMAGE,
     ],
 };
 
@@ -165,7 +165,6 @@ const CREATIVE_POLICY: ModeSkillPolicy = ModeSkillPolicy {
     builtin_default: PolicyEffect::Enable,
     rules: &[
         DISABLE_OFFICE,
-        DISABLE_GSTACK,
         DISABLE_COMPUTER_USE,
         DISABLE_DEBUGGING,
         DISABLE_CANVAS,
@@ -179,12 +178,13 @@ const COWORK_POLICY: ModeSkillPolicy = ModeSkillPolicy {
         ENABLE_META,
         ENABLE_COORDINATION,
         ENABLE_PLANNING,
+        ENABLE_GENERATE_IMAGE,
     ],
 };
 
 const DEEP_RESEARCH_POLICY: ModeSkillPolicy = ModeSkillPolicy {
     builtin_default: PolicyEffect::Disable,
-    rules: &[ENABLE_META, ENABLE_COORDINATION],
+    rules: &[ENABLE_META, ENABLE_COORDINATION, ENABLE_GENERATE_IMAGE],
 };
 
 const ULTRA_POLICY: ModeSkillPolicy = ModeSkillPolicy {
@@ -241,6 +241,22 @@ mod tests {
     use super::*;
     use crate::agents::{STANDARD_HARNESS_CONFIG_ID, STANDARD_HARNESS_CONFIG_MEMBERS};
     use crate::skills::catalog::BUILTIN_SKILL_SPECS;
+
+    #[test]
+    fn image_generation_defaults_on_in_main_workflows_and_remains_opt_in_for_specialist_agents() {
+        for mode in ["Standard", "Claw", "Creative", "Cowork", "DeepResearch"] {
+            assert_eq!(
+                resolve_builtin_default_enabled("generate-image", mode),
+                Some(true)
+            );
+        }
+        for mode in ["Ultimate", "SwarmWorker", "ComputerUse", "SomeUnknownMode"] {
+            assert_eq!(
+                resolve_builtin_default_enabled("generate-image", mode),
+                Some(false)
+            );
+        }
+    }
 
     #[test]
     fn agent_browser_defaults_on_only_for_ultra_and_swarm_worker() {

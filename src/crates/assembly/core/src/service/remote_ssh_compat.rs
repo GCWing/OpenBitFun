@@ -46,19 +46,16 @@ pub mod workspace_state {
     }
 
     pub fn remote_workspace_runtime_root(ssh_host: &str, remote_root_norm: &str) -> PathBuf {
-        openbitfun_services_core::workspace_identity::remote_workspace_runtime_root(
-            crate::infrastructure::get_path_manager_arc().remote_ssh_mirror_root_dir(),
-            ssh_host,
-            remote_root_norm,
-        )
+        crate::infrastructure::get_path_manager_arc()
+            .remote_workspace_runtime_root(ssh_host, remote_root_norm)
     }
 
     pub fn remote_workspace_session_mirror_dir(ssh_host: &str, remote_root_norm: &str) -> PathBuf {
-        openbitfun_services_core::workspace_identity::remote_workspace_session_mirror_dir(
-            crate::infrastructure::get_path_manager_arc().remote_ssh_mirror_root_dir(),
-            ssh_host,
-            remote_root_norm,
+        crate::service::workspace_runtime::WorkspaceRuntimeService::new(
+            crate::infrastructure::get_path_manager_arc(),
         )
+        .context_for_remote_workspace(ssh_host, remote_root_norm)
+        .sessions_dir
     }
 
     pub fn unresolved_remote_session_storage_dir(

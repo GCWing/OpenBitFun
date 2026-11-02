@@ -11,11 +11,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [
-      "icons/openbitfun-app-icon.icns",
-      "icons/openbitfun-app-icon.ico",
-      "icons/openbitfun-app-icon.png"
-    ],
     "resources": {
       "../../mobile-web/dist": "mobile-web/dist",
       "../extension-host/dist/extension-host.js": "resources/ext-host/extension-host.js",
@@ -27,6 +22,12 @@
     "linux": {
       "deb": {
         "depends": [
+          "libgstreamer1.0-0",
+          "libgstreamer-plugins-base1.0-0",
+          "gstreamer1.0-pipewire",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "xdg-desktop-portal",
           "libwebkit2gtk-4.1-0",
           "libgtk-3-0"
         ],

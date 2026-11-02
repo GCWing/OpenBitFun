@@ -1,14 +1,17 @@
 //! Product HostInvoke command handlers for CLI Peer Host.
 
+mod btw;
 mod config;
 mod dialog;
 mod external_sources;
 mod filesystem;
 mod git;
+mod model_pools;
 mod models;
 mod permission;
 mod product_control;
 mod session;
+mod skills;
 mod snapshot;
 mod soft;
 mod system;
@@ -35,6 +38,12 @@ pub(crate) fn dispatch<'a>(
         "get_session_permission_mode" => Box::pin(permission::session_permission_mode(state, args, false, false)),
         "update_session_permission_mode" => Box::pin(permission::session_permission_mode(state, args, true, false)),
         "update_active_turn_permission_mode" => Box::pin(permission::session_permission_mode(state, args, true, true)),
+        "retry_model_pool_member" | "get_model_pools" => Box::pin(model_pools::dispatch(command, state, args)),
+        "save_model_pool" => Box::pin(model_pools::dispatch(command, state, args)),
+        "delete_model_pool" => Box::pin(model_pools::dispatch(command, state, args)),
+        "get_model_pool_status" => Box::pin(model_pools::dispatch(command, state, args)),
+        "get_session_model_target" => Box::pin(model_pools::dispatch(command, state, args)),
+        "update_session_model_target" => Box::pin(model_pools::dispatch(command, state, args)),
         "get_ai_model_catalog" => Box::pin(models::get_ai_model_catalog()),
         "project_ai_model_reasoning_catalog" => Box::pin(models::project_ai_model_reasoning_catalog(args)),
         "get_model_configs" => Box::pin(models::get_model_configs()),
@@ -45,6 +54,8 @@ pub(crate) fn dispatch<'a>(
         "initialize_workspace_startup_state" => {
             Box::pin(workspace::initialize_workspace_startup_state(state))
         }
+        "get_workspace_icon" => Box::pin(workspace::get_workspace_icon(state, args)),
+        "set_workspace_icon" => Box::pin(workspace::set_workspace_icon(state, args)),
         "get_opened_workspaces" => Box::pin(workspace::get_opened_workspaces(state)),
         "get_recent_workspaces" => Box::pin(workspace::get_recent_workspaces(state)),
         "get_current_workspace" | "get_workspace_info" => {
@@ -102,11 +113,15 @@ pub(crate) fn dispatch<'a>(
         "terminal_shutdown_all" => Box::pin(terminal::shutdown_all()),
         // Filesystem
         "workspace_file_upload" => Box::pin(filesystem::workspace_file_upload(state, args)),
-        "get_directory_children" | "list_files" => {
-            Box::pin(filesystem::get_directory_children(state, args))
+        "html_preview_read_resource" => Box::pin(filesystem::html_preview_read_resource(args)),
+        "get_directory_children" | "explorer_get_children" | "list_files" => {
+            Box::pin(filesystem::get_directory_children(&state.filesystem_service, &state.workspace_service, args))
         }
-        "get_directory_children_paginated" => {
-            Box::pin(filesystem::get_directory_children_paginated(state, args))
+        "get_directory_children_paginated" | "explorer_get_children_paginated" => {
+            Box::pin(filesystem::get_directory_children_paginated(&state.filesystem_service, &state.workspace_service, args))
+        }
+        "get_file_tree" | "explorer_get_file_tree" => {
+            Box::pin(filesystem::get_file_tree(&state.filesystem_service, &state.workspace_service, args))
         }
         "check_path_exists" => Box::pin(filesystem::check_path_exists(state, args)),
         "create_directory" => Box::pin(filesystem::create_directory(state, args)),
@@ -126,6 +141,7 @@ pub(crate) fn dispatch<'a>(
         "get_all_tools_info" => Box::pin(tools::get_all_tools_info()),
         "get_chat_mcp_catalog" => Box::pin(tools::get_chat_mcp_catalog(args)),
 
+        "get_model_routing_status" => Box::pin(session::get_model_routing_status(state, args)),
         // Sessions
         "list_persisted_sessions" => Box::pin(session::list_persisted_sessions(state, args)),
         "list_persisted_sessions_page" => Box::pin(session::list_persisted_sessions_page(state, args)),
@@ -134,6 +150,7 @@ pub(crate) fn dispatch<'a>(
             Box::pin(session::list_persisted_sessions_count(state, args))
         }
         "search_session_content" => Box::pin(session::search_session_content(state, args)),
+        "load_session_trajectory" => Box::pin(session::load_session_trajectory(state, args)),
         "load_session_turn_window" => Box::pin(session::load_session_turn_window(state, args)),
         "load_session_turns" => Box::pin(session::load_session_turns(state, args)),
         "load_session_event_backfill" => Box::pin(std::future::ready(session::load_session_event_backfill(state, args))),
@@ -161,6 +178,7 @@ pub(crate) fn dispatch<'a>(
         "get_session_files" => Box::pin(snapshot::get_session_files(state, args)),
 
         // Dialog / tools
+        "manage_dialog_queue" => Box::pin(dialog::manage_dialog_queue(state, args)),
         "start_dialog_turn" => Box::pin(dialog::start_dialog_turn(state, args)),
         "cancel_dialog_turn" => Box::pin(dialog::cancel_dialog_turn(state, args)),
         "start_user_question_interaction" => Box::pin(dialog::start_user_question_interaction(state, args)),
@@ -171,6 +189,8 @@ pub(crate) fn dispatch<'a>(
         // coordinator via the compatibility surface both CLI and Desktop Peer
         // Hosts share.
         "cancel_tool" => Box::pin(dialog::cancel_tool(state, args)),
+        "btw_ask_stream" => Box::pin(btw::btw_ask_stream(state, args)),
+        "btw_cancel" => Box::pin(btw::btw_cancel(args)),
         "get_session_interaction_mailbox" => Box::pin(std::future::ready(permission::get_session_interaction_mailbox(state, args))),
         "list_pending_permission_requests" => Box::pin(std::future::ready(permission::list_pending_permission_requests(state))),
         "subscribe_permission_requests" => Box::pin(std::future::ready(permission::subscribe_permission_requests())),
@@ -200,8 +220,14 @@ pub(crate) fn dispatch<'a>(
         "get_acp_clients" => Box::pin(soft::get_acp_clients()),
         "list_background_command_activities" => Box::pin(soft::list_background_command_activities()),
 
+        // Skills
+        "get_skill_configs" => Box::pin(skills::get_skill_configs(args)),
+        "get_mode_skill_configs" => Box::pin(skills::get_mode_skill_configs(args)),
+        "get_global_skill_settings" => Box::pin(skills::get_global_skill_settings(args)),
+
         // System
         "get_system_info" => Box::pin(system::get_system_info()),
+        "get_runtime_logging_info" => Box::pin(system::get_runtime_logging_info()),
         "get_token_usage_statistics" => Box::pin(system::get_token_usage_statistics(state, args)),
 
         // Only reachable if the registry marks a command Handled without a
@@ -218,6 +244,12 @@ pub(crate) fn dispatch<'a>(
 /// cannot be advertised as runnable here without a handler (or vice versa).
 #[cfg(test)]
 pub(crate) const HANDLED_COMMANDS: &[&str] = &[
+    "btw_ask_stream",
+    "btw_cancel",
+    "get_skill_configs",
+    "get_mode_skill_configs",
+    "get_global_skill_settings",
+    "get_runtime_logging_info",
     "terminal_execute",
     "terminal_get",
     "terminal_get_shells",
@@ -246,7 +278,15 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "refresh_models_dev_catalog_now",
     "get_models_dev_catalog_status",
     "get_model_configs",
+    "get_model_routing_status",
     "project_ai_model_reasoning_catalog",
+    "retry_model_pool_member",
+    "get_model_pools",
+    "save_model_pool",
+    "delete_model_pool",
+    "get_model_pool_status",
+    "get_session_model_target",
+    "update_session_model_target",
     "get_ai_model_catalog",
     "update_active_turn_permission_mode",
     "update_session_permission_mode",
@@ -279,11 +319,18 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_configs",
     "get_current_workspace",
     "workspace_file_upload",
+    "html_preview_read_resource",
     "get_directory_children",
     "get_directory_children_paginated",
+    "get_file_tree",
+    "explorer_get_children",
+    "explorer_get_children_paginated",
+    "explorer_get_file_tree",
     "get_external_source_control_snapshot",
     "get_external_source_discovery_snapshot",
     "get_external_source_snapshot",
+    "get_workspace_icon",
+    "set_workspace_icon",
     "get_opened_workspaces",
     "get_recent_workspaces",
     "get_session_files",
@@ -306,6 +353,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "list_project_permission_grants",
     "load_session_event_backfill",
     "load_session_turn_window",
+    "load_session_trajectory",
     "load_session_turns",
     "open_workspace",
     "product_control_invoke",
@@ -336,6 +384,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "set_external_tool_targets_enabled_command",
     "set_active_workspace",
     "start_dialog_turn",
+    "manage_dialog_queue",
     "submit_user_answers",
     "start_user_question_interaction",
     "subscribe_permission_requests",

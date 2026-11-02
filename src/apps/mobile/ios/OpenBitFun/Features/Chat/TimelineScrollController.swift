@@ -7,13 +7,18 @@ import OSLog
 @MainActor
 final class TimelineScrollController: ObservableObject {
     @Published private(set) var followsBottom = true
+    @Published private(set) var historyBottomSpace: CGFloat = 0
+    /// Asked once per deliberate drag reaching the start of the transcript.
+    var onHistoryStartReached: (() -> Bool)?
+    private var historyArrival = HistoryPageArrivalTracker()
     private weak var scrollView: UIScrollView?
     private var observations: [NSKeyValueObservation] = []
     private var updateScheduled = false
     private var applyingOffset = false
     private var interactionRevision = 0
-    private var anchorScheduled = false
-    private var pendingAnchorDisplacement: CGFloat = 0
+    private var historyAnchor: (id: String, contentTop: CGFloat)?
+    private var historyRequestInFlight = false
+    private var requestedDuringGesture = false
     private var sessionID = ""
     // Geometry telemetry must not invalidate the SwiftUI tree on every scroll pixel.
     private final class WeakRow {
@@ -74,16 +79,19 @@ final class TimelineScrollController: ObservableObject {
 
     func attach(_ scroll: UIScrollView) {
         guard scrollView !== scroll else { return }
+        scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(historyPanChanged(_:)))
         observations.removeAll()
         scrollView = scroll
+        scroll.panGestureRecognizer.addTarget(self, action: #selector(historyPanChanged(_:)))
         previousSize = scroll.bounds.size
         observations = [
-            scroll.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+            scroll.observe(\.contentSize, options: [.new]) { [weak self] scroll, _ in
                 MainActor.assumeIsolated {
                     #if DEBUG
                     self?.traceGeometry("content-size")
                     #endif
                     self?.scheduleFollow()
+                    self?.restoreHistoryAnchor()
                 }
             },
             scroll.observe(\.bounds, options: [.new]) { [weak self] scroll, _ in
@@ -97,54 +105,88 @@ final class TimelineScrollController: ObservableObject {
                     self.traceGeometry("bounds")
                     #endif
                     self.observeUserScroll(scroll)
+                    self.restoreHistoryAnchor()
                 }
             }
         ]
         logGeometry("attach", force: true)
         scheduleFollow()
+        restoreHistoryAnchor()
     }
 
     func open(session: String) {
         guard sessionID != session else { return }
         sessionID = session
+        historyArrival.cancelArrival()
+        historyRequestInFlight = false
+        requestedDuringGesture = false
         followBottom()
     }
 
     func followBottom() {
         interactionRevision += 1
-        pendingAnchorDisplacement = 0
+        historyAnchor = nil
+        historyBottomSpace = 0
         followsBottom = true
         logGeometry("follow-request", force: true)
         scheduleFollow()
     }
 
-    var isUserScrolling: Bool {
-        guard let scroll = scrollView else { return false }
-        // Tracking also includes a stationary tap on a button inside the list.
-        // Only an actual drag/deceleration cancels history-position restoration.
-        return scroll.isDragging || scroll.isDecelerating
-    }
-
     func stopFollowing() { interactionRevision += 1; followsBottom = false }
 
-    func preserveAnchor(displacement: CGFloat) {
-        guard !isUserScrolling, !followsBottom, abs(displacement) > 0.5 else { return }
-        pendingAnchorDisplacement = displacement
-        guard !anchorScheduled else { return }
-        anchorScheduled = true
-        let revision = interactionRevision
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.anchorScheduled = false
-            guard revision == self.interactionRevision, !self.isUserScrolling,
-                  !self.followsBottom, let scroll = self.scrollView else { return }
-            let delta = self.pendingAnchorDisplacement
-            self.pendingAnchorDisplacement = 0
-            self.applyingOffset = true
-            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x,
-                y: scroll.contentOffset.y + delta), animated: false)
-            self.applyingOffset = false
+    /// Capture content coordinates, not a viewport position. Finger movement
+    /// changes only the viewport; prepending changes only the row's content Y.
+    @discardableResult
+    func beginHistoryRequest() -> Bool {
+        guard !historyRequestInFlight, let scroll = scrollView else { return false }
+        historyRequestInFlight = true
+        requestedDuringGesture = true
+        stopFollowing()
+        // A short transcript leaves blank space below its rows. Retain that
+        // space while prepending, otherwise UIScrollView clamps the compensating
+        // offset and pushes the original messages down on a tall viewport.
+        historyBottomSpace += max(0, scroll.bounds.height - scroll.adjustedContentInset.top
+            - scroll.adjustedContentInset.bottom - scroll.contentSize.height)
+        if let row = rowFrames.filter({ $0.value.maxY > 0 })
+            .min(by: { $0.value.minY < $1.value.minY }) {
+            historyAnchor = (row.key, row.value.minY + scroll.contentOffset.y)
         }
+        return true
+    }
+
+    func historyLoadingChanged(_ loading: Bool) {
+        historyRequestInFlight = loading
+        restoreHistoryAnchor()
+    }
+
+    /// Run during native layout so the inserted area is compensated before it
+    /// is drawn. This also works while dragging/decelerating: it never restores
+    /// an old finger position or scrolls the captured row to the top first.
+    func restoreHistoryAnchor() {
+        guard !applyingOffset, !followsBottom, let anchor = historyAnchor,
+              let scroll = scrollView, let view = rowViews[anchor.id]?.view,
+              view.window != nil else { return }
+        let contentTop = view.convert(view.bounds, to: scroll).minY
+        let delta = contentTop - anchor.contentTop
+        guard abs(delta) > 0.5 else { return }
+        historyAnchor = (anchor.id, contentTop)
+        applyingOffset = true
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x,
+            y: scroll.contentOffset.y + delta), animated: false)
+        applyingOffset = false
+    }
+
+    @objc private func historyPanChanged(_ pan: UIPanGestureRecognizer) {
+        guard let scroll = scrollView else { return }
+        if pan.state == .began {
+            requestedDuringGesture = historyRequestInFlight
+            historyArrival.beginGesture()
+            // A completed page no longer owns subsequent deliberate scrolling.
+            if !historyRequestInFlight { historyAnchor = nil }
+        }
+        guard pan.state == .began || pan.state == .changed,
+              !requestedDuringGesture, !historyRequestInFlight else { return }
+        observeHistoryStart(scroll)
     }
 
     private func observeUserScroll(_ scroll: UIScrollView) {
@@ -155,13 +197,26 @@ final class TimelineScrollController: ObservableObject {
         // KVO can run inside a layout pass; publish presentation state on the next turn.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.interactionRevision == revision else { return }
-            self.followsBottom = atBottom
+            if !self.historyRequestInFlight { self.followsBottom = atBottom }
         }
     }
 
     private func bottomOffset(_ scroll: UIScrollView) -> CGFloat {
         max(-scroll.adjustedContentInset.top,
             scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+    }
+
+    /// Only real pan events may request a page. Layout, bounce and anchor
+    /// corrections cannot re-arm pagination or drain history after release.
+    private func observeHistoryStart(_ scroll: UIScrollView) {
+        let aboveStart = scroll.contentOffset.y + scroll.adjustedContentInset.top
+        guard historyArrival.arrived(atStart: aboveStart <= 0.5) else { return }
+        let session = sessionID
+        requestedDuringGesture = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.sessionID == session, !self.historyRequestInFlight else { return }
+            _ = self.onHistoryStartReached?()
+        }
     }
 
     private func scheduleFollow() {
@@ -201,7 +256,8 @@ struct TimelineRowProbe: UIViewRepresentable {
     let rowID: String
 
     func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+        let view = RowView()
+        view.controller = controller
         view.isUserInteractionEnabled = false
         controller.registerRow(rowID, view: view)
         return view
@@ -209,6 +265,14 @@ struct TimelineRowProbe: UIViewRepresentable {
 
     func updateUIView(_ view: UIView, context: Context) {
         controller.registerRow(rowID, view: view)
+    }
+
+    final class RowView: UIView {
+        weak var controller: TimelineScrollController?
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            controller?.restoreHistoryAnchor()
+        }
     }
 }
 
@@ -230,7 +294,11 @@ struct TimelineScrollProbe: UIViewRepresentable {
     final class ProbeView: UIView {
         weak var controller: TimelineScrollController?
         override func didMoveToWindow() { super.didMoveToWindow(); bindScrollView() }
-        override func layoutSubviews() { super.layoutSubviews(); bindScrollView() }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            bindScrollView()
+            controller?.restoreHistoryAnchor()
+        }
 
         func bindScrollView() {
             var parent = superview

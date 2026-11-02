@@ -1,6 +1,8 @@
 //! Agentic Events Definition
 pub use openbitfun_core_types::errors::{AiErrorDetail, ErrorCategory};
-use openbitfun_core_types::{ReasoningContentKind, SessionExecutionTarget, ToolImageAttachment};
+use openbitfun_core_types::{
+    ReasoningContentKind, SessionContinuationPolicy, SessionExecutionTarget, ToolImageAttachment,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::time::SystemTime;
 
@@ -18,6 +20,16 @@ where
     } else {
         Ok(model_id)
     }
+}
+
+/// Observable selection facts for one logical round; not a billing estimate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRoutingDecision {
+    pub route: String,
+    pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -139,6 +151,14 @@ pub enum AgenticEvent {
         title: String,
         method: String,
     },
+
+    /// One-sentence next-input suggestion offered after a completed turn.
+    /// Session-scoped hint: it is not part of the turn lifecycle or journal.
+    PromptSuggestionGenerated {
+        session_id: String,
+        turn_id: String,
+        suggestion: String,
+    },
     ImageAnalysisStarted {
         session_id: String,
         image_count: usize,
@@ -180,6 +200,9 @@ pub enum AgenticEvent {
         /// Runtime-admitted public label for a focused Review child.
         #[serde(skip_serializing_if = "Option::is_none")]
         focused_review_display_label: Option<String>,
+        /// Runtime-owned admission policy for subsequent child turns.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        continuation_policy: Option<SessionContinuationPolicy>,
     },
 
     DialogTurnCompleted {
@@ -201,6 +224,8 @@ pub enum AgenticEvent {
         /// Whether the turn produced a user-visible final response.
         #[serde(skip_serializing_if = "Option::is_none")]
         has_final_response: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        background_delivery: Option<openbitfun_core_types::background_delivery::BackgroundDelivery>,
     },
 
     DialogTurnCancelled {
@@ -298,6 +323,8 @@ pub enum AgenticEvent {
         model_config_id: String,
         /// Provider model name sent on the request.
         effective_model_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        routing: Option<ModelRoutingDecision>,
     },
 
     /// Emitted as soon as an automatic retry supersedes one model attempt.
@@ -327,6 +354,9 @@ pub enum AgenticEvent {
         first_visible_output_ms: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stream_duration_ms: Option<u64>,
+        /// Request start to first effective output for the accepted model attempt.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ttft_ms: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         attempt_count: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -657,6 +687,7 @@ impl AgenticEvent {
             | Self::SessionHistoryChanged { session_id, .. }
             | Self::SessionDeleted { session_id }
             | Self::SessionTitleGenerated { session_id, .. }
+            | Self::PromptSuggestionGenerated { session_id, .. }
             | Self::ImageAnalysisStarted { session_id, .. }
             | Self::ImageAnalysisCompleted { session_id, .. }
             | Self::DialogTurnStarted { session_id, .. }
@@ -742,6 +773,7 @@ impl AgenticEvent {
             | Self::ContextCompressionStarted { .. }
             | Self::ThreadGoalUpdated { .. }
             | Self::UserSteeringInjected { .. }
+            | Self::PromptSuggestionGenerated { .. }
             | Self::ContextCompressionCompleted { .. } => AgenticEventPriority::Normal,
 
             Self::ToolEvent { tool_event, .. } => tool_event.default_priority(),
@@ -844,6 +876,7 @@ mod tests {
             first_chunk_ms: Some(10),
             first_visible_output_ms: Some(12),
             stream_duration_ms: Some(100),
+            ttft_ms: Some(35),
             attempt_count: Some(1),
             failure_category: None,
             token_details: Some(serde_json::json!({ "reasoningTokens": 7 })),
@@ -855,6 +888,7 @@ mod tests {
         assert_eq!(json["model_config_id"], "model-config");
         assert_eq!(json["effective_model_name"], "provider-model");
         assert_eq!(json["first_chunk_ms"], 10);
+        assert_eq!(json["ttft_ms"], 35);
         assert_eq!(json["token_details"]["reasoningTokens"], 7);
     }
 
@@ -870,11 +904,17 @@ mod tests {
             "effective_model_name": "provider-model"
         });
 
-        let event: AgenticEvent = serde_json::from_value(json).expect("event");
+        let event: AgenticEvent = serde_json::from_value(json.clone()).expect("event");
+        assert_eq!(serde_json::to_value(&event).unwrap(), json);
 
         match event {
-            AgenticEvent::ModelRoundCompleted { duration_ms, .. } => {
+            AgenticEvent::ModelRoundCompleted {
+                duration_ms,
+                ttft_ms,
+                ..
+            } => {
                 assert_eq!(duration_ms, None);
+                assert_eq!(ttft_ms, None);
             }
             _ => panic!("unexpected event"),
         }
@@ -1110,6 +1150,7 @@ mod tests {
             agent_type: Some("GeneralPurpose".to_string()),
             model_id: Some("fast".to_string()),
             focused_review_display_label: Some("Authentication boundary".to_string()),
+            continuation_policy: Some(SessionContinuationPolicy::FreshOnly),
         };
 
         assert_eq!(event.session_id(), Some("child-session"));
@@ -1124,10 +1165,31 @@ mod tests {
         assert_eq!(serialized["parent_tool_call_id"], "tool-1");
         assert_eq!(serialized["agent_type"], "GeneralPurpose");
         assert_eq!(serialized["model_id"], "fast");
+        assert_eq!(serialized["continuation_policy"], "fresh_only");
         assert_eq!(
             serialized["focused_review_display_label"],
             "Authentication boundary"
         );
+    }
+
+    #[test]
+    fn subagent_session_linked_accepts_legacy_payload_without_continuation_policy() {
+        let event: AgenticEvent = serde_json::from_value(json!({
+            "type": "SubagentSessionLinked",
+            "session_id": "child",
+            "subagent_dialog_turn_id": "turn",
+            "parent_session_id": "parent",
+            "parent_dialog_turn_id": "parent-turn",
+            "parent_tool_call_id": "tool"
+        }))
+        .expect("legacy linked event");
+        assert!(matches!(
+            event,
+            AgenticEvent::SubagentSessionLinked {
+                continuation_policy: None,
+                ..
+            }
+        ));
     }
 
     #[test]

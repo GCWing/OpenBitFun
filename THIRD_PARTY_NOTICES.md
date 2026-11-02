@@ -12,7 +12,8 @@ release packages.
 - Copyright: Copyright 2021 Huawei Device Co., Ltd.
 
 Non-Apple OpenBitFun GUI distributions bundle unmodified copies of the Base and
-Simplified Chinese Regular, Medium, and Bold fonts. They do not bundle the
+Simplified Chinese variable fonts (Version 2.040), exposing the design system's
+Regular (400), Medium (500), Semibold (600), and Bold (700) weights. They do not bundle the
 Traditional Chinese font family. Apple GUI distributions and Traditional
 Chinese UI text use platform system fonts instead.
 
@@ -36,6 +37,16 @@ complete upstream license text is preserved in `models-dev.LICENSE.txt`, which
 is shipped as `third-party/models.dev/LICENSE.txt`. Source distributions keep
 the canonical copies of both files beside the bundled snapshot under
 `src/crates/services/services-integrations/assets/`.
+
+## Font Awesome Free
+
+- Project: Font Awesome Free
+- Source: https://github.com/FortAwesome/Font-Awesome
+- License: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+- Copyright: Copyright (c) Fonticons, Inc.
+
+The device list uses the Font Awesome Linux brand icon as the mark for a device
+that runs Linux, redrawn at row icon size by narrowing its view box.
 
 ## anydoc
 

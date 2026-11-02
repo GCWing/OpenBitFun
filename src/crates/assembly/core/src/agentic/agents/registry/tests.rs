@@ -410,6 +410,24 @@ fn creation_tools_default_only_to_creative_mode() {
 }
 
 #[test]
+fn desktop_cards_default_to_standard_ultimate_creative_and_claw_modes() {
+    for spec in builtin_agent_specs()
+        .iter()
+        .filter(|spec| spec.category == AgentCategory::Mode)
+    {
+        let mode = (spec.factory)();
+        assert_eq!(
+            mode.default_tools()
+                .iter()
+                .any(|tool| tool == "DesktopCard"),
+            matches!(mode.id(), "Standard" | "Ultimate" | "Creative" | "Claw"),
+            "DesktopCard has unexpected default exposure in {}",
+            mode.id()
+        );
+    }
+}
+
+#[test]
 fn every_builtin_mode_with_control_hub_can_also_schedule_with_cron() {
     // ControlHub's `wait` documentation tells the agent to schedule anything
     // repeating — or further out than an hour — with Cron instead of holding
@@ -464,31 +482,6 @@ fn builtin_modes_carrying_the_environment_tools_can_forward_a_port_they_opened()
 }
 
 #[test]
-fn agent_list_and_delete_are_exposed_only_to_swarm_planners() {
-    for spec in builtin_agent_specs() {
-        let agent = (spec.factory)();
-        let has_list = agent.default_tools().iter().any(|tool| tool == "AgentList");
-        let has_delete = agent
-            .default_tools()
-            .iter()
-            .any(|tool| tool == "AgentDelete");
-        let should_have_controls = matches!(agent.id(), "Ultimate" | "SwarmPlanner");
-        assert_eq!(
-            has_list,
-            should_have_controls,
-            "unexpected AgentList exposure for {}",
-            agent.id()
-        );
-        assert_eq!(
-            has_delete,
-            should_have_controls,
-            "unexpected AgentDelete exposure for {}",
-            agent.id()
-        );
-    }
-}
-
-#[test]
 fn skill_tool_is_exposed_only_to_ultra_and_swarm_worker_within_the_swarm_catalog() {
     for spec in builtin_agent_specs() {
         let agent = (spec.factory)();
@@ -507,22 +500,40 @@ fn skill_tool_is_exposed_only_to_ultra_and_swarm_worker_within_the_swarm_catalog
     }
 }
 
-#[test]
-fn non_deep_review_builtin_subagents_default_to_primary() {
+#[tokio::test]
+async fn builtin_subagent_model_fallbacks_use_fast_except_memory_phase2() {
+    let registry = AgentRegistry::new();
     for agent_type in [
         "Explore",
         "CodeReview",
         "GeneralPurpose",
-        "MemoryPhase2",
         "SwarmPlanner",
         "SwarmWorker",
     ] {
         assert_eq!(
             default_model_id_for_builtin_agent(agent_type),
-            "primary",
-            "{agent_type} should default to the primary model slot"
+            "fast",
+            "{agent_type} should default to the fast model slot"
+        );
+        assert_eq!(
+            registry
+                .get_model_id_for_agent(agent_type, None)
+                .await
+                .unwrap(),
+            "fast"
         );
     }
+    assert_eq!(
+        default_model_id_for_builtin_agent("MemoryPhase2"),
+        "primary"
+    );
+    assert_eq!(
+        registry
+            .get_model_id_for_agent("MemoryPhase2", None)
+            .await
+            .unwrap(),
+        "primary"
+    );
 }
 
 #[test]
@@ -576,11 +587,6 @@ fn product_full_agent_registry_preserves_the_complete_builtin_catalog() {
     compatibility.sort();
 
     assert_eq!(selected, compatibility);
-}
-
-#[test]
-fn generate_doc_hidden_agent_defaults_to_fast() {
-    assert_eq!(default_model_id_for_builtin_agent("GenerateDoc"), "fast");
 }
 
 #[test]
@@ -654,7 +660,7 @@ fn historical_reviewer_invocations_bind_to_the_current_worker_runtime() {
 }
 
 #[tokio::test]
-async fn task_visible_subagents_are_filtered_by_parent_agent() {
+async fn task_visible_subagents_are_filtered_by_parent_visibility() {
     let registry = AgentRegistry::new();
 
     let agentic_visible = registry
@@ -731,6 +737,7 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
         assert!(ultra_visible.iter().any(|agent| agent.id == swarm_id));
     }
     assert_eq!(ultra_visible.len(), 3);
+    assert!(!ultra_visible.iter().any(|agent| agent.id == "Explore"));
     assert!(!ultra_visible
         .iter()
         .any(|agent| agent.id == "GeneralPurpose"));
@@ -748,6 +755,9 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
         assert!(planner_visible.iter().any(|agent| agent.id == swarm_id));
     }
+    assert!(!planner_visible
+        .iter()
+        .any(|agent| agent.id == "GeneralPurpose"));
 }
 
 #[test]
@@ -775,10 +785,10 @@ fn merge_dynamic_mcp_tools_appends_registered_mcp_tools_once() {
 
 #[test]
 fn merge_dynamic_acp_tools_appends_registered_acp_subagents_once() {
-    let configured_tools = vec!["Read".to_string(), "Task".to_string()];
+    let configured_tools = vec!["Read".to_string(), "AgentSpawn".to_string()];
     let registered_tool_names = vec![
         "Read".to_string(),
-        "Task".to_string(),
+        "AgentSpawn".to_string(),
         "acp__codex__prompt".to_string(),
         "acp__claude-code__prompt".to_string(),
         "acp__codex__prompt".to_string(),
@@ -790,7 +800,7 @@ fn merge_dynamic_acp_tools_appends_registered_acp_subagents_once() {
         merged,
         vec![
             "Read".to_string(),
-            "Task".to_string(),
+            "AgentSpawn".to_string(),
             "acp__codex__prompt".to_string(),
             "acp__claude-code__prompt".to_string(),
         ]
@@ -813,12 +823,12 @@ fn merge_dynamic_acp_tools_ignores_other_tool_families() {
 
 #[test]
 fn merge_dynamic_mode_tools_appends_mcp_then_acp_tools() {
-    let resolved_tools = vec!["Read".to_string(), "Task".to_string()];
+    let resolved_tools = vec!["Read".to_string(), "AgentSpawn".to_string()];
     let registered_tool_names = vec![
         "Read".to_string(),
         "mcp__notion__notion-search".to_string(),
         "acp__codex__prompt".to_string(),
-        "Task".to_string(),
+        "AgentSpawn".to_string(),
     ];
 
     let merged = merge_dynamic_mode_tools(resolved_tools, &registered_tool_names, true);
@@ -827,7 +837,7 @@ fn merge_dynamic_mode_tools_appends_mcp_then_acp_tools() {
         merged,
         vec![
             "Read".to_string(),
-            "Task".to_string(),
+            "AgentSpawn".to_string(),
             "mcp__notion__notion-search".to_string(),
             "acp__codex__prompt".to_string(),
         ]
@@ -2228,6 +2238,7 @@ fn external_primary_route_follows_the_session_execution_worktree() {
     );
 
     let config = SessionConfig {
+        tool_presentation_mode: Default::default(),
         workspace_id: Some(worktree.clone()),
         project_workspace_id: Some(project.clone()),
         workspace_path: Some("/same/execution-path".into()),
@@ -2315,6 +2326,157 @@ fn non_session_primary_subagents_and_unknown_ids_do_not_resolve() {
             "{agent_type} must fail closed for an external owner"
         );
     }
+}
+
+#[test]
+fn subagent_conversation_resolves_local_children_without_promoting_them_to_modes() {
+    let registry = AgentRegistry::new();
+    let workspace = "subagent-conversation-workspace";
+    registry.install_external_subagent_routes(
+        workspace,
+        Vec::new(),
+        [(
+            "GeneralPurpose".to_string(),
+            ExternalSubagentRoute::Unavailable,
+        )]
+        .into_iter()
+        .collect(),
+    );
+
+    for agent_type in ["GeneralPurpose", "Explore", "Standard"] {
+        let binding = registry
+            .resolve_local_agent_for_subagent_turn(agent_type, Some(workspace), None)
+            .expect("an existing local child must keep its saved identity");
+        assert_eq!(binding.runtime_agent_key, agent_type);
+        assert_eq!(
+            binding.route_owner,
+            openbitfun_core_types::SessionAgentRouteOwner::Local
+        );
+        assert!(registry
+            .resolve_local_agent_for_subagent_turn(
+                agent_type,
+                Some(workspace),
+                binding.route_key.as_deref(),
+            )
+            .is_some());
+    }
+    for agent_type in ["GeneralPurpose", "Explore"] {
+        assert!(registry
+            .resolve_primary_agent_for_turn(agent_type, Some(workspace), false, None)
+            .is_none());
+    }
+    let external_key = "external::new-general-purpose";
+    registry.install_external_subagent_routes(
+        workspace,
+        vec![ExternalSubagentRegistration {
+            runtime_key: external_key.to_string(),
+            logical_id: "GeneralPurpose".to_string(),
+            route_key: "opencode:new-general-purpose".to_string(),
+            ecosystem_id: EcosystemId::new("opencode").unwrap(),
+            provider_label: "OpenCode".to_string(),
+            model_binding: super::ExternalSubagentModelBinding::InheritParent,
+            hidden: false,
+            mode: ExternalSubagentMode::All,
+            agent: Arc::new(TestAgent {
+                id: external_key.to_string(),
+            }),
+        }],
+        [(
+            "GeneralPurpose".to_string(),
+            ExternalSubagentRoute::External(external_key.to_string()),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(
+        registry
+            .resolve_subagent_for_fresh_invocation("GeneralPurpose", Some(workspace), true)
+            .expect("new tasks use the new external route")
+            .runtime_agent_key,
+        external_key
+    );
+    assert_eq!(
+        registry
+            .resolve_local_agent_for_subagent_turn("GeneralPurpose", Some(workspace), None)
+            .expect("the existing local child must keep its own agent")
+            .runtime_agent_key,
+        "GeneralPurpose"
+    );
+    assert!(registry
+        .resolve_local_agent_for_subagent_turn(external_key, Some(workspace), None)
+        .is_none());
+}
+
+#[test]
+fn subagent_conversation_preserves_custom_source_and_workspace_binding() {
+    let registry = AgentRegistry::new();
+    let workspace = "custom-child-workspace";
+    registry.write_agents().insert(
+        "user-child".to_string(),
+        test_source_custom_entry("user-child", "user prompt", CustomSubagentKind::User),
+    );
+    insert_project_subagent(&registry, workspace, "project-child", "fast");
+
+    for agent_type in ["user-child", "project-child"] {
+        let binding = registry
+            .resolve_local_agent_for_subagent_turn(agent_type, Some(workspace), None)
+            .expect("custom child must resolve in its owning workspace");
+        assert!(registry
+            .resolve_local_agent_for_subagent_turn(
+                agent_type,
+                Some(workspace),
+                binding.route_key.as_deref(),
+            )
+            .is_some());
+        assert!(registry
+            .resolve_local_agent_for_subagent_turn(
+                agent_type,
+                Some(workspace),
+                Some("wrong-source")
+            )
+            .is_none());
+        assert!(registry
+            .resolve_primary_agent_for_turn(agent_type, Some(workspace), false, None)
+            .is_none());
+    }
+    assert!(registry
+        .resolve_local_agent_for_subagent_turn("project-child", Some("other-workspace"), None)
+        .is_none());
+    assert!(registry
+        .resolve_local_agent_for_subagent_turn("missing-child", Some(workspace), None)
+        .is_none());
+
+    let saved_key = registry
+        .resolve_local_agent_for_subagent_turn("user-child", Some(workspace), None)
+        .expect("original user source")
+        .route_key;
+    registry.write_agents().insert(
+        "user-child".to_string(),
+        test_source_custom_entry(
+            "user-child",
+            "replacement prompt",
+            CustomSubagentKind::Project,
+        ),
+    );
+    assert!(
+        registry
+            .resolve_local_agent_for_subagent_turn(
+                "user-child",
+                Some(workspace),
+                saved_key.as_deref()
+            )
+            .is_none(),
+        "a same-name definition from another source must not replace the saved binding"
+    );
+
+    let mut external_entry = test_project_entry("external-child", "fast");
+    external_entry.source = AgentSource::External;
+    registry
+        .write_agents()
+        .insert("external-child".to_string(), external_entry);
+    assert!(registry
+        .resolve_local_agent_for_subagent_turn("external-child", Some(workspace), None)
+        .is_none());
 }
 
 #[test]

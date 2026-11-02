@@ -147,15 +147,20 @@ function getMobileWebRebuildPlan(mobileWebDir, force = false, rootDir = ROOT_DIR
     path.join(mobileWebDir, 'tsconfig.json'),
     path.join(rootDir, 'pnpm-lock.yaml'),
     path.join(rootDir, 'pnpm-workspace.yaml'),
+    // src/mobile-web's prebuild rebuilds the design system, and mobile-web
+    // consumes @openbitfun/ui through its package exports (no source alias, and
+    // design-system/**/dist is generated rather than committed). Every file that
+    // can change a design-system build output must therefore invalidate the
+    // mobile-web dist, so watch the packages/ and tooling/ trees as a whole
+    // instead of a file list that falls behind: new packages and package-root
+    // configs such as vite.config.ts or tsconfig.build.json are covered without
+    // maintenance. Generated dist/ and node_modules/ stay ignored, so build
+    // output cannot re-trigger itself, and design-system/apps consumes these
+    // packages rather than feeding them.
     path.join(rootDir, 'design-system', 'package.json'),
-    path.join(rootDir, 'design-system', 'packages', 'design-tokens', 'package.json'),
-    path.join(rootDir, 'design-system', 'packages', 'design-tokens', 'scripts'),
-    path.join(rootDir, 'design-system', 'packages', 'design-tokens', 'src'),
-    path.join(rootDir, 'design-system', 'packages', 'theme-openbitfun', 'package.json'),
-    path.join(rootDir, 'design-system', 'packages', 'theme-openbitfun', 'scripts'),
-    path.join(rootDir, 'design-system', 'packages', 'theme-openbitfun', 'src'),
-    path.join(rootDir, 'design-system', 'tooling', 'token-engine', 'package.json'),
-    path.join(rootDir, 'design-system', 'tooling', 'token-engine', 'src'),
+    path.join(rootDir, 'design-system', 'tsconfig.base.json'),
+    path.join(rootDir, 'design-system', 'packages'),
+    path.join(rootDir, 'design-system', 'tooling'),
   ];
   for (const entry of fs.readdirSync(mobileWebDir)) {
     if (entry.startsWith('vite.config.')) {

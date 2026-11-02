@@ -225,9 +225,7 @@ mod tests {
     use openbitfun_core_types::{
         SessionExecutionTarget, SessionExecutionTargetKind, WorktreeLifecycle,
     };
-    use openbitfun_services_core::workspace_identity::{
-        remote_workspace_session_mirror_dir, workspace_session_identity,
-    };
+    use openbitfun_services_core::workspace_identity::workspace_session_identity;
     use std::path::PathBuf;
 
     #[test]
@@ -249,11 +247,9 @@ mod tests {
         assert!(matches!(binding.backend, WorkspaceBackend::Remote { .. }));
         assert_eq!(
             binding.session_storage_dir(),
-            remote_workspace_session_mirror_dir(
-                crate::infrastructure::get_path_manager_arc().remote_ssh_mirror_root_dir(),
-                "127.0.0.1",
-                "/home/wsp/projects/test"
-            )
+            WorkspaceRuntimeService::new(crate::infrastructure::get_path_manager_arc())
+                .context_for_remote_workspace("127.0.0.1", "/home/wsp/projects/test")
+                .sessions_dir
         );
     }
 

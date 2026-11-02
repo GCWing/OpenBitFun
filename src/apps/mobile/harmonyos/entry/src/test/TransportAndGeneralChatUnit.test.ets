@@ -1071,7 +1071,7 @@ export default function transportAndGeneralChatUnitTest() {
     it('still gates Remote chat when the desktop connection is unavailable', 0, () => {
       expect(ChatComposerPolicy.canSend('运行任务', 0, false, true, 'failed')).assertEqual(false);
       expect(ChatComposerPolicy.canSend('运行任务', 0, false, true, 'connected')).assertEqual(true);
-      expect(ChatComposerPolicy.canSend('运行任务', 0, false, true, 'reconnecting')).assertEqual(true);
+      expect(ChatComposerPolicy.canSend('运行任务', 0, false, true, 'reconnecting')).assertEqual(false);
     });
 
     it('lets a draft outrank a running turn where the message can be handed over', 0, () => {
@@ -1928,7 +1928,7 @@ export default function transportAndGeneralChatUnitTest() {
         title: '',
         instruction: 'hello'
       }, '/repo');
-      expectCommandJson(createCommand, '{"cmd":"create_session","agent_type":"cowork","session_name":"Remote Cowork Session","workspace_path":"/repo","remote_connection_id":""}');
+      expectCommandJson(createCommand, '{"cmd":"create_session","agent_type":"cowork","session_name":"","workspace_path":"/repo","remote_connection_id":""}');
       expect(JSON.stringify(createCommand).indexOf('run_mode')).assertEqual(-1);
 
       const minimal = RemoteCommandFactory.createSession({
@@ -1943,7 +1943,7 @@ export default function transportAndGeneralChatUnitTest() {
       const identified = RemoteCommandFactory.createSession({
         agentType: 'code', title: '', instruction: '', workspaceId: 'ws-1', remoteConnectionId: 'saved', remoteSshHost: 'host'
       }, '/repo');
-      expectCommandJson(identified, '{"cmd":"create_session","agent_type":"code","session_name":"Remote Code Session","workspace_id":"ws-1"}');
+      expectCommandJson(identified, '{"cmd":"create_session","agent_type":"code","session_name":"","workspace_id":"ws-1"}');
     });
 
     it('builds message and polling commands', 0, () => {

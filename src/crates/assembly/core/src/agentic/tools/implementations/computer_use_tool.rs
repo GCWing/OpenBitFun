@@ -1,11 +1,10 @@
 //! Desktop automation (Computer use).
 
 use super::computer_use_locate::execute_computer_use_locate;
-use super::control_hub::{coded_tool_error, err_response, ErrorCode};
-use crate::agentic::tools::computer_use_capability::computer_use_desktop_available;
+use super::control_hub::{coded_tool_error, ErrorCode};
+use crate::agentic::tools::computer_use_capability::computer_use_host_available;
 use crate::agentic::tools::computer_use_host::{
-    AppSelector, ComputerScreenshot, ComputerUseHost, ComputerUseNavigateQuadrant, OcrRegionNative,
-    ScreenshotCropCenter, UiElementLocateQuery,
+    AppSelector, ComputerScreenshot, ComputerUseHost, OcrRegionNative, UiElementLocateQuery,
 };
 use crate::agentic::tools::computer_use_optimizer::hash_screenshot_bytes;
 use crate::agentic::tools::framework::{
@@ -18,9 +17,7 @@ use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use log::{debug, warn};
 use openbitfun_agent_tools::computer_use::{
-    build_screenshot_tool_body_and_hint, coordinate_mode,
-    ensure_pointer_move_uses_screen_coordinates_only, parse_screenshot_params,
-    use_screen_coordinates,
+    coordinate_mode, ensure_pointer_move_uses_screen_coordinates_only, use_screen_coordinates,
 };
 use openbitfun_core_types::product_identity::hidden_data_directory;
 use serde_json::{json, Value};
@@ -32,6 +29,15 @@ fn computer_use_permission_resource(input: &Value) -> String {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("unknown");
+    if action == "start_control" {
+        return format!(
+            "start_control:mode={}",
+            input
+                .get("mode")
+                .and_then(Value::as_str)
+                .unwrap_or("background")
+        );
+    }
     let target = [
         "app_name",
         "url",
@@ -61,6 +67,7 @@ pub(crate) async fn computer_use_augment_result_json(
 ) -> Value {
     let snap = host.computer_use_session_snapshot().await;
     let interaction = host.computer_use_interaction_state();
+    let control = host.control_snapshot();
 
     // Record action for loop detection
     let action_type = body
@@ -76,7 +83,7 @@ pub(crate) async fn computer_use_augment_result_json(
     let success = body
         .get("success")
         .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or(false);
     host.record_action(&action_type, &action_params, success);
 
     // Check for action loops
@@ -89,6 +96,12 @@ pub(crate) async fn computer_use_augment_result_json(
                 "foreground_application": snap.foreground_application,
                 "pointer_global": snap.pointer_global,
                 "input_coordinates": input_coordinates,
+                "capture_scope": host.capture_scope(),
+                "capture_target": control.target,
+                "control_supported": control.supported,
+                "control_mode": control.supported.then_some(control.mode),
+                "virtual_pointer": control.pointer,
+                "pointer_note": "pointer_global belongs to the human desktop; virtual_pointer belongs to the controlled surface. Neither changes the selected target.",
             }),
         );
         map.insert("interaction_state".to_string(), json!(interaction));
@@ -110,7 +123,7 @@ pub(crate) async fn computer_use_augment_result_json(
     body
 }
 
-/// On-disk copy of each Computer use screenshot (pointer overlay included) for debugging.
+/// Optional on-disk copy of the exact authorized capture for debugging.
 /// Opt-in: only written when [`COMPUTER_USE_DEBUG_SCREENSHOTS_ENV`] is set to `1`;
 /// the directory is pruned to the newest [`COMPUTER_USE_DEBUG_MAX_FILES`] files after each write.
 /// Filenames: `cu_<ms>_full.jpg` (whole display) or `cu_<ms>_crop_<x>_<y>.jpg` when a point crop was requested.
@@ -225,17 +238,16 @@ impl ComputerUseTool {
         let os = Self::host_os_label();
         let keys = Self::key_chord_os_hint();
         format!(
-            "Desktop automation (host OS: {}). {} \
-The **primary model cannot consume images** in tool results — **do not** use **`screenshot`**.\n\
-**OBSERVE & VERIFY (text-only):** Use **`describe_screen`** as your eyes — it returns a text snapshot (frontmost app + AX tree `ax_tree_text` with `node_idx`s + `ui_tree_text` + pointer) with NO image. Call it before acting when UI state is unknown, and after an action to verify the `ax_state_digest` changed. This replaces the `screenshot` observe→act→verify loop for text-only models.\n\
-**ACTION PRIORITY (CRITICAL):** Always think in this order:\n\
-1. **Terminal/CLI/System commands first** — Use the **`ExecCommand`** tool for terminal commands, system scripts (e.g., macOS `osascript`), shell automation. Most efficient.\n\
-2. **Keyboard shortcuts second** — Use **`key_chord`** / **`type_text`** for system/app shortcuts, navigation keys. Unsure what shortcut a target app registers for a function (e.g. \"Save\")? Call **`get_app_shortcuts`** first instead of guessing or clicking through menus.\n\
-3. **Precise UI control last** — Only when above fail: **`click_target`** / **`move_to_target`** (AX → OCR → screen coords in one call) → lower-level **`click_element`** / **`move_to_text`** → **`mouse_move`** + **`click`**.\n\
-**Rhythm:** one action at a time; use **`wait`** when UI animates. Observe **`interaction_state`** and **`computer_use_context`** in tool JSON.\n\
-**`click_target` / `move_to_target`:** Unified resolver: AX filters or `target_text` first, OCR second, explicit global x/y last. **`click_element` / `locate`:** Accessibility (AX/UIA/AT-SPI). **`move_to_text`:** OCR match + move pointer only. **`click`:** at current pointer only — use **`mouse_move`** or **`move_to_text`** / **`click_element`** first.\n\
-**`mouse_move` / `drag`:** **`use_screen_coordinates`: true** with globals from tools. **`pointer_move_rel`:** relative nudge; host may block right after certain flows — follow tool errors.\n\
-**`key_chord` / `type_text` / `scroll` / `wait`:** standard desktop automation without any screenshot step.\n",
+            "Desktop application control on {}. {} For OpenBitFun settings and product operations (including MCP configuration), use OpenBitFunControl discovery and its supported operations first; opening settings is not configuration success. For OpenBitFun MiniApps, prefer MiniAppBrowser and its bridge/DOM/input controls; missing semantic actions alone do not justify desktop fallback. Ordinary web pages use ControlHub when available. \
+Text-only model: observe the selected app through get_app_state or describe_screen and read AX/OCR facts; do not call screenshot or guess unseen pixels. \
+Begin each new user GUI task with start_control once (background by default); keep that session through verification. Use list_apps for application identity and list_windows for window titles and exact {{pid,window_id}} selection. After a missing/wrong window, inspect list_windows across processes (query matches application names, bundle ids and titles) before concluding the task is unavailable; app input results list opened_windows that appeared in any process. Reuse the selector or omit app to follow the bound window. \
+Use app_batch by default for already-decided app_click/app_type_text/app_key_chord/app_scroll steps. Focus and exact Unicode text fit in one app_type_text step. Batch known search input and its submit key, or several observed fields. \
+One batch returns ordered receipts and one final observation. End it when new information is needed; reuse the result without a duplicate read or routine delay. include_image=false omits the image when AX text is sufficient. \
+Use fresh observed node_idx/ocr_text targets and echo observation_id for node/index input when available. Read capability, OCR and truncation notes; report missing evidence instead of inventing it. \
+Verify the intended content, not digest changes. Never replay completed steps after partial failure; check delivery before retrying a submission. \
+Prefer background mode. For the user's requested GUI task, switch with start_control(mode=foreground) when background delivery is unsupported or verified ineffective, unless the user required background-only/no-disruption. Use activate_app on activate-app-v1 hosts and its fresh observation before global input; Linux uses the consented portal surface. Never replay uncertain input. Respect Stop, cancellation and permission denial; stop_control releases the session when finished. \
+Use clipboard_get to read plain text from the runtime host clipboard (optional max_output_bytes, default 65536), and clipboard_set with text to replace it; an empty string clears it. Clipboard actions do not activate or paste into an application and are unavailable during window-only sharing. \
+Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or input workarounds. Prefer available ControlHub browser actions for web content. Before an irreversible submission verify its target, content and user authorization, then verify the result.",
             os, keys
         )
     }
@@ -250,8 +262,11 @@ The **primary model cannot consume images** in tool results — **do not** use *
                 | "focus_display"
                 | "paste"
                 | "list_apps"
+                | "list_windows"
                 | "get_app_state"
                 | "get_app_shortcuts"
+                | "app_batch"
+                | "app_drag"
                 | "app_click"
                 | "app_type_text"
                 | "app_scroll"
@@ -273,10 +288,161 @@ The **primary model cannot consume images** in tool results — **do not** use *
     ///
     /// Fields that differ by design (richer guidance for the multimodal
     /// model, or `screenshot`-only fields) stay inline in each schema.
+    /// Tagged unions mirror the serde host contracts. Keep each variant's
+    /// fields and example together so model hints cannot drift to guessed keys.
+    fn tagged_action_variant(
+        kind: &str,
+        properties: Value,
+        required: &[&str],
+        example: Value,
+    ) -> Value {
+        let mut fields = properties.as_object().unwrap().clone();
+        fields.insert("kind".into(), json!({"type":"string","enum":[kind]}));
+        let mut required_fields = vec!["kind"];
+        required_fields.extend_from_slice(required);
+        json!({"type":"object","properties":fields,"required":required_fields,
+            "additionalProperties":false,"examples":[example]})
+    }
+
+    fn app_program_schema() -> Value {
+        let target = Self::app_target_schema(false);
+        let mut variants = Vec::new();
+        for (name, fields, required) in [
+            (
+                "app_click",
+                json!({"target":target,"wait_ms_after":{"type":"integer","minimum":0,"description":"Optional explicit post-click settle time; omitted means no fixed delay."},"click_count":{"type":"integer","minimum":1,"maximum":3},"mouse_button":{"type":"string","enum":["left","right","middle"]},"modifier_keys":{"type":"array","items":{"type":"string"}}}),
+                vec!["target"],
+            ),
+            (
+                "app_type_text",
+                json!({"text":{"type":"string"},"focus":Self::app_target_schema(true)}),
+                vec!["text"],
+            ),
+            (
+                "app_key_chord",
+                json!({"keys":{"type":"array","minItems":1,"items":{"type":"string"}},"focus_idx":{"type":"integer","minimum":0}}),
+                vec!["keys"],
+            ),
+            (
+                "app_scroll",
+                json!({"dx":{"type":"integer"},"dy":{"type":"integer"},"focus":Self::app_target_schema(true)}),
+                vec![],
+            ),
+            (
+                "app_drag",
+                json!({"from":Self::image_endpoint_schema(),"to":Self::image_endpoint_schema(),"duration_ms":{"type":"integer","minimum":1},"mouse_button":{"type":"string","enum":["left","right","middle"]}}),
+                vec!["from", "to"],
+            ),
+            (
+                "wait",
+                json!({"ms":{"type":"integer","minimum":0}}),
+                vec!["ms"],
+            ),
+        ] {
+            let mut fields = fields.as_object().unwrap().clone();
+            fields.insert("action".into(), json!({"type":"string","enum":[name]}));
+            let mut required = required;
+            required.push("action");
+            variants.push(json!({"type":"object","properties":fields,"required":required,"additionalProperties":false}));
+        }
+        json!({"type":"array","minItems":1,"items":{"oneOf":variants},"description":"Ordered app-scoped inputs, executed in one call with one final observation. Batch already-known actions (for example click/type/key/scroll). End the batch before choosing a target that depends on an unseen result. Stops on first failure and returns partial receipts; never replay completed steps."})
+    }
+
+    fn image_endpoint_schema() -> Value {
+        Self::tagged_action_variant(
+            "image_xy",
+            json!({"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0},"screenshot_id":{"type":"string","minLength":1}}),
+            &["x", "y", "screenshot_id"],
+            json!({"kind":"image_xy","x":120,"y":80,"screenshot_id":"capture-1"}),
+        )
+    }
+
+    fn app_target_schema(nullable: bool) -> Value {
+        let mut variants = vec![
+            Self::tagged_action_variant(
+                "node_idx",
+                json!({"idx":{"type":"integer","minimum":0}}),
+                &["idx"],
+                json!({"kind":"node_idx","idx":3}),
+            ),
+            Self::tagged_action_variant(
+                "ocr_text",
+                json!({"needle":{"type":"string","minLength":1}}),
+                &["needle"],
+                json!({"kind":"ocr_text","needle":"Search"}),
+            ),
+            Self::tagged_action_variant(
+                "image_xy",
+                json!({
+                    "x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0},
+                    "screenshot_id":{"type":"string","minLength":1}
+                }),
+                &["x", "y", "screenshot_id"],
+                json!({"kind":"image_xy","x":120,"y":80,"screenshot_id":"capture-1"}),
+            ),
+            Self::tagged_action_variant(
+                "screen_xy",
+                json!({"x":{"type":"number"},"y":{"type":"number"}}),
+                &["x", "y"],
+                json!({"kind":"screen_xy","x":150.5,"y":220.0}),
+            ),
+            Self::tagged_action_variant(
+                "image_grid",
+                json!({
+                    "x0":{"type":"integer","minimum":0},"y0":{"type":"integer","minimum":0},
+                    "width":{"type":"integer","minimum":1},"height":{"type":"integer","minimum":1},
+                    "rows":{"type":"integer","minimum":1},"cols":{"type":"integer","minimum":1},
+                    "row":{"type":"integer","minimum":0},"col":{"type":"integer","minimum":0},
+                    "intersections":{"type":"boolean"},"screenshot_id":{"type":"string","minLength":1}
+                }),
+                &[
+                    "x0",
+                    "y0",
+                    "width",
+                    "height",
+                    "rows",
+                    "cols",
+                    "row",
+                    "col",
+                    "screenshot_id",
+                ],
+                json!({"kind":"image_grid","x0":0,"y0":0,"width":300,"height":300,"rows":15,"cols":15,"row":7,"col":7,"intersections":true,"screenshot_id":"capture-1"}),
+            ),
+            Self::tagged_action_variant(
+                "visual_grid",
+                json!({
+                    "rows":{"type":"integer","minimum":1},"cols":{"type":"integer","minimum":1},
+                    "row":{"type":"integer","minimum":0},"col":{"type":"integer","minimum":0},
+                    "intersections":{"type":"boolean"},"wait_ms_after_detection":{"type":"integer","minimum":0}
+                }),
+                &["rows", "cols", "row", "col"],
+                json!({"kind":"visual_grid","rows":15,"cols":15,"row":7,"col":7}),
+            ),
+        ];
+        if nullable {
+            variants.push(json!({"type":"null"}));
+        }
+        json!({"oneOf":variants,"description": if nullable {
+            "Optional focus target for app_type_text/app_scroll. Use a fresh target from the same application's observation, e.g. {\"kind\":\"node_idx\",\"idx\":3} or {\"kind\":\"ocr_text\",\"needle\":\"Search\"}. Omit/null to use the app's current focus when supported; this does not activate the application."
+        } else {
+            "Required for app_click. Use {\"kind\":\"node_idx\",\"idx\":3}, {\"kind\":\"ocr_text\",\"needle\":\"Search\"}, or {\"kind\":\"image_xy\",\"x\":120,\"y\":80,\"screenshot_id\":\"capture-1\"}. Node indices and screenshot_id must come from the same target application's latest observation. Image targets need a model-visible image; screen_xy uses observed global coordinates. Grid row/col are zero-based and must be less than rows/cols."
+        }})
+    }
+
+    fn app_wait_predicate_schema() -> Value {
+        json!({"description":"Required for app_wait_for. A condition on the selected application's observed state; a digest change alone is not proof of successful delivery.", "oneOf":[
+            Self::tagged_action_variant("digest_changed", json!({"prev_digest":{"type":"string"}}), &["prev_digest"], json!({"kind":"digest_changed","prev_digest":"observed-digest"})),
+            Self::tagged_action_variant("title_contains", json!({"needle":{"type":"string"}}), &["needle"], json!({"kind":"title_contains","needle":"Sent"})),
+            Self::tagged_action_variant("role_enabled", json!({"role":{"type":"string"}}), &["role"], json!({"kind":"role_enabled","role":"AXButton"})),
+            Self::tagged_action_variant("node_enabled", json!({"idx":{"type":"integer","minimum":0}}), &["idx"], json!({"kind":"node_enabled","idx":3}))
+        ]})
+    }
+
     fn shared_action_properties() -> Value {
         json!({
             "x": { "type": "integer", "description": "For `mouse_move` and `drag`: X in **global display** units when **`use_screen_coordinates`: true** (required). **Not** for `click`." },
             "y": { "type": "integer", "description": "For `mouse_move` and `drag`: Y in **global display** units when **`use_screen_coordinates`: true** (required). **Not** for `click`." },
+            "mode": { "type": "string", "enum": ["observe", "background", "foreground"], "description": "For start_control. Prefer background for app tasks; foreground is available when needed for the requested GUI task unless the user required background-only/no-disruption. Activate and reobserve the target before global input. Keep the session until the task is done." },
             "coordinate_mode": { "type": "string", "enum": ["image", "normalized"], "description": "Ignored for `mouse_move` / `drag` — host rejects image/normalized positioning; always set **`use_screen_coordinates`: true**." },
             "button": { "type": "string", "enum": ["left", "right", "middle"], "description": "For `click`, `click_element`, `drag`: mouse button (default left)." },
             "num_clicks": { "type": "integer", "minimum": 1, "maximum": 3, "description": "For `click`, `click_element`: 1=single (default), 2=double, 3=triple click." },
@@ -284,31 +450,53 @@ The **primary model cannot consume images** in tool results — **do not** use *
             "start_y": { "type": "integer", "description": "For `drag`: start Y coordinate." },
             "end_x": { "type": "integer", "description": "For `drag`: end X coordinate." },
             "end_y": { "type": "integer", "description": "For `drag`: end Y coordinate." },
-            "text": { "type": "string", "description": "For `type_text`: text to type. Prefer clipboard paste (key_chord) for long content." },
-            "ms": { "type": "integer", "description": "For `wait`: duration in milliseconds." },
+            "text": { "type": "string", "description": "Required for clipboard_set/app_type_text/type_text/paste: exact plain text. clipboard_set accepts an empty string to clear the clipboard (maximum 16 MiB; no NUL). For background tasks use app_type_text with the app selector and optional focus; do not substitute global clipboard shortcuts." },
+            "ms": { "type": "integer", "description": "For `wait`: duration in milliseconds. With app, or a window already bound to the session, the result is that window's observation after the wait (include_image applies)." },
             "text_query": { "type": "string", "description": "For `move_to_text`, `move_to_target`, `click_target`: visible text to OCR-match on screen (case-insensitive substring)." },
             "identifier_contains": { "type": "string", "description": "For `locate`, `click_element`: case-insensitive substring on AXIdentifier." },
-            "node_idx": { "type": "integer", "minimum": 0, "description": "For `locate`, `click_element`, `app_click`: jump straight to a node returned by the most recent `get_app_state` (field `idx`). Bypasses BFS. macOS only; other platforms return AX_IDX_NOT_SUPPORTED." },
+            "node_idx": { "type": "integer", "minimum": 0, "description": "For `locate`, `click_element`: jump straight to a node returned by the most recent `get_app_state` (field `idx`). Bypasses BFS. macOS only; other platforms return AX_IDX_NOT_SUPPORTED." },
+            "observation_id": { "type": "string", "minLength": 1, "description": "Echo the opaque observation_id from get_app_state or the latest app action when sending node/index input. It is invalidated by every new app observation, target change, or stop. Omit only for older hosts without observation-id-v1." },
             "app_state_digest": { "type": "string", "description": "For `locate`, `click_element`: optional `state_digest` from the same `get_app_state` call that produced `node_idx`. Stale digest yields AX_IDX_STALE so you re-snapshot." },
-            "max_depth": { "type": "integer", "minimum": 1, "maximum": 200, "description": "For `locate`, `click_element`: max BFS depth (default 48). Ignored when `node_idx` is supplied." },
+            "max_depth": { "type": "integer", "minimum": 1, "maximum": 200, "description": "For get_app_state: AX depth (default 32). For locate/click_element: max BFS depth (default 48), ignored with node_idx." },
             "filter_combine": { "type": "string", "enum": ["all", "any"], "description": "For `locate`, `click_element`: `all` (default, AND) or `any` (OR) for filter combination. Priority: `node_idx` > `text_contains` > `title_contains`+`role_substring`." },
             "url": { "type": "string", "description": "For `open_url`: URL to open with the system/default browser." },
             "path": { "type": "string", "description": "For `open_file`: local file path to open with its default handler." },
-            "app": { "type": ["string", "object"], "description": "For `open_file`: optional app name. For app-scoped actions (including `get_app_shortcuts`): selector object such as `{ \"name\": \"Safari\" }`, `{ \"bundle_id\": \"...\" }`, or `{ \"pid\": 123 }`." },
+            "app": {"description":"Select an application by pid, bundle_id or name from list_apps, or an exact {pid,window_id} from list_windows on window-target-v1 hosts. Optional on list_windows to filter; omit on app actions to keep the bound window. Example: {\"pid\":421}. A string is accepted only by open_file to choose its handler.", "anyOf":[
+                {"type":"object","properties":{"pid":{"type":"integer","minimum":1},"bundle_id":{"type":"string","minLength":1},"name":{"type":"string","minLength":1},"window_id":{"type":"integer","minimum":1,"description":"Exact window from list_windows; requires its owning pid and window-target-v1 capability"}},"minProperties":1,"additionalProperties":false},
+                {"type":"string","minLength":1}
+            ]},
             "script_type": { "type": "string", "enum": ["applescript", "shell", "bash", "powershell", "cmd"], "description": "For `run_script`: script interpreter/type." },
-            "timeout_ms": { "type": "integer", "description": "For `run_script`: timeout in milliseconds." },
-            "max_output_bytes": { "type": "integer", "description": "For `run_script` / `clipboard_get`: maximum bytes to return." },
+            "timeout_ms": { "type": "integer", "description": "For run_script/app_wait_for: timeout in milliseconds; app_wait_for defaults to 8000." },
+            "max_output_bytes": { "type": "integer", "minimum": 1, "description": "For run_script/clipboard_get: maximum output bytes. clipboard_get defaults to 65536 and caps at 1048576; text ends at a UTF-8 boundary and truncated reports whether bytes were omitted." },
+            "max_bytes": { "type": "integer", "minimum": 1, "description": "Legacy alias for clipboard_get max_output_bytes; max_output_bytes takes precedence when both are supplied." },
             "clear_first": { "type": "boolean", "description": "For `paste`: select all before pasting." },
             "submit": { "type": "boolean", "description": "For `paste`: press submit keys after pasting." },
             "submit_keys": { "type": "array", "items": { "type": "string" }, "description": "For `paste`: key chord to submit, default `[\"return\"]`." },
             "display_id": { "type": ["integer", "null"], "description": "For `focus_display` or display-pinned desktop actions: display id, or null to clear the pin." },
             "include_hidden": { "type": "boolean", "description": "For `list_apps`: include hidden/background apps." },
+            "query": { "type": "string", "minLength": 1, "description": "For list_windows: case-insensitive text matched against application names, bundle identifiers and window titles across processes, e.g. \"WeChat\" also finds its helper processes. Filtered results include off-screen windows." },
+            "include_offscreen": { "type": "boolean", "description": "For list_windows: list off-screen (minimized, hidden or other-Space) windows too. Default false without app/query (they are counted per application instead) and true with app/query." },
+            "focus_window_only": {"type":"boolean","description":"For get_app_state: restrict the AX tree to the target application window (default true). Does not activate the application."},
+            "zoom": {
+                "type": "object",
+                "description": "For get_app_state on app-zoom-v1 hosts (vision models): capture a rectangle of an earlier screenshot of the bound window again at higher detail, in that screenshot's image pixels. Use it for small text, icons or tiles that are hard to read; the result has its own screenshot_id for precise image_xy input. The AX tree is not refreshed.",
+                "properties": {
+                    "screenshot_id": {"type": "string", "minLength": 1},
+                    "x": {"type": "integer", "minimum": 0},
+                    "y": {"type": "integer", "minimum": 0},
+                    "width": {"type": "integer", "minimum": 1},
+                    "height": {"type": "integer", "minimum": 1}
+                },
+                "required": ["screenshot_id", "x", "y", "width", "height"],
+                "additionalProperties": false
+            },
+            "include_image": {"type":"boolean","description":"For get_app_state and app_batch/app input results: include the final window image (default true). For describe_screen: default false; true attaches the same target image for vision models. Set false when AX text is sufficient; keep true for visual, canvas or image-coordinate decisions. Does not change input capability or authorization."},
             "only_visible": { "type": "boolean", "description": "For `list_apps`: list only visible apps when true." },
-            "target": { "type": "object", "description": "For `app_click`: click target such as `{ \"node_idx\": 3 }`, image/screen coordinates, or OCR text." },
-            "focus": { "type": ["object", "null"], "description": "For app-scoped text/scroll actions: optional focus target." },
-            "predicate": { "type": "object", "description": "For `app_wait_for`: wait predicate." },
-            "dx": { "type": "integer", "description": "For app/interactive scroll actions: horizontal delta." },
-            "dy": { "type": "integer", "description": "For app/interactive scroll actions: vertical delta." },
+            "target": Self::app_target_schema(false),
+            "focus": Self::app_target_schema(true),
+            "predicate": Self::app_wait_predicate_schema(),
+            "dx": { "type": "integer", "description": "For app_scroll/interactive_scroll: horizontal delta; defaults to 0. Specify a nonzero dx or dy for a scroll action." },
+            "dy": { "type": "integer", "description": "For app_scroll/interactive_scroll: vertical delta; defaults to 0. Specify a nonzero dx or dy for a scroll action." },
             "mouse_button": { "type": "string", "enum": ["left", "right", "middle"], "description": "For app/interactive/visual click actions." },
             "click_count": { "type": "integer", "minimum": 1, "maximum": 3, "description": "For app click actions." },
             "modifier_keys": { "type": "array", "items": { "type": "string" }, "description": "For app click actions: modifier keys to hold." },
@@ -326,6 +514,10 @@ The **primary model cannot consume images** in tool results — **do not** use *
             Value::Object(map) => map,
             other => unreachable!("shared_action_properties must return an object, got {other:?}"),
         };
+        properties.insert("steps".into(), Self::app_program_schema());
+        properties.insert("from".into(), Self::image_endpoint_schema());
+        properties.insert("to".into(), Self::image_endpoint_schema());
+        properties.insert("duration_ms".into(), json!({"type":"integer","minimum":1,"description":"App drag duration in milliseconds (default 400)"}));
         match specific {
             Value::Object(specific_map) => properties.extend(specific_map),
             other => unreachable!("schema-specific properties must be an object, got {other:?}"),
@@ -333,13 +525,220 @@ The **primary model cannot consume images** in tool results — **do not** use *
         Value::Object(properties)
     }
 
+    /// Keep the compatibility schema complete; publish only the current app
+    /// workflow to models. This projection never changes runtime dispatch.
+    fn model_input_schema(&self, vision: bool) -> Value {
+        fn compact(value: &mut Value, vision: bool) {
+            match value {
+                Value::Object(map) => {
+                    map.remove("description");
+                    map.remove("examples");
+                    if let Some(variants) = map.get_mut("oneOf").and_then(Value::as_array_mut) {
+                        variants.retain(|variant| {
+                            let kind = variant
+                                .pointer("/properties/kind/enum/0")
+                                .and_then(Value::as_str);
+                            let action = variant
+                                .pointer("/properties/action/enum/0")
+                                .and_then(Value::as_str);
+                            let allowed_target = match kind {
+                                Some("image_xy") => vision,
+                                Some("screen_xy" | "image_grid" | "visual_grid") => false,
+                                _ => true,
+                            };
+                            allowed_target && (vision || action != Some("app_drag"))
+                        });
+                    }
+                    for child in map.values_mut() {
+                        compact(child, vision);
+                    }
+                }
+                Value::Array(values) => {
+                    for child in values {
+                        compact(child, vision);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut schema = self.input_schema();
+        let properties = schema["properties"].as_object_mut().expect("object schema");
+        properties.retain(|key, _| {
+            matches!(
+                key.as_str(),
+                "action"
+                    | "app"
+                    | "mode"
+                    | "include_hidden"
+                    | "only_visible"
+                    | "query"
+                    | "include_offscreen"
+                    | "focus_window_only"
+                    | "include_image"
+                    | "zoom"
+                    | "steps"
+                    | "target"
+                    | "focus"
+                    | "text"
+                    | "keys"
+                    | "focus_idx"
+                    | "observation_id"
+                    | "dx"
+                    | "dy"
+                    | "app_name"
+                    | "mouse_button"
+                    | "click_count"
+                    | "modifier_keys"
+                    | "wait_ms_after"
+                    | "from"
+                    | "to"
+                    | "duration_ms"
+                    | "predicate"
+                    | "timeout_ms"
+                    | "poll_ms"
+                    | "ms"
+                    | "x"
+                    | "y"
+                    | "use_screen_coordinates"
+                    | "delta_x"
+                    | "delta_y"
+                    | "scroll_x"
+                    | "scroll_y"
+                    | "button"
+                    | "num_clicks"
+                    | "start_x"
+                    | "start_y"
+                    | "end_x"
+                    | "end_y"
+            )
+        });
+        properties["app"] = properties["app"]["anyOf"][0].clone();
+        let mut actions = vec![
+            "start_control",
+            "stop_control",
+            "control_status",
+            "list_apps",
+            "list_windows",
+            "get_app_state",
+            "describe_screen",
+            "get_app_shortcuts",
+            "app_batch",
+            "app_click",
+            "app_type_text",
+            "app_key_chord",
+            "app_scroll",
+            "app_wait_for",
+            "wait",
+            "get_os_info",
+            "open_app",
+            "activate_app",
+            "click",
+            "key_chord",
+            "type_text",
+            "scroll",
+        ];
+        if vision {
+            actions.extend(["screenshot", "app_drag", "mouse_move", "drag"]);
+        } else {
+            for key in [
+                "from",
+                "to",
+                "duration_ms",
+                "zoom",
+                "x",
+                "y",
+                "use_screen_coordinates",
+                "scroll_x",
+                "scroll_y",
+                "start_x",
+                "start_y",
+                "end_x",
+                "end_y",
+            ] {
+                properties.remove(key);
+            }
+        }
+        properties["action"] = json!({"type":"string", "enum":actions});
+        compact(&mut schema, vision);
+        let properties = schema["properties"].as_object_mut().unwrap();
+        properties["app"]["description"] =
+            json!("Known app from list_apps, or exact {pid,window_id} from list_windows on window-target-v1 hosts. Omit to keep the bound window. Use list_windows when the title is wrong or a helper has no window.");
+        properties["mode"]["description"] =
+            json!("Default background. Foreground only for a user-requested takeover.");
+        properties["ms"]["description"] = json!("wait duration. With app or a bound window, returns that window's observation after waiting; no separate get_app_state is needed.");
+        properties["query"]["description"] = json!("list_windows: case-insensitive match on application name, bundle id or title across processes (finds helper processes too); includes off-screen windows.");
+        properties["include_offscreen"]["description"] = json!("list_windows: also list minimized/hidden/other-Space windows. Default false unfiltered (counted per app), true with app/query.");
+        if vision {
+            properties["zoom"]["description"] = json!("get_app_state on app-zoom-v1 hosts: re-capture {x,y,width,height} of an earlier screenshot (its image pixels, with its screenshot_id) at higher detail when small text, icons or tiles are hard to tell apart. Click with image_xy on the returned screenshot_id. AX tree not refreshed.");
+        }
+        properties["app_name"]["description"] = json!("Application name, bundle identifier or path for open_app. Background mode requests a launch without activation where the host supports it; then observe the returned target.");
+        properties["include_image"]["description"] = json!("get_app_state and app_batch/app input results: default true. describe_screen: default false, set true to attach the target image for a vision model. Keep images for canvas/game decisions; false when AX text suffices.");
+        properties["steps"]["description"] = json!("Required by app_batch as this top-level `steps` field: {\"action\":\"app_batch\",\"app\":{...},\"steps\":[{\"action\":\"app_type_text\",...},{\"action\":\"app_key_chord\",\"keys\":[\"return\"]}]}. Default for several already-decided inputs: one app, ordered steps, one final observation taken after the window settles. Examples: known search+Return; several observed form fields with stable layout. End before new information is needed. No routine waits or duplicate reads; never replay completed steps after partial failure. Batch changes neither capability nor authorization.");
+        let observed_focus = if vision {
+            json!({"kind":"image_xy","x":120,"y":80,"screenshot_id":"observed-frame"})
+        } else {
+            json!({"kind":"node_idx","idx":3})
+        };
+        let observed_fields = if vision {
+            json!([
+                {"kind":"image_xy","x":120,"y":80,"screenshot_id":"observed-frame"},
+                {"kind":"image_xy","x":120,"y":140,"screenshot_id":"observed-frame"},
+                {"kind":"image_xy","x":120,"y":200,"screenshot_id":"observed-frame"}
+            ])
+        } else {
+            json!([{"kind":"node_idx","idx":3},{"kind":"node_idx","idx":7},{"kind":"node_idx","idx":11}])
+        };
+        properties["steps"]["examples"] = json!([
+            [
+                {"action":"app_type_text","focus":observed_focus,"text":"search query"},
+                {"action":"app_key_chord","keys":["return"]}
+            ],
+            [
+                {"action":"app_type_text","focus":observed_fields[0],"text":"Ada"},
+                {"action":"app_type_text","focus":observed_fields[1],"text":"Lovelace"},
+                {"action":"app_type_text","focus":observed_fields[2],"text":"London"}
+            ]
+        ]);
+        if let Some(variants) = properties["steps"]["items"]["oneOf"].as_array_mut() {
+            for variant in variants {
+                match variant.pointer("/properties/action/enum/0").and_then(Value::as_str) {
+                    Some("app_type_text") => variant["properties"]["focus"]["description"] = json!("Focus and type in one step; no preceding click needed. Omit to keep current app focus."),
+                    Some("app_key_chord") => variant["properties"]["keys"]["description"] = json!("One simultaneous chord using observed app behavior. Separate sequential chords into steps."),
+                    Some("app_scroll") => variant["properties"]["focus"]["description"] = json!("Scroll location only; does not click or focus a control."),
+                    _ => {}
+                }
+            }
+        }
+        properties["target"]["description"] = json!(if vision {
+            "Observed image_xy pixels require their screenshot_id; node_idx and ocr_text are optional precision targets."
+        } else {
+            "Observed node_idx or ocr_text only; this model cannot see pixels."
+        });
+        properties["focus"]["description"] =
+            json!("Text: focus and type together. Scroll: anchor only, never click. Omit to preserve current app focus.");
+        properties["action"]["description"] = json!("Observe known target, then app_batch for decided inputs and one final observation. Start each new user GUI task once with start_control (background by default). When background delivery is unavailable or verified ineffective for the requested GUI task, use start_control(mode=foreground) unless the user required background-only/no-disruption. activate_app, click, key_chord, type_text, scroll, mouse_move and drag need a foreground session; app_* actions do not. On activate-app-v1 hosts activate_app selects the exact window, restoring it when minimized or hidden, and returns its new observation before global input; Linux uses the consented portal surface. wait with app or a bound window returns its observation. Never replay uncertain input; click uses the current pointer.");
+        properties["delta_x"]["description"] =
+            json!("Global scroll horizontal wheel delta; app_scroll uses dx instead.");
+        properties["delta_y"]["description"] =
+            json!("Global scroll vertical wheel delta; app_scroll uses dy instead.");
+        if vision {
+            properties["use_screen_coordinates"]["description"] = json!("Required true for global mouse_move/drag: x,y are observed global display coordinates, never raw screenshot pixels. drag requires start_x/start_y/end_x/end_y. app_* image_xy uses screenshot pixels and screenshot_id instead.");
+            properties["x"]["description"] =
+                json!("Global mouse_move X in display coordinates. drag uses start_x/start_y/end_x/end_y.");
+            properties["y"]["description"] =
+                json!("Global mouse_move Y in display coordinates. drag uses start_x/start_y/end_x/end_y.");
+        }
+        schema
+    }
+
     /// JSON Schema without `screenshot` or screenshot-only fields.
+    #[cfg(test)]
     fn input_schema_text_only() -> Value {
         let properties = Self::merge_with_shared_properties(json!({
             "action": {
                 "type": "string",
-                "enum": ["click_target", "move_to_target", "click_element", "move_to_text", "click", "mouse_move", "scroll", "drag", "locate", "key_chord", "type_text", "pointer_move_rel", "wait", "list_displays", "focus_display", "paste", "list_apps", "get_app_state", "get_app_shortcuts", "describe_screen", "app_click", "app_type_text", "app_scroll", "app_key_chord", "app_wait_for", "open_app", "open_url", "open_file", "clipboard_get", "clipboard_set", "run_script", "run_apple_script", "get_os_info"],
-                "description": "The action to perform. **Primary model is text-only — no `screenshot`.** **Browser boundary:** no input action here may drive a Chromium-family browser (Chrome/Edge/Brave/Arc) — use ControlHub domain=\"browser\" for those; switching focus away with `key_chord` [\"alt\",\"tab\"] / [\"command\",\"tab\"] or `open_app` is always allowed. **ACTION PRIORITY:** 1) Use the `ExecCommand` tool for CLI/terminal/system commands first. 2) **`open_app`** to launch apps. **`run_apple_script`** for AppleScript (macOS). 3) Prefer `key_chord` for shortcuts/navigation. Before guessing a shortcut, call **`get_app_shortcuts`** to look up what a target app actually has registered (e.g. \"what triggers Save in this app?\"), then fire it with `key_chord` / `app_key_chord` — avoids trial-and-error mouse clicks. 4) Only when above fail: `click_target` / `move_to_target` (AX → OCR → screen coords in one call), then lower-level `click_element`, `move_to_text`, or `mouse_move` + `click`. Never guess coordinates. **`describe_screen`** is the text-only equivalent of `screenshot`: it returns a structured text snapshot (frontmost app + AX tree + UI tree text + pointer + window geometry) with NO image — use it to observe and verify state when the primary model cannot view screenshots."
+                "enum": ["start_control", "stop_control", "control_status", "click_target", "move_to_target", "click_element", "move_to_text", "click", "mouse_move", "scroll", "drag", "locate", "key_chord", "type_text", "pointer_move_rel", "wait", "list_displays", "focus_display", "paste", "list_apps", "list_windows", "get_app_state", "get_app_shortcuts", "describe_screen", "app_batch", "app_drag", "app_click", "app_type_text", "app_scroll", "app_key_chord", "app_wait_for", "open_app", "activate_app", "open_url", "open_file", "clipboard_get", "clipboard_set", "run_script", "run_apple_script", "get_os_info"],
+                "description": "Select a ComputerUse action. This model is text-only: observe through describe_screen/get_app_state and read returned AX/OCR facts; screenshot and image-based targeting require image support. Observe the known target with get_app_state/describe_screen; list_apps resolves applications, while list_windows discovers native window titles across processes (query filters by application, bundle id or title). Use app:{pid,window_id} from that inventory when a helper has no window or the default window is wrong. A first observation can start background control automatically. Use app_batch for decided app_click/app_type_text/app_scroll/app_key_chord inputs to fresh node_idx or observed ocr_text targets and one final observation. Consult get_app_shortcuts for unknown shortcuts. Keep the session active until the task is finished; control_status reports its scope and stop_control releases it. If background delivery is unavailable or verified ineffective, use start_control(mode=foreground) for the requested GUI task unless the user required background-only/no-disruption. Use activate_app and its new observation before global input; capture errors alone do not prove input failure. Do not replace missing GUI observations with ad hoc scripts in ExecCommand. Reuse the returned after-action observation; app_type_text with focus combines known targeting and exact Unicode input. Observe, act once, then verify the intended result; do not repeat a mutation merely because its digest is unchanged. Prefer ControlHub domain=\"browser\" for web content; ComputerUse supports native browser chrome and dialogs."
             },
             "use_screen_coordinates": { "type": "boolean", "description": "For `mouse_move`, `drag`: **must be true** — global display coordinates from `move_to_text`, `locate`, AX, or `pointer_global`. **Not** for `click`." },
             "delta_x": { "type": "integer", "description": "For `pointer_move_rel`: horizontal delta (negative=left); also accepted as `dx`. For `scroll`: horizontal wheel delta." },
@@ -350,7 +749,7 @@ The **primary model cannot consume images** in tool results — **do not** use *
             "move_to_text_match_index": { "type": "integer", "minimum": 1, "description": "For `move_to_text` and unified target actions: **1-based** OCR match index." },
             "ocr_region_native": {
                 "type": "object",
-                "description": "For `move_to_text`: optional global native rectangle for OCR. If omitted, macOS uses the frontmost window bounds from Accessibility; other OSes use the primary display.",
+                "description": "For `move_to_text`: optional global logical rectangle intersected with the authorized target capture. If omitted, OCR uses that capture. The rectangle does not authorize observing another window or the desktop.",
                 "properties": {
                     "x0": { "type": "integer", "description": "Top-left X in global screen coordinates." },
                     "y0": { "type": "integer", "description": "Top-left Y in global screen coordinates." },
@@ -526,157 +925,173 @@ The **primary model cannot consume images** in tool results — **do not** use *
         Ok(vec![ToolResult::ok(body, Some(hint))])
     }
 
-    /// Text-only observation action: returns a structured text snapshot of
-    /// the desktop (frontmost app + AX tree + condensed UI tree text +
-    /// pointer + displays) with **no image bytes**. This is the observe and
-    /// verify step that closes the cowork loop for text-only primary models
-    /// that cannot consume `screenshot` JPEGs.
+    /// Observe the selected window's AX state, with optional pixels and desktop
+    /// metadata. Text-only models never receive image bytes; the legacy default
+    /// remains text-only.
     async fn describe_screen(
         host: &dyn ComputerUseHost,
-        _input: &Value,
+        input: &Value,
         text_only: bool,
     ) -> OpenBitFunResult<Vec<ToolResult>> {
-        // For a text-only model this *is* the observation step, so it clears
-        // the same guard a `screenshot` would. Without this the guard can only
-        // ever be cleared by a capture the model cannot consume.
-        if text_only {
-            host.computer_use_waive_fresh_capture_guard();
-        }
+        let include_image = match input.get("include_image") {
+            None => false,
+            Some(Value::Bool(value)) => *value && !text_only,
+            Some(_) => {
+                return Err(OpenBitFunError::tool(
+                    "[INVALID_PARAMS] include_image must be a boolean",
+                ))
+            }
+        };
         let session_snap = host.computer_use_session_snapshot().await;
         let interaction = host.computer_use_interaction_state();
-        let pointer = session_snap.pointer_global.clone();
-        let displays = interaction.displays.clone();
-
-        // Build a frontmost-app selector from the session snapshot. The AX
-        // tree (`get_app_state`) is the richest text signal; `enumerate_ui_tree_text`
-        // is a condensed fallback that also covers apps whose `get_app_state`
-        // AX dump is sparse (Canvas / WebView surfaces).
-        let selector = session_snap
-            .foreground_application
-            .as_ref()
-            .map(|fg| AppSelector {
-                name: fg.name.clone(),
-                bundle_id: fg.bundle_id.clone(),
-                pid: fg.process_id,
-            });
-
-        let mut ax_tree_text: Option<String> = None;
-        let mut ax_nodes_count: Option<usize> = None;
-        let mut ax_digest: Option<String> = None;
-        let mut window_title: Option<String> = None;
-        // Why `ax_tree_text` is empty, when it is. A bare `null` here reads as
-        // truncated tool output, and an agent that believes its own results are
-        // being cut off will keep re-issuing the same call instead of switching
-        // tactic — which is exactly what a null `ax_tree_text` used to cause.
-        let ax_tree_status: &str = match selector.as_ref() {
+        // The human's foreground application is metadata, never the source of
+        // an observation after a control target has been selected.
+        let selector = if let Some(app) = input.get("app").filter(|v| v.is_object()) {
+            Some(
+                serde_json::from_value::<AppSelector>(app.clone())
+                    .map_err(|e| OpenBitFunError::tool(format!("Invalid app selector: {e}")))?,
+            )
+        } else if host.control_snapshot().supported {
+            Some(AppSelector::default())
+        } else {
+            session_snap
+                .foreground_application
+                .as_ref()
+                .map(|fg| AppSelector {
+                    name: fg.name.clone(),
+                    bundle_id: fg.bundle_id.clone(),
+                    pid: fg.process_id,
+                    window_id: None,
+                })
+        };
+        let mut target_application = None;
+        let mut ax_tree_text = None;
+        let mut ax_nodes_count = None;
+        let mut ax_digest = None;
+        let mut window_title = None;
+        let mut ax_error = None;
+        let mut screenshot = None;
+        let mut observation_id = None;
+        let ax_tree_status = match selector {
             None => "no_foreground_app",
             Some(app) => match host
-                .get_app_state(app.clone(), DESCRIBE_SCREEN_AX_DEPTH, true)
+                .get_app_state_with_options(app, DESCRIBE_SCREEN_AX_DEPTH, true, include_image)
                 .await
             {
                 Ok(snap) => {
-                    // Deliberately drop `snap.screenshot` (JPEG) — describe_screen
-                    // never returns image bytes so text-only models are safe.
-                    window_title = snap.window_title.clone();
+                    observation_id = snap.observation_id;
+                    screenshot = snap.screenshot.filter(|_| include_image);
+                    target_application = Some(snap.app);
+                    window_title = snap.window_title;
                     ax_nodes_count = Some(snap.nodes.len());
-                    ax_digest = Some(snap.digest.clone());
+                    ax_digest = Some(snap.digest);
+                    let limited = snap.tree_text.contains("AX_WINDOW_CONTENT_UNAVAILABLE");
                     ax_tree_text = Some(clip_tree_text(
                         snap.tree_text,
                         DESCRIBE_SCREEN_TREE_TEXT_MAX_BYTES,
                     ))
                     .filter(|t| !t.trim().is_empty());
-                    if ax_tree_text.is_some() {
+                    if limited {
+                        "content_unavailable"
+                    } else if ax_tree_text.is_some() {
                         "ok"
                     } else {
                         "empty_tree"
                     }
                 }
                 Err(e) => {
-                    debug!("describe_screen: get_app_state failed: {}", e);
+                    ax_error = Some(e.to_string());
                     "query_failed"
                 }
             },
         };
-
+        // Read pixels through the native capture provider, even for text-only
+        // models. No JPEG is sent to a model that cannot consume images.
+        let (ocr_text, ocr_status, ocr_error) = if text_only || ax_tree_status != "ok" {
+            match host.read_screen_text().await {
+                Ok(text) => {
+                    let status = if text.is_empty() {
+                        "no_text_detected"
+                    } else {
+                        "ok"
+                    };
+                    (text, status, None)
+                }
+                Err(e) => (Vec::new(), "unavailable", Some(e.to_string())),
+            }
+        } else {
+            (Vec::new(), "not_requested", None)
+        };
+        if text_only && (ax_tree_status == "ok" || ocr_status == "ok") {
+            host.computer_use_waive_fresh_capture_guard();
+        }
         let ui_tree_text = host.enumerate_ui_tree_text().await;
-
-        // Turn each non-`ok` status into the tactic that actually works there,
-        // so a sparse tree costs one redirect instead of a search.
         let ax_tree_note = match ax_tree_status {
             "ok" => None,
-            "no_foreground_app" => Some(
-                "No application is frontmost, so there is no AX tree to read. Use `list_apps` to \
-find the target, then `open_app` (or `app_click` with an explicit `app` selector) to bring it forward."
-                    .to_string(),
-            ),
-            "empty_tree" => Some(
-                "The frontmost app exposes an empty accessibility tree — usual for Electron / \
-WebView apps that have not enabled their web-content AX tree, and for an app running with no \
-window. This is NOT truncated output: re-calling `describe_screen` returns the same thing. \
-Check `window_count` via `open_app`, or target visible text with `move_to_text` / `click_target`."
-                    .to_string(),
-            ),
-            "query_failed" => Some(
-                "The AX query failed (commonly missing Accessibility trust, or the app exited). \
-Grant Accessibility permission, or fall back to `move_to_text` / `click_target` on visible text."
-                    .to_string(),
-            ),
-            _ => None,
+            "no_foreground_app" => Some("No target application is selected. Use list_apps, then get_app_state with an explicit app selector."),
+            "content_unavailable" | "empty_tree" => Some("The target does not expose accessible content controls. Read ocr_text or the same target's screenshot. An unchanged accessibility tree does not prove an input action failed."),
+            _ => Some("Read ax_error for the failed target query. Use the available OCR facts; do not activate another application or repeat a mutation to repair an observation failure."),
         };
-
         let mut body = json!({
-            "success": true,
-            "action": "describe_screen",
-            "image_bytes": false,
+            "success": true, "action": "describe_screen", "image_bytes": screenshot.is_some(),
+            "observation_id": observation_id,
+            "capture_scope_note": "This observes one explicit or bound target window, not the entire desktop. Use list_windows for window discovery.",
             "foreground_application": session_snap.foreground_application,
-            "pointer_global": pointer,
-            "displays": displays,
-            "window_title": window_title,
-            "ax_tree_text": ax_tree_text,
-            "ax_tree_status": ax_tree_status,
-            "ax_tree_note": ax_tree_note,
-            "ax_nodes_count": ax_nodes_count,
-            "ax_state_digest": ax_digest,
-            "ui_tree_text": ui_tree_text,
+            "target_application": target_application,
+            "pointer_global": session_snap.pointer_global, "displays": interaction.displays,
+            "window_title": window_title, "ax_tree_text": ax_tree_text,
+            "ax_tree_status": ax_tree_status, "ax_tree_note": ax_tree_note,
+            "ax_error": ax_error, "ax_nodes_count": ax_nodes_count,
+            "ax_state_digest": ax_digest, "ui_tree_text": ui_tree_text,
+            "ocr_text": ocr_text, "ocr_status": ocr_status, "ocr_error": ocr_error,
             "output_is_complete": true,
         });
-
-        let input_coords = json!({
-            "kind": "describe_screen",
-        });
-        body = computer_use_augment_result_json(host, body, Some(input_coords)).await;
-
-        // Guide the model to use the returned text fields as its "screen view":
-        // pick `node_idx` from `ax_tree_text` for `app_click`/`click_element`, or
-        // match visible text via `move_to_text`, and compare `ax_state_digest`
-        // before/after an action to verify a mutation.
-        let hint = format!(
-            "describe_screen: complete text snapshot returned (no image, ax_tree_status={}). \
-Use `ax_tree_text` node indices for `app_click`/`click_element`, match visible text with `move_to_text`, \
-and compare `ax_state_digest` across actions to verify state changes.{}",
-            ax_tree_status,
-            if ax_tree_status == "ok" {
-                ""
-            } else {
-                " No AX tree available — read `ax_tree_note` and switch tactic rather than repeating this call."
+        if let Some(shot) = &screenshot {
+            body["screenshot_meta"] = json!({
+                "screenshot_id": shot.screenshot_id, "capture_frame": shot.capture_frame,
+                "image_width": shot.image_width, "image_height": shot.image_height,
+                "native_width": shot.native_width, "native_height": shot.native_height,
+                "vision_scale": shot.vision_scale, "mime_type": shot.mime_type,
+                "image_content_rect": shot.image_content_rect,
+                "image_global_bounds": shot.image_global_bounds,
+                "coordinate_hint": "Use image_xy with this screenshot_id on the observed app window. Image pixels are not desktop coordinates.",
+            });
+            if !shot.auxiliary_windows.is_empty() {
+                body["screenshot_meta"]["auxiliary_windows"] = json!(shot.auxiliary_windows);
             }
-        );
-        Ok(vec![ToolResult::ok(body, Some(hint))])
+        }
+        let body =
+            computer_use_augment_result_json(host, body, Some(json!({"kind": "describe_screen"})))
+                .await;
+        let summary = Some(format!(
+            "describe_screen: target observation returned (AX: {ax_tree_status}, OCR: {ocr_status}). Read the full observation, select app-scoped actions, and verify the resulting content."
+        ));
+        Ok(vec![match screenshot {
+            Some(shot) => ToolResult::ok_with_images(
+                body,
+                summary,
+                vec![ToolImageAttachment {
+                    mime_type: shot.mime_type,
+                    data_base64: B64.encode(&shot.bytes),
+                }],
+            ),
+            None => ToolResult::ok(body, summary),
+        }])
     }
 
     /// Screenshot tool results attach JPEGs via `tool_image_attachments`; only providers whose
-    /// request converters emit multimodal tool output are supported (Anthropic + OpenAI-compatible).
+    /// request converters emit multimodal tool output are supported.
     fn require_multimodal_tool_output_for_screenshot(ctx: &ToolUseContext) -> OpenBitFunResult<()> {
         if !ctx.primary_model_supports_image_understanding() {
             return Err(OpenBitFunError::tool(
-                "The primary model does not accept images; do not use ComputerUse action `screenshot` or other image-producing steps. Use `click_element`, `locate`, `move_to_text` (with `move_to_text_match_index` when listed), `mouse_move` with globals from tool JSON, `key_chord`, etc.".to_string(),
+                "The primary model does not accept images; do not use ComputerUse action `screenshot` or other image-producing steps. Use get_app_state/describe_screen and observed node_idx or ocr_text app-scoped targets.".to_string(),
             ));
         }
         if ctx.primary_model_facts().multimodal_tool_output_supported() {
             return Ok(());
         }
         Err(OpenBitFunError::tool(
-            "Screenshot results include images in tool results; set the primary model to Anthropic (Claude) or OpenAI-compatible API format. Other providers are not supported for screenshots yet.".to_string(),
+            "Screenshot results include images in tool results; set the primary model to an image-capable model using Anthropic, OpenAI Chat/Responses, or Gemini API format.".to_string(),
         ))
     }
 
@@ -691,8 +1106,10 @@ and compare `ax_state_digest` across actions to verify state changes.{}",
         }
         if coordinate_mode(input) == "normalized" {
             host.map_normalized_coords_to_pointer_f64(x, y)
+                .map_err(Into::into)
         } else {
             host.map_image_coords_to_pointer_f64(x, y)
+                .map_err(Into::into)
         }
     }
 
@@ -728,10 +1145,10 @@ and compare `ax_state_digest` across actions to verify state changes.{}",
 
     fn key_chord_os_hint() -> &'static str {
         match std::env::consts::OS {
-            "macos" => "On this host use command/option/control/shift in key_chord (not Win/Linux names). **System clipboard (prefer over type_text when pasting):** command+a select all, command+c copy, command+x cut, command+v paste — combine with focus/selection shortcuts as needed.",
-            "windows" => "On this host use meta (Windows key), alt, control, shift in key_chord. **System clipboard:** control+a/c/x/v for select all, copy, cut, paste.",
-            "linux" => "On this host use control, alt, shift, and meta/super as appropriate for the desktop. **System clipboard:** typically control+a/c/x/v (match the app and DE).",
-            _ => "Match key_chord modifiers to the host OS in Runtime Context. Prefer standard clipboard chords (select all, copy, cut, paste) before long type_text.",
+            "macos" => "macOS app_key_chord uses command/option/control/shift. Global key_chord and paste require foreground mode; clipboard_get/clipboard_set do not change focus.",
+            "windows" => "Windows background typing supports validated native editable controls selected by observed node, image point or the bound window thread’s current focus; scrolling requires an observed scrollable node. App-scoped keyboard chords are unavailable; global key_chord requires foreground mode and uses meta, alt, control, shift.",
+            "linux" => "Linux background actions use AT-SPI semantic nodes; text insertion requires an observed EditableText node in focus. Arbitrary background coordinates and app_key_chord are unavailable. Portal keyboard input requires foreground mode and uses control, alt, shift, meta/super.",
+            _ => "Match modifiers to the host OS. Use app-scoped capabilities where available; global seat input requires foreground mode; clipboard_get/clipboard_set do not change focus.",
         }
     }
 
@@ -921,13 +1338,11 @@ and compare `ax_state_digest` across actions to verify state changes.{}",
         ))
     }
 
-    /// Writes the exact JPEG sent to the model (including pointer overlay) under the workspace for debugging.
+    /// Writes the exact host capture sent to the model under the workspace for debugging.
     /// No-op unless [`COMPUTER_USE_DEBUG_SCREENSHOTS_ENV`] is set to `1`.
     async fn try_save_screenshot_for_debug(
         bytes: &[u8],
         context: &ToolUseContext,
-        crop: Option<ScreenshotCropCenter>,
-        nav_label: Option<&str>,
     ) -> Option<String> {
         if std::env::var(COMPUTER_USE_DEBUG_SCREENSHOTS_ENV).as_deref() != Ok("1") {
             return None;
@@ -943,11 +1358,7 @@ and compare `ax_state_digest` across actions to verify state changes.{}",
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let suffix = crop
-            .map(|c| format!("crop_{}_{}", c.x, c.y))
-            .or_else(|| nav_label.map(|s| s.to_string()))
-            .unwrap_or_else(|| "full".to_string());
-        let fname = format!("cu_{}_{}.jpg", ms, suffix);
+        let fname = format!("cu_{ms}_authorized_capture.jpg");
         let path = dir.join(&fname);
         if let Err(e) = tokio::fs::write(&path, bytes).await {
             warn!(
@@ -957,23 +1368,10 @@ and compare `ax_state_digest` across actions to verify state changes.{}",
             );
             return None;
         }
-        match (crop, nav_label) {
-            (Some(c), _) => debug!(
-                "computer_use debug: wrote point crop center=({}, {}) -> {}",
-                c.x,
-                c.y,
-                path.display()
-            ),
-            (None, Some(lab)) => debug!(
-                "computer_use debug: wrote screenshot ({}) -> {}",
-                lab,
-                path.display()
-            ),
-            (None, None) => debug!(
-                "computer_use debug: wrote full-screen screenshot -> {}",
-                path.display()
-            ),
-        }
+        debug!(
+            "computer_use debug: wrote authorized capture -> {}",
+            path.display()
+        );
         Self::prune_debug_screenshots(&dir).await;
         Some(format!("{}/{}", debug_subdir.replace('\\', "/"), fname))
     }
@@ -997,7 +1395,7 @@ and compare `ax_state_digest` across actions to verify state changes.{}",
         if files.len() <= COMPUTER_USE_DEBUG_MAX_FILES {
             return;
         }
-        files.sort_by(|a, b| b.0.cmp(&a.0));
+        files.sort_by_key(|file| std::cmp::Reverse(file.0));
         for (_, path) in files.into_iter().skip(COMPUTER_USE_DEBUG_MAX_FILES) {
             if let Err(e) = tokio::fs::remove_file(&path).await {
                 warn!(
@@ -1013,9 +1411,41 @@ and compare `ax_state_digest` across actions to verify state changes.{}",
     async fn pack_screenshot_tool_output(
         shot: &ComputerScreenshot,
         debug_rel: Option<String>,
+        input: &Value,
     ) -> OpenBitFunResult<(Value, ToolImageAttachment, String)> {
         let b64 = B64.encode(&shot.bytes);
-        let (data, hint) = build_screenshot_tool_body_and_hint(shot, debug_rel);
+        let ignored: Vec<&str> = [
+            "screenshot_crop_center_x",
+            "screenshot_crop_center_y",
+            "screenshot_crop_half_extent_native",
+            "screenshot_navigate_quadrant",
+            "screenshot_reset_navigation",
+            "screenshot_implicit_center",
+            "window",
+            "screenshot_window",
+            "crop_to_focused_window",
+        ]
+        .into_iter()
+        .filter(|field| input.get(*field).is_some())
+        .collect();
+        let hint = format!("Authorized capture {}x{}; screenshot_id={}. Use image_xy with this screenshot_id and the returned coordinate geometry. Capture parameters never select or authorize another surface.", shot.image_width, shot.image_height, shot.screenshot_id.as_deref().unwrap_or("unavailable"));
+        let mut data = json!({
+            "success": true, "action": "screenshot", "screenshot_id": shot.screenshot_id, "capture_frame": shot.capture_frame,
+            "mime_type": shot.mime_type, "image_width": shot.image_width,
+            "image_height": shot.image_height, "native_width": shot.native_width,
+            "native_height": shot.native_height, "display_origin_x": shot.display_origin_x,
+            "display_origin_y": shot.display_origin_y, "vision_scale": shot.vision_scale,
+            "image_content_rect": shot.image_content_rect,
+            "image_global_bounds": shot.image_global_bounds,
+            "debug_screenshot_path": debug_rel,
+        });
+        if !shot.auxiliary_windows.is_empty() {
+            data["auxiliary_windows"] = json!(shot.auxiliary_windows);
+        }
+        if !ignored.is_empty() {
+            data["compatibility"] = json!({"ignored_fields": ignored,
+                "note": "Legacy crop, quadrant, navigation and window hints are accepted but ignored. The image is the current authorized capture, with no additional crop, display navigation or target change."});
+        }
         let attach = ToolImageAttachment {
             mime_type: shot.mime_type.clone(),
             data_base64: b64,
@@ -1166,32 +1596,25 @@ impl Tool for ComputerUseTool {
         let os = Self::host_os_label();
         let keys = Self::key_chord_os_hint();
         Ok(format!(
-            "Desktop automation (host OS: {}). {} All actions in one tool. Send only parameters that apply to the chosen `action`. \
-**ACTION PRIORITY (CRITICAL):** Always think in this order before choosing an action:\n\
-1. **Terminal/CLI/System commands first** — Use the **`ExecCommand`** tool for terminal commands, system scripts (e.g., macOS `osascript`, AppleScript), shell automation. This is the MOST EFFICIENT approach.\n\
-2. **Keyboard shortcuts second** — Use **`key_chord`** for system shortcuts, app shortcuts, navigation keys (Enter, Escape, Tab, Space, Arrow keys). Prefer over mouse when equivalent. Don't know the shortcut for a target app's function? Call **`get_app_shortcuts`** to read its registered menu shortcuts (macOS `AXMenuBar`, Windows UIA menu tree), then fire it with `key_chord` / `app_key_chord` instead of clicking through menus.\n\
-3. **Precise UI control last** — Only when above methods fail: prefer **`click_target`** / **`move_to_target`** (AX → OCR → screen coords in one call). Use lower-level **`click_element`**, **`move_to_text`**, or **`mouse_move`** + **`click`** only when you need manual disambiguation.\n\
-**Screenshot usage:** **`screenshot`** is ONLY for observing/confirming UI state and extracting text/information — NEVER use screenshot coordinates to control mouse movement. Always use precise methods (AX, OCR, system coordinates) for targeting.\n\
-**Cowork-style loop:** **`screenshot`** (observe) → **one** action → **`screenshot`** (verify). Use **`wait`** if UI animates. When **`interaction_state.recommend_screenshot_to_verify_last_action`** is true, call **`screenshot`** next. \
-**`click_target` / `move_to_target`:** Unified target resolver. In one call it tries AX (`node_idx`, `text_contains`, `title_contains`, `role_substring`, `identifier_contains`, or `target_text`) first, then OCR (`target_text` / `text_query`), then explicit global `x`/`y` with `use_screen_coordinates: true`. `click_target` moves and clicks authoritatively, avoiding the multi-step locate → move → screenshot → click loop for common targets. \
-**`click_element`:** Lower-level Accessibility tree (AX/UIA/AT-SPI) locate + click. Provide `title_contains` / `role_substring` / `identifier_contains`. On macOS, **`TextArea`** and **`TextField`** match both `AXTextArea` and `AXTextField` (many chat apps use TextField for compose). If several text fields match, the host deprioritizes known **search** controls (e.g. WeChat `_SC_SEARCH_FIELD`) and prefers **lower** on-screen fields (composer). Bypasses coordinate screenshot guard — but **not** the browser boundary: no ComputerUse input action (including `app_click` / `interactive_click` / `visual_click`) may drive a Chromium-family browser; use ControlHub domain=\"browser\" instead. \
-**`move_to_text`:** OCR-match visible text (`text_query`) and **move the pointer** to it (no click, no keys); **no prior `screenshot` required for targeting** (host captures **raw** pixels for Vision — no agent screenshot overlays; on macOS defaults to the **frontmost window** unless **`ocr_region_native`** overrides). Matching **strips whitespace** between CJK glyphs and allows **small edit distance** when Vision mis-reads one character. The host **trusts** the resulting globals — **next `click`** does **not** require an extra `screenshot` (same as AX). If **several** hits match, the host returns **preview JPEGs + accessibility** per candidate — pick **`move_to_text_match_index`** (1-based) and call **`move_to_text` again** with the same query/region, or narrow with **`ocr_region_native`**. Use **`click`** afterward if you need a mouse press. Prefer after `click_element` misses when text is visible. \
-**`click`:** Press at **current pointer only** — **never** pass `x`, `y`, `coordinate_mode`, or `use_screen_coordinates`. Position first with **`move_to_text`**, **`mouse_move`** (**globals only**), or **`click_element`**. After pointer moves, **`screenshot`** again before the next guarded **`click`** when the host requires it. \
-**`mouse_move` / `drag`:** **`use_screen_coordinates`: true** required — global coordinates from **`move_to_text`**, **`locate`**, AX, or **`pointer_global`**; never JPEG pixel guesses. \
-**`scroll` / `type_text` / `pointer_move_rel` / `wait` / `locate`:** No mandatory pre-screenshot by themselves. **`pointer_move_rel`** is **blocked immediately after `screenshot`** until **`move_to_text`**, **`mouse_move`** (globals), or **`click_element`** — do not nudge from the JPEG. \
-**`key_chord`:** Press key combination; prefer over **`click`** when shortcuts or **Enter**/**Escape**/**Tab** suffice. **Mandatory fresh screenshot only** when chord includes Return/Enter. \
-**`screenshot`:** JPEG for **confirmation** (optional pointer overlay). Capture prefers the focused application window when available, with full-display fallback. Set **`screenshot_window`: true** to request the focused window. Read **`screenshot_id`**, **`image_content_rect`**, and **`image_global_bounds`** for the image identity and coordinate basis; follow **`interaction_state`** for verification requirements. \
-**`type_text`:** Type text; prefer clipboard for long content. Does **not** move the pointer — **Enter** **`key_chord`** may follow without a mandatory `screenshot` unless you moved the pointer since the last capture. If **`screenshot`** shows the correct chat is already open and the input may be focused, **try `type_text` first** before spending steps on `click_element` / `move_to_text`.",
+            "Desktop application control on {}. {} For OpenBitFun settings and product operations (including MCP configuration), use OpenBitFunControl discovery and its supported operations first; opening settings is not configuration success. For OpenBitFun MiniApps, prefer MiniAppBrowser and its bridge/DOM/input controls; missing semantic actions alone do not justify desktop fallback. Ordinary web pages use ControlHub when available. \
+Observe a known app with get_app_state. Use list_apps for application identity and list_windows for exact window titles and {{pid,window_id}}. A helper with no window or a screenshot of the wrong window calls for window discovery (list_windows query matches application names, bundle ids and titles across processes), not a conclusion that the task is closed; app input results list opened_windows that appeared in any process. On app-zoom-v1 hosts, get_app_state zoom re-captures an unclear region of a screenshot at higher detail. Begin each new user GUI task with start_control once (background by default); keep that session through verification. Reuse the selector or omit app to keep the bound window. \
+Use app_batch by default for already-decided app_click/app_type_text/app_key_chord/app_scroll/app_drag steps. Focus and Unicode input fit in one app_type_text step. Batch known search input plus its submit key, or several observed form fields; end the batch when new information is needed. \
+One batch returns ordered receipts and one final observation. Use that result for the next decision, without a duplicate screenshot or routine delay; finish when the requested outcome is verified. \
+Set include_image=false when AX text is enough for the next decision; keep the default true for visual, canvas or image-coordinate work. Read tree_text, observation_id, screenshot_id, geometry and errors. Use observed image_xy with its exact screenshot_id; echo observation_id for node/index input when available. AX/OCR are optional precision aids for visible graphical controls. \
+A submitted event or changed digest does not prove completion. Verify intended content; never replay completed steps after partial failure, and check delivery before retrying a submission. \
+Prefer background mode. For the user's requested GUI task, switch with start_control(mode=foreground) when background delivery is unsupported or verified ineffective, unless the user required background-only/no-disruption. Use activate_app on activate-app-v1 hosts and its fresh observation before global input; Linux uses the consented portal surface. Never replay uncertain input. Respect Stop, cancellation and permission denial; stop_control releases the session when finished. \
+Capabilities describe available routes, not support for every control. Use supported recovery or report the limitation. Text-only models use describe_screen/get_app_state and AX/OCR targets. Use clipboard_get to read plain text from the runtime host clipboard (optional max_output_bytes, default 65536), and clipboard_set with text to replace it; an empty string clears it. Clipboard actions do not activate or paste into an application and are unavailable during window-only sharing. \
+Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or input workarounds. Prefer available ControlHub browser actions for web content. Before an irreversible submission verify its target, content and user authorization, then verify the result.",
             os, keys,
         ))
     }
 
     fn short_description(&self) -> String {
-        "Inspect the screen and control desktop input for computer-use tasks.".to_string()
+        "Control native desktop apps and OS dialogs. Prefer OpenBitFunControl for OpenBitFun settings, MiniAppBrowser for MiniApps and ControlHub for web pages.".to_string()
     }
 
     fn default_exposure(&self) -> ToolExposure {
-        ToolExposure::Deferred
+        ToolExposure::Direct
     }
 
     async fn description_with_context(
@@ -1212,8 +1635,8 @@ impl Tool for ComputerUseTool {
         let properties = Self::merge_with_shared_properties(json!({
             "action": {
                 "type": "string",
-                "enum": ["screenshot", "describe_screen", "click_target", "move_to_target", "click_element", "move_to_text", "click", "mouse_move", "scroll", "drag", "locate", "key_chord", "type_text", "pointer_move_rel", "wait", "list_displays", "focus_display", "paste", "list_apps", "get_app_state", "get_app_shortcuts", "app_click", "app_type_text", "app_scroll", "app_key_chord", "app_wait_for", "build_interactive_view", "interactive_click", "interactive_type_text", "interactive_scroll", "build_visual_mark_view", "visual_click", "open_app", "open_url", "open_file", "clipboard_get", "clipboard_set", "run_script", "run_apple_script", "get_os_info"],
-                "description": "The action to perform. **Browser boundary:** no input action here may drive a Chromium-family browser (Chrome/Edge/Brave/Arc) — use ControlHub domain=\"browser\" for those; switching focus away with `key_chord` [\"alt\",\"tab\"] / [\"command\",\"tab\"] or `open_app` is always allowed. **ACTION PRIORITY:** 1) Use the `ExecCommand` tool for CLI/terminal/system commands (most efficient). 2) **`open_app`** to launch apps by name. **`run_apple_script`** to run AppleScript (macOS). 3) Prefer **`key_chord`** for shortcuts/navigation keys over mouse. Not sure what shortcut a target app uses? Call **`get_app_shortcuts`** first to read its registered menu shortcuts, then fire the winner with `key_chord` / `app_key_chord` instead of clicking through menus. 4) Only when above fail: `click_target` / `move_to_target` (AX → OCR → screen coords in one call) before lower-level `click_element`, `move_to_text`, or `mouse_move` + `click`. **`screenshot`** is for observation/confirmation ONLY — never derive mouse coordinates from screenshots. `click` = press at **current pointer only** (no x/y params). `scroll` supports optional position (`scroll_x`/`scroll_y`). `type_text`, `drag`, `pointer_move_rel`, `wait`, `locate` = standard actions."
+                "enum": ["start_control", "stop_control", "control_status", "screenshot", "describe_screen", "click_target", "move_to_target", "click_element", "move_to_text", "click", "mouse_move", "scroll", "drag", "locate", "key_chord", "type_text", "pointer_move_rel", "wait", "list_displays", "focus_display", "paste", "list_apps", "list_windows", "get_app_state", "get_app_shortcuts", "app_batch", "app_drag", "app_click", "app_type_text", "app_scroll", "app_key_chord", "app_wait_for", "build_interactive_view", "interactive_click", "interactive_type_text", "interactive_scroll", "build_visual_mark_view", "visual_click", "open_app", "activate_app", "open_url", "open_file", "clipboard_get", "clipboard_set", "run_script", "run_apple_script", "get_os_info"],
+                "description": "Select a ComputerUse action. Observe the known target with get_app_state/describe_screen/screenshot; list_apps resolves applications, while list_windows discovers native window titles across processes (query filters by application, bundle id or title). On app-zoom-v1 hosts, get_app_state zoom re-captures an unclear screenshot region at higher detail with its own screenshot_id. Use app:{pid,window_id} from that inventory when a helper has no window or the default window is wrong. A first observation can start background control automatically. Use app_batch for decided app_click/app_type_text/app_scroll/app_key_chord inputs and one final observation. For app_click use a fresh node_idx, observed ocr_text, or image_xy/image_grid with the screenshot_id from that same app observation. Screenshot pixels are valid for these app-scoped targets; do not reinterpret them as global screen coordinates. Consult get_app_shortcuts for unknown shortcuts. Keep the session active across observations and actions; control_status reports its scope and stop_control releases it. Global input requires foreground mode. If background delivery is unavailable or verified ineffective, switch with start_control(mode=foreground) for the requested GUI task unless the user required background-only/no-disruption. Use activate_app on activate-app-v1 hosts and its new observation before global input; Linux requires the consented portal surface. Capture errors alone do not establish failed input. Preserve the original user's constraints in delegated work. Do not replace failed GUI observations with ad hoc scripts in ExecCommand. Reuse the returned after-action observation; app_type_text with focus combines known targeting and exact Unicode input. Observe, act once, then verify the intended result; do not repeat a mutation merely because its digest is unchanged. Prefer ControlHub domain=\"browser\" for web content; ComputerUse supports native browser chrome and dialogs."
             },
             "use_screen_coordinates": { "type": "boolean", "description": "For `mouse_move`, `drag`: **must be true** — global display coordinates (e.g. macOS points) from `move_to_text`, `locate`, AX, or `pointer_global`. **Not** for `click`." },
             "delta_x": { "type": "integer", "description": "For `pointer_move_rel`: horizontal delta (negative=left); also accepted as `dx`. **Not** allowed as the first move after `screenshot` (host). For `scroll`: horizontal wheel delta." },
@@ -1224,7 +1647,7 @@ impl Tool for ComputerUseTool {
             "move_to_text_match_index": { "type": "integer", "minimum": 1, "description": "For `move_to_text` and unified target actions: **1-based** OCR match index. For `move_to_text`, use after a disambiguation response; for `click_target`, use to pin a candidate." },
             "ocr_region_native": {
                 "type": "object",
-                "description": "For `move_to_text`: optional global native rectangle for OCR. If omitted, macOS uses the frontmost window bounds from Accessibility; other OSes use the primary display. Overrides the automatic region when set. Requires x0, y0, width, height.",
+                "description": "For `move_to_text`: optional global native rectangle within the authorized target capture. Omit to read that target window. This never expands capture to another window or display. Requires x0, y0, width, height.",
                 "properties": {
                     "x0": { "type": "integer", "description": "Top-left X in global screen coordinates (macOS: same logical space as CGDisplayBounds / pointer; not physical Retina pixels)." },
                     "y0": { "type": "integer", "description": "Top-left Y in global screen coordinates (macOS: logical, Y-down)." },
@@ -1235,7 +1658,6 @@ impl Tool for ComputerUseTool {
             "title_contains": { "type": "string", "description": "For `locate`, `click_element`: case-insensitive substring on AXTitle ONLY. Use same language as the app UI. Prefer `text_contains` (also covers AXValue/AXDescription/AXHelp) when in doubt." },
             "role_substring": { "type": "string", "description": "For `locate`, `click_element`: case-insensitive substring on AXRole **or AXSubrole** (e.g. \"Button\", \"TextField\", \"SearchField\")." },
             "text_contains": { "type": "string", "description": "For `locate`, `click_element`: case-insensitive substring matched against ANY of AXTitle / AXValue / AXDescription / AXHelp. Best default when the visible label lives in value/description (e.g. AXStaticText cards)." },
-            "screenshot_window": { "type": "boolean", "description": "For screenshot: request the focused application window, with full-display fallback when the host cannot resolve it." },
             "app_name": { "type": "string", "description": "For `open_app`: the application name to launch (e.g. \"Safari\", \"WeChat\", \"Visual Studio Code\")." },
             "script": { "type": "string", "description": "For `run_apple_script`: the AppleScript code to execute via `osascript`. macOS only." },
             "opts": { "type": "object", "description": "For `build_interactive_view` / `build_visual_mark_view`: optional view options." },
@@ -1251,15 +1673,39 @@ impl Tool for ComputerUseTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string"},
+                "status": {"type": "string"},
+                "observation": {"type": "object", "additionalProperties": true},
+                "screenshot": {"type": "object", "additionalProperties": true},
+                "screenshot_meta": {"type": "object", "additionalProperties": true},
+                "screenshot_id": {"type": "string"},
+                "windows": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "apps": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "steps": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "partial": {"type": "boolean"},
+                "warning": {"type": "string"},
+                "error": {"type": "string"},
+                "control_guidance": {"type": "string"},
+                "suggested_next_action": {"type": "object", "additionalProperties": true}
+            },
+            "additionalProperties": true
+        })
+    }
+
     async fn input_schema_for_model_with_context(&self, context: Option<&ToolUseContext>) -> Value {
         let vision = context
             .map(|c| c.primary_model_supports_image_understanding())
             .unwrap_or(true);
-        if vision {
-            self.input_schema_for_model().await
-        } else {
-            Self::input_schema_text_only()
-        }
+        self.model_input_schema(vision)
+    }
+
+    async fn input_schema_for_model(&self) -> Value {
+        self.model_input_schema(true)
     }
 
     fn is_readonly(&self) -> bool {
@@ -1282,15 +1728,18 @@ impl Tool for ComputerUseTool {
     }
 
     async fn is_enabled(&self) -> bool {
-        if !computer_use_desktop_available() {
+        if !computer_use_host_available() {
             return false;
         }
         let Ok(service) = GlobalConfigManager::get_service().await else {
             return false;
         };
-        let ai: crate::service::config::types::AIConfig =
-            service.get_config(Some("ai")).await.unwrap_or_default();
-        ai.computer_use_enabled
+        // Missing legacy fields are defaulted by the config owner. A failed
+        // read must not turn that default into authorization.
+        service
+            .get_config::<bool>(Some("ai.computer_use_enabled"))
+            .await
+            .unwrap_or(false)
     }
 
     async fn is_available_in_context(&self, context: Option<&ToolUseContext>) -> bool {
@@ -1301,6 +1750,517 @@ impl Tool for ComputerUseTool {
     }
 
     async fn call_impl(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> OpenBitFunResult<Vec<ToolResult>> {
+        let mut results = self.call_with_control(input, context).await?;
+        super::computer_use_presentation::complete_model_results(&mut results);
+        Ok(results)
+    }
+}
+
+/// What a foreground restore established about a window without a live
+/// surface; it decides which recovery the error can still offer.
+/// How long activate_app waits for a restored window's surface to appear.
+const RESTORED_SURFACE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SurfaceRecovery {
+    NotAttempted,
+    /// Neither minimized nor in a hidden application.
+    NothingToRestore,
+    RestoreFailed,
+    /// Restored, but no live surface appeared before the deadline.
+    StillUnavailable,
+}
+
+impl ComputerUseTool {
+    /// Native adapters expose a leading machine code (`[CODE] ...` or
+    /// `CODE: ...`), not a prose classifier. Only tool errors carry one.
+    fn native_error_code(error: &OpenBitFunError) -> Option<&str> {
+        let OpenBitFunError::Tool(message) = error else {
+            return None;
+        };
+        if let Some(rest) = message.strip_prefix('[') {
+            rest.split_once(']').map(|(code, _)| code)
+        } else {
+            message.split_once(':').map(|(code, _)| code)
+        }
+    }
+
+    /// The selected window exists but has no live surface right now; a
+    /// foreground restore can bring it back.
+    fn surface_unavailable(error: &OpenBitFunError) -> bool {
+        matches!(
+            Self::native_error_code(error),
+            Some("TARGET_SURFACE_UNAVAILABLE" | "TARGET_APP_HIDDEN")
+        )
+    }
+
+    fn capture_failure_allows_ax_observation(error: &OpenBitFunError) -> bool {
+        // Unknown errors and control/authorization revocations stay fail-closed
+        // even when their human text mentions an unavailable frame.
+        matches!(
+            Self::native_error_code(error),
+            Some(
+                "CAPTURE_TIMEOUT"
+                    | "CAPTURE_FRAME_UNAVAILABLE"
+                    | "TARGET_APP_HIDDEN"
+                    | "TARGET_SURFACE_UNAVAILABLE"
+                    | "TARGET_NOT_VISIBLE"
+                    | "TARGET_WINDOW_UNAVAILABLE"
+                    | "SCREEN_CAPTURE_PERMISSION_REQUIRED"
+            )
+        )
+    }
+
+    /// activate_app is the explicit foreground request to show a window, so a
+    /// minimized window or hidden application is restored and prepared again
+    /// instead of failing. Background modes never reach this path.
+    async fn restore_and_prepare(
+        host: &crate::agentic::tools::computer_use_host::ComputerUseHostRef,
+        app: &AppSelector,
+        error: OpenBitFunError,
+        context: &ToolUseContext,
+    ) -> Result<bool, (OpenBitFunError, SurfaceRecovery)> {
+        if !Self::surface_unavailable(&error)
+            || host.control_snapshot().mode
+                != crate::agentic::tools::computer_use_host::ControlMode::Foreground
+        {
+            return Err((error, SurfaceRecovery::NotAttempted));
+        }
+        match host
+            .restore_window(app.clone())
+            .await
+            .map_err(OpenBitFunError::from)
+        {
+            Ok(true) => {}
+            Ok(false) => return Err((error, SurfaceRecovery::NothingToRestore)),
+            Err(restore_error) => {
+                let OpenBitFunError::Tool(message) = error else {
+                    return Err((error, SurfaceRecovery::RestoreFailed));
+                };
+                let restore_error = match restore_error {
+                    OpenBitFunError::Tool(detail) => detail,
+                    other => other.to_string(),
+                };
+                return Err((
+                    OpenBitFunError::Tool(format!(
+                        "{}. Restoring the window failed: {}",
+                        message.trim_end_matches('.'),
+                        restore_error.trim_end_matches('.')
+                    )),
+                    SurfaceRecovery::RestoreFailed,
+                ));
+            }
+        }
+        // The window manager animates un-minimize; the surface appears after it.
+        let deadline = tokio::time::Instant::now() + RESTORED_SURFACE_DEADLINE;
+        loop {
+            tokio::select! {
+                biased;
+                _ = async {
+                    match context.cancellation_token() {
+                        Some(token) => token.cancelled().await,
+                        None => std::future::pending().await,
+                    }
+                } => return Err((
+                    OpenBitFunError::tool("[CANCELLED] Cancelled while restoring the window; no input was sent"),
+                    SurfaceRecovery::NotAttempted,
+                )),
+                _ = tokio::time::sleep(std::time::Duration::from_millis(150)) => {}
+            }
+            match host.prepare_control_target(app.clone()).await.map_err(OpenBitFunError::from) {
+                Ok(()) => return Ok(true),
+                Err(error)
+                    if Self::surface_unavailable(&error)
+                        && tokio::time::Instant::now() < deadline => {}
+                Err(error) if Self::surface_unavailable(&error) => {
+                    return Err((error, SurfaceRecovery::StillUnavailable))
+                }
+                Err(OpenBitFunError::Tool(message)) => {
+                    return Err((
+                        OpenBitFunError::Tool(format!(
+                            "{}. The window was already restored (unhidden or un-minimized) before this failure",
+                            message.trim_end_matches('.')
+                        )),
+                        SurfaceRecovery::NotAttempted,
+                    ))
+                }
+                Err(error) => return Err((error, SurfaceRecovery::NotAttempted)),
+            }
+        }
+    }
+
+    /// The bound native window (`pid:N/window:M`) as an explicit selector, so
+    /// a call that follows the bound window is explained in terms of it.
+    fn bound_window_selector(
+        host: &crate::agentic::tools::computer_use_host::ComputerUseHostRef,
+    ) -> Option<AppSelector> {
+        let target = host.control_snapshot().target?;
+        let (pid, window) = target.strip_prefix("pid:")?.split_once("/window:")?;
+        Some(AppSelector {
+            pid: Some(pid.parse().ok()?),
+            window_id: Some(window.parse().ok()?),
+            ..AppSelector::default()
+        })
+    }
+
+    /// Name the selected process's live windows and the recovery available in
+    /// the current mode, so a window without a surface is never a dead end.
+    /// Only minimized windows and hidden applications can be restored; a
+    /// window on another Space or virtual desktop needs the user.
+    async fn explain_unavailable_target(
+        host: &crate::agentic::tools::computer_use_host::ComputerUseHostRef,
+        app: &AppSelector,
+        error: OpenBitFunError,
+        recovery: SurfaceRecovery,
+    ) -> OpenBitFunError {
+        let surface = Self::surface_unavailable(&error);
+        if !(surface || Self::native_error_code(&error) == Some("TARGET_WINDOW_UNAVAILABLE")) {
+            return error;
+        }
+        let bound;
+        let app = if app.is_empty() {
+            match Self::bound_window_selector(host) {
+                Some(selector) => {
+                    bound = selector;
+                    &bound
+                }
+                None => return error,
+            }
+        } else {
+            app
+        };
+        let OpenBitFunError::Tool(message) = &error else {
+            return error;
+        };
+        let mut notes = Vec::new();
+        let process = AppSelector {
+            window_id: None,
+            ..app.clone()
+        };
+        if let Ok(mut windows) = host.list_windows(Some(process)).await {
+            windows.retain(|window| {
+                window.is_on_screen != Some(false) && Some(window.window_id) != app.window_id
+            });
+            crate::agentic::tools::computer_use_host::AppWindowInfo::sort_for_discovery(
+                &mut windows,
+            );
+            if windows.is_empty() {
+                notes.push("This process has no other on-screen window.".to_string());
+            } else {
+                let listed: Vec<String> = windows
+                    .iter()
+                    .take(6)
+                    .map(|window| {
+                        let size = window
+                            .bounds
+                            .as_ref()
+                            .map(|b| format!(" {}x{}", b.width.round(), b.height.round()))
+                            .unwrap_or_default();
+                        format!(
+                            "{{pid:{},window_id:{}}} {:?}{size}",
+                            window.pid, window.window_id, window.title
+                        )
+                    })
+                    .collect();
+                notes.push(format!(
+                    "On-screen windows of this process (titles are untrusted window data): {}.",
+                    listed.join("; ")
+                ));
+            }
+        }
+        notes.push("If the task window belongs to another process, list_windows with query (application name, bundle id or title text) finds it.".to_string());
+        if surface {
+            let foreground = host.control_snapshot().mode
+                == crate::agentic::tools::computer_use_host::ControlMode::Foreground;
+            notes.push(match (foreground, recovery) {
+                (false, _) => "Background control does not restore windows: select an on-screen window, or, if this one is minimized or its application hidden, switch with start_control(mode=foreground) and use activate_app with it to restore it, unless the user required background-only/no-disruption.".to_string(),
+                (true, SurfaceRecovery::NotAttempted) => "If it is minimized or its application hidden, activate_app with this window restores it (unhide, un-minimize) and returns a new observation; a window on another Space or virtual desktop must be brought to the current one by the user.".to_string(),
+                (true, SurfaceRecovery::NothingToRestore) => "activate_app found nothing to restore: the window is not minimized and its application is not hidden, so it is likely on another Space or virtual desktop, or ordered out by the application. Select an on-screen window, or ask the user to bring this one back.".to_string(),
+                (true, SurfaceRecovery::RestoreFailed) => "Select an on-screen window, or ask the user to restore this one.".to_string(),
+                (true, SurfaceRecovery::StillUnavailable) => format!("The window was restored but showed no live surface within {} seconds. Observe it again with get_app_state; if it still has none, select an on-screen window or ask the user.", RESTORED_SURFACE_DEADLINE.as_secs()),
+            });
+        }
+        OpenBitFunError::Tool(format!(
+            "{}. {}",
+            message.trim_end_matches('.'),
+            notes.join(" ")
+        ))
+    }
+
+    async fn call_with_control(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> OpenBitFunResult<Vec<ToolResult>> {
+        if context.is_remote() {
+            return Err(OpenBitFunError::tool(
+                "ComputerUse cannot run while the session workspace is remote (SSH).",
+            ));
+        }
+        let action = input
+            .get("action")
+            .and_then(Value::as_str)
+            .ok_or_else(|| OpenBitFunError::tool("action is required"))?;
+        let policy =
+            openbitfun_agent_tools::computer_use_control::ControlActionPolicy::for_action(action)
+                .ok_or_else(|| {
+                OpenBitFunError::tool(format!(
+                    "[CONTROL_ACTION_INVALID] Unknown ComputerUse action: {action}"
+                ))
+            })?;
+        let host = context.computer_use_host.as_ref().ok_or_else(|| {
+            OpenBitFunError::tool("Native Computer Use provider unavailable on the executing host")
+        })?;
+        if action == "activate_app"
+            && !host
+                .control_snapshot()
+                .capabilities
+                .iter()
+                .any(|cap| cap == "activate-app-v1")
+        {
+            return Err(OpenBitFunError::tool("[ACTIVATION_UNSUPPORTED] Host does not advertise activate-app-v1. No activation was attempted. Linux uses the consented portal surface; do not infer its identity from an AT-SPI PID."));
+        }
+        if let Some(app) = input.get("app").filter(|app| app.is_object()) {
+            let app: AppSelector = serde_json::from_value(app.clone())
+                .map_err(|e| OpenBitFunError::tool(format!("Invalid app selector: {e}")))?;
+            app.validate_window_target()
+                .map_err(OpenBitFunError::tool)?;
+            if app.window_id.is_some()
+                && !host
+                    .control_snapshot()
+                    .capabilities
+                    .iter()
+                    .any(|cap| cap == "window-target-v1")
+            {
+                return Err(OpenBitFunError::tool("[WINDOW_TARGET_UNSUPPORTED] This host does not advertise window-target-v1; the exact window selector was not ignored. Use a compatible host or supported app observations."));
+            }
+        }
+        let owner = match context.session_id.as_deref() {
+            Some(owner) => owner,
+            None if !host.control_snapshot().supported => "legacy-local-tool-context",
+            None => {
+                return Err(OpenBitFunError::tool(
+                    "[CONTROL_OWNER_REQUIRED] Desktop control requires a runtime session",
+                ))
+            }
+        };
+        match action {
+            "control_status" => {
+                return Ok(vec![ToolResult::ok(
+                    serde_json::to_value(host.control_snapshot())?,
+                    None,
+                )])
+            }
+            "stop_control" => {
+                return Ok(vec![ToolResult::ok(
+                    serde_json::to_value(host.stop_control(owner).await?)?,
+                    None,
+                )])
+            }
+            "start_control" => {
+                let request = serde_json::from_value::<
+                    crate::agentic::tools::computer_use_host::ControlStartRequest,
+                >(input.clone())
+                .map_err(|e| OpenBitFunError::tool(format!("Invalid control request: {e}")))?;
+                let snapshot = host.start_control(owner, request).await?;
+                Self::watch_control_cancellation(host.clone(), context, snapshot.generation);
+                return Ok(vec![ToolResult::ok(serde_json::to_value(snapshot)?, None)]);
+            }
+            _ => {}
+        }
+        let previous_generation = host.control_snapshot().generation;
+        let lease_result = host.acquire_control_action(owner, action).await;
+        let current_generation = host.control_snapshot().generation;
+        if current_generation != previous_generation {
+            Self::watch_control_cancellation(host.clone(), context, current_generation);
+        }
+        let mut lease = lease_result?;
+        let result = async {
+            let mut capture_preparation_error = None;
+            let mut restored_window = false;
+            // A wait that names an app ends with that app's observation, so it
+            // prepares the target like get_app_state before the observation scope.
+            let observed_wait =
+                action == "wait" && input.get("app").is_some_and(Value::is_object);
+            if policy.target || observed_wait {
+                let app: crate::agentic::tools::computer_use_host::AppSelector = match input.get("app").filter(|v| v.is_object()) {
+                    Some(app) => serde_json::from_value(app.clone())
+                        .map_err(|e| OpenBitFunError::tool(format!("Invalid app selector: {e}")))?,
+                    None => crate::agentic::tools::computer_use_host::AppSelector::default(),
+                };
+                let explicit_target = !app.is_empty();
+                let exact_window = app.window_id.is_some();
+                let prepared = match host.prepare_control_target(app.clone()).await.map_err(OpenBitFunError::from) {
+                    Err(error) if action == "activate_app" => {
+                        Self::restore_and_prepare(host, &app, error, context).await
+                    }
+                    other => other
+                        .map(|()| false)
+                        .map_err(|error| (error, SurfaceRecovery::NotAttempted)),
+                };
+                let prepared = match prepared {
+                    Ok(restored) => {
+                        restored_window = restored;
+                        Ok(())
+                    }
+                    Err((error, recovery)) => {
+                        Err(Self::explain_unavailable_target(host, &app, error, recovery).await)
+                    }
+                };
+                if let Err(error) = prepared {
+                    // The wait still happens when only the target is
+                    // unavailable; control and authorization failures fail it.
+                    if observed_wait && Self::capture_failure_allows_ax_observation(&error) {
+                        return Self::wait_then_observe(
+                            host.as_ref(),
+                            input,
+                            context,
+                            Some(error.to_string()),
+                        )
+                        .await;
+                    }
+                    // These reads resolve their own explicit selector and never
+                    // consult the old capture's pixels, OCR or pointer map. An
+                    // empty selector is deliberately not eligible: after failed
+                    // preparation it could otherwise resolve the wrong app.
+                    if explicit_target
+                        && !exact_window
+                        && matches!(action, "get_app_state" | "get_app_shortcuts")
+                        && input.get("zoom").is_none_or(Value::is_null)
+                        && Self::capture_failure_allows_ax_observation(&error)
+                    {
+                        capture_preparation_error = Some(error.to_string());
+                    } else {
+                        return Err(error);
+                    }
+                }
+            }
+            if !policy.observation {
+                if let Some(value) = input.get("observation_id") {
+                    let id = value.as_str().filter(|id| !id.is_empty()).ok_or_else(|| OpenBitFunError::tool("[INVALID_PARAMS] observation_id must be a nonempty string"))?;
+                    host.validate_observation(id)?;
+                }
+            }
+            let observation_scope = host.control_snapshot();
+            let mut results = self.call_controlled(input, context).await?;
+            if policy.observation && policy.lease
+                && !super::computer_use_program::same_active_control(&observation_scope, &host.control_snapshot())
+            {
+                return Err(OpenBitFunError::tool("[CONTROL_STALE] Observation discarded because control stopped or changed target"));
+            }
+            if restored_window {
+                for result in &mut results {
+                    if let ToolResult::Result { data, .. } = result {
+                        data["restored_window"] = json!(true);
+                    }
+                }
+            }
+            if let Some(error) = capture_preparation_error {
+                for result in &mut results {
+                    if let ToolResult::Result { data, .. } = result {
+                        data["capture_preparation_error"] = json!(error);
+                        data["control_target_available"] = json!(false);
+                        data["capture_status"] = json!("unavailable");
+                        data["background_input"] = json!(false);
+                        data["control_guidance"] = json!("Accessibility facts describe only the requested process. Capture failure or a menu-only tree does not prove the task window is closed or absent: it may belong to another process or another window. Use list_windows (query matches application names, bundle ids and titles across processes), match the task's title, then get_app_state with its pid and window_id. Do not use a previously bound app's pixels or coordinates; this failed observation does not authorize input.");
+                        data["suggested_next_action"] = json!({"action":"list_windows"});
+                    }
+                }
+            }
+            Ok(results)
+        }
+        .await;
+        if let Some(lease) = lease.as_mut() {
+            lease.complete();
+        }
+        result
+    }
+
+    fn watch_control_cancellation(
+        host: crate::agentic::tools::computer_use_host::ComputerUseHostRef,
+        context: &ToolUseContext,
+        generation: u64,
+    ) {
+        let Some(token) = context.cancellation_token().cloned() else {
+            return;
+        };
+        let owner = context
+            .session_id
+            .clone()
+            .unwrap_or_else(|| "legacy-local-tool-context".into());
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        if host.control_snapshot().generation == generation { let _ = host.stop_control_generation(&owner, generation).await; }
+                        break;
+                    }
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                        let state = host.control_snapshot();
+                        if state.generation != generation || state.state == "stopped" { break; }
+                    }
+                }
+            }
+        });
+    }
+    /// Waiting is for an app to change, so it ends with that app's settled
+    /// state instead of a bare receipt. A requested target that could not be
+    /// prepared is reported, never substituted by another window's state.
+    async fn wait_then_observe(
+        host_ref: &dyn crate::agentic::tools::computer_use_host::ComputerUseHost,
+        input: &Value,
+        context: &ToolUseContext,
+        preparation_error: Option<String>,
+    ) -> OpenBitFunResult<Vec<ToolResult>> {
+        let ms = input
+            .get("ms")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| OpenBitFunError::tool("ms is required".to_string()))?;
+        host_ref.wait_ms(ms).await?;
+        let observe = input.get("app").is_some_and(Value::is_object)
+            || host_ref.control_snapshot().target.is_some();
+        let observation_error = match preparation_error {
+            Some(error) => Some(error),
+            None if observe => {
+                let mut observation = input.clone();
+                observation["action"] = json!("get_app_state");
+                match super::computer_use_actions::ComputerUseActions::new()
+                    .handle_desktop("get_app_state", &observation, context)
+                    .await
+                {
+                    Ok(mut results) => {
+                        for result in &mut results {
+                            if let ToolResult::Result { data, .. } = result {
+                                data["action"] = json!("wait");
+                                data["waited_ms"] = json!(ms);
+                            }
+                        }
+                        return Ok(results);
+                    }
+                    Err(error) => Some(error.to_string()),
+                }
+            }
+            None => None,
+        };
+        let (body, summary) = match observation_error {
+            Some(error) => (
+                json!({ "success": true, "action": "wait", "ms": ms, "observation_error": error }),
+                format!("Waited {} ms; the observation failed.", ms),
+            ),
+            None => (
+                json!({ "success": true, "action": "wait", "ms": ms }),
+                format!("Waited {} ms.", ms),
+            ),
+        };
+        let body = computer_use_augment_result_json(host_ref, body, None).await;
+        Ok(vec![ToolResult::ok(body, Some(summary))])
+    }
+
+    async fn call_controlled(
         &self,
         input: &Value,
         context: &ToolUseContext,
@@ -1316,17 +2276,9 @@ impl Tool for ComputerUseTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| OpenBitFunError::tool("action is required".to_string()))?;
 
-        // Browser-boundary guard: physical input actions (click/type/scroll/…)
-        // must not drive a CDP-drivable (Chromium-family) browser from the
-        // desktop side — the ControlHub browser domain owns that surface.
-        // Read-only observation actions pass through.
-        if let Some(err) = super::computer_use_actions::ComputerUseActions::new()
-            .desktop_action_targets_browser(action, input, context)
-            .await
-        {
-            return Ok(err_response("computer_use", action, err));
-        }
-
+        // Browser process identity does not determine input authority. The
+        // session owner, selected target and host control scope govern input;
+        // page automation is a preferred route, not a desktop capability gate.
         match action {
             "open_url" | "open_file" | "clipboard_get" | "clipboard_set" | "run_script"
             | "get_os_info" => {
@@ -1345,7 +2297,7 @@ impl Tool for ComputerUseTool {
 
         let host = context.computer_use_host.as_ref().ok_or_else(|| {
             OpenBitFunError::tool(
-                "Computer use is only available in the OpenBitFun desktop app.".to_string(),
+                "Computer Use requires a native provider on the executing host.".to_string(),
             )
         })?;
 
@@ -1353,6 +2305,49 @@ impl Tool for ComputerUseTool {
 
         match action {
             "locate" => execute_computer_use_locate(input, context).await,
+            "activate_app" => {
+                let app: crate::agentic::tools::computer_use_host::AppSelector = input
+                    .get("app")
+                    .filter(|app| app.is_object())
+                    .cloned()
+                    .map(serde_json::from_value)
+                    .transpose()?
+                    .unwrap_or_default();
+                host_ref.activate_app(app.clone()).await?;
+                // Raising a window repaints it; observe the settled frame.
+                let settle = tokio::select! {
+                    biased;
+                    _ = async {
+                        match context.cancellation_token() {
+                            Some(token) => token.cancelled().await,
+                            None => std::future::pending().await,
+                        }
+                    } => None,
+                    result = host_ref.settle_after_input(
+                        app,
+                        crate::agentic::tools::computer_use_host::AppInputSettlePolicy::default(),
+                    ) => Some(result),
+                };
+                let mut observation = input.clone();
+                observation["action"] = json!("get_app_state");
+                // Activation invalidates geometry/focus assumptions. Return the
+                // new observation once; never append speculative keyboard input.
+                let mut results = super::computer_use_actions::ComputerUseActions::new()
+                    .handle_desktop("get_app_state", &observation, context)
+                    .await?;
+                for result in &mut results {
+                    if let ToolResult::Result { data, .. } = result {
+                        data["action"] = json!("activate_app");
+                        data["activated"] = json!(true);
+                        data["settle"] = match &settle {
+                            Some(Ok(settle)) => json!(settle),
+                            Some(Err(error)) => json!(crate::agentic::tools::computer_use_host::AppInputSettle::unavailable(error.to_string())),
+                            None => json!({"status":"interrupted","waited_ms":0,"reason":"Cancelled while waiting for the window to settle"}),
+                        };
+                    }
+                }
+                Ok(results)
+            }
 
             // Text-only observation: the "eyes" of the desktop loop when the
             // primary model cannot consume screenshot images. Returns a
@@ -1361,6 +2356,9 @@ impl Tool for ComputerUseTool {
             // verify step that closes the cowork loop for text-only models.
             "describe_screen" => {
                 let text_only = !context.primary_model_supports_image_understanding();
+                if !text_only && input.get("include_image").and_then(Value::as_bool) == Some(true) {
+                    Self::require_multimodal_tool_output_for_screenshot(context)?;
+                }
                 return Self::describe_screen(host_ref, input, text_only).await;
             }
 
@@ -1854,97 +2852,30 @@ impl Tool for ComputerUseTool {
             }
 
             "screenshot" => {
-                // Text-only soft gate: instead of hard-rejecting (which crashes
-                // the agent loop when a stale hint or the model itself asks for
-                // `screenshot`), return a success envelope that points the model
-                // at the text-only observe action. The model keeps its turn and
-                // switches to `describe_screen` / AX / OCR / keyboard tactics.
+                // A stale catalog or model can still request an image. Perform
+                // a real text observation instead of claiming an empty capture
+                // succeeded and waiving verification without any evidence.
                 if !context.primary_model_supports_image_understanding() {
-                    // A text-only `screenshot` never captures anything, so it
-                    // can never clear the stale-capture guard the usual way.
-                    // Waive it here: otherwise the guard's own recovery advice
-                    // ("call `screenshot` first") is an instruction the model
-                    // can follow forever without ever being allowed to click.
-                    host_ref.computer_use_waive_fresh_capture_guard();
-                    let body = json!({
-                        "success": true,
-                        "action": "screenshot",
-                        "screenshot_unavailable": true,
-                        "reason": "primary_model_is_text_only",
-                        "stale_capture_guard": "waived",
-                        "instruction": "The primary model cannot consume image bytes, so `screenshot` produced nothing. Use `describe_screen` to observe the desktop as text (frontmost app + AX tree + UI tree text + pointer), then act with `click_target`/`click_element`/`move_to_text`/`key_chord`/`paste`. Never retry `screenshot`. The fresh-capture guard has been waived, so `click` and Enter `key_chord` are unblocked."
-                    });
-                    let input_coords = json!({ "kind": "screenshot", "text_only": true });
-                    let body =
-                        computer_use_augment_result_json(host_ref, body, Some(input_coords)).await;
-                    return Ok(vec![ToolResult::ok(
-                        body,
-                        Some(
-                            "screenshot unavailable (text-only model): use describe_screen to observe."
-                                .to_string(),
-                        ),
-                    )]);
+                    return Self::describe_screen(host_ref, input, true).await;
                 }
                 Self::require_multimodal_tool_output_for_screenshot(context)?;
-                let (params, ignored_crop_for_quadrant) = parse_screenshot_params(input)?;
-                let crop_for_debug = params.crop_center;
-                let nav_debug = params.navigate_quadrant.map(|q| match q {
-                    ComputerUseNavigateQuadrant::TopLeft => "nav_tl",
-                    ComputerUseNavigateQuadrant::TopRight => "nav_tr",
-                    ComputerUseNavigateQuadrant::BottomLeft => "nav_bl",
-                    ComputerUseNavigateQuadrant::BottomRight => "nav_br",
-                });
-                let shot = host_ref.screenshot_display(params).await?;
-                // Update screenshot hash for visual change detection
-                let shot_hash = hash_screenshot_bytes(&shot.bytes);
-                host_ref.update_screenshot_hash(shot_hash);
-                let crop_for_debug = shot.screenshot_crop_center.or(crop_for_debug);
-                let debug_rel = Self::try_save_screenshot_for_debug(
-                    &shot.bytes,
-                    context,
-                    crop_for_debug,
-                    nav_debug,
-                )
-                .await;
-                let input_coords = json!({
-                    "kind": "screenshot",
-                    "screenshot_reset_navigation": params.reset_navigation,
-                    "screenshot_crop_ignored_for_quadrant": ignored_crop_for_quadrant,
-                    "screenshot_crop_center": shot.screenshot_crop_center.map(|c| json!({ "x": c.x, "y": c.y })),
-                    "screenshot_crop_half_extent_native": shot.point_crop_half_extent_native,
-                    "screenshot_implicit_confirmation_crop_applied": shot.implicit_confirmation_crop_applied,
-                    "screenshot_navigate_quadrant": params.navigate_quadrant.map(|q| match q {
-                        ComputerUseNavigateQuadrant::TopLeft => "top_left",
-                        ComputerUseNavigateQuadrant::TopRight => "top_right",
-                        ComputerUseNavigateQuadrant::BottomLeft => "bottom_left",
-                        ComputerUseNavigateQuadrant::BottomRight => "bottom_right",
-                    }),
-                });
-                let (mut data, attach, mut hint) =
-                    Self::pack_screenshot_tool_output(&shot, debug_rel).await?;
-                if let Some(obj) = data.as_object_mut() {
-                    obj.insert(
-                        "action".to_string(),
-                        Value::String("screenshot".to_string()),
-                    );
-                    if ignored_crop_for_quadrant {
-                        obj.insert(
-                            "screenshot_crop_center_ignored".to_string(),
-                            Value::Bool(true),
-                        );
-                        obj.insert(
-                            "screenshot_params_note".to_string(),
-                            Value::String(
-                                "screenshot_navigate_quadrant was set; screenshot_crop_center_x/y in this request were ignored."
-                                    .to_string(),
-                            ),
-                        );
-                        hint = format!(
-                            "{} `screenshot_crop_center_*` were ignored because `screenshot_navigate_quadrant` takes precedence.",
-                            hint
-                        );
-                    }
+                let control = host_ref.control_snapshot();
+                if !control.supported
+                    || control
+                        .target
+                        .as_deref()
+                        .is_none_or(|target| target.trim().is_empty())
+                {
+                    return Err(OpenBitFunError::tool("CAPTURE_REQUIRED: Screenshot requires an authorized capture target. Select an application through the control session; display, crop and navigation hints do not grant capture authority."));
                 }
+                // The host owns capture authority and the exact pixel/coordinate
+                // basis. Presentation neither navigates displays nor fabricates crops.
+                let shot = host_ref.screenshot_display(Default::default()).await?;
+                host_ref.update_screenshot_hash(hash_screenshot_bytes(&shot.bytes));
+                let debug_rel = Self::try_save_screenshot_for_debug(&shot.bytes, context).await;
+                let input_coords = json!({"kind":"screenshot", "screenshot_id":shot.screenshot_id});
+                let (data, attach, hint) =
+                    Self::pack_screenshot_tool_output(&shot, debug_rel, input).await?;
                 let data =
                     computer_use_augment_result_json(host_ref, data, Some(input_coords)).await;
                 Ok(vec![ToolResult::ok_with_images(
@@ -2064,23 +2995,7 @@ impl Tool for ComputerUseTool {
                 );
                 Ok(vec![ToolResult::ok(body, Some(summary))])
             }
-            "wait" => {
-                let ms = input
-                    .get("ms")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| OpenBitFunError::tool("ms is required".to_string()))?;
-                host_ref.wait_ms(ms).await?;
-                let body = computer_use_augment_result_json(
-                    host_ref,
-                    json!({ "success": true, "action": "wait", "ms": ms }),
-                    None,
-                )
-                .await;
-                Ok(vec![ToolResult::ok(
-                    body,
-                    Some(format!("Waited {} ms.", ms)),
-                )])
-            }
+            "wait" => Self::wait_then_observe(host_ref, input, context, None).await,
             "open_app" => {
                 let app_name = input
                     .get("app_name")
@@ -2089,16 +3004,17 @@ impl Tool for ComputerUseTool {
                         OpenBitFunError::tool("open_app requires `app_name` parameter.".to_string())
                     })?;
                 let result = host_ref.open_app(app_name).await?;
-                // A live process with zero windows is the one launch outcome
-                // that looks like success but leaves nothing to act on. Name it
-                // explicitly and say what to do, rather than letting the agent
-                // rediscover it through a chain of failing AX queries.
+                // A launcher's empty window list does not establish whether
+                // another process owns the task UI. Guide native discovery.
                 let windowless = result.success && result.window_count == Some(0);
-                let next_step = if windowless {
+                let target_unresolved = result.success
+                    && (result.process_id.is_none() || result.window_count.is_none() || windowless);
+                let next_step = if target_unresolved {
                     Some(format!(
-                        "'{}' is running (PID {}) but owns no window, so there is nothing on screen to click. \
-The host already retried via `open -b`. Re-run `open_app`, or ask the user to open the app's main window (e.g. from its Dock icon). \
-Do not fall back to screen-coordinate clicks — there is no window to hit.",
+                        "The launch request for '{}' succeeded (reported PID {}), but its task window is not resolved. \
+On window-target-v1 hosts use list_windows with query set to the application or task title (it matches helper processes too) and select the observed pid and window_id by title/content; a helper or another process may own the UI. \
+On Linux use list_apps and get_app_state for AT-SPI identity; portal-selected capture has a separate scope. \
+Do not send screen-coordinate clicks without an observed window or report launch as task completion.",
                         result.app_name,
                         result
                             .process_id
@@ -2108,7 +3024,7 @@ Do not fall back to screen-coordinate clicks — there is no window to hit.",
                 } else {
                     None
                 };
-                let body = computer_use_augment_result_json(
+                let mut body = computer_use_augment_result_json(
                     host_ref,
                     json!({
                         "success": result.success,
@@ -2124,11 +3040,24 @@ Do not fall back to screen-coordinate clicks — there is no window to hit.",
                         "window_count": result.window_count,
                         "launch_path": result.launch_path,
                         "windowless": windowless,
+                        "target_unresolved": target_unresolved,
                         "next_step": next_step,
                     }),
                     None,
                 )
                 .await;
+                if target_unresolved {
+                    body["recommended_next_action"] = json!(if host_ref
+                        .control_snapshot()
+                        .capabilities
+                        .iter()
+                        .any(|c| c == "window-target-v1")
+                    {
+                        "list_windows"
+                    } else {
+                        "list_apps"
+                    });
+                }
                 let summary = if !result.success {
                     format!(
                         "Failed to open '{}': {}",
@@ -2137,7 +3066,7 @@ Do not fall back to screen-coordinate clicks — there is no window to hit.",
                     )
                 } else if windowless {
                     format!(
-                        "Opened '{}'{} but it has NO window — nothing is on screen to act on.",
+                        "Opened '{}'{}; this process reports no window. Use list_windows to discover the task's owning window.",
                         result.app_name,
                         result
                             .process_id
@@ -2272,12 +3201,20 @@ mod tests {
         DESCRIBE_SCREEN_TREE_TEXT_MAX_BYTES,
     };
     use crate::agentic::tools::computer_use_host::{
-        ComputerScreenshot, ComputerUseForegroundApplication, ComputerUseHost,
+        AppSelector, ComputerScreenshot, ComputerUseForegroundApplication, ComputerUseHost,
         ComputerUsePermissionSnapshot, ComputerUseScreenshotParams, ComputerUseSessionSnapshot,
     };
-    use crate::agentic::tools::framework::{Tool, ToolUseContext};
-    use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
+    use crate::agentic::tools::framework::{Tool, ToolExposure, ToolResult, ToolUseContext};
+    use openbitfun_agent_tools::computer_use_host::error::{OpenBitFunError, OpenBitFunResult};
     use serde_json::{json, Value};
+
+    #[test]
+    fn computer_use_is_direct_by_default() {
+        assert_eq!(
+            ComputerUseTool::new().default_exposure(),
+            ToolExposure::Direct
+        );
+    }
 
     #[test]
     fn computer_use_permission_resource_identifies_action_and_safe_target() {
@@ -2345,6 +3282,128 @@ mod tests {
         assert!(actions.iter().any(|a| a == "describe_screen"));
     }
 
+    #[test]
+    fn screenshot_admission_includes_gemini_and_rejects_nonvisual_models() {
+        let mut context = ToolUseContext::for_tool_listing(None, None);
+        for (format, vision, allowed) in [
+            ("gemini", true, true),
+            ("gemini", false, false),
+            ("unknown", true, false),
+        ] {
+            context.primary_model_facts =
+                tool_runtime::context::PrimaryModelFacts::new("m", "m", format, vision);
+            assert_eq!(
+                ComputerUseTool::require_multimodal_tool_output_for_screenshot(&context).is_ok(),
+                allowed
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn model_schema_is_compact_and_capability_scoped_without_removing_legacy_calls() {
+        let tool = ComputerUseTool::new();
+        let legacy = tool.input_schema();
+        let visual = tool.input_schema_for_model_with_context(None).await;
+        let mut context = ToolUseContext::for_tool_listing(None, None);
+        context.primary_model_facts =
+            tool_runtime::context::PrimaryModelFacts::new("m", "m", "anthropic", false);
+        let textual = tool
+            .input_schema_for_model_with_context(Some(&context))
+            .await;
+        assert!(visual.to_string().len() < legacy.to_string().len() / 2);
+        for schema in [&visual, &textual] {
+            let launch = schema["properties"]["app_name"]["description"]
+                .as_str()
+                .unwrap();
+            assert!(launch.contains("without activation"));
+            assert!(!launch.contains("requires foreground"));
+            let actions = action_enum(schema);
+            for current in [
+                "app_batch",
+                "open_app",
+                "click",
+                "key_chord",
+                "type_text",
+                "scroll",
+            ] {
+                assert!(actions.iter().any(|action| action == current));
+            }
+            for legacy_action in [
+                "run_script",
+                "run_apple_script",
+                "paste",
+                "interactive_click",
+            ] {
+                assert!(!actions.iter().any(|action| action == legacy_action));
+                assert!(action_enum(&legacy)
+                    .iter()
+                    .any(|action| action == legacy_action));
+            }
+            assert_eq!(schema["additionalProperties"], false);
+            assert_eq!(schema["properties"]["app"]["type"], "object");
+            assert_eq!(schema["properties"]["include_image"]["type"], "boolean");
+            assert!(!schema["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field == "include_image"));
+            assert!(schema["properties"].get("script").is_none());
+        }
+        for hidden in [
+            "image_xy",
+            "image_grid",
+            "visual_grid",
+            "screen_xy",
+            "screenshot_id",
+            "app_drag",
+        ] {
+            assert!(
+                !textual.to_string().contains(hidden),
+                "text-only leaked {hidden}"
+            );
+        }
+        // Every required global drag argument must survive the compact schema;
+        // additionalProperties=false otherwise makes valid runtime calls impossible.
+        for key in ["start_x", "start_y", "end_x", "end_y"] {
+            assert_eq!(visual["properties"][key]["type"], "integer");
+            assert!(textual["properties"].get(key).is_none());
+        }
+        assert_eq!(visual["properties"]["num_clicks"]["maximum"], 3);
+        let click = &visual["properties"]["steps"]["items"]["oneOf"][0];
+        assert!(click["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("target")));
+        let targets = click["properties"]["target"]["oneOf"].as_array().unwrap();
+        let image = targets
+            .iter()
+            .find(|target| target["properties"]["kind"]["enum"][0] == "image_xy")
+            .unwrap();
+        assert_eq!(
+            image["required"],
+            json!(["kind", "x", "y", "screenshot_id"])
+        );
+        // Optional export permits a real Draft 2020-12 validator in focused QA
+        // without adding a schema-validation dependency to the runtime.
+        if let Ok(directory) = std::env::var("OPENBITFUN_SCHEMA_TEST_OUTPUT") {
+            std::fs::write(
+                std::path::Path::new(&directory).join("legacy.json"),
+                legacy.to_string(),
+            )
+            .unwrap();
+            std::fs::write(
+                std::path::Path::new(&directory).join("visual.json"),
+                visual.to_string(),
+            )
+            .unwrap();
+            std::fs::write(
+                std::path::Path::new(&directory).join("text.json"),
+                textual.to_string(),
+            )
+            .unwrap();
+        }
+    }
+
     /// Text-only tool description must steer the model to `describe_screen` and
     /// away from `screenshot`.
     #[test]
@@ -2394,25 +3453,87 @@ mod tests {
         }
     }
 
-    /// Screenshot-only fields must exist solely in the full (multimodal) schema:
-    /// text-only models never receive a `screenshot` action, so these params
-    /// would be dead/misleading in that schema.
-    #[test]
-    fn screenshot_only_fields_are_absent_from_text_only_schema() {
-        let full_keys = property_keys(&ComputerUseTool::new().input_schema());
-        let text_only_keys = property_keys(&ComputerUseTool::input_schema_text_only());
+    #[tokio::test]
+    async fn screenshot_rejects_unauthorized_host_before_capture() {
+        let mut context = ToolUseContext::for_tool_listing(None, None);
+        context.computer_use_host = Some(Arc::new(GuardRecordingHost::default()));
+        context.primary_model_facts.supports_image_inputs = true;
+        context.primary_model_facts.api_format = "anthropic".into();
+        let error = ComputerUseTool::new()
+            .call_controlled(
+                &json!({
+                    "action":"screenshot", "window":false, "screenshot_reset_navigation":true
+                }),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("CAPTURE_REQUIRED"), "{error}");
+    }
 
-        let screenshot_only_fields = ["screenshot_window"];
-        for field in screenshot_only_fields {
-            assert!(
-                full_keys.contains(field),
-                "full schema should contain `{field}`"
-            );
-            assert!(
-                !text_only_keys.contains(field),
-                "text-only schema should NOT contain `{field}`"
-            );
+    #[tokio::test]
+    async fn screenshot_projection_preserves_native_frame_without_navigation() {
+        use super::B64;
+        use base64::Engine as _;
+        // Legacy DTO fields remain readable, but cannot turn a window frame
+        // into a full-display/quadrant instruction or modify its pixels.
+        let shot: ComputerScreenshot = serde_json::from_value(json!({
+            "screenshot_id":"window-frame-17", "bytes":[1,2,3,4], "mime_type":"image/png",
+            "image_width":640,"image_height":480,"native_width":1280,"native_height":960,
+            "display_origin_x":-1440,"display_origin_y":40,"vision_scale":0.5,
+            "image_content_rect":{"left":0,"top":0,"width":640,"height":480},
+            "image_global_bounds":{"left":-1200.0,"top":120.0,"width":640.0,"height":480.0},
+            "quadrant_navigation_click_ready":true,
+            "navigation_native_rect":{"x0":0,"y0":0,"width":1280,"height":960}
+        }))
+        .unwrap();
+        let (body, attachment, hint) = ComputerUseTool::pack_screenshot_tool_output(
+            &shot,
+            None,
+            &json!({"action":"screenshot"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(B64.decode(attachment.data_base64).unwrap(), shot.bytes);
+        assert_eq!(attachment.mime_type, "image/png");
+        assert_eq!(body["screenshot_id"], "window-frame-17");
+        assert_eq!(body["native_width"], 1280);
+        assert_eq!(body["image_width"], 640);
+        assert_eq!(body["image_global_bounds"]["left"], -1200.0);
+        for removed in [
+            "hierarchical_navigation",
+            "navigation_native_rect",
+            "quadrant_navigation_click_ready",
+            "recommended_next_for_click_targeting",
+            "display_width_px",
+        ] {
+            assert!(body.get(removed).is_none(), "obsolete field {removed}");
         }
+        assert!(body.get("compatibility").is_none());
+        assert!(!hint.contains("full display") && !hint.contains("quadrant"));
+        let (legacy, legacy_attachment, _) = ComputerUseTool::pack_screenshot_tool_output(
+            &shot,
+            None,
+            &json!({
+                "screenshot_navigate_quadrant":"top_left", "screenshot_crop_center_x":999999,
+                "screenshot_crop_center_y":-1, "screenshot_reset_navigation":true, "window":false
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            legacy["compatibility"]["ignored_fields"]
+                .as_array()
+                .unwrap()
+                .len(),
+            5
+        );
+        assert_eq!(legacy["image_global_bounds"], body["image_global_bounds"]);
+        assert_eq!(
+            B64.decode(legacy_attachment.data_base64).unwrap(),
+            shot.bytes
+        );
     }
 
     #[test]
@@ -2420,6 +3541,8 @@ mod tests {
         let full = property_keys(&ComputerUseTool::new().input_schema());
         let text = property_keys(&ComputerUseTool::input_schema_text_only());
         for field in [
+            "screenshot_window",
+            "window",
             "screenshot_crop_center_x",
             "screenshot_crop_center_y",
             "screenshot_crop_half_extent_native",
@@ -2473,35 +3596,121 @@ mod tests {
         assert!(full_keys.contains("i"));
     }
 
-    /// The `Bash` tool is not registered in the product tool registry
-    /// (`ExecCommand` is), so naming it as the top-priority action sends the
-    /// model at a tool that does not exist.
-    #[tokio::test]
-    async fn descriptions_and_schemas_never_reference_a_nonexistent_bash_tool() {
-        let full_description = ComputerUseTool::new()
-            .description()
-            .await
-            .expect("description");
-        let text_only_description = ComputerUseTool::description_text_only();
-        let full_schema = ComputerUseTool::new().input_schema().to_string();
-        let text_only_schema = ComputerUseTool::input_schema_text_only().to_string();
-        for blob in [
-            full_description.as_str(),
-            text_only_description.as_str(),
-            full_schema.as_str(),
-            text_only_schema.as_str(),
+    #[test]
+    fn app_target_and_wait_schema_examples_deserialize_into_host_contracts() {
+        use crate::agentic::tools::computer_use_host::{AppWaitPredicate, ClickTarget};
+        let shared = ComputerUseTool::shared_action_properties();
+        for key in ["target", "focus", "predicate"] {
+            let variants = shared[key]["oneOf"]
+                .as_array()
+                .expect("tagged alternatives");
+            let mut kinds = std::collections::BTreeSet::new();
+            for variant in variants {
+                if variant["type"] == "null" {
+                    continue;
+                }
+                let example = &variant["examples"][0];
+                let kind = example["kind"].as_str().unwrap();
+                assert!(kinds.insert(kind), "each tag must select one schema branch");
+                assert_eq!(variant["properties"]["kind"]["enum"][0], kind);
+                for required in variant["required"].as_array().unwrap() {
+                    assert!(example.get(required.as_str().unwrap()).is_some());
+                }
+                for field in example.as_object().unwrap().keys() {
+                    assert!(variant["properties"].get(field).is_some());
+                }
+                if key == "predicate" {
+                    serde_json::from_value::<AppWaitPredicate>(example.clone())
+                        .expect("predicate example matches serde");
+                } else {
+                    serde_json::from_value::<ClickTarget>(example.clone())
+                        .expect("target example matches serde");
+                }
+            }
+            assert_eq!(kinds.len(), if key == "predicate" { 4 } else { 6 });
+        }
+        assert!(
+            serde_json::from_value::<ClickTarget>(json!({"kind":"node_idx","node_idx":3})).is_err()
+        );
+        assert!(
+            serde_json::from_value::<ClickTarget>(json!({"kind":"ocr_text","text":"Search"}))
+                .is_err()
+        );
+        assert!(serde_json::from_value::<AppWaitPredicate>(
+            json!({"kind":"title_contains","text":"Sent"})
+        )
+        .is_err());
+        for schema in [
+            ComputerUseTool::new().input_schema(),
+            ComputerUseTool::input_schema_text_only(),
         ] {
-            assert!(
-                !blob.contains("Bash"),
-                "ComputerUse text must not name the unregistered Bash tool"
-            );
-            assert!(blob.contains("ExecCommand"));
+            let fields = schema["properties"].as_object().unwrap();
+            for key in [
+                "app",
+                "target",
+                "text",
+                "focus",
+                "dx",
+                "dy",
+                "predicate",
+                "timeout_ms",
+                "poll_ms",
+                "focus_window_only",
+            ] {
+                assert!(fields.contains_key(key), "missing app action field: {key}");
+            }
         }
     }
 
-    /// Minimal host whose only signal is a Chromium-family frontmost app;
-    /// every input primitive fails loudly so the test proves the browser
-    /// guard rejects `click` before any physical input is attempted.
+    /// Descriptions and schema hints are both model-visible. A background
+    /// workflow must not be contradicted by scripts-first or focus-switching
+    /// advice in the action property, including for text-only models.
+    #[tokio::test]
+    async fn descriptions_and_schemas_preserve_background_observation_workflow() {
+        let tool = ComputerUseTool::new();
+        let full_description = tool.description().await.expect("description");
+        let text_only_description = ComputerUseTool::description_text_only();
+        let full_schema = tool.input_schema();
+        let text_only_schema = ComputerUseTool::input_schema_text_only();
+        let full_action = full_schema["properties"]["action"]["description"]
+            .as_str()
+            .unwrap();
+        let text_only_action = text_only_schema["properties"]["action"]["description"]
+            .as_str()
+            .unwrap();
+        for blob in [
+            full_description.as_str(),
+            text_only_description.as_str(),
+            full_action,
+            text_only_action,
+        ] {
+            assert!(blob.contains("background"));
+            assert!(blob.contains("get_app_state"));
+            assert!(blob.contains("app_click"));
+            assert!(blob.contains("stop_control"));
+            assert!(blob.contains("ExecCommand"));
+            for obsolete in [
+                "Bash",
+                "commands first",
+                "first**",
+                "always allowed",
+                "Only when above fail",
+                "never derive mouse coordinates from screenshots",
+            ] {
+                assert!(!blob.contains(obsolete), "obsolete instruction: {obsolete}");
+            }
+        }
+        assert!(full_action.contains("image_xy/image_grid"));
+        assert!(full_action.contains("screenshot_id"));
+        assert!(text_only_action.contains("AX/OCR facts"));
+        assert!(!text_only_schema["properties"]["action"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action == "screenshot"));
+    }
+
+    /// Chromium foreground fixture whose native input always reports failure.
     #[derive(Debug)]
     struct ChromeForegroundHost;
 
@@ -2578,6 +3787,11 @@ mod tests {
     #[derive(Debug, Default)]
     struct GuardRecordingHost {
         waived: std::sync::atomic::AtomicBool,
+        observing: bool,
+        control_supported: bool,
+        human_foreground: bool,
+        observed_selectors:
+            std::sync::Mutex<Vec<crate::agentic::tools::computer_use_host::AppSelector>>,
     }
 
     #[async_trait::async_trait]
@@ -2628,8 +3842,68 @@ mod tests {
         async fn wait_ms(&self, _ms: u64) -> OpenBitFunResult<()> {
             not_expected()
         }
+        fn control_snapshot(&self) -> crate::agentic::tools::computer_use_host::ControlSnapshot {
+            crate::agentic::tools::computer_use_host::ControlSnapshot {
+                supported: self.control_supported,
+                state: if self.control_supported {
+                    "active"
+                } else {
+                    "idle"
+                }
+                .into(),
+                target: self.control_supported.then(|| "pid:421/window:22".into()),
+                ..Default::default()
+            }
+        }
         async fn computer_use_session_snapshot(&self) -> ComputerUseSessionSnapshot {
-            ComputerUseSessionSnapshot::default()
+            ComputerUseSessionSnapshot {
+                foreground_application: self.human_foreground.then(|| {
+                    ComputerUseForegroundApplication {
+                        name: Some("Human Editor".into()),
+                        bundle_id: Some("example.human-editor".into()),
+                        process_name: Some("Human Editor".into()),
+                        process_id: Some(999),
+                    }
+                }),
+                pointer_global: None,
+            }
+        }
+        async fn get_app_state(
+            &self,
+            app: crate::agentic::tools::computer_use_host::AppSelector,
+            _max_depth: u32,
+            _focus_window_only: bool,
+        ) -> OpenBitFunResult<crate::agentic::tools::computer_use_host::AppStateSnapshot> {
+            self.observed_selectors.lock().unwrap().push(app);
+            if !self.observing {
+                return not_expected();
+            }
+            Ok(serde_json::from_value(json!({
+                "app": {"name":"Target Chat","pid":421,"running":true},
+                "window_title":"Target conversation",
+                "tree_text":"AX_WINDOW_CONTENT_UNAVAILABLE: window chrome only",
+                "digest":"fixture-target-digest","captured_at_ms":1
+            }))
+            .unwrap())
+        }
+        async fn read_screen_text(
+            &self,
+        ) -> OpenBitFunResult<Vec<crate::agentic::tools::computer_use_host::OcrTextMatch>> {
+            if !self.observing {
+                return not_expected();
+            }
+            Ok(vec![
+                crate::agentic::tools::computer_use_host::OcrTextMatch {
+                    text: "已发送测试消息".into(),
+                    confidence: 0.98,
+                    center_x: 150.0,
+                    center_y: 210.0,
+                    bounds_left: 100.0,
+                    bounds_top: 200.0,
+                    bounds_width: 100.0,
+                    bounds_height: 20.0,
+                },
+            ])
         }
         fn computer_use_waive_fresh_capture_guard(&self) {
             self.waived.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -2646,57 +3920,76 @@ mod tests {
         (context, host)
     }
 
-    /// A text-only `screenshot` captures nothing, so it can never clear the
-    /// stale-capture guard through the normal path — yet the guard's own error
-    /// tells the model to "call `screenshot` first". Left as it was, that is a
-    /// closed loop: every `click` and Enter `key_chord` stays refused for the
-    /// rest of the session, and the only way out is to bypass the tool entirely
-    /// (the observed failure was an agent falling back to raw
-    /// `osascript … keystroke return`, which skips every safety check the guard
-    /// exists to enforce).
     #[tokio::test]
-    async fn text_only_screenshot_waives_the_unsatisfiable_capture_guard() {
-        let (context, host) = text_only_context(std::sync::Arc::new(GuardRecordingHost::default()));
-        let results = ComputerUseTool::new()
-            .call_impl(&json!({ "action": "screenshot" }), &context)
-            .await
-            .expect("text-only screenshot returns a soft envelope");
-        assert!(
-            host.waived.load(std::sync::atomic::Ordering::SeqCst),
-            "text-only screenshot must waive the guard it can never satisfy"
-        );
-        let body = results[0].content();
-        assert_eq!(
-            body.get("stale_capture_guard").and_then(Value::as_str),
-            Some("waived"),
-            "the waiver must be visible to the model: {body}"
-        );
-        // The guard's own error text says "call `screenshot` first"; the
-        // instruction here has to say that path is now open, or the model has
-        // no reason to believe retrying the click will work.
-        let instruction = body
-            .get("instruction")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        assert!(
-            instruction.contains("waived"),
-            "instruction must tell the model the guard is cleared: {instruction}"
-        );
+    async fn text_only_observation_does_not_waive_guard_without_ax_or_ocr_content() {
+        for action in ["screenshot", "describe_screen"] {
+            let (context, host) =
+                text_only_context(std::sync::Arc::new(GuardRecordingHost::default()));
+            let results = ComputerUseTool::new()
+                .call_impl(&json!({"action":action}), &context)
+                .await
+                .expect("observation reports its unavailable content");
+            assert!(
+                !host.waived.load(std::sync::atomic::Ordering::SeqCst),
+                "{action} must not waive the guard without observing content"
+            );
+            let body = results[0].content();
+            assert_eq!(body["ax_tree_status"], "no_foreground_app");
+            assert_ne!(body["ocr_status"], "ok");
+        }
     }
 
-    /// `describe_screen` is the text-only equivalent of taking a look, so it
-    /// clears the same guard a capture would.
     #[tokio::test]
-    async fn text_only_describe_screen_waives_the_capture_guard() {
-        let (context, host) = text_only_context(std::sync::Arc::new(GuardRecordingHost::default()));
-        let _ = ComputerUseTool::new()
-            .call_impl(&json!({ "action": "describe_screen" }), &context)
-            .await
-            .expect("describe_screen should succeed");
-        assert!(
-            host.waived.load(std::sync::atomic::Ordering::SeqCst),
-            "describe_screen is the text-only observation step and must waive the guard"
-        );
+    async fn describe_screen_uses_explicit_or_bound_target_and_delivers_ocr_to_model() {
+        for explicit in [true, false] {
+            for action in ["describe_screen", "screenshot"] {
+                let (mut context, host) =
+                    text_only_context(std::sync::Arc::new(GuardRecordingHost {
+                        observing: true,
+                        control_supported: !explicit,
+                        human_foreground: true,
+                        ..Default::default()
+                    }));
+                context.session_id = Some("observation-test".into());
+                let mut input = json!({"action":action});
+                if explicit {
+                    input["app"] = json!({"pid":421});
+                }
+                let results = ComputerUseTool::new()
+                    .call_impl(&input, &context)
+                    .await
+                    .expect("target observation");
+                let selectors = host.observed_selectors.lock().unwrap();
+                assert_eq!(selectors.len(), 1);
+                assert_eq!(selectors[0].pid, explicit.then_some(421));
+                assert!(selectors[0].name.is_none());
+                assert!(selectors[0].bundle_id.is_none());
+                assert!(
+                    host.waived.load(std::sync::atomic::Ordering::SeqCst),
+                    "real OCR observation can satisfy the text-only guard"
+                );
+                let crate::agentic::tools::framework::ToolResult::Result {
+                    data,
+                    result_for_assistant: Some(text),
+                    image_attachments,
+                } = &results[0]
+                else {
+                    panic!("complete model observation expected");
+                };
+                assert_eq!(data["target_application"]["pid"], 421);
+                assert_eq!(data["ax_tree_status"], "content_unavailable");
+                assert_eq!(data["ocr_status"], "ok");
+                assert!(text.contains("已发送测试消息"));
+                assert!(text.contains("bounds_left"));
+                assert!(text.contains("Target Chat"));
+                assert!(
+                    image_attachments
+                        .as_ref()
+                        .is_none_or(|images| images.is_empty()),
+                    "text-only observation must not send image bytes"
+                );
+            }
+        }
     }
 
     #[test]
@@ -2815,6 +4108,17 @@ mod tests {
             .expect("describe_screen should succeed");
         let body = results[0].content();
         let data = body.get("data").unwrap_or(&body);
+        let crate::agentic::tools::framework::ToolResult::Result {
+            result_for_assistant: Some(model_text),
+            ..
+        } = &results[0]
+        else {
+            panic!("ComputerUse must provide its complete model observation");
+        };
+        assert!(model_text.contains("ax_tree_status"));
+        assert!(model_text.contains("no_foreground_app"));
+        assert!(model_text.contains("output_is_complete"));
+        assert!(model_text.contains("ax_tree_note"));
         assert_eq!(
             data.get("ax_tree_status").and_then(Value::as_str),
             Some("no_foreground_app"),
@@ -2835,114 +4139,47 @@ mod tests {
         );
     }
 
-    /// The browser-boundary guard must be reachable from `call_impl`: a
-    /// physical input action while a Chromium-family browser is frontmost is
-    /// rejected with the ControlHub browser-domain redirect instead of
-    /// clicking into the page.
+    /// Chromium foreground presence must not reject a selected native app or
+    /// native browser chrome before the actual host dispatch.
     #[tokio::test]
-    async fn click_is_rejected_while_chromium_browser_is_frontmost() {
+    async fn chromium_identity_does_not_override_desktop_input_scope() {
         let mut context = ToolUseContext::for_tool_listing(None, None);
-        context.computer_use_host = Some(std::sync::Arc::new(ChromeForegroundHost));
-        let results = ComputerUseTool::new()
-            .call_impl(&json!({ "action": "click" }), &context)
-            .await
-            .expect("guard rejection is a structured envelope, not a hard error");
-        let body = results[0].content();
-        assert_eq!(
-            body.get("ok").and_then(Value::as_bool),
-            Some(false),
-            "guarded click should return an error envelope: {body}"
-        );
-        let error_text = body.get("error").map(Value::to_string).unwrap_or_default();
-        assert!(
-            error_text.contains("browser"),
-            "guard error should redirect to the ControlHub browser domain: {error_text}"
-        );
-    }
-
-    /// Renaming the same physical input must not get through the boundary: the
-    /// app-scoped and interactive/visual variants are guarded too.
-    #[tokio::test]
-    async fn app_scoped_input_is_rejected_while_chromium_browser_is_frontmost() {
-        let mut context = ToolUseContext::for_tool_listing(None, None);
-        context.computer_use_host = Some(std::sync::Arc::new(ChromeForegroundHost));
-        for action in [
-            "app_click",
-            "app_type_text",
-            "app_scroll",
-            "app_key_chord",
-            "interactive_click",
-            "interactive_type_text",
-            "interactive_scroll",
-            "visual_click",
-        ] {
-            let results = ComputerUseTool::new()
-                .call_impl(&json!({ "action": action }), &context)
-                .await
-                .expect("guard rejection is a structured envelope");
-            assert_eq!(
-                results[0].content().get("ok").and_then(Value::as_bool),
-                Some(false),
-                "`{action}` must be guarded"
-            );
-        }
-    }
-
-    /// An explicit browser selector is rejected on its own evidence, without
-    /// asking the host what is frontmost.
-    #[tokio::test]
-    async fn app_selector_naming_chromium_is_rejected_without_a_foreground_signal() {
-        let context = ToolUseContext::for_tool_listing(None, None);
-        let results = ComputerUseTool::new()
-            .call_impl(
-                &json!({
-                    "action": "app_click",
-                    "app": { "name": "Google Chrome" },
-                    "target": { "node_idx": 12 }
-                }),
-                &context,
-            )
-            .await
-            .expect("guard rejection is a structured envelope");
-        assert_eq!(
-            results[0].content().get("ok").and_then(Value::as_bool),
-            Some(false)
-        );
-    }
-
-    /// The guard is positional, not task-related: a task whose target is not
-    /// the browser must keep a way to reach it while the browser is frontmost.
-    /// Both escape routes must therefore pass the guard untouched.
-    #[tokio::test]
-    async fn guard_leaves_an_escape_route_for_non_browser_targets() {
-        let mut context = ToolUseContext::for_tool_listing(None, None);
-        context.computer_use_host = Some(std::sync::Arc::new(ChromeForegroundHost));
-        let actions = super::super::computer_use_actions::ComputerUseActions::new();
+        context.computer_use_host = Some(Arc::new(ChromeForegroundHost));
         for input in [
-            // App switcher: the only keyboard way off a browser window.
-            json!({ "action": "key_chord", "keys": ["command", "tab"] }),
-            json!({ "action": "key_chord", "keys": ["alt", "tab"] }),
-            // App-scoped input aimed at a different app.
-            json!({ "action": "app_type_text", "app": { "name": "WeChat" }, "text": "hi" }),
+            json!({"action":"click"}),
+            json!({"action":"app_type_text","app":{"name":"Google Chrome"},"text":"fixture"}),
+            json!({"action":"app_type_text","app":{"name":"WeChat"},"text":"fixture"}),
+            json!({"action":"app_type_text","text":"fixture"}),
         ] {
-            let action = input.get("action").and_then(Value::as_str).expect("action");
+            let result = ComputerUseTool::new().call_impl(&input, &context).await;
+            // This host refuses native calls. Reaching its error proves the
+            // obsolete process-name guard no longer short-circuits dispatch.
+            let error = if input["action"] == "click" {
+                result
+                    .expect_err("fixture host rejects global input")
+                    .to_string()
+            } else if input.get("app").is_none() {
+                let error = result
+                    .expect_err("unbound host requires a target selector")
+                    .to_string();
+                assert!(error.contains("INVALID_PARAMS"), "{error}");
+                error
+            } else {
+                let results = result.expect("app input failure keeps its receipt");
+                let ToolResult::Result { data, .. } = &results[0] else {
+                    panic!("expected receipt")
+                };
+                assert_eq!(data["action_status"], "failed");
+                assert_eq!(data["input_may_have_been_submitted"], true);
+                let error = data["error"].as_str().expect("native error").to_string();
+                assert!(error.contains("APP_INPUT_UNSUPPORTED"), "{error}");
+                error
+            };
             assert!(
-                actions
-                    .desktop_action_targets_browser(action, &input, &context)
-                    .await
-                    .is_none(),
-                "{input} must not be guarded"
+                !error.contains("Chromium-family") && !error.contains("browser domain"),
+                "{error}"
             );
         }
-        // A normal chord in the browser is still rejected.
-        assert!(actions
-            .desktop_action_targets_browser(
-                "key_chord",
-                &json!({ "action": "key_chord", "keys": ["command", "t"] }),
-                &context
-            )
-            .await
-            .is_some());
     }
 
     /// The `action` enum, description, and a handful of other fields are
@@ -2958,5 +4195,2627 @@ mod tests {
             text_only.get("properties").and_then(|p| p.get("action")),
             "`action` is expected to differ (screenshot presence, tailored guidance)"
         );
+    }
+    use crate::agentic::tools::computer_use_host::{
+        ComputerUseActionLease, ControlMode, ControlSnapshot, ControlStartRequest,
+    };
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug)]
+    struct ControlRecordingHost {
+        state: Mutex<ControlSnapshot>,
+        events: Arc<Mutex<Vec<String>>>,
+        wait_started: tokio::sync::Notify,
+        require_share: bool,
+        fail_capture: bool,
+        fail_observation: bool,
+        observation_image: bool,
+        replace_control_during_observation: Option<ControlSnapshot>,
+        replace_control_during_input: Option<ControlSnapshot>,
+        capture_error: &'static str,
+        settle: Option<crate::agentic::tools::computer_use_host::AppInputSettle>,
+        /// `None` keeps the trait's unsupported window discovery.
+        windows: Mutex<Option<Vec<crate::agentic::tools::computer_use_host::AppWindowInfo>>>,
+        /// restore_window reports a change and later preparation succeeds.
+        restorable: bool,
+        /// restore_window reports a change but the surface never appears.
+        restore_without_surface: bool,
+        /// restore_window fails with this error.
+        restore_error: Option<&'static str>,
+        /// Preparation fails with this error once the window was restored.
+        error_after_restore: Option<&'static str>,
+        restored: std::sync::atomic::AtomicBool,
+        /// Window inventory installed when app input is dispatched.
+        windows_after_input: Option<Vec<crate::agentic::tools::computer_use_host::AppWindowInfo>>,
+    }
+    impl Default for ControlRecordingHost {
+        fn default() -> Self {
+            Self {
+                state: Mutex::new(ControlSnapshot {
+                    supported: true,
+                    state: "idle".into(),
+                    ..Default::default()
+                }),
+                events: Arc::default(),
+                wait_started: tokio::sync::Notify::new(),
+                require_share: false,
+                fail_capture: false,
+                fail_observation: false,
+                observation_image: false,
+                replace_control_during_observation: None,
+                replace_control_during_input: None,
+                capture_error: "TARGET_APP_HIDDEN: no live surface",
+                settle: None,
+                windows: Mutex::new(None),
+                restorable: false,
+                restore_without_surface: false,
+                restore_error: None,
+                error_after_restore: None,
+                restored: std::sync::atomic::AtomicBool::new(false),
+                windows_after_input: None,
+            }
+        }
+    }
+    fn fixture_window(
+        pid: i32,
+        window_id: u64,
+        application: &str,
+        title: &str,
+        on_screen: bool,
+    ) -> crate::agentic::tools::computer_use_host::AppWindowInfo {
+        crate::agentic::tools::computer_use_host::AppWindowInfo {
+            pid,
+            window_id,
+            application: application.into(),
+            title: title.into(),
+            bundle_id: Some(format!("example.{}", application.to_lowercase())),
+            is_on_screen: Some(on_screen),
+            bounds: Some(
+                crate::agentic::tools::computer_use_host::ComputerUseImageGlobalBounds {
+                    left: 0.0,
+                    top: 0.0,
+                    width: 400.0,
+                    height: 300.0,
+                },
+            ),
+        }
+    }
+    struct RecordingLease {
+        events: Arc<Mutex<Vec<String>>>,
+        complete: bool,
+    }
+    impl ComputerUseActionLease for RecordingLease {
+        fn complete(&mut self) {
+            self.complete = true;
+            self.events.lock().unwrap().push("complete".into());
+        }
+    }
+    impl Drop for RecordingLease {
+        fn drop(&mut self) {
+            self.events.lock().unwrap().push(
+                if self.complete {
+                    "released"
+                } else {
+                    "cancelled"
+                }
+                .into(),
+            );
+        }
+    }
+    #[async_trait::async_trait]
+    impl ComputerUseHost for ControlRecordingHost {
+        async fn activate_app(&self, app: AppSelector) -> OpenBitFunResult<()> {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("activate:{:?}", app.pid));
+            Ok(())
+        }
+        async fn open_app(
+            &self,
+            name: &str,
+        ) -> OpenBitFunResult<crate::agentic::tools::computer_use_host::OpenAppResult> {
+            self.events.lock().unwrap().push(format!("launch:{name}"));
+            Ok(crate::agentic::tools::computer_use_host::OpenAppResult {
+                app_name: name.into(),
+                success: true,
+                process_id: None,
+                error_message: None,
+                bundle_id: None,
+                process_name: None,
+                window_count: None,
+                launch_path: Some("shell_no_activate".into()),
+            })
+        }
+        async fn settle_after_input(
+            &self,
+            app: AppSelector,
+            _policy: crate::agentic::tools::computer_use_host::AppInputSettlePolicy,
+        ) -> OpenBitFunResult<crate::agentic::tools::computer_use_host::AppInputSettle> {
+            let Some(settle) = self.settle.clone() else {
+                return Ok(
+                    crate::agentic::tools::computer_use_host::AppInputSettle::unavailable(
+                        "fixture host has no frame stream",
+                    ),
+                );
+            };
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("settle:{:?}", app.pid));
+            Ok(settle)
+        }
+        fn validate_observation(&self, id: &str) -> OpenBitFunResult<()> {
+            self.events.lock().unwrap().push(format!("validate:{id}"));
+            if id == "fixture-current" {
+                Ok(())
+            } else {
+                Err(OpenBitFunError::tool("[STALE_OBSERVATION] Read again"))
+            }
+        }
+
+        async fn dispatch_app_input(
+            &self,
+            app: crate::agentic::tools::computer_use_host::AppSelector,
+            action: crate::agentic::tools::computer_use_host::AppInputAction,
+        ) -> OpenBitFunResult<()> {
+            assert!(
+                app.pid == Some(421)
+                    || (app.is_empty() && self.state.lock().unwrap().target.is_some()),
+                "input must name the fixture or follow a bound window: {app:?}"
+            );
+            if let crate::agentic::tools::computer_use_host::AppInputAction::Wait { ms } = action {
+                return self.wait_ms(ms).await;
+            }
+            let mut events = self.events.lock().unwrap();
+            events.push(format!("input:{}", action.name()));
+            if let Some(windows) = &self.windows_after_input {
+                *self.windows.lock().unwrap() = Some(windows.clone());
+            }
+            if let Some(replacement) = &self.replace_control_during_input {
+                *self.state.lock().unwrap() = replacement.clone();
+            }
+            if matches!(action, crate::agentic::tools::computer_use_host::AppInputAction::TypeText {ref text, ..} if text == "fixture-failure")
+            {
+                return Err(OpenBitFunError::tool(
+                    "FIXTURE_INPUT_FAILURE: target rejected input",
+                ));
+            }
+            Ok(())
+        }
+        async fn prepare_control_target(
+            &self,
+            app: crate::agentic::tools::computer_use_host::AppSelector,
+        ) -> OpenBitFunResult<()> {
+            if let Some(error) = self
+                .error_after_restore
+                .filter(|_| self.restored.load(std::sync::atomic::Ordering::SeqCst))
+            {
+                return Err(OpenBitFunError::tool(error));
+            }
+            if self.fail_capture && !self.restored.load(std::sync::atomic::Ordering::SeqCst) {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(format!("prepare:{:?}", app.pid));
+                return Err(OpenBitFunError::tool(self.capture_error));
+            }
+            Ok(())
+        }
+        async fn zoom_observation(
+            &self,
+            app: AppSelector,
+            region: crate::agentic::tools::computer_use_host::ComputerUseZoomRegion,
+        ) -> OpenBitFunResult<crate::agentic::tools::computer_use_host::ComputerScreenshot>
+        {
+            self.events.lock().unwrap().push(format!(
+                "zoom:{:?}:{}:{},{},{}x{}",
+                app.pid, region.screenshot_id, region.x, region.y, region.width, region.height
+            ));
+            Ok(serde_json::from_value(json!({
+                "screenshot_id":"fixture-zoom", "bytes":[4,5,6], "mime_type":"image/jpeg",
+                "image_width":640,"image_height":480,"native_width":80,"native_height":60,
+                "display_origin_x":10,"display_origin_y":20,"vision_scale":1.0,
+                "image_content_rect":{"left":0,"top":0,"width":640,"height":480},
+                "image_global_bounds":{"left":10.0,"top":20.0,"width":80.0,"height":60.0},
+                "auxiliary_windows":[{
+                    "window_id":77,"composited":true,"clipped":true,
+                    "image_rect":{"left":320,"top":0,"width":320,"height":240},
+                    "global_bounds":{"left":50.0,"top":0.0,"width":60.0,"height":50.0}
+                }]
+            }))
+            .expect("valid fixture"))
+        }
+        async fn restore_window(&self, app: AppSelector) -> OpenBitFunResult<bool> {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("restore:{:?}:{:?}", app.pid, app.window_id));
+            if let Some(error) = self.restore_error {
+                return Err(OpenBitFunError::tool(error));
+            }
+            if self.restorable {
+                self.restored
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            Ok(self.restorable || self.restore_without_surface)
+        }
+        async fn get_app_state(
+            &self,
+            app: crate::agentic::tools::computer_use_host::AppSelector,
+            _max_depth: u32,
+            _focus_window_only: bool,
+        ) -> OpenBitFunResult<crate::agentic::tools::computer_use_host::AppStateSnapshot> {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("observe:{:?}", app.pid));
+            assert!(
+                app.pid == Some(421)
+                    || (app.is_empty() && self.state.lock().unwrap().target.is_some()),
+                "observation must name the fixture or follow a bound window: {app:?}"
+            );
+            if self.fail_observation {
+                return Err(OpenBitFunError::tool("FIXTURE_OBSERVATION_FAILURE"));
+            }
+            if let Some(replacement) = &self.replace_control_during_observation {
+                *self.state.lock().unwrap() = replacement.clone();
+            }
+            let mut snapshot: crate::agentic::tools::computer_use_host::AppStateSnapshot =
+                serde_json::from_value(json!({
+                    "app":{"name":"Requested target","pid":421,"running":true},
+                    "tree_text":"AXMenuBar target menu", "digest":"target-ax", "captured_at_ms":1
+                }))
+                .expect("valid fixture");
+            if self.observation_image {
+                snapshot.observation_id = Some("fixture-current".into());
+                snapshot.screenshot = Some(
+                    serde_json::from_value(json!({
+                        "screenshot_id":"fixture-image", "bytes":[1,2,3], "mime_type":"image/jpeg",
+                        "image_width":16,"image_height":12,"native_width":16,"native_height":12,
+                        "display_origin_x":0,"display_origin_y":0,"vision_scale":1.0
+                    }))
+                    .expect("valid fixture"),
+                );
+            }
+            Ok(snapshot)
+        }
+        async fn get_app_shortcuts(
+            &self,
+            app: crate::agentic::tools::computer_use_host::AppSelector,
+        ) -> OpenBitFunResult<crate::agentic::tools::computer_use_host::AppShortcutsSnapshot>
+        {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("shortcuts:{:?}", app.pid));
+            assert_eq!(app.pid, Some(421));
+            Ok(serde_json::from_value(json!({
+                "app":{"name":"Requested target","pid":421,"running":true},
+                "shortcuts":[],"captured_at_ms":1
+            }))
+            .expect("valid fixture"))
+        }
+        fn control_snapshot(&self) -> ControlSnapshot {
+            self.state.lock().unwrap().clone()
+        }
+        async fn list_windows(
+            &self,
+            app: Option<AppSelector>,
+        ) -> OpenBitFunResult<Vec<crate::agentic::tools::computer_use_host::AppWindowInfo>>
+        {
+            let Some(windows) = self.windows.lock().unwrap().clone() else {
+                return Err(OpenBitFunError::tool(
+                    "[WINDOW_DISCOVERY_UNSUPPORTED] fixture host",
+                ));
+            };
+            self.events.lock().unwrap().push("list_windows".into());
+            Ok(windows
+                .into_iter()
+                .filter(|window| {
+                    app.as_ref().is_none_or(|app| {
+                        app.pid.is_none_or(|pid| pid == window.pid)
+                            && app.window_id.is_none_or(|id| id == window.window_id)
+                    })
+                })
+                .collect())
+        }
+        async fn start_control(
+            &self,
+            owner: &str,
+            request: ControlStartRequest,
+        ) -> OpenBitFunResult<ControlSnapshot> {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("start:{owner}:{:?}", request.mode));
+            let mut state = self.state.lock().unwrap();
+            state.generation += 1;
+            state.owner = Some(owner.into());
+            state.mode = request.mode;
+            state.state = "active".into();
+            Ok(state.clone())
+        }
+        async fn stop_control(&self, owner: &str) -> OpenBitFunResult<ControlSnapshot> {
+            self.events.lock().unwrap().push(format!("stop:{owner}"));
+            let mut state = self.state.lock().unwrap();
+            state.generation += 1;
+            state.state = "stopped".into();
+            Ok(state.clone())
+        }
+        async fn stop_control_generation(
+            &self,
+            owner: &str,
+            generation: u64,
+        ) -> OpenBitFunResult<ControlSnapshot> {
+            let snapshot = {
+                let mut state = self.state.lock().unwrap();
+                if state.generation != generation {
+                    return Ok(state.clone());
+                }
+                state.generation += 1;
+                state.state = "stopped".into();
+                state.clone()
+            };
+            self.events.lock().unwrap().push(format!("stop:{owner}"));
+            Ok(snapshot)
+        }
+        async fn acquire_control_action(
+            &self,
+            owner: &str,
+            action: &str,
+        ) -> OpenBitFunResult<Option<Box<dyn ComputerUseActionLease>>> {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("acquire:{owner}:{action}"));
+            {
+                let mut state = self.state.lock().unwrap();
+                if self.require_share {
+                    state.generation += 1;
+                    state.owner = Some(owner.into());
+                    state.state = "awaiting_share".into();
+                    return Err(OpenBitFunError::tool(
+                        "[SHARE_REQUIRED] Select an application",
+                    ));
+                }
+                if state.state == "idle" {
+                    state.state = "active".into();
+                    state.owner = Some(owner.into());
+                }
+            }
+            Ok(Some(Box::new(RecordingLease {
+                events: self.events.clone(),
+                complete: false,
+            })))
+        }
+        async fn permission_snapshot(&self) -> OpenBitFunResult<ComputerUsePermissionSnapshot> {
+            not_expected()
+        }
+        async fn request_accessibility_permission(&self) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn request_screen_capture_permission(&self) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn screenshot_display(
+            &self,
+            _params: ComputerUseScreenshotParams,
+        ) -> OpenBitFunResult<ComputerScreenshot> {
+            not_expected()
+        }
+        fn map_image_coords_to_pointer(&self, _x: i32, _y: i32) -> OpenBitFunResult<(i32, i32)> {
+            not_expected()
+        }
+        fn map_normalized_coords_to_pointer(
+            &self,
+            _x: i32,
+            _y: i32,
+        ) -> OpenBitFunResult<(i32, i32)> {
+            not_expected()
+        }
+        async fn mouse_move(&self, _x: i32, _y: i32) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn pointer_move_relative(&self, _dx: i32, _dy: i32) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn mouse_click(&self, _button: &str) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn scroll(&self, _delta_x: i32, _delta_y: i32) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn key_chord(&self, _keys: Vec<String>) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn type_text(&self, _text: &str) -> OpenBitFunResult<()> {
+            not_expected()
+        }
+        async fn wait_ms(&self, ms: u64) -> OpenBitFunResult<()> {
+            self.events.lock().unwrap().push("wait".into());
+            self.wait_started.notify_one();
+            if ms > 0 {
+                std::future::pending::<()>().await;
+            }
+            Ok(())
+        }
+        async fn computer_use_session_snapshot(&self) -> ComputerUseSessionSnapshot {
+            ComputerUseSessionSnapshot::default()
+        }
+    }
+
+    fn control_context(host: Arc<ControlRecordingHost>) -> ToolUseContext {
+        let mut context = ToolUseContext::for_tool_listing(None, None);
+        context.session_id = Some("control-task".into());
+        context.computer_use_host = Some(host);
+        context
+    }
+
+    #[test]
+    fn window_discovery_and_selection_survive_every_tool_schema() {
+        for schema in [
+            ComputerUseTool::new().input_schema(),
+            ComputerUseTool::input_schema_text_only(),
+            ComputerUseTool::new().model_input_schema(true),
+            ComputerUseTool::new().model_input_schema(false),
+        ] {
+            assert!(schema["properties"]["action"]["enum"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|action| action == "list_windows"));
+            assert!(schema["properties"]["app"]
+                .to_string()
+                .contains("window_id"));
+        }
+    }
+
+    #[tokio::test]
+    async fn window_discovery_lists_live_windows_and_finds_helpers_by_query() {
+        let host = Arc::new(ControlRecordingHost::default());
+        host.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .push("window-target-v1".into());
+        *host.windows.lock().unwrap() = Some(vec![
+            fixture_window(10, 1, "WeChat", "WeChat", true),
+            fixture_window(11, 2, "WeChatAppEx", "", false),
+            fixture_window(11, 3, "WeChatAppEx", "Mini Game", false),
+            fixture_window(12, 4, "Finder", "Downloads", false),
+            fixture_window(13, 5, "Notes", "Todo", true),
+        ]);
+        let context = control_context(host.clone());
+        let list = |params: Value| {
+            let context = &context;
+            async move {
+                ComputerUseTool::new()
+                    .call_impl(&params, context)
+                    .await
+                    .map(|result| result[0].content())
+            }
+        };
+        let ids = |body: &Value| -> Vec<u64> {
+            body["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|window| window["window_id"].as_u64().unwrap())
+                .collect()
+        };
+
+        let unfiltered = list(json!({"action":"list_windows"})).await.unwrap();
+        assert_eq!(ids(&unfiltered), [1, 5]);
+        assert_eq!(unfiltered["offscreen_windows_omitted"], 3);
+        assert!(unfiltered.get("offscreen_applications_omitted").is_none());
+        let null_app = list(json!({"action":"list_windows","app":null,"query":null}))
+            .await
+            .unwrap();
+        assert_eq!(ids(&null_app), [1, 5]);
+        assert_eq!(null_app["offscreen_windows_omitted"], 3);
+        assert!(list(json!({"action":"list_windows","app":{}}))
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("at least one of pid|bundle_id|name"));
+        let summary = unfiltered["offscreen_by_application"].as_array().unwrap();
+        assert_eq!(summary.len(), 2);
+        assert_eq!(summary[0]["application"], "WeChatAppEx");
+        assert_eq!(summary[0]["offscreen_windows"], 2);
+        assert_eq!(summary[0]["titled"], 1);
+        assert_eq!(summary[0]["bundle_id"], "example.wechatappex");
+        assert!(unfiltered["offscreen_guidance"]
+            .as_str()
+            .unwrap()
+            .contains("query"));
+
+        let helpers = list(json!({"action":"list_windows","query":"wechat"}))
+            .await
+            .unwrap();
+        assert_eq!(ids(&helpers), [1, 3, 2]);
+        assert!(helpers.get("offscreen_windows_omitted").is_none());
+
+        let by_title = list(json!({"action":"list_windows","query":"mini GAME"}))
+            .await
+            .unwrap();
+        assert_eq!(ids(&by_title), [3]);
+
+        let live_only =
+            list(json!({"action":"list_windows","query":"wechat","include_offscreen":false}))
+                .await
+                .unwrap();
+        assert_eq!(ids(&live_only), [1]);
+        assert_eq!(live_only["offscreen_windows_omitted"], 2);
+
+        let everything = list(json!({"action":"list_windows","include_offscreen":true}))
+            .await
+            .unwrap();
+        assert_eq!(everything["windows"].as_array().unwrap().len(), 5);
+
+        let by_app = list(json!({"action":"list_windows","app":{"pid":11}}))
+            .await
+            .unwrap();
+        assert_eq!(ids(&by_app), [3, 2]);
+
+        for query in [json!(""), json!("  "), json!(7)] {
+            let error = list(json!({"action":"list_windows","query":query}))
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("query"), "{error}");
+        }
+
+        let mut legacy = fixture_window(20, 9, "Legacy", "Unknown visibility", true);
+        legacy.is_on_screen = None;
+        let mut inventory = vec![legacy];
+        inventory.extend(
+            (0..45)
+                .map(|n| fixture_window(100 + n, 1000 + n as u64, &format!("App{n}"), "", false)),
+        );
+        *host.windows.lock().unwrap() = Some(inventory);
+        let bounded = list(json!({"action":"list_windows"})).await.unwrap();
+        assert_eq!(ids(&bounded), [9]);
+        assert_eq!(bounded["offscreen_windows_omitted"], 45);
+        let summary = bounded["offscreen_by_application"].as_array().unwrap();
+        assert_eq!(summary.len(), 40);
+        assert!(summary.iter().all(|entry| entry["application"].is_string()));
+        assert_eq!(bounded["offscreen_applications_omitted"], 5);
+    }
+
+    #[test]
+    fn legacy_window_records_without_visibility_still_deserialize() {
+        let window: crate::agentic::tools::computer_use_host::AppWindowInfo =
+            serde_json::from_value(json!({
+                "pid": 7, "window_id": 3, "application": "Legacy", "title": "Main"
+            }))
+            .unwrap();
+        assert_eq!(window.is_on_screen, None);
+        assert!(window.bounds.is_none());
+        assert!(window.bundle_id.is_none());
+    }
+
+    fn minimized_window_host(mode: ControlMode, restorable: bool) -> Arc<ControlRecordingHost> {
+        let host = Arc::new(ControlRecordingHost {
+            fail_capture: true,
+            capture_error:
+                "TARGET_SURFACE_UNAVAILABLE: Window 99 of process 421 is minimized; no live surface is available",
+            restorable,
+            ..Default::default()
+        });
+        {
+            let mut state = host.state.lock().unwrap();
+            state.mode = mode;
+            state
+                .capabilities
+                .extend(["window-target-v1".into(), "activate-app-v1".into()]);
+        }
+        *host.windows.lock().unwrap() = Some(vec![
+            fixture_window(421, 99, "Fixture", "Minimized task", false),
+            fixture_window(421, 8, "Fixture", "Visible main", true),
+            fixture_window(500, 7, "Other", "Unrelated", true),
+        ]);
+        host
+    }
+
+    #[tokio::test]
+    async fn foreground_activation_restores_a_minimized_window_before_activating() {
+        let host = minimized_window_host(ControlMode::Foreground, true);
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"activate_app","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let body = result[0].content();
+        assert_eq!(body["restored_window"], true);
+        assert_eq!(body["activated"], true);
+        let events = host.events.lock().unwrap().clone();
+        let position = |prefix: &str| {
+            events
+                .iter()
+                .position(|event| event.starts_with(prefix))
+                .unwrap_or_else(|| panic!("{prefix} missing from {events:?}"))
+        };
+        assert!(position("prepare:") < position("restore:Some(421):Some(99)"));
+        assert!(position("restore:") < position("activate:"));
+        assert!(position("activate:") < position("observe:"));
+    }
+
+    #[tokio::test]
+    async fn unrestorable_activation_reports_the_surface_and_live_alternatives() {
+        let host = minimized_window_host(ControlMode::Foreground, false);
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"activate_app","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("TARGET_SURFACE_UNAVAILABLE"), "{error}");
+        assert!(
+            error.contains("{pid:421,window_id:8} \"Visible main\" 400x300"),
+            "{error}"
+        );
+        assert!(!error.contains("window_id:99}"), "{error}");
+        assert!(!error.contains("Unrelated"), "{error}");
+        assert!(
+            error.contains("activate_app found nothing to restore"),
+            "{error}"
+        );
+        assert!(
+            error.contains("another Space or virtual desktop"),
+            "{error}"
+        );
+        assert!(
+            !error.contains("activate_app with this window restores it"),
+            "{error}"
+        );
+        let events = host.events.lock().unwrap();
+        assert!(events.iter().any(|event| event.starts_with("restore:")));
+        assert!(!events.iter().any(|event| event.starts_with("activate:")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn restored_window_without_a_surface_is_not_offered_activation_again() {
+        let host = Arc::new(ControlRecordingHost {
+            restore_without_surface: true,
+            ..Arc::try_unwrap(minimized_window_host(ControlMode::Foreground, false)).unwrap()
+        });
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"activate_app","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("TARGET_SURFACE_UNAVAILABLE"), "{error}");
+        assert!(
+            error.contains("restored but showed no live surface within 3 seconds"),
+            "{error}"
+        );
+        assert!(!error.contains("activate_app"), "{error}");
+        let events = host.events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.starts_with("restore:"))
+                .count(),
+            1
+        );
+        assert!(
+            events
+                .iter()
+                .filter(|event| event.starts_with("prepare:"))
+                .count()
+                > 2,
+            "{events:?}"
+        );
+        assert!(!events.iter().any(|event| event.starts_with("activate:")));
+    }
+
+    #[tokio::test]
+    async fn failed_restores_are_reported_without_offering_activation_again() {
+        let host = Arc::new(ControlRecordingHost {
+            restore_error: Some(
+                "[RESTORE_UNAVAILABLE] The minimized state of window 99 could not be read over Accessibility, so it was not restored",
+            ),
+            ..Arc::try_unwrap(minimized_window_host(ControlMode::Foreground, false)).unwrap()
+        });
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"activate_app","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("is minimized"), "{error}");
+        assert!(
+            error.contains("Restoring the window failed: [RESTORE_UNAVAILABLE]"),
+            "{error}"
+        );
+        assert!(
+            error.contains("ask the user to restore this one"),
+            "{error}"
+        );
+        assert!(!error.contains("activate_app"), "{error}");
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.starts_with("activate:")));
+    }
+
+    #[tokio::test]
+    async fn failures_after_a_restore_say_the_window_was_restored() {
+        let host = Arc::new(ControlRecordingHost {
+            error_after_restore: Some("[SHARED_TARGET_ONLY] Window was not shared by the user"),
+            ..Arc::try_unwrap(minimized_window_host(ControlMode::Foreground, true)).unwrap()
+        });
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"activate_app","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("SHARED_TARGET_ONLY"), "{error}");
+        assert!(error.contains("already restored"), "{error}");
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.starts_with("activate:")));
+    }
+
+    #[tokio::test]
+    async fn bound_window_failures_are_explained_without_an_explicit_selector() {
+        let host = minimized_window_host(ControlMode::Foreground, true);
+        host.state.lock().unwrap().target = Some("pid:421/window:99".into());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(&json!({"action":"get_app_state"}), &context)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("{pid:421,window_id:8} \"Visible main\" 400x300"),
+            "{error}"
+        );
+        assert!(!error.contains("window_id:99}"), "{error}");
+        assert!(
+            error.contains("activate_app with this window restores it"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_an_unpreparable_app_still_waits_and_reports_the_target() {
+        let host = minimized_window_host(ControlMode::Background, true);
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"wait","app":{"pid":421,"window_id":99},"ms":0}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let body = result[0].content();
+        assert_eq!(body["action"], "wait");
+        assert_eq!(body["ms"], 0);
+        assert!(body.get("app_state").is_none(), "{body}");
+        let error = body["observation_error"].as_str().unwrap();
+        assert!(error.contains("is minimized"), "{error}");
+        assert!(
+            error.contains("Background control does not restore windows"),
+            "{error}"
+        );
+        let events = host.events.lock().unwrap();
+        assert!(events.iter().any(|event| event == "wait"), "{events:?}");
+        assert!(!events.iter().any(|event| event.starts_with("observe:")));
+        assert!(!events.iter().any(|event| event.starts_with("restore:")));
+    }
+
+    #[tokio::test]
+    async fn foreground_wait_reports_a_minimized_window_without_restoring_it() {
+        let host = minimized_window_host(ControlMode::Foreground, true);
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"wait","app":{"pid":421,"window_id":99},"ms":0}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let error = result[0].content()["observation_error"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            error.contains("activate_app with this window restores it"),
+            "{error}"
+        );
+        let events = host.events.lock().unwrap();
+        assert!(events.iter().any(|event| event == "wait"), "{events:?}");
+        assert!(!events.iter().any(|event| event.starts_with("restore:")));
+        assert!(!events.iter().any(|event| event.starts_with("observe:")));
+    }
+
+    #[tokio::test]
+    async fn wait_fails_when_control_rejects_its_target() {
+        let host = Arc::new(ControlRecordingHost {
+            fail_capture: true,
+            capture_error: "[SHARED_TARGET_ONLY] Window was not shared by the user",
+            ..Default::default()
+        });
+        host.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .push("window-target-v1".into());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"wait","app":{"pid":421,"window_id":99},"ms":0}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("SHARED_TARGET_ONLY"), "{error}");
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event == "wait"));
+    }
+
+    #[tokio::test]
+    async fn background_observation_of_a_minimized_window_never_restores_it() {
+        for action in ["get_app_state", "activate_app"] {
+            let host = minimized_window_host(ControlMode::Background, true);
+            let context = control_context(host.clone());
+            let error = ComputerUseTool::new()
+                .call_impl(
+                    &json!({"action":action,"app":{"pid":421,"window_id":99}}),
+                    &context,
+                )
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("is minimized"), "{error}");
+            assert!(
+                error.contains("Background control does not restore windows"),
+                "{error}"
+            );
+            assert!(error.contains("start_control(mode=foreground)"), "{error}");
+            assert!(error.contains("list_windows with query"), "{error}");
+            assert!(error.contains("window_id:8}"), "{error}");
+            let events = host.events.lock().unwrap();
+            assert!(
+                !events.iter().any(|event| event.starts_with("restore:")),
+                "{action}"
+            );
+            assert!(
+                !events.iter().any(|event| event.starts_with("observe:")),
+                "{action}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn foreground_observation_points_at_activate_app_without_restoring() {
+        let host = minimized_window_host(ControlMode::Foreground, true);
+        *host.windows.lock().unwrap() = Some(vec![fixture_window(
+            421,
+            99,
+            "Fixture",
+            "Minimized task",
+            false,
+        )]);
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"get_app_state","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no other on-screen window"), "{error}");
+        assert!(
+            error.contains("activate_app with this window restores it"),
+            "{error}"
+        );
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.starts_with("restore:")));
+    }
+
+    #[tokio::test]
+    async fn exact_window_is_never_ignored_by_an_older_host() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"get_app_state","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("WINDOW_TARGET_UNSUPPORTED"));
+        assert!(host.events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_exact_window_does_not_observe_the_previous_window_of_the_same_pid() {
+        let host = Arc::new(ControlRecordingHost {
+            fail_capture: true,
+            capture_error: "TARGET_WINDOW_UNAVAILABLE: requested window closed",
+            ..Default::default()
+        });
+        host.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .push("window-target-v1".into());
+        host.state.lock().unwrap().target = Some("pid:421/window:8".into());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"get_app_state","app":{"pid":421,"window_id":99}}),
+                &context,
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("TARGET_WINDOW_UNAVAILABLE"));
+        assert_eq!(
+            host.control_snapshot().target.as_deref(),
+            Some("pid:421/window:8")
+        );
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.starts_with("observe:")));
+    }
+
+    #[tokio::test]
+    async fn describe_screen_honors_requested_images_and_preserves_text_only_compatibility() {
+        for vision in [true, false] {
+            for requested in [None, Some(false), Some(true)] {
+                let host = Arc::new(ControlRecordingHost {
+                    observation_image: true,
+                    ..Default::default()
+                });
+                let mut context = control_context(host);
+                context.primary_model_facts.supports_image_inputs = vision;
+                context.primary_model_facts.api_format = "anthropic".into();
+                let mut input = json!({"action":"describe_screen","app":{"pid":421}});
+                if let Some(requested) = requested {
+                    input["include_image"] = json!(requested);
+                }
+                let result = ComputerUseTool::new()
+                    .call_impl(&input, &context)
+                    .await
+                    .unwrap();
+                let ToolResult::Result {
+                    data,
+                    image_attachments,
+                    result_for_assistant,
+                } = &result[0]
+                else {
+                    panic!("observation expected")
+                };
+                let expected = vision && requested == Some(true);
+                assert_eq!(data["image_bytes"], expected);
+                assert_eq!(
+                    image_attachments.as_ref().map_or(0, Vec::len),
+                    usize::from(expected)
+                );
+                assert_eq!(data.get("screenshot_meta").is_some(), expected);
+                if expected {
+                    assert_eq!(data["screenshot_meta"]["screenshot_id"], "fixture-image");
+                    assert_eq!(data["observation_id"], "fixture-current");
+                    assert_eq!(image_attachments.as_ref().unwrap()[0].data_base64, "AQID");
+                    assert!(result_for_assistant
+                        .as_ref()
+                        .unwrap()
+                        .contains("fixture-image"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_advertised_action_has_explicit_admission_policy() {
+        for schema in [
+            ComputerUseTool::new().input_schema(),
+            ComputerUseTool::input_schema_text_only(),
+        ] {
+            for action in schema["properties"]["action"]["enum"].as_array().unwrap() {
+                let name = action.as_str().unwrap();
+                assert!(
+                    openbitfun_agent_tools::computer_use_control::ControlActionPolicy::for_action(
+                        name
+                    )
+                    .is_some(),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_workspace_and_headless_hosts_never_fall_back_to_controller_gui() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let mut remote = control_context(host.clone());
+        let identity = openbitfun_services_core::workspace_identity::workspace_session_identity(
+            "/srv/project",
+            Some("fixture-ssh"),
+            Some("ssh.fixture"),
+        )
+        .unwrap();
+        remote.workspace = Some(crate::agentic::WorkspaceBinding::new_remote(
+            None,
+            std::path::PathBuf::from("/srv/project"),
+            "fixture-ssh".into(),
+            "Fixture".into(),
+            identity,
+        ));
+        for input in [
+            json!({"action":"start_control"}),
+            json!({"action":"activate_app","app":{"pid":421}}),
+            json!({"action":"clipboard_get"}),
+            json!({"action":"clipboard_set","text":"must stay on the runtime host"}),
+        ] {
+            let result = ComputerUseTool::new().call_impl(&input, &remote).await;
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("workspace is remote"));
+        }
+        assert!(host.events.lock().unwrap().is_empty());
+        let headless = ToolUseContext::for_tool_listing(None, None);
+        for input in [
+            json!({"action":"get_app_state","app":{"pid":421}}),
+            json!({"action":"activate_app","app":{"pid":421}}),
+            json!({"action":"clipboard_get"}),
+            json!({"action":"clipboard_set","text":"must not touch the controller"}),
+        ] {
+            let result = ComputerUseTool::new().call_impl(&input, &headless).await;
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("provider unavailable"));
+        }
+    }
+
+    #[tokio::test]
+    async fn stale_observation_references_fail_before_any_input() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new().call_impl(&json!({
+            "action":"app_click", "app":{"pid":421}, "observation_id":"fixture-old", "target":{"node_idx":0}
+        }), &context).await;
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("STALE_OBSERVATION"));
+        let events = host.events.lock().unwrap();
+        assert!(events.iter().any(|event| event == "validate:fixture-old"));
+        assert!(!events.iter().any(|event| event.starts_with("input:")));
+    }
+
+    #[tokio::test]
+    async fn read_discarded_after_target_revision_changes_even_when_target_is_identical() {
+        let initial = ControlSnapshot {
+            supported: true,
+            state: "active".into(),
+            owner: Some("control-task".into()),
+            generation: 1,
+            target: Some("window:a".into()),
+            target_revision: 1,
+            ..Default::default()
+        };
+        let host = Arc::new(ControlRecordingHost {
+            state: Mutex::new(initial.clone()),
+            replace_control_during_observation: Some(ControlSnapshot {
+                target_revision: 3,
+                ..initial
+            }),
+            ..Default::default()
+        });
+        let context = control_context(host);
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"get_app_state","app":{"pid":421}}),
+                &context,
+            )
+            .await;
+        assert!(result.unwrap_err().to_string().contains("CONTROL_STALE"));
+    }
+
+    #[tokio::test]
+    async fn control_entrypoints_route_owner_mode_and_do_not_take_action_leases() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        let started = tool
+            .call_impl(
+                &json!({"action":"start_control","mode":"observe"}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(started[0].content()["mode"], "observe");
+        assert_eq!(host.control_snapshot().mode, ControlMode::Observe);
+        let status = tool
+            .call_impl(&json!({"action":"control_status"}), &context)
+            .await
+            .unwrap();
+        assert_eq!(status[0].content()["owner"], "control-task");
+        let stopped = tool
+            .call_impl(&json!({"action":"stop_control"}), &context)
+            .await
+            .unwrap();
+        assert_eq!(stopped[0].content()["state"], "stopped");
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            ["start:control-task:Observe", "stop:control-task"]
+        );
+    }
+
+    #[tokio::test]
+    async fn foreground_activation_requires_capability_and_returns_a_new_observation() {
+        for supported in [false, true] {
+            let host = Arc::new(ControlRecordingHost::default());
+            {
+                let mut state = host.state.lock().unwrap();
+                state.state = "active".into();
+                state.mode = ControlMode::Foreground;
+                if supported {
+                    state.capabilities.push("activate-app-v1".into());
+                }
+            }
+            let context = control_context(host.clone());
+            let result = ComputerUseTool::new()
+                .call_impl(
+                    &json!({"action":"activate_app","app":{"pid":421},"include_image":false}),
+                    &context,
+                )
+                .await;
+            if supported {
+                let result = result.unwrap();
+                assert_eq!(result[0].content()["activated"], true);
+                let events = host.events.lock().unwrap();
+                let activation = events
+                    .iter()
+                    .position(|e| e == "activate:Some(421)")
+                    .unwrap();
+                let observation = events
+                    .iter()
+                    .position(|e| e == "observe:Some(421)")
+                    .unwrap();
+                assert!(activation < observation);
+                assert!(!events.iter().any(|e| e.starts_with("input:")));
+            } else {
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("ACTIVATION_UNSUPPORTED"));
+                assert!(host.events.lock().unwrap().is_empty());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn unresolved_launch_recommends_discovery_instead_of_unbound_screenshot() {
+        for native_windows in [false, true] {
+            let host = Arc::new(ControlRecordingHost::default());
+            if native_windows {
+                host.state
+                    .lock()
+                    .unwrap()
+                    .capabilities
+                    .push("window-target-v1".into());
+            }
+            let context = control_context(host.clone());
+            let result = ComputerUseTool::new()
+                .call_impl(&json!({"action":"open_app","app_name":"Fixture"}), &context)
+                .await
+                .unwrap();
+            let body = result[0].content();
+            assert_eq!(body["target_unresolved"], true);
+            assert_eq!(
+                body["recommended_next_action"],
+                if native_windows {
+                    "list_windows"
+                } else {
+                    "list_apps"
+                }
+            );
+            assert!(body["next_step"]
+                .as_str()
+                .unwrap()
+                .contains("task window is not resolved"));
+            assert!(!host
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|e| e.starts_with("observe:")));
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_requested_image_keeps_ax_and_reports_partial_observation() {
+        let host = ControlRecordingHost::default();
+        host.state.lock().unwrap().state = "active".into();
+        for include_image in [false, true] {
+            let (snapshot, error) = super::super::computer_use_program::observe_after_input(
+                &host,
+                AppSelector::by_pid(421),
+                None,
+                include_image,
+            )
+            .await;
+            assert!(snapshot.is_some());
+            assert_eq!(error.is_some(), include_image);
+        }
+    }
+
+    #[tokio::test]
+    async fn control_provider_requires_owner_before_any_native_work() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let mut context = control_context(host.clone());
+        context.session_id = None;
+        let result = ComputerUseTool::new()
+            .call_impl(&json!({"action":"start_control"}), &context)
+            .await;
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("CONTROL_OWNER_REQUIRED"));
+        assert!(host.events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn unsupported_host_defaults_never_claim_control_or_stop_success() {
+        let mut context = ToolUseContext::for_tool_listing(None, None);
+        context.computer_use_host = Some(Arc::new(GuardRecordingHost::default()));
+        let tool = ComputerUseTool::new();
+        let status = tool
+            .call_impl(&json!({"action":"control_status"}), &context)
+            .await
+            .unwrap();
+        assert_eq!(status[0].content()["supported"], false);
+        for action in ["start_control", "stop_control"] {
+            assert!(tool
+                .call_impl(&json!({"action":action}), &context)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("CONTROL_UNSUPPORTED"));
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_failed_share_request_closes_only_its_own_generation() {
+        for superseded in [false, true] {
+            let host = Arc::new(ControlRecordingHost {
+                require_share: true,
+                ..Default::default()
+            });
+            let mut context = control_context(host.clone());
+            let token = tokio_util::sync::CancellationToken::new();
+            context.runtime_handles =
+                openbitfun_runtime_ports::ToolRuntimeHandles::new(None, Some(token.clone()));
+            let error = ComputerUseTool::new()
+                .call_impl(
+                    &json!({"action":"get_app_state","app":{"pid":421}}),
+                    &context,
+                )
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("SHARE_REQUIRED"));
+            assert_eq!(host.control_snapshot().state, "awaiting_share");
+            if superseded {
+                host.state.lock().unwrap().generation += 1;
+            }
+            token.cancel();
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            assert_eq!(
+                host.control_snapshot().state,
+                if superseded {
+                    "awaiting_share"
+                } else {
+                    "stopped"
+                }
+            );
+            assert!(!host
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| event.starts_with("observe:") || event.starts_with("input:")));
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_action_releases_lease_without_cancelling_control() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        ComputerUseTool::new()
+            .call_impl(&json!({"action":"wait","ms":0}), &context)
+            .await
+            .unwrap();
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            ["acquire:control-task:wait", "wait", "complete", "released"]
+        );
+    }
+
+    #[tokio::test]
+    async fn dropped_tool_future_drops_unfinished_lease_as_cancellation() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        let input = json!({"action":"wait","ms":1});
+        let mut future = Box::pin(tool.call_impl(&input, &context));
+        tokio::select! {
+            _ = host.wait_started.notified() => {},
+            result = &mut future => panic!("fixture wait returned unexpectedly: {result:?}"),
+        }
+        drop(future);
+        assert_eq!(
+            *host.events.lock().unwrap(),
+            ["acquire:control-task:wait", "wait", "cancelled"]
+        );
+    }
+
+    #[test]
+    fn control_permission_exposes_mode_but_never_input_text_or_script() {
+        let tool = ComputerUseTool::new();
+        let context = ToolUseContext::for_tool_listing(None, None);
+        for (mode, expected) in [
+            (Some("foreground"), "start_control:mode=foreground"),
+            (None, "start_control:mode=background"),
+        ] {
+            let mut input =
+                json!({"action":"start_control", "text":"private text", "script":"private script"});
+            if let Some(mode) = mode {
+                input["mode"] = json!(mode);
+            }
+            let intents = tool.permission_intents(&input, &context).unwrap();
+            assert_eq!(intents[0].resources, [expected]);
+            assert!(!format!("{:?}", intents[0].resources).contains("private"));
+        }
+    }
+    #[tokio::test]
+    async fn capture_failure_preserves_explicit_target_ax_without_claiming_binding() {
+        let host = Arc::new(ControlRecordingHost {
+            fail_capture: true,
+            ..Default::default()
+        });
+        host.state.lock().unwrap().target = Some("pid:999/window:8".into());
+        let context = control_context(host.clone());
+        for action in ["get_app_state", "get_app_shortcuts"] {
+            let result = ComputerUseTool::new()
+                .call_impl(&json!({"action":action,"app":{"pid":421}}), &context)
+                .await
+                .unwrap();
+            let data = result[0].content();
+            assert_eq!(data["target_app"]["pid"], 421);
+            assert_eq!(data["control_target_available"], false);
+            assert_eq!(data["capture_status"], "unavailable");
+            assert!(data["capture_preparation_error"]
+                .as_str()
+                .unwrap()
+                .contains("TARGET_APP_HIDDEN"));
+            assert_eq!(
+                host.control_snapshot().target.as_deref(),
+                Some("pid:999/window:8")
+            );
+        }
+        let events = host.events.lock().unwrap();
+        assert!(events.iter().any(|e| e == "observe:Some(421)"));
+        assert!(events.iter().any(|e| e == "shortcuts:Some(421)"));
+    }
+
+    #[tokio::test]
+    async fn capture_failure_blocks_input_implicit_target_and_cross_target_observers() {
+        let host = Arc::new(ControlRecordingHost {
+            fail_capture: true,
+            ..Default::default()
+        });
+        host.state.lock().unwrap().target = Some("pid:999/window:8".into());
+        let context = control_context(host.clone());
+        for input in [
+            json!({"action":"get_app_state","app":{}}),
+            json!({"action":"describe_screen","app":{"pid":421}}),
+            json!({"action":"app_click","app":{"pid":421},"target":{"kind":"node_idx","node_idx":1}}),
+        ] {
+            let error = ComputerUseTool::new()
+                .call_impl(&input, &context)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("TARGET_APP_HIDDEN"));
+        }
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e.starts_with("observe:") || e.starts_with("shortcuts:")));
+        assert_eq!(
+            host.control_snapshot().target.as_deref(),
+            Some("pid:999/window:8")
+        );
+    }
+    #[tokio::test]
+    async fn locked_or_revoked_capture_never_falls_through_to_ax() {
+        for capture_error in [
+            "SESSION_LOCKED: execution host is locked",
+            "[CONTROL_STOPPED] observe cannot continue",
+            "CONTROL_OWNER_MISMATCH: another owner",
+            "CAPTURE_GENERATION_CHANGED: obsolete generation",
+            "CAPTURE_STOPPED: permission revoked",
+            "unexpected error containing CAPTURE_TIMEOUT: is not a code",
+        ] {
+            let host = Arc::new(ControlRecordingHost {
+                fail_capture: true,
+                capture_error,
+                ..Default::default()
+            });
+            let context = control_context(host.clone());
+            for action in ["get_app_state", "get_app_shortcuts"] {
+                assert!(ComputerUseTool::new()
+                    .call_impl(&json!({"action":action,"app":{"pid":421}}), &context)
+                    .await
+                    .is_err());
+            }
+            assert!(!host
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|e| e.starts_with("observe:") || e.starts_with("shortcuts:")));
+        }
+    }
+
+    #[test]
+    fn ax_fallback_recognizes_only_explicit_surface_error_codes() {
+        for code in [
+            "CAPTURE_TIMEOUT",
+            "CAPTURE_FRAME_UNAVAILABLE",
+            "TARGET_APP_HIDDEN",
+            "TARGET_SURFACE_UNAVAILABLE",
+            "SCREEN_CAPTURE_PERMISSION_REQUIRED",
+        ] {
+            assert!(ComputerUseTool::capture_failure_allows_ax_observation(
+                &crate::util::errors::OpenBitFunError::tool(format!("{code}: details"))
+            ));
+        }
+        assert!(!ComputerUseTool::capture_failure_allows_ax_observation(
+            &crate::util::errors::OpenBitFunError::tool(
+                "LOCAL_AUTHORIZATION_REQUIRED: approve access"
+            )
+        ));
+    }
+    #[tokio::test]
+    async fn computer_use_model_combo_examples_run_all_inputs_and_one_final_observation() {
+        for vision in [true, false] {
+            let tool = ComputerUseTool::new();
+            let schema = tool.model_input_schema(vision);
+            let examples = schema["properties"]["steps"]["examples"]
+                .as_array()
+                .unwrap();
+            assert_eq!(examples.len(), 2);
+            for (steps, expected_inputs) in examples.iter().zip([
+                vec!["input:app_type_text", "input:app_key_chord"],
+                vec!["input:app_type_text"; 3],
+            ]) {
+                let typed: Vec<crate::agentic::tools::computer_use_host::AppInputAction> =
+                    serde_json::from_value(steps.clone()).unwrap();
+                for step in &typed {
+                    super::super::computer_use_program::validate_step(step).unwrap();
+                }
+                assert_eq!(typed.len(), expected_inputs.len());
+                assert_eq!(steps[0]["action"], "app_type_text");
+                assert_eq!(
+                    steps[0]["focus"]["kind"],
+                    if vision { "image_xy" } else { "node_idx" }
+                );
+                let host = Arc::new(ControlRecordingHost::default());
+                let context = control_context(host.clone());
+                tool.call_impl(
+                    &json!({"action":"start_control","mode":"background"}),
+                    &context,
+                )
+                .await
+                .unwrap();
+                host.events.lock().unwrap().clear();
+                let result = tool
+                    .call_impl(
+                        &json!({"action":"app_batch","app":{"pid":421},"steps":steps}),
+                        &context,
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(result[0].content()["completed_steps"], typed.len());
+                let events = host.events.lock().unwrap();
+                let inputs: Vec<_> = events
+                    .iter()
+                    .filter(|event| event.starts_with("input:"))
+                    .map(String::as_str)
+                    .collect();
+                assert_eq!(inputs, expected_inputs);
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| event.starts_with("observe:"))
+                        .count(),
+                    1
+                );
+                assert!(!events.iter().any(|event| event.contains("foreground")));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_runs_five_inputs_with_one_observation() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        tool.call_impl(
+            &json!({"action":"start_control","mode":"background"}),
+            &context,
+        )
+        .await
+        .unwrap();
+        host.events.lock().unwrap().clear();
+        let result = tool.call_impl(&json!({"action":"app_batch","app":{"pid":421},"steps":[
+            {"action":"app_click","target":{"kind":"image_xy","x":20,"y":30,"screenshot_id":"observed-canvas"}},
+            {"action":"app_type_text","text":"exact Unicode 内容"},
+            {"action":"app_key_chord","keys":["tab"]},
+            {"action":"app_scroll","dy":20},
+            {"action":"app_key_chord","keys":["escape"]}
+        ]}), &context).await.unwrap();
+        let body = result[0].content();
+        assert_eq!(body["completed_steps"], 5);
+        assert_eq!(body["status"], "submitted");
+        let events = host.events.lock().unwrap();
+        assert_eq!(events.iter().filter(|e| e.starts_with("input:")).count(), 5);
+        assert_eq!(
+            events.iter().filter(|e| e.starts_with("observe:")).count(),
+            1
+        );
+        assert!(
+            events
+                .iter()
+                .position(|e| e.starts_with("observe:"))
+                .unwrap()
+                > events
+                    .iter()
+                    .rposition(|e| e.starts_with("input:"))
+                    .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn computer_use_image_option_preserves_legacy_provider_and_one_observation() {
+        // This host only implements the original get_app_state port. The new
+        // default method must preserve old callers and support AX-only output.
+        for include_image in [None, Some(true), Some(false)] {
+            for mut input in [
+                json!({"action":"get_app_state"}),
+                json!({"action":"app_type_text","text":"exact Unicode 内容"}),
+                json!({"action":"app_batch","steps":[
+                    {"action":"app_type_text","text":"exact Unicode 内容"},
+                    {"action":"app_key_chord","keys":["tab"]}
+                ]}),
+            ] {
+                let host = Arc::new(ControlRecordingHost {
+                    observation_image: true,
+                    ..Default::default()
+                });
+                let context = control_context(host.clone());
+                input["app"] = json!({"pid":421});
+                if let Some(include_image) = include_image {
+                    input["include_image"] = json!(include_image);
+                }
+                let results = ComputerUseTool::new()
+                    .call_impl(&input, &context)
+                    .await
+                    .unwrap();
+                let body = results[0].content();
+                let expected_image = include_image.unwrap_or(true);
+                assert_eq!(body["app_state"]["has_screenshot"], expected_image);
+                assert_eq!(body["app_state"]["observation_id"], "fixture-current");
+                assert_eq!(body["app_state"]["tree_text"], "AXMenuBar target menu");
+                assert_eq!(
+                    body["app_state"].get("screenshot_meta").is_some(),
+                    expected_image
+                );
+                let ToolResult::Result {
+                    image_attachments, ..
+                } = &results[0]
+                else {
+                    panic!("expected observation result");
+                };
+                assert_eq!(
+                    image_attachments.as_ref().map_or(0, Vec::len),
+                    usize::from(expected_image)
+                );
+                let expected_inputs = match input["action"].as_str().unwrap() {
+                    "get_app_state" => 0,
+                    "app_batch" => 2,
+                    _ => 1,
+                };
+                let events = host.events.lock().unwrap();
+                assert_eq!(
+                    events.iter().filter(|e| e.starts_with("observe:")).count(),
+                    1
+                );
+                assert_eq!(
+                    events.iter().filter(|e| e.starts_with("input:")).count(),
+                    expected_inputs
+                );
+                if expected_inputs > 0 {
+                    assert_eq!(body["completed_steps"], expected_inputs);
+                    assert!(body["observation_elapsed_ms"].is_u64());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn computer_use_invalid_image_option_fails_before_input_or_observation() {
+        for value in [Value::Null, json!("false"), json!(0)] {
+            for mut input in [
+                json!({"action":"get_app_state"}),
+                json!({"action":"app_type_text","text":"must not be entered"}),
+                json!({"action":"app_batch","steps":[{"action":"app_key_chord","keys":["return"]}]}),
+            ] {
+                let host = Arc::new(ControlRecordingHost::default());
+                let context = control_context(host.clone());
+                input["app"] = json!({"pid":421});
+                input["include_image"] = value.clone();
+                let error = ComputerUseTool::new()
+                    .call_impl(&input, &context)
+                    .await
+                    .unwrap_err();
+                assert!(error
+                    .to_string()
+                    .contains("include_image must be a boolean"));
+                assert!(!host
+                    .events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event.starts_with("input:") || event.starts_with("observe:")));
+            }
+        }
+    }
+
+    fn stable_settle() -> crate::agentic::tools::computer_use_host::AppInputSettle {
+        crate::agentic::tools::computer_use_host::AppInputSettle {
+            status: crate::agentic::tools::computer_use_host::AppInputSettleStatus::Stable,
+            waited_ms: 310,
+            changed: Some(true),
+            reason: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_settles_once_between_last_input_and_observation() {
+        let host = Arc::new(ControlRecordingHost {
+            settle: Some(stable_settle()),
+            ..Default::default()
+        });
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"app_type_text","text":"query"},
+                    {"action":"app_key_chord","keys":["return"]}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let body = result[0].content();
+        assert_eq!(body["settle"]["status"], "stable");
+        assert_eq!(body["settle"]["changed"], true);
+        let events = host.events.lock().unwrap();
+        let settle: Vec<_> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, event)| event.starts_with("settle:"))
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(settle.len(), 1);
+        let last_input = events
+            .iter()
+            .rposition(|e| e.starts_with("input:"))
+            .unwrap();
+        let observe = events
+            .iter()
+            .position(|e| e.starts_with("observe:"))
+            .unwrap();
+        assert!(last_input < settle[0] && settle[0] < observe, "{events:?}");
+    }
+
+    #[tokio::test]
+    async fn input_reports_windows_that_appeared_in_any_process_without_rebinding() {
+        let own_pid = std::process::id() as i32;
+        let before = vec![
+            fixture_window(421, 8, "Fixture", "Main", true),
+            fixture_window(600, 30, "Helper", "Mini Game", false),
+            fixture_window(700, 40, "Other", "Already open", true),
+        ];
+        let mut after = before.clone();
+        after[1].is_on_screen = Some(true);
+        after.push(fixture_window(421, 9, "Fixture", "Settings", true));
+        after.push(fixture_window(own_pid, 50, "OpenBitFun", "", true));
+        after.push(fixture_window(800, 60, "Minimized", "Opened hidden", false));
+        let host = Arc::new(ControlRecordingHost {
+            windows_after_input: Some(after),
+            ..Default::default()
+        });
+        *host.windows.lock().unwrap() = Some(before);
+        host.state.lock().unwrap().target = Some("pid:421/window:8".into());
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_type_text","app":{"pid":421},"text":"hello"}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let body = result[0].content();
+        let opened: Vec<(i64, u64)> = body["opened_windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| (w["pid"].as_i64().unwrap(), w["window_id"].as_u64().unwrap()))
+            .collect();
+        assert_eq!(opened, [(600, 30), (421, 9)]);
+        assert!(body["opened_windows_hint"]
+            .as_str()
+            .unwrap()
+            .contains("nothing was selected automatically"));
+        assert_eq!(
+            host.control_snapshot().target.as_deref(),
+            Some("pid:421/window:8")
+        );
+
+        let unchanged = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_type_text","app":{"pid":421},"text":"again"}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert!(unchanged[0].content().get("opened_windows").is_none());
+    }
+
+    #[tokio::test]
+    async fn wait_for_an_app_returns_its_observation_and_a_bare_wait_stays_a_receipt() {
+        let host = Arc::new(ControlRecordingHost {
+            observation_image: true,
+            ..Default::default()
+        });
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+
+        let bare = tool
+            .call_impl(&json!({"action":"wait","ms":0}), &context)
+            .await
+            .unwrap();
+        assert_eq!(bare[0].content()["ms"], 0);
+        assert!(bare[0].content().get("app_state").is_none());
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.starts_with("observe:")));
+
+        let observed = tool
+            .call_impl(
+                &json!({"action":"wait","app":{"pid":421},"ms":0,"include_image":false}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let body = observed[0].content();
+        assert_eq!(body["action"], "wait");
+        assert_eq!(body["waited_ms"], 0);
+        assert_eq!(body["app_state"]["digest"], "target-ax");
+        let events = host.events.lock().unwrap().clone();
+        let wait = events.iter().rposition(|e| e == "wait").unwrap();
+        let observe = events
+            .iter()
+            .rposition(|e| e == "observe:Some(421)")
+            .unwrap();
+        assert!(wait < observe, "{events:?}");
+
+        host.state.lock().unwrap().target = Some("pid:421/window:8".into());
+        let bound = tool
+            .call_impl(&json!({"action":"wait","ms":0}), &context)
+            .await
+            .unwrap();
+        assert_eq!(bound[0].content()["app_state"]["digest"], "target-ax");
+        assert!(host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event == "observe:None"));
+    }
+
+    #[tokio::test]
+    async fn zoom_returns_a_fresh_region_image_without_refreshing_the_ax_tree() {
+        let host = Arc::new(ControlRecordingHost::default());
+        host.state.lock().unwrap().target = Some("pid:421/window:8".into());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        let zoom = json!({"screenshot_id":"fixture-image","x":4,"y":2,"width":8,"height":6});
+
+        let unsupported = tool
+            .call_impl(&json!({"action":"get_app_state","zoom":zoom}), &context)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(unsupported.contains("app-zoom-v1"), "{unsupported}");
+
+        host.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .push("app-zoom-v1".into());
+        let results = tool
+            .call_impl(&json!({"action":"get_app_state","zoom":zoom}), &context)
+            .await
+            .unwrap();
+        let ToolResult::Result {
+            data,
+            image_attachments,
+            ..
+        } = &results[0]
+        else {
+            panic!("zoom observation expected")
+        };
+        assert_eq!(data["zoom_source"], zoom);
+        assert_eq!(
+            data["app_state"]["screenshot_meta"]["screenshot_id"],
+            "fixture-zoom"
+        );
+        assert_eq!(
+            data["app_state"]["screenshot_meta"]["image_global_bounds"]["width"],
+            80.0
+        );
+        assert!(data["zoom_note"]
+            .as_str()
+            .unwrap()
+            .contains("not refreshed"));
+        let popups = &data["app_state"]["screenshot_meta"]["auxiliary_windows"];
+        assert_eq!(popups[0]["window_id"], 77);
+        assert_eq!(popups[0]["clipped"], true);
+        assert!(data["app_state"]["screenshot_meta"]["auxiliary_hint"].is_string());
+        assert!(data["app_state"].get("tree_text").is_none());
+        assert_eq!(image_attachments.as_ref().unwrap()[0].data_base64, "BAUG");
+        let events = host.events.lock().unwrap().clone();
+        assert!(
+            events.contains(&"zoom:None:fixture-image:4,2,8x6".to_string()),
+            "{events:?}"
+        );
+        assert!(
+            !events.iter().any(|e| e.starts_with("observe:")),
+            "{events:?}"
+        );
+
+        for (input, expected) in [
+            (
+                json!({"action":"get_app_state","zoom":{"screenshot_id":"fixture-image","x":0,"y":0,"width":8}}),
+                "bad zoom",
+            ),
+            (
+                json!({"action":"get_app_state","zoom":{"screenshot_id":"fixture-image","x":0,"y":0,"width":8,"height":6,"scale":4}}),
+                "bad zoom",
+            ),
+            (
+                json!({"action":"get_app_state","zoom":zoom,"include_image":false}),
+                "omit include_image",
+            ),
+        ] {
+            let error = tool
+                .call_impl(&input, &context)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{input}: {error}");
+        }
+
+        let mut text_only = control_context(host.clone());
+        text_only.primary_model_facts.supports_image_inputs = false;
+        let error = tool
+            .call_impl(&json!({"action":"get_app_state","zoom":zoom}), &text_only)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("vision-capable"), "{error}");
+        let mut text_transport = control_context(host.clone());
+        text_transport.primary_model_facts.api_format = "text-only-transport".into();
+        let error = tool
+            .call_impl(
+                &json!({"action":"get_app_state","zoom":zoom}),
+                &text_transport,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("carries images in tool results"), "{error}");
+        assert_eq!(
+            host.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| e.starts_with("zoom:"))
+                .count(),
+            1
+        );
+
+        let observed = tool
+            .call_impl(&json!({"action":"get_app_state","zoom":null}), &context)
+            .await
+            .unwrap();
+        assert_eq!(observed[0].content()["app_state"]["digest"], "target-ax");
+    }
+
+    #[tokio::test]
+    async fn zoom_never_degrades_to_an_accessibility_only_read() {
+        let host = Arc::new(ControlRecordingHost {
+            fail_capture: true,
+            capture_error: "TARGET_SURFACE_UNAVAILABLE: window is minimized",
+            ..Default::default()
+        });
+        host.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .push("app-zoom-v1".into());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"get_app_state","app":{"pid":421},
+                    "zoom":{"screenshot_id":"fixture-image","x":0,"y":0,"width":8,"height":6}}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("TARGET_SURFACE_UNAVAILABLE"), "{error}");
+        let events = host.events.lock().unwrap().clone();
+        assert!(
+            !events
+                .iter()
+                .any(|e| e.starts_with("zoom:") || e.starts_with("observe:")),
+            "{events:?}"
+        );
+    }
+
+    #[test]
+    fn zoom_is_published_only_to_vision_models() {
+        let tool = ComputerUseTool::new();
+        let vision = tool.model_input_schema(true);
+        assert_eq!(
+            vision["properties"]["zoom"]["required"],
+            json!(["screenshot_id", "x", "y", "width", "height"])
+        );
+        assert!(vision["properties"]["zoom"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("screenshot_id"));
+        assert!(tool.model_input_schema(false)["properties"]
+            .get("zoom")
+            .is_none());
+        assert_eq!(
+            tool.input_schema()["properties"]["zoom"]["additionalProperties"],
+            false
+        );
+    }
+
+    #[tokio::test]
+    async fn omitted_app_follows_the_bound_window_and_is_rejected_when_none_is_bound() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        let error = tool
+            .call_impl(&json!({"action":"get_app_state"}), &context)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("no window is bound"), "{error}");
+        assert!(host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|e| !e.starts_with("observe:")));
+
+        host.state.lock().unwrap().target = Some("pid:421/window:8".into());
+        let observed = tool
+            .call_impl(&json!({"action":"get_app_state"}), &context)
+            .await
+            .unwrap();
+        assert_eq!(observed[0].content()["app_state"]["digest"], "target-ax");
+        let typed = tool
+            .call_impl(
+                &json!({"action":"app_key_chord","keys":["return"]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(typed[0].content()["status"], "submitted");
+    }
+
+    #[tokio::test]
+    async fn computer_use_settle_reports_unavailable_or_skipped_without_failing_input() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        let typed = tool
+            .call_impl(
+                &json!({"action":"app_type_text","app":{"pid":421},"text":"hello"}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(typed[0].content()["settle"]["status"], "unavailable");
+        assert_eq!(typed[0].content()["status"], "submitted");
+        let waited = tool
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"wait","ms":0}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(waited[0].content()["settle"]["status"], "skipped");
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_without_steps_names_misplaced_fields_before_input() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},
+                    "actions":[{"action":"app_type_text","text":"query"}],
+                    "post_click_wait_ms":200}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("requires a top-level `steps` array"),
+            "{error}"
+        );
+        assert!(error.contains("field(s): actions;"), "{error}");
+        assert!(
+            !error.contains("post_click_wait_ms"),
+            "accepted compatibility aliases are not reported as unknown: {error}"
+        );
+        assert!(error.contains("No step was executed"), "{error}");
+        assert!(
+            error.contains(r#""steps":[{"action":"app_type_text""#),
+            "{error}"
+        );
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e.starts_with("input:") || e.starts_with("observe:")));
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_step_decode_error_names_step_index_and_action() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"app_type_text","text":"query"},
+                    {"action":"app_key_chord","key":"return"}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("steps[1]"), "{error}");
+        assert!(error.contains("app_key_chord"), "{error}");
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e.starts_with("input:")));
+    }
+
+    #[tokio::test]
+    async fn foreground_activation_settles_before_its_observation() {
+        let host = Arc::new(ControlRecordingHost {
+            settle: Some(stable_settle()),
+            ..Default::default()
+        });
+        {
+            let mut state = host.state.lock().unwrap();
+            state.state = "active".into();
+            state.mode = ControlMode::Foreground;
+            state.capabilities.push("activate-app-v1".into());
+        }
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"activate_app","app":{"pid":421},"include_image":false}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result[0].content()["settle"]["status"], "stable");
+        let events = host.events.lock().unwrap();
+        let activate = events
+            .iter()
+            .position(|e| e == "activate:Some(421)")
+            .unwrap();
+        let settle = events.iter().position(|e| e == "settle:Some(421)").unwrap();
+        let observe = events
+            .iter()
+            .position(|e| e == "observe:Some(421)")
+            .unwrap();
+        assert!(activate < settle && settle < observe, "{events:?}");
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_failure_returns_receipts_without_replay() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        tool.call_impl(&json!({"action":"start_control"}), &context)
+            .await
+            .unwrap();
+        let result = tool
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"app_key_chord","keys":["tab"]},
+                    {"action":"app_type_text","text":"fixture-failure"},
+                    {"action":"app_key_chord","keys":["return"]}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let body = result[0].content();
+        assert_eq!(body["status"], "partial");
+        assert_eq!(body["completed_steps"], 1);
+        assert_eq!(body["steps"].as_array().unwrap().len(), 2);
+        assert_eq!(body["steps"][1]["input_may_have_been_submitted"], true);
+        assert_eq!(
+            host.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| *e == "input:app_key_chord")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_validates_all_steps_before_first_input() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"app_type_text","text":"must not be sent"},
+                    {"action":"app_key_chord","keys":[]}
+                ]}),
+                &context,
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e.starts_with("input:")));
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_rejects_invalid_late_visual_targets_before_any_input() {
+        for target in [
+            json!({"kind":"image_xy","x":4,"y":8}),
+            json!({"kind":"image_xy","x":-1,"y":8,"screenshot_id":"seen"}),
+            json!({"kind":"image_grid","x0":0,"y0":0,"width":100,"height":100,"rows":2,"cols":2,"row":2,"col":0,"screenshot_id":"seen"}),
+            json!({"kind":"ocr_text","needle":"   "}),
+        ] {
+            for action in ["app_click", "app_type_text", "app_scroll"] {
+                let host = Arc::new(ControlRecordingHost::default());
+                let context = control_context(host.clone());
+                let mut step = json!({"action":action});
+                if action == "app_click" {
+                    step["target"] = target.clone();
+                } else {
+                    step["focus"] = target.clone();
+                }
+                if action == "app_type_text" {
+                    step["text"] = json!("must not type");
+                }
+                let result = ComputerUseTool::new()
+                    .call_impl(
+                        &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                            {"action":"app_key_chord","keys":["return"]}, step
+                        ]}),
+                        &context,
+                    )
+                    .await;
+                assert!(
+                    result.is_err(),
+                    "invalid target accepted: {action} {target}"
+                );
+                assert!(
+                    !host
+                        .events
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .any(|event| event.starts_with("input:")),
+                    "an earlier irreversible action must not run before structural validation"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn computer_use_legacy_target_overflow_never_wraps_to_another_control() {
+        for target in [
+            json!({"node_idx":4294967296_u64}),
+            json!({"image_xy":{"x":4294967297_i64,"y":2,"screenshot_id":"seen"}}),
+            json!({"image_xy":{"x":1,"y":4294967298_i64,"screenshot_id":"seen"}}),
+        ] {
+            let host = Arc::new(ControlRecordingHost::default());
+            let context = control_context(host.clone());
+            let result = ComputerUseTool::new()
+                .call_impl(
+                    &json!({"action":"app_click","app":{"pid":421},"target":target}),
+                    &context,
+                )
+                .await;
+            assert!(result.is_err());
+            assert!(!host
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| event.starts_with("input:")));
+        }
+    }
+
+    #[test]
+    fn computer_use_batch_schema_exposes_explicit_click_settle() {
+        let schema = ComputerUseTool::app_program_schema();
+        let click = &schema["items"]["oneOf"][0];
+        assert_eq!(click["properties"]["wait_ms_after"]["type"], "integer");
+        assert_eq!(click["properties"]["wait_ms_after"]["minimum"], 0);
+        let step = serde_json::from_value(json!({"action":"app_click","target":{"kind":"image_xy","x":1,"y":2,"screenshot_id":"seen"},"wait_ms_after":25})).unwrap();
+        super::super::computer_use_program::validate_step(&step).unwrap();
+    }
+
+    #[tokio::test]
+    async fn computer_use_program_stops_after_input_changes_control_scope() {
+        use crate::agentic::tools::computer_use_host::{AppInputAction, AppSelector};
+        let initial = ControlSnapshot {
+            supported: true,
+            state: "active".into(),
+            generation: 17,
+            owner: Some("session-a".into()),
+            target: Some("window-a".into()),
+            mode: ControlMode::Background,
+            ..Default::default()
+        };
+        for change in [
+            "stopped",
+            "generation",
+            "owner",
+            "target",
+            "mode",
+            "unsupported",
+        ] {
+            let mut replacement = initial.clone();
+            match change {
+                "stopped" => replacement.state = "stopped".into(),
+                "generation" => replacement.generation += 1,
+                "owner" => replacement.owner = Some("session-b".into()),
+                "target" => replacement.target = Some("window-b".into()),
+                "mode" => replacement.mode = ControlMode::Observe,
+                "unsupported" => replacement.supported = false,
+                _ => unreachable!(),
+            }
+            // One step isolates the pre-observation guard; two steps also
+            // prove a changed scope never executes the next queued mutation.
+            for count in [1, 2] {
+                let host = ControlRecordingHost {
+                    state: Mutex::new(initial.clone()),
+                    replace_control_during_input: Some(replacement.clone()),
+                    ..Default::default()
+                };
+                let steps: Vec<AppInputAction> = (0..count)
+                    .map(|index| AppInputAction::TypeText {
+                        text: format!("fixture-{index}"),
+                        focus: None,
+                    })
+                    .collect();
+                let result = super::super::computer_use_program::execute(
+                    &host,
+                    AppSelector::by_pid(421),
+                    steps,
+                    None,
+                    true,
+                )
+                .await;
+                assert_eq!(
+                    *host.events.lock().unwrap(),
+                    ["input:app_type_text"],
+                    "{change}/{count}"
+                );
+                assert!(result.snapshot.is_none(), "{change}/{count}");
+                assert_eq!(result.receipt["status"], "cancelled", "{change}/{count}");
+                assert_eq!(result.receipt["completed_steps"], 1);
+                assert_eq!(result.receipt["requested_steps"], count);
+                assert_eq!(result.receipt["steps"].as_array().unwrap().len(), 1);
+                assert_eq!(result.receipt["steps"][0]["status"], "submitted");
+                assert!(result.receipt["observation_error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("CONTROL_CHANGED_DURING_INPUT"));
+            }
+        }
+        for initially_stopped in [false, true] {
+            let mut state = initial.clone();
+            if initially_stopped {
+                state.state = "stopped".into();
+            }
+            let host = ControlRecordingHost {
+                state: Mutex::new(state),
+                ..Default::default()
+            };
+            let steps = vec![
+                AppInputAction::TypeText {
+                    text: "first".into(),
+                    focus: None,
+                },
+                AppInputAction::TypeText {
+                    text: "second".into(),
+                    focus: None,
+                },
+            ];
+            let result = super::super::computer_use_program::execute(
+                &host,
+                AppSelector::by_pid(421),
+                steps,
+                None,
+                true,
+            )
+            .await;
+            if initially_stopped {
+                assert!(host.events.lock().unwrap().is_empty());
+                assert_eq!(result.receipt["status"], "cancelled");
+                assert_eq!(result.receipt["completed_steps"], 0);
+                assert!(result.receipt["steps"].as_array().unwrap().is_empty());
+                assert!(result.snapshot.is_none());
+            } else {
+                assert_eq!(
+                    *host.events.lock().unwrap(),
+                    [
+                        "input:app_type_text",
+                        "input:app_type_text",
+                        "observe:Some(421)"
+                    ]
+                );
+                assert_eq!(result.receipt["status"], "submitted");
+                assert_eq!(result.receipt["completed_steps"], 2);
+                assert!(result.receipt["observation_error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("CAPTURE_UNAVAILABLE"));
+                assert!(result.snapshot.is_some());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn computer_use_recovery_discards_observation_after_control_scope_changes() {
+        let initial = ControlSnapshot {
+            supported: true,
+            state: "active".into(),
+            generation: 17,
+            owner: Some("session-a".into()),
+            target: Some("window-a".into()),
+            ..Default::default()
+        };
+        for change in ["stopped", "generation", "owner", "target", "mode"] {
+            let mut replacement = initial.clone();
+            match change {
+                "stopped" => replacement.state = "stopped".into(),
+                "generation" => replacement.generation += 1,
+                "owner" => replacement.owner = Some("session-b".into()),
+                "target" => replacement.target = Some("window-b".into()),
+                "mode" => replacement.mode = ControlMode::Observe,
+                _ => unreachable!(),
+            }
+            let host = ControlRecordingHost {
+                state: Mutex::new(initial.clone()),
+                replace_control_during_observation: Some(replacement),
+                ..Default::default()
+            };
+            let (snapshot, error) = super::super::computer_use_program::observe_after_input(
+                &host,
+                crate::agentic::tools::computer_use_host::AppSelector {
+                    pid: Some(421),
+                    ..Default::default()
+                },
+                None,
+                true,
+            )
+            .await;
+            assert!(
+                snapshot.is_none(),
+                "{change} must discard the old observation"
+            );
+            assert!(error
+                .unwrap()
+                .contains("CONTROL_CHANGED_DURING_OBSERVATION"));
+            assert_eq!(*host.events.lock().unwrap(), ["observe:Some(421)"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_preserves_receipts_when_final_observation_fails() {
+        let host = Arc::new(ControlRecordingHost {
+            fail_observation: true,
+            ..Default::default()
+        });
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        tool.call_impl(
+            &json!({"action":"start_control","mode":"background"}),
+            &context,
+        )
+        .await
+        .unwrap();
+        let results = tool
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"app_type_text","text":"already submitted"},
+                    {"action":"app_key_chord","keys":["return"]}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let receipt = results[0].content();
+        assert_eq!(receipt["status"], "submitted");
+        assert_eq!(receipt["completed_steps"], 2);
+        assert!(receipt["observation_error"]
+            .as_str()
+            .unwrap()
+            .contains("FIXTURE_OBSERVATION_FAILURE"));
+        assert_eq!(
+            host.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| e.starts_with("input:"))
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn computer_use_cancelled_batch_submits_no_steps() {
+        use crate::agentic::tools::computer_use_host::{AppInputAction, AppSelector};
+        let host = Arc::new(ControlRecordingHost::default());
+        let mut context = control_context(host.clone());
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+        context.runtime_handles =
+            openbitfun_runtime_ports::ToolRuntimeHandles::new(None, Some(token));
+        let outcome = super::super::computer_use_program::execute(
+            host.as_ref(),
+            AppSelector {
+                pid: Some(421),
+                ..Default::default()
+            },
+            vec![AppInputAction::TypeText {
+                text: "must not submit".into(),
+                focus: None,
+            }],
+            Some(&context),
+            true,
+        )
+        .await;
+        assert_eq!(outcome.receipt["status"], "cancelled");
+        assert_eq!(outcome.receipt["completed_steps"], 0);
+        assert!(outcome.snapshot.is_none());
+        assert!(host.events.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_cancel_interrupts_wait_and_skips_remaining_input() {
+        use crate::agentic::tools::computer_use_host::{AppInputAction, AppSelector};
+        let host = Arc::new(ControlRecordingHost::default());
+        host.state.lock().unwrap().state = "active".into();
+        let mut context = control_context(host.clone());
+        let token = tokio_util::sync::CancellationToken::new();
+        context.runtime_handles =
+            openbitfun_runtime_ports::ToolRuntimeHandles::new(None, Some(token.clone()));
+        let execution = super::super::computer_use_program::execute(
+            host.as_ref(),
+            AppSelector {
+                pid: Some(421),
+                ..Default::default()
+            },
+            vec![
+                AppInputAction::Wait { ms: 60_000 },
+                AppInputAction::TypeText {
+                    text: "must not submit".into(),
+                    focus: None,
+                },
+            ],
+            Some(&context),
+            true,
+        );
+        let cancel = async {
+            host.wait_started.notified().await;
+            token.cancel();
+        };
+        let (outcome, ()) = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::join!(execution, cancel)
+        })
+        .await
+        .unwrap();
+        assert_eq!(outcome.receipt["status"], "cancelled");
+        assert_eq!(outcome.receipt["completed_steps"], 0);
+        assert_eq!(
+            outcome.receipt["steps"][0]["input_may_have_been_submitted"],
+            false
+        );
+        assert!(outcome.snapshot.is_none());
+        assert_eq!(*host.events.lock().unwrap(), vec!["wait"]);
     }
 }

@@ -168,7 +168,7 @@ describe('WebFetchCard', () => {
     expect(detailPills).toEqual(expect.arrayContaining(['text', '20 chars']));
   });
 
-  it('opens the fetched URL when the expanded link row is clicked', () => {
+  it('opens the fetched URL from the inline icon without toggling the card', () => {
     act(() => {
       root.render(
         <WebFetchCard
@@ -185,9 +185,7 @@ describe('WebFetchCard', () => {
       card?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    const linkRow = container.querySelector(
-      '[data-openbitfun-tool-card="web-fetch"] [data-openbitfun-part="sourceLink"]',
-    );
+    const linkRow = container.querySelector('button[aria-label="Click to open link"]');
     expect(linkRow).not.toBeNull();
 
     act(() => {
@@ -195,6 +193,7 @@ describe('WebFetchCard', () => {
     });
 
     expect(openExternalMock).toHaveBeenCalledWith('https://example.com/article');
+    expect(container.querySelector('button[aria-expanded]')?.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('copies fetched content from the expanded action area', async () => {

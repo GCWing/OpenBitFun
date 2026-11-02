@@ -45,6 +45,13 @@ Remote Connect 使用全局 GitHub 账户和官方版本化 Relay。账户控件
   `i18nService.t(...)` 必须有 bootstrap namespace 覆盖。
 - 遵循 `src/web-ui/LOGGING.md`：仅英文、无 emoji、结构化日志
 
+## 动态界面的 CSS 失效范围
+
+- 对频繁增删 DOM 的组件自有兄弟关系样式，优先使用专属类名，避免仅按标签或通配符匹配。CSS Modules 和祖先作用域不能隔离浏览器的样式失效工作。
+- 现有布局与间距语义允许时使用 flex/grid 的 `gap`；不要机械地将同类相邻关系替换为 `:not(:first-child)`，也不要仅为此切换布局模式。
+- 生成内容可以保留语义标签选择器。对实测热点添加渲染器专属类名；用 `:where(.owned-class)` 限定复合选择器时可保持原优先级。保留内嵌 HTML、嵌套列表、混合表格单元格及数学内容的行为。
+- 改写后核对匹配集合与层叠效果。短时 Selector Stats 录制用于定位失效原因，普通录制用于验证收益；失效次数不等于可感知提升。不全面禁止兄弟选择器。
+
 ## 命令
 
 这里只维护开发/构建入口；验证命令统一放在下方“验证”章节。
@@ -72,3 +79,11 @@ pnpm run check:web
 以上依次用于 locale 资源、locale contract/shared terms、i18n runtime/namespace loading 和普通 Web UI 代码。
 `check:web` 会执行类型检查，以及 CI 使用的 Appearance contract、主题颜色和主题视觉治理门禁，确保渲染 DOM
 或样式回归能在本地发现。完整 lint、build 与大范围测试由 CI 兜底，除非本地改动确实需要复现。
+
+导航分割线拖拽、弹性反馈、取消操作与键盘调宽使用以下聚焦检查：
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/layout/useNavResize.test.tsx src/app/layout/WorkspaceBody.presentation.test.ts
+```
+
+这些本地 DOM 测试覆盖手势状态和弹簧收敛，不代表原生 WebView 渲染或真实远程场景验证。

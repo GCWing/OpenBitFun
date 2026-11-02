@@ -6,14 +6,15 @@ use super::support::{
 use super::AgentRegistry;
 use crate::agentic::agents::registry::types::{is_review_agent_entry, AgentEntry, AgentSource};
 use crate::agentic::agents::{
-    is_swarm_delegate_agent_type, is_swarm_planner_agent_type, mode_presentation_rank,
-    resolve_mode_config_profile_id, AgentCategory, AgentInfo, AgentToolPolicy, SubagentListScope,
-    SubagentQueryContext,
+    mode_presentation_rank, resolve_mode_config_profile_id, AgentCategory, AgentInfo,
+    AgentToolPolicy, SubagentListScope, SubagentQueryContext,
 };
 use crate::agentic::deep_review_policy::canonical_review_worker_agent_type;
 use crate::agentic::tools::get_all_registered_tool_names;
 use crate::service::config::mode_config_canonicalizer::resolve_effective_tools;
-use openbitfun_agent_runtime::agents::subagent_source_presentation_rank;
+use openbitfun_agent_runtime::agents::{
+    subagent_source_presentation_rank, BuiltinSubagentExposure,
+};
 use std::collections::HashSet;
 
 /// Append the dynamically registered tool families a mode Agent may use.
@@ -34,6 +35,19 @@ pub(super) fn merge_dynamic_mode_tools(
 }
 
 impl AgentRegistry {
+    /// Recursive delegation is an explicit tool capability. It only takes
+    /// effect inside Swarm; ordinary child sessions remain non-recursive.
+    pub(crate) async fn can_delegate_in_swarm(
+        &self,
+        agent_type: &str,
+        workspace_id: Option<&str>,
+    ) -> bool {
+        self.get_agent_tools(agent_type, workspace_id)
+            .await
+            .iter()
+            .any(|tool| matches!(tool.as_str(), "AgentSpawn" | "Task"))
+    }
+
     /// Return every effective local agent definition that can participate in
     /// product-level external-source conflict resolution. Main-agent modes and
     /// subagents share one logical id namespace in external ecosystems, so a
@@ -288,15 +302,6 @@ impl AgentRegistry {
         if entry.category != AgentCategory::SubAgent {
             return false;
         }
-        if query.list_scope == SubagentListScope::TaskVisible
-            && query
-                .parent_agent_type
-                .is_some_and(is_swarm_planner_agent_type)
-            && !is_swarm_delegate_agent_type(entry.agent.id())
-        {
-            return false;
-        }
-
         let availability = resolve_availability(
             entry,
             query.parent_agent_type,
@@ -312,7 +317,8 @@ impl AgentRegistry {
                 entry.visibility_policy.show_in_global_registry
             }
             SubagentListScope::TaskVisible => {
-                entry.visibility_policy.show_in_global_registry
+                // Management visibility must not expose hidden delegates to other parents.
+                entry.visibility_policy.exposure != BuiltinSubagentExposure::Hidden
                     || entry
                         .visibility_policy
                         .can_access_from_parent(query.parent_agent_type)
@@ -409,7 +415,13 @@ impl AgentRegistry {
                 );
             }
         }
-        if query.external_sources_supported {
+        // Swarm currently executes native definitions only. External route
+        // overlays must not advertise candidates the invocation cannot resolve.
+        if query.external_sources_supported
+            && !query
+                .parent_agent_type
+                .is_some_and(crate::agentic::agents::is_swarm_planner_agent_type)
+        {
             if let Some(workspace_id) = query.workspace_id {
                 result = self.apply_external_routes_to_query(workspace_id, result);
             }

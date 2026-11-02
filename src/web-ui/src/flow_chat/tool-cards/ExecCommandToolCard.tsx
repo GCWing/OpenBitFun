@@ -8,6 +8,7 @@ export const ExecCommandToolCard: React.FC<ToolCardProps> = ({
   toolItem,
   onExpand,
   isLastItem,
+  displayContext,
 }) => {
   const { t } = useTranslation('flow-chat');
   const model = useMemo(
@@ -21,6 +22,7 @@ export const ExecCommandToolCard: React.FC<ToolCardProps> = ({
       model={model}
       onExpand={onExpand}
       isLastItem={isLastItem}
+      displayContext={displayContext}
     />
   );
 };

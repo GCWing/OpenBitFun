@@ -87,6 +87,10 @@ pub(crate) async fn server_info_for_host(host_version: &'static str) -> Json<Ser
             "device_alias_v1",
             "device_metadata_v1",
             "device_client_build_v1",
+            // Hosts may report themselves as `cli` instead of `desktop`.
+            // Clients must ask before using it: an older Relay rejects the
+            // unknown kind outright, which would fail the whole login.
+            "device_kind_cli_v1",
         ],
     })
 }

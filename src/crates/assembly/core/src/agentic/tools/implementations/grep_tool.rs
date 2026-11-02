@@ -166,10 +166,12 @@ impl GrepTool {
                 "applied_limit": result.applied_limit,
                 "applied_offset": result.applied_offset,
                 "result": result.result_text,
-                "search_backend": if search.used_rg_candidates { "rg_candidates_workspace_io" } else if search.used_grep_candidates { "grep_candidates_workspace_io" } else { "workspace_io" },
-                "scanned_file_count": search.scanned_file_count,
-                "scanned_bytes": search.scanned_bytes,
-                "ignore_scope": "search_path",
+                "diagnostics": {
+                    "search_backend": if search.used_rg_candidates { "rg_candidates_workspace_io" } else if search.used_grep_candidates { "grep_candidates_workspace_io" } else { "workspace_io" },
+                    "scanned_file_count": search.scanned_file_count,
+                    "scanned_bytes": search.scanned_bytes,
+                    "ignore_scope": "search_path"
+                }
             }),
             result_for_assistant: Some(assistant_text),
             image_attachments: None,
@@ -547,6 +549,23 @@ Usage:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "path": {"type": "string"},
+                "output_mode": {"type": "string"},
+                "file_count": {"type": "integer"},
+                "total_matches": {"type": "integer"},
+                "result": {"type": "string"},
+                "truncated": {"type": "boolean"}
+            },
+            "required": ["pattern", "path", "output_mode", "file_count", "total_matches", "result"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -631,7 +650,9 @@ Usage:
                     "applied_limit": result.applied_limit,
                     "applied_offset": result.applied_offset,
                     "result": result.result_text,
-                    "representation": "miniapp_context"
+                    "diagnostics": {
+                        "representation": "miniapp_context"
+                    }
                 }),
                 result_for_assistant: Some(result.result_text),
                 image_attachments: None,
@@ -714,13 +735,15 @@ Usage:
                             "output_mode": output_mode,
                             "file_count": file_count,
                             "total_matches": total_matches,
-                            "backend": search_result.backend,
-                            "repo_phase": search_result.repo_status.phase,
-                            "base_advance_in_progress": search_result.repo_status.base_advance_in_progress,
-                            "workspace_probe_pending": search_result.repo_status.workspace_probe_pending,
                             "applied_limit": head_limit,
                             "applied_offset": if offset > 0 { Some(offset) } else { None::<usize> },
                             "result": result_text,
+                            "diagnostics": {
+                                "backend": search_result.backend,
+                                "repo_phase": search_result.repo_status.phase,
+                                "base_advance_in_progress": search_result.repo_status.base_advance_in_progress,
+                                "workspace_probe_pending": search_result.repo_status.workspace_probe_pending
+                            }
                         }),
                         result_for_assistant: Some(annotate_workspace_probe_pending(
                             result_text,
@@ -798,13 +821,15 @@ Usage:
                                 "output_mode": output_mode,
                                 "file_count": file_count,
                                 "total_matches": total_matches,
-                                "backend": search_result.backend,
-                                "repo_phase": search_result.repo_status.phase,
-                                "base_advance_in_progress": search_result.repo_status.base_advance_in_progress,
-                                "workspace_probe_pending": search_result.repo_status.workspace_probe_pending,
                                 "applied_limit": head_limit,
                                 "applied_offset": if offset > 0 { Some(offset) } else { None::<usize> },
                                 "result": result_text,
+                                "diagnostics": {
+                                    "backend": search_result.backend,
+                                    "repo_phase": search_result.repo_status.phase,
+                                    "base_advance_in_progress": search_result.repo_status.base_advance_in_progress,
+                                    "workspace_probe_pending": search_result.repo_status.workspace_probe_pending
+                                }
                             }),
                             result_for_assistant: Some(annotate_workspace_probe_pending(
                                 result_text,
@@ -2335,7 +2360,7 @@ mod tests {
             };
             assert_eq!(data["result"], expected.result.result_text);
             assert_eq!(data["total_matches"], expected.result.total_matches);
-            assert_eq!(data["search_backend"], "workspace_io");
+            assert_eq!(data["diagnostics"]["search_backend"], "workspace_io");
         }
 
         #[tokio::test]

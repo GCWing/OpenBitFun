@@ -97,6 +97,8 @@ fn call_deferred_tool_contract_uses_nested_object_arguments() {
 
     assert!(call_deferred_tool_description()
         .contains("The order is important. ALWAYS output tool_name first, then args."));
+    assert!(call_deferred_tool_description()
+        .contains("If compaction or truncation removed it, reload it with GetToolSpec first"));
     assert_eq!(schema["additionalProperties"], false);
     assert_eq!(schema["required"], json!(["tool_name", "args"]));
     assert_eq!(schema["properties"]["args"]["type"], "object");
@@ -1456,22 +1458,18 @@ fn runtime_artifact_reference_owner_preserves_session_prefix_and_rejects_escape(
 }
 
 #[test]
-fn deferred_tool_usage_gate_preserves_get_tool_spec_unlock_contract() {
+fn deferred_tool_usage_allows_calls_without_a_loaded_spec() {
     let deferred_tools = vec!["WebFetch".to_string()];
     let loaded_deferred_tool_specs = Vec::new();
 
-    let err = validate_deferred_tool_usage(
+    validate_deferred_tool_usage(
         "WebFetch",
         &deferred_tools,
         &loaded_deferred_tool_specs,
         0,
         GET_TOOL_SPEC_TOOL_NAME,
     )
-    .expect_err("deferred tool should require GetToolSpec unlock");
-    assert_eq!(
-        err.to_string(),
-        "Tool 'WebFetch' is deferred. Call GetToolSpec first with {\"tool_name\":\"WebFetch\"} to read its full usage instructions and input schema before invoking it."
-    );
+    .expect("deferred exposure must not block execution when no spec is loaded");
 
     let loaded_deferred_tool_specs = vec![LoadedDeferredToolSpec {
         tool_name: "WebFetch".to_string(),
@@ -1508,7 +1506,19 @@ fn deferred_tool_usage_gate_preserves_get_tool_spec_unlock_contract() {
         0,
         GET_TOOL_SPEC_TOOL_NAME,
     )
-    .expect("GetToolSpec itself is the unlock path");
+    .expect("GetToolSpec remains executable");
+
+    validate_deferred_tool_usage(
+        "WebFetch",
+        &[],
+        &[LoadedDeferredToolSpec {
+            tool_name: "WebFetch".to_string(),
+            catalog_generation: 41,
+        }],
+        42,
+        GET_TOOL_SPEC_TOOL_NAME,
+    )
+    .expect("a stale receipt must not affect a tool that is no longer deferred");
 }
 
 #[test]
@@ -2030,7 +2040,7 @@ fn get_tool_spec_contract_escapes_assistant_detail_for_xml_sections() {
 fn get_tool_spec_contract_preserves_duplicate_load_hint() {
     assert_eq!(
         build_get_tool_spec_duplicate_load_hint("WebFetch"),
-        "Tool 'WebFetch' is already loaded in the current conversation. Do not call GetToolSpec again for it. Use CallDeferredTool with tool_name 'WebFetch' and put the tool arguments inside args."
+        "Tool 'WebFetch' is already loaded in the current context. Use CallDeferredTool with tool_name 'WebFetch' and put the tool arguments inside args. Reload with GetToolSpec only if its full definition leaves the context or the runtime reports it stale."
     );
 }
 
@@ -2052,7 +2062,7 @@ fn get_tool_spec_contract_builds_duplicate_load_result() {
     assert_eq!(
         result_for_assistant.as_deref(),
         Some(
-            "Tool 'WebFetch' is already loaded in the current conversation. Do not call GetToolSpec again for it. Use CallDeferredTool with tool_name 'WebFetch' and put the tool arguments inside args."
+            "Tool 'WebFetch' is already loaded in the current context. Use CallDeferredTool with tool_name 'WebFetch' and put the tool arguments inside args. Reload with GetToolSpec only if its full definition leaves the context or the runtime reports it stale."
         )
     );
     assert_eq!(image_attachments, None);
@@ -2127,7 +2137,7 @@ fn get_tool_spec_contract_plans_duplicate_load_without_core_context() {
     assert!(result_for_assistant
         .as_deref()
         .unwrap_or_default()
-        .contains("already loaded in the current conversation"));
+        .contains("already loaded in the current context"));
     assert_eq!(image_attachments, None);
 }
 
@@ -3058,7 +3068,7 @@ async fn get_tool_spec_detail_resolver_preserves_contextual_detail_contract() {
     .expect("collapsed WebFetch detail");
 
     assert_eq!(detail.tool_name, "WebFetch");
-    assert_eq!(detail.description, "WebFetch description for agentic");
+    assert_eq!(detail.description, "WebFetch description for Standard");
     assert_eq!(
         detail.input_schema["properties"]["agent"]["const"],
         "Standard"
@@ -3067,7 +3077,7 @@ async fn get_tool_spec_detail_resolver_preserves_contextual_detail_contract() {
         detail.to_value(),
         json!({
             "tool_name": "WebFetch",
-            "description": "WebFetch description for agentic",
+            "description": "WebFetch description for Standard",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -3118,7 +3128,7 @@ async fn get_tool_spec_catalog_provider_preserves_runtime_catalog_contract() {
     .await
     .expect("provider-backed detail");
     assert_eq!(detail.tool_name, "WebFetch");
-    assert_eq!(detail.description, "WebFetch description for agentic");
+    assert_eq!(detail.description, "WebFetch description for Standard");
 }
 
 #[tokio::test]
@@ -3153,7 +3163,7 @@ async fn get_tool_spec_provider_execution_returns_duplicate_result_without_detai
     assert!(result_for_assistant
         .as_deref()
         .unwrap_or_default()
-        .contains("already loaded in the current conversation"));
+        .contains("already loaded in the current context"));
     assert_eq!(image_attachments, None);
 }
 
@@ -3189,15 +3199,15 @@ async fn get_tool_spec_provider_execution_returns_detail_result_from_provider() 
     };
 
     assert_eq!(data["tool_name"], "WebFetch");
-    assert_eq!(data["description"], "WebFetch description for agentic");
+    assert_eq!(data["description"], "WebFetch description for Standard");
     assert_eq!(
         data["input_schema"]["properties"]["agent"]["const"],
         "Standard"
     );
     let assistant = result_for_assistant.expect("assistant detail");
-    assert!(assistant.contains("<description>\nWebFetch description for agentic"));
+    assert!(assistant.contains("<description>\nWebFetch description for Standard"));
     assert!(assistant.contains("\"agent\""));
-    assert!(assistant.contains("\"agentic\""));
+    assert!(assistant.contains("\"Standard\""));
     assert_eq!(image_attachments, None);
 }
 
@@ -3267,7 +3277,7 @@ async fn get_tool_spec_runtime_facade_owns_execution_path() {
         panic!("expected normal tool result");
     };
     assert_eq!(data["tool_name"], "WebFetch");
-    assert_eq!(data["description"], "WebFetch description for agentic");
+    assert_eq!(data["description"], "WebFetch description for Standard");
     assert_eq!(
         data["input_schema"]["properties"]["agent"]["const"],
         "Standard"
@@ -3306,7 +3316,7 @@ async fn get_tool_spec_runtime_facade_owns_tool_result_vector_adapter_shape() {
     assert_eq!(data["tool_name"], "WebFetch");
     assert!(result_for_assistant
         .expect("assistant detail")
-        .contains("<description>\nWebFetch description for agentic"));
+        .contains("<description>\nWebFetch description for Standard"));
     assert_eq!(image_attachments, None);
 
     let duplicate_runtime =
@@ -3339,7 +3349,7 @@ async fn get_tool_spec_runtime_facade_owns_tool_result_vector_adapter_shape() {
     assert_eq!(
         result_for_assistant.as_deref(),
         Some(
-            "Tool 'WebFetch' is already loaded in the current conversation. Do not call GetToolSpec again for it. Use CallDeferredTool with tool_name 'WebFetch' and put the tool arguments inside args."
+            "Tool 'WebFetch' is already loaded in the current context. Use CallDeferredTool with tool_name 'WebFetch' and put the tool arguments inside args. Reload with GetToolSpec only if its full definition leaves the context or the runtime reports it stale."
         )
     );
     assert!(image_attachments.is_none());

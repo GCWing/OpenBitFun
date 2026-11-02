@@ -31,6 +31,17 @@ use crate::miniapp::storage::{
 };
 use crate::miniapp::types::{MiniApp, MiniAppMeta, MiniAppRuntimeProfile, MiniAppSource};
 
+fn validate_chrome(
+    chrome: Option<&crate::miniapp::chrome::MiniAppChrome>,
+) -> MiniAppPortResult<()> {
+    if let Some(chrome) = chrome {
+        chrome
+            .validate()
+            .map_err(|error| MiniAppPortError::new(MiniAppPortErrorKind::InvalidInput, error))?;
+    }
+    Ok(())
+}
+
 /// Storage-backed facade for MiniApp runtime-state lifecycle transitions.
 pub struct MiniAppRuntimeFacade<'a> {
     storage: &'a dyn MiniAppStoragePort,
@@ -71,6 +82,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         compiled_html: String,
         now: i64,
     ) -> MiniAppPortResult<MiniApp> {
+        validate_chrome(input.chrome.as_ref())?;
         let app = build_created_app(id, input, compiled_html, now);
         self.storage.save(app.clone()).await?;
         Ok(app)
@@ -84,6 +96,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         compiled_html: String,
         now: i64,
     ) -> MiniAppPortResult<MiniApp> {
+        validate_chrome(patch.chrome.as_ref())?;
         let app = apply_update_patch(&previous_app, patch, compiled_html, now);
         self.storage
             .save_version(app_id, previous_app.version, previous_app)
@@ -172,6 +185,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         }
 
         let MarketPackageMeta {
+            chrome,
             name,
             description,
             icon,
@@ -184,6 +198,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         let mut next = apply_update_patch(
             &previous,
             MiniAppUpdatePatch {
+                chrome: chrome.clone(),
                 name: Some(name),
                 description: Some(description),
                 icon: Some(icon),
@@ -197,6 +212,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
             now,
         );
         next.i18n = i18n;
+        next.chrome = chrome;
         next.runtime_profile = MiniAppRuntimeProfile::MarketStrict;
         next.runtime.content_hash = miniapp_content_hash(&next);
         let metadata =
@@ -219,6 +235,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         now: i64,
     ) -> MiniAppPortResult<MiniApp> {
         let MarketPackageMeta {
+            chrome,
             name,
             description,
             icon,
@@ -231,6 +248,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         let mut app = build_created_app(
             id,
             MiniAppCreateInput {
+                chrome,
                 name,
                 description,
                 icon,
@@ -296,6 +314,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         let app_id = draft.app_id.clone();
         let draft_root = draft.draft_root.clone();
         let mut manifest = manifest_from_draft(&draft);
+        validate_chrome(draft.app.chrome.as_ref())?;
         let app = apply_draft_source_sync_result(draft.app, compiled_html, now);
         manifest.updated_at = app.updated_at;
         self.save_draft_with_manifest(app_id, draft_root, app, manifest)
@@ -359,6 +378,7 @@ impl<'a> MiniAppRuntimeFacade<'a> {
         baseline: MiniAppCustomizationBaseline,
         now: i64,
     ) -> MiniAppPortResult<MiniApp> {
+        validate_chrome(draft_app.chrome.as_ref())?;
         let app_id = current.id.clone();
         let app = apply_draft_to_active(&current, draft_app, compiled_html, now);
         if app.version != current.version {
@@ -851,6 +871,7 @@ mod tests {
 
     fn imported_app() -> MiniApp {
         MiniApp {
+            chrome: None,
             id: "imported".to_string(),
             name: "Imported".to_string(),
             description: "Imported app".to_string(),
@@ -1023,6 +1044,7 @@ mod tests {
 
     fn market_package_meta(version: u32) -> MarketPackageMeta {
         MarketPackageMeta {
+            chrome: None,
             name: "Market App".to_string(),
             description: "A reviewed app".to_string(),
             icon: "box".to_string(),

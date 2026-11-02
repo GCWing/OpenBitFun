@@ -13,6 +13,10 @@
       "value": "#FFFFFF"
     },
     {
+      "name": "welcome_page_bg",
+      "value": "#FFFFFF"
+    },
+    {
       "name": "page_bg_fade",
       "value": "#00FFFFFF"
     },

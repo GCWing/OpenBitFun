@@ -1,3 +1,5 @@
+import type { GlobalSkillSettings } from '@/infrastructure/config/types';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
@@ -7,11 +9,14 @@ import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer
 import type { SkillInfo, SkillLevel, SkillValidationResult, SkillScanDiagnostic } from '@/infrastructure/config/types';
 import { canDeleteSkill, isOpenBitFunManagedSkill, getSkillOriginSourceId, getSkillSourceLabel } from '@/infrastructure/config/skillSourcePresentation';
 import { useWorkspaceManagerSync } from '@/infrastructure/hooks/useWorkspaceManagerSync';
+import { isRemoteWorkspace as workspaceIsRemote, type WorkspaceInfo } from '@/shared/types';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import type { InstalledFilter } from '../skillsSceneStore';
 
 const log = createLogger('SkillsScene:useInstalledSkills');
+const EMPTY_SKILLS: SkillInfo[] = [];
+const EMPTY_DIAGNOSTICS: SkillScanDiagnostic[] = [];
 
 function installedSkillGroup(skill: SkillInfo): InstalledFilter {
   if (skill.isBuiltin) return 'builtin';
@@ -20,6 +25,8 @@ function installedSkillGroup(skill: SkillInfo): InstalledFilter {
 }
 
 interface UseInstalledSkillsOptions {
+  workspace?: WorkspaceInfo;
+  initialLevel?: SkillLevel;
   searchQuery: string;
   activeFilter: InstalledFilter;
   enabled?: boolean;
@@ -29,24 +36,32 @@ export function useInstalledSkills({
   searchQuery,
   activeFilter,
   enabled = true,
+  workspace: targetWorkspace,
+  initialLevel = 'user',
 }: UseInstalledSkillsOptions) {
   const { t } = useTranslation('scenes/skills');
   const notification = useNotification();
   const { warning: notifyScanWarning, info: notifyScanInfo } = notification;
-  const { workspace, workspacePath, hasWorkspace, isRemoteWorkspace } = useWorkspaceManagerSync();
+  const current = useWorkspaceManagerSync();
+  const workspace = targetWorkspace ?? current.workspace;
+  const workspacePath = targetWorkspace ? targetWorkspace.rootPath : current.workspacePath;
+  const hasWorkspace = targetWorkspace ? true : current.hasWorkspace;
+  const isRemoteWorkspace = targetWorkspace ? workspaceIsRemote(targetWorkspace) : current.isRemoteWorkspace;
 
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [loadedContextKey, setLoadedContextKey] = useState<string | null>(null);
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [diagnostics, setDiagnostics] = useState<SkillScanDiagnostic[]>([]);
-  const [diagnosticsAvailable, setDiagnosticsAvailable] = useState(true);
+  const [loadedSkills, setSkills] = useState<SkillInfo[]>([]);
+  const [loadedDiagnostics, setDiagnostics] = useState<SkillScanDiagnostic[]>([]);
+  const [loadedDiagnosticsAvailable, setDiagnosticsAvailable] = useState(true);
   const [globallyDisabledSkillKeys, setGloballyDisabledSkillKeys] = useState<Set<string>>(new Set());
   const [directManagementSupported, setDirectManagementSupported] = useState(false);
+  /** Version 0: the host lists Skills but refuses every availability change. */
+  const [skillSettingsReadOnly, setSkillSettingsReadOnly] = useState(false);
   const [savingGlobalSkillKey, setSavingGlobalSkillKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [formLevel, setFormLevel] = useState<SkillLevel>('user');
+  const [formLevel, setFormLevel] = useState<SkillLevel>(initialLevel);
   const [formPath, setFormPath] = useState('');
   const [validationResult, setValidationResult] = useState<SkillValidationResult | null>(null);
   const [isValidating, setIsValidating] = useState(false);
@@ -67,6 +82,12 @@ export function useInstalledSkills({
       capabilityRef.current.enabled = enabled;
     }
   }, [capabilityKey, enabled]);
+
+  useLayoutEffect(() => () => {
+    // Standalone dialogs can close while an installation or picker is pending.
+    capabilityRef.current.enabled = false;
+    capabilityRef.current.epoch += 1;
+  }, []);
 
   const currentCapabilityEpoch = useCallback((): number | null => (
     capabilityRef.current.enabled ? capabilityRef.current.epoch : null
@@ -90,7 +111,12 @@ export function useInstalledSkills({
           forceRefresh,
           workspaceId: workspace?.id,
         }),
-        configAPI.getGlobalSkillSettings(isRemoteWorkspace ? undefined : workspace?.id),
+        configAPI.getGlobalSkillSettings(isRemoteWorkspace ? undefined : workspace?.id).catch((error: unknown): GlobalSkillSettings => {
+          // Availability settings are optional here: a host that refuses them can
+          // still list its Skills, only without direct management.
+          if (!classifyPeerHostRefusal(error)) throw error;
+          return { directSkillManagementVersion: 0, globallyDisabledUserSkillKeys: [], globallyDisabledProjectSkillKeys: [] };
+        }),
       ]);
       if (requestId !== loadRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
         return;
@@ -100,13 +126,14 @@ export function useInstalledSkills({
       setDiagnostics(list.diagnostics);
       setDiagnosticsAvailable(list.diagnosticsAvailable);
       setDirectManagementSupported(!isRemoteWorkspace && globalSettings.directSkillManagementVersion === 1);
+      setSkillSettingsReadOnly(globalSettings.directSkillManagementVersion === 0);
       setGloballyDisabledSkillKeys(new Set([
         ...globalSettings.globallyDisabledUserSkillKeys,
         ...(!isRemoteWorkspace ? globalSettings.globallyDisabledProjectSkillKeys ?? [] : []),
       ]));
 
       const diagnosticKeys = list.diagnostics
-        .map(({ sourceId, path, message }) => JSON.stringify([sourceId, path, message]))
+        .map(({ sourceId, path, message, unsupportedField }) => JSON.stringify([sourceId, path, message, unsupportedField]))
         .sort();
       const feedbackKey = JSON.stringify([
         capabilityRef.current.key, list.diagnosticsAvailable, diagnosticKeys,
@@ -114,17 +141,30 @@ export function useInstalledSkills({
       // Gallery focus and tab re-entry refresh the scan; only changed results notify.
       if (lastScanFeedbackKeyRef.current !== feedbackKey) {
         lastScanFeedbackKeyRef.current = feedbackKey;
-        if (list.diagnostics.length > 0) {
+        const failures = list.diagnostics.filter(item => !item.unsupportedField);
+        const unsupported = list.diagnostics.filter(item => item.unsupportedField);
+        if (failures.length > 0) {
           const message = list.skills.length > 0 ? t('list.scanIncomplete') : t('list.loadFailed');
           notifyScanWarning(message, {
             title: t('nav.title'),
             metadata: {
-              diagnostics: list.diagnostics
+              diagnostics: failures
                 .map(({ path, message }) => `${path}: ${message}`)
                 .join('\n'),
             },
           });
-        } else if (!list.diagnosticsAvailable) {
+        }
+        if (unsupported.length > 0) {
+          notifyScanInfo(t('list.unsupportedSkills'), {
+            title: t('nav.title'),
+            metadata: {
+              diagnostics: unsupported
+                .map(item => `${item.path}: ${t('list.unsupportedField', { field: item.unsupportedField })}`)
+                .join('\n'),
+            },
+          });
+        }
+        if (list.diagnostics.length === 0 && !list.diagnosticsAvailable) {
           notifyScanInfo(t('list.diagnosticsUnavailable'), { title: t('nav.title') });
         }
       }
@@ -244,9 +284,9 @@ export function useInstalledSkills({
 
   const resetForm = useCallback(() => {
     setFormPath('');
-    setFormLevel('user');
+    setFormLevel(initialLevel);
     setValidationResult(null);
-  }, []);
+  }, [initialLevel]);
 
   const handleAdd = useCallback(async () => {
     const capabilityEpoch = currentCapabilityEpoch();
@@ -342,8 +382,9 @@ export function useInstalledSkills({
   }, [capabilityIsCurrent, currentCapabilityEpoch, loadSkills, notification, t, workspace?.id]);
 
   const canToggleSkill = useCallback((skill: SkillInfo) => (
-    directManagementSupported || (skill.level === 'user' && isOpenBitFunManagedSkill(skill))
-  ), [directManagementSupported]);
+    !skillSettingsReadOnly
+      && (directManagementSupported || (skill.level === 'user' && isOpenBitFunManagedSkill(skill)))
+  ), [directManagementSupported, skillSettingsReadOnly]);
 
   const handleGlobalSkillToggle = useCallback(async (skill: SkillInfo, enabled: boolean) => {
     const capabilityEpoch = currentCapabilityEpoch();
@@ -399,6 +440,11 @@ export function useInstalledSkills({
     t,
     workspace?.id,
   ]);
+
+  const catalogCurrent = enabled && loadedContextKey === capabilityKey;
+  const skills = catalogCurrent ? loadedSkills : EMPTY_SKILLS;
+  const diagnostics = catalogCurrent ? loadedDiagnostics : EMPTY_DIAGNOSTICS;
+  const diagnosticsAvailable = !catalogCurrent || loadedDiagnosticsAvailable;
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 

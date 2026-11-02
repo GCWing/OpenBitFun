@@ -30,8 +30,9 @@ Two details matter here:
 - `collapsed tool listing`, `skill listing`, `agent listing`, and `user context`
   are prepended reminders injected immediately before the first non-system
   conversation message
-- `tool definitions` and `collapsed tool listing` are currently rebuilt every
-  turn; they are not restored from a dedicated session-level cache artifact
+- `tool definitions` are rebuilt every turn and are not restored from a
+  dedicated session-level cache artifact; the deferred catalog inside the
+  `collapsed tool listing` follows the session's listing baseline snapshot
 
 Relevant code:
 
@@ -137,24 +138,43 @@ Why this layer is different:
 
 What it is:
 
-- a prompt-visible reminder describing collapsed tools
+- a prompt-visible reminder with the tool-calling guide, the direct tool names,
+  and the deferred tool catalog that `GetToolSpec` / `CallDeferredTool` serve
 
 How it is reused:
 
-- rebuilt each turn/request from the current prompt-builder context
+- the deferred catalog is part of `TurnSkillAgentSnapshot.deferred_tools` and
+  follows the same baseline + diff model as skill/agent listings: the head
+  renders the baseline catalog in baseline order, and later additions,
+  description changes, and removals (for example an MCP server that connects
+  after turn 0 or reconnects with a different tool list) are appended as a
+  `# Deferred Tool Listing Update` diff reminder
+- deferred tools are invoked through the stable `CallDeferredTool` gateway, so
+  catalog changes never touch the tool definitions payload
+- the direct tool names follow the current turn's tool definitions, which
+  already change the request at the tools layer when they differ
+- the reminder is rendered only while the current agent exposes `GetToolSpec`
 - ordered before skill/agent listings to keep the reminder prefix stable
 
 Where it is persisted:
 
-- nowhere as a dedicated snapshot or cache file
+- inside the per-turn skill-agent snapshots and the fork baseline override
+- snapshots written before deferred tools were tracked have no
+  `deferred_tools` field; a session whose baseline lacks it (or lists no
+  deferred tools) keeps rendering the current catalog each turn until a
+  baseline rebuild adopts a tracked snapshot
+- deferred-tool diff reminders reuse the `skill_listing_diff` reminder kind,
+  because reminder kinds are persisted and older builds reject unknown kinds
 
 What usually preserves reuse:
 
-- keeping the collapsed-tool surface stable
+- appending deferred-catalog diffs instead of re-rendering the catalog
+- catalog reordering alone, which produces no diff
 
 What usually breaks reuse:
 
-- changing which tools are collapsed or how that collapsed listing renders
+- changing the agent's direct tool set, which also changes tool definitions
+- a listing baseline rebuild, which re-renders the head from the latest snapshot
 
 ### 4. Skill listing and agent listing
 
@@ -204,8 +224,11 @@ What usually breaks reuse:
 Special rewrite path:
 
 - when OpenBitFun rebuilds the listing baseline to the latest snapshot, it also
-  removes old skill/agent diff reminders from live context and from pre-rebuild
-  persisted context snapshots
+  removes old skill/agent/deferred-tool diff reminders from live context and
+  from pre-rebuild persisted context snapshots
+- a turn also rebuilds the baseline when the baseline tracks deferred tools but
+  the previous snapshot does not (written by a build without deferred-tool
+  tracking), because the deferred changes in between are unknown
 - this is the main non-compression exception to the normal append-only message
   pattern
 
@@ -279,6 +302,13 @@ Important exceptions:
   context and older persisted context snapshots
 - context compression intentionally rewrites conversation history into a shorter
   summary form, then invalidates prompt cache and starts a new stable prefix
+- image payloads are elided from older image-bearing messages at send time.
+  The latest two image-bearing messages always keep pixels; older ones are
+  elided four at a time (`MIN_RETAINED_IMAGE_MESSAGES`,
+  `IMAGE_ELISION_BATCH` in `execution_engine.rs`). Each elision rewrites an
+  already-sent message and invalidates the provider cache from that message
+  onward, so it must stay batched rather than sliding by one message per new
+  image. Model-pool image requirements use the same retained window.
 
 ## Session Storage Layout
 
@@ -310,12 +340,20 @@ If you want to preserve prefix cache reuse:
 2. Keep the user-context policy scope stable.
 3. Avoid changing the effective tool manifest unless the feature really needs
    it.
-4. Treat skill/agent listings as snapshot + diff state, not as text to rebuild
-   from scratch every turn.
+4. Treat skill/agent listings and the deferred tool catalog as snapshot + diff
+   state, not as text to rebuild from scratch every turn.
 5. When creating derived sessions, clone prompt cache and seed listing baselines
    from the parent session.
 6. Prefer append-only history updates; do not rewrite already-sent prefixes in
    normal turn flow.
+7. Side requests that extend a turn's prefix (prompt suggestion, compression,
+   finalize) must keep the turn's model, tools, and reasoning/thinking
+   settings. Providers render reasoning settings into the prompt itself
+   (DeepSeek at token 0; Anthropic invalidates the message cache when thinking
+   changes), so changing them is a full miss, not a cheaper request.
+8. Do not insert `system`-role messages after the start of history. Some
+   chat templates (for example DeepSeek V4) hoist every system message to the
+   front, which rewrites the head; use user-role reminders at the tail.
 
 If you intentionally need to reset or rewrite the prefix:
 

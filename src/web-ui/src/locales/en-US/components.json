@@ -51,6 +51,9 @@
     "copyLink": "Copy link",
     "copyFilePath": "Copy file path"
   },
+  "imageLightbox": {
+    "label": "Image preview"
+  },
   "mermaidBlock": {
     "renderFailed": "Diagram render failed",
     "codeIncomplete": "Code incomplete, waiting for more content...",
@@ -326,6 +329,7 @@
     }
   },
   "tooltip": {
+    "openDetails": "Open details",
     "copy": "Copy",
     "copied": "Copied",
     "close": "Close",
@@ -334,6 +338,11 @@
   },
   "tabs": {
     "close": "Close",
+    "closeBtwTitle": "Close side conversation?",
+    "saveBtwAsFork": "Save as fork",
+    "saveBtwFailed": "Could not save. The side thread is still open; try again.",
+    "confirmCloseBtw": "Closing discards the conversation permanently.",
+    "closeBtwFailed": "Could not close the side conversation. The tab is still open; please try again.",
     "popOut": "Pop out as scene",
     "closeOthers": "Close Others",
     "closeAll": "Close All",
@@ -540,6 +549,13 @@
     "devWingExpand": "Expand dev tools"
   },
   "canvas": {
+    "resizePanes": "Resize panes",
+    "chatPane": "Chat",
+    "contentPane": "Content",
+    "swapPanes": "Swap panes",
+    "hidePanel": "Hide panel",
+    "maximizePanel": "Maximize panel",
+    "restorePanel": "Restore panel",
     "noContentOpen": "No content open",
     "filesCount": "{{count}} files",
     "searchPlaceholder": "Search file name or path...",
@@ -568,7 +584,15 @@
     "dropRight": "Right",
     "dropTop": "Top",
     "dropBottom": "Bottom",
-    "dropCenter": "Drop"
+    "dropCenter": "Drop",
+    "empty": {
+      "title": "Nothing open",
+      "workspaceUnavailable": "Workspace disconnected. Please reconnect.",
+      "selectWorkspace": "Select a workspace first.",
+      "browseFiles": "Browse files",
+      "newTerminal": "New terminal",
+      "reopen": "Reopen {{title}}"
+    }
   },
   "flexiblePanel": {
     "empty": {
@@ -638,5 +662,60 @@
     "unsavedMessage": "Save changes to “{{title}}” before closing?",
     "closeOtherContent": "Close other content tabs",
     "closeAllContent": "Close all content tabs"
+  },
+  "desktopCard": {
+    "loading": "Loading…",
+    "loadFailed": "This card could not be loaded.",
+    "unsupportedTemplate": "This card needs a newer version of OpenBitFun.",
+    "updated": "Updated {{time}}",
+    "updatedWithWarning": "Updated {{time}}, some data may be missing",
+    "refreshFailed": "Refresh failed: {{error}}",
+    "menu": {
+      "more": "More actions",
+      "refresh": "Refresh",
+      "openLink": "Open link",
+      "openSession": "Open source session",
+      "alwaysOnTop": "Keep on top",
+      "hide": "Hide card",
+      "delete": "Delete card"
+    },
+    "deleteConfirm": {
+      "title": "Delete card",
+      "message": "Delete this card? This cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "countdown": {
+      "due": "Time's up",
+      "days": "{{count}}d",
+      "dismiss": "Dismiss"
+    },
+    "checklist": {
+      "empty": "No items"
+    },
+    "chart": {
+      "empty": "No data to chart yet",
+      "other": "Other",
+      "remaining": "Remaining",
+      "ofTotal": "of {{total}}",
+      "changeSince": "{{change}} since {{label}}",
+      "range": "{{min}} – {{max}}"
+    },
+    "cron": {
+      "failed": "Could not load the scheduled job.",
+      "missing": "This scheduled job no longer exists.",
+      "enabled": "Active",
+      "paused": "Paused",
+      "nextRun": "Next run",
+      "lastRun": "Last run",
+      "neverRun": "Not run yet",
+      "status": {
+        "ok": "Succeeded",
+        "error": "$t(shared:statuses.failed)",
+        "running": "$t(shared:statuses.running)",
+        "queued": "Queued",
+        "cancelled": "$t(shared:statuses.cancelled)"
+      }
+    }
   }
 }

@@ -4,7 +4,7 @@ Scope: this guide applies to `src/crates/execution/tool-execution`.
 
 `tool-runtime` owns low-level reusable tool execution helpers such as filesystem
 and search utilities, provider-neutral pipeline planning/retry/token policy,
-ExecCommand presentation/control facts, Computer Use loop/retry policies,
+ExecCommand presentation/control facts, Computer Use evidence/read-retry policies,
 prompt-safe tool context facts/custom-data materialization and extension merge,
 background exec-output capture state, and provider-neutral Web tool result
 processing. It is not the product tool registry, permission model, or
@@ -32,13 +32,32 @@ agent-facing tool surface.
 - Glob and ignore matching compile POSIX patterns to byte regexes without host
   path normalization. The shared `regex` dependency belongs to the baseline
   search utilities; HTML extractors remain optional under `web-readable`.
+- `document-read` owns offline byte-to-Markdown extraction. Non-PDF formats use
+  anydoc; PDFs use its existing pdf-inspector backend's page API so readable
+  pages survive alongside explicit OCR gaps. Keep source-page coverage separate
+  from Markdown line-window truncation. `pages` selects original PDF pages,
+  PPTX slides, XLSX visible sheets, or explicitly synthetic text chunks for
+  reflowable/legacy formats. Office selection filters the in-memory OOXML
+  manifest while preserving package resources; never infer slides from headings
+  or claim that Word text chunks are printed pages. Keep normalized selections
+  in cache keys and apply line windows within the same selected representation.
+  Whole-source transfer and parser limits still apply. Dependencies remain optional, with
+  OCR/network features disabled; workspace byte IO and model-facing guidance
+  stay with their existing providers and Core tool owner.
+- Local Glob uses the parallel `ignore` walker without an `rg` subprocess.
+  Keep matching after ignore filtering, include `.rgignore` when ignore rules
+  are enabled, and merge bounded worker results with exact totals and stable
+  depth/path selection. Remote shell and workspace-IO Glob paths remain separate.
 - Background exec-output and ExecCommand presentation helpers may own retained
   output buffers, cursors, lifecycle metadata, assistant response text, and
   provider-neutral completion shapes; concrete local/remote process managers
   stay in services or core adapters.
-- Computer Use helpers here may own provider-neutral loop detection, screenshot
-  hash, verification, and retry policy. Host APIs, permissions, captures, OCR,
-  accessibility, and OS input remain in host adapters.
+- Computer Use helpers own bounded action evidence, full-buffer screenshot
+  fingerprints and read-only retry policy. Repeated action names or unchanged
+  pixels do not prove a loop; hash changes do not verify task completion. Errors
+  cannot prove that mutation input was never submitted, so they must not authorize
+  automatic input replay. Host APIs, permissions, captures, OCR, accessibility,
+  and OS input remain in host adapters.
 - Provider-neutral contracts belong in `tool-contracts` (`openbitfun-agent-tools`);
   product provider grouping belongs in `tool-provider-groups`
   (`openbitfun-tool-packs`).
@@ -51,6 +70,7 @@ agent-facing tool surface.
 
 ```bash
 cargo test -p tool-runtime
+cargo test -p tool-runtime --no-default-features --lib computer_use
 cargo test -p tool-runtime --features shell-analysis --lib shell_analysis
 cargo test -p tool-runtime --lib fs::read_file::tests::
 cargo test -p tool-runtime --no-default-features --lib search::
@@ -59,7 +79,7 @@ cargo test -p tool-runtime --no-default-features --test tool_io_contracts
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib grep_tool::tests::workspace_io
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib glob_tool::tests
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib ls_tool::tests
-cargo test -p tool-runtime --features document-read fs::document
+cargo test -p tool-runtime --features document-read --lib fs::document
 cargo test -p tool-runtime --features web-readable web
 node scripts/check-core-boundaries.mjs
 ```

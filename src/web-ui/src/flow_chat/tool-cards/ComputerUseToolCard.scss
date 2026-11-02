@@ -1,52 +1,48 @@
-.computer-use-tool-card__action-code {
-  font-size: var(--openbitfun-type-meta-font-size);
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 88%, transparent);
-  color: var(--openbitfun-color-content-secondary);
-  white-space: nowrap;
-}
-
 .computer-use-tool-card__expanded {
+  container: computer-fields / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--openbitfun-space-2);
 }
 
 .computer-use-tool-card__row {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--openbitfun-control-tool-card-field-label-width) minmax(0, 1fr);
   align-items: baseline;
-  gap: 8px;
-  font-size: var(--openbitfun-type-label-sm-font-size);
+  gap: var(--openbitfun-space-2);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-md-line-height);
   color: var(--openbitfun-color-content-secondary);
+  overflow-wrap: anywhere;
 
   code {
-    font-size: var(--openbitfun-type-meta-font-size);
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 88%, transparent);
+    min-inline-size: 0;
+    font-family: var(--openbitfun-type-flow-code-font-family);
+    font-size: var(--openbitfun-type-flow-code-font-size);
+    white-space: pre-wrap;
   }
 }
 
 .computer-use-tool-card__row-label {
   flex-shrink: 0;
-  min-width: 64px;
+  min-width: 0;
   color: var(--openbitfun-color-content-muted);
 }
 
 .computer-use-tool-card__loop-warning {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  gap: var(--openbitfun-space-2);
+  padding: var(--openbitfun-space-2);
+  border-radius: var(--openbitfun-radius-sm);
+  overflow-wrap: anywhere;
   background: var(--openbitfun-color-status-warning-surface);
   color: var(--openbitfun-color-status-warning-content);
   font-size: var(--openbitfun-type-label-sm-font-size);
 
-  svg {
+  > :is(svg, [data-openbitfun-component='icon']) {
     flex-shrink: 0;
-    margin-top: 2px;
+    block-size: 1lh;
     color: var(--openbitfun-color-status-warning-emphasis);
   }
 }
@@ -58,7 +54,7 @@
 .computer-use-tool-card__permission-denied {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--openbitfun-space-3);
   font-size: var(--openbitfun-type-label-sm-font-size);
   color: var(--openbitfun-color-content-secondary);
 
@@ -70,4 +66,8 @@
 
 .computer-use-tool-card__settings-button {
   align-self: flex-start;
+}
+
+@container computer-fields (max-width: 22rem) {
+  .computer-use-tool-card__row { grid-template-columns: minmax(0, 1fr); gap: var(--openbitfun-space-1); }
 }

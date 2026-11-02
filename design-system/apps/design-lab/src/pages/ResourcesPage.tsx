@@ -1,8 +1,6 @@
 import { Icon as CatalogIcon, type IconName } from "@openbitfun/ui";
 import { BookOpen, Boxes, FileCode2, FileText, ShieldCheck } from "lucide-react";
-import { componentRegistry } from "@openbitfun/ui/registry";
 import { useI18n, type MessageKey } from "../i18n";
-import { editableTokenCatalog } from "../token-editor/catalog";
 
 const repositoryBase = "https://github.com/GCWing/OpenBitFun/blob/main/design-system";
 
@@ -56,23 +54,15 @@ export function ResourcesPage() {
   return (
     <main className="lab-page lab-page--resources" id="resources">
       <header className="page-heading">
-        <span className="page-kicker">{t("resources.kicker")}</span>
         <h1>{t("resources.title")}</h1>
-        <p>{t("resources.description")}</p>
       </header>
-
-      <section className="resource-fact-strip" aria-label={t("resources.factsLabel")}>
-        <span><strong>{componentRegistry.length}</strong>{t("resources.componentsFact")}</span>
-        <span><strong>{editableTokenCatalog.length}</strong>{t("resources.tokensFact")}</span>
-        <span><strong>3</strong>{t("resources.packagesFact")}</span>
-      </section>
 
       <section className="resource-grid" aria-label={t("resources.libraryLabel")}>
         {resources.map((resource) => {
           const Icon = resource.icon;
           return (
             <a href={resource.href} key={resource.title} rel="noreferrer" target="_blank">
-              <span className="resource-card-icon">{typeof Icon === "string" ? <CatalogIcon name={Icon} size="lg" style={{ width: 19, height: 19 }} /> : <Icon aria-hidden="true" size={19} />}</span>
+              <span className="resource-card-icon">{typeof Icon === "string" ? <CatalogIcon name={Icon} size="lg" /> : <CatalogIcon glyph={Icon} size="lg" />}</span>
               <span>
                 <strong>{t(resource.title)}</strong>
                 <small>{t(resource.description)}</small>
@@ -83,13 +73,6 @@ export function ResourcesPage() {
         })}
       </section>
 
-      <section className="resource-boundary-panel">
-        <div>
-          <span className="page-kicker">{t("resources.boundaryKicker")}</span>
-          <h2>{t("resources.boundaryTitle")}</h2>
-        </div>
-        <p>{t("resources.boundaryDescription")}</p>
-      </section>
     </main>
   );
 }

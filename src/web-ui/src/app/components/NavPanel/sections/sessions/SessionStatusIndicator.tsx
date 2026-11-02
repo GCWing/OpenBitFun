@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { Icon } from '@openbitfun/ui';
 import { CircleAlert, CircleCheck, CirclePause, CircleStop, CloudOff, Hand, Loader2, MessageCircleQuestion } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
@@ -17,7 +17,18 @@ const presentation = {
   syncing: { glyph: CloudOff, tone: 'secondary', label: 'nav.sessions.status.syncing' },
 } as const;
 
-export const SessionStatusIndicator = memo(function SessionStatusIndicator({ sessionId }: { sessionId: string }) {
+export const SessionStatusIndicator = memo(function SessionStatusIndicator({
+  sessionId,
+  idleFallback,
+}: {
+  sessionId: string;
+  /**
+   * Rendered in the same trailing cell while the session has nothing to report,
+   * so a second row mark can sit on the row's right edge without claiming a
+   * second cell. The cell still yields to the row menu on hover or focus.
+   */
+  idleFallback?: ReactNode;
+}) {
   const { t } = useI18n('common');
   const status = useSessionNavStatus(sessionId);
   const appearance = status.kind === 'idle' ? null : presentation[status.kind];
@@ -26,6 +37,14 @@ export const SessionStatusIndicator = memo(function SessionStatusIndicator({ ses
       ? t('nav.sessions.status.approvalCount', { count: status.pendingCount })
       : t(appearance.label)
     : '';
+
+  if (!appearance && idleFallback) {
+    return (
+      <span className="session-status-indicator openbitfun-nav-panel__inline-item-status">
+        {idleFallback}
+      </span>
+    );
+  }
 
   return appearance ? (
     <span

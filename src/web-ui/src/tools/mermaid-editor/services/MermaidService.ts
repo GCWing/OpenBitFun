@@ -4,15 +4,11 @@
  */
 
 import { getMermaidConfig } from '../appearance/mermaidAppearance';
+import { createModuleLoader } from '@/shared/utils/moduleLoader';
 
 type MermaidRuntime = typeof import('mermaid')['default'];
 
-let mermaidRuntimePromise: Promise<MermaidRuntime> | null = null;
-
-function loadMermaidRuntime(): Promise<MermaidRuntime> {
-  mermaidRuntimePromise ??= import('mermaid').then((module) => module.default);
-  return mermaidRuntimePromise;
-}
+const loadMermaidRuntime = createModuleLoader(() => import('mermaid').then(module => module.default));
 
 export class MermaidService {
   private static instance: MermaidService;

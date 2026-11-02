@@ -354,19 +354,10 @@ impl<'a> WorkspaceInstructionResolver<'a> {
     }
 
     async fn resolve_sources(mut self) -> Result<Self, String> {
-        if let Some(path) = self.first_existing(AGENTS_INSTRUCTION_FILE_GROUP).await? {
-            self.append_source_tree(path, false).await?;
+        self.resolve_agents_or_claude_sources().await?;
+        if !self.files.is_empty() {
+            return Ok(self);
         }
-        self.ecosystem_id = "claude-code";
-        if let Some(path) = self.first_existing(CLAUDE_INSTRUCTION_FILE_GROUP).await? {
-            self.append_source_tree(path, true).await?;
-        }
-        if self.io.is_file(CLAUDE_LOCAL_INSTRUCTION_FILE).await? {
-            self.append_source_tree(CLAUDE_LOCAL_INSTRUCTION_FILE.to_string(), true)
-                .await?;
-        }
-
-        self.append_claude_rules(false).await?;
 
         self.ecosystem_id = "opencode";
         for config_path in OPENCODE_PROJECT_CONFIG_FILES {
@@ -377,12 +368,38 @@ impl<'a> WorkspaceInstructionResolver<'a> {
         Ok(self)
     }
 
-    async fn resolve_conditional(mut self) -> Result<Vec<WorkspaceInstructionFile>, String> {
-        self.append_claude_rules(true).await?;
-        Ok(self.files)
+    async fn resolve_agents_or_claude_sources(&mut self) -> Result<(), String> {
+        if let Some((path, content)) = self.first_non_empty(AGENTS_INSTRUCTION_FILE_GROUP).await? {
+            self.append_source_tree_with_content(path, false, Some(content))
+                .await?;
+            return Ok(());
+        }
+        self.ecosystem_id = "claude-code";
+        if let Some((path, content)) = self.first_non_empty(CLAUDE_INSTRUCTION_FILE_GROUP).await? {
+            self.append_source_tree_with_content(path, true, Some(content))
+                .await?;
+        }
+        if self.io.is_file(CLAUDE_LOCAL_INSTRUCTION_FILE).await? {
+            self.append_source_tree(CLAUDE_LOCAL_INSTRUCTION_FILE.to_string(), true)
+                .await?;
+        }
+
+        self.append_claude_rules().await
     }
 
-    async fn append_claude_rules(&mut self, conditional_only: bool) -> Result<(), String> {
+    async fn resolve_conditional(mut self) -> Result<Vec<WorkspaceInstructionFile>, String> {
+        // Use the startup family selection here too, so a successful Read
+        // cannot reactivate Claude rules suppressed by AGENTS instructions.
+        // OpenCode has no conditional rules and need not be discovered here.
+        self.resolve_agents_or_claude_sources().await?;
+        Ok(self
+            .files
+            .into_iter()
+            .filter(|file| !file.path_patterns.is_empty())
+            .collect())
+    }
+
+    async fn append_claude_rules(&mut self) -> Result<(), String> {
         self.ecosystem_id = "claude-code";
         let rules = self.collect_files(CLAUDE_RULES_DIRECTORY).await?;
         for rule in rules
@@ -396,12 +413,9 @@ impl<'a> WorkspaceInstructionResolver<'a> {
                 continue;
             };
             match parse_instruction_path_scope(&content) {
-                Ok(InstructionPathScope::Unscoped) if !conditional_only => {
+                Ok(InstructionPathScope::Unscoped) => {
                     self.append_source_tree_with_content(rule, true, Some(content))
                         .await?;
-                }
-                Ok(InstructionPathScope::Unscoped) => {
-                    self.seen.insert(rule);
                 }
                 Ok(InstructionPathScope::Scoped { paths, body }) => {
                     self.seen.insert(rule.clone());
@@ -425,10 +439,15 @@ impl<'a> WorkspaceInstructionResolver<'a> {
         Ok(())
     }
 
-    async fn first_existing(&self, candidates: &[&str]) -> Result<Option<String>, String> {
+    async fn first_non_empty(
+        &mut self,
+        candidates: &[&str],
+    ) -> Result<Option<(String, String)>, String> {
         for candidate in candidates {
             if self.io.is_file(candidate).await? {
-                return Ok(Some((*candidate).to_string()));
+                if let Some(content) = self.read_instruction_text(candidate).await? {
+                    return Ok(Some(((*candidate).to_string(), content)));
+                }
             }
         }
         Ok(None)
@@ -466,6 +485,9 @@ impl<'a> WorkspaceInstructionResolver<'a> {
             }
             return Ok(None);
         };
+        if content.trim().is_empty() {
+            return Ok(None);
+        }
         if self.total_instruction_bytes.saturating_add(content.len()) > MAX_TOTAL_INSTRUCTION_BYTES
         {
             self.total_instruction_bytes = MAX_TOTAL_INSTRUCTION_BYTES;
@@ -580,6 +602,9 @@ impl<'a> WorkspaceInstructionResolver<'a> {
             );
             return Ok(());
         };
+        if content.trim().is_empty() {
+            return Ok(());
+        }
         let value = match serde_json::from_str::<Value>(&strip_jsonc(&content)) {
             Ok(value) => value,
             Err(error) => {

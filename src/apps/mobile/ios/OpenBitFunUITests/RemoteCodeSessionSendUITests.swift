@@ -948,6 +948,62 @@ private extension XCUIApplication {
 }
 
 final class StreamingPresentationUITests: XCTestCase {
+    func testMessageTimesAndQuietFailures() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--streaming-regression", "--message-metadata-regression"]
+        app.launch()
+        let timestamps = app.staticTexts.matching(identifier: "chat.messageTimestamp")
+        XCTAssertTrue(timestamps.firstMatch.waitForExistence(timeout: 15))
+        XCTAssertEqual(timestamps.count, 2)
+        let summary = app.buttons["tool.summary.read"]
+        XCTAssertTrue(summary.exists)
+        XCTAssertFalse(app.buttons["tool.toggle.fetch"].exists)
+        summary.tap()
+        app.buttons["tool.toggle.fetch"].tap()
+        XCTAssertTrue(app.staticTexts["HTTP 404"].waitForExistence(timeout: 3))
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "Message times and expandable tool failure"
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
+    func testCollapsedDraftKeepsTextAndShowsVoiceOnlyWhenExpanded() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--composer-draft-preview"]
+        app.launch()
+        let input = app.textFields["composer.input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 15))
+        let original = input.value as? String
+        XCTAssertTrue((original?.count ?? 0) > 300)
+        let voice = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "语音输入", "Voice input"))
+        XCTAssertEqual(voice.count, 0)
+        let collapsed = XCTAttachment(screenshot: app.screenshot())
+        collapsed.name = "Collapsed long draft"
+        collapsed.lifetime = .keepAlways
+        add(collapsed)
+        input.tap()
+        XCTAssertTrue(voice.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertEqual(input.value as? String, original)
+    }
+
+    func testComposerRoleRowsSelectSemanticModel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--composer-model-picker"]
+        app.launch()
+        let primary = app.buttons["composer.model.primary"]
+        let fast = app.buttons["composer.model.fast"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 15))
+        XCTAssertTrue(fast.exists)
+        let menu = XCTAttachment(screenshot: app.screenshot())
+        menu.name = "Model role picker"
+        menu.lifetime = .keepAlways
+        add(menu)
+        fast.tap()
+        let control = app.buttons["composer.modelControl"]
+        XCTAssertTrue(control.waitForExistence(timeout: 3))
+        XCTAssertTrue(["快速模型", "Fast model"].contains(control.value as? String ?? ""))
+    }
+
     func testDirectoryOpenRoutesBeforeAuthorityIsReady() {
         let app = XCUIApplication()
         app.launchArguments = ["--streaming-regression", "--fixture-shell", "--open-loading-regression", "--status-regression"]
@@ -1103,6 +1159,29 @@ final class StreamingPresentationUITests: XCTestCase {
     }
 
     override func setUpWithError() throws { continueAfterFailure = false }
+
+    func testHistoryPageKeepsPositionAndDoesNotQueueMoreDrags() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--streaming-regression", "--history-pagination-regression"]
+        app.launch()
+        XCTAssertTrue(app.buttons["fixture.shortHistory"].waitForExistence(timeout: 15))
+        app.buttons["fixture.shortHistory"].tap()
+        let scroll = app.scrollViews.firstMatch
+        // Multiple gestures while the page is in flight must not queue work.
+        for _ in 0..<3 { scroll.swipeDown() }
+        let requests = app.staticTexts["fixture.historyRequests"]
+        XCTAssertEqual(requests.label, "History requests: 1")
+        let row = app.staticTexts["History row 0"]
+        XCTAssertTrue(row.exists)
+        let top = row.frame.minY
+        app.buttons["fixture.deliverHistory"].tap()
+        let settled = NSPredicate { _, _ in app.buttons["timeline.loadOlder"].isEnabled }
+        expectation(for: settled, evaluatedWith: nil)
+        waitForExpectations(timeout: 5)
+        XCTAssertEqual(row.frame.minY, top, accuracy: 4, "Prepending must preserve the existing visible row")
+        XCTAssertEqual(requests.label, "History requests: 1", "Layout must not drain another page")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
+    }
 
     func testPrependingHistoryPreservesVisibleRowOffset() {
         let app = XCUIApplication()

@@ -210,3 +210,18 @@ The recent-home brand and headline are centered above the leading-aligned sessio
 HarmonyOS welcome occupies the full window when signed out without an active remote target. It suppresses the workspace sidebar without changing retained selection. At 600vp and above, the brand, phrase and constrained action group are centered without the compact dock; smaller windows retain the stacked dock. The welcome mark is 156vp compact and 184vp wide, using the diagonal sweep. Size changes update this layout in place.
 
 For HarmonyOS welcome windows at least 840vp wide with width/height at least 1.2, a centered composition capped at 1000vp places the brand and actions side by side. This follows available window geometry rather than a device model or fold count.
+
+### Authenticated cold-start home transition
+
+After the persisted first-install reveal has already been claimed, an
+authenticated process launch uses `cold_start_home` (2400 ms). The home shell
+mounts immediately so restoration and remote loading continue underneath the
+cover. The contour mark starts at 56 logical units, then moves to the mark's
+measured native bounds during 16%–68% of the timeline; the cover fades from
+68%–100%. Each platform measures the actual compact or wide home layout, so
+safe-area insets, split windows, and foldable posture changes do not rely on a
+fixed coordinate. Signed-out restore, manual login after launch, activity or
+scene recreation, foreground resume, and a second root do not claim the
+transition. If the home mark is unavailable, the mark remains centered and the
+cover still fades on the same clock. Reduced motion finishes immediately, and
+accessibility and pointer interaction stay with the cover until it completes.

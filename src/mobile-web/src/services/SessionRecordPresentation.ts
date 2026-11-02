@@ -9,6 +9,28 @@ export interface MobileStoredTurn {
 }
 interface RichText { id: string; content: string; orderIndex?: number; timestamp?: number; status?: string; subagentSessionId?: string }
 interface RichTool { id: string; toolName: string; orderIndex?: number; status?: string; startTime?: number; durationMs?: number; subagentSessionId?: string; toolCall: {id:string;input:unknown}; toolResult?:{result:unknown;success:boolean;error?:string} }
+
+/**
+ * Streamed turn records carry user attachment pixels in
+ * `userMessage.metadata.images`; the timeline and rollback/edit drafts read
+ * them from `ChatMessage.images`. Keep entries whose pixels arrived so a
+ * rollback never re-sends a blank frame.
+ */
+function presentUserMessageImages(metadata: unknown): ChatMessage['images'] {
+  if (!metadata || typeof metadata !== 'object') return undefined;
+  const images = (metadata as { images?: unknown }).images;
+  if (!Array.isArray(images)) return undefined;
+  const presented = images.flatMap((image) => {
+    if (!image || typeof image !== 'object') return [];
+    const record = image as { name?: unknown; data_url?: unknown };
+    const dataUrl = typeof record.data_url === 'string' ? record.data_url.trim() : '';
+    if (!dataUrl) return [];
+    const name = typeof record.name === 'string' && record.name.trim() ? record.name : 'image';
+    return [{ name, data_url: dataUrl }];
+  });
+  return presented.length > 0 ? presented : undefined;
+}
+
 export function presentSessionTurn(turn: MobileStoredTurn): ChatMessage[] {
   const items: ChatMessageItem[] = [...turn.modelRounds].sort((a,b)=>a.roundIndex-b.roundIndex).flatMap(round => {
     const ordered = [
@@ -25,7 +47,7 @@ export function presentSessionTurn(turn: MobileStoredTurn): ChatMessage[] {
     });
   });
   return [
-    {id:turn.userMessage.id,turn_id:turn.turnId,role:'user',content:turn.userMessage.content,timestamp:String(turn.userMessage.timestamp),metadata:turn.userMessage.metadata},
+    {id:turn.userMessage.id,turn_id:turn.turnId,turn_index:turn.turnIndex,role:'user',content:turn.userMessage.content,timestamp:String(turn.userMessage.timestamp),metadata:turn.userMessage.metadata,images:presentUserMessageImages(turn.userMessage.metadata)},
     {id:`${turn.turnId}_assistant`,turn_id:turn.turnId,role:'assistant',content:items.filter(i=>i.type==='text').map(i=>i.content??'').join(''),thinking:items.filter(i=>i.type==='thinking').map(i=>i.content??'').join(''),items,tools:items.flatMap(i=>i.tool?[i.tool]:[]),status:turn.status==='inprogress'?'streaming':turn.status,error:turn.error,timestamp:String(turn.timestamp)},
   ];
 }

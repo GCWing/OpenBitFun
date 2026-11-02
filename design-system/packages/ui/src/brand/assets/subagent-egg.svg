@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 256 256" aria-hidden="true">
+  <g data-hatch-part="egg">
+    <g data-hatch-part="peek">
+      <path d="M44 142C44 99 82 78 128 78C174 78 212 99 212 142V182H44Z" fill="#F4D57A"/>
+      <g data-hatch-part="eyes" fill="#714B30">
+        <ellipse cx="103" cy="150" rx="9" ry="13"/>
+        <ellipse cx="153" cy="150" rx="9" ry="13"/>
+      </g>
+    </g>
+    <g data-hatch-part="lid">
+      <rect x="119" y="42" width="18" height="34" rx="9" fill="#D5AB57"/>
+      <circle cx="128" cy="35" r="19" fill="#B67D43"/>
+      <path d="M34 140C40 95 74 62 128 62C182 62 216 95 222 140L197 132L176 145L151 131L128 143L105 131L80 145L59 132Z" fill="#F9E9BD"/>
+      <path d="M64 110C74 95 87 84 102 81" fill="none" stroke="#FFF8E7" stroke-width="9" stroke-linecap="round"/>
+    </g>
+    <g data-hatch-part="shell-left">
+      <path d="M30 157L55 165L78 151L103 166L128 153V238H90C52 238 30 210 30 172Z" fill="#F9E9BD"/>
+      <path d="M30 174C34 211 56 224 90 224H128V238H90C52 238 30 210 30 174Z" fill="#E5CE96"/>
+    </g>
+    <g data-hatch-part="shell-right">
+      <path d="M128 153L153 166L178 151L201 165L226 157V172C226 210 204 238 166 238H128Z" fill="#F9E9BD"/>
+      <path d="M226 174C222 211 200 224 166 224H128V238H166C204 238 226 210 226 174Z" fill="#E5CE96"/>
+    </g>
+  </g>
+</svg>

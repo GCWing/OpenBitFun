@@ -1,35 +1,38 @@
 import React from 'react';
 import { Minus } from 'lucide-react';
 import { CodeReviewReportExportActions } from '../../tool-cards/CodeReviewReportExportActions';
+import { Icon, type IconSource } from '@openbitfun/ui';
 
 type ExportableReviewData = React.ComponentProps<typeof CodeReviewReportExportActions>['reviewData'];
 
 interface ReviewActionHeaderProps {
   reviewData?: ExportableReviewData | null;
-  PhaseIcon: React.ComponentType<{
-    size?: number | string;
-    style?: React.CSSProperties;
-    className?: string;
-  }>;
+  isReviewRunning?: boolean;
+  phaseIcon: IconSource;
   phaseIconClass: string;
   phaseTitle: string;
   errorMessage?: string | null;
+  errorSummary?: string;
+  errorDetailsLabel?: string;
   minimizeLabel: string;
   onMinimize: () => void;
 }
 
 export const ReviewActionHeader: React.FC<ReviewActionHeaderProps> = ({
   reviewData,
-  PhaseIcon,
+  isReviewRunning = false,
+  phaseIcon,
   phaseIconClass,
   phaseTitle,
   errorMessage,
+  errorSummary,
+  errorDetailsLabel,
   minimizeLabel,
   onMinimize,
 }) => (
   <>
     <div className="deep-review-action-bar__controls">
-      {reviewData && (
+      {(reviewData || isReviewRunning) && (
         <CodeReviewReportExportActions
           reviewData={reviewData}
           actions={['copy', 'save']}
@@ -42,19 +45,25 @@ export const ReviewActionHeader: React.FC<ReviewActionHeaderProps> = ({
         onClick={onMinimize}
         aria-label={minimizeLabel}
       >
-        <Minus size={14} />
+        <Icon glyph={Minus} size="sm" />
       </button>
     </div>
 
     <div className="deep-review-action-bar__status" role="status" aria-live="polite">
-      <PhaseIcon
-        size={18}
+      <Icon {...phaseIcon}
+        size="md"
         className={`deep-review-action-bar__icon ${phaseIconClass}`}
       />
       <span className="deep-review-action-bar__status-title">{phaseTitle}</span>
-      {errorMessage && (
-        <span className="deep-review-action-bar__error-message">{errorMessage}</span>
-      )}
     </div>
+    {errorMessage && (
+      <div className="deep-review-action-bar__error-message" role="status">
+        {errorSummary && errorSummary !== errorMessage && (
+          <div>{errorSummary}</div>
+        )}
+        {errorDetailsLabel && <div>{errorDetailsLabel}</div>}
+        <div>{errorMessage}</div>
+      </div>
+    )}
   </>
 );

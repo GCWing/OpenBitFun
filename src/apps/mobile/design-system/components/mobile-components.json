@@ -66,10 +66,10 @@
     },
     "message_bubble": {
       "purpose": "Presents one user or assistant message in the conversation timeline.",
-      "anatomy": ["message_text", "role_surface", "hairline_border"],
+      "anatomy": ["message_text", "role_surface", "hairline_border", "message_timestamp"],
       "states": ["user", "assistant"],
       "tokens": ["body_large", "message_bubble_max_width", "message_bubble_horizontal_padding", "message_bubble_vertical_padding", "message_bubble_radius", "message_spacing", "timeline_top_padding"],
-      "platformNotes": "The maximum width is the 276-unit compact HarmonyOS baseline; wide layouts may use a separate responsive policy."
+      "platformNotes": "The maximum width is the 276-unit compact HarmonyOS baseline; wide layouts may use a separate responsive policy. Show each available host message time below its content in localized short date/time with muted label-small text, right aligned for users and left aligned for assistants. Omit unavailable or invalid legacy timestamps. Ordinary failed tool calls share the neutral collapsed activity presentation; their actual failure details remain expandable. Questions, approvals and failed replies retain their attention states."
     },
     "conversation_overlay": {
       "purpose": "Lets the transcript own the whole pane while the header and composer stay reachable above it.",
@@ -98,6 +98,13 @@
       "states": ["empty", "draft", "focused", "streaming", "disconnected", "with_attachments"],
       "tokens": ["composer_action_size", "composer_collapsed_height", "composer_expanded_height", "composer_collapsed_radius", "composer_expanded_radius"],
       "platformNotes": "Keyboard, dictation, and attachment pickers remain native adapters. The focused two-row form stays compact and exists to expose message context controls; multiline content and attachments may grow it further. The trailing action is the single filled action for Send, Dictate, or Stop."
+    },
+    "prompt_suggestion": {
+      "purpose": "Offer the host's next-input suggestion above the remote conversation composer.",
+      "anatomy": ["suggestion_text", "full_width_touch_target"],
+      "states": ["available", "draft_hidden", "busy_hidden", "disconnected_hidden", "retired"],
+      "tokens": ["body_medium", "muted", "control_touch_size", "conversation_overlay_side_inset"],
+      "platformNotes": "Compact and wide layouts use a quiet, leading-aligned button with wrapping text and a minimum 48-unit touch target. Show only for the latest completed turn when the draft is empty and the session is idle and connected. Tapping copies the exact text into the native editor and focuses it without sending. New turns, session changes and host stream gaps retire the hint. Suggestions stay outside persisted transcripts; older hosts need no fallback request."
     },
     "composer_model_selector": {
       "purpose": "Changes the model for the message being composed without leaving the conversation or creation flow.",
@@ -224,6 +231,13 @@
       "states": ["first_launch", "already_shown", "reduced_motion", "backgrounded"],
       "tokens": ["page_bg", "ink", "brand_dot", "startup_brand"],
       "platformNotes": "Native first-launch-only overlay on HarmonyOS, Android and iOS. Claim a persisted installation-local flag before playback; account changes, process restarts and upgrades do not reset it. Design previews do not consume it. Existing installs without the flag show it once after upgrade; 6800ms timeline independent of network readiness. A cyan dot hops ahead of ten 42-unit letters with subtle letter bounce. At normalized text time 0.70–0.86 it arcs back to the dotless i, settling at 7.35 units diameter with one fading halo. Text time is min(progress / 0.65 * 0.9, 0.9). Logo expands from 0.65 to 1 with a small overshoot during progress 0.66–0.85 as the word moves down 42 units. Use a centered 280×240 stage, scaled down for narrow windows, 92-unit contour mark on Android/iOS and a 156vp mark on HarmonyOS, with platform-native soft sans typography. HarmonyOS positions the mark at (62, -34) to preserve separation from the settled wordmark. Fade the overlay over the last 3%. Reserve full glyph slots; no layout changes during reveal. Remove on completion or background and do not replay on activity recreation/foreground. Skip for reduced motion. Notification onboarding follows completion. The dedicated brand_dot token preserves identity independently of action/status colors."
+    },
+    "cold_start_home_transition": {
+      "purpose": "Covers a normal authenticated process launch while the measured home brand mark moves into its final position and the page fades in.",
+      "anatomy": ["home_surface", "moving_contour_brand_mark", "measured_home_mark_anchor", "page_fade"],
+      "states": ["authenticated_process_launch", "signed_out", "background_resume", "reduce_motion", "compact", "wide"],
+      "tokens": ["page_bg", "recent_home_mark_size", "cold_start_home"],
+      "platformNotes": "Only the first authenticated restore in a new process may claim this presentation. The existing installation-local startup_brand_reveal takes precedence and remains unchanged. The home shell mounts underneath; no network request gates the 2400ms timeline. Start the mark at 56 logical units, measure the rendered home mark in the native layout, and interpolate to that measured rect so compact, wide, safe-area, and foldable layouts share the same endpoint. Move through the measured target during 16%–68% of the timeline, then fade the cover from 68%–100%. Signed-out restore, later manual login, foreground resume, activity recreation, and a second scene root do not replay it. Reduced motion completes immediately. If the target is unavailable, keep the mark centered and fade the cover without inventing an endpoint. Hide the underlying shell from accessibility while the cover is active; preserve pointer blocking until completion."
     },
     "permission_request_panel": {
       "purpose": "Answers an independent runtime permission request below the conversation header, outside the transcript, matching mobile-web.",

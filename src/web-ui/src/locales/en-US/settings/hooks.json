@@ -1,10 +1,10 @@
 {
   "title": "Agent Hooks",
-  "subtitle": "Run custom commands on Agent lifecycle events.",
+  "subtitle": "Run commands automatically when selected agent events occur",
   "loading": "Loading hook settings...",
   "activation": {
-    "title": "Activation",
-    "description": "Hooks run with your user privileges. Enable only commands you trust."
+    "title": "Agent Hooks",
+    "description": "Commands run as the user running OpenBitFun; enable hooks only from trusted sources"
   },
   "fields": {
     "enabled": {
@@ -12,7 +12,7 @@
     },
     "projectHooks": {
       "label": "Enable project hook file",
-      "description": "Reads and runs .openbitfun/config/hooks.json from the workspace. Enable only for trusted repositories."
+      "description": "Allow commands from the workspace's .openbitfun/config/hooks.json; enable only for trusted projects"
     }
   },
   "projectHooksRisk": {
@@ -100,7 +100,7 @@
   },
   "discovery": {
     "title": "Discovered external hooks",
-    "description": "Inspect local Hook declarations from DeepSeek Harness, PI, and OpenCode. Discovery does not run or import them.",
+    "description": "Inspect hook declarations from DeepSeek Harness, PI, and OpenCode; discovery does not import or execute them",
     "disabled": "Disabled in source",
     "unsupported": "Unsupported by source bridge",
     "opaque": "Requires native runtime inspection",

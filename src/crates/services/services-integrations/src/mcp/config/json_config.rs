@@ -23,8 +23,20 @@ impl fmt::Display for MCPJsonConfigValidationError {
 
 impl std::error::Error for MCPJsonConfigValidationError {}
 
+/// Canonicalizes a `type` / `transport` / `source` token before matching.
+///
+/// The MCP client ecosystem is inconsistent about casing: Cursor, Cline, and
+/// other clients emit `streamableHttp`, while others use `streamable-http`,
+/// `streamable_http`, `streamablehttp`, or `http`. The visual editor already
+/// lowercases these tokens before matching, so the core validator and parser
+/// must do the same, or a config the form accepts fails again when it is saved.
+/// Accepting a spelling never changes the canonical value we persist.
+pub(super) fn normalized_token(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
 fn normalize_source(value: &str) -> Option<&'static str> {
-    match value.trim() {
+    match normalized_token(value).as_str() {
         "local" => Some("local"),
         "remote" => Some("remote"),
         _ => None,
@@ -32,7 +44,7 @@ fn normalize_source(value: &str) -> Option<&'static str> {
 }
 
 fn normalize_transport(value: &str) -> Option<&'static str> {
-    match value.trim() {
+    match normalized_token(value).as_str() {
         "stdio" => Some("stdio"),
         "sse" => Some("sse"),
         "http" | "streamable_http" | "streamable-http" | "streamablehttp" => {
@@ -43,7 +55,7 @@ fn normalize_transport(value: &str) -> Option<&'static str> {
 }
 
 fn normalize_legacy_type(value: &str) -> Option<(Option<&'static str>, Option<&'static str>)> {
-    match value.trim() {
+    match normalized_token(value).as_str() {
         "stdio" => Some((None, Some("stdio"))),
         "local" => Some((Some("local"), Some("stdio"))),
         "sse" => Some((Some("remote"), Some("sse"))),

@@ -21,6 +21,7 @@ export interface ChatSessionSnapshot {
   title: string;
   sessionState: string;
   newMessages: ChatMessage[];
+  /** When present, this and activeTurn form a complete authoritative reducer projection. */
   messageSnapshot?: ChatMessage[];
   activeTurn?: ChatMessage;
   modelCatalog?: RemoteModelCatalog;
@@ -34,6 +35,8 @@ export interface ChatSessionSnapshot {
   hasMoreMessages?: boolean;
   historyLoading?: boolean;
   historyFailed?: boolean;
+  /** Empty when no valid hint remains; older hosts simply never emit one. */
+  promptSuggestion?: string;
 }
 
 export interface ChatSessionControllerCallbacks {
@@ -67,6 +70,7 @@ export class ChatSessionController {
   private completedTurnId: string = '';
   private hasMoreMessages: boolean = false;
   private historyLoading: boolean = false;
+  private historyReplaying: boolean = false;
   private historyFailed: boolean = false;
   private modelReadVersion: number = 0;
   private pendingModelCatalog?: RemoteModelCatalog;
@@ -83,7 +87,7 @@ export class ChatSessionController {
     this.stop(); this.sessionId = sessionId; this.cursor = cursor;
     this.reducer = new DurableSessionReducer(); this.mailbox.select(sessionId); this.stopped = false; this.caughtUp = false;
     this.sessionState = 'idle'; this.completedTurnId = ''; this.hasMoreMessages = false;
-    this.historyLoading = false; this.historyFailed = false;
+    this.historyLoading = false; this.historyReplaying = false; this.historyFailed = false;
     this.pendingModelCatalog = undefined;
     const epoch = this.generation;
     void this.loadInitialModelCatalog(sessionId, epoch);
@@ -95,20 +99,25 @@ export class ChatSessionController {
           // must not delay the serial transcript stream or its durable cursor.
           if (event.event === 'session-interaction-changed') { void this.mailbox.refresh(); return; }
           if (!this.reducer.apply(event)) return;
-          if (this.caughtUp) this.publish();
+          if (this.caughtUp && !this.historyReplaying) this.publish();
         },
         onResumed: async (): Promise<void> => { if (this.current(epoch)) void this.mailbox.refresh(); },
         onGap: async (): Promise<void> => {
           // The desktop restarted the stream: everything reduced so far came
           // from its previous epoch and is replayed from the latest page.
           if (!this.current(epoch)) return;
+          this.historyReplaying = true;
           this.reducer = new DurableSessionReducer(); this.hasMoreMessages = false;
+          if (this.caughtUp) this.publish();
         },
         onCaughtUp: async (): Promise<void> => {
           if (!this.current(epoch)) return;
-          this.caughtUp = true; this.publish();
+          this.caughtUp = true; this.historyReplaying = false; this.publish();
         },
         onHistory: (hasMore: boolean): void => { this.hasMoreMessages = hasMore; },
+        onHistoryReplay: (active: boolean): void => {
+          if (this.current(epoch)) this.historyReplaying = active;
+        },
         onHistoryState: (loading: boolean, failed: boolean): void => {
           if (!this.current(epoch)) return;
           this.historyLoading = loading; this.historyFailed = failed;
@@ -127,7 +136,7 @@ export class ChatSessionController {
       const catalog = await this.sessionManager.getModelCatalog(sessionId);
       if (!this.current(epoch) || version !== this.modelReadVersion) return;
       this.pendingModelCatalog = catalog;
-      if (this.caughtUp) this.publish();
+      if (this.caughtUp && !this.historyReplaying) this.publish();
     } catch (error) {
       if (this.current(epoch) && version === this.modelReadVersion) this.callbacks.onError(error);
     }
@@ -154,23 +163,28 @@ export class ChatSessionController {
     if (this.stopped || !this.callbacks.canPoll(this.sessionId)) return;
     const persisted: ChatMessage[] = [];
     let active: ChatMessage | undefined = undefined;
+    this.completedTurnId = '';
     this.reducer.messages().forEach((message: ChatMessage) => {
       if (message.role === 'assistant' && (message.status === 'active' || message.status === 'running')) active = message;
       else {
         persisted.push(message);
-        if (message.role === 'assistant') this.completedTurnId = message.turnId || '';
+        if (message.role === 'assistant') {
+          this.completedTurnId = message.status === 'completed' ? (message.turnId || '') : '';
+        }
       }
     });
     this.cursor.knownMessageCount = persisted.length;
     const catalog = this.pendingModelCatalog;
     this.pendingModelCatalog = undefined;
     if (catalog) this.cursor.knownModelCatalogVersion = catalog.version || 0;
+    const suggestion = this.reducer.promptSuggestion();
     this.callbacks.onSnapshot({
       sessionId: this.sessionId, cursor: this.cursor, changed: true, title: '', modelCatalog: catalog,
       sessionState: active ? 'active' : this.sessionState, newMessages: [],
       activeTurn: active, messageSnapshot: persisted, shouldSyncAfterTurnEnded: false,
       historyRewritten: false, completedTurnId: this.completedTurnId, hasMoreMessages: this.hasMoreMessages,
-      historyLoading: this.historyLoading, historyFailed: this.historyFailed
+      historyLoading: this.historyLoading, historyFailed: this.historyFailed,
+      promptSuggestion: active ? '' : suggestion
     });
   }
 }

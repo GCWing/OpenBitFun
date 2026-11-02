@@ -1,0 +1,68 @@
+@layer openbitfun.components {
+  .root {
+    display: flex;
+    min-inline-size: 0;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-md-line-height);
+  }
+
+  .participant {
+    display: inline-flex;
+    box-sizing: border-box;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    min-block-size: var(--openbitfun-control-height-sm);
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+    padding: 0;
+    border: 0;
+    border-radius: var(--openbitfun-radius-sm);
+    background: transparent;
+    color: var(--openbitfun-color-content-secondary);
+    font: inherit;
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
+    text-align: start;
+  }
+
+  button.participant:not(:disabled) { cursor: pointer; }
+  button.participant:not(:disabled):is(:hover, :focus-visible) { color: var(--openbitfun-color-content-primary); text-decoration: underline; text-underline-offset: var(--openbitfun-space-1); }
+  .identity, .direction, .processing { display: inline-flex; flex: 0 0 auto; align-items: center; }
+  .identity, .direction { --openbitfun-icon-stroke-width: var(--openbitfun-control-icon-stroke-width); }
+  .direction { color: var(--openbitfun-color-content-muted); }
+  .targets { display: inline-flex; flex-wrap: wrap; min-inline-size: 0; max-inline-size: 100%; gap: var(--openbitfun-space-1); }
+  .outcome { display: inline-flex; min-inline-size: 0; max-inline-size: 100%; align-items: center; gap: var(--openbitfun-space-1); }
+  .separator { color: var(--openbitfun-color-content-muted); }
+  .result {
+    display: inline-flex;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+    margin: 0;
+    padding: 0 var(--openbitfun-space-1);
+    border: 0;
+    border-radius: var(--openbitfun-radius-sm);
+    background: var(--openbitfun-color-action-neutral-surface);
+    color: inherit;
+    font: inherit;
+    text-align: start;
+  }
+  .resultText { min-inline-size: 0; overflow-wrap: anywhere; }
+  button.result { cursor: pointer; }
+  button.result:hover { background: var(--openbitfun-color-action-quiet-hover); }
+  .root[data-openbitfun-status="error"] .outcome { color: var(--openbitfun-color-status-danger-content); }
+  .root[data-openbitfun-status="rejected"] .outcome,
+  .root[data-openbitfun-status="pending_confirmation"] .outcome { color: var(--openbitfun-color-status-warning-content); }
+  .participant:focus-visible, .result:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+  .details { display: flex; flex-direction: column; min-inline-size: 0; gap: var(--openbitfun-space-4); }
+
+  @media (forced-colors: active) {
+    .result { outline: var(--openbitfun-border-width-default) solid ButtonBorder; }
+  }
+}

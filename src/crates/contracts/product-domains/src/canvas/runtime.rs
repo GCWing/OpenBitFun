@@ -1,4 +1,6 @@
-use super::sdk_contract_generated::{OPENBITFUN_CANVAS_RUNTIME_VERSION, OPENBITFUN_CANVAS_SDK_VERSION};
+use super::sdk_contract_generated::{
+    OPENBITFUN_CANVAS_RUNTIME_VERSION, OPENBITFUN_CANVAS_SDK_VERSION,
+};
 use crate::canvas::types::{CanvasCompiledPayload, CanvasDiagnostic, CanvasId, CanvasRevision};
 use serde::{Deserialize, Serialize};
 

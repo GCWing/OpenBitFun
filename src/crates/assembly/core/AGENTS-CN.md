@@ -60,7 +60,7 @@ SessionManager -> Session -> DialogTurn -> ModelRound
   package/module 归属；不得用互斥 Cargo `cfg` 隐藏未评审的 Core 能力。
 - 保持轻量兼容 feature 可独立编译。本地服务 profile 为 `dispatch-store`、`terminal`、
   `workspace-runtime` 和 `workspace-watch`；`remote-workspace` 只增加远程工作区 facade，
-  `ssh-remote` 才增加具体 SSH transport。`announcement`、`file-watch`、`git`、
+  `ssh-remote` 才增加具体 SSH transport。`file-watch`、`git`、
   `review-platform` 也保持独立，`service-integrations` 只是其兼容聚合。任何窄 feature 都不得直接或间接启用 `product-full`。
 - `product-full` 必须显式组合自身消费的每个能力，包括 `permission`、`session-git`、
   `runtime-ownership` 等产品专属 `services-core` feature。不得把这些 feature 写在依赖声明上，
@@ -117,3 +117,6 @@ cargo test -p openbitfun-core --no-default-features --features <minimal-features
 feature-free facade 改动使用第一种，单一 feature 边界改动使用第二种，行为改动使用第三种。
 只有 Cargo feature、依赖方向或 test-target 布局变化时才运行 `pnpm run check:core-boundaries`。
 workspace check 与产品全量测试由 CI 兜底，不是 Core 默认预检。仅改文档时运行 `git diff --check`。
+
+助理发现、打开状态持久化和按工作区 ID 重新打开的聚焦验证：
+`cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib service::workspace::service::tests::assistant_`。

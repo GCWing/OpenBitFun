@@ -97,6 +97,64 @@ pub struct ConfigHealthStatus {
     pub last_modified: chrono::DateTime<chrono::Utc>,
 }
 
+// Old clients still send scalar/fixed choices. Translate the request, never
+// read or mutate the frozen legacy defaults as part of a current write.
+fn translate_legacy_model_selection_write(
+    path: &str,
+    value: serde_json::Value,
+) -> OpenBitFunResult<(String, serde_json::Value)> {
+    use openbitfun_config_contracts::model_pool::{AgentModelSelection, AgentModelSelections};
+    let Some(suffix) = path.strip_prefix("ai.agent_model_defaults") else {
+        return Ok((path.into(), value));
+    };
+    if !suffix.is_empty() && !suffix.starts_with('.') {
+        return Ok((path.into(), value));
+    }
+    let converted = match suffix {
+        "" => serde_json::to_value(AgentModelSelections::from_legacy(&serde_json::from_value(
+            value,
+        )?))?,
+        ".mode" => {
+            serde_json::json!({"kind":"model", "model_ref": serde_json::from_value::<String>(value)?})
+        }
+        ".subagents" => {
+            let legacy = AgentModelDefaultsConfig {
+                subagents: serde_json::from_value(value)?,
+                ..Default::default()
+            };
+            serde_json::to_value(AgentModelSelections::from_legacy(&legacy).subagents)?
+        }
+        ".subagents.builtin" => {
+            let old: BTreeMap<String, SubagentModelSelection> = serde_json::from_value(value)?;
+            serde_json::to_value(
+                old.into_iter()
+                    .map(|(id, choice)| (id, AgentModelSelection::from(choice)))
+                    .collect::<BTreeMap<_, _>>(),
+            )?
+        }
+        ".subagents.default" | ".subagents.fork" => {
+            serde_json::to_value(AgentModelSelection::from(serde_json::from_value::<
+                SubagentModelSelection,
+            >(value)?))?
+        }
+        _ if suffix.starts_with(".subagents.builtin.") => {
+            if value.is_null() {
+                value
+            } else {
+                serde_json::to_value(AgentModelSelection::from(serde_json::from_value::<
+                    SubagentModelSelection,
+                >(value)?))?
+            }
+        }
+        _ => {
+            return Err(OpenBitFunError::validation(
+                "Unsupported legacy model selection path",
+            ))
+        }
+    };
+    Ok((format!("ai.agent_model_selections{suffix}"), converted))
+}
+
 impl ConfigService {
     /// Creates a new configuration service.
     pub async fn new() -> OpenBitFunResult<Self> {
@@ -115,6 +173,11 @@ impl ConfigService {
         })
     }
 
+    /// Storage root selected by this executing host's configuration manager.
+    pub(crate) async fn user_data_dir(&self) -> std::path::PathBuf {
+        self.manager.read().await.path_manager().user_data_dir()
+    }
+
     /// Gets a configuration value (supports dot-paths).
     pub async fn get_config<T>(&self, path: Option<&str>) -> OpenBitFunResult<T>
     where
@@ -129,6 +192,11 @@ impl ConfigService {
             serde_json::from_value(serde_json::to_value(config)?)
                 .map_err(|e| OpenBitFunError::config(format!("Failed to serialize config: {}", e)))
         }
+    }
+
+    pub async fn model_pool_store(&self) -> super::model_pool_store::ModelPoolStore<'_> {
+        let directory = self.manager.read().await.path_manager().user_config_dir();
+        super::model_pool_store::ModelPoolStore::new(self, directory)
     }
 
     pub async fn install_runtime_ai_model(&self, model: AIModelConfig) -> OpenBitFunResult<()> {
@@ -184,12 +252,33 @@ impl ConfigService {
     where
         T: serde::Serialize,
     {
+        self.set_config_if_changed(path, value).await.map(|_| ())
+    }
+
+    /// Compares and persists under the same lock; unchanged preferences do not
+    /// trigger validation, disk writes, account sync, or runtime notifications.
+    pub async fn set_config_if_changed<T>(&self, path: &str, value: T) -> OpenBitFunResult<bool>
+    where
+        T: serde::Serialize,
+    {
+        let (path, value) =
+            translate_legacy_model_selection_write(path, serde_json::to_value(value)?)?;
+        let path = path.as_str();
         {
             let mut manager = self.manager.write().await;
+            let comparison_path = if path.starts_with("ai.agent_model_selections.") {
+                "ai.agent_model_selections"
+            } else {
+                path
+            };
+            let before = manager.get::<serde_json::Value>(comparison_path).ok();
             manager.set(path, value).await?;
+            if before == manager.get::<serde_json::Value>(comparison_path).ok() {
+                return Ok(false);
+            }
         }
         self.after_config_change(path).await;
-        Ok(())
+        Ok(true)
     }
 
     /// Reads, modifies, validates, and persists a section under one write lock.
@@ -225,11 +314,13 @@ impl ConfigService {
     async fn after_config_change(&self, path: &str) {
         let model_configuration_changed = Self::path_touches_models(path);
         if model_configuration_changed {
-            if let Err(e) = self.reconcile_models("set_config").await {
-                warn!(
-                    "Model reconcile after set_config failed: path={}, error={}",
-                    path, e
-                );
+            if path != "ai.agent_model_selections.mode" {
+                if let Err(e) = self.reconcile_models("set_config").await {
+                    warn!(
+                        "Model reconcile after set_config failed: path={}, error={}",
+                        path, e
+                    );
+                }
             }
             super::global::GlobalConfigManager::broadcast_update(
                 super::global::ConfigUpdateEvent::ModelConfigurationUpdated,
@@ -283,8 +374,9 @@ impl ConfigService {
         path.is_empty()
             || path == "ai"
             || path.starts_with("ai.models")
+            || path.starts_with("ai.model_pools")
             || path.starts_with("ai.default_models")
-            || path.starts_with("ai.agent_model_defaults")
+            || path.starts_with("ai.agent_model_selections")
             || path.starts_with("ai.task_models")
     }
 
@@ -471,6 +563,54 @@ impl ConfigService {
         #[cfg(feature = "web-tools")]
         self.refresh_web_search_runtime().await;
         Ok(())
+    }
+
+    /// Reloads when another writer (a hand edit, another OpenBitFun process)
+    /// replaced the config file since this service last loaded or wrote it.
+    ///
+    /// A missing file is left alone rather than recreated, and a file that
+    /// fails to load keeps the current in-memory configuration. Returns
+    /// whether a reload happened.
+    pub async fn reload_if_changed_on_disk(&self) -> OpenBitFunResult<bool> {
+        let (config_file, known) = {
+            let manager = self.manager.read().await;
+            (
+                manager.config_file().to_path_buf(),
+                manager.disk_fingerprint(),
+            )
+        };
+        let Some(on_disk) = read_config_fingerprint(&config_file).await? else {
+            return Ok(false);
+        };
+        if known == Some(on_disk) {
+            return Ok(false);
+        }
+
+        {
+            let mut manager = self.manager.write().await;
+            // A local save may have landed between the check and the lock.
+            match read_config_fingerprint(&config_file).await? {
+                Some(on_disk) if manager.disk_fingerprint() != Some(on_disk) => {}
+                _ => return Ok(false),
+            }
+            manager.reload().await?;
+        }
+
+        info!(
+            "Configuration reloaded after an on-disk change: path={}",
+            config_file.display()
+        );
+        super::global::GlobalConfigManager::broadcast_update(
+            super::global::ConfigUpdateEvent::ModelConfigurationUpdated,
+        )
+        .await;
+        super::global::GlobalConfigManager::broadcast_update(
+            super::global::ConfigUpdateEvent::ConfigReloaded,
+        )
+        .await;
+        #[cfg(feature = "web-tools")]
+        self.refresh_web_search_runtime().await;
+        Ok(true)
     }
 
     /// Creates a configuration backup.
@@ -742,11 +882,21 @@ impl ReconcileModelsReport {
     }
 }
 
+async fn read_config_fingerprint(path: &std::path::Path) -> OpenBitFunResult<Option<u64>> {
+    match tokio::fs::read(path).await {
+        Ok(content) => Ok(Some(super::manager::config_content_fingerprint(&content))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(OpenBitFunError::config(format!(
+            "Failed to read config file {}: {error}",
+            path.display()
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::infrastructure::PathManager;
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     fn model(id: &str, enabled: bool, category: ModelCategory) -> AIModelConfig {
@@ -801,6 +951,299 @@ mod tests {
         .expect("config service");
 
         (service, dir)
+    }
+
+    #[tokio::test]
+    async fn model_pool_main_config_defaults_roundtrip() {
+        use openbitfun_config_contracts::model_pool::{AgentModelSelection, ModelPoolDefinition};
+        let (service, _dir) = test_service("model-pool-main-config").await;
+        service
+            .add_ai_model(runtime_model("a", "fixture-key"))
+            .await
+            .unwrap();
+        service
+            .add_ai_model(runtime_model("b", "fixture-key"))
+            .await
+            .unwrap();
+        let mut pool: ModelPoolDefinition = serde_json::from_value(serde_json::json!({
+            "id":"", "name":"Workers", "strategy":"balanced", "member_model_ids":["a","b"]
+        }))
+        .unwrap();
+        let first = service
+            .model_pool_store()
+            .await
+            .save(pool.clone())
+            .await
+            .unwrap();
+        assert_eq!(first.pools.len(), 1);
+        let pool_id = first.pools[0]["id"].as_str().unwrap().to_owned();
+        let suffix = pool_id.strip_prefix("model-pool-").unwrap();
+        assert_eq!(suffix.len(), 6);
+        assert!(suffix
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit()));
+        pool.id = pool_id.clone();
+        service
+            .set_config(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"pool","pool_id":pool_id}),
+            )
+            .await
+            .unwrap();
+        service
+            .set_config(
+                "ai.agent_model_selections.subagents.default",
+                serde_json::json!({"kind":"pool","pool_id":pool_id}),
+            )
+            .await
+            .unwrap();
+        service
+            .set_config(
+                "ai.agent_model_selections.subagents.fork",
+                serde_json::json!({"kind":"pool","pool_id":pool_id}),
+            )
+            .await
+            .unwrap();
+        service
+            .set_config(
+                "ai.agent_model_selections.subagents.builtin.Explore",
+                serde_json::json!({"kind":"pool","pool_id":pool_id}),
+            )
+            .await
+            .unwrap();
+        let updated = service
+            .model_pool_store()
+            .await
+            .save(ModelPoolDefinition {
+                name: "Renamed".into(),
+                ..pool
+            })
+            .await
+            .unwrap();
+        assert_eq!(updated.get(&pool_id).unwrap().name, "Renamed");
+        let before: openbitfun_config_contracts::model_pool::AgentModelSelections = service
+            .get_config(Some("ai.agent_model_selections"))
+            .await
+            .unwrap();
+        assert_eq!(
+            before.subagents.default,
+            AgentModelSelection::Pool {
+                pool_id: pool_id.clone()
+            }
+        );
+        service
+            .set_config(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model","model_ref":"b"}),
+            )
+            .await
+            .unwrap();
+        let after: openbitfun_config_contracts::model_pool::AgentModelSelections = service
+            .get_config(Some("ai.agent_model_selections"))
+            .await
+            .unwrap();
+        assert_eq!(
+            after.mode,
+            openbitfun_core_types::model_pool::ModelSelection::Model {
+                model_ref: "b".into()
+            }
+        );
+        assert_eq!(after.subagents, before.subagents);
+        // Removing the referenced pool retains user intent. Repairing mode must
+        // still work even while another setting references the deleted pool.
+        service
+            .model_pool_store()
+            .await
+            .delete(&pool_id)
+            .await
+            .unwrap();
+        service
+            .set_config(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model","model_ref":"a"}),
+            )
+            .await
+            .unwrap();
+        let path_manager = service.manager.read().await.path_manager().clone();
+        assert!(!path_manager
+            .user_config_dir()
+            .join("model-pools.v1.json")
+            .exists());
+        let reloaded = ConfigService::with_settings(ConfigManagerSettings {
+            path_manager: Some(path_manager),
+            auto_save: true,
+            backup_count: 0,
+        })
+        .await
+        .unwrap();
+        let ai: AIConfig = reloaded.get_config(Some("ai")).await.unwrap();
+        assert!(ai.model_pools.pools.is_empty());
+        assert_eq!(ai.agent_model_defaults.mode, "primary");
+        assert_eq!(
+            ai.effective_model_selections().unwrap().subagents.default,
+            AgentModelSelection::Pool { pool_id }
+        );
+    }
+
+    #[tokio::test]
+    async fn model_pool_main_config_concurrent_defaults_preserve_siblings() {
+        let (service, _dir) = test_service("model-pool-concurrent").await;
+        service
+            .add_ai_model(runtime_model("a", "fixture-key"))
+            .await
+            .unwrap();
+        let (mode, child) = tokio::join!(
+            service.set_config(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model","model_ref":"a"})
+            ),
+            service.set_config(
+                "ai.agent_model_selections.subagents.default",
+                serde_json::json!({"kind":"inherit"})
+            ),
+        );
+        mode.unwrap();
+        child.unwrap();
+        let defaults: openbitfun_config_contracts::model_pool::AgentModelSelections = service
+            .get_config(Some("ai.agent_model_selections"))
+            .await
+            .unwrap();
+        let selections = defaults.clone();
+        assert_eq!(
+            selections.mode,
+            openbitfun_core_types::model_pool::ModelSelection::Model {
+                model_ref: "a".into()
+            }
+        );
+        assert_eq!(
+            selections.subagents.default,
+            openbitfun_config_contracts::model_pool::AgentModelSelection::Inherit
+        );
+        assert!(defaults
+            .subagents
+            .builtin
+            .contains_key("ResearchSpecialist"));
+    }
+
+    #[tokio::test]
+    async fn reload_if_changed_on_disk_picks_up_external_edits_only() {
+        let (service, dir) = test_service("reload-on-disk-change").await;
+        service
+            .add_ai_model(runtime_model("kept", "fixture-key"))
+            .await
+            .unwrap();
+        // The service's own write is not an external change.
+        assert!(!service.reload_if_changed_on_disk().await.unwrap());
+
+        let config_file = dir
+            .path()
+            .join("reload-on-disk-change")
+            .join("config")
+            .join("app.json");
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_file).unwrap()).unwrap();
+        value["ai"]["models"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(runtime_model("added", "fixture-key")).unwrap());
+        std::fs::write(&config_file, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+        let mut changes = service.subscribe_local_changes();
+        changes.borrow_and_update();
+        assert!(service.reload_if_changed_on_disk().await.unwrap());
+        let config: GlobalConfig = service.get_config(None).await.unwrap();
+        assert!(config.ai.models.iter().any(|model| model.id == "added"));
+        // A reload is not a local edit and must not echo into account sync.
+        assert!(!changes.has_changed().unwrap());
+        assert!(!service.reload_if_changed_on_disk().await.unwrap());
+
+        // A half-written edit keeps the loaded configuration.
+        std::fs::write(&config_file, "{\"ai\": ").unwrap();
+        assert!(service.reload_if_changed_on_disk().await.is_err());
+        let config: GlobalConfig = service.get_config(None).await.unwrap();
+        assert!(config.ai.models.iter().any(|model| model.id == "added"));
+
+        // A deleted file is neither reloaded nor recreated.
+        std::fs::remove_file(&config_file).unwrap();
+        assert!(!service.reload_if_changed_on_disk().await.unwrap());
+        assert!(!config_file.exists());
+    }
+
+    #[tokio::test]
+    async fn model_default_noop_does_not_persist_or_notify() {
+        let (service, dir) = test_service("model-default-noop").await;
+        service
+            .add_ai_model(runtime_model("chosen", "fixture-key"))
+            .await
+            .unwrap();
+        let mut changes = service.subscribe_local_changes();
+        assert!(service
+            .set_config_if_changed(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model","model_ref":"chosen"})
+            )
+            .await
+            .unwrap());
+        changes.borrow_and_update();
+        let before: GlobalConfig = service.get_config(None).await.unwrap();
+        assert!(!service
+            .set_config_if_changed(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model","model_ref":"chosen"})
+            )
+            .await
+            .unwrap());
+        assert!(!changes.has_changed().unwrap());
+        let after: GlobalConfig = service.get_config(None).await.unwrap();
+        assert_eq!(before.last_modified, after.last_modified);
+        let restarted = restart_test_service(&dir, "model-default-noop").await;
+        assert_eq!(
+            restarted
+                .get_config::<String>(Some("ai.agent_model_selections.mode.model_ref"))
+                .await
+                .unwrap(),
+            "chosen"
+        );
+        assert!(service
+            .set_config(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model","model_ref":"removed-model"})
+            )
+            .await
+            .is_err());
+        assert!(service
+            .set_config("ai.agent_model_selections.mode", 123)
+            .await
+            .is_err());
+        let legacy: serde_json::Value = service
+            .get_config(Some("ai.agent_model_defaults"))
+            .await
+            .unwrap();
+        assert!(!service
+            .set_config_if_changed("ai.agent_model_defaults.mode", "chosen")
+            .await
+            .unwrap());
+        service
+            .set_config(
+                "ai.agent_model_defaults.subagents.fork",
+                serde_json::json!({"kind":"fixed","model_id":"chosen"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service
+                .get_config::<String>(Some("ai.agent_model_selections.subagents.fork.model_ref"))
+                .await
+                .unwrap(),
+            "chosen"
+        );
+        assert_eq!(
+            service
+                .get_config::<serde_json::Value>(Some("ai.agent_model_defaults"))
+                .await
+                .unwrap(),
+            legacy
+        );
     }
 
     fn realtime_voice_fixture() -> VoiceCallConfig {
@@ -1071,6 +1514,8 @@ mod tests {
             ("app.right_panel.width", json!(420)),
             ("app.flow_chat.show_permission_mode_control", json!(false)),
             ("app.hooks.project_hooks_enabled", json!(true)),
+            ("app.external_session_discovery.codex", json!(true)),
+            ("app.external_session_discovery.zcode", json!(false)),
             (
                 "app.keybindings",
                 json!({"version": 1, "overrides": {"session.new": {"key": "n", "alt": true}}}),
@@ -1137,9 +1582,10 @@ mod tests {
             ),
         ];
         for (path, value) in &fixtures {
-            source.set_config(path, value).await.unwrap();
-            assert!(
+            let changed = source.set_config_if_changed(path, value).await.unwrap();
+            assert_eq!(
                 changes.has_changed().unwrap(),
+                changed,
                 "Missing configuration change signal: {path}"
             );
             changes.borrow_and_update();
@@ -1778,6 +2224,7 @@ mod tests {
             ..Default::default()
         });
         config.ai.default_models.speech_recognition = Some("speech".to_string());
+        config.ai.migrate_model_selections().unwrap();
         let original = serde_json::to_string_pretty(&config).expect("serialize config");
         tokio::fs::write(path_manager.app_config_file(), &original)
             .await
@@ -2099,7 +2546,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reconcile_models_resets_invalid_agent_model_defaults() {
+    async fn reconcile_models_preserves_unavailable_selection_and_frozen_legacy() {
         let (service, _dir) = test_service("agent-model-defaults-repair").await;
         service
             .set_config(
@@ -2107,50 +2554,39 @@ mod tests {
                 &vec![model("old-model", true, ModelCategory::GeneralChat)],
             )
             .await
-            .expect("initial model should save");
+            .unwrap();
+        let legacy: serde_json::Value = service
+            .get_config(Some("ai.agent_model_defaults"))
+            .await
+            .unwrap();
         service
             .set_config(
-                "ai.agent_model_defaults",
-                &AgentModelDefaultsConfig {
-                    mode: "old-model".to_string(),
-                    subagents: SubagentModelDefaultsConfig {
-                        default_selection: SubagentModelSelection::fixed("old-model"),
-                        builtin: HashMap::from([(
-                            "Explore".to_string(),
-                            SubagentModelSelection::fixed("old-model"),
-                        )]),
-                        fork: SubagentModelSelection::fixed("old-model"),
-                    },
-                },
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model","model_ref":"old-model"}),
             )
             .await
-            .expect("agent model defaults should save");
-
+            .unwrap();
         service
             .set_config(
                 "ai.models",
                 &vec![model("new-model", true, ModelCategory::GeneralChat)],
             )
             .await
-            .expect("model replacement should reconcile defaults");
-
-        let defaults: AgentModelDefaultsConfig = service
-            .get_config(Some("ai.agent_model_defaults"))
-            .await
-            .expect("agent model defaults should load");
-        assert_eq!(defaults.mode, "primary");
+            .unwrap();
         assert_eq!(
-            defaults.subagents.default_selection,
-            SubagentModelSelection::fixed("fast")
+            service
+                .get_config::<String>(Some("ai.agent_model_selections.mode.model_ref"))
+                .await
+                .unwrap(),
+            "old-model"
         );
         assert_eq!(
-            defaults.subagents.builtin,
-            HashMap::from([(
-                "ResearchSpecialist".to_string(),
-                SubagentModelSelection::Inherit,
-            )])
+            service
+                .get_config::<serde_json::Value>(Some("ai.agent_model_defaults"))
+                .await
+                .unwrap(),
+            legacy
         );
-        assert_eq!(defaults.subagents.fork, SubagentModelSelection::Inherit);
     }
 
     #[tokio::test]
@@ -2268,7 +2704,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_disables_invalid_reasoning_model_without_mutating_the_file() {
+    async fn startup_preserves_unresolved_reasoning_model_without_mutating_the_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let user_root = dir.path().join("invalid-reasoning-startup");
         let path_manager = Arc::new(PathManager::with_user_root_for_tests(user_root));
@@ -2285,6 +2721,10 @@ mod tests {
 
         let mut raw_config =
             serde_json::to_value(GlobalConfig::default()).expect("default config should serialize");
+        raw_config["ai"]["agent_model_selections"] = serde_json::to_value(
+            openbitfun_config_contracts::model_pool::AgentModelSelections::default(),
+        )
+        .unwrap();
         raw_config["version"] = serde_json::json!(env!("CARGO_PKG_VERSION"));
         raw_config["ai"]["models"] = serde_json::json!([{
             "id": "invalid-model",
@@ -2313,7 +2753,7 @@ mod tests {
         let service = ConfigService::with_settings(settings()).await.unwrap();
         let models = service.get_ai_models().await.unwrap();
         assert_eq!(models.len(), 1);
-        assert!(!models[0].enabled);
+        assert!(models[0].enabled);
         assert_eq!(models[0].api_key, "key");
         assert_eq!(
             models[0]
@@ -2324,7 +2764,7 @@ mod tests {
                 .as_deref(),
             Some("missing")
         );
-        assert!(service.load_diagnostics().await.iter().any(|d| d
+        assert!(!service.load_diagnostics().await.iter().any(|d| d
             .message
             .contains("default preset 'missing' is not available")));
         assert_eq!(

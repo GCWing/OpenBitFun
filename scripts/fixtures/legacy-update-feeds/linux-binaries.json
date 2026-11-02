@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "version": "0.2.19",
+  "tag": "v0.2.19",
+  "platforms": {
+    "linux-x86_64": {
+      "target": "x86_64-unknown-linux-gnu",
+      "cli": {
+        "filename": "bitfun-cli-0.2.19-x86_64-unknown-linux-gnu.tar.gz",
+        "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256Url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-x86_64-unknown-linux-gnu.tar.gz.sha256",
+        "sha256SigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-x86_64-unknown-linux-gnu.tar.gz.sha256.sig",
+        "sigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-x86_64-unknown-linux-gnu.tar.gz.sig"
+      },
+      "relay": {
+        "filename": "bitfun-relay-server-x86_64-unknown-linux-gnu.tar.gz",
+        "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256Url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-x86_64-unknown-linux-gnu.tar.gz.sha256",
+        "sha256SigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-x86_64-unknown-linux-gnu.tar.gz.sha256.sig",
+        "sigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-x86_64-unknown-linux-gnu.tar.gz.sig"
+      }
+    },
+    "linux-aarch64": {
+      "target": "aarch64-unknown-linux-gnu",
+      "cli": {
+        "filename": "bitfun-cli-0.2.19-aarch64-unknown-linux-gnu.tar.gz",
+        "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256Url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-aarch64-unknown-linux-gnu.tar.gz.sha256",
+        "sha256SigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-aarch64-unknown-linux-gnu.tar.gz.sha256.sig",
+        "sigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-cli-0.2.19-aarch64-unknown-linux-gnu.tar.gz.sig"
+      },
+      "relay": {
+        "filename": "bitfun-relay-server-aarch64-unknown-linux-gnu.tar.gz",
+        "url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256Url": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-aarch64-unknown-linux-gnu.tar.gz.sha256",
+        "sha256SigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-aarch64-unknown-linux-gnu.tar.gz.sha256.sig",
+        "sigUrl": "https://github.com/GCWing/BitFun/releases/download/v0.2.19/bitfun-relay-server-aarch64-unknown-linux-gnu.tar.gz.sig"
+      }
+    }
+  }
+}

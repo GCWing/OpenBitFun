@@ -26,13 +26,13 @@ function SessionRuntimeButton({
   const { t } = useTranslation('flow-chat');
   return (
     <Tooltip content={t('usage.runtime.tooltip')}>
-      <button data-overflow-trigger data-openbitfun-component="session-runtime-status-entry" data-openbitfun-part="root"
+      <button data-openbitfun-icon-slot="true" data-overflow-trigger data-openbitfun-component="session-runtime-status-entry" data-openbitfun-part="root"
         className="session-runtime-status-entry"
         type="button"
         onClick={onOpen}
         aria-label={t('usage.runtime.open')}
       >
-        <Activity size={13} data-openbitfun-component="session-runtime-status-entry" data-openbitfun-part="icon" aria-hidden />
+        <Activity size="var(--openbitfun-control-icon-size-sm)" data-openbitfun-component="session-runtime-status-entry" data-openbitfun-part="icon" aria-hidden />
         <OverflowText data-openbitfun-component="session-runtime-status-entry" data-openbitfun-part="label">{t('usage.runtime.button')}</OverflowText>
       </button>
     </Tooltip>

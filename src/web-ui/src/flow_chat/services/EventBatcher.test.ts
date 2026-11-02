@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setIncludeSensitiveDiagnostics } from '@/shared/utils/logger';
+import { LogLevel, logger, setIncludeSensitiveDiagnostics } from '@/shared/utils/logger';
 import {
   DEFAULT_EVENT_MAX_LATENCY_MS,
   EventBatcher,
@@ -208,6 +208,20 @@ describe('EventBatcher dual latency', () => {
     batcher.destroy();
   });
 
+  it('commits accumulated facts when a minimized window stops delivering frames', async () => {
+    const onFlush = vi.fn();
+    const batcher = new EventBatcher({ onFlush });
+    batcher.add('text', 'a', 'accumulate', (a, b) => a + b, { maxLatencyMs: TEXT_CHUNK_MAX_LATENCY_MS });
+    await vi.advanceTimersByTimeAsync(TEXT_CHUNK_MAX_LATENCY_MS);
+    batcher.add('text', 'b', 'accumulate', (a, b) => a + b, { maxLatencyMs: TEXT_CHUNK_MAX_LATENCY_MS });
+    await vi.advanceTimersByTimeAsync(TEXT_CHUNK_MAX_LATENCY_MS);
+    expect(onFlush).toHaveBeenCalledExactlyOnceWith([{ key: 'text', payload: 'ab' }]);
+    await drainAnimationFrames();
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    batcher.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('reschedules earlier when a text event arrives after a tool event', async () => {
     const onFlush = vi.fn();
     const batcher = new EventBatcher({ onFlush });
@@ -225,5 +239,30 @@ describe('EventBatcher dual latency', () => {
     expect(onFlush).toHaveBeenCalledTimes(1);
     expect(onFlush.mock.calls[0][0]).toHaveLength(2);
     batcher.destroy();
+  });
+
+  it('keeps raw event counts in slow-flush warnings when trace is disabled', () => {
+    const previousLevel = logger.getLevel();
+    logger.setLevel(LogLevel.WARN);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const batcher = new EventBatcher({
+      onFlush: () => now.mockReturnValue(11),
+    });
+
+    batcher.add('tool', { value: 1 }, 'replace');
+    batcher.add('tool', { value: 2 }, 'replace');
+    batcher.flushNow();
+
+    expect(warn).toHaveBeenCalledWith('Event batch processing took longer than expected', 'EventBatcher', {
+      rawEventCount: 2,
+      mergedEventCount: 1,
+      durationMs: 11,
+    });
+
+    batcher.destroy();
+    now.mockRestore();
+    warn.mockRestore();
+    logger.setLevel(previousLevel);
   });
 });

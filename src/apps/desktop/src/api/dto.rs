@@ -73,6 +73,8 @@ pub struct WorkspaceInfoDto {
     pub workspace_type: WorkspaceTypeDto,
     pub workspace_kind: WorkspaceKindDto,
     pub assistant_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_name_number: Option<u64>,
     pub languages: Vec<String>,
     pub opened_at: String,
     pub last_accessed: String,
@@ -127,11 +129,13 @@ impl WorkspaceInfoDto {
 
         Self {
             id: info.id.clone(),
-            name: info.name.clone(),
+            name: workspace_display_name(info),
             root_path,
             workspace_type: WorkspaceTypeDto::from_workspace_type(&info.workspace_type),
             workspace_kind: WorkspaceKindDto::from_workspace_kind(&info.workspace_kind),
             assistant_id: info.assistant_id.clone(),
+            default_name_number:
+                openbitfun_core::service::workspace::assistant_naming::default_name_number(info),
             languages: info.languages.clone(),
             opened_at: info.opened_at.to_rfc3339(),
             last_accessed: info.last_accessed.to_rfc3339(),
@@ -159,6 +163,44 @@ impl WorkspaceInfoDto {
             ssh_host,
         }
     }
+}
+
+fn workspace_display_name(
+    info: &openbitfun_core::service::workspace::manager::WorkspaceInfo,
+) -> String {
+    let name = info.name.trim();
+    let normalized = name.to_ascii_lowercase();
+    if info.workspace_kind != WorkspaceKind::Remote
+        || (!name.is_empty()
+            && normalized != "unknown"
+            && normalized != "unknown project"
+            && name != "未知"
+            && name != "未知项目")
+    {
+        return info.name.clone();
+    }
+
+    if let Some(path_name) = info
+        .root_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return path_name.to_string();
+    }
+    for key in ["connectionName", "sshHost"] {
+        if let Some(value) = info
+            .metadata
+            .get(key)
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return value.to_string();
+        }
+    }
+    "Remote workspace".to_string()
 }
 
 impl WorkspaceIdentityDto {

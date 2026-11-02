@@ -18,6 +18,8 @@ export interface SessionRecord { sessionId: string; id: string; revision: number
 interface StoredTurn { revision: number; data?: TurnRecord; authoritative?: boolean; }
 interface StoredRound { revision: number; data?: RoundRecord; }
 interface StoredItem { revision: number; turnId: string; roundId: string; data: ItemRecord; }
+interface RenderedTurn { generation: number; messages: ChatMessage[]; }
+interface PromptSuggestion { sourceTurnId: string; suggestion: string; sessionId?: string; }
 
 /** Lossless record storage follows Happy's stable-id message reduction. Mobile
  * presentation adapts the existing persisted turn schema; it does not define a
@@ -28,7 +30,56 @@ export class DurableSessionReducer {
   private turns: Map<string, StoredTurn> = new Map();
   private rounds: Map<string, StoredRound> = new Map();
   private items: Map<string, StoredItem> = new Map();
+  // One turn's messages are rebuilt only when something that can change them
+  // arrived. A record carries no usable "this turn's content changed" flag (a
+  // round or item record repeats its parent turn header without advancing the
+  // turn's own revision), so the reducer counts the arrivals itself.
+  private turnGenerations: Map<string, number> = new Map();
+  private renderedTurns: Map<string, RenderedTurn> = new Map();
+  private generationSeq: number = 0;
+  private suggestion?: PromptSuggestion;
+
+  /** Optional host hints stay outside durable transcript records. */
+  promptSuggestion(): string {
+    const hint = this.suggestion;
+    if (!hint) return '';
+    const latest = this.latestTurn();
+    if (!latest || latest.turnId !== hint.sourceTurnId || latest.status !== 'completed') {
+      this.suggestion = undefined;
+      return '';
+    }
+    return hint.suggestion;
+  }
+
+  private latestTurn(): TurnRecord | undefined {
+    let latest: TurnRecord | undefined = undefined;
+    for (const stored of this.turns.values()) {
+      const turn = stored.data;
+      if (turn && stored.revision > (this.tombstones.get(`turn/${turn.turnId}`) ?? 0) &&
+        (!latest || turn.turnIndex > latest.turnIndex)) latest = turn;
+    }
+    return latest;
+  }
+  private touchTurn(turnId: string): void {
+    this.generationSeq++;
+    this.turnGenerations.set(turnId, this.generationSeq);
+  }
+  /** A tombstone names its turn only when the host repeated the header. */
+  private forgetTurnOrAll(record: SessionRecord): void {
+    const turnId = record.turn?.turnId;
+    if (turnId) this.touchTurn(turnId); else this.renderedTurns.clear();
+  }
   apply(event: HostSessionEvent): boolean {
+    if (event.event === 'agentic://prompt-suggestion') {
+      const hint = event.payload as PromptSuggestion;
+      if (!hint || typeof hint.sourceTurnId !== 'string' || !hint.sourceTurnId ||
+        typeof hint.suggestion !== 'string' || !hint.suggestion ||
+        (hint.sessionId !== undefined && hint.sessionId !== event.session_id)) return false;
+      const latest = this.latestTurn();
+      if (latest && latest.turnId !== hint.sourceTurnId) return false;
+      this.suggestion = hint;
+      return true;
+    }
     if (event.event !== 'session-record') return false;
     const record = event.payload as SessionRecord;
     if (record.sessionId !== event.session_id || !record.id || !Number.isSafeInteger(record.revision) || record.revision < 1) throw new Error('Invalid session record identity');
@@ -41,11 +92,15 @@ export class DurableSessionReducer {
       if (record.id.startsWith('turn/')) {
         const id = record.id.slice(5); const previousTurn = this.turns.get(id);
         if (!previousTurn || previousTurn.revision < record.revision) this.turns.set(id, { revision: record.revision });
+        this.touchTurn(id);
       } else if (record.id.startsWith('round/')) {
         const id = record.id.slice(6); const previousRound = this.rounds.get(id);
         if (!previousRound || previousRound.revision < record.revision) this.rounds.set(id, { revision: record.revision });
-      } else if (record.id.startsWith('item/')) this.items.delete(record.id.slice(5));
-      else throw new Error('Unknown session tombstone kind');
+        this.forgetTurnOrAll(record);
+      } else if (record.id.startsWith('item/')) {
+        this.items.delete(record.id.slice(5));
+        this.forgetTurnOrAll(record);
+      } else throw new Error('Unknown session tombstone kind');
       return true;
     }
     const data = record.turn;
@@ -72,6 +127,7 @@ export class DurableSessionReducer {
       if (!item || item.revision < record.revision) this.items.set(record.item.data.id,
         { revision: record.revision, turnId: data.turnId, roundId: record.round.id, data: record.item });
     }
+    this.touchTurn(data.turnId);
     return true;
   }
   messages(): ChatMessage[] {
@@ -90,44 +146,62 @@ export class DurableSessionReducer {
       const turn = stored.data;
       if (!turn) continue;
       if (turn.kind === 'local_command') continue;
-      const metadata = turn.userMessage.metadata as UserMetadata | undefined;
-      const userText = metadata?.original_text || turn.userMessage.content;
-      if (userText.length > 0 || (metadata?.images?.length || 0) > 0) result.push({ id: turn.userMessage.id, turnId: turn.turnId,
-        role: 'user', text: userText, images: metadata?.images, status: 'sent', timestamp: new Date(turn.userMessage.timestamp).toISOString() });
-      const turnFence = this.tombstones.get(`turn/${turn.turnId}`) ?? 0;
-      const entries = (byTurn.get(turn.turnId) ?? []).filter((item: StoredItem) => {
-        const round = this.rounds.get(item.roundId);
-        const roundFence = Math.max(turnFence, this.tombstones.get(`round/${item.roundId}`) ?? 0);
-        return !!round?.data && round.revision > roundFence &&
-          item.revision > Math.max(roundFence, this.tombstones.get(`item/${item.data.data.id}`) ?? 0);
-      })
-        .sort((a: StoredItem, b: StoredItem) => {
-          const roundA = this.rounds.get(a.roundId)?.data?.roundIndex || 0;
-          const roundB = this.rounds.get(b.roundId)?.data?.roundIndex || 0;
-          return roundA - roundB || (a.data.data.orderIndex ?? a.data.data.timestamp ?? 0) -
-            (b.data.data.orderIndex ?? b.data.data.timestamp ?? 0) || a.data.data.id.localeCompare(b.data.data.id);
-        });
-      const items: ChatMessageItemResponse[] = [];
-      const tools: RemoteToolStatusResponse[] = [];
-      for (const entry of entries) {
-        const data = entry.data.data;
-        if (data.status === 'superseded' || data.status === 'retry_superseded') continue;
-        const round = this.rounds.get(entry.roundId)?.data?.roundIndex || 0;
-        const item: ChatMessageItemResponse = { type: entry.data.type, content: data.content, round_index: round, is_subagent: data.isSubagentItem === true || !!data.subagentSessionId };
-        if (entry.data.type === 'tool') {
-          const tool: RemoteToolStatusResponse = { id: data.toolCall?.id || data.id, name: data.toolName, status: data.status || (data.toolResult ? (data.toolResult.success ? 'completed' : 'failed') : 'running'),
-            tool_input: data.toolCall?.input, tool_output: data.toolResult?.result,
-            duration_ms: data.durationMs ?? data.toolResult?.durationMs, error_preview: data.toolResult?.error, start_ms: data.startTime };
-          item.tool = tool; tools.push(tool);
-        }
-        items.push(item);
+      const generation = this.turnGenerations.get(turn.turnId) ?? 0;
+      const cached = this.renderedTurns.get(turn.turnId);
+      if (cached && cached.generation === generation) {
+        for (const message of cached.messages) result.push(message);
+        continue;
       }
-      const status = turn.status === 'inprogress' ? 'active' : turn.status === 'error' ? 'failed' : turn.status;
-      result.push({ id: `assistant-${turn.turnId}`, turnId: turn.turnId, role: 'assistant', status: status,
-        text: items.filter((item: ChatMessageItemResponse) => item.type === 'text' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
-        thinking: items.filter((item: ChatMessageItemResponse) => item.type === 'thinking' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
-        tools: tools, items: items, timestamp: new Date(turn.timestamp).toISOString(), error: turn.error, renderVersion: stored.revision });
+      const rendered = this.renderTurn(turn, stored, byTurn.get(turn.turnId) ?? []);
+      this.renderedTurns.set(turn.turnId, { generation: generation, messages: rendered });
+      for (const message of rendered) result.push(message);
     }
+    // Dropped turns must not pin their messages, and the cache must not outlive
+    // the turns it describes.
+    const live: Set<string> = new Set<string>();
+    for (const stored of turns) { const turn = stored.data; if (turn) live.add(turn.turnId); }
+    for (const key of Array.from(this.renderedTurns.keys())) if (!live.has(key)) this.renderedTurns.delete(key);
+    return result;
+  }
+  private renderTurn(turn: TurnRecord, stored: StoredTurn, entries: StoredItem[]): ChatMessage[] {
+    const result: ChatMessage[] = [];
+    const metadata = turn.userMessage.metadata as UserMetadata | undefined;
+    const userText = metadata?.original_text || turn.userMessage.content;
+    if (userText.length > 0 || (metadata?.images?.length || 0) > 0) result.push({ id: turn.userMessage.id, turnId: turn.turnId,
+      role: 'user', text: userText, images: metadata?.images, status: 'sent', timestamp: String(turn.userMessage.timestamp) });
+    const turnFence = this.tombstones.get(`turn/${turn.turnId}`) ?? 0;
+    const visible = entries.filter((item: StoredItem) => {
+      const round = this.rounds.get(item.roundId);
+      const roundFence = Math.max(turnFence, this.tombstones.get(`round/${item.roundId}`) ?? 0);
+      return !!round?.data && round.revision > roundFence &&
+        item.revision > Math.max(roundFence, this.tombstones.get(`item/${item.data.data.id}`) ?? 0);
+    })
+      .sort((a: StoredItem, b: StoredItem) => {
+        const roundA = this.rounds.get(a.roundId)?.data?.roundIndex || 0;
+        const roundB = this.rounds.get(b.roundId)?.data?.roundIndex || 0;
+        return roundA - roundB || (a.data.data.orderIndex ?? a.data.data.timestamp ?? 0) -
+          (b.data.data.orderIndex ?? b.data.data.timestamp ?? 0) || a.data.data.id.localeCompare(b.data.data.id);
+      });
+    const items: ChatMessageItemResponse[] = [];
+    const tools: RemoteToolStatusResponse[] = [];
+    for (const entry of visible) {
+      const data = entry.data.data;
+      if (data.status === 'superseded' || data.status === 'retry_superseded') continue;
+      const round = this.rounds.get(entry.roundId)?.data?.roundIndex || 0;
+      const item: ChatMessageItemResponse = { type: entry.data.type, content: data.content, round_index: round, is_subagent: data.isSubagentItem === true || !!data.subagentSessionId };
+      if (entry.data.type === 'tool') {
+        const tool: RemoteToolStatusResponse = { id: data.toolCall?.id || data.id, name: data.toolName, status: data.status || (data.toolResult ? (data.toolResult.success ? 'completed' : 'failed') : 'running'),
+          tool_input: data.toolCall?.input, tool_output: data.toolResult?.result,
+          duration_ms: data.durationMs ?? data.toolResult?.durationMs, error_preview: data.toolResult?.error, start_ms: data.startTime };
+        item.tool = tool; tools.push(tool);
+      }
+      items.push(item);
+    }
+    const status = turn.status === 'inprogress' ? 'active' : turn.status === 'error' ? 'failed' : turn.status;
+    result.push({ id: `assistant-${turn.turnId}`, turnId: turn.turnId, role: 'assistant', status: status,
+      text: items.filter((item: ChatMessageItemResponse) => item.type === 'text' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
+      thinking: items.filter((item: ChatMessageItemResponse) => item.type === 'thinking' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
+      tools: tools, items: items, timestamp: String(turn.timestamp), error: turn.error, renderVersion: stored.revision });
     return result;
   }
 }

@@ -85,11 +85,18 @@ pub async fn local_device_metadata() -> serde_json::Value {
         let value = String::from_utf8(output.stdout).ok()?.trim().to_string();
         (!value.is_empty()).then_some(value)
     }
-    let os = match std::env::consts::OS {
-        "macos" => "macOS",
-        "windows" => "Windows",
-        "linux" => "Linux",
-        other => other,
+    // OpenHarmony/HarmonyOS PC builds compile for `target_env = "ohos"` while
+    // `std::env::consts::OS` still reads `linux`, so the target env is the only
+    // exact signal that separates HarmonyOS from a Linux distribution.
+    let os = if cfg!(target_env = "ohos") {
+        "HarmonyOS"
+    } else {
+        match std::env::consts::OS {
+            "macos" => "macOS",
+            "windows" => "Windows",
+            "linux" => "Linux",
+            other => other,
+        }
     };
     #[cfg(target_os = "macos")]
     let (model, version) = (
@@ -343,11 +350,16 @@ mod tests {
     #[tokio::test]
     async fn local_metadata_has_display_os_and_only_non_destructive_valid_fields() {
         let metadata = local_device_metadata().await;
-        let expected = match std::env::consts::OS {
-            "macos" => "macOS",
-            "windows" => "Windows",
-            "linux" => "Linux",
-            other => other,
+        // Pins the exact strings the Web UI selects device artwork on.
+        let expected = if cfg!(target_env = "ohos") {
+            "HarmonyOS"
+        } else {
+            match std::env::consts::OS {
+                "macos" => "macOS",
+                "windows" => "Windows",
+                "linux" => "Linux",
+                other => other,
+            }
         };
         assert_eq!(metadata["device_os"], expected);
         for (key, value) in metadata.as_object().unwrap() {

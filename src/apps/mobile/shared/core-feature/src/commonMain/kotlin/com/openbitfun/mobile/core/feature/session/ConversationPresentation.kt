@@ -4,6 +4,7 @@ import com.openbitfun.mobile.core.domain.ChatMessage
 import com.openbitfun.mobile.core.domain.ChatTimelineItemType
 import com.openbitfun.mobile.core.domain.ChatTimelineProjector
 import com.openbitfun.mobile.core.domain.ChatTimelineState
+import com.openbitfun.mobile.core.domain.ChatTranscriptOrigin
 import com.openbitfun.mobile.core.domain.ToolInputPolicy
 import com.openbitfun.mobile.core.domain.ToolQuestionPolicy
 import com.openbitfun.mobile.core.domain.ToolStatusPolicy
@@ -93,7 +94,7 @@ public data class ToolCard public constructor(
     public val foldIntoSummary: Boolean
         get() {
             if (actions.isNotEmpty() || kind == ToolKind.QUESTION) return false
-            if (phase != ToolPhase.COMPLETED && phase != ToolPhase.CANCELLED) return false
+            if (phase !in setOf(ToolPhase.COMPLETED, ToolPhase.CANCELLED, ToolPhase.FAILED)) return false
             val normalizedName = name.filterNot { it == '_' || it == '-' || it.isWhitespace() }.lowercase()
             val planWrite = normalizedName in setOf("write", "writefile", "createfile") &&
                 filePath.lowercase().endsWith(".plan.md")
@@ -159,14 +160,13 @@ public data class ConversationRow public constructor(
     public val streaming: Boolean,
     /** Streaming, with nothing to show yet; apps draw the waiting indicator. */
     public val typing: Boolean,
-    /** Sent from this device but not yet echoed back by the desktop. */
-    public val pending: Boolean,
     /** The send failed and this is the row a retry would repeat. */
     public val showRetry: Boolean,
     /** A user-visible assistant failure returned by the desktop. */
     public val error: String?,
     /** This is the current turn, including its finalizing snapshot before persistence. */
     public val live: Boolean,
+    public val timestampMs: Long?,
 )
 
 /**
@@ -210,11 +210,23 @@ public fun ChatTimelineState.conversationRows(): List<ConversationRow> =
             live = item.type == ChatTimelineItemType.ASSISTANT_LIVE_TURN,
             streaming = item.isStreaming,
             typing = message?.let { isTyping(it, item.isStreaming) } == true,
-            pending = item.type == ChatTimelineItemType.OPTIMISTIC_USER_MESSAGE,
             showRetry = item.showRetryAction,
             error = message?.error?.trim()?.takeIf(String::isNotEmpty),
+            timestampMs = message?.timestamp?.let(SessionTimePresentation::timestampMs),
         )
     }
+
+/**
+ * Whether this timeline is still the copy this device stored, rather than the
+ * host's answer for the session.
+ *
+ * The stored copy is worth showing at once, but it stops wherever the last write
+ * stopped — inside whatever turn was running when the app went away — so a wait
+ * for "the transcript" ends on the host's answer rather than on rows, and rows
+ * already on screen are labelled unconfirmed until it arrives.
+ */
+public fun ChatTimelineState.transcriptUnconfirmed(): Boolean =
+    origin != ChatTranscriptOrigin.HOST
 
 /**
  * What to print for a message.

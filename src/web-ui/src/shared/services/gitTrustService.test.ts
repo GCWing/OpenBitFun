@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TauriCommandError } from '@/infrastructure/api/errors/TauriCommandError';
+import { activateSurface, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import {
   describeGitTrustFailure,
   requestGitRepositoryTrust,
@@ -59,6 +60,7 @@ function grantedOutcome() {
 }
 
 beforeEach(() => {
+  activateSurface('local');
   resetGitTrustDecisions();
   confirmWarningMock.mockReset();
   trustRepositoryMock.mockReset();
@@ -112,6 +114,29 @@ describe('requestGitRepositoryTrust', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
     expect(confirmWarningMock).toHaveBeenCalledTimes(1);
     expect(trustRepositoryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('never grants an answer from a departed device to the device rendered now', async () => {
+    let resolveConfirm!: (value: boolean) => void;
+    confirmWarningMock.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolveConfirm = resolve;
+      }),
+    );
+    trustRepositoryMock.mockResolvedValue(grantedOutcome());
+    const workspace = { workspaceId: 'same-path-id', repositoryPath: REPOSITORY_PATH };
+
+    const departed = requestGitRepositoryTrust(workspace);
+    activateSurface('peer-b');
+    confirmWarningMock.mockResolvedValueOnce(false);
+    const current = requestGitRepositoryTrust(workspace);
+    resolveConfirm(true);
+
+    await expect(departed).rejects.toSatisfy(isSurfaceChangedError);
+    await expect(current).resolves.toBe(false);
+    expect(confirmWarningMock).toHaveBeenCalledTimes(2);
+    expect(trustRepositoryMock).not.toHaveBeenCalled();
+    expect(warningMock).not.toHaveBeenCalled();
   });
 
   it('does not ask again in the quiet period after a decline', async () => {

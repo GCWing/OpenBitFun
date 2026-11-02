@@ -15,7 +15,10 @@ impl DeepResearchMode {
     pub fn new() -> Self {
         Self {
             default_tools: vec![
-                "Task".to_string(),
+                "AgentSpawn".to_string(),
+                "AgentSendInput".to_string(),
+                "AgentControl".to_string(),
+                "AgentList".to_string(),
                 "ListModels".to_string(),
                 "AgentWait".to_string(),
                 "WebSearch".to_string(),
@@ -26,6 +29,7 @@ impl DeepResearchMode {
                 "Read".to_string(),
                 "view_image".to_string(),
                 "analyze_image".to_string(),
+                "generate_image".to_string(),
                 "Grep".to_string(),
                 "Glob".to_string(),
                 "Write".to_string(),
@@ -42,7 +46,6 @@ impl DeepResearchMode {
                 // belongs on a schedule, and ControlHub's `wait` points here
                 // rather than at an hour-long turn.
                 "Cron".to_string(),
-                "TodoWrite".to_string(),
                 "AskUserQuestion".to_string(),
             ],
         }
@@ -68,7 +71,7 @@ impl Agent for DeepResearchMode {
     }
 
     fn prompt_template_name(&self, _model_name: Option<&str>) -> &str {
-        "deep_research_agent"
+        "deep_research_mode"
     }
 
     fn default_tools(&self) -> Vec<String> {
@@ -79,7 +82,6 @@ impl Agent for DeepResearchMode {
         UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 
     fn is_readonly(&self) -> bool {
@@ -95,10 +97,19 @@ mod tests {
     fn has_expected_default_tools() {
         let agent = DeepResearchMode::new();
         let tools = agent.default_tools();
-        assert!(
-            tools.contains(&"Task".to_string()),
-            "Task tool required for parallel sub-agent orchestration"
-        );
+        for tool in [
+            "AgentSpawn",
+            "AgentSendInput",
+            "AgentControl",
+            "AgentList",
+            "AgentWait",
+        ] {
+            assert!(
+                tools.contains(&tool.to_string()),
+                "{tool} required for sub-agent orchestration"
+            );
+        }
+        assert!(!tools.contains(&"Task".to_string()));
         assert!(tools.contains(&"ListModels".to_string()));
         assert!(tools.contains(&"WebSearch".to_string()));
         assert!(tools.contains(&"WebFetch".to_string()));
@@ -122,8 +133,8 @@ mod tests {
         let agent = DeepResearchMode::new();
         assert_eq!(
             agent.prompt_template_name(Some("gpt-5.1")),
-            "deep_research_agent"
+            "deep_research_mode"
         );
-        assert_eq!(agent.prompt_template_name(None), "deep_research_agent");
+        assert_eq!(agent.prompt_template_name(None), "deep_research_mode");
     }
 }

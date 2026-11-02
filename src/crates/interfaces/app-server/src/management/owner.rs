@@ -441,6 +441,9 @@ fn model_from_mutation(
         api_key,
         context_window: mutation.context_window,
         max_tokens: mutation.max_tokens,
+        max_images_per_request: mutation
+            .max_images_per_request
+            .unwrap_or(current.max_images_per_request),
         temperature: current.temperature,
         top_p: current.top_p,
         enabled: mutation.enabled,
@@ -456,6 +459,7 @@ fn model_from_mutation(
         custom_request_body,
         custom_request_body_mode: current.custom_request_body_mode,
         auth: current.auth,
+        channel_routing: current.channel_routing,
     })
 }
 
@@ -1271,12 +1275,34 @@ impl AppManagementService {
         request: UpdateModelRequest,
     ) -> AppManagementResult<UpdateModelResponse> {
         validate_model_update_identity(&request.model_id, &request.model)?;
-        let existing = self.model_config(&request.model_id).await?;
-        let model = model_from_mutation(request.model, Some(existing))?;
-        self.config
-            .update_ai_model(&request.model_id, model)
+        // Older mutation DTOs cannot express account/channel routing. Merge
+        // against the current model under the owner write lock, so a concurrent
+        // policy edit is not replaced by a stale preservation snapshot.
+        let outcome = self
+            .config
+            .update_config(
+                "ai.models",
+                |models: &mut Vec<openbitfun_core::service::config::AIModelConfig>| {
+                    let Some(existing) =
+                        models.iter_mut().find(|model| model.id == request.model_id)
+                    else {
+                        return Ok(Err(AppManagementError::not_found(format!(
+                            "AI model '{}' was not found",
+                            request.model_id
+                        ))));
+                    };
+                    match model_from_mutation(request.model, Some(existing.clone())) {
+                        Ok(model) => {
+                            *existing = model;
+                            Ok(Ok(()))
+                        }
+                        Err(error) => Ok(Err(error)),
+                    }
+                },
+            )
             .await
             .map_err(core_error)?;
+        outcome?;
         Ok(UpdateModelResponse {})
     }
 
@@ -1304,8 +1330,7 @@ impl AppManagementService {
             ModelDefaultSlot::Mode => self
                 .config
                 .set_config(
-                    "ai.agent_model_defaults.mode",
-                    request.model_id.as_deref().unwrap_or("primary"),
+                    "ai.agent_model_selections.mode", serde_json::json!({"kind":"model", "model_ref": request.model_id.as_deref().unwrap_or("primary")}),
                 )
                 .await
                 .map_err(core_error)?,
@@ -1732,6 +1757,7 @@ fn project_account_snapshot(
             .map(|device| AccountDevice {
                 device_id: device.device_id,
                 device_name: device.device_name,
+                device_kind: device.device_kind,
                 device_alias: device.device_alias,
                 device_model: device.device_model,
                 device_os: device.device_os,
@@ -1856,6 +1882,7 @@ mod tests {
             custom_request_body: Some(SecretUpdate::Preserve),
             context_window: Some(128_000),
             max_tokens: Some(8_192),
+            max_images_per_request: None,
             enabled: true,
             reasoning: None,
             inline_think_in_text: true,
@@ -1868,32 +1895,64 @@ mod tests {
     fn model_mutation_preserves_and_replaces_write_only_values() {
         let existing = openbitfun_core::service::config::AIModelConfig {
             api_key: "existing-key".to_string(),
+            max_images_per_request: Some(3),
             custom_headers: Some(HashMap::from([(
                 "Authorization".to_string(),
                 "existing-header".to_string(),
             )])),
             custom_request_body: Some("existing-body".to_string()),
+            channel_routing: Some(
+                serde_json::from_value(serde_json::json!({
+                    "version": 1, "fallback_model_ids": ["backup"], "manual_channel": "backup"
+                }))
+                .unwrap(),
+            ),
             ..Default::default()
         };
 
         let preserved = model_from_mutation(mutation(), Some(existing.clone()))
             .expect("preserve existing model secrets");
         assert_eq!(preserved.api_key, "existing-key");
+        assert_eq!(preserved.max_images_per_request, Some(3));
         assert_eq!(preserved.custom_headers, existing.custom_headers);
+        assert_eq!(
+            preserved.channel_routing, existing.channel_routing,
+            "an older management payload must preserve the channel selection it cannot express"
+        );
         assert_eq!(
             preserved.custom_request_body.as_deref(),
             Some("existing-body")
         );
 
         let mut replacement = mutation();
+        let original_route = existing.channel_routing.clone();
         replacement.api_key = Some(SecretUpdate::Replace("new-key".to_string()));
         replacement.custom_headers = Some(SecretUpdate::Clear);
         replacement.custom_request_body = Some(SecretUpdate::Replace("new-body".to_string()));
-        let replaced =
-            model_from_mutation(replacement, Some(existing)).expect("replace model secrets");
+        let replaced = model_from_mutation(replacement, Some(existing.clone()))
+            .expect("replace model secrets");
         assert_eq!(replaced.api_key, "new-key");
+        assert_eq!(replaced.max_images_per_request, Some(3));
         assert!(replaced.custom_headers.is_none());
         assert_eq!(replaced.custom_request_body.as_deref(), Some("new-body"));
+        assert_eq!(replaced.channel_routing, original_route);
+
+        let mut limited = mutation();
+        limited.max_images_per_request = Some(Some(5));
+        let updated = model_from_mutation(limited, Some(existing)).expect("update image limit");
+        assert_eq!(updated.max_images_per_request, Some(5));
+
+        let mut cleared = mutation();
+        cleared.max_images_per_request = Some(None);
+        let cleared = model_from_mutation(
+            cleared,
+            Some(openbitfun_core::service::config::AIModelConfig {
+                max_images_per_request: Some(3),
+                ..Default::default()
+            }),
+        )
+        .expect("clear image limit");
+        assert_eq!(cleared.max_images_per_request, None);
     }
 
     #[test]
@@ -1951,6 +2010,7 @@ mod tests {
     fn model_summary_exposes_only_sorted_header_names() {
         let model = openbitfun_core::service::config::AIModelConfig {
             api_key: "secret-key".to_string(),
+            max_images_per_request: Some(3),
             custom_headers: Some(HashMap::from([
                 ("Z-Header".to_string(), "secret-z".to_string()),
                 ("A-Header".to_string(), "secret-a".to_string()),
@@ -1960,6 +2020,7 @@ mod tests {
 
         let summary = openbitfun_core::service::config::model_projection::model_summary(&model);
         assert!(summary.api_key_configured);
+        assert_eq!(summary.max_images_per_request, Some(3));
         assert_eq!(summary.custom_header_names, ["A-Header", "Z-Header"]);
         let debug = format!("{summary:?}");
         assert!(!debug.contains("secret-key"));

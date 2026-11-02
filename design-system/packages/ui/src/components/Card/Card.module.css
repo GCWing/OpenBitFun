@@ -51,6 +51,10 @@
     gap: var(--openbitfun-layout-card-gap-lg);
   }
 
+  .root[data-radius="none"] {
+    border-radius: 0;
+  }
+
   .root[data-radius="sm"] {
     border-radius: var(--openbitfun-layout-card-radius-sm);
   }

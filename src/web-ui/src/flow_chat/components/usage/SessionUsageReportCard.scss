@@ -1,9 +1,7 @@
 @use '../../flat-markdown-surfaces' as flatMarkdownSurfaces;
-@use '../../markdown-typography' as markdownTypography;
 
 .session-usage-report-card {
   @include flatMarkdownSurfaces.apply;
-  @include markdownTypography.apply;
 
   display: flex;
   flex-direction: column;
@@ -217,8 +215,7 @@
     border-radius: 6px;
     background: color-mix(in srgb, var(--openbitfun-color-action-quiet-hover) 58%, transparent);
 
-    svg,
-    [data-openbitfun-component='icon'] {
+    > :is(svg, [data-openbitfun-component='icon']) {
       flex: 0 0 auto;
       color: var(--openbitfun-color-content-secondary);
     }
@@ -469,7 +466,11 @@
   font-size: var(--openbitfun-type-support-font-size);
   line-height: var(--openbitfun-type-support-line-height);
 
-  span + span {
+  // Chromium associated the former span + span rule with unrelated transcript
+  // spans during virtual row changes. Use owned metadata classes to narrow the
+  // invalidation set. Equal-DOM trace sample: 53 added / 771 retained elements,
+  // style time 59 -> 31ms and elementCount 3867 -> 2027 (single desktop run).
+  > .session-usage-report-card__compact-meta-item + .session-usage-report-card__compact-meta-item {
     padding-inline-start: var(--openbitfun-space-2);
     border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
   }

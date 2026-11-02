@@ -1,4 +1,4 @@
-use crate::file_lock::{FileLock, FileLockError, FileLockMode};
+use crate::file_lock::{is_lock_contention, FileLock, FileLockError, FileLockMode};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -89,7 +89,7 @@ impl SessionWriteLock {
                         path: lock_path.clone(),
                         source,
                     },
-                    FileLockError::Unavailable(source) if is_contention(&source) => {
+                    FileLockError::Unavailable(source) if is_lock_contention(&source) => {
                         SessionWriteLockError::InUse
                     }
                     FileLockError::Unavailable(source) => {
@@ -229,20 +229,6 @@ fn hash_path(hasher: &mut Sha256, path: &Path) {
         for unit in path.as_os_str().encode_wide() {
             hasher.update(unit.to_le_bytes());
         }
-    }
-}
-
-fn is_contention(error: &std::io::Error) -> bool {
-    if error.kind() == std::io::ErrorKind::WouldBlock {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        error.raw_os_error() == Some(33)
-    }
-    #[cfg(unix)]
-    {
-        matches!(error.raw_os_error(), Some(libc::EAGAIN))
     }
 }
 

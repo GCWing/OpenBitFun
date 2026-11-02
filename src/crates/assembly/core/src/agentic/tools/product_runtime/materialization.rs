@@ -21,6 +21,7 @@ const PRODUCT_TOOL_REGISTRATION_ORDER: &[&str] = &[
     "Read",
     "view_image",
     "analyze_image",
+    "generate_image",
     "Glob",
     "Grep",
     "Write",
@@ -34,9 +35,8 @@ const PRODUCT_TOOL_REGISTRATION_ORDER: &[&str] = &[
     "Task",
     "AgentSpawn",
     "AgentSendInput",
-    "AgentInterrupt",
+    "AgentControl",
     "AgentList",
-    "AgentDelete",
     "AgentWait",
     "LaunchReviewAgent",
     "Skill",
@@ -54,11 +54,13 @@ const PRODUCT_TOOL_REGISTRATION_ORDER: &[&str] = &[
     "ReadCanvas",
     "UpdateCanvas",
     "PatchCanvas",
+    "ListWorkspaces",
     "SessionControl",
     "SessionMessage",
     "SessionHistory",
     "Cron",
     "PortForward",
+    "DesktopCard",
     "WebSearch",
     "WebFetch",
     "ListMCPResources",
@@ -71,8 +73,10 @@ const PRODUCT_TOOL_REGISTRATION_ORDER: &[&str] = &[
     "InitMiniApp",
     "FinalizeMiniApp",
     "PublishMiniApp",
+    "MiniAppBrowser",
     "FrontendWorkbench",
     "PublishAppearance",
+    "PageManage",
     "PageDeploy",
     "PagePublish",
     "ControlHub",
@@ -110,6 +114,8 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "view_image" => Some(Arc::new(ViewImageTool::new())),
             #[cfg(feature = "tools-image-analysis")]
             "analyze_image" => Some(Arc::new(AnalyzeImageTool::new())),
+            #[cfg(feature = "tools-image-generation")]
+            "generate_image" => Some(Arc::new(GenerateImageTool::new())),
             "Glob" => Some(Arc::new(GlobTool::new())),
             "Grep" => Some(Arc::new(GrepTool::new())),
             "Write" => Some(Arc::new(FileWriteTool::new())),
@@ -124,9 +130,8 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "Task" => Some(Arc::new(TaskTool::new())),
             "AgentSpawn" => Some(Arc::new(AgentSpawnTool::new())),
             "AgentSendInput" => Some(Arc::new(AgentSendInputTool::new())),
-            "AgentInterrupt" => Some(Arc::new(AgentInterruptTool::new())),
+            "AgentControl" => Some(Arc::new(AgentControlTool::new())),
             "AgentList" => Some(Arc::new(AgentListTool::new())),
-            "AgentDelete" => Some(Arc::new(AgentDeleteTool::new())),
             "AgentWait" => Some(Arc::new(AgentWaitTool::new())),
             "LaunchReviewAgent" => Some(Arc::new(LaunchReviewAgentTool::new())),
             "Skill" => Some(Arc::new(SkillTool::new())),
@@ -148,6 +153,7 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "CallDeferredTool" => Some(Arc::new(CallDeferredTool::new())),
             #[cfg(feature = "tools-git")]
             "GetFileDiff" => Some(Arc::new(GetFileDiffTool::new())),
+            "ListWorkspaces" => Some(Arc::new(ListWorkspacesTool::new())),
             "SessionControl" => Some(Arc::new(SessionControlTool::new())),
             "SessionMessage" => Some(Arc::new(SessionMessageTool::new())),
             "SessionHistory" => Some(Arc::new(SessionHistoryTool::new())),
@@ -155,6 +161,8 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "Cron" => Some(Arc::new(CronTool::new())),
             #[cfg(feature = "tools-agent-control")]
             "PortForward" => Some(Arc::new(PortForwardTool::new())),
+            #[cfg(feature = "tools-agent-control")]
+            "DesktopCard" => Some(Arc::new(DesktopCardTool::new())),
             #[cfg(feature = "tools-browser-web")]
             "WebSearch" => Some(Arc::new(WebSearchTool::new())),
             #[cfg(feature = "tools-browser-web")]
@@ -179,10 +187,14 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "FinalizeMiniApp" => Some(Arc::new(FinalizeMiniAppTool::new())),
             #[cfg(feature = "tools-miniapp")]
             "PublishMiniApp" => Some(Arc::new(PublishMiniAppTool::new())),
+            #[cfg(feature = "tools-miniapp")]
+            "MiniAppBrowser" => Some(Arc::new(MiniAppBrowserTool::new())),
             #[cfg(feature = "tools-creation")]
             "FrontendWorkbench" => Some(Arc::new(FrontendWorkbenchTool::new())),
             #[cfg(feature = "tools-miniapp")]
             "PublishAppearance" => Some(Arc::new(PublishAppearanceTool::new())),
+            #[cfg(feature = "tools-pages")]
+            "PageManage" => Some(Arc::new(PageManageTool::new())),
             #[cfg(feature = "tools-pages")]
             "PageDeploy" => Some(Arc::new(PageDeployTool::new())),
             #[cfg(feature = "tools-pages")]
@@ -256,6 +268,55 @@ mod tests {
     use crate::agentic::tools::framework::ToolExposure;
     use openbitfun_tool_packs::product_tool_provider_group_plan;
 
+    #[test]
+    fn image_tools_follow_independent_compiled_owners() {
+        for (group, expected, compiled) in [
+            (
+                ToolPackFeatureGroup::ImageGeneration,
+                &["generate_image"][..],
+                cfg!(feature = "tools-image-generation"),
+            ),
+            (
+                ToolPackFeatureGroup::ImageAnalysis,
+                &["view_image", "analyze_image"][..],
+                cfg!(feature = "tools-image-analysis"),
+            ),
+        ] {
+            let result = create_product_tool_registry_from_plan(
+                product_tool_provider_group_plan(),
+                &[group],
+                Arc::new(openbitfun_agent_tools::SnapshotToolDecorator::new(
+                    Arc::new(super::super::snapshot::ProductSnapshotToolWrapper),
+                )),
+            );
+            if !compiled {
+                assert!(matches!(
+                    result,
+                    Err(ProductToolMaterializationError::UnavailableFeatureGroups { .. })
+                ));
+                continue;
+            }
+            let registry = result.expect("the explicitly selected image owner must materialize");
+            assert_eq!(
+                registry
+                    .get_tool_names()
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            for tool in registry.get_all_tools() {
+                assert!(
+                    tool.output_schema()
+                        .as_object()
+                        .is_some_and(|schema| !schema.is_empty()),
+                    "{} must expose its output contract",
+                    tool.name()
+                );
+            }
+        }
+    }
+
     /// Every tool name the provider plan advertises must materialize.
     ///
     /// Registry construction treats an unknown name as a hard error, so a tool
@@ -278,6 +339,15 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn list_workspaces_materializes_as_readonly_deferred_discovery() {
+        let tool = ProductConcreteToolFactory
+            .materialize_tool("ListWorkspaces")
+            .expect("workspace catalog belongs to the session tool provider");
+        assert!(tool.is_readonly());
+        assert!(matches!(tool.default_exposure(), ToolExposure::Deferred));
     }
 
     #[cfg(all(feature = "tools-agent-control", feature = "remote-workspace"))]

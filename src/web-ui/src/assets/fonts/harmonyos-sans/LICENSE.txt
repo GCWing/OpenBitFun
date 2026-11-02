@@ -8,7 +8,7 @@ HarmonyOS Sans Fonts License Agreement
 THIS HARMONYOS SANS FONTS LICENSE AGREEMENT ("AGREEMENT") IS A LEGAL AGREEMENT BETWEEN YOU (EITHER A SINGLE INDIVIDUAL, OR SINGLE LEGAL ENTITY) AND HUAWEI DEVICE CO., LTD.( "LICENSOR")FOR THE USE OF THE HARMONYOS SANS FONTS ACCOMPANYING THIS AGREEMENT.BY DOWNLOADING,COPYING OR OTHERWISE USING HARMONYOS SANS FONTS YOU INDICATE THAT YOU AGREE TO BE BOUND BY ALL OF THE TERMS OF THIS AGREEMENT. IF YOU DO NOT AGREE TO THE TERMS OF THIS AGREEMENT, YOU MAY NOT DOWNLOAD, COPY OR OTHERWISE USE THE HARMONYOS SANS FONTS, AND YOU SHALL PROMPTLY DESTROY AND DELETE ALL THE HARMONYOS SANS FONTS.
 
 1.Definition  
-"HarmonyOS Sans Fonts" shall mean the collection of fonts software components provided by Licensor under this Agreement and clearly marked as "HarmonyOS¬ Sans".
+"HarmonyOS Sans Fonts" shall mean the collection of fonts software components provided by Licensor under this Agreement and clearly marked as "HarmonyOS Sans".
 
 "YOU" shall mean an individual or legal entity exercising permissions granted by this Agreement. 
 

@@ -12,6 +12,7 @@ export type SessionKind = 'normal' | 'btw' | 'review' | 'deep_review' | 'miniapp
 export type PersistedSessionKind = 'standard' | 'subagent';
 export type SessionTitleSource = 'text' | 'i18n';
 export type SessionRelationshipKind = 'btw' | 'review' | 'deep_review' | 'miniapp' | 'subagent';
+export type SessionContinuationPolicy = 'reusable' | 'fresh_only';
 
 export interface SessionRelationship {
   kind?: SessionRelationshipKind;
@@ -21,9 +22,24 @@ export interface SessionRelationship {
   parentTurnIndex?: number | null;
   parentToolCallId?: string | null;
   subagentType?: string | null;
+  continuationPolicy?: SessionContinuationPolicy | null;
 }
 
 export interface SessionCustomMetadata extends Record<string, unknown> {
+  importedFrom?: string;
+  externalHistoryMode?: 'follow';
+  externalHistoryPending?: boolean;
+  externalContentVersion?: string;
+  externalSourceStatus?: 'available' | 'unavailable' | 'unsupported';
+  externalSourceIncomplete?: boolean;
+  externalObservedFingerprint?: string;
+  externalMaterializedObservation?: string;
+  externalBranchOf?: {
+    sessionId: string;
+    ecosystemId: string;
+    sourceSessionId: string;
+    contentVersion: string;
+  };
   kind?: SessionKind;
   parentSessionId?: string | null;
   parentRequestId?: string | null;
@@ -31,6 +47,7 @@ export interface SessionCustomMetadata extends Record<string, unknown> {
   parentTurnIndex?: number | null;
   parentToolCallId?: string | null;
   subagentType?: string | null;
+  continuationPolicy?: SessionContinuationPolicy | null;
   forkOrigin?: {
     sessionId?: string | null;
     turnId?: string | null;
@@ -39,6 +56,7 @@ export interface SessionCustomMetadata extends Record<string, unknown> {
   } | null;
   lastFinishedAt?: number | null;
   titleSource?: SessionTitleSource | null;
+  titleUserEdited?: boolean;
   titleKey?: string | null;
   titleParams?: Record<string, unknown> | null;
   workspaceSessionNumber?: number;
@@ -145,6 +163,8 @@ export interface SessionActivitySummary {
   pendingQuestions: number;
   lastTurn?: SessionLastTurn;
   unreadCompletion?: 'completed' | 'error' | 'interrupted';
+  /** A quiet run can be newer than the unread user-facing result. */
+  unreadTurn?: SessionLastTurn;
 }
 
 export interface ReviewActionPersistedState {
@@ -281,9 +301,12 @@ export interface ModelRoundData {
   providerId?: string;
   modelConfigId?: string;
   effectiveModelName?: string;
+  routing?: ModelRoutingDecision;
   firstChunkMs?: number;
   firstVisibleOutputMs?: number;
   streamDurationMs?: number;
+  /** Request start to first effective output for the accepted model attempt. */
+  ttftMs?: number;
   attemptCount?: number;
   attemptDiagnostics?: ModelRoundAttemptDiagnostic[];
   failureCategory?: string;
@@ -308,6 +331,8 @@ export interface ModelRoundAttemptToolDiagnostic {
 
 export interface ModelRoundRenderHints {
   disableExploreGrouping?: boolean;
+  /** Explicit host policy; absent on older retry-derived hints. */
+  disableExploreGroupingSource?: 'host';
 }
 
 export interface TextItemData {
@@ -377,3 +402,9 @@ export interface ToolResultData {
 }
 
 export type TurnStatus = 'inprogress' | 'completed' | 'error' | 'cancelled';
+
+export interface ModelRoutingDecision {
+  route: string;
+  latencyMs: number;
+  fallbackReason?: string;
+}

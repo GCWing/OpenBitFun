@@ -23,6 +23,8 @@ Control the default Agent Harness, session-title generation, accelerated workspa
   - Enable or disable automatic titles generated from session content
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 让标题模型继承主模型、快速模型或使用指定模型
   - Make title generation inherit the primary or fast model, or use a selected model
+- **智能体可直接控制 / Direct Agent control** · 启用或停用 Agent 答复后在输入框中显示的一句话候选输入
+  - Enable or disable the one-sentence next input suggested in the input box after an Agent reply
 - **智能体可直接控制 / Direct Agent control** · 为本地工作区启用 Flashgrep 加速搜索
   - Enable Flashgrep-backed accelerated search for local workspaces
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看索引状态并在需要时重建工作区索引
@@ -52,6 +54,7 @@ Control the default Agent Harness, session-title generation, accelerated workspa
 | 选项 / Option | 可用值 / Values | 中文说明 | English description |
 | --- | --- | --- | --- |
 | 自动生成会话标题 / Automatic session titles | `boolean` | 根据会话内容生成易识别的标题。 | Generate a recognizable title from session content. |
+| 候选输入建议 / Next input suggestion | `boolean` | Agent 答复完成后，在输入框中给出一句话的下一步输入建议。 | Suggest a one-sentence next message in the input box after the Agent replies. |
 | 工作区加速搜索 / Accelerated workspace search | `boolean` | 为本地项目启用 Flashgrep 加速搜索。 | Enable Flashgrep-backed search for local projects. |
 
 ## 可以直接对智能体说 / Try saying
@@ -62,6 +65,8 @@ Control the default Agent Harness, session-title generation, accelerated workspa
   - “Fix Ultimate as the Harness for new sessions”
 - “关闭自动生成会话标题”
   - “Turn off automatic session titles”
+- “关闭答复后的候选输入建议”
+  - “Turn off next input suggestions after replies”
 - “启用工作区加速搜索”
   - “Enable accelerated workspace search”
 

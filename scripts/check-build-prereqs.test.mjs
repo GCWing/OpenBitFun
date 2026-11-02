@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -17,11 +24,24 @@ function createTestRoot({
   mobileWebDist = false,
   pluginHostDist = false,
   sherpaOnnx = null,
+  virtualStoreEntries = null,
 } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-build-prereqs-'));
 
   if (nodeModules) {
     mkdirSync(path.join(root, 'node_modules'), { recursive: true });
+  }
+
+  // Maps a virtual store package path, relative to the root, to the files it
+  // should contain. An empty file list models a package whose files are gone.
+  if (virtualStoreEntries) {
+    for (const [relativeDir, files] of Object.entries(virtualStoreEntries)) {
+      const packageDir = path.join(root, relativeDir);
+      mkdirSync(packageDir, { recursive: true });
+      for (const file of files) {
+        writeFileSync(path.join(packageDir, file), '{}');
+      }
+    }
   }
 
   if (mobileWebDist) {
@@ -65,10 +85,24 @@ function createFakePnpm() {
   writeFileSync(
     fakePnpmPath,
     `
-const { mkdirSync, writeFileSync } = require('fs');
+const { existsSync, mkdirSync, writeFileSync } = require('fs');
+const path = require('path');
 const args = process.argv.slice(2);
 if (args[0] === 'install') {
   mkdirSync('node_modules', { recursive: true });
+  const restorePath = process.env.FAKE_PNPM_RESTORE_PATH;
+  if (restorePath) {
+    // Records whether the broken package was still present when install ran,
+    // which is what pnpm itself would trip over.
+    if (process.env.FAKE_PNPM_REPORT_PATH) {
+      writeFileSync(
+        process.env.FAKE_PNPM_REPORT_PATH,
+        JSON.stringify({ dirExistedWhenInstallRan: existsSync(restorePath) }),
+      );
+    }
+    mkdirSync(restorePath, { recursive: true });
+    writeFileSync(path.join(restorePath, 'package.json'), '{}');
+  }
 } else if (args[0] === 'run' && args[1] === 'prepare:mobile-web') {
   mkdirSync('src/mobile-web/dist', { recursive: true });
   writeFileSync('src/mobile-web/dist/index.html', '<html></html>');
@@ -94,7 +128,10 @@ if (args[0] === 'install') {
   return binDir;
 }
 
-function runCheck(root, { fix = false, extraPath = null, sherpaEnv = null } = {}) {
+function runCheck(
+  root,
+  { fix = false, extraPath = null, sherpaEnv = null, extraEnv = null } = {},
+) {
   const env = {
     ...process.env,
     OPENBITFUN_BUILD_PREREQS_TEST_ROOT: root,
@@ -108,6 +145,9 @@ function runCheck(root, { fix = false, extraPath = null, sherpaEnv = null } = {}
     } else {
       env.SHERPA_ONNX_LIB_DIR = sherpaEnv;
     }
+  }
+  if (extraEnv) {
+    Object.assign(env, extraEnv);
   }
 
   const args = fix ? [scriptPath, '--fix'] : [scriptPath];
@@ -124,6 +164,12 @@ test('passes when all prerequisites are present (including sherpa-onnx prebuilt)
     mobileWebDist: true,
     pluginHostDist: true,
     sherpaOnnx: ['sherpa-onnx-v1.13.4-osx-arm64-static-lib'],
+    virtualStoreEntries: {
+      'node_modules/.pnpm/typescript@5.8.3/node_modules/typescript': ['package.json'],
+      'node_modules/.pnpm/@openbitfun+ui@0.1.0/node_modules/@openbitfun/ui': [
+        'package.json',
+      ],
+    },
   });
   t.after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -132,6 +178,72 @@ test('passes when all prerequisites are present (including sherpa-onnx prebuilt)
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /Build prerequisite check passed/);
   assert.doesNotMatch(result.stderr, /\[WARN\]/);
+});
+
+test('fails when a pnpm virtual store package has no files', (t) => {
+  const root = createTestRoot({
+    nodeModules: true,
+    mobileWebDist: true,
+    pluginHostDist: true,
+    sherpaOnnx: ['sherpa-onnx-v1.13.4-osx-arm64-static-lib'],
+    virtualStoreEntries: {
+      'node_modules/.pnpm/typescript@5.8.3/node_modules/typescript': [],
+    },
+  });
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+
+  const result = runCheck(root, { sherpaEnv: '' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /\[FAIL\] pnpm virtual store/);
+  assert.match(
+    result.stderr,
+    /node_modules[\\/]\.pnpm[\\/]typescript@5\.8\.3[\\/]node_modules[\\/]typescript/,
+  );
+  assert.match(result.stderr, /Fix: pnpm install/);
+  assert.match(result.stderr, /does not repair this/);
+});
+
+test('--fix removes broken virtual store packages before running pnpm install', (t) => {
+  const binDir = createFakePnpm();
+  const brokenRelativeDir =
+    'node_modules/.pnpm/typescript@5.8.3/node_modules/typescript';
+  const root = createTestRoot({
+    nodeModules: true,
+    mobileWebDist: true,
+    pluginHostDist: true,
+    sherpaOnnx: ['sherpa-onnx-v1.13.4-osx-arm64-static-lib'],
+    virtualStoreEntries: { [brokenRelativeDir]: [] },
+  });
+  const reportPath = path.join(root, 'fake-pnpm-report.json');
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  });
+
+  const result = runCheck(root, {
+    fix: true,
+    extraPath: binDir,
+    sherpaEnv: '',
+    extraEnv: {
+      FAKE_PNPM_RESTORE_PATH: path.join(root, brokenRelativeDir),
+      FAKE_PNPM_REPORT_PATH: reportPath,
+    },
+  });
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(
+    result.stdout,
+    /Removing broken package directory node_modules[\\/]\.pnpm[\\/]typescript@5\.8\.3[\\/]node_modules[\\/]typescript/,
+  );
+  assert.match(result.stdout, /\$ pnpm install/);
+  assert.match(result.stdout, /All errors resolved/);
+  // The empty directory has to be gone before install runs; pnpm does not
+  // repair a package directory that still exists with no files.
+  assert.equal(
+    JSON.parse(readFileSync(reportPath, 'utf8')).dirExistedWhenInstallRan,
+    false,
+  );
 });
 
 test('fails when root node_modules is missing', (t) => {

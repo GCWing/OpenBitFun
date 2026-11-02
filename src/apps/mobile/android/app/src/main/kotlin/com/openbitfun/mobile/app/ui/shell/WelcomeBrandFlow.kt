@@ -61,7 +61,9 @@ internal fun WelcomeBrandFlow(modifier: Modifier, sweep: Boolean = false) {
     ) else remember { mutableFloatStateOf(0f) }
     val ink=MaterialTheme.colorScheme.onBackground
     Canvas(modifier) {
-        val phase = animatedPhase.value
+        val framePhase = animatedPhase.value
+        // Keep the cover and measured home mark on the same sweep during handoff.
+        val phase = if (sweep && moving) (android.os.SystemClock.uptimeMillis() % 5000L) / 5000f else framePhase
         drawIntoCanvas { canvas ->
             val c=canvas.nativeCanvas;c.save();c.scale(size.width/256,size.height/256);paint.color=ink.toArgb()
             if(sweep) {

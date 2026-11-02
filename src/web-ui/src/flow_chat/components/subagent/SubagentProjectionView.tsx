@@ -1,3 +1,12 @@
+import { useFlowChatVirtualizer } from '../modern/useFlowChatVirtualizer';
+import { useFlowChatViewportOwner } from '../modern/useFlowChatViewportOwner';
+import { estimateFlowItemHeight } from '../modern/virtualItemHeightEstimators';
+import { FlowChatReaderProvider, useFlowChatReaderScope, useFlowChatReaderValue } from '../../timeline/readerState';
+import { useEmbeddedTimelineFollow } from '../../timeline/useEmbeddedTimelineFollow';
+import { useTimelineInteraction } from '../../timeline/useTimelineInteraction';
+import { TimelineMutationBoundary } from '../../timeline/TimelineMutationBoundary';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import type { AnyFlowItem } from '../../types/flow-chat';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
@@ -5,11 +14,9 @@ import type { FlowChatState, FlowItem, FlowTextItem, FlowThinkingItem, FlowToolI
 import { FlowTextBlock } from '../FlowTextBlock';
 import { ModelThinkingDisplay } from '../../tool-cards/ModelThinkingDisplay';
 import { FlowToolCard } from '../FlowToolCard';
-import { taskCollapseStateManager } from '../../store/TaskCollapseStateManager';
-import { SmoothHeightCollapse } from '../modern/SmoothHeightCollapse';
-import { FLOWCHAT_COLLAPSE_DURATION_MS } from '../modern/flowChatCollapseMotion';
 import { FlowChatStore } from '../../store/FlowChatStore';
 import { getSubagentProjectionState } from '../../utils/subagentProjection';
+import { isFlowItemVisible } from '../../utils/flowItemVisibility';
 import { ensureBtwSessionAvailable } from '../../services/btwSessionPane';
 import { RuntimeStatusSlot } from '../modern/RuntimeStatusSlot';
 import { useRuntimeStatusStore } from '../../store/runtimeStatusStore';
@@ -33,7 +40,7 @@ interface SubagentProjectionViewProps {
 const SUBAGENT_TEXT_TRUNCATE_LINES = 50;
 
 const SubagentProjectionTextBlock = React.memo<{ textItem: FlowTextItem; className?: string }>(({ textItem, className = '' }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useFlowChatReaderValue<boolean>(`text:${textItem.id}:expanded`, false);
   const { t } = useTranslation('flow-chat');
 
   const content = typeof textItem.content === 'string'
@@ -63,7 +70,7 @@ const SubagentProjectionTextBlock = React.memo<{ textItem: FlowTextItem; classNa
   };
 
   return (
-    <div data-openbitfun-component="subagent-projection" data-openbitfun-part="truncated" className="subagent-projection-text--truncated">
+    <div data-openbitfun-component="subagent-projection" data-openbitfun-part="truncated" className="subagent-projection-text--truncated" data-thinking-continuation="">
       <FlowTextBlock
         textItem={truncatedItem}
         className={className}
@@ -93,6 +100,7 @@ function renderProjectedItem(
   turnId: string | undefined,
   compactText: boolean,
   isLastVisibleItem: boolean,
+  thinkingSessionId?: string,
 ): React.ReactNode {
   switch (item.type) {
     case 'text':
@@ -110,11 +118,12 @@ function renderProjectedItem(
           thinkingItem={item as FlowThinkingItem}
           isLastItem={isLastVisibleItem}
           displayContext="subagent-projection"
+          sourceSessionId={thinkingSessionId}
         />
       );
     case 'tool':
       return (
-        <div data-openbitfun-component="subagent-projection" data-openbitfun-part="item" key={item.id} className="flowchat-flow-item" data-flow-item-id={item.id} data-flow-item-type="tool">
+        <div data-openbitfun-component="subagent-projection" data-openbitfun-part="item" key={item.id} className="flowchat-flow-item" data-thinking-continuation="" data-flow-item-id={item.id} data-flow-item-type="tool">
           <FlowToolCard
             toolItem={item as FlowToolItem}
             sessionId={sessionId}
@@ -144,11 +153,11 @@ export const SubagentProjectionView: React.FC<SubagentProjectionViewProps> = ({
   liveItemsMode = 'last-round',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const userScrolledUpRef = useRef(false);
+  const followRef = useRef(true);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const viewportOwner = useFlowChatViewportOwner(containerRef);
   const lastScrollTopRef = useRef(0);
-  const [isCollapsed, setIsCollapsed] = useState(() =>
-    taskCollapseStateManager.isCollapsed(parentTaskToolId)
-  );
   const [projectionState, setProjectionState] = useState(() => {
     if (!parentToolIds || parentToolIds.size === 0) {
       return null;
@@ -165,18 +174,6 @@ export const SubagentProjectionView: React.FC<SubagentProjectionViewProps> = ({
       { itemsMode: liveItemsMode },
     );
   });
-
-  useEffect(() => {
-    setIsCollapsed(taskCollapseStateManager.isCollapsed(parentTaskToolId));
-
-    const unsubscribe = taskCollapseStateManager.addListener((toolId, collapsed) => {
-      if (toolId === parentTaskToolId) {
-        setIsCollapsed(collapsed);
-      }
-    });
-
-    return unsubscribe;
-  }, [parentTaskToolId]);
 
   useEffect(() => {
     if (!parentToolIds || parentToolIds.size === 0) {
@@ -227,7 +224,10 @@ export const SubagentProjectionView: React.FC<SubagentProjectionViewProps> = ({
   const resolvedSubagentSessionId = subagentSessionId
     ?? projectionState?.session?.sessionId
     ?? directSubagentSessionId;
-  const items = liveItems;
+  useEffect(() => resolvedSubagentSessionId
+    ? FlowChatStore.getInstance().retainSessionHistory(resolvedSubagentSessionId)
+    : undefined, [resolvedSubagentSessionId]);
+  const items = useMemo(() => liveItems.filter(isFlowItemVisible), [liveItems]);
   const runtimeStatus = useRuntimeStatusStore(state => (
     resolvedSubagentSessionId
       ? state.bySessionId.get(resolvedSubagentSessionId)
@@ -271,6 +271,10 @@ export const SubagentProjectionView: React.FC<SubagentProjectionViewProps> = ({
     });
   }, [items.length, itemsProp, parentSessionId, parentToolIds, resolvedSubagentSessionId, sessionId]);
 
+  const shouldRenderProjection =
+    Boolean(resolvedSubagentSessionId) &&
+    (items.length > 0 || projectionState?.isRunning === true || Boolean(runtimeStatus));
+
   // Tail position, not active status, controls live completion retention.
   // Otherwise a newer settled action can collapse while an older item still
   // carries a stale active status.
@@ -286,12 +290,13 @@ export const SubagentProjectionView: React.FC<SubagentProjectionViewProps> = ({
 
       if (currentScrollTop < lastScrollTopRef.current && maxScrollTop > 0) {
         if (lastScrollTopRef.current - currentScrollTop > 20) {
-          userScrolledUpRef.current = true;
+          followRef.current = false;
+          viewportOwner.release('follow-output');
         }
       }
 
       if (maxScrollTop > 0 && maxScrollTop - currentScrollTop < 30) {
-        userScrolledUpRef.current = false;
+        followRef.current = true;
       }
 
       lastScrollTopRef.current = currentScrollTop;
@@ -299,71 +304,77 @@ export const SubagentProjectionView: React.FC<SubagentProjectionViewProps> = ({
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [isCollapsed]);
+  }, [shouldRenderProjection, viewportOwner]);
 
-  const scrollSignal = useMemo(() => {
-    return items.map((item) => {
-      const itemAny = item as any;
-      const contentLength = typeof itemAny.content === 'string' ? itemAny.content.length : 0;
-      const paramsLength = itemAny.partialParams ? JSON.stringify(itemAny.partialParams).length : 0;
-      return `${item.id}:${item.status}:${contentLength}:${paramsLength}`;
-    }).join('|');
-  }, [items]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || isCollapsed) return;
-
-    const rafId = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!userScrolledUpRef.current) {
-          container.scrollTop = container.scrollHeight;
-          lastScrollTopRef.current = container.scrollTop;
-        }
-      });
-    });
-
-    return () => cancelAnimationFrame(rafId);
-  }, [isCollapsed, scrollSignal]);
-
-  const shouldRenderProjection =
-    Boolean(resolvedSubagentSessionId) &&
-    (items.length > 0 || projectionState?.isRunning === true || Boolean(runtimeStatus));
+  // Chunk the recorded sequence before hiding failed/empty items. Visibility
+  // changes must not reparent surviving cards (or destroy their focus/selection).
+  // Never cut a thought from the following item used by its side annotation.
+  const runs = useMemo(() => {
+    const result: FlowItem[][] = [];
+    let run: FlowItem[] = [];
+    for (const item of liveItems) {
+      run.push(item);
+      if (run.length >= 8 && item.type !== 'thinking') { result.push(run); run = []; }
+    }
+    if (run.length) result.push(run);
+    return result;
+  }, [liveItems]);
+  const reader = useFlowChatReaderScope(`${getActiveSurfaceScope().epoch}:subagent:${resolvedSubagentSessionId}:${parentTaskToolId}`);
+  const cancelAimRef = useRef<() => void>(() => {});
+  const pinnedKeys = useTimelineInteraction(containerRef, reader, () => followRef.current, '.subagent-projection-run[data-virtual-item-key]', () => {
+    followRef.current = false; viewportOwner.release('follow-output'); cancelAimRef.current();
+  });
+  const virtualizer = useFlowChatVirtualizer({
+    pinnedKeys,
+    items: runs, scrollerRef: containerRef, headerRef,
+    getItemKey: run => run[0].id,
+    estimateItemHeightPx: run => run.reduce((height, item) => height + (isFlowItemVisible(item) ? estimateFlowItemHeight(item as AnyFlowItem).heightPx : 0), 0),
+    scrollPaddingStartPx: 0, startAtTailOnMount: true,
+    writeViewport: viewportOwner.write, shiftViewport: viewportOwner.shift,
+  });
+  cancelAimRef.current = virtualizer.cancelAim;
+  useEmbeddedTimelineFollow({ scrollerRef: containerRef, contentRef, followRef, viewportOwner,
+    revision: shouldRenderProjection ? items : null, cancelAim: virtualizer.cancelAim });
 
   if (!shouldRenderProjection) {
     return null;
   }
 
   return (
-    <div data-openbitfun-component="subagent-projection" data-openbitfun-part="root" data-openbitfun-state={isCollapsed ? 'collapsed' : 'expanded'}
-      className={`subagent-projection-wrapper ${isCollapsed ? 'subagent-projection-wrapper--collapsed' : 'subagent-projection-wrapper--expanded'} ${className}`.trim()}
+    <FlowChatReaderProvider store={reader}>
+    <div data-openbitfun-component="subagent-projection" data-openbitfun-part="root" data-openbitfun-state="expanded"
+      className={`subagent-projection-wrapper ${className}`.trim()}
       data-subagent-session-id={resolvedSubagentSessionId}
     >
-      <SmoothHeightCollapse
-        isOpen={!isCollapsed}
-        className="subagent-projection-collapse"
-        durationMs={FLOWCHAT_COLLAPSE_DURATION_MS}
-       data-openbitfun-component="subagent-projection" data-openbitfun-part="collapse">
-        <div
-          ref={containerRef}
-          data-openbitfun-component="subagent-projection"
-          data-openbitfun-part="container"
-          className={`subagent-projection-container ${isCollapsed ? 'subagent-projection-container--collapsed' : 'subagent-projection-container--expanded'}`}
-          data-parent-tool-id={parentTaskToolId}
-        >
-          <div data-openbitfun-component="subagent-projection" data-openbitfun-part="content" className="subagent-projection-content">
-            {items.map(item => renderProjectedItem(
-              item,
-              sessionId ?? resolvedSubagentSessionId,
-              turnId,
-              compactText,
-              item.id === lastVisibleItemId,
-            ))}
-            <RuntimeStatusSlot sessionId={resolvedSubagentSessionId} />
-          </div>
+      <div
+        ref={containerRef}
+        data-openbitfun-component="subagent-projection"
+        data-openbitfun-part="container"
+        className="subagent-projection-container subagent-projection-container--expanded"
+        data-parent-tool-id={parentTaskToolId}
+      >
+        <TimelineMutationBoundary itemKeys={runs.map(run => run[0].id)} scrollerRef={containerRef}
+          canRepair={() => !followRef.current && viewportOwner.canShift()} shift={viewportOwner.shift}
+          rowSelector=".subagent-projection-run">
+        <div ref={contentRef} style={{ paddingTop: virtualizer.paddingTopPx, paddingBottom: virtualizer.paddingBottomPx }} data-openbitfun-component="subagent-projection" data-openbitfun-part="content" className="subagent-projection-content" data-flow-item-stack="">
+          {virtualizer.rows.map((row, index) => <React.Fragment key={row.key}>
+            {index > 0 && row.startPx > virtualizer.rows[index - 1].endPx && <div aria-hidden="true" style={{ height: row.startPx - virtualizer.rows[index - 1].endPx }} />}
+            <div ref={virtualizer.measureRowElement} data-virtual-index={row.index} data-virtual-item-key={row.key}
+            className="subagent-projection-run" data-flow-item-stack="">
+            {runs[row.index].filter(isFlowItemVisible).map(item => renderProjectedItem(
+            item,
+            sessionId ?? resolvedSubagentSessionId,
+            turnId,
+            compactText,
+            item.id === lastVisibleItemId,
+            resolvedSubagentSessionId,
+          ))}</div></React.Fragment>)}
+          <RuntimeStatusSlot sessionId={resolvedSubagentSessionId} />
         </div>
-      </SmoothHeightCollapse>
+        </TimelineMutationBoundary>
+      </div>
     </div>
+    </FlowChatReaderProvider>
   );
 };
 

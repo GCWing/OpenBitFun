@@ -29,6 +29,12 @@ export type WidgetMessage =
     }
   | {
       source: 'openbitfun-widget';
+      type: 'openbitfun-widget:rendered';
+      widgetId?: string;
+      widgetCode: string;
+    }
+  | {
+      source: 'openbitfun-widget';
       type: 'openbitfun-widget:open-file';
       widgetId?: string;
       filePath?: string;
@@ -860,6 +866,13 @@ ${createWidgetAppearanceFallbackCss()}
         currentWidgetId = data.widgetId || currentWidgetId || '';
         applyAppearance(data.appearance);
         setContent(String(data.html || ''), Boolean(data.runScripts));
+        // Acknowledge the applied content, not only the initial empty shell.
+        sendMessage({
+          source: 'openbitfun-widget',
+          type: 'openbitfun-widget:rendered',
+          widgetId: currentWidgetId,
+          widgetCode: String(data.html || '')
+        });
       });
 
       window.addEventListener('load', scheduleResize);

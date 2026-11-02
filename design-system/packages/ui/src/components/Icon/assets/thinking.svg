@@ -1,6 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none">
-  <mask id="thinking-mark" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="40" style="mask-type:alpha">
-    <image width="40" height="40" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAADUUlEQVR4AbzYsXEVMRCAYQ+5CzAFuAEoAHKgAMghZ8gxORQAORQA5LgAaIACcAE0wH5vZt8IjaS70zvbo7WklW73l7TaO/ve2T4/98PMx5AfIT9D3odchJxc9gAE9zlIHoSchyiP4teXkJMh9wB8HSAJFs1jobs69iYbewDauZ77y97AWv0pgE/DybcQOxVVsxj7GiNPQqbKDGCCvQ2Pa2JMjDrqKdAtgDXYnwDk+FnUf0PqQueZdzFwEzIFmoAe7qUJThxl7lgJ9j0c67+I+jpEAfYrGs9DgHmWjRFo1z9Ag700wXgPLPwfC8g30XsY8jjkVQi4qI6FrR5oz/8FwFGaEGOc51HasaPHyUYL1GWqzdFdAZRU68HsOy4xtgdY2sw6QbPfqi8BgmgN3pVu5P8c4O8BiW3OGBxMmxpiW+ioewauAbpdrVWkTmB7r77sWdmoB8RWmRfTV2mK7gNAl6CXJjL+WkZLY2vb5WLZlI7oev5vADIOspUm6B1Dpg0pSd/qR+9gNksxV57NcAHGJpGO+Gn5P0vA0lirzaCVCgcGgZYOs19/D6beXJBALBAYmy1f/+nWAuZDmRo+hUKMgKbrJdrcaXM94yg3paytgMF1KLUz8XQYKH6lzgLEsmeAFlOWm7OALOdxafcEkLBQ9+YM9acApuFp52lgVJ8C6AgFvLrnw1je3N6coX4GkNO1iZZzF2k60W8FLJ0BlSro3M7W96DL4daaWy8K/KKsBZTD5LI8LmByGZEXXZhWoqUXBjlPXtTP9LMa0IMAJhPtoh8LstNutAWlv1xw9mv/hzeJwVtLtBW6nAg0c6I2Xc//4hc1+wyIpTRKd6qwJW7FJ1tiVF0K3aovasdyG7ku47OEqtuLX9RWUT+0d3+0+MUvajBu3PR/BhjoSMbfaBMWv6jzxmVq2AM0wfIGO+rWLtItflEzJgaXQGWCVpoqN48tF64Es3AX0IVpJfrFL2oOGGW8BwqumybCgGfZaIHlLbaLrUR/yINhY1XhhLMWaCuO6DwzAlt0vPZVVxritAQtx1ptu5NHmTvWmtfUzQCmoQQVzKmra2NibDNYGjoFMG2M/vDPwM+5m+s9AMWknaqd03ml1fpN/T0AxVg3TWyiaUz+BwAA//8YQHFjAAAABklEQVQDAKksCkOibHrFAAAAAElFTkSuQmCC" />
-  </mask>
-  <rect width="40" height="40" fill="currentColor" mask="url(#thinking-mark)" />
+  <g stroke="currentColor" stroke-linecap="round" stroke-width="2">
+    <path d="M19.5 3.75 3.5 10.5" />
+    <path d="M19.5 3.75 35.5 10.5" />
+    <path d="M3.5 10.5 19.5 19.5" />
+    <path d="M35.5 10.5 19.5 19.5" />
+    <path d="M19.5 19.5 3.5 28.5" />
+    <path d="M19.5 19.5 35.5 28.5" />
+    <path d="M3.5 28.5 19.5 35.25" />
+    <path d="M35.5 28.5 19.5 35.25" />
+  </g>
+  <g fill="currentColor">
+    <circle cx="19.5" cy="3.75" r="4" />
+    <circle cx="3.5" cy="10.5" r="4" />
+    <circle cx="35.5" cy="10.5" r="4" />
+    <circle cx="19.5" cy="19.5" r="4" />
+    <circle cx="3.5" cy="28.5" r="4" />
+    <circle cx="35.5" cy="28.5" r="4" />
+    <circle cx="19.5" cy="35.25" r="4" />
+  </g>
 </svg>

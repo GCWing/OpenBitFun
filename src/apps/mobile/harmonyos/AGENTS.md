@@ -76,6 +76,65 @@ source scripts/ohos-env.sh
 "$HVIGORW" --mode module -p module=entry@default -p ohos.test.type=LocalTest test --no-daemon
 ```
 
+For window inset subscription lifecycle and late completion regressions, run
+`node --test tools/tests/window-insets-lifecycle.test.cjs tools/tests/immersive-bottom.test.cjs`.
+The lifecycle tests run the production service with deferred platform window
+reads; device rotation and folding still require native verification.
+
+For language-refresh and literal-parameter regressions, run
+`node --test tools/tests/host-text-retranslator.test.cjs`. This exercises the
+production retranslator and RemoteI18n with real element catalogs; platform
+resource access is mocked and does not replace native resource/device checks.
+
+For workspace/session catalog rendering, install the debug HAP and run
+`python3 tools/check-catalog-refresh.py --hdc "$HDC"` (add `--dark` for dark
+mode). Run in compact and wide postures. The isolated fixture replaces objects
+while preserving IDs and checks titles and click payloads in the sidebar,
+recent sessions, time/project lists, and workspace picker. The script restores
+the normal App even on assertion failure; it does not modify remote data.
+
+For composer submission timing and draft ownership, run
+`node --test tools/tests/composer-submit.test.cjs`. The native preview scenario
+`composer-submit` uses the real composer and command controller with a pending
+fake RPC: send must clear the input before pressing **Acknowledge**, and a
+**Next draft** entered while pending must survive acknowledgment. Exercise both
+compact and wide layouts and return to normal `EntryAbility` afterward.
+
+For rollback reply ownership and session switching, run
+`node --test tools/tests/rollback-session-isolation.test.cjs`.
+In the `copy-rollback` native preview, stage a rollback, use **Resize**, and verify
+the preview remains for the same session. Use **Switch session** and verify the
+staging bar and full-text panel close while `SESSION-B-DRAFT` remains untouched.
+Exercise compact and wide widths in light and dark modes, then restore normal
+`EntryAbility`. Deferred-response unit tests cover switching while rollback,
+send acknowledgment, and voice shutdown are pending; the preview uses a mock
+host and is not evidence of live relay or physical fold behavior.
+After installing the debug HAP on a wide device/emulator, run
+`python3 tools/check-rollback-session-isolation.py --hdc "$HDC" --device <target>`
+for compact/wide, light/dark and live resize checks with layout/screenshot evidence.
+
+For history loading and explicit jump-to-bottom navigation, install the debug
+HAP and run `python3 tools/check-history-scroll.py --hdc "$HDC"`. The
+`history-scroll` preview holds a mock history response while the production
+ChatTimeline handles the jump. It covers success/failure at wide and compact
+content widths with a live resize and restores the normal App afterward.
+This is native controller UI coverage, not remote transport or physical fold
+coverage; exercise those separately when their behavior changes.
+
+For durable transcript projection, run
+`node --test tools/tests/session-record.test.cjs tools/tests/host-stream.test.cjs tools/tests/streaming-markdown.test.cjs`.
+The `durable-timeline` native preview uses the
+production reducer, timeline store and rows. **Next replay** exercises late tool
+insertion, 30 identical publications, text correction, deletion and completion;
+block counts must be 2, 3, 3, 3, 2, 2, with one visible answer. Verify compact,
+wide and live fold transitions, then return to normal `EntryAbility`.
+
+For host shutdown/restart handling, run
+`node --test tools/tests/connection-health.test.cjs tools/tests/session-record.test.cjs tools/tests/host-stream.test.cjs`.
+In `durable-timeline`, **Host offline** must retain content and disable Stop;
+**Host returned** publishes an interrupted turn, preserving its output and
+removing the running action. Test both postures and restore normal App afterward.
+
 ## Visual reference fidelity
 
 - Before drawing a system glyph, text approximation, or new bitmap, search the existing HarmonyOS media resources and the approved desktop reference images. Reuse the established asset when one exists.
@@ -113,6 +172,15 @@ source scripts/ohos-env.sh
 - Preserve auto-dismiss, outside-tap handling, accessibility labels, and a short enter/exit transition for anchored menus.
 
 ## Theme and device verification
+
+For cold-start home animation geometry, launch the isolated design preview with
+`hdc shell aa start -a EntryAbility -b <bundle-id> --ps openbitfunDesignPreview cold-start-home`
+(or `cold-start-home-dark`). Use **Replay** to run the production 2400 ms
+transition over the production recent-home component and **Resize** during
+playback to remeasure its anchor. This fixture does not load account or remote
+state. Check compact and wide windows separately, then force-stop and start the
+normal EntryAbility without preview arguments. A fixture check does not replace
+authenticated cold-process, signed-out, and background/foreground verification.
 
 - Use existing semantic colors from `Theme.ets`; do not hard-code a light-only foreground or surface color.
 - For changes to navigation controls, menus, or responsive presentation, verify compact and wide behavior, light and dark theme legibility, and capture a real-device screenshot before completion when a device is connected.

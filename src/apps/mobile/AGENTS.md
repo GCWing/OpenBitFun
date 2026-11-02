@@ -92,9 +92,10 @@ UiState or an Intent declared there, and no module above it is visible to them.
   the local SDK path and is not committed.
 - The Android app builds from `android/`: `./gradlew :app:assembleDebug` and
   `:app:installDebug`; release verification is `./gradlew :app:assembleRelease`.
-  Release signing is enabled only when all four `OPENBITFUN_ANDROID_KEYSTORE`,
+  Release builds use the standard local Android debug keystore when formal
+  signing credentials are absent; all four `OPENBITFUN_ANDROID_KEYSTORE`,
   `OPENBITFUN_ANDROID_KEYSTORE_PASSWORD`, `OPENBITFUN_ANDROID_KEY_ALIAS`, and
-  `OPENBITFUN_ANDROID_KEY_PASSWORD` environment variables are present. Signing
+  `OPENBITFUN_ANDROID_KEY_PASSWORD` environment variables override it. Signing
   files and values must never be committed. AGP 9 compiles Kotlin itself — applying
   `org.jetbrains.kotlin.android` is an error, not a no-op, and
   `kotlin { jvmToolchain(...) }` is no longer available in an app module.
@@ -105,6 +106,11 @@ UiState or an Intent declared there, and no module above it is visible to them.
   when touching either module.
 
 ## Remote capability ownership
+
+For next-input suggestion replay, stale-turn retirement, host restart and session
+isolation, run from `shared/` with the Android guide's Java runtime:
+`./gradlew :core-feature:jvmTest --tests '*promptSuggestion*' --tests '*SessionRecordReplicaTest*'`.
+These are simulated host streams, not evidence of a live remote connection.
 
 Native mobile surfaces are controllers. Desktop and CLI own execution, files, terminals and SSH credentials. Mobile workspace selection may use only connections already saved on the controlled runtime; it must not create an SSH connection or instantiate another runtime. Carry the selected connection identity through every operation, and report missing identity instead of falling back to local files.
 

@@ -6,11 +6,15 @@ import type { EditorConfig, MinimapConfig, GuidesConfig, ScrollbarConfig, HoverC
 import {
   getTypographyTokenNumber,
   getTypographyTokenPx,
-  getTypographyTokenValue,
+  readActiveTypographyTokenValue,
 } from '@/infrastructure/design-system/typographyRuntime';
 
 export const DEFAULT_EDITOR_FONT_SIZE = getTypographyTokenPx('font.size.base');
-export const DEFAULT_EDITOR_FONT_FAMILY = getTypographyTokenValue('font.family.mono');
+/** An empty persisted value follows the design system's current code font. */
+export const DEFAULT_EDITOR_FONT_FAMILY = '';
+export function resolveEditorFontFamily(fontFamily?: string): string {
+  return fontFamily?.trim() || readActiveTypographyTokenValue('font.family.mono');
+}
 export const DEFAULT_EDITOR_LINE_HEIGHT = getTypographyTokenNumber('lineHeight.base');
 export const DEFAULT_EDITOR_INLAY_FONT_SIZE = getTypographyTokenPx('font.size.xs');
 export const DEFAULT_EDITOR_FONT_WEIGHT: EditorConfig['fontWeight'] =

@@ -4,20 +4,42 @@ import com.openbitfun.mobile.core.domain.ChatMessage
 import com.openbitfun.mobile.core.domain.ChatSessionCursor
 import com.openbitfun.mobile.core.domain.ChatSyncPhase
 import com.openbitfun.mobile.core.domain.ChatTimelineState
+import com.openbitfun.mobile.core.domain.ChatTranscriptOrigin
 import com.openbitfun.mobile.core.protocol.ChatMessageItemResponse
 import com.openbitfun.mobile.core.protocol.RemoteModelCatalog
 import com.openbitfun.mobile.core.protocol.RemoteToolStatusResponse
 import com.openbitfun.mobile.core.protocol.RelayJson
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ConversationPresentationTest {
+    @Test
+    fun messageTimesSurviveProjectionWithLegacyScalesAndMissingValues() {
+        val rows = timeline(persisted = listOf(
+            message("user", "user", "Question").copy(timestamp = "1700000000"),
+            message("assistant", "assistant", "Answer").copy(timestamp = "1700000001000"),
+            message("legacy", "assistant", "Old answer").copy(timestamp = null),
+            message("invalid", "user", "Old question").copy(timestamp = "invalid"),
+        )).conversationRows()
+        assertEquals(listOf(1700000000000L, 1700000001000L, null, null), rows.map { it.timestampMs })
+    }
+
     @Test
     fun anEmptySessionGetsTheOneRowNobodyOwns() {
         val rows = timeline().conversationRows()
 
         assertEquals(listOf(ConversationRowKind.EMPTY), rows.map { it.kind })
+    }
+
+    @Test
+    fun aTimelineThatIsStillThisDevicesCopyIsUnconfirmed() {
+        val stored = timeline().copy(origin = ChatTranscriptOrigin.CACHE)
+        val fromHost = timeline().copy(origin = ChatTranscriptOrigin.HOST)
+
+        assertTrue(stored.transcriptUnconfirmed())
+        assertFalse(fromHost.transcriptUnconfirmed())
     }
 
     @Test
@@ -39,11 +61,14 @@ class ConversationPresentationTest {
     }
 
     @Test
-    fun aMessageStillInFlightIsShownAsPendingUntilItsTwinArrives() {
+    fun aMessageStillInFlightIsShownOnceUntilItsTwinArrives() {
         val optimistic = timeline(optimistic = listOf(message("local-1", "user", "ship it")))
-        assertEquals(listOf(true), optimistic.conversationRows().map { it.pending })
+        assertEquals(
+            listOf("pending-local-1"),
+            optimistic.conversationRows().map { it.id },
+        )
 
-        // The same message identity persisted: one row, no longer pending. Reading
+        // The same message identity persisted: one row, not two. Reading
         // persistedMessages directly would have shown it twice.
         val persisted = timeline(
             persisted = listOf(message("local-1", "user", "ship it")),
@@ -51,7 +76,7 @@ class ConversationPresentationTest {
         )
         val rows = persisted.conversationRows()
         assertEquals(1, rows.size)
-        assertEquals(false, rows.single().pending)
+        assertEquals("message-local-1", rows.single().id)
     }
 
     @Test
@@ -228,6 +253,7 @@ private fun timeline(
     cursor = ChatSessionCursor(0, 0, 0),
     modelCatalog = RemoteModelCatalog(version = 0),
     selectedModelId = "",
+    origin = ChatTranscriptOrigin.HOST,
 )
 
 private fun message(

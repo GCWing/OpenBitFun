@@ -15,15 +15,6 @@ pub(crate) fn is_generic_reasoning_preset(preset: &ReasoningPresetDescriptor) ->
     preset.execution_provider.as_deref() == Some(GENERIC_REASONING_PROVIDER_ID)
 }
 
-pub(crate) fn normalize_generic_reasoning_effort(value: &str) -> Option<&'static str> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "low" => Some("low"),
-        "medium" => Some("medium"),
-        "high" => Some("high"),
-        _ => None,
-    }
-}
-
 /// Attribution for APIs that accept third-party harnesses under their own name.
 #[cfg(feature = "subscription-auth")]
 pub(crate) fn product_user_agent() -> String {
@@ -138,7 +129,7 @@ pub(crate) fn apply_affinity_headers(
     } else if uses_opencode_affinity(client, url) {
         &["x-opencode-session"]
     } else if client.subscription_provider_key() == Some("grok")
-        && is_https_endpoint(url, "api.x.ai", "/v1/responses")
+        && is_https_endpoint(url, "cli-chat-proxy.grok.com", "/v1/responses")
     {
         &["x-grok-conv-id"]
     } else {
@@ -157,7 +148,8 @@ pub(crate) fn apply_affinity_headers(
             )
         })
         .collect();
-    builder.headers(headers)
+    let builder = builder.headers(headers);
+    super::opencode::headers(client, builder, url, key)
 }
 
 pub(crate) fn apply_header_policy<F>(
@@ -195,6 +187,11 @@ pub(crate) fn apply_custom_headers(
     if let Some(custom_headers) = &client.config.custom_headers {
         if !custom_headers.is_empty() {
             for (key, value) in custom_headers {
+                if super::opencode::uses_free_zen(client)
+                    && key.eq_ignore_ascii_case("x-opencode-request")
+                {
+                    continue;
+                }
                 builder = builder.header(key.as_str(), value.as_str());
             }
         }
@@ -423,13 +420,21 @@ pub(crate) fn summarize_request_body_for_log(
             serde_json::Value::Bool(tool_stream),
         );
     }
-    if let Some(system) = request_body
-        .get("system")
-        .and_then(serde_json::Value::as_str)
-    {
+    let system_chars = match request_body.get("system") {
+        Some(serde_json::Value::String(system)) => Some(system.chars().count()),
+        Some(serde_json::Value::Array(blocks)) => Some(
+            blocks
+                .iter()
+                .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
+                .map(|text| text.chars().count())
+                .sum(),
+        ),
+        _ => None,
+    };
+    if let Some(system_chars) = system_chars {
         summary.insert(
             "system_chars".to_string(),
-            serde_json::Value::Number((system.chars().count() as u64).into()),
+            serde_json::Value::Number((system_chars as u64).into()),
         );
     }
     if let Some(messages) = request_body
@@ -615,6 +620,7 @@ mod tests {
             "https://opencode.ai/zen/go/v1/models",
             "https://chatgpt.com/backend-api/codex/responses",
             "https://api.x.ai/v1/responses",
+            "https://cli-chat-proxy.grok.com/v1/responses",
             "https://inference-api.nousresearch.com/v1/chat/completions",
         ] {
             for mode in ["merge", "replace"] {
@@ -906,7 +912,7 @@ mod tests {
                 ),
                 (
                     SubscriptionProvider::Grok,
-                    "https://api.x.ai/v1/responses",
+                    "https://cli-chat-proxy.grok.com/v1/responses",
                     vec!["x-grok-conv-id"],
                 ),
                 (
@@ -983,6 +989,9 @@ mod tests {
                     "https://opencode.ai/zen-other/v1/messages",
                     "https://opencode.ai.evil.test/zen/v1/messages",
                     "https://api.x.ai/v1/chat/completions",
+                    "https://api.x.ai/v1/responses",
+                    "https://cli-chat-proxy.grok.com.evil.test/v1/responses",
+                    "http://cli-chat-proxy.grok.com/v1/responses",
                 ] {
                     let client = request_client(url).with_subscription_provider(provider);
                     assert!(prepare_request_context(&client, None).is_none());

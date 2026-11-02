@@ -22,7 +22,9 @@ use openbitfun_product_domains::canvas::types::{
     CanvasCompiledPayload, CanvasDiagnostic, CanvasDiagnosticCategory, CanvasDiagnosticSeverity,
     CanvasSource,
 };
-use openbitfun_product_domains::canvas::{OPENBITFUN_CANVAS_RUNTIME_VERSION, OPENBITFUN_CANVAS_SDK_VERSION};
+use openbitfun_product_domains::canvas::{
+    OPENBITFUN_CANVAS_RUNTIME_VERSION, OPENBITFUN_CANVAS_SDK_VERSION,
+};
 
 pub use html::compile_canvas_html;
 use html::stable_content_hash;

@@ -76,16 +76,14 @@ export struct StreamingMarkdownContent {
       this.saveRenderedText();
       return;
     }
-    if (this.text.length < this.renderedText.length || this.text.length < this.targetText.length) {
+    // The input is already revision-reconciled by the transcript owner. A
+    // rewrite or deletion is authoritative, not a stale streaming chunk.
+    // Only append-only growth may continue the previous reveal animation.
+    if (!this.text.startsWith(this.targetText) || !this.text.startsWith(this.renderedText)) {
       this.clearTimer();
-      this.saveRenderedText();
-      if (this.renderedText.length < this.targetText.length) {
-        this.startTimer();
-      }
-      return;
-    }
-    if (!this.text.startsWith(this.renderedText) && this.renderedText.length > 0) {
-      this.clearTimer();
+      this.targetText = this.text;
+      this.renderedText = this.text;
+      this.renderedRevision += 1;
       this.saveRenderedText();
       return;
     }
@@ -129,9 +127,6 @@ export struct StreamingMarkdownContent {
     }
     const cached = this.cachedRenderedText();
     if (cached.length > 0 && this.text.startsWith(cached)) {
-      return cached;
-    }
-    if (cached.length > 0) {
       return cached;
     }
     return '';

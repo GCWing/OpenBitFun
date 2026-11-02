@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { stripKeyboardControlCharacters } from '../../../../shared/text-input/textInputGuard';
 
 const NON_TEXT_INPUT_TYPES = new Set([
   'button',
@@ -47,6 +48,14 @@ function hasBlockingModal(): boolean {
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
 }
 
+function hasTranscriptSelection(): boolean {
+  const selection = document.getSelection();
+  if (!selection || selection.isCollapsed || !selection.anchorNode?.isConnected) return false;
+  const node = selection.anchorNode;
+  const element = node instanceof Element ? node : node.parentElement;
+  return Boolean(element?.closest('[data-flowchat-selection-root]'));
+}
+
 function isTextEntryKey(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.metaKey) {
     return false;
@@ -57,7 +66,7 @@ function isTextEntryKey(event: KeyboardEvent): boolean {
     return false;
   }
 
-  return event.key.length === 1
+  return (event.key.length === 1 && stripKeyboardControlCharacters(event.key) !== '')
     || event.key === 'Dead'
     || event.key === 'Process'
     || event.keyCode === 229;
@@ -100,6 +109,7 @@ export function useComposerDefaultFocus({
         || document.activeElement === editor
         || hasVisibleTextInputFocus()
         || hasBlockingModal()
+        || hasTranscriptSelection()
       ) {
         return;
       }

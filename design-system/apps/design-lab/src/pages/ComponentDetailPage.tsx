@@ -1,5 +1,12 @@
-import { Fragment, useMemo, useState } from "react";
-import { VoiceCallPreview, VoiceParticlePreview } from "../components/VoiceCallPreview";
+import { CapsulePreview } from "../preview/CapsulePreview";
+import { ColorPickerPreview } from "../preview/ColorPickerPreview";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { ComponentOverview } from "../preview/ComponentOverview";
+import { getComponentPresentation, getInitialPreviewState, hasComponentOverview } from "../preview/componentPresentation";
+import { previewEn } from "../i18n/previewMessages";
+import { MobileConversationExample, MobileDisclosureExample, MobileFloatingActionsExample, MobileScrimExample, NavigationExample } from "../preview/LiveComponentExamples";
+import { BrandPreview, brandCodeSample } from "../preview/BrandPreview";
+import { VoiceCallPreview } from "../components/VoiceCallPreview";
 import { Clipboard, List } from "lucide-react";
 import {
   ActionCard,
@@ -59,6 +66,7 @@ import {
   NavigationPanelSection,
   NavigationPanelSeparator,
   NumberInput,
+  OverflowText,
   PageHeader,
   Radio,
   ScrollArea,
@@ -67,6 +75,7 @@ import {
   Select,
   Sheet,
   StatusPill,
+  ShimmerText,
   Spinner,
   Switch,
   TabGroup,
@@ -96,13 +105,15 @@ import {
 } from "@openbitfun/ui";
 import {
   MobileActionSheet,
+  MobileAvatar,
   MobileBadge,
   MobileBanner,
   MobileButton,
   MobileCard,
+  MobileCheckbox,
   MobileChoiceSheet,
-  MobileConfirmSheet,
   MobileComposer,
+  MobileConfirmSheet,
   MobileDisclosure,
   MobileFileButton,
   MobileFloatingActions,
@@ -111,18 +122,29 @@ import {
   MobileListRow,
   MobileMessage,
   MobilePageHeader,
+  MobileRadioGroup,
   MobileScrim,
   MobileSection,
   MobileSegmentedControl,
+  MobileSelect,
   MobileSheet,
   MobileStatus,
+  MobileStepper,
+  MobileSwitch,
+  MobileTabBar,
+  MobileTag,
   MobileTextField,
   MobileTextarea,
-} from "@openbitfun/ui/mobile";
-import type { ComponentMeta } from "@openbitfun/ui/registry";
+  MobileToolbar,
+}
+from "@openbitfun/ui/mobile";
+import { componentRegistry, type ComponentMeta } from "@openbitfun/ui/registry";
 import previewImage from "../assets/design-system-hero.webp";
 import { IconCompositionPreview } from "../preview/IconCompositionPreview";
 import { RollingTextPreview } from "../preview/RollingTextPreview";
+import { ThinkingIndicatorPreview } from "../preview/ThinkingIndicatorPreview";
+import { SplitViewPreview } from "../preview/SplitViewPreview";
+import { SetupWizardPreview } from "../preview/SetupWizardPreview";
 import { NestedMenuPattern } from "./ReferencePatterns";
 import { useI18n, type MessageKey } from "../i18n";
 import {
@@ -139,7 +161,8 @@ interface ComponentDetailPageProps {
   component: ComponentMeta;
   contrast: ContrastMode;
   density: DensityMode;
-  onBack: () => void;
+  embedded?: boolean;
+  onBack?: () => void;
   onInspectTokens: (name: string) => void;
   tokenOverrides: TokenOverrides;
 }
@@ -153,8 +176,43 @@ type FieldOrientation = "horizontal" | "vertical";
 type PageHeaderAlign = "center" | "start";
 type PageHeaderSize = "display" | "lg" | "md" | "sm";
 
-const buttonVariants = ["outline", "fill", "secondary", "primary", "text"] as const;
-const iconButtonVariants = ["quiet", "outline", "fill", "primary"] as const;
+/** Registry order, so a detail heading can carry the same category index as the library index. */
+const categoryOrder = Array.from(new Set(componentRegistry.map(item => item.category)));
+
+/**
+ * A level-2 reference block that keeps a real heading.
+ *
+ * `Disclosure` renders its `summary` inside the trigger `<button>`, and a button cannot contain a
+ * heading. `renderHeader` hands over the trigger attributes instead, letting the heading own the
+ * trigger the other way round: `<h2><button>…</button></h2>` is valid phrasing content, while
+ * `<button><h2>…</h2></button>` is not. The block keeps its document structure, and the component
+ * still owns open state, ids, and ARIA wiring.
+ *
+ * `summary` stays because the component requires it; `renderHeader` replaces the visible header.
+ */
+function ReferenceDisclosure({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Disclosure
+      className="design-reference-disclosure"
+      summary={label}
+      renderHeader={triggerProps => (
+        <h2 className="design-reference-heading" data-openbitfun-part="header">
+          <button {...triggerProps} className="design-reference-trigger" data-overflow-trigger>
+            <span aria-hidden="true" className="design-reference-indicator" data-openbitfun-part="indicator">
+              <Icon name="chevron-right" size="sm" />
+            </span>
+            <OverflowText className="design-reference-label" data-openbitfun-part="heading">{label}</OverflowText>
+          </button>
+        </h2>
+      )}
+    >
+      {children}
+    </Disclosure>
+  );
+}
+
+const buttonVariants = ["outline", "fill", "secondary", "primary", "quiet", "text"] as const;
+const iconButtonVariants = ["annotation", "quiet", "glass", "outline", "fill", "primary"] as const;
 const iconButtonSizes = ["xs", "standard", "sm", "md", "lg"] as const;
 const buttonInspectorStates = ["default", "hover", "active"] as const;
 const fieldOrientations = ["vertical", "horizontal"] as const;
@@ -168,7 +226,15 @@ const iconSizes = ["2xs", "xs", "sm", "md", "lg"] as const;
 const iconTones = ["inherit", "primary", "secondary", "muted", "disabled", "info", "success", "warning", "danger"] as const;
 
 const optionLabelKeys: Readonly<Record<string, MessageKey>> = {
+  form: "setupWizard.state.form",
+  contained: "setupWizard.state.contained",
+  ...Object.fromEntries(Object.keys(previewEn).filter(key => key.startsWith("preview.state.")).map(key => [key.slice("preview.state.".length), key as MessageKey])),
+  collapsed: "detail.option.collapsed",
+  streaming: "detail.option.streaming",
+  summary: "detail.option.summary",
+  visible: "detail.option.visible",
   active: "detail.option.active",
+  static: "thinkingIndicator.static",
   "active-option": "detail.option.active-option",
   always: "detail.option.always",
   asking: "detail.option.asking",
@@ -192,6 +258,7 @@ const optionLabelKeys: Readonly<Record<string, MessageKey>> = {
   hidden: "detail.option.hidden",
   inline: "detail.option.inline",
   scrolling: "detail.option.scrolling",
+  panel: "preview.state.panel",
   "focus-within": "detail.option.focus-within",
   "with-context": "detail.option.with-context",
   "with-center": "detail.option.with-center",
@@ -215,6 +282,8 @@ const optionLabelKeys: Readonly<Record<string, MessageKey>> = {
   on: "detail.option.on",
   open: "detail.option.open",
   outline: "detail.option.outline",
+  annotation: "detail.option.annotation",
+  glass: "detail.option.glass",
   primary: "detail.option.primary",
   quiet: "detail.option.quiet",
   raised: "detail.option.raised",
@@ -255,13 +324,10 @@ function InspectorSelect({
   return (
     <label className="component-inspector-select">
       <span>{label}</span>
-      <select onChange={(event) => onChange(event.target.value)} value={value}>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {translateOptions && optionLabelKeys[option] ? t(optionLabelKeys[option]) : option}
-          </option>
-        ))}
-      </select>
+      <Select aria-label={label} onValueChange={value => onChange(String(value))} value={value} size="sm"
+        options={options.map(option => ({ value: option,
+          label: translateOptions && optionLabelKeys[option] ? t(optionLabelKeys[option]) : option,
+        }))} />
     </label>
   );
 }
@@ -360,11 +426,15 @@ export function ComponentDetailPage({
   component,
   contrast,
   density,
+  embedded = false,
   onBack,
   onInspectTokens,
   tokenOverrides,
 }: ComponentDetailPageProps) {
   const { t } = useI18n();
+  const isButtonComponent = component.name === "Button" || component.name === "IconButton";
+  const presentation = getComponentPresentation(component);
+  const hasOverview = hasComponentOverview(presentation);
   const stateLabel = (state: string) => optionLabelKeys[state] ? t(optionLabelKeys[state]) : state;
   const [variant, setVariant] = useState<(typeof buttonVariants)[number]>("fill");
   const [iconButtonSize, setIconButtonSize] = useState<(typeof iconButtonSizes)[number]>("xs");
@@ -393,34 +463,20 @@ export function ComponentDetailPage({
   const [tabGroupSize, setTabGroupSize] = useState<TabGroupSize>("sm");
   const [toolbarSize, setToolbarSize] = useState<ToolbarSize>("sm");
   const [checkboxAppearance, setCheckboxAppearance] = useState<"custom" | "native">("custom");
-  const [previewState, setPreviewState] = useState(
-    component.name === "Card"
-      ? "raised"
-      : component.name === "Disclosure"
-        ? "open"
-      : component.name === "Composer"
-      ? "with-context"
-      : component.name === "Switch"
-        ? "off"
-      : component.name === "StatusPill"
-        ? "success"
-      : component.name === "Toolbar"
-        ? "with-center"
-      : component.name === "TabGroup" || component.name === "SegmentedControl"
-        ? "selected"
-        : component.name === "ScrollArea"
-          ? "auto"
-        : component.name === "Tooltip"
-          ? "top"
-        : component.states[0] ?? "default",
-  );
+  const [previewState, setPreviewState] = useState(getInitialPreviewState(component));
   const [inspectorDisabled, setInspectorDisabled] = useState(false);
   const [inspectorLoading, setInspectorLoading] = useState(false);
   const [previewIcon, setPreviewIcon] = useState<PreviewIcon>("none");
   const [previewIconPosition, setPreviewIconPosition] = useState<PreviewIconPosition>("left");
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState(hasOverview ? "overview" : "single");
+  const [narrowPreview, setNarrowPreview] = useState(false);
+  const [layoutGuides, setLayoutGuides] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("properties");
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [previewPending, setPreviewPending] = useState(false);
   const [mobileChoiceValue, setMobileChoiceValue] = useState("standard");
   const [menuShowScrollbar, setMenuShowScrollbar] = useState(true);
   const [navigationPanelShowScrollbar, setNavigationPanelShowScrollbar] = useState(true);
@@ -429,77 +485,31 @@ export function ComponentDetailPage({
   const flowChatPreview = getFlowChatPreviewDefinition(component.name);
   const isFlowChatComponent = Boolean(flowChatPreview);
 
-  const states = useMemo(() => {
-    if (flowChatPreview) {
-      return component.states;
-    }
+  useEffect(() => {
+    const pending = overlayOpen && previewState === "pending";
+    setPreviewPending(pending);
+    if (!pending) return;
+    // A pending specimen must finish so the real modal remains dismissible.
+    const timer = window.setTimeout(() => setPreviewPending(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [overlayOpen, previewState]);
 
-    switch (component.name) {
-      case "ActionCard":
-        return ["default", "hover", "active", "focus-visible", "selected", "disabled"] as const;
-      case "ActionItem":
-        return ["default", "hover", "active", "disabled"] as const;
-      case "ActivityItem":
-        return ["default", "hover", "active", "focus-visible", "disabled"] as const;
-      case "Button":
-      case "IconButton":
-        return ["default", "hover", "active", "disabled"] as const;
-      case "LauncherButton":
-        return ["default", "hover", "active", "focus-visible", "disabled"] as const;
-      case "Composer":
-        return ["default", "focus-within", "with-context", "invalid", "disabled"] as const;
-      case "Combobox":
-      case "Listbox":
-        return component.states;
-      case "ConfirmDialog":
-        return ["info", "warning", "error", "success", "pending"] as const;
-      case "Card":
-        return ["raised", "subtle", "media"] as const;
-      case "Input":
-      case "SearchField":
-        return ["default", "filled", "hover", "focus-visible", "read-only", "invalid", "disabled"] as const;
-      case "Select":
-        return ["default", "hover", "focus-visible", "open", "invalid", "disabled"] as const;
-      case "Field":
-      case "Icon":
-      case "KeyHint":
-      case "Dialog":
-      case "LoadingState":
-      case "Sheet":
-      case "PageHeader":
-        return ["default"] as const;
-      case "FieldGroup":
-        return ["subtle", "plain", "divided"] as const;
-      case "Disclosure":
-        return ["closed", "open", "hover", "focus-visible", "disabled"] as const;
-      case "Menu":
-        return ["default", "scrolling", "focus-within", "disabled-item", "checked-item"] as const;
-      case "NavigationPanel":
-        return ["default", "selected-item", "disabled-item", "scrolling"] as const;
-      case "ScrollArea":
-        return ["auto", "always", "hidden"] as const;
-      case "StatusPill":
-        return ["neutral", "info", "success", "warning", "danger"] as const;
-      case "Spinner":
-        return component.states;
-      case "SegmentedControl":
-      case "TabGroup":
-        return ["selected", "unselected", "hover", "disabled"] as const;
-      case "Toolbar":
-        return ["default", "with-center", "overflow"] as const;
-      case "Tooltip":
-        return ["top", "bottom", "left", "right"] as const;
-      case "Switch":
-        return ["off", "on", "focus-visible", "disabled"] as const;
-      default:
-        return component.states;
-    }
-  }, [component.name, component.states, flowChatPreview]);
-  const inspectorStates = component.name === "Button" || component.name === "IconButton"
-    ? buttonInspectorStates
-    : states;
+  const states = component.states;
+  const inspectorStates = states;
 
   const codeSample = useMemo(() => {
+    if (component.name === "SetupWizard") {
+      return 'import { SetupWizard } from "@openbitfun/ui";\n\n// The host owns step state, drafts, validation, and saving.\n<SetupWizard\n  title={title}\n  titleId={titleId}\n  headerActions={<CloseButton />}\n  guideLabel={guideLabel}\n  step={{ ...steps[current], progress: formatProgress(current + 1, steps.length) }}\n  contentMode={steps[current].hasEditor ? "contained" : "scroll"}\n  footer={<StepActions />}\n>\n  <StepForm />\n</SetupWizard>\n\n// For a modal, connect Dialog aria-labelledby to the same titleId.\n';
+    }
+    if (component.name === "SplitView") {
+      return `import { SplitView } from "@openbitfun/ui";\n\n<SplitView\n  primary={<Chat />}\n  secondary={<Content />}\n  mode={mode}\n  secondarySide={contentSide}\n  rightSize={rightSize}\n  onRightSizeChange={setRightSize}\n  dividerLabel="${t('splitView.resize')}"\n  dividerActions={<SwapButton onClick={swapPanes} />}\n/>`;
+    }
+    if (component.name === "ThinkingIndicator") {
+      return `import { ThinkingIndicator } from "@openbitfun/ui";\n\n<ThinkingIndicator active={thinking} size="sm" label="${t("thinkingIndicator.label")}" />\n`;
+    }
+    if (component.name === "ShimmerText") {
+      return `import { ShimmerText } from "@openbitfun/ui";\n\n<ShimmerText active={running}>${t("components.preview.flowChat.running")}</ShimmerText>\n`;
+    }
     if (component.name === "RollingText") {
       return 'import { RollingText, TabGroup } from "@openbitfun/ui";\n\n// Keep the identity stable for title edits; change it when replacing the resource.\n<RollingText transitionKey={record.id}>{record.title}</RollingText>\n\n// TabGroup owns the text slot and composes RollingText without nested clipping.\n<TabGroup\n  aria-label="Views"\n  items={[{ value: slotId, label: record.title, labelTransitionKey: record.id }]}\n/>\n';
     }
@@ -514,6 +524,15 @@ export function ComponentDetailPage({
     if (component.name === "MobileLink") return `import { MobileLink } from "@openbitfun/ui/mobile";\n\n<MobileLink href="https://example.com">\n  ${t("nav.docs")}\n</MobileLink>`;
     if (component.name === "MobileTextField") return `import { MobileTextField } from "@openbitfun/ui/mobile";\n\n<MobileTextField\n  aria-label="${t("components.preview.searchLabel")}"\n  placeholder="${t("components.preview.searchPlaceholder")}"\n/>`;
     if (component.name === "MobileListRow") return `import { MobileListRow } from "@openbitfun/ui/mobile";\n\n<MobileListRow\n  appearance="surface"\n  label="${t("components.preview.session")}"\n  supportingText="/workspace"\n/>`;
+    if (component.name === "MobileAvatar") return `import { MobileAvatar } from "@openbitfun/ui/mobile";\n\n<MobileAvatar name="${t("components.preview.session")}" size="md" status="online" />`;
+    if (component.name === "MobileCheckbox") return `import { MobileCheckbox } from "@openbitfun/ui/mobile";\n\n<MobileCheckbox\n  label="${t("components.preview.notifications")}"\n  description="${t("components.preview.fieldDescription")}"\n  checked={enabled}\n  onCheckedChange={setEnabled}\n/>`;
+    if (component.name === "MobileRadioGroup") return `import { MobileRadioGroup } from "@openbitfun/ui/mobile";\n\n<MobileRadioGroup\n  name="density"\n  options={densityOptions}\n  value={density}\n  onValueChange={setDensity}\n/>`;
+    if (component.name === "MobileSelect") return `import { MobileSelect } from "@openbitfun/ui/mobile";\n\n<MobileSelect\n  label="${t("components.preview.mobileSelectLabel")}"\n  options={models}\n  sheetTitle="${t("components.preview.mobileSelectLabel")}"\n  value={model}\n  onValueChange={setModel}\n/>`;
+    if (component.name === "MobileStepper") return `import { MobileStepper } from "@openbitfun/ui/mobile";\n\n<MobileStepper\n  label="${t("components.preview.mobileStepperLabel")}"\n  decrementLabel="${t("components.preview.mobileDecrease")}"\n  incrementLabel="${t("components.preview.mobileIncrease")}"\n  min={0}\n  max={5}\n  value={value}\n  onValueChange={setValue}\n/>`;
+    if (component.name === "MobileSwitch") return `import { MobileSwitch } from "@openbitfun/ui/mobile";\n\n<MobileSwitch\n  label="${t("components.preview.notifications")}"\n  description="${t("components.preview.fieldDescription")}"\n  checked={enabled}\n  onCheckedChange={setEnabled}\n/>`;
+    if (component.name === "MobileTabBar") return `import { MobileTabBar } from "@openbitfun/ui/mobile";\n\n<MobileTabBar\n  label="${t("components.preview.segmentedLabel")}"\n  items={destinations}\n  value={section}\n  onValueChange={setSection}\n/>`;
+    if (component.name === "MobileTag") return `import { MobileTag } from "@openbitfun/ui/mobile";\n\n<MobileTag\n  selected={active}\n  onClick={toggle}\n>\n  Design\n</MobileTag>`;
+    if (component.name === "MobileToolbar") return `import { MobileToolbar } from "@openbitfun/ui/mobile";\n\n<MobileToolbar\n  label="${t("components.preview.mobileToolbarSelection")}"\n  leading={<BackButton />}\n  trailing={<MoreButton />}\n>\n  ${t("components.preview.mobileToolbarSelection")}\n</MobileToolbar>`;
     if (component.name === "MobileSheet") return `import { MobileSheet } from "@openbitfun/ui/mobile";\n\n<MobileSheet\n  footer={<CancelButton />}\n  onOpenChange={() => setOpen(false)}\n  open={open}\n  title="${t("components.preview.modalTitle")}"\n>\n  <ActionList />\n</MobileSheet>`;
     if (component.name === "Textarea") return `import { Textarea } from "@openbitfun/ui";\n\n<Textarea\n  label="${t("components.preview.inputLabel")}"\n  defaultValue="${t("components.preview.fieldValue")}"\n  hint="${t("components.preview.fieldDescription")}"\n  maxLength={200}\n  rows={3}\n  showCount\n/>`;
     if (component.name === "Alert") return `import { Alert } from "@openbitfun/ui";\n\n<Alert tone="info" title="${t("components.preview.notifications")}" message="${t("components.preview.fieldDescription")}" />`;
@@ -521,19 +540,19 @@ export function ComponentDetailPage({
     if (component.name === "Checkbox" || component.name === "Radio") return `import { ${component.name} } from "@openbitfun/ui";\n\n<${component.name}${component.name === "Checkbox" ? ` appearance="${checkboxAppearance}"` : ""} label="${t("components.preview.notifications")}" defaultChecked />`;
     if (component.name === "NumberBadge") return `import { NumberBadge } from "@openbitfun/ui";\n\n<NumberBadge value={${JSON.stringify(numberBadgeValue)}} />;`;
     if (component.name === "NumberInput") return 'import { useState } from "react";\nimport { NumberInput } from "@openbitfun/ui";\n\nfunction Example() {\n  const [value, setValue] = useState(8);\n  return <NumberInput value={value} onValueChange={setValue} />;\n}';
+    if (component.name === "ColorPicker") return 'import { ColorPicker } from "@openbitfun/ui";\n\n<ColorPicker onValueChange={setColor} />';
     if (component.name === "Empty") return `import { Empty } from "@openbitfun/ui";\n\n<Empty title="${t("components.preview.cardTitle")}" description="${t("components.preview.cardDescription")}" />`;
     if (flowChatPreview) {
       return flowChatPreview.codeSample(t);
     }
+
+    if (component.category === "brand") return brandCodeSample(component.name);
 
     if (component.name === "ActionCard") {
       return `import { Icon, ActionCard } from "@openbitfun/ui";\n\n<ActionCard\n  actions={[\n    { id: "more", icon: <Icon name="more" />, label: "${t("components.preview.more")}" },\n  ]}\n  description="${t("components.preview.actionCardDescription")}"\n  leading={<Icon name="session" />}\n  size="${actionCardSize}"\n>\n  ${t("components.preview.actionCardTitle")}\n</ActionCard>`;
     }
     if (component.name === "LauncherButton") {
       return 'import { Icon, LauncherButton } from "@openbitfun/ui";\n\n<LauncherButton leadingIcon={<Icon name="mic" />}>\n  Hello\n</LauncherButton>';
-    }
-    if (component.name === "VoiceParticleLogo") {
-      return 'import { VoiceParticleLogo } from "@openbitfun/ui";\n\n// Return live FFT byte bins from fftSize=256 analysers.\n<VoiceParticleLogo readAudio={() => ({\n  user: microphoneFrequencyData,\n  assistant: playbackFrequencyData,\n  assistantSpeaking: isAudioPlaying,\n})} />';
     }
     if (component.name === "VoiceCallPanel") {
       return 'import { VoiceCallPanel } from "@openbitfun/ui";\n\n<VoiceCallPanel\n  title="Live Call"\n  labels={{ back: "Back to chat", close: "Close", mute: "Mute",\n    unmute: "Unmute", settings: "Settings", end: "End call" }}\n  phase="live"\n  muted={muted}\n  userTranscript={userTranscript}\n  assistantTranscript={assistantTranscript}\n  readAudio={readAudio}\n  onBack={returnToChat}\n  onClose={closeWindow}\n  onToggleMute={toggleMute}\n  onOpenSettings={openVoiceSettings}\n  onEnd={endCall}\n/>';
@@ -584,13 +603,17 @@ export function ComponentDetailPage({
       return `import { Icon } from "@openbitfun/ui";\n\n<Icon name="${iconName}" size="${iconSize}" tone="${iconTone}" />`;
     }
 
+    if (component.name === "Capsule") {
+      return `import { Button, Capsule, Icon, IconButton } from "@openbitfun/ui";\n\n<Capsule size="sm" action={\n  <IconButton aria-label="${t("components.preview.close")}" icon={<Icon name="xmark" />} onClick={remove} />\n}>\n  <Button size="sm" variant="outline">${t("components.preview.modalProviderName")}</Button>\n</Capsule>`;
+    }
     if (component.name === "IconButton") {
       const stateProps = `${inspectorDisabled ? " disabled" : ""}${inspectorLoading ? " loading" : ""}`;
-      return `import { IconButton } from "@openbitfun/ui";\nimport { List } from "lucide-react";\n\n<IconButton\n  aria-label="${t("components.preview.listView")}"\n  icon={<List />}\n  variant="${iconButtonVariant}"\n  size="${iconButtonSize}"\n  shape="${iconButtonShape}"${stateProps}\n/>`;
+      const annotation = iconButtonVariant === "annotation";
+      return `import { Icon, IconButton } from "@openbitfun/ui";${annotation ? "" : '\nimport { List } from "lucide-react";'}\n\n<IconButton\n  aria-label="${t(annotation ? "components.preview.fieldHelp" : "components.preview.listView")}"\n  icon={<Icon ${annotation ? 'name="info"' : 'glyph={List}'} />}\n  variant="${iconButtonVariant}"\n  size="${iconButtonSize}"\n  shape="${iconButtonShape}"${stateProps}\n/>`;
     }
     if (component.name === "Field") {
       const labelAction = fieldShowLabelAction
-        ? `\n  labelAction={<IconButton aria-label="${t("components.preview.fieldHelp")}" icon={<Icon name="info" />} size="xs" />}`
+        ? `\n  labelAction={\n    <Tooltip content="${t("components.preview.fieldDescription")}" trigger="hover-focus" openOnClick>\n      <IconButton aria-label="${t("components.preview.fieldHelp")}" icon={<Icon name="info" />} size="xs" variant="annotation" />\n    </Tooltip>\n  }`
         : "";
       const controlLeading = fieldShowControlLeading
         ? `\n  controlLeading={<Switch aria-label="${t("components.preview.notifications")}" />}`
@@ -598,7 +621,7 @@ export function ComponentDetailPage({
       const controlTrailing = fieldShowControlTrailing
         ? `\n  controlTrailing={<IconButton aria-label="${t("components.preview.more")}" icon={<Icon name="more" />} size="xs" />}`
         : "";
-      return `import { Icon, Field, IconButton, Input, Switch } from "@openbitfun/ui";\n\n<Field\n  description="${t("components.preview.fieldDescription")}"\n  label="${t("components.preview.appearance")}"${labelAction}${controlLeading}${controlTrailing}\n  orientation="${fieldOrientation}"\n  required\n>\n  <Input defaultValue="${t("components.preview.fieldValue")}" trailing={<Icon name="chevron-down" />} />\n</Field>`;
+      return `import { Icon, Field, IconButton, Input, Switch, Tooltip } from "@openbitfun/ui";\n\n<Field\n  description="${t("components.preview.fieldDescription")}"\n  label="${t("components.preview.appearance")}"${labelAction}${controlLeading}${controlTrailing}\n  orientation="${fieldOrientation}"\n  required\n>\n  <Input defaultValue="${t("components.preview.fieldValue")}" trailing={<Icon name="chevron-down" />} />\n</Field>`;
     }
     if (component.name === "Input") {
       const stateProps = previewState === "disabled"
@@ -620,13 +643,15 @@ export function ComponentDetailPage({
       return `import { LoadingState } from "@openbitfun/ui";\n\n<LoadingState>${t("detail.loading")}</LoadingState>`;
     }
     if (component.name === "Tooltip") {
-      return `import { Tooltip } from "@openbitfun/ui";\n\n<Tooltip\n  content="${t("components.preview.tooltipContent")}"\n  placement="${previewState}"\n>\n  <Button>${t("components.preview.tooltipTrigger")}</Button>\n</Tooltip>`;
+      const behavior = previewState === "instant" ? "\n  delay={0}" : previewState === "interactive" ? "\n  interactive" : previewState === "visible" ? "\n  active" : "";
+      return `import { Button, Tooltip } from "@openbitfun/ui";\n\n<Tooltip\n  content="${t("components.preview.tooltipContent")}"\n  placement="top"${behavior}\n>\n  <Button>${t("components.preview.tooltipTrigger")}</Button>\n</Tooltip>`;
     }
     if (component.name === "Menu") {
       return `import { Icon, Menu, MenuItem, MenuSection, MenuSeparator } from "@openbitfun/ui";\n\n<Menu\n  aria-label="${t("components.preview.menuLabel")}"\n  scrollbarVisibility="${menuShowScrollbar ? "auto" : "hidden"}"\n>\n  <MenuSection title="${t("components.preview.menuSectionTitle")}">\n    <MenuItem leading={<Icon name="session" />}>${t("components.preview.menuItemOne")}</MenuItem>\n    <MenuItem leading={<Icon name="session" />}>${t("components.preview.menuItemTwo")}</MenuItem>\n  </MenuSection>\n  <MenuSeparator />\n  <MenuSection aria-label="${t("components.preview.menuMoreSection")}">\n    <MenuItem disabled>${t("components.preview.menuDisabledItem")}</MenuItem>\n  </MenuSection>\n</Menu>`;
     }
     if (component.name === "Dialog") {
-      return `import { Button, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle } from "@openbitfun/ui";\n\n<Dialog onOpenChange={() => setOpen(false)} open={open} size="xl">\n  <DialogHeader>\n    <DialogHeading><DialogTitle>${t("components.preview.modalTitle")}</DialogTitle></DialogHeading>\n    <DialogClose />\n  </DialogHeader>\n  <DialogBody><ProviderConfigurationFields /></DialogBody>\n  <DialogFooter appearance="floating">\n    <Button onClick={() => setOpen(false)} variant="fill">${t("components.preview.modalCancel")}</Button>\n    <Button onClick={() => setOpen(false)} variant="primary">${t("components.preview.modalSave")}</Button>\n  </DialogFooter>\n</Dialog>`;
+      const geometry = previewState === "panel" ? 'preset="panel"' : 'size="xl"';
+      return `import { Button, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle } from "@openbitfun/ui";\n\n<Dialog onOpenChange={() => setOpen(false)} open={open} ${geometry}>\n  <DialogHeader>\n    <DialogHeading><DialogTitle>${t("components.preview.modalTitle")}</DialogTitle></DialogHeading>\n    <DialogClose />\n  </DialogHeader>\n  <DialogBody><ProviderConfigurationFields /></DialogBody>\n  <DialogFooter appearance="floating">\n    <Button onClick={() => setOpen(false)} variant="fill">${t("components.preview.modalCancel")}</Button>\n    <Button onClick={() => setOpen(false)} variant="primary">${t("components.preview.modalSave")}</Button>\n  </DialogFooter>\n</Dialog>`;
     }
     if (component.name === "Sheet") {
       return `import { Button, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Sheet } from "@openbitfun/ui";\n\n<Sheet onOpenChange={() => setOpen(false)} open={open} placement="right" size="lg">\n  <DialogHeader>\n    <DialogHeading><DialogTitle>${t("components.preview.modalTitle")}</DialogTitle></DialogHeading>\n    <DialogClose />\n  </DialogHeader>\n  <DialogBody><ProviderConfigurationFields /></DialogBody>\n  <DialogFooter>\n    <Button onClick={() => setOpen(false)} variant="fill">${t("components.preview.modalCancel")}</Button>\n    <Button onClick={() => setOpen(false)} variant="primary">${t("components.preview.modalSave")}</Button>\n  </DialogFooter>\n</Sheet>`;
@@ -669,7 +694,7 @@ export function ComponentDetailPage({
       return `import { Icon, IconButton, NavigationPanel, NavigationPanelBody, NavigationPanelContent, NavigationPanelFooter, NavigationPanelHeader, NavigationPanelItem, NavigationPanelSection, NavigationPanelSeparator, SearchField } from "@openbitfun/ui";\n\n<NavigationPanel aria-label="${t("components.preview.navigationPanelLabel")}">\n  <NavigationPanelHeader>\n    <SearchField aria-label="${t("components.preview.searchLabel")}" leadingIcon={<Icon name="search" />} />\n  </NavigationPanelHeader>\n  <NavigationPanelBody scrollbarVisibility="${navigationPanelShowScrollbar ? "auto" : "hidden"}">\n    <NavigationPanelContent>\n      <NavigationPanelSection title="${t("components.preview.navigationPanelSectionTitle")}">\n        <NavigationPanelItem selected>${t("components.preview.menuItemOne")}</NavigationPanelItem>\n        <NavigationPanelItem>${t("components.preview.menuItemTwo")}</NavigationPanelItem>\n      </NavigationPanelSection>\n      <NavigationPanelSeparator />\n      <NavigationPanelSection title="${t("components.preview.navigationPanelMoreSection")}">\n        <NavigationPanelItem>${t("components.preview.navigationPanelMoreItem")}</NavigationPanelItem>\n      </NavigationPanelSection>\n    </NavigationPanelContent>\n  </NavigationPanelBody>\n  <NavigationPanelFooter>\n    <NavigationPanelItem leading={<Icon name="device-mac" />}>${t("components.preview.navigationPanelDevice")}</NavigationPanelItem>\n    <IconButton aria-label="${t("components.preview.settings")}" icon={<Icon name="gear" />} />\n  </NavigationPanelFooter>\n</NavigationPanel>`;
     }
     if (component.name === "ScrollArea") {
-      return `import { ScrollArea } from "@openbitfun/ui";\n\n<ScrollArea\n  aria-label="${t("components.preview.scrollAreaLabel")}"\n  className="activity-scroll-area"\n  orientation="${scrollAreaOrientation}"\n  scrollbarVisibility="${previewState}"\n>\n  {items.map((item) => <div key={item.id}>{item.label}</div>)}\n</ScrollArea>`;
+      return `import { ScrollArea } from "@openbitfun/ui";\n\n<ScrollArea\n  aria-label="${t("components.preview.scrollAreaLabel")}"\n  className="activity-scroll-area"\n  orientation="${scrollAreaOrientation}"\n  scrollbarVisibility="${previewState}"\n  edgeFade="${scrollAreaOrientation === "horizontal" ? "none" : "vertical"}"\n>\n  {items.map((item) => <div key={item.id}>{item.label}</div>)}\n</ScrollArea>`;
     }
     if (component.name === "TabGroup") {
       const defaultTab = previewState === "unselected" ? "settings" : "welcome";
@@ -840,7 +865,7 @@ export function ComponentDetailPage({
     );
   }
 
-  function renderDialogExample() {
+  function renderDialogExample(state = previewState) {
     const closePreview = () => setOverlayOpen(false);
     return (
       <>
@@ -850,6 +875,8 @@ export function ComponentDetailPage({
         <Dialog
           onOpenChange={closePreview}
           open={overlayOpen}
+          role={state === "alert" ? "alertdialog" : "dialog"}
+          preset={state === "panel" ? "panel" : "default"}
           size="xl"
         >
           <DialogHeader>
@@ -858,8 +885,8 @@ export function ComponentDetailPage({
             </DialogHeading>
             <DialogClose />
           </DialogHeader>
-          <DialogBody>{renderDialogConfigurationContent()}</DialogBody>
-          <DialogFooter appearance="floating">
+          <DialogBody style={state === "scrolling" ? { maxHeight: "40dvh" } : undefined}>{renderDialogConfigurationContent()}</DialogBody>
+          <DialogFooter appearance={state === "floating-footer" || state === "panel" ? "floating" : "attached"}>
             <Button onClick={closePreview} variant="fill">
               {t("components.preview.modalCancel")}
             </Button>
@@ -872,10 +899,10 @@ export function ComponentDetailPage({
     );
   }
 
-  function renderSheetExample() {
+  function renderSheetExample(state = previewState) {
     const closePreview = () => setOverlayOpen(false);
-    const placement = previewState === "left" || previewState === "bottom"
-      ? previewState
+    const placement = state === "left" || state === "bottom"
+      ? state
       : "right";
     return (
       <>
@@ -913,13 +940,14 @@ export function ComponentDetailPage({
     previewVariant = iconButtonVariant,
     applyInspectorControls = false,
   ) {
+    const annotation = previewVariant === "annotation";
     return (
       <IconButton
-        aria-label={t("components.preview.listView")}
+        aria-label={t(annotation ? "components.preview.fieldHelp" : "components.preview.listView")}
         className={state === "focus-visible" ? "lab-force-focus" : undefined}
         data-openbitfun-preview-state={state === "hover" || state === "active" ? state : undefined}
         disabled={state === "disabled" || applyInspectorControls && inspectorDisabled}
-        icon={<List aria-hidden="true" />}
+        icon={annotation ? <Icon name="info" /> : <Icon glyph={List} />}
         loading={state === "loading" || applyInspectorControls && inspectorLoading}
         size={iconButtonSize}
         shape={iconButtonShape}
@@ -932,9 +960,11 @@ export function ComponentDetailPage({
     state = previewState,
     previewVariant = variant,
     applyInspectorControls = false,
+    appearance = activityItemAppearance,
   ) {
+    const mobileSheetStyle = state === "narrow" ? { maxInlineSize: 320 } : state === "wide" ? { maxInlineSize: 640 } : undefined;
+    if (component.category === "brand") return <BrandPreview name={component.name} state={state} />;
     if (component.name === "VoiceCallPanel") return <VoiceCallPreview key={state} state={state} />;
-    if (component.name === "VoiceParticleLogo") return <VoiceParticlePreview active={state !== "paused" && state !== "reduced-motion"} />;
     if (isFlowChatComponent) {
       return (
         <FlowChatComponentPreview
@@ -945,9 +975,15 @@ export function ComponentDetailPage({
       );
     }
 
+    if (component.name === "Capsule") return <CapsulePreview key={state} state={state} />;
     if (component.name === "Icon") {
       return <Icon name={iconName} size={iconSize} tone={iconTone} />;
     }
+    if (component.name === "ThinkingIndicator") {
+      return <ThinkingIndicatorPreview key={state} state={state} />;
+    }
+    if (component.name === "SplitView") return <SplitViewPreview state={state} />;
+    if (component.name === "SetupWizard") return <SetupWizardPreview state={state} />;
 
     if (component.name === "MobileButton") {
       return <MobileButton data-openbitfun-preview-state={state} disabled={state === "disabled"} loading={state === "loading"}>{t("components.preview.actionCardTitle")}</MobileButton>;
@@ -959,12 +995,11 @@ export function ComponentDetailPage({
     }
 
     if (component.name === "MobileDisclosure") {
-      return <MobileDisclosure disabled={state === "disabled"} onToggle={() => undefined} open={state === "open"} title={t("detail.loading")}>{t("components.preview.fieldDescription")}</MobileDisclosure>;
+      return <MobileDisclosureExample key={state} state={state} />;
     }
 
     if (component.name === "MobileMessage") {
-      const roleType = state === "user" || state === "system" ? state : "assistant";
-      return <MobileMessage roleType={roleType}>{t("components.preview.cardDescription")}</MobileMessage>;
+      return <MobileConversationExample name={component.name} key={state} state={state} />;
     }
 
     if (component.name === "MobileBadge") {
@@ -978,27 +1013,11 @@ export function ComponentDetailPage({
     }
 
     if (component.name === "MobileComposer") {
-      const expanded = state === "expanded";
-      return (
-        <MobileComposer
-          aria-label={t("components.preview.composerPlaceholder")}
-          endActions={<MobileIconButton appearance="plain" aria-label={t("components.preview.flowChat.askUserSubmit")} icon={<Icon name="arrow-up" aria-hidden="true" />} size="sm" />}
-          expanded={expanded}
-          leading={<MobileIconButton appearance="plain" aria-label={t("components.preview.add")} icon={<Icon name="plus" aria-hidden="true" />} size="sm" />}
-          startActions={expanded ? <Button size="sm" variant="fill">k3-256k</Button> : undefined}
-        >
-          {expanded ? <textarea aria-label={t("components.preview.composerPlaceholder")} placeholder={t("components.preview.composerPlaceholder")} /> : <span>{t("components.preview.composerPlaceholder")}</span>}
-        </MobileComposer>
-      );
+      return <MobileConversationExample name={component.name} key={state} state={state} />;
     }
 
     if (component.name === "MobileFloatingActions") {
-      return (
-        <MobileFloatingActions
-          leading={<Button size="sm" variant="fill">{t("components.preview.actionCardTitle")}</Button>}
-          trailing={<MobileIconButton appearance="floating" aria-label={t("components.preview.settings")} icon={<Icon name="gear" aria-hidden="true" />} />}
-        />
-      );
+      return <MobileFloatingActionsExample key={state} state={state} />;
     }
 
     if (component.name === "MobileFileButton") {
@@ -1050,20 +1069,165 @@ export function ComponentDetailPage({
       );
     }
 
+    if (component.name === "MobileAvatar") {
+      const avatarStatus = state === "online" || state === "away" || state === "busy" || state === "offline" ? state : undefined;
+      return (
+        <MobileAvatar
+          key={state}
+          name={t("components.preview.session")}
+          shape={state === "artwork" ? "rounded" : "circle"}
+          size={state === "initials" ? "lg" : "md"}
+          src={state === "image" ? previewImage : undefined}
+          status={avatarStatus}
+        >
+          {state === "image" || state === "initials" ? undefined : <Icon aria-hidden="true" name="session" />}
+        </MobileAvatar>
+      );
+    }
+
+    if (component.name === "MobileCheckbox") {
+      return (
+        <MobileCheckbox
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          defaultChecked={state === "checked"}
+          description={t("components.preview.fieldDescription")}
+          disabled={state === "disabled"}
+          indeterminate={state === "indeterminate"}
+          invalid={state === "invalid"}
+          key={state}
+          label={t("components.preview.notifications")}
+        />
+      );
+    }
+
+    if (component.name === "MobileRadioGroup") {
+      return (
+        <MobileRadioGroup
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          key={state}
+          name="detail-mobile-radio"
+          options={[
+            { description: t("components.preview.fieldDescription"), disabled: state === "disabled", label: t("components.preview.segmentedChat"), value: "chat" },
+            { disabled: state === "disabled", label: t("components.preview.segmentedAgent"), value: "agent" },
+          ]}
+          value="chat"
+        />
+      );
+    }
+
+    if (component.name === "MobileSelect") {
+      return (
+        <MobileSelect
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          defaultOpen={state === "open"}
+          description={state === "invalid" ? t("components.preview.inputError") : undefined}
+          disabled={state === "disabled"}
+          invalid={state === "invalid"}
+          key={state}
+          label={t("components.preview.mobileSelectLabel")}
+          options={[
+            { label: "deepseek-v4-pro", value: "pro" },
+            { label: "deepseek-v4-flash", value: "flash" },
+          ]}
+          sheetTitle={t("components.preview.mobileSelectLabel")}
+          value="pro"
+        />
+      );
+    }
+
+    if (component.name === "MobileStepper") {
+      return (
+        <MobileStepper
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-within" ? state : undefined}
+          decrementLabel={t("components.preview.mobileDecrease")}
+          description={state === "invalid" ? t("components.preview.inputError") : undefined}
+          disabled={state === "disabled"}
+          incrementLabel={t("components.preview.mobileIncrease")}
+          invalid={state === "invalid"}
+          key={state}
+          label={t("components.preview.mobileStepperLabel")}
+          max={5}
+          min={0}
+          value={3}
+        />
+      );
+    }
+
+    if (component.name === "MobileSwitch") {
+      return (
+        <MobileSwitch
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          defaultChecked={state === "on"}
+          description={t("components.preview.fieldDescription")}
+          disabled={state === "disabled"}
+          key={state}
+          label={t("components.preview.notifications")}
+        />
+      );
+    }
+
+    if (component.name === "MobileTabBar") {
+      return (
+        <MobileTabBar
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          items={[
+            { icon: <Icon aria-hidden="true" name="session" />, label: t("components.preview.segmentedChat"), value: "chat" },
+            { icon: <Icon aria-hidden="true" name="folder" />, label: t("components.preview.segmentedAgent"), value: "agent" },
+            { disabled: state === "disabled", icon: <Icon aria-hidden="true" name="gear" />, label: t("components.preview.settings"), value: "settings" },
+          ]}
+          key={state}
+          label={t("components.preview.segmentedLabel")}
+          value={state === "selected" ? "agent" : "chat"}
+        />
+      );
+    }
+
+    if (component.name === "MobileTag") {
+      const forcedTagState = state === "hover" || state === "active" || state === "focus-visible" ? state : undefined;
+      return (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {["Design", "Frontend", "Tokens"].map((label, index) => (
+            <MobileTag
+              data-openbitfun-preview-state={index === 0 ? forcedTagState : undefined}
+              disabled={state === "disabled"}
+              key={label}
+              selected={state === "selected" && index === 0}
+              size={index === 2 ? "sm" : "md"}
+            >
+              {label}
+            </MobileTag>
+          ))}
+        </div>
+      );
+    }
+
+    if (component.name === "MobileToolbar") {
+      return (
+        <MobileToolbar
+          appearance={state === "plain" ? "plain" : "surface"}
+          key={state}
+          label={t("components.preview.mobileToolbarSelection")}
+          leading={<MobileIconButton appearance="plain" aria-label={t("components.preview.close")} icon={<Icon aria-hidden="true" name="chevron-left" />} size="sm" />}
+          sticky={state === "sticky"}
+          trailing={<MobileIconButton appearance="plain" aria-label={t("components.preview.more")} icon={<Icon aria-hidden="true" name="more" />} size="sm" />}
+        >
+          <span>{t("components.preview.mobileToolbarSelection")}</span>
+        </MobileToolbar>
+      );
+    }
+
     if (component.name === "MobilePageHeader") {
       return <MobilePageHeader actions={<MobileIconButton appearance="plain" aria-label={t("components.preview.more")} icon={<Icon name="more" aria-hidden="true" />} size="sm" />} centered={state === "centered"} leading={<MobileIconButton appearance="plain" aria-label={t("components.preview.close")} icon={<Icon name="chevron-left" aria-hidden="true" />} size="sm" />} subtitle={state === "with-subtitle" ? t("components.preview.fieldDescription") : undefined} title={t("components.preview.session")} />;
     }
 
-    if (component.name === "MobileScrim") {
-      return <MobileScrim aria-label={t("components.preview.close")} style={{ blockSize: 120, inlineSize: "100%", position: "relative" }} visible={state !== "hidden"} />;
-    }
+    if (component.name === "MobileScrim") return <MobileScrimExample key={state} state={state} />;
 
     if (component.name === "MobileSection") {
       return <MobileSection action={state === "with-action" ? <MobileButton appearance="plain" size="sm">{t("components.preview.more")}</MobileButton> : undefined} description={state === "content-only" ? undefined : t("components.preview.fieldDescription")} title={state === "content-only" ? undefined : t("components.preview.appearance")}><MobileCard>{t("components.preview.cardDescription")}</MobileCard></MobileSection>;
     }
 
     if (component.name === "MobileSegmentedControl") {
-      return <MobileSegmentedControl aria-label={t("components.preview.segmentedLabel")} onChange={() => undefined} options={[{ label: t("components.preview.segmentedChat"), value: "chat" }, { disabled: state === "disabled", label: t("components.preview.segmentedAgent"), value: "agent" }]} value={state === "selected" ? "agent" : "chat"} />;
+      return <NavigationExample name={component.name} key={state} state={state} />;
     }
 
     if (component.name === "MobileStatus") {
@@ -1123,13 +1287,14 @@ export function ComponentDetailPage({
       );
     }
     if (component.name === "NumberInput") return <NumberInputPreview key={state} state={state} />;
+    if (component.name === "ColorPicker") return <ColorPickerPreview key={state} state={state} />;
     if (component.name === "NumberBadge") return <NumberBadge value={numberBadgeValue} />;
     if (component.name === "Empty") {
       return (
         <Empty
           actions={state === "with-actions" ? <Button>{t("components.preview.add")}</Button> : undefined}
           description={t("components.preview.cardDescription")}
-          title={state === "with-title" ? t("components.preview.cardTitle") : undefined}
+          title={state === "with-title" || state === "with-actions" ? t("components.preview.cardTitle") : undefined}
         />
       );
     }
@@ -1165,7 +1330,6 @@ export function ComponentDetailPage({
           leading={<Icon name="session" size="lg" aria-hidden="true" />}
           selected={state === "selected"}
           size={actionCardSize}
-          tabIndex={-1}
         >
           {t("components.preview.actionCardTitle")}
         </ActionCard>
@@ -1183,7 +1347,6 @@ export function ComponentDetailPage({
           }
           disabled={state === "disabled"}
           leadingIcon={<Icon name="mic" aria-hidden="true" />}
-          tabIndex={-1}
         >
           Hello
         </LauncherButton>
@@ -1197,7 +1360,7 @@ export function ComponentDetailPage({
           leading={<Icon name="unselected" />}
           tone={state as StatusPillTone}
         >
-          Ask
+          {stateLabel(state)}
         </StatusPill>
       );
     }
@@ -1276,7 +1439,8 @@ export function ComponentDetailPage({
           invalid={state === "invalid"}
           leading={<Icon name="unselected" />}
           onValueChange={(value) => setSelectValue(String(value))}
-          open={state === "open" ? true : undefined}
+          defaultOpen={state === "open"}
+          key={state}
           options={[
             { label: "Ask", value: "ask" },
             { label: "Plan", value: "plan" },
@@ -1290,6 +1454,8 @@ export function ComponentDetailPage({
     if (component.name === "ActionItem") {
       return (
         <ActionItem
+          tone={state === "danger" ? "danger" : "neutral"}
+          triggerClassName={state === "focus-visible" ? "lab-force-focus" : undefined}
           actions={[
             {
               icon: <Icon name="plus" size="lg" aria-hidden="true" />,
@@ -1314,7 +1480,7 @@ export function ComponentDetailPage({
     }
 
     if (component.name === "ActivityItem") {
-      const surface = activityItemAppearance === "surface";
+      const surface = appearance === "surface";
       return (
         <ActivityItem
           actions={surface ? [
@@ -1334,7 +1500,7 @@ export function ComponentDetailPage({
               label: t("components.preview.activityOpen"),
             },
           ] : []}
-          appearance={activityItemAppearance}
+          appearance={appearance}
           className={state === "focus-visible"
             ? "component-activity-item-example lab-force-focus"
             : "component-activity-item-example"}
@@ -1419,20 +1585,25 @@ export function ComponentDetailPage({
             />
           ) : undefined}
           description={t("components.preview.fieldDescription")}
+          error={state === "invalid" ? t("components.preview.inputError") : undefined}
           label={t("components.preview.appearance")}
           labelAction={fieldShowLabelAction ? (
-            <IconButton
-              aria-label={t("components.preview.fieldHelp")}
-              icon={<Icon name="info" size="lg" aria-hidden="true" />}
-              size="xs"
-            />
+            <Tooltip content={t("components.preview.fieldDescription")} trigger="hover-focus" openOnClick>
+              <IconButton
+                aria-label={t("components.preview.fieldHelp")}
+                icon={<Icon name="info" size="xs" />}
+                size="xs"
+                variant="annotation"
+              />
+            </Tooltip>
           ) : undefined}
-          orientation={fieldOrientation}
+          orientation={applyInspectorControls ? fieldOrientation : "vertical"}
           required
         >
           <Input
             aria-label={t("components.preview.appearance")}
             defaultValue={t("components.preview.fieldValue")}
+            invalid={state === "invalid"}
             trailing={<Icon name="chevron-down" size="lg" aria-hidden="true" />}
           />
         </Field>
@@ -1569,8 +1740,10 @@ export function ComponentDetailPage({
       return (
         <Tooltip
           content={t("components.preview.tooltipContent")}
-          delay={0}
-          placement={state as "top" | "bottom" | "left" | "right"}
+          delay={state === "instant" ? 0 : undefined}
+          interactive={state === "interactive"}
+          active={state === "visible"}
+          placement="top"
         >
           <Button size="sm" variant="fill">
             {t("components.preview.tooltipTrigger")}
@@ -1698,7 +1871,6 @@ export function ComponentDetailPage({
             aria-label={t("components.preview.composerEditorLabel")}
             disabled={state === "disabled"}
             placeholder={t("components.preview.composerPlaceholder")}
-            readOnly
           />
         </Composer>
       );
@@ -1712,6 +1884,7 @@ export function ComponentDetailPage({
       return (
         <Spinner
           aria-label={t("detail.loading")}
+          className={state === "reduced-motion" ? "design-preview-reduced-motion" : undefined}
           size={size}
           variant={state === "bars" ? "bars" : "matrix"}
         />
@@ -1735,7 +1908,7 @@ export function ComponentDetailPage({
             onConfirm={() => undefined}
             onOpenChange={() => setOverlayOpen(false)}
             open={overlayOpen}
-            pendingAction={state === "pending" ? "confirm" : null}
+            pendingAction={state === "pending" && previewPending ? "confirm" : null}
             preview="/workspace/project"
             title={t("components.preview.confirmTitle")}
             type={confirmType}
@@ -1744,16 +1917,17 @@ export function ComponentDetailPage({
       );
     }
 
-    if (component.name === "Dialog") return renderDialogExample();
-    if (component.name === "Sheet") return renderSheetExample();
+    if (component.name === "Dialog") return renderDialogExample(state);
+    if (component.name === "Sheet") return renderSheetExample(state);
     if (component.name === "MobileActionSheet") {
       return (
         <>
           <Button onClick={() => setOverlayOpen(true)} variant="fill">{t("components.preview.modalInteractionDemo")}</Button>
           <MobileActionSheet
+            style={mobileSheetStyle}
             actions={[
-              { id: "rename", label: t("components.preview.modalSave") },
-              { id: "delete", label: t("components.preview.confirmDelete"), tone: "danger" },
+              { id: "rename", label: t("components.preview.modalSave"), disabled: state === "disabled" },
+              { id: "delete", label: t("components.preview.confirmDelete"), tone: state === "danger" ? "danger" : "neutral" },
             ]}
             cancelLabel={t("components.preview.modalCancel")}
             onAction={() => setOverlayOpen(false)}
@@ -1770,13 +1944,15 @@ export function ComponentDetailPage({
         <>
           <Button onClick={() => setOverlayOpen(true)} variant="fill">{t("components.preview.modalInteractionDemo")}</Button>
           <MobileConfirmSheet
+            style={mobileSheetStyle}
             cancelLabel={t("components.preview.modalCancel")}
             confirmLabel={t("components.preview.confirmDelete")}
-            confirmTone="danger"
+            confirmTone={state === "danger" ? "danger" : "primary"}
+            confirmDisabled={state === "disabled"}
             onConfirm={() => setOverlayOpen(false)}
             onOpenChange={() => setOverlayOpen(false)}
             open={overlayOpen}
-            pending={state === "pending"}
+            pending={state === "pending" && previewPending}
             title={t("components.preview.confirmTitle")}
           />
         </>
@@ -1788,6 +1964,7 @@ export function ComponentDetailPage({
         <>
           <Button onClick={() => setOverlayOpen(true)} variant="fill">{t("components.preview.modalInteractionDemo")}</Button>
           <MobileSheet
+            style={mobileSheetStyle}
             footer={<Button onClick={() => setOverlayOpen(false)} variant="fill">{t("components.preview.modalCancel")}</Button>}
             onOpenChange={() => setOverlayOpen(false)}
             open={overlayOpen}
@@ -1804,6 +1981,7 @@ export function ComponentDetailPage({
         <>
           <Button onClick={() => setOverlayOpen(true)} variant="fill">{t("components.preview.modalInteractionDemo")}</Button>
           <MobileChoiceSheet
+            style={mobileSheetStyle}
             cancelLabel={t("components.preview.modalCancel")}
             onOpenChange={() => setOverlayOpen(false)}
             onSelect={(value) => {
@@ -1917,6 +2095,7 @@ export function ComponentDetailPage({
           aria-label={t("components.preview.scrollAreaLabel")}
           className="component-scroll-area-example"
           orientation={scrollAreaOrientation}
+          edgeFade={scrollAreaOrientation === "horizontal" ? "none" : "vertical"}
           scrollbarVisibility={state as ScrollbarVisibility}
         >
           <div className="component-scroll-area-example__content">
@@ -1931,58 +2110,19 @@ export function ComponentDetailPage({
     }
 
     if (component.name === "SegmentedControl") {
-      const defaultMode = state === "unselected" ? "agent" : "chat";
-      return (
-        <SegmentedControl
-          size="md"
-          aria-label={t("components.preview.segmentedLabel")}
-          data-openbitfun-preview-state={state === "hover" || state === "active" ? state : undefined}
-          defaultValue={defaultMode}
-          disabled={state === "disabled"}
-          key={state}
-          options={[
-            {
-              icon: <Icon name="session" size="xs" aria-hidden="true" />,
-              label: t("components.preview.segmentedChat"),
-              value: "chat",
-            },
-            {
-              label: t("components.preview.segmentedAgent"),
-              value: "agent",
-            },
-          ]}
-        />
-      );
+      return <NavigationExample name={component.name} key={state} state={state} />;
     }
 
     if (component.name === "RollingText") {
       return <RollingTextPreview interactive={state === "replacing"} />;
     }
 
+    if (component.name === "ShimmerText") {
+      return <ShimmerText active={state !== "static"}>{t("components.preview.flowChat.running")}</ShimmerText>;
+    }
+
     if (component.name === "TabGroup") {
-      const defaultTab = state === "unselected" ? "settings" : "welcome";
-      return (
-        <TabGroup
-          aria-label={t("components.preview.tabGroupLabel")}
-          data-openbitfun-preview-state={state === "hover" || state === "active" ? state : undefined}
-          defaultValue={defaultTab}
-          items={[
-            {
-              icon: <Icon name="session" size="sm" aria-hidden="true" />,
-              label: t("components.preview.welcome"),
-              value: "welcome",
-            },
-            {
-              disabled: state === "disabled",
-              icon: <Icon name="session" size="sm" aria-hidden="true" />,
-              label: t("components.preview.settings"),
-              value: "settings",
-            },
-          ]}
-          key={state}
-          size={tabGroupSize}
-        />
-      );
+      return <NavigationExample name={component.name} key={state} state={state} size={tabGroupSize} />;
     }
 
     if (component.name === "Toolbar") {
@@ -2055,6 +2195,118 @@ export function ComponentDetailPage({
     );
   }
 
+  function renderStateComparison() {
+    return (
+      <ThemeRoot className={isButtonComponent ? "component-preview-canvas design-button-overview" : "component-preview-canvas"}
+        colorScheme={colorScheme} contrast={contrast} density={density} tokenOverrides={tokenOverrides}
+        style={{ "--_preview-state-count": states.length } as CSSProperties} tabIndex={0} role="region" aria-label={t("detail.preview")}>
+        {isFlowChatComponent ? (
+          <div
+            className="flow-chat-state-list"
+            data-component="flow-chat-tool-card"
+          >
+            {states.map((state) => (
+              <section
+                className="flow-chat-state-list__item"
+                data-active={state === previewState || undefined}
+                key={state}
+              >
+                <header className="flow-chat-state-list__heading">
+                  <strong>{stateLabel(state)}</strong>
+                  <code>{state}</code>
+                </header>
+                <div
+                  className="flow-chat-state-list__preview"
+                  data-component-name={component.name}
+                >
+                  {renderPreview(state)}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : component.name === "Button" ? (
+          (["plain", "subtle"] as const).map((surface) => (
+            <section className="button-state-surface" data-surface={surface} key={surface}>
+              <h3>{t(surface === "plain" ? "detail.option.plain" : "detail.option.subtle")}</h3>
+              <div
+                className="component-preview-matrix"
+                data-component="button"
+                data-state-count={states.length}
+              >
+                <span className="component-preview-matrix__corner" />
+                {states.map((state, index) => (
+                  <span
+                    className="component-preview-matrix__column-label"
+                    data-last={index === states.length - 1 || undefined}
+                    key={state}
+                  >
+                    {stateLabel(state)}
+                  </span>
+                ))}
+                {buttonVariants.map((matrixVariant) => (
+                  <Fragment key={matrixVariant}>
+                    <span className="component-preview-matrix__row-label">
+                      {stateLabel(matrixVariant)}
+                    </span>
+                    {states.map((state) => (
+                      <div
+                        className="component-preview-matrix__cell"
+                        data-active={matrixVariant === variant && state === previewState || undefined}
+                        key={`${matrixVariant}-${state}`}
+                      >
+                        {renderPreview(state, matrixVariant)}
+                      </div>
+                    ))}
+                  </Fragment>
+                ))}
+              </div>
+              <div className="component-preview-row">
+                <code>labelBehavior="static"</code>
+                <Button labelBehavior="static" size="sm" variant="text"
+                  style={{ maxInlineSize: 220, blockSize: "auto", whiteSpace: "normal" }}>
+                  {t("components.preview.cardDescription")}
+                </Button>
+              </div>
+            </section>
+          ))
+        ) : component.name === "IconButton" ? (
+          <div
+            className="component-preview-matrix"
+            data-component="icon-button"
+            data-state-count={states.length}
+          >
+            <span className="component-preview-matrix__corner" />
+            {states.map((state, index) => (
+              <span
+                className="component-preview-matrix__column-label"
+                data-last={index === states.length - 1 || undefined}
+                key={state}
+              >
+                {stateLabel(state)}
+              </span>
+            ))}
+            {iconButtonVariants.map((matrixVariant) => (
+              <Fragment key={matrixVariant}>
+                <span className="component-preview-matrix__row-label">
+                  {stateLabel(matrixVariant)}
+                </span>
+                {states.map((state) => (
+                  <div
+                    className="component-preview-matrix__cell"
+                    data-active={matrixVariant === iconButtonVariant && state === previewState || undefined}
+                    key={`${matrixVariant}-${state}`}
+                  >
+                    {renderIconButtonPreview(state, matrixVariant)}
+                  </div>
+                ))}
+              </Fragment>
+            ))}
+          </div>
+        ) : null}
+      </ThemeRoot>
+    );
+  }
+
   const copyLabel = copyStatus === "copied"
     ? t("detail.copied")
     : copyStatus === "unavailable"
@@ -2068,391 +2320,125 @@ export function ComponentDetailPage({
       ? t("settings.touch")
       : t("settings.comfortable");
 
+  const Page = embedded ? "section" : "main";
+
   return (
-    <main className="lab-page lab-page--component-detail">
-      <nav className="component-breadcrumb" aria-label={t("detail.breadcrumbLabel")}>
-        <button onClick={onBack} type="button">
+    <Page className={embedded ? "design-library-detail" : "lab-page lab-page--component-detail"} aria-labelledby="component-detail-title">
+      {!embedded && <nav className="component-breadcrumb" aria-label={t("detail.breadcrumbLabel")}>
+        <Button onClick={onBack} variant="text" size="sm">
           {t(isFlowChatComponent ? "detail.backFlowChat" : "detail.back")}
-        </button>
+        </Button>
         <Icon name="chevron-right" size="lg" aria-hidden="true" style={{ width: 13, height: 13 }} />
         <span aria-current="page">{component.name}</span>
-      </nav>
+      </nav>}
 
-      <div className="component-preview-layout">
+      <div className="component-preview-layout design-detail-layout" data-inspector-open={inspectorOpen || undefined}>
         <div className="component-preview-main">
           <header className="component-detail-heading">
             <div>
-              <h1>{component.name}</h1>
+              {embedded && (
+                <span className="page-kicker">
+                  <span className="page-kicker-index">{String(categoryOrder.indexOf(component.category) + 1).padStart(2, "0")}</span>
+                  {getComponentCategoryLabel(component.category, t)}
+                </span>
+              )}
+              <h1 id="component-detail-title">{component.name}</h1>
               <p>{getComponentDescription(component.name, component.description, t)}</p>
             </div>
           </header>
 
           <section className="component-preview-panel" id="component-workbench">
-            <header className="component-panel-heading">
+            <header className="component-panel-heading design-preview-toolbar">
               <h2>{t("detail.preview")}</h2>
+              {isFlowChatComponent && <SegmentedControl aria-label={t("detail.preview")} value={previewMode} onValueChange={setPreviewMode}
+                options={[{ value: "single", label: t("design.standalone") }, { value: "conversation", label: t("design.inConversation") }]} />}
+              {hasOverview && <SegmentedControl aria-label={t("detail.preview")} value={previewMode}
+                onValueChange={value => { setPreviewMode(value); if (value === "overview") setInspectorOpen(false); }}
+                options={[{ value: "overview", label: t(isButtonComponent ? "design.allVariants" : "preview.examples") }, { value: "single", label: t("design.standalone") }]} />}
+              <Button size="sm" variant="text" aria-expanded={inspectorOpen} aria-controls="component-preview-configuration" onClick={() => {
+                setInspectorOpen(value => !value);
+                if (hasOverview && !inspectorOpen) setPreviewMode("single");
+              }}>
+                {t(inspectorOpen ? "design.closeConfigure" : "design.configure")}
+              </Button>
             </header>
-
-            <ThemeRoot
-              className="component-preview-canvas"
-              colorScheme={colorScheme}
-              contrast={contrast}
-              density={density}
-              tokenOverrides={tokenOverrides}
-              tabIndex={0}
-              role="region"
-              aria-label={t("detail.preview")}
-            >
-              {component.name === "ConfirmDialog" || component.name === "Dialog" || component.name === "Sheet" ? (
-                <div className="component-dialog-preview-stage">
-                  <span className="component-dialog-preview-stage__label">
-                    {stateLabel(previewState)}
-                  </span>
-                  {renderPreview(previewState)}
-                </div>
-              ) : component.name === "Card" ? (
-                <div className="component-card-preview-stage">
-                  <span className="component-card-preview-stage__label">
-                    {stateLabel(previewState)}
-                  </span>
-                  {renderPreview(previewState)}
-                </div>
-              ) : component.name === "ActivityItem" ? (
-                <div className="component-activity-item-preview-stage">
-                  <span className="component-activity-item-preview-stage__label">
-                    {stateLabel(activityItemAppearance)} · {stateLabel(previewState)}
-                  </span>
-                  {renderPreview(previewState)}
-                </div>
-              ) : component.name === "Composer" ? (
-                <div className="component-composer-preview-stage">
-                  <span className="component-composer-preview-stage__label">
-                    {stateLabel(previewState)}
-                  </span>
-                  {renderPreview(previewState)}
-                </div>
-              ) : component.name === "Toolbar" ? (
-                <div className="component-toolbar-preview-stage">
-                  <span className="component-toolbar-preview-stage__label">
-                    {stateLabel(previewState)}
-                  </span>
-                  {renderPreview(previewState)}
-                </div>
-              ) : component.name === "Combobox" || component.name === "MultiSelect" ? (
-                <div className="component-combobox-preview" data-component="combobox">
-                  <span>{stateLabel(previewState)}</span>
-                  {renderPreview(previewState)}
-                </div>
-              ) : component.name === "Menu" || component.name === "NavigationPanel" || component.name === "FieldGroup" ? (
-                <div className="component-surface-state-list" data-component={component.name}>
-                  {states.map((state) => (
-                    <section className="component-surface-state-list__item" key={state}>
-                      <header className="flow-chat-state-list__heading">
-                        <strong>{stateLabel(state)}</strong>
-                        <code>{state}</code>
-                      </header>
-                      <div className="component-surface-state-list__preview">{renderPreview(state)}</div>
-                    </section>
-                  ))}
-                </div>
-              ) : isFlowChatComponent ? (
-                <div
-                  className="flow-chat-state-list"
-                  data-component="flow-chat-tool-card"
-                >
-                  {states.map((state) => (
-                    <section
-                      className="flow-chat-state-list__item"
-                      data-active={state === previewState || undefined}
-                      key={state}
-                    >
-                      <header className="flow-chat-state-list__heading">
-                        <strong>{stateLabel(state)}</strong>
-                        <code>{state}</code>
-                      </header>
-                      <div
-                        className="flow-chat-state-list__preview"
-                        data-component-name={component.name}
-                      >
-                        {renderPreview(state)}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              ) : component.name === "Button" ? (
-                (["plain", "subtle"] as const).map((surface) => (
-                  <section className="button-state-surface" data-surface={surface} key={surface}>
-                    <h3>{t(surface === "plain" ? "detail.option.plain" : "detail.option.subtle")}</h3>
-                    <div
-                      className="component-preview-matrix"
-                      data-component="button"
-                      data-state-count={states.length}
-                    >
-                      <span className="component-preview-matrix__corner" />
-                      {states.map((state, index) => (
-                        <span
-                          className="component-preview-matrix__column-label"
-                          data-last={index === states.length - 1 || undefined}
-                          key={state}
-                        >
-                          {stateLabel(state)}
-                        </span>
-                      ))}
-                      {buttonVariants.map((matrixVariant) => (
-                        <Fragment key={matrixVariant}>
-                          <span className="component-preview-matrix__row-label">
-                            {stateLabel(matrixVariant)}
-                          </span>
-                          {states.map((state) => (
-                            <div
-                              className="component-preview-matrix__cell"
-                              data-active={matrixVariant === variant && state === previewState || undefined}
-                              key={`${matrixVariant}-${state}`}
-                            >
-                              {renderPreview(state, matrixVariant)}
-                            </div>
-                          ))}
-                        </Fragment>
-                      ))}
-                    </div>
-                    <div className="component-preview-row">
-                      <code>labelBehavior="static"</code>
-                      <Button labelBehavior="static" size="sm" variant="text"
-                        style={{ maxInlineSize: 220, blockSize: "auto", whiteSpace: "normal" }}>
-                        {t("components.preview.cardDescription")}
-                      </Button>
-                    </div>
-                  </section>
-                ))
-              ) : component.name === "Icon" ? (
-                <>
-                  <IconCompositionPreview />
-                  <div className="component-icon-catalog">
-                    {canonicalIconNames.map((name) => (
-                      <div className="component-icon-catalog__item" key={name}>
-                        <Icon name={name} size="lg" />
-                        <code>{name}</code>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : component.name === "IconButton" ? (
-                <div
-                  className="component-preview-matrix"
-                  data-component="icon-button"
-                  data-state-count={states.length}
-                >
-                  <span className="component-preview-matrix__corner" />
-                  {states.map((state, index) => (
-                    <span
-                      className="component-preview-matrix__column-label"
-                      data-last={index === states.length - 1 || undefined}
-                      key={state}
-                    >
-                      {stateLabel(state)}
-                    </span>
-                  ))}
-                  {iconButtonVariants.map((matrixVariant) => (
-                    <Fragment key={matrixVariant}>
-                      <span className="component-preview-matrix__row-label">
-                        {stateLabel(matrixVariant)}
-                      </span>
-                      {states.map((state) => (
-                        <div
-                          className="component-preview-matrix__cell"
-                          data-active={matrixVariant === iconButtonVariant && state === previewState || undefined}
-                          key={`${matrixVariant}-${state}`}
-                        >
-                          {renderIconButtonPreview(state, matrixVariant)}
-                        </div>
-                      ))}
-                    </Fragment>
-                  ))}
-                </div>
-              ) : component.category === "mobile" ? (
-                <div
-                  className="component-preview-matrix"
-                  data-component={component.name.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()}
-                  data-state-count={states.length}
-                >
-                  <span className="component-preview-matrix__corner" />
-                  {states.map((state, index) => (
-                    <span
-                      className="component-preview-matrix__column-label"
-                      data-last={index === states.length - 1 || undefined}
-                      key={state}
-                    >
-                      {stateLabel(state)}
-                    </span>
-                  ))}
-                  <span className="component-preview-matrix__row-label">{component.name}</span>
-                  {states.map((state) => (
-                    <div
-                      className="component-preview-matrix__cell"
-                      data-active={state === previewState || undefined}
-                      key={state}
-                    >
-                      {renderPreview(state)}
-                    </div>
-                  ))}
-                </div>
-              ) : component.name === "ActionCard" || component.name === "ActionItem" || component.name === "Combobox" || component.name === "Field" || component.name === "FieldGroup" || component.name === "Input" || component.name === "KeyHint" || component.name === "Listbox" || component.name === "Menu" || component.name === "NavigationPanel" || component.name === "PageHeader" || component.name === "ScrollArea" || component.name === "SearchField" || component.name === "SegmentedControl" || component.name === "Select" || component.name === "StatusPill" || component.name === "Tooltip" ? (
-                <div
-                  className="component-preview-matrix"
-                  data-component={component.name === "ActionCard"
-                    ? "action-card"
-                    : component.name === "ActionItem"
-                      ? "action-item"
-                    : component.name === "Combobox"
-                      ? "combobox"
-                    : component.name === "Field"
-                      ? "field"
-                    : component.name === "StatusPill"
-                      ? "status-pill"
-                    : component.name === "SegmentedControl"
-                      ? "segmented-control"
-                    : component.name === "Select"
-                      ? "select"
-                    : component.name === "FieldGroup"
-                      ? "field-group"
-                    : component.name === "Input"
-                      ? "input"
-                    : component.name === "KeyHint"
-                      ? "key-hint"
-                    : component.name === "Listbox"
-                      ? "listbox"
-                      : component.name === "PageHeader"
-                        ? "page-header"
-                      : component.name === "Menu"
-                        ? "menu"
-                      : component.name === "NavigationPanel"
-                        ? "navigation-panel"
-                      : component.name === "ScrollArea"
-                        ? "scroll-area"
-                      : component.name === "Tooltip"
-                        ? "tooltip"
-                      : "search-field"}
-                  data-state-count={states.length}
-                >
-                  <span className="component-preview-matrix__corner" />
-                  {states.map((state, index) => (
-                    <span
-                      className="component-preview-matrix__column-label"
-                      data-last={index === states.length - 1 || undefined}
-                      key={state}
-                    >
-                      {stateLabel(state)}
-                    </span>
-                  ))}
-                  <span className="component-preview-matrix__row-label">{component.name}</span>
-                  {states.map((state) => (
-                    <div
-                      className="component-preview-matrix__cell"
-                      data-active={state === previewState || undefined}
-                      key={state}
-                    >
-                      {renderPreview(state)}
-                    </div>
-                  ))}
-                </div>
-              ) : component.name === "TabGroup" ? (
-                <div
-                  className="component-preview-matrix"
-                  data-component="tab-group"
-                  data-state-count={states.length}
-                >
-                  <span className="component-preview-matrix__corner" />
-                  {states.map((state, index) => (
-                    <span
-                      className="component-preview-matrix__column-label"
-                      data-last={index === states.length - 1 || undefined}
-                      key={state}
-                    >
-                      {stateLabel(state)}
-                    </span>
-                  ))}
-                  <span className="component-preview-matrix__row-label">TabGroup</span>
-                  {states.map((state) => (
-                    <div
-                      className="component-preview-matrix__cell"
-                      data-active={state === previewState || undefined}
-                      key={state}
-                    >
-                      {renderPreview(state)}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  className="component-preview-matrix"
-                  data-component={component.name.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()}
-                  data-state-count={states.length}
-                >
-                  <span className="component-preview-matrix__corner" />
-                  {states.map((state, index) => (
-                    <span
-                      className="component-preview-matrix__column-label"
-                      data-last={index === states.length - 1 || undefined}
-                      key={state}
-                    >
-                      {stateLabel(state)}
-                    </span>
-                  ))}
-                  <span className="component-preview-matrix__row-label">{component.name}</span>
-                  {states.map((state) => (
-                    <div
-                      className="component-preview-matrix__cell"
-                      data-active={state === previewState || undefined}
-                      key={state}
-                    >
-                      {renderPreview(state)}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {component.name === "Menu" && <div className="component-menu-interaction"><NestedMenuPattern /></div>}
-              {component.name === "Disclosure" && (
-                <div className="component-preview-row">
-                  <code>presentation="native"</code>
-                  <Disclosure presentation="native" summary={t("components.preview.appearance")}>
-                    {t("components.preview.appearanceDescription")}
-                  </Disclosure>
-                </div>
-              )}
+            {(!hasOverview || previewMode === "single") && <div className="design-preview-options">
+              {inspectorStates.length > 1 && <InspectorSelect label={t("detail.state")} onChange={state => { setPreviewState(state); setOverlayOpen(false); }} options={inspectorStates} value={previewState} />}
+              <Button size="sm" variant="text" aria-pressed={narrowPreview} onClick={() => setNarrowPreview(value => !value)}>{t(narrowPreview ? "design.narrowWidth" : "design.fullWidth")}</Button>
+              {isFlowChatComponent && <Button size="sm" variant="text" aria-pressed={layoutGuides} onClick={() => setLayoutGuides(value => !value)}>{t("design.inspectLayout")}</Button>}
+            </div>}
+            {hasOverview && previewMode === "overview" ? (isButtonComponent ? renderStateComparison() :
+              <ComponentOverview component={component} presentation={presentation} states={states} stateLabel={stateLabel} renderPreview={state => renderPreview(state)}
+                extraExamples={component.name === "ActivityItem" ? <section className="design-mobile-appearances"><h3>{t("preview.styles")}</h3><div className="design-example-grid">{(["inline", "surface"] as const).map(appearance => <section key={appearance}><h3>{stateLabel(appearance)}</h3>{renderPreview("default", variant, false, appearance)}</section>)}</div><h3>{t("preview.states")}</h3></section> : undefined}
+                onInspect={state => { setPreviewState(state); setPreviewMode("single"); }} iconName={iconName} onSelectIcon={setIconName}
+                colorScheme={colorScheme} contrast={contrast} density={density} tokenOverrides={tokenOverrides} />
+            ) : (
+            <ThemeRoot className="design-selected-stage" colorScheme={colorScheme} contrast={contrast} density={density} tokenOverrides={tokenOverrides}
+              data-component-name={component.name} data-presentation={presentation} data-mobile={component.category === "mobile" || undefined} data-chat={isFlowChatComponent || undefined} data-mode={previewMode} data-narrow={narrowPreview || undefined} data-guides={layoutGuides || undefined}>
+              {component.category === "mobile" && <span className="design-preview-width-label">{t("preview.mobileWidth")}</span>}
+              <div className="design-preview-context-before" hidden={!isFlowChatComponent || previewMode !== "conversation"}>
+                <p className="design-context-user">{t("design.contextUser")}</p><p>{t("design.contextAssistant")}</p>
+                {component.name === "ChatComposer" && <p>{t("design.contextAfter")}</p>}
+              </div>
+              <div className="design-selected-component" data-component-name={component.name}>
+                {component.name === "IconButton" ? renderIconButtonPreview(previewState, iconButtonVariant, true) : renderPreview(previewState, variant, true)}
+              </div>
+              <div className="design-preview-context-after" hidden={!isFlowChatComponent || previewMode !== "conversation" || component.name === "ChatComposer"}><p>{t("design.contextAfter")}</p></div>
+              {previewState === "hidden" && <p className="design-hidden-preview">{t("preview.hidden")}</p>}
             </ThemeRoot>
+            )}
           </section>
+          {presentation === "conversation" && <details className="design-state-comparison" onToggle={event => setComparisonOpen(event.currentTarget.open)}>
+            <summary>{t("design.compare")}</summary>
+            {comparisonOpen && renderStateComparison()}
+          </details>}
+          <ReferenceDisclosure label={t("design.usage")}>
+            <p className="design-reference-note">{t(`preview.note.${presentation}`)}</p>
+            {isFlowChatComponent && <div className="design-preview-caption"><p>{t("design.chatContextNote")}</p><a href="#flow-chat-mock">{t("design.conversation")}<Icon name="arrow-right" /></a></div>}
+          </ReferenceDisclosure>
 
+          {component.name === "Icon" && <section className="design-icon-documentation"><h2>{t("design.contexts")}</h2><IconCompositionPreview /></section>}
+          {component.name === "Menu" && <section className="design-icon-documentation"><h2>{t("design.contexts")}</h2><NestedMenuPattern /></section>}
+          {component.name === "Disclosure" && <section className="design-icon-documentation"><h2>{t("preview.nativeDisclosure")}</h2><Disclosure presentation="native" summary={t("components.preview.appearance")}>{t("components.preview.appearanceDescription")}</Disclosure></section>}
+          <ReferenceDisclosure label={t("detail.code")}>
           <section className="component-code-panel component-code-panel--standalone">
             <header className="component-panel-heading component-code-heading">
-              <h2>{t("detail.code")}</h2>
               <div>
                 <span>React · TypeScript</span>
-                <button onClick={copyCode} type="button">
-                  <Clipboard aria-hidden="true" size={14} />
+                <Button onClick={copyCode} size="sm" variant="text" leadingIcon={<Icon glyph={Clipboard} size="sm" />}>
                   {copyLabel}
-                </button>
+                </Button>
               </div>
             </header>
             <pre><code>{codeSample}</code></pre>
           </section>
+          </ReferenceDisclosure>
+              <ReferenceDisclosure label={t("detail.inspector.publicApi")}>
+              <div className="design-component-api">
+                <div className="component-inspector-props">
+                  {component.props.map((prop) => (
+                    <div key={prop.name}>
+                      <code>{prop.name}</code>
+                      <span>{prop.type}</span>
+                      <small>{prop.defaultValue ?? "—"}</small>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              </ReferenceDisclosure>
+          <ReferenceDisclosure label={t("detail.ownedTokens")}>
+          <div className="design-component-tokens"><div className="component-inspector-token-list">{component.tokens.map(token => <code key={token}>{token}</code>)}</div>
+            <Button variant="text" onClick={() => onInspectTokens(component.name)} trailingIcon={<Icon name="arrow-right" />}>{t("detail.openWorkbench")}</Button>
+          </div>
+          </ReferenceDisclosure>
         </div>
 
-        <aside className="component-inspector">
-          <div className="component-inspector-tabs" role="tablist" aria-label={t("detail.inspector.label")}>
-            {(["properties", "styles", "tokens"] as const).map((tab) => (
-              <button
-                aria-selected={inspectorTab === tab}
-                key={tab}
-                onClick={() => setInspectorTab(tab)}
-                role="tab"
-                type="button"
-              >
-                {t(`detail.inspector.${tab}` as MessageKey)}
-              </button>
-            ))}
-          </div>
+        <aside className="component-inspector" id="component-preview-configuration" hidden={!inspectorOpen}>
+          <TabGroup aria-label={t("detail.inspector.label")} value={inspectorTab} onValueChange={value => setInspectorTab(value as InspectorTab)}
+            items={[{ value: "properties", label: t("detail.inspector.properties"), id: "inspector-properties-tab", panelId: "inspector-properties" }, { value: "styles", label: t("detail.inspector.styles"), id: "inspector-styles-tab", panelId: "inspector-styles" }]} />
 
           {inspectorTab === "properties" && (
-            <div className="component-inspector-content" role="tabpanel">
+            <div className="component-inspector-content" role="tabpanel" id="inspector-properties" aria-labelledby="inspector-properties-tab">
               <section>
                 <h2>{t("detail.inspector.basicProperties")}</h2>
                 <div className="component-inspector-controls">
@@ -2705,38 +2691,11 @@ export function ComponentDetailPage({
                 </div>
               </section>
 
-              <section>
-                <h2>{t("detail.inspector.selectedPreview")}</h2>
-                <ThemeRoot
-                  className="component-inspector-preview"
-                  colorScheme={colorScheme}
-                  contrast={contrast}
-                  density={density}
-                  tokenOverrides={tokenOverrides}
-                >
-                  {component.name === "IconButton"
-                    ? renderIconButtonPreview(previewState, iconButtonVariant, true)
-                    : renderPreview(previewState, variant, true)}
-                </ThemeRoot>
-              </section>
-
-              <section>
-                <h2>{t("detail.inspector.publicApi")}</h2>
-                <div className="component-inspector-props">
-                  {component.props.map((prop) => (
-                    <div key={prop.name}>
-                      <code>{prop.name}</code>
-                      <span>{prop.type}</span>
-                      <small>{prop.defaultValue ?? "—"}</small>
-                    </div>
-                  ))}
-                </div>
-              </section>
             </div>
           )}
 
           {inspectorTab === "styles" && (
-            <div className="component-inspector-content" role="tabpanel">
+            <div className="component-inspector-content" role="tabpanel" id="inspector-styles" aria-labelledby="inspector-styles-tab">
               <section>
                 <h2>{t("detail.inspector.themeContext")}</h2>
                 <dl className="component-inspector-facts">
@@ -2755,21 +2714,8 @@ export function ComponentDetailPage({
             </div>
           )}
 
-          {inspectorTab === "tokens" && (
-            <div className="component-inspector-content" role="tabpanel">
-              <section>
-                <h2>{t("detail.ownedTokens")}</h2>
-                <div className="component-inspector-token-list">
-                  {component.tokens.map((token) => <code key={token}>{token}</code>)}
-                </div>
-                <button className="component-inspector-action" onClick={() => onInspectTokens(component.name)} type="button">
-                  {t("detail.openWorkbench")}
-                </button>
-              </section>
-            </div>
-          )}
         </aside>
       </div>
-    </main>
+    </Page>
   );
 }

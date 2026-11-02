@@ -442,7 +442,14 @@ export class ChatTimelineStore {
 
   applySnapshot(snapshot: ChatSessionSnapshot): void {
     this.setCursor(snapshot.cursor);
-    if (snapshot.messageSnapshot) {
+    if (snapshot.messageSnapshot !== undefined) {
+      // The durable reducer already resolves identity, ordering, revisions and
+      // tombstones. Replace its complete projection, as the shared mobile
+      // session store does, rather than merging it as a legacy partial poll.
+      // Clear before persisted messages too: stale active/steering blocks must
+      // not be carried into an authoritative completed turn. Pending user
+      // messages remain separate until a host record acknowledges them.
+      this.clearActiveTurn();
       this.setPersistedMessages(snapshot.messageSnapshot);
     } else if (snapshot.newMessages.length > 0) {
       this.mergePersistedMessages(snapshot.newMessages);

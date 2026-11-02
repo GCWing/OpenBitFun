@@ -124,6 +124,17 @@
       "secondaryBorder": { "$type": "color", "$value": "color-mix(in srgb, {color.accent.secondary} 25%, transparent)" }
     },
     "identity": {
+      "project": {
+        "$description": "User-selected project identity colors; independent of status, selection and assistant identity.",
+        "blue": { "$type": "color", "$value": "{ref.color.blue.600}" },
+        "cyan": { "$type": "color", "$value": "{ref.color.cyan.600}" },
+        "green": { "$type": "color", "$value": "{ref.color.green.600}" },
+        "yellow": { "$type": "color", "$value": "{ref.color.amber.525}" },
+        "orange": { "$type": "color", "$value": "{ref.color.amber.625}" },
+        "red": { "$type": "color", "$value": "{ref.color.red.600}" },
+        "purple": { "$type": "color", "$value": "{ref.color.purple.650}" },
+        "pink": { "$type": "color", "$value": "{ref.color.pink.600}" }
+      },
       "assistant": {
         "$description": "Named assistant identity used where it must remain distinct from the primary and secondary product accents.",
         "content": { "$type": "color", "$value": "{ref.color.pink.600}" },
@@ -150,8 +161,8 @@
       }
     },
     "link": {
-      "default": { "$type": "color", "$value": "{ref.color.blue.600}" },
-      "hover": { "$type": "color", "$value": "{ref.color.blue.700}" }
+      "default": { "$type": "color", "$value": "{ref.color.cyan.500}" },
+      "hover": { "$type": "color", "$value": "{ref.color.cyan.600}" }
     },
     "border": {
       "subtle": { "$type": "color", "$value": "rgba(16, 26, 39, 0.08)" },
@@ -233,6 +244,36 @@
       "added": { "$type": "color", "$value": "{ref.color.green.550}" },
       "removed": { "$type": "color", "$value": "{ref.color.red.650}" }
     },
+    "codeDiff": {
+      "$description": "Read-only code comparisons: turquoise additions, coral removals, separate line/gutter/word layers, and syntax colors. These renderer roles intentionally differ from product status and Git-summary colors.",
+      "foreground": { "$type": "color", "$value": "{ref.color.gray.900}" },
+      "lineNumber": { "$type": "color", "$value": "{ref.color.neutral.750}" },
+      "gutterBorder": { "$type": "color", "$value": "{ref.color.neutral.0}" },
+      "added": {
+        "marker": { "$type": "color", "$value": "{ref.color.green.450}" },
+        "line": { "$type": "color", "$value": "{ref.color.green.75}" },
+        "gutter": { "$type": "color", "$value": "{ref.color.green.60}" },
+        "word": { "$type": "color", "$value": "{ref.color.green.150}" }
+      },
+      "removed": {
+        "marker": { "$type": "color", "$value": "{ref.color.red.450}" },
+        "line": { "$type": "color", "$value": "{ref.color.red.75}" },
+        "gutter": { "$type": "color", "$value": "{ref.color.red.65}" },
+        "word": { "$type": "color", "$value": "{ref.color.red.150}" }
+      },
+      "syntax": {
+        "comment": { "$type": "color", "$value": "{ref.color.neutral.550}" },
+        "punctuation": { "$type": "color", "$value": "{ref.color.neutral.600}" },
+        "keyword": { "$type": "color", "$value": "{ref.color.pink.550}" },
+        "declaration": { "$type": "color", "$value": "{ref.color.purple.475}" },
+        "function": { "$type": "color", "$value": "{ref.color.purple.650}" },
+        "string": { "$type": "color", "$value": "{ref.color.green.625}" },
+        "number": { "$type": "color", "$value": "{ref.color.cyan.475}" },
+        "property": { "$type": "color", "$value": "{ref.color.amber.625}" },
+        "variable": { "$type": "color", "$value": "{ref.color.amber.525}" },
+        "operator": { "$type": "color", "$value": "{ref.color.cyan.425}" }
+      }
+    },
     "status": {
       "info": {
         "emphasis": { "$description": "Clear blue status emphasis, sharing the existing creative-action blue anchor.", "$type": "color", "$value": "{ref.color.blue.550}" },
@@ -286,7 +327,8 @@
     "blur": {
       "subtle": { "$type": "filter", "$value": "blur(4px) saturate(1.02)" },
       "base": { "$type": "filter", "$value": "blur(8px) saturate(1.05)" },
-      "medium": { "$type": "filter", "$value": "blur(12px) saturate(1.2)" }
+      "medium": { "$type": "filter", "$value": "blur(12px) saturate(1.2)" },
+      "strong": { "$description": "Wide-radius frosting for translucent floating panels over detailed content.", "$type": "filter", "$value": "blur(32px) saturate(1.3)" }
     }
   },
   "opacity": {

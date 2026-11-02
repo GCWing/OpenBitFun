@@ -153,6 +153,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  // Centering the label line box leaves the lowercase text body about 1px below
+  // the optically centered badge icon and dismiss glyph. Lift the label so all
+  // three read as one row.
+  transform: translateY(-1px);
 }
 
 .rich-text-tag-pill__badge {

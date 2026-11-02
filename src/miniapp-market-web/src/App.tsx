@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { AccountSignIn } from './AccountSignIn';
+import { takeNativeAuthReturnTo } from './authReturnTo';
 import { downloadUrl, loginUrl, marketApi, MarketApiError } from './api';
 import { formatCompactNumber, formatMarketDate, formatMarketDateTime } from './format';
 import { GetOpenBitFunCta } from './GetOpenBitFunCta';
@@ -836,7 +837,7 @@ function DetailPage({
                 icon={<Star size={18} fill={value <= (app.myRating || 0) ? 'currentColor' : 'none'} />}
               />
             ))}
-            <span>{app.ratingAverage.toFixed(1)} ({app.ratingCount})</span>
+            <span className="rating-summary">{app.ratingAverage.toFixed(1)} ({app.ratingCount})</span>
           </div>
         </div>
         <div className="detail-gallery">
@@ -1483,6 +1484,14 @@ function AdminPage({
 }
 
 function DesktopComplete({ t }: { t: (key: MessageKey) => string }) {
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  useEffect(() => {
+    const target = takeNativeAuthReturnTo();
+    if (!target) return;
+    setReturnTo(target);
+    const timer = window.setTimeout(() => window.location.replace(target), 120);
+    return () => window.clearTimeout(timer);
+  }, []);
   return (
     <main className="form-page">
       <section className="auth-gate">
@@ -1491,6 +1500,7 @@ function DesktopComplete({ t }: { t: (key: MessageKey) => string }) {
         </span>
         <h1>{t('authComplete')}</h1>
         <p>{t('authCompleteBody')}</p>
+        {returnTo && <a className="button" href={returnTo}>{t('authReturnToApp')}</a>}
       </section>
     </main>
   );

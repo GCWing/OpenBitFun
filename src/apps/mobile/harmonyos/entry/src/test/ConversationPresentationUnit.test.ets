@@ -25,7 +25,7 @@ import {
 import { AssistantProcessLayoutPolicy } from '../main/ets/pages/policy/AssistantProcessLayoutPolicy';
 import { ConversationMessageRenderPolicy } from '../main/ets/pages/policy/ConversationMessageRenderPolicy';
 import { ToolCollapsePolicy } from '../main/ets/pages/policy/ToolCollapsePolicy';
-import { ChatMessageStructurePolicy } from '../main/ets/pages/policy/ChatMessageStructurePolicy';
+import { ChatMessageStructurePolicy, StructuredRenderGroup } from '../main/ets/pages/policy/ChatMessageStructurePolicy';
 import { ToolStatusPresentationPolicy } from '../main/ets/pages/policy/ToolStatusPresentationPolicy';
 import { PlanToolPolicy } from '../main/ets/pages/policy/PlanToolPolicy';
 import {
@@ -48,10 +48,6 @@ import { AccountDeviceSelectionPolicy } from '../main/ets/pages/policy/AccountDe
 import { SidebarConnectionActionPolicy } from '../main/ets/pages/policy/SidebarConnectionActionPolicy';
 import { SidebarDeviceProjectionPolicy } from '../main/ets/pages/policy/SidebarDeviceProjectionPolicy';
 import { HarnessProfilePolicy } from '../main/ets/pages/policy/HarnessProfilePolicy';
-import { CONNECT_INTENT_AUTO, CONNECT_INTENT_SCAN } from '../main/ets/pages/state/AppShellState';
-import {
-  DetectedUrlAction
-} from '../main/ets/services/ConnectScanDecisionPolicy';
 
 interface LoginFailureFixture { code?: number; statusCode?: number; }
 
@@ -70,6 +66,7 @@ export default function conversationPresentationUnitTest() {
       expect(HarnessProfilePolicy.agentType('minimal')).assertEqual('minimal');
       expect(HarnessProfilePolicy.agentType('standard')).assertEqual('agentic');
       expect(HarnessProfilePolicy.agentType('ultimate')).assertEqual('Ultra');
+      expect(HarnessProfilePolicy.agentType('creative')).assertEqual('Creative');
     });
   });
 
@@ -335,6 +332,119 @@ export default function conversationPresentationUnitTest() {
       expect(parentOutput[0].subItems?.length || 0).assertEqual(0);
     });
 
+    it('folds a Task restatement once instead of drawing its children twice', 0, () => {
+      const task = toolStatus('task-1', 'Task', 'running');
+      const childThinking: ConversationUiMessageItem = {
+        type: 'thinking',
+        content: 'Inspect child files',
+        is_subagent: true
+      };
+      const childRead: ConversationUiMessageItem = {
+        type: 'tool',
+        tool: toolStatus('read-child', 'Read', 'running'),
+        is_subagent: true
+      };
+      const parentTask: ConversationUiMessageItem = { type: 'tool', tool: task };
+      parentTask.subItems = [childThinking, childRead];
+
+      const scoped = ChatMessageStructurePolicy.scopeSubagentItems([parentTask, childThinking, childRead]);
+      expect(scoped.length).assertEqual(1);
+      expect(scoped[0].subItems?.length || 0).assertEqual(2);
+    });
+
+    it('keeps a child that repeats inside the Task', 0, () => {
+      const task = toolStatus('task-2', 'Task', 'running');
+      const childRead: ConversationUiMessageItem = {
+        type: 'tool',
+        tool: toolStatus('read-child-2', 'Read', 'completed'),
+        is_subagent: true
+      };
+      const parentTask: ConversationUiMessageItem = { type: 'tool', tool: task };
+      parentTask.subItems = [childRead, childRead];
+
+      const scoped = ChatMessageStructurePolicy.scopeSubagentItems([parentTask, childRead, childRead]);
+      expect(scoped[0].subItems?.length || 0).assertEqual(2);
+    });
+
+    it('matches only original nested occurrences and preserves repeated flat text', 0, () => {
+      [true, false].forEach((marked: boolean) => {
+        [0, 1, 2].forEach((nestedCount: number) => {
+          const child: ConversationUiMessageItem = { type: 'text', content: 'Checking again', is_subagent: marked };
+          const nested: ConversationUiMessageItem[] = [];
+          for (let index = 0; index < nestedCount; index++) nested.push(child);
+          const task: ConversationUiMessageItem = {
+            type: 'tool', tool: toolStatus('task', 'Task', 'running'), subItems: nested
+          };
+          const scoped = ChatMessageStructurePolicy.scopeSubagentItems([task, child, child, child, child, child]);
+          expect(scoped[0].subItems?.length).assertEqual(5);
+          expect(task.subItems?.length).assertEqual(nestedCount);
+        });
+      });
+    });
+
+    it('updates a nested tool from its flat restatement without mutating the source', 0, () => {
+      [true, false].forEach((marked: boolean) => {
+        const nested: ConversationUiMessageItem = {
+          type: 'tool', content: 'old', tool: toolStatus('read', 'Read', 'running'),
+          subItems: [{ type: 'text', content: 'nested detail' }]
+        };
+        const task: ConversationUiMessageItem = {
+          type: 'tool', tool: toolStatus('task', 'Task', 'running'), subItems: [nested]
+        };
+        const completed = toolStatus('read', 'Read', 'completed');
+        completed.result_preview = 'new output';
+        completed.name = undefined;
+        if (nested.tool) nested.tool.input_preview = 'original input';
+        const flat: ConversationUiMessageItem = { type: 'tool', content: 'new', tool: completed, is_subagent: marked };
+        const children = ChatMessageStructurePolicy.scopeSubagentItems([task, flat])[0].subItems || [];
+        expect(children.length).assertEqual(1);
+        expect(children[0].tool?.status).assertEqual('completed');
+        expect(children[0].tool?.result_preview).assertEqual('new output');
+        expect(children[0].content).assertEqual('new');
+        expect(children[0].tool?.name).assertEqual('Read');
+        expect(children[0].tool?.input_preview).assertEqual('original input');
+        expect(children[0].subItems?.length).assertEqual(1);
+        expect(nested.tool?.status).assertEqual('running');
+      });
+    });
+
+    it('keeps a reasoning block path when an earlier item arrives in front of it', 0, () => {
+      const onlyThinking = ChatMessageStructurePolicy.structuredGroups([
+        { type: 'thinking', content: 'Inspect' }
+      ], 'item', true, 'active');
+      const withSteeringFirst = ChatMessageStructurePolicy.structuredGroups([
+        { type: 'user-steering', steering_id: 'steering-1', content: 'Use plan B' },
+        { type: 'thinking', content: 'Inspect' }
+      ], 'item', true, 'active');
+      expect(onlyThinking.length).assertEqual(1);
+      expect(onlyThinking[0].type).assertEqual('item');
+      const thinkingGroup = withSteeringFirst.filter((group: StructuredRenderGroup) =>
+        group.items.length > 0 && ChatMessageStructurePolicy.isThinkingEntry(group.items[0]))[0];
+      expect(thinkingGroup.path).assertEqual(onlyThinking[0].path);
+      expect(thinkingGroup.key).assertEqual(onlyThinking[0].key);
+    });
+
+    it('keeps a Task path and its children when an earlier tool arrives late', 0, () => {
+      const task = toolStatus('task-3', 'Task', 'running');
+      const childThinking: ConversationUiMessageItem = {
+        type: 'thinking',
+        content: 'Child reasoning',
+        is_subagent: true
+      };
+      const parentTask: ConversationUiMessageItem = { type: 'tool', tool: task };
+      parentTask.subItems = [childThinking];
+
+      const taskOnly = ChatMessageStructurePolicy.structuredGroups([parentTask], 'item', true, 'active');
+      const withEarlierTool = ChatMessageStructurePolicy.structuredGroups([
+        { type: 'tool', tool: toolStatus('read-late', 'Read', 'completed') },
+        parentTask
+      ], 'item', true, 'active');
+      const taskGroup = withEarlierTool.filter((group: StructuredRenderGroup) =>
+        group.type === 'item' && (group.items[0].tool?.name || '') === 'Task')[0];
+      expect(taskOnly[0].path).assertEqual(taskGroup.path);
+      expect((taskGroup.items[0].subItems || []).length).assertEqual(1);
+    });
+
     it('keeps one plain assistant text item on the lightweight markdown path', 0, () => {
       expect(ChatMessageStructurePolicy.requiresStructuredRendering([
         { type: 'text', content: 'Hello' }
@@ -471,6 +581,15 @@ export default function conversationPresentationUnitTest() {
   });
 
   describe('ToolCollapsePolicy', () => {
+    it('folds failed calls with completed work and retains error details', 0, () => {
+      const failed = toolStatus('failed', 'WebFetch', 'failed');
+      failed.error_preview = 'HTTP 404';
+      const groups = ToolCollapsePolicy.collapsedGroups([toolStatus('read', 'Read', 'completed'), failed]);
+      expect(groups.length).assertEqual(1);
+      expect(groups[0].type).assertEqual('summary');
+      expect(groups[0].tools[1].error_preview).assertEqual('HTTP 404');
+    });
+
     it('folds consecutive completed tools of any kind into one summary', 0, () => {
       const groups = ToolCollapsePolicy.collapsedGroups([
         toolStatus('1', 'Grep', 'completed'),
@@ -508,7 +627,7 @@ export default function conversationPresentationUnitTest() {
       expect(PlanToolPolicy.canBuild(planTool)).assertTrue();
     });
 
-    it('does not fold running, failed, or blocking tools into the summary', 0, () => {
+    it('does not fold running or blocking tools into the summary', 0, () => {
       const groups = ToolCollapsePolicy.collapsedGroups([
         toolStatus('1', 'Grep', 'completed'),
         toolStatus('2', 'Read', 'completed'),
@@ -589,12 +708,16 @@ export default function conversationPresentationUnitTest() {
       expect(REMOTE_CHAT_COMPOSER_CAPABILITIES.supportsAttachments).assertTrue();
     });
 
-    it('keeps voice reachable beside Send once a draft has content', 0, () => {
+    it('keeps voice reachable beside Send while a draft holds the collapsed field', 0, () => {
       expect(ChatComposerPolicy.shouldShowSupplementalVoice('继续补充', 0, false, true)).assertTrue();
       expect(ChatComposerPolicy.shouldShowSupplementalVoice('', 1, false, true)).assertTrue();
       expect(ChatComposerPolicy.shouldShowSupplementalVoice('', 0, false, true)).assertFalse();
       expect(ChatComposerPolicy.shouldShowSupplementalVoice('继续补充', 0, true, true)).assertFalse();
       expect(ChatComposerPolicy.shouldShowSupplementalVoice('继续补充', 0, false, false)).assertFalse();
+      // The slot is the draft's second way into dictation, never its only one:
+      // an empty field still reaches the microphone from the primary slot.
+      expect(ChatComposerPolicy.primaryAction('', 0, false, false, false, true, true, 'connected', true))
+        .assertEqual(ComposerPrimaryAction.Voice);
       expect(ChatComposerPolicy.canUseSupplementalVoice(false)).assertTrue();
       expect(ChatComposerPolicy.canUseSupplementalVoice(true)).assertFalse();
     });
@@ -633,7 +756,7 @@ export default function conversationPresentationUnitTest() {
       expect(RemoteI18n.t('sidebar.devices')).assertEqual('设备');
       expect(RemoteI18n.t('sidebar.newChat')).assertEqual('聊天');
       expect(RemoteI18n.t('sidebar.connectDesktop')).assertEqual('连接电脑');
-      expect(RemoteI18n.t('sidebar.scanToConnect')).assertEqual('扫码连接电脑');
+      expect(RemoteI18n.t('sidebar.scanToConnect')).assertEqual('sidebar.scanToConnect');
       expect(RemoteI18n.t('sidebar.signInOpenBitFunAccount')).assertEqual('使用邮箱或 GitHub 登录');
       expect(RemoteI18n.t('connect.chooseConnectionTitle')).assertEqual('连接电脑');
       expect(RemoteI18n.t('sidebar.local')).assertEqual('sidebar.local');
@@ -648,7 +771,7 @@ export default function conversationPresentationUnitTest() {
       expect(RemoteI18n.t('sidebar.addWorkspace')).assertEqual('添加工作区');
     });
 
-    it('hides the redundant scan action after a QR connection succeeds', 0, () => {
+    it('routes sidebar chat and session creation by connection state', 0, () => {
       expect(SidebarConnectionActionPolicy.chatAction('normal', true)).assertEqual('choose-harness');
       expect(SidebarConnectionActionPolicy.chatAction('remote', true)).assertEqual('choose-harness');
       expect(SidebarConnectionActionPolicy.chatAction('normal', false)).assertEqual('code');
@@ -658,8 +781,6 @@ export default function conversationPresentationUnitTest() {
       expect(SidebarConnectionActionPolicy.canCreateSession('connected', true)).assertFalse();
       expect(SidebarConnectionActionPolicy.canCreateSession('reconnecting', false)).assertFalse();
       expect(SidebarConnectionActionPolicy.canCreateSession('idle', false)).assertFalse();
-      expect(SidebarConnectionActionPolicy.shouldShowScan('disconnected')).assertTrue();
-      expect(SidebarConnectionActionPolicy.shouldShowScan('connected')).assertFalse();
     });
 
     it('uses the complete chat and settings shell for QR access without an account', 0, () => {
@@ -691,26 +812,9 @@ export default function conversationPresentationUnitTest() {
   });
 
   describe('ConnectSheetLandingPolicy', () => {
-    it('opens unsigned-in automatic entry on the explainer, not the camera', 0, () => {
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_AUTO, false))
-        .assertEqual(ConnectSheetStep.Intro);
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_AUTO, true))
-        .assertEqual(ConnectSheetStep.Account);
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_SCAN, false))
-        .assertEqual(ConnectSheetStep.Scan);
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_SCAN, true))
-        .assertEqual(ConnectSheetStep.Scan);
-    });
-
-    it('keeps the current pairing step while a URL is present or pairing is busy', 0, () => {
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Intro, false))
-        .assertEqual(ConnectSheetStep.Intro);
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Scan, false))
-        .assertEqual(ConnectSheetStep.Scan);
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Account, true))
-        .assertEqual(ConnectSheetStep.Account);
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Account, false))
-        .assertEqual(ConnectSheetStep.Intro);
+    it('lands on the account device list when signed in and on sign-in otherwise', 0, () => {
+      expect(ConnectSheetLandingPolicy.step(false)).assertEqual(ConnectSheetStep.Intro);
+      expect(ConnectSheetLandingPolicy.step(true)).assertEqual(ConnectSheetStep.Account);
     });
 
     it('maps a failed pair to the matching reconnect hint', 0, () => {
@@ -730,8 +834,6 @@ export default function conversationPresentationUnitTest() {
       expect(RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(RemoteConnectEntryKind.EnterSurface))
         .assertFalse();
       expect(RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(RemoteConnectEntryKind.OpenConnect))
-        .assertTrue();
-      expect(RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(RemoteConnectEntryKind.OpenScan))
         .assertTrue();
     });
   });

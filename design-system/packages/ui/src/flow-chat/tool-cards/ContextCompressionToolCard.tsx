@@ -1,6 +1,6 @@
 import { OverflowText } from '../../primitives/OverflowText';
 import type { HTMLAttributes, ReactNode } from "react";
-import { Archive } from "lucide-react";
+import { Icon } from "../../components/Icon/Icon";
 import { classNames } from "../../internal/classNames";
 import {
   ProminentToolCard,
@@ -13,6 +13,8 @@ import styles from "./ContextCompressionToolCard.module.css";
 export interface ContextCompressionToolCardProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "children" | "title"> {
   error?: ReactNode;
+  isExpanded?: boolean;
+  onToggle?: () => void;
   processingText?: ReactNode;
   status: FlowChatToolStatus;
   summary?: ReactNode;
@@ -29,6 +31,8 @@ const ACTIVE_STATUSES = new Set<FlowChatToolStatus>([
 export function ContextCompressionToolCard({
   className,
   error,
+  isExpanded = false,
+  onToggle,
   processingText,
   status,
   summary,
@@ -48,6 +52,9 @@ export function ContextCompressionToolCard({
       data-openbitfun-status={status}
     >
       <ProminentToolCard
+        collapsibleErrorContent
+        isExpanded={isExpanded}
+        onToggle={error ? onToggle : undefined}
         errorContent={error ? <div className={styles.error}>{error}</div> : undefined}
         summary={(
           <ProminentToolCardSummary
@@ -61,7 +68,7 @@ export function ContextCompressionToolCard({
                 {content}
               </OverflowText>
             ) : undefined}
-            icon={<Archive aria-hidden="true" />}
+            icon={<Icon name="session" size="sm" />}
             statusIcon={loading ? <ToolProcessingDots size={16} /> : undefined}
           />
         )}

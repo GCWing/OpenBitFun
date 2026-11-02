@@ -202,6 +202,7 @@ export class DeviceDirectoryViewModel {
     const target = deviceId.trim();
     const entry = this.state.find(target);
     if (!entry) {
+      RemoteLogger.warn(`workspace catalog ignored device=${target} reason=device_not_in_directory count=${workspaces.length}`);
       return;
     }
     entry.workspaces = workspaces.slice();

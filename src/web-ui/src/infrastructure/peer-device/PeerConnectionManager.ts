@@ -39,19 +39,38 @@ export type PeerConnectionHealth = 'connecting' | 'ready' | 'degraded';
 export type PeerHostKind = 'desktop' | 'cli';
 
 export interface PeerHostCapabilities {
+  readonly backgroundResultDeliveryV1?: boolean;
   readonly idempotentDialogSubmit: boolean;
   /** Only true after explicit negotiation; older hosts need the upload API. */
   readonly inlineImageAttachmentsV1?: boolean;
   readonly btwInitialModelSelectionV1?: boolean;
+  readonly btwModelPoolSelectionV1?: boolean;
+  /** Terminal output arrives as replay pages announced on the host stream. */
+  readonly terminalCursorReplayV1?: boolean;
   readonly controlConversationV1?: boolean;
   readonly controlConversationResetV1?: boolean;
   readonly targetedSessionRollback: boolean;
   readonly tokenUsageStatistics: boolean;
   /** MiniApp Agent runs accept immutable virtual context-file snapshots. */
   readonly miniAppAgentContextFilesV1: boolean;
+  readonly miniAppAgentImagesV1: boolean;
   readonly wslWorkspacesV1?: boolean;
+  /** Host stores ordered subscription account pools on model configs. */
+  readonly subscriptionAccountPoolsV1?: boolean;
+  /** Host-owned read-only subscription allowance query. */
+  readonly subscriptionQuotaV1?: boolean;
+  readonly grokQuotaV1?: boolean;
+  readonly subscriptionModelQuotaV1?: boolean;
+  /** Host routes a model to its configured backup channels. */
+  readonly modelChannelRoutingV1?: boolean;
+  readonly wholeSessionCopyV1?: boolean;
+  readonly sessionTrajectoryV1?: boolean;
+  readonly modelRoutingV1?: boolean;
+  readonly modelPoolSelectionV1?: boolean;
+  readonly computerUseSharingV1?: boolean;
   /** Typed ProductControl HostInvoke, including shared config read-back. */
   readonly productControlV1?: boolean;
+  readonly remoteConnectControlV1?: boolean;
   /**
    * ProductControl definitions that need a host-native provider or a live
    * presentation surface. The controller does not pre-check these: the peer
@@ -77,8 +96,11 @@ export interface PeerHostCapabilities {
    * (older host); resolve via `hostKind` the same way as `cancelTool`.
    */
   readonly toolCatalog: boolean | null;
+  /** Missing on older hosts: Desktop implements PR details, CLI does not. */
+  readonly reviewPlatformV1?: boolean | null;
   /** Scoped MCP choices must be explicitly advertised by the host. */
   readonly chatMcpCatalogV1?: boolean;
+  readonly workspaceIconV1?: boolean;
   readonly workspaceIdReferencesV1?: boolean;
   /**
    * Host implements `submit_user_answers` for Runtime-owned
@@ -87,6 +109,7 @@ export interface PeerHostCapabilities {
    */
   readonly userQuestionResponse: boolean | null;
   readonly userQuestionInteraction?: boolean;
+  readonly dialogQueueV1?: boolean;
   /**
    * Which kind of host answered `peer_mode_ping` (`"desktop"` | `"cli"`).
    * `null` = the host did not advertise `host_type` (even older host, or the
@@ -164,23 +187,40 @@ interface PeerModePingResult {
 }
 
 const NO_CAPABILITIES: PeerHostCapabilities = {
+  backgroundResultDeliveryV1: false,
   idempotentDialogSubmit: false,
   inlineImageAttachmentsV1: false,
   btwInitialModelSelectionV1: false,
+  btwModelPoolSelectionV1: false,
+  terminalCursorReplayV1: false,
   controlConversationV1: false,
   controlConversationResetV1: false,
   targetedSessionRollback: false,
   tokenUsageStatistics: false,
   miniAppAgentContextFilesV1: false,
+  miniAppAgentImagesV1: false,
   wslWorkspacesV1: false,
+  subscriptionAccountPoolsV1: false,
+  subscriptionQuotaV1: false,
+  grokQuotaV1: false,
+  subscriptionModelQuotaV1: false,
+  modelChannelRoutingV1: false,
+  wholeSessionCopyV1: false,
+  sessionTrajectoryV1: false,
+  modelRoutingV1: false,
+  modelPoolSelectionV1: false,
+  computerUseSharingV1: false,
   productControlV1: false,
+  remoteConnectControlV1: false,
   productControlNativeV1: false,
   productControlPresentationV1: false,
   // Unknown (not yet probed) — not the same as `false` (probed, unsupported).
   // Consumers treat `null` optimistically so an unprobed host is not gated off.
   cancelTool: null,
   toolCatalog: null,
+  reviewPlatformV1: null,
   chatMcpCatalogV1: false,
+  workspaceIconV1: false,
   workspaceIdReferencesV1: false,
   userQuestionResponse: null,
   // Host kind is unknown until the first `peer_mode_ping` resolves. Consumers
@@ -425,8 +465,15 @@ export class PeerConnectionManager {
       supportsTargetedSessionRollback: entry.capabilities.targetedSessionRollback,
       supportsTokenUsageStatistics: entry.capabilities.tokenUsageStatistics,
       supportsMiniAppAgentContextFilesV1: entry.capabilities.miniAppAgentContextFilesV1,
+      supportsMiniAppAgentImagesV1: entry.capabilities.miniAppAgentImagesV1,
       supportsWslWorkspacesV1: entry.capabilities.wslWorkspacesV1,
+      supportsWholeSessionCopyV1: entry.capabilities.wholeSessionCopyV1,
+      supportsModelRoutingV1: entry.capabilities.modelRoutingV1,
+      supportsModelPoolSelectionV1: entry.capabilities.modelPoolSelectionV1,
+      supportsBtwModelPoolSelectionV1: entry.capabilities.btwModelPoolSelectionV1,
+      supportsComputerUseSharingV1: entry.capabilities.computerUseSharingV1,
       supportsProductControlV1: entry.capabilities.productControlV1,
+      supportsRemoteConnectControlV1: entry.capabilities.remoteConnectControlV1,
     });
     entry.health = 'ready';
     this.scheduleKeepalive(entry);
@@ -503,24 +550,42 @@ export class PeerConnectionManager {
 
     return {
       idempotentDialogSubmit: caps?.idempotent_dialog_submit === true,
+      backgroundResultDeliveryV1: caps?.background_result_delivery_v1 === true,
       inlineImageAttachmentsV1: caps?.inline_image_attachments_v1 === true,
       btwInitialModelSelectionV1: caps?.btw_initial_model_selection_v1 === true,
+      btwModelPoolSelectionV1: caps?.btw_model_pool_selection_v1 === true,
+      terminalCursorReplayV1: caps?.terminal_cursor_replay_v1 === true,
       controlConversationV1: caps?.control_conversation_v1 === true,
       controlConversationResetV1: caps?.control_conversation_reset_v1 === true,
       targetedSessionRollback: caps?.targeted_session_rollback === true,
       tokenUsageStatistics: caps?.token_usage_statistics === true,
       miniAppAgentContextFilesV1: caps?.miniapp_agent_context_files_v1 === true,
+      miniAppAgentImagesV1: caps?.miniapp_agent_images_v1 === true,
       wslWorkspacesV1: caps?.wsl_workspaces_v1 === true,
+      subscriptionAccountPoolsV1: caps?.subscription_account_pools_v1 === true,
+      subscriptionQuotaV1: caps?.subscription_quota_v1 === true,
+      grokQuotaV1: caps?.grok_quota_v1 === true,
+      subscriptionModelQuotaV1: caps?.subscription_model_quota_v1 === true,
+      modelChannelRoutingV1: caps?.model_channel_routing_v1 === true,
+      wholeSessionCopyV1: caps?.whole_session_copy_v1 === true,
+      sessionTrajectoryV1: caps?.session_trajectory_v1 === true,
+      modelRoutingV1: caps?.model_routing_v1 === true,
+      modelPoolSelectionV1: caps?.model_pool_selection_v1 === true,
+      computerUseSharingV1: caps?.computer_use_sharing_v1 === true,
       productControlV1: caps?.product_control_v1 === true,
+      remoteConnectControlV1: caps?.remote_connect_control_v1 === true,
       productControlNativeV1: caps?.product_control_native_v1 === true,
       productControlPresentationV1:
         caps?.product_control_presentation_v1 === true,
       cancelTool,
       toolCatalog,
+      reviewPlatformV1: caps?.review_platform_v1 === undefined ? null : caps.review_platform_v1 === true,
       chatMcpCatalogV1: caps?.chat_mcp_catalog_v1 === true,
+      workspaceIconV1: caps?.workspace_icon_v1 === true,
       workspaceIdReferencesV1: caps?.workspace_id_references_v1 === true,
       userQuestionResponse,
       userQuestionInteraction: caps?.user_question_interaction_v1 === true,
+      dialogQueueV1: caps?.dialog_queue_v1 === true,
       hostKind,
     };
   }
@@ -604,8 +669,15 @@ export class PeerConnectionManager {
         supportsTargetedSessionRollback: capabilities.targetedSessionRollback,
         supportsTokenUsageStatistics: capabilities.tokenUsageStatistics,
         supportsMiniAppAgentContextFilesV1: capabilities.miniAppAgentContextFilesV1,
+        supportsMiniAppAgentImagesV1: capabilities.miniAppAgentImagesV1,
         supportsWslWorkspacesV1: capabilities.wslWorkspacesV1,
+        supportsWholeSessionCopyV1: capabilities.wholeSessionCopyV1,
+        supportsModelRoutingV1: capabilities.modelRoutingV1,
+        supportsModelPoolSelectionV1: capabilities.modelPoolSelectionV1,
+        supportsBtwModelPoolSelectionV1: capabilities.btwModelPoolSelectionV1,
+        supportsComputerUseSharingV1: capabilities.computerUseSharingV1,
         supportsProductControlV1: capabilities.productControlV1,
+        supportsRemoteConnectControlV1: capabilities.remoteConnectControlV1,
       });
       entry.consecutiveFailures = 0;
       const recovered = entry.health !== 'ready';
@@ -740,20 +812,36 @@ function capabilitiesEqual(
   b: PeerHostCapabilities,
 ): boolean {
   return a.idempotentDialogSubmit === b.idempotentDialogSubmit &&
+    a.backgroundResultDeliveryV1 === b.backgroundResultDeliveryV1 &&
     a.inlineImageAttachmentsV1 === b.inlineImageAttachmentsV1 &&
     a.btwInitialModelSelectionV1 === b.btwInitialModelSelectionV1 &&
+    a.btwModelPoolSelectionV1 === b.btwModelPoolSelectionV1 &&
     a.controlConversationV1 === b.controlConversationV1 &&
     a.controlConversationResetV1 === b.controlConversationResetV1 &&
     a.targetedSessionRollback === b.targetedSessionRollback &&
     a.tokenUsageStatistics === b.tokenUsageStatistics &&
     a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
+    a.miniAppAgentImagesV1 === b.miniAppAgentImagesV1 &&
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
+    a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
+    a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
+    a.grokQuotaV1 === b.grokQuotaV1 &&
+    a.subscriptionModelQuotaV1 === b.subscriptionModelQuotaV1 &&
+    a.modelChannelRoutingV1 === b.modelChannelRoutingV1 &&
+    a.wholeSessionCopyV1 === b.wholeSessionCopyV1 &&
+    a.sessionTrajectoryV1 === b.sessionTrajectoryV1 &&
+    a.modelRoutingV1 === b.modelRoutingV1 &&
+    a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&
+    a.computerUseSharingV1 === b.computerUseSharingV1 &&
     a.cancelTool === b.cancelTool &&
     a.toolCatalog === b.toolCatalog &&
+    a.reviewPlatformV1 === b.reviewPlatformV1 &&
     a.chatMcpCatalogV1 === b.chatMcpCatalogV1 &&
+    a.workspaceIconV1 === b.workspaceIconV1 &&
     a.workspaceIdReferencesV1 === b.workspaceIdReferencesV1 &&
     a.userQuestionResponse === b.userQuestionResponse &&
     a.userQuestionInteraction === b.userQuestionInteraction &&
+    a.dialogQueueV1 === b.dialogQueueV1 &&
     a.hostKind === b.hostKind;
 }
 

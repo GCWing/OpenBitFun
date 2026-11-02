@@ -8,6 +8,7 @@
 | 扩展体系 | [Plugin Runtime](extensions/plugin-runtime-design.md)、[能力集成](extensions/capability-runtime-integration-design.md)、[外部来源](extensions/external-ai-work-sources-design.md)、[OpenCode 兼容](extensions/opencode-extension-compatibility.md) |
 | 产品交付 | [产品定制](product-customization-blueprint.md)、[CLI 产品线](cli-product-line-design.md)、[Agent SDK](agent-sdk-product-architecture.md)、[平台可移植性](platform-portability-design.md) |
 | 产品控制面 | [Product Control](product-control-plane.md) |
+| 模型与订阅 | [订阅多账号与额度路由集成设计](subscription-account-routing-design.md)（提案） |
 | 架构演进 | [Core 拆分](../plans/core-decomposition-plan.md)、[演进计划](../plans/product-architecture-evolution-plan.md)、[Rust 依赖边界](rust-build-dependency-boundaries.md) |
 
 Embedded interactive TUI direct-runtime 已交付。当前 loopback Web Server 已承载 Embedded Runtime 和 WebSocket App Server；Shared App Server 的跨进程共享形态仍需按生产调用路径逐项验收。当前调用路径和稳定 owner 边界以本文及已接线代码为准。
@@ -196,9 +197,9 @@ block-beta
 | Shared frontend | `src/shared` | `shared` |
 | Interfaces | `src/crates/interfaces/*` | `acp`、`app-server`、`app-server-client`、`app-server-protocol`、`sdk-host` |
 | Assembly | `src/crates/assembly/*` | `agent-content`、`core`、`external-sources`、`product-capabilities` |
-| Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`ai-adapters`、`claude-code-adapter`、`codex-adapter`、`dsh-adapter`、`opencode-adapter`、`static-hook-support`、`transport`、`webdriver` |
+| Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`ai-adapters`、`claude-code-adapter`、`codex-adapter`、`zcode-adapter`、`dsh-adapter`、`opencode-adapter`、`static-hook-support`、`transport`、`webdriver` |
 | Services | `src/crates/services/*` | `services-core`、`services-integrations`、`miniapp-market-service`、`skin-market-service`、`relay-service`、`page-function-runtime`、`terminal` |
-| Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution`、`tool-call-jsonrepair` |
+| Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution` |
 | Contracts | `src/crates/contracts/*` | `core-types`、`events`、`runtime-ports`、`product-domains` |
 
 Installer、E2E 以及 MiniApp/Skin market server 和对应 service 在 Level 0 图中分别归入交付入口、测试范围或 Services 家族，不作为独立架构模块。
@@ -214,6 +215,8 @@ Logical 与 Development 的主要映射如下，映射是多对多关系：
 | Contracts | 为多个逻辑职责提供稳定事实与 port；不构成独立逻辑模块 |
 
 Assembly 是唯一组装根，只选择下层能力和实现，不能反向依赖 app。每个生态 adapter 独立保留外部格式和顺序语义，再映射到 OpenBitFun owner；生态 adapter 之间不能形成兄弟依赖。
+
+Computer Use 的控制会话、系统共享提示、后台输入边界与 macOS / Windows / Ubuntu 原生实现见 [Computer Use control-session SPEC](computer-use-control.md)。平台资源由 Desktop 持有，模式、状态和动作契约保持可移植；共享 Core 通过 host port 管理任务结束与取消时的释放。
 
 各层的静态职责按下表执行。层间只允许由上向下依赖；同层依赖必须有明确的单向 owner 关系，不能为了复用方便形成环。
 
@@ -373,6 +376,7 @@ flowchart LR
 | Web Server | Embedded Agent Runtime、WebSocket App Server、Health/Info；当前只允许 loopback 单用户模式 |
 | Relay Server | WebSocket/HTTP bridge、账户与同步；不包含 Agent Runtime |
 | Plugin Host | 可选的受管 Bun 子进程；执行配置中显式声明的 OpenCode package plugin，由本地 Agent Runtime 进程监督，不按 Session 或插件各启一个进程 |
+| MiniApp Shell | 单独编译的轻量窗口程序，通过私有本机 IPC 复用 Desktop host 中的执行与状态 owner；不链接 Core/Agent Runtime，不复制 Desktop 主程序。macOS 导出包只有 Shell、图标与身份，Windows/Linux 使用随主产品安装的 Shell。旧 v1 启动记录与实例身份保持兼容。自定义窗口栏由 MiniApp 的可选 `chrome.titlebar` 元数据声明，Shell 与草稿预览共享轻量渲染器；macOS 保留原生红绿灯，Windows 复用主应用右侧窗口按钮，系统控件位置与形状不可由 MiniApp 覆盖；原生窗口操作仍归 Shell，应用内操作通过 SceneChrome 进入主顶部栏 |
 
 ### 2.5 Scenarios (+1) · Level 0
 
@@ -898,7 +902,7 @@ Shared Agent Runtime 是第一方多实例的目标部署，不是上表新增�
 
 ## 独立数据迁移工具的依赖边界
 
-Data Migrator 是独立发布的本地离线工具，不依赖 Core、Product Assembly、Desktop 或 Web UI。
+Data Tools 是独立发布的本地离线工具，不依赖 Core、Product Assembly、Desktop 或 Web UI。
 主应用不检测、启动或捆绑迁移器。两者在同一源码工作区复用稳定的数据格式与存储实现：
 
 - contracts/config-contracts：配置 DTO、默认值、版本校验及到共享模型 DTO 的纯转换；Core 原路径保留转发，ConfigProvider 仍在 Core。
@@ -910,7 +914,7 @@ Data Migrator 是独立发布的本地离线工具，不依赖 Core、Product As
 WorkspaceInfo/WorkspaceIdentity 的运行操作由 Core 的 runtime extension traits 保留，稳定记录无需导入这些能力。
 原 Core 存储入口保留错误映射；可选 legacy-migration facade 保留旧导入路径，但不再由 product-full 启用。
 远程四种场景不提供迁移工具的执行入口；仅转换本机保存的连接记录，不连接远端。
-使用与发行契约以 [独立迁移器说明](../../src/apps/data-migrator/README.zh-CN.md) 为准。
+使用与发行契约以 [独立数据工具说明](../../src/apps/data-tools/README.zh-CN.md) 为准。
 
 
 ## Agent 身份与产品概念

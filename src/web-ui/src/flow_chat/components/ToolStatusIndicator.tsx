@@ -107,7 +107,7 @@ export const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({
             className={`w-3 h-3 ${config.color}`}
           />
         ) : config.icon ? (
-          <config.icon
+          <Icon glyph={config.icon} size="xs"
             className={`w-3 h-3 ${config.color} ${config.animate ? 'animate-spin' : ''}`}
           />
         ) : null}

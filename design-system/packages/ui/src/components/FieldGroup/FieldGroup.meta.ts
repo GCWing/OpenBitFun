@@ -8,11 +8,12 @@ export const fieldGroupMeta = {
   props: [
     { name: "FormSection.title", type: "ReactNode" },
     { name: "FormSection.description", type: "ReactNode" },
+    { defaultValue: "stacked", name: "FormSection.descriptionLayout", type: "stacked | inline" },
     { name: "FormSection.leading", type: "ReactNode" },
     { name: "FormSection.actions", type: "ReactNode" },
     { defaultValue: "h2", name: "FormSection.headingAs", type: "h2 | h3 | h4" },
     { defaultValue: "subtle", name: "appearance", type: "subtle | plain" },
-    { defaultValue: "default", name: "fieldSurface", type: "default | ambient" },
+    { defaultValue: "default", name: "fieldSurface", type: "default | ambient | filled" },
     { defaultValue: "true", name: "dividers", type: "boolean" },
     { defaultValue: "center", name: "FieldRow.align", type: "center | start" },
     { defaultValue: "md", name: "FieldRow.padding", type: "none | md" },

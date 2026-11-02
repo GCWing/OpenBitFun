@@ -7,6 +7,7 @@ export const APPEARANCE_DOMAIN_TOKENS = {
   miniApp: domainToken('mini-app'),
   mermaidDiagram: domainToken('mermaid-diagram'),
   gitGraphLane: Array.from({ length: 8 }, (_, index) => domainToken(`git-lane-${index}`)),
+  subagentAvatar: (avatarId: string): string => domainToken(`subagent-${avatarId}`),
   toolIdentity: {
     search: domainToken('tool-search'),
     webSearch: domainToken('tool-web-search'),
@@ -65,6 +66,7 @@ export const APPEARANCE_LANGUAGE_TOKENS = {
   javascriptReact: languageToken('cyan'),
   python: languageToken('blue'),
   rust: languageToken('orange'),
+  cangjie: languageToken('red'),
   go: languageToken('cyan'),
   java: languageToken('orange'),
   kotlin: languageToken('purple'),

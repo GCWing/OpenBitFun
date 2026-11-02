@@ -21,4 +21,14 @@ platform-integration crate, not a product runtime or tool-policy owner.
 cargo check -p openbitfun-webdriver
 ```
 
+The crate selects Tauri's raw WebView access and the PNG/JPEG codecs it uses;
+focused checks must not depend on feature unification from the Desktop host.
+
+For reveal/focus changes, build Desktop and use the real packaged UI regression
+documented in `tests/e2e/AGENTS.md` (`run-interaction-scroll.mjs`).
+
+For script result serialization and background browser automation, build Desktop
+and run `node tests/e2e/scripts/run-browser-session-isolation.mjs`. It checks
+numeric-length object fields, DOM collection references and actual article reads.
+
 For documentation-only changes, run `git diff --check`.

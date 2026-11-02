@@ -255,18 +255,28 @@ impl RelayClient {
                         state.sender = Some(connection.sender());
                         state.state = ConnectionState::Connected;
                     }
-                    let _ = events.try_send(if first {
-                        RelayEvent::Connected
-                    } else {
-                        RelayEvent::Reconnected
-                    });
                     if events
-                        .try_send(RelayEvent::AuthOk {
+                        .send(if first {
+                            RelayEvent::Connected
+                        } else {
+                            RelayEvent::Reconnected
+                        })
+                        .await
+                        .is_err()
+                    {
+                        log::info!("Relay event receiver closed after connection");
+                        connection.close().await;
+                        return;
+                    }
+                    if events
+                        .send(RelayEvent::AuthOk {
                             user_id: connection.user_id.clone(),
                             device_id: connection.device_id.clone(),
                         })
+                        .await
                         .is_err()
                     {
+                        log::info!("Relay event receiver closed after authentication");
                         connection.close().await;
                         return;
                     }
@@ -274,9 +284,20 @@ impl RelayClient {
                         let _ = ready.send(Ok(()));
                     }
                     delay = Duration::from_secs(1);
-                    while let Ok(incoming) = connection.receive().await {
-                        if !Self::route(&owner, &events, epoch, incoming) {
-                            break;
+                    loop {
+                        let incoming = match connection.receive().await {
+                            Ok(incoming) => incoming,
+                            Err(error) => {
+                                log::warn!(
+                                    "Relay receive loop ended; scheduling reconnect: {error}"
+                                );
+                                break;
+                            }
+                        };
+                        if !Self::route(&owner, &events, epoch, incoming).await {
+                            log::info!("Relay event receiver closed; stopping reconnect loop");
+                            connection.close().await;
+                            return;
                         }
                     }
                     connection.close().await;
@@ -298,7 +319,8 @@ impl RelayClient {
                 state.replies.clear();
                 state.state = ConnectionState::Reconnecting;
             }
-            if events.try_send(RelayEvent::Disconnected).is_err() {
+            if events.send(RelayEvent::Disconnected).await.is_err() {
+                log::info!("Relay event receiver closed while reporting disconnect");
                 return;
             }
             let jitter = rand::random::<u32>() as u64 % (delay.as_millis() as u64 + 1);
@@ -306,21 +328,17 @@ impl RelayClient {
             delay = (delay * 2).min(Duration::from_secs(5));
         }
     }
-    fn route(
+    async fn route(
         owner: &Arc<Mutex<Owner>>,
         events: &mpsc::Sender<RelayEvent>,
         epoch: u64,
         event: Incoming,
     ) -> bool {
-        let mut state = owner.lock().unwrap();
-        if state.epoch != epoch {
+        if owner.lock().unwrap().epoch != epoch {
             return false;
         }
         match event {
             Incoming::RpcRequest(event) => {
-                state
-                    .replies
-                    .retain(|_, reply| reply.deadline > Instant::now());
                 let value = event.payload.0;
                 let Some(source) = value["sourceDeviceId"].as_str() else {
                     return false;
@@ -332,21 +350,31 @@ impl RelayClient {
                     return false;
                 };
                 let correlation = format!("rpc-{}", uuid::Uuid::new_v4());
-                state.replies.insert(
-                    correlation.clone(),
-                    Reply {
-                        id: event.id,
-                        deadline: reply_deadline(&value),
-                        source: source.into(),
-                    },
-                );
+                {
+                    let mut state = owner.lock().unwrap();
+                    if state.epoch != epoch {
+                        return false;
+                    }
+                    state
+                        .replies
+                        .retain(|_, reply| reply.deadline > Instant::now());
+                    state.replies.insert(
+                        correlation.clone(),
+                        Reply {
+                            id: event.id,
+                            deadline: reply_deadline(&value),
+                            source: source.into(),
+                        },
+                    );
+                }
                 events
-                    .try_send(RelayEvent::DeviceMessageReceived {
+                    .send(RelayEvent::DeviceMessageReceived {
                         source_device_id: source.into(),
                         correlation_id: correlation,
                         encrypted_data: data.into(),
                         nonce: nonce.into(),
                     })
+                    .await
                     .is_ok()
             }
             Incoming::Ephemeral(event) => {
@@ -354,7 +382,8 @@ impl RelayClient {
                 if value["type"] == "device-presence" {
                     match serde_json::from_value(value["devices"].clone()) {
                         Ok(devices) => events
-                            .try_send(RelayEvent::DevicePresence { devices })
+                            .send(RelayEvent::DevicePresence { devices })
+                            .await
                             .is_ok(),
                         Err(_) => false,
                     }
@@ -367,12 +396,13 @@ impl RelayClient {
                         return false;
                     };
                     events
-                        .try_send(RelayEvent::DeviceMessageReceived {
+                        .send(RelayEvent::DeviceMessageReceived {
                             source_device_id: source.into(),
                             correlation_id: String::new(),
                             encrypted_data: data.into(),
                             nonce: nonce.into(),
                         })
+                        .await
                         .is_ok()
                 } else {
                     true
@@ -482,6 +512,9 @@ fn reply_deadline(payload: &serde_json::Value) -> Instant {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use sioc::prelude::Event;
+
     #[test]
     fn presence_metadata_and_legacy_round_trip() {
         let legacy = serde_json::json!({"device_id":"id", "device_name":"technical"});
@@ -571,7 +604,226 @@ mod tests {
         }
     }
 
-    use super::*;
+    #[tokio::test]
+    async fn route_waits_for_event_capacity_instead_of_dropping_connection() {
+        let owner = Arc::new(Mutex::new(Owner {
+            epoch: 1,
+            state: ConnectionState::Connected,
+            url: None,
+            task: None,
+            sender: None,
+            replies: HashMap::new(),
+        }));
+        let (events, mut received) = mpsc::channel(1);
+        events.send(RelayEvent::Connected).await.unwrap();
+
+        let route_owner = owner.clone();
+        let mut route_task = tokio::spawn(async move {
+            RelayClient::route(
+                &route_owner,
+                &events,
+                1,
+                Incoming::Ephemeral(Event {
+                    payload: super::super::realtime_client::Ephemeral(serde_json::json!({
+                        "type": "device-presence",
+                        "devices": [],
+                    })),
+                    id: (),
+                    attachments: (),
+                }),
+            )
+            .await
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut route_task)
+                .await
+                .is_err()
+        );
+        assert!(matches!(received.recv().await, Some(RelayEvent::Connected)));
+        assert!(route_task.await.unwrap());
+        assert!(matches!(
+            received.recv().await,
+            Some(RelayEvent::DevicePresence { devices }) if devices.is_empty()
+        ));
+    }
+
+    #[tokio::test]
+    async fn server_close_reconnects_and_restores_device_presence() {
+        use futures::{SinkExt, StreamExt};
+        use tokio::net::TcpListener;
+        use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+        for websocket_close in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let (close_tx, mut close_rx) = mpsc::channel(1);
+            let (pending_tx, mut pending_rx) = mpsc::channel(1);
+            let server = tokio::spawn(async move {
+                for connection in 0..2 {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let mut socket = accept_async(stream).await.unwrap();
+                    socket
+                        .send(Message::Text(
+                            format!(
+                                "0{}",
+                                json!({"sid":"test", "upgrades":[], "pingInterval":25_000,
+                                    "pingTimeout":5_000, "maxPayload":1_000_000})
+                            )
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+                    let auth = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                    let auth: serde_json::Value =
+                        serde_json::from_str(auth.strip_prefix("40").unwrap()).unwrap();
+                    assert_eq!(auth["token"], "test-token");
+                    assert_eq!(auth["clientType"], "machine-scoped");
+                    socket
+                        .send(Message::Text("40{\"sid\":\"test\"}".into()))
+                        .await
+                        .unwrap();
+                    socket
+                        .send(Message::Text(
+                            format!(
+                                "42{}",
+                                json!(["auth-ok", {"userId":"account", "deviceId":"host"}])
+                            )
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+
+                    // Each replacement socket must register the host again.
+                    let registration = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                    let registration = registration.strip_prefix("42").unwrap();
+                    let event_start = registration.find('[').unwrap();
+                    let event: serde_json::Value =
+                        serde_json::from_str(&registration[event_start..]).unwrap();
+                    assert_eq!(event, json!(["rpc-register", {"method":"host:invoke"}]));
+                    socket
+                        .send(Message::Text(
+                            format!("43{}[{{\"ok\":true}}]", &registration[..event_start]).into(),
+                        ))
+                        .await
+                        .unwrap();
+                    let mut devices = vec![json!({"device_id":"host", "device_name":"Host"})];
+                    if connection == 1 {
+                        devices.push(json!({"device_id":"peer", "device_name":"Peer"}));
+                    }
+                    socket
+                        .send(Message::Text(
+                            format!(
+                                "42{}",
+                                json!(["ephemeral", {"type":"device-presence", "devices":devices}])
+                            )
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+
+                    for call in 0..if connection == 0 { 2 } else { 1 } {
+                        let request = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                        let request = request.strip_prefix("42").unwrap();
+                        let event_start = request.find('[').unwrap();
+                        let event: serde_json::Value =
+                            serde_json::from_str(&request[event_start..]).unwrap();
+                        assert_eq!(event[0], "rpc-call");
+                        assert_eq!(event[1]["method"], "peer:invoke");
+                        assert_eq!(
+                            event[1]["params"]["encrypted_data"],
+                            if call == 0 { "request" } else { "pending" }
+                        );
+                        if call == 0 {
+                            socket
+                                .send(Message::Text(
+                                    format!(
+                                        "43{}{}",
+                                        &request[..event_start],
+                                        json!([{"ok":true, "result":{
+                                            "encrypted_data":format!("reply-{connection}"), "nonce":"nonce"
+                                        }}])
+                                    )
+                                    .into(),
+                                ))
+                                .await
+                                .unwrap();
+                        } else {
+                            // This request reached the old socket; it must
+                            // fail on close and never replay on its replacement.
+                            pending_tx.send(()).await.unwrap();
+                        }
+                    }
+
+                    close_rx.recv().await.unwrap();
+                    if connection == 0 {
+                        if websocket_close {
+                            socket.close(None).await.unwrap();
+                        } else {
+                            socket.send(Message::Text("1".into())).await.unwrap();
+                        }
+                        while let Some(Ok(message)) = socket.next().await {
+                            if message.is_close() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+
+            let (client, mut events) = RelayClient::new();
+            let result = tokio::time::timeout(Duration::from_secs(8), async {
+                client.connect(&format!("http://{address}")).await.unwrap();
+                client
+                    .connect_authenticated("test-token", "Host")
+                    .await
+                    .unwrap();
+                assert!(matches!(events.recv().await, Some(RelayEvent::Connected)));
+                assert!(matches!(events.recv().await, Some(RelayEvent::AuthOk { .. })));
+                assert!(matches!(
+                    events.recv().await,
+                    Some(RelayEvent::DevicePresence { devices }) if devices.len() == 1
+                ));
+                assert_eq!(
+                    client.request_device("peer", "request", "nonce").await.unwrap(),
+                    ("reply-0".into(), "nonce".into())
+                );
+
+                let (pending, ()) = tokio::join!(
+                    client.request_device("peer", "pending", "nonce"),
+                    async {
+                        pending_rx.recv().await.unwrap();
+                        close_tx.send(()).await.unwrap();
+                        assert!(matches!(events.recv().await, Some(RelayEvent::Disconnected)));
+                    }
+                );
+                assert!(pending.is_err(), "an unacknowledged request must not report success");
+                assert!(matches!(events.recv().await, Some(RelayEvent::Reconnected)));
+                assert!(matches!(events.recv().await, Some(RelayEvent::AuthOk { .. })));
+                assert!(matches!(
+                    events.recv().await,
+                    Some(RelayEvent::DevicePresence { devices })
+                        if devices.iter().map(|device| device.device_id.as_str()).collect::<Vec<_>>()
+                            == ["host", "peer"]
+                ));
+                assert_eq!(client.connection_state().await, ConnectionState::Connected);
+                assert_eq!(
+                    client.request_device("peer", "request", "nonce").await.unwrap(),
+                    ("reply-1".into(), "nonce".into())
+                );
+                close_tx.send(()).await.unwrap();
+            })
+            .await;
+            client.disconnect().await;
+            if result.is_err() {
+                server.abort();
+            }
+            let server_result = server.await;
+            result.expect("closed Relay transport must reconnect and refresh device presence");
+            server_result.unwrap();
+        }
+    }
+
     #[test]
     fn reply_deadline_respects_forwarded_timeout() {
         let now = Instant::now();

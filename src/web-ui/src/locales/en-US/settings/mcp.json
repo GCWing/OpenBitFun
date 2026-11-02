@@ -1,11 +1,11 @@
 {
   "title": "MCP",
-  "subtitle": "Manage MCP server connections",
+  "subtitle": "Connect MCP servers to give agents access to external tools and data",
   "subtitleReadOnly": "View MCP connections",
   "section": {
     "serverList": {
       "title": "MCP Server List",
-      "description": "MCP servers and JSON configuration",
+      "description": "A server must be enabled and connected before its tools are available to agents",
       "desktopUnavailable": "Manage OpenBitFun MCP in Desktop.",
       "remoteUnavailable": "OpenBitFun MCP management is unavailable during a remote connection.",
       "loadFailed": "MCP servers could not be loaded."
@@ -13,7 +13,7 @@
   },
   "external": {
     "title": "External MCP servers",
-    "description": "From other AI applications",
+    "description": "Servers discovered in other AI apps and their activation status in OpenBitFun",
     "manage": "Manage external integrations",
     "retry": "Retry external MCP sources",
     "loading": "Checking external MCP sources...",
@@ -199,7 +199,7 @@
   "jsonEditor": {
     "title": "Advanced JSON config",
     "loadFailed": "MCP configuration could not be loaded.",
-    "hint1": "Use standard Cursor format for MCP configuration. Config will be saved to app.json in user directory.",
+    "hint1": "Organize server configurations in a mcpServers object; edits take effect when you save.",
     "hint2": "Use command for stdio or url for Streamable HTTP. Legacy HTTP+SSE configurations remain readable; transport can select the explicit protocol.",
     "secretWarning": "env, headers, and URLs may contain API keys. Inspect and save the configuration only in OpenBitFun; do not paste it into online JSON validators.",
     "discardTitle": "Discard MCP JSON changes?",
@@ -209,7 +209,8 @@
     "lintError": "JSON syntax error{{location}}: {{message}}",
     "exampleTitle": "Configuration Examples:",
     "localProcess": "Local Process (stdio):",
-    "remoteService": "Remote service (Streamable HTTP):"
+    "remoteService": "Remote service (Streamable HTTP):",
+    "description": "Edit the same MCP server configurations directly for bulk changes or advanced parameters"
   },
   "resourceBrowser": {
     "title": "MCP Resources",
@@ -339,7 +340,7 @@
     "editTitle": "Edit server",
     "edit": "$t(shared:tools.edit)",
     "importTitle": "Import config",
-    "scopeHint": "This device · User configuration · Available across workspaces on this device",
+    "scopeHint": "Execution host · User configuration · Applies to all workspaces on that host",
     "connectionType": "Connection method",
     "http": "Server URL (Streamable HTTP)",
     "stdio": "Start command (stdio)",
@@ -347,7 +348,7 @@
     "url": "Server URL",
     "command": "Executable",
     "commandPlaceholder": "npx, uvx, docker, or an executable path",
-    "commandHint": "The executable and paths belong to this device. Add each argument separately; no shell command parsing is performed.",
+    "commandHint": "Programs and paths belong to the execution host. Enter each argument separately; spaces do not split arguments",
     "arguments": "Arguments",
     "argumentIndex": "Argument {{index}}",
     "addArgument": "Add argument",
@@ -376,9 +377,9 @@
     "defaultTimeout": "Use the system default",
     "autoStart": "Connect automatically when enabled",
     "enabled": "Enable this server",
-    "credentialHint": "Environment variables and headers are stored in this device’s configuration file. Saved values are hidden and retained until edited; remove a row to delete it.",
-    "newServerHint": "New servers are saved disabled. Review the configuration, then enable and start the server from the list.",
-    "applyHint": "Saving applies changes to enabled services and may reconnect them. A saved configuration does not guarantee a successful connection.",
+    "credentialHint": "Environment variables and headers are stored in the execution host's configuration file. Existing values stay hidden and are preserved unless edited; delete a row to remove it",
+    "newServerHint": "New servers stay disabled after saving; enable them in the list",
+    "applyHint": "Saving updates enabled servers and may reconnect them; a successful save does not confirm a working connection",
     "editJson": "Advanced server JSON",
     "backToForm": "Back to form",
     "saveNew": "Save configuration",

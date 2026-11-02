@@ -142,6 +142,7 @@ export const DEFAULT_CLOUD_RELAY_URL: string = OFFICIAL_RELAY_URL;
 
 /** Device kinds the relay accepts; mirrors `relay-service/src/db.rs::DEVICE_KINDS`. */
 const DEVICE_KIND_DESKTOP: string = 'desktop';
+const DEVICE_KIND_CLI: string = 'cli';
 const DEVICE_KIND_MOBILE: string = 'mobile';
 const DEVICE_KIND_WATCH: string = 'watch';
 
@@ -158,19 +159,21 @@ const DEVICE_KIND_WATCH: string = 'watch';
 const KNOWN_NON_DESKTOP_DEVICE_NAMES: string[] = ['harmonyos phone', 'harmonyos watch'];
 
 /**
- * Whether a relay device row is a desktop, and so controllable from a phone.
+ * Whether a relay device row is a host, and so controllable from a phone.
  *
- * A row that reports its kind is taken at its word. A row without one predates
- * the relay learning about kinds, and is judged by two weaker signals: this
- * phone's own row is never a desktop, and neither is one carrying a name our
- * own builds register under. Anything else stays visible — hiding a real
- * desktop would strand the user, while a stale phone row disappears the next
- * time that phone logs in against a relay that stores kinds.
+ * A row that reports its kind is taken at its word: a desktop and a CLI host run
+ * the same control plane, so both are targets, while a phone or a watch is only
+ * ever a controller. A row without one predates the relay learning about kinds,
+ * and is judged by two weaker signals: this phone's own row is never a host, and
+ * neither is one carrying a name our own builds register under. Anything else
+ * stays visible — hiding a real host would strand the user, while a stale phone
+ * row disappears the next time that phone logs in against a relay that stores
+ * kinds.
  */
-function isDesktopDeviceRow(device: CloudAccountDeviceWire, selfDeviceId: string): boolean {
+function isHostDeviceRow(device: CloudAccountDeviceWire, selfDeviceId: string): boolean {
   const kind = (device.device_kind || '').trim();
   if (kind.length > 0) {
-    return kind === DEVICE_KIND_DESKTOP;
+    return kind === DEVICE_KIND_DESKTOP || kind === DEVICE_KIND_CLI;
   }
   if (selfDeviceId.length > 0 && device.device_id === selfDeviceId) {
     return false;
@@ -229,8 +232,66 @@ export class CloudAccountClient {
   private readonly cipher: HarmonyRemoteCryptoCipher = new HarmonyRemoteCryptoCipher();
 
   private authorizationGeneration: number = 0;
+  private authorizationForeground: boolean = true;
+  private authorizationForegroundWaiters: Array<() => void> = [];
 
-  cancelAuthorization(): void { this.authorizationGeneration++; }
+  cancelAuthorization(): void {
+    this.authorizationGeneration++;
+    this.releaseAuthorizationForegroundWaiters();
+  }
+
+  /**
+   * Browser authorization is a foreground interaction. HarmonyOS may suspend
+   * the page while the external browser is open, so do not start or continue
+   * relay polling until the page is visible again.
+   */
+  setAuthorizationForeground(value: boolean): void {
+    if (this.authorizationForeground === value) return;
+    this.authorizationForeground = value;
+    this.releaseAuthorizationForegroundWaiters();
+  }
+
+  private releaseAuthorizationForegroundWaiters(): void {
+    const waiters = this.authorizationForegroundWaiters;
+    this.authorizationForegroundWaiters = [];
+    waiters.forEach((resolve: () => void): void => resolve());
+  }
+
+  private async waitForAuthorizationForeground(generation: number): Promise<boolean> {
+    if (generation !== this.authorizationGeneration) return false;
+    if (this.authorizationForeground) return true;
+    await new Promise<void>((resolve: () => void): void => {
+      this.authorizationForegroundWaiters.push(resolve);
+    });
+    return generation === this.authorizationGeneration && this.authorizationForeground;
+  }
+
+  /**
+   * Wait for the normal poll interval, but interrupt it when the page is
+   * backgrounded or foregrounded. A foreground transition therefore performs
+   * the next poll immediately instead of making the user wait for an old timer.
+   */
+  private async waitForAuthorizationTick(generation: number, delayMs: number): Promise<boolean> {
+    if (!await this.waitForAuthorizationForeground(generation)) return false;
+    let timer: number = -1;
+    let finish: () => void = (): void => {};
+    await new Promise<void>((resolve: () => void): void => {
+      let settled: boolean = false;
+      finish = (): void => {
+        if (settled) return;
+        settled = true;
+        if (timer !== -1) clearTimeout(timer);
+        const index = this.authorizationForegroundWaiters.indexOf(finish);
+        if (index >= 0) this.authorizationForegroundWaiters.splice(index, 1);
+        resolve();
+      };
+      this.authorizationForegroundWaiters.push(finish);
+      timer = setTimeout(finish, delayMs);
+    });
+    if (generation !== this.authorizationGeneration) return false;
+    if (!this.authorizationForeground) return this.waitForAuthorizationForeground(generation);
+    return true;
+  }
 
   async login(relayUrl: string, deviceId: string, openAuthorization: (url: string) => Promise<boolean>, deviceSecret: Uint8Array): Promise<CloudAccountSession> {
     const generation = ++this.authorizationGeneration;
@@ -240,12 +301,25 @@ export class CloudAccountClient {
     if (!start.authorizationUrl.startsWith('https://github.com/login/oauth/authorize?') && !/^https:\/\/auth\.openbitfun\.com\/sign-in#ticket=[A-Za-z0-9_-]+$/.test(start.authorizationUrl)) {
       throw new Error('Untrusted account authorization URL.');
     }
-    if (!await openAuthorization(start.authorizationUrl)) throw new Error('Could not open account sign-in.');
+    const authorizationUrl = start.authorizationUrl.replace(
+      '/sign-in#',
+      '/sign-in?returnTo=openbitfun%3A%2F%2Fauth%2Fcallback#'
+    );
+    if (!await openAuthorization(authorizationUrl)) throw new Error('Could not open account sign-in.');
     const deadline = Math.min(start.expiresAt * 1000, Date.now() + 600000);
     let lastTransient: Error | undefined = undefined;
+    let firstPoll = true;
     while (Date.now() < deadline && generation === this.authorizationGeneration) {
-      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(30, Math.max(1, start.pollIntervalSeconds)) * 1000));
-      if (generation !== this.authorizationGeneration) break;
+      if (!firstPoll) {
+        // Keep the return-to-app handoff responsive even when the relay's
+        // conservative interval is large; the next poll is bounded to 2s.
+        if (!await this.waitForAuthorizationTick(
+          generation,
+          Math.min(2, Math.max(1, start.pollIntervalSeconds)) * 1000,
+        )) break;
+      }
+      firstPoll = false;
+      if (!await this.waitForAuthorizationForeground(generation)) break;
       const request: GitHubPollRequest = { transactionId: start.transactionId, transactionSecret: start.transactionSecret };
       let poll: GitHubPoll;
       try {
@@ -263,7 +337,7 @@ export class CloudAccountClient {
         continue;
       }
       lastTransient = undefined;
-      if (generation !== this.authorizationGeneration) break;
+      if (!await this.waitForAuthorizationForeground(generation)) break;
       if (poll.status === 'authorized' && poll.tokens?.accessToken) {
         if (deviceSecret.length !== 32) throw new Error('Invalid device identity.');
         const keys: DeviceKeyPair = { privateKey: new Uint8Array(deviceSecret), publicKey: X25519.scalarMultBase(deviceSecret) };
@@ -296,27 +370,34 @@ export class CloudAccountClient {
     session: CloudAccountSession,
     deviceId: string,
     deviceName: string,
-    requestId: string
+    requestId: string,
+    deviceSecret?: Uint8Array
   ): Promise<CloudProvisionedDevice> {
-    const keys = X25519.generateKeyPair();
-    const body: ProvisionDeviceRequest = {
-      public_key: Encoding.bytesToBase64(keys.publicKey),
-      device_id: deviceId,
-      device_name: deviceName,
-      device_kind: DEVICE_KIND_WATCH,
-      request_id: requestId
-    };
-    const wire = await this.request<ProvisionDeviceWire>(
-      relayUrl, '/api/auth/provision-device', 'POST', body, session.token);
-    const token = (wire.token || '').trim();
-    const userId = (wire.user_id || '').trim();
-    const provisionedDeviceId = (wire.device_id || '').trim();
-    if (token.length === 0 || userId !== session.userId || provisionedDeviceId !== deviceId) {
-      // A credential naming a different account or device would sign the watch
-      // in as somebody else. Refuse rather than pass it on.
-      throw new Error('Relay returned a mismatched provisioned device identity.');
+    const privateKey = deviceSecret ? Encoding.copyBytes(deviceSecret) : X25519.generateKeyPair().privateKey;
+    try {
+      if (privateKey.length !== 32) throw new Error('Invalid watch device identity.');
+      const body: ProvisionDeviceRequest = {
+        public_key: Encoding.bytesToBase64(X25519.scalarMultBase(privateKey)),
+        device_id: deviceId,
+        device_name: deviceName,
+        device_kind: DEVICE_KIND_WATCH,
+        request_id: requestId
+      };
+      const wire = await this.request<ProvisionDeviceWire>(
+        relayUrl, '/api/auth/provision-device', 'POST', body, session.token);
+      const token = (wire.token || '').trim();
+      const userId = (wire.user_id || '').trim();
+      const provisionedDeviceId = (wire.device_id || '').trim();
+      if (token.length === 0 || userId !== session.userId || provisionedDeviceId !== deviceId) {
+        // A credential naming a different account or device would sign the watch
+        // in as somebody else. Refuse rather than pass it on.
+        throw new Error('Relay returned a mismatched provisioned device identity.');
+      }
+      return { token, userId, deviceId: provisionedDeviceId, deviceSecret: privateKey };
+    } catch (err) {
+      privateKey.fill(0);
+      throw err instanceof Error ? err : new Error('Watch credential provisioning failed.');
     }
-    return { token, userId, deviceId: provisionedDeviceId, deviceSecret: keys.privateKey };
   }
 
   /**
@@ -332,9 +413,9 @@ export class CloudAccountClient {
     selfDeviceId: string = ''
   ): Promise<CloudAccountDevice[]> {
     const devices = await this.request<CloudAccountDeviceWire[]>(relayUrl, '/api/devices', 'GET', undefined, session.token);
-    const desktops = devices.filter((device: CloudAccountDeviceWire): boolean =>
-      isDesktopDeviceRow(device, selfDeviceId));
-    return desktops.map((device: CloudAccountDeviceWire): CloudAccountDevice => ({
+    const hosts = devices.filter((device: CloudAccountDeviceWire): boolean =>
+      isHostDeviceRow(device, selfDeviceId));
+    return hosts.map((device: CloudAccountDeviceWire): CloudAccountDevice => ({
       deviceId: device.device_id,
       deviceName: device.device_name || device.device_id,
       deviceKind: device.device_kind,

@@ -5,10 +5,9 @@
     --_tab-group-item-padding-inline: var(--openbitfun-control-tab-group-item-padding-inline);
     --_tab-group-item-gap: var(--openbitfun-control-tab-group-item-gap);
     --_tab-group-item-icon-size: var(--openbitfun-control-tab-group-item-icon-size);
-    --_tab-group-item-action-reserve: calc(
-      var(--openbitfun-control-tab-group-item-action-size)
-      + var(--openbitfun-control-tab-group-item-action-inset)
-      + var(--_tab-group-item-gap)
+    --_tab-group-action-padding: max(
+      var(--_tab-group-item-padding-inline),
+      calc((var(--_tab-group-item-height) + var(--openbitfun-control-tab-group-item-action-size)) / 2 + var(--_tab-group-item-gap))
     );
 
     display: inline-flex;
@@ -25,6 +24,10 @@
   }
 
   .item {
+    --_floating-action-host-height: var(--_tab-group-item-height);
+    --_floating-action-size: var(--openbitfun-control-tab-group-item-action-size);
+    box-sizing: content-box;
+    isolation: isolate;
     position: relative;
     display: inline-flex;
     flex: 0 0 auto;
@@ -47,10 +50,11 @@
     max-inline-size: 100%;
     padding-block: var(--_tab-group-item-padding-block);
     padding-inline: var(--_tab-group-item-padding-inline);
-    border: var(--openbitfun-border-width-default) solid var(--_tab-border);
+    border: var(--openbitfun-border-width-default) solid transparent;
     border-radius: var(--openbitfun-control-tab-group-item-radius);
     color: var(--_tab-content);
-    background: var(--_tab-background);
+    background: transparent;
+    outline: none;
     font-family: var(--openbitfun-type-label-md-font-family);
     font-size: var(--openbitfun-type-label-md-font-size);
     font-weight: var(--openbitfun-type-label-md-font-weight);
@@ -58,20 +62,23 @@
     line-height: var(--openbitfun-type-label-md-line-height);
     white-space: nowrap;
     cursor: pointer;
+    transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  /* The surface follows the item's growing action area; the tab content stays put. */
+  .tab::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    box-sizing: border-box;
+    border: var(--openbitfun-border-width-default) solid var(--_tab-border);
+    border-radius: inherit;
+    background: var(--_tab-background);
+    pointer-events: none;
     transition:
       background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-      border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-      color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-  }
-
-  .item[data-has-end-action="true"] .tab {
-    padding-inline-end: var(--_tab-group-item-action-reserve);
-  }
-
-  .item[data-has-end-action="true"][data-has-icon="false"] .tab {
-    /* Mirror the trailing action reserve so a text-only label remains centered
-       within the complete tab while the overlaid action fades in and out. */
-    padding-inline-start: var(--_tab-group-item-action-reserve);
+      border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
   .tab[aria-selected="true"] {
@@ -82,21 +89,25 @@
     font-weight: var(--openbitfun-type-label-selected-font-weight);
   }
 
-  .tab:hover:not(:disabled),
-  .item:hover .tab:not(:disabled),
-  .tabGroup[data-openbitfun-preview-state="hover"] .tab[aria-selected="false"]:not(:disabled) {
+  .tab:hover:not(:disabled)::before,
+  .item:hover .tab:not(:disabled)::before,
+  .tabGroup[data-openbitfun-preview-state="hover"] .tab[aria-selected="false"]:not(:disabled)::before {
     background: var(--_tab-background-hover);
+    border-color: var(--openbitfun-component-button-outline-border-interactive);
+  }
+
+  .tab:active:not(:disabled)::before,
+  .tabGroup[data-openbitfun-preview-state="active"] .tab[aria-selected="false"]:not(:disabled)::before {
+    background: var(--_tab-background-active);
     border-color: var(--openbitfun-component-button-outline-border-interactive);
   }
 
   .tab:active:not(:disabled),
   .tabGroup[data-openbitfun-preview-state="active"] .tab[aria-selected="false"]:not(:disabled) {
-    background: var(--_tab-background-active);
-    border-color: var(--openbitfun-component-button-outline-border-interactive);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
   }
 
-  .tab:focus-visible {
+  .tab:focus-visible::before {
     outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
     outline-offset: var(--openbitfun-focus-offset);
   }
@@ -104,6 +115,64 @@
   .tab:disabled {
     color: var(--openbitfun-color-action-neutral-content-disabled);
     cursor: not-allowed;
+  }
+
+  /* Touch keeps the action exposed; desktop opens this area only on interaction.
+     Content-box padding lets capped labels keep their width while the pill grows. */
+  .item[data-has-end-action="true"] {
+    padding-inline-end: calc(var(--_tab-group-action-padding) - var(--_tab-group-item-padding-inline));
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .item[data-has-end-action="true"] {
+      padding-inline-end: 0;
+      transition: padding-inline-end var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+    }
+
+    .item[data-has-end-action="true"]:is(:hover, :focus-visible, :has(:focus-visible)),
+    .tabGroup:is([data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) .item[data-has-end-action="true"] {
+      padding-inline-end: calc(var(--_tab-group-action-padding) - var(--_tab-group-item-padding-inline));
+    }
+
+    .endAction {
+      visibility: hidden;
+      transition: visibility 0s;
+    }
+
+    .item:hover > .endAction,
+    .tabGroup[data-openbitfun-preview-state="hover"] .endAction {
+      visibility: visible;
+      transition-delay: var(--openbitfun-motion-duration-fast);
+    }
+
+    .item:hover > .endAction > button,
+    .tabGroup[data-openbitfun-preview-state="hover"] .endAction > button {
+      transition-delay: var(--openbitfun-motion-duration-fast), 0s, 0s;
+    }
+
+    .tabGroup:is([data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) .endAction {
+      pointer-events: auto;
+    }
+
+    .tabGroup:is([data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) .endAction > button {
+      opacity: 1;
+    }
+  }
+
+  .item:is(:focus-visible, :has(:focus-visible)),
+  .tabGroup[data-openbitfun-preview-state="focus-visible"] .item {
+    transition: none;
+  }
+
+  .item:is(:focus-visible, :has(:focus-visible)) > .endAction,
+  .tabGroup[data-openbitfun-preview-state="focus-visible"] .endAction {
+    visibility: visible;
+    transition: none;
+  }
+
+  .item:is(:focus-visible, :has(:focus-visible)) > .endAction > button,
+  .tabGroup[data-openbitfun-preview-state="focus-visible"] .endAction > button {
+    transition: none;
   }
 
   .icon {
@@ -132,17 +201,7 @@
   }
 
   .endAction {
-    position: absolute;
-    inset-block-start: 50%;
-    inset-inline-end: var(--openbitfun-control-tab-group-item-action-inset);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    inline-size: var(--openbitfun-control-tab-group-item-action-size);
-    block-size: var(--openbitfun-control-tab-group-item-action-size);
     color: var(--openbitfun-color-action-neutral-content);
-    transform: translateY(-50%);
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
   .labelSuffix {
@@ -151,7 +210,8 @@
     align-items: center;
   }
 
-  .endAction > :where(button, [role="button"]) {
+  /* Native tab actions share the glass material; IconButtons keep their tone and states. */
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -162,69 +222,57 @@
     border: 0;
     border-radius: var(--openbitfun-radius-pill);
     color: inherit;
-    background: transparent;
     font: inherit;
     cursor: pointer;
     transition:
+      opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
       background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
       color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
-  .endAction > :where(button, [role="button"]):hover {
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):hover {
     color: var(--openbitfun-color-action-neutral-content);
-    background: var(--openbitfun-color-action-neutral-surface-hover);
   }
 
-  .endAction > :where(button, [role="button"]):active {
-    background: var(--openbitfun-color-action-neutral-surface-pressed);
-  }
-
-  .endAction > :where(button, [role="button"]):focus-visible {
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):focus-visible {
     outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
     outline-offset: var(--openbitfun-focus-offset);
   }
 
-  .endAction > :where(button, [role="button"]):disabled {
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):disabled {
     color: var(--openbitfun-color-action-neutral-content-disabled);
     cursor: not-allowed;
   }
 
-  @media (hover: hover) and (pointer: fine) {
-    .endAction {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .item:is(:hover, :focus-within) .endAction {
-      opacity: 1;
-      pointer-events: auto;
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
+    .item[data-has-end-action="true"],
     .tab,
+    .tab::before,
     .endAction,
-    .endAction > :where(button, [role="button"]) {
+    .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])) {
       transition: none;
     }
   }
 
   @media (forced-colors: active) {
-    .tab {
+    .tab::before {
       border-color: ButtonText;
     }
 
     .tab[aria-selected="true"] {
-      border-color: Highlight;
       color: HighlightText;
+    }
+
+    .tab[aria-selected="true"]::before {
+      border-color: Highlight;
       background: Highlight;
     }
 
-    .tab:focus-visible {
+    .tab:focus-visible::before {
       outline-color: Highlight;
     }
 
-    .endAction > :where(button, [role="button"]):focus-visible {
+    .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):focus-visible {
       outline-color: Highlight;
     }
 

@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   useCallback,
@@ -22,6 +23,7 @@ import { Portal } from "../../overlay/Portal";
 import { useDesignSystem } from "../../overlay/useDesignSystem";
 import { useDismissibleLayer } from "../../overlay/useDismissibleLayer";
 import { IconButton } from "../IconButton";
+import { Capsule } from "../Capsule";
 import {
   Listbox,
   ListboxEmpty,
@@ -79,6 +81,8 @@ export interface MultiSelectProps extends PickerCommonProps {
   defaultValue?: readonly ComboboxValue[];
   maxVisibleTags?: number;
   onValueChange?: (value: ComboboxValue[]) => void;
+  /** Replaces selected tags with a compact, caller-localized summary. */
+  selectionSummary?: ReactNode;
   showSelectAll?: boolean;
   value?: readonly ComboboxValue[];
 }
@@ -153,6 +157,7 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
   delete (rootProps as Record<string, unknown>).onValueChange;
   delete (rootProps as Record<string, unknown>).value;
   delete (rootProps as Record<string, unknown>).maxVisibleTags;
+  delete (rootProps as Record<string, unknown>).selectionSummary;
   delete (rootProps as Record<string, unknown>).showSelectAll;
   const divProps = rootProps as HTMLAttributes<HTMLDivElement>;
 
@@ -164,6 +169,7 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
   const maxVisibleTags = multiple
     ? (props as MultiSelectProps).maxVisibleTags ?? 3
     : 0;
+  const selectionSummary = multiple ? (props as MultiSelectProps).selectionSummary : undefined;
   const showSelectAll = multiple
     && ((props as MultiSelectProps).showSelectAll ?? false);
   const placeholder = placeholderProp ?? designSystem.messages.selectPlaceholder;
@@ -496,13 +502,14 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
   const activeDescendant = resolvedOpen && activeIndex >= 0
     ? optionId(activeIndex)
     : undefined;
+  const fieldAccessibility = useFieldAccessibility({ ...props, "aria-describedby": ariaDescribedBy }, Boolean(label));
   const resolvedTriggerLabel = ariaLabel
-    ?? (label || providedId || typeof placeholder !== "string" ? undefined : placeholder);
+    ?? (label || fieldAccessibility["aria-labelledby"] || providedId || typeof placeholder !== "string" ? undefined : placeholder);
   const resolvedLabelledBy = ariaLabel
     ? ariaLabelledBy
-    : ariaLabelledBy ?? (label ? labelId : undefined);
+    : ariaLabelledBy ?? (label ? labelId : fieldAccessibility["aria-labelledby"]);
   const resolvedDescribedBy = [
-    ariaDescribedBy,
+    fieldAccessibility["aria-describedby"],
     errorMessage ? errorId : undefined,
   ].filter(Boolean).join(" ") || undefined;
 
@@ -624,6 +631,7 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
   ) : null;
 
   const singleOption = selectedOptions[0];
+  const showTags = multiple && hasValue && selectionSummary == null;
 
   return (
     <div
@@ -646,13 +654,12 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
         aria-hidden={resolvedOpen || undefined}
         className={styles.control}
         data-openbitfun-part="control"
-        data-tags={multiple && hasValue ? "true" : "false"}
+        data-tags={showTags ? "true" : "false"}
       >
-        {multiple && hasValue && (
+        {showTags && (
           <span className={styles.tags} data-openbitfun-part="tags">
             {selectedOptions.slice(0, Math.max(1, maxVisibleTags)).map((option) => (
-              <span className={styles.tag} data-openbitfun-part="tag" key={`${typeof option.value}:${option.value}`}>
-                <OverflowText>{option.label}</OverflowText>
+              <Capsule size="xs" data-openbitfun-part="tag" key={`${typeof option.value}:${option.value}`} action={(
                 <IconButton
                   aria-label={`${designSystem.messages.clearSelection}: ${option.label}`}
                   disabled={disabled}
@@ -667,7 +674,9 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
                   tabIndex={resolvedOpen ? -1 : undefined}
                   variant="quiet"
                 />
-              </span>
+              )}>
+                <span className={styles.tag}><OverflowText>{option.label}</OverflowText></span>
+              </Capsule>
             ))}
             {selectedOptions.length > Math.max(1, maxVisibleTags) && (
               <span className={styles.tag}>+{selectedOptions.length - Math.max(1, maxVisibleTags)}</span>
@@ -702,7 +711,7 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
             {!hasValue ? (
               <OverflowText className={styles.placeholder}>{placeholder}</OverflowText>
             ) : multiple ? (
-              <OverflowText className={styles.valueLabel}>{selectedOptions.map((option) => option.label).join(", ")}</OverflowText>
+              <OverflowText className={styles.valueLabel}>{selectionSummary ?? selectedOptions.map((option) => option.label).join(", ")}</OverflowText>
             ) : (
               <span className={styles.singleValue}>
                 {singleOption?.leading && (

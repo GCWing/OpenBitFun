@@ -12,6 +12,12 @@ read:
 
 ## Ownership
 
+Model-edit compatibility has a focused check:
+`cargo test --locked -p openbitfun-cli --bin openbitfun model_selection::tests`.
+Older mutation DTOs preserve account/channel policy. Merge write-only credentials
+and unexpressed routing fields against the current model inside the existing
+config write lock, so a concurrent settings edit cannot be overwritten.
+
 CLI owns only surface concerns:
 
 - Clap entrypoints and CLI-local configuration
@@ -106,8 +112,9 @@ restrictions remain enforced.
 - Assemble CLI through `DeliveryProfile::Cli` and validated product Runtime
   parts. Hiding a command is not a backend capability restriction.
 - The CLI selects the reviewed `openbitfun-core` owner-feature closure
-  (`agent-runtime`, `external-sources`, `plugin-runtime`, `remote-connect`, and
-  `ssh-remote`) plus the Code Agent atomic tool owners and the independent
+  (`agent-runtime`, `external-sources`, `plugin-runtime`, `remote-connect`,
+  `ssh-remote`, and `dispatch-store` for the `dispatch outbound` controller)
+  plus the Code Agent atomic tool owners and the independent
   `tools-pages` owner. Pages binds to the executing host's AccountRuntime;
   controller-local account state must not enable remote tools. It must not register
   DeepReview, DeepResearch, MiniApp, or Canvas agents/tools. Do not replace the
@@ -152,6 +159,29 @@ For streaming `exec` retry, context recovery, and final-event contracts:
 cargo test --locked -p openbitfun-cli --test cli_command_contracts exec_cli_contracts::stream_json_
 ```
 
+For scheduled-job bootstrap, persisted tasks, and unattended execution after a
+CLI restart (with a mock model and a real CLI process):
+
+```bash
+cargo test --locked -p openbitfun-cli --bin openbitfun bootstrap_profile_tests::
+cargo test --locked -p openbitfun-cli --test terminal_process_contracts scheduled_jobs_
+cargo test --locked -p openbitfun-cli --test cli_command_contracts scheduled_jobs_
+```
+
+Embedded Interactive/Execution bootstrap wires the existing Core Cron service,
+subscribes to turn lifecycle events, and starts scheduling after host setup.
+Shared TUI must not claim the host-wide scheduling lease: its workspace scope and
+last-controller idle shutdown cannot own all persisted jobs.
+
+For ACP stdio session restore, duplicate-load rejection, history replay and close:
+
+```bash
+cargo test --locked -p openbitfun-cli --test acp_stdio_cli
+```
+
+Back-to-back requests can reach the server during or after the first transition;
+the fixture validates both rejection states and exactly one history replay.
+
 When a CLI change crosses a shared boundary, use the focused command maintained
 by that owner: Agent Runtime for port/SDK behavior, the IPC adapter for shared
 protocol behavior, Core for turn/tool/persistence behavior, Terminal for
@@ -165,3 +195,40 @@ guide.
 For unattended question lifecycle changes, run `cargo test --locked -p openbitfun-cli --bin openbitfun shared_runtime::` and `cargo test --locked -p openbitfun-agent-runtime-ipc protocol_contract_tests::`.
 
 For Pages account adapters, use the focused Core command in its guide and `cargo check -p openbitfun-cli`.
+
+For `/goal` prompt routing (including the pending-session guard):
+
+```bash
+cargo test --locked -p openbitfun-cli --bin openbitfun goal_prompts_
+cargo test --locked -p openbitfun-cli --bin openbitfun -- modes::exec::tests:: dispatch::worker::tests::
+```
+
+For daemon Remote Connect management, private IPC authentication/frame bounds,
+and daemon lifecycle regressions:
+
+```bash
+cargo test --locked -p openbitfun-cli --bin openbitfun daemon::
+```
+
+Bot listeners belong to the daemon. Chat/Shared/dispatch processes call its
+private, versioned endpoint and never replay a mutation after an unknown outcome.
+The executing account is checked before control requests reach the shared owner.
+These loopback fixtures do not establish live Relay or provider connectivity.
+
+For the inline WeChat QR card, collapsed output, theme contrast and narrow terminals:
+
+```bash
+cargo test --locked -p openbitfun-cli --bin openbitfun ui::tool_cards::tests::
+```
+
+For native Computer Use host wiring and headless/dispatch admission:
+
+```bash
+cargo test --locked -p openbitfun-cli --bin openbitfun computer_use::
+cargo test --locked -p openbitfun-cli --test cli_command_contracts computer_use_
+```
+
+Native provider and OS fixture checks belong to
+[`services/computer-use`](../../crates/services/computer-use/AGENTS.md). CLI owns
+the main-thread run-loop adapter and provider injection, including Shared TUI's
+executing host. Dispatch, ACP and the stdio server do not infer a GUI provider.

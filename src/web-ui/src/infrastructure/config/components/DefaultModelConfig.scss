@@ -1,12 +1,25 @@
 .default-model-config {
   padding: 0;
 
-  &__optional-label {
-    margin-left: 4px;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    font-weight: var(--openbitfun-type-body-sm-font-weight);
-    opacity: 0.75;
+  &--compact {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: var(--openbitfun-space-4);
+
+    > .openbitfun-config-page-row {
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      align-content: start;
+      background: transparent;
+    }
+  }
+
+  &__slot-label-content {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+    min-width: 0;
   }
   
   

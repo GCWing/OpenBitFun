@@ -70,6 +70,32 @@ describe('FlowTextBlock', () => {
     expect(mocks.markdownRenderer).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['', ' \n\t\u3000'])('renders no wrapper for blank text %j', content => {
+    const textItem: FlowTextItem = {
+      id: 'blank', type: 'text', timestamp: 1, status: 'completed',
+      content, isStreaming: false, isMarkdown: true,
+    };
+    act(() => root.render(<FlowTextBlock textItem={textItem} />));
+    expect(container.childElementCount).toBe(0);
+    expect(mocks.markdownRenderer).not.toHaveBeenCalled();
+  });
+
+  it('renders streaming text when a blank item receives content', async () => {
+    const textItem: FlowTextItem = {
+      id: 'streaming-text', type: 'text', timestamp: 1, status: 'streaming',
+      content: '', isStreaming: true, isMarkdown: false,
+    };
+    act(() => root.render(<FlowTextBlock textItem={textItem} />));
+    expect(container.childElementCount).toBe(0);
+
+    act(() => root.render(<FlowTextBlock textItem={{ ...textItem, content: 'Hello' }} />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    expect(container.querySelector('[data-thinking-continuation]')?.textContent).toBe('Hello');
+
+    act(() => root.render(<FlowTextBlock textItem={{ ...textItem, isStreaming: false, status: 'completed' }} />));
+    expect(container.childElementCount).toBe(0);
+  });
+
   it('renders Deep Research protocol markers as structured UI instead of markdown text', async () => {
     const textItem: FlowTextItem = {
       id: 'text-protocol',

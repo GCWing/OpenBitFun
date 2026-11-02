@@ -1,0 +1,63 @@
+.host-message-queue {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  border-radius: 20px;
+  background: var(--openbitfun-color-surface-panel);
+  color: var(--openbitfun-color-content-primary);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+
+  // 7px + half a 40px queue control matches the composer: 5px + half of 44px.
+  &__header { display: flex; align-items: center; padding: 0 7px 0 12px; }
+  &__toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    min-height: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: start;
+    font: inherit;
+    box-shadow: none;
+    justify-content: flex-start;
+    [data-openbitfun-part="label"] { display: flex; align-items: center; gap: 8px; }
+    cursor: pointer;
+    &:focus-visible { outline: 2px solid var(--openbitfun-color-focus-ring); outline-offset: -2px; border-radius: 8px; }
+  }
+  &__icon {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    flex-shrink: 0;
+    color: var(--openbitfun-color-content-secondary);
+  }
+  &__row { display: flex; align-items: center; gap: 4px; }
+  &__message { flex: 1; min-width: 0; }
+  &__row &__actions { flex-wrap: nowrap; gap: 0; margin: 0; }
+  &__count, &__status, &__help { color: var(--openbitfun-color-content-secondary); }
+  &__help { margin: 0; padding: 0 12px 12px; }
+  &__body {
+    max-height: min(240px, calc(var(--mobile-viewport-height) * 0.28));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  &__list {
+    list-style: none;
+    margin: 0;
+    padding: 0 7px 0 12px;
+    li { padding: 4px 0; border-top: 1px solid var(--openbitfun-color-border-subtle); }
+    p { margin: 0 0 4px; }
+  }
+  &__preview { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  &__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+}

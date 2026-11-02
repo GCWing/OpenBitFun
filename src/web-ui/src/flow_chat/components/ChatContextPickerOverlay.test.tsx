@@ -14,7 +14,7 @@ import {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string, options?: { field?: string }) => options?.field ? `${key}:${options.field}` : key }),
 }));
 
 vi.mock('@/infrastructure/api', () => ({
@@ -53,6 +53,7 @@ interface HarnessProps {
   skills?: readonly ContextPickerSkill[];
   skillsLoading?: boolean;
   skillsLoadFailed?: boolean;
+  skillDiagnostics?: ChatContextPickerProps['skillDiagnostics'];
   onRetrySkills?: ChatContextPickerProps['onRetrySkills'];
   onSelectSkill?: ChatContextPickerProps['onSelectSkill'];
   onAddImage?: ChatContextPickerProps['onAddImage'];
@@ -69,6 +70,7 @@ const Harness: React.FC<HarnessProps> = ({
   skills,
   skillsLoading,
   skillsLoadFailed,
+  skillDiagnostics,
   onRetrySkills,
   onSelectSkill,
   onAddImage,
@@ -96,6 +98,7 @@ const Harness: React.FC<HarnessProps> = ({
         skills={skills}
         skillsLoading={skillsLoading}
         skillsLoadFailed={skillsLoadFailed}
+        skillDiagnostics={skillDiagnostics}
         onRetrySkills={onRetrySkills}
         onSelectSkill={onSelectSkill}
         onAddImage={onAddImage}
@@ -110,7 +113,40 @@ const option = (kind: string) => document.querySelector<HTMLElement>(
   `[data-openbitfun-context-kind="${kind}"]`,
 );
 
+/** Row click accepts a directory; this trailing region is what opens it. */
+const optionEnterAffordance = (row: Element | null | undefined) => row
+  ?.querySelector<HTMLElement>('[data-openbitfun-part="indicator"]');
+
 describe('ChatContextPicker overlay', () => {
+  it('separates unavailable skill capabilities from scan errors in the picker', async () => {
+    const unsupported = {
+      path: '/remote/guard/SKILL.md', sourceId: 'claude-code',
+      message: 'unsupported hooks', unsupportedField: 'hooks',
+    };
+    const failure = { path: '/remote/missing', sourceId: 'claude-code', message: 'missing target' };
+    const render = (diagnostics: ChatContextPickerProps['skillDiagnostics']) => act(async () => root.render(
+      <Harness searchQuery="guard" skillDiagnostics={diagnostics} onSelectSkill={vi.fn()} />,
+    ));
+    await render([unsupported]);
+    expect(document.body.textContent).toContain('contextPicker.skillsUnsupported');
+    expect(document.body.textContent).not.toContain('contextPicker.skillsIncomplete');
+    const details = document.querySelector<HTMLDetailsElement>('details');
+    await act(async () => details?.querySelector<HTMLElement>('summary')?.click());
+    expect(document.body.textContent).toContain('/remote/guard/SKILL.md');
+    expect(document.body.textContent).toContain('contextPicker.skillsUnsupportedField:hooks');
+
+    await render([unsupported, failure]);
+    const disclosures = Array.from(document.querySelectorAll<HTMLDetailsElement>('details'));
+    expect(disclosures).toHaveLength(2);
+    for (const disclosure of disclosures) {
+      if (!disclosure.open) await act(async () => disclosure.querySelector<HTMLElement>('summary')?.click());
+    }
+    expect(disclosures[0].textContent).toContain('missing target');
+    expect(disclosures[0].textContent).not.toContain('/remote/guard');
+    expect(disclosures[1].textContent).toContain('contextPicker.skillsUnsupportedField:hooks');
+    expect(disclosures[1].textContent).not.toContain('missing target');
+  });
+
   const mcpCatalog = {
     modeRestricted: false,
     tools: [{ name: 'mcp__docs__search', serverId: 'docs', serverName: 'Docs', toolName: 'search', description: 'Find manuals' }],
@@ -323,7 +359,7 @@ describe('ChatContextPicker overlay', () => {
     ]);
 
     await act(async () => {
-      item?.click();
+      optionEnterAffordance(item)?.click();
       await Promise.resolve();
     });
 
@@ -335,6 +371,121 @@ describe('ChatContextPicker overlay', () => {
     expect(nestedItem?.querySelector('[data-openbitfun-part="label"]')?.textContent)
       .toBe('App.tsx');
     expect(nestedItem?.querySelector('[data-openbitfun-part="metadata"]')).toBeNull();
+  });
+
+  it('selects a directory on Enter and keeps directory browsing on the arrow keys', async () => {
+    const onSelectContext = vi.fn();
+    const onClose = vi.fn();
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValueOnce([
+      {
+        path: '/workspace/src',
+        name: 'src',
+        isDirectory: true,
+      },
+    ]);
+
+    await act(async () => {
+      root.render(<Harness onSelectContext={onSelectContext} onClose={onClose} />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onSelectContext).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'directory',
+      directoryPath: '/workspace/src',
+      directoryName: 'src',
+      recursive: true,
+    }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(workspaceAPI.explorerGetChildren).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-openbitfun-part="currentDirectoryPath"]')?.textContent)
+      .toBe('workspace');
+
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValueOnce([
+      {
+        path: '/workspace/src/App.tsx',
+        name: 'App.tsx',
+        isDirectory: false,
+      },
+    ]);
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowRight',
+        bubbles: true,
+        cancelable: true,
+      }));
+      await Promise.resolve();
+    });
+
+    expect(workspaceAPI.explorerGetChildren).toHaveBeenLastCalledWith('workspace-id', '/workspace/src');
+    expect(document.querySelector('[data-openbitfun-part="currentDirectoryPath"]')?.textContent)
+      .toBe('workspace/src');
+    expect(document.querySelector<HTMLElement>('[data-openbitfun-part="option"]')?.textContent)
+      .toContain('App.tsx');
+    expect(onSelectContext).toHaveBeenCalledOnce();
+  });
+
+  it('selects a directory on a row click and enters it from the trailing chevron', async () => {
+    const onSelectContext = vi.fn();
+    const onClose = vi.fn();
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValueOnce([
+      {
+        path: '/workspace/src',
+        name: 'src',
+        isDirectory: true,
+      },
+    ]);
+
+    await act(async () => {
+      root.render(<Harness onSelectContext={onSelectContext} onClose={onClose} />);
+      await Promise.resolve();
+    });
+
+    const row = document.querySelector<HTMLElement>('[data-openbitfun-part="option"]');
+    const enterAffordance = optionEnterAffordance(row);
+    expect(enterAffordance?.querySelector('[data-openbitfun-name="chevron-right"]')?.getAttribute('title'))
+      .toBe('contextPicker.openDirectory');
+
+    await act(async () => {
+      row?.click();
+      await Promise.resolve();
+    });
+
+    expect(onSelectContext).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'directory',
+      directoryPath: '/workspace/src',
+      directoryName: 'src',
+    }));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(workspaceAPI.explorerGetChildren).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-openbitfun-part="currentDirectoryPath"]')?.textContent)
+      .toBe('workspace');
+
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValueOnce([
+      {
+        path: '/workspace/src/App.tsx',
+        name: 'App.tsx',
+        isDirectory: false,
+      },
+    ]);
+
+    await act(async () => {
+      enterAffordance?.click();
+      await Promise.resolve();
+    });
+
+    expect(workspaceAPI.explorerGetChildren).toHaveBeenLastCalledWith('workspace-id', '/workspace/src');
+    expect(document.querySelector('[data-openbitfun-part="currentDirectoryPath"]')?.textContent)
+      .toBe('workspace/src');
+    expect(onSelectContext).toHaveBeenCalledOnce();
   });
 
   it('enters the Skill source and returns the selected Skill', async () => {
@@ -383,9 +534,9 @@ describe('ChatContextPicker overlay', () => {
     expect(description?.getAttribute('data-marquee-active')).toBeNull();
     expect(description?.getAttribute('data-marquee-trigger')).toBe('interaction');
     expect(description?.getAttribute('data-overflow-style')).toBe('ellipsis');
-    expect(description?.getAttribute('title')).toBe('');
+    expect(description?.getAttribute('title')).toBeNull();
     expect(skillOptions[0]?.getAttribute('title')).toBe('');
-    expect(skillOptions[0]?.querySelector('[data-openbitfun-part="label"]')?.getAttribute('title')).toBe('');
+    expect(skillOptions[0]?.querySelector('[data-openbitfun-part="label"]')?.getAttribute('title')).toBeNull();
     expect(skillOptions[1]?.querySelector('[data-openbitfun-part="metadata"]')?.textContent)
       .toBe('Build presentations');
     expect(workspaceAPI.explorerGetChildren).not.toHaveBeenCalled();

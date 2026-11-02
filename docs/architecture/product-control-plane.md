@@ -122,6 +122,18 @@ CLI Agent、CLI 自身和 CLI Peer HostInvoke 共享同一个进程级
 跨版本边界使用 schema version、稳定 ID、alias 和 capability negotiation。持久化配置键
 保持兼容，新增字段带默认值，旧数据不可因解析失败被删除或重置。
 
+MCP 用户服务器由 `setting.tools.mcp` 的结构化操作列出、增量配置、启停和删除。
+Desktop provider 调用共享 MCPService；GUI JSON 保存也复用该服务的持久化和运行时
+协调路径。每服务器修改携带读取时的配置 fingerprint，经现有 CAS owner 提交，保留
+其他服务器、未提供字段、已有凭据和未知扩展字段。读取仅返回 ID、结构、有效性和
+状态，不回传命令参数、URL 或秘密值；新增凭据与 OAuth 同意继续使用受保护的用户流程。
+配置提交与连接结果分开返回，运行时失败不回滚或重放已经保存的用户决定。
+
+这些操作修改执行端的 OpenBitFun 产品配置，不修改 SSH 工作区配置。需要产品宿主
+目录的参数在远程工作区拒绝；纯结构化配置可由 Desktop 上的远程会话调用。Peer
+沿用目标端能力发现和 `product_control_native_v1` 检查；CLI 与 Detached Dispatch
+未安装该 provider，明确返回 unsupported，不调用控制端界面或文件系统代执行。
+
 ## 7. 防腐门禁
 
 CI 必须结构性证明以下闭包，而不是依赖人工更新数量基线：

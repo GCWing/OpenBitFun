@@ -25,6 +25,9 @@ export class RemoteWorkspaceViewModel {
   private readonly coordinator: RemoteWorkspaceCoordinator;
   private readonly hooks: RemoteWorkspaceViewModelHooks;
   private catalogLoadVersion: number = 0;
+  // Background catalog invalidation must not cancel a foreground picker's
+  // result/finally, and opening a picker must not abandon sidebar loading.
+  private pickerLoadVersion: number = 0;
 
   constructor(
     pageState: RemotePageState,
@@ -64,7 +67,7 @@ export class RemoteWorkspaceViewModel {
     return await this.select(path, true, undefined, undefined, workspaceId);
   }
 
-  async loadRecentWorkspacesInBackground(): Promise<void> {
+  async loadRecentWorkspacesInBackground(propagateFailure: boolean = false): Promise<void> {
     const loadVersion = ++this.catalogLoadVersion;
     const targetId = this.hooks.remoteTargetId();
     if (targetId.length === 0) {
@@ -101,6 +104,7 @@ export class RemoteWorkspaceViewModel {
         this.hooks.onCatalogFailed(targetId);
       }
       RemoteLogger.warn(`background recent workspace load failed: ${String(err)}`);
+      if (propagateFailure && this.isCurrentCatalogLoad(loadVersion, targetId)) throw new Error(String(err));
     }
   }
 
@@ -108,24 +112,24 @@ export class RemoteWorkspaceViewModel {
     if (!this.hooks.isRemoteAvailable()) {
       return;
     }
-    const loadVersion = ++this.catalogLoadVersion;
+    const loadVersion = ++this.pickerLoadVersion;
     const targetId = this.hooks.remoteTargetId();
     try {
       this.hooks.onBusy(true);
       this.hooks.onStatus(RemoteI18n.t('status.loadingRecentWorkspaces'));
       const recent = await this.coordinator.recentWorkspaces();
-      if (!this.isCurrentCatalogLoad(loadVersion, targetId)) {
+      if (!this.isCurrentPickerLoad(loadVersion, targetId)) {
         return;
       }
       this.pageState.setRecentWorkspaces(recent);
       this.hooks.onStatus(recent.length > 0 ?
         RemoteI18n.t('status.chooseWorkspace') : RemoteI18n.t('status.noRecentWorkspaces'));
     } catch (err) {
-      if (this.isCurrentCatalogLoad(loadVersion, targetId)) {
+      if (this.isCurrentPickerLoad(loadVersion, targetId)) {
         this.hooks.onConnectionFailure(err);
       }
     } finally {
-      if (this.isCurrentCatalogLoad(loadVersion, targetId)) {
+      if (this.isCurrentPickerLoad(loadVersion, targetId)) {
         this.hooks.onBusy(false);
       }
     }
@@ -137,28 +141,32 @@ export class RemoteWorkspaceViewModel {
       targetId === this.hooks.remoteTargetId();
   }
 
+  private isCurrentPickerLoad(loadVersion: number, targetId: string): boolean {
+    return targetId.length > 0 && loadVersion === this.pickerLoadVersion && targetId === this.hooks.remoteTargetId();
+  }
+
   private async loadAssistants(): Promise<void> {
     if (!this.hooks.isRemoteAvailable()) {
       return;
     }
-    const loadVersion = ++this.catalogLoadVersion;
+    const loadVersion = ++this.pickerLoadVersion;
     const targetId = this.hooks.remoteTargetId();
     try {
       this.hooks.onBusy(true);
       this.hooks.onStatus(RemoteI18n.t('status.loadingAssistants'));
       const assistants = await this.coordinator.assistants();
-      if (!this.isCurrentCatalogLoad(loadVersion, targetId)) {
+      if (!this.isCurrentPickerLoad(loadVersion, targetId)) {
         return;
       }
       this.pageState.setAssistants(assistants);
       this.hooks.onStatus(assistants.length > 0 ?
         RemoteI18n.t('status.chooseAssistant') : RemoteI18n.t('status.noAssistants'));
     } catch (err) {
-      if (this.isCurrentCatalogLoad(loadVersion, targetId)) {
+      if (this.isCurrentPickerLoad(loadVersion, targetId)) {
         this.hooks.onConnectionFailure(err);
       }
     } finally {
-      if (this.isCurrentCatalogLoad(loadVersion, targetId)) {
+      if (this.isCurrentPickerLoad(loadVersion, targetId)) {
         this.hooks.onBusy(false);
       }
     }

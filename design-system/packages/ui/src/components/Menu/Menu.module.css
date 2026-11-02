@@ -23,6 +23,13 @@
     box-shadow: var(--openbitfun-shadow-menu);
   }
 
+  /* Content-driven menus hug their widest row; the fixed token stays the upper bound. */
+  .root[data-openbitfun-inline-size="content"] {
+    inline-size: max-content;
+    min-inline-size: var(--openbitfun-overlay-menu-min-inline-size);
+    max-inline-size: min(var(--openbitfun-overlay-menu-inline-size), 100%);
+  }
+
   .viewport {
     flex: 1 1 auto;
     min-inline-size: 0;

@@ -87,7 +87,7 @@ internal fun AppSidebar(
     searchOpen: Boolean,
     onQueryChange: (String) -> Unit,
     onToggleSearch: () -> Unit,
-    onScanDesktop: () -> Unit,
+    onConnectDesktop: () -> Unit,
     onRetryRemoteDevice: () -> Unit,
     onRefreshRemoteDevices: () -> Unit,
     refreshingRemoteDevices: Boolean,
@@ -150,7 +150,7 @@ internal fun AppSidebar(
                             workspaceState = workspaceState,
                             workspaceDirectory = workspaceDirectory,
                             selectedSessionId = remoteSelectedSessionId.takeIf { remoteActive },
-                            onConnect = onScanDesktop,
+                            onConnect = onConnectDesktop,
                             onRetryActive = onRetryRemoteDevice,
                             onRefreshDevices = onRefreshRemoteDevices,
                             refreshingDevices = refreshingRemoteDevices,
@@ -183,11 +183,7 @@ internal fun AppSidebar(
                 if (signedIn) {
                     SidebarAuthenticatedFooter({ onWorkspaceTool("", null, false) }, onOpenSettings)
                 } else {
-                    SidebarSignedOutFooter(
-                        showScan = connectionPhase != ConnectionPhase.CONNECTED,
-                        onScanDesktop = onScanDesktop,
-                        onOpenAccount = onOpenAccount,
-                    )
+                    SidebarSignedOutFooter(onOpenAccount = onOpenAccount)
                 }
             }
         }

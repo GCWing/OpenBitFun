@@ -76,6 +76,14 @@ describe('openMainSession resource activation', () => {
     expect(mocks.sceneState.openScene).toHaveBeenCalledWith('session');
   });
 
+  it('refreshes a cached source when it is explicitly opened again', async () => {
+    mocks.flowChatState.activeSessionId = 'source';
+    mocks.flowChatState.sessions.set('source', { sessionId: 'source', historyState: 'ready', isHistorical: false, externalHistory: { mode: 'follow' } });
+    await openMainSession('source');
+    expect(mocks.switchChatSession).toHaveBeenCalledOnce();
+    expect(mocks.sceneState.openScene).toHaveBeenCalledWith('session');
+  });
+
   it('waits for successful activation before opening the scene', async () => {
     mocks.flowChatState.sessions.set('target', { sessionId: 'target' });
     mocks.switchChatSession.mockImplementation(async () => {
@@ -119,6 +127,81 @@ describe('openMainSession resource activation', () => {
     await expect(openMainSession('remote')).rejects.toThrow();
     expect(mocks.switchChatSession).not.toHaveBeenCalled();
     expect(mocks.sceneState.openScene).not.toHaveBeenCalled();
+  });
+
+  it('activates a worktree session in its own project without switching workspace', async () => {
+    const project = { id: 'project', rootPath: '/projects/main', workspaceKind: 'normal' };
+    const worktree = {
+      id: 'worktree', rootPath: '/projects/tree', workspaceKind: 'normal',
+      worktree: { isMain: false, mainRepoPath: '/projects/main', mainWorkspaceId: project.id },
+    };
+    mocks.workspaceState.currentWorkspace = project;
+    mocks.workspaceState.activeWorkspaceId = project.id;
+    mocks.workspaceState.openedWorkspaces = new Map([[project.id, project], [worktree.id, worktree]]);
+    mocks.flowChatState.sessions.set('tree-session', {
+      sessionId: 'tree-session', workspaceId: worktree.id, projectWorkspaceId: project.id,
+      workspacePath: worktree.rootPath, projectWorkspacePath: project.rootPath,
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'wt-1', rootPath: worktree.rootPath },
+      },
+    });
+    mocks.switchChatSession.mockImplementation(async (id: string) => {
+      mocks.flowChatState.activeSessionId = id;
+    });
+
+    await openMainSession('tree-session');
+
+    expect(mocks.setActiveWorkspace).not.toHaveBeenCalled();
+    expect(mocks.switchChatSession.mock.calls.map(([id]) => id)).toEqual(['tree-session']);
+    expect(mocks.sceneState.openScene).toHaveBeenCalledWith('session');
+  });
+
+  it('activates a session created in an open worktree workspace inside that workspace', async () => {
+    const project = { id: 'project', rootPath: '/projects/main', workspaceKind: 'normal' };
+    const worktree = {
+      id: 'worktree', rootPath: '/projects/tree', workspaceKind: 'normal',
+      worktree: { isMain: false, mainRepoPath: '/projects/main', mainWorkspaceId: project.id },
+    };
+    mocks.workspaceState.currentWorkspace = project;
+    mocks.workspaceState.activeWorkspaceId = project.id;
+    mocks.workspaceState.openedWorkspaces = new Map([[project.id, project], [worktree.id, worktree]]);
+    mocks.flowChatState.sessions.set('in-tree-session', {
+      sessionId: 'in-tree-session', workspaceId: worktree.id, projectWorkspaceId: project.id,
+      workspacePath: worktree.rootPath, projectWorkspacePath: project.rootPath,
+      config: { executionTarget: { kind: 'local', rootPath: worktree.rootPath } },
+    });
+    mocks.setActiveWorkspace.mockImplementation(async (id: string) => {
+      mocks.workspaceState.activeWorkspaceId = id;
+    });
+    mocks.switchChatSession.mockImplementation(async (id: string) => {
+      mocks.flowChatState.activeSessionId = id;
+    });
+
+    await openMainSession('in-tree-session');
+
+    expect(mocks.setActiveWorkspace.mock.calls.map(([id]) => id)).toEqual([worktree.id]);
+    expect(mocks.switchChatSession.mock.calls.map(([id]) => id)).toEqual(['in-tree-session']);
+    expect(mocks.workspaceState.activeWorkspaceId).toBe(worktree.id);
+  });
+
+  it('reports a worktree session whose project is not open instead of switching to the worktree', async () => {
+    const project = { id: 'project', rootPath: '/projects/main', workspaceKind: 'normal' };
+    const worktree = { id: 'worktree', rootPath: '/projects/tree', workspaceKind: 'normal' };
+    mocks.workspaceState.currentWorkspace = project;
+    mocks.workspaceState.activeWorkspaceId = project.id;
+    mocks.workspaceState.openedWorkspaces = new Map([[project.id, project]]);
+    mocks.flowChatState.sessions.set('tree-session', {
+      sessionId: 'tree-session', workspaceId: worktree.id, projectWorkspaceId: 'unopened-project',
+      workspacePath: worktree.rootPath, projectWorkspacePath: '/projects/other',
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'wt-1', rootPath: worktree.rootPath },
+      },
+    });
+
+    await expect(openMainSession('tree-session')).rejects.toThrow();
+
+    expect(mocks.setActiveWorkspace).not.toHaveBeenCalled();
+    expect(mocks.switchChatSession).not.toHaveBeenCalled();
   });
 
   it('orders workspace activation and only opens the latest requested session', async () => {

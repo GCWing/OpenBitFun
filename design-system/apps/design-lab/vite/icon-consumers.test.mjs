@@ -5,14 +5,23 @@ import test from "node:test";
 test("Lab navigation, theme resources and export actions consume the shared icon catalog", async () => {
   const source = relative => readFile(new URL(`../src/${relative}`, import.meta.url), "utf8");
   const app = await source("App.tsx");
-  assert.match(app, /name="palette"/);
+  assert.match(app, /<LabNavigation/);
   assert.match(app, /name="settings"/);
   assert.match(app, /icon: "palette"/);
   assert.doesNotMatch(app, /\b(?:Palette|Settings2)\b/);
-  for (const page of ["ResourcesPage", "GettingStartedPage"]) {
+  const resources = await source("pages/ResourcesPage.tsx");
+  assert.match(resources, /icon: "palette"/);
+  assert.match(resources, /<CatalogIcon name=\{Icon\}/);
+  assert.doesNotMatch(resources, /\bPalette\b/);
+  /* The guide's three steps are shared with the homepage (see components/GuideContract), so the
+     catalog icon they consume lives in the block; the pages only render the block. */
+  const guide = await source("components/GuideContract.tsx");
+  assert.match(guide, /icon: "palette"/);
+  assert.match(guide, /<CatalogIcon name=\{Icon\}/);
+  assert.doesNotMatch(guide, /\bPalette\b/);
+  for (const page of ["GettingStartedPage", "OverviewPage"]) {
     const markup = await source(`pages/${page}.tsx`);
-    assert.match(markup, /icon: "palette"/);
-    assert.match(markup, /<CatalogIcon name=\{Icon\}/);
+    assert.match(markup, /<GuideStepList/);
     assert.doesNotMatch(markup, /\bPalette\b/);
   }
   const workbench = await source("token-editor/TokenWorkbench.tsx");
@@ -20,25 +29,16 @@ test("Lab navigation, theme resources and export actions consume the shared icon
   assert.doesNotMatch(workbench, /\bDownload\b/);
 });
 
-test("Mobile and Icon are standalone navigation items and component groups are collapsible", async () => {
+test("the website has three primary destinations and a unified public catalog", async () => {
   const source = relative => readFile(new URL(`../src/${relative}`, import.meta.url), "utf8");
-  const [app, styles] = await Promise.all([
-    source("App.tsx"),
-    source("styles.css"),
-  ]);
-
-  assert.match(app, /component\.category !== "flow-chat"/);
-  assert.match(app, /component\.category !== "mobile"/);
-  assert.match(app, /component\.name !== "Icon"/);
-  assert.match(app, /href="#mobile"/);
-  assert.match(app, /category="mobile"/);
-  assert.match(app, /href="#component\/icon"/);
-  assert.match(app, /aria-controls="lab-standard-component-links"/);
-  assert.match(app, /aria-controls="lab-flow-chat-component-links"/);
-  assert.match(app, /hidden=\{!expandedComponentGroups\.components\}/);
-  assert.match(app, /hidden=\{!expandedComponentGroups\["flow-chat"\]\}/);
-  assert.match(styles, /\.lab-nav-group-chevron\[data-expanded\]/);
-  assert.match(styles, /\.lab-component-links\[hidden\]/);
+  const [app, navigation, catalog, index, directory] = await Promise.all([source("App.tsx"), source("components/LabNavigation.tsx"), source("pages/ComponentsPage.tsx"), source("components/LabComponentIndex.tsx"), source("componentNavigation.ts")]);
+  assert.match(navigation, /\["components", "foundations", "brand"\]/);
+  assert.match(app, /category=\{libraryCategory\(route\.page\)\}/);
+  assert.match(directory, /page === "mobile" \? "mobile" : page === "flow-chat" \? "flow-chat" : undefined/);
+  assert.match(index, /const catalogComponents = componentRegistry\.filter/);
+  assert.match(index, /<nav className="design-library-list"/);
+  assert.match(catalog, /<ComponentDetailPage key=\{selectedComponent.name\} embedded/);
+  assert.doesNotMatch(app, /expandedComponentGroups|lab-standard-component-links/);
 });
 
 test("every published mobile component has catalog and detail previews", async () => {

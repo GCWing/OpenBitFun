@@ -1,3 +1,5 @@
+@use '../../../shared/styles/resource-table';
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 
 .asv {
@@ -5,6 +7,24 @@
   flex-direction: column;
   gap: var(--openbitfun-space-3);
   width: 100%;
+
+  &__create-dialog {
+    block-size: min(var(--openbitfun-overlay-dialog-panel-block-size), calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
+  }
+
+  &__table-wrap {
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+  &__table {
+    @include resource-table.table(minmax(0, 1.5fr) minmax(0, 1.75fr) minmax(0, 0.85fr) minmax(9rem, max-content));
+    min-inline-size: 40rem;
+  }
+  &__table-copy { display: flex; flex-direction: column; min-width: 0; gap: var(--openbitfun-space-1); }
+  &__table-name { color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-type-heading-card-font-weight); }
+  &__table-meta { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-xs-font-size); }
+  &__table-actions { display: flex; align-items: center; justify-content: center; gap: var(--openbitfun-space-2); }
+  &__table-editor > [role='cell'] { padding: var(--openbitfun-space-4); background: var(--openbitfun-color-surface-tertiary); }
 
   // ── Header ─────────────────────────────────────────────────────────────────
 
@@ -260,6 +280,12 @@
     flex-direction: column;
     gap: var(--openbitfun-space-2);
     padding: var(--openbitfun-space-3);
+
+    &--dialog {
+      gap: var(--openbitfun-space-4);
+      padding: 0;
+      min-inline-size: 0;
+    }
   }
 
   &__form-row {

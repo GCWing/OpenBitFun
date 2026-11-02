@@ -24,7 +24,10 @@ function filesIn(directory: string): string[] {
 
 describe('catalog icon consumer integration', () => {
   it('renders general-purpose icons through Lucide while retaining reviewed authored artwork', () => {
-    const preserved = new Set(['minimal', 'standard', 'ultimate', 'creative', 'git', 'thinking']);
+    const preserved = new Set([
+      'minimal', 'standard', 'ultimate', 'creative', 'git', 'thinking',
+      'reasoning-auto',
+    ]);
     for (const name of iconNames) {
       const markup = renderToStaticMarkup(createElement(Icon, { name }));
       if (preserved.has(name)) {
@@ -38,7 +41,7 @@ describe('catalog icon consumer integration', () => {
   });
 
   it('uses catalog marks in navigation, the creative entry and string-based menus', () => {
-    expect(source('app/components/NavPanel/components/MiniAppEntry.tsx')).toContain('<Icon name="mini-app" size="sm"');
+    expect(source('app/scenes/personal-overview/OverviewMiniAppLogos.tsx')).toContain("renderMiniAppIcon(app.icon || 'box', 'lg')");
     expect(source('app/components/NavBar/NavBar.tsx')).toContain('<Icon name="sidebar-left"');
     const harnessSource = source('app/scenes/agents/components/AgentHarnessOverview.tsx');
     expect(harnessSource).toContain('HARNESS_PRESENTATION[id]');
@@ -77,8 +80,9 @@ describe('catalog icon consumer integration', () => {
     });
 
     expect(localAdapters).toEqual([]);
-    expect(source('app/components/NavPanel/MainNav.tsx')).toContain('<Icon glyph={Users} size="sm" />');
-    expect(source('app/components/NavPanel/MainNav.tsx')).toContain('<Icon glyph={Network} size="sm" />');
+    expect(source('app/components/NavPanel/MainNav.tsx')).toContain('<Icon glyph={House} size="sm" />');
+    expect(source('app/components/NavPanel/components/PersistentFooterActions.tsx'))
+      .toContain('<Icon name="gear" size="sm" aria-hidden="true" />');
     expect(source('app/scenes/agents/agentsIcons.ts')).toContain('Record<AgentIconKey, IconSource>');
     expect(source('app/scenes/ecosystem-compatibility/ExternalAgentContent.tsx'))
       .toContain('Record<EcosystemImportItemKind, IconSource>');

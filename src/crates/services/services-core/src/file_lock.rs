@@ -43,6 +43,27 @@ impl FileLock {
     }
 }
 
+/// Whether a failed lock attempt means "someone else holds it" rather than a
+/// real filesystem failure. Callers map this to their own `InUse` error.
+///
+/// A contended `flock` reports `EAGAIN`/`EWOULDBLOCK`, which `std` already
+/// surfaces as [`std::io::ErrorKind::WouldBlock`] on every supported platform,
+/// so this stays free of platform crates.
+pub(crate) fn is_lock_contention(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        // ERROR_LOCK_VIOLATION: an exclusive lock is held by someone else.
+        error.raw_os_error() == Some(33)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 fn open_lock_file(path: &Path) -> Result<File, FileLockError> {
     OpenOptions::new()
         .create(true)

@@ -1,3 +1,6 @@
+import { modelSelectionsConfigPath, effectiveModelSelections } from '@/infrastructure/config/services/modelSelections';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
+import { modelPoolAPI, readableModelPools, supportsModelPools, type ModelPoolDefinition } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { primaryAgentKind, agentName } from '@/shared/agents/identity';
 import { isPrimaryAgent, isOrdinaryAgent } from '../agentVisibility';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,7 +16,7 @@ import type {
   AIModelConfig,
   DefaultModelsConfig,
   ModeSkillInfo,
-  SubagentModelSelection,
+  AgentModelTargetSelection,
 } from '@/infrastructure/config/types';
 import { useNotification } from '@/shared/notification-system';
 import type { DynamicToolInfo } from '@/shared/types/agent-api';
@@ -138,8 +141,8 @@ function configuredModelName(
 
 function subagentModelOverride(
   subagent: SubagentInfo,
-  builtinOverrides: Record<string, SubagentModelSelection>,
-): SubagentModelSelection | undefined {
+  builtinOverrides: Record<string, AgentModelTargetSelection>,
+): AgentModelTargetSelection | undefined {
   const source = subagent.subagentSource ?? subagent.source;
   if (source === 'builtin') {
     return builtinOverrides[subagent.id];
@@ -151,11 +154,11 @@ function subagentModelOverride(
 
   return subagent.model.trim() === 'inherit'
     ? { kind: 'inherit' }
-    : { kind: 'fixed', model_id: subagent.model.trim() };
+    : { kind: 'model', model_ref: subagent.model.trim() };
 }
 
 function subagentModelDisplayName(
-  selection: SubagentModelSelection | undefined,
+  selection: AgentModelTargetSelection | undefined,
   models: AIModelConfig[],
   defaultModels: DefaultModelsConfig,
 ): string | undefined {
@@ -163,7 +166,8 @@ function subagentModelDisplayName(
     return undefined;
   }
 
-  const modelId = selection.model_id.trim();
+  if (selection.kind === 'pool') return selection.pool_id;
+  const modelId = selection.model_ref.trim();
   if (!modelId) {
     return undefined;
   }
@@ -213,6 +217,7 @@ export function useAgentsList({
   const [loading, setLoading] = useState(true);
   const [availableTools, setAvailableTools] = useState<ToolInfo[]>([]);
   const [toolCatalogStatus, setToolCatalogStatus] = useState<ToolCatalogStatus>('available');
+  const [modelPools, setModelPools] = useState<ModelPoolDefinition[]>([]);
   const [configuredModels, setConfiguredModels] = useState<AIModelConfig[]>([]);
   const [modeProfiles, setModeProfiles] = useState<Record<string, ModeProfileEntry>>({});
   const [agentSkills, setAgentSkills] = useState<Record<string, ModeSkillInfo[]>>({});
@@ -250,7 +255,7 @@ export function useAgentsList({
     };
 
     try {
-      const [modes, subagents, toolCatalog, configs, reviewTeamDefinition, modelConfigs] = await Promise.all([
+      const [modes, subagents, toolCatalog, configs, reviewTeamDefinition, modelConfigs, poolDocument] = await Promise.all([
         agentAPI.getAvailableModes({ workspaceId: workspace?.id }).catch(() => []),
         SubagentAPI.listSubagents({ workspaceId: workspace?.id }).catch(() => []),
         fetchTools(),
@@ -259,8 +264,9 @@ export function useAgentsList({
         configAPI.getConfigs([
           'ai.models',
           'ai.default_models',
-          'ai.agent_model_defaults',
+          modelSelectionsConfigPath(),
         ]).catch((): Record<string, unknown> => ({})),
+        supportsModelPools() ? modelPoolAPI.list() : Promise.resolve(undefined),
       ]);
 
       const profileMap = buildProfileMap(modes);
@@ -306,9 +312,9 @@ export function useAgentsList({
       const defaultModels = (
         modelConfigs['ai.default_models'] as DefaultModelsConfig | undefined
       ) ?? {};
-      const builtinOverrides = (
-        modelConfigs['ai.agent_model_defaults'] as AgentModelDefaultsConfig | undefined
-      )?.subagents?.builtin ?? {};
+      const builtinOverrides = effectiveModelSelections(modelConfigs[modelSelectionsConfigPath()] as AgentModelDefaultsConfig | undefined).subagents.builtin;
+      const pools = poolDocument ? readableModelPools(poolDocument) : [];
+      setModelPools(pools);
 
       const modeAgents: AgentWithCapabilities[] = modes.map((mode) =>
         enrichCapabilities({
@@ -342,7 +348,7 @@ export function useAgentsList({
           capabilities: [],
           agentKind: 'subagent',
           subagentModelOverride: modelOverride,
-          subagentModelDisplayName: subagentModelDisplayName(modelOverride, models, defaultModels),
+          subagentModelDisplayName: modelOverride?.kind === 'pool' ? pools.find(pool => pool.id === modelOverride.pool_id)?.name ?? modelOverride.pool_id : subagentModelDisplayName(modelOverride, models, defaultModels),
         });
       });
 
@@ -589,22 +595,26 @@ export function useAgentsList({
 
   const handleSetSubagentModel = useCallback(async (
     subagentId: string,
-    selection: SubagentModelSelection | undefined,
+    selection: AgentModelTargetSelection | undefined,
   ) => {
     try {
-      await SubagentAPI.updateSubagentConfig({
-        subagentId,
-        model: selection
-          ? (selection.kind === 'inherit' ? 'inherit' : selection.model_id)
-          : undefined,
-        clearModelOverride: !selection,
-        workspaceId: workspace?.id,
-      });
+      const source = allAgents.find(agent => agent.id === subagentId && agent.agentKind === 'subagent');
+      if (source && resolveAgentSource(source) === 'builtin' && modelSelectionsConfigPath() === 'ai.agent_model_selections') {
+        await configManager.setConfig(`ai.agent_model_selections.subagents.builtin.${subagentId}`, selection ?? null);
+      } else {
+        if (selection?.kind === 'pool') throw new Error('Model pools are not supported by this agent configuration');
+        await SubagentAPI.updateSubagentConfig({
+          subagentId,
+          model: selection ? (selection.kind === 'inherit' ? 'inherit' : selection.model_ref) : undefined,
+          clearModelOverride: !selection,
+          workspaceId: workspace?.id,
+        });
+      }
       await loadAgents();
     } catch {
       notification.error(t('agentCard.modelSelector.updateFailed'));
     }
-  }, [loadAgents, notification, t, workspace?.id]);
+  }, [allAgents, loadAgents, notification, t, workspace?.id]);
 
   const filteredAgents = useMemo(() => allAgents.filter((agent) => {
     if (searchQuery) {
@@ -652,6 +662,7 @@ export function useAgentsList({
     availableTools,
     toolCatalogStatus,
     configuredModels,
+    modelPools,
     getModeProfile,
     getAgentSkills,
     getModeManageableSubagents,

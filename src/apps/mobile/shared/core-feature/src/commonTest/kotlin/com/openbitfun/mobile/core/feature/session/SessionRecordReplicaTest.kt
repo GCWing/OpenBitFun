@@ -7,7 +7,7 @@ class SessionRecordReplicaTest {
     private fun record(revision: Long, status: String, text: String): JsonObject = buildJsonObject {
         put("sessionId", "s"); put("id", "item/i"); put("revision", revision)
         put("turn", buildJsonObject {
-            put("sessionId", "s"); put("turnId", "t"); put("turnIndex", 0); put("status", status)
+            put("sessionId", "s"); put("turnId", "t"); put("turnIndex", 0); put("status", status); put("timestamp", 1700000001000L)
             put("userMessage", buildJsonObject { put("id", "u"); put("content", "question"); put("timestamp", 1) })
         })
         put("round", buildJsonObject { put("id", "r"); put("turnId", "t"); put("roundIndex", 0) })
@@ -23,6 +23,8 @@ class SessionRecordReplicaTest {
         assertEquals("u", messages[0].id)
         assertEquals("hello world", messages[1].text)
         assertEquals("completed", messages[1].status)
+        assertEquals("1", messages[0].timestamp)
+        assertEquals("1700000001000", messages[1].timestamp)
     }
     @Test fun turnRecordUserMessageOutlivesTheHeadersItsChildrenRepeat() {
         val replica = SessionRecordReplica("s")
@@ -176,5 +178,82 @@ class SessionRecordReplicaTest {
         val replica = SessionRecordReplica("other")
         assertFails { replica.apply(record(1, "running", "private")) }
         assertTrue(replica.messages().isEmpty())
+    }
+
+    private fun turnRecord(turn: String, index: Int, revision: Long, status: String, answer: String): JsonObject = buildJsonObject {
+        put("sessionId", "s"); put("id", "item/$turn"); put("revision", revision)
+        put("turn", buildJsonObject {
+            put("sessionId", "s"); put("turnId", turn); put("turnIndex", index); put("status", status)
+            put("userMessage", buildJsonObject { put("id", "${turn}u"); put("content", "question $turn"); put("timestamp", 1) })
+        })
+        put("round", buildJsonObject { put("id", "${turn}r"); put("turnId", turn); put("roundIndex", 0) })
+        put("item", buildJsonObject { put("type", "text"); put("data", buildJsonObject { put("id", turn); put("content", answer); put("orderIndex", 0) }) })
+    }
+
+    @Test fun untouchedTurnsReuseTheirRenderedMessagesAndChangedOnesDoNot() {
+        val replica = SessionRecordReplica("s")
+        replica.apply(turnRecord("t", 0, 1, "running", "first"))
+        val first = replica.messages()
+        assertEquals(2, first.size)
+        replica.apply(turnRecord("t2", 1, 1, "completed", "second"))
+        val second = replica.messages()
+        assertEquals(4, second.size)
+        assertSame(first[0], second[0], "An untouched turn keeps its user message instance")
+        assertSame(first[1], second[1], "An untouched turn keeps its answer instance")
+        assertNotSame(first[1], second[3])
+        replica.apply(turnRecord("t", 0, 2, "completed", "first done"))
+        val third = replica.messages()
+        assertEquals("first done", third[1].text)
+        assertNotSame(second[1], third[1], "A changed turn is rendered again")
+        assertSame(second[3], third[3], "Its neighbours are still reused")
+    }
+
+    @Test fun terminalToolsReuseCacheAfterRetiringControls() {
+        for (status in listOf("completed", "failed", "cancelled", "rejected", "skipped")) {
+            val replica = SessionRecordReplica("s")
+            for (id in listOf("one", "two")) {
+                val source = record(1, "inprogress", "")
+                replica.apply(JsonObject(source + mapOf(
+                    "id" to JsonPrimitive("item/$id"),
+                    "item" to buildJsonObject {
+                        put("type", "tool")
+                        put("data", buildJsonObject {
+                            put("id", id); put("toolName", "Read"); put("status", status)
+                            put("toolCall", buildJsonObject { put("id", id) })
+                        })
+                    }
+                )))
+                replica.applyControl(buildJsonObject {
+                    put("turnId", "t")
+                    put("toolEvent", buildJsonObject {
+                        put("event_type", "ConfirmationNeeded"); put("tool_id", id); put("tool_name", "Read")
+                    })
+                })
+            }
+            val first = replica.messages()
+            assertEquals(listOf(status, status), first[1].tools.orEmpty().map { it.status })
+            repeat(3) {
+                assertSame(first[0], replica.messages()[0])
+                assertSame(first[1], replica.messages()[1], "Terminal tools must not invalidate a read-only render")
+            }
+            replica.apply(turnRecord("other", 1, 1, "inprogress", "new turn"))
+            assertSame(first[1], replica.messages()[1], "A new turn must not re-render completed history")
+        }
+    }
+
+    @Test fun controlOnlyChangesRefreshTheOwningTurn() {
+        val replica = SessionRecordReplica("s")
+        replica.apply(turnRecord("t", 0, 1, "inprogress", "working"))
+        replica.apply(turnRecord("t2", 1, 1, "completed", "other"))
+        val before = replica.messages()
+        assertTrue(before[1].tools.orEmpty().isEmpty())
+        replica.applyControl(buildJsonObject {
+            put("turnId", "t")
+            put("toolEvent", buildJsonObject { put("event_type", "ConfirmationNeeded"); put("tool_id", "call"); put("tool_name", "Bash"); put("params", buildJsonObject { put("command", "pwd") }) })
+        })
+        val after = replica.messages()
+        assertEquals("call", after[1].tools.orEmpty().single().id)
+        assertNotSame(before[1], after[1], "A control event refreshes its own turn")
+        assertSame(before[3], after[3], "Turns without control changes are still reused")
     }
 }

@@ -1,6 +1,7 @@
 import { Check as LucideCheck, Copy as LucideCopy, FileText as LucideFileText } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import type { Components, UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -30,6 +31,8 @@ import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import { MobileButton, MobileIconButton, MobileLink } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useTheme } from '../theme';
+import { mayContainMarkdownMath, normalizeMathDelimiters } from './chatMarkdownMath';
+import type { MarkdownMathContentProps } from './MarkdownMathContent';
 import { RemoteArtifactImage } from './RemoteArtifactImage';
 
 const SYNTAX_LANGUAGES = { bash, c, cpp, csharp, css, diff, go, java, javascript, json, jsx, kotlin, markdown, markup, php, python, ruby, rust, sql, swift, tsx, typescript, yaml };
@@ -359,6 +362,7 @@ const FileCard: React.FC<FileCardProps> = ({ path, onGetFileInfo, onDownload }) 
     </MobileButton>
   );
 };
+
 interface MarkdownContentProps {
   content: string;
   onFileDownload?: (path: string, onProgress?: (downloaded: number, total: number) => void) => Promise<void>;
@@ -368,12 +372,37 @@ interface MarkdownContentProps {
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, onFileDownload, onGetFileInfo }) => {
   const { isDark } = useTheme();
   const syntaxTheme = isDark ? vscDarkPlus : vs;
+  const hasMath = useMemo(() => mayContainMarkdownMath(content), [content]);
+  const normalizedContent = useMemo(
+    () => (hasMath ? normalizeMathDelimiters(content) : content),
+    [content, hasMath],
+  );
+  const [MathRenderer, setMathRenderer] = useState<React.ComponentType<MarkdownMathContentProps> | null>(null);
+
+  // KaTeX is only downloaded for chats that actually contain math. If the
+  // optional chunk cannot load, keep the base renderer instead of breaking the
+  // transcript.
+  useEffect(() => {
+    if (!hasMath || MathRenderer) return;
+    let cancelled = false;
+    import('./MarkdownMathContent')
+      .then((module) => {
+        if (!cancelled) setMathRenderer(() => module.MarkdownMathContent);
+      })
+      .catch((error) => {
+        console.error('[ChatMarkdown] math renderer failed to load', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasMath, MathRenderer]);
+
   const fileReferences = useMemo(
     () => onFileDownload && onGetFileInfo ? projectFileReferences(content) : [],
     [content, onFileDownload, onGetFileInfo],
   );
 
-  const components: React.ComponentProps<typeof ReactMarkdown>['components'] = useMemo(() => ({
+  const components: Components = useMemo(() => ({
     code({ className, children, ...props }: any) {
       const match = /language-(\w+)/.exec(className || '');
       const codeStr = String(children).replace(/\n$/, '');
@@ -477,26 +506,36 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, onFil
     },
   }), [syntaxTheme, isDark, onFileDownload, onGetFileInfo]);
 
+  const markdownUrlTransform = useCallback<UrlTransform>((url, key) => {
+    if (key === 'src' && /^data:image\/(?:png|jpeg|gif|webp|bmp|svg\+xml|avif);base64,/i.test(url)) return url;
+    if (/^[A-Za-z]:[\\/]/.test(url)) return url;
+    if (url.startsWith('computer://') || /^openbitfun:\/\/(?:runtime|current-session)\//.test(url)) return url;
+    if (/^(https?|mailto|tel|file):/i.test(url) || url.startsWith('#') || url.startsWith('/')) {
+      return url;
+    }
+    // Preserve relative paths without a protocol (e.g. "report.pptx",
+    // "./output.pdf"). Unknown schemes remain blocked.
+    if (!url.includes(':')) return url;
+    return '';
+  }, []);
+
   return (
     <>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={components}
-        urlTransform={(url, key) => {
-          if (key === 'src' && /^data:image\/(?:png|jpeg|gif|webp|bmp|svg\+xml|avif);base64,/i.test(url)) return url;
-          if (/^[A-Za-z]:[\\/]/.test(url)) return url;
-          if (url.startsWith('computer://') || /^openbitfun:\/\/(?:runtime|current-session)\//.test(url)) return url;
-          if (/^(https?|mailto|tel|file):/i.test(url) || url.startsWith('#') || url.startsWith('/')) {
-            return url;
-          }
-          // Preserve relative paths without a protocol (e.g. "report.pptx",
-          // "./output.pdf"). Unknown schemes remain blocked.
-          if (!url.includes(':')) return url;
-          return '';
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+      {hasMath && MathRenderer ? (
+        <MathRenderer
+          components={components}
+          content={normalizedContent}
+          urlTransform={markdownUrlTransform}
+        />
+      ) : (
+        <ReactMarkdown
+          components={components}
+          remarkPlugins={[remarkGfm]}
+          urlTransform={markdownUrlTransform}
+        >
+          {content}
+        </ReactMarkdown>
+      )}
       {fileReferences.length > 0 && onGetFileInfo && onFileDownload && (
         <div className="message-file-cards">
           {fileReferences.map((reference) => (

@@ -1,12 +1,16 @@
 import { i18nService } from '@/infrastructure/i18n';
-import { createTab } from '@/shared/utils/tabUtils';
 import type { PanelContent } from '@/app/components/panels/base/types';
-import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
+import { switchAgentCanvasScope, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import type { CanvasTab } from '@/app/components/panels/content-canvas/types';
+import { expandSessionAuxPane } from '@/app/scenes/session/sessionPanelLayout';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { createLogger } from '@/shared/utils/logger';
 import { flowChatStore } from '../store/FlowChatStore';
 import type { Session } from '../types/flow-chat';
 import { resolveSessionTitle } from '../utils/sessionTitle';
+import { resolveSessionDriverId } from '../session-drivers/resolve';
 import { flowChatManager } from './FlowChatManager';
+import { openMainSession } from './sessionActivation';
 
 export const BTW_SESSION_PANEL_TYPE = 'btw-session' as const;
 
@@ -30,6 +34,7 @@ export interface BtwSessionPanelMetadata {
   childSessionId: string;
   parentSessionId: string;
   contentRole: 'btw-session';
+  discardSessionOnClose: boolean;
 }
 
 export interface EnsureBtwSessionAvailableParams {
@@ -53,6 +58,8 @@ export interface LoadBtwSessionHistoryParams {
 }
 
 type AgentCanvasState = ReturnType<typeof useAgentCanvasStore.getState>;
+const log = createLogger('BtwSessionPane');
+let paneOpenRequest = 0;
 
 export const getBtwSessionDuplicateKey = (childSessionId: string) => `btw-session-${childSessionId}`;
 
@@ -67,26 +74,6 @@ const resolveBtwSessionTitle = (childSessionId: string): string => {
 
 export const isBtwSessionPanelContent = (content: PanelContent | null | undefined): boolean =>
   content?.type === BTW_SESSION_PANEL_TYPE;
-
-const isRightPanelCollapsed = (): boolean => {
-  try {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-    const layoutState = (window as unknown as {
-      __OPENBITFUN_LAYOUT_STATE__?: { rightPanelCollapsed?: boolean };
-    }).__OPENBITFUN_LAYOUT_STATE__;
-    return layoutState?.rightPanelCollapsed ?? false;
-  } catch {
-    return false;
-  }
-};
-
-const requestRightPanelExpansion = (): void => {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new window.CustomEvent('expand-right-panel'));
-  }
-};
 
 export interface BtwSessionPanelWorkspace {
   workspaceId?: string;
@@ -137,6 +124,10 @@ export const buildBtwSessionPanelContent = (
     childSessionId,
     parentSessionId,
     contentRole: 'btw-session',
+    discardSessionOnClose: (() => {
+      const session = flowChatStore.getState().sessions.get(childSessionId);
+      return session?.sessionKind === 'btw' && session.isTransient === true;
+    })(),
   } satisfies BtwSessionPanelMetadata,
 });
 
@@ -165,19 +156,47 @@ export const selectActiveBtwSessionTab = (state: AgentCanvasState): CanvasTab | 
   return activeTab;
 };
 
-export async function loadBtwSessionHistory(params: LoadBtwSessionHistoryParams): Promise<void> {
+const metadataLoads = new Map<string, Promise<void>>();
+
+function ensureBtwSessionMetadata(params: LoadBtwSessionHistoryParams): Promise<void> {
   const sessions = flowChatStore.getState().sessions;
   const child = sessions.get(params.childSessionId);
-  if (!(child?.workspaceId ?? child?.config?.workspaceId)) {
+  if (child?.isTransient) return Promise.resolve();
+  // A dispatch observer receives these facts from its host. It must not look
+  // for child metadata in the controller's local workspace store.
+  if (resolveSessionDriverId(params.childSessionId, child) === 'dispatch') return Promise.resolve();
+  if (!(child?.workspaceId ?? child?.config?.workspaceId)
+    || (child?.sessionKind === 'subagent' && child.continuationPolicy === undefined)) {
+    const scope = getActiveSurfaceScope();
+    const key = scope.key('child-metadata', scope.epoch, params.childSessionId);
+    const pending = metadataLoads.get(key);
+    if (pending) return pending;
     const parentId = params.parentSessionId ?? child?.parentSessionId;
     const parent = parentId ? sessions.get(parentId) : undefined;
     // Read the child's persisted binding from its parent's project store.
     // Never assign the parent's execution ID: a child may own a worktree.
-    const storageOwnerId = parent?.projectWorkspaceId ?? parent?.config?.projectWorkspaceId
-      ?? parent?.workspaceId ?? parent?.config?.workspaceId;
-    if (!storageOwnerId || !await flowChatStore.ensurePersistedSessionMetadata(params.childSessionId, storageOwnerId)) {
-      throw new Error('Child session workspace is unavailable');
-    }
+    const storageOwnerId = child?.projectWorkspaceId ?? child?.config?.projectWorkspaceId
+      ?? parent?.projectWorkspaceId ?? parent?.config?.projectWorkspaceId
+      ?? parent?.workspaceId ?? parent?.config?.workspaceId
+      ?? child?.workspaceId ?? child?.config?.workspaceId;
+    if (!storageOwnerId) return Promise.resolve();
+    const load = flowChatStore.ensurePersistedSessionMetadata(params.childSessionId, storageOwnerId)
+      .then(() => undefined).finally(() => metadataLoads.delete(key));
+    metadataLoads.set(key, load);
+    return load;
+  }
+  return Promise.resolve();
+}
+
+export async function loadBtwSessionHistory(params: LoadBtwSessionHistoryParams): Promise<void> {
+  if (flowChatStore.getState().sessions.get(params.childSessionId)?.isTransient) return;
+  const scope = getActiveSurfaceScope();
+  // Reading history remains possible even if conversation metadata is unknown.
+  await ensureBtwSessionMetadata(params).catch(() => undefined);
+  scope.assertCurrent('load child session history');
+  const child = flowChatStore.getState().sessions.get(params.childSessionId);
+  if (!(child?.workspaceId ?? child?.config?.workspaceId)) {
+    throw new Error('Child session workspace is unavailable');
   }
   await flowChatManager.hydrateSessionHistoryForDetail(params.childSessionId);
 }
@@ -256,7 +275,10 @@ function ensureBtwSessionAvailableInternal(
       (sessionToHydrate.historyState === 'metadata-only' || sessionToHydrate.historyState === 'failed')
     );
 
-  if (!shouldHydrate) return { historyLoadRequested: false };
+  if (!shouldHydrate) {
+    void ensureBtwSessionMetadata(params).catch(() => undefined);
+    return { historyLoadRequested: false };
+  }
   void loadBtwSessionHistory({
     childSessionId: params.childSessionId, parentSessionId: params.parentSessionId,
   }).catch(() => undefined);
@@ -305,34 +327,38 @@ export function openBtwSessionInAuxPane(params: {
     params.sessionTitle,
   );
 
-  const duplicateCheckKey = content.metadata?.duplicateCheckKey;
-  const canvasStore = useAgentCanvasStore.getState();
-  if (duplicateCheckKey) {
-    const existing = canvasStore.findTabByMetadata({ duplicateCheckKey });
+  const surface = getActiveSurfaceScope();
+  const request = ++paneOpenRequest;
+  const isCurrent = () => surface.isCurrent() && request === paneOpenRequest;
+  const openTab = () => {
+    if (!isCurrent() || flowChatStore.getState().activeSessionId !== params.parentSessionId) return;
+
+    // Child conversations belong to their parent's canvas, including before
+    // AuxPane mounts. They are not workspace file resources: a parent's
+    // execution worktree need not be an opened workspace in the resource router.
+    switchAgentCanvasScope(params.parentSessionId);
+    const canvasStore = useAgentCanvasStore.getState();
+    const existing = canvasStore.findTabByMetadata({
+      duplicateCheckKey: content.metadata!.duplicateCheckKey,
+    });
     if (existing) {
-      if (params.expand !== false && isRightPanelCollapsed()) {
-        requestRightPanelExpansion();
-      }
       canvasStore.updateTabContent(existing.tab.id, existing.groupId, content);
       canvasStore.switchToTab(existing.tab.id, existing.groupId);
-      return;
+    } else {
+      canvasStore.addTab(content, 'active');
     }
-  }
+    if (params.expand !== false) expandSessionAuxPane();
+  };
 
-  if (params.expand !== false) {
-    requestRightPanelExpansion();
+  if (flowChatStore.getState().activeSessionId === params.parentSessionId) {
+    openTab();
+  } else {
+    void openMainSession(params.parentSessionId, { isCurrent }).then(openTab).catch(error => {
+      log.error('Failed to open child session pane', {
+        parentSessionId: params.parentSessionId, childSessionId: params.childSessionId, error,
+      });
+    });
   }
-
-  createTab({
-    type: content.type,
-    title: content.title,
-    data: content.data,
-    metadata: content.metadata,
-    checkDuplicate: true,
-    duplicateCheckKey,
-    replaceExisting: false,
-    mode: 'agent',
-  });
 }
 
 export function closeBtwSessionInAuxPane(childSessionId: string): boolean {

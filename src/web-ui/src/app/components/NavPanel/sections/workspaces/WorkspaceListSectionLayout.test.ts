@@ -54,7 +54,7 @@ describe('WorkspaceListSection layout styles', () => {
     const workspaceMenu = extractBlock(stylesheet, '&__workspace-item-menu');
     const assistantItem = extractBlock(stylesheet, '&__assistant-item');
     const assistantCard = extractBlock(stylesheet, '&__assistant-item-card');
-    const assistantCollapseButton = extractBlock(stylesheet, '&__assistant-item-collapse-btn');
+    const assistantCollapseButton = extractBlock(stylesheet, '&__assistant-item-open-btn');
     const assistantIcon = extractBlock(stylesheet, '&__assistant-item-avatar');
     const assistantNameButton = extractBlock(stylesheet, '&__assistant-item-name-btn');
     const assistantLabel = extractBlock(stylesheet, '&__assistant-item-label');
@@ -132,8 +132,8 @@ describe('WorkspaceListSection layout styles', () => {
     );
     const sessionRails = stylesheet.match(/--openbitfun-nav-session-rail: 30px;/g);
 
-    expect(fullWidthSessionLists).toHaveLength(2);
-    expect(sessionRails).toHaveLength(2);
+    expect(fullWidthSessionLists).toHaveLength(1);
+    expect(sessionRails).toHaveLength(1);
     // SessionsSection derives both the child connector and title offsets from
     // this rail. Context-specific child padding would split those axes again.
     expect(stylesheet).not.toMatch(/&\.is-child\s*\{\s*padding-left:/);
@@ -141,9 +141,7 @@ describe('WorkspaceListSection layout styles', () => {
     expect(stylesheet).toContain(
       '&__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active)',
     );
-    expect(stylesheet).toContain(
-      '&__assistant-item.is-active:has(&__assistant-item-sessions &__inline-item.is-active)',
-    );
+    expect(stylesheet).not.toContain('&__assistant-item-sessions');
   });
 
   it('keeps all three workspace hover actions at the compact row size', () => {
@@ -157,6 +155,21 @@ describe('WorkspaceListSection layout styles', () => {
       expect(block).toContain('height: 20px;');
     }
     expect(source.match(/data-testid="nav-workspace-new-session-btn"/g)).toHaveLength(2);
+  });
+
+  it('keeps the scheduled-job mark off workspace rows', () => {
+    const source = readWorkspaceItemSource();
+
+    // A workspace row owns no session, so the scheduled-job count it used to
+    // borrow from its sessions belongs on the session rows only. The workspace
+    // row must not subscribe to the counts store or claim the name row's
+    // trailing metadata slot for it.
+    expect(source).not.toContain('cronJobCountsStore');
+    expect(source).not.toContain('scheduledJobCount');
+    expect(source).not.toContain('scheduledJobBadge');
+    expect(source).not.toContain('inline-item-cron');
+    expect(source).not.toContain('nav.scheduledJobs.badgeTooltip');
+    expect(source).not.toContain('metadata={scheduledJobBadge}');
   });
 
   it('keeps workspace and assistant rows flat on hover', () => {
@@ -180,7 +193,7 @@ describe('WorkspaceListSection layout styles', () => {
     expect(source).toContain(
       "const sessionDisclosureIcon = sessionsCollapsed ? 'chevron-right' : 'chevron-down';",
     );
-    expect(source.match(/<Icon name=\{sessionDisclosureIcon\} size="sm" \/>/g)).toHaveLength(2);
+    expect(source.match(/<Icon name=\{sessionDisclosureIcon\} size="sm" \/>/g)).toHaveLength(1);
     expect(stylesheet).not.toContain('&.is-collapsed svg');
   });
 
@@ -250,31 +263,49 @@ describe('WorkspaceListSection layout styles', () => {
     const itemSource = readWorkspaceItemSource();
     const listSource = readWorkspaceListSource();
     const stylesheet = readWorkspaceListStylesheet();
+    const iconSource = readFileSync(fileURLToPath(new URL('../../../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
 
-    expect(itemSource).toContain('<Icon name="user" size="sm" />');
-    expect(itemSource).toContain('<Icon glyph={Server} size="sm" />');
-    expect(itemSource).toContain('<Icon name="folder" size="sm" />');
+    expect(itemSource).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
+    expect(itemSource).toContain('<WorkspaceIcon workspace={workspace} />');
+    expect(iconSource).toContain('projectGlyphs[glyph] : remote ? Server : Folder');
+    expect(iconSource).toContain('<Icon glyph={artwork} size="sm"');
     expect(itemSource).not.toContain('SessionGroup');
     expect(listSource).not.toContain('nav.sessions.viewMenu.grouping.all');
     expect(listSource).not.toContain('workspace-all-sessions-header');
     expect(stylesheet).not.toContain('&__workspace-all-sessions-header');
     expect(stylesheet).not.toContain('&__workspace-all-sessions-icon');
-    expect(stylesheet).toContain('&__assistant-item-group-icon');
+    expect(stylesheet).not.toContain('&__assistant-item-group-icon');
     expect(extractBlock(stylesheet, '&__workspace-item:not(.is-active) &__workspace-item-icon'))
       .toContain('opacity: 1;');
     expect(extractBlock(stylesheet, '&__assistant-item:not(.is-active) &__assistant-item-avatar'))
       .toContain('opacity: 1;');
   });
 
-  it('uses the standard workspace session-row presentation inside assistant groups', () => {
-    const itemSource = readWorkspaceItemSource();
-    const assistantSessionsStart = itemSource.indexOf('openbitfun-nav-panel__assistant-item-sessions');
-    const assistantSessionsEnd = itemSource.indexOf('useWorkspaceViewPreferences', assistantSessionsStart);
-    const assistantSessionsMarkup = itemSource.slice(assistantSessionsStart, assistantSessionsEnd);
+  it('expands assistant history below its row with a collapse icon and no resource shortcut', () => {
+    const source = readWorkspaceItemSource();
+    const start = source.indexOf('if (workspace.workspaceKind === WorkspaceKind.Assistant)');
+    const assistant = source.slice(start, source.indexOf('\n  return (', start));
 
-    expect(assistantSessionsStart).toBeGreaterThanOrEqual(0);
-    expect(assistantSessionsEnd).toBeGreaterThan(assistantSessionsStart);
-    expect(assistantSessionsMarkup).toContain('<SessionsSection');
-    expect(assistantSessionsMarkup).not.toContain('presentation=');
+    expect(assistant).not.toContain('nav-workspace-session-region');
+    expect(assistant).not.toContain('nav-workspace-sessions-toggle');
+    expect(assistant).not.toContain('nav-workspace-project-resources-btn');
+    expect(assistant).not.toContain('handleCollapseToggle');
+    for (const removedAction of ['project-permissions', 'reveal', 'open-session-storage', 'manage-sessions', 'copy-path']) {
+      expect(assistant).not.toContain(`data-testid="nav-workspace-menu-${removedAction}"`);
+    }
+    expect(assistant).toContain('nav-assistant-history-btn');
+    expect(assistant).toContain('nav-workspace-menu-manage-assistant');
+    expect(source).toContain('useNurseryStore.getState().openAssistant(workspace.id)');
+    expect(source).toContain("useSceneStore.getState().openScene('assistant')");
+    expect(assistant).toContain('{assistantHistoryOpen && (');
+    expect(assistant).toContain('data-testid="nav-assistant-session-region"');
+    expect(assistant).toContain('hidden={!assistantHistoryOpen}');
+    expect(assistant).toContain('aria-expanded={assistantHistoryOpen}');
+    expect(assistant).toContain('aria-controls={assistantHistoryId}');
+    expect(assistant).toContain('setAssistantHistoryOpen(open => !open)');
+    expect(assistant).toContain('glyph={assistantHistoryOpen ? ChevronUp : History}');
+    expect(assistant).not.toContain('aria-haspopup="dialog"');
+    expect(assistant).not.toContain('AssistantSessionHistoryDialog');
+    expect(assistant).toContain('handleOpenLatestAssistantSession');
   });
 });

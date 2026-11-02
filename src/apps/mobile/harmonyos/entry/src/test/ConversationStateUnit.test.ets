@@ -123,7 +123,7 @@ import {
 } from '../main/ets/model/RemoteModels';
 
 import {
-  durableRecord,
+  hostRecord,
   ToolInputFixture,
   CryptoImageFixture,
   CryptoCommandFixture,
@@ -1760,7 +1760,7 @@ export default function conversationStateUnitTest() {
       // The round and item records repeat the turn only as a parent header, and
       // that copy carries the attachment as it was recorded rather than the
       // pixels the turn record was given. It must not replace the turn.
-      reducer.apply(durableRecord('session', 5, 'on it'));
+      reducer.apply(hostRecord('session', 5, 'on it'));
       const reduced = reducer.messages();
       expect(reduced[0].text).assertEqual('look at this');
       expect((reduced[0].images || []).length).assertEqual(1);

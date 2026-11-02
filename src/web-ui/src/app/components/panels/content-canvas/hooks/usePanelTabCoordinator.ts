@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 
 interface UsePanelTabCoordinatorOptions {
   visibleTabCount: number;
-  /** Changing workspace restores content without changing the user's layout. */
   scopeKey?: string;
   expandEventName: string;
   onExpand: () => void;
@@ -26,14 +25,25 @@ export function usePanelTabCoordinator({
   useEffect(() => {
     const previous = previousRef.current;
     previousRef.current = { visibleTabCount, scopeKey };
+    // A scope change restores the content of the scope being entered. That
+    // scope's open state is owned by the host, which restores it together with
+    // the content, so a restore is not a content transition here.
+    if (previous.scopeKey !== scopeKey) {
+      return;
+    }
     if (
-      previous.scopeKey === scopeKey
-      && previous.visibleTabCount > 0
+      previous.visibleTabCount > 0
       && visibleTabCount === 0
     ) {
       onCollapse();
+    } else if (
+      previous.visibleTabCount === 0
+      && visibleTabCount > 0
+      && previous.scopeKey !== undefined
+    ) {
+      onExpand();
     }
-  }, [visibleTabCount, scopeKey, onCollapse]);
+  }, [visibleTabCount, scopeKey, onExpand, onCollapse]);
 
   // Compatibility for callers that explicitly request this panel, including
   // actions that reveal an existing tab without creating another one.

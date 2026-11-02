@@ -9,6 +9,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -79,6 +82,7 @@ import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
 import com.openbitfun.mobile.core.feature.session.conversationRows
 import com.openbitfun.mobile.core.feature.session.modelOptions
 import com.openbitfun.mobile.core.feature.session.selectedModelOption
+import com.openbitfun.mobile.core.feature.session.transcriptUnconfirmed
 import com.openbitfun.mobile.core.feature.workspace.RemoteFileDownloadUiState
 
 internal const val CONVERSATION_TEST_TAG: String = "conversation"
@@ -182,7 +186,7 @@ internal fun ConversationView(
     // The remote composer's single source of truth is the store's draft. Typing,
     // voice, and send all round-trip through `state.draft` so a half-written
     // message survives session switches and process restarts via DraftStore.
-    var submittedDraft by remember(attachmentOwner, state.selectedSessionId) { mutableStateOf<String?>(null) }
+    var submittedDraft by rememberSaveable(attachmentOwner, state.selectedSessionId) { mutableStateOf<String?>(null) }
     val draft = if (submittedDraft == state.draft) "" else state.draft
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -267,10 +271,17 @@ internal fun ConversationView(
         var topInset by remember { mutableStateOf(0.dp) }
         var bottomInset by remember { mutableStateOf(0.dp) }
         val density = LocalDensity.current
+        // Scaffold already lifts the pane above the keyboard. Navigation only
+        // belongs to this layer when the keyboard is absent.
+        val navigationBottom = with(density) {
+            if (WindowInsets.ime.getBottom(this) > 0) 0.dp else WindowInsets.navigationBars.getBottom(this).toDp()
+        }
         Box(modifier = Modifier.fillMaxSize().testTag(CONVERSATION_TEST_TAG)) {
             if (timeline == null) {
                 Box(Modifier.fillMaxSize()) {
-                    if (loadingVisible) ConversationLoadingState(Modifier.fillMaxSize())
+                    if (loadingVisible) ConversationLoadingState(
+                        Modifier.fillMaxSize().padding(top = topInset, bottom = bottomInset),
+                    )
                 }
             } else if (visibleRows.isEmpty() && !state.hasMoreMessages) {
                 ConversationEmptyState(modifier = Modifier.fillMaxSize())
@@ -304,7 +315,7 @@ internal fun ConversationView(
             ConversationHeader(
                 title = state.sessions.firstOrNull { it.id == sessionId }?.title.orEmpty(),
                 contextTitle = contextTitle,
-                canStop = activeTurn != null,
+                canStop = activeTurn != null && phase == ConnectionPhase.CONNECTED,
                 enabled = !state.busy && sessionId.isNotEmpty(),
                 onBack = onBack,
                 onOpenSidebar = onOpenSidebar,
@@ -335,7 +346,8 @@ internal fun ConversationView(
                     // short of that leaves a line of text sitting crisp and
                     // legible beside the pill after it has already faded out
                     // higher up.
-                    .background(bottomOverlayFade()),
+                    .background(bottomOverlayFade())
+                    .padding(bottom = navigationBottom),
             ) {
                 if (attachmentDraft.failed.value) {
                     TextButton(onClick = { attachmentDraft.retry() }) {
@@ -347,6 +359,11 @@ internal fun ConversationView(
                     images = images,
                     // An empty session id would send nowhere, so it reads as busy.
                     busy = state.busy || preparingImage || attachmentsBlocked || sessionId.isEmpty(),
+                    // Session hydration must not make the draft field require
+                    // repeated taps. Sending and attachment actions remain
+                    // guarded by `busy`; typing can start as soon as a session
+                    // has been selected and the draft survives hydration.
+                    inputEnabled = sessionId.isNotEmpty() && !preparingImage && !attachmentsBlocked,
                     streaming = activeTurn != null,
                     phase = phase,
                     model = timeline?.selectedModelOption(stringResource(R.string.models_unnamed)),
@@ -354,6 +371,7 @@ internal fun ConversationView(
                     modelCatalogFailed = state.modelCatalogFailure != null,
                     capabilities = ChatComposerCapabilities.RemoteChat,
                     placeholder = stringResource(R.string.message_input_label),
+                    promptSuggestion = state.promptSuggestion,
                     onDraftChange = {
                         submittedDraft = null
                         onIntent(RemoteSessionIntent.UpdateDraft(it))
@@ -444,6 +462,9 @@ private fun ConversationTimelineViewHost(
     ConversationTimelineView(
         rows = visibleRows,
         hasMoreMessages = state.hasMoreMessages,
+        transcriptUnconfirmed = state.timeline
+            ?.takeIf { it.sessionId == state.selectedSessionId }
+            ?.transcriptUnconfirmed() == true,
         historyLoadState = state.historyLoadState,
         onLoadOlder = { onIntent(RemoteSessionIntent.LoadOlderMessages) },
         enabled = !state.busy,

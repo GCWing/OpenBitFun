@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { useReaderScrollMemory } from '../timeline/useReaderScrollMemory';
 interface UseToolCardHeightContractOptions {
   toolId: string | null | undefined;
   toolName: string;
@@ -15,6 +16,7 @@ export function useToolCardHeightContract({
   getAnchorElement: _getAnchorElement,
 }: UseToolCardHeightContractOptions) {
   const cardRootRef = useRef<HTMLDivElement>(null);
+  useReaderScrollMemory(cardRootRef, _toolId);
 
   const dispatchToolCardToggle = useCallback(() => {
     window.dispatchEvent(new CustomEvent('tool-card-toggle'));

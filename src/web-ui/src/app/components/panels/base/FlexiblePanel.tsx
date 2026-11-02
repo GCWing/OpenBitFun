@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import React, { useCallback, memo } from 'react';
 import { OverflowText, Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import { AlertCircle } from 'lucide-react';
@@ -40,114 +41,129 @@ function updateGenerativeWidgetResultCode(result: unknown, widgetCode: string): 
 }
 
 // Stable lazy components at module level to avoid re-creation on each render
-const GitDiffView = React.lazy(() =>
+const GitDiffView = lazyWithRecovery(() =>
   import('@/tools/git/components/GitDiffView/GitDiffView')
 );
 
-const GitSettingsView = React.lazy(() => 
+const GitSettingsView = lazyWithRecovery(() =>
   import('@/tools/git/components/GitSettingsView/GitSettingsView')
 );
 
-const CodeEditor = React.lazy(() =>
+const CodeEditor = lazyWithRecovery(() =>
   import('@/tools/editor/components/CodeEditor').then(module => ({
     default: module.default,
   }))
 );
 
-const MarkdownEditor = React.lazy(() =>
+const MarkdownEditor = lazyWithRecovery(() =>
   import('@/tools/editor/components/MarkdownEditor').then(module => ({
     default: module.default,
   }))
 );
 
-const ImageViewer = React.lazy(() =>
+const ImageViewer = lazyWithRecovery(() =>
   import('@/tools/editor/components/ImageViewer').then(module => ({
     default: module.default,
   }))
 );
 
-const PdfViewer = React.lazy(() =>
+const PdfViewer = lazyWithRecovery(() =>
   import('@/tools/editor/components/PdfViewer').then(module => ({
     default: module.default,
   }))
 );
 
-const DiffEditor = React.lazy(() =>
+const DiffEditor = lazyWithRecovery(() =>
   import('@/tools/editor/components/DiffEditor').then(module => ({
     default: module.default,
   }))
 );
 
-const GitDiffEditor = React.lazy(() =>
+const GitDiffEditor = lazyWithRecovery(() =>
   import('@/tools/git/components/GitDiffEditor/GitDiffEditor').then(module => ({
     default: module.default,
   }))
 );
 
-const GitGraphView = React.lazy(() => 
+const GitGraphView = lazyWithRecovery(() =>
   import('@/tools/git/components/GitGraphView/GitGraphView').then(module => ({ 
     default: module.GitGraphView 
   }))
 );
 
-const GitBranchHistoryView = React.lazy(() =>
+const GitBranchHistoryView = lazyWithRecovery(() =>
   import('@/tools/git/components/GitBranchHistoryView/GitBranchHistoryView').then(module => ({
     default: module.GitBranchHistoryView
   }))
 );
 
 // Plan viewer component
-const PlanViewer = React.lazy(() => 
+const PlanViewer = lazyWithRecovery(() =>
   import('@/tools/editor/components/PlanViewer').then(module => ({ 
     default: module.default 
   }))
 );
 
 // Uses ConnectedTerminal to auto-connect backend
-const TerminalTabPanel = React.lazy(() => 
+const TerminalTabPanel = lazyWithRecovery(() =>
   import('@/tools/terminal/components/ConnectedTerminal')
 );
 
-const BrowserPanel = React.lazy(() =>
+const BrowserPanel = lazyWithRecovery(() =>
   import('@/app/scenes/browser/BrowserPanel')
 );
-const HtmlPreviewPanel = React.lazy(() =>
+const HtmlPreviewPanel = lazyWithRecovery(() =>
   import('@/app/scenes/browser/HtmlPreviewPanel')
 );
 
-const GenerativeWidgetPanel = React.lazy(() =>
+const GenerativeWidgetPanel = lazyWithRecovery(() =>
   import('@/tools/generative-widget/GenerativeWidgetPanel')
 );
 
-const OpenBitFunCanvasPanel = React.lazy(() =>
+const OpenBitFunCanvasPanel = lazyWithRecovery(() =>
   import('@/tools/openbitfun-canvas/OpenBitFunCanvasPanel')
 );
 
-const TaskDetailPanel = React.lazy(() => 
+const TaskDetailPanel = lazyWithRecovery(() =>
   import('@/flow_chat/components/TaskDetailPanel').then(module => ({ 
     default: module.TaskDetailPanel 
   }))
 );
 
-const BtwSessionPanel = React.lazy(() =>
+const BtwSessionPanel = lazyWithRecovery(() =>
   import('@/flow_chat/components/btw/BtwSessionPanel').then(module => ({
     default: module.BtwSessionPanel
   }))
 );
 
-const SessionUsagePanel = React.lazy(() =>
+const ThinkingDetailPanel = lazyWithRecovery(() =>
+  import('@/flow_chat/components/ThinkingDetailPanel').then(module => ({
+    default: module.ThinkingDetailPanel
+  }))
+);
+
+const TrajectoryRangeDetails = lazyWithRecovery(() => import('@/flow_chat/trajectory/TrajectoryDetails').then(module => ({ default: module.TrajectoryRangeDetails })));
+const TrajectoryDetails = lazyWithRecovery(() => import('@/flow_chat/trajectory/TrajectoryDetails').then(module => ({ default: module.TrajectoryDetails })));
+
+const SessionUsagePanel = lazyWithRecovery(() =>
   import('@/flow_chat/components/usage/SessionUsagePanel').then(module => ({
     default: module.SessionUsagePanel
   }))
 );
 
-const BackgroundCommandOutputPanel = React.lazy(() =>
+const ToolDefinitionsPreview = lazyWithRecovery(() =>
+  import('@/flow_chat/components/usage/ToolDefinitionsPreview').then(module => ({
+    default: module.ToolDefinitionsPreview,
+  }))
+);
+
+const BackgroundCommandOutputPanel = lazyWithRecovery(() =>
   import('@/flow_chat/components/background-command/BackgroundCommandOutputPanel').then(module => ({
     default: module.BackgroundCommandOutputPanel
   }))
 );
 
-const ReviewPlatformPanel = React.lazy(() =>
+const ReviewPlatformPanel = lazyWithRecovery(() =>
   import('@/app/components/panels/review-platform/ReviewPlatformPanel')
 );
 
@@ -169,6 +185,8 @@ interface ExtendedFlexiblePanelProps extends FlexiblePanelProps {
   isActive?: boolean;
   /** File no longer exists on disk (from editor); drives tab "deleted" label */
   onFileMissingFromDiskChange?: (missing: boolean) => void;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
 }
 
 const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
@@ -182,6 +200,7 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
   isActive = true,
   onFileMissingFromDiskChange,
   terminalResizeSuspended = false,
+  resizeSuspended = false,
 }) => {
   const { t, formatDate } = useI18n('components');
   const documentSession = useEditorDocument();
@@ -321,6 +340,13 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
         const markdownWorkspacePath = markdownEditorData.workspacePath || workspacePath;
         const markdownJumpToLine = markdownEditorData.jumpToLine ?? markdownEditorData.jumpToRange?.start;
         const markdownJumpToColumn = markdownEditorData.jumpToColumn;
+
+        // Retained tabs from the earlier read-only Markdown preview use the same reader.
+        if (markdownEditorData.readOnly && !markdownFilePath && typeof markdownInitialContent === 'string'
+          && content.metadata?.sessionId
+          && content.metadata.duplicateCheckKey === `session-context-toolDefinitions-${content.metadata.sessionId}`) {
+          return renderLazyEditor(<ToolDefinitionsPreview content={markdownInitialContent} />);
+        }
 
         return (
           <div className="openbitfun-flexible-panel__markdown-editor" data-openbitfun-component="flexible-panel" data-openbitfun-part="markdownEditor">
@@ -828,6 +854,7 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
                 key={sessionId}
                 sessionId={sessionId}
                 autoFocus={isActive}
+                renderingActive={isActive}
                 closeBehavior="detach"
                 onClose={() => onContentChange?.(null)}
                 resizeSuspended={!isActive || terminalResizeSuspended}
@@ -848,9 +875,26 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
               workspacePath={content.data?.workspacePath || workspacePath}
               viewKind={content.data?.viewKind}
               displayTitle={content.data?.displayTitle}
+              resizeSuspended={resizeSuspended}
             />
           </React.Suspense>
         );
+
+      case 'thinking-detail':
+        return (
+          <React.Suspense fallback={<div className="openbitfun-flexible-panel__loading" data-openbitfun-component="flexible-panel" data-openbitfun-part="loading" data-openbitfun-state="loading">{t('flexiblePanel.loading.taskDetail')}</div>}>
+            <ThinkingDetailPanel
+              key={JSON.stringify([content.data.surfaceId, content.data.sessionId, content.data.thinkingItem.id])}
+              data={content.data}
+            />
+          </React.Suspense>
+        );
+
+      case 'tool-definitions':
+        return renderLazyEditor(<ToolDefinitionsPreview content={typeof content.data?.content === 'string' ? content.data.content : ''} />);
+
+      case 'session-trajectory':
+        return renderLazyEditor(content.data?.range ? <TrajectoryRangeDetails {...content.data} /> : <TrajectoryDetails {...content.data} />);
 
       case 'session-usage':
         return (
@@ -859,8 +903,17 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
               report={content.data?.report}
               markdown={content.data?.markdown}
               sessionId={content.data?.sessionId}
+              sessionTitle={content.data?.sessionTitle}
+              isLoading={content.data?.isLoading}
+              error={content.data?.error}
+              workspaceId={content.data?.workspaceId ?? content.data?.report?.workspace?.workspaceId}
               workspacePath={content.data?.workspacePath || workspacePath}
               initialTab={content.data?.initialTab}
+              onTitleChange={title => {
+                if (content.title !== title) {
+                  onContentChange?.({ ...content, title, data: { ...content.data, title } });
+                }
+              }}
             />
           </React.Suspense>
         );
@@ -897,10 +950,12 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
         return (
           <React.Suspense fallback={<div className="openbitfun-flexible-panel__loading" data-openbitfun-component="flexible-panel" data-openbitfun-part="loading" data-openbitfun-state="loading">{t('flexiblePanel.loading.terminal')}</div>}>
             <BrowserPanel
-              key={content.data?.openRequestId ?? 'browser-panel'}
+              key={content.data?.targetId ?? content.data?.openRequestId ?? 'browser-panel'}
               isActive={isActive}
               initialUrl={content.data?.url}
               openRequestId={content.data?.openRequestId}
+              targetId={content.data?.targetId}
+              conversationId={content.data?.conversationId}
             />
           </React.Suspense>
         );

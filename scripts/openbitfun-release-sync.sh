@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# sync-release.sh — Mirror OpenBitFun release assets from GitHub to openbitfun.com.
+# sync-release.sh — Mirror OpenBitFun release assets from GitHub to a download mirror.
 #
 # Flow:
 #   1. Fetch the selected channel's latest-v1.json from GitHub
@@ -19,7 +19,7 @@
 # new host only needs this repository, not a detached AutoUpdate copy:
 #   */10 * * * * /root/repos/OpenBitFun/scripts/openbitfun-release-sync.sh \
 #       >> /var/log/openbitfun-release-sync.log 2>&1
-# Host restore: deploy/openbitfun-host/README.md
+# Host-specific paths and mirror configuration belong to your deployment.
 #
 # Optional immediate trigger. The release workflow POSTs to
 # ${OPENBITFUN_SYNC_WEBHOOK_URL} once assets are published (see the "Request

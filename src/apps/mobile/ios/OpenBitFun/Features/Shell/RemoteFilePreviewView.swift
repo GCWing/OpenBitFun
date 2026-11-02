@@ -230,11 +230,9 @@ struct RemoteFilePreviewSheet: View {
                     }
                     .foregroundStyle(OpenBitFunTheme.muted).padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let data = preview.imageData, let image = UIImage(data: data) {
+                } else if let data = preview.imageData {
                     ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
+                        AsyncDecodedImage(data: data)
                             .padding(18)
                     }
                 } else {

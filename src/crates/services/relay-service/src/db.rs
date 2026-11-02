@@ -556,20 +556,35 @@ impl UserRow {
 /// filtered on this. Phones and watches still register — they need a device
 /// row to hold their auth token — they just aren't offered as control targets.
 pub const DEVICE_KIND_DESKTOP: &str = "desktop";
+/// A headless host: the CLI and TUI delivery profiles belong to this kind.
+pub const DEVICE_KIND_CLI: &str = "cli";
 pub const DEVICE_KIND_MOBILE: &str = "mobile";
 pub const DEVICE_KIND_WATCH: &str = "watch";
 
-pub const DEVICE_KINDS: [&str; 3] = [DEVICE_KIND_DESKTOP, DEVICE_KIND_MOBILE, DEVICE_KIND_WATCH];
+pub const DEVICE_KINDS: [&str; 4] = [
+    DEVICE_KIND_DESKTOP,
+    DEVICE_KIND_CLI,
+    DEVICE_KIND_MOBILE,
+    DEVICE_KIND_WATCH,
+];
 
 pub fn is_valid_device_kind(kind: &str) -> bool {
     DEVICE_KINDS.contains(&kind)
 }
 
+/// Whether a row is an OpenBitFun host this account can reach and drive, as
+/// opposed to a controller (a phone or a watch).
+///
 /// A missing kind predates client-side reporting, and is read as a desktop:
 /// hiding a real desktop would break remote control outright, while a stale
-/// phone row corrects itself the next time that phone logs in.
-pub fn device_kind_is_desktop(kind: Option<&str>) -> bool {
-    matches!(kind, None | Some(DEVICE_KIND_DESKTOP))
+/// phone row corrects itself the next time that phone logs in. A CLI host is a
+/// host as well — it runs the same control plane, only without a window — so it
+/// stays in the list instead of being hidden like a controller.
+pub fn device_kind_is_host(kind: Option<&str>) -> bool {
+    matches!(
+        kind,
+        None | Some(DEVICE_KIND_DESKTOP) | Some(DEVICE_KIND_CLI)
+    )
 }
 
 /// Self-reported technical metadata. Missing values never erase stored facts.
@@ -2847,6 +2862,22 @@ mod tests {
             normalize_client_version(Some(&"a".repeat(64))),
             Some("a".repeat(64))
         );
+    }
+
+    #[test]
+    fn a_cli_row_is_a_host_while_a_controller_row_is_not() {
+        assert!(is_valid_device_kind(DEVICE_KIND_CLI));
+        // A host stays visible in the device directory whatever profile it runs.
+        for host in [None, Some(DEVICE_KIND_DESKTOP), Some(DEVICE_KIND_CLI)] {
+            assert!(device_kind_is_host(host), "{host:?} must stay a host");
+        }
+        // A phone or a watch is a controller, and stays out of that list.
+        for controller in [Some(DEVICE_KIND_MOBILE), Some(DEVICE_KIND_WATCH)] {
+            assert!(
+                !device_kind_is_host(controller),
+                "{controller:?} is a controller"
+            );
+        }
     }
 
     #[tokio::test]

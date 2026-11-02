@@ -15,7 +15,17 @@ pub mod diff;
 pub mod dispatch_contract;
 #[cfg(feature = "dispatch-workspace")]
 pub mod dispatch_workspace;
-#[cfg(any(feature = "local-storage", feature = "runtime-ownership"))]
+#[cfg(any(
+    feature = "local-storage",
+    feature = "runtime-ownership",
+    feature = "resource-capacity"
+))]
+pub mod exclusive_file_lease;
+#[cfg(any(
+    feature = "local-storage",
+    feature = "runtime-ownership",
+    feature = "resource-capacity"
+))]
 mod file_lock;
 #[cfg(any(feature = "filesystem", feature = "workspace-transfer"))]
 pub mod file_write_lock;
@@ -45,9 +55,15 @@ pub mod pet_packages;
 pub mod process_manager;
 #[cfg(feature = "process-runtime")]
 pub mod process_tree;
+#[cfg(feature = "resource-capacity")]
+pub mod resource_capacity;
+#[cfg(feature = "routing-state")]
+pub mod routing_state;
 #[cfg(feature = "session-event-format")]
 pub mod session_projection_format;
 pub mod storage_error;
+#[cfg(feature = "workspace-icons")]
+pub mod workspace_icon_assets;
 #[cfg(feature = "workspace-persistence")]
 pub mod workspace_persistence;
 #[cfg(feature = "workspace-persistence")]
@@ -62,6 +78,8 @@ pub use openbitfun_core_types::product_identity;
 pub mod runtime_ownership;
 #[cfg(feature = "local-storage")]
 pub mod session;
+#[cfg(feature = "session-recovery")]
+pub mod session_recovery;
 #[cfg(feature = "session-search")]
 pub mod session_search;
 #[cfg(feature = "local-storage")]
@@ -70,6 +88,8 @@ pub mod session_usage;
 pub mod storage_cleanup;
 #[cfg(feature = "process-runtime")]
 pub mod system;
+#[cfg(feature = "system-proxy")]
+pub mod system_proxy;
 #[cfg(feature = "tls-provider")]
 pub mod tls_provider;
 #[cfg(feature = "local-storage")]

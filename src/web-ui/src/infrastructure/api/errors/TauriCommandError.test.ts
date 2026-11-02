@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createTauriCommandError,
   gitRepositoryUntrustedPath,
   isGitRepositoryNotFoundError,
   isGitRepositoryUntrustedError,
   isNotAvailableError,
   isOutcomeUnknownError,
+  isRemoteWorkspaceConnectionConflictError,
   isSessionInUseError,
+  remoteWorkspaceConnectionConflictOwner,
   TauriCommandError,
 } from './TauriCommandError';
+import { SurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+
+it('preserves device cancellation through command error translation', () => {
+  const cancellation = new SurfaceChangedError('peer', 4, 'list_sessions');
+  expect(createTauriCommandError('list_sessions', cancellation)).toBe(cancellation);
+});
 
 describe('isGitRepositoryNotFoundError', () => {
   const legacyError = "Failed to get Git status: Repository not found: could not find repository at '/workspace'; class=Repository (6); code=NotFound (-3)";
@@ -157,5 +166,32 @@ describe('isGitRepositoryUntrustedError', () => {
     expect(
       gitRepositoryUntrustedPath(new Error('git_repository_untrusted:   ')),
     ).toBeUndefined();
+  });
+});
+
+describe('isRemoteWorkspaceConnectionConflictError', () => {
+  const conflict =
+    'remote_workspace_connection_conflict: Workspace remote_1 is bound to SSH connection ssh-root@example.com; reopening it with connection ssh-deploy@example.com requires confirmation.';
+
+  it.each([
+    conflict,
+    new TauriCommandError('Command failed', {
+      command: 'open_remote_workspace',
+      originalError: conflict,
+    }),
+    { message: 'Host command failed', details: { originalError: conflict } },
+    { message: 'Internal error', data: conflict },
+  ])('recognizes the stable code through Desktop and Peer wrappers: %j', (error) => {
+    expect(isRemoteWorkspaceConnectionConflictError(error)).toBe(true);
+    expect(remoteWorkspaceConnectionConflictOwner(error)).toBe('ssh-root@example.com');
+  });
+
+  it.each([
+    'Failed to open remote workspace: Remote workspace path is not a directory',
+    'Failed to open remote workspace: remote_workspace_connection_conflict: wrapped by an old host',
+    'remote_workspace_storage_conflict: Workspace remote_1 is owned by SSH connection ssh-root@example.com',
+  ])('does not classify other failures: %s', (message) => {
+    expect(isRemoteWorkspaceConnectionConflictError(new Error(message))).toBe(false);
+    expect(remoteWorkspaceConnectionConflictOwner(new Error(message))).toBeUndefined();
   });
 });

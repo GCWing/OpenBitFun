@@ -1,7 +1,11 @@
 fn main() {
+    // Cargo does not propagate a dependency's link-arg to the final executable.
+    // Keep the shared provider optional on macOS older than ScreenCaptureKit.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,ScreenCaptureKit");
+    }
     println!("cargo:rerun-if-env-changed=OPENBITFUN_RELEASE_CHANNEL");
     println!("cargo:rerun-if-env-changed=OPENBITFUN_DESKTOP_BINARY_NAME");
-    println!("cargo:rerun-if-env-changed=OPENBITFUN_DATA_MIGRATOR_BINARY_NAME");
     println!("cargo:rerun-if-env-changed=OPENBITFUN_UPDATER_PRIMARY_ENDPOINT");
     println!("cargo:rerun-if-env-changed=OPENBITFUN_UPDATER_FALLBACK_ENDPOINT");
     // The Windows primary thread keeps the Tauri event loop and native window

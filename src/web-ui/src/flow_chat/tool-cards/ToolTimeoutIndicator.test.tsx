@@ -1,8 +1,10 @@
+import { formatDuration } from '@/shared/utils/format';
 import React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
+import { JSDOM } from 'jsdom';
 import { I18nextProvider, initReactI18next } from 'react-i18next';
 import { createInstance, type i18n as I18nInstance } from 'i18next';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,11 +12,11 @@ import { ToolTimeoutIndicator } from './ToolTimeoutIndicator';
 
 const setSubagentTimeoutMock = vi.hoisted(() => vi.fn());
 const timeoutIndicatorStyles = readFileSync(
-  new URL('./ToolTimeoutIndicator.scss', import.meta.url),
+  new URL('../../../../../design-system/packages/ui/src/flow-chat/conversation/ToolDuration.css', import.meta.url),
   'utf8',
 );
 const taskToolStyles = readFileSync(
-  new URL('./TaskToolDisplay.scss', import.meta.url),
+  new URL('../components/TaskDetailPanel/TaskDetailPanel.scss', import.meta.url),
   'utf8',
 );
 
@@ -25,11 +27,6 @@ vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
 }));
 
 let i18n: I18nInstance;
-let JSDOMCtor: (new (
-  html?: string,
-  options?: { pretendToBeVisual?: boolean; url?: string }
-) => { window: Window & typeof globalThis }) | null = null;
-
 beforeAll(async () => {
   i18n = createInstance();
   await i18n.use(initReactI18next).init({
@@ -55,8 +52,6 @@ beforeAll(async () => {
     interpolation: { escapeValue: false },
   });
 
-  const jsdom = await import('jsdom');
-  JSDOMCtor = jsdom.JSDOM as typeof JSDOMCtor;
 });
 
 function withI18n(element: React.ReactElement): React.ReactElement {
@@ -77,7 +72,7 @@ describe('ToolTimeoutIndicator', () => {
   let root: Root | null = null;
 
   beforeEach(() => {
-    dom = new JSDOMCtor!('<!doctype html><html><body></body></html>', {
+    dom = new JSDOM('<!doctype html><html><body></body></html>', {
       pretendToBeVisual: true,
       url: 'http://localhost',
     }) as unknown as { window: Window & typeof globalThis };
@@ -137,8 +132,8 @@ describe('ToolTimeoutIndicator', () => {
     );
 
     expect(html).toContain('duration-text--completed-success');
-    expect(html).toContain('Completed in 1.3s');
-    expect(html).toContain('1.3s');
+    expect(html).toContain(`Completed in ${formatDuration(1250)}`);
+    expect(html).toContain(formatDuration(1250));
     expect(html).not.toContain('<svg');
   });
 
@@ -166,8 +161,8 @@ describe('ToolTimeoutIndicator', () => {
     );
 
     expect(html).toContain('duration-text--completed-error');
-    expect(html).toContain('Failed after 2.4s: provider timed out');
-    expect(html).toContain('2.4s');
+    expect(html).toContain(`Failed after ${formatDuration(2400)}: provider timed out`);
+    expect(html).toContain(formatDuration(2400));
     expect(html).not.toContain('<svg');
   });
 

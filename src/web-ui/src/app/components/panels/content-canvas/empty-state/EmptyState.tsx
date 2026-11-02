@@ -12,10 +12,11 @@ import { Icon, Tooltip } from '@openbitfun/ui';
 
 export interface EmptyStateProps {
   onClose?: () => void;
+  toolbarActions?: React.ReactNode;
   children?: React.ReactNode;
 }
 
-export const EmptyState: React.FC<EmptyStateProps> = ({ onClose, children }) => {
+export const EmptyState: React.FC<EmptyStateProps> = ({ onClose, toolbarActions, children }) => {
   const { t } = useTranslation('components');
   const hasEmbeddedContent = children !== undefined && children !== null;
 
@@ -26,16 +27,16 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ onClose, children }) => 
 
   return (
     <div data-openbitfun-component="content-canvas" data-openbitfun-part="empty" data-openbitfun-state="empty" className="canvas-empty-state">
-      {onClose && (
+      {(toolbarActions !== undefined || onClose) && (
         <div className="canvas-empty-state__toolbar" data-openbitfun-component="content-canvas" data-openbitfun-part="emptyToolbar">
-          <Tooltip content={t('tabs.close')}>
+          {toolbarActions !== undefined ? toolbarActions : <Tooltip content={t('tabs.close')}>
             <button
               className="canvas-empty-state__close-btn"
               onClick={handleClose}
             >
               <Icon name="xmark" size="sm" />
             </button>
-          </Tooltip>
+          </Tooltip>}
         </div>
       )}
       <div

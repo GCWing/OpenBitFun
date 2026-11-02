@@ -72,3 +72,55 @@ File uploads stream 3 MiB chunks through the runtime transfer owner, use a whole
 Account sign-in offers independent GitHub and email-code accounts through the
 shared OpenBitFun authorization page. No password registration is needed. Use the
 same login method and account on the desktop/CLI and phone to see its devices.
+
+## Host-owned message queue
+
+On hosts advertising `dialog_queue_v1`, the composer remains available while a
+turn runs. Accepted follow-ups appear in the host message queue, shared with the
+desktop and supported Peer Device controllers. Closing this page, disconnecting
+the phone, or leaving the session does not stop host-side dispatch.
+
+- **Send now** starts the selected message when idle. While a turn runs, the
+  host finishes the current atomic action and starts the selected message as
+  the next regular user turn. It has its own history and navigation entry on
+  desktop and mobile; existing tool results stay with the preceding turn.
+  Acceptance is distinct from the new turn actually starting. Older hosts may
+  still render steering inline within the active turn. The turn-scoped SDK
+  steering API used by CLI/Dispatch retains its inline contract; this handoff
+  belongs to host queue promotion.
+- **Remove from queue** only removes an unstarted message. It never stops the
+  active turn. An operation that lost a race with dispatch is rejected.
+- A failed turn or unconsumed steering retains the message as blocked on the
+  host. Resolve the cause, then explicitly send now or remove it.
+- A lost response leaves an unconfirmed local record in IndexedDB. **Check /
+  retry** queries the original message ID before retransmission; it does not
+  allocate a second submission. Local storage must succeed before sending.
+- The guarantee starts when the execution host accepts the message. A request
+  that never reached the host is not guaranteed to run. Pending messages are
+  held in host memory: quitting or restarting the execution host can lose them.
+  A changed queue epoch prevents automatic replay; the submitting browser keeps
+  its cached text for an explicit recovery decision.
+
+Older hosts retain the legacy send path and do not expose this queue management
+UI. ACP and Detached Dispatch retain their own driver behavior. Permissions and
+questions still use the existing remote interaction mailbox.
+
+Verification: `pnpm --dir src/mobile-web run test:host-queue` covers ambiguous
+retries and a real Chromium page close/reopen with IndexedDB. The browser tests
+use simulated host/relay data and disposable profiles; they are not evidence of
+a physical phone or an SSH workspace test.
+
+### Project icons
+
+Recent-project and compact sidebar rows display the owning host's project icon when it
+advertises `workspace_icon_read_v1`. Built-in project categories use the same Lucide artwork
+as Desktop, including life/hobby categories. Theme changes select the light/dark image locally;
+a legacy single image serves both themes, and a missing variant falls back to the available
+image without rewriting host metadata. Missing or unknown glyph IDs fall back to the folder/server shape without
+altering host settings. Older hosts retain their existing default icons. Images
+are fetched through authenticated RemoteCommand requests by workspace ID, never by a
+controller-local file path. Reconnect/catalog refresh reloads the host projection; target
+epochs prevent a late response from another device replacing the current icon. Icon editing
+is available in the Desktop controller; mobile/IM editing requests receive an explicit
+unsupported response. A failed image read preserves host settings and displays a fallback
+with an unavailable hint.

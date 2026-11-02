@@ -5,11 +5,21 @@ import type { DialogTurn } from '../../types/flow-chat';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { consumeSubmittedMessageArrival } from '../../services/submittedMessagePresentation';
 
-const { mockStartAcpDialogTurn, mockStartAgenticDialogTurn, mockTransition, mockUpdateSessionMetadata } = vi.hoisted(() => ({
+const { mockCreateSession, mockStartAcpDialogTurn, mockStartAgenticDialogTurn, mockEnsureCoordinatorSession, mockTransition, mockUpdateSessionMetadata, mockGetMode, mockUpdateMode } = vi.hoisted(() => ({
+  mockCreateSession: vi.fn(),
   mockStartAcpDialogTurn: vi.fn(),
   mockStartAgenticDialogTurn: vi.fn(),
+  mockEnsureCoordinatorSession: vi.fn(),
   mockTransition: vi.fn(),
   mockUpdateSessionMetadata: vi.fn(),
+  mockGetMode: vi.fn(),
+  mockUpdateMode: vi.fn(),
+}));
+
+const poolMocks = vi.hoisted(() => ({ list: vi.fn(), supported: vi.fn(() => false), read: vi.fn() }));
+vi.mock('@/infrastructure/config/services/modelSelections', () => ({ readModelSelections: poolMocks.read }));
+vi.mock('@/infrastructure/api/service-api/ModelPoolAPI', () => ({
+  modelPoolAPI: { list: poolMocks.list }, supportsModelPools: poolMocks.supported,
 }));
 
 vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({
@@ -17,11 +27,27 @@ vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({
 }));
 
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
-  agentAPI: { startDialogTurn: mockStartAgenticDialogTurn },
+  agentAPI: {
+    createSession: mockCreateSession,
+    startDialogTurn: mockStartAgenticDialogTurn,
+    ensureCoordinatorSession: mockEnsureCoordinatorSession,
+    getSessionPermissionMode: mockGetMode,
+    updateSessionPermissionMode: mockUpdateMode,
+  },
 }));
 
 vi.mock('@/infrastructure/api/service-api/SessionAPI', () => ({ sessionAPI: {} }));
 vi.mock('@/infrastructure/api/service-api/WorktreeAPI', () => ({ worktreeAPI: {} }));
+vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
+  workspaceManager: {
+    getState: () => ({
+      openedWorkspaces: new Map([['project-workspace', {
+        id: 'project-workspace', rootPath: WORKSPACE_PATH, workspaceKind: 'normal',
+      }]]),
+      recentWorkspaces: [],
+    }),
+  },
+}));
 
 vi.mock('../../state-machine', () => ({
   stateMachineManager: {
@@ -40,9 +66,88 @@ vi.mock('../../services/flow-chat-manager/PersistenceModule', () => ({
 }));
 
 vi.mock('../../utils/modelSync', () => ({ syncSessionModelSelection: vi.fn() }));
+vi.mock('../../utils/modelResolution', () => ({
+  getModelMaxTokens: vi.fn(async () => 32000),
+  resolveReasoningPresetForSessionCreation: vi.fn(async () => 'balanced'),
+}));
+vi.mock('../../services/sessionTitleMetadata', () => ({
+  initializeSessionTitleMetadata: vi.fn(async (_id, descriptor) => descriptor),
+}));
 
 const SESSION_ID = 'acp_dsh_session';
 const WORKSPACE_PATH = '/Users/user/workspace/project';
+
+describe('localSessionDriver conversation creation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateSession.mockResolvedValue({ sessionId: 'host-session', workspaceId: 'project' });
+    poolMocks.supported.mockReturnValue(false);
+    poolMocks.read.mockResolvedValue({ mode: { kind: 'model', model_ref: 'primary' } });
+  });
+
+  function seed(agentType = 'Standard') {
+    return {
+      surfaceScope: getActiveSurfaceScope(), draftId: 'reserved-session',
+      config: { modelName: 'selected-model' }, agentType, sessionName: 'New chat',
+      titleDescriptor: { text: 'New chat', source: 'text' as const },
+      workspaceId: 'project', workspacePath: WORKSPACE_PATH, projectWorkspacePath: WORKSPACE_PATH,
+    };
+  }
+
+  it('reserves a frontend conversation without creating a host session', async () => {
+    const createSession = vi.fn();
+    const context = { flowChatStore: { createSession } } as any;
+    await expect(localSessionDriver.createSession(context, seed())).resolves.toBe('reserved-session');
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(createSession.mock.calls[0][0]).toBe('reserved-session');
+    expect(createSession.mock.calls[0][1]).toMatchObject({
+      workspaceId: 'project', modelName: 'selected-model', reasoningPreset: 'balanced',
+    });
+    expect(createSession.mock.calls[0].at(-1)).toEqual({
+      workspaceId: 'project', phase: 'editing', turnId: expect.any(String),
+    });
+  });
+
+  it('stores the default pool as pending intent until a draft is materialized', async () => {
+    poolMocks.supported.mockReturnValue(true);
+    poolMocks.read.mockResolvedValue({ mode: { kind: 'pool', pool_id: 'pool-1' } });
+    const createSession = vi.fn();
+    await localSessionDriver.createSession({ flowChatStore: { createSession } } as any, { ...seed(), config: {} });
+    expect(createSession.mock.calls[0][1]).toMatchObject({
+      modelPoolId: 'pool-1', modelPoolSelectionPending: true, reasoningPreset: undefined,
+    });
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('preserves an explicit single-model choice even when a default pool exists', async () => {
+    poolMocks.supported.mockReturnValue(true);
+    const createSession = vi.fn();
+    await localSessionDriver.createSession({ flowChatStore: { createSession } } as any, seed());
+    expect(poolMocks.read).not.toHaveBeenCalled();
+    expect(createSession.mock.calls[0][1].modelName).toBe('selected-model');
+  });
+
+  it('does not fall back to a primary model when reading the default target fails', async () => {
+    poolMocks.supported.mockReturnValue(true);
+    poolMocks.read.mockRejectedValue(new Error('config unreadable'));
+    const createSession = vi.fn();
+    await expect(localSessionDriver.createSession({ flowChatStore: { createSession } } as any,
+      { ...seed(), config: {} })).rejects.toThrow('config unreadable');
+    expect(createSession).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps assistant bootstrap on the existing immediate creation path', async () => {
+    const createSession = vi.fn();
+    const context = { flowChatStore: { createSession } } as any;
+    await expect(localSessionDriver.createSession(context, seed('Claw'))).resolves.toBe('host-session');
+    expect(mockCreateSession).toHaveBeenCalledWith(expect.objectContaining({
+      agentType: 'Claw', workspaceId: 'project', workspacePath: WORKSPACE_PATH,
+    }));
+    expect(createSession.mock.calls[0][0]).toBe('host-session');
+  });
+});
 
 function persistedTurn(id: string, storageTurnIndex: number): DialogTurn {
   return {
@@ -164,5 +269,126 @@ describe('localSessionDriver.startTurn on an ACP session', () => {
       createdLocalTurnId: null, hostAcceptedTurn: false,
     })).rejects.toThrow('offline');
     expect(mockUpdateSessionMetadata).not.toHaveBeenCalled();
+  });
+});
+
+describe('localSessionDriver review repair permissions', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockTransition.mockResolvedValue(true);
+    mockStartAgenticDialogTurn.mockResolvedValue(undefined);
+    mockGetMode.mockResolvedValue({ mode: 'auto_approve' });
+  });
+
+  it('waits for parent permission inheritance before starting the repair', async () => {
+    const { context, session } = createHarness([]);
+    Object.assign(session, { sessionKind: 'review', parentSessionId: 'parent', mode: 'agentic' });
+    let finishUpdate!: () => void;
+    mockUpdateMode.mockImplementation(() => new Promise<void>((resolve) => { finishUpdate = resolve; }));
+    const submission = localSessionDriver.startTurn(context, {
+      ...startTurnInput(session), acpClientId: undefined, currentAgentType: 'ReviewFixer',
+    }, { createdLocalTurnId: null, hostAcceptedTurn: false });
+    await vi.waitFor(() => expect(mockUpdateMode).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: SESSION_ID, mode: 'auto_approve' }),
+    ));
+    expect(mockStartAgenticDialogTurn).not.toHaveBeenCalled();
+    finishUpdate();
+    await submission;
+    expect(mockStartAgenticDialogTurn).toHaveBeenCalledTimes(1);
+    expect(mockStartAgenticDialogTurn).toHaveBeenCalledWith(expect.objectContaining({
+      agentType: 'ReviewFixer',
+    }));
+  });
+
+  it('does not start repair with stale permissions if inheritance fails', async () => {
+    const { context, session } = createHarness([]);
+    Object.assign(session, { sessionKind: 'deep_review', parentSessionId: 'parent', mode: 'agentic' });
+    mockUpdateMode.mockRejectedValue(new Error('permission update failed'));
+    await expect(localSessionDriver.startTurn(context, {
+      ...startTurnInput(session), acpClientId: undefined, currentAgentType: 'ReviewFixer',
+    }, { createdLocalTurnId: null, hostAcceptedTurn: false })).rejects.toThrow('permission update failed');
+    expect(mockStartAgenticDialogTurn).not.toHaveBeenCalled();
+  });
+});
+
+
+const queueMocks = vi.hoisted(() => ({ supported: vi.fn(() => false), submit: vi.fn() }));
+vi.mock('../../services/hostDialogQueue', () => ({
+  hostQueueSupported: queueMocks.supported,
+  hostDialogQueue: () => ({ submit: queueMocks.submit }),
+  queueImageAttachments: () => [],
+}));
+
+describe('host queue submissions', () => {
+  beforeEach(() => { vi.clearAllMocks(); queueMocks.supported.mockReturnValue(true); queueMocks.submit.mockResolvedValue({ receipt: { status: 'queued' } }); });
+  it('lets authoritative host events start a turn without clearing an existing active presentation', async () => {
+    const { context, session, addedTurns } = createHarness([]);
+    session.mode = 'Standard';
+    context.contentBuffers.set(SESSION_ID, 'active output');
+    context.activeTextItems.set(SESSION_ID, 'active item');
+    const input = { ...startTurnInput(session), acpClientId: undefined, currentAgentType: 'Standard', isFirstMessage: false,
+      options: { turnId: 'stable-request-id' } };
+    const tracker = { createdLocalTurnId: null, hostAcceptedTurn: false };
+    await localSessionDriver.startTurn(context, input, tracker);
+    expect(queueMocks.submit).toHaveBeenCalledWith(expect.objectContaining({ content: 'hello' }), expect.any(Object), 'stable-request-id');
+    expect(mockTransition).not.toHaveBeenCalled();
+    expect(mockStartAgenticDialogTurn).not.toHaveBeenCalled();
+    expect(context.contentBuffers.get(SESSION_ID)).toBe('active output');
+    expect(context.activeTextItems.get(SESSION_ID)).toBe('active item');
+    expect(addedTurns).toHaveLength(0);
+    expect(tracker.hostAcceptedTurn).toBe(true);
+  });
+});
+
+describe('worktree follow-up submissions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockEnsureCoordinatorSession.mockResolvedValue(undefined);
+    mockTransition.mockResolvedValue(true);
+    mockStartAgenticDialogTurn.mockResolvedValue(undefined);
+    queueMocks.submit.mockResolvedValue({ receipt: { status: 'queued' } });
+  });
+
+  it.each([false, true])('prepares the owning project and sends the next turn with host queue support %s', async supportsQueue => {
+    queueMocks.supported.mockReturnValue(supportsQueue);
+    const { context, session } = createHarness([persistedTurn('turn-1', 0)]);
+    Object.assign(session, {
+      mode: 'Standard',
+      isHistorical: false,
+      historyState: 'ready',
+      workspaceId: 'worktree-not-in-catalog',
+      workspacePath: '/worktrees/task',
+      projectWorkspaceId: 'project-workspace',
+      projectWorkspacePath: WORKSPACE_PATH,
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'worktree-1', rootPath: '/worktrees/task' },
+      },
+    });
+    const tracker = { createdLocalTurnId: null, hostAcceptedTurn: false };
+
+    await localSessionDriver.ensureReady(context, SESSION_ID);
+    await localSessionDriver.startTurn(context, {
+      ...startTurnInput(session), acpClientId: undefined, currentAgentType: 'Standard',
+    }, tracker);
+
+    expect(mockEnsureCoordinatorSession).toHaveBeenCalledWith({
+      sessionId: SESSION_ID, workspaceId: 'project-workspace', includeInternal: false,
+    });
+    if (supportsQueue) {
+      expect(queueMocks.submit).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'hello' }), expect.any(Object), undefined,
+      );
+      expect(mockStartAgenticDialogTurn).not.toHaveBeenCalled();
+    } else {
+      expect(mockStartAgenticDialogTurn).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: SESSION_ID,
+        workspaceId: 'worktree-not-in-catalog',
+        workspacePath: '/worktrees/task',
+        projectWorkspacePath: WORKSPACE_PATH,
+      }));
+    }
+    expect(tracker.hostAcceptedTurn).toBe(true);
+    expect(session.workspacePath).toBe('/worktrees/task');
+    expect(session.dialogTurns[0].id).toBe('turn-1');
   });
 });

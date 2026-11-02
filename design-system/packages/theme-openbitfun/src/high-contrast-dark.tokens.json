@@ -42,6 +42,10 @@
       "secondary": { "$type": "color", "$value": "{ref.color.gray.50}" },
       "muted": { "$type": "color", "$value": "{ref.color.gray.150}" }
     },
+    "link": {
+      "default": { "$type": "color", "$value": "{ref.color.cyan.300}" },
+      "hover": { "$type": "color", "$value": "{ref.color.cyan.200}" }
+    },
     "border": {
       "subtle": { "$type": "color", "$value": "{ref.color.gray.400}" },
       "default": { "$type": "color", "$value": "{ref.color.gray.250}" },

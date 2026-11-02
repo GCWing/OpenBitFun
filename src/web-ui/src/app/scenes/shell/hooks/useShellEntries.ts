@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { useSessionTerminalDirectory } from '@/app/hooks/useSessionTerminalDirectory';
 import { openShellSessionTarget } from '@/shared/services/openShellSessionTarget';
 import {
   AGENT_SOURCE,
@@ -51,6 +52,10 @@ export function useShellEntries(targetWorkspace?: WorkspaceInfo | null): UseShel
     [scope.surfaceId, workspaceId],
   );
   const profileKey = scope.key('terminal-profiles', workspace?.id);
+  // A terminal opened here serves the session that owns this workspace, so it
+  // must start where that session executes: a worktree session's cwd is the
+  // worktree, not the project root.
+  const sessionDirectory = useSessionTerminalDirectory(workspaceId);
 
   const [editingState, setEditingTerminal] = useState<EditingTerminalState | null>(null);
   const editingTerminal = editingState?.key === profileKey ? editingState : null;
@@ -84,6 +89,7 @@ export function useShellEntries(targetWorkspace?: WorkspaceInfo | null): UseShel
   } = useTerminalSessions({
     workspaceId: workspace?.id,
     workspacePath,
+    defaultDirectory: sessionDirectory,
     isRemote,
     currentConnectionId,
     scope,

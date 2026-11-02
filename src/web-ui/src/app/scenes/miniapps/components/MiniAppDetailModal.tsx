@@ -1,6 +1,7 @@
 import { OverflowText,
   Button,
   Icon,
+  StatusPill,
   ScrollArea,
   Dialog,
   DialogBody,
@@ -14,7 +15,10 @@ import React, { useMemo, useRef } from 'react';
 import { Bot, Cpu, Database, FolderKanban, Play, ShieldCheck, Square } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
-import { renderMiniAppIcon } from '../utils/miniAppIcons';
+import { getMiniAppShowcaseAsset, renderMiniAppIcon } from '../utils/miniAppIcons';
+import { MarketImage } from '@/app/components/GalleryLayout/MarketImage';
+import { MiniAppDetailPage } from './MiniAppDetailPage';
+import { MiniAppNavigationAction } from './MiniAppNavigationAction';
 import { pickLocalizedString, pickLocalizedTags } from '../utils/pickLocalizedString';
 import {
   projectMiniAppDetailCapabilities,
@@ -25,12 +29,15 @@ import {
 import './MiniAppDetailModal.scss';
 
 interface MiniAppDetailModalProps {
+  presentation?: 'dialog' | 'page';
   app: MiniAppMeta | null;
   marketReleaseNumber?: number;
   isActive: boolean;
   isCustomizing: boolean;
   onClose: () => void;
   onOpen: (appId: string) => void;
+  launchActions?: React.ReactNode;
+  systemAppActions?: React.ReactNode;
   onDelete: (appId: string) => void;
   onStop?: (appId: string) => void | Promise<void>;
 }
@@ -137,12 +144,15 @@ function sourceLabel(source: MiniAppDetailSource, t: Translate): string {
 }
 
 const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
+  presentation = 'dialog',
   app,
   marketReleaseNumber,
   isActive,
   isCustomizing,
   onClose,
   onOpen,
+  launchActions,
+  systemAppActions,
   onDelete,
   onStop,
 }) => {
@@ -180,6 +190,60 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
     : snapshot.isActive
       ? t('detail.status.running')
       : t('detail.status.installed');
+
+  if (presentation === 'page') {
+    if (!app) return null;
+    const showcase = getMiniAppShowcaseAsset(displayedApp.id);
+    return (
+      <MiniAppDetailPage
+        title={localizedName}
+        description={localizedDescription}
+        icon={renderMiniAppIcon(displayedApp.icon || 'box', 40)}
+        badges={<>
+          <StatusPill tone="neutral">{sourceLabel(source, t)}</StatusPill>
+          <StatusPill tone="neutral">v{version}</StatusPill>
+          {localizedTags.map(tag => <StatusPill key={tag} tone="neutral">{tag}</StatusPill>)}
+        </>}
+        actions={<>
+          <MiniAppNavigationAction appId={displayedApp.id} />
+          {systemAppActions}
+          {launchActions ?? <Button variant="outline" size="sm" onClick={() => onOpen(displayedApp.id)}>
+            {t('detail.start')}
+          </Button>}
+          {snapshot.isActive && onStop && <Button variant="outline" size="sm" onClick={() => void onStop(displayedApp.id)}>
+            {t('detail.stop')}
+          </Button>}
+          <Button variant="outline" tone="danger" size="sm" onClick={() => onDelete(displayedApp.id)}>{t('detail.uninstall')}</Button>
+        </>}
+        preview={showcase ? <MarketImage source={showcase} responsive width={1280} height={720}
+          sizes="(min-width: 720px) 680px, 100vw" alt={t('market.library.showcaseAlt', { name: localizedName })} /> : undefined}
+      >
+        <section className="miniapp-detail-page__section">
+          <h2 className="miniapp-detail-page__section-title">{t('detail.highlights')}</h2>
+          <ul className="miniapp-detail-page__capabilities">
+            {capabilities.map(capability => {
+              const copy = capabilityCopy(capability, t);
+              return <li key={capability.kind} className="miniapp-detail-page__capability">
+                <span className="miniapp-detail-page__capability-icon" aria-hidden="true">{capabilityIcon(capability)}</span>
+                <span className="miniapp-detail-page__capability-copy">
+                  <strong className="miniapp-detail-page__label">{copy.title}</strong>
+                  <span className="miniapp-detail-page__copy">{copy.description}</span>
+                </span>
+              </li>;
+            })}
+          </ul>
+        </section>
+        <section className="miniapp-detail-page__section">
+          <h2 className="miniapp-detail-page__section-title">{t('detail.information')}</h2>
+          <dl className="miniapp-detail-page__information">
+            <div className="miniapp-detail-page__information-row"><dt>{t('detail.versionLabel')}</dt><dd>v{version}</dd></div>
+            <div className="miniapp-detail-page__information-row"><dt>{t('detail.sourceLabel')}</dt><dd>{sourceLabel(source, t)}</dd></div>
+            <div className="miniapp-detail-page__information-row"><dt>{t('detail.statusLabel')}</dt><dd>{statusCopy}</dd></div>
+          </dl>
+        </section>
+      </MiniAppDetailPage>
+    );
+  }
 
   return (
     <Dialog
@@ -265,7 +329,9 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
                   </span>
                   <span className="miniapp-detail-modal__highlight-copy">
                     <strong><OverflowText>{copy.title}</OverflowText></strong>
-                    <OverflowText lines={2}>{copy.description}</OverflowText>
+                    <OverflowText className="miniapp-detail-modal__highlight-description" lines={2}>
+                      {copy.description}
+                    </OverflowText>
                   </span>
                 </div>
               );
@@ -286,6 +352,7 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
             <span data-testid="miniapp-detail-status">{statusCopy}</span>
           </div>
           <div className="miniapp-detail-modal__actions" data-openbitfun-component="mini-app-detail-modal" data-openbitfun-part="actions">
+            <MiniAppNavigationAction appId={displayedApp.id} />
             {snapshot.isActive && onStop ? (
               <Button
                 variant="outline"
@@ -299,7 +366,7 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
                 {t('detail.stop')}
               </Button>
             ) : null}
-            <Button
+            {launchActions ?? <Button
               variant="primary"
               size="md"
               className="miniapp-detail-modal__primary"
@@ -309,7 +376,8 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
             >
 
               {snapshot.isActive ? t('detail.open') : t('detail.start')}
-            </Button>
+            </Button>}
+            {systemAppActions}
             <Button
               variant="outline"
               size="md"
@@ -329,3 +397,7 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
 
 export default MiniAppDetailModal;
 export type { MiniAppDetailModalProps };
+
+export function MiniAppInstalledDetailPage(props: Omit<MiniAppDetailModalProps, 'presentation'>) {
+  return <MiniAppDetailModal {...props} presentation="page" />;
+}

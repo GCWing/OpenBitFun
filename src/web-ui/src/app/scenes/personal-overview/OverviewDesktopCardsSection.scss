@@ -1,0 +1,46 @@
+.overview-desktop-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-1);
+  width: 100%;
+  max-block-size: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    padding: var(--openbitfun-space-1) 0;
+
+    &[data-visible='false'] .overview-desktop-cards__icon,
+    &[data-visible='false'] .overview-desktop-cards__title { color: var(--openbitfun-color-content-muted); }
+  }
+
+  &__icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--openbitfun-color-accent-default);
+  }
+
+  &__copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: var(--openbitfun-type-label-md-font-size);
+    line-height: var(--openbitfun-type-label-md-line-height);
+  }
+
+  &__meta {
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+}

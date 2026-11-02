@@ -1,6 +1,8 @@
 import type { ComponentMeta } from "../../registry.types";
 
 const ambientTokens = [
+  "control.flowChat.cardPaddingInline",
+  "control.toolCard.fieldLabelWidth",
   "control.flowChat.rowIconSize",
   "control.flowChat.rowIconGap",
   "color.content.primary",
@@ -22,6 +24,7 @@ const activityProps = [
   { name: "status", type: "FlowChatToolStatus" },
   { name: "action", type: "ReactNode" },
   { name: "summary", type: "ReactNode" },
+  { name: "extra", type: "ReactNode" },
 ] as const;
 
 const expandableProps = [
@@ -44,8 +47,21 @@ export const agentWaitToolCardMeta = {
   description: "A concrete ambient card for background-agent wait progress and completion summaries.",
   maturity: "stable",
   name: "AgentWaitToolCard",
-  props: activityProps,
+  props: [...activityProps,
+    { name: "interaction", type: "ToolCardInteraction" },
+    { name: "agents", type: "AgentWaitTargets" },
+  ],
   states: ["default", "loading", "error"],
+  tokens: ambientTokens,
+} as const satisfies ComponentMeta;
+
+export const cronToolCardMeta = {
+  category: "flow-chat",
+  description: "An ambient scheduled-job card with schedule, next-run, and payload details.",
+  maturity: "stable",
+  name: "CronToolCard",
+  props: expandableProps,
+  states: ["default", "hover", "loading", "expanded", "error"],
   tokens: ambientTokens,
 } as const satisfies ComponentMeta;
 
@@ -91,10 +107,14 @@ export const globSearchToolCardMeta = {
 
 export const grepSearchToolCardMeta = {
   category: "flow-chat",
-  description: "An ambient text-search card with query metadata and a scrollable result preview.",
+  description: "An ambient text-search card with query metadata, file-grouped excerpts and aligned line numbers.",
   maturity: "stable",
   name: "GrepSearchToolCard",
-  props: searchProps,
+  props: [
+    ...searchProps,
+    { name: "resultBlocks", type: "readonly GrepSearchResultBlock[]" },
+    { name: "resultText", type: "string" },
+  ],
   states: ["default", "hover", "loading", "expanded", "error"],
   tokens: ambientTokens,
 } as const satisfies ComponentMeta;
@@ -114,7 +134,7 @@ export const sessionControlToolCardMeta = {
   description: "An ambient session-lifecycle card with semantic detail fields and session rows.",
   maturity: "stable",
   name: "SessionControlToolCard",
-  props: expandableProps,
+  props: [...expandableProps, { name: "interaction", type: "ToolCardInteraction" }],
   states: ["default", "hover", "loading", "expanded", "error"],
   tokens: ambientTokens,
 } as const satisfies ComponentMeta;
@@ -124,7 +144,10 @@ export const sessionMessageToolCardMeta = {
   description: "An ambient cross-session message card with target details and message content.",
   maturity: "stable",
   name: "SessionMessageToolCard",
-  props: expandableProps,
+  props: [...expandableProps,
+    { name: "interaction", type: "ToolCardInteraction" },
+    { name: "openAction", type: "{ label: string; onPress: (event: MouseEvent<HTMLButtonElement>) => void }" },
+  ],
   states: ["default", "hover", "loading", "expanded", "error"],
   tokens: ambientTokens,
 } as const satisfies ComponentMeta;
@@ -151,7 +174,7 @@ export const terminalControlToolCardMeta = {
 
 export const todoToolCardMeta = {
   category: "flow-chat",
-  description: "An ambient task-progress card with compact and expandable list presentations.",
+  description: "A prominent task-progress card with a current-task summary and an expandable list.",
   maturity: "stable",
   name: "TodoToolCard",
   props: expandableProps,

@@ -10,6 +10,16 @@ function readSource(relativePath: string): string {
 }
 
 describe('FlowChat transcript edge fade', () => {
+  it('keeps the changing mask stop local to the scroller', () => {
+    const stylesheet = readSource('./VirtualMessageList.scss');
+    const registration = stylesheet.match(/@property\s+--_flow-chat-top-mask-start\s*\{([^}]+)\}/)?.[1];
+
+    expect(registration).toBeDefined();
+    expect(registration).toMatch(/syntax:\s*['"]\*['"]/);
+    expect(registration).toMatch(/inherits:\s*false\s*;/);
+    expect(registration).toMatch(/initial-value:\s*transparent 0\s*;/);
+  });
+
   it('fades the transcript at the top and before the live ChatInput edge', () => {
     const component = readSource('./VirtualMessageList.tsx');
     const stylesheet = readSource('./VirtualMessageList.scss');

@@ -209,13 +209,6 @@ struct RemoteAuthorityGateTests {
             "current target file transfer callback remains accepted"
         )
 
-        let pairingReplacement = RemoteAuthorityGate.pairingAttemptTransition(
-            authoritativeTargetKey: "pairing",
-            remoteConnected: true
-        )
-        expect(pairingReplacement.clearBoundRemoteProjection, "re-pair clears the replaced pairing projection")
-        expect(!pairingReplacement.remoteConnected, "failed re-pair remains disconnected after the old projection was discarded")
-
         expect(
             RemoteAuthorityGate.exactInvalidationMatchesAuthority(
                 expectedTargetKey: "account:device-a",
@@ -223,7 +216,7 @@ struct RemoteAuthorityGateTests {
                 currentTargetKey: "account:device-a",
                 currentEpoch: 7
             ),
-            "terminal pairing failure may invalidate the exact old account authority"
+            "terminal failure may invalidate the exact old account authority"
         )
         expect(
             !RemoteAuthorityGate.exactInvalidationMatchesAuthority(
@@ -232,52 +225,9 @@ struct RemoteAuthorityGateTests {
                 currentTargetKey: "account:device-a",
                 currentEpoch: 8
             ),
-            "terminal pairing failure cannot invalidate a newer account authority"
+            "terminal failure cannot invalidate a newer account authority"
         )
 
-        let capturedAccount = RetainedAccountAuthority(targetKey: "account:device-a", epoch: 7)
-        expect(
-            RemoteAuthorityGate.shouldRetainAccountAfterPairingFailure(
-                captured: capturedAccount,
-                adapterTargetKey: "account:device-a",
-                adapterEpoch: 7,
-                modelTargetKey: "account:device-a",
-                modelEpoch: 7,
-                healthyConnected: true
-            ),
-            "failed pairing retains the explicitly captured healthy authoritative account"
-        )
-        expect(
-            !RemoteAuthorityGate.shouldRetainAccountAfterPairingFailure(
-                captured: capturedAccount,
-                adapterTargetKey: "account:device-a",
-                adapterEpoch: 7,
-                modelTargetKey: "account:device-a",
-                modelEpoch: 7,
-                healthyConnected: false
-            ),
-            "failed account remote cannot be retained by a later pairing failure"
-        )
-        expect(
-            !RemoteAuthorityGate.shouldRetainAccountAfterPairingFailure(
-                captured: capturedAccount,
-                adapterTargetKey: "account:device-a",
-                adapterEpoch: 8,
-                modelTargetKey: "account:device-a",
-                modelEpoch: 7,
-                healthyConnected: true
-            ),
-            "changed adapter epoch cannot retain the captured account"
-        )
-
-        let retainedAccountPairingAttempt = RemoteAuthorityGate.pairingAttemptTransition(
-            authoritativeTargetKey: "account:device-a",
-            remoteConnected: true
-        )
-        expect(
-            !retainedAccountPairingAttempt.clearBoundRemoteProjection,
-            "pairing submission does not invalidate a retained account before its terminal result"
-        )
         expect(
             !RemoteAuthorityGate.fileTransferCallbackMatchesAuthority(
                 requestTargetKey: "account:device-a",
@@ -559,19 +509,6 @@ struct RemoteAuthorityGateTests {
             mutation: "coreAdapter?.disconnect()",
             message: "disconnect invalidates transfers before adapter authority reset"
         )
-        expectInvalidationBeforeMutation(
-            in: modelSource,
-            function: "private func prepareProjectionForPairingSubmission()",
-            mutation: "remoteExpectedDeviceKey = nil",
-            message: "replacing pairing invalidates transfers before old pairing projection is revoked"
-        )
-        expectCallBeforeMutation(
-            in: modelSource,
-            function: "func submitPairing(url: String)",
-            call: "coreAdapter?.resolveDeviceLink(url: url)",
-            mutation: "selectRemoteDevice(device)",
-            message: "QR membership validation precedes the device selection path that invalidates transfers"
-        )
         let remoteSessionSource = readSource(
             iosDirectory.appendingPathComponent("OpenBitFun/Infrastructure/MobileAppModel+RemoteSession.swift")
         )
@@ -603,7 +540,7 @@ struct RemoteAuthorityGateTests {
 
         expect(ComposerSendSettlementPolicy.shouldRestore(
             sentSession: "a", currentSession: "a", acknowledged: false,
-            draftIsEmpty: true, attachmentsAreEmpty: true
+            draftIsEmpty: true, attachmentsAreEmpty: true, draftUnchanged: true
         ), "failed send restores the cleared composer")
         for (session, ack, emptyDraft, emptyImages) in [
             ("a", true, true, true), ("b", false, true, true),
@@ -611,9 +548,34 @@ struct RemoteAuthorityGateTests {
         ] {
             expect(!ComposerSendSettlementPolicy.shouldRestore(
                 sentSession: "a", currentSession: session, acknowledged: ack,
-                draftIsEmpty: emptyDraft, attachmentsAreEmpty: emptyImages
+                draftIsEmpty: emptyDraft, attachmentsAreEmpty: emptyImages, draftUnchanged: true
             ), "send settlement preserves newer typing, attachments and another session")
         }
+        expect(!ComposerSendSettlementPolicy.shouldRestore(
+            sentSession: "a", currentSession: "a", acknowledged: false,
+            draftIsEmpty: true, attachmentsAreEmpty: true, draftUnchanged: false
+        ), "edits later erased, removed attachments and session round trips invalidate restoration")
+        for reason in ["NETWORK", "TIMEOUT", "TRANSPORT"] {
+            expect(RemoteSessionFailureProjectionPolicy.keepsVisibleConversation(reasonName: reason),
+                   "a retryable transport failure keeps the rendered conversation")
+        }
+        // The store maps exactly these reasons to `ConnectionPhase.RECONNECTING`;
+        // everything else is a deterministic end the projection must follow.
+        for reason in [
+            "SESSION_NOT_FOUND", "PROTOCOL_MISMATCH", "NO_WORKSPACE", "REMOTE_REJECTED",
+            "RATE_LIMITED", "WORKSPACE_ID_UNSUPPORTED", "WORKSPACE_ID_UNKNOWN",
+            "HOST_STREAM_UNSUPPORTED",
+        ] {
+            expect(!RemoteSessionFailureProjectionPolicy.keepsVisibleConversation(reasonName: reason),
+                   "a deterministic \(reason) failure ends the projection")
+        }
+        expectCallBeforeMutation(
+            in: remoteSessionSource,
+            function: "func apply(remoteState state: RemoteSessionUiState",
+            call: "RemoteSessionFailureProjectionPolicy.keepsVisibleConversation(",
+            mutation: "timelineRows = []",
+            message: "a retryable remote failure is classified before any projection is cleared"
+        )
         expectCallBeforeMutation(
             in: remoteSessionSource,
             function: "func sendRemote()",

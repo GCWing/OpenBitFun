@@ -67,6 +67,8 @@ static TOKEN_STORE_TEMP_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic:
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReviewPlatformError {
+    #[error("git_unavailable: Git is unavailable. Install Git and ensure it is on PATH in the environment running this workspace, then retry.")]
+    GitUnavailable,
     #[error("Invalid repository path: {0}")]
     InvalidRepository(String),
     #[error("Repository ownership is not trusted: {repository_path}")]
@@ -4655,12 +4657,7 @@ async fn execute_git_command(
         .args(args)
         .output()
         .await
-        .map_err(|error| {
-            ReviewPlatformError::InvalidRepository(format!(
-                "Failed to execute git command: {}",
-                error
-            ))
-        })?;
+        .map_err(|error| git_execution_error(current_dir_path, error))?;
 
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
@@ -4672,6 +4669,14 @@ async fn execute_git_command(
         String::from_utf8_lossy(&output.stderr).to_string()
     };
     Err(classify_git_command_failure(current_dir, message))
+}
+
+fn git_execution_error(current_dir: &Path, error: std::io::Error) -> ReviewPlatformError {
+    // Starting a process also returns NotFound when its working directory is missing.
+    if error.kind() == std::io::ErrorKind::NotFound && current_dir.is_dir() {
+        return ReviewPlatformError::GitUnavailable;
+    }
+    ReviewPlatformError::InvalidRepository(format!("Failed to execute git command: {}", error))
 }
 
 fn review_evidence_error(error: ReviewPlatformError, resource: &str) -> ReviewPlatformError {
@@ -7931,6 +7936,31 @@ mod tests {
             "openbitfun-review-platform-{name}-{}-{id}.json",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn git_execution_errors_distinguish_missing_git_from_workspace_and_permission_failures() {
+        let current_dir = std::env::temp_dir();
+        let missing_dir = temp_token_store_path("missing-workspace");
+        let error = git_execution_error(
+            &current_dir,
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        );
+        assert!(matches!(error, ReviewPlatformError::GitUnavailable));
+        assert!(error.to_string().starts_with("git_unavailable:"));
+        assert!(!error.to_string().contains("Invalid repository path"));
+
+        let error = git_execution_error(
+            &missing_dir,
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        );
+        assert!(matches!(error, ReviewPlatformError::InvalidRepository(_)));
+
+        let error = git_execution_error(
+            &current_dir,
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        );
+        assert!(matches!(error, ReviewPlatformError::InvalidRepository(_)));
     }
 
     fn spawn_single_review_response(response: Vec<u8>) -> String {

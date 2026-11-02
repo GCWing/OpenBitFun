@@ -6,9 +6,8 @@
   @include itemRhythm.apply;
   @include transcriptLayout.content-column;
   /*
-   * The composition assigns one 8px trailing gap to each item, including the
-   * last item across a model-round boundary. Consecutive collapsed ambient
-   * tools have no extra gap, within a round and across virtual rows.
+   * The composition assigns one body-paragraph gap to each item, including
+   * expanded/prominent tools and the last item across virtual-row boundaries.
    *
    * No mount / enter animation lives here on purpose. The list is virtualized:
    * any animation keyed off mount replays whenever an item scrolls back into
@@ -53,6 +52,17 @@
   padding: var(--openbitfun-space-1) 0;
   margin-top: var(--openbitfun-space-1);
 
+  // Keep the measured footer slot and keyboard access when a historical turn rests.
+  &[data-footer-reveal='hover'] {
+    opacity: 0;
+    pointer-events: none;
+
+    &:focus-within, &:has([aria-describedby], [aria-expanded='true']) {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
   // Reserve layout while typewriter catch-up finishes; reveal without resize.
   &--pending {
     visibility: hidden;
@@ -64,14 +74,27 @@
   @include transcriptLayout.metadata-actions;
 }
 
+.model-round-item__usage {
+  margin-inline-end: auto;
+}
+
+.model-round-item__completion {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  margin-inline-start: auto;
+  min-inline-size: 0;
+}
+
 .model-round-item__meta {
   display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--openbitfun-space-2);
   min-width: 0;
-  margin-inline-end: auto;
   color: var(--openbitfun-color-content-muted);
   font-family: var(--openbitfun-type-flow-meta-font-family);
   font-size: var(--openbitfun-type-flow-meta-font-size);
@@ -94,171 +117,39 @@
 
 .model-round-item__retry-history {
   display: flex;
+  min-inline-size: 0;
   flex-direction: column;
-  gap: var(--openbitfun-control-flow-chat-flow-item-gap);
   margin-bottom: var(--openbitfun-control-flow-chat-flow-item-gap);
 }
 
-.model-round-item__retry-toggle {
-  display: inline-block;
-  block-size: auto;
-  border-radius: 0;
-  font-family: inherit;
-  font-weight: inherit;
-  letter-spacing: inherit;
-  white-space: normal;
-  text-decoration: none;
-
-  &::before { content: none; }
-
-  > [data-openbitfun-part='content'] { display: contents; }
-
-  align-self: flex-start;
-  min-block-size: max(1lh, var(--openbitfun-control-tool-card-ambient-row-min-block-size));
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-flow-control-font-size);
-  line-height: var(--openbitfun-type-flow-control-line-height);
-  cursor: pointer;
-  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
-
-  &:hover {
-    color: var(--openbitfun-color-content-primary);
-  }
-
-  &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
-    outline-offset: 2px;
-    border-radius: 3px;
-  }
-}
-
 .model-round-item__retry-attempt {
-  @include itemRhythm.apply($enclosed: true);
-  padding: var(--openbitfun-space-2) 0 0;
-  border-top: 1px solid color-mix(in srgb, var(--openbitfun-color-border-default) 62%, transparent);
-}
-
-.model-round-item__retry-attempt-label {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--openbitfun-space-1);
-  margin-bottom: var(--openbitfun-space-1);
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-flow-meta-font-size);
-  line-height: var(--openbitfun-type-flow-meta-line-height);
-  text-transform: uppercase;
-  letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
-}
-
-.model-round-item__attempt-diagnostic-toggle,
-.model-round-item__attempt-diagnostic-copy {
-  flex-shrink: 1;
-  transition: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--openbitfun-color-content-muted);
-  cursor: pointer;
-
-  &::before { content: none; }
-
-  > [data-openbitfun-part='icon'] {
-    --openbitfun-opacity-icon-artwork: inherit;
-    display: contents;
-  }
-
-  > :where([data-openbitfun-part='icon']) > :where(svg, [data-openbitfun-component='icon']) {
-    inline-size: 13px;
-    block-size: 13px;
-  }
-
-  &:hover {
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
-    color: var(--openbitfun-color-content-primary);
-  }
-
-  &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
-    outline-offset: 1px;
-  }
+  min-inline-size: 0;
 }
 
 .model-round-item__attempt-diagnostic-toggle {
+  inline-size: 100%;
+  justify-content: flex-start;
   color: var(--openbitfun-color-status-warning-content);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  text-align: start;
 }
 
 .model-round-item__attempt-diagnostic-details {
-  display: block;
-  flex: 0 0 100%;
-  width: min(100%, 48rem);
-  margin: 0.2rem 0 0.45rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--openbitfun-color-border-default) 72%, transparent);
-  border-radius: 4px;
-  background: var(--openbitfun-color-surface-panel);
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-flow-support-font-size);
-  font-weight: var(--openbitfun-type-body-sm-font-weight);
-  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
-  line-height: var(--openbitfun-type-flow-support-line-height);
-  text-transform: none;
+  padding-inline: calc(var(--openbitfun-control-button-xs-padding-inline) + var(--openbitfun-border-width-default));
 }
 
-.model-round-item__attempt-diagnostic-category,
-.model-round-item__attempt-diagnostic-section,
-.model-round-item__attempt-diagnostic-tool-title {
-  display: block;
-}
+.model-round-item__retry-attempt-content {
+  @include itemRhythm.apply($enclosed: true);
+  min-inline-size: 0;
 
-.model-round-item__attempt-diagnostic-category {
-  margin-bottom: 0.35rem;
-  color: var(--openbitfun-color-content-primary);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
-}
+  &:empty {
+    display: none;
+  }
 
-.model-round-item__attempt-diagnostic-section + .model-round-item__attempt-diagnostic-section {
-  margin-top: 0.55rem;
-}
-
-.model-round-item__attempt-diagnostic-tool-title {
-  margin-bottom: 0.2rem;
-  color: var(--openbitfun-color-content-primary);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
-}
-
-.model-round-item__attempt-diagnostic-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  min-width: 0;
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-flow-meta-font-size);
-}
-
-.model-round-item__attempt-diagnostic-section pre {
-  max-height: 16rem;
-  margin: 0.2rem 0 0.35rem;
-  padding: 0.45rem;
-  overflow: auto;
-  border-radius: 3px;
-  background: var(--openbitfun-color-surface-tertiary);
-  color: var(--openbitfun-color-content-primary);
-  font-family:var(--openbitfun-type-code-md-font-family);
-  font-size: var(--openbitfun-type-flow-support-font-size);
-  line-height: var(--openbitfun-type-meta-line-height);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  > .model-round-item__retry-history:last-child {
+    margin-bottom: 0;
+  }
 }
 
 .model-round-item__action-btn {
@@ -361,16 +252,7 @@
   }
 }
 
-/* Focus highlight for programmatic "jump to marker" navigation. */
-.flowchat-flow-item.flowchat-flow-item--focused {
-  outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
-  outline-offset: 2px;
-  border-radius: var(--openbitfun-control-flow-chat-card-radius);
-  box-shadow: var(--openbitfun-shadow-accent-glow);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .model-round-item__retry-toggle,
   .model-round-item__action-btn {
     transition-duration: 0ms;
   }

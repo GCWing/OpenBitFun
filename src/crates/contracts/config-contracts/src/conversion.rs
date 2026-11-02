@@ -74,6 +74,9 @@ impl TryFrom<AIModelConfig> for AIConfig {
     type Error = String;
 
     fn try_from(other: AIModelConfig) -> Result<Self, Self::Error> {
+        if crate::protected_account_models::is_guarded_account_model(&other) {
+            return Err("This subscription account binding requires an account-capable OpenBitFun; the original configuration was preserved".into());
+        }
         if !other.supports_text_generation() {
             return Err(format!(
                 "Model '{}' does not support text_chat and cannot be used for text generation",
@@ -81,7 +84,18 @@ impl TryFrom<AIModelConfig> for AIConfig {
             ));
         }
 
-        let custom_request_body = if let Some(body_str) = &other.custom_request_body {
+        if other.max_images_per_request == Some(0) {
+            return Err(format!(
+                "Model '{}' max_images_per_request must be greater than 0",
+                other.name
+            ));
+        }
+
+        let custom_request_body = if let Some(body_str) = other
+            .custom_request_body
+            .as_deref()
+            .filter(|body| !body.trim().is_empty())
+        {
             match serde_json::from_str::<serde_json::Value>(body_str) {
                 Ok(value) => Some(value),
                 Err(e) => {
@@ -95,6 +109,12 @@ impl TryFrom<AIModelConfig> for AIConfig {
         } else {
             None
         };
+
+        crate::normalization::validate_image_budget_request_body(
+            other.max_images_per_request,
+            custom_request_body.as_ref(),
+        )
+        .map_err(|error| format!("Model '{}' {error}", other.name))?;
 
         let request_url = other
             .request_url
@@ -148,6 +168,7 @@ impl TryFrom<AIModelConfig> for AIConfig {
             format: other.provider.clone(),
             context_window,
             max_tokens: Some(max_tokens),
+            max_images_per_request: other.max_images_per_request,
             temperature: other.temperature,
             top_p: other.top_p,
             inline_think_in_text: other.inline_think_in_text,
@@ -244,6 +265,7 @@ mod tests {
             api_key: "key".to_string(),
             context_window: Some(128000),
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             enabled: true,
@@ -259,6 +281,7 @@ mod tests {
             custom_request_body: None,
             custom_request_body_mode: None,
             auth: Default::default(),
+            channel_routing: None,
         }
     }
 
@@ -266,6 +289,139 @@ mod tests {
     fn missing_reasoning_default_does_not_change_runtime_config() {
         let config = AIConfig::try_from(base_model_config()).expect("conversion should succeed");
         assert_eq!(config.model, "test-model");
+    }
+
+    #[test]
+    fn image_budget_preserves_legacy_payloads_and_runtime_round_trips() {
+        let legacy_payload = serde_json::to_value(base_model_config()).unwrap();
+        assert!(legacy_payload.get("max_images_per_request").is_none());
+        let legacy: AIModelConfig = serde_json::from_value(legacy_payload.clone()).unwrap();
+        assert_eq!(legacy.max_images_per_request, None);
+        assert_eq!(serde_json::to_value(&legacy).unwrap(), legacy_payload);
+        let fingerprint = crate::types::model_runtime_binding_fingerprint(&legacy);
+        let mut limited = legacy.clone();
+        limited.max_images_per_request = Some(3);
+        let saved = serde_json::to_value(&limited).unwrap();
+        assert_eq!(saved["max_images_per_request"], 3);
+        let loaded: AIModelConfig = serde_json::from_value(saved).unwrap();
+        let runtime = AIConfig::try_from(loaded).unwrap();
+        assert_eq!(runtime.max_images_per_request, Some(3));
+        let runtime_payload = serde_json::to_value(runtime).unwrap();
+        let restored: AIConfig = serde_json::from_value(runtime_payload).unwrap();
+        assert_eq!(restored.max_images_per_request, Some(3));
+        assert_ne!(
+            crate::types::model_runtime_binding_fingerprint(&limited),
+            fingerprint
+        );
+        limited.max_images_per_request = None;
+        assert_eq!(
+            crate::types::model_runtime_binding_fingerprint(&limited),
+            fingerprint
+        );
+
+        let runtime = AIConfig::try_from(legacy).unwrap();
+        let payload = serde_json::to_value(runtime).unwrap();
+        assert!(payload.get("max_images_per_request").is_none());
+        let restored: AIConfig = serde_json::from_value(payload).unwrap();
+        assert_eq!(restored.max_images_per_request, None);
+    }
+
+    #[test]
+    fn image_budget_rejects_zero_without_discarding_model_configuration() {
+        let mut model = base_model_config();
+        model.max_images_per_request = Some(0);
+        assert!(crate::normalization::validate_model_config(&model, 0)
+            .unwrap_err()
+            .contains("max_images_per_request"));
+        assert!(AIConfig::try_from(model.clone())
+            .unwrap_err()
+            .contains("max_images_per_request"));
+        let mut config = crate::GlobalConfig::default();
+        config.ai.models.push(model.clone());
+        crate::normalization::recover_persisted_config(&mut config);
+        assert_eq!(config.ai.models.len(), 1);
+        assert!(!config.ai.models[0].enabled);
+        assert_eq!(config.ai.models[0].api_key, model.api_key);
+        assert_eq!(config.ai.models[0].max_images_per_request, Some(0));
+    }
+
+    #[test]
+    fn image_budget_rejects_wire_message_overrides_but_keeps_other_custom_options() {
+        for key in ["messages", "input", "contents"] {
+            let mut model = base_model_config();
+            model.custom_request_body = Some(serde_json::json!({key: []}).to_string());
+            assert!(
+                AIConfig::try_from(model.clone()).is_ok(),
+                "legacy override: {key}"
+            );
+            model.max_images_per_request = Some(3);
+            assert!(crate::normalization::validate_model_config(&model, 0)
+                .unwrap_err()
+                .contains("custom_request_body"));
+            assert!(AIConfig::try_from(model)
+                .unwrap_err()
+                .contains("custom_request_body"));
+        }
+        let mut model = base_model_config();
+        model.max_images_per_request = Some(3);
+        model.custom_request_body = Some(r#"{"temperature":0.2}"#.into());
+        assert!(crate::normalization::validate_model_config(&model, 0).is_ok());
+        assert_eq!(
+            AIConfig::try_from(model)
+                .unwrap()
+                .custom_request_body
+                .unwrap()["temperature"],
+            0.2
+        );
+    }
+
+    #[test]
+    fn accepts_legacy_missing_null_and_blank_custom_request_bodies() {
+        for body in [
+            None,
+            Some(serde_json::Value::Null),
+            Some("".into()),
+            Some(" \n\t ".into()),
+        ] {
+            let mut payload = serde_json::to_value(base_model_config()).unwrap();
+            payload
+                .as_object_mut()
+                .unwrap()
+                .remove("custom_request_body");
+            if let Some(body) = body {
+                payload["custom_request_body"] = body;
+            }
+            let model: AIModelConfig = serde_json::from_value(payload).unwrap();
+            let round_trip: AIModelConfig =
+                serde_json::from_value(serde_json::to_value(model).unwrap()).unwrap();
+            let config =
+                AIConfig::try_from(round_trip).expect("legacy config should remain usable");
+            assert_eq!(config.custom_request_body, None);
+        }
+    }
+
+    #[test]
+    fn preserves_non_empty_custom_request_body_and_mode() {
+        let mut model = base_model_config();
+        model.custom_request_body = Some(" \n{\"temperature\":0.2}\n ".to_string());
+        model.custom_request_body_mode = Some("trim".to_string());
+
+        let config = AIConfig::try_from(model).expect("conversion should succeed");
+        assert_eq!(
+            config.custom_request_body,
+            Some(serde_json::json!({"temperature": 0.2}))
+        );
+        assert_eq!(config.custom_request_body_mode.as_deref(), Some("trim"));
+    }
+
+    #[test]
+    fn ignores_malformed_non_empty_custom_request_body() {
+        let mut model = base_model_config();
+        model.custom_request_body = Some("{".to_string());
+
+        let config =
+            AIConfig::try_from(model).expect("existing parse fallback should remain usable");
+        assert_eq!(config.custom_request_body, None);
     }
 
     #[test]

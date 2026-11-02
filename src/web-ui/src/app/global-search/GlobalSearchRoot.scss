@@ -1,18 +1,122 @@
 @use '../styles/nav-panel-font-scope.scss' as nav-font;
 @use '../styles/workspace-shell-surfaces' as shell-surfaces;
 
+/*
+ * A lucide chevron inks only the middle of its square box -- the path spans
+ * x 9..15 in a 24 viewBox, so roughly 34% of the box stays empty on each side
+ * (about 5px at the 14-15px chevrons this surface renders). A pill whose
+ * chevron meets its inline padding has to cancel that slack, otherwise the
+ * chevron end reads wider than the text end even though the padding is even.
+ */
+$chevron-box-slack: 5px;
+
+.global-search-overlay {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  // An opacity-animated ancestor would isolate the dialog's backdrop filter.
+  animation: none;
+}
+
 .global-search-dialog {
+  isolation: isolate;
+  // The material and content clip themselves; the elevation layer stays outside.
+  overflow: visible;
+  // Keep ancestor opacity at 1 so the glass layer can sample the page backdrop.
+  animation-name: global-search-surface-enter;
+
+  &[data-state='exiting'] {
+    animation-name: global-search-surface-exit;
+  }
+
   // The results viewport absorbs short windows and longer result sets.
-  inline-size: var(--openbitfun-layout-search-dialog-width);
+  inline-size: min(
+    var(--openbitfun-layout-search-dialog-width),
+    calc(100vw - 2 * var(--openbitfun-overlay-dialog-viewport-gutter))
+  );
   block-size: min(
     var(--openbitfun-layout-search-dialog-height),
     calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter))
   );
 }
 
+@keyframes global-search-surface-enter {
+  from { transform: translateY(var(--openbitfun-motion-distance-sm)) scale(0.98); }
+  to { transform: none; }
+}
+
+@keyframes global-search-surface-exit {
+  from { transform: none; }
+  to { transform: translateY(var(--openbitfun-motion-distance-sm)) scale(0.98); }
+}
+
+.global-search-dialog__material {
+  display: none;
+}
+
+@supports (backdrop-filter: none) or (-webkit-backdrop-filter: none) {
+  .global-search-dialog {
+    // The outer surface owns elevation; only the glass layer is clipped.
+    background: transparent;
+    box-shadow: var(--openbitfun-shadow-inner-highlight-hover), var(--openbitfun-shadow-overlay);
+  }
+
+  .global-search-dialog__material {
+    display: block;
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    border-radius: inherit;
+    clip-path: inset(0 round var(--openbitfun-overlay-dialog-surface-radius));
+    background: color-mix(
+      in srgb,
+      color-mix(in srgb, var(--openbitfun-color-surface-raised) 90%, var(--openbitfun-color-content-on-dark)) 58%,
+      transparent
+    );
+    -webkit-backdrop-filter: var(--openbitfun-effect-blur-strong);
+    backdrop-filter: var(--openbitfun-effect-blur-strong);
+    // Retain the glass plane when hover marquees promote content to new layers.
+    transform: translateZ(0);
+    pointer-events: none;
+  }
+}
+
+:where([data-contrast='high']) .global-search-dialog {
+  background: var(--openbitfun-color-surface-raised);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+
+  .global-search-dialog__material { display: none; }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .global-search-dialog {
+    background: var(--openbitfun-color-surface-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+
+    .global-search-dialog__material { display: none; }
+  }
+}
+
+@media (forced-colors: active) {
+  .global-search-dialog {
+    background: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+
+    .global-search-dialog__material { display: none; }
+  }
+}
+
 .global-search-modal-content {
+  position: relative;
+  z-index: 1;
   display: flex;
+  // Hover animations repaint only the content plane, away from the glass edges.
+  contain: paint;
   overflow: hidden;
+  border-radius: inherit;
 }
 
 .global-search {
@@ -131,11 +235,19 @@
   &__detail-back {
     min-height: 28px;
     gap: 3px;
-    margin-left: -5px;
-    padding: 3px 6px 3px 4px;
+    /*
+     * No optical negative offset here: the modal host gives the results
+     * viewport no inline-start padding above 980px, so a leading negative
+     * margin crosses the clip line and chops the pill's leading radius.
+     */
+    padding: 3px 6px;
     border-radius: 7px;
     font-size: var(--openbitfun-type-label-sm-font-size);
     font-weight: var(--openbitfun-type-label-sm-font-weight);
+
+    > [data-openbitfun-component='icon'] {
+      margin-inline-start: -$chevron-box-slack;
+    }
   }
 
   &__detail-heading {
@@ -170,6 +282,16 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     margin-top: 8px;
+  }
+
+  &__result-row {
+    min-width: 0;
+  }
+
+  &__result-row > [role='gridcell'],
+  &__result-row .global-search__action-card {
+    width: 100%;
+    height: 100%;
   }
 
   &__result {
@@ -484,8 +606,7 @@
   }
 }
 
-// Modal and embedded hosts share one design-system presentation. Their host
-// variants only control lifecycle and responsive layout behavior.
+// Modal and embedded hosts share design-system search and result primitives.
 .global-search--modal,
 .global-search--embedded {
   --global-search-surface: var(--openbitfun-color-surface-raised);
@@ -497,6 +618,12 @@
   color: var(--openbitfun-color-content-primary);
   font-family:var(--openbitfun-type-body-sm-font-family);
 
+  .global-search__header {
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--openbitfun-layout-search-dialog-scope-gap);
+  }
+
   .global-search__query-system-shell,
   .global-search__query--system {
     width: 100%;
@@ -505,7 +632,6 @@
   .global-search__scope-bar {
     display: flex;
     min-width: 0;
-    margin-top: var(--openbitfun-layout-search-dialog-scope-gap);
   }
 
   .global-search__results {
@@ -529,11 +655,30 @@
     font-size: var(--openbitfun-type-body-md-font-size);
   }
 
-  .global-search__group,
+  .global-search__group {
+    min-width: 0;
+  }
+
+  /*
+   * Groups only stack in flow while the overview grid is inactive -- a query or
+   * a drilldown. Those states still need the shared flow gap: the old blanket
+   * `margin-top: 0` left the next group's title sitting on the previous group.
+   * Above 700px the overview grid keeps owning its own separation through its
+   * row gap, which uses the same token.
+   */
   .global-search__group + .global-search__group,
   .global-search__group--assistants {
-    min-width: 0;
-    margin-top: 0 !important;
+    margin-top: var(--openbitfun-space-4) !important;
+  }
+
+  @media (min-width: 701px) {
+    .global-search__results[data-search-state='default'][data-search-view='overview'] {
+      .global-search__group,
+      .global-search__group + .global-search__group,
+      .global-search__group--assistants {
+        margin-top: 0 !important;
+      }
+    }
   }
 
   .global-search__group--actions,
@@ -569,14 +714,23 @@
     font-weight: var(--openbitfun-type-body-sm-font-weight);
   }
 
+  /*
+   * The hover pill paints its own background, and the results viewport has no
+   * inline-start padding to bleed a negative optical offset into, so the pill
+   * keeps real inline padding and its count sits inside the group title.
+   */
   .global-search__group-drilldown {
     min-height: 0;
     margin: 0;
-    padding: 0;
+    padding: 0 var(--openbitfun-space-1);
     gap: var(--openbitfun-space-1);
     color: inherit;
     font-size: inherit;
     font-weight: inherit;
+
+    > [data-openbitfun-component='icon'] {
+      margin-inline-end: -$chevron-box-slack;
+    }
   }
 
   .global-search__group-items {
@@ -732,10 +886,6 @@
 }
 
 @media (max-width: 700px) {
-  .global-search-modal-content {
-    padding: var(--openbitfun-space-3);
-  }
-
   .global-search--modal {
 
     .global-search__results {
@@ -772,26 +922,52 @@
 }
 
 /*
- * DialogBody provides the modal's content inset. Its nested results viewport
- * must still reach the surface's inline-end edge, so transfer only that inset
- * to the viewport's content-bearing regions.
+ * The query row and its divider span the dialog. Content regions own their
+ * insets so the results scrollbar still reaches the surface's inline-end edge.
  */
 .global-search-modal-content {
   --global-search-modal-inline-end-inset: var(--openbitfun-layout-search-dialog-padding);
 
-  padding: var(--openbitfun-layout-search-dialog-padding);
-
+  padding: 0;
+  padding-block-end: var(--global-search-modal-inline-end-inset);
   padding-inline-end: 0;
 }
 
 .global-search--modal {
-  .global-search__query-system-shell {
-    --openbitfun-control-search-field-height-sm: var(--openbitfun-layout-search-dialog-query-height);
+  container-type: inline-size;
+
+  .global-search__result:hover:not(.is-selected) {
+    border-color: transparent;
   }
 
-  > .global-search__header,
+  .global-search__action-card:hover:not([data-selected='true']) {
+    outline-color: transparent;
+  }
+
+  .global-search__query-system-shell {
+    display: flex;
+    min-inline-size: 0;
+    box-sizing: border-box;
+    padding-block: var(--openbitfun-space-component-block);
+    padding-inline: var(--global-search-modal-inline-end-inset);
+    border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+
+    &:focus-within {
+      border-block-end-color: var(--openbitfun-color-border-default);
+    }
+  }
+
+  .global-search__query--system {
+    block-size: var(--openbitfun-control-search-field-height-sm);
+  }
+
+  .global-search__scope-bar {
+    padding-inline: var(--global-search-modal-inline-end-inset);
+  }
+
   > .global-search__results,
   > .global-search__footer {
+    padding-inline-start: var(--global-search-modal-inline-end-inset);
     padding-inline-end: var(--global-search-modal-inline-end-inset);
   }
 }
@@ -799,8 +975,6 @@
 @media (max-width: 700px) {
   .global-search-modal-content {
     --global-search-modal-inline-end-inset: var(--openbitfun-space-3);
-    padding: var(--openbitfun-space-3);
-    padding-inline-end: 0;
   }
 }
 
@@ -832,4 +1006,109 @@
       display: none;
     }
   }
+}
+
+// Queried cards use the host's available width; the default overview keeps its layout.
+.global-search--modal,
+.global-search--embedded {
+  .global-search__group-items[data-search-layout='cards'] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--openbitfun-space-3);
+  }
+}
+
+@container (max-width: 600px) {
+  .global-search--modal,
+  .global-search--embedded {
+    .global-search__group-items[data-search-layout='cards'] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+}
+
+@container (max-width: 420px) {
+  .global-search--modal,
+  .global-search--embedded {
+    .global-search__group-items[data-search-layout='cards'] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+.global-search__diagnostics {
+  min-width: 0;
+  margin-right: auto;
+  color: var(--openbitfun-color-content-muted);
+}
+
+.global-search__diagnostics-summary {
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-meta-font-size);
+  margin-left: -6px;
+
+  &[aria-expanded='true'] {
+    background: var(--openbitfun-color-action-quiet-hover);
+    color: var(--openbitfun-color-content-primary);
+  }
+}
+
+.global-search__diagnostics-icon {
+  flex: 0 0 auto;
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.global-search__diagnostics-panel {
+  position: fixed;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(280px, calc(100vw - 16px));
+  max-width: min(480px, calc(100vw - 16px));
+  max-height: min(240px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 10px 14px;
+  background: var(--openbitfun-color-surface-raised);
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-md);
+  box-shadow: var(--openbitfun-shadow-overlay);
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-meta-font-size);
+}
+
+.global-search__diagnostic-target {
+  margin-block-end: 8px;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-meta-font-size);
+}
+
+.global-search__diagnostic {
+  padding-block: 8px;
+  border-top: 1px solid var(--openbitfun-color-border-subtle);
+  overflow-wrap: anywhere;
+
+  strong {
+    color: var(--openbitfun-color-content-primary);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+  }
+
+  p {
+    margin-block: 4px 8px;
+    color: var(--openbitfun-color-content-secondary);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+}
+
+.global-search__diagnostic-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.global-search__diagnostic-path {
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-code-sm-font-family);
+  font-size: var(--openbitfun-type-micro-font-size);
+  margin-block-start: 2px;
 }

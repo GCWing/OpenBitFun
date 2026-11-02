@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   workspaceId: 'workspace-a' as string | null,
   workspacePath: '/workspace',
   peerDeviceId: '',
+  sessionMounts: 0,
   skills: [] as Array<Record<string, unknown>>,
   t: (key: string, values?: Record<string, unknown>) => key === 'productSummary.assets' ? `assets:${values?.count}` : key,
 }));
@@ -36,22 +37,19 @@ vi.mock('./ecosystemCompatibilityStore', () => ({
 }));
 vi.mock('@openbitfun/ui', async () => {
   const { createElement, forwardRef } = await import('react');
-  const { Alert, Switch, Tooltip } = await vi.importActual<typeof import('@openbitfun/ui')>('@openbitfun/ui');
+  const { Alert, Button, FieldGroup, FormSection, SegmentedControl, Switch, ToolbarGroup, ToolbarSeparator, Tooltip } = await vi.importActual<typeof import('@openbitfun/ui')>('@openbitfun/ui');
   const Wrapper = forwardRef<HTMLDivElement, { children?: React.ReactNode }>(
     ({ children }, ref) => createElement('div', { ref }, children),
   );
   return {
-    Alert,
-    ...Object.fromEntries(['LoadingState', 'NavigationPanel', 'NavigationPanelBody', 'NavigationPanelContent',
-      'NavigationPanelFooter', 'NavigationPanelHeader', 'NavigationPanelSection',
+    Alert, Button, FieldGroup, FormSection, SegmentedControl,
+    ...Object.fromEntries(['LoadingState',
       'OverflowText', 'ScrollArea', 'SearchField', 'Select', 'StatusPill', 'Textarea', 'DialogBody', 'DialogFooter', 'DialogHeader', 'DialogHeaderActions', 'DialogDescription', 'DialogHeading', 'DialogTitle'].map((name) => [name, Wrapper])),
-    Switch, Tooltip,
-    NavigationPanelItem: ({ children, title, 'data-product-id': productId }: React.HTMLAttributes<HTMLDivElement> & { 'data-product-id'?: string }) => createElement('div', { title, 'data-product-id': productId }, children),
+    Switch, ToolbarGroup, ToolbarSeparator, Tooltip,
     IconButton: ({ icon, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: React.ReactNode }) => createElement('button', props, icon),
     Checkbox: ({ size: _size, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => createElement('input', { type: 'checkbox', ...props }),
     Icon: () => null, DialogClose: () => null,
     Dialog: ({ open, children, 'data-ecosystem-category': category }: { open: boolean; children?: React.ReactNode; 'data-ecosystem-category'?: string }) => open ? createElement('div', { role: 'dialog', 'data-ecosystem-category': category }, children) : null,
-    Button: ({ children, onClick, disabled, 'aria-label': label }: React.ButtonHTMLAttributes<HTMLButtonElement>) => createElement('button', { onClick, disabled, 'aria-label': label }, children),
   };
 });
 
@@ -63,6 +61,13 @@ vi.mock('@/infrastructure/config/services/AIExperienceConfigService', () => ({ a
   addChangeListener: () => () => {},
 } }));
 vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => true }));
+vi.mock('./ExternalAgentSessions', async () => {
+  const { useState } = await import('react');
+  return { default: function SessionDiscovery({ ecosystemId }: { ecosystemId: string }) {
+    const [mount] = useState(() => ++mocks.sessionMounts);
+    return <section data-session-mount={mount} data-session-source={ecosystemId} />;
+  } };
+});
 vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({ configAPI: { getGlobalSkillSettings: async () => ({ directSkillManagementVersion: 1, globallyDisabledUserSkillKeys: [], globallyDisabledProjectSkillKeys: [] }), getConfig: async () => ({ enable_agent_companion: false }), getSkillScanReport: async () => ({ skills: mocks.skills, diagnostics: [] }) } }));
 vi.mock('@/infrastructure/api/service-api/ExternalHooksAPI', () => ({ externalHooksAPI: {
   getCatalog: async () => ({ sources: [], entries: [], providers: [], failedProviderIds: [], discoveryPending: false }),
@@ -108,6 +113,7 @@ describe('compatibility discovery lifecycle', () => {
     mocks.workspaceId = 'workspace-a';
     mocks.workspacePath = '/workspace';
     mocks.peerDeviceId = '';
+    mocks.sessionMounts = 0;
     mocks.skills = [];
     container = document.createElement('div');
     document.body.append(container);
@@ -125,6 +131,36 @@ describe('compatibility discovery lifecycle', () => {
     const trigger = container.querySelector<HTMLButtonElement>('[data-content-group="mcp"] button[aria-haspopup="dialog"]');
     if (trigger && !container.querySelector('[data-ecosystem-category="mcp"]')) await act(async () => trigger.click());
   }
+
+  it('preserves the host session discovery control when navigation switches workspace', async () => {
+    mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(true, false, true));
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    const sessions = container.querySelector('[data-session-mount]');
+    const content = container.querySelector('[data-external-agent-content]');
+    expect(sessions).not.toBeNull();
+    expect(sessions?.parentElement).toBe(content?.parentElement);
+    mocks.workspaceId = 'imported-source-workspace';
+    mocks.workspacePath = '/imported-source';
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    expect(container.querySelector('[data-session-mount]')).toBe(sessions);
+    expect(mocks.sessionMounts).toBe(1);
+    expect(container.querySelector('[data-external-agent-content]')).not.toBe(content);
+  });
+
+  it('switches between Codex and Zcode with isolated discovery controls', async () => {
+    mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(true));
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    const codexView = container.querySelector('[data-session-source="codex"]');
+    mocks.selectedProductId = 'zcode';
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    expect(container.querySelector('[data-session-source="zcode"]')).not.toBeNull();
+    expect(container.querySelector('[data-session-source="codex"]')).toBeNull();
+    expect(container.querySelector('[data-session-mount]')).not.toBe(codexView);
+    expect(container.querySelector('[data-external-agent-content="zcode"]')).not.toBeNull();
+    mocks.peerDeviceId = 'peer-other';
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    expect(container.querySelector('[data-session-source="zcode"]')).not.toBeNull();
+  });
 
   it('uses the Cursor brand mark and does not present shared directories as agents', async () => {
     mocks.selectedProductId = 'cursor';
@@ -267,6 +303,32 @@ describe('compatibility discovery lifecycle', () => {
     expect(discoverySwitch().disabled).toBe(false);
   });
 
+  it('prepares imports from the header and discards the pending review after switching to a peer', async () => {
+    mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(true, false, true));
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    const headerButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.ecosystem-compatibility__product-header button'));
+    expect(headerButtons().map((button) => button.textContent)).toEqual([
+      'run.openManager', 'content.importAll', 'content.undoAll', 'content.refresh',
+    ]);
+    expect(container.querySelector('[data-external-agent-content] h2')).toBeNull();
+    expect(container.textContent).not.toContain('content.description');
+    expect(headerButtons()[2].disabled).toBe(true);
+
+    let resolvePlan!: (plan: ExternalMcpImportPlanV1) => void;
+    mocks.planMcpImport.mockImplementationOnce(() => new Promise((resolve) => { resolvePlan = resolve; }));
+    await act(async () => headerButtons()[1].click());
+    expect(headerButtons()[1].disabled).toBe(true);
+    expect(headerButtons()[3].disabled).toBe(true);
+    expect(mocks.applyMcpImport).not.toHaveBeenCalled();
+
+    mocks.peerDeviceId = 'peer-host';
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    expect(headerButtons().map((button) => button.textContent)).toEqual(['run.openManager', 'content.refresh']);
+    await act(async () => resolvePlan({ schemaVersion: 1, planFingerprint: 'old-host', items: [] }));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(mocks.applyMcpImport).not.toHaveBeenCalled();
+  });
+
   it('collects the completed MCP scan without requiring a manual refresh', async () => {
     mocks.getDiscoverySnapshot.mockResolvedValueOnce(snapshot(true, true)).mockResolvedValue(snapshot(true, false, true));
     await renderMcp();
@@ -384,7 +446,8 @@ describe('compatibility discovery lifecycle', () => {
     mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(true, false, true));
     await renderMcp();
     expect(container.querySelector('[data-product-id="codex"]')?.getAttribute('title')).toBe('Codex · assets:2');
-    expect(container.textContent).toContain('host.local');
+    expect(container.textContent).not.toContain('header.executionHost');
+    expect(container.textContent).not.toContain('host.local');
     expect(container.textContent).not.toContain('host.remote');
     mocks.ownerSurface = 'external-sources';
     await act(async () => root.render(<EcosystemCompatibilityScene />));

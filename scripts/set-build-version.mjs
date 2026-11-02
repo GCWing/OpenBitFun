@@ -51,22 +51,6 @@ export function setBuildVersion(root, version) {
     );
   }
 
-  replaceVersion(
-    path.join(root, 'src/apps/mobile/android/app/build.gradle.kts'),
-    /^(\s*versionName\s*=\s*")[^"]+(".*)$/m,
-    `$1${version}$2`,
-  );
-  replaceVersion(
-    path.join(root, 'src/apps/mobile/ios/OpenBitFun/Info.plist'),
-    /(<key>CFBundleShortVersionString<\/key>\s*<string>)[^<]+(<\/string>)/m,
-    `$1${version}$2`,
-  );
-  replaceVersion(
-    path.join(root, 'src/apps/mobile/harmonyos/AppScope/app.json5'),
-    /^(\s*"versionName"\s*:\s*")[^"]+(".*)$/m,
-    `$1${version}$2`,
-  );
-
   syncCargoLock(root);
 }
 

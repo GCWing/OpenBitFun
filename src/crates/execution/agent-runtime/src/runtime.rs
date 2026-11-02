@@ -1340,6 +1340,37 @@ impl AgentRuntime {
             .map_err(RuntimeError::from)
     }
 
+    pub async fn update_session_model_target(
+        &self,
+        session_id: &str,
+        selection: openbitfun_core_types::model_pool::ModelSelection,
+    ) -> Result<openbitfun_core_types::model_pool::SessionModelTarget, RuntimeError> {
+        let port = self.session_model.as_ref().ok_or_else(|| {
+            RuntimeError::Port(PortError::new(
+                PortErrorKind::NotAvailable,
+                "agent session model port is not registered",
+            ))
+        })?;
+        port.update_session_model_target(session_id, selection)
+            .await
+            .map_err(RuntimeError::from)
+    }
+
+    pub async fn get_session_model_target(
+        &self,
+        session_id: &str,
+    ) -> Result<openbitfun_core_types::model_pool::SessionModelTarget, RuntimeError> {
+        let port = self.session_model.as_ref().ok_or_else(|| {
+            RuntimeError::Port(PortError::new(
+                PortErrorKind::NotAvailable,
+                "agent session model port is not registered",
+            ))
+        })?;
+        port.get_session_model_target(session_id)
+            .await
+            .map_err(RuntimeError::from)
+    }
+
     pub async fn update_session_model_selection(
         &self,
         request: AgentSessionModelSelectionUpdateRequest,
@@ -1603,6 +1634,26 @@ impl AgentRuntime {
             .submit_message(request)
             .await
             .map_err(RuntimeError::from)
+    }
+
+    pub async fn manage_dialog_queue(
+        &self,
+        request: openbitfun_runtime_ports::DialogQueueRequest,
+    ) -> Result<openbitfun_runtime_ports::DialogQueueSnapshot, RuntimeError> {
+        let session_id = request.session_id.clone();
+        let result = self
+            .dialog_turn
+            .as_ref()
+            .ok_or(RuntimeError::MissingDialogTurnPort)?
+            .manage_dialog_queue(request)
+            .await
+            .map_err(RuntimeError::from)?;
+        if result.session_id != session_id {
+            return Err(
+                PortError::new(PortErrorKind::Backend, "Queue session identity mismatch").into(),
+            );
+        }
+        Ok(result)
     }
 
     pub async fn submit_dialog_turn(

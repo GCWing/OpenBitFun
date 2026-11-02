@@ -1,5 +1,6 @@
 package com.openbitfun.mobile.core.feature.session
 
+import com.openbitfun.mobile.core.domain.ChatTranscriptOrigin
 import com.openbitfun.mobile.core.domain.RemoteSession
 import com.openbitfun.mobile.core.feature.connection.ConnectionPhase
 import com.openbitfun.mobile.core.persistence.ChatLocalStore
@@ -183,10 +184,60 @@ class RemoteSessionPersistenceTest {
         }
         val store = RemoteSessionStore.create(this, transport, "device-a", stores.stores)
         store.dispatch(RemoteSessionIntent.Open("server")); runCurrent()
-        assertEquals(1, stores.transcripts.replaces)
+        assertEquals(1, stores.transcripts.writes)
         val timeline = assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline
         assertEquals("msg 7", timeline?.persistedMessages?.last()?.text)
         store.stop()
+    }
+
+    @Test
+    fun aHistoryPageWritesTheTranscriptOnceWhenItSettles() = runTest {
+        // A page prepends to the transcript window, so no already written row can be
+        // reused and every record of the burst would rewrite all of it — on the
+        // thread that draws the screen. The page lands once, when its read settles.
+        val stores = MemoryPersistence()
+        val transport = PersistenceTransport().apply {
+            initialRecords = listOf(
+                richRecord("server", "t-new", 1, 1, "completed", "newest"),
+                buildJsonObject {
+                    put("session_id", "server"); put("event", "relay://session-ready")
+                    put("payload", buildJsonObject { put("hasMore", true) })
+                },
+            )
+        }
+        val store = RemoteSessionStore.create(this, transport, "device-a", stores.stores)
+        store.dispatch(RemoteSessionIntent.Open("server")); runCurrent()
+        val afterOpen = stores.transcripts.writes
+        val beforePage = assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline
+        val page = CompletableDeferred<Unit>()
+        transport.loadOlderGate = page
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages); runCurrent()
+        transport.records.emit(buildJsonObject {
+            put("session_id", "server"); put("event", "relay://session-history-started")
+            put("payload", buildJsonObject {})
+        })
+        val complete = richRecord("server", "t-old-0", 0, 1, "completed", "older 0")
+        val header = JsonObject(complete + ("payload" to JsonObject(complete.getValue("payload").jsonObject
+            .filterKeys { it != "round" && it != "item" } + ("id" to JsonPrimitive("turn/t-old-0")))))
+        transport.records.emit(header); runCurrent()
+        assertEquals(beforePage, assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline,
+            "A turn header must not expose the user bubble before the reply in the same page")
+        (0 until 6).forEach { index ->
+            transport.records.emit(richRecord("server", "t-old-$index", 0, 1, "completed", "older $index"))
+            runCurrent()
+            assertEquals(beforePage, assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline,
+                "History records must be reduced without publishing intermediate user/assistant rows")
+        }
+        transport.records.emit(buildJsonObject {
+            put("session_id", "server"); put("event", "relay://session-ready")
+            put("payload", buildJsonObject { put("hasMore", false) })
+        })
+        runCurrent()
+        assertEquals(afterOpen, stores.transcripts.writes, "A page in flight must not rewrite the transcript per record")
+        page.complete(Unit); runCurrent()
+        assertEquals(afterOpen + 1, stores.transcripts.writes)
+        assertTrue(stores.transcripts.rows.getValue("device-a::server").any { it.text == "older 5" })
+        store.dispatch(RemoteSessionIntent.Stop)
     }
 
     @Test
@@ -197,16 +248,16 @@ class RemoteSessionPersistenceTest {
         }
         val store = RemoteSessionStore.create(this, transport, "device-a", stores.stores)
         store.dispatch(RemoteSessionIntent.Open("server")); runCurrent()
-        val afterOpen = stores.transcripts.replaces
+        val afterOpen = stores.transcripts.writes
         (2..6).forEach { revision ->
             transport.records.emit(richRecord("server", "t-2", 1, revision.toLong(), "inprogress", "chunk $revision"))
             runCurrent()
         }
-        assertEquals(afterOpen, stores.transcripts.replaces)
+        assertEquals(afterOpen, stores.transcripts.writes)
         advanceTimeBy(600); runCurrent()
-        assertEquals(afterOpen + 1, stores.transcripts.replaces)
+        assertEquals(afterOpen + 1, stores.transcripts.writes)
         transport.records.emit(richRecord("server", "t-2", 1, 7, "completed", "chunk done")); runCurrent()
-        assertEquals(afterOpen + 2, stores.transcripts.replaces)
+        assertEquals(afterOpen + 2, stores.transcripts.writes)
         assertEquals("chunk done", stores.transcripts.rows.getValue("device-a::server").last().text)
         store.stop()
     }
@@ -409,6 +460,55 @@ class RemoteSessionPersistenceTest {
         store.stop()
     }
 
+    /**
+     * A reopened session immediately shows this device's stored copy, but that
+     * copy is not the host's transcript: it stops wherever its last write
+     * stopped, which is inside the turn that was running when the app went away.
+     * Presenting it as the session is what made a reopen show a lone user
+     * message as the whole conversation, so the state has to say where the rows
+     * came from and only stop saying "waiting" once the host has answered.
+     */
+    @Test
+    fun aRestoredTranscriptIsThisDevicesCopyUntilTheHostAnswers() = runTest {
+        val stores = MemoryPersistence()
+        stores.transcripts.rows["device-a::server"] = listOf(
+            PersistedRemoteMessage(messageId = "m-user", sessionId = "server", role = "user", text = "do the thing"),
+        )
+        val transport = PersistenceTransport().apply {
+            subscribeGate = CompletableDeferred()
+            initialRecords = listOf(richRecord("server", "t-1", 0, 1, "completed", "done"))
+        }
+        val store = RemoteSessionStore.create(this, transport, "device-a", stores.stores)
+
+        store.dispatch(RemoteSessionIntent.Open("server")); runCurrent()
+        val restored = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(listOf("do the thing"), restored.timeline?.persistedMessages?.map { it.text })
+        assertEquals(ChatTranscriptOrigin.CACHE, restored.timeline?.origin)
+
+        transport.subscribeGate!!.complete(Unit); runCurrent()
+        val fromHost = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(ChatTranscriptOrigin.HOST, fromHost.timeline?.origin)
+        assertEquals("done", fromHost.timeline?.persistedMessages?.last()?.text)
+        store.stop()
+    }
+
+    @Test
+    fun aRestoredTranscriptIsNotWrittenBackBeforeTheHostAnswers() = runTest {
+        val stores = MemoryPersistence()
+        val stored = listOf(
+            PersistedRemoteMessage(messageId = "m-user", sessionId = "server", role = "user", text = "do the thing"),
+        )
+        stores.transcripts.rows["device-a::server"] = stored
+        val transport = PersistenceTransport().apply { subscribeGate = CompletableDeferred() }
+        val store = RemoteSessionStore.create(this, transport, "device-a", stores.stores)
+
+        store.dispatch(RemoteSessionIntent.Open("server")); runCurrent()
+
+        assertEquals(0, stores.transcripts.writes)
+        assertEquals(stored, stores.transcripts.rows["device-a::server"])
+        store.stop()
+    }
+
     @Test
     fun corruptedPayloadIsRetainedAsDegradedMessage() = runTest {
         val stores = MemoryPersistence()
@@ -472,10 +572,14 @@ private class MemorySessions : RemoteSessionListStore {
 private class MemoryTranscripts : RemoteTranscriptStore {
     val rows = mutableMapOf<String, List<PersistedRemoteMessage>>()
     val cursors = mutableMapOf<String, PersistedRemoteCursor>()
-    var replaces = 0
+    var writes = 0
     override fun load(deviceKey: String, sessionId: String) = rows["$deviceKey::$sessionId"].orEmpty()
-    override fun append(deviceKey: String, sessionId: String, startSeq: Int, messages: List<PersistedRemoteMessage>) = Unit
-    override fun replace(deviceKey: String, sessionId: String, messages: List<PersistedRemoteMessage>) { replaces++; rows["$deviceKey::$sessionId"] = messages }
+    override fun append(deviceKey: String, sessionId: String, startSeq: Int, messages: List<PersistedRemoteMessage>) {
+        if (messages.isEmpty()) return
+        writes++
+        rows["$deviceKey::$sessionId"] = rows["$deviceKey::$sessionId"].orEmpty().take(startSeq) + messages
+    }
+    override fun replace(deviceKey: String, sessionId: String, messages: List<PersistedRemoteMessage>) { writes++; rows["$deviceKey::$sessionId"] = messages }
     override fun loadCursor(deviceKey: String, sessionId: String) = cursors["$deviceKey::$sessionId"]
     override fun saveCursor(deviceKey: String, sessionId: String, cursor: PersistedRemoteCursor) { cursors["$deviceKey::$sessionId"] = cursor }
     override fun delete(deviceKey: String, sessionId: String) {
@@ -490,9 +594,14 @@ private class PersistenceTransport : RemoteCommandTransport, RemoteSessionStream
     var streamFailure: ((Throwable) -> Unit)? = null
     var caughtUp: (() -> Unit)? = null
     var subscriptions = 0
+    /** Holds the host's stream open without answering, for the pre-answer window. */
+    var subscribeGate: CompletableDeferred<Unit>? = null
+    var loadOlderGate: CompletableDeferred<Unit>? = null
+    override suspend fun loadOlder(sessionId: String) { loadOlderGate?.await() }
     override suspend fun subscribe(sessionId: String, onError: (Throwable) -> Unit, onCaughtUp: () -> Unit): Flow<JsonObject> = flow {
         subscriptions++
         streamFailure = onError; caughtUp = onCaughtUp
+        subscribeGate?.await()
         initialRecords.forEach { emit(it) }
         onCaughtUp()
         records.collect { emit(it) }

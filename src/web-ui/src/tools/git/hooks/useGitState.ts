@@ -123,6 +123,11 @@ export function useGitState(options: UseGitStateOptions): UseGitStateReturn {
   const isFirstMountRef = useRef(true);
 
   useEffect(() => {
+    if (!normalizedPath.workspaceId || !isActive) return;
+    return gitStateManager.registerPolling(normalizedPath);
+  }, [isActive, normalizedPath]);
+
+  useEffect(() => {
     if (!normalizedPath.workspaceId || !isActive || !participateInWindowFocusRefresh) {
       return;
     }
@@ -162,11 +167,11 @@ export function useGitState(options: UseGitStateOptions): UseGitStateReturn {
     }
 
     suppressedMountRefreshRef.current = false;
-    gitStateManager.refresh(normalizedPath, {
+    void Promise.resolve(gitStateManager.refresh(normalizedPath, {
       layers: layersRef.current || ['basic', 'status'],
       reason: 'visibility',
       source: debugSource,
-    });
+    })).catch(() => undefined);
   }, [
     cancelPendingRefreshSources,
     debugSource,
@@ -195,11 +200,11 @@ export function useGitState(options: UseGitStateOptions): UseGitStateReturn {
         source: debugSource,
         layers: layersRef.current || ['basic', 'status'],
       });
-      gitStateManager.refresh(normalizedPath, {
+      void Promise.resolve(gitStateManager.refresh(normalizedPath, {
         layers: layersRef.current || ['basic', 'status'],
         reason: isFirstMount ? 'mount' : 'visibility',
         source: debugSource,
-      });
+      })).catch(() => undefined);
     }
 
     prevActiveRef.current = isActive;

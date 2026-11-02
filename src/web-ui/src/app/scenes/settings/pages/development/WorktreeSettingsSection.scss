@@ -1,0 +1,448 @@
+// Worktree settings page presentation.
+@keyframes openbitfun-worktree-results-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes openbitfun-worktree-row-remove {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(6px, 0, 0);
+  }
+}
+
+@keyframes openbitfun-worktree-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 0.82;
+  }
+}
+
+@keyframes openbitfun-worktree-refresh-progress {
+  from {
+    transform: translate3d(-130%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(360%, 0, 0);
+  }
+}
+
+@keyframes openbitfun-worktree-session-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.openbitfun-worktree-settings {
+  &__projects {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-6);
+    animation: openbitfun-worktree-results-enter 180ms var(--openbitfun-motion-easing-standard) both;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  &__results {
+    position: relative;
+    min-height: 176px;
+    overflow-anchor: none;
+
+    &--refreshing {
+      .openbitfun-worktree-settings__projects,
+      .openbitfun-worktree-settings__empty {
+        opacity: 0.7;
+      }
+    }
+  }
+
+  &__refresh-progress {
+    position: absolute;
+    z-index: 1;
+    top: -1px;
+    right: 0;
+    left: 0;
+    height: 2px;
+    overflow: hidden;
+    border-radius: var(--openbitfun-radius-sm);
+    pointer-events: none;
+
+    span {
+      display: block;
+      width: 28%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--openbitfun-color-accent-default);
+      opacity: 0.7;
+      animation: openbitfun-worktree-refresh-progress 900ms ease-in-out infinite;
+    }
+  }
+
+  &__skeleton {
+    min-height: 176px;
+  }
+
+  &__skeleton-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--openbitfun-space-4);
+    padding: 0 var(--openbitfun-space-1) var(--openbitfun-space-2);
+
+    span {
+      display: block;
+      height: 11px;
+      border-radius: var(--openbitfun-radius-sm);
+      background: var(--openbitfun-color-action-quiet-hover);
+      animation: openbitfun-worktree-loading-pulse 1.2s ease-in-out infinite;
+
+      &:first-child {
+        width: min(220px, 42%);
+      }
+
+      &:last-child {
+        width: 72px;
+      }
+    }
+  }
+
+  &__skeleton-list {
+    overflow: hidden;
+    border: 1px solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-md);
+    background: var(--openbitfun-color-surface-subtle);
+  }
+
+  &__skeleton-row {
+    display: grid;
+    gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+
+    & + & {
+      border-top: 1px solid var(--openbitfun-color-border-subtle);
+    }
+
+    span {
+      display: block;
+      height: 9px;
+      border-radius: var(--openbitfun-radius-sm);
+      background: var(--openbitfun-color-action-quiet-hover);
+      animation: openbitfun-worktree-loading-pulse 1.2s ease-in-out infinite;
+
+      &:first-child {
+        width: min(280px, 42%);
+      }
+
+      &:nth-child(2) {
+        width: min(620px, 78%);
+        animation-delay: 80ms;
+      }
+
+      &:last-child {
+        width: min(180px, 34%);
+        animation-delay: 160ms;
+      }
+    }
+  }
+
+  &__project {
+    min-width: 0;
+  }
+
+  &__project-header {
+    display: flex;
+    /* Group count reads on the workspace name, not on its secondary path. */
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--openbitfun-space-4);
+    padding: 0 var(--openbitfun-space-1) var(--openbitfun-space-2);
+
+    > span {
+      flex-shrink: 0;
+      color: var(--openbitfun-color-content-muted);
+      font-size: var(--openbitfun-type-label-sm-font-size);
+      line-height: var(--openbitfun-type-body-sm-line-height);
+    }
+  }
+
+  &__project-identity {
+    min-width: 0;
+
+    h4 {
+      margin: 0;
+      color: var(--openbitfun-color-content-primary);
+      font-size: var(--openbitfun-type-label-md-font-size);
+      font-weight: var(--openbitfun-type-label-selected-font-weight);
+      line-height: var(--openbitfun-type-body-sm-line-height);
+    }
+
+    code {
+      display: block;
+      margin-top: 2px;
+      overflow: hidden;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--openbitfun-color-content-muted);
+      font-family:var(--openbitfun-type-code-md-font-family);
+      font-size: var(--openbitfun-type-label-sm-font-size);
+      line-height: var(--openbitfun-type-body-sm-line-height);
+      white-space: nowrap;
+    }
+  }
+
+  &__worktree-list {
+    overflow: hidden;
+    border: 1px solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-md);
+    background: var(--openbitfun-color-surface-subtle);
+  }
+
+  &__worktree {
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+    transition: background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &:hover {
+      background: var(--openbitfun-color-action-neutral-surface);
+    }
+
+    & + & {
+      border-top: 1px solid var(--openbitfun-color-border-subtle);
+    }
+
+    &--removing {
+      pointer-events: none;
+      animation: openbitfun-worktree-row-remove
+        180ms
+        cubic-bezier(0.4, 0, 1, 1)
+        both;
+    }
+  }
+
+  &__worktree-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    /* The row action belongs to the worktree identity, so it pins to the title
+       line instead of drifting to the middle of a multi-line row. */
+    align-items: start;
+    gap: var(--openbitfun-space-3);
+  }
+
+  &__worktree-copy {
+    min-width: 0;
+  }
+
+  &__worktree-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    min-width: 0;
+  }
+
+  &__worktree-title {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--openbitfun-color-content-primary);
+    font-size: var(--openbitfun-type-label-md-font-size);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    white-space: nowrap;
+  }
+
+  &__metadata {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    min-width: 0;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+
+    /* State pills keep their own geometry and let the row wrap instead. */
+    > * {
+      flex-shrink: 0;
+    }
+  }
+
+  &__path {
+    display: block;
+    max-width: 100%;
+    margin-top: 2px;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--openbitfun-color-content-secondary);
+    font-family:var(--openbitfun-type-code-md-font-family);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    white-space: nowrap;
+  }
+
+  &__sessions-summary {
+    display: flex;
+    /* The summary wraps as a whole, so the count never collapses into a
+       one-character column next to a long conversation name. */
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    min-width: 0;
+    margin-top: var(--openbitfun-space-2);
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  &__sessions-count {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  &__session-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--openbitfun-space-1) var(--openbitfun-space-3);
+    min-width: 0;
+  }
+
+  &__session-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+    min-width: 0;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--openbitfun-color-content-secondary);
+    font: inherit;
+    line-height: inherit;
+    cursor: pointer;
+    transition:
+      color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    > span:not([data-overflow-content]):first-of-type {
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    &:hover:not(:disabled) {
+      color: var(--openbitfun-color-content-primary);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    &:active:not(:disabled) {
+      transform: translate3d(0, 1px, 0);
+    }
+
+    &:disabled {
+      cursor: wait;
+    }
+  }
+
+  &__session-link-spinner {
+    flex-shrink: 0;
+    animation: openbitfun-worktree-session-spin 700ms linear infinite;
+  }
+
+  &__session-link-state {
+    flex-shrink: 0;
+    color: var(--openbitfun-color-content-muted);
+
+    &::before {
+      content: '(';
+    }
+
+    &::after {
+      content: ')';
+    }
+  }
+
+  &__delete-control {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__empty {
+    animation: openbitfun-worktree-results-enter 180ms var(--openbitfun-motion-easing-standard) both;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+}
+
+@container config-panel (max-width: 520px) {
+  .openbitfun-worktree-settings {
+    &__projects {
+      gap: var(--openbitfun-space-5);
+    }
+
+    &__worktree {
+      padding: var(--openbitfun-space-3);
+    }
+
+    &__worktree-main {
+      column-gap: var(--openbitfun-space-2);
+    }
+
+    &__worktree-heading {
+      gap: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-worktree-settings {
+    &__projects,
+    &__empty,
+    &__worktree--removing,
+    &__skeleton-header span,
+    &__skeleton-row span,
+    &__session-link-spinner {
+      animation: none;
+    }
+
+    &__refresh-progress span {
+      width: 100%;
+      opacity: 0.45;
+      animation: none;
+      transform: none;
+    }
+
+    &__session-link,
+    &__empty,
+    &__projects,
+    &__worktree {
+      transition: none;
+    }
+  }
+}

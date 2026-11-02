@@ -103,12 +103,33 @@ async fn updater_endpoints_by_policy() -> Vec<tauri::Url> {
 
 /// Tauri's `latest-v1.json` platform key for this host, e.g. `darwin-aarch64`.
 /// Mirrors `scripts/generate-tauri-latest-json.mjs`.
+///
+/// Linux installs append a bundle-type suffix (`-deb` / `-rpm`) so the manifest
+/// hands each install form the package its updater can actually install:
+/// tauri-plugin-updater derives `dpkg -i` / `rpm -U` / AppImage rewrite from the
+/// same [`tauri::utils::platform::bundle_type`] this key is derived from. A bare
+/// `linux-*` key would feed AppImage bytes to a deb install, which the plugin
+/// rejects as `invalid updater binary format`.
 fn updater_platform_key() -> String {
     let os = match std::env::consts::OS {
         "macos" => "darwin",
         other => other,
     };
-    format!("{os}-{}", std::env::consts::ARCH)
+    format!(
+        "{os}-{}{}",
+        std::env::consts::ARCH,
+        updater_platform_key_suffix(tauri::utils::platform::bundle_type())
+    )
+}
+
+/// Manifest-key suffix for the running install form, kept in step with
+/// `scripts/generate-tauri-latest-json.mjs` (`linux-<arch>-deb` / `linux-<arch>-rpm`).
+fn updater_platform_key_suffix(bundle: Option<tauri::utils::config::BundleType>) -> &'static str {
+    match bundle {
+        Some(tauri::utils::config::BundleType::Deb) => "-deb",
+        Some(tauri::utils::config::BundleType::Rpm) => "-rpm",
+        _ => "",
+    }
 }
 
 /// Read one updater manifest and return the download URL it advertises for this
@@ -289,7 +310,14 @@ pub async fn check_for_updates(
     request: CheckForUpdatesRequest,
 ) -> Result<CheckForUpdatesResponse, String> {
     let _ = request;
-    let updater = ranked_updater(&app).await?;
+    // Discovery reads only the manifests. Package throughput probes belong to download.
+    let updater = app
+        .updater_builder()
+        .endpoints(default_endpoints())
+        .map_err(|e| e.to_string())?
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| e.to_string())?;
     match update {
         Some(u) => Ok(CheckForUpdatesResponse {
@@ -664,7 +692,7 @@ fn main_window_fullscreen_restore_maximized() -> &'static Mutex<bool> {
 }
 
 fn read_main_window_fullscreen_response(
-    window: &tauri::WebviewWindow,
+    window: &tauri::Window,
     fallback_fullscreen: bool,
     fallback_maximized: bool,
 ) -> ToggleMainWindowFullscreenResponse {
@@ -719,7 +747,7 @@ pub async fn minimize_to_tray(
     if let Err(error) = crate::tray::setup_tray(&app, &startup_trace) {
         log::warn!("Failed to initialize tray before minimizing: {}", error);
     }
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         window.hide().map_err(|e| e.to_string())?;
         log::info!("Main window minimized to tray via command");
     }
@@ -757,7 +785,7 @@ pub async fn startup_window_control(
     app: tauri::AppHandle,
     request: StartupWindowControlRequest,
 ) -> Result<StartupWindowControlResponse, String> {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         return Err("Main window not found".to_string());
     };
 
@@ -843,7 +871,7 @@ pub async fn toggle_main_window_fullscreen(
     request: ToggleMainWindowFullscreenRequest,
 ) -> Result<ToggleMainWindowFullscreenResponse, String> {
     let _ = request;
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         return Err("Main window not found".to_string());
     };
 
@@ -910,7 +938,7 @@ pub async fn toggle_main_window_fullscreen(
 
 fn apply_main_window_fullscreen_monitor_bounds(
     app: &tauri::AppHandle,
-    window: &tauri::WebviewWindow,
+    window: &tauri::Window,
 ) -> Result<(), String> {
     let monitor = window
         .current_monitor()
@@ -1039,7 +1067,7 @@ fn notification_response_activates_main_window(
 
 #[cfg(target_os = "windows")]
 fn activate_main_window_from_notification(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         log::warn!("Failed to activate main window from notification: main window not found");
         return;
     };
@@ -1115,7 +1143,13 @@ mod tests {
     #[test]
     fn updater_platform_key_matches_latest_json_convention() {
         let key = super::updater_platform_key();
-        let (os, arch) = key.split_once('-').expect("os-arch shape");
+        // Optional bundle-type suffix, mirroring the script's linux-<arch>-deb /
+        // linux-<arch>-rpm keys.
+        let base = key
+            .strip_suffix("-deb")
+            .or_else(|| key.strip_suffix("-rpm"))
+            .unwrap_or(&key);
+        let (os, arch) = base.split_once('-').expect("os-arch shape");
         assert!(
             matches!(os, "darwin" | "linux" | "windows"),
             "unexpected updater os segment: {os}"
@@ -1129,6 +1163,45 @@ mod tests {
             key.starts_with("darwin-"),
             "macOS must map to darwin, got {key}"
         );
+        #[cfg(target_os = "linux")]
+        assert!(
+            key.starts_with("linux-"),
+            "Linux keys must stay under the linux- prefix, got {key}"
+        );
+    }
+
+    /// The suffix must mirror the plugin's installer selection exactly: the same
+    /// `bundle_type()` that makes tauri-plugin-updater run `dpkg -i` / `rpm -U`
+    /// must ask the manifest for the `-deb` / `-rpm` payload, and every other
+    /// bundle type must keep the bare `os-arch` key (AppImage rewrite path).
+    #[test]
+    fn updater_platform_key_suffix_matches_plugin_installer_selection() {
+        use tauri::utils::config::BundleType;
+        assert_eq!(
+            super::updater_platform_key_suffix(Some(BundleType::Deb)),
+            "-deb"
+        );
+        assert_eq!(
+            super::updater_platform_key_suffix(Some(BundleType::Rpm)),
+            "-rpm"
+        );
+        assert_eq!(
+            super::updater_platform_key_suffix(Some(BundleType::AppImage)),
+            ""
+        );
+        assert_eq!(
+            super::updater_platform_key_suffix(Some(BundleType::Msi)),
+            ""
+        );
+        assert_eq!(
+            super::updater_platform_key_suffix(Some(BundleType::Nsis)),
+            ""
+        );
+        assert_eq!(
+            super::updater_platform_key_suffix(Some(BundleType::App)),
+            ""
+        );
+        assert_eq!(super::updater_platform_key_suffix(None), "");
     }
 
     #[test]

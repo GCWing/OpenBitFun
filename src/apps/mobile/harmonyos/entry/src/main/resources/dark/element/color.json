@@ -13,6 +13,10 @@
       "value": "#151514"
     },
     {
+      "name": "welcome_page_bg",
+      "value": "#252522"
+    },
+    {
       "name": "page_bg_fade",
       "value": "#00151514"
     },
@@ -222,7 +226,7 @@
     },
     {
       "name": "welcome_dock",
-      "value": "#171917"
+      "value": "#000000"
     },
     {
       "name": "welcome_button",

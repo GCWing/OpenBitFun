@@ -1361,7 +1361,10 @@
 .chat-msg__assistant-content {
   width: 100%;
   max-width: 100%;
-  padding: 0 2px 10px 0;
+  // The transcript owns the horizontal gutter shared with timestamps and toggles.
+  padding: 0 0 10px;
+  box-sizing: border-box;
+  min-width: 0;
   border: 0;
   border-radius: 0;
   background: transparent;

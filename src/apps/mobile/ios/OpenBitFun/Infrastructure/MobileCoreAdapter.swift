@@ -130,16 +130,6 @@ final class MobileCoreAdapter {
         )
     }
 
-    func resolveDeviceLink(url: String) -> AccountDeviceLinkResult {
-        let result = AccountDeviceLinkKt.resolveAccountDeviceLink(
-            url: url, state: SkieSwiftStateFlow<AccountUiState>(account.state).value
-        )
-        if result.status == .signInRequired, let relayUrl = result.relayUrl {
-            account.dispatch(intent: AccountIntentSelectRelay(relayUrl: relayUrl))
-        }
-        return result
-    }
-
     func beginAccountOperation() -> (accountGeneration: UInt64, remoteTargetEpoch: UInt64) {
         accountGeneration &+= 1
         desiredRemoteTarget = nil
@@ -155,6 +145,10 @@ final class MobileCoreAdapter {
         hydrateAccountTargetOnBind = false
         initialRemoteTargetSelectionOpen = false
         account.dispatch(intent: AccountIntentLogin.shared)
+    }
+
+    func notifyAuthorizationCallback() {
+        account.notifyAuthorizationCallback()
     }
 
     func selectAccountDevice(id: String) {
@@ -184,6 +178,27 @@ final class MobileCoreAdapter {
                 self?.onDirectoryState?(state, capturedGeneration)
             }
         }
+    }
+
+    private func reconcileDirectorySessionSnapshot(
+        _ state: RemoteSessionUiState,
+        sessionStore: RemoteSessionStore,
+        targetKey: String
+    ) {
+        guard let ready = state as? RemoteSessionUiStateReady,
+              ready.query.isEmpty,
+              ready.agentFilter.name == "ALL",
+              !ready.busy,
+              let workspaceIdentity = sessionStore.activeWorkspaceIdentity,
+              targetKey.hasPrefix("account:") else { return }
+        let deviceID = String(targetKey.dropFirst("account:".count))
+        guard !deviceID.isEmpty else { return }
+        _ = deviceDirectory.reconcileWorkspaceSessions(
+            deviceId: deviceID,
+            identity: workspaceIdentity,
+            sessions: ready.sessions,
+            hasMore: ready.hasMore
+        )
     }
 
     @discardableResult
@@ -628,6 +643,7 @@ final class MobileCoreAdapter {
         onRemoteTargetBound?(targetKey, boundEpoch, accountGeneration)
 
         let sessionFlow = SkieSwiftStateFlow<RemoteSessionUiState>(sessionStore.state)
+        reconcileDirectorySessionSnapshot(sessionFlow.value, sessionStore: sessionStore, targetKey: targetKey)
         onRemoteState?(sessionFlow.value, targetKey, boundEpoch)
         remoteObservations.append(Task { [weak self] in
             var lastHealthSignature = ""
@@ -641,6 +657,7 @@ final class MobileCoreAdapter {
                     lastHealthSignature = signature
                 }
                 #endif
+                self?.reconcileDirectorySessionSnapshot(state, sessionStore: sessionStore, targetKey: targetKey)
                 self?.onRemoteState?(state, targetKey, boundEpoch)
             }
         })

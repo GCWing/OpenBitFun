@@ -108,8 +108,8 @@ function rankSession(session: Session): number {
   return session.lastActiveAt || session.updatedAt || session.createdAt || 0;
 }
 
-function findProjectedSession(
-  state: FlowChatState,
+export function findProjectedSession(
+  state: Pick<FlowChatState, 'sessions'>,
   target: SubagentProjectionTarget,
 ): Session | null {
   const { directSubagentSessionId, parentSessionId, parentToolIds } = target;

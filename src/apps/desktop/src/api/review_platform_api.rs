@@ -117,7 +117,7 @@ pub async fn review_platform_get_workspace_snapshot(
             "Failed to get review platform workspace snapshot: path={}, remote_id={:?}, error={}",
             request.repository_path, request.remote_id, error
         );
-        review_platform_command_error("Failed to get review platform workspace snapshot", &error)
+        review_platform_ui_error(&error)
     })
 }
 
@@ -136,7 +136,7 @@ pub async fn review_platform_get_workspace_context(
             "Failed to get review platform workspace context: path={}, remote_id={:?}, error={}",
             request.repository_path, request.remote_id, error
         );
-        review_platform_command_error("Failed to get review platform workspace context", &error)
+        review_platform_ui_error(&error)
     })
 }
 
@@ -159,10 +159,7 @@ pub async fn review_platform_get_pull_request_detail(
             request.pull_request_id,
             error
         );
-        review_platform_command_error(
-            "Failed to get review platform pull request detail",
-            &error,
-        )
+        review_platform_ui_error(&error)
     })
 }
 
@@ -185,7 +182,7 @@ pub async fn review_platform_get_pull_request_review_target(
             request.pull_request_id,
             error
         );
-        review_platform_command_error("Failed to prepare pull request Review target", &error)
+        review_platform_ui_error(&error)
     })
 }
 
@@ -215,7 +212,7 @@ pub async fn review_platform_get_issue(
             request.issue_id,
             safe_error
         );
-        safe_review_platform_command_error("Failed to get provider Issue evidence", &error)
+        review_platform_ui_error(&error)
     })
 }
 
@@ -243,24 +240,36 @@ pub async fn review_platform_get_pull_request_review_target_by_identity(
             request.pull_request_id,
             safe_error
         );
-        safe_review_platform_command_error("Failed to prepare pull request Review target", &error)
+        review_platform_ui_error(&error)
     })
 }
 
-fn review_platform_command_error(context: &str, error: &ReviewPlatformError) -> String {
-    if let Some(repository_path) = error.untrusted_repository_path() {
-        return untrusted_repository_error_message(repository_path);
-    }
-
-    format!("{context}: {error}")
-}
-
-fn safe_review_platform_command_error(context: &str, error: &ReviewPlatformError) -> String {
-    if let Some(repository_path) = error.untrusted_repository_path() {
-        return untrusted_repository_error_message(repository_path);
-    }
-
-    format!("{context}: {}", safe_review_platform_error(error))
+fn review_platform_ui_error(error: &ReviewPlatformError) -> String {
+    let code = match error {
+        ReviewPlatformError::RepositoryUntrusted {
+            repository_path, ..
+        } => {
+            return untrusted_repository_error_message(repository_path);
+        }
+        ReviewPlatformError::GitUnavailable => return error.to_string(),
+        ReviewPlatformError::InvalidRepository(_) => "invalidRepository",
+        ReviewPlatformError::RemoteNotFound(_) => "remoteNotFound",
+        ReviewPlatformError::UnsupportedPlatform(_) => "unsupportedPlatform",
+        ReviewPlatformError::Api(_) => "providerFailed",
+        ReviewPlatformError::Http { status: 401, .. } => "authenticationRequired",
+        ReviewPlatformError::Http { status: 403, .. } => "permissionDenied",
+        ReviewPlatformError::Http { status: 404, .. } => "notFound",
+        ReviewPlatformError::Http { .. } => "providerFailed",
+        ReviewPlatformError::Network(_) => "networkFailed",
+        ReviewPlatformError::Parse(_) => "invalidResponse",
+        ReviewPlatformError::StaleTarget(_) => "staleTarget",
+        ReviewPlatformError::EvidenceTooLarge { .. } => "evidenceTooLarge",
+        ReviewPlatformError::TargetIsPullRequest { .. } => "targetIsPullRequest",
+    };
+    format!(
+        "review_platform_error:{code}: {}",
+        safe_review_platform_error(error)
+    )
 }
 
 fn safe_review_platform_error(error: &ReviewPlatformError) -> String {
@@ -277,6 +286,7 @@ fn safe_review_platform_error(error: &ReviewPlatformError) -> String {
         ReviewPlatformError::TargetIsPullRequest { .. } => {
             "requested Issue is a pull request".to_string()
         }
+        ReviewPlatformError::GitUnavailable => "Git is unavailable".to_string(),
         ReviewPlatformError::InvalidRepository(_) => "invalid repository".to_string(),
         ReviewPlatformError::RepositoryUntrusted { .. } => {
             "repository ownership is not trusted".to_string()
@@ -312,10 +322,7 @@ pub async fn review_platform_get_pull_request_detail_page(
             request.per_page,
             error
         );
-        review_platform_command_error(
-            "Failed to get review platform pull request detail page",
-            &error,
-        )
+        review_platform_ui_error(&error)
     })
 }
 
@@ -341,7 +348,7 @@ pub async fn review_platform_get_pull_request_ci_log(
             request.ci_item_id,
             error
         );
-        review_platform_command_error("Failed to get review platform CI log", &error)
+        review_platform_ui_error(&error)
     })
 }
 
@@ -357,7 +364,7 @@ pub async fn review_platform_update_auth_token(
                 "Failed to update review platform auth token: platform={:?}, host={}, error={}",
                 request.platform, request.host, error
             );
-            format!("Failed to update review platform auth token: {}", error)
+            review_platform_ui_error(&error)
         })
 }
 
@@ -373,7 +380,7 @@ pub async fn review_platform_clear_auth_token(
                 "Failed to clear review platform auth token: platform={:?}, host={}, error={}",
                 request.platform, request.host, error
             );
-            format!("Failed to clear review platform auth token: {}", error)
+            review_platform_ui_error(&error)
         })
 }
 
@@ -416,26 +423,18 @@ mod tests {
         };
 
         assert_eq!(
-            review_platform_command_error("Failed to load review platform", &error),
-            "git_repository_untrusted: /srv/shared/repo"
-        );
-        assert_eq!(
-            safe_review_platform_command_error("Failed to load review platform", &error),
+            review_platform_ui_error(&error),
             "git_repository_untrusted: /srv/shared/repo"
         );
     }
 
     #[test]
-    fn review_platform_command_errors_keep_context_for_other_failures() {
+    fn review_platform_command_errors_use_stable_codes_for_other_failures() {
         let error = ReviewPlatformError::RemoteNotFound("origin".to_string());
 
         assert_eq!(
-            review_platform_command_error("Failed to load review platform", &error),
-            "Failed to load review platform: Remote not found: origin"
-        );
-        assert_eq!(
-            safe_review_platform_command_error("Failed to load review platform", &error),
-            "Failed to load review platform: provider remote was not found"
+            review_platform_ui_error(&error),
+            "review_platform_error:remoteNotFound: provider remote was not found"
         );
     }
 

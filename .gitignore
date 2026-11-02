@@ -62,6 +62,7 @@ src/web-ui/src/generated/api/
 # Tauri generated files
 apps/desktop/gen/
 src/apps/desktop/gen/
+src/apps/miniapp-shell/gen/
 src-tauri/gen/
 
 # Updater signing private key (never commit; pubkey is in tauri.conf.json)
@@ -134,3 +135,5 @@ src/apps/mobile/android/.kotlin/
 
 # Retired implementation-process notes stay local; durable docs live with their owner.
 /docs/superpowers/
+
+AGENTS.override.md

@@ -51,7 +51,7 @@ describe('L0 Settings Panel', () => {
 
       const comparison = await browser.execute(() => {
         const upperItem = document.querySelector<HTMLElement>(
-          '[data-testid="nav-assistant-manager"]',
+          '[data-testid="nav-todos-btn"]',
         );
         const lowerItem = document.querySelector<HTMLElement>(
           '[data-testid="nav-session-item"]:not([data-session-active="true"]) .openbitfun-nav-panel__inline-item-label',
@@ -121,7 +121,7 @@ describe('L0 Settings Panel', () => {
 
       const comparison = await browser.execute(() => {
         const mainItem = document.querySelector<HTMLElement>(
-          '[data-testid="nav-assistant-manager"]',
+          '[data-testid="nav-todos-btn"]',
         );
         const settingsItem = document.querySelector<HTMLElement>(
           '.openbitfun-settings-nav__item:not(.is-active)',

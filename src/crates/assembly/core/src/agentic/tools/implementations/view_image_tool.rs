@@ -50,16 +50,12 @@ impl ViewImageTool {
             ));
         }
 
-        let format = Self::primary_api_format(ctx);
-        if matches!(
-            format.as_str(),
-            "anthropic" | "openai" | "response" | "responses"
-        ) {
+        if ctx.primary_model_facts().multimodal_tool_output_supported() {
             return Ok(());
         }
 
         Err(OpenBitFunError::tool(
-            "view_image returns images in tool results; set the primary model to Anthropic (Claude) or OpenAI-compatible API format. Other providers are not supported for view_image yet."
+            "view_image returns images in tool results; set the primary model to an image-capable model using Anthropic, OpenAI Chat/Responses, or Gemini API format."
                 .to_string(),
         ))
     }
@@ -246,6 +242,20 @@ impl Tool for ViewImageTool {
             },
             "required": ["path"],
             "additionalProperties": false
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "width": {"type": "integer"},
+                "height": {"type": "integer"},
+                "summary": {"type": "string"}
+            },
+            "required": ["path", "width", "height", "summary"],
+            "additionalProperties": true
         })
     }
 
@@ -704,9 +714,24 @@ mod tests {
                 .await
         );
         assert!(
-            !ViewImageTool::new()
+            ViewImageTool::new()
                 .is_available_in_context(Some(&remote_context("gemini", true)))
                 .await
+        );
+    }
+
+    #[test]
+    fn gemini_image_admission_agrees_with_tool_availability() {
+        assert!(
+            ViewImageTool::require_multimodal_tool_output(&remote_context("gemini", true)).is_ok()
+        );
+        assert!(
+            ViewImageTool::require_multimodal_tool_output(&remote_context("gemini", false))
+                .is_err()
+        );
+        assert!(
+            ViewImageTool::require_multimodal_tool_output(&remote_context("unknown", true))
+                .is_err()
         );
     }
 

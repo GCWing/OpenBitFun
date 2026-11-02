@@ -16,18 +16,21 @@
 }
 
 .openbitfun-control-card__fields {
+  container: control-fields / inline-size;
   display: grid;
   gap: var(--openbitfun-space-2);
   margin: 0;
 }
 
 .openbitfun-control-card__field {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: var(--openbitfun-control-tool-card-field-label-width) minmax(0, 1fr);
   align-items: baseline;
-  gap: var(--openbitfun-space-1) var(--openbitfun-space-3);
+  gap: var(--openbitfun-space-2);
 
   dt {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
     color: var(--openbitfun-color-content-muted);
     font-weight: var(--openbitfun-type-label-sm-font-weight);
   }
@@ -50,8 +53,6 @@
 .openbitfun-control-card__list {
   display: grid;
   gap: var(--openbitfun-space-3);
-  max-block-size: 20rem;
-  overflow-y: auto;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -72,4 +73,17 @@
   color: var(--openbitfun-color-status-danger-content);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.openbitfun-control-card__viewport {
+  max-block-size: 20rem;
+}
+
+.openbitfun-control-card__result + .openbitfun-control-card__result {
+  padding-block-start: var(--openbitfun-space-2);
+  border-block-start: 1px solid var(--openbitfun-color-border-subtle);
+}
+
+@container control-fields (max-width: 22rem) {
+  .openbitfun-control-card__field { grid-template-columns: minmax(0, 1fr); gap: var(--openbitfun-space-1); }
 }

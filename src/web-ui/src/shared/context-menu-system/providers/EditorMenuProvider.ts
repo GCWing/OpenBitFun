@@ -153,6 +153,7 @@ export class EditorMenuProvider implements IMenuProvider {
     items.push({
       id: 'editor-select-all',
       label: i18nService.t('common:actions.selectAll'),
+      icon: 'SelectAll',
       shortcut: 'Ctrl+A',
       command: 'select-all',
       onClick: async (ctx) => {

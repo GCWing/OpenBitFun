@@ -1,6 +1,8 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { systemAPI } from '../../infrastructure/api';
 import { WebFetchToolCard as WebFetchToolCardView } from '@openbitfun/ui/flow-chat';
@@ -55,8 +57,9 @@ export const WebFetchCard: React.FC<ToolCardProps> = ({
   onExpand,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -89,7 +92,7 @@ export const WebFetchCard: React.FC<ToolCardProps> = ({
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded, {
       onExpand,
     });
-  }, [applyExpandedState, isExpandable, isExpanded, onExpand]);
+  }, [applyExpandedState, isExpandable, isExpanded, onExpand, setIsExpanded]);
 
   const getDetails = () => {
     const details: string[] = [];
@@ -105,40 +108,16 @@ export const WebFetchCard: React.FC<ToolCardProps> = ({
     return details;
   };
 
-  const renderContent = () => {
-    if (status === 'completed') {
-      return headerTitle || `"${url}"`;
-    }
-
-    if (status === 'error') {
-      return errorMessage;
-    }
-
-    if (status === 'running' || status === 'streaming' || status === 'preparing') {
-      return t('toolCards.webFetch.reading', { url });
-    }
-
-    if (status === 'pending') {
-      return t('toolCards.webFetch.preparingRead', { url });
-    }
-
-    return t('toolCards.webFetch.readTitle', { url });
-  };
-
-  const renderAction = () => (
-    status === 'completed'
-      ? t('toolCards.webFetch.readLabel')
-      : undefined
-  );
-
   return (
     <div data-openbitfun-adapter="web-fetch" ref={cardRootRef} data-tool-card-id={toolId ?? ''}>
       <WebFetchToolCardView
         status={status}
         isExpanded={isExpanded}
         onToggle={isExpandable ? handleClick : undefined}
-        action={renderAction()}
-        title={renderContent()}
+        action={t('toolCards.webFetch.readLabel')}
+        title={url}
+        resultSummary={status === 'completed' && headerTitle && headerTitle !== url ? headerTitle : undefined}
+        statusDescription={getToolCardStatusDescription(status, t, errorMessage)}
         url={status === 'completed' ? parsedResult?.url : undefined}
         openUrlLabel={t('toolCards.webFetch.clickToOpenLink')}
         onOpenUrl={parsedResult?.url ? (event) => {
@@ -147,6 +126,7 @@ export const WebFetchCard: React.FC<ToolCardProps> = ({
         } : undefined}
         details={status === 'completed' ? getDetails() : undefined}
         content={status === 'completed' && hasContent ? parsedResult?.content : undefined}
+        contentLabel={t('toolCards.common.executionResult')}
         emptyContent={status === 'completed' && !hasContent ? t('toolCards.webFetch.noContent') : undefined}
         error={status === 'error' ? errorMessage : undefined}
         copyAction={hasContent ? (

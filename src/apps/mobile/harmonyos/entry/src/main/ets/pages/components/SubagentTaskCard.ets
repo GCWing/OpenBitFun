@@ -20,7 +20,15 @@ import { ToolGlyph } from './ToolGlyphs';
 export struct SubagentTaskCard {
   @Param interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   @Param title: string = '';
+  @Param path: string = '';
   @Param status: string = 'completed';
+  /**
+   * Process items of this branch, as re-read by the bubble on every render.
+   *
+   * A snapshot array would freeze the first empty branch: the ForEach that draws
+   * this card is keyed by the branch view key, which deliberately does not change
+   * while the subagent publishes steps, so its item builder never re-runs.
+   */
   @Param items: ConversationUiMessageItem[] = [];
   @Param renderRevision: number = 0;
   @Event onApproveTool: (toolId: string, updatedInput?: Object) => void =
@@ -114,7 +122,7 @@ export struct SubagentTaskCard {
             status: this.childStatus(index),
             keepExpandedWhenDone: false,
             streaming: this.childStatus(index) === 'running',
-            streamKey: `${this.title}-subagent-thinking-${index}`
+            streamKey: `${this.processItemKey(index)}-thinking`
           })
         } else if (entry.tool) {
           ToolStatusList({
@@ -146,12 +154,34 @@ export struct SubagentTaskCard {
           .width('100%')
           .alignItems(HorizontalAlign.Start)
         }
-      }, (entry: ConversationUiMessageItem, index: number) =>
-        ChatMessageStructurePolicy.structuredItemKey(entry, `subagent-${index}`))
+      }, (_entry: ConversationUiMessageItem, index: number) => this.processItemKey(index))
     }
     .width('100%')
     .padding({ left: 14, top: 6, bottom: 4 })
     .border({ width: { left: 1 }, color: LINE })
+  }
+
+  /**
+   * View key for one process entry, anchored to the Task that owns it.
+   *
+   * Counting each kind separately keeps a child's key while siblings of other
+   * kinds arrive, so a running Task cannot renumber what is already drawn.
+   */
+  private processItemKey(index: number): string {
+    const items = this.visibleProcessItems();
+    const ordinals: Map<string, number> = new Map<string, number>();
+    for (let cursor = 0; cursor <= index && cursor < items.length; cursor++) {
+      const kind = this.processItemKind(items[cursor]);
+      const ordinal = ordinals.get(kind) || 0;
+      if (cursor === index) return `${this.path}-process-${kind}-${ordinal}`;
+      ordinals.set(kind, ordinal + 1);
+    }
+    return `${this.path}-process-item-${index}`;
+  }
+
+  private processItemKind(entry: ConversationUiMessageItem): string {
+    if (ChatMessageStructurePolicy.isThinkingEntry(entry)) return 'thinking';
+    return entry.tool ? 'tool' : 'text';
   }
 
   private isRunning(): boolean {

@@ -9,7 +9,6 @@ use log::info;
 use crate::agentic::coordination;
 use crate::agentic::events;
 use crate::agentic::execution;
-use crate::agentic::goal_mode::ThreadGoalTokenSubscriber;
 use crate::agentic::persistence;
 use crate::agentic::session;
 use crate::agentic::tools;
@@ -82,6 +81,17 @@ pub async fn init_agentic_system_for_profile_with_runtime_ownership(
     delivery_profile: DeliveryProfile,
     runtime_ownership: Arc<CoreRuntimeOwnership>,
 ) -> Result<AgenticSystem> {
+    init_agentic_system_with_computer_use_host(delivery_profile, runtime_ownership, None).await
+}
+
+/// Assemble the same Runtime with an explicit native provider from its host.
+/// No provider is inferred from the delivery profile or controller environment.
+pub async fn init_agentic_system_with_computer_use_host(
+    delivery_profile: DeliveryProfile,
+    runtime_ownership: Arc<CoreRuntimeOwnership>,
+    computer_use_host: Option<tools::computer_use_host::ComputerUseHostRef>,
+) -> Result<AgenticSystem> {
+    tools::computer_use_capability::set_computer_use_host_available(computer_use_host.is_some());
     info!("Initializing agentic system for profile {delivery_profile}");
 
     select_agentic_system_profile(delivery_profile)?;
@@ -115,17 +125,13 @@ pub async fn init_agentic_system_for_profile_with_runtime_ownership(
             session_manager.clone(),
         )),
     );
-    event_router.subscribe_internal(
-        "thread_goal_tokens".to_string(),
-        Arc::new(ThreadGoalTokenSubscriber),
-    );
 
     let tool_registry = tools::registry::get_global_tool_registry();
     let tool_state_manager = Arc::new(tools::pipeline::ToolStateManager::new(event_queue.clone()));
     let permission_request_manager =
         crate::product_runtime::core_permission_request_manager().map_err(anyhow::Error::msg)?;
     let tool_pipeline = Arc::new(
-        tools::pipeline::ToolPipeline::new(tool_registry, tool_state_manager, None)
+        tools::pipeline::ToolPipeline::new(tool_registry, tool_state_manager, computer_use_host)
             .with_permission_request_manager(permission_request_manager),
     );
 
@@ -137,13 +143,14 @@ pub async fn init_agentic_system_for_profile_with_runtime_ownership(
     ));
 
     let execution_config = execution::execution_engine_config_from_global_config().await;
-    let execution_engine = Arc::new(execution::ExecutionEngine::new(
+    let execution_engine = execution::ExecutionEngine::new(
         round_executor,
         event_queue.clone(),
         session_manager.clone(),
         context_compressor,
         execution_config,
-    ));
+    );
+    let execution_engine = Arc::new(execution_engine);
 
     let coordinator = Arc::new(coordination::ConversationCoordinator::new(
         session_manager,

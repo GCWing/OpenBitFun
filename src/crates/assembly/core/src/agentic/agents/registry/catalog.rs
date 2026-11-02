@@ -2,8 +2,8 @@ use super::types::AgentCategory;
 use super::visibility::SubagentVisibilityPolicy;
 use crate::agentic::agents::{
     Agent, ClawMode, CodeReviewAgent, ComputerUseMode, CoworkMode, CreativeHarness,
-    DeepResearchMode, DeepReviewAgent, ExploreAgent, GeneralPurposeAgent, GenerateDocAgent,
-    MinimalHarness, OpenBitFunAgent, ResearchSpecialistAgent, ReviewFixerAgent, ReviewJudgeAgent,
+    DeepResearchMode, DeepReviewAgent, ExploreAgent, GeneralPurposeAgent, MinimalHarness,
+    OpenBitFunAgent, ResearchSpecialistAgent, ReviewFixerAgent, ReviewJudgeAgent,
     ReviewWorkerAgent, StandardHarness, SwarmPlannerAgent, SwarmReviewerAgent, SwarmWorkerAgent,
     UltimateHarness,
 };
@@ -65,7 +65,6 @@ fn builtin_agent_factory(id: &str) -> fn() -> Arc<dyn Agent> {
         "ReviewFixer" => || Arc::new(ReviewFixerAgent::new()),
         "CodeReview" => || Arc::new(CodeReviewAgent::new()),
         "DeepReview" => || Arc::new(DeepReviewAgent::new()),
-        "GenerateDoc" => || Arc::new(GenerateDocAgent::new()),
         "MemoryPhase2" => || Arc::new(MemoryPhase2Agent::new()),
         _ => panic!("missing legacy Agent factory for builtin agent {id}"),
     }

@@ -34,7 +34,7 @@ const excerpt: ConversationExcerptContext = {
 };
 function Probe({ target = 'main', active = true }: { target?: string; active?: boolean }) {
   useExcerptComposerActions({ mainSessionId: 'main', targetSessionId: target, active,
-    setInputTarget: mocks.setTarget, focus: mocks.focus });
+    selectTargetSession: mocks.setTarget, focus: mocks.focus });
   return null;
 }
 describe('scoped excerpt composer routing', () => {
@@ -103,7 +103,10 @@ describe('scoped excerpt composer routing', () => {
   it('creates a new ordinary side draft instead of using review or already submitted sessions', () => {
     mocks.sessions.set('draft', { sessionId: 'draft', parentSessionId: 'main', sessionKind: 'review', dialogTurns: [] });
     mocks.sessions.set('sent', { sessionId: 'sent', parentSessionId: 'main', sessionKind: 'btw', btwOrigin: { requestId: 'sent-1' }, dialogTurns: [] });
-    mocks.create.mockReturnValueOnce({ childSessionId: 'new-side' });
+    mocks.create.mockImplementationOnce(() => {
+      mocks.sessions.set('new-side', { sessionId: 'new-side', parentSessionId: 'main', sessionKind: 'btw', config: {}, dialogTurns: [] });
+      return { childSessionId: 'new-side' };
+    });
     act(() => root.render(<Probe />));
     act(() => requestExcerptAction(excerpt, 'main', 'ask'));
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ parentSessionId: 'main', parentDialogTurnId: 'turn-2' }));

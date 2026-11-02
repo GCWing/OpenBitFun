@@ -140,8 +140,14 @@ export function composerPresentationToModelText(
   );
 }
 
-export function composerPresentationToAccessibleText(
+/**
+ * Readable rendering of the presentation. Inline tokens can keep their
+ * canonical form so that a clipboard round trip back into the composer can
+ * rebuild the matching capsules.
+ */
+function composerPresentationToText(
   presentation: ComposerPresentation,
+  canonicalInlineTokens: boolean,
 ): string {
   return trimComposerText(
     presentation.segments.map(segment => {
@@ -149,7 +155,9 @@ export function composerPresentationToAccessibleText(
         return segment.text;
       }
       if (segment.kind === 'inline-token') {
-        return `[${segment.tokenType === 'skill' ? 'Skill' : 'Widget'}: ${segment.label}]`;
+        return canonicalInlineTokens
+          ? segment.token
+          : `[${segment.tokenType === 'skill' ? 'Skill' : 'Widget'}: ${segment.label}]`;
       }
       if (isConversationExcerpt(segment.context)) return '\n\n' + formatConversationExcerpt(segment.context);
       const type = segment.context.type === 'session-reference'
@@ -158,6 +166,19 @@ export function composerPresentationToAccessibleText(
       return `[${type}: ${segment.label}]`;
     }).join(''),
   );
+}
+
+export function composerPresentationToAccessibleText(
+  presentation: ComposerPresentation,
+): string {
+  return composerPresentationToText(presentation, false);
+}
+
+/** Clipboard text that keeps inline tokens restorable by a composer paste. */
+export function composerPresentationToClipboardText(
+  presentation: ComposerPresentation,
+): string {
+  return composerPresentationToText(presentation, true);
 }
 
 export function composerPresentationContexts(

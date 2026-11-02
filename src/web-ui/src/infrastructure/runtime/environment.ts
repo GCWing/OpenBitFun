@@ -38,3 +38,14 @@ export const isWindowsDesktopRuntime = (): boolean =>
     (typeof navigator.userAgent === 'string' && navigator.userAgent.toUpperCase().includes('WINDOWS'))
     || (typeof navigator.platform === 'string' && navigator.platform.toUpperCase().includes('WIN'))
   );
+
+/**
+ * Linux Desktop runs WebKitGTK, whose clipboard bridge differs from WebView2 and
+ * WKWebView: OS clipboards arrive without DataTransfer payloads, so the composer
+ * falls back to reading them through the host.
+ */
+export const isLinuxDesktopRuntime = (): boolean =>
+  supportsNativeWindowControls() &&
+  typeof navigator !== 'undefined' &&
+  typeof navigator.userAgent === 'string' &&
+  navigator.userAgent.toUpperCase().includes('LINUX');

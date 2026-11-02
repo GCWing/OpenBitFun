@@ -19,6 +19,8 @@ describe('MCP visual configuration compatibility', () => {
     { source: 'remote', transport: 'streamable_http', url: 'https://example.test/mcp', timeouts: { startupMs: 12001, catalogMs: 7000, future: 23 } },
     { type: ' remote ', transport: ' http ', source: ' remote ', url: 'https://example.test/mcp' },
     { type: 'local', source: 'remote', transport: 'http', url: 'https://example.test/mcp' },
+    { type: 'streamableHttp', url: 'https://example.test/mcp' },
+    { source: 'REMOTE', transport: 'SSE', url: 'https://example.test/sse' },
   ])('round-trips existing data without adding defaults or dropping fields: %j', entry => {
     const document = documentWith(entry);
     const original = JSON.stringify(document);

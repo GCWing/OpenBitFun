@@ -43,7 +43,6 @@ function settings(
 ): AIExperienceSettings {
   return {
     enable_session_title_generation: true,
-    enable_visual_mode: false,
     enable_agent_companion: enableAgentCompanion,
     enable_workspace_search: false,
     quick_actions: [],

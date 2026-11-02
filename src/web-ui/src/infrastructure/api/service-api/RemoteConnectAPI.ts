@@ -14,6 +14,12 @@ export interface DeviceDirectoryMetadata {
   device_os?: string | null;
   device_os_version?: string | null;
   /**
+   * Kind the device reported to the Relay (`desktop`, `cli`, `mobile`,
+   * `watch`). Absent for a device that never reported one and for older Relays;
+   * absent means unknown, which is not the same as "not a host".
+   */
+  device_kind?: string | null;
+  /**
    * Client build the device reported to the Relay. The host projection emits
    * `device_client_version`; the Relay's own snake_case spelling is
    * `client_version`. Both are read, exactly like the Relay/backend tolerance,
@@ -99,6 +105,13 @@ export interface ConnectionResult {
 }
 
 export interface RemoteConnectStatus {
+  /** Present only when the host supports independently managed Relay routes. */
+  connections?: Array<{
+    method: 'lan' | 'openbitfun_server';
+    relay_connected: boolean;
+    relay_url: string | null;
+    clients: Array<{ id: string; name: string }>;
+  }>;
   relay_connected: boolean;
   relay_url: string | null;
   active_method: RemoteConnectionMethod | null;
@@ -229,9 +242,9 @@ class RemoteConnectAPIService {
     }
   }
 
-  async stopConnection(): Promise<void> {
+  async stopConnection(method?: 'lan' | 'openbitfun_server'): Promise<void> {
     try {
-      await this.adapter.request<void>('remote_connect_stop');
+      await this.adapter.request<void>('remote_connect_stop', method ? { request: { method } } : undefined);
     } catch (e) {
       log.error('stopConnection failed', e);
       throw e;

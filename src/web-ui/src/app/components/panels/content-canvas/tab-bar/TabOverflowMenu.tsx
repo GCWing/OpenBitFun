@@ -169,15 +169,18 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
       <Tooltip content={tooltipContent} placement="bottom">
         {hasOverflow ? (
           <Button
+            className="canvas-tab-panorama-trigger"
             data-openbitfun-product-component="canvas-tab-overflow"
             data-openbitfun-product-part="trigger"
             size="sm"
-            variant="text"
+            variant="glass"
+            labelBehavior="static"
             aria-label={tooltipContent}
             aria-haspopup="menu"
             aria-expanded={isOpen}
             onClick={handleButtonClick}
-            leadingIcon={hasMissionControl ? <LayoutGrid size={14} /> : <Icon name="chevron-down" size="sm" />}
+            leadingIcon={hasMissionControl ? <Icon glyph={LayoutGrid} size="sm" /> : undefined}
+            trailingIcon={<Icon name={isOpen ? 'chevron-up' : 'chevron-down'} size="sm" />}
           >
             <span data-openbitfun-product-component="canvas-tab-overflow" data-openbitfun-product-part="badge">
               +{overflowTabs.length}
@@ -185,12 +188,14 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
           </Button>
         ) : (
           <IconButton
+            className="canvas-tab-panorama-trigger"
             data-openbitfun-product-component="canvas-tab-overflow"
             data-openbitfun-product-part="trigger"
             size="sm"
+            variant="glass"
             aria-label={tooltipContent}
             onClick={handleButtonClick}
-            icon={<LayoutGrid size={14} />}
+            icon={<Icon glyph={LayoutGrid} size="sm" />}
           />
         )}
       </Tooltip>
@@ -211,7 +216,7 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
               <MenuItem
                 className="canvas-tab-overflow-menu__mission-control-row canvas-tab-overflow-menu__mission-control"
                 onClick={handleMissionControlClick}
-                leading={<LayoutGrid size={14} />}
+                leading={<Icon glyph={LayoutGrid} size="sm" />}
                 shortcut={<KeyHint>⌘.</KeyHint>}
               >
                 <span>{t('tabs.missionControl')}</span>

@@ -21,10 +21,14 @@ import styles from "./Menu.module.css";
 
 export type MenuItemRole = "menuitem" | "menuitemcheckbox" | "menuitemradio";
 
+/** `fixed` keeps the menu width token; `content` fits the rows between the menu minimum and that token. */
+export type MenuInlineSize = "fixed" | "content";
+
 export interface MenuProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "autoFocus" | "role"> {
   autoFocusFirstItem?: boolean;
   children: ReactNode;
+  inlineSize?: MenuInlineSize;
   scrollbarVisibility?: ScrollbarVisibility;
 }
 
@@ -105,6 +109,7 @@ export const Menu = forwardRef<HTMLDivElement, MenuProps>(function Menu({
   autoFocusFirstItem = false,
   children,
   className,
+  inlineSize = "fixed",
   onFocusCapture,
   onKeyDown,
   scrollbarVisibility = "auto",
@@ -210,6 +215,7 @@ export const Menu = forwardRef<HTMLDivElement, MenuProps>(function Menu({
       {...props}
       className={classNames(styles.root, className)}
       data-openbitfun-component="menu"
+      data-openbitfun-inline-size={inlineSize}
       onFocusCapture={handleFocusCapture}
       onKeyDown={handleKeyDown}
       ref={setRootRef}

@@ -297,7 +297,10 @@ internal fun RemoteSessionListContent(
                                 settings = viewSettings,
                                 projectChild = section is SessionListSection.Project,
                                 selected = session.id == state.selectedSessionId,
-                                enabled = !state.busy,
+                                // Opening a session is cancellable/supersedable
+                                // in the store; keep rows tappable while the
+                                // previous transcript hydrates.
+                                enabled = true,
                                 onOpen = {
                                     onIntent(RemoteSessionIntent.Open(session.id))
                                     onOpen(session.id)

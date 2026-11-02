@@ -7,12 +7,8 @@ parameters:
   - name: wait_ms
     description: "Milliseconds to wait after page load before screenshot"
     required: false
-    default: "3000"
+    default: "0"
 steps:
-  - domain: browser
-    action: connect
-    description: "Connect to user's default browser via CDP"
-
   - domain: browser
     action: navigate
     params:
@@ -23,12 +19,8 @@ steps:
     action: wait
     params:
       duration_ms: "{{wait_ms}}"
-    description: "Wait for page to fully render"
-
-  - domain: browser
-    action: get_title
-    description: "Get the page title for reference"
-    output_var: page_title
+    description: "Apply only an explicitly requested post-load delay"
+    condition: "wait_ms is not 0"
 
   - domain: browser
     action: screenshot

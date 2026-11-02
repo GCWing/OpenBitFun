@@ -1,5 +1,9 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { useDeviceDirectory, resolveDeviceName } from '@/infrastructure/account/deviceDirectory';
-import { requireSessionWorkspaceId } from '@/flow_chat/utils/sessionWorkspace';
+import { requireSessionOwningWorkspaceId } from '@/flow_chat/utils/sessionOrdering';
+import { isSessionEmptyForCopy } from '@/flow_chat/utils/sessionCopy';
+import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { canCopySessionsOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
 /**
  * SessionsSection — inline accordion content for the "Sessions" nav item.
  *
@@ -7,9 +11,9 @@ import { requireSessionWorkspaceId } from '@/flow_chat/utils/sessionWorkspace';
  * Owns all data fetching / mutation for chat sessions.
  */
 
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton, Input, Menu, MenuItem, OverflowText, Tooltip } from '@openbitfun/ui';
-import { Loader2, Archive, ListChecks } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton, Input, Menu, MenuItem, MenuSeparator, OverflowText, StatusPill, Tooltip } from '@openbitfun/ui';
+import { Loader2, Archive, FolderGit2, FolderOpen } from 'lucide-react';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { useI18n } from '@/infrastructure/i18n';
 import { flowChatStore } from '../../../../../flow_chat/store/FlowChatStore';
@@ -17,7 +21,9 @@ import { flowChatManager } from '../../../../../flow_chat/services/FlowChatManag
 import type { FlowChatState, Session } from '../../../../../flow_chat/types/flow-chat';
 import { useSceneStore } from '../../../../stores/sceneStore';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
+import { sessionAPI, type SessionCatalogQuery, type SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
 import { createLogger } from '@/shared/utils/logger';
+import { isSamePath } from '@/shared/utils/pathUtils';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import {
@@ -32,13 +38,17 @@ import {
 import { recordHistorySessionDiagnosticEvent } from '@/flow_chat/services/historySessionDiagnostics';
 import { resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
 import {
+  isWorktreeIsolatedSession,
   sessionBelongsToWorkspaceNavRow,
 } from '@/flow_chat/utils/sessionOrdering';
+import { sessionWorktreeRootPath } from '@/flow_chat/utils/sessionWorktree';
 import {
   compareWorkspaceNavSessions,
   DEFAULT_WORKSPACE_SESSION_FILTERS,
-  hasWorkspaceSessionFilters,
   matchesWorkspaceSessionView,
+  matchesWorkspaceExternalDiscovery,
+  matchesWorkspaceSourceAgent,
+  sessionSourceAgentLabel,
   useWorkspaceSessionViewStore,
 } from '../../workspaceSessionView';
 import { stateMachineManager } from '@/flow_chat/state-machine';
@@ -48,7 +58,15 @@ import { isDefaultSessionTitle, resolveSessionTitle } from '@/flow_chat/utils/se
 import { useSessionTitleNumbers } from '@/flow_chat/hooks/useSessionTitleNumbers';
 import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
 import { useSessionComposerStore } from '@/flow_chat/store/sessionComposerStore';
-import { getActiveSurfaceId, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, getActiveSurfaceScope, isSurfaceChangedError, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+import { EXTERNAL_SESSION_NAMES, isExternalSessionEcosystem } from '@/shared/types/external-session';
+import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
+import { useWorkspaceSessionCatalog } from './useWorkspaceSessionCatalog';
+import { useArchivedSessionMetadata } from './useArchivedSessionMetadata';
+import ArchivedSessionMenuItems from './ArchivedSessionMenuItems';
+import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, workspaceSessionCatalogQuery, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
+import { useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
+import { useSessionNavExpansion } from './useSessionNavExpansion';
 import { isSessionNavRowActive } from './sessionNavSelection';
 import { isSessionRowPointerTarget } from './sessionOpenPointer';
 import {
@@ -66,10 +84,8 @@ import {
 } from '@/shared/utils/fixedPopoverViewport';
 import { exportSessionToMarkdown } from '@/flow_chat/services/sessionMarkdownExport';
 import type { TranscriptExportScope } from '@/flow_chat/utils/dialogTranscriptExport';
-import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { AssistantAvatar } from '@/app/components/AssistantAvatar';
 import { notificationService } from '@/shared/notification-system';
-import { copyTextToClipboard } from '@/shared/utils/textSelection';
 import { isOutcomeUnknownError } from '@/infrastructure/api/errors/TauriCommandError';
 import { scheduleAfterStartupPaint, scheduleAfterStartupSignal } from '@/shared/utils/startupTaskScheduling';
 import {
@@ -79,6 +95,11 @@ import {
 import { useDispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resolveDispatchNavPresentation } from '@/features/dispatch/dispatchNavPresentation';
 import {
+  ensureCronJobCountsListener,
+  getCronJobCountsSnapshot,
+  subscribeCronJobCounts,
+} from '@/app/components/scheduled-jobs/cronJobCountsStore';
+import {
   SESSION_METADATA_DEFERRED_FALLBACK_MS,
   SESSION_METADATA_DEFERRED_FRAME_COUNT,
   SESSION_METADATA_DEFERRED_SIGNAL,
@@ -87,8 +108,6 @@ import {
   hasStartupOverlayHandedOff,
 } from './sessionMetadataStartup';
 import {
-  getEffectiveTopLevelSessionCount,
-  getSessionBufferPrefetchLimit,
   getSessionDisplayLimit,
   getSessionExpandToggleState,
   SESSIONS_LEVEL_0,
@@ -96,22 +115,17 @@ import {
 } from './sessionNavExpand';
 import { useSessionRowRemovalTransition } from './sessionRowShift';
 import { SessionStatusIndicator } from './SessionStatusIndicator';
+import { createSessionsNavSelector } from './sessionsNavSelector';
 import './SessionsSection.scss';
 
 const log = createLogger('SessionsSection');
-const ScheduledJobsModal = lazy(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
-const WorkspaceSessionBatchModal = lazy(() => import('../workspaces/WorkspaceSessionBatchModal'));
+const reportedDiscoveryNotificationKeys = new Set<string>();
+const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
 
 type HistoryOpenIntentDispatchResult = 'none' | 'dispatched' | 'already-pending';
 
 /** Page size for the fully-expanded (level 2) session list. */
 const SESSIONS_LEVEL_2_PAGE = 200;
-
-/**
- * Delay before topping the off-screen row buffer back up. Keeps the refill out
- * of the startup burst and coalesces the repeated deletes of a cleanup pass.
- */
-const SESSIONS_BUFFER_PREFETCH_DELAY_MS = 800;
 
 const getTitle = (session: Session): string =>
   resolveSessionTitle(session, (key, options) => i18nService.t(key, options));
@@ -127,24 +141,6 @@ function DefaultSessionTitlePreview({ sessionId, createdAt }: Pick<Session, 'ses
     </div>
   );
 }
-
-const countTopLevelSessionsInScope = (
-  sessions: Iterable<Session>, workspaceId?: string,
-): number => {
-  const scopedSessions = Array.from(sessions).filter((session: Session) => {
-    if (session.isTransient || session.sessionKind === 'subagent') return false;
-    return workspaceId ? sessionBelongsToWorkspaceNavRow(session, workspaceId) : !session.workspaceId;
-  });
-
-  const knownIds = new Set(scopedSessions.map(session => session.sessionId));
-  return scopedSessions.reduce((count, session) => {
-    const parentSessionId = resolveSessionRelationship(session).parentSessionId;
-    if (parentSessionId && knownIds.has(parentSessionId)) {
-      return count;
-    }
-    return count + 1;
-  }, 0);
-};
 
 const getChildSessionBadge = (kind: Session['sessionKind']): string => {
   const normalizedKind =
@@ -200,6 +196,15 @@ interface SessionsSectionProps {
   workspaceScopes?: WorkspaceSessionScope[];
   /** Navigation geometry for nested workspace rows versus the flat aggregate list. */
   layout?: 'nested' | 'flat';
+  /** Close a containing history surface after explicit session navigation. */
+  onSessionOpened?: () => void;
+  /** Assistant history owns persistence; ordinary project rows do not expose this action. */
+  defaultSessionAction?: {
+    sessionId: string | null;
+    disabled: boolean;
+    disabledReason?: string;
+    onChange: (sessionId: string | null) => void;
+  };
 }
 
 export interface WorkspaceSessionScope {
@@ -217,21 +222,29 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   useWorkspaceViewPreferences = false,
   workspaceScopes,
   layout = 'nested',
+  onSessionOpened,
+  defaultSessionAction,
 }) => {
   useDeviceDirectory();
   const { t } = useI18n('common');
+  useEffect(() => { ensureCronJobCountsListener(); }, []);
   const storedSessionOrdering = useWorkspaceSessionViewStore(state => state.ordering);
   const storedSessionShow = useWorkspaceSessionViewStore(state => state.show);
   const storedSessionFilters = useWorkspaceSessionViewStore(state => state.filters);
+  const storedSourceAgent = useWorkspaceSessionViewStore(state => state.sourceAgent);
+  const sourceAgent = useWorkspaceViewPreferences ? storedSourceAgent : 'all';
+  const matchesSourceAgent = useCallback((session: Session) => matchesWorkspaceSourceAgent(
+    session, sourceAgent,
+  ), [sourceAgent]);
   const sessionOrdering = useWorkspaceViewPreferences ? storedSessionOrdering : 'created';
   const sessionShow = useWorkspaceViewPreferences ? storedSessionShow : 'all';
   const sessionFilters = useWorkspaceViewPreferences
     ? storedSessionFilters
     : DEFAULT_WORKSPACE_SESSION_FILTERS;
-  const hasActiveSessionFilter = sessionShow !== 'all' || hasWorkspaceSessionFilters(sessionFilters);
+  const includeArchivedSessions = sessionShow === 'archived' || !sessionFilters.hideArchived;
   const showAllWithoutLimit = layout === 'flat' && Boolean(workspaceScopes?.length);
   const sessionListClassName = `openbitfun-nav-panel__inline-list${layout === 'flat' ? ' is-flat-workspace-view' : ''}`;
-  const { setActiveWorkspace, currentWorkspace } = useWorkspaceContext();
+  const { setActiveWorkspace, openWorkspace, openedWorkspacesList, currentWorkspace } = useWorkspaceContext();
   const activeTabId = useSceneStore(s => s.activeTabId);
   const activeBtwSessionTab = useAgentCanvasStore(state => selectActiveBtwSessionTab(state as any));
   const activeBtwSessionData = activeBtwSessionTab?.content.data as
@@ -240,32 +253,28 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const [flowChatState, setFlowChatState] = useState<FlowChatState>(() =>
     flowChatStore.getState()
   );
+  const peerDevice = usePeerDeviceModeOptional();
+  const canCopySessions = canCopySessionsOnSurface(
+    peerDevice?.peerMode.active ?? false,
+    peerDevice?.currentPeerCapabilities ?? null,
+  );
   const backgroundSubagentActivities = useBackgroundSubagentActivityStore(state => state.activities);
   const dispatchTransportByJobId = useDispatchJobStore(state => state.transportByJobId);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [expandLevel, setExpandLevel] = useState<0 | 1 | 2>(0);
-  // Grouped workspace history keeps its existing level-2 paging. The flat
-  // aggregate projection bypasses this display cap and streams every page in.
-  const [level2DisplayCount, setLevel2DisplayCount] = useState(SESSIONS_LEVEL_2_PAGE);
-
-  useEffect(() => {
-    if (expandLevel !== 2) {
-      setLevel2DisplayCount(SESSIONS_LEVEL_2_PAGE);
-    }
-  }, [expandLevel]);
+  const { expandLevel, level2DisplayCount, setExpandLevel, setLevel2DisplayCount } = useSessionNavExpansion(
+    `${surfaceScopedKey(getActiveSurfaceId(), workspaceId)}:${sourceAgent}`,
+    SESSIONS_LEVEL_2_PAGE,
+  );
+  const surface = getActiveSurfaceScope();
+  const initialMetadataKey = surface.key(workspaceId, surface.epoch);
   const [metadataPageState, setMetadataPageState] = useState<{
-    totalTopLevelCount: number | null;
-    syncedTopLevelCount: number | null;
-    nextCursor?: string;
-    hasMore: boolean;
+    loadedScope: string | null;
     isLoading: boolean;
     loadError: boolean;
+    firstPage?: SessionMetadataPage;
   }>({
-    totalTopLevelCount: null,
-    syncedTopLevelCount: null,
-    nextCursor: undefined,
-    hasMore: false,
+    loadedScope: null,
     isLoading: false,
     loadError: false,
   });
@@ -277,10 +286,81 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     failedScopeCount: 0,
   }));
   const [aggregateReloadRequestId, setAggregateReloadRequestId] = useState(0);
+  const [catalogRefreshVersion, setCatalogRefreshVersion] = useState(0);
+  const onDiscoveryCompleted = useCallback(() => {
+    setCatalogRefreshVersion(value => value + 1);
+    setAggregateReloadRequestId(value => value + 1);
+  }, []);
+  const discovery = useWorkspaceSessionDiscovery(
+    workspaceScopes?.map(scope => scope.workspaceId) ?? (workspaceId ? [workspaceId] : []),
+    isVisible,
+    onDiscoveryCompleted,
+  );
+  const observeDiscovery = discovery.observe;
+  const matchesExternalDiscovery = useCallback((session: Session) => matchesWorkspaceExternalDiscovery(
+    session, discovery.enabledSources,
+  ), [discovery.enabledSources]);
+  useEffect(() => {
+    // The same host scan is observed by the active workspace row and, in some
+    // layouts, by an aggregate or assistant-history row. Show one toast per
+    // diagnostic set instead of reserving space in every session list.
+    if (!isVisible || !isActiveWorkspace || !workspaceId || discovery.pending) return;
+
+    const sources = new Set(discovery.diagnostics.map(diagnostic => diagnostic.ecosystemId));
+    const messages = new Map<string, string>();
+    for (const diagnostic of discovery.diagnostics) {
+      const source = isExternalSessionEcosystem(diagnostic.ecosystemId)
+        ? EXTERNAL_SESSION_NAMES[diagnostic.ecosystemId]
+        : diagnostic.ecosystemId;
+      const kind = diagnostic.code === 'workspace_unresolved' ? 'workspace' : 'read';
+      const key = `diagnostic:${diagnostic.ecosystemId}:${kind}`;
+      messages.set(
+        key,
+        t(
+          kind === 'workspace'
+            ? 'nav.sessions.discoveryWorkspaceUnresolved'
+            : 'nav.sessions.discoveryReadFailed',
+          { source },
+        ),
+      );
+    }
+
+    // Keep warnings from older hosts and non-catalog failures visible. Newer
+    // hosts also send structured diagnostics, so suppress only the legacy
+    // catalog summaries that those diagnostics replace.
+    for (const warning of discovery.warnings) {
+      const derived = [...sources].some(source => (
+        warning === `Some ${source} source records could not be read`
+        || warning === `Some ${source} sessions could not be matched to a workspace`
+      ));
+      if (!derived) messages.set(`warning:${warning}`, warning);
+    }
+
+    const notificationScope = `${getActiveSurfaceId()}:${workspaceId}`;
+    const notificationKeys = new Set(
+      [...messages.keys()].map(key => `${notificationScope}:${key}`),
+    );
+    for (const key of reportedDiscoveryNotificationKeys) {
+      if (key.startsWith(`${notificationScope}:`) && !notificationKeys.has(key)) {
+        reportedDiscoveryNotificationKeys.delete(key);
+      }
+    }
+    for (const [key, message] of messages) {
+      const notificationKey = `${notificationScope}:${key}`;
+      if (reportedDiscoveryNotificationKeys.has(notificationKey)) continue;
+      reportedDiscoveryNotificationKeys.add(notificationKey);
+      notificationService.warning(message, {
+        title: t('nav.sessions.discoveryWarningTitle'),
+        duration: 7000,
+      });
+    }
+  }, [discovery.diagnostics, discovery.pending, discovery.warnings, isActiveWorkspace, isVisible, t, workspaceId]);
   const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
   /** Second level of the session menu: pick what a Markdown export includes. */
   const [isExportScopeMenu, setIsExportScopeMenu] = useState(false);
   const [exportingSessionId, setExportingSessionId] = useState<string | null>(null);
+  /** Session whose copy request is in flight; one copy runs at a time. */
+  const [duplicatingSessionId, setDuplicatingSessionId] = useState<string | null>(null);
   const orderingRevision = useSyncExternalStore(
     sessionNavStatusService.subscribeOrdering,
     sessionNavStatusService.getOrderingSnapshot,
@@ -291,8 +371,47 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     void orderingRevision;
     return new Set([...flowChatState.sessions.keys()].filter(sessionNavStatusService.isRunning));
   }, [flowChatState.sessions, orderingRevision]);
+  const discoveryEnabledSources = discovery.enabledSources;
+  const discoveryFilterActive = discoveryEnabledSources !== undefined
+    && Object.keys(EXTERNAL_SESSION_NAMES).some(source => !discoveryEnabledSources.has(source));
+  const catalogQueryJson = useMemo(() => {
+    if (discoveryFilterActive) return JSON.stringify(null);
+    return JSON.stringify(workspaceSessionCatalogQuery(workspaceId, sessionOrdering, sessionShow,
+      sessionFilters, sourceAgent) ?? null);
+  }, [discoveryFilterActive, workspaceId, sessionOrdering, sessionShow, sessionFilters, sourceAgent]);
+  const captureCatalogQuery = useCallback((query: SessionCatalogQuery) => captureWorkspaceSessionCatalogQuery(
+    query, flowChatStore.getState().sessions.values(), sessionNavStatusService.getSortTimestamp,
+  ), []);
+  // Capture the view's observed order only when beginning a catalog. Hydration,
+  // streaming and run starts must not restart it; a refresh or device switch
+  // must rebind it.
+  const catalogQuery = useMemo(() => {
+    void catalogRefreshVersion;
+    void initialMetadataKey;
+    const query = (JSON.parse(catalogQueryJson) ?? undefined) as SessionCatalogQuery | undefined;
+    return query ? captureCatalogQuery(query) : undefined;
+  }, [captureCatalogQuery, catalogQueryJson, catalogRefreshVersion, initialMetadataKey]);
+  const getKnownCatalogCount = useCallback(() => countPersistedWorkspaceCatalogSessions(
+    flowChatStore.getState().sessions.values(), workspaceId, sourceAgent,
+  ), [workspaceId, sourceAgent]);
+  const catalog = useWorkspaceSessionCatalog({
+    workspaceId,
+    enabled: isVisible && !workspaceScopes?.length && metadataPageState.loadedScope === initialMetadataKey,
+    refreshVersion: catalogRefreshVersion,
+    onPage: observeDiscovery,
+    query: catalogQuery,
+    captureQuery: captureCatalogQuery,
+    targetCount: expandLevel === 2 ? level2DisplayCount : expandLevel === 1 ? SESSIONS_LEVEL_1 : SESSIONS_LEVEL_0,
+    firstPage: metadataPageState.loadedScope === initialMetadataKey ? metadataPageState.firstPage : undefined,
+    getKnownCount: getKnownCatalogCount,
+  });
   const [scheduledJobsSessionId, setScheduledJobsSessionId] = useState<string | null>(null);
-  const [batchWorkspace, setBatchWorkspace] = useState<WorkspaceSessionScope | null>(null);
+  const cronJobCountsRevision = useSyncExternalStore(
+    subscribeCronJobCounts,
+    () => getCronJobCountsSnapshot(),
+    () => getCronJobCountsSnapshot(),
+  );
+  const cronJobCountsBySession = cronJobCountsRevision.bySessionId;
   const editInputRef = useRef<HTMLInputElement>(null);
   const sessionMenuPopoverRef = useRef<HTMLDivElement>(null);
   const sessionMenuAnchorRef = useRef<HTMLButtonElement>(null);
@@ -312,39 +431,14 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     ? contextSessionMenuPosition
     : anchoredSessionMenuPosition;
   const metadataLoadRequestIdRef = useRef(0);
-  /** User-driven metadata loads still running; background loads yield to them. */
-  const foregroundLoadCountRef = useRef(0);
   const initialMetadataLoadKeyRef = useRef<string | null>(null);
   const sessionListRef = useRef<HTMLDivElement>(null);
-  /** Last (scope, live, synced) triple a background reconcile ran for. */
-  const liveReconcileSignatureRef = useRef<string | null>(null);
-  /** Last (scope, cursor, size) triple a buffer prefetch ran for. */
-  const bufferPrefetchSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const selector = (s: FlowChatState): string => {
-      const parts: string[] = [s.activeSessionId ?? ''];
-      for (const session of s.sessions.values()) {
-        const latestTurn = session.dialogTurns[session.dialogTurns.length - 1];
-        const dispatchTarget = session.config.dispatchTarget;
-        const dispatchTargetSnapshot = dispatchTarget?.kind === 'ssh'
-          ? `ssh:${dispatchTarget.connectionId}:${dispatchTarget.workspacePath}:${dispatchTarget.displayName}`
-          : dispatchTarget?.kind === 'device'
-            ? `device:${dispatchTarget.deviceId}:${dispatchTarget.workspacePath}:${dispatchTarget.displayName}`
-            : 'local';
-        parts.push(
-          `${session.sessionId}|${session.isTransient ? '1':'0'}|${session.sessionKind}|` +
-          `${session.parentSessionId ?? ''}|${session.parentToolCallId ?? ''}|${session.subagentType ?? ''}|` +
-          `${session.workspacePath ?? ''}|${session.mode ?? ''}|${session.needsUserAttention ?? ''}|` +
-          `${session.hasUnreadCompletion ?? ''}|${latestTurn?.status ?? ''}|` +
-          `${session.title ?? ''}|${dispatchTargetSnapshot}|${session.config.dispatchJobState ?? ''}`
-        );
-      }
-      return parts.join(';');
-    };
+    const selector = createSessionsNavSelector();
     const unsub = flowChatStore.subscribeSelector(selector, (() => {
       setFlowChatState(flowChatStore.getState());
-    }), { isEqual: (a, b) => a === b });
+    }));
     return () => unsub();
   }, []);
 
@@ -382,18 +476,13 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   useEffect(() => {
     metadataLoadRequestIdRef.current += 1;
     initialMetadataLoadKeyRef.current = null;
-    liveReconcileSignatureRef.current = null;
-    bufferPrefetchSignatureRef.current = null;
-    setExpandLevel(0);
     setMetadataPageState({
-      totalTopLevelCount: null,
-      syncedTopLevelCount: null,
-      nextCursor: undefined,
-      hasMore: false,
+      loadedScope: null,
       isLoading: false,
       loadError: false,
     });
-  }, [workspaceId]);
+    return () => { metadataLoadRequestIdRef.current += 1; };
+  }, [initialMetadataKey]);
 
   const workspaceScopesKey = useMemo(
     () => workspaceScopes?.map(scope => scope.workspaceId).join('|') ?? '',
@@ -416,16 +505,12 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           const page = await flowChatStore.loadSessionMetadataPage(
             scope.workspaceId, SESSIONS_LEVEL_2_PAGE, cursor,
             'sessions_nav_all_grouping',
+            { fresh: aggregateReloadRequestId > 0 },
           );
           if (cancelled) return;
+          observeDiscovery(scope.workspaceId, page);
           cursor = page.hasMore ? page.nextCursor : undefined;
         } while (cursor);
-
-        if (!sessionFilters.hideArchived && !cancelled) {
-          await flowChatStore.loadArchivedSessionMetadata(
-            scope.workspaceId,
-          );
-        }
       }));
 
       if (cancelled) return;
@@ -456,82 +541,47 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }, [
     aggregateReloadRequestId,
     isVisible,
-    sessionFilters.hideArchived,
+    observeDiscovery,
     workspaceScopes,
     workspaceScopesKey,
   ]);
 
-  useEffect(() => {
-    if (!isVisible || sessionFilters.hideArchived || workspaceScopes?.length || !workspaceId) return;
-    void flowChatStore.loadArchivedSessionMetadata(
-      workspaceId!,
-    ).catch(error => {
-      log.warn('Failed to load archived session projection', { error });
-    });
-  }, [
-    isVisible,
-    sessionFilters.hideArchived,
-    workspaceId,
-    workspaceScopes,
-  ]);
+  const archivedCatalog = useArchivedSessionMetadata({
+    workspaceIds: workspaceScopes?.map(scope => scope.workspaceId) ?? (workspaceId ? [workspaceId] : []),
+    enabled: isVisible && includeArchivedSessions,
+    refreshVersion: catalogRefreshVersion,
+  });
 
   const loadMetadataPage = useCallback(
     async (
       limit: number,
       cursor: string | undefined,
       source: string,
-      options?: { background?: boolean },
     ) => {
       if (!workspaceId || limit <= 0) {
         return null;
       }
 
-      // A background refresh only re-syncs counts for a list that is already on
-      // screen. Surfacing its spinner (or its retry state) would make routine
-      // upkeep — such as replacing the row a delete consumed — flash the list.
-      // It also leaves the request id alone so it cannot strand a user-driven
-      // load (which would otherwise never clear its spinner); instead it drops
-      // its own result if anything else claimed the list meanwhile.
-      const isBackgroundLoad = options?.background === true;
-      if (isBackgroundLoad && foregroundLoadCountRef.current > 0) {
-        return null;
-      }
-
-      const requestId = isBackgroundLoad
-        ? metadataLoadRequestIdRef.current
-        : metadataLoadRequestIdRef.current + 1;
-      if (!isBackgroundLoad) {
-        metadataLoadRequestIdRef.current = requestId;
-        foregroundLoadCountRef.current += 1;
-        setMetadataPageState(prev => ({
-          ...prev,
-          isLoading: true,
-          loadError: false,
-        }));
-      }
+      const requestId = ++metadataLoadRequestIdRef.current;
+      setMetadataPageState(prev => ({ ...prev, isLoading: true, loadError: false }));
 
       try {
         const page = await flowChatStore.loadSessionMetadataPage(
           workspaceId, limit, cursor,
-          source
+          source, { query: catalogQuery },
         );
-        if (metadataLoadRequestIdRef.current === requestId) {
-          const syncedTopLevelCount = countTopLevelSessionsInScope(
-            flowChatStore.getState().sessions.values(),
-            workspaceId,
-          );
+        if (metadataLoadRequestIdRef.current === requestId && surface.isCurrent()) {
+          observeDiscovery(workspaceId, page);
           setMetadataPageState({
-            totalTopLevelCount: page.totalTopLevelCount,
-            syncedTopLevelCount,
-            nextCursor: page.nextCursor,
-            hasMore: page.hasMore,
+            loadedScope: initialMetadataKey,
             isLoading: false,
             loadError: false,
+            firstPage: page,
           });
         }
         return page;
       } catch (error) {
-        if (metadataLoadRequestIdRef.current === requestId && !isBackgroundLoad) {
+        if (metadataLoadRequestIdRef.current === requestId && surface.isCurrent()) {
           setMetadataPageState(prev => ({
             ...prev,
             isLoading: false,
@@ -540,16 +590,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         }
         log.warn('Failed to load visible session metadata page', { error, workspaceId, cursor, limit });
         return null;
-      } finally {
-        if (!isBackgroundLoad) {
-          foregroundLoadCountRef.current = Math.max(foregroundLoadCountRef.current - 1, 0);
-        }
       }
     },
-    [workspaceId]
+    [catalogQuery, initialMetadataKey, observeDiscovery, surface, workspaceId]
   );
-
-  const initialMetadataKey = workspaceId ?? '';
 
   const loadInitialMetadataPage = useCallback(
     async (source: string) => {
@@ -634,40 +678,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     workspaceId,
   ]);
 
-  useEffect(() => {
-    const needsExpandedDataset = sessionOrdering !== 'updated' || hasActiveSessionFilter;
-    if (!needsExpandedDataset || !isVisible || !workspaceId) {
-      return;
-    }
-
-    setExpandLevel(2);
-    setLevel2DisplayCount(SESSIONS_LEVEL_2_PAGE);
-    void loadMetadataPage(
-      SESSIONS_LEVEL_2_PAGE,
-      undefined,
-      'sessions_nav_view_preferences',
-    );
-  }, [
-    isVisible,
-    loadMetadataPage,
-    sessionOrdering,
-    hasActiveSessionFilter,
-    workspaceId,
-  ]);
-
   // When sessions are archived, reset stale metadata so the expand toggle
   // doesn't linger with old counts after all sessions are gone.
   useEffect(() => {
     const handler = () => {
       metadataLoadRequestIdRef.current += 1;
-      liveReconcileSignatureRef.current = null;
-      bufferPrefetchSignatureRef.current = null;
+      setCatalogRefreshVersion(value => value + 1);
       setExpandLevel(0);
       setMetadataPageState({
-        totalTopLevelCount: null,
-        syncedTopLevelCount: null,
-        nextCursor: undefined,
-        hasMore: false,
+        loadedScope: null,
         isLoading: false,
         loadError: false,
       });
@@ -677,7 +696,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     };
     window.addEventListener('openbitfun:session-archived', handler);
     return () => window.removeEventListener('openbitfun:session-archived', handler);
-  }, [isVisible, workspaceId, loadMetadataPage]);
+  }, [isVisible, workspaceId, loadMetadataPage, setExpandLevel]);
 
   const closeSessionMenu = useCallback(() => {
     setOpenMenuSessionId(null);
@@ -736,45 +755,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     };
   }, [isExportScopeMenu, openMenuSessionId, updateContextSessionMenuPosition]);
 
-  const sessions = useMemo(
-    () =>
-      Array.from(flowChatState.sessions.values())
-        .filter((s: Session) => {
-          if (s.isTransient) {
-            return false;
-          }
-          if (s.sessionKind === 'subagent') {
-            return false;
-          }
-          if (workspaceScopes?.length) {
-            return workspaceScopes.some(scope => sessionBelongsToWorkspaceNavRow(s, scope.workspaceId));
-          }
-          if (workspaceId) {
-            return sessionBelongsToWorkspaceNavRow(s, workspaceId);
-          }
-          return !s.workspaceId;
-        }),
-    [flowChatState.sessions, workspaceId, workspaceScopes]
-  );
-
   const { topLevelSessions: allTopLevelSessions, childrenByParent } = useMemo(() => {
     // Activity timestamps can change independently of the session records.
     void orderingRevision;
-    const childMap = new Map<string, Session[]>();
-    const parents: Session[] = [];
-
-    const knownIds = new Set(sessions.map(s => s.sessionId));
-
-    for (const s of sessions) {
-      const pid = resolveSessionRelationship(s).parentSessionId;
-      if (pid && typeof pid === 'string' && pid.trim() && knownIds.has(pid)) {
-        const list = childMap.get(pid) || [];
-        list.push(s);
-        childMap.set(pid, list);
-      } else {
-        parents.push(s);
-      }
-    }
+    const { topLevelSessions: parents, childrenByParent: childMap } = getWorkspaceSessionHierarchy(
+      sessionShow === 'archived'
+        ? [...flowChatState.sessions.values()].filter(session => session.persistedStatus === 'archived')
+        : flowChatState.sessions.values(),
+      workspaceScopes?.length ? workspaceScopes.map(scope => scope.workspaceId) : workspaceId ? [workspaceId] : [],
+    );
 
     const compareForCurrentView = (left: Session, right: Session) =>
       compareWorkspaceNavSessions(
@@ -794,24 +783,24 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       topLevelSessions: [...parents].sort(compareForCurrentView),
       childrenByParent: childMap,
     };
-  }, [orderingRevision, runningSessionIds, sessionOrdering, sessions]);
+  }, [flowChatState.sessions, orderingRevision, runningSessionIds, sessionOrdering, sessionShow, workspaceId, workspaceScopes]);
 
   const topLevelSessions = useMemo(
-    () => allTopLevelSessions.filter(session => matchesWorkspaceSessionView(
+    () => allTopLevelSessions.filter(session => matchesExternalDiscovery(session)
+      && matchesSourceAgent(session) && matchesWorkspaceSessionView(
       session,
       sessionShow,
       sessionFilters,
       runningSessionIds.has(session.sessionId),
     )),
-    [allTopLevelSessions, runningSessionIds, sessionFilters, sessionShow],
+    [allTopLevelSessions, matchesExternalDiscovery, matchesSourceAgent, runningSessionIds, sessionFilters, sessionShow],
   );
 
   const visibleChildrenByParent = useMemo(() => {
-    if (!hasActiveSessionFilter) return childrenByParent;
-
     const filtered = new Map<string, Session[]>();
     for (const [parentId, children] of childrenByParent) {
-      filtered.set(parentId, children.filter(session => matchesWorkspaceSessionView(
+      filtered.set(parentId, children.filter(session => matchesExternalDiscovery(session)
+        && matchesSourceAgent(session) && matchesWorkspaceSessionView(
         session,
         sessionShow,
         sessionFilters,
@@ -819,7 +808,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       )));
     }
     return filtered;
-  }, [childrenByParent, hasActiveSessionFilter, runningSessionIds, sessionFilters, sessionShow]);
+  }, [childrenByParent, matchesExternalDiscovery, matchesSourceAgent, runningSessionIds, sessionFilters, sessionShow]);
 
   const sessionDisplayLimit = useMemo(() => {
     return getSessionDisplayLimit({
@@ -830,16 +819,18 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     });
   }, [topLevelSessions.length, expandLevel, level2DisplayCount, showAllWithoutLimit]);
 
-  const totalTopLevelSessionCount = !hasActiveSessionFilter && !workspaceScopes?.length
-    ? getEffectiveTopLevelSessionCount(
-        metadataPageState.totalTopLevelCount,
-        metadataPageState.syncedTopLevelCount,
-        allTopLevelSessions.length,
-        metadataPageState.isLoading,
-      )
-    : topLevelSessions.length;
-  const hasMoreUnloadedSessions =
-    !hasActiveSessionFilter && !workspaceScopes?.length && allTopLevelSessions.length < totalTopLevelSessionCount;
+  // Only an acknowledged workspace query provides a scoped total. Include
+  // newly-created local rows while their metadata publication is in flight.
+  const totalTopLevelSessionCount = workspaceSessionCatalogTotal(topLevelSessions.length, catalog);
+  const knownCatalogCount = getKnownCatalogCount();
+  useEffect(() => {
+    // Page hydration updates the baseline inside the reader. A later local
+    // creation/removal/archive needs a new bounded first page to refill rows.
+    if (isVisible && catalog.paged && catalog.complete && !catalog.loading
+      && catalog.knownCount !== knownCatalogCount) setCatalogRefreshVersion(value => value + 1);
+  }, [catalog.complete, catalog.knownCount, catalog.loading, catalog.paged, isVisible, knownCatalogCount]);
+  const isSessionCountComplete = !workspaceId || Boolean(workspaceScopes?.length)
+    || (catalog.complete && !discovery.pending && !discovery.failed);
   const expandToggleState = getSessionExpandToggleState(totalTopLevelSessionCount, expandLevel);
   // The visible label stays short ("Show more") and the remaining count rides in
   // a trailing `+N` chip; screen readers get the full sentence via aria-label.
@@ -854,16 +845,16 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       const count = expandToggleState.collapsedRemainingCount;
       return {
         label: t('nav.sessions.showMoreLabel'),
-        ariaLabel: t('nav.sessions.showMore', { count }),
-        remainingCount: count,
+        ariaLabel: isSessionCountComplete ? t('nav.sessions.showMore', { count }) : t('nav.sessions.showMoreLabel'),
+        remainingCount: isSessionCountComplete ? count : null,
       };
     }
     if (expandToggleState.action === 'show-all') {
       const count = expandToggleState.expandedRemainingCount;
       return {
         label: t('nav.sessions.showAllLabel'),
-        ariaLabel: t('nav.sessions.showAll', { count }),
-        remainingCount: count,
+        ariaLabel: isSessionCountComplete ? t('nav.sessions.showAll', { count }) : t('nav.sessions.showAllLabel'),
+        remainingCount: isSessionCountComplete ? count : null,
       };
     }
     return {
@@ -875,99 +866,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     expandToggleState.action,
     expandToggleState.collapsedRemainingCount,
     expandToggleState.expandedRemainingCount,
+    isSessionCountComplete,
     t,
-  ]);
-
-  useEffect(() => {
-    if (
-      !isVisible ||
-      !workspaceId ||
-      metadataPageState.isLoading ||
-      metadataPageState.totalTopLevelCount === null ||
-      metadataPageState.syncedTopLevelCount === null ||
-      allTopLevelSessions.length === metadataPageState.syncedTopLevelCount
-    ) {
-      return;
-    }
-
-    // Re-running for a scope whose counts have not moved would spin on a
-    // failing backend, since a background load leaves the state untouched.
-    const signature = [
-      initialMetadataKey,
-      allTopLevelSessions.length,
-      metadataPageState.syncedTopLevelCount,
-    ].join('\n');
-    if (liveReconcileSignatureRef.current === signature) {
-      return;
-    }
-    liveReconcileSignatureRef.current = signature;
-
-    void loadMetadataPage(SESSIONS_LEVEL_0, undefined, 'sessions_nav_live_reconcile', {
-      background: true,
-    });
-  }, [
-    initialMetadataKey,
-    isVisible,
-    loadMetadataPage,
-    metadataPageState.isLoading,
-    metadataPageState.syncedTopLevelCount,
-    metadataPageState.totalTopLevelCount,
-    allTopLevelSessions.length,
-    workspaceId,
-  ]);
-
-  // Keep a few rows loaded past the visible slice. Deleting a session then
-  // promotes an already-loaded row in the same commit instead of leaving a gap
-  // until a metadata round trip lands.
-  useEffect(() => {
-    if (
-      !isVisible ||
-      !workspaceId ||
-      metadataPageState.isLoading ||
-      metadataPageState.loadError ||
-      metadataPageState.totalTopLevelCount === null ||
-      !metadataPageState.nextCursor
-    ) {
-      return;
-    }
-
-    const prefetchLimit = getSessionBufferPrefetchLimit({
-      expandLevel,
-      loadedTopLevelCount: allTopLevelSessions.length,
-      totalTopLevelCount: totalTopLevelSessionCount,
-      hasMore: metadataPageState.hasMore,
-    });
-    if (prefetchLimit <= 0) {
-      return;
-    }
-
-    const signature = [initialMetadataKey, metadataPageState.nextCursor, prefetchLimit].join('\n');
-    if (bufferPrefetchSignatureRef.current === signature) {
-      return;
-    }
-
-    const cursor = metadataPageState.nextCursor;
-    const timer = window.setTimeout(() => {
-      bufferPrefetchSignatureRef.current = signature;
-      void loadMetadataPage(prefetchLimit, cursor, 'sessions_nav_buffer_prefetch', {
-        background: true,
-      });
-    }, SESSIONS_BUFFER_PREFETCH_DELAY_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    allTopLevelSessions.length,
-    expandLevel,
-    initialMetadataKey,
-    isVisible,
-    loadMetadataPage,
-    metadataPageState.hasMore,
-    metadataPageState.isLoading,
-    metadataPageState.loadError,
-    metadataPageState.nextCursor,
-    metadataPageState.totalTopLevelCount,
-    totalTopLevelSessionCount,
-    workspaceId,
   ]);
 
   const visibleItems = useMemo(() => {
@@ -1079,6 +979,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             workspaceId: targetWorkspaceId,
             workspacePath: session.workspacePath,
           });
+          onSessionOpened?.();
           return;
         }
 
@@ -1087,6 +988,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             workspaceId: targetWorkspaceId,
             activateWorkspace,
           });
+          onSessionOpened?.();
           return;
         }
 
@@ -1094,6 +996,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           workspaceId: targetWorkspaceId,
           activateWorkspace,
         });
+        onSessionOpened?.();
         window.dispatchEvent(
           new CustomEvent('flowchat:switch-session', { detail: { sessionId } })
         );
@@ -1104,6 +1007,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     [
       activeSessionId,
       dispatchHistoryOpenIntentForSession,
+      onSessionOpened,
       editingSessionId,
       setActiveWorkspace,
       workspaceId,
@@ -1140,6 +1044,23 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     },
     [activeSessionId, dispatchHistoryOpenIntentForSession, editingSessionId],
   );
+
+  const handleRevealSessionStorageDirectory = useCallback(async (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    closeSessionMenu();
+    try {
+      if (isNonLocalDispatchTarget(session.config.dispatchTarget)) {
+        throw new Error(t('nav.sessions.storageDirectoryDesktopOnly'));
+      }
+      const storageWorkspaceId = workspaceId ?? requireSessionOwningWorkspaceId(session);
+      await sessionAPI.revealStorageDirectory(storageWorkspaceId, session.sessionId);
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.sessions.openStorageDirectoryFailed'),
+        { duration: 4000 },
+      );
+    }
+  }, [closeSessionMenu, t, workspaceId]);
 
   const resolveSessionTitle = getTitle;
   const titleNumbers = useSessionTitleNumbers(flowChatState.sessions);
@@ -1196,7 +1117,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           {
             sessionId: session.sessionId,
             title: resolveSessionTitle(session),
-            workspaceId: requireSessionWorkspaceId(session),
+            workspaceId: requireSessionOwningWorkspaceId(session),
           },
           scope
         );
@@ -1205,28 +1126,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       }
     },
     [closeSessionMenu, exportingSessionId, resolveSessionTitle]
-  );
-
-  const handleDelete = useCallback(
-    async (e: React.MouseEvent, sessionId: string) => {
-      e.stopPropagation();
-      const session = flowChatStore.getState().sessions.get(sessionId);
-      const confirmed = await confirmDanger(
-        t('nav.sessions.deleteConfirmTitle'),
-        t('nav.sessions.deleteConfirmMessage', {
-          name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
-        }),
-        { confirmText: t('nav.sessions.delete') },
-      );
-      if (!confirmed) return;
-
-      try {
-        await flowChatManager.deleteChatSession(sessionId);
-      } catch (err) {
-        log.error('Failed to delete session', err);
-      }
-    },
-    [resolveSessionTitle, t]
   );
 
   const handleArchive = useCallback(
@@ -1243,17 +1142,75 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     [t]
   );
 
-  const handleCopySessionId = useCallback(
+  /**
+   * Copy the session into a new independent session. The copy is created by the
+   * host and appears in this list; the current row and the active session stay
+   * untouched (archiving keeps the user's place too).
+   */
+  const handleDuplicateSession = useCallback(
     async (e: React.MouseEvent, sessionId: string) => {
       e.stopPropagation();
-      const copied = await copyTextToClipboard(sessionId);
-      if (copied) {
-        notificationService.success(t('nav.sessions.copySessionIdSuccess'), { duration: 2000 });
-      } else {
-        notificationService.error(t('nav.sessions.copySessionIdFailed'), { duration: 3000 });
+      closeSessionMenu();
+      if (duplicatingSessionId) return;
+
+      setDuplicatingSessionId(sessionId);
+      try {
+        const copied = await flowChatManager.duplicateChatSession(sessionId);
+        if (copied.metadataProjected) {
+          notificationService.success(
+            t('nav.sessions.duplicateSuccess', { name: copied.sessionName }),
+            { duration: 3000 },
+          );
+        } else {
+          notificationService.warning(
+            t('nav.sessions.duplicateCreatedRefreshFailed', { name: copied.sessionName }),
+            { duration: 5000 },
+          );
+        }
+      } catch (error) {
+        if (isSurfaceChangedError(error)) return;
+        log.error('Failed to copy session', { sessionId, error });
+        notificationService.error(
+          error instanceof Error && error.message
+            ? error.message
+            : t('nav.sessions.duplicateFailed'),
+          { duration: 4000 },
+        );
+      } finally {
+        setDuplicatingSessionId(null);
       }
     },
-    [t]
+    [closeSessionMenu, duplicatingSessionId, t],
+  );
+
+  /**
+   * A worktree directory is registered for execution but not opened, so the
+   * session row is the only place it can be reached from. Opening it as a
+   * workspace is an explicit user action; if the worktree happens to be open
+   * already, activating it is the whole effect.
+   */
+  const handleOpenWorktreeWorkspace = useCallback(
+    async (e: React.MouseEvent, worktreePath: string) => {
+      e.stopPropagation();
+      closeSessionMenu();
+      const opened = openedWorkspacesList.find(workspace =>
+        isSamePath(workspace.rootPath ?? '', worktreePath)
+      );
+      try {
+        if (opened) {
+          await setActiveWorkspace(opened.id);
+          return;
+        }
+        await openWorkspace(worktreePath);
+      } catch (err) {
+        log.error('Failed to open the worktree directory as a workspace', {
+          worktreePath,
+          error: err,
+        });
+        notificationService.error(t('nav.sessions.openWorktreeWorkspaceFailed'), { duration: 3000 });
+      }
+    },
+    [closeSessionMenu, openWorkspace, openedWorkspacesList, setActiveWorkspace, t]
   );
 
   const handleStartEdit = useCallback(
@@ -1308,58 +1265,30 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     [handleConfirmEdit, handleCancelEdit]
   );
 
-  const handleExpandToggle = useCallback(async () => {
-    if (metadataPageState.isLoading) {
-      return;
-    }
-
-    const loadedTopLevelCount = topLevelSessions.length;
-    const total = totalTopLevelSessionCount;
-
+  const handleExpandToggle = useCallback(() => {
     if (expandLevel === 0) {
-      const targetCount = Math.min(total, SESSIONS_LEVEL_1);
-      if (
-        loadedTopLevelCount < targetCount &&
-        hasMoreUnloadedSessions &&
-        metadataPageState.nextCursor
-      ) {
-        await loadMetadataPage(
-          targetCount - loadedTopLevelCount,
-          metadataPageState.nextCursor,
-          'sessions_nav_expand_level_1'
-        );
-      }
       setExpandLevel(1);
       return;
     }
-
-    if (expandLevel === 1 && total > SESSIONS_LEVEL_1) {
-      if (
-        loadedTopLevelCount < total &&
-        hasMoreUnloadedSessions &&
-        metadataPageState.nextCursor
-      ) {
-        await loadMetadataPage(
-          total - loadedTopLevelCount,
-          metadataPageState.nextCursor,
-          'sessions_nav_expand_all'
-        );
-      }
+    if (expandLevel === 1 && totalTopLevelSessionCount > SESSIONS_LEVEL_1) {
       setExpandLevel(2);
       return;
     }
-
     setExpandLevel(0);
-  }, [
-    expandLevel,
-    hasMoreUnloadedSessions,
-    loadMetadataPage,
-    metadataPageState.isLoading,
-    metadataPageState.nextCursor,
-    topLevelSessions.length,
-    totalTopLevelSessionCount,
-  ]);
+  }, [expandLevel, setExpandLevel, totalTopLevelSessionCount]);
 
+  const sourceFilterStatus = discovery.failed ? (
+    <Button variant="outline" size="sm" onClick={discovery.retry}>{t('nav.sessions.partialLoadFailedRetry')}</Button>
+  ) : catalog.loading || discovery.pending || archivedCatalog.loading ? (
+    <div className="openbitfun-nav-panel__inline-loading" role="status">
+      <Loader2 className="openbitfun-nav-panel__inline-loading-icon" aria-hidden="true" />
+      <OverflowText>{t(discovery.pending ? 'nav.sessions.discoveringExternal' : 'nav.sessions.loading')}</OverflowText>
+    </div>
+  ) : catalog.failed || archivedCatalog.failed ? (
+    <Button variant="outline" size="sm" onClick={() => setCatalogRefreshVersion(value => value + 1)}>
+      {t('nav.sessions.partialLoadFailedRetry')}
+    </Button>
+  ) : null;
   const aggregateLoadStatus = showAllWithoutLimit
     ? aggregateLoadState.isLoading
       ? (
@@ -1393,6 +1322,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     : null;
 
   if (allTopLevelSessions.length === 0) {
+    if (sourceFilterStatus) return <div className={sessionListClassName}>{sourceFilterStatus}</div>;
     if (aggregateLoadStatus) {
       return (
         <div data-openbitfun-component="sessions-section" data-openbitfun-part="root" className={sessionListClassName}>
@@ -1452,6 +1382,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }
 
   if (topLevelSessions.length === 0) {
+    if (sourceFilterStatus) return <div className={sessionListClassName}>{sourceFilterStatus}</div>;
     if (aggregateLoadState.isLoading && aggregateLoadStatus) {
       return (
         <div className={sessionListClassName}>
@@ -1471,8 +1402,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
   return (
     <div className={sessionListClassName} ref={sessionListRef}>
+      {sourceFilterStatus}
       {visibleItems.map(({ session, level }) => {
           const isEditing = editingSessionId === session.sessionId;
+          const isArchived = session.persistedStatus === 'archived';
           const relationship = resolveSessionRelationship(session);
           const isChildSession = level === 1 && relationship.displayAsChild;
           const childSessionBadge = getChildSessionBadge(relationship.kind);
@@ -1500,6 +1433,18 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             : undefined;
           const backgroundSubagentActivityCount = backgroundSubagentActivity?.totalCount ?? 0;
           const showBackgroundSubagentActivity = !isChildSession && backgroundSubagentActivityCount > 0;
+          const scheduledJobCount = cronJobCountsBySession.get(session.sessionId) ?? 0;
+          // Same mark the session status indicator draws, in the same trailing
+          // cell: one 12px secondary clock on the row's right edge, no count.
+          // Sessions with a status to report keep that status instead.
+          const scheduledJobMark = scheduledJobCount > 0 ? (
+            <Icon
+              name="clock"
+              size="xs"
+              tone="secondary"
+              label={t('nav.scheduledJobs.badgeTooltip', { count: scheduledJobCount })}
+            />
+          ) : undefined;
           const parentSessionId = relationship.parentSessionId;
           const parentSession = parentSessionId ? flowChatState.sessions.get(parentSessionId) : undefined;
           const parentTitle = parentSession ? resolveSessionTitle(parentSession) : '';
@@ -1511,6 +1456,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           const showAssistantInTooltip = trimmedAssistant.length > 0;
           const dispatchTarget = session.config.dispatchTarget;
           const isDispatched = isNonLocalDispatchTarget(dispatchTarget);
+          const worktreeIsolated = isWorktreeIsolatedSession(session);
+          const worktreeRootPath = sessionWorktreeRootPath(session) ?? '';
           const dispatchTargetLabel =
             dispatchTarget?.kind === 'ssh' || dispatchTarget?.kind === 'device'
               ? (dispatchTarget.kind === 'device' ? resolveDeviceName(dispatchTarget.deviceId, dispatchTarget.displayName) : dispatchTarget.displayName)
@@ -1549,6 +1496,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             showAssistantInTooltip ||
             isChildSession ||
             showBackgroundSubagentActivity ||
+            worktreeIsolated ||
             isDispatched;
           const tooltipContent = showRichTooltip ? (
             <div className="openbitfun-nav-panel__inline-item-tooltip">
@@ -1576,6 +1524,11 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                     : t('nav.sessions.childSourceWithoutTurn', {
                         parentTitle: parentTitle || t('nav.sessions.parentSession'),
                   })}
+                </div>
+              ) : null}
+              {worktreeIsolated ? (
+                <div className="openbitfun-nav-panel__inline-item-tooltip-meta">
+                  {t('nav.sessions.worktreeTooltip', { path: worktreeRootPath })}
                 </div>
               ) : null}
               {isDispatched ? (
@@ -1619,6 +1572,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             <div
               className={[
                 'openbitfun-nav-panel__inline-item',
+                sessionWorkspaceScope && !isChildSession && 'has-workspace-name',
                 showAssistantIdentity && 'is-assistant-session',
                 level === 1 && 'is-child',
                 isChildSession && 'is-btw-child',
@@ -1698,9 +1652,25 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                         <span className="openbitfun-nav-panel__inline-item-title">
                           <OverflowText behavior="marquee" title="" className="openbitfun-nav-panel__inline-item-label">{sessionTitle}</OverflowText>
                           <SessionTitleNumber number={titleNumber} />
+                          {isArchived && (
+                            <StatusPill className="openbitfun-nav-panel__inline-item-archived-badge" tone="neutral" data-testid="nav-session-archived-badge">
+                              {t('nav.sessions.archivedBadge')}
+                            </StatusPill>
+                          )}
+                          {defaultSessionAction?.sessionId === session.sessionId && (
+                            <StatusPill tone="neutral">{t('nav.sessions.defaultSession')}</StatusPill>
+                          )}
                         </span>
+                    {session.importedSource ? (
+                      <StatusPill className="openbitfun-nav-panel__inline-item-source-badge" tone="neutral"
+                        title={t('nav.sessions.sourceAgentLabel', { name: sessionSourceAgentLabel(session.importedSource) })}>
+                        {sessionSourceAgentLabel(session.importedSource)}
+                      </StatusPill>
+                    ) : null}
                     {isChildSession ? (
-                      <span className="openbitfun-nav-panel__inline-item-btw-badge">{childSessionBadge}</span>
+                      <StatusPill className="openbitfun-nav-panel__inline-item-btw-badge" tone="neutral">
+                        {childSessionBadge}
+                      </StatusPill>
                     ) : null}
                     {isDispatched ? (
                       <span
@@ -1710,6 +1680,17 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                       ><OverflowText>
                         {dispatchPresentation?.badgeLabel}
                       </OverflowText></span>
+                    ) : null}
+                    {worktreeIsolated ? (
+                      // Icon-only marker: the badge sits next to the title, where a
+                      // label competes with it. The tooltip carries the worktree path.
+                      <span
+                        className="openbitfun-nav-panel__inline-item-worktree-badge"
+                        title={t('nav.sessions.worktreeTooltip', { path: worktreeRootPath })}
+                        aria-label={t('nav.sessions.worktreeTooltip', { path: worktreeRootPath })}
+                      >
+                        <FolderGit2 className="openbitfun-nav-panel__inline-item-worktree-icon" aria-hidden />
+                      </span>
                     ) : null}
                     {reviewActivityKind ? (
                       <span className="openbitfun-nav-panel__inline-item-review-badge">
@@ -1748,13 +1729,35 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                     </span>
                   </span>
                   <div className="openbitfun-nav-panel__inline-item-trailing">
-                    <SessionStatusIndicator sessionId={session.sessionId} />
+                    <SessionStatusIndicator
+                      sessionId={session.sessionId}
+                      idleFallback={scheduledJobMark}
+                    />
                     <div
                       className={`openbitfun-nav-panel__inline-item-actions${openMenuSessionId === session.sessionId ? ' is-open' : ''}`}
                       data-openbitfun-component="sessions-section"
                       data-openbitfun-part="actions"
                       data-openbitfun-state={openMenuSessionId === session.sessionId ? 'menuOpen' : undefined}
                     >
+                      {defaultSessionAction && !isChildSession && !session.isTransient && session.persistedStatus !== 'archived' && (
+                        <Tooltip content={defaultSessionAction.disabledReason ?? t(
+                          defaultSessionAction.sessionId === session.sessionId ? 'nav.sessions.clearDefault' : 'nav.sessions.setDefault',
+                        )}>
+                          <IconButton
+                            size="xs"
+                            disabled={defaultSessionAction.disabled}
+                            aria-label={t(defaultSessionAction.sessionId === session.sessionId ? 'nav.sessions.clearDefault' : 'nav.sessions.setDefault')}
+                            aria-pressed={defaultSessionAction.sessionId === session.sessionId}
+                            icon={<Icon name="pin" size="xs" />}
+                            onClick={event => {
+                              event.stopPropagation();
+                              defaultSessionAction.onChange(defaultSessionAction.sessionId === session.sessionId ? null : session.sessionId);
+                            }}
+                            data-testid="nav-session-default-btn"
+                            data-session-id={session.sessionId}
+                          />
+                        </Tooltip>
+                      )}
                       <button
                         type="button"
                         ref={openMenuSessionId === session.sessionId ? sessionMenuAnchorRef : undefined}
@@ -1774,6 +1777,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                     <Menu
                       ref={sessionMenuPopoverRef}
                       className="openbitfun-nav-panel__inline-item-menu-popover"
+                      inlineSize="content"
                       data-openbitfun-component="sessions-section"
                       data-openbitfun-part="menu"
                       data-openbitfun-state="menuOpen"
@@ -1785,7 +1789,21 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                       data-testid="nav-session-menu"
                       data-session-id={session.sessionId}
                     >
-                      {isExportScopeMenu ? (
+                      {isArchived ? (
+                        <ArchivedSessionMenuItems
+                          key={surface.key(session.sessionId, surface.epoch)}
+                          session={session}
+                          title={sessionTitle}
+                          workspaceName={sessionWorkspaceScope?.workspaceName
+                            || openedWorkspacesList.find(workspace => sessionBelongsToWorkspaceNavRow(session, workspace.id))?.name
+                            || workspaceId || session.projectWorkspaceId || session.workspaceId || ''}
+                          onClose={closeSessionMenu}
+                          onChanged={() => {
+                            setCatalogRefreshVersion(value => value + 1);
+                            setAggregateReloadRequestId(value => value + 1);
+                          }}
+                        />
+                      ) : isExportScopeMenu ? (
                         <>
                           <MenuItem
                             type="button"
@@ -1831,12 +1849,31 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                           </MenuItem>
                           <MenuItem
                             type="button"
-                            leading={<Icon name="duplicate" size="sm" />}
-                            onClick={e => { closeSessionMenu(); void handleCopySessionId(e, session.sessionId); }}
-                            data-testid="nav-session-menu-copy-id"
+                            leading={duplicatingSessionId === session.sessionId
+                              ? <Loader2 className="openbitfun-nav-panel__inline-toggle-spinner" aria-hidden />
+                              : <Icon name="git" size="sm" />}
+                            onClick={e => { void handleDuplicateSession(e, session.sessionId); }}
+                            // A running turn is still being persisted, so its
+                            // history is not a stable copy boundary; a session
+                            // owned by another device has no local history.
+                            disabled={isDispatched
+                              || !canCopySessions
+                              || isSessionEmptyForCopy(session)
+                              || runningSessionIds.has(session.sessionId)
+                              || duplicatingSessionId === session.sessionId}
+                            title={isDispatched
+                              ? t('nav.sessions.duplicateDispatchUnsupported')
+                              : !canCopySessions
+                                ? t('nav.sessions.duplicateHostUnsupported')
+                                : isSessionEmptyForCopy(session)
+                                  ? t('nav.sessions.duplicateEmpty')
+                                  : runningSessionIds.has(session.sessionId)
+                                    ? t('nav.sessions.duplicateRunning')
+                                    : undefined}
+                            data-testid="nav-session-menu-duplicate"
                             data-session-id={session.sessionId}
                           >
-                            <span>{t('nav.sessions.copySessionId')}</span>
+                            <span>{t('nav.sessions.duplicate')}</span>
                           </MenuItem>
                           <MenuItem
                             type="button"
@@ -1867,6 +1904,33 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                           >
                             <span>{t('nav.scheduledJobs.open')}</span>
                           </MenuItem>
+                          {worktreeIsolated && worktreeRootPath ? (
+                            <MenuItem
+                              type="button"
+                              leading={<Icon glyph={FolderGit2} size="sm" />}
+                              onClick={e => { void handleOpenWorktreeWorkspace(e, worktreeRootPath); }}
+                              data-testid="nav-session-menu-open-worktree-workspace"
+                              data-session-id={session.sessionId}
+                            >
+                              <span>{t('nav.sessions.openWorktreeWorkspace')}</span>
+                            </MenuItem>
+                          ) : null}
+                          <MenuSeparator />
+                          <MenuItem
+                            type="button"
+                            leading={<Icon glyph={FolderOpen} size="sm" />}
+                            onClick={e => { void handleRevealSessionStorageDirectory(e, session); }}
+                            disabled={!sessionAPI.canRevealStorageDirectory() || isDispatched || (!workspaceId && !session.projectWorkspaceId && !session.workspaceId)}
+                            title={!sessionAPI.canRevealStorageDirectory() || isDispatched
+                              ? t('nav.sessions.storageDirectoryDesktopOnly')
+                              : (!workspaceId && !session.projectWorkspaceId && !session.workspaceId)
+                                ? t('nav.sessions.storageDirectoryWorkspaceUnavailable')
+                                : undefined}
+                            data-testid="nav-session-menu-open-storage"
+                            data-session-id={session.sessionId}
+                          >
+                            <span>{t('nav.sessions.openStorageDirectory')}</span>
+                          </MenuItem>
                           <MenuItem
                             type="button"
                             leading={<Icon glyph={Archive} size="sm" />}
@@ -1875,38 +1939,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             data-session-id={session.sessionId}
                           >
                             <span>{t('nav.sessions.archive')}</span>
-                          </MenuItem>
-                          <MenuItem
-                            type="button"
-                            leading={<Icon glyph={ListChecks} size="sm" />}
-                            disabled={!workspaceId && !session.projectWorkspaceId && !session.workspaceId}
-                            onClick={e => {
-                              e.stopPropagation();
-                              closeSessionMenu();
-                              const batchWorkspaceId = workspaceId || session.projectWorkspaceId || session.workspaceId;
-                              if (!batchWorkspaceId) return;
-                              const path = workspacePath || session.projectWorkspacePath || session.workspacePath || '';
-                              setBatchWorkspace({
-                                workspaceId: batchWorkspaceId,
-                                workspaceName: presentation?.assistant.name
-                                  || (currentWorkspace?.id === batchWorkspaceId && currentWorkspace.name)
-                                  || path
-                                  || batchWorkspaceId,
-                              });
-                            }}
-                            data-testid="nav-session-menu-manage-sessions"
-                          >
-                            <span>{t('nav.sessions.manage')}</span>
-                          </MenuItem>
-                          <MenuItem
-                            type="button"
-                            tone="danger"
-                            leading={<Icon name="delete" size="sm" />}
-                            onClick={e => { closeSessionMenu(); void handleDelete(e, session.sessionId); }}
-                            data-testid="nav-session-menu-delete"
-                            data-session-id={session.sessionId}
-                          >
-                            <span>{t('nav.sessions.delete')}</span>
                           </MenuItem>
                         </>
                       )}
@@ -1934,23 +1966,28 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
       {aggregateLoadStatus}
 
-      {!showAllWithoutLimit && expandLevel === 2 && topLevelSessions.length > sessionDisplayLimit && (
+      {!showAllWithoutLimit && expandLevel === 2 && totalTopLevelSessionCount > sessionDisplayLimit && (
         <button data-overflow-trigger
           type="button"
           className="openbitfun-nav-panel__inline-toggle"
           data-testid="nav-session-list-load-more"
-          aria-label={t('nav.sessions.showMore', {
-            count: topLevelSessions.length - sessionDisplayLimit,
-          })}
+          aria-label={isSessionCountComplete ? t('nav.sessions.showMore', {
+            count: totalTopLevelSessionCount - sessionDisplayLimit,
+          }) : t('nav.sessions.showMoreLabel')}
           onClick={() => setLevel2DisplayCount(prev => prev + SESSIONS_LEVEL_2_PAGE)}
+          disabled={catalog.loading}
         >
           <OverflowText className="openbitfun-nav-panel__inline-toggle-label">
             {t('nav.sessions.showMoreLabel')}
           </OverflowText>
-          <span className="openbitfun-nav-panel__inline-toggle-count" aria-hidden>
-            +{topLevelSessions.length - sessionDisplayLimit}
+          {isSessionCountComplete && (
+            <span className="openbitfun-nav-panel__inline-toggle-count" aria-hidden>
+              +{totalTopLevelSessionCount - sessionDisplayLimit}
+            </span>
+          )}
+          <span className="openbitfun-nav-panel__inline-toggle-trailing">
+            <Icon name="chevron-down" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
           </span>
-          <Icon name="chevron-down" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
         </button>
       )}
 
@@ -1975,13 +2012,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
               +{expandToggleLabels.remainingCount}
             </span>
           )}
-          {metadataPageState.isLoading ? (
-            <Loader2 className="openbitfun-nav-panel__inline-toggle-spinner" aria-hidden />
-          ) : expandToggleLabels.remainingCount === null ? (
-            <Icon name="chevron-up" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
-          ) : (
-            <Icon name="chevron-down" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
-          )}
+          <span className="openbitfun-nav-panel__inline-toggle-trailing">
+            {metadataPageState.isLoading ? (
+              <Loader2 className="openbitfun-nav-panel__inline-toggle-spinner" aria-hidden />
+            ) : expandToggleState.action === 'show-less' ? (
+              <Icon name="chevron-up" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
+            ) : (
+              <Icon name="chevron-down" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
+            )}
+          </span>
         </button>
       )}
 
@@ -2002,16 +2041,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           </Suspense>
         )}
       </RetainedMountBoundary>
-      {batchWorkspace && (
-        <Suspense fallback={null}>
-          <WorkspaceSessionBatchModal
-            isOpen
-            onClose={() => setBatchWorkspace(null)}
-            workspaceId={batchWorkspace.workspaceId}
-            workspaceLabel={batchWorkspace.workspaceName}
-          />
-        </Suspense>
-      )}
     </div>
   );
 };

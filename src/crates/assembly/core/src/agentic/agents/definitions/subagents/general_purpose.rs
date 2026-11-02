@@ -18,6 +18,7 @@ impl GeneralPurposeAgent {
                 "Read".to_string(),
                 "view_image".to_string(),
                 "analyze_image".to_string(),
+                "generate_image".to_string(),
                 "Glob".to_string(),
                 "Grep".to_string(),
                 "Write".to_string(),
@@ -63,7 +64,6 @@ impl Agent for GeneralPurposeAgent {
         UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 
     fn is_readonly(&self) -> bool {

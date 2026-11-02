@@ -1,9 +1,61 @@
 import { describe, expect, it } from 'vitest';
+import { themes } from '@openbitfun/theme-openbitfun';
 import type { AppearancePackage } from '../types';
-import { APPEARANCE_THEME_TOKEN_NAMES } from './catalog';
+import { APPEARANCE_THEME_TOKEN_NAMES, getBuiltinAppearanceThemeTokens } from './catalog';
 import { composeAppearancePackage } from './composeAppearancePackage';
 
 describe('composeAppearancePackage', () => {
+  it.each(['light', 'dark'] as const)('supplies colored usage series to legacy %s packages and retains overrides', mode => {
+    const original: AppearancePackage = {
+      schema: 'openbitfun.appearance', schemaVersion: 2,
+      id: 'example.legacy-usage', name: 'Legacy usage', version: '1.0.0', mode,
+    };
+    const payload = JSON.stringify(original);
+    const resolved = composeAppearancePackage(JSON.parse(payload));
+    const tokens = resolved.renderers!['theme-tokens']!.settings.tokens;
+    expect(tokens).toMatchObject({
+      '--openbitfun-component-session-usage-input': themes[mode]['color.status.info.emphasis'],
+      '--openbitfun-component-session-usage-output': themes[mode]['color.accent.secondary'],
+    });
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers?.['theme-tokens']?.settings.tokens)
+      .toEqual(tokens);
+    expect(JSON.stringify(original)).toBe(payload);
+
+    tokens['--openbitfun-component-session-usage-output'] = '#7766bb';
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers!['theme-tokens']!.settings.tokens)
+      .toHaveProperty('--openbitfun-component-session-usage-output', '#7766bb');
+  });
+
+  it('keeps usage series colorful in the monochrome appearance', () => {
+    const tokens = getBuiltinAppearanceThemeTokens('openbitfun-monochrome');
+    expect(tokens['--openbitfun-component-session-usage-input']).toBe(themes.light['color.status.info.emphasis']);
+    expect(tokens['--openbitfun-component-session-usage-output']).toBe(themes.light['color.accent.secondary']);
+    expect(tokens['--openbitfun-component-session-usage-input']).not.toBe(tokens['--openbitfun-component-session-usage-output']);
+    expect(tokens['--openbitfun-component-session-usage-input']).not.toBe(tokens['--openbitfun-color-accent-default']);
+    expect(tokens['--openbitfun-component-session-usage-output']).not.toBe(tokens['--openbitfun-color-accent-secondary']);
+  });
+
+  it.each(['light', 'dark'] as const)('supplies subagent accents to legacy %s packages and preserves overrides', mode => {
+    const original: AppearancePackage = {
+      schema: 'openbitfun.appearance', schemaVersion: 2,
+      id: 'example.legacy-subagents', name: 'Legacy subagents', version: '1.0.0', mode,
+    };
+    const payload = JSON.stringify(original);
+    const resolved = composeAppearancePackage(JSON.parse(payload));
+    const tokens = resolved.renderers!['theme-tokens']!.settings.tokens;
+    const defaults = getBuiltinAppearanceThemeTokens(`openbitfun-${mode}`);
+    for (const name of APPEARANCE_THEME_TOKEN_NAMES.filter(name => name.startsWith('--openbitfun-domain-subagent-'))) {
+      expect(tokens[name as keyof typeof tokens]).toBe(defaults[name as keyof typeof defaults]);
+    }
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers?.['theme-tokens']?.settings.tokens)
+      .toEqual(tokens);
+    expect(JSON.stringify(original)).toBe(payload);
+
+    tokens['--openbitfun-domain-subagent-robot-01'] = '#446688';
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers!['theme-tokens']!.settings.tokens)
+      .toHaveProperty('--openbitfun-domain-subagent-robot-01', '#446688');
+  });
+
   it.each(['light', 'dark'] as const)('supplies update material cyan to legacy %s packages and preserves explicit overrides', mode => {
     const original: AppearancePackage = {
       schema: 'openbitfun.appearance', schemaVersion: 2,

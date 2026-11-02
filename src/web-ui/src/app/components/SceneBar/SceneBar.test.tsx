@@ -2,6 +2,8 @@
 
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InteractionMotion } from '@/shared/utils/motionPreference';
 import type { SceneTab, SceneTabId } from './types';
@@ -9,10 +11,15 @@ import SceneBar from './SceneBar';
 import { useSceneStore } from '../../stores/sceneStore';
 import { useContentResourceStore } from '../../workbench/contentResourceStore';
 import { writeSessionTabDrag } from '../../workbench/canvasTabTransfer';
-import { clearAgentCanvasForPeerSwitch, switchAgentCanvasWorkspace, useAgentCanvasStore } from '../panels/content-canvas/stores';
+import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '../panels/content-canvas/stores';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const sceneBarStyles = readFileSync(
+  resolve(process.cwd(), 'src/app/components/SceneBar/SceneBar.scss'),
+  'utf8',
+);
 
 const sceneHarness = vi.hoisted(() => ({
   state: {
@@ -46,7 +53,9 @@ vi.mock('../../hooks/useSceneManager', () => ({
 }));
 
 vi.mock('../../hooks/useSessionTabLabels', () => ({
-  useSessionTabLabels: () => ({ session: { title: sceneHarness.state.sessionTitle ?? '' } }),
+  useSessionTabLabels: (tabs: SceneTab[]) => Object.fromEntries(tabs.map(tab => [tab.id,
+    { title: tab.id === 'session' ? sceneHarness.state.sessionTitle ?? '' : tab.session?.sessionId ?? '' },
+  ])),
 }));
 
 vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
@@ -84,7 +93,7 @@ describe('SceneBar overflow navigation', () => {
     sceneHarness.state.pendingTabId = null;
     sceneHarness.state.navigationMotion = 'instant';
     sceneHarness.state.sessionTitle = undefined;
-    for (const tab of sceneHarness.state.openTabs) delete tab.session;
+    for (const tab of sceneHarness.state.openTabs) { delete tab.session; delete tab.sessionHistory; }
     sceneHarness.activateScene.mockReset();
     sceneHarness.closeScene.mockReset();
     clearAgentCanvasForPeerSwitch();
@@ -96,11 +105,145 @@ describe('SceneBar overflow navigation', () => {
     act(() => root.unmount());
     container.remove();
     activateSurface('local');
+    vi.restoreAllMocks();
   });
 
   function renderSceneBar() {
     act(() => root.render(<SceneBar />));
   }
+
+  function withSessionHistory() {
+    const tab = sceneHarness.state.openTabs[0];
+    tab.session = { surfaceId: 'local', workspaceKey: 'workspace-a', sessionId: 'six' };
+    tab.sessionHistory = ['six', 'five', 'four', 'three', 'two'];
+    return tab;
+  }
+
+  const visibleHistory = () => document.querySelector<HTMLElement>('[role="menu"]:not([aria-hidden="true"])');
+
+  it('switches on the first click and opens the five recent sessions only when the selected tab is clicked again', () => {
+    withSessionHistory();
+    sceneHarness.state.activeTabId = 'git';
+    renderSceneBar();
+    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"][data-openbitfun-value="session"]')!;
+    act(() => trigger.click());
+    expect(sceneHarness.activateScene).toHaveBeenCalledWith('session');
+    expect(visibleHistory()).toBeNull();
+    sceneHarness.state.activeTabId = 'session';
+    renderSceneBar();
+    act(() => trigger.click());
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect([...visibleHistory()!.querySelectorAll('[role="menuitemradio"]')].map(item => item.textContent))
+      .toEqual(['six', 'five', 'four', 'three', 'two']);
+    expect(visibleHistory()!.querySelector('[aria-checked="true"]')?.textContent).toBe('six');
+    act(() => trigger.click());
+    expect(visibleHistory()).toBeNull();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('selects a recent session through the guarded scene navigation and closes the list', () => {
+    const tab = withSessionHistory();
+    const open = vi.spyOn(useSceneStore.getState(), 'openSessionScene').mockImplementation(() => {});
+    useSceneStore.setState({ openTabs: [tab] });
+    renderSceneBar();
+    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
+    act(() => trigger.click());
+    act(() => visibleHistory()!.querySelector<HTMLButtonElement>('[data-menu-id="four"]')!.click());
+    expect(open).toHaveBeenCalledWith({ ...tab.session, sessionId: 'four' }, expect.anything());
+    const guard = open.mock.calls[0][1]!.isCurrent!;
+    expect(guard()).toBe(true);
+    useSceneStore.setState({ openTabs: [] });
+    expect(guard()).toBe(false);
+    expect(visibleHistory()).toBeNull();
+  });
+
+  it('starts the floating surface at the capsule bounds and keeps the original tab mounted', () => {
+    withSessionHistory();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('role') === 'tab') return new DOMRect(100, 14, 148, 28);
+      if (this.getAttribute('role') === 'menu') return new DOMRect(100, 14, 220, 210);
+      return new DOMRect();
+    });
+    renderSceneBar();
+    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
+    act(() => trigger.click());
+    const menu = visibleHistory()!;
+    expect(menu.style.left).toBe('100px');
+    expect(menu.style.top).toBe('14px');
+    expect(menu.style.getPropertyValue('--_session-history-source-width')).toBe('148px');
+    expect(menu.style.getPropertyValue('--_session-history-source-height')).toBe('28px');
+    expect(container.querySelector('[role="tab"]')).toBe(trigger);
+  });
+
+  it('supports ArrowDown, Escape and outside dismissal, and closes history on device switches', () => {
+    withSessionHistory();
+    renderSceneBar();
+    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
+    act(() => {
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    });
+    expect(visibleHistory()).not.toBeNull();
+    expect(document.activeElement?.textContent).toBe('six');
+    act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(visibleHistory()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    act(() => trigger.click());
+    act(() => document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
+    expect(visibleHistory()).toBeNull();
+    act(() => trigger.click());
+    expect(visibleHistory()).not.toBeNull();
+    act(() => activateSurface('peer:history'));
+    expect(visibleHistory()).toBeNull();
+  });
+
+  it('does not open recent sessions while activation is pending or when the close action is clicked', () => {
+    withSessionHistory();
+    sceneHarness.state.pendingTabId = 'session';
+    renderSceneBar();
+    act(() => container.querySelector<HTMLButtonElement>('[role="tab"]')!.click());
+    expect(visibleHistory()).toBeNull();
+    sceneHarness.state.pendingTabId = null;
+    renderSceneBar();
+    act(() => container.querySelector<HTMLButtonElement>('[data-scene-bar-part="closeTab"]')!.click());
+    expect(sceneHarness.closeScene).toHaveBeenCalledWith('session');
+    expect(visibleHistory()).toBeNull();
+  });
+
+  it('focuses a background pane before offering its selected workspace history', () => {
+    withSessionHistory();
+    useSceneStore.setState({ focusedPane: 'secondary' });
+    renderSceneBar();
+    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
+    act(() => trigger.click());
+    expect(sceneHarness.activateScene).toHaveBeenCalledWith('session');
+    expect(visibleHistory()).toBeNull();
+    act(() => useSceneStore.setState({ focusedPane: 'primary' }));
+    act(() => trigger.click());
+    expect(visibleHistory()).not.toBeNull();
+  });
+
+  it.each([undefined, ['six']])('keeps a workspace with only its current session collapsed (history: %s)', history => {
+    const tab = withSessionHistory();
+    tab.sessionHistory = history;
+    renderSceneBar();
+    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
+    act(() => trigger.click());
+    act(() => trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(visibleHistory()).toBeNull();
+    expect(trigger.hasAttribute('aria-haspopup')).toBe(false);
+    expect(trigger.hasAttribute('aria-expanded')).toBe(false);
+  });
+
+  it('collapses when reconciliation leaves only the current session in history', () => {
+    const tab = withSessionHistory();
+    renderSceneBar();
+    act(() => container.querySelector<HTMLButtonElement>('[role="tab"]')!.click());
+    expect(visibleHistory()).not.toBeNull();
+    tab.sessionHistory = ['six'];
+    renderSceneBar();
+    expect(visibleHistory()).toBeNull();
+  });
 
   function startSessionTabDrag() {
     const store = useAgentCanvasStore.getState();
@@ -149,21 +292,24 @@ describe('SceneBar overflow navigation', () => {
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
   });
 
-  it('clears its offer when another drop target stops event bubbling', () => {
+  it('clears its offer after another drop target stops event bubbling', async () => {
     renderSceneBar();
     let transfer!: DataTransfer;
     act(() => { transfer = startSessionTabDrag(); });
     const elsewhere = document.createElement('div');
     document.body.appendChild(elsewhere);
     elsewhere.addEventListener('drop', event => event.stopPropagation());
-    act(() => elsewhere.dispatchEvent(dragEvent('drop', transfer)));
+    await act(async () => {
+      elsewhere.dispatchEvent(dragEvent('drop', transfer));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
     expect(container.querySelector('[data-openbitfun-part="dropHint"]')).toBeNull();
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
     expect(useContentResourceStore.getState().resources).toEqual({});
     elsewhere.remove();
   });
 
-  it.each(['end', 'remove', 'workspace-switch', 'device-switch'])('withdraws availability when the source is invalidated: %s', action => {
+  it.each(['end', 'remove', 'scope-switch', 'device-switch'])('withdraws availability when the source is invalidated: %s', action => {
     renderSceneBar();
     act(() => { startSessionTabDrag(); });
     expect(container.querySelector('[data-openbitfun-part="dropHint"]')).not.toBeNull();
@@ -171,7 +317,7 @@ describe('SceneBar overflow navigation', () => {
       const store = useAgentCanvasStore.getState();
       if (action === 'end') store.endDrag();
       if (action === 'remove') store.detachTab(store.draggingTabId!, 'primary');
-      if (action === 'workspace-switch') switchAgentCanvasWorkspace(undefined, 'another-workspace');
+      if (action === 'scope-switch') switchAgentCanvasScope('another-session');
       if (action === 'device-switch') activateSurface('peer');
     });
     expect(container.querySelector('[data-openbitfun-part="dropHint"]')).toBeNull();
@@ -342,6 +488,13 @@ describe('SceneBar overflow navigation', () => {
 
     expect(tabs.scrollLeft).toBe(72);
     expect(container.querySelector<HTMLButtonElement>('[data-openbitfun-part="scrollPrevious"]')?.disabled).toBe(false);
+  });
+
+  it('removes unavailable edge controls from layout and paints the overflow fade directly', () => {
+    expect(sceneBarStyles).toMatch(/&:disabled\s*\{\s*display:\s*none;/);
+    expect(sceneBarStyles).toContain('background: linear-gradient(');
+    expect(sceneBarStyles).not.toContain('mask-image: linear-gradient(');
+    expect(sceneBarStyles).not.toContain('backdrop-filter: var(--openbitfun-effect-blur-subtle)');
   });
 
   it('scrolls a newly active off-screen tab into view', () => {

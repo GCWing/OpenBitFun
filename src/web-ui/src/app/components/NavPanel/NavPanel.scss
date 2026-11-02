@@ -663,14 +663,23 @@ $_section-header-height: 22px;
 
   &__miniapp-item {
     display: flex;
+    // Anchors the trailing app bubbles, which trail as an overlay.
+    position: relative;
     width: 100%;
     min-height: var(--openbitfun-layout-navigation-panel-item-height);
     padding: 0;
     background: transparent;
   }
 
+  // Every nav row paints its hover/selected pill on the ActionItem trigger. This
+  // row's root also lays the trailing actions region out in flow, so the root gap
+  // plus that region's own inset pushed the trigger 12px off the row's right edge
+  // and the pill stopped short with it. Trailing the region as an overlay keeps
+  // the bubbles on their existing gutter and lets the pill span the full row.
   &__miniapp-item > [data-openbitfun-part='actions'] {
-    margin-inline-end: var(--openbitfun-space-2);
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--openbitfun-space-2);
   }
 
   &__miniapp-entry {
@@ -936,9 +945,15 @@ $_section-header-height: 22px;
   }
 
   &__section-action {
-    flex: 0 0 var(--_nav-icon-slot-size);
-    inline-size: var(--_nav-icon-slot-size);
-    block-size: var(--_nav-icon-slot-size);
+    // The header's three actions sit directly above the workspace row's three hover
+    // actions and read as one set of icon columns, so the cluster uses the row's
+    // compact 20px box instead of the 22px `--_nav-icon-slot-size` slot. The row
+    // pitch is 20px + the 4px `__section-actions` gap below, and only that pair
+    // puts every icon centre on the row's column centres. The `size="sm"` glyph
+    // stays 14px and remains centred inside the smaller box.
+    flex: 0 0 20px;
+    inline-size: 20px;
+    block-size: 20px;
     color: var(--_nav-icon-color);
 
     &:hover {
@@ -955,67 +970,8 @@ $_section-header-height: 22px;
     position: relative;
     display: inline-flex;
     align-items: center;
-    inline-size: var(--_nav-icon-slot-size);
-    block-size: var(--_nav-icon-slot-size);
-  }
-
-  /* Positioning-only overrides; the design-system Menu owns the surface look. */
-  &__workspace-menu {
-
-    position: fixed;
-    /* Shrink-wrap to widest row; cap width for long paths + viewport on small screens */
-    width: fit-content;
-    max-width: min(440px, calc(100vw - 32px));
-    max-height: min(560px, calc(100vh - 16px));
-    z-index: var(--openbitfun-layer-popover);
-    transform-origin: top left;
-    animation: openbitfun-footer-menu-in var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-decelerate) forwards;
-
-    &.is-closing {
-      animation: openbitfun-footer-menu-out var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-accelerate) forwards;
-    }
-  }
-
-  &__workspace-menu-item-main {
-    display: flex;
-    align-items: baseline;
-    gap: 0.3em;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  &__workspace-menu-item-host {
-    /* flex-shrink 0: host is not squeezed; max-width ~26ch fits 255.255.255.255 + margin in typical UI fonts */
-    flex: 0 0 auto;
-    max-width: min(26ch, 52%);
-    overflow: hidden;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-md-font-size);
-  }
-
-  &__workspace-menu-item-host-sep {
-    flex: 0 0 auto;
-    color: var(--openbitfun-color-content-muted);
-    opacity: 0.55;
-    font-size: var(--openbitfun-type-label-md-font-size);
-  }
-
-  &__workspace-menu-item-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  &__workspace-menu-empty {
-    padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-sm-font-size);
-  }
-
-  &__workspace-menu-workspaces {
-    max-height: 240px;
-    overscroll-behavior: contain;
+    inline-size: 20px;
+    block-size: 20px;
   }
 
   // ──────────────────────────────────────────────
@@ -1353,12 +1309,19 @@ $_section-header-height: 22px;
   flex-shrink: 0;
 }
 
+.openbitfun-nav-panel__footer-device-control {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .openbitfun-nav-panel__footer-device-status {
   display: flex;
   align-items: center;
   gap: var(--openbitfun-space-2);
-  flex: 1 1 auto;
-  width: 100%;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: none;
   height: 30px;
@@ -1375,6 +1338,15 @@ $_section-header-height: 22px;
 
   > svg {
     flex-shrink: 0;
+    // A line box is split by the font's ascent and descent, not by the glyphs
+    // drawn in it, so the mark was once pushed down a pixel to follow the text.
+    // Measured against the face this row actually renders (HarmonyOS Sans:
+    // 92.8%/24.4% against a cap ink of 74.5%/1.5%), centring the mark on that box
+    // already leaves it 0.03em below a caps label's ink centre and 0.05em below a
+    // Chinese one, and a device name is one of those two. The nudge therefore read
+    // as the mark sitting low. A mark whose own mass is off-centre still states its
+    // correction in `deviceSystemMarks`, which moves the drawn mass rather than the
+    // box.
   }
 
   &:hover,
@@ -1401,39 +1373,64 @@ $_section-header-height: 22px;
   line-height: var(--openbitfun-type-modifier-leading-dense-line-height);
 }
 
-// Attached remote parties are shown once per device kind with unframed icons.
-// Message-app marks inherit the theme foreground; connection state is already
-// communicated by the device overview rather than by recoloring the brand.
-.openbitfun-nav-panel__footer-device-status-attached {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  margin-left: 1px;
-  color: var(--openbitfun-color-content-secondary);
-}
+.openbitfun-nav-panel__footer-remote-control {
+  flex: 0 0 auto;
+  min-inline-size: var(--openbitfun-control-icon-button-xs-size);
+  block-size: var(--openbitfun-control-icon-button-xs-size);
+  padding: 0 var(--openbitfun-space-1);
+  border: none;
+  border-radius: var(--openbitfun-radius-pill);
+  color: var(--openbitfun-color-status-success-content);
+  background: var(--openbitfun-color-status-success-surface);
+  text-decoration: none;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
-.openbitfun-nav-panel__footer-device-status-attached-group {
-  width: var(--_nav-icon-slot-size);
-  height: var(--_nav-icon-slot-size);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  box-sizing: border-box;
-  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
+  > [data-openbitfun-part='content'] {
+    gap: 0;
 
-  &[data-openbitfun-device-kind='message-app'] {
-    border: 0;
-    background: transparent;
-    color: var(--openbitfun-color-content-primary);
+    > [data-openbitfun-part='label'] {
+      display: block;
+      max-inline-size: 0;
+      margin-inline-start: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: max-inline-size var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+                  margin-inline-start var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+                  opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+    }
   }
-}
 
-.openbitfun-nav-panel__footer-device-status-attached-count {
-  font-size: var(--openbitfun-type-overline-sm-font-size);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
-  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
+  &:is(:hover, :focus-visible, [data-loading='true']) {
+    color: var(--openbitfun-color-status-danger-content);
+    background: var(--openbitfun-color-status-danger-surface);
+    text-decoration: none;
+
+    > [data-openbitfun-part='content'] > [data-openbitfun-part='label'] {
+      max-inline-size: 20em;
+      margin-inline-start: var(--openbitfun-space-1);
+      opacity: 1;
+    }
+  }
+
+  &:disabled:not([data-loading='true']) {
+    color: var(--openbitfun-color-action-neutral-content-disabled);
+  }
+
+  @media (hover: none) {
+    > [data-openbitfun-part='content'] > [data-openbitfun-part='label'] {
+      max-inline-size: 20em;
+      margin-inline-start: var(--openbitfun-space-1);
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &,
+    > [data-openbitfun-part='content'] > [data-openbitfun-part='label'] {
+      transition: none;
+    }
+  }
 }
 
 // Footer notification: yellow only when there are unread messages (BellDot)
@@ -1549,7 +1546,6 @@ $_section-header-height: 22px;
 /* Positioning-only overrides; the design-system Menu owns the surface look. */
 .openbitfun-nav-panel__footer-menu {
   position: fixed;
-  min-width: 148px;
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   z-index: var(--openbitfun-layer-popover);
@@ -1561,44 +1557,21 @@ $_section-header-height: 22px;
   }
 }
 
-.openbitfun-nav-panel__appearance-menu-trigger {
-  &.is-open {
-    background: var(--openbitfun-color-action-neutral-surface);
-  }
-}
-
-.openbitfun-nav-panel__appearance-menu-current {
-  display: block;
-  max-width: 82px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-/* Positioning and open-state composition only; the design-system Menu owns chrome. */
-.openbitfun-nav-panel__appearance-submenu {
-  position: fixed;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100vh - 16px);
-  z-index: calc(var(--openbitfun-layer-popover) + 1);
-  animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
-
-  &[data-placement='right'] {
-    transform-origin: top left;
-  }
-
-  &[data-placement='left'] {
-    transform-origin: top right;
-  }
-}
-
 // ──────────────────────────────────────────────
 // Device overview — one compact model, local and connected states
 // ──────────────────────────────────────────────
 
 .openbitfun-device-overview {
+  --_device-overview-inline-size: min(360px, calc(100vw - 16px), calc((100vh - 16px) * 1.618));
+  // Keep the management circle concentric with the card's outer corner.
+  --_device-overview-header-icon-size: calc(var(--openbitfun-control-icon-size-md) + var(--openbitfun-space-1));
+  --_device-overview-management-inset: max(var(--openbitfun-space-1), calc(var(--openbitfun-layout-card-radius-lg) - var(--openbitfun-border-width-default) - var(--openbitfun-control-height-sm) / 2));
+  --_device-overview-edge-fade-extent: calc(var(--_device-overview-management-inset) + (var(--openbitfun-control-height-sm) - var(--_device-overview-header-icon-size)) / 2);
   position: fixed;
   z-index: var(--openbitfun-layer-popover);
-  width: min(280px, calc(100vw - 16px));
+  width: var(--_device-overview-inline-size);
+  height: calc(var(--_device-overview-inline-size) / 1.618);
+  min-height: 0;
   max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
@@ -1607,14 +1580,10 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__scroll {
+  // Keep the hero stable while additional controllers and task hosts scroll.
+  display: block;
   min-height: 0;
-  flex: 1 1 auto;
-}
-
-.openbitfun-device-overview__title {
-  margin: 0;
-  color: inherit;
-  font: inherit;
+  flex: 1 1 0;
 }
 
 .openbitfun-device-overview__current {
@@ -1741,25 +1710,10 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__notice {
-  width: calc(100% - var(--openbitfun-space-5) * 2);
-  margin: 0 var(--openbitfun-space-5) var(--openbitfun-space-4);
-  height: auto;
-  min-height: var(--openbitfun-control-height-sm);
-  justify-content: flex-start;
-  text-align: left;
-  white-space: normal;
-}
-
-.openbitfun-device-overview__actions {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  gap: var(--openbitfun-space-2);
-  padding: var(--openbitfun-space-5);
-}
-
-.openbitfun-device-overview__action {
-  width: 100%;
+  position: absolute;
+  inset-block-start: var(--openbitfun-space-1);
+  inset-inline-start: var(--openbitfun-space-5);
+  z-index: 2;
 }
 
 @keyframes openbitfun-device-overview-spin {
@@ -1770,157 +1724,285 @@ $_section-header-height: 22px;
 
 .openbitfun-device-overview__header {
   flex-shrink: 0;
-  padding: var(--openbitfun-space-5) var(--openbitfun-space-5) var(--openbitfun-space-1);
+  padding: var(--_device-overview-management-inset) var(--_device-overview-management-inset) var(--openbitfun-space-1);
 
-  .openbitfun-device-overview__title {
-    color: var(--openbitfun-color-content-primary);
-    font-family: var(--openbitfun-type-label-md-font-family);
-    font-size: var(--openbitfun-type-body-lg-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-label-md-line-height);
-    text-align: center;
-    overflow-wrap: anywhere;
-  }
+  > [data-openbitfun-part='header-content'] { flex: 1 1 0; }
+  > [data-openbitfun-part='actions'] { flex: 0 0 auto; }
+}
+
+.openbitfun-device-overview__device-details {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--openbitfun-space-2);
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  // Reserve equal, fixed-width navigation slots so names never move on hover.
+  padding-inline: calc(var(--openbitfun-space-5) + var(--openbitfun-control-height-sm) + var(--openbitfun-space-2));
+}
+
+.openbitfun-device-overview__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--openbitfun-space-2);
+  min-width: 0;
+  width: 100%;
+}
+
+.openbitfun-device-overview__manage-devices > [data-openbitfun-part='icon'] {
+  inline-size: var(--_device-overview-header-icon-size);
+  block-size: var(--_device-overview-header-icon-size);
 }
 
 .openbitfun-device-overview__body {
   min-width: 0;
+  height: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .openbitfun-device-overview__summary {
   position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: var(--openbitfun-space-2);
+  flex-shrink: 0;
   min-width: 0;
-  text-align: center;
+  height: 100%;
+  padding-block-end: var(--openbitfun-space-4);
+  box-sizing: border-box;
+  // Fill the remaining height without shrinking when extra devices are listed.
+  margin-block: auto;
+  text-align: start;
 }
 
 .openbitfun-device-overview__carousel-viewport {
+  grid-area: 1 / 1;
+  position: relative;
+  min-width: 0;
   overflow: hidden;
   width: 100%;
 }
 
-.openbitfun-device-overview__carousel-track {
-  display: flex;
-  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.openbitfun-device-overview__carousel-slide {
-  flex: 0 0 100%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.openbitfun-device-overview__device-switcher {
+.openbitfun-device-overview__device-scene {
   position: relative;
   width: 100%;
   min-width: 0;
+  height: 100%;
 }
 
 .openbitfun-device-overview__carousel-controls {
   position: absolute;
-  inset: 0 0 auto;
-  aspect-ratio: 2 / 1;
+  inset-block: 0;
+  inset-inline: var(--openbitfun-space-5);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-inline: var(--openbitfun-space-4);
   pointer-events: none;
-
-  > button { pointer-events: auto; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .openbitfun-device-overview__carousel-track { transition: none; }
-}
+.openbitfun-device-overview__carousel-button {
+  flex: 0 0 var(--openbitfun-control-height-sm);
+  pointer-events: auto;
+  color: var(--openbitfun-color-content-secondary);
 
-.openbitfun-device-overview__connect-overlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-  z-index: 1;
+  > [data-openbitfun-part='icon'] {
+    inline-size: var(--openbitfun-control-icon-size-md);
+    block-size: var(--openbitfun-control-icon-size-md);
+  }
 
-  > button {
-    pointer-events: auto;
+  &:is(:hover, :focus-visible):not(:disabled) {
+    color: var(--openbitfun-color-content-primary);
+  }
+
+  &:disabled {
+    color: var(--openbitfun-color-action-neutral-content-disabled);
   }
 }
 
-.openbitfun-device-overview__incompatible {
-  max-width: calc(100% - var(--openbitfun-space-4) * 2);
-  padding: var(--openbitfun-space-1) var(--openbitfun-space-2);
-  border-radius: var(--openbitfun-radius-sm);
-  background: var(--openbitfun-color-action-quiet-hover);
-  color: var(--openbitfun-color-status-warning-content);
-  font-size: var(--openbitfun-type-meta-font-size);
-  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+@media (hover: hover) and (pointer: fine) {
+  .openbitfun-device-overview__carousel-controls {
+    opacity: 0;
+  }
+
+  .openbitfun-device-overview__carousel-button {
+    pointer-events: none;
+  }
+
+  .openbitfun-device-overview:hover,
+  .openbitfun-device-overview:has(.openbitfun-device-overview__carousel-button:focus-visible) {
+    .openbitfun-device-overview__carousel-controls {
+      opacity: 1;
+    }
+
+    .openbitfun-device-overview__carousel-button {
+      pointer-events: auto;
+    }
+  }
+}
+
+.openbitfun-device-overview__pagination-index {
+  display: inline-block;
+  text-align: end;
+}
+
+.openbitfun-device-overview__pagination {
+  flex: 0 0 auto;
+  min-width: 4ch;
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-label-lg-font-family);
+  font-size: var(--openbitfun-type-label-lg-font-size);
+  font-weight: var(--openbitfun-type-label-lg-font-weight);
+  line-height: var(--openbitfun-type-label-lg-line-height);
+  letter-spacing: var(--openbitfun-type-label-lg-letter-spacing);
+  font-variant-numeric: tabular-nums;
   text-align: center;
-  overflow-wrap: anywhere;
-  pointer-events: auto;
 }
 
 .openbitfun-device-overview__artwork {
+  // Align the fade start with the header management glyph's right edge.
+  // Using the card width also accounts for a native scrollbar in the body.
+  --_device-overview-artwork-mask: linear-gradient(
+    to right,
+    var(--openbitfun-color-content-on-light) 0,
+    var(--openbitfun-color-content-on-light) calc(var(--_device-overview-inline-size) - var(--openbitfun-border-width-default) * 2 - var(--_device-overview-edge-fade-extent)),
+    transparent 100%
+  );
   display: grid;
-  position: relative;
+  position: absolute;
+  // The artwork row ends above the device details and action rows.
+  inset-block-start: var(--openbitfun-space-2);
+  inset-block-end: 0;
+  inset-inline-start: 0;
   width: 100%;
-  aspect-ratio: 2 / 1;
-  flex-shrink: 0;
   overflow: hidden;
   place-items: center;
-  background: var(--openbitfun-color-surface-raised);
+  background: transparent;
   isolation: isolate;
+  -webkit-mask-image: var(--_device-overview-artwork-mask);
+  mask-image: var(--_device-overview-artwork-mask);
+  mask-mode: alpha;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 
   > img {
     position: absolute;
-    width: 202px;
-    height: 202px;
+    z-index: 1;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    width: auto;
+    height: 100%;
     max-width: none;
     object-fit: contain;
-    mix-blend-mode: multiply;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (forced-colors: active) {
+  .openbitfun-device-overview__artwork {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 }
 
 .openbitfun-device-overview__artwork-glyph {
-  width: 58.333333%;
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+  width: auto;
+  height: 100%;
   aspect-ratio: 140 / 78;
   background: var(--openbitfun-color-content-primary);
   mask: url('./assets/device.svg') center / contain no-repeat;
 }
 
+// A headless host is drawn, not a system: the row mark's three rack units, which
+// are a tall stack where every other artwork here is a landscape laptop. It takes
+// less of the width and more of the height instead, so it carries the same weight
+// in the compact artwork as the silhouettes beside it.
 .openbitfun-device-overview__artwork[data-artwork='server'] .openbitfun-device-overview__artwork-glyph {
-  width: 38.11849%;
-  aspect-ratio: 91.484375 / 70.7421875;
+  aspect-ratio: 24 / 29.4629;
   mask-image: url('./assets/server.svg');
 }
 
-.openbitfun-device-overview__device-name {
-  max-width: 100%;
-  box-sizing: border-box;
-  padding-inline: var(--openbitfun-space-5);
-  color: var(--openbitfun-color-content-secondary);
-  font-family: var(--openbitfun-type-label-md-font-family);
-  font-size: var(--openbitfun-type-meta-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+// The system variants keep the neutral device.svg silhouette and size, so only
+// the mask source differs; an unplaceable system falls back to device.svg.
+.openbitfun-device-overview__artwork[data-artwork='windows'] .openbitfun-device-overview__artwork-glyph {
+  mask-image: url('./assets/windows.svg');
 }
 
-.openbitfun-device-overview__activity {
-  max-width: 100%;
+.openbitfun-device-overview__artwork[data-artwork='macos'] .openbitfun-device-overview__artwork-glyph {
+  mask-image: url('./assets/macos.svg');
+}
+
+.openbitfun-device-overview__artwork[data-artwork='linux'] .openbitfun-device-overview__artwork-glyph {
+  mask-image: url('./assets/linux.svg');
+}
+
+.openbitfun-device-overview__artwork[data-artwork='harmonyos'] .openbitfun-device-overview__artwork-glyph {
+  mask-image: url('./assets/harmonyos.svg');
+}
+
+.openbitfun-device-overview__device-heading {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-height: var(--openbitfun-control-height-sm);
+  min-width: 0;
+  gap: var(--openbitfun-space-1);
+}
+
+.openbitfun-device-overview__device-actions {
+  padding-inline: var(--openbitfun-space-5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--openbitfun-space-2);
+  min-height: var(--openbitfun-control-height-sm);
+  min-width: 0;
   box-sizing: border-box;
-  padding: var(--openbitfun-space-1) var(--openbitfun-space-5) 0;
+  text-align: center;
+}
+
+.openbitfun-device-overview__device-name {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-body-md-font-family);
+  font-size: var(--openbitfun-type-body-md-font-size);
+  font-weight: var(--openbitfun-type-body-md-font-weight);
+  line-height: var(--openbitfun-type-body-md-line-height);
+  letter-spacing: var(--openbitfun-type-body-md-letter-spacing);
+}
+
+.openbitfun-device-overview__device-status {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-height: var(--openbitfun-control-height-sm);
+  min-width: 0;
   color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-meta-font-family);
   font-size: var(--openbitfun-type-meta-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--openbitfun-type-meta-line-height);
+}
+
+.openbitfun-device-overview__connection-status {
+  max-width: 100%;
+}
+
+.openbitfun-device-overview__usage-badge {
+  flex: 0 0 auto;
 }
 
 .openbitfun-device-overview__device-group {
-  margin: 0 var(--openbitfun-space-5) var(--openbitfun-space-4);
+  margin: var(--openbitfun-space-3) var(--openbitfun-space-4) 0;
 
   h3 {
     margin: 0 6px 7px;
@@ -1934,17 +2016,16 @@ $_section-header-height: 22px;
 .openbitfun-device-overview__device-rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--openbitfun-space-2);
 }
 
 .openbitfun-device-overview__device-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   column-gap: var(--openbitfun-space-2);
-  row-gap: var(--openbitfun-space-1);
-  min-height: 42px;
-  padding: 4px 6px;
+  min-height: 32px;
+  padding: var(--openbitfun-space-1) 0;
   border-radius: var(--openbitfun-radius-sm);
 
   &[data-openbitfun-device-kind='message-app'] .openbitfun-device-overview__device-icon {
@@ -1961,31 +2042,27 @@ $_section-header-height: 22px;
     white-space: nowrap;
   }
 
-  > span:not(.openbitfun-device-overview__device-icon) {
-    grid-column: 2;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-micro-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    overflow-wrap: anywhere;
+}
 
-    // Green dot plus muted label, the live-state pairing the workspace list
-    // already teaches in this panel. Colouring the text as well would make one
-    // fact speak in two different status hues.
-    &:not(:empty)::before {
-      content: '';
-      display: inline-block;
-      width: 5px;
-      height: 5px;
-      margin-right: 5px;
-      border-radius: var(--openbitfun-radius-pill);
-      background: var(--openbitfun-color-status-success-content);
-      vertical-align: 1px;
-    }
-  }
+.openbitfun-device-overview__task-count {
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-meta-font-size);
+}
+
+.openbitfun-device-overview__device-row[data-openbitfun-activities~='controlling'] .openbitfun-device-overview__device-icon::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-end: 0;
+  width: var(--openbitfun-space-2);
+  height: var(--openbitfun-space-2);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-surface-raised);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-accent-default);
 }
 
 .openbitfun-device-overview__device-icon {
-  grid-row: 1 / span 2;
+  position: relative;
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -2435,12 +2512,12 @@ $_section-header-height: 22px;
   }
 
   &__brand-header {
-    padding: 0 6px 5px;
+    padding: 0 var(--openbitfun-space-3) 5px;
   }
 
   &__top-actions {
     gap: calc(var(--openbitfun-space-1) / 2);
-    padding: 5px 6px var(--openbitfun-space-3);
+    padding: 5px var(--openbitfun-space-3) var(--openbitfun-space-3);
     margin-bottom: var(--openbitfun-space-3);
   }
 
@@ -2550,8 +2627,15 @@ $_section-header-height: 22px;
 
   &__section-header {
     height: 22px;
-    margin: 0 6px;
+    margin: 0 var(--openbitfun-space-3);
     padding: 0 var(--openbitfun-space-2);
+    // Trailing edge of the shared action column, not the header's own padding
+    // gutter. The sessions list below starts at the 12px list inset and every row
+    // ends its last action 4px inside its own 1px row border, so the header has to
+    // reach one border-width further in than its 8px gutter to land on that
+    // column. Without it the header icons sit 3px inside the workspace row
+    // actions and read as a second, accidental axis.
+    padding-right: calc(var(--openbitfun-space-1) + var(--openbitfun-border-width-default));
     border-radius: var(--openbitfun-radius-sm);
     opacity: 1;
     transition:
@@ -2576,7 +2660,7 @@ $_section-header-height: 22px;
 
   &__items {
     gap: calc(var(--openbitfun-space-1) / 2);
-    padding: 2px 6px;
+    padding: 2px var(--openbitfun-space-3);
   }
 
   &__item {
@@ -2612,7 +2696,7 @@ $_section-header-height: 22px;
   &__bottom-bar {
     flex-direction: column;
     gap: var(--openbitfun-space-1);
-    padding: 4px 6px;
+    padding: 4px var(--openbitfun-space-3);
     border-top: 1px solid;
     @include shell-surfaces.sidebar-hairline-color;
   }
@@ -2691,7 +2775,7 @@ $_section-header-height: 22px;
 
 .openbitfun-nav-panel__footer {
   min-height: 50px;
-  padding: 2px 6px;
+  padding: 2px var(--openbitfun-space-3);
 }
 
 .openbitfun-nav-panel__footer-btn--icon,
@@ -2705,9 +2789,7 @@ $_section-header-height: 22px;
     color 120ms ease;
 }
 
-.openbitfun-nav-panel__workspace-menu,
-.openbitfun-nav-panel__footer-menu,
-.openbitfun-nav-panel__appearance-submenu {
+.openbitfun-nav-panel__footer-menu {
   animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
 
   &.is-closing {
@@ -2760,9 +2842,7 @@ $_section-header-height: 22px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .openbitfun-nav-panel__workspace-menu,
   .openbitfun-nav-panel__footer-menu,
-  .openbitfun-nav-panel__appearance-submenu,
   .openbitfun-device-overview {
     animation: none;
   }
@@ -2880,6 +2960,38 @@ $_section-header-height: 22px;
   min-block-size: 0;
   height: 100%;
 
+}
+
+// The shortcut owns one continuous hover/selection surface, including its action.
+.openbitfun-nav-panel__miniapp-shortcut {
+  gap: 0;
+  padding-inline-end: var(--openbitfun-space-1);
+  border-radius: var(--openbitfun-radius-base);
+
+  &:not(.is-active):not([data-disabled='true']):hover {
+    @include shell-surfaces.navigation-hover-feedback;
+  }
+
+  &.is-active {
+    @include shell-surfaces.navigation-selection-feedback;
+  }
+
+  > .openbitfun-nav-panel__top-action-btn,
+  > .openbitfun-nav-panel__top-action-btn:is(:hover, :active, .is-active) {
+    background: transparent;
+    padding-inline-end: var(--openbitfun-space-1);
+  }
+
+  .openbitfun-nav-panel__miniapp-shortcut-remove {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &:hover .openbitfun-nav-panel__miniapp-shortcut-remove,
+  &:focus-within .openbitfun-nav-panel__miniapp-shortcut-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .openbitfun-nav-panel__main-nav-header {

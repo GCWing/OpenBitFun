@@ -11,11 +11,18 @@ This directory follows `src/web-ui/AGENTS.md`.
   original Markdown when parsing and serializing. HTML rendering uses the shared
   sanitized Markdown renderer.
 - Markdown serialization uses the parser-matched remark extensions. Preserve link titles, code whitespace, and literal syntax; validate emitted inline ranges and use equivalent inline HTML only when Markdown delimiters cannot preserve them. Unsupported block conversions stay local to their source region.
+- Rich text parses pasted plain-text Markdown with the same document parser.
+  Styled source HTML and Markdown editor clipboard metadata must also reach this
+  parser rather than becoming literal paragraphs or a single code block.
+  Preserve native rich HTML, code-block and explicit plain-text paste behavior.
 - Source-backed reference blocks share document-level definitions, numbering,
   and anchors. Preview context is transient and must not enter saved Markdown.
 - Rich text reuses the existing MarkdownRenderer typography and component styles.
   Preserve the pre-existing preview appearance; do not add an editor-specific
   visual redesign.
+- Embedded consumers can set `emptyDocumentPlaceholder` to keep task-specific
+  guidance visible in an empty document, including while focused. Keep these hints
+  in placeholder decorations; they must not enter saved content or undo history.
 - Outside local editing, embeds keep their original rendered appearance. Show
   additional source-editing labels and completion controls only while that embed
   is being edited.
@@ -29,6 +36,32 @@ This directory follows `src/web-ui/AGENTS.md`.
   continue through existing infrastructure adapters.
 
 ## Focused verification
+
+Document-backed code editors may suspend inactive Monaco views after 30 seconds;
+at most three inactive views stay warm across hosts. Visible views and active IME
+composition are protected. Find/replace widgets and nonempty queries also keep
+their view: Monaco does not include this interaction in `saveViewState`, and a
+closed widget still owns the query used by F3. `EditorDocument` retains the exact
+model, undo/redo, dirty state and saved view state. Closing a suspended view must
+still support saving its model. Standalone, rich-text and Diff editors remain
+resident until their state has an independently tested owner; do not rebuild a
+document to save view memory.
+
+For view residency, also run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/tools/editor/services/editorViewResidency.test.ts src/tools/editor/components/CodeEditor.test.tsx
+```
+
+For code editor disk synchronization, encoding reloads, and dirty-state changes:
+
+```bash
+pnpm --dir src/web-ui run test:run src/tools/editor/components/CodeEditor.test.tsx src/tools/editor/services/MonacoModelManager.test.ts src/tools/editor/services/EditorDocument.test.ts src/tools/editor/utils/diskFileVersion.test.ts
+```
+
+The component tests use the real document/model manager with fake Monaco rendering
+and host IO. They cover delayed reads, stale requests, surface changes, and view
+remounts; they do not establish live SSH or peer transport behavior.
 
 Run from the repository root after Markdown editor changes:
 

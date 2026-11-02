@@ -695,6 +695,13 @@ mod tests {
         }
         .message("terminal_list");
         assert!(cli.starts_with("command 'terminal_list' is not supported on CLI peer host"));
+        // The Web UI asks for a host update when it sees this reason.
+        assert_eq!(
+            table::CLI_NOT_IMPLEMENTED,
+            HostSupport::Unsupported {
+                reason: "the CLI peer host has no handler for this command"
+            }
+        );
         assert!(!PeerRefusal::UnknownToHost {
             host: PeerHostKind::Cli
         }
@@ -793,6 +800,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn whole_session_copy_runs_on_desktop_and_is_explicitly_unsupported_on_cli() {
+        let copy = operation("copy_session").unwrap();
+        assert_eq!(copy.remote_workspace, RemoteWorkspaceStance::Routed);
+        assert_eq!(copy.peer, PeerStance::Proxied);
+        assert_eq!(
+            peer_host_verdict("copy_session", PeerHostKind::Desktop),
+            PeerHostVerdict::Execute
+        );
+        assert!(matches!(
+            peer_host_verdict("copy_session", PeerHostKind::Cli),
+            PeerHostVerdict::Refuse(PeerRefusal::HostUnsupported { .. })
+        ));
     }
 
     #[test]

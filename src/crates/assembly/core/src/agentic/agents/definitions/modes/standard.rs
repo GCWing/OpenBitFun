@@ -20,9 +20,10 @@ impl Default for StandardHarness {
 
 impl StandardHarness {
     pub fn new() -> Self {
-        Self {
-            default_tools: standard_harness_tools(),
-        }
+        let mut default_tools = standard_harness_tools();
+        default_tools.push("ComputerUse".to_string());
+        default_tools.push("DesktopCard".to_string());
+        Self { default_tools }
     }
 }
 

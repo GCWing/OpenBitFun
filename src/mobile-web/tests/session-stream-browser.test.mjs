@@ -84,13 +84,13 @@ test('an older host without host streams is reported as unsupported instead of r
   const relay=new RelayFixture();relay.legacyHost=true;
   const page=await relay.page(context,source.origin);
   await signIn(page);await connected(page);
-  const module=fileURLToPath(new URL('../../shared/relay-transport/HostStream.ts',import.meta.url));
+  const module='/@fs/'+fileURLToPath(new URL('../../shared/relay-transport/HostStream.ts',import.meta.url)).replace(/\\/g, '/').replace(/^\/+/, '');
   const result=await page.evaluate(async path=>{
    const {getBrowserAccountStore,releaseBrowserAccount}=await import('/src/services/BrowserAccountStore.ts');
    const {currentRelayUrl}=await import('/src/services/pairingLink.ts');
    const {RelayHttpClient}=await import('/src/services/RelayHttpClient.ts');
    const {RemoteSessionManager}=await import('/src/services/RemoteSessionManager.ts');
-   const {UNSUPPORTED_HOST_MESSAGE}=await import('/@fs'+path);
+   const {UNSUPPORTED_HOST_MESSAGE}=await import(path);
    const saved=await getBrowserAccountStore(currentRelayUrl()).read();
    const client=new RelayHttpClient(currentRelayUrl(),{token:saved.session.token,masterKey:saved.session.masterKey,userId:saved.session.userId,deviceId:saved.controllerDeviceId});
    releaseBrowserAccount(saved);

@@ -31,6 +31,10 @@
 
 ### 3. 先声明你的设计系统（写在 `style.css` 顶部注释中）
 
+在设计界面时同时确定业务状态和核心动作：哪些是用户当前输入、选择、结果，哪些动作可以
+通过同一业务函数供 UI 和 Agent 调用。新应用默认接入 `app.agent.expose()`，按 SKILL.md
+的“默认生成业务状态与语义动作”实现；不要等 Agent 要操作时再改源码、重载补接口。
+
 在写一行实际样式之前，先用注释明确以下"宪法"，并在整份 CSS 里贯彻：
 
 ```css
@@ -64,9 +68,12 @@
 
 ### 5. 验证（每次大改后跑一遍）
 
+- 保留一份尚未持久化的用户输入，通过语义动作完成真实任务，检查未修改字段、实例和文档身份不变
+- 确认桥接结果与 UI 一致，未知动作/错误参数没有部分写入；日常操作不调用源码更新或重载
+
 - `cargo build`（如果改到了 Rust 端）
 - 在 Toolbox 里启动应用，分别截图 4 种状态：light + zh / light + en / dark + zh / dark + en
-- 用 Task subagent fork 一个"fresh eyes" review（可以参考 `gstack-design-review` skill），让它对截图列 issue
+- 用 Task subagent fork 一个"fresh eyes" review，让它对截图列 issue
 - 检查清单见本文末"视觉 QA Checklist"
 
 ---

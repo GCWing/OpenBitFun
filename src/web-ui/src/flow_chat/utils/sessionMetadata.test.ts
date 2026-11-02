@@ -45,6 +45,20 @@ function createSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('sessionMetadata', () => {
+  it('defaults only authoritative legacy child metadata to reusable', () => {
+    expect(deriveSessionRelationshipFromMetadata({ relationship: { kind: 'subagent' } }).continuationPolicy).toBe('reusable');
+    expect(deriveSessionRelationshipFromMetadata({ customMetadata: { kind: 'subagent' } }).continuationPolicy).toBe('reusable');
+    expect(normalizeSessionRelationship({ sessionKind: 'subagent' }).continuationPolicy).toBeUndefined();
+    expect(deriveSessionRelationshipFromMetadata({ relationship: { kind: 'subagent', continuationPolicy: 'future-policy' as never } }).continuationPolicy).toBeUndefined();
+  });
+
+  it('preserves the runtime continuation policy when saving a placeholder with incomplete metadata', () => {
+    const metadata = buildSessionMetadata(createSession({ sessionKind: 'subagent' }), {
+      relationship: { kind: 'subagent', continuationPolicy: 'fresh_only' },
+    } as SessionMetadata);
+    expect(metadata.relationship?.continuationPolicy).toBe('fresh_only');
+  });
+
   it('normalizes runtime sessions to an explicit normal kind', () => {
     expect(normalizeSessionRelationship({})).toEqual({
       sessionKind: 'normal',
@@ -458,6 +472,7 @@ describe('sessionMetadata', () => {
       parentSessionId: 'parent-1',
       parentToolCallId: 'tool-call-7',
       subagentType: 'Explore',
+      continuationPolicy: 'fresh_only',
       btwOrigin: {
         parentSessionId: 'parent-1',
         parentDialogTurnId: 'turn-8',
@@ -499,6 +514,7 @@ describe('sessionMetadata', () => {
     const relationship = deriveSessionRelationshipFromMetadata(metadata);
     expect(relationship).toEqual({
       sessionKind: 'subagent',
+      continuationPolicy: 'fresh_only',
       parentSessionId: 'parent-1',
       btwOrigin: {
         requestId: undefined,

@@ -1,3 +1,4 @@
+import { OpenBitFunMark } from '@openbitfun/ui/brand';
 import { Alert, Button, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle } from '@openbitfun/ui';
 import ReactMarkdown from 'react-markdown';
 import { useI18n } from '@/infrastructure/i18n';
@@ -78,7 +79,7 @@ export function AppUpdatePanel() {
           ) : (
             <div className="openbitfun-update-panel__empty" aria-hidden="true"
               data-openbitfun-component="update" data-openbitfun-part="releaseArtwork">
-              <span className="openbitfun-update-details__mark" />
+              <OpenBitFunMark className="openbitfun-update-details__mark" />
             </div>
           )}
         </div>

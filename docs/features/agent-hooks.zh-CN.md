@@ -144,6 +144,38 @@ openbitfun hooks reset <user|project> --confirm
 `/hooks_external`、`/hooks-external` 作为统一 `/hooks` 管理视图的兼容别名。
 `reset` 只用于显式恢复损坏的 OpenBitFun 托管索引，绝不会修改来源文件。
 
+## 技能中的 Hooks
+
+通过 `Skill` 调用 Claude 格式技能时，经过完整校验的同步 `type: command`
+处理器会注册到现有 Hook 引擎，归属于当前会话。扫描、列表和导入不注册、不执行；
+导入后的 Claude 技能保留来源方言，外部 Hook 目录仍然只是只读发现数据。
+
+技能使用上文已支持的生命周期事件、正则 matcher、stdin JSON、退出码阻断和
+`updatedInput`。执行顺序在配置的 command 层之后。同一会话重复加载不重复注册；
+声明改变时明确报错，不静默替换已激活规则。`once: true` 仅在退出码为 0 后消费，
+并发派发也只成功执行一次；退出码 2、其他失败和超时不消费。
+同一模型响应先调用技能、再调用工具时，后续工具会等技能完成后再执行 Hook 与权限预检。
+
+Claude 适配将 `Bash` 匹配到 `ExecCommand`，并双向转换 `command/cmd`。
+`Write` 的路径前缀 `payload` 会转换成 `file_path/content`，返回的 `updatedInput`
+再转换回本地格式并接受正常校验；有匹配的技能 Hook 时，无法确定写入目标的调用会被阻断。
+`Edit` 沿用原参数。命令环境包含 `CLAUDE_SKILL_DIR`、`CLAUDE_SESSION_ID`、
+`CLAUDE_PROJECT_DIR`；技能正文中的变量仍不会因此展开。
+
+技能 `PreToolUse` 的 `permissionDecision: ask` 进入现有会话权限邮箱，携带 Hook
+原因；即使启用了自动批准，也需要用户本次答复，已有权限拒绝仍然优先。
+原生 `hooks.json` 保持 Codex 决策契约。
+
+激活受 `app.hooks.enabled` 控制；项目技能还要求 `app.hooks.project_hooks_enabled`，
+后续派发也遵守该开关。缺少所属会话、本地工作区或处于 SSH/远程工作区时明确拒绝激活，
+不会回退到控制端本地执行。远程控制、Peer Device、Detached Dispatch 复用目标运行时
+已有的会话和权限 owner，不增加客户端执行器。
+
+注册跨普通回合及进程内空闲卸载保留；会话结束、删除或临时会话丢弃时清除并取消正在运行的
+处理器，SessionEnd 派发被取消时也会清理。状态只存在于运行时内存，进程重启后需要重新调用技能。
+未知事件、异步、`prompt/agent` 类型和未知执行字段会使整份技能加载失败，不会只丢弃部分约束。
+脚本文件与原生命令 Hook 一样是实时依赖，声明指纹不代表脚本快照。
+
 ## 快速开始
 
 创建 `<用户配置目录>/config/hooks.json`：

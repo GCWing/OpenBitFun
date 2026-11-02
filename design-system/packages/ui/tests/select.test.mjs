@@ -63,7 +63,7 @@ test("Select styling owns one token-driven surface for the expanded header and l
   assert.match(styles, /--openbitfun-control-select-padding-inline/);
   assert.match(styles, /--openbitfun-control-select-indicator-size/);
   assert.match(styles, /--openbitfun-color-field-border-focus/);
-  assert.match(styles, /--openbitfun-overlay-menu-surface-radius/);
+  assert.match(styles, /\.popover\s*\{[^}]*border-radius:\s*var\(--openbitfun-control-select-radius\)/s);
   assert.match(styles, /--openbitfun-color-selection-surface/);
   assert.match(styles, /--openbitfun-color-control-highlight-background/);
   assert.match(styles, /--openbitfun-shadow-menu/);

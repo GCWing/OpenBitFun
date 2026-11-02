@@ -30,6 +30,7 @@ beforeEach(() => {
   mocks.enabled.mockResolvedValue(true);
   mocks.check.mockResolvedValue(available());
   useUpdateInstallStore.setState({
+    ...useUpdateInstallStore.getInitialState(),
     status: 'idle', progress: { downloaded: 0, total: null }, error: null,
     startedAt: null, version: null, promptOpen: false, initialized: false,
     downloadVersion: null, availableUpdate: null, currentVersion: null,
@@ -42,6 +43,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('staged app update', () => {
@@ -253,7 +255,7 @@ describe('staged app update', () => {
     expect(state().notice).toBeNull();
   });
 
-  it('downloads in the background without showing a completion card, opening a dialog, or installing', async () => {
+  it('queues verified completion for the shell without authorizing installation', async () => {
     mocks.download.mockImplementation(async (progress) => {
       expect(state().status).toBe('downloading');
       expect(selectHasUpdateAttention(state())).toBe(false);
@@ -267,6 +269,9 @@ describe('staged app update', () => {
     state().showNotice();
     expect(state().notice).toBeNull();
     expect(mocks.download).toHaveBeenCalledWith(expect.any(Function), '2.0.0');
+    expect(mocks.install).not.toHaveBeenCalled();
+    state().presentPendingInstall();
+    expect(state().promptOpen).toBe(true);
     expect(mocks.install).not.toHaveBeenCalled();
   });
 
@@ -290,6 +295,46 @@ describe('staged app update', () => {
     expect(state()).toMatchObject({ status: 'ready', version: '2.0.0', promptOpen: false });
     expect(mocks.download).not.toHaveBeenCalled();
     expect(mocks.install).not.toHaveBeenCalled();
+  });
+
+  it('reminds from fresh discovery cache without another network check', async () => {
+    writeAppUpdateSnapshot({ result: available(), checkedAt: Date.now() });
+    await state().checkForUpdates('startup');
+    expect(mocks.check).not.toHaveBeenCalled();
+    expect(state().notice).toBe('available');
+    state().dismissNotice();
+    await state().checkForUpdates('startup');
+    expect(state().notice).toBeNull();
+  });
+
+  it('restores a deferred installation across restart and reminds again after 24 hours', async () => {
+    vi.useFakeTimers();
+    await state().startInstall();
+    state().presentPendingInstall();
+    expect(state().promptOpen).toBe(true);
+    state().deferInstall();
+    mocks.pending.mockResolvedValue({ version: '2.0.0' });
+    useUpdateInstallStore.setState(useUpdateInstallStore.getInitialState());
+    await state().initialize();
+    state().presentPendingInstall();
+    expect(state().promptOpen).toBe(false);
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+    state().presentPendingInstall();
+    expect(state().promptOpen).toBe(true);
+    expect(mocks.install).not.toHaveBeenCalled();
+  });
+
+  it('honors deferral for this run even when reminder persistence fails', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage unavailable'); });
+    await state().checkForUpdates('automatic');
+    state().dismissNotice();
+    await state().refreshAvailableReminder();
+    expect(state().notice).toBeNull();
+    await state().startInstall();
+    state().presentPendingInstall();
+    state().deferInstall();
+    state().presentPendingInstall();
+    expect(state().promptOpen).toBe(false);
   });
 
   it('keeps a prepared package in the checkmark when its discovery reminder was skipped', async () => {

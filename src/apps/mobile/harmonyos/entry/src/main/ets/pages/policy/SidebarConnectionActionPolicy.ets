@@ -12,13 +12,9 @@ export class SidebarConnectionActionPolicy {
     return connectionState === 'connected' && !isBusy;
   }
 
-  static shouldShowScan(connectionState: string): boolean {
-    return connectionState !== 'connected';
-  }
-
   /**
-   * Account identity is optional once a remote control target exists. A QR
-   * room therefore unlocks the same chat/settings shell as an account device,
+   * Account identity is optional once a remote control target exists. A legacy
+   * QR room persisted by an older version therefore still unlocks the same chat/settings shell as an account device,
    * including while that remembered target is temporarily reconnecting.
    */
   static shouldShowPrimaryNavigation(

@@ -47,17 +47,18 @@ vi.mock('@openbitfun/ui', async (importOriginal) => {
   const Wrapper = ({ children }: React.PropsWithChildren) => <div>{children}</div>;
   return {
     Alert: (await importOriginal<typeof import('@openbitfun/ui')>()).Alert,
+    FieldGroup: (await importOriginal<typeof import('@openbitfun/ui')>()).FieldGroup,
     Input: ({ size: _size, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
     Switch: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input type="checkbox" role="switch" {...props} />,
     Checkbox: ({ size: _size, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => <input type="checkbox" {...props} />,
-    Button: ({ children, disabled, onClick, 'aria-label': label }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button disabled={disabled} onClick={onClick} aria-label={label}>{children}</button>,
+    Button: ({ children, disabled, onClick, 'aria-label': label, variant }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) => <button disabled={disabled} onClick={onClick} aria-label={label} data-openbitfun-variant={variant}>{children}</button>,
     Select: ({ value, options, onValueChange, disabled }: { value: string; options: Array<{ value: string; label: string }>; onValueChange: (value: string) => void; disabled?: boolean }) => <select value={value} disabled={disabled} onChange={(event) => onValueChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>,
     SearchField: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
     Dialog: ({ open, children, onOpenChange, id, 'data-ecosystem-category': category }: React.PropsWithChildren<{ open: boolean; onOpenChange: (open: boolean) => void; id?: string; 'data-ecosystem-category'?: string }>) => open ? <div role="dialog" id={id} data-ecosystem-category={category}><button onClick={() => onOpenChange(false)}>close</button>{children}</div> : null,
     DialogClose: () => null, DialogDescription: Wrapper, DialogHeaderActions: Wrapper, DialogFooter: Wrapper, DialogHeader: Wrapper, DialogHeading: Wrapper, DialogTitle: Wrapper, DialogBody: Wrapper,
     Icon: () => <span data-icon="true" />,
     IconButton: ({ icon, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: React.ReactNode }) => <button {...props}>{icon}</button>,
-    Card: Wrapper, CardBody: Wrapper,
+    Card: ({ children, radius }: React.PropsWithChildren<{ radius?: string }>) => <div data-openbitfun-component="card" data-radius={radius}>{children}</div>, CardBody: Wrapper,
     CardHeader: ({ title, description }: { title?: React.ReactNode; description?: React.ReactNode }) => <div>{title}{description}</div>,
     ScrollArea: Wrapper, LoadingState: Wrapper, OverflowText: Wrapper, StatusPill: Wrapper,
   };
@@ -104,6 +105,7 @@ describe('external agent content and explicit import boundary', () => {
   let root: Root;
   let container: HTMLDivElement;
   let data: ReturnType<typeof fixture>;
+  const contentActionsRef = React.createRef<ExternalAgentContentHandle>();
   beforeEach(() => {
     clearEcosystemDiscoveryCache();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -141,7 +143,7 @@ describe('external agent content and explicit import boundary', () => {
   afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
   async function render(product: EcosystemProductId = 'codex', catalogFailed = false, onCounts?: (counts: Record<string, number>) => void) {
     const runtime = buildEcosystemProductRuntimes(data.snapshot, []).find((entry) => entry.spec.id === product)!;
-    await act(async () => root.render(<ExternalAgentContent key={`${product}:${mocks.workspacePath}`} runtime={runtime} snapshot={data.snapshot} catalogFailed={catalogFailed} onRefresh={mocks.refresh} onSupplementalCounts={onCounts} />));
+    await act(async () => root.render(<ExternalAgentContent key={`${product}:${mocks.workspacePath}`} actionsRef={contentActionsRef} runtime={runtime} snapshot={data.snapshot} catalogFailed={catalogFailed} onRefresh={mocks.refresh} onSupplementalCounts={onCounts} />));
   }
   async function click(label: string, kind?: string) {
     if (kind && !container.querySelector(`[data-import-kind="${kind}"]`)) await expand(kind);
@@ -167,6 +169,7 @@ describe('external agent content and explicit import boundary', () => {
     await render();
     await expand('account');
     const account = container.querySelector('[data-content-group="account"]')!;
+    expect(account.querySelector('[data-openbitfun-component="card"]')?.getAttribute('data-radius')).toBe('none');
     expect(account.textContent).toContain('codex@example.test');
     expect(account.textContent).not.toContain('other@example.test');
     expect(account.textContent).toContain('content.accounts.labels.connected');
@@ -260,14 +263,14 @@ describe('external agent content and explicit import boundary', () => {
 
   it('opens pets in their own catalog dialog and refreshes them from the scene control', async () => {
     mocks.getPets.mockResolvedValue(petFixture());
-    const refreshControlRef = React.createRef<ExternalAgentContentHandle>();
+    const actionsRef = React.createRef<ExternalAgentContentHandle>();
     const runtime = buildEcosystemProductRuntimes(data.snapshot, []).find((entry) => entry.spec.id === 'codex')!;
-    await act(async () => root.render(<ExternalAgentContent runtime={runtime} snapshot={data.snapshot} catalogFailed={false} onRefresh={mocks.refresh} refreshControlRef={refreshControlRef} />));
+    await act(async () => root.render(<ExternalAgentContent runtime={runtime} snapshot={data.snapshot} catalogFailed={false} onRefresh={mocks.refresh} actionsRef={actionsRef} />));
     await expand('pet');
     expect(container.textContent).toContain('Codex Cat');
     expect(container.querySelectorAll('[data-ecosystem-category="pet"]')).toHaveLength(1);
     mocks.getPets.mockClear(); mocks.getAccounts.mockClear();
-    await act(async () => refreshControlRef.current!.refresh());
+    await act(async () => actionsRef.current!.refresh());
     expect(mocks.getPets).toHaveBeenCalledTimes(1);
     expect(mocks.getAccounts).toHaveBeenCalledTimes(1);
     await click('close');
@@ -428,6 +431,7 @@ describe('external agent content and explicit import boundary', () => {
     expect(dialog.querySelector('[data-content-empty-state="notDetected"] p')?.textContent).toBe('import.states.notDetected');
     const scanButton = dialog.querySelector<HTMLButtonElement>('[data-content-empty-state] button');
     expect(scanButton?.textContent).toBe('content.scan');
+    expect(scanButton?.getAttribute('data-openbitfun-variant')).toBe('primary');
     expect(scanButton?.disabled).toBe(false);
     expect(dialog.querySelector('[role="table"], [role="columnheader"], [data-import-kind], input')).toBeNull();
     expect(dialog.textContent).not.toMatch(/content\.(importCategory|importSelected|undoSelected|selectedCount|noMatches)/);
@@ -626,7 +630,7 @@ describe('external agent content and explicit import boundary', () => {
   it('reviews MCP and Hooks without copying Skills in a full agent batch', async () => {
     mocks.skillImportVersion = 1;
     await render();
-    await click('content.importAll');
+    await act(async () => contentActionsRef.current!.importAll());
     expect(mocks.addSkill).not.toHaveBeenCalled();
     expect(mocks.applyMcp).not.toHaveBeenCalled();
     expect(mocks.applyHook).not.toHaveBeenCalled();
@@ -644,7 +648,7 @@ describe('external agent content and explicit import boundary', () => {
     let failHook!: (error: Error) => void;
     mocks.applyMcp.mockImplementation(() => new Promise((resolve) => { finishMcp = resolve; }));
     mocks.applyHook.mockImplementation(() => new Promise((_resolve, reject) => { failHook = reject; }));
-    await render(); await click('content.importAll');
+    await render(); await act(async () => contentActionsRef.current!.importAll());
     const dialog = container.querySelector('[role="dialog"]:not([data-ecosystem-category])')!;
     expect([...dialog.querySelectorAll('.ecosystem-compatibility__batch-group')].map((group) => group.getAttribute('aria-label'))).toEqual(['capabilities.mcp', 'capabilities.hook']);
     expect(dialog.querySelector('progress')).toBeNull();
@@ -666,7 +670,7 @@ describe('external agent content and explicit import boundary', () => {
     expect(container.querySelectorAll('[data-content-group]').length).toBeGreaterThan(2);
     expect(container.querySelectorAll('[data-import-kind]')).toHaveLength(0);
     const overview = container.querySelector('.ecosystem-compatibility__content-overview')!;
-    expect(overview.querySelectorAll('[role="columnheader"]')).toHaveLength(3);
+    expect(overview.querySelectorAll('[role="columnheader"]')).toHaveLength(2);
     expect(overview.textContent).toContain('import.columns.state');
     expect(overview.querySelector('[data-content-group="skill"] [data-icon]')).not.toBeNull();
     expect(overview.querySelector('[data-content-group="skill"]')?.textContent).toContain('content.itemCount');
@@ -731,7 +735,7 @@ describe('external agent content and explicit import boundary', () => {
     });
     await render();
     if (mode === 'single') await click('content.prepareImport', 'mcp');
-    else await click('content.importAll');
+    else await act(async () => contentActionsRef.current!.importAll());
     await click('content.confirm');
     if (mode === 'batch') await click('content.close');
     await expand('mcp');

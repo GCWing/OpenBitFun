@@ -38,6 +38,22 @@ pub fn normalize_remote_workspace_path(path: &str) -> String {
     s.trim_end_matches('/').to_string()
 }
 
+/// Canonical form of an SSH connection id.
+///
+/// Older builds generated `ssh-user@host:port`; current profiles use
+/// `ssh-user@host`. Both spellings name the same saved connection, so persisted
+/// workspace records written by either build compare equal after this mapping.
+pub fn canonical_ssh_connection_id(id: &str) -> String {
+    if let Some(rest) = id.strip_prefix("ssh-") {
+        if let (Some(at), Some(colon)) = (rest.find('@'), rest.rfind(':')) {
+            if colon > at && rest[colon + 1..].parse::<u16>().is_ok() {
+                return format!("ssh-{}", &rest[..colon]);
+            }
+        }
+    }
+    id.to_string()
+}
+
 /// Connection id as one safe local path component.
 pub fn sanitize_ssh_connection_id_for_local_dir(connection_id: &str) -> String {
     if connection_id == "." {
@@ -287,6 +303,28 @@ fn hash_host_and_root(host: &str, root_norm: &str) -> String {
     hex_encode(&hasher.finalize()[..16])
 }
 
+/// Build the compact runtime-directory key for a local workspace.
+///
+/// Runtime keys intentionally omit a product or workspace-kind prefix from
+/// the directory name. The domain marker remains part of the hashed input so
+/// local and remote identities cannot accidentally share a key.
+pub fn local_workspace_runtime_key(canonical_root_norm: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"runtime-local\0");
+    hasher.update(canonical_root_norm.as_bytes());
+    hex_encode(&hasher.finalize()[..12])
+}
+
+/// Build the compact runtime-directory key for a remote workspace.
+pub fn remote_workspace_runtime_key(ssh_host: &str, remote_root_norm: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"runtime-remote\0");
+    hasher.update(ssh_host.trim().to_lowercase().as_bytes());
+    hasher.update(b"\0");
+    hasher.update(remote_root_norm.as_bytes());
+    hex_encode(&hasher.finalize()[..12])
+}
+
 /// Stable storage id for a local workspace (`localhost` + canonical absolute root).
 pub fn local_workspace_stable_storage_id(canonical_root_norm: &str) -> String {
     format!(
@@ -351,4 +389,33 @@ pub fn build_project_runtime_slug(canonical: &str) -> String {
     let max_prefix_len = 120_usize.saturating_sub(suffix.len() + 1);
     let prefix = slug[..max_prefix_len].trim_end_matches('-');
     format!("{}-{}", prefix, suffix)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_ssh_connection_id;
+
+    #[test]
+    fn canonical_ssh_connection_id_strips_only_legacy_port_suffixes() {
+        assert_eq!(
+            canonical_ssh_connection_id("ssh-root@example.com:22"),
+            "ssh-root@example.com"
+        );
+        assert_eq!(
+            canonical_ssh_connection_id("ssh-root@example.com"),
+            "ssh-root@example.com"
+        );
+        assert_eq!(
+            canonical_ssh_connection_id("ssh-root@example.com:not-a-port"),
+            "ssh-root@example.com:not-a-port"
+        );
+        assert_eq!(
+            canonical_ssh_connection_id("ssh-user:name@example.com"),
+            "ssh-user:name@example.com"
+        );
+        assert_eq!(
+            canonical_ssh_connection_id("0c9f6c1e-profile:22"),
+            "0c9f6c1e-profile:22"
+        );
+    }
 }

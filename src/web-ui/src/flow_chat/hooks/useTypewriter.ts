@@ -113,6 +113,10 @@ export const TYPEWRITER_MIN_PAINT_INTERVAL_MS = 16;
 export const TYPEWRITER_FINISH_MIN_PAINT_INTERVAL_MS = 8;
 
 export interface TypewriterOptions {
+  /** Skip playback and drain immediately, e.g. when the owning body is hidden.
+   * Unlike animate=false (stream finished), this does not animate the backlog.
+   */
+  revealImmediately?: boolean;
   /**
    * Replay the whole current text on mount. Defaults to false: mounting starts
    * from the current text and only reveals later appended content.
@@ -209,27 +213,31 @@ export function useTypewriter(
   options: TypewriterOptions = {}
 ): TypewriterResult {
   const replayOnMount = options.replayOnMount ?? false;
+  const revealImmediately = options.revealImmediately ?? false;
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(getPrefersReducedMotion);
-  const shouldReplayInitialText = animate && replayOnMount && !prefersReducedMotion;
+  const shouldReplayInitialText = animate && replayOnMount && !prefersReducedMotion && !revealImmediately;
   const [displayText, setDisplayText] = useState(shouldReplayInitialText ? '' : targetText);
   const revealedRef = useRef(shouldReplayInitialText ? 0 : targetText.length);
   const targetRef = useRef(targetText);
   const animateRef = useRef(animate);
+  const revealImmediatelyRef = useRef(revealImmediately);
   const rafRef = useRef<number | null>(null);
   const lastTickMsRef = useRef<number | null>(null);
   const lastPaintMsRef = useRef(0);
   const fractionalCarryRef = useRef(0);
 
-  const isRevealing = !prefersReducedMotion
+  const isRevealing = !revealImmediately && !prefersReducedMotion
     && (animate || displayText.length < targetText.length);
 
   useEffect(() => {
+    const wasRevealImmediately = revealImmediatelyRef.current;
+    revealImmediatelyRef.current = revealImmediately;
     animateRef.current = animate;
     targetRef.current = targetText;
 
     const pageIsHidden = typeof document !== 'undefined'
       && document.visibilityState === 'hidden';
-    if (prefersReducedMotion || pageIsHidden) {
+    if (revealImmediately || prefersReducedMotion || pageIsHidden) {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -238,8 +246,22 @@ export function useTypewriter(
       lastPaintMsRef.current = 0;
       fractionalCarryRef.current = 0;
       revealedRef.current = targetText.length;
-      setDisplayText(targetText);
+      // The immediate result is returned directly below. Avoid scheduling a
+      // React state update for every streaming chunk while the owner is
+      // collapsed. When the mode changes later, the animated branch syncs the
+      // state once before deciding whether a reveal is needed.
+      if (!revealImmediately || !wasRevealImmediately) {
+        setDisplayText(targetText);
+      }
       return;
+    }
+
+    if (wasRevealImmediately) {
+      // The state was intentionally left untouched while immediate mode was
+      // active. Seed it once when the content becomes visible again so a
+      // subsequent animated update starts from the current target.
+      setDisplayText(targetText);
+      revealedRef.current = targetText.length;
     }
 
     // Reset when target shrinks (e.g. new round).
@@ -342,7 +364,7 @@ export function useTypewriter(
     if (rafRef.current === null && targetText.length > revealedRef.current) {
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [targetText, animate, prefersReducedMotion]);
+  }, [targetText, animate, prefersReducedMotion, revealImmediately]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
@@ -380,5 +402,5 @@ export function useTypewriter(
     };
   }, []);
 
-  return { displayText, isRevealing };
+  return { displayText: revealImmediately ? targetText : displayText, isRevealing };
 }

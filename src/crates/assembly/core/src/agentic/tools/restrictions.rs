@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn tool_restriction_errors_map_to_tool_errors() {
         let error: OpenBitFunError = ToolRestrictionError::Denied {
-            tool_name: "Task".to_string(),
+            tool_name: "AgentSpawn".to_string(),
             message: Some(
                 "Recursive subagent delegation is blocked. Use direct tools instead.".to_string(),
             ),

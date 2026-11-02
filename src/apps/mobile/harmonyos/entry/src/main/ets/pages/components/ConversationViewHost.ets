@@ -3,6 +3,11 @@ import { ConversationView } from './ConversationView';
 import { ConversationIntent } from '../actions/ConversationIntent';
 import { ComposerPresentation } from './ComposerBar';
 import { ConversationViewOptions } from './ConversationViewContract';
+import {
+  SettingsPlacement,
+  SettingsPlacementPolicy,
+  SettingsSheetKind
+} from '../policy/SettingsPlacementPolicy';
 
 @ComponentV2
 export struct ConversationViewHost {
@@ -15,6 +20,8 @@ export struct ConversationViewHost {
   @Param composerPresentation: ComposerPresentation = ComposerPresentation.Compact;
   @Param composerInputId: string = 'conversation-composer-input';
   @Param hoverOperateMode: boolean = false;
+  @Param fullTextSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
   @Param onRestoreSidebar: () => void = () => {};
   @Param onIntent: (intent: ConversationIntent) => void = (_intent: ConversationIntent) => {};
 
@@ -37,6 +44,7 @@ export struct ConversationViewHost {
     options.composerPresentation = this.composerPresentation;
     options.composerInputId = this.composerInputId;
     options.hoverOperateMode = this.hoverOperateMode;
+    options.fullTextSheetPlacement = this.fullTextSheetPlacement;
     return options;
   }
 

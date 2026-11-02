@@ -11,17 +11,24 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
-use crate::client::quirks::{
-    is_deepseek_reasoning_effort_model, is_glm_52_reasoning_effort_model, is_zhipuai_url,
+use crate::providers::reasoning::{
+    self, api_format_for_provider, is_codex_chatgpt_path, is_known_codex_reasoning_model,
+    is_responses_endpoint, normalize_dashscope_reasoning_effort,
+    normalize_deepseek_reasoning_effort, normalize_glm_52_reasoning_effort,
+    normalize_glm_53_reasoning_effort, normalize_siliconflow_reasoning_effort,
+    AnthropicThinkingCapability, ReasoningRule,
 };
-use crate::providers::anthropic::request::{
-    anthropic_thinking_capability, AnthropicThinkingCapability,
-};
-use crate::providers::openai::common::is_known_codex_reasoning_model;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelsDevCatalog {
     providers: BTreeMap<String, ModelsDevProvider>,
+}
+
+/// Protocol-only manual controls are not a declaration that a particular model
+/// accepts them. This uses host-side compiler metadata before serialization.
+pub fn is_protocol_generic_reasoning_preset(preset: &ReasoningPresetDescriptor) -> bool {
+    preset.source == ReasoningPresetSource::AdapterFallback
+        && crate::providers::shared::is_generic_reasoning_preset(preset)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -673,8 +680,15 @@ pub fn project_reasoning_catalog_with_limit_and_auto_binding(
             // tested adapter gap for trusted auto bindings; explicit bindings
             // to arbitrary gateways do not gain adapter-inferred capability.
             if matches!(binding, ReasoningCatalogBinding::Auto)
-                && source_provider.eq_ignore_ascii_case("zhipuai")
-                && is_glm_52_reasoning_effort_model(&source_model.id)
+                && matches!(
+                    reasoning::resolve_reasoning_rule(
+                        api_format_for_provider(provider, base_url),
+                        source_provider,
+                        base_url,
+                        &source_model.id,
+                    ),
+                    ReasoningRule::Glm52
+                )
                 && support.toggle
             {
                 for descriptor in toggle_descriptors(
@@ -758,6 +772,7 @@ pub fn project_reasoning_catalog_with_limit_and_auto_binding(
                     order: preset.order.unwrap_or(100),
                     actions: preset.actions.clone(),
                     source: ReasoningPresetSource::ModelConfig,
+                    effective_effort: None,
                     execution_provider: Some(execution_provider.clone()),
                     execution_model: Some(execution_model.clone()),
                 },
@@ -766,6 +781,9 @@ pub fn project_reasoning_catalog_with_limit_and_auto_binding(
     }
 
     let mut presets = descriptors.into_values().collect::<Vec<_>>();
+    for preset in &mut presets {
+        preset.effective_effort = reasoning_display_effort(provider, base_url, preset);
+    }
     presets.sort_by(|left, right| {
         left.order
             .cmp(&right.order)
@@ -834,6 +852,17 @@ fn auto_provider_id(provider: &str, base_url: &str) -> Option<&'static str> {
         ("gemini" | "google", "generativelanguage.googleapis.com") => Some("google"),
         ("deepseek" | "openai" | "anthropic", "api.deepseek.com") => Some("deepseek"),
         ("openai" | "anthropic", "open.bigmodel.cn" | "api.z.ai") => Some("zhipuai"),
+        (
+            "openai" | "siliconflow" | "silicon_flow",
+            "api.siliconflow.cn" | "api.siliconflow.com",
+        ) => Some("siliconflow"),
+        ("openai" | "dashscope" | "alibaba" | "aliyun", host)
+            if host.ends_with(".maas.aliyuncs.com")
+                || host == "dashscope.aliyuncs.com"
+                || host == "dashscope-intl.aliyuncs.com" =>
+        {
+            Some("dashscope")
+        }
         _ => None,
     }
 }
@@ -844,99 +873,16 @@ fn adapter_reasoning_support(
     execution_model: &str,
     execution_provider: &str,
 ) -> AdapterReasoningSupport {
-    let provider = provider.trim().to_ascii_lowercase();
-    let execution_provider = execution_provider.trim().to_ascii_lowercase();
-    let execution_model = execution_model.trim().to_ascii_lowercase();
-    if provider == "deepseek" || base_url.to_ascii_lowercase().contains("api.deepseek.com") {
-        return AdapterReasoningSupport {
-            effort: true,
-            toggle: true,
-            ..Default::default()
-        };
+    let format = api_format_for_provider(provider, base_url);
+    let rule =
+        reasoning::resolve_reasoning_rule(format, execution_provider, base_url, execution_model);
+    let capabilities = rule.capabilities(format);
+    AdapterReasoningSupport {
+        effort: capabilities.effort,
+        toggle: capabilities.toggle,
+        budget_tokens: capabilities.budget_tokens,
+        nullable_effort: capabilities.nullable_effort,
     }
-    if execution_provider == "deepseek"
-        && is_deepseek_reasoning_effort_model(&execution_model)
-        && matches!(provider.as_str(), "openai" | "anthropic")
-    {
-        return AdapterReasoningSupport {
-            effort: true,
-            toggle: true,
-            ..Default::default()
-        };
-    }
-    if (execution_provider == "zhipuai"
-        && is_glm_52_reasoning_effort_model(&execution_model)
-        && matches!(provider.as_str(), "openai" | "anthropic"))
-        || (is_zhipuai_url(base_url)
-            && is_glm_52_reasoning_effort_model(&execution_model)
-            && matches!(provider.as_str(), "openai" | "anthropic"))
-    {
-        return AdapterReasoningSupport {
-            effort: true,
-            toggle: true,
-            ..Default::default()
-        };
-    }
-    if matches!(provider.as_str(), "response" | "responses")
-        || (provider == "openai" && is_responses_endpoint(base_url))
-    {
-        return AdapterReasoningSupport {
-            effort: true,
-            nullable_effort: true,
-            ..Default::default()
-        };
-    }
-    match provider.as_str() {
-        "anthropic" => {
-            let capability = anthropic_thinking_capability(&execution_model);
-            AdapterReasoningSupport {
-                effort: !matches!(capability, AnthropicThinkingCapability::ManualOnly),
-                toggle: !matches!(
-                    capability,
-                    AnthropicThinkingCapability::AdaptiveOnly
-                        | AnthropicThinkingCapability::AdaptiveDefaultNoDisabled
-                ),
-                budget_tokens: !matches!(
-                    capability,
-                    AnthropicThinkingCapability::AdaptiveOnly
-                        | AnthropicThinkingCapability::AdaptiveDefaultNoDisabled
-                ),
-                ..Default::default()
-            }
-        }
-        "gemini" | "google" => gemini_reasoning_support(&execution_model),
-        _ => Default::default(),
-    }
-}
-
-fn gemini_reasoning_support(model: &str) -> AdapterReasoningSupport {
-    let model = model.trim().to_ascii_lowercase();
-    if model.starts_with("gemini-3-") {
-        return AdapterReasoningSupport {
-            effort: true,
-            ..Default::default()
-        };
-    }
-    if model.starts_with("gemini-2.5-") {
-        return AdapterReasoningSupport {
-            toggle: model.contains("flash"),
-            budget_tokens: true,
-            ..Default::default()
-        };
-    }
-    AdapterReasoningSupport::default()
-}
-
-fn is_responses_endpoint(base_url: &str) -> bool {
-    base_url
-        .trim_end_matches('/')
-        .to_ascii_lowercase()
-        .ends_with("/responses")
-}
-
-fn is_codex_chatgpt_path(path: &str) -> bool {
-    let path = path.trim_end_matches('/');
-    path == "/backend-api/codex" || path == "/backend-api/codex/responses"
 }
 
 fn adapter_fallback_descriptors(
@@ -951,12 +897,16 @@ fn adapter_fallback_descriptors(
     };
     let model_id = model_id.trim().to_ascii_lowercase();
     let source = ReasoningPresetSource::AdapterFallback;
+    let format = api_format_for_provider(provider, base_url);
+    let rule = reasoning::resolve_reasoning_rule(format, provider_id, base_url, &model_id);
 
     match provider_id {
-        // Keep these tables deliberately conservative. A future model is not
-        // assumed compatible merely because the protocol has an effort field.
+        // Prefer tested provider/model mappings, then use the protocol-level
+        // fallback for models that are newer or gateway-specific.
         "openai" if support.effort => {
-            if is_codex_chatgpt_base_url(base_url) && is_known_codex_reasoning_model(&model_id) {
+            if matches!(rule, ReasoningRule::CodexChatGpt)
+                && is_known_codex_reasoning_model(&model_id)
+            {
                 // The Codex adapter clamps unsupported `minimal` and uses
                 // medium by default. low/medium/high is the tested common set
                 // across its built-in model table.
@@ -1001,12 +951,12 @@ fn adapter_fallback_descriptors(
                 }
             }
         }
-        "anthropic" => match anthropic_thinking_capability(&model_id) {
-            AnthropicThinkingCapability::AdaptivePreferred
-            | AnthropicThinkingCapability::AdaptiveOnly
-            | AnthropicThinkingCapability::AdaptiveDefaultNoDisabled
-                if support.effort =>
-            {
+        "anthropic" => match rule {
+            ReasoningRule::Claude(
+                AnthropicThinkingCapability::AdaptivePreferred
+                | AnthropicThinkingCapability::AdaptiveOnly
+                | AnthropicThinkingCapability::AdaptiveDefaultNoDisabled,
+            ) if support.effort => {
                 // low/medium/high is the conservative common subset for the
                 // adaptive families recognized by the request adapter. More
                 // model-specific values such as max/xhigh remain models.dev
@@ -1028,21 +978,52 @@ fn adapter_fallback_descriptors(
             // the unknown/default classification, so it must never become a
             // family-wide fallback. Budget choices are derived from max_tokens
             // at request time, so the catalog exposes only a safe on/off mode.
-            AnthropicThinkingCapability::ManualOnly
+            ReasoningRule::Claude(AnthropicThinkingCapability::ManualOnly)
                 if matches!(model_id.as_str(), "claude-sonnet-4-5" | "claude-haiku-4-5")
                     && support.toggle =>
             {
                 toggle_descriptors(source, provider, model_id.as_str())
             }
+            ReasoningRule::Claude(AnthropicThinkingCapability::ManualEffort)
+                if support.effort || support.budget_tokens =>
+            {
+                let mut descriptors = toggle_descriptors(source, provider, model_id.as_str());
+                if support.effort {
+                    descriptors.extend(effort_descriptors(
+                        &[
+                            Some("low".into()),
+                            Some("medium".into()),
+                            Some("high".into()),
+                        ],
+                        false,
+                        source,
+                        provider,
+                        model_id.as_str(),
+                    ));
+                }
+                if support.budget_tokens {
+                    descriptors.extend(budget_descriptors(
+                        Some(1_024),
+                        None,
+                        None,
+                        effective_max_output_tokens,
+                        provider,
+                        source,
+                        provider,
+                        model_id.as_str(),
+                    ));
+                }
+                descriptors
+            }
             _ => Vec::new(),
         },
         "deepseek"
-            if is_deepseek_reasoning_effort_model(&model_id)
+            if matches!(rule, ReasoningRule::DeepSeek { .. })
                 && support.effort
                 && support.toggle =>
         {
             let mut descriptors = toggle_descriptors(source, provider, model_id.as_str());
-            let efforts = if model_id == "deepseek-v4-flash" {
+            let efforts = if matches!(rule, ReasoningRule::DeepSeek { flash: true }) {
                 vec![Some("low".into()), Some("high".into()), Some("max".into())]
             } else {
                 vec![Some("high".into()), Some("max".into())]
@@ -1056,13 +1037,20 @@ fn adapter_fallback_descriptors(
             ));
             descriptors
         }
-        "zhipuai" if is_glm_52_reasoning_effort_model(&model_id) && support.effort => {
+        "zhipuai"
+            if matches!(rule, ReasoningRule::Glm52 | ReasoningRule::Glm53) && support.effort =>
+        {
             let mut descriptors = Vec::new();
             if support.toggle {
                 descriptors.extend(toggle_descriptors(source, provider, model_id.as_str()));
             }
+            let efforts = if matches!(rule, ReasoningRule::Glm53) {
+                &[Some("low".into()), Some("high".into()), Some("max".into())][..]
+            } else {
+                &[Some("high".into()), Some("max".into())][..]
+            };
             descriptors.extend(effort_descriptors(
-                &[Some("high".into()), Some("max".into())],
+                efforts,
                 false,
                 source,
                 provider,
@@ -1070,18 +1058,88 @@ fn adapter_fallback_descriptors(
             ));
             descriptors
         }
-        "google" if support.effort && model_id.starts_with("gemini-3-") => effort_descriptors(
-            &[
-                Some("low".into()),
-                Some("medium".into()),
-                Some("high".into()),
-            ],
-            false,
-            source,
-            provider,
-            model_id.as_str(),
-        ),
-        "google" if support.budget_tokens && model_id.starts_with("gemini-2.5-") => {
+        "siliconflow" | "silicon_flow"
+            if matches!(rule, ReasoningRule::SiliconFlow { .. })
+                && (support.effort || support.toggle || support.budget_tokens) =>
+        {
+            let mut descriptors = toggle_descriptors(source, provider, model_id.as_str());
+            if support.effort {
+                descriptors.extend(effort_descriptors(
+                    &[Some("high".into()), Some("max".into())],
+                    false,
+                    source,
+                    provider,
+                    model_id.as_str(),
+                ));
+            }
+            if support.budget_tokens {
+                descriptors.extend(budget_descriptors(
+                    Some(128),
+                    Some(32_768),
+                    None,
+                    effective_max_output_tokens,
+                    provider,
+                    source,
+                    provider,
+                    model_id.as_str(),
+                ));
+            }
+            descriptors
+        }
+        "dashscope" | "alibaba" | "aliyun"
+            if matches!(rule, ReasoningRule::DashScope { .. })
+                && (support.effort || support.toggle || support.budget_tokens) =>
+        {
+            let mut descriptors = Vec::new();
+            if support.toggle {
+                descriptors.extend(toggle_descriptors(source, provider, model_id.as_str()));
+            }
+            if support.effort {
+                let efforts = if matches!(rule, ReasoningRule::DashScope { forced: true, .. }) {
+                    &[Some("low".into()), Some("high".into()), Some("max".into())][..]
+                } else {
+                    &[Some("high".into()), Some("max".into())][..]
+                };
+                descriptors.extend(effort_descriptors(
+                    efforts,
+                    false,
+                    source,
+                    provider,
+                    model_id.as_str(),
+                ));
+            }
+            if support.budget_tokens {
+                descriptors.extend(budget_descriptors(
+                    Some(1),
+                    None,
+                    None,
+                    effective_max_output_tokens,
+                    provider,
+                    source,
+                    provider,
+                    model_id.as_str(),
+                ));
+            }
+            descriptors
+        }
+        "google" if support.effort && matches!(rule, ReasoningRule::Gemini3 { .. }) => {
+            let values = if matches!(rule, ReasoningRule::Gemini3 { minimal: true }) {
+                vec![
+                    Some("minimal".into()),
+                    Some("low".into()),
+                    Some("medium".into()),
+                    Some("high".into()),
+                ]
+            } else {
+                vec![
+                    Some("low".into()),
+                    Some("medium".into()),
+                    Some("high".into()),
+                ]
+            };
+            effort_descriptors(&values, false, source, provider, model_id.as_str())
+        }
+        "google" if support.budget_tokens && matches!(rule, ReasoningRule::Gemini25 { .. }) => {
             budget_descriptors(
                 Some(1_024),
                 None,
@@ -1146,17 +1204,51 @@ fn adapter_fallback_provider_id(provider: &str, base_url: &str) -> Option<&'stat
     }
 }
 
-fn is_codex_chatgpt_base_url(base_url: &str) -> bool {
-    reqwest::Url::parse(base_url.trim())
-        .ok()
-        .is_some_and(|url| {
-            url.scheme() == "https"
-                && url.port_or_known_default() == Some(443)
-                && url
-                    .host_str()
-                    .is_some_and(|host| host.trim_end_matches('.') == "chatgpt.com")
-                && is_codex_chatgpt_path(url.path())
-        })
+// Display aliases follow the existing executing adapter without changing which
+// presets the catalog recognizes, or their persisted ids and request actions.
+fn reasoning_display_effort(
+    provider: &str,
+    base_url: &str,
+    preset: &ReasoningPresetDescriptor,
+) -> Option<String> {
+    let execution_provider = preset.execution_provider.as_deref()?;
+    if preset.source == ReasoningPresetSource::ModelConfig
+        || execution_provider == crate::providers::shared::GENERIC_REASONING_PROVIDER_ID
+    {
+        return None;
+    }
+    let provider = provider.trim().to_ascii_lowercase();
+    if !matches!(
+        provider.as_str(),
+        "openai" | "anthropic" | "deepseek" | "zhipuai" | "siliconflow" | "dashscope"
+    ) || (provider == "openai" && is_responses_endpoint(base_url))
+    {
+        return None;
+    }
+    let execution_model = preset.execution_model.as_deref()?;
+    let effort = preset.actions.iter().find_map(|action| match action {
+        ReasoningPresetAction::Effort { value } => Some(value.as_str()),
+        _ => None,
+    })?;
+    match reasoning::resolve_reasoning_rule(
+        api_format_for_provider(&provider, base_url),
+        execution_provider,
+        base_url,
+        execution_model,
+    ) {
+        ReasoningRule::DeepSeek { .. } => {
+            normalize_deepseek_reasoning_effort(execution_model, effort).map(ToOwned::to_owned)
+        }
+        ReasoningRule::Glm52 => normalize_glm_52_reasoning_effort(effort).map(ToOwned::to_owned),
+        ReasoningRule::Glm53 => normalize_glm_53_reasoning_effort(effort).map(ToOwned::to_owned),
+        ReasoningRule::SiliconFlow { effort: true } => {
+            normalize_siliconflow_reasoning_effort(effort).map(ToOwned::to_owned)
+        }
+        ReasoningRule::DashScope { effort: true, .. } => {
+            normalize_dashscope_reasoning_effort(execution_model, effort).map(ToOwned::to_owned)
+        }
+        _ => None,
+    }
 }
 
 fn effort_descriptors(
@@ -1178,6 +1270,7 @@ fn effort_descriptors(
                 value: value.to_string(),
             }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         })
@@ -1205,6 +1298,7 @@ fn toggle_descriptors(
             order: 0,
             actions: vec![ReasoningPresetAction::Toggle { enabled: false }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         },
@@ -1214,6 +1308,7 @@ fn toggle_descriptors(
             order: 1,
             actions: vec![ReasoningPresetAction::Toggle { enabled: true }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         },
@@ -1260,6 +1355,7 @@ fn budget_descriptors(
             order: 30 + index as i32,
             actions: vec![ReasoningPresetAction::BudgetTokens { value }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         })
@@ -1277,7 +1373,8 @@ fn display_label(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        project_reasoning_catalog, project_reasoning_catalog_with_limit,
+        is_protocol_generic_reasoning_preset, project_reasoning_catalog,
+        project_reasoning_catalog_with_limit,
         project_reasoning_catalog_with_limit_and_auto_binding, ModelsDevCatalog,
     };
     use crate::providers::shared::GENERIC_REASONING_PROVIDER_ID;
@@ -1590,6 +1687,10 @@ mod tests {
             .presets
             .iter()
             .all(|preset| preset.source == ReasoningPresetSource::AdapterFallback));
+        assert!(projection
+            .presets
+            .iter()
+            .all(|preset| !is_protocol_generic_reasoning_preset(preset)));
     }
 
     #[test]
@@ -2000,6 +2101,10 @@ mod tests {
                 preset.source == ReasoningPresetSource::AdapterFallback
                     && preset.execution_provider.as_deref() == Some(GENERIC_REASONING_PROVIDER_ID)
             }));
+            assert!(projection
+                .presets
+                .iter()
+                .all(is_protocol_generic_reasoning_preset));
         }
     }
 
@@ -2122,7 +2227,7 @@ mod tests {
     }
 
     #[test]
-    fn official_google_endpoint_rejects_unverified_gemini_family_options() {
+    fn official_google_endpoint_uses_the_gemini_format_fallback_for_unknown_models() {
         let projection = project_reasoning_catalog(
             "gemini",
             "gemini-test",
@@ -2131,8 +2236,15 @@ mod tests {
             Some(&catalog()),
         );
 
-        assert_eq!(projection.status, ReasoningCapabilityStatus::Unknown);
-        assert!(projection.presets.is_empty());
+        assert_eq!(projection.status, ReasoningCapabilityStatus::Known);
+        assert_eq!(
+            projection
+                .presets
+                .iter()
+                .map(|preset| preset.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["off", "on"]
+        );
     }
 
     #[test]
@@ -2207,6 +2319,92 @@ mod tests {
 
         assert_eq!(projection.status, ReasoningCapabilityStatus::Unsupported);
         assert!(projection.presets.is_empty());
+    }
+
+    #[test]
+    fn effort_display_metadata_preserves_ids_actions_and_generic_fallback() {
+        let values = ["low", "medium", "high", "xhigh", "max"].map(|value| Some(value.to_string()));
+        for (provider, model, expected) in [
+            ("zhipuai", "glm-5.2", ["high", "high", "high", "max", "max"]),
+            (
+                "deepseek",
+                "deepseek-v4-flash",
+                ["low", "high", "high", "high", "max"],
+            ),
+        ] {
+            let source = ModelsDevCatalog::parse_str(
+                &serde_json::json!({
+                    (provider): {"models": {(model): {"reasoning": true,
+                        "reasoning_options": {"type": "effort", "values": values}}}}
+                })
+                .to_string(),
+            )
+            .unwrap();
+            let config = ReasoningConfig {
+                catalog: ReasoningCatalogBinding::ModelsDev {
+                    provider: provider.into(),
+                    model: model.into(),
+                },
+                ..Default::default()
+            };
+            let projection = project_reasoning_catalog(
+                "openai",
+                model,
+                "https://gateway.example.com/v1/chat/completions",
+                Some(&config),
+                Some(&source),
+            );
+            assert_eq!(projection.status, ReasoningCapabilityStatus::Known);
+            assert_eq!(projection.presets.len(), values.len());
+            for ((descriptor, wire), effective) in
+                projection.presets.iter().zip(&values).zip(expected)
+            {
+                assert_eq!(Some(descriptor.id.as_str()), wire.as_deref());
+                assert_eq!(descriptor.effective_effort.as_deref(), Some(effective));
+                assert_eq!(
+                    descriptor.actions,
+                    vec![ReasoningPresetAction::Effort {
+                        value: wire.clone().unwrap(),
+                    }]
+                );
+            }
+            // The same source binding over Responses keeps that adapter's
+            // original efforts; Chat/Anthropic aliases cannot cross protocols.
+            for transport in ["responses", "openai"] {
+                let responses = project_reasoning_catalog(
+                    transport,
+                    model,
+                    "https://gateway.example.com/v1/responses",
+                    Some(&config),
+                    Some(&source),
+                );
+                assert_eq!(responses.presets.len(), values.len());
+                assert!(responses
+                    .presets
+                    .iter()
+                    .all(|preset| preset.effective_effort.is_none()));
+            }
+        }
+        let generic = project_reasoning_catalog(
+            "openai",
+            "glm-5.2",
+            "https://gateway.example.com/v1",
+            None,
+            None,
+        );
+        assert_eq!(generic.status, ReasoningCapabilityStatus::Known);
+        assert_eq!(
+            generic
+                .presets
+                .iter()
+                .map(|preset| preset.id.as_str())
+                .collect::<Vec<_>>(),
+            ["off", "on", "low", "medium", "high"]
+        );
+        assert!(generic
+            .presets
+            .iter()
+            .all(|preset| preset.effective_effort.is_none()));
     }
 
     #[test]

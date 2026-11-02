@@ -8,6 +8,8 @@ export const confirmDialogAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'icon' },
     { id: 'message' },
     { id: 'preview' },
+    { id: 'actions' },
+    { id: 'actionGroup' },
   ],
   facets: [{
     id: 'status',

@@ -63,6 +63,7 @@ export class TerminalMenuProvider implements IMenuProvider {
     items.push({
       id: 'terminal-select-all',
       label: i18nService.t('common:actions.selectAll'),
+      icon: 'SelectAll',
       shortcut: 'Ctrl+Shift+A',
       onClick: () => {
         globalEventBus.emit('terminal:select-all', {

@@ -59,7 +59,7 @@ function createDialogTurn(status: DialogTurn['status'] = 'processing'): DialogTu
   };
 }
 
-function createContext(dialogTurn: DialogTurn): any {
+function createContext(dialogTurn: DialogTurn, sessionPatch: Record<string, unknown> = {}): any {
   const session = {
     sessionId: SESSION_ID,
     dialogTurns: [dialogTurn],
@@ -71,6 +71,7 @@ function createContext(dialogTurn: DialogTurn): any {
     config: {},
     error: null,
     sessionKind: 'normal',
+    ...sessionPatch,
   };
 
   return {
@@ -107,6 +108,17 @@ describe('PersistenceModule', () => {
     vi.clearAllMocks();
   });
 
+  it.each([{}, { firstChunkMs: 20, firstVisibleOutputMs: 200, streamDurationMs: 1_200, ttftMs: 350 }])(
+    'preserves optional host timing through JSON persistence: %j', timing => {
+      const turn = createDialogTurn('completed');
+      Object.assign(turn.modelRounds[0], timing);
+      const saved = JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(turn)));
+      for (const key of ['firstChunkMs', 'firstVisibleOutputMs', 'streamDurationMs', 'ttftMs'] as const) {
+        expect(saved.modelRounds[0][key]).toBe(turn.modelRounds[0][key]);
+      }
+    },
+  );
+
   it('saves a visible result receipt with its retained generation and no metadata read', async () => {
     const turn = createDialogTurn('completed');
     turn.recoveryEpoch = 2;
@@ -116,6 +128,27 @@ describe('PersistenceModule', () => {
       unreadCompletion: undefined,
       lastTurn: expect.objectContaining({ turnId: TURN_ID, status: 'completed', executionGeneration: 2 }),
     }), 'workspace-local', ['unreadCompletion', 'needsUserAttention']);
+  });
+
+  it('addresses session storage through the owning project for a worktree session', async () => {
+    const turn = createDialogTurn('completed');
+    const context = createContext(turn, {
+      workspaceId: 'worktree-cli',
+      projectWorkspaceId: 'main-project',
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'worktree-cli', rootPath: '/tmp/tree' },
+      },
+    });
+
+    await updateSessionMetadata(context, SESSION_ID, ['unreadCompletion', 'needsUserAttention']);
+
+    // The execution worktree is usually not an open workspace, so addressing the
+    // session's own storage through it is rejected, while the owning project
+    // resolves to the identical session directory.
+    expect(mockSaveSessionMetadata).toHaveBeenCalledWith(expect.anything(), 'main-project', [
+      'unreadCompletion',
+      'needsUserAttention',
+    ]);
   });
 
   it('never writes old notification metadata to a device selected during its read', async () => {
@@ -131,6 +164,15 @@ describe('PersistenceModule', () => {
     } finally {
       activateSurface(original);
     }
+  });
+
+  it('preserves actual routing facts in frontend checkpoints', () => {
+    const turn = createDialogTurn('completed');
+    turn.modelRounds = [{ id: 'r', index: 0, items: [], isStreaming: false, isComplete: true, startTime: 1,
+      modelConfigId: 'economy-id', effectiveModelName: 'economy-name', routing: { route: 'economy', latencyMs: 12 } }];
+    expect(convertDialogTurnToBackendFormat(turn, 0).modelRounds[0]).toMatchObject({
+      modelConfigId: 'economy-id', effectiveModelName: 'economy-name', routing: { route: 'economy', latencyMs: 12 },
+    });
   });
 
   it('persists dialog turn token usage metadata when available', () => {
@@ -150,6 +192,16 @@ describe('PersistenceModule', () => {
       totalTokens: 1520,
       timestamp: 2400,
     });
+  });
+
+  it.each([0, 900])('preserves reported cache tokens %s in the saved turn payload', cachedTokens => {
+    const turn = createDialogTurn('completed');
+    turn.tokenUsage = { inputTokens: 1200, outputTokens: 320, totalTokens: 1520, cachedTokens, timestamp: 2400 };
+    const persisted = JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(turn, 0)));
+    expect(persisted.tokenUsage.cachedTokens).toBe(cachedTokens);
+    delete turn.tokenUsage.cachedTokens;
+    expect(JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(turn, 0))).tokenUsage)
+      .not.toHaveProperty('cachedTokens');
   });
 
   it('persists finish reason when present', () => {

@@ -64,6 +64,7 @@ export interface PreferredCloudTarget {
 /** Owns the authenticated account and remote device selection. */
 export class SettingsController {
   private readonly cloud?: CloudAccountSettingsDependencies;
+  private cloudInitialization?: Promise<void>;
   private cloudSession?: CloudAccountSession;
   private cloudRelayUrl: string = '';
   private selectedRelayUrl: string = DEFAULT_CLOUD_RELAY_URL;
@@ -89,6 +90,13 @@ export class SettingsController {
   }
 
   async initializeCloudAccount(context: Context): Promise<void> {
+    if (!this.cloudInitialization) {
+      this.cloudInitialization = this.initializeCloudAccountInternal(context);
+    }
+    await this.cloudInitialization;
+  }
+
+  private async initializeCloudAccountInternal(context: Context): Promise<void> {
     const cloud = this.requireCloud();
     await cloud.sessionStore.init(context);
     await this.restoreCloudAccountSession();
@@ -127,23 +135,38 @@ export class SettingsController {
       return undefined;
     }
     const cloud = this.requireCloud();
+    // Persist the identity before registration. A timed-out or cancelled
+    // handoff can then replay registration without rotating the watch's key.
+    let identity = await cloud.sessionStore.loadWatchProvisionIdentity(this.cloudRelayUrl, session.userId, deviceId);
+    if (!identity) {
+      identity = {
+        relayUrl: this.cloudRelayUrl, userId: session.userId, deviceId, requestId,
+        privateKeyBase64: Encoding.bytesToBase64(Encoding.randomBytes(32))
+      };
+      await cloud.sessionStore.saveWatchProvisionIdentity(identity);
+    }
+    const secret = Encoding.base64ToBytes(identity.privateKeyBase64);
     try {
       const provisioned = await cloud.client.provisionDevice(
-        this.cloudRelayUrl, session, deviceId, deviceName, requestId);
+        this.cloudRelayUrl, session, deviceId, deviceName, identity.requestId, secret);
       RemoteLogger.info(`watch credential minted from the phone account device=${provisioned.deviceId}`);
+      const masterKeyBase64 = Encoding.bytesToBase64(provisioned.deviceSecret);
+      provisioned.deviceSecret.fill(0);
       return {
         ok: true,
         passwordRequired: false,
         relayUrl: this.cloudRelayUrl,
         token: provisioned.token,
         userId: provisioned.userId,
-        masterKeyBase64: Encoding.bytesToBase64(provisioned.deviceSecret),
+        masterKeyBase64,
         deviceId: provisioned.deviceId,
         failure: '',
         desktopReported: false
       };
     } catch (err) {
       throw err instanceof Error ? err : new Error('Watch credential provisioning failed.');
+    } finally {
+      secret.fill(0);
     }
   }
 
@@ -160,8 +183,17 @@ export class SettingsController {
     const relayUrl = this.selectedRelayUrl;
     const generation = ++this.accountLoginVersion;
     const cloud = this.requireCloud();
+    if (this.cloudInitialization) {
+      await this.cloudInitialization;
+    }
     RemoteLogger.info('cloud account UI login requested');
-    const deviceSecret = await cloud.sessionStore.deviceSecret();
+    let deviceSecret: Uint8Array;
+    try {
+      deviceSecret = await cloud.sessionStore.deviceSecret();
+    } catch (err) {
+      RemoteLogger.error(`cloud account device identity failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw err instanceof Error ? err : new Error(String(err));
+    }
     if (generation !== this.accountLoginVersion) { deviceSecret.fill(0); throw new Error('Account login cancelled'); }
     let session: CloudAccountSession;
     try {
@@ -201,6 +233,11 @@ export class SettingsController {
   }
 
   cancelCloudLogin(): void { this.cloud?.client.cancelAuthorization(); }
+
+  /** Keep browser authorization polling aligned with the page lifecycle. */
+  setAuthorizationForeground(value: boolean): void {
+    this.cloud?.client.setAuthorizationForeground(value);
+  }
 
   async logoutCloudAccount(): Promise<void> {
     this.cancelCloudLogin();
@@ -262,7 +299,7 @@ export class SettingsController {
         }));
         const cloud = this.requireCloud();
         cloud.hooks.onAccountDevices(this.accountDevices);
-        const target = cloud.remoteState.controlTargetDeviceId;
+        const target = this.targetReleased() ? '' : cloud.remoteState.controlTargetDeviceId;
         if (target && !ids.includes(target)) {
           cloud.remoteState.setConnectionState('reconnecting');
           cloud.remoteState.setStatusText(RemoteI18n.t('remote.settings.deviceUnavailable'));
@@ -278,7 +315,7 @@ export class SettingsController {
       // Transport startup failure must not invalidate a restored account identity.
       const cloud = this.requireCloud();
       cloud.remoteState.setStatusText(ConnectionErrorPolicy.errorText(error));
-      if (cloud.remoteState.controlTargetDeviceId) cloud.remoteState.setConnectionState('reconnecting');
+      if (cloud.remoteState.controlTargetDeviceId && !this.targetReleased()) cloud.remoteState.setConnectionState('reconnecting');
       RemoteLogger.warn(`account presence observer failed: ${ConnectionErrorPolicy.errorText(error)}`);
     }
   }
@@ -300,8 +337,18 @@ export class SettingsController {
     finally { this.presenceRefreshing = false; }
   }
 
+  /**
+   * The user left the selected device: it stays as the selection so it can be
+   * offered again, but presence churn must not bring the link back on its own.
+   */
+  private targetReleased(): boolean {
+    const remoteState = this.requireCloud().remoteState;
+    return remoteState.controlTargetType === 'account_device' && remoteState.connectionState === 'disconnected';
+  }
+
   private scheduleTargetProbe(epoch: number): void {
-    if (epoch !== this.presenceGeneration || this.targetProbeTimer !== -1 || this.targetProbing) return;
+    if (epoch !== this.presenceGeneration || this.targetProbeTimer !== -1 || this.targetProbing ||
+      this.targetReleased()) return;
     const cloud = this.requireCloud();
     const target = cloud.remoteState.controlTargetDeviceId;
     if (!target || !this.accountDevices.some((device: CloudAccountDevice) => device.deviceId === target && device.online)) return;
@@ -312,16 +359,19 @@ export class SettingsController {
   }
 
   private async probeTarget(epoch: number, target: string): Promise<void> {
-    if (epoch !== this.presenceGeneration || target !== this.requireCloud().remoteState.controlTargetDeviceId) return;
+    if (epoch !== this.presenceGeneration || target !== this.requireCloud().remoteState.controlTargetDeviceId ||
+      this.targetReleased()) return;
     this.targetProbing = true;
     let retry = false;
     try {
       await this.requireCloud().sessionManager.ping();
-      if (epoch !== this.presenceGeneration || target !== this.requireCloud().remoteState.controlTargetDeviceId) return;
+      if (epoch !== this.presenceGeneration || target !== this.requireCloud().remoteState.controlTargetDeviceId ||
+        this.targetReleased()) return;
       this.requireCloud().remoteState.setConnectionState('connected');
       this.targetProbeDelay = 250;
     } catch (error) {
-      if (epoch === this.presenceGeneration && target === this.requireCloud().remoteState.controlTargetDeviceId) {
+      if (epoch === this.presenceGeneration && target === this.requireCloud().remoteState.controlTargetDeviceId &&
+        !this.targetReleased()) {
         this.requireCloud().remoteState.setConnectionState('reconnecting');
         this.requireCloud().remoteState.setStatusText(ConnectionErrorPolicy.errorText(error));
         this.targetProbeDelay = Math.min(30000, this.targetProbeDelay * 2);

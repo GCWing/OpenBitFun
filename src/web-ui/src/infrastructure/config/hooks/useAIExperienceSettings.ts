@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import {
   aiExperienceConfigService,
   type AIExperienceSettings,
@@ -7,57 +8,64 @@ import {
 export interface UseAIExperienceSettingsResult {
   settings: AIExperienceSettings | null;
   isLoading: boolean;
+  isRefreshing: boolean;
   error: Error | null;
   reload: () => Promise<void>;
 }
 
 export function useAIExperienceSettings(): UseAIExperienceSettingsResult {
-  const [settings, setSettings] = useState<AIExperienceSettings | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
+  const [snapshot, setSnapshot] = useState(() => ({
+    epoch: scope.epoch,
+    settings: aiExperienceConfigService.getCachedSettings(),
+    error: null as Error | null,
+    pending: true,
+  }));
   const activeRef = useRef(true);
   const requestIdRef = useRef(0);
 
   const load = useCallback(async (forceRefresh: boolean) => {
     const requestId = ++requestIdRef.current;
-    if (activeRef.current) {
-      setIsLoading(true);
-      setError(null);
-    }
+    setSnapshot(current => current.epoch === scope.epoch
+      ? { ...current, pending: true, error: null }
+      : { epoch: scope.epoch, settings: null, pending: true, error: null });
     try {
-      const next = await aiExperienceConfigService.getSettingsAsync({ forceRefresh });
-      if (activeRef.current && requestId === requestIdRef.current) {
-        setSettings(next);
+      const next = await aiExperienceConfigService.getSettingsAsync({ forceRefresh, requireLoaded: true });
+      if (activeRef.current && scope.isCurrent() && requestId === requestIdRef.current) {
+        setSnapshot({ epoch: scope.epoch, settings: next, pending: false, error: null });
       }
     } catch (reason) {
-      if (activeRef.current && requestId === requestIdRef.current) {
-        setSettings(null);
-        setError(reason instanceof Error ? reason : new Error(String(reason)));
-      }
-    } finally {
-      if (activeRef.current && requestId === requestIdRef.current) {
-        setIsLoading(false);
+      if (activeRef.current && scope.isCurrent() && requestId === requestIdRef.current) {
+        setSnapshot(current => ({
+          ...current, pending: false,
+          error: reason instanceof Error ? reason : new Error(String(reason)),
+        }));
       }
     }
-  }, []);
+  }, [scope]);
 
   useEffect(() => {
     activeRef.current = true;
     void load(false);
     const removeListener = aiExperienceConfigService.addChangeListener(next => {
-      if (!activeRef.current) return;
+      if (!activeRef.current || !scope.isCurrent()) return;
       requestIdRef.current += 1;
-      setSettings(next);
-      setError(null);
-      setIsLoading(false);
+      setSnapshot({ epoch: scope.epoch, settings: next, pending: false, error: null });
     });
     return () => {
       activeRef.current = false;
+      requestIdRef.current += 1;
       removeListener();
     };
-  }, [load]);
+  }, [load, scope]);
 
   const reload = useCallback(() => load(true), [load]);
-
-  return { settings, isLoading, error, reload };
+  const current = snapshot.epoch === scope.epoch ? snapshot : { settings: null, error: null, pending: true };
+  return {
+    settings: current.settings,
+    error: current.error,
+    isLoading: current.pending && current.settings === null,
+    isRefreshing: current.pending && current.settings !== null,
+    reload,
+  };
 }

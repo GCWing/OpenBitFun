@@ -8,7 +8,7 @@ import {
   SkillToolCard,
   type FlowChatToolStatus,
 } from '@openbitfun/ui/flow-chat';
-import { getSkillSourceLabelFromIdentity } from '@/infrastructure/config/skillSourcePresentation';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -17,24 +17,15 @@ function nonEmptyString(value: unknown): string | undefined {
 
 export const SkillDisplay: React.FC<ToolCardProps> = React.memo(({ toolItem }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
 
-  const skillInfo = useMemo(() => {
+  const loadedSkillName = useMemo(() => {
     if (!toolResult?.result) return null;
     const result = toolResult.result as Record<string, unknown>;
-    const sourceLabel = getSkillSourceLabelFromIdentity(
-      nonEmptyString(result.source_label),
-      nonEmptyString(result.source_id),
-      nonEmptyString(result.source_slot),
-      '',
-    );
-    const displayName = nonEmptyString(result.skill_name)
+    return nonEmptyString(result.skill_name)
       || nonEmptyString(result.name)
       || t('toolCards.skill.unknownSkill');
-    return {
-      displayName,
-      sourceLabel,
-    };
   }, [toolResult?.result, t]);
 
   const commandName =
@@ -42,38 +33,14 @@ export const SkillDisplay: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
     (toolCall?.input?.skill_name as string | undefined) ||
     t('toolCards.skill.unknown');
 
-  const displayName = status === 'completed' && skillInfo ? skillInfo.displayName : commandName;
-  const completedLabel = skillInfo?.sourceLabel
-    ? `${displayName} · ${skillInfo.sourceLabel}`
-    : displayName;
-
-  const getErrorMessage = () => {
-    if (toolResult && 'error' in toolResult && toolResult.error) {
-      return String(toolResult.error);
-    }
-    return t('toolCards.skill.loadSkillFailed');
-  };
-
-  const renderContent = () => {
-    if (status === 'error') {
-      return `${getErrorMessage()}${commandName ? ` ${commandName}` : ''}`;
-    }
-    if (status === 'completed') {
-      return `${t('toolCards.skill.skillAction')} ${completedLabel}`;
-    }
-    if (status === 'running' || status === 'streaming' || status === 'preparing') {
-      return `${t('toolCards.skill.loadingSkill')} ${displayName}...`;
-    }
-    if (status === 'pending') {
-      return `${t('toolCards.skill.preparingSkill')} ${displayName}`;
-    }
-    return `${t('toolCards.skill.skillAction')} ${displayName}`;
-  };
+  const displayName = status === 'completed' && loadedSkillName ? loadedSkillName : commandName;
 
   return (
     <SkillToolCard
       status={status as FlowChatToolStatus}
-      summary={renderContent()}
+      action={t('toolCards.skill.action')}
+      summary={displayName}
+      statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
     />
   );
 });

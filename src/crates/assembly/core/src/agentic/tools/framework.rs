@@ -43,6 +43,22 @@ pub trait Tool: Send + Sync {
     /// Input mode definition - using JSON Schema
     fn input_schema(&self) -> Value;
 
+    /// JSON Schema for the assistant-facing portion of the value returned to a
+    /// PTC program.
+    ///
+    /// This is intentionally a compact semantic projection, rather than a
+    /// mirror of every field in the internal/canonical result. Include fields
+    /// that are present in `result_for_assistant` or that the model needs for
+    /// control flow (for example a continuation cursor or an operation id).
+    /// Omit UI-only, diagnostic, persistence, and transport metadata. The
+    /// canonical result may still contain those fields at runtime; they are
+    /// simply not part of the model-facing SDK contract. The default is an
+    /// open/unknown JSON value so existing tools remain compatible while
+    /// output contracts are added incrementally.
+    fn output_schema(&self) -> Value {
+        Value::Object(serde_json::Map::new())
+    }
+
     /// JSON Schema sent to the model (may depend on app language or other runtime config).
     /// Default: same as [`input_schema`].
     async fn input_schema_for_model(&self) -> Value {
@@ -109,6 +125,12 @@ pub trait Tool: Send + Sync {
     /// Whether to be concurrency safe
     fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
         self.is_readonly()
+    }
+
+    /// Subsequent calls must be preflighted after this tool finishes because
+    /// it can change session execution policy (for example, activate hooks).
+    fn invalidates_tool_preflight(&self) -> bool {
+        false
     }
 
     /// Describe permission actions and resources without performing side effects.

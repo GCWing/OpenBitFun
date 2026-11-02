@@ -73,7 +73,7 @@ function RenderFallback({
         isExpanded={true}
         header={(
           <AmbientToolCardHeader
-            icon={<AlertTriangle size={16} />}
+            icon={<Icon glyph={AlertTriangle} size="md" />}
             action={displayName}
             content="Tool card render failed"
           />

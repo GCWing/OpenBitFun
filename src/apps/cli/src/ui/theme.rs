@@ -66,6 +66,12 @@ impl Appearance {
     }
 }
 
+/// QR modules are machine-readable data. Theme accents and terminal defaults
+/// cannot guarantee the dark modules and light quiet zone required by scanners.
+pub(super) fn qr_code_style() -> Style {
+    Style::default().fg(Color::Black).bg(Color::White)
+}
+
 pub(crate) fn resolve_effective_color_scheme(preference: &str) -> EffectiveColorScheme {
     if std::env::var_os("NO_COLOR").is_some() {
         return EffectiveColorScheme::Monochrome;
@@ -671,7 +677,7 @@ pub(super) fn tool_icon(tool_name: &str) -> &'static str {
         "LS" | "list_dir" | "ls" => "\u{2192}",                // →
         "WebFetch" => "%",
         "WebSearch" => "\u{25c8}", // ◈
-        "Task" => "#",
+        "Task" | "AgentSpawn" => "#",
         "HmosCompilation" => "\u{2692}",
         "TodoWrite" => "\u{2699}", // ⚙
         "Skill" => "\u{2192}",     // →

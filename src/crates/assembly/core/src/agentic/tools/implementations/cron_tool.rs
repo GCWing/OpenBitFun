@@ -396,38 +396,41 @@ impl CronTool {
         }
     }
 
-    fn build_list_result_for_assistant(
-        &self,
-        workspace: &str,
-        session_id: &str,
-        jobs: &[CronJob],
-    ) -> String {
+    fn build_list_result_for_assistant(&self, workspace: &str, jobs: &[CronJob]) -> String {
         if jobs.is_empty() {
-            return format!(
-                "No scheduled jobs found for session '{}' in workspace '{}'.",
-                session_id, workspace
-            );
+            return format!("No scheduled jobs found in workspace '{}'.", workspace);
         }
 
         let mut lines = vec![format!(
-            "Found {} scheduled job(s) for session '{}' in workspace '{}'.",
+            "Found {} scheduled job(s) in workspace '{}'.",
             jobs.len(),
-            session_id,
             workspace,
         )];
         lines.push(String::new());
-        lines.push("| job_id | name | enabled | schedule |".to_string());
-        lines.push("| --- | --- | --- | --- |".to_string());
+        lines.push("| job_id | name | enabled | schedule | target |".to_string());
+        lines.push("| --- | --- | --- | --- | --- |".to_string());
         for job in jobs {
             lines.push(format!(
-                "| {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {} |",
                 Self::escape_markdown_table_cell(&job.id),
                 Self::escape_markdown_table_cell(&job.name),
                 if job.enabled { "true" } else { "false" },
                 Self::escape_markdown_table_cell(&Self::schedule_summary(&job.schedule)),
+                Self::escape_markdown_table_cell(&Self::target_summary(job)),
             ));
         }
         lines.join("\n")
+    }
+
+    /// Which conversation a job delivers into. The list is workspace-scoped, so
+    /// the agent needs this to tell its own jobs from another session's.
+    fn target_summary(job: &CronJob) -> String {
+        match &job.target {
+            CronJobTarget::Session { session_id, .. } => format!("session {}", session_id),
+            CronJobTarget::Workspace { launch, .. } => {
+                format!("new session ({})", launch.agent_type)
+            }
+        }
     }
 }
 
@@ -446,6 +449,7 @@ enum CronAction {
     Update,
     Remove,
     Run,
+    Report,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -454,6 +458,8 @@ struct CronToolJobInput {
     schedule: CronToolScheduleInput,
     payload: String,
     enabled: Option<bool>,
+    #[serde(default)]
+    report_policy: openbitfun_core_types::background_delivery::BackgroundReportPolicy,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -462,6 +468,7 @@ struct CronToolJobPatchInput {
     schedule: Option<CronToolScheduleInput>,
     payload: Option<String>,
     enabled: Option<bool>,
+    report_policy: Option<openbitfun_core_types::background_delivery::BackgroundReportPolicy>,
 }
 
 impl CronToolJobPatchInput {
@@ -470,6 +477,7 @@ impl CronToolJobPatchInput {
             && self.schedule.is_none()
             && self.payload.is_none()
             && self.enabled.is_none()
+            && self.report_policy.is_none()
     }
 }
 
@@ -481,6 +489,7 @@ struct CronToolInput {
     job: Option<CronToolJobInput>,
     patch: Option<CronToolJobPatchInput>,
     job_id: Option<String>,
+    report: Option<openbitfun_core_types::background_delivery::BackgroundReport>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -633,6 +642,7 @@ struct CronToolJobOutput {
     schedule: CronToolScheduleOutput,
     payload: String,
     enabled: bool,
+    report_policy: openbitfun_core_types::background_delivery::BackgroundReportPolicy,
     session_id: String,
     workspace_path: String,
     created_at_ms: i64,
@@ -651,6 +661,7 @@ impl TryFrom<&CronJob> for CronToolJobOutput {
             schedule: CronToolScheduleOutput::try_from(&job.schedule)?,
             payload: job.payload.text.clone(),
             enabled: job.enabled,
+            report_policy: job.report_policy.clone(),
             session_id: job.session_id().unwrap_or_default().to_string(),
             workspace_path: job.workspace().workspace_path.clone(),
             created_at_ms: job.created_at_ms,
@@ -681,11 +692,12 @@ Defaults:
 
 Actions:
 - "get_time": Return the current local time including timezone information.
-- "list": List all jobs for the effective session scope.
+- "list": List every job in the workspace, including jobs that belong to other sessions. Each row reports its target, and "job_id" from here works with "update", "remove", and "run".
 - "add": Create a job. Requires "job". When "job.name" is omitted, uses "Cron job".
 - "update": Update a job. Requires "job_id" and "patch".
 - "remove": Delete a job. Requires "job_id".
 - "run": Trigger a job immediately. Requires "job_id".
+- "report": Propose delivery of the currently executing scheduled run. Requires "report": {"disposition":"quiet"|"report"|"attention", "reason":"explanation"}. Available only inside an admitted background run. This preserves raw output and never ends or reruns the task.
 
 Job schema for "add":
 {
@@ -725,11 +737,11 @@ Patch schema for "update":
             "properties": {
                 "session_id": {
                     "type": "string",
-                    "description": "Optional target session ID. Defaults to the current session for list/add."
+                    "description": "Optional session ID. Defaults to the current session; for add it is the session the payload is delivered to, for list it selects the workspace to report on."
                 },
                 "action": {
                     "type": "string",
-                    "enum": ["get_time", "list", "add", "update", "remove", "run"],
+                    "enum": ["get_time", "list", "add", "update", "remove", "run", "report"],
                     "description": "Cron action to perform."
                 },
                 "job": {
@@ -740,6 +752,7 @@ Patch schema for "update":
                             "type": "string",
                             "description": "Optional job name. Defaults to 'Cron job'."
                         },
+                        "report_policy": {"type":"string", "enum":["inherit", "always", "conditional"], "description":"Notification policy. Defaults to inheriting the task instructions."},
                         "schedule": {
                             "type": "object",
                             "description": "Required schedule definition. Use { \"kind\": \"at\", \"at\": \"<ISO-8601>\" }, { \"kind\": \"every\", \"every\": <seconds>, \"anchor\": \"<optional ISO-8601>\" }, or { \"kind\": \"cron\", \"expr\": \"<cron-expression>\", \"tz\": \"<optional timezone>\" }. anchor defaults to the current time. tz defaults to the local timezone."
@@ -770,6 +783,7 @@ Patch schema for "update":
                             "type": "string",
                             "description": "Optional updated payload text. It will be sent to the target session as a user message."
                         },
+                        "report_policy": {"type":"string","enum":["inherit","always","conditional"]},
                         "enabled": {
                             "type": "boolean"
                         }
@@ -779,10 +793,55 @@ Patch schema for "update":
                 "job_id": {
                     "type": "string",
                     "description": "Required for update, remove, and run."
+                },
+                "report": {
+                    "type":"object",
+                    "properties": {
+                        "disposition":{"type":"string","enum":["quiet","report","attention"]},
+                        "reason":{"type":"string","description":"Why this run should or should not be delivered under the task's instructions."}
+                    },
+                    "required":["disposition","reason"],
+                    "additionalProperties":false
                 }
             },
             "required": ["action"],
             "additionalProperties": false
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        let job = json!({
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "schedule": {"type": "object", "additionalProperties": true},
+                "enabled": {"type": "boolean"},
+                "sessionId": {"type": "string"},
+                "workspacePath": {"type": "string"}
+            },
+            "required": ["id", "name", "schedule", "enabled", "sessionId", "workspacePath"],
+            "additionalProperties": false
+        });
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["get_time", "list", "add", "update", "remove", "run", "report"]},
+                "now": {"type": "string", "description": "Current local time in RFC 3339 format for get_time."},
+                "workspace": {"type": "string"},
+                "session_id": {"type": "string"},
+                "count": {"type": "integer"},
+                "job_id": {"type": "string"},
+                "deleted": {"type": "boolean"},
+                "report": {"type": "object", "additionalProperties": true},
+                "jobs": {
+                    "type": "array",
+                    "items": job
+                },
+                "job": job
+            },
+            "additionalProperties": true
         })
     }
 
@@ -829,6 +888,17 @@ Patch schema for "update":
         }
 
         match parsed.action {
+            CronAction::Report => {
+                let valid = parsed.report.as_ref().is_some_and(|report| !report.reason.trim().is_empty()
+                    && matches!(report.disposition, openbitfun_core_types::background_delivery::BackgroundReportDisposition::Quiet | openbitfun_core_types::background_delivery::BackgroundReportDisposition::Report | openbitfun_core_types::background_delivery::BackgroundReportDisposition::Attention));
+                ValidationResult {
+                    result: valid,
+                    message: (!valid)
+                        .then(|| "A final report disposition and reason are required".to_owned()),
+                    error_code: (!valid).then_some(400),
+                    meta: None,
+                }
+            }
             CronAction::GetTime => ValidationResult::default(),
             CronAction::List => {
                 let has_effective_session = parsed.session_id.is_some()
@@ -1042,6 +1112,7 @@ Patch schema for "update":
 
         match action {
             "get_time" => "Get current ISO-8601 time".to_string(),
+            "report" => "Record background report proposal".to_string(),
             "list" => "List scheduled jobs".to_string(),
             "add" => "Create scheduled job".to_string(),
             "update" => format!("Update scheduled job {}", job_id),
@@ -1060,6 +1131,29 @@ Patch schema for "update":
             .map_err(|err| OpenBitFunError::tool(format!("Invalid input: {}", err)))?;
 
         match params.action {
+            CronAction::Report => {
+                let report = params
+                    .report
+                    .ok_or_else(|| OpenBitFunError::tool("report is required".to_owned()))?;
+                let session_id = context.session_id.as_deref().ok_or_else(|| {
+                    OpenBitFunError::tool("A current session is required".to_owned())
+                })?;
+                let turn_id = context.dialog_turn_id.as_deref().ok_or_else(|| {
+                    OpenBitFunError::tool("A current background run is required".to_owned())
+                })?;
+                let coordinator = get_global_coordinator().ok_or_else(|| {
+                    OpenBitFunError::tool("The execution host is unavailable".to_owned())
+                })?;
+                coordinator
+                    .get_session_manager()
+                    .propose_background_report(session_id, turn_id, report.clone())
+                    .await?;
+                Ok(vec![ToolResult::Result {
+                    data: json!({"success":true,"action":"report","report":report}),
+                    result_for_assistant: Some("Background report proposal recorded. Execution history is preserved. Finish the current work normally; do not rerun it.".to_owned()),
+                    image_attachments: None,
+                }])
+            }
             CronAction::GetTime => {
                 let now = Local::now();
                 let iso = now.to_rfc3339_opts(SecondsFormat::Secs, false);
@@ -1077,7 +1171,7 @@ Patch schema for "update":
             }
             CronAction::List => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let session_id =
                     self.resolve_effective_session_id(params.session_id.as_deref(), context)?;
@@ -1085,13 +1179,30 @@ Patch schema for "update":
                     .resolve_effective_workspace_for_session(&session_id, context)
                     .await?;
                 let workspace = workspace_ref.workspace_path.clone();
-                let mut jobs = cron_service
-                    .list_jobs_filtered(
-                        workspace_ref.workspace_id.as_deref(),
-                        Some(&session_id),
-                        Some(CronJobTargetKind::Session),
-                    )
-                    .await;
+                // Workspace scope, not session scope: the product surfaces list
+                // every job in the workspace, and a session-only list made the
+                // agent report "no scheduled jobs" while the UI showed them.
+                let workspace_id = workspace_ref.workspace_id.as_deref();
+                let mut jobs = match workspace_id {
+                    Some(workspace_id) => {
+                        cron_service
+                            .list_jobs_filtered(Some(workspace_id), None, None)
+                            .await
+                    }
+                    // A workspace without a stable id cannot be filtered by id,
+                    // and the service refuses to match unmigrated records by
+                    // path. Reporting every workspace would be worse than
+                    // reporting only this session's jobs.
+                    None => {
+                        cron_service
+                            .list_jobs_filtered(
+                                None,
+                                Some(&session_id),
+                                Some(CronJobTargetKind::Session),
+                            )
+                            .await
+                    }
+                };
                 jobs.sort_by(|left, right| {
                     left.created_at_ms
                         .cmp(&right.created_at_ms)
@@ -1099,15 +1210,28 @@ Patch schema for "update":
                 });
                 let serialized_jobs = Self::serialize_jobs(&jobs)?;
 
-                let result_for_assistant =
-                    self.build_list_result_for_assistant(&workspace, &session_id, &jobs);
+                let mut result_for_assistant =
+                    self.build_list_result_for_assistant(&workspace, &jobs);
+                if workspace_id.is_none() {
+                    result_for_assistant.push_str(&format!(
+                        "\n\nScope note: this workspace has no stable id, so only jobs targeting session '{}' are listed.",
+                        session_id
+                    ));
+                }
+                if !cron_service.is_scheduling_owner() {
+                    // Two instances can share one user data directory. Saying so
+                    // here stops the agent from presenting a standby list as the
+                    // state that will actually run.
+                    result_for_assistant.push_str(
+                        "\n\nScheduling note: another running OpenBitFun instance owns scheduled job execution right now, so these jobs run there and edits or manual runs are refused in this instance.",
+                    );
+                }
 
                 Ok(vec![ToolResult::Result {
                     data: json!({
                         "success": true,
                         "action": "list",
                         "workspace": workspace,
-                        "session_id": session_id,
                         "count": jobs.len(),
                         "jobs": serialized_jobs,
                     }),
@@ -1117,7 +1241,7 @@ Patch schema for "update":
             }
             CronAction::Add => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let session_id =
                     self.resolve_effective_session_id(params.session_id.as_deref(), context)?;
@@ -1136,6 +1260,7 @@ Patch schema for "update":
                         name: Self::normalize_add_name(job.name),
                         schedule: job.schedule.to_service_schedule("job.schedule")?,
                         payload: Self::into_service_payload(job.payload),
+                        report_policy: job.report_policy.clone(),
                         enabled: job.enabled.unwrap_or(true),
                         target: CronJobTarget::Session {
                             session_id: session_id.clone(),
@@ -1161,7 +1286,7 @@ Patch schema for "update":
             }
             CronAction::Update => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let job_id = params.job_id.ok_or_else(|| {
                     OpenBitFunError::tool("job_id is required for update".to_string())
@@ -1190,6 +1315,7 @@ Patch schema for "update":
                                 .map(|value| value.to_service_schedule("patch.schedule"))
                                 .transpose()?,
                             payload: patch.payload.map(Self::into_service_payload),
+                            report_policy: patch.report_policy.clone(),
                             enabled: patch.enabled,
                             target: None,
                         },
@@ -1212,7 +1338,7 @@ Patch schema for "update":
             }
             CronAction::Remove => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let job_id = params.job_id.ok_or_else(|| {
                     OpenBitFunError::tool("job_id is required for remove".to_string())
@@ -1239,7 +1365,7 @@ Patch schema for "update":
             }
             CronAction::Run => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let job_id = params.job_id.ok_or_else(|| {
                     OpenBitFunError::tool("job_id is required for run".to_string())
@@ -1457,6 +1583,7 @@ mod tests {
             config_updated_at_ms: 0,
             updated_at_ms: 0,
             state: Default::default(),
+            report_policy: Default::default(),
         }
     }
 
@@ -1532,5 +1659,70 @@ mod tests {
         let summary =
             CronTool::add_result_summary(&job_with_schedule(every_30_minutes(), "session_1"), None);
         assert!(!summary.contains("end your turn"), "got: {summary}");
+    }
+
+    fn workspace_target_job(id: &str) -> CronJob {
+        CronJob {
+            id: id.to_string(),
+            name: "nightly report".to_string(),
+            schedule: every_30_minutes(),
+            payload: CronJobPayload {
+                text: "summarize the day".to_string(),
+            },
+            enabled: true,
+            target: CronJobTarget::Workspace {
+                workspace: CronWorkspaceRef {
+                    workspace_id: None,
+                    workspace_path: "/home/wsp/projects/test".to_string(),
+                    project_workspace_path: None,
+                    execution_target: None,
+                    remote_connection_id: None,
+                    remote_ssh_host: None,
+                },
+                launch: Default::default(),
+            },
+            created_at_ms: 0,
+            config_updated_at_ms: 0,
+            updated_at_ms: 0,
+            state: Default::default(),
+            report_policy: Default::default(),
+        }
+    }
+
+    #[test]
+    fn list_summary_covers_every_job_in_the_workspace_with_its_target() {
+        // The list is workspace-scoped, so a job another session owns is still
+        // reported — hiding it made the agent deny jobs the UI was showing.
+        let tool = CronTool::new();
+        let mut other_session_job = job_with_schedule(every_30_minutes(), "session_other");
+        other_session_job.id = "cron_aaaaaaaa".to_string();
+        let jobs = vec![other_session_job, workspace_target_job("cron_bbbbbbbb")];
+
+        let summary = tool.build_list_result_for_assistant("/home/wsp/projects/test", &jobs);
+
+        assert!(
+            summary.contains("Found 2 scheduled job(s)"),
+            "got: {summary}"
+        );
+        assert!(
+            summary.contains("workspace '/home/wsp/projects/test'"),
+            "got: {summary}"
+        );
+        assert!(!summary.contains("for session"), "got: {summary}");
+        // Each row says which conversation the job delivers into.
+        assert!(summary.contains("session session_other"), "got: {summary}");
+        assert!(summary.contains("new session ("), "got: {summary}");
+    }
+
+    #[test]
+    fn list_summary_reports_an_empty_workspace() {
+        let tool = CronTool::new();
+
+        let summary = tool.build_list_result_for_assistant("/home/wsp/projects/test", &[]);
+
+        assert_eq!(
+            summary,
+            "No scheduled jobs found in workspace '/home/wsp/projects/test'."
+        );
     }
 }

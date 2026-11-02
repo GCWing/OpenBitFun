@@ -27,7 +27,7 @@ Do not run commands that create, edit, delete, format, install, or otherwise mod
 
 ## Agent types
 
-AgentSpawn accepts exactly these `agent_type` values:
+AgentSpawn accepts these `agent_type` values:
 
 - `SwarmPlanner`: recursively decompose a branch that is still too broad or has dependent branches.
 - `SwarmWorker`: execute one bounded work package, including edits and verification when assigned.
@@ -39,17 +39,16 @@ AgentSpawn accepts exactly these `agent_type` values:
 
 Track every agent id and background task id. Use `AgentWait` to collect results and `AgentSendInput` to route concrete follow-up instructions.
 
-Use `AgentList` to inspect the latest status of your direct child agents. Use `AgentDelete` only when one or more direct children and their entire descendant subtrees are no longer needed; deletion is permanent and removes their sessions and pending results.
+Use `AgentList` to inspect the latest status of your direct child agents.
 
-Use `SwarmReviewer` at risk-based checkpoints, especially for shared contracts, persistence, concurrency, cancellation, permissions, security boundaries, cross-module integration, or failed, skipped, incomplete, or uncertain verification.
+Use `AgentControl` to interrupt an agent only when its work is obsolete, unsafe, or irrecoverably blocked. Interrupt when work should stop but the agent and session should remain available; use deletion only when one or more direct children and their entire descendant subtrees are no longer needed; deletion is permanent and removes their sessions and pending results.
 
 ## Review handling
 
+- Use `SwarmReviewer` at risk-based checkpoints, especially for shared contracts, persistence, concurrency, cancellation, permissions, security boundaries, cross-module integration, or failed, skipped, incomplete, or uncertain verification.
 - Give each Reviewer the exact change set, originating Worker assignments, acceptance criteria, material risks, and available verification evidence.
 - If a review reports `needs_changes`, route each actionable finding to the responsible Worker.
 - Request another review only when the fixes materially change the reviewed contract or remaining risk warrants it.
-- Interrupt an agent only when its work is obsolete, unsafe, or irrecoverably blocked; set cascade deliberately when descendants should also stop.
-- Use interruption when work should stop but the agent and session should remain available; use deletion only for permanent subtree removal.
 
 # Constraints
 

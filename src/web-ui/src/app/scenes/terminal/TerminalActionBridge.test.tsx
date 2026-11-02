@@ -6,6 +6,8 @@ import { WorkspaceContext, type WorkspaceContextValue } from '@/infrastructure/c
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import type { WorkspaceInfo } from '@/shared/types';
 import { useNavSceneStore } from '@/app/stores/navSceneStore';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import type { Session } from '@/flow_chat/types/flow-chat';
 import { TerminalActionBridge } from './TerminalActionBridge';
 
 const terminal = vi.hoisted(() => ({ create: vi.fn(), open: vi.fn() }));
@@ -60,6 +62,48 @@ describe('terminal creation from workspace resources', () => {
     } finally {
       await act(async () => root.unmount());
       container.remove();
+    }
+  });
+
+  it('starts a terminal in the worktree the active session executes in', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const project = { id: 'p', rootPath: '/repo', name: 'P', workspaceKind: 'normal' } as WorkspaceInfo;
+    const state = { ...workspaceManager.getState(), currentWorkspace: project,
+      activeWorkspaceId: project.id, openedWorkspaces: new Map([[project.id, project]]) };
+    vi.spyOn(workspaceManager, 'getState').mockReturnValue(state);
+    const previousFlowState = flowChatStore.getState();
+    const worktreeSession = {
+      sessionId: 'worktree-session', workspaceId: 'worktree-ws', projectWorkspaceId: project.id,
+      workspacePath: '/worktrees/wt-1', dialogTurns: [], status: 'active', createdAt: 0, lastActiveAt: 0,
+      error: null,
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'wt-1', rootPath: '/worktrees/wt-1' },
+      },
+    } as Session;
+    flowChatStore.setState(current => ({ ...current,
+      sessions: new Map([[worktreeSession.sessionId, worktreeSession]]),
+      activeSessionId: worktreeSession.sessionId,
+    }));
+    terminal.create.mockResolvedValue({ id: 'terminal-wt', name: 'Shell 1' });
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(
+        <WorkspaceContext.Provider value={{ ...state, activeWorkspace: project, workspacePath: project.rootPath } as WorkspaceContextValue}>
+          <TerminalActionBridge />
+        </WorkspaceContext.Provider>,
+      ));
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('terminal-create-requested', { detail: { surfaceId: 'local' } }));
+      });
+      // The project still owns the terminal; only the cwd is the worktree root.
+      expect(terminal.create).toHaveBeenCalledExactlyOnceWith({
+        workspaceId: project.id, workspacePath: '/worktrees/wt-1',
+      });
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      flowChatStore.setState(() => previousFlowState);
     }
   });
 });

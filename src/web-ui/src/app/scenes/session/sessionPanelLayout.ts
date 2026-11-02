@@ -1,29 +1,28 @@
+import { useSceneStore } from '../../stores/sceneStore';
 import { appManager } from '../../services/AppManager';
-import { loadPanelWidth, RIGHT_PANEL_CONFIG, STORAGE_KEYS } from '../../layout/panelConfig';
+import { sessionPaneLayoutStore } from './sessionPaneLayoutStore';
+import { selectedSessionTab, tabPane } from '../../workbench/scenePaneModel';
 
-/** Explicit, synchronous layout writes remain safe when open requests repeat. */
+/** Canvas reveal shares the workbench's draft guard and navigation transaction. */
 export function expandSessionAuxPane(): void {
-  if (!appManager.getState().layout.rightPanelCollapsed) return;
-
-  window.dispatchEvent(new CustomEvent('expand-right-panel-immediate', {
-    detail: { noAnimation: true },
-  }));
-  appManager.updateLayout({
-    rightPanelWidth: loadPanelWidth(
-      STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH,
-      RIGHT_PANEL_CONFIG.COMFORTABLE_DEFAULT,
-    ),
-    rightPanelCollapsed: false,
-  });
+  useSceneStore.getState().revealCanvas();
 }
 
 export function collapseSessionAuxPane(): void {
-  // In editor mode this pane is the main content surface.
-  if (appManager.getState().layout.chatCollapsed) return;
-  appManager.updateLayout({ rightPanelCollapsed: true });
+  const scenes = useSceneStore.getState();
+  if (scenes.canvasPane !== 'secondary' || scenes.openTabs.some(tab => tab.pane === 'secondary')) return;
+  sessionPaneLayoutStore.getState().collapseEmptyContent();
+}
+
+/** An explicit hide also restores chat when the pane occupies the content area. */
+export function hideSessionAuxPane(): void {
+  sessionPaneLayoutStore.getState().hideContent();
 }
 
 export function expandSessionBottomTerminalPane(height: number): void {
+  const panes = sessionPaneLayoutStore.getState();
+  const session = selectedSessionTab(useSceneStore.getState());
+  panes.revealPanes([session ? tabPane(session) : 'primary']);
   appManager.updateLayout({
     bottomTerminalPanelHeight: height,
     bottomTerminalPanelCollapsed: false,

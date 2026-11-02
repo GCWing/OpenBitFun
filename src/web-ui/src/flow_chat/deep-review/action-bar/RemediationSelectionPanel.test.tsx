@@ -28,7 +28,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@openbitfun/ui', () => ({
+vi.mock('@openbitfun/ui', async () => ({
   Icon: ({ name }: { name: string }) => <span data-openbitfun-component="icon" data-openbitfun-name={name} />,
   Button: ({
     children,
@@ -37,33 +37,7 @@ vi.mock('@openbitfun/ui', () => ({
     children: React.ReactNode;
     disabled?: boolean;
   }) => <button type="button" disabled={disabled}>{children}</button>,
-  Checkbox: ({
-    checked,
-    className,
-    disabled,
-    indeterminate,
-    label,
-    onChange,
-  }: {
-    checked?: boolean;
-    className?: string;
-    disabled?: boolean;
-    indeterminate?: boolean;
-    label?: React.ReactNode;
-    onChange?: React.ChangeEventHandler<HTMLInputElement>;
-  }) => (
-    <label className={className}>
-      <input
-        type="checkbox"
-        aria-checked={indeterminate ? 'mixed' : checked ? 'true' : 'false'}
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-        readOnly={!onChange}
-      />
-      {label}
-    </label>
-  ),
+  Checkbox: (await vi.importActual<typeof import("@openbitfun/ui")>("@openbitfun/ui")).Checkbox,
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -227,6 +201,51 @@ describeWithJsdom('RemediationSelectionPanel interactions', () => {
     dom.window.close();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it.each([true, false])('keeps list visibility when selecting all (expanded=%s)', (expanded) => {
+    const onToggleAll = vi.fn();
+    const onToggleList = vi.fn();
+    function Panel() {
+      const [selected, setSelected] = React.useState(new Set<string>());
+      const [visible, setVisible] = React.useState(expanded);
+      return (
+        <RemediationSelectionPanel
+          {...baseProps}
+          remediationItems={remediationItems()}
+          selectedRemediationIds={selected}
+          completedRemediationIds={new Set()}
+          decisionSelections={{}}
+          expandedDecisionIds={new Set()}
+          showRemediationList={visible}
+          onToggleAll={() => {
+            onToggleAll();
+            setSelected(selected.size ? new Set() : new Set(remediationItems().map((item) => item.id)));
+          }}
+          onToggleList={() => {
+            onToggleList();
+            setVisible(!visible);
+          }}
+        />
+      );
+    }
+    mount(<Panel />);
+    const header = container.querySelector<HTMLElement>('.deep-review-action-bar__remediation-toggle')!;
+    const checkbox = header.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const box = header.querySelector<HTMLElement>('[data-openbitfun-part="box"]')!;
+
+    for (const target of [checkbox, box]) {
+      act(() => { target.click(); });
+      expect(checkbox.checked).toBe(target === checkbox);
+      expect(Boolean(container.querySelector('.deep-review-action-bar__remediation-list'))).toBe(expanded);
+      expect(onToggleList).not.toHaveBeenCalled();
+    }
+    expect(onToggleAll).toHaveBeenCalledTimes(2);
+
+    act(() => { header.querySelector<HTMLElement>('.deep-review-action-bar__remediation-label')!.click(); });
+    expect(onToggleList).toHaveBeenCalledTimes(1);
+    expect(Boolean(container.querySelector('.deep-review-action-bar__remediation-list'))).toBe(!expanded);
+    expect(onToggleAll).toHaveBeenCalledTimes(2);
   });
 
   it('toggles a remediation group once when clicking the root checkbox', () => {

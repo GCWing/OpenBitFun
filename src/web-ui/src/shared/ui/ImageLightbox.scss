@@ -1,0 +1,86 @@
+/* Full-size image preview. It renders into the app overlay host, so these
+   rules are deliberately not scoped to the surface that opened it. */
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: var(--openbitfun-layer-fullscreen);
+  background: color-mix(in srgb, var(--openbitfun-color-content-on-light) 80%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: image-lightbox-fade-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+
+  img {
+    max-width: 90vw;
+    max-height: 85vh;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px var(--openbitfun-color-overlay-scrim);
+    object-fit: contain;
+  }
+}
+
+.image-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 15%, transparent);
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--openbitfun-color-content-on-dark);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+
+  &:hover {
+    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 30%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--openbitfun-color-content-on-dark);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes image-lightbox-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-lightbox {
+    animation: none;
+  }
+
+  .image-lightbox-close {
+    transition-duration: 0ms;
+  }
+}
+
+.image-lightbox[data-openbitfun-component='dialog'] {
+  padding: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.image-lightbox-surface[data-openbitfun-component='dialog'] {
+  width: 100%;
+  height: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+
+.image-lightbox-close[data-openbitfun-component='icon-button'] {
+  &::before { content: none; }
+  > [data-openbitfun-part='icon'] { display: contents; }
+}

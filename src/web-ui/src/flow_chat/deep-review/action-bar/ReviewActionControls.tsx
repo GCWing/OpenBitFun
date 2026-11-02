@@ -235,7 +235,7 @@ export const ReviewActionControls: React.FC<ReviewActionControlsProps> = ({
       {phase === 'fix_interrupted' && (
         <>
           <div className="deep-review-action-bar__interruption-notice">
-            <AlertTriangle size={16} className="deep-review-action-bar__interruption-icon" />
+            <Icon glyph={AlertTriangle} size="md" className="deep-review-action-bar__interruption-icon" />
             <span>
               {t('deepReviewActionBar.fixInterrupted', {
                 count: remainingFixIds.length,

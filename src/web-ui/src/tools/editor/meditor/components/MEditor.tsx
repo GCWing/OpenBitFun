@@ -56,6 +56,7 @@ const MEditorSourceFallback = forwardRef<EditorInstance, MEditorProps>((props, r
     readonly = false,
     autofocus = false,
     placeholder,
+    emptyDocumentPlaceholder,
     onChange,
     onSave,
     onFocus,
@@ -154,7 +155,7 @@ const MEditorSourceFallback = forwardRef<EditorInstance, MEditorProps>((props, r
         rows={rows}
         readOnly={readonly}
         autoFocus={autofocus}
-        placeholder={placeholder}
+        placeholder={emptyDocumentPlaceholder ?? placeholder}
         onChange={(event) => updateValue(event.target.value)}
         onFocus={onFocus}
         onBlur={onBlur}
@@ -229,6 +230,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
     mode: initialMode = 'ir',
     toolbar = false,
     placeholder: placeholderProp,
+    emptyDocumentPlaceholder,
     readonly = false,
     autofocus = false,
     onChange,
@@ -438,7 +440,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
               onChange={handleEditorChange}
               onFocus={onFocus}
               onBlur={onBlur}
-              placeholder={placeholder}
+              placeholder={emptyDocumentPlaceholder ?? placeholder}
               readonly={readonly}
               autofocus={autofocus}
             />
@@ -454,6 +456,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
               onFocus={onFocus}
               onBlur={onBlur}
               placeholder={placeholder}
+              emptyDocumentPlaceholder={emptyDocumentPlaceholder}
               readonly={readonly}
               autofocus={autofocus}
               filePath={filePath}

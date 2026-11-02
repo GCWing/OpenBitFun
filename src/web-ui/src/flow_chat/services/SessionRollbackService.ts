@@ -1,3 +1,4 @@
+import { hostQueueSupported, hostDialogQueue } from './hostDialogQueue';
 import { agentAPI } from '@/infrastructure/api';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { createLogger } from '@/shared/utils/logger';
@@ -79,6 +80,10 @@ export async function rollbackSessionToTurn(
 ): Promise<RollbackSessionToTurnResult> {
   if (resolveSessionDriverId(request.sessionId, flowChatStore.getState().sessions.get(request.sessionId)) === 'dispatch') {
     throw new Error('History rollback is unavailable for a detached remote session.');
+  }
+  if (hostQueueSupported(request.sessionId)) {
+    const queue = await hostDialogQueue(request.sessionId).refresh();
+    if (queue.items.length) throw new Error('Clear the host message queue before changing Session history');
   }
   const lease = request.lease
     ?? tryBeginSessionMutation(request.sessionId, request.kind, request.targetTurnId);

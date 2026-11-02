@@ -34,9 +34,10 @@ use openbitfun_services_integrations::mcp::server::{
 };
 use openbitfun_services_integrations::mcp::{
     build_mcp_tool_descriptor, build_mcp_tool_name, normalize_name_for_mcp,
-    render_mcp_tool_result_for_assistant, MCPContextEnhancer, MCPContextEnhancerConfig,
-    MCPDynamicToolProvider, MCPToolCatalogClient, McpDynamicToolDescriptor, McpToolInfo,
-    PromptAdapter, ResourceAdapter, MCP_TOOL_DELIMITER, MCP_TOOL_PREFIX,
+    render_mcp_tool_result_for_assistant, render_unparsed_mcp_tool_result_for_assistant,
+    MCPContextEnhancer, MCPContextEnhancerConfig, MCPDynamicToolProvider, MCPToolCatalogClient,
+    McpDynamicToolDescriptor, McpToolInfo, PromptAdapter, ResourceAdapter, MCP_TOOL_DELIMITER,
+    MCP_TOOL_PREFIX,
 };
 use rmcp::model::{AnnotateAble, Annotations, Content, Icon, Meta, RawResource, ResourceContents};
 use std::collections::HashMap;
@@ -91,6 +92,302 @@ fn make_resource(name: &str, description: Option<&str>, uri: &str) -> MCPResourc
 #[derive(Default)]
 struct InMemoryMCPConfigStore {
     values: tokio::sync::Mutex<HashMap<String, serde_json::Value>>,
+}
+
+#[tokio::test]
+async fn mcp_control_patch_preserves_secrets_future_fields_and_other_servers() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    let original = json!({
+        "futureRoot": {"version": 2},
+        "mcpServers": {
+            "docs": {"url": "https://example.test/mcp?token=url-secret", "autoStart": false,
+                "headers": {"Authorization": "header-secret"}, "env": {"KEY": "env-secret"},
+                "futureField": {"key": "extension-secret"}},
+            "local": {"command": "command-secret", "args": ["argument-secret"], "enabled": false}
+        }
+    });
+    store
+        .set_config_value("mcp_servers", original.clone())
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    let visible = serde_json::to_string(&snapshot).unwrap();
+    for secret in [
+        "url-secret",
+        "header-secret",
+        "env-secret",
+        "extension-secret",
+        "command-secret",
+        "argument-secret",
+    ] {
+        assert!(!visible.contains(secret), "discovery leaked {secret}");
+    }
+    let patch = json!({"enabled": false});
+    service
+        .edit_user_server(&snapshot.fingerprint, "docs", patch.as_object())
+        .await
+        .unwrap();
+    let mut expected = original.clone();
+    expected["mcpServers"]["docs"]["enabled"] = json!(false);
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(expected.clone())
+    );
+
+    assert!(matches!(
+        service
+            .edit_user_server(&snapshot.fingerprint, "local", None)
+            .await,
+        Err(MCPImportError::StaleConfiguration)
+    ));
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(expected)
+    );
+    let fresh = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(&fresh.fingerprint, "local", None)
+        .await
+        .unwrap();
+    let after = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after["mcpServers"].get("local").is_none());
+    assert_eq!(
+        after["mcpServers"]["docs"]["headers"],
+        original["mcpServers"]["docs"]["headers"]
+    );
+}
+
+#[tokio::test]
+async fn mcp_control_legacy_array_round_trip_preserves_unknown_data() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    let legacy = json!({"id": "legacy", "name": "Legacy", "type": "local", "command": "old-server",
+        "location": "user", "autoStart": false, "env": {"TOKEN": "keep-me"}, "future": [1, 2],
+        "transport":null, "oauth":null, "capabilities":["legacy-capability"],
+        "settings":{"_openbitfunImport":{"sourceCandidateId":"codex:mcp:legacy"}, "futureSetting":{"v":2}}});
+    store
+        .set_config_value("mcp_servers", json!([legacy.clone()]))
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    assert_eq!(snapshot.servers.len(), 1);
+    assert!(snapshot.servers[0].config_valid);
+    service
+        .edit_user_server(
+            &snapshot.fingerprint,
+            "legacy",
+            json!({"enabled": false}).as_object(),
+        )
+        .await
+        .unwrap();
+    let after = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after.is_array());
+    assert_eq!(after[0]["future"], legacy["future"]);
+    assert_eq!(after[0]["settings"], legacy["settings"]);
+    let old_reader: Vec<MCPServerConfig> = serde_json::from_value(after).unwrap();
+    let mut expected: MCPServerConfig = serde_json::from_value(legacy).unwrap();
+    expected.enabled = false;
+    assert_eq!(
+        serde_json::to_value(&old_reader[0]).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
+    assert_eq!(old_reader[0].command.as_deref(), Some("old-server"));
+    assert_eq!(old_reader[0].env["TOKEN"], "keep-me");
+    assert!(!old_reader[0].enabled);
+}
+
+#[tokio::test]
+async fn mcp_control_legacy_array_add_transport_change_and_delete_stay_readable() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    store
+        .set_config_value("mcp_servers", json!([]))
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let empty = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(
+            &empty.fingerprint,
+            "new",
+            json!({"command":"old-server", "autoStart":false}).as_object(),
+        )
+        .await
+        .unwrap();
+    let before = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(
+            &before.fingerprint,
+            "new",
+            json!({"command":null, "type":null, "url":"https://example.test/mcp"}).as_object(),
+        )
+        .await
+        .unwrap();
+    let saved = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    let old_reader: Vec<MCPServerConfig> = serde_json::from_value(saved).unwrap();
+    assert_eq!(old_reader[0].server_type, MCPServerType::Remote);
+    assert!(old_reader[0].command.is_none());
+    assert_eq!(
+        old_reader[0].url.as_deref(),
+        Some("https://example.test/mcp")
+    );
+    let refreshed = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(&refreshed.fingerprint, "new", None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(json!([]))
+    );
+}
+
+#[tokio::test]
+async fn mcp_control_invalid_records_and_edits_never_reset_configuration() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    let service = MCPConfigService::new(store.clone());
+    for original in [
+        json!("unreadable"),
+        json!([{"command": "missing-id"}]),
+        json!([{"id":"same"}, {"id":"same"}]),
+    ] {
+        store
+            .set_config_value("mcp_servers", original.clone())
+            .await
+            .unwrap();
+        assert!(service.user_control_snapshot().await.is_err());
+        let fingerprint = service
+            .user_json_config_snapshot()
+            .await
+            .unwrap()
+            .fingerprint;
+        assert!(service
+            .edit_user_server(&fingerprint, "new", json!({"command":"new"}).as_object())
+            .await
+            .is_err());
+        assert_eq!(
+            store.get_config_value("mcp_servers").await.unwrap(),
+            Some(original)
+        );
+    }
+    let original = json!({"mcpServers": {"unknown": {"type":"future-transport", "url":"https://example.test"}}});
+    store
+        .set_config_value("mcp_servers", original.clone())
+        .await
+        .unwrap();
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    assert!(!snapshot.servers[0].config_valid);
+    let error = service
+        .edit_user_server(
+            &snapshot.fingerprint,
+            "new",
+            json!({"type":"secret-invalid", "command":"x"}).as_object(),
+        )
+        .await
+        .unwrap_err();
+    assert!(!error.to_string().contains("secret-invalid"));
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(original.clone())
+    );
+    service
+        .edit_user_server(
+            &snapshot.fingerprint,
+            "new",
+            json!({"command":"new", "autoStart":false}).as_object(),
+        )
+        .await
+        .unwrap();
+    let after = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after["mcpServers"]["unknown"],
+        original["mcpServers"]["unknown"]
+    );
+}
+
+#[tokio::test]
+async fn mcp_control_oauth_toggle_respects_legacy_shorthand_and_preserves_options() {
+    use serde_json::json;
+    for oauth in [json!(false), json!({"clientId":"keep-client"})] {
+        let store = Arc::new(InMemoryMCPConfigStore::default());
+        store
+            .set_config_value(
+                "mcp_servers",
+                json!({"mcpServers":{"docs":{
+                    "url":"https://example.test/mcp", "oauth":oauth, "oauthEnabled":false
+                }}}),
+            )
+            .await
+            .unwrap();
+        let service = MCPConfigService::new(store.clone());
+        let before = service.user_control_snapshot().await.unwrap();
+        service
+            .edit_user_server(
+                &before.fingerprint,
+                "docs",
+                json!({"oauthEnabled":true}).as_object(),
+            )
+            .await
+            .unwrap();
+        let after = store
+            .get_config_value("mcp_servers")
+            .await
+            .unwrap()
+            .unwrap();
+        let loaded = parse_cursor_format(&after);
+        assert!(loaded[0].remote_oauth_enabled());
+        assert_eq!(
+            after["mcpServers"]["docs"]["oauth"],
+            if oauth.is_boolean() {
+                json!(true)
+            } else {
+                oauth
+            }
+        );
+    }
+}
+
+#[tokio::test]
+async fn mcp_control_concurrent_edits_use_compare_and_set() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    store
+        .set_config_value("mcp_servers", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    assert!(snapshot.servers.is_empty());
+    let patch = json!({"command":"server", "autoStart":false});
+    let (first, second) = tokio::join!(
+        service.edit_user_server(&snapshot.fingerprint, "first", patch.as_object()),
+        service.edit_user_server(&snapshot.fingerprint, "second", patch.as_object())
+    );
+    assert_ne!(first.is_ok(), second.is_ok());
+    assert_eq!(
+        service.user_control_snapshot().await.unwrap().servers.len(),
+        1
+    );
 }
 
 #[async_trait]
@@ -998,6 +1295,149 @@ fn mcp_dynamic_tool_descriptor_and_result_rendering_preserve_tool_contract() {
             12_000,
         ),
         "Error executing MCP tool 'search'"
+    );
+}
+
+#[test]
+fn mcp_tool_error_rendering_preserves_server_details_and_excludes_metadata() {
+    let result: rmcp::model::CallToolResult = serde_json::from_value(serde_json::json!({
+        "isError": true,
+        "content": [
+            { "type": "text", "text": "The query must not be empty." },
+            { "type": "text", "text": "Provide at least one search term." }
+        ],
+        "structuredContent": { "ignored": "content wins" },
+        "_meta": { "private": "not for the model" }
+    }))
+    .unwrap();
+    let result = map_rmcp_tool_result(result);
+
+    assert!(result.is_error);
+
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &result, 12_000),
+        "Error executing MCP tool 'search'\nThe query must not be empty.\nProvide at least one search term."
+    );
+}
+
+#[test]
+fn mcp_tool_error_rendering_uses_structured_details_when_content_is_empty() {
+    for content in [
+        None,
+        Some(Vec::new()),
+        Some(vec![MCPToolResultContent::Text {
+            text: " \n\t".to_string(),
+        }]),
+    ] {
+        let mut result = MCPToolResult {
+            content,
+            is_error: true,
+            structured_content: Some(serde_json::json!({
+                "message": "The requested document was not found."
+            })),
+            meta: Some(serde_json::json!({ "private": "not for the model" })),
+        };
+
+        assert_eq!(
+            render_mcp_tool_result_for_assistant("search", &result, 12_000),
+            "Error executing MCP tool 'search'\n{\"message\":\"The requested document was not found.\"}"
+        );
+
+        result.structured_content = None;
+        assert_eq!(
+            render_mcp_tool_result_for_assistant("search", &result, 12_000),
+            "Error executing MCP tool 'search'"
+        );
+    }
+}
+
+#[test]
+fn mcp_tool_result_rendering_preserves_success_without_an_error_flag() {
+    for (payload, expected) in [
+        (
+            serde_json::json!({ "content": [{ "type": "text", "text": "done" }] }),
+            "done",
+        ),
+        (
+            serde_json::json!({ "structuredContent": { "ok": true } }),
+            "{\"ok\":true}",
+        ),
+        (serde_json::json!({}), "MCP tool execution completed"),
+    ] {
+        let result: MCPToolResult = serde_json::from_value(payload).unwrap();
+        assert_eq!(
+            render_mcp_tool_result_for_assistant("search", &result, 12_000),
+            expected
+        );
+    }
+}
+
+#[test]
+fn mcp_unparsed_tool_error_payload_is_rendered_as_failure_without_private_metadata() {
+    let raw = serde_json::json!({
+        "isError": true,
+        "content": [{ "type": "resource_extension_from_a_newer_server", "uri": "file:///x" }],
+        "_meta": { "private": "not for the model" }
+    });
+
+    let rendered = render_unparsed_mcp_tool_result_for_assistant(&raw, usize::MAX);
+    assert!(
+        rendered.starts_with("MCP tool execution failed: "),
+        "an unparsed failing payload must not read as a completed call: {rendered}"
+    );
+    assert!(rendered.contains("resource_extension_from_a_newer_server"));
+    assert!(rendered.contains("\"isError\":true"));
+    assert!(!rendered.contains("not for the model"));
+
+    // Without the MCP error flag the pre-existing completed text stays.
+    for payload in [
+        serde_json::json!({ "unexpected": true }),
+        serde_json::json!({ "isError": false }),
+        serde_json::json!([1, 2, 3]),
+    ] {
+        assert_eq!(
+            render_unparsed_mcp_tool_result_for_assistant(&payload, usize::MAX),
+            "MCP tool execution completed"
+        );
+    }
+
+    // The failed fallback shares the assistant character budget.
+    let long = serde_json::json!({ "isError": true, "content": "x".repeat(200) });
+    let truncated = render_unparsed_mcp_tool_result_for_assistant(&long, 40);
+    assert!(truncated.starts_with("MCP tool execution failed: "));
+    assert!(truncated.contains("[Result truncated: 40 of"));
+}
+
+#[test]
+fn mcp_tool_error_rendering_uses_the_existing_character_limit() {
+    let result = MCPToolResult {
+        content: Some(vec![MCPToolResultContent::Text {
+            text: "\u{03b1}\u{03b2}\u{03b3}".to_string(),
+        }]),
+        is_error: true,
+        structured_content: None,
+        meta: None,
+    };
+
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &result, 37),
+        "Error executing MCP tool 'search'\n\u{03b1}\u{03b2}\u{03b3}"
+    );
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &result, 36),
+        "Error executing MCP tool 'search'\n\u{03b1}\u{03b2}\n[Result truncated: 36 of 37 characters shown]"
+    );
+
+    let long_details = "x".repeat(12_001);
+    let long_result = MCPToolResult {
+        content: Some(vec![MCPToolResultContent::Text {
+            text: long_details.clone(),
+        }]),
+        ..result
+    };
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &long_result, usize::MAX),
+        format!("Error executing MCP tool 'search'\n{}", long_details)
     );
 }
 
@@ -2226,4 +2666,103 @@ fn mcp_cursor_format_helpers_preserve_cursor_compatibility_contract() {
     assert_eq!(parsed[0].server_type, MCPServerType::Remote);
     assert_eq!(parsed[0].transport, Some(MCPServerTransport::Sse));
     assert_eq!(parsed[0].location, ConfigLocation::User);
+}
+
+#[test]
+fn mcp_config_accepts_camel_case_streamable_http_type() {
+    // Cursor, Cline, and other MCP clients emit `type: "streamableHttp"`.
+    // OpenBitFun must accept it (and other casings) as streamable HTTP.
+    let config = serde_json::json!({
+        "mcpServers": {
+            "remote": {
+                "type": "streamableHttp",
+                "url": "https://example.com/mcp"
+            }
+        }
+    });
+
+    validate_mcp_json_config(&config).expect("camelCase streamableHttp type must validate");
+
+    let parsed = parse_cursor_format(&config);
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].server_type, MCPServerType::Remote);
+    assert_eq!(
+        parsed[0].transport,
+        Some(MCPServerTransport::StreamableHttp)
+    );
+
+    for alias in [
+        "streamable-http",
+        "streamable_http",
+        "streamablehttp",
+        "HTTP",
+    ] {
+        validate_mcp_json_config(&serde_json::json!({
+            "mcpServers": {
+                "alias": { "type": alias, "url": "https://example.com/mcp" }
+            }
+        }))
+        .unwrap_or_else(|error| panic!("type '{}' must validate: {}", alias, error));
+    }
+}
+
+#[test]
+fn mcp_config_normalizes_token_case_for_type_transport_and_source() {
+    // The visual editor lowercases `type`, `transport`, and `source` before
+    // matching. The core validator and parser must agree, otherwise a config
+    // the form renders happily fails again when the document is saved.
+    let cases = [
+        (
+            serde_json::json!({ "type": "StreamableHTTP", "url": "https://example.com/mcp" }),
+            "streamable-http",
+            MCPServerTransport::StreamableHttp,
+        ),
+        (
+            serde_json::json!({
+                "transport": "STREAMABLE-HTTP",
+                "url": "https://example.com/mcp"
+            }),
+            "streamable-http",
+            MCPServerTransport::StreamableHttp,
+        ),
+        (
+            serde_json::json!({
+                "source": "REMOTE",
+                "transport": "SSE",
+                "url": "https://example.com/sse"
+            }),
+            "sse",
+            MCPServerTransport::Sse,
+        ),
+        (
+            serde_json::json!({ "source": "Local", "command": "npx", "args": ["-y", "server"] }),
+            "stdio",
+            MCPServerTransport::Stdio,
+        ),
+    ];
+
+    for (server, canonical_type, transport) in cases {
+        let config = serde_json::json!({ "mcpServers": { "case": server.clone() } });
+
+        validate_mcp_json_config(&config)
+            .unwrap_or_else(|error| panic!("'{}' must validate: {}", server, error));
+
+        let parsed = parse_cursor_format(&config);
+        assert_eq!(
+            parsed.len(),
+            1,
+            "'{}' must be parsed instead of silently dropped",
+            server
+        );
+        assert_eq!(parsed[0].transport, Some(transport), "for '{}'", server);
+
+        // Accepting a spelling must not change the canonical token we persist.
+        let written = config_to_cursor_format(&parsed[0]);
+        assert_eq!(
+            written["type"].as_str(),
+            Some(canonical_type),
+            "'{}' must persist the canonical token",
+            server
+        );
+    }
 }

@@ -10,6 +10,18 @@ describe('I18nService shared namespace contract', () => {
     expect(service.t('common:actions.copy')).not.toBe('common:actions.copy');
   });
 
+  it('can restore a bootstrap namespace without a duplicate lazy import', async () => {
+    const service = new I18nService();
+    const i18n = service.getI18nInstance();
+    const expected = service.t('common:actions.copy');
+    i18n.removeResourceBundle(DEFAULT_LOCALE, 'common');
+
+    await service.loadNamespace('common');
+
+    expect(i18n.hasResourceBundle(DEFAULT_LOCALE, 'common')).toBe(true);
+    expect(service.t('common:actions.copy')).toBe(expected);
+  });
+
   it('keeps shared terms explicit so surface namespaces retain priority', () => {
     const service = new I18nService();
     const i18n = service.getI18nInstance();
@@ -103,5 +115,33 @@ describe('I18nService shared namespace contract', () => {
     );
     expect(service.getCurrentLocale()).toBe(initialLocale);
     vi.unstubAllGlobals();
+  });
+
+  it('reuses equivalent date and number formatters', () => {
+    const service = new I18nService();
+    const createDateTimeFormatter = (
+      service as unknown as {
+        createDateTimeFormatter(options?: Intl.DateTimeFormatOptions): Intl.DateTimeFormat;
+      }
+    ).createDateTimeFormatter.bind(service);
+
+    const dateFormatter = createDateTimeFormatter({ year: 'numeric', month: '2-digit' });
+    expect(createDateTimeFormatter({ month: '2-digit', year: 'numeric' })).toBe(dateFormatter);
+
+    const firstNumber = service.formatNumber(1234.5, { style: 'decimal', useGrouping: true });
+    const secondNumber = service.formatNumber(1234.5, { useGrouping: true, style: 'decimal' });
+    expect(secondNumber).toBe(firstNumber);
+  });
+
+  it('does not cache options with custom prototypes', () => {
+    const service = new I18nService();
+    const createDateTimeFormatter = (
+      service as unknown as {
+        createDateTimeFormatter(options?: Intl.DateTimeFormatOptions): Intl.DateTimeFormat;
+      }
+    ).createDateTimeFormatter.bind(service);
+    const options = Object.create({ dateStyle: 'medium' }) as Intl.DateTimeFormatOptions;
+
+    expect(createDateTimeFormatter(options)).not.toBe(createDateTimeFormatter(options));
   });
 });

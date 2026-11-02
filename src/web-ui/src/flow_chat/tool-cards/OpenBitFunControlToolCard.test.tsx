@@ -33,8 +33,20 @@ describe('OpenBitFun control card content', () => {
     expect(html).toContain('data-openbitfun-tool-card="openbitfun-control"');
     expect(html).toContain('data-openbitfun-attention="prominent"');
     expect(html).toContain('Change setting');
-    expect(html).toContain('OpenBitFun');
-    expect(html).toContain('lucide-sliders-horizontal');
+    expect(html).toContain('peer.feature');
+    expect(html).toContain('Applied value: False');
+    expect(html).toContain('lucide-mouse-pointer');
+    expect(html).toContain('data-default-icon="tool"');
+    for (const [action, result] of [
+      ['list', { items: [] }],
+      ['search', { items: [] }],
+      ['get', { capability: { id: 'peer.feature' } }],
+    ] as const) {
+      const discovery = render(action, result);
+      expect(discovery).toContain('lucide-mouse-pointer');
+      expect(discovery).toContain('data-default-icon="tool"');
+      expect(discovery).not.toContain('lucide-book-search');
+    }
     expect(html).not.toContain('data-openbitfun-part="extra"');
     expect(html).not.toContain('Tool: OpenBitFunControl');
   });

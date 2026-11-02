@@ -1,7 +1,7 @@
 import { FakeHostSessionManager, hostRecord } from './LocalTestFixtures';
 import { describe, it, expect } from '@ohos/hypium';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
-import { RemoteControlSettingsPagePolicy } from '../main/ets/pages/policy/RemoteControlSettingsPagePolicy';
+import { SettingsPagePolicy } from '../main/ets/pages/policy/SettingsPagePolicy';
 import { ChatSessionController, ChatSessionSnapshot } from '../main/ets/services/ChatSessionController';
 import { ChatComposerPolicy } from '../main/ets/services/ChatComposerPolicy';
 import { ChatTimelineItem, ChatTimelineProjector } from '../main/ets/services/ChatTimelineProjector';
@@ -299,16 +299,15 @@ export default function lifecycleUnitTest() {
     });
   });
 
-  describe('RemoteControlSettingsPagePolicy', () => {
-    it('opens account mode directly on the signed-out login page', 0, () => {
-      expect(RemoteControlSettingsPagePolicy.resolve(true, false, false, false)).assertEqual('login');
-      expect(RemoteControlSettingsPagePolicy.resolve(true, false, false, true)).assertEqual('profile');
+  describe('SettingsPagePolicy', () => {
+    it('opens account mode on the login page only while signed out', 0, () => {
+      expect(SettingsPagePolicy.resolve(true, false)).assertEqual('login');
+      expect(SettingsPagePolicy.resolve(true, true)).assertEqual('settings');
     });
 
-    it('does not expose the remote page while account navigation is active', 0, () => {
-      expect(RemoteControlSettingsPagePolicy.resolve(false, true, false, false)).assertEqual('login');
-      expect(RemoteControlSettingsPagePolicy.resolve(false, false, true, false)).assertEqual('login');
-      expect(RemoteControlSettingsPagePolicy.resolve(false, false, false, false)).assertEqual('remote');
+    it('keeps settings on the single page without an account request', 0, () => {
+      expect(SettingsPagePolicy.resolve(false, false)).assertEqual('settings');
+      expect(SettingsPagePolicy.resolve(false, true)).assertEqual('settings');
     });
   });
 
@@ -335,6 +334,24 @@ export default function lifecycleUnitTest() {
       expect(state.showSidebar).assertFalse();
       expect(state.showSettings).assertFalse();
       expect(state.showConnectSheet).assertFalse();
+    });
+
+    it('settles an account request back onto the single settings page', 0, () => {
+      const state = new AppShellState();
+
+      state.openSettings('account');
+      state.settleAccountSettings();
+      expect(state.showSettings).assertTrue();
+      expect(state.settingsMode).assertEqual('general');
+
+      state.openSettings('general');
+      state.openSettings('account');
+      state.settleAccountSettings();
+      expect(state.showSettings).assertTrue();
+      expect(state.settingsMode).assertEqual('general');
+
+      state.settleAccountSettings();
+      expect(state.settingsMode).assertEqual('general');
     });
 
     it('keeps settings page and editor drafts until the sheet is closed', 0, () => {

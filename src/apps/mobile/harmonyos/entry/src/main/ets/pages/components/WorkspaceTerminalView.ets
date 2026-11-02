@@ -58,7 +58,7 @@ export struct WorkspaceTerminalView {
         const foreground = this.color($r('app.color.ink').id);
         const frame: TerminalFrame = { epoch: epoch, revision: ++this.revision, reset: reset,
           data: reset ? output : output.slice(this.sentOutput.length),
-          theme: { background: this.color($r('app.color.page_bg').id), foreground: foreground, cursor: foreground } };
+          theme: { background: this.color($r('app.color.media_background').id), foreground: foreground, cursor: foreground } };
         await this.controller.runJavaScript(`window.OpenBitFunTerminal.accept(${JSON.stringify(frame)})`);
         this.sentEpoch = epoch; this.sentOutput = output;
       }

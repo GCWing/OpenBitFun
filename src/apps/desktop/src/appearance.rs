@@ -83,7 +83,17 @@ fn clamp_agent_companion_window_position(
     let Some((area_position, area_size)) = work_area_for_agent_companion_window(app, window) else {
         return position;
     };
+    clamp_to_agent_companion_work_area(position, size, area_position, area_size)
+}
 
+/// Keeps the whole outer window inside the work area, so neither the pet nor a
+/// bubble beside it can sit past a screen edge.
+fn clamp_to_agent_companion_work_area(
+    position: tauri::LogicalPosition<f64>,
+    size: tauri::LogicalSize<f64>,
+    area_position: tauri::LogicalPosition<f64>,
+    area_size: tauri::LogicalSize<f64>,
+) -> tauri::LogicalPosition<f64> {
     let min_x = area_position.x + AGENT_COMPANION_WINDOW_EDGE_MARGIN;
     let min_y = area_position.y + AGENT_COMPANION_WINDOW_EDGE_MARGIN;
     let max_x = area_position.x + area_size.width - size.width - AGENT_COMPANION_WINDOW_EDGE_MARGIN;
@@ -178,6 +188,14 @@ impl Default for AppearanceConfig {
 }
 
 impl AppearanceConfig {
+    pub(crate) fn miniapp_mode() -> &'static str {
+        if Self::load_startup_bootstrap_config().appearance.is_light {
+            "light"
+        } else {
+            "dark"
+        }
+    }
+
     pub fn get_builtin_appearance(appearance_id: &str) -> Option<Self> {
         Self::startup_appearance_bootstrap_manifest()
             .appearances
@@ -319,6 +337,16 @@ impl AppearanceConfig {
             serde_json::to_string(&startup_locale).unwrap_or_else(|_| "\"zh-CN\"".to_string());
         let show_startup_window_controls = !cfg!(target_os = "macos");
         let native_sidebar_material = cfg!(any(target_os = "windows", target_os = "macos"));
+        // The Linux shell paints the frame radius itself because WebKitGTK keeps
+        // the GTK frame square on Wayland. Advertise that so neither this
+        // bootstrap nor the Web UI paints an opaque page background over the
+        // transparent corners.
+        let native_frame_attribute = if cfg!(target_os = "linux") {
+            "root.setAttribute('data-openbitfun-native-frame', 'client');"
+        } else {
+            ""
+        };
+        let transparent_page_background = native_sidebar_material || cfg!(target_os = "linux");
         let startup_trace_id_json = serde_json::to_string(startup_trace_id)
             .unwrap_or_else(|_| "\"desktop-unknown\"".to_string());
         let bootstrap_log_level_json = serde_json::to_string(crate::logging::level_to_str(
@@ -374,6 +402,7 @@ impl AppearanceConfig {
                     if ({native_sidebar_material}) {{
                         root.setAttribute('data-openbitfun-native-material', 'sidebar');
                     }}
+                    {native_frame_attribute}
                     
                     root.style.setProperty('--openbitfun-color-surface-canvas', '{bg_primary}');
                     root.style.setProperty('--openbitfun-color-surface-panel', '{bg_secondary}');
@@ -384,10 +413,10 @@ impl AppearanceConfig {
                     root.style.setProperty('--openbitfun-color-content-primary', '{text_primary}');
                     root.style.setProperty('--openbitfun-color-content-muted', '{text_muted}');
                     root.style.setProperty('--openbitfun-color-accent-default', '{accent_color}');
-                    root.style.backgroundColor = {native_sidebar_material} ? 'transparent' : '{bg_primary}';
+                    root.style.backgroundColor = {transparent_page_background} ? 'transparent' : '{bg_primary}';
                     
                     if (document.body) {{
-                        document.body.style.backgroundColor = {native_sidebar_material} ? 'transparent' : '{bg_primary}';
+                        document.body.style.backgroundColor = {transparent_page_background} ? 'transparent' : '{bg_primary}';
                     }}
                     
                     return true;
@@ -521,7 +550,6 @@ pub fn create_main_window(
     let (startup_page_ready, mut startup_page_ready_rx) = tokio::sync::watch::channel(false);
     let bootstrap_config = AppearanceConfig::load_startup_bootstrap_config();
     let appearance = bootstrap_config.appearance.clone();
-    let bg_color = appearance.to_tauri_color();
     let init_script = appearance.generate_init_script(
         startup_trace_id,
         &bootstrap_config,
@@ -553,20 +581,15 @@ pub fn create_main_window(
     let materialization_workbench = Arc::clone(&frontend_workbench);
     #[cfg(target_os = "macos")]
     let builder = {
-        // Configure both Tao's native window and Wry's WebView. The builder's
-        // traffic_light_position setter only configures Wry, so native window
-        // lifecycle events otherwise restore the default button placement.
+        // Configure the native window as well as its WebView. The WebView-only
+        // builder setter misses Tao's title/resize/fullscreen restoration path.
+        // Both framework paths receive one inset derived from AppKit metrics.
         let config = tauri::utils::config::WindowConfig {
             label: "main".into(),
             url: main_url,
             title_bar_style: tauri::TitleBarStyle::Overlay,
             hidden_title: true,
-            // Native button center = inset + height / 2 - origin.y.
-            // AppKit's 16pt button at y=6 needs 20.5 for the 45px toolbar.
-            traffic_light_position: Some(tauri::utils::config::LogicalPosition {
-                x: 12.0,
-                y: 20.5,
-            }),
+            traffic_light_position: crate::macos_window_chrome::traffic_light_position(),
             ..Default::default()
         };
         match tauri::WebviewWindowBuilder::from_config(app_handle, &config) {
@@ -590,12 +613,15 @@ pub fn create_main_window(
         .resizable(true)
         .fullscreen(false)
         .visible(false)
-        .background_color(bg_color)
         .accept_first_mouse(true)
         .initialization_script(&init_script)
         .on_page_load({
             let startup_trace_id = startup_trace_id.to_string();
             move |_window, payload| {
+                #[cfg(target_os = "macos")]
+                if matches!(payload.event(), PageLoadEvent::Started) {
+                    crate::macos_window_chrome::reset_renderer(_window.app_handle());
+                }
                 if matches!(payload.event(), PageLoadEvent::Finished) {
                     let _ = startup_page_ready.send(true);
                 }
@@ -634,20 +660,40 @@ pub fn create_main_window(
             );
     }
 
+    // The Linux window is transparent because the shell draws the frame radius
+    // itself: WebKitGTK keeps the GTK frame square on Wayland.
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder
+            .transparent(true)
+            .background_color(tauri::window::Color(0, 0, 0, 0));
+    }
+
     #[cfg(debug_assertions)]
     if !use_development_frontend() {
         // Product-path isolation alone does not isolate WKWebView storage.
-        // This guarded test window keeps a private store across document
-        // reloads and never opens the daily client's browser data store.
-        builder = builder.incognito(true);
+        // Default to a private store. Windows persistence tests explicitly opt
+        // into a directory under the already validated isolated product root.
+        let persistent_test_store = cfg!(target_os = "windows")
+            && std::env::var("OPENBITFUN_E2E_PERSISTENT_WEBVIEW").as_deref() == Ok("1");
+        #[cfg(target_os = "windows")]
+        if persistent_test_store {
+            builder = builder.data_directory(
+                openbitfun_core::infrastructure::get_path_manager_arc()
+                    .user_data_dir()
+                    .join("e2e-webview"),
+            );
+        }
+        builder = builder.incognito(!persistent_test_store);
     }
 
     // On Windows, Tauri's native file-drop handler replaces WebView2's OLE drop
     // target and disables every HTML5 drag/drop interaction in the page. Keep
     // the browser handler there. The frontend keeps dropped File wrappers alive
     // briefly while the Desktop host resolves their original paths through
-    // WebView2, without copying file contents. WKWebView/WebKitGTK do not have
-    // that conflict, so their native handler remains enabled and supplies paths.
+    // WebView2, without copying file contents. The reviewed Wry macOS adapter
+    // delegates non-file drags to WebKit; its native file handler and WebKitGTK's
+    // remain enabled to supply original paths. See third_party/wry/OPENBITFUN-PATCH.md.
     #[cfg(target_os = "windows")]
     {
         builder = builder.disable_drag_drop_handler();
@@ -660,7 +706,11 @@ pub fn create_main_window(
     builder =
         builder.on_navigation(move |url| navigation_workbench.should_allow_main_navigation(url));
 
-    #[cfg(target_os = "windows")]
+    // Windows and Linux both own their window chrome: the frontend renders the
+    // window controls and the drag regions, so GTK's header bar would add a
+    // second title bar above them. tao keeps a hidden CSD header on Wayland so
+    // the compositor does not paint server-side decorations instead.
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         builder = builder.decorations(false);
     }
@@ -668,6 +718,10 @@ pub fn create_main_window(
     let build_started_at = Instant::now();
     match builder.build() {
         Ok(window) => {
+            #[cfg(target_os = "macos")]
+            if let Err(error) = crate::macos_window_chrome::install(&window) {
+                error!("Failed to install native fullscreen chrome synchronization: {error}");
+            }
             #[cfg(target_os = "windows")]
             if let Err(error) = crate::window_webview_geometry::install(&window) {
                 error!("Failed to install main WebView geometry protection: {error}");
@@ -797,7 +851,7 @@ fn development_frontend_url(
     base.join(path).map_err(|error| error.to_string())
 }
 
-fn app_url(app: &tauri::AppHandle, path: &str) -> WebviewUrl {
+pub(crate) fn app_url(app: &tauri::AppHandle, path: &str) -> WebviewUrl {
     if use_development_frontend() {
         match development_frontend_url(app.config().build.dev_url.as_ref(), path) {
             Ok(url) => {
@@ -920,10 +974,26 @@ fn resize_agent_companion_window(
         AGENT_COMPANION_WINDOW_MAX_HEIGHT,
     );
     let scale_factor = window.scale_factor().unwrap_or(1.0);
-    let size = agent_companion_window_effective_size(window);
-    if (size.width - width).abs() < 0.5 && (size.height - height).abs() < 0.5 {
+    // `set_size` sets the inner (webview) size, so compare and anchor against
+    // the inner size too. Comparing against the outer size skips requests on
+    // platforms where the native frame adds pixels, leaving the viewport
+    // narrower than the bottom-right anchored dock and clipping it on the left.
+    let fallback_size = agent_companion_window_effective_size(window);
+    let inner_size = window
+        .inner_size()
+        .ok()
+        .map(|size| size.to_logical::<f64>(scale_factor))
+        .unwrap_or(fallback_size);
+    if (inner_size.width - width).abs() < 0.5 && (inner_size.height - height).abs() < 0.5 {
         return;
     }
+    let outer_size = window
+        .outer_size()
+        .ok()
+        .map(|size| size.to_logical::<f64>(scale_factor))
+        .unwrap_or(inner_size);
+    let frame_width = (outer_size.width - inner_size.width).max(0.0);
+    let frame_height = (outer_size.height - inner_size.height).max(0.0);
 
     let old_position = window
         .outer_position()
@@ -943,16 +1013,78 @@ fn resize_agent_companion_window(
             app,
             window,
             tauri::LogicalPosition::new(
-                position.x + size.width - width,
-                position.y + size.height - height,
+                position.x + inner_size.width - width,
+                position.y + inner_size.height - height,
             ),
-            tauri::LogicalSize::new(width, height),
+            tauri::LogicalSize::new(width + frame_width, height + frame_height),
         );
         if let Err(e) = window.set_position(next_position) {
             warn!("Failed to position Agent companion window: {}", e);
         } else {
             remember_agent_companion_window_position(next_position);
         }
+    }
+}
+
+/// Pulls the pet back inside the work area after a display scale change.
+///
+/// The platform keeps the physical origin while the window's physical size
+/// follows the new scale, which can push the pet or a bubble past a screen edge.
+/// Nothing else re-clamps it until the next bubble-driven resize.
+fn reclamp_agent_companion_window(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let position = position.to_logical::<f64>(scale_factor);
+    let size = agent_companion_window_effective_size(window);
+    let next_position = clamp_agent_companion_window_position(app, window, position, size);
+    if (next_position.x - position.x).abs() < 0.5 && (next_position.y - position.y).abs() < 0.5 {
+        return;
+    }
+    if let Err(e) = window.set_position(next_position) {
+        warn!(
+            "Failed to keep Agent companion window inside the work area: {}",
+            e
+        );
+    } else {
+        remember_agent_companion_window_position(next_position);
+    }
+}
+
+fn watch_agent_companion_window_scale(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+    let app = app.clone();
+    window.on_window_event(move |event| {
+        if !matches!(event, tauri::WindowEvent::ScaleFactorChanged { .. }) {
+            return;
+        }
+        // Deferred: the platform applies its own DPI-adjusted bounds after this
+        // event returns, which would overwrite a position set from inside it.
+        let app_for_clamp = app.clone();
+        if let Err(e) = app.run_on_main_thread(move || {
+            if let Some(window) = app_for_clamp.get_webview_window(AGENT_COMPANION_WINDOW_LABEL) {
+                reclamp_agent_companion_window(&app_for_clamp, &window);
+            }
+        }) {
+            warn!(
+                "Failed to schedule Agent companion window re-clamp after a scale change: {}",
+                e
+            );
+        }
+    });
+}
+
+/// Re-asserts the pet stacking hint after the native window is mapped.
+///
+/// GTK applies keep-above on map, and a reused window may have been raised
+/// behind the main window while it was hidden, so both show paths re-apply it.
+#[cfg(target_os = "linux")]
+fn enforce_agent_companion_window_stacking(window: &tauri::WebviewWindow) {
+    if let Err(error) = window.set_always_on_top(true) {
+        warn!(
+            "Failed to re-apply Agent companion always-on-top: {}",
+            error
+        );
     }
 }
 
@@ -975,6 +1107,8 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
             error!("Failed to show Agent companion window: {}", e);
             format!("Failed to show Agent companion window: {}", e)
         })?;
+        #[cfg(target_os = "linux")]
+        enforce_agent_companion_window_stacking(&window);
         debug!(
             "Agent companion window reused: total_duration_ms={}",
             started_at.elapsed().as_millis()
@@ -1020,6 +1154,22 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
 
     builder = builder.disable_drag_drop_handler();
 
+    // Wayland compositors drop GTK's keep-above request, so the only stacking
+    // relationship the platform can still guarantee is "above its parent".
+    // Attaching the pet to the main window keeps the app's own page from covering
+    // it there, while `always_on_top` keeps floating it above other applications
+    // on X11, where the window manager honors the hint.
+    #[cfg(target_os = "linux")]
+    if let Some(main_window) = app.get_window("main") {
+        match main_window.gtk_window() {
+            Ok(parent) => builder = builder.transient_for_raw(&parent),
+            Err(error) => warn!(
+                "Failed to read the main window GTK handle for Agent companion stacking: {}",
+                error
+            ),
+        }
+    }
+
     let build_started_at = Instant::now();
     let window = builder.build().map_err(|e| {
         error!(
@@ -1036,12 +1186,15 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
     );
 
     position_agent_companion_window(&app, &window);
+    watch_agent_companion_window_scale(&app, &window);
 
     let show_started_at = Instant::now();
     window.show().map_err(|e| {
         error!("Failed to show Agent companion window: {}", e);
         format!("Failed to show Agent companion window: {}", e)
     })?;
+    #[cfg(target_os = "linux")]
+    enforce_agent_companion_window_stacking(&window);
     debug!(
         "Agent companion window shown: show_duration_ms={} total_duration_ms={}",
         show_started_at.elapsed().as_millis(),
@@ -1093,7 +1246,9 @@ pub async fn hide_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
 #[tauri::command]
 pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     let total_started_at = Instant::now();
-    if let Some(main_window) = app.get_webview_window("main") {
+    // Embedded browsers add child WebViews, so the main host is no longer a
+    // single-WebView window. Look up the native window independently of its views.
+    if let Some(main_window) = app.get_window("main") {
         main_window
             .unminimize()
             .map_err(|error| error.to_string())?;
@@ -1115,7 +1270,7 @@ pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 
         #[cfg(target_os = "macos")]
         {
-            crate::cancel_main_window_close_request_on_macos();
+            crate::cancel_main_window_close_request_on_macos(&app);
             crate::mark_main_window_hidden_on_macos(false);
         }
 
@@ -1138,6 +1293,55 @@ pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
         total_started_at.elapsed().as_millis()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod agent_companion_window_geometry_tests {
+    use super::{clamp_to_agent_companion_work_area, AGENT_COMPANION_WINDOW_EDGE_MARGIN};
+    use tauri::{LogicalPosition, LogicalSize};
+
+    const MARGIN: f64 = AGENT_COMPANION_WINDOW_EDGE_MARGIN;
+
+    fn clamp(x: f64, y: f64, width: f64, height: f64) -> (f64, f64) {
+        // A 2560x1440 work area to the right of a primary display, so negative
+        // and offset origins are both exercised by the other cases below.
+        let position = clamp_to_agent_companion_work_area(
+            LogicalPosition::new(x, y),
+            LogicalSize::new(width, height),
+            LogicalPosition::new(2560.0, 0.0),
+            LogicalSize::new(2560.0, 1400.0),
+        );
+        (position.x, position.y)
+    }
+
+    #[test]
+    fn keeps_a_window_that_already_fits() {
+        assert_eq!(clamp(3000.0, 600.0, 288.0, 110.0), (3000.0, 600.0));
+    }
+
+    #[test]
+    fn pulls_a_window_past_the_left_edge_back_inside() {
+        // A bubble growing the window leftward from a pet near the edge.
+        assert_eq!(clamp(2400.0, 600.0, 288.0, 110.0), (2560.0 + MARGIN, 600.0));
+    }
+
+    #[test]
+    fn keeps_the_right_and_bottom_edges_inside_including_the_frame() {
+        let (x, y) = clamp(5000.0, 2000.0, 290.0, 112.0);
+        assert_eq!(x, 2560.0 + 2560.0 - 290.0 - MARGIN);
+        assert_eq!(y, 1400.0 - 112.0 - MARGIN);
+    }
+
+    #[test]
+    fn falls_back_to_the_work_area_origin_when_the_window_cannot_fit() {
+        let position = clamp_to_agent_companion_work_area(
+            LogicalPosition::new(-500.0, -500.0),
+            LogicalSize::new(360.0, 240.0),
+            LogicalPosition::new(-1280.0, 0.0),
+            LogicalSize::new(300.0, 200.0),
+        );
+        assert_eq!((position.x, position.y), (-1280.0, 0.0));
+    }
 }
 
 #[cfg(test)]

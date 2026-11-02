@@ -48,12 +48,21 @@
 }
 
 .branch-quick-switch__search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 8px;
   border-bottom: 1px solid var(--openbitfun-color-border-subtle);
 }
 
 .branch-quick-switch__input-field {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+.branch-quick-switch__error {
+  padding: 8px;
+  color: var(--openbitfun-color-status-danger-content);
 }
 
 .branch-quick-switch__list {

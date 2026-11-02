@@ -1,4 +1,4 @@
-import { ActionCard, Button, Textarea } from '@openbitfun/ui';
+import { ActionCard, Button, Textarea, Icon } from '@openbitfun/ui';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle } from 'lucide-react';
@@ -30,7 +30,7 @@ export const DecisionExecutionGate: React.FC<DecisionExecutionGateProps> = ({
   return (
     <div className="deep-review-action-bar__decision-gate" role="dialog" aria-modal="false">
       <div className="deep-review-action-bar__decision-gate-header">
-        <AlertTriangle size={16} className="deep-review-action-bar__decision-gate-icon" />
+        <Icon glyph={AlertTriangle} size="md" className="deep-review-action-bar__decision-gate-icon" />
         <div>
           <div className="deep-review-action-bar__decision-gate-title">
             {t('deepReviewActionBar.decisionGate.title')}

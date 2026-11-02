@@ -1,0 +1,36 @@
+@layer openbitfun.components {
+  .layer {
+    position: absolute;
+    z-index: var(--openbitfun-layer-decoration);
+    inset: 0;
+    overflow: visible;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .fragment {
+    position: absolute;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--openbitfun-color-action-quiet-hover);
+    color: var(--openbitfun-color-content-secondary);
+    pointer-events: none;
+  }
+
+  .fragmentStart {
+    clip-path: polygon(0 0, 53% 0, 47% 35%, 53% 55%, 46% 100%, 0 100%);
+    transform-origin: left center;
+  }
+
+  .fragmentEnd {
+    clip-path: polygon(57% 0, 100% 0, 100% 100%, 50% 100%, 57% 55%, 51% 35%);
+    transform-origin: right center;
+  }
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+    .layer { display: none; }
+  }
+}

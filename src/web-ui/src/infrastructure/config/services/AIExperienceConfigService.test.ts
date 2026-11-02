@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const configManagerMock = vi.hoisted(() => ({
+  hasCachedConfig: vi.fn(() => false),
+  getCachedConfig: vi.fn(),
   getConfig: vi.fn(),
   setConfig: vi.fn(),
   watch: vi.fn(),
@@ -20,12 +22,13 @@ vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({
 
 vi.mock('./AgentCompanionPetService', () => ({
   DEFAULT_AGENT_COMPANION_PET: {
-    id: 'blue-golden',
-    displayName: '困困',
+    id: 'bitblob',
+    displayName: 'BitBlob',
     source: 'preset',
-    packagePath: '/agent-companion-pets/blue-golden',
-    spritesheetPath: '/agent-companion-pets/blue-golden/spritesheet.png',
-    spritesheetMimeType: 'image/png',
+    packagePath: '/agent-companion-pets/bitblob',
+    spritesheetPath: '/agent-companion-pets/bitblob/spritesheet.webp',
+    spritesheetMimeType: 'image/webp',
+    spriteVersionNumber: 2,
   },
 }));
 
@@ -41,6 +44,30 @@ describe('AIExperienceConfigService startup behavior', () => {
     vi.resetModules();
     vi.clearAllMocks();
     configManagerMock.watch.mockReturnValue(() => undefined);
+  });
+
+  it('exposes trusted data synchronously and retains it after a failed refresh', async () => {
+    configManagerMock.getConfig.mockResolvedValueOnce({ enable_agent_companion: false });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+    expect(aiExperienceConfigService.getCachedSettings()).toBeNull();
+    await aiExperienceConfigService.getSettingsAsync({ requireLoaded: true });
+    expect(aiExperienceConfigService.getCachedSettings()?.enable_agent_companion).toBe(false);
+    configManagerMock.getConfig.mockRejectedValueOnce(new Error('offline'));
+    await aiExperienceConfigService.reload();
+    expect(aiExperienceConfigService.getCachedSettings()?.enable_agent_companion).toBe(false);
+  });
+
+  it('cannot repopulate the cache from a previous device read', async () => {
+    const { activateSurface } = await import('@/infrastructure/peer-device/deviceSurface');
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+    let finish!: (value: unknown) => void;
+    configManagerMock.getConfig.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = aiExperienceConfigService.getSettingsAsync();
+    activateSurface('peer');
+    const rejected = expect(pending).rejects.toMatchObject({ isSurfaceChangedError: true });
+    finish({ enable_agent_companion: true });
+    await rejected;
+    expect(aiExperienceConfigService.getCachedSettings()).toBeNull();
   });
 
   it('does not read app.ai_experience during module import', async () => {
@@ -64,7 +91,7 @@ describe('AIExperienceConfigService startup behavior', () => {
     expect(configManagerMock.getConfig).toHaveBeenCalledWith('app.ai_experience');
   });
 
-  it('uses the blue-golden cat when no companion pet has been configured', async () => {
+  it('uses BitBlob when no companion pet has been configured', async () => {
     configManagerMock.getConfig.mockResolvedValueOnce({
       enable_agent_companion: true,
     });
@@ -73,10 +100,10 @@ describe('AIExperienceConfigService startup behavior', () => {
     const settings = await aiExperienceConfigService.getSettingsAsync();
 
     expect(settings.agent_companion_pet).toMatchObject({
-      id: 'blue-golden',
-      displayName: '困困',
-      packagePath: '/agent-companion-pets/blue-golden',
-      spritesheetPath: '/agent-companion-pets/blue-golden/spritesheet.png',
+      id: 'bitblob',
+      displayName: 'BitBlob',
+      packagePath: '/agent-companion-pets/bitblob',
+      spritesheetPath: '/agent-companion-pets/bitblob/spritesheet.webp',
     });
   });
 
@@ -150,5 +177,74 @@ describe('AIExperienceConfigService startup behavior', () => {
     );
     await aiExperienceConfigService.reload();
     expect(aiExperienceConfigService.getSettings().quick_actions).toEqual([]);
+  });
+
+  it('keeps commit co-author settings unavailable when an older host omits the field', async () => {
+    configApiMock.getConfig.mockResolvedValueOnce({ quick_actions: [] });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    const settings = await aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true });
+
+    expect(settings.enable_git_commit_coauthor).toBeUndefined();
+    expect(settings.quick_actions).toEqual([]);
+  });
+
+  it('keeps prompt suggestion settings unavailable when an older host omits the field', async () => {
+    configApiMock.getConfig.mockResolvedValueOnce({ enable_session_title_generation: false });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    const settings = await aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true });
+
+    expect(settings.enable_prompt_suggestion).toBeUndefined();
+    expect(settings.enable_session_title_generation).toBe(false);
+  });
+
+  it('persists a prompt suggestion opt-out as a single field write', async () => {
+    const persisted = { enable_prompt_suggestion: true, quick_actions: [] as unknown[] };
+    configManagerMock.getConfig.mockResolvedValue(persisted);
+    configManagerMock.setConfig.mockImplementation(async (path: string, value: unknown) => {
+      expect(path).toBe('app.ai_experience.enable_prompt_suggestion');
+      persisted.enable_prompt_suggestion = value as boolean;
+    });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    await aiExperienceConfigService.saveSettings({ enable_prompt_suggestion: false });
+    await aiExperienceConfigService.reload();
+
+    expect(configManagerMock.setConfig).toHaveBeenCalledTimes(1);
+    expect(aiExperienceConfigService.getSettings().enable_prompt_suggestion).toBe(false);
+  });
+
+  it('persists a co-author opt-out without overwriting quick actions or voice settings', async () => {
+    const persisted = {
+      enable_git_commit_coauthor: true,
+      voice_input: { provider: 'cloud', model_id: 'saved-model' },
+      quick_actions: [{ id: 'custom', label: 'Review', prompt: 'Review changes', enabled: false }],
+    };
+    configManagerMock.getConfig.mockResolvedValue(persisted);
+    configManagerMock.setConfig.mockImplementation(async (path: string, value: unknown) => {
+      expect(path).toBe('app.ai_experience.enable_git_commit_coauthor');
+      persisted.enable_git_commit_coauthor = value as boolean;
+    });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    await aiExperienceConfigService.saveSettings({ enable_git_commit_coauthor: false });
+    await aiExperienceConfigService.reload();
+
+    expect(configManagerMock.setConfig).toHaveBeenCalledTimes(1);
+    expect(aiExperienceConfigService.getSettings()).toMatchObject({
+      enable_git_commit_coauthor: false,
+      voice_input: persisted.voice_input,
+      quick_actions: persisted.quick_actions,
+    });
+  });
+
+  it('reports host read failures instead of supplying defaults to a settings editor', async () => {
+    const error = new Error('Execution host unavailable');
+    configApiMock.getConfig.mockRejectedValueOnce(error);
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    await expect(aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true }))
+      .rejects.toBe(error);
   });
 });

@@ -55,6 +55,7 @@ pub(crate) fn account_snapshot_projection(
             .map(|device| AccountDevice {
                 device_id: device.device_id,
                 device_name: device.device_name,
+                device_kind: device.device_kind,
                 device_alias: device.device_alias,
                 device_model: device.device_model,
                 device_os: device.device_os,
@@ -239,6 +240,16 @@ impl CliAccountRoutingHost {
             .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
         let _routing_guard = self.lifecycle.write().await;
         self.stop_routing_locked().await;
+    }
+
+    pub(crate) async fn connection_state(
+        &self,
+    ) -> openbitfun_core::service::remote_connect::relay_client::ConnectionState {
+        let client = self.relay_client.read().await.clone();
+        match client {
+            Some(client) => client.connection_state().await,
+            None => openbitfun_core::service::remote_connect::relay_client::ConnectionState::Disconnected,
+        }
     }
 
     pub(crate) async fn stop_device_routing(&self) {
@@ -630,6 +641,10 @@ impl CliAccountRoutingHost {
 
 #[async_trait]
 impl AccountRuntimeHost for CliAccountRoutingHost {
+    fn is_cli_host(&self) -> bool {
+        true
+    }
+
     async fn retire_background_routing_owner(
         &self,
     ) -> std::result::Result<bool, BackgroundRoutingOwnerRetirementError> {
@@ -670,6 +685,7 @@ impl AccountRuntimeHost for CliAccountRoutingHost {
     }
 
     async fn stop_device_routing(&self) {
+        crate::remote_control::retire_daemon_account().await;
         self.stop_routing().await;
     }
 }

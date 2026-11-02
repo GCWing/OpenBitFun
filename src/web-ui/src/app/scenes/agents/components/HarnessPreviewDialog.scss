@@ -1,0 +1,169 @@
+.harness-preview {
+  &.agent-detail-dialog { block-size: auto; }
+  &[data-profile='Minimal'] { color: var(--openbitfun-color-identity-harness-minimal); }
+  &[data-profile='Standard'] { color: var(--openbitfun-color-identity-harness-standard); }
+  &[data-profile='Ultimate'] { color: var(--openbitfun-color-identity-harness-ultimate); }
+  &[data-profile='Creative'] { color: var(--openbitfun-color-identity-harness-creative); }
+
+  &__header { align-items: center; }
+  &__mark { flex: none; color: currentColor; }
+  &__body { gap: var(--openbitfun-space-4); }
+
+  &__body,
+  &__footer {
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-exit),
+      transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-exit);
+  }
+
+  &[data-detail-view='transitioning'] &__body,
+  &[data-detail-view='transitioning'] &__footer {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--openbitfun-motion-distance-sm)));
+    pointer-events: none;
+  }
+
+  &__footer {
+    padding-inline: var(--openbitfun-overlay-dialog-content-padding-lg);
+  }
+
+  &__manage {
+    box-sizing: border-box;
+    inline-size: 100%;
+  }
+
+  &__description {
+    color: var(--openbitfun-color-content-secondary);
+    text-align: center;
+    text-wrap: balance;
+    line-height: var(--openbitfun-type-body-md-line-height);
+  }
+
+  &__stage {
+    appearance: none;
+    position: relative;
+    flex: none;
+    width: 100%;
+    aspect-ratio: 400 / 248;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    border-radius: var(--openbitfun-radius-xl);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+      outline-offset: var(--openbitfun-focus-offset);
+    }
+  }
+
+  &__tile,
+  &__actor,
+  &__dot,
+  &__app,
+  &__app-art,
+  &__app-button,
+  &__sparkle { position: absolute; }
+
+  &__tile {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    border-radius: var(--openbitfun-radius-lg);
+    transform-origin: 50% 100%;
+    background: var(--openbitfun-color-action-neutral-surface-hover);
+    box-shadow: var(--openbitfun-shadow-xs);
+
+    &[data-lit] {
+      background: color-mix(in srgb, currentColor 12%, var(--openbitfun-color-surface-raised));
+    }
+
+    &[data-done] { background: currentColor; }
+    &[data-done] > [data-openbitfun-component='icon'] { color: var(--openbitfun-color-content-inverse); }
+    > [data-openbitfun-component='icon'] { width: 45%; height: 45%; }
+  }
+
+  &__actor { pointer-events: none; }
+
+  &__actor-shadow {
+    position: absolute;
+    left: 14%;
+    top: 89%;
+    width: 72%;
+    height: 9%;
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--openbitfun-color-content-muted);
+    filter: blur(2px);
+  }
+
+  &__actor-art {
+    position: absolute;
+    inset: 0;
+    transform-origin: 50% 93.75%;
+
+    > span,
+    svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  }
+
+  &__dot { border-radius: var(--openbitfun-radius-pill); }
+
+  &__app {
+    box-sizing: border-box;
+    padding: 2% 2.5%;
+    border-radius: var(--openbitfun-radius-xl);
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    background: var(--openbitfun-color-surface-raised);
+    box-shadow: var(--openbitfun-shadow-lg);
+  }
+
+  &__app-dots {
+    display: flex;
+    gap: var(--openbitfun-space-1);
+
+    > i {
+      display: block;
+      width: 5%;
+      aspect-ratio: 1;
+      border-radius: var(--openbitfun-radius-pill);
+      background: var(--openbitfun-color-content-muted);
+    }
+  }
+
+  &__app-art {
+    border-radius: var(--openbitfun-radius-md);
+    background: linear-gradient(135deg, currentColor, color-mix(in srgb, currentColor 40%, var(--openbitfun-color-surface-raised)));
+
+    > span {
+      position: absolute;
+      width: 20%;
+      aspect-ratio: 1;
+      top: 20%;
+      right: 10%;
+      border-radius: var(--openbitfun-radius-pill);
+      background: var(--openbitfun-color-content-inverse);
+      opacity: 0.4;
+    }
+  }
+
+  &__app-button {
+    border-radius: var(--openbitfun-radius-pill);
+    background: currentColor;
+  }
+
+  &__sparkle {
+    display: grid;
+    place-items: center;
+    > [data-openbitfun-component='icon'] { width: 100%; height: 100%; }
+  }
+
+  @media (forced-colors: active) {
+    &__tile,
+    &__app { border: 1px solid CanvasText; }
+  }
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+    &__body,
+    &__footer { transition: none; }
+  }
+}

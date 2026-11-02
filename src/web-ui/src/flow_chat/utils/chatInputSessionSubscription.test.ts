@@ -17,6 +17,15 @@ function session(overrides: Partial<Session> = {}): Session {
 }
 
 describe('chatInputSessionSubscriptionKey', () => {
+  it.each<Partial<Session>>([
+    { continuationPolicy: 'fresh_only' }, { historyState: 'hydrating' },
+    { persistedStatus: 'archived' }, { parentSessionId: 'new-parent' },
+    { config: { dispatchTargetRequest: { kind: 'ssh', connectionId: 'host' } } },
+    { draft: { workspaceId: 'other', phase: 'editing', turnId: 'first' } },
+  ])('invalidates target eligibility when conversation facts change: %j', change => {
+    expect(chatInputSessionSubscriptionKey(session(change))).not.toBe(chatInputSessionSubscriptionKey(session()));
+  });
+
   it('invalidates the first-turn lock when projected history counts change', () => {
     expect(chatInputSessionSubscriptionKey(session({ totalTurnCount: 1 }))).not.toBe(
       chatInputSessionSubscriptionKey(session({ totalTurnCount: 0 })),

@@ -40,6 +40,15 @@ pub struct BackgroundRoutingOwnerRetirementError {
 
 #[async_trait]
 pub trait AccountRuntimeHost: Send + Sync {
+    /// Whether this host is headless (the CLI/TUI delivery profiles).
+    ///
+    /// Such a host reports itself as a CLI device, but only to a Relay that
+    /// advertises the capability for it — see
+    /// `AccountClient::reported_device_kind`. A Desktop host keeps the default.
+    fn is_cli_host(&self) -> bool {
+        false
+    }
+
     async fn retire_background_routing_owner(
         &self,
     ) -> std::result::Result<bool, BackgroundRoutingOwnerRetirementError>;
@@ -80,6 +89,9 @@ pub struct AccountInfo {
 pub struct AccountDevice {
     pub device_id: String,
     pub device_name: String,
+    /// Kind the device reported to the Relay (`desktop`, `cli`, …). Absent on
+    /// legacy devices and older Relays.
+    pub device_kind: Option<String>,
     pub device_alias: Option<String>,
     pub device_model: Option<String>,
     pub device_os: Option<String>,
@@ -211,7 +223,7 @@ impl AccountRuntime {
 
     pub async fn try_restore_session(self: &Arc<Self>) -> Option<String> {
         if let Ok(Some(loaded)) = session_store::load_session_detailed() {
-            if openbitfun_services_integrations::remote_connect::account::is_retired_official_relay(
+            if openbitfun_services_integrations::remote_connect::account::persisted_relay_requires_migration(
                 &loaded.relay_url,
             ) {
                 if let Some(device_id) = loaded.device_id.as_deref() {
@@ -348,8 +360,11 @@ impl AccountRuntime {
 
         let device = current_device_identity()?;
         let client = AccountClient::new();
+        let device_kind = client
+            .reported_device_kind(&relay_url, self.host.is_cli_host())
+            .await;
         let (session, profile) = client
-            .login_with_identity(&relay_url, &device)
+            .login_with_identity(&relay_url, &device, device_kind)
             .await
             .map_err(|error| anyhow!("login failed: {error}"))?;
         let previous_account_context = self.account_context.read().await.clone();
@@ -383,7 +398,7 @@ impl AccountRuntime {
                 log::warn!("Failed to clean up retired account uploads: {error}");
             }
         }
-        session_store::clear_session();
+        // Atomic replacement preserves the previous credential if saving fails.
 
         let user_id = session.user_id.clone();
         let token = session.token.clone();
@@ -550,6 +565,7 @@ impl AccountRuntime {
             .map(|device| AccountDevice {
                 device_id: device.device_id,
                 device_name: device.device_name,
+                device_kind: device.device_kind,
                 device_alias: device.device_alias,
                 device_model: device.device_model,
                 device_os: device.device_os,
