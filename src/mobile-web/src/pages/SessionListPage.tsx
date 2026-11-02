@@ -1,8 +1,7 @@
 import { WorkspaceIcon as ProjectWorkspaceIcon } from '../components/WorkspaceIcon';
+import { SessionTypeIcon } from '../components/SessionTypeIcon';
 import { subscribeHostCatalog } from '../services/HostCatalogSubscription';
 import {
-  AppWindow as LucideAppWindow,
-  Bot as LucideBot,
   Check as LucideCheck,
   ChevronRight as LucideChevronRight,
   ChevronsUpDown as LucideChevronsUpDown,
@@ -11,7 +10,6 @@ import {
   FolderOpen as LucideFolderOpen,
   LoaderCircle as LucideLoaderCircle,
   LogOut as LucideLogOut,
-  MessageSquare as LucideMessageSquare,
   MessageCircle as LucideMessageCircle,
   Monitor as LucideMonitor,
   Moon as LucideMoon,
@@ -22,7 +20,6 @@ import {
   Sun as LucideSun,
   Terminal as LucideTerminal,
   User as LucideUser,
-  Users as LucideUsers,
   Wrench as LucideWrench,
   X as LucideX,
 } from 'lucide-react';
@@ -64,7 +61,9 @@ import { describeRemoteError } from '../services/remoteErrorPresentation';
 import { deviceFailurePresentation } from '../services/deviceFailureCopy';
 import {
   isClawAgent,
+  isCoworkAgent,
   sameWorkspace,
+  sessionIconKind,
   selectedSessionWorkspaceContext,
   sessionMatchesWorkspace,
   sessionWorkspaceContext,
@@ -227,10 +226,6 @@ function agentLabel(agentType: string, t: (key: string) => string): string {
   }
 }
 
-function isCoworkAgent(agentType: string): boolean {
-  return agentType === 'cowork' || agentType === 'Cowork';
-}
-
 /** Pick first workspace suitable for Expert mode (exclude Claw assistant roots when kind is known). */
 function pickFirstProWorkspace(list: RecentWorkspaceEntry[]): RecentWorkspaceEntry | undefined {
   if (list.length === 0) return undefined;
@@ -247,24 +242,6 @@ function truncateMiddle(str: string, maxLen: number): string {
   const head = Math.ceil(keep * 0.6);
   const tail = keep - head;
   return str.slice(0, head) + '...' + str.slice(-tail);
-}
-
-function SessionTypeIcon({ agentType }: { agentType: string }) {
-  if (isCoworkAgent(agentType)) {
-    return (
-      <LucideUsers width="18" height="18" stroke="currentColor" aria-hidden="true" />
-    );
-  }
-
-  if (isClawAgent(agentType)) {
-    return (
-      <LucideAppWindow width="18" height="18" stroke="currentColor" aria-hidden="true" />
-    );
-  }
-
-  return (
-    <LucideMessageSquare width="18" height="18" stroke="currentColor" aria-hidden="true" />
-  );
 }
 
 /* Mode Selection Icons */
@@ -1697,7 +1674,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                         <MobileButton appearance="plain" block className="harmony-sidebar__workspace-main" onClick={() => void handleToggleCompactWorkspace(workspace)}>
                           <span className="harmony-sidebar__folder-icon" aria-hidden="true">
                             {workspace.workspace_kind === 'assistant'
-                              ? <LucideBot width="21" height="21" stroke="currentColor" aria-hidden="true" />
+                              ? <SessionTypeIcon workspaceKind="assistant" size={21} />
                               : <ProjectWorkspaceIcon manager={sessionMgr} workspace={workspace} />}
                           </span>
                           <span className="harmony-sidebar__workspace-copy">
@@ -1724,7 +1701,11 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                               onContextMenu={(event) => { event.preventDefault(); setMenuSession(session); }}
                             >
                               <MobileButton appearance="plain" block className="harmony-sidebar__session-main" onClick={(event) => handleSessionClick(session, event, workspace)}>
-                                <span className="harmony-sidebar__session-icon" aria-hidden="true"><LucideMessageCircle width="18" height="18" stroke="currentColor" /></span>
+                                <span className="harmony-sidebar__session-icon" aria-hidden="true">
+                                  {sessionIconKind(session.agent_type, workspace.workspace_kind) === 'assistant'
+                                    ? <SessionTypeIcon agentType={session.agent_type} workspaceKind={workspace.workspace_kind} />
+                                    : <LucideMessageCircle width="18" height="18" stroke="currentColor" />}
+                                </span>
                                 <span className="harmony-sidebar__row-label">{session.name || t('sessions.untitledSession')}</span>
                               </MobileButton>
                               <MobileIconButton

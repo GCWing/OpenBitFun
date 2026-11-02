@@ -10,7 +10,7 @@ const code = ts.transpileModule(source, {
 const {
   mergeWorkspaceSessions, sessionMatchesWorkspace, workspaceIdentityKey,
   resolveLegacyWorkspaceReference, sameWorkspace,
-  isClawAgent, isRemoteSessionWorkspace, resolveChatHeaderContext, selectedSessionWorkspaceContext,
+  isClawAgent, isCoworkAgent, sessionIconKind, isRemoteSessionWorkspace, resolveChatHeaderContext, selectedSessionWorkspaceContext,
   sessionWorkspaceContext, workspaceContext,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -632,4 +632,22 @@ test('a path-only session context cannot open the rollback gate over a possibly 
   assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_kind: 'normal' }, selectedSsh, [sshRow]), false);
   assert.equal(isRemoteSessionWorkspace('Claw', pathOnly, selectedSsh, [sshRow]), false);
   assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_kind: 'assistant' }, selectedSsh, [sshRow]), false);
+});
+
+test('Claw sessions and assistant entries share one icon kind (#2363)', async () => {
+  assert.equal(sessionIconKind('Claw'), 'assistant');
+  assert.equal(sessionIconKind('claw'), 'assistant');
+  assert.equal(sessionIconKind(undefined, 'assistant'), 'assistant');
+  assert.equal(sessionIconKind('agentic', 'assistant'), 'assistant');
+  assert.equal(sessionIconKind('Cowork'), 'cowork');
+  assert.equal(isCoworkAgent('cowork'), true);
+  assert.equal(sessionIconKind('agentic'), 'code');
+  assert.equal(sessionIconKind('agentic', 'remote'), 'code');
+
+  const page = await readFile(new URL('../src/pages/SessionListPage.tsx', import.meta.url), 'utf8');
+  const icon = await readFile(new URL('../src/components/SessionTypeIcon.tsx', import.meta.url), 'utf8');
+  assert.match(icon, /assistant: LucideBot/);
+  assert.doesNotMatch(page, /AppWindow|function SessionTypeIcon|Bot as LucideBot/);
+  assert.match(page, /<SessionTypeIcon workspaceKind="assistant"/);
+  assert.match(page, /renderSessionIcon=\{\(agentType\) => <SessionTypeIcon agentType=\{agentType\} \/>\}/);
 });

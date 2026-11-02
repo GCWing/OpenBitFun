@@ -265,6 +265,25 @@ export function isClawAgent(agentType: string): boolean {
   return agentType === 'claw' || agentType === 'Claw';
 }
 
+export function isCoworkAgent(agentType: string): boolean {
+  return agentType === 'cowork' || agentType === 'Cowork';
+}
+
+export type SessionIconKind = 'assistant' | 'cowork' | 'code';
+
+/**
+ * The one icon mapping for sessions and assistant entries. Claw sessions and
+ * assistant workspaces share the assistant icon wherever they are listed.
+ */
+export function sessionIconKind(
+  agentType: string | undefined,
+  workspaceKind?: RecentWorkspaceEntry['workspace_kind'],
+): SessionIconKind {
+  if (isClawAgent(agentType ?? '') || workspaceKind === 'assistant') return 'assistant';
+  if (isCoworkAgent(agentType ?? '')) return 'cowork';
+  return 'code';
+}
+
 /**
  * The workspace a session belongs to, captured when the session is opened. Every
  * field is optional because pre-ID hosts and old navigation records omit them.
