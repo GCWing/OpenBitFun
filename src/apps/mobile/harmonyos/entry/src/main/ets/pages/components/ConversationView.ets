@@ -969,7 +969,7 @@ export struct ConversationView {
       this.stagingTargetText = '';
       this.composerSnapshot = '';
       // Any sheet up belongs to the previous context, so none survives the switch.
-      this.closeSheet();
+      this.sheetPresented = false;
       this.fullTextMessage = '';
       this.fullTextTurnId = '';
       this.showHeaderActions = false;
