@@ -15,7 +15,9 @@ import type { RelayHttpClient } from '../../src/services/RelayHttpClient';
 import { queueStorage, type QueueItem, type QueueOutboxRecord } from '../../../shared/dialog-queue/HostDialogQueue';
 
 /** Real sidebar, chat, manager and durable outbox; only host IO is simulated. */
-export async function mountAssistantSessionFixture({ legacyWorkspace = false, queueSupported = true, legacyPending = false, selectedProject = false } = {}) {
+export async function mountAssistantSessionFixture({ legacyWorkspace = false, queueSupported = true, legacyPending = false, selectedProject = false, openChat = false, holdSubmissions = false } = {}) {
+  let streamHandlers: Parameters<RemoteSessionManager['subscribeSessionStream']>[1] | undefined;
+  let settleSubmission: ((error?: string) => void) | undefined;
   const account = 'assistant-mode-account', device = 'assistant-mode-host', sessionId = 'assistant-session';
   const capabilities = ['host_stream_v1', ...(queueSupported ? ['dialog_queue_v1'] : []),
     ...(legacyWorkspace ? [] : ['workspace_id_references_v1', 'harness_profiles_v1'])];
@@ -32,7 +34,7 @@ export async function mountAssistantSessionFixture({ legacyWorkspace = false, qu
   const projectSessions: SessionInfo[] = projects.map((workspace) => ({ session_id: `${workspace.name}-session`,
     name: `${workspace.name} session`, agent_type: 'agentic', workspace_id: workspace.workspace_id,
     workspace_path: workspace.path, workspace_name: workspace.name, created_at: '1', updated_at: '1', message_count: 0 }));
-  const calls: Array<Record<string, any>> = [], sessions: SessionInfo[] = legacyPending ? [session] : [];
+  const calls: Array<Record<string, any>> = [], sessions: SessionInfo[] = legacyPending || openChat ? [session] : [];
   const receipts = new Map<string, QueueItem>();
   const scope = JSON.stringify([account, device, sessionId]);
   const pending: QueueOutboxRecord = { scope, key: JSON.stringify([scope, 'before-upgrade-turn']),
@@ -48,6 +50,7 @@ export async function mountAssistantSessionFixture({ legacyWorkspace = false, qu
     isControlTargetCurrent: (target: { deviceId: string; epoch: number }) => target.deviceId === device && target.epoch === 0,
     onControlTargetChange: () => () => {}, onDeviceDirectoryChanged: () => () => {},
     subscribeHostStream: async (_id: string, handlers: Parameters<RemoteSessionManager['subscribeSessionStream']>[1]) => {
+      streamHandlers = handlers;
       handlers.onHistoryState?.({ hasMore: false, oldestSeq: null, cursor: 0, truncated: false });
       handlers.onCaughtUp?.();
       return { close() {}, wake() {}, loadOlder: async () => {} };
@@ -78,6 +81,9 @@ export async function mountAssistantSessionFixture({ legacyWorkspace = false, qu
           const request = command.request;
           let receipt = request.action === 'get' ? receipts.get(request.turnId) ?? null : null;
           if (request.action === 'submit') {
+            if (holdSubmissions) await new Promise<void>((resolve, reject) => {
+              settleSubmission = error => error ? reject(new Error(error)) : resolve();
+            });
             const message = request.message;
             if (!['Claw', 'Cowork', 'agentic', 'minimal', 'Ultra', 'Creative', 'plugin::claw'].includes(message.agentType)) {
               throw new Error(`Unknown session mode: ${message.agentType}`);
@@ -105,7 +111,7 @@ export async function mountAssistantSessionFixture({ legacyWorkspace = false, qu
   document.body.replaceChildren(element);
   const root = createRoot(element);
   function Fixture() {
-    const [selected, setSelected] = useState<{ id: string; agentType?: string; workspace?: SessionWorkspaceContext } | null>(legacyPending ? { id: sessionId, agentType: 'Claw' } : null);
+    const [selected, setSelected] = useState<{ id: string; agentType?: string; workspace?: SessionWorkspaceContext } | null>(legacyPending || openChat ? { id: sessionId, agentType: 'Claw' } : null);
     return <ThemeProvider><I18nProvider>{selected
       ? <ChatPage sessionMgr={manager} sessionId={selected.id} sessionName="New Session" agentType={selected.agentType}
         workspace={selected.workspace}
@@ -116,5 +122,14 @@ export async function mountAssistantSessionFixture({ legacyWorkspace = false, qu
     }</I18nProvider></ThemeProvider>;
   }
   root.render(<Fixture />);
-  return { calls, manager, pending, receipts, sessionId, dispose: () => root.unmount() };
+  return { calls, manager, pending, receipts, sessionId, dispose: () => root.unmount(),
+    ready: () => !!streamHandlers,
+    event: (event: Parameters<NonNullable<typeof streamHandlers>['onEvent']>[0]) => streamHandlers?.onEvent(event),
+    completeSubmission(error?: string) {
+      if (!settleSubmission) throw new Error('No submission is waiting for acknowledgement');
+      const settle = settleSubmission;
+      settleSubmission = undefined;
+      settle(error);
+    },
+  };
 }
