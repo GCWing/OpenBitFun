@@ -237,6 +237,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::MiniappAgentContextFilesV1,
     PeerHostCapability::MiniappAgentImagesV1,
     PeerHostCapability::WslWorkspacesV1,
+    PeerHostCapability::SshProxyCommandV1,
     PeerHostCapability::ComputerUseSharingV1,
     PeerHostCapability::ProductControlV1,
     PeerHostCapability::RemoteConnectControlV1,
