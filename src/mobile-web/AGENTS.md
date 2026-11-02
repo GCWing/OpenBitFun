@@ -63,6 +63,7 @@ pnpm --dir src/mobile-web run test:session-model-browser # Per-session host mode
 pnpm --dir src/mobile-web run test:account-login # account login without an online desktop
 pnpm --dir src/mobile-web run test:account-browser # real Chrome tabs, persistence, migration, races; simulated Relay
 pnpm --dir src/mobile-web run test:images # image preparation and upload limits
+pnpm --dir src/mobile-web run test:session-deletion # deleting the open session moves to its nearest surviving neighbor
 pnpm --dir src/mobile-web run test:workspace-identity # workspace ID wire projection, capability gate, legacy routing and cache records
 pnpm --dir src/mobile-web run test:remote-cache-browser # real IndexedDB read of pre-ID session cache records
 pnpm --dir src/mobile-web run type-check
