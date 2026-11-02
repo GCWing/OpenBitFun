@@ -15,6 +15,7 @@ impl WebSearchProviderId {
     pub const EXA_SEARCH_API: &'static str = "exa_search_api";
     pub const TAVILY: &'static str = "tavily";
     pub const DEEPSEEK: &'static str = "deepseek";
+    pub const KEENABLE: &'static str = "keenable";
     pub const OPENBITFUN_SEARCH_HTTP: &'static str = "openbitfun_search_http";
 
     pub fn new(value: impl Into<String>) -> Self {

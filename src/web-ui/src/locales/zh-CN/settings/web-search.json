@@ -6,6 +6,7 @@
     "exaSearchApi": "Exa Search API",
     "tavily": "Tavily Search API",
     "deepseek": "DeepSeek Search API",
+    "keenable": "Keenable Search API",
     "openbitfunSearchHttp": "自定义 HTTP 服务"
   },
   "providerDescriptions": {
@@ -13,6 +14,7 @@
     "exaSearchApi": "需要 Exa API Key，在下方填写并保存",
     "tavily": "需要 Tavily API Key，在下方填写并保存",
     "deepseek": "需要 DeepSeek API Key，在下方填写并保存",
+    "keenable": "无需 API Key；可在下方保存 Keenable API Key 以提高速率限制",
     "openbitfunSearchHttp": "接入自建或企业内部搜索服务，需填写服务地址并按需配置认证"
   },
   "auth": {
@@ -73,7 +75,8 @@
   },
   "status": {
     "configured": "执行主机已配置",
-    "missing": "执行主机缺少凭据"
+    "missing": "执行主机缺少凭据",
+    "optionalMissing": "未保存 Key，搜索使用免费的免 Key 额度"
   },
   "protocol": {
     "request": {

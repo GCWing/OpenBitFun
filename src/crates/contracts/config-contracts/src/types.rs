@@ -1392,6 +1392,10 @@ fn default_deepseek_credential_id() -> String {
     "deepseek-search-api".to_string()
 }
 
+fn default_keenable_credential_id() -> String {
+    "keenable-search-api".to_string()
+}
+
 fn default_openbitfun_search_http_credential_id() -> String {
     "openbitfun-search-http".to_string()
 }
@@ -1426,6 +1430,7 @@ pub struct WebSearchProviderConfigs {
     pub exa_search_api: WebSearchCredentialProviderConfig,
     pub tavily: WebSearchCredentialProviderConfig,
     pub deepseek: WebSearchCredentialProviderConfig,
+    pub keenable: WebSearchCredentialProviderConfig,
     pub openbitfun_search_http: OpenBitFunSearchHttpConfig,
     #[serde(flatten)]
     pub unknown: serde_json::Map<String, serde_json::Value>,
@@ -1444,6 +1449,10 @@ impl Default for WebSearchProviderConfigs {
             },
             deepseek: WebSearchCredentialProviderConfig {
                 credential_id: default_deepseek_credential_id(),
+                unknown: serde_json::Map::new(),
+            },
+            keenable: WebSearchCredentialProviderConfig {
+                credential_id: default_keenable_credential_id(),
                 unknown: serde_json::Map::new(),
             },
             openbitfun_search_http: OpenBitFunSearchHttpConfig::default(),
@@ -4522,6 +4531,10 @@ mod tests {
             "deepseek-search-api"
         );
         assert_eq!(
+            config.web_search.providers.keenable.credential_id,
+            "keenable-search-api"
+        );
+        assert_eq!(
             config.web_search.providers.exa_search_api.credential_id,
             "exa-search-api"
         );
@@ -4552,6 +4565,38 @@ mod tests {
         config
             .providers
             .deepseek
+            .unknown
+            .insert("futureOption".to_string(), serde_json::json!(true));
+        let restored: WebSearchConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        assert_eq!(restored, config);
+    }
+
+    #[test]
+    fn web_search_keenable_config_preserves_legacy_payload_and_unknown_options() {
+        let legacy = serde_json::json!({
+            "provider": "deepseek",
+            "providers": {"deepseek": {"credentialId": "existing-deepseek"}},
+            "selectionRevision": 3
+        });
+        let mut config: WebSearchConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(
+            config.providers.keenable.credential_id,
+            "keenable-search-api"
+        );
+        let round_trip = serde_json::to_value(&config).unwrap();
+        assert_eq!(round_trip["provider"], legacy["provider"]);
+        assert_eq!(
+            round_trip["providers"]["deepseek"],
+            legacy["providers"]["deepseek"]
+        );
+        assert_eq!(round_trip["selectionRevision"], legacy["selectionRevision"]);
+
+        config.provider = "keenable".to_string();
+        config.providers.keenable.credential_id = "custom-keenable-ref".to_string();
+        config
+            .providers
+            .keenable
             .unknown
             .insert("futureOption".to_string(), serde_json::json!(true));
         let restored: WebSearchConfig =
