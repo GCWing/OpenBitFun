@@ -435,6 +435,7 @@ export const GlobalSearchContent: React.FC<GlobalSearchContentProps> = ({
             <SearchField
               ref={inputRef}
               className="global-search__query global-search__query--system"
+              variant={variant === 'modal' ? 'embedded' : 'default'}
               value={query}
               onValueChange={(nextQuery) => {
                 setQuery(nextQuery);
@@ -824,7 +825,7 @@ const GlobalSearchRoot: React.FC = () => {
       data-testid="global-search-dialog"
     >
       <div className="global-search-dialog__material" aria-hidden="true" />
-      <DialogBody className="global-search-modal-content">
+      <DialogBody className="global-search-modal-content" inset="none">
         <GlobalSearchContent
           active={open}
           autoFocus

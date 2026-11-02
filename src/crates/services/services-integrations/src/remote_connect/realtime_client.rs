@@ -214,7 +214,12 @@ impl RealtimeSender {
             .timeout(Duration::from_secs(10))
             .await?;
         if response.payload.0["ok"] != true {
-            bail!("Relay event rejected");
+            bail!(
+                "Relay event rejected: {}",
+                response.payload.0["error"]
+                    .as_str()
+                    .unwrap_or("no reason provided by relay")
+            );
         }
         Ok(())
     }

@@ -15,11 +15,12 @@ vi.mock('@/flow_chat/store/FlowChatStore', () => ({
   }]]) }) },
 }));
 vi.mock('../sessions/SessionsSection', () => ({
-  default: ({ defaultSessionAction: action, onSessionOpened }: {
+  default: ({ defaultSessionAction: action, onSessionOpened, useWorkspaceViewPreferences }: {
     defaultSessionAction: { sessionId: string | null; disabled: boolean; onChange: (id: string) => void };
     onSessionOpened?: () => void;
+    useWorkspaceViewPreferences?: boolean;
   }) => <>
-    <span data-default={action.sessionId ?? ''} />
+    <span data-default={action.sessionId ?? ''} data-shared-filters={useWorkspaceViewPreferences} />
     <button data-set-default disabled={action.disabled} onClick={() => action.onChange('chosen')}>Pin</button>
     <button data-open-session onClick={onSessionOpened}>Open</button>
   </>,
@@ -54,6 +55,7 @@ describe('assistant history default selection', () => {
   it('persists the selected session after preparing its draft, and allows clearing the default', async () => {
     await render();
     expect(container.querySelector('[data-default]')?.getAttribute('data-default')).toBe('previous');
+    expect(container.querySelector('[data-shared-filters]')?.getAttribute('data-shared-filters')).toBe('true');
     await act(async () => container.querySelector<HTMLButtonElement>('[data-set-default]')!.click());
     expect(mocks.prepare).toHaveBeenCalledOnce();
     expect(mocks.save).toHaveBeenCalledWith('assistant', 'chosen');

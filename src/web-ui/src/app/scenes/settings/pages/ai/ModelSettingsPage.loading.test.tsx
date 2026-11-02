@@ -131,8 +131,8 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(editor()!.textContent).not.toContain('bigmodel.cn');
     expect(editor()!.querySelector('.openbitfun-model-settings__resolved-url')).toBeNull();
     expect(editorDraft().dirty).toBe(false);
-    expect(editor()!.getAttribute('data-preset')).toBe('default');
-    expect(editor()!.getAttribute('data-size')).toBe('lg');
+    expect(editor()!.getAttribute('data-preset')).toBe('panel');
+    expect(editor()!.getAttribute('data-size')).toBe('xl');
     expect(endpoint.closest('[data-field-surface]')?.getAttribute('data-field-surface')).toBe('filled');
     await act(async () => editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-advanced-toggle"] button')!.click());
     expect(editorDraft().dirty).toBe(false);
@@ -1063,7 +1063,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
         const editor = document.querySelector<HTMLElement>('.openbitfun-model-settings__editor-dialog')!;
         const brand = editor.querySelector<HTMLElement>('[data-testid="settings-provider-editor-brand"]')!;
         expect(brand.getAttribute('aria-label')).toBe(model.name);
-        expect(editor.getAttribute('data-preset')).toBe('default');
+        expect(editor.getAttribute('data-preset')).toBe('panel');
         expect(editor.querySelector('[data-openbitfun-part="title"]')?.classList.contains('sr-only')).toBe(true);
         expect(brand.closest('[data-openbitfun-part="heading"]')).not.toBeNull();
         if (kind === 'subscription') expect(brand.querySelector<HTMLElement>('[data-product-logo="codex"]')?.style.width).toBe('64px');

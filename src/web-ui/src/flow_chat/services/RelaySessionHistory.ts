@@ -6,6 +6,18 @@ import { resourceBudget } from '@/shared/utils/resourceBudget';
 
 const log = createLogger('RelaySessionHistory');
 
+/**
+ * One frame. `setTimeout`, not `requestAnimationFrame`: a hidden window suspends
+ * animation frames, and live records must keep applying while it is hidden.
+ */
+const RECORD_FLUSH_DELAY_MS = 16;
+
+/**
+ * A page in flight renders as one batch at its ready event, even when its record
+ * events span frames. Only a backstop, so a stalled page cannot hold live records.
+ */
+const PAGE_RECORD_FLUSH_DELAY_MS = 250;
+
 export interface RelayHistoryReady {
   sessionId: string;
   hasMore: boolean;
@@ -33,29 +45,45 @@ export class RelaySessionHistory {
   private rejectPage: ((error: unknown) => void) | null = null;
   private visible = false;
   private prefetchCredit = 0;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly fail: (error: unknown) => void;
 
+  /**
+   * `onRecord` must only reduce the record: the host sends each record of a page
+   * as its own event, so rendering there is quadratic in the items of a long
+   * turn. It returns true for a record that cannot wait for the next frame.
+   * `onFlush` renders what was reduced. Live pages have no ready event, so the
+   * timer is what publishes them; a replayed page flushes before its ready event
+   * so a reader never sees ready without records.
+   */
   constructor(
     readonly sessionId: string,
-    onRecord: (record: SessionRecord) => void,
+    onRecord: (record: SessionRecord) => boolean | void,
     onReady: (ready: RelayHistoryReady) => void,
     onError: (error: unknown) => void,
     onResumed?: () => Promise<void>,
+    private readonly onFlush?: () => void,
   ) {
+    this.fail = error => { this.rejectReady(error); this.rejectPage?.(error); onError(error); };
     // Register before asking Rust to replay its cache or fetch the first page.
     this.listeners.push(remoteConnectAPI.onSessionRecord(value => {
       if (!this.isCurrent()) return;
       const record = value as SessionRecord;
       if (record.sessionId !== this.sessionId) return;
-      try { onRecord(record); } catch (error) { this.rejectReady(error); this.rejectPage?.(error); onError(error); }
+      try {
+        if (onRecord(record) === true) this.flush();
+        else this.scheduleFlush();
+      } catch (error) { this.fail(error); }
     }));
     this.listeners.push(remoteConnectAPI.onSessionSyncError(error => {
       if (!this.isCurrent() || error.sessionId !== this.sessionId || error.targetDeviceId !== this.scope.surfaceId) return;
-      this.rejectReady(new Error(error.message));
-      this.rejectPage?.(new Error(error.message));
-      onError(new Error(error.message));
+      // Records received before the failure stay rendered.
+      this.flush();
+      this.fail(new Error(error.message));
     }));
     this.listeners.push(remoteConnectAPI.onSessionReady(ready => {
       if (!this.isCurrent() || ready.sessionId !== this.sessionId) return;
+      if (!this.flush()) return;
       const resumed = this.pageApplied === null;
       this.ready = ready;
       if (resumed && onResumed) void onResumed().catch(error => {
@@ -72,15 +100,30 @@ export class RelaySessionHistory {
     // A closed subscription may never have had an open() caller.
     void this.firstPage.catch(() => {});
     if (typeof document !== 'undefined') {
-      const resumePrefetch = () => {
+      const onVisibilityChanged = () => {
+        // Hidden windows throttle the flush timer; never leave a returning view stale.
+        if (this.flushTimer !== null) this.flush();
         if (document.visibilityState !== 'hidden') this.scheduleHistoryPrefetch();
       };
-      document.addEventListener('visibilitychange', resumePrefetch);
-      this.listeners.push(() => document.removeEventListener('visibilitychange', resumePrefetch));
+      document.addEventListener('visibilitychange', onVisibilityChanged);
+      this.listeners.push(() => document.removeEventListener('visibilitychange', onVisibilityChanged));
     }
   }
 
   private isCurrent(): boolean { return !this.closed && this.scope.isCurrent(); }
+
+  private scheduleFlush(): void {
+    if (this.flushTimer !== null) return;
+    const pageInFlight = this.ready === null || this.pageApplied !== null;
+    this.flushTimer = setTimeout(() => this.flush(), pageInFlight ? PAGE_RECORD_FLUSH_DELAY_MS : RECORD_FLUSH_DELAY_MS);
+  }
+
+  private flush(): boolean {
+    if (this.flushTimer !== null) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    if (!this.isCurrent()) return false;
+    try { this.onFlush?.(); return true; } catch (error) { this.fail(error); return false; }
+  }
 
   /** Visibility gates optional history IO only; live records/mailboxes stay subscribed. */
   setVisible(visible: boolean): void {
@@ -156,6 +199,9 @@ export class RelaySessionHistory {
   }
 
   close(): void {
+    if (this.closed) return;
+    // After a surface change the store keeps these pending for the next ready.
+    if (this.flushTimer !== null) this.flush();
     if (this.closed) return;
     this.closed = true;
     if (this.historyTimer !== null) clearTimeout(this.historyTimer);

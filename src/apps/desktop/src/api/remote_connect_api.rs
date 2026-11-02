@@ -28,7 +28,7 @@ use openbitfun_services_integrations::remote_connect::{
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -2778,6 +2778,13 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                             devices.iter().map(|d| d.device_id.clone()).collect();
                         hub.retain_online(&online);
                     }
+                    // Peer controllers are presence-scoped as well. A controller
+                    // that dropped off must stop being a fanout target, otherwise
+                    // every peer event for it is rejected by the relay and the log
+                    // fills with failures that never resolve on their own.
+                    let online_ids: HashSet<String> =
+                        devices.iter().map(|d| d.device_id.clone()).collect();
+                    crate::api::peer_host_invoke::retain_online_controllers(route, &online_ids);
                     // Offline presence does not revoke an account device or its
                     // permission mailbox. Reconnect resumes the same ownership.
                     if !device_routing_owner_is_current(&event_owner).await {

@@ -6,6 +6,7 @@ import {
   canQueryToolCatalogOnSurface,
   canSubmitUserQuestionsOnSurface,
   canQuerySubscriptionQuotaOnSurface,
+  usesTerminalCursorReplay,
 } from './peerCapabilityResolution';
 import type { PeerHostCapabilities } from './PeerConnectionManager';
 
@@ -129,4 +130,22 @@ it('requires advertised Grok quota support from a peer', () => {
   expect(canQueryGrokQuotaOnSurface(true, null)).toBe(false);
   expect(canQueryGrokQuotaOnSurface(true, { subscriptionQuotaV1: true } as PeerHostCapabilities)).toBe(false);
   expect(canQueryGrokQuotaOnSurface(true, { grokQuotaV1: true } as PeerHostCapabilities)).toBe(true);
+});
+
+describe('usesTerminalCursorReplay', () => {
+  const capabilities = (fields: Record<string, unknown>) => fields as unknown as PeerHostCapabilities;
+
+  it('follows the typed capability', () => {
+    expect(usesTerminalCursorReplay(capabilities({ terminalCursorReplayV1: true, hostKind: 'cli' }))).toBe(true);
+  });
+
+  it('resolves an older host through its kind', () => {
+    expect(usesTerminalCursorReplay(capabilities({ terminalCursorReplayV1: false, hostKind: 'cli' }))).toBe(true);
+    expect(usesTerminalCursorReplay(capabilities({ terminalCursorReplayV1: false, hostKind: 'desktop' }))).toBe(false);
+  });
+
+  it('stays on terminal_event while the host is unknown or local', () => {
+    expect(usesTerminalCursorReplay(capabilities({ hostKind: null }))).toBe(false);
+    expect(usesTerminalCursorReplay(undefined)).toBe(false);
+  });
 });

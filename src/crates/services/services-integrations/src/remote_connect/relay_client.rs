@@ -648,6 +648,182 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn server_close_reconnects_and_restores_device_presence() {
+        use futures::{SinkExt, StreamExt};
+        use tokio::net::TcpListener;
+        use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+        for websocket_close in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let (close_tx, mut close_rx) = mpsc::channel(1);
+            let (pending_tx, mut pending_rx) = mpsc::channel(1);
+            let server = tokio::spawn(async move {
+                for connection in 0..2 {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let mut socket = accept_async(stream).await.unwrap();
+                    socket
+                        .send(Message::Text(
+                            format!(
+                                "0{}",
+                                json!({"sid":"test", "upgrades":[], "pingInterval":25_000,
+                                    "pingTimeout":5_000, "maxPayload":1_000_000})
+                            )
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+                    let auth = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                    let auth: serde_json::Value =
+                        serde_json::from_str(auth.strip_prefix("40").unwrap()).unwrap();
+                    assert_eq!(auth["token"], "test-token");
+                    assert_eq!(auth["clientType"], "machine-scoped");
+                    socket
+                        .send(Message::Text("40{\"sid\":\"test\"}".into()))
+                        .await
+                        .unwrap();
+                    socket
+                        .send(Message::Text(
+                            format!(
+                                "42{}",
+                                json!(["auth-ok", {"userId":"account", "deviceId":"host"}])
+                            )
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+
+                    // Each replacement socket must register the host again.
+                    let registration = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                    let registration = registration.strip_prefix("42").unwrap();
+                    let event_start = registration.find('[').unwrap();
+                    let event: serde_json::Value =
+                        serde_json::from_str(&registration[event_start..]).unwrap();
+                    assert_eq!(event, json!(["rpc-register", {"method":"host:invoke"}]));
+                    socket
+                        .send(Message::Text(
+                            format!("43{}[{{\"ok\":true}}]", &registration[..event_start]).into(),
+                        ))
+                        .await
+                        .unwrap();
+                    let mut devices = vec![json!({"device_id":"host", "device_name":"Host"})];
+                    if connection == 1 {
+                        devices.push(json!({"device_id":"peer", "device_name":"Peer"}));
+                    }
+                    socket
+                        .send(Message::Text(
+                            format!(
+                                "42{}",
+                                json!(["ephemeral", {"type":"device-presence", "devices":devices}])
+                            )
+                            .into(),
+                        ))
+                        .await
+                        .unwrap();
+
+                    for call in 0..if connection == 0 { 2 } else { 1 } {
+                        let request = socket.next().await.unwrap().unwrap().into_text().unwrap();
+                        let request = request.strip_prefix("42").unwrap();
+                        let event_start = request.find('[').unwrap();
+                        let event: serde_json::Value =
+                            serde_json::from_str(&request[event_start..]).unwrap();
+                        assert_eq!(event[0], "rpc-call");
+                        assert_eq!(event[1]["method"], "peer:invoke");
+                        assert_eq!(
+                            event[1]["params"]["encrypted_data"],
+                            if call == 0 { "request" } else { "pending" }
+                        );
+                        if call == 0 {
+                            socket
+                                .send(Message::Text(
+                                    format!(
+                                        "43{}{}",
+                                        &request[..event_start],
+                                        json!([{"ok":true, "result":{
+                                            "encrypted_data":format!("reply-{connection}"), "nonce":"nonce"
+                                        }}])
+                                    )
+                                    .into(),
+                                ))
+                                .await
+                                .unwrap();
+                        } else {
+                            // This request reached the old socket; it must
+                            // fail on close and never replay on its replacement.
+                            pending_tx.send(()).await.unwrap();
+                        }
+                    }
+
+                    close_rx.recv().await.unwrap();
+                    if connection == 0 {
+                        if websocket_close {
+                            socket.close(None).await.unwrap();
+                        } else {
+                            socket.send(Message::Text("1".into())).await.unwrap();
+                        }
+                        while let Some(Ok(message)) = socket.next().await {
+                            if message.is_close() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+
+            let (client, mut events) = RelayClient::new();
+            let result = tokio::time::timeout(Duration::from_secs(8), async {
+                client.connect(&format!("http://{address}")).await.unwrap();
+                client
+                    .connect_authenticated("test-token", "Host")
+                    .await
+                    .unwrap();
+                assert!(matches!(events.recv().await, Some(RelayEvent::Connected)));
+                assert!(matches!(events.recv().await, Some(RelayEvent::AuthOk { .. })));
+                assert!(matches!(
+                    events.recv().await,
+                    Some(RelayEvent::DevicePresence { devices }) if devices.len() == 1
+                ));
+                assert_eq!(
+                    client.request_device("peer", "request", "nonce").await.unwrap(),
+                    ("reply-0".into(), "nonce".into())
+                );
+
+                let (pending, ()) = tokio::join!(
+                    client.request_device("peer", "pending", "nonce"),
+                    async {
+                        pending_rx.recv().await.unwrap();
+                        close_tx.send(()).await.unwrap();
+                        assert!(matches!(events.recv().await, Some(RelayEvent::Disconnected)));
+                    }
+                );
+                assert!(pending.is_err(), "an unacknowledged request must not report success");
+                assert!(matches!(events.recv().await, Some(RelayEvent::Reconnected)));
+                assert!(matches!(events.recv().await, Some(RelayEvent::AuthOk { .. })));
+                assert!(matches!(
+                    events.recv().await,
+                    Some(RelayEvent::DevicePresence { devices })
+                        if devices.iter().map(|device| device.device_id.as_str()).collect::<Vec<_>>()
+                            == ["host", "peer"]
+                ));
+                assert_eq!(client.connection_state().await, ConnectionState::Connected);
+                assert_eq!(
+                    client.request_device("peer", "request", "nonce").await.unwrap(),
+                    ("reply-1".into(), "nonce".into())
+                );
+                close_tx.send(()).await.unwrap();
+            })
+            .await;
+            client.disconnect().await;
+            if result.is_err() {
+                server.abort();
+            }
+            let server_result = server.await;
+            result.expect("closed Relay transport must reconnect and refresh device presence");
+            server_result.unwrap();
+        }
+    }
+
     #[test]
     fn reply_deadline_respects_forwarded_timeout() {
         let now = Instant::now();

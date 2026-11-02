@@ -21,6 +21,12 @@ export const ACCENT: ResourceColor = $r('app.color.accent');
 export const FILE_LINK: ResourceColor = $r('app.color.file_link');
 export const PRIMARY_ACTION: ResourceColor = $r('app.color.primary_action');
 export const CONTENT_ON_ACTION: ResourceColor = $r('app.color.content_on_action');
+/**
+ * Content that sits on an INK-filled surface. INK inverts per theme while
+ * content_on_action is pinned to the action color, so an ink chip must not
+ * borrow CONTENT_ON_ACTION — page_bg is the theme-correct inverse of INK.
+ */
+export const CONTENT_ON_INK: ResourceColor = $r('app.color.page_bg');
 export const CONNECT_HERO_BG: ResourceColor = $r('app.color.connect_hero_bg');
 export const CONNECT_HERO_ACCENT: ResourceColor = $r('app.color.connect_hero_accent');
 export const CONNECT_HERO_SECONDARY: ResourceColor = $r('app.color.connect_hero_secondary');

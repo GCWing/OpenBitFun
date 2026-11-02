@@ -10,18 +10,28 @@ import { I18nProvider } from '../../src/i18n';
 import { ThemeProvider } from '../../src/theme';
 import { useMobileStore } from '../../src/services/store';
 import { RemoteSessionManager, type SessionInfo } from '../../src/services/RemoteSessionManager';
+import type { SessionWorkspaceContext } from '../../src/services/workspaceIdentity';
 import type { RelayHttpClient } from '../../src/services/RelayHttpClient';
 import { queueStorage, type QueueItem, type QueueOutboxRecord } from '../../../shared/dialog-queue/HostDialogQueue';
 
 /** Real sidebar, chat, manager and durable outbox; only host IO is simulated. */
-export async function mountAssistantSessionFixture({ legacyWorkspace = false, queueSupported = true, legacyPending = false } = {}) {
+export async function mountAssistantSessionFixture({ legacyWorkspace = false, queueSupported = true, legacyPending = false, selectedProject = false } = {}) {
   const account = 'assistant-mode-account', device = 'assistant-mode-host', sessionId = 'assistant-session';
   const capabilities = ['host_stream_v1', ...(queueSupported ? ['dialog_queue_v1'] : []),
     ...(legacyWorkspace ? [] : ['workspace_id_references_v1', 'harness_profiles_v1'])];
   const assistant = { ...(legacyWorkspace ? {} : { workspace_id: 'assistant-workspace' }),
     path: '/fixtures/assistant', name: 'Assistant', workspace_kind: 'assistant' as const, last_opened: '' };
   const session: SessionInfo = { session_id: sessionId, name: 'New Session', agent_type: 'Claw',
-    workspace_id: assistant.workspace_id, workspace_path: assistant.path, created_at: '1', updated_at: '1', message_count: 0 };
+    workspace_id: assistant.workspace_id, workspace_path: assistant.path, created_at: '1', updated_at: '1', message_count: 0,
+    // The host sends the root label; the assistant identity name lives on the catalog row.
+    ...(selectedProject ? { workspace_name: 'workspace' } : {}) };
+  // Issue 2360 shape: the host's selected workspace is a Git project, not the assistant.
+  const project = (name: string) => ({ workspace_id: `${name}-workspace`, path: `/fixtures/${name}`, name,
+    workspace_kind: 'normal' as const, last_opened: '' });
+  const projects = selectedProject ? [project('home'), project('api')] : [];
+  const projectSessions: SessionInfo[] = projects.map((workspace) => ({ session_id: `${workspace.name}-session`,
+    name: `${workspace.name} session`, agent_type: 'agentic', workspace_id: workspace.workspace_id,
+    workspace_path: workspace.path, workspace_name: workspace.name, created_at: '1', updated_at: '1', message_count: 0 }));
   const calls: Array<Record<string, any>> = [], sessions: SessionInfo[] = legacyPending ? [session] : [];
   const receipts = new Map<string, QueueItem>();
   const scope = JSON.stringify([account, device, sessionId]);
@@ -45,11 +55,16 @@ export async function mountAssistantSessionFixture({ legacyWorkspace = false, qu
     async sendDeviceRpc(target: string, command: Record<string, any>) {
       calls.push(structuredClone({ device: target, ...command }));
       switch (command.cmd) {
-        case 'get_workspace_info': return { resp: 'workspace_info', ...assistant, has_workspace: true, capabilities };
-        case 'list_recent_workspaces': return { resp: 'recent_workspaces', workspaces: [assistant],
-          ...(legacyWorkspace ? {} : { opened_workspaces: [assistant] }) };
+        case 'get_workspace_info': return selectedProject
+          ? { resp: 'workspace_info', workspace_id: projects[0].workspace_id, path: projects[0].path, project_name: projects[0].name,
+            git_branch: 'master', workspace_kind: 'normal', has_workspace: true, capabilities }
+          : { resp: 'workspace_info', ...assistant, has_workspace: true, capabilities };
+        case 'list_recent_workspaces': return { resp: 'recent_workspaces', workspaces: [assistant, ...projects],
+          ...(legacyWorkspace ? {} : { opened_workspaces: [assistant, ...projects] }) };
         case 'list_assistants': return { resp: 'assistant_list', assistants: [assistant] };
-        case 'list_sessions': return { resp: 'sessions', sessions, has_more: false };
+        case 'list_sessions': return { resp: 'sessions', has_more: false, sessions: selectedProject
+          ? [...sessions, ...projectSessions].filter((row) => row.workspace_id === command.workspace_id)
+          : sessions };
         // The RemoteCommand create path accepts the mobile alias. The queue
         // invokes the runtime directly and requires its registered mode ID.
         case 'create_session': sessions.push(session); return { resp: 'session_created', ...session };
@@ -82,19 +97,21 @@ export async function mountAssistantSessionFixture({ legacyWorkspace = false, qu
   const manager = new RemoteSessionManager(client, capabilities);
   useMobileStore.getState().resetForDeviceSwitch();
   useMobileStore.setState({ authenticatedUserId: account, connectionHealth: 'connected',
-    controlTarget: { deviceId: device, deviceName: 'Host' }, error: null });
+    // A paired relay has no device name, so the header shows the workspace line.
+    controlTarget: { deviceId: device, deviceName: selectedProject ? null : 'Host' }, error: null });
   localStorage.setItem('openbitfun-mobile-language', 'en-US');
   const element = document.createElement('main');
   element.className = 'mobile-app';
   document.body.replaceChildren(element);
   const root = createRoot(element);
   function Fixture() {
-    const [selected, setSelected] = useState<{ id: string; agentType?: string } | null>(legacyPending ? { id: sessionId, agentType: 'Claw' } : null);
+    const [selected, setSelected] = useState<{ id: string; agentType?: string; workspace?: SessionWorkspaceContext } | null>(legacyPending ? { id: sessionId, agentType: 'Claw' } : null);
     return <ThemeProvider><I18nProvider>{selected
       ? <ChatPage sessionMgr={manager} sessionId={selected.id} sessionName="New Session" agentType={selected.agentType}
+        workspace={selected.workspace}
         autoFocus onBack={() => setSelected(null)} wideLayout={window.innerWidth >= 900} />
       : <SessionListPage compact client={client} sessionMgr={manager}
-        onSelectSession={(id, _name, _isNew, agentType) => setSelected({ id, agentType })}
+        onSelectSession={(id, _name, _isNew, agentType, workspace) => setSelected({ id, agentType, workspace })}
         onOpenWorkspace={() => {}} onDisconnect={() => {}} />
     }</I18nProvider></ThemeProvider>;
   }

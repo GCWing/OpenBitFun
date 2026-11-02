@@ -151,13 +151,13 @@ const monitor = method('onViewStateChanged');
 test('a reused wide pane discards A staging and panels without restoring A draft into B', () => {
   const pane = {state: {surface: 'remote', activeSession: {sessionId: 'B'}, sessionContextRevision: 2, rollbackOutcomeSeq: 0, rollbackOutcome: ''},
     rollbackContextIdentity: 'remote:A:1', stagingTargetTurnId: 'turn-A', stagingTargetText: 'A prompt',
-    composerSnapshot: 'A draft', handledRollbackOutcomeSeq: 3, showFullText: true, fullTextMessage: 'A text',
+    composerSnapshot: 'A draft', handledRollbackOutcomeSeq: 3, activeSheet: 'full_text', sheetPresented: true, fullTextMessage: 'A text',
     fullTextTurnId: 'turn-A', showHeaderActions: true, applyRollbackEvent() {throw Error('must not restore A composer');}};
   monitor.call(pane);
   assert.equal(pane.stagingTargetTurnId, '');
   assert.equal(pane.stagingTargetText, '');
   assert.equal(pane.composerSnapshot, '');
-  assert.equal(pane.showFullText, false);
+  assert.equal(pane.sheetPresented, false);
   assert.equal(pane.handledRollbackOutcomeSeq, 0);
 });
 test('resizing a reused pane preserves staging; a new session consumes its own failures once', () => {

@@ -100,8 +100,11 @@ describe('remote surface generated bindings', () => {
     expect([...PEER_HOST_ADVERTISED_CAPABILITIES.desktop]).toEqual(registry.capabilities.desktop);
     expect([...PEER_HOST_ADVERTISED_CAPABILITIES.cli]).toEqual(registry.capabilities.cli);
     for (const capability of PEER_HOST_ADVERTISED_CAPABILITIES.cli) {
+      // A delivery path, not a feature: Desktop fans out `terminal_event` instead.
+      if (capability === 'terminal_cursor_replay_v1') continue;
       expect(PEER_HOST_ADVERTISED_CAPABILITIES.desktop, capability).toContain(capability);
     }
+    expect(PEER_HOST_ADVERTISED_CAPABILITIES.desktop).not.toContain('terminal_cursor_replay_v1');
     expect(PEER_HOST_ADVERTISED_CAPABILITIES.cli).not.toContain('miniapp_agent_context_files_v1');
     expect(PEER_HOST_ADVERTISED_CAPABILITIES.desktop).toContain('cancel_tool');
     expect(PEER_HOST_ADVERTISED_CAPABILITIES.cli).toContain('cancel_tool');

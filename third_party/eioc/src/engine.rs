@@ -160,6 +160,17 @@ where
                         Packet::Close => {
                             tracing::debug!("server closed");
 
+                            // Release a manager blocked on outbound capacity
+                            // before waiting for space in its inbound queue.
+                            engine_rx.close();
+                            // The Socket.IO manager still owns live namespace
+                            // senders. Notify it before this task exits so its
+                            // receivers close and the account owner can reconnect.
+                            // A manager that already exited has nothing left to
+                            // release, so a failed notification is not an error.
+                            if let Err(error) = sink.send(Message::Close).await {
+                                tracing::debug!(%error, "manager already closed");
+                            }
                             break;
                         }
                         Packet::Ping(payload) => {
@@ -365,13 +376,73 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn engine_io_server_close_exits_ok() {
+    async fn engine_io_server_close_notifies_sink_and_exits_ok() {
         let s = setup();
         s.tx.send(EngineAction::Transport(Frame::Packet(Packet::Close)))
             .await
             .unwrap();
-        let (result, _) = s.run().await;
+        let (sink, messages) = capturing_sink();
+        let (result, _) = s.run_with(sink).await;
         result.unwrap();
+        assert!(matches!(
+            messages.lock().unwrap().as_slice(),
+            [Message::Close]
+        ));
+    }
+
+    #[tokio::test]
+    async fn engine_io_server_close_tolerates_closed_manager() {
+        let s = setup();
+        s.tx.send(EngineAction::Transport(Frame::Packet(Packet::Close)))
+            .await
+            .unwrap();
+        let (result, _) = s.run_with(FailingSink).await;
+        result.unwrap();
+    }
+
+    #[tokio::test]
+    async fn engine_io_server_close_releases_blocked_senders() {
+        let (engine_tx, engine_rx) = mpsc::channel(1);
+        engine_tx
+            .send(EngineAction::Transport(Frame::Packet(Packet::Close)))
+            .await
+            .unwrap();
+        let (manager_tx, manager_rx) = mpsc::channel(1);
+        manager_tx
+            .send(Message::Text("queued directive".into()))
+            .await
+            .unwrap();
+        let (transport_tx, _transport_rx) = mpsc::channel(1);
+        let (handshake_tx, handshake_rx) = oneshot::channel();
+        handshake_tx.send(make_handshake()).unwrap();
+
+        // A manager processing outbound messages cannot drain its inbox until
+        // the engine accepts the writes or reports that the session is closed.
+        let manager = async move {
+            if engine_tx
+                .send(EngineAction::Sink(Message::Text("first write".into())))
+                .await
+                .is_ok()
+            {
+                engine_tx
+                    .send(EngineAction::Sink(Message::Text("pending write".into())))
+                    .await
+                    .unwrap_err();
+            }
+            drop(manager_rx);
+        };
+        let engine = engine_io(
+            tokio_util::sync::PollSender::new(manager_tx),
+            engine_rx,
+            transport_tx,
+            handshake_rx,
+            CancellationToken::new(),
+        );
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(engine, manager)
+        })
+        .await
+        .expect("server close must release pending writes even when the manager inbox is full");
     }
 
     #[tokio::test]
