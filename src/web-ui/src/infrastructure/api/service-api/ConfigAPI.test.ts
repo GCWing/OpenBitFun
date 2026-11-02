@@ -145,7 +145,7 @@ describe('ConfigAPI batch config reads', () => {
     });
   });
 
-  it.each(['tavily', 'deepseek'])('keeps %s WebSearch credentials on the dedicated secret commands', async (provider) => {
+  it.each(['tavily', 'deepseek', 'keenable'])('keeps %s WebSearch credentials on the dedicated secret commands', async (provider) => {
     invokeMock
       .mockResolvedValueOnce({ provider, configured: false })
       .mockResolvedValueOnce({ provider, configured: true })

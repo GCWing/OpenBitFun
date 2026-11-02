@@ -6,6 +6,7 @@
     "exaSearchApi": "Exa Search API",
     "tavily": "Tavily Search API",
     "deepseek": "DeepSeek Search API",
+    "keenable": "Keenable Search API",
     "openbitfunSearchHttp": "Custom HTTP service"
   },
   "providerDescriptions": {
@@ -13,6 +14,7 @@
     "exaSearchApi": "Requires an Exa API key; enter and save it below",
     "tavily": "Requires a Tavily API key; enter and save it below",
     "deepseek": "Requires a DeepSeek API key; enter and save it below",
+    "keenable": "No API key needed; optionally save a Keenable API key below for higher rate limits",
     "openbitfunSearchHttp": "Connect a self-hosted or internal search service with its address and required authentication"
   },
   "auth": {
@@ -73,7 +75,8 @@
   },
   "status": {
     "configured": "Configured on the execution host",
-    "missing": "Credentials missing on the execution host"
+    "missing": "Credentials missing on the execution host",
+    "optionalMissing": "No key saved; searches use the free keyless tier"
   },
   "protocol": {
     "request": {
