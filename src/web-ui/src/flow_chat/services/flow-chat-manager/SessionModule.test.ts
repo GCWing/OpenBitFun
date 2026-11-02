@@ -1023,6 +1023,35 @@ describe('SessionModule historical session coordination', () => {
     );
   });
 
+  it('leaves partial peer history to on-demand paging after a switch', async () => {
+    activateSurface('peer-device');
+    try {
+      const session = createSession({
+        sessionId: 'peer-partial',
+        isHistorical: false,
+        historyState: 'ready',
+        isPartial: true,
+        dialogTurns: [{
+          id: 'turn-tail',
+          userMessage: { id: 'user-turn-tail', content: 'Latest prompt', timestamp: 1 },
+          modelRounds: [{ items: [{ type: 'text', text: 'Latest answer' }] }],
+          status: 'completed',
+        } as any],
+        loadedTurnCount: 1,
+        totalTurnCount: 20,
+      });
+      const { context, flowChatStore } = createContext(session, { activeSessionId: 'other-session' });
+      persistenceMocks.touchSessionActivity.mockResolvedValue(undefined);
+
+      await switchChatSession(context, session.sessionId);
+
+      expect(flowChatStore.switchSession).toHaveBeenCalledWith(session.sessionId);
+      expect(flowChatStore.ensureSessionFullHistory).not.toHaveBeenCalled();
+    } finally {
+      activateSurface(LOCAL_SURFACE_ID);
+    }
+  });
+
   it('touches only the latest active session during rapid switches', async () => {
     const firstSession = createSession({
       sessionId: 'history-1',

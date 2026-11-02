@@ -330,7 +330,10 @@ function shouldCompletePartialHistoryAfterSwitch(session: Session | undefined): 
   // A live session can retain only its restored tail while still being marked
   // non-historical. Completing it after an explicit switch restores the
   // assistant rounds that cannot come from the user-only turn catalog.
-  return session?.isHistorical !== true
+  // Peer history is paged on demand: draining every older page here would pull
+  // a long remote transcript through Relay on each switch.
+  return getActiveSurfaceScope().surfaceId === 'local'
+    && session?.isHistorical !== true
     && session?.historyState === 'ready'
     && session.isPartial === true
     && session.externalHistory?.mode !== 'follow';

@@ -1934,6 +1934,8 @@ interface SurfaceStateContainer {
   readonly relayRecordVersions: Map<string, number>;
   readonly relayMailboxReads: Map<string, Promise<void>>;
   readonly relaySessionRecords: Map<string, SessionRecordReplica>;
+  /** Turns the replica changed that the rendered session does not reflect yet. */
+  readonly relayPendingRecordTurns: Map<string, Set<string>>;
   readonly relaySessionHistory: Map<string, RelaySessionHistory>;
 }
 
@@ -1955,6 +1957,7 @@ function createSurfaceStateContainer(surfaceId: DeviceSurfaceId): SurfaceStateCo
     relayMailboxVersions: new Map(),
     relayMailboxReads: new Map(),
     relaySessionRecords: new Map(),
+    relayPendingRecordTurns: new Map(),
     relaySessionHistory: new Map(),
   };
 }
@@ -3125,6 +3128,7 @@ export class FlowChatStore {
       this.activeSurface.relaySessionHistory.get(id)?.close();
       this.activeSurface.relaySessionHistory.delete(id);
       this.activeSurface.relaySessionRecords.delete(id);
+      this.activeSurface.relayPendingRecordTurns.delete(id);
       this.activeSurface.relayQuestionMailboxes.delete(id);
       this.activeSurface.relayRecordVersions.delete(id);
       this.activeSurface.relayMailboxVersions.delete(id);
@@ -6083,7 +6087,8 @@ export class FlowChatStore {
             surface.relaySessionHistory.delete(sessionId);
             history?.close();
           }
-        }, () => this.refreshRelayInteractionMailbox(sessionId));
+        }, () => this.refreshRelayInteractionMailbox(sessionId),
+        () => this.flushRelaySessionRecords(sessionId));
       history.setVisible(this.historyLeases.has(this.surfaceKey(sessionId)));
       surface.relaySessionHistory.set(sessionId, history);
     }
@@ -6113,6 +6118,7 @@ export class FlowChatStore {
         // Canonical terminal facts fence an overlapping mailbox response. Do
         // not turn a busy token stream into repeated mailbox requests.
         if (recordVersion !== (surface.relayRecordVersions.get(sessionId) ?? 0)) {
+          this.flushRelaySessionRecords(sessionId);
           const turns = surface.state.sessions.get(sessionId)?.dialogTurns ?? [];
           mailbox.userQuestions = { ...mailbox.userQuestions, questions: mailbox.userQuestions.questions.filter(question => {
             const turn = turns.find(value => value.id === question.dialogTurnId);
@@ -6167,32 +6173,50 @@ export class FlowChatStore {
       replica = new SessionRecordReplica(record.sessionId);
       surface.relaySessionRecords.set(record.sessionId, replica);
     }
-    const previousTurn = surface.state.sessions.get(record.sessionId)?.dialogTurns;
-    const change = replica.apply(record);
+    const turnId = replica.ingest(record);
     surface.relayRecordVersions.set(record.sessionId, (surface.relayRecordVersions.get(record.sessionId) ?? 0) + 1);
-    if (!change) return;
-    const incoming = change.turn
-      ? this.convertToDialogTurns([change.turn], { activeTurnId: change.turn.turnId })[0]
-      : null;
+    if (turnId === null) return;
+    const pending = surface.relayPendingRecordTurns.get(record.sessionId);
+    if (pending) pending.add(turnId);
+    else surface.relayPendingRecordTurns.set(record.sessionId, new Set([turnId]));
+  }
+
+  /** Render what the replica received since the last flush as one state update. */
+  private flushRelaySessionRecords(sessionId: string): void {
+    const surface = this.activeSurface;
+    const pending = surface.relayPendingRecordTurns.get(sessionId);
+    const replica = surface.relaySessionRecords.get(sessionId);
+    if (!pending || !replica) return;
+    surface.relayPendingRecordTurns.delete(sessionId);
+    // Closing the subscription of a removed session must not recreate its state.
+    if (!surface.state.sessions.has(sessionId)) return;
+    const previousTurn = surface.state.sessions.get(sessionId)?.dialogTurns;
+    // A submission can be painted before the runtime allocates its turn ID.
+    // The stable user-message ID joins that optimistic row to its echo.
+    const incoming = new Map<string, DialogTurn>();
+    for (const turnId of pending) {
+      const { turn } = replica.snapshot(turnId);
+      const dialogTurn = turn && this.convertToDialogTurns([turn], { activeTurnId: turn.turnId })[0];
+      if (dialogTurn) incoming.set(dialogTurn.userMessage.id, dialogTurn);
+    }
     this.setState(previous => {
-      const session = previous.sessions.get(record.sessionId);
+      const session = previous.sessions.get(sessionId);
       if (!session) return previous;
-      let dialogTurns = session.dialogTurns.filter(turn => turn.id !== change.turnId);
-      if (incoming) {
-        // A submission can be painted before the runtime allocates its turn ID.
-        // The stable user-message ID joins that optimistic row to its echo.
-        dialogTurns = dialogTurns.filter(turn => turn.userMessage.id !== incoming.userMessage.id);
-        dialogTurns.push(incoming);
+      const dialogTurns = session.dialogTurns.filter(turn => (
+        !pending.has(turn.id) && !incoming.has(turn.userMessage.id)
+      ));
+      if (incoming.size > 0) {
+        dialogTurns.push(...incoming.values());
         dialogTurns.sort((a, b) => a.storageTurnIndex !== undefined && b.storageTurnIndex !== undefined
           ? a.storageTurnIndex - b.storageTurnIndex : a.startTime - b.startTime);
       }
       const sessions = new Map(previous.sessions);
-      sessions.set(record.sessionId, { ...session, dialogTurns });
+      sessions.set(sessionId, { ...session, dialogTurns });
       return { ...previous, sessions };
     });
-    const mailbox = surface.relayQuestionMailboxes.get(record.sessionId);
+    const mailbox = surface.relayQuestionMailboxes.get(sessionId);
     if (mailbox) {
-      const turns = this.state.sessions.get(record.sessionId)?.dialogTurns ?? [];
+      const turns = this.state.sessions.get(sessionId)?.dialogTurns ?? [];
       const questions = mailbox.questions.filter(question => {
         const turn = turns.find(value => value.id === question.dialogTurnId);
         if (turn && ['completed', 'cancelled', 'error'].includes(turn.status)) return false;
@@ -6201,14 +6225,14 @@ export class FlowChatStore {
         return !item || item.type !== 'tool' || !['completed', 'failed', 'cancelled', 'error'].includes(item.status);
       });
       const currentMailbox = { ...mailbox, questions };
-      surface.relayQuestionMailboxes.set(record.sessionId, currentMailbox);
-      this.reconcilePendingUserQuestions(record.sessionId, currentMailbox);
+      surface.relayQuestionMailboxes.set(sessionId, currentMailbox);
+      this.reconcilePendingUserQuestions(sessionId, currentMailbox);
     }
-    const currentTurns = this.state.sessions.get(record.sessionId)?.dialogTurns ?? [];
+    const currentTurns = this.state.sessions.get(sessionId)?.dialogTurns ?? [];
     if (previousTurn?.length !== currentTurns.length
       || previousTurn?.some((turn, index) => turn.id !== currentTurns[index]?.id
         || turn.storageTurnIndex !== currentTurns[index]?.storageTurnIndex)) {
-      this.refreshRelayTurnCatalog(record.sessionId);
+      this.refreshRelayTurnCatalog(sessionId);
     }
     const latest = currentTurns.at(-1);
     const running = latest && !['completed', 'cancelled', 'error'].includes(latest.status);
@@ -6216,7 +6240,7 @@ export class FlowChatStore {
     const pendingTools = running ? latest.modelRounds.flatMap(modelRound => modelRound.items)
       .filter((item): item is FlowToolItem => item.type === 'tool' && item.status === 'pending_confirmation')
       .map(item => item.toolCall.id) : [];
-    stateMachineManager.getOrCreate(record.sessionId).acceptRuntimeStatus({
+    stateMachineManager.getOrCreate(sessionId).acceptRuntimeStatus({
       state: latest?.status === 'error' ? SessionExecutionState.ERROR
         : running ? SessionExecutionState.PROCESSING : SessionExecutionState.IDLE,
       turnId: latest?.id ?? null, roundId: round?.id ?? null,

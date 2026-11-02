@@ -15,6 +15,7 @@ import {
 import type { FlowChatState, ModelRound, Session } from '../types/flow-chat';
 import { startupTrace } from '@/shared/utils/startupTrace';
 import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
+import { SessionRecordReplica } from '../session-stream/SessionRecordReplica';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
@@ -7901,6 +7902,138 @@ describe('FlowChatStore device surfaces', () => {
     expect(flowChatStore.getState().sessions.get('local-1')?.historyState).toBe('ready');
   });
 
+  describe('relay record coalescing', () => {
+    const itemRecord = (sessionId: string, turnIndex: number, index: number, revision = index + 1) => {
+      const { modelRounds: _rounds, ...turn } = createPersistedTurn(turnIndex, sessionId);
+      const roundId = `round-${turnIndex}`;
+      const itemId = `text-${turnIndex}-${index}`;
+      return {
+        sessionId, id: `item/${itemId}`, revision, turn,
+        round: { id: roundId, turnId: turn.turnId, roundIndex: 0, timestamp: 1, startTime: 1, status: 'completed' },
+        item: { type: 'text', data: { id: itemId, content: `item ${index}`, isStreaming: false, timestamp: 1, orderIndex: index } },
+      };
+    };
+    const texts = (sessionId: string, turnIndex = 0) => flowChatStore.getState().sessions.get(sessionId)!
+      .dialogTurns.find(turn => turn.id === `turn-${turnIndex}`)?.modelRounds.flatMap(round => round.items) ?? [];
+
+    beforeEach(() => {
+      stateMachineManagerMock.getOrCreate.mockReturnValue({ acceptRuntimeStatus: vi.fn() });
+    });
+
+    it('renders a page of one long turn once, before ready reports it', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-long');
+      const count = 400;
+      const updates: number[] = [];
+      const unsubscribe = flowChatStore.subscribe(state => {
+        const session = state.sessions.get('peer-long');
+        if (session) updates.push(session.dialogTurns.length);
+      });
+      const snapshot = vi.spyOn(SessionRecordReplica.prototype, 'snapshot');
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        updates.length = 0; // The hydrating placeholder is not a record update.
+        for (let index = 0; index < count; index += 1) apiMocks.relayRecord?.(itemRecord('peer-long', 0, index));
+        expect(updates).toEqual([]);
+        apiMocks.relayReady?.({ sessionId: 'peer-long', hasMore: false, oldestSeq: 1, cursor: count });
+        return 'peer-long-subscription';
+      });
+
+      await flowChatStore.loadSessionHistory('peer-long');
+      unsubscribe();
+
+      expect(snapshot).toHaveBeenCalledTimes(1);
+      snapshot.mockRestore();
+      // One update for the records, then the ready and catalog bookkeeping.
+      expect(updates[0]).toBe(1);
+      expect(updates.length).toBeLessThanOrEqual(4);
+      expect(texts('peer-long')).toHaveLength(count);
+      expect(flowChatStore.getState().sessions.get('peer-long')).toMatchObject({
+        historyState: 'ready', loadedTurnCount: 1,
+      });
+    });
+
+    it('publishes live records without a ready event and keeps turn order', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-live');
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-live', 2, 0));
+        apiMocks.relayReady?.({ sessionId: 'peer-live', hasMore: false, oldestSeq: 1, cursor: 1 });
+        return 'peer-live-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-live');
+
+      apiMocks.relayRecord?.(itemRecord('peer-live', 2, 1));
+      apiMocks.relayRecord?.(itemRecord('peer-live', 0, 0));
+      expect(texts('peer-live', 2)).toHaveLength(1);
+
+      await vi.waitFor(() => expect(texts('peer-live', 2)).toHaveLength(2));
+      expect(flowChatStore.getState().sessions.get('peer-live')!.dialogTurns.map(turn => turn.id))
+        .toEqual(['turn-0', 'turn-2']);
+    });
+
+    it('applies a tombstone that lands in the same batch as the turn', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-tombstone');
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-tombstone', 0, 0));
+        apiMocks.relayRecord?.(itemRecord('peer-tombstone', 1, 0, 2));
+        apiMocks.relayRecord?.({ sessionId: 'peer-tombstone', id: 'turn/turn-0', revision: 3, deleted: true });
+        apiMocks.relayReady?.({ sessionId: 'peer-tombstone', hasMore: false, oldestSeq: 1, cursor: 3 });
+        return 'peer-tombstone-subscription';
+      });
+
+      await flowChatStore.loadRelaySessionHistory('peer-tombstone');
+
+      expect(flowChatStore.getState().sessions.get('peer-tombstone')!.dialogTurns.map(turn => turn.id))
+        .toEqual(['turn-1']);
+    });
+
+    it('does not revive a removed session when closing its subscription flushes', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-removed');
+      const acceptRuntimeStatus = vi.fn();
+      stateMachineManagerMock.getOrCreate.mockReturnValue({ acceptRuntimeStatus });
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayReady?.({ sessionId: 'peer-removed', hasMore: false, oldestSeq: 1, cursor: 0 });
+        return 'peer-removed-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-removed');
+      apiMocks.relayRecord?.(itemRecord('peer-removed', 0, 0));
+
+      flowChatStore.setState(state => {
+        const sessions = new Map(state.sessions);
+        sessions.delete('peer-removed');
+        return { ...state, sessions };
+      });
+      (flowChatStore as any).clearRemovedSessionHistoryState(['peer-removed'], 'test');
+
+      expect(acceptRuntimeStatus).not.toHaveBeenCalled();
+    });
+
+    it('keeps records received before a surface switch for the next ready on that surface', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-switch');
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayReady?.({ sessionId: 'peer-switch', hasMore: false, oldestSeq: 1, cursor: 0 });
+        return 'peer-switch-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-switch');
+      apiMocks.relayRecord?.(itemRecord('peer-switch', 0, 0));
+
+      activateSurface(LOCAL_SURFACE_ID);
+      activateSurface(PEER_SURFACE_ID);
+      expect(flowChatStore.getState().sessions.get('peer-switch')!.dialogTurns).toHaveLength(0);
+
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayReady?.({ sessionId: 'peer-switch', hasMore: false, oldestSeq: 1, cursor: 1 });
+        return 'peer-switch-resubscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-switch');
+
+      expect(texts('peer-switch')).toHaveLength(1);
+    });
+  });
+
   it('builds visible turn navigation from canonical records without treating storage gaps as ordinals', async () => {
     activateSurface(PEER_SURFACE_ID);
     seedSession('peer-log');
@@ -7943,7 +8076,7 @@ describe('FlowChatStore device surfaces', () => {
     apiMocks.relayRecord?.({sessionId:'peer-mailbox',id:'turn/turn-0',revision:2,turn});
     expect(tools().find(item=>item.id==='question')).toMatchObject({status:'waiting'});
     apiMocks.relayRecord?.({sessionId:'peer-mailbox',id:'turn/turn-0',revision:3,turn:{...turn,status:'completed'}});
-    expect(tools().find(item=>item.id==='question')).toBeUndefined();
+    await vi.waitFor(()=>expect(tools().find(item=>item.id==='question')).toBeUndefined());
   });
 
   it('does not revive a question when a completed record races a mailbox response', async () => {

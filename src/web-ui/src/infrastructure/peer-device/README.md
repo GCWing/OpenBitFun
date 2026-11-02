@@ -16,8 +16,17 @@ host, and a stream-epoch change (host restart) drops the replica before replay.
 The latest page paints first; older pages share one in-flight reader. A visible
 open or explicit reader request can warm one adjacent page while the document is
 visible and the shared resource budget permits it. This never recursively drains
-the transcript. Hiding a view pauses optional prefetch only; live records,
-reconnect and interaction-mailbox delivery keep their subscriptions.
+the transcript, and neither does switching to a session: its older pages load
+when the reader or an explicit full-history request asks for them. Hiding a view
+pauses optional prefetch only; live records, reconnect and interaction-mailbox
+delivery keep their subscriptions.
+
+The host sends each record of a page as its own event. Records reduce into the
+replica as they arrive; rendering the changed turns is coalesced to one store
+update per frame and always happens before a page's ready event. Rendering per
+record is quadratic in the items of a long turn and freezes the UI thread. Live
+pages have no ready event, so the frame timer publishes them; it is a timer
+rather than an animation frame so hidden windows keep applying records.
 Receive cursors advance only after applying
 records, never from a send acknowledgement. Transport reconnect resumes that same
 subscription. Local Runtime projection machinery is not a second Relay content
