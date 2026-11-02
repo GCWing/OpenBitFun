@@ -178,6 +178,9 @@ listener alone recovers an interaction emitted before attachment.
     commands are high priority within each submission burst and use the shared
     transport admission policy. Both local and SSH-backed PTY cursors on B must
     notify A without placing raw output into an unbounded event queue.
+    A host that announces cursors instead of fanning out `terminal_event`
+    advertises `terminal_cursor_replay_v1`; a CLI host that predates the key is
+    treated as advertising it, and the choice is re-made once capabilities resolve.
     Remote `SIGINT` / `SIGTSTP` map to PTY control bytes instead of silently
     succeeding without affecting the process.
 

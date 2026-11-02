@@ -2332,5 +2332,10 @@
     "createProject": "建立專案",
     "assistantError": "無法建立助理，請稍後重試。",
     "back": "返回選擇"
+  },
+  "peerHost": {
+    "unavailable": "此功能在該裝置上無法使用。",
+    "updateRequired": "該裝置上的 OpenBitFun 版本不支援此功能。請嘗試在該裝置上更新 OpenBitFun。",
+    "withDetail": "{{message}}（{{detail}}）"
   }
 }
