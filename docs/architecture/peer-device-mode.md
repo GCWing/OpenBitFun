@@ -337,6 +337,16 @@ FS) and must not be mixed with Peer Device Mode.
   epochs and lifecycle cancellation around `realtime_client`; TypeScript uses
   `AccountRealtime`. Replacing an account retires its socket and pending replies.
   Transient disconnection does not destroy the Runtime's tasks or journals.
+- The Relay keeps one machine-scoped socket per `device_id`, and every host on a
+  machine shares `device_identity.json`. Hosts therefore arbitrate locally
+  (`remote_connect::routing_lease`) instead of replacing each other's socket:
+  Desktop is the primary host, CLI/TUI/daemon the secondary one. Each holds an
+  OS file lock per Relay endpoint next to the identity file. A secondary host
+  connects only while no primary holds its lock, and stands by (`Standby`
+  connection state) otherwise. The OS releases the lock when a host exits or is
+  killed, so the standing-by host reconnects within about a second. Hosts of the
+  same priority take turns. A host built before this change does not
+  arbitrate.
 - Relay `rpc-call` routes to the authenticated target's registered method and
   carries the caller's deadline (120s when omitted). The server checks account
   membership before routing. Missing acknowledgement after dispatch is an unknown

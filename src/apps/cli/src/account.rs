@@ -18,8 +18,9 @@ use openbitfun_core::service::remote_connect::account_runtime::{
     BackgroundRoutingOwnerRetirementError,
 };
 use openbitfun_core::service::remote_connect::{
-    self, encryption, relay_client::RelayClient, relay_client::RelayEvent, session_store,
-    DeviceIdentity, RemoteServer,
+    self, encryption,
+    relay_client::{ConnectionState, DeviceRoutingPriority, RelayClient, RelayEvent},
+    session_store, DeviceIdentity, RemoteServer,
 };
 
 pub(crate) struct CliAccountRuntimeParts {
@@ -173,11 +174,18 @@ impl CliAccountRoutingHost {
         }
         self.stop_routing().await;
 
-        let (client, mut event_rx) = RelayClient::new();
+        // A Desktop host on this machine serves the shared device first; this
+        // client stands by and takes over once that host exits.
+        let (client, mut event_rx) = RelayClient::new_device_host(DeviceRoutingPriority::Secondary);
         client.connect(&request.relay_url).await?;
         client
             .connect_authenticated(&request.session.token, &request.device_name)
             .await?;
+        if client.connection_state().await == ConnectionState::Standby {
+            tracing::info!(
+                "Another OpenBitFun host on this machine serves this device; device routing is standing by"
+            );
+        }
         let client = Arc::new(client);
         {
             let _routing_guard = self.lifecycle.write().await;
