@@ -39,6 +39,24 @@ const USER_PROFILE_CONNECT_RETRY_BACKOFF: [Duration; 4] = [
 /// prompt, so it is treated as the endpoint not being ready yet.
 const USER_PROFILE_FAST_RESET_WINDOW: Duration = Duration::from_secs(1);
 
+/// Why a guarded user-profile connection could not be established.
+#[derive(Debug)]
+pub enum UserProfileConnectError {
+    /// The endpoint answered the WebSocket upgrade with HTTP 404. An inferred
+    /// endpoint may fall back to setup; authentication/permission refusals may not.
+    NotABrowserEndpoint(OpenBitFunError),
+    /// Any other failure: timeout, denial, transport error, product mismatch.
+    Failed(OpenBitFunError),
+}
+
+impl UserProfileConnectError {
+    pub fn into_error(self) -> OpenBitFunError {
+        match self {
+            Self::NotABrowserEndpoint(error) | Self::Failed(error) => error,
+        }
+    }
+}
+
 /// Why a WebSocket connection could not be opened.
 enum WsConnectError {
     /// The TCP connect or HTTP upgrade did not finish in time. For a guarded
@@ -181,11 +199,25 @@ impl CdpClient {
         browser_kind: &BrowserKind,
         ws_url: &str,
     ) -> OpenBitFunResult<CdpBrowserConnection> {
+        Self::connect_user_profile_browser_checked(logical_port, actual_port, browser_kind, ws_url)
+            .await
+            .map_err(UserProfileConnectError::into_error)
+    }
+
+    /// [`Self::connect_user_profile_browser`] with a distinct HTTP 404 result.
+    /// Callers that inferred the endpoint from a 404 port probe may fall back
+    /// to setup; other failures, including permission refusals, stay failures.
+    pub async fn connect_user_profile_browser_checked(
+        logical_port: u16,
+        actual_port: u16,
+        browser_kind: &BrowserKind,
+        ws_url: &str,
+    ) -> Result<CdpBrowserConnection, UserProfileConnectError> {
         if Self::browser_connection_suppressed(logical_port).await {
-            return Err(OpenBitFunError::tool(
+            return Err(UserProfileConnectError::Failed(OpenBitFunError::tool(
                 "Browser control was disconnected in Settings. Reconnect it there before attaching again."
                     .to_string(),
-            ));
+            )));
         }
         if let Some(existing) = Self::browser_connection(logical_port).await {
             if existing.actual_port == actual_port && existing.browser_kind == *browser_kind {
@@ -197,6 +229,12 @@ impl CdpClient {
             "Requesting user-approved browser profile connection on port {}",
             actual_port
         );
+        let wrap = |error: OpenBitFunError| {
+            OpenBitFunError::tool(format!(
+                "Could not connect to the current browser profile. Approve OpenBitFun's remote debugging request in the browser, then try again: {}",
+                error
+            ))
+        };
         let client = Arc::new(
             Self::connect_user_profile_websocket(
                 ws_url,
@@ -204,13 +242,26 @@ impl CdpClient {
                 &USER_PROFILE_CONNECT_RETRY_BACKOFF,
             )
             .await
-            .map_err(|error| {
-                OpenBitFunError::tool(format!(
-                    "Could not connect to the current browser profile. Approve OpenBitFun's remote debugging request in the browser, then try again: {}",
-                    error
-                ))
+            .map_err(|error| match error {
+                UserProfileConnectError::NotABrowserEndpoint(error) => {
+                    UserProfileConnectError::NotABrowserEndpoint(wrap(error))
+                }
+                UserProfileConnectError::Failed(error) => {
+                    UserProfileConnectError::Failed(wrap(error))
+                }
             })?,
         );
+        Self::retain_user_profile_browser(logical_port, actual_port, browser_kind, client)
+            .await
+            .map_err(UserProfileConnectError::Failed)
+    }
+
+    async fn retain_user_profile_browser(
+        logical_port: u16,
+        actual_port: u16,
+        browser_kind: &BrowserKind,
+        client: Arc<CdpClient>,
+    ) -> OpenBitFunResult<CdpBrowserConnection> {
         // Validate that this is a browser-level CDP endpoint before retaining
         // it. This also fails quickly if the DevToolsActivePort file was stale.
         let version = match client.browser_version().await {
@@ -401,20 +452,37 @@ impl CdpClient {
         ws_url: &str,
         budget: Duration,
         backoff: &[Duration],
-    ) -> OpenBitFunResult<Self> {
+    ) -> Result<Self, UserProfileConnectError> {
         let deadline = tokio::time::Instant::now() + budget;
         let mut delays = backoff.iter();
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return Err(Self::websocket_timeout_error());
+                return Err(UserProfileConnectError::Failed(
+                    Self::websocket_timeout_error(),
+                ));
             }
             let attempt_started = tokio::time::Instant::now();
             let error = match Self::open_websocket(ws_url, remaining).await {
                 Ok(client) => return Ok(client),
-                Err(WsConnectError::Timeout) => return Err(Self::websocket_timeout_error()),
+                Err(WsConnectError::Timeout) => {
+                    return Err(UserProfileConnectError::Failed(
+                        Self::websocket_timeout_error(),
+                    ))
+                }
                 Err(WsConnectError::Failed(error)) => error,
             };
+            // Only a missing endpoint permits the setup fallback. Authentication
+            // or permission refusals must remain failures, not trigger a new prompt.
+            if matches!(
+                &error,
+                tokio_tungstenite::tungstenite::Error::Http(response)
+                    if response.status() == tokio_tungstenite::tungstenite::http::StatusCode::NOT_FOUND
+            ) {
+                return Err(UserProfileConnectError::NotABrowserEndpoint(
+                    Self::websocket_failed_error(&error),
+                ));
+            }
             let retryable = Self::is_retryable_before_upgrade(&error, attempt_started.elapsed());
             let delay = delays.next().copied();
             match delay {
@@ -429,7 +497,11 @@ impl CdpClient {
                     );
                     tokio::time::sleep(delay).await;
                 }
-                _ => return Err(Self::websocket_failed_error(&error)),
+                _ => {
+                    return Err(UserProfileConnectError::Failed(
+                        Self::websocket_failed_error(&error),
+                    ))
+                }
             }
         }
     }
@@ -1263,8 +1335,6 @@ mod tests {
 
     #[tokio::test]
     async fn guarded_port_without_json_endpoints_connects_over_browser_websocket() {
-        use openbitfun_services_integrations::browser_control::BrowserLauncher as Provider;
-
         let (port, upgraded_paths) = spawn_guarded_browser(
             "Chrome/156.0.8078.74",
             "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
@@ -1277,9 +1347,14 @@ mod tests {
             .to_string()
             .contains("Settings > Browser control"));
 
-        let endpoint = Provider::guarded_port_debug_endpoint(&BrowserKind::Chrome, port)
-            .await
-            .expect("guarded endpoint fallback");
+        // The endpoint the launcher infers for a 404 port whose browser runs.
+        let endpoint = super::super::browser_launcher::BrowserDebugEndpoint {
+            port,
+            web_socket_url: format!("ws://127.0.0.1:{port}/devtools/browser"),
+        };
+        assert!(
+            openbitfun_services_integrations::browser_control::BrowserLauncher::is_inferred_guarded_endpoint(&endpoint)
+        );
         let logical_port = port;
         let connection = CdpClient::connect_user_profile_browser(
             logical_port,
@@ -1415,8 +1490,56 @@ mod tests {
         .await
         .err()
         .expect("stalled handshake must time out");
-        assert!(error.to_string().contains("Timed out"));
+        assert!(matches!(error, UserProfileConnectError::Failed(_)));
+        assert!(error.into_error().to_string().contains("Timed out"));
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(accepted.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn http_upgrade_denial_does_not_trigger_not_found_setup_fallback() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        for (status, not_found) in [
+            ("404 Not Found", true),
+            ("401 Unauthorized", false),
+            ("403 Forbidden", false),
+        ] {
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .expect("bind");
+            let port = listener.local_addr().expect("address").port();
+            let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let counter = accepted.clone();
+            let server = tokio::spawn(async move {
+                while let Ok((mut stream, _)) = listener.accept().await {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let mut buffer = [0_u8; 2048];
+                    let _ = stream.read(&mut buffer).await;
+                    let response = format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                }
+            });
+
+            let error = CdpClient::connect_user_profile_browser_checked(
+                port,
+                port,
+                &BrowserKind::Chrome,
+                &format!("ws://127.0.0.1:{port}/devtools/browser"),
+            )
+            .await
+            .err()
+            .expect("a rejected upgrade must fail");
+            server.abort();
+            assert_eq!(
+                matches!(error, UserProfileConnectError::NotABrowserEndpoint(_)),
+                not_found,
+                "access denial must not reopen setup: {status}"
+            );
+            assert_eq!(accepted.load(Ordering::SeqCst), 1);
+            assert!(CdpClient::browser_connection(port).await.is_none());
+        }
     }
 }

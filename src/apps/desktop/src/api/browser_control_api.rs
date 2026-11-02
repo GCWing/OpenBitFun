@@ -3,7 +3,9 @@
 use openbitfun_core::agentic::tools::browser_control::browser_launcher::{
     BrowserKind, BrowserLauncher, CdpPortProbe, LaunchResult, DEFAULT_CDP_PORT,
 };
-use openbitfun_core::agentic::tools::browser_control::cdp_client::CdpClient;
+use openbitfun_core::agentic::tools::browser_control::cdp_client::{
+    CdpClient, UserProfileConnectError,
+};
 use openbitfun_core::agentic::tools::implementations::control_hub_tool::disconnect_external_browser;
 use openbitfun_core::service::config::{get_global_config_service, GlobalConfig};
 use serde::{Deserialize, Serialize};
@@ -49,6 +51,19 @@ pub fn init_on_startup() {
         else {
             return;
         };
+        // Nobody asked for this connection, so never raise an approval prompt
+        // in a browser that may not be the selected one: a port inferred from
+        // a 404 probe is ambiguous while the other guarded browser runs too.
+        if BrowserLauncher::is_inferred_guarded_endpoint(&endpoint)
+            && BrowserLauncher::other_guarded_browser_running(&kind).await
+        {
+            log::info!(
+                "Skipping startup reattach to {}: port {} has no DevToolsActivePort and another guarded browser is running",
+                kind,
+                endpoint.port
+            );
+            return;
+        }
         if CdpClient::browser_connection_for_kind(DEFAULT_CDP_PORT, &kind)
             .await
             .is_some()
@@ -192,9 +207,15 @@ pub async fn browser_control_get_status(
     // attaching does.
     let user_profile_endpoint =
         BrowserLauncher::user_profile_debug_endpoint_or_guarded_port(&configured_kind, port).await;
+    // An endpoint inferred from a 404 port probe is only a candidate until
+    // the browser accepts the WebSocket, so it makes the browser "ready" but
+    // never proves the persistent setting is on.
+    let published_endpoint = user_profile_endpoint
+        .as_ref()
+        .is_some_and(|endpoint| !BrowserLauncher::is_inferred_guarded_endpoint(endpoint));
     let default_cdp_enabled = default_cdp_supported
-        && (user_profile_endpoint.is_some()
-            || BrowserLauncher::is_default_cdp_enabled(&configured_kind));
+        && (published_endpoint
+            || BrowserLauncher::is_default_cdp_enabled_async(&configured_kind).await);
     let user_profile_connection =
         CdpClient::browser_connection_for_kind(port, &configured_kind).await;
     let browser_connection_suppressed = CdpClient::browser_connection_suppressed(port).await;
@@ -360,44 +381,71 @@ async fn complete_launch(
     kind: &BrowserKind,
     logical_port: u16,
     result: LaunchResult,
+    wait_for_user_profile_setup: bool,
 ) -> Result<BrowserControlLaunchResponse, String> {
-    match result {
-        LaunchResult::UserProfileReady { endpoint } => {
-            // Attaching to a guarded real profile makes the browser show its own
-            // approval request, and that prompt is only answerable from a
-            // visible window. Browser control itself is background work, so
-            // this is one of the few flows that must surface the browser.
-            BrowserLauncher::activate_browser(kind);
-            let connection = CdpClient::connect_user_profile_browser(
-                logical_port,
-                endpoint.port,
-                kind,
-                &endpoint.web_socket_url,
-            )
-            .await;
-            if let Err(error) = connection {
+    let mut result = result;
+    // An endpoint inferred from a 404 port probe gets one chance: a 404 on
+    // the WebSocket upgrade falls back to setup. Authorization denials and
+    // other handshake failures remain errors, never another setup attempt.
+    let mut inferred_fallback_available = true;
+    loop {
+        let LaunchResult::UserProfileReady { endpoint } = result else {
+            let response = to_launch_response(kind, result);
+            if response.success {
+                CdpClient::authorize_legacy_browser(logical_port, kind).await;
+            }
+            return Ok(response);
+        };
+        // Attaching to a guarded real profile makes the browser show its own
+        // approval request, and that prompt is only answerable from a
+        // visible window. Browser control itself is background work, so
+        // this is one of the few flows that must surface the browser.
+        BrowserLauncher::activate_browser(kind);
+        let connection = CdpClient::connect_user_profile_browser_checked(
+            logical_port,
+            endpoint.port,
+            kind,
+            &endpoint.web_socket_url,
+        )
+        .await;
+        match connection {
+            Ok(_) => {
+                return Ok(BrowserControlLaunchResponse {
+                    success: true,
+                    status: "connected_user_profile".into(),
+                    message: None,
+                    browser_kind: kind.to_string(),
+                    setup_url: None,
+                })
+            }
+            Err(UserProfileConnectError::NotABrowserEndpoint(error))
+                if inferred_fallback_available
+                    && BrowserLauncher::is_inferred_guarded_endpoint(&endpoint) =>
+            {
+                log::info!(
+                    "Port {} is not a guarded browser endpoint, continuing with {} setup: {}",
+                    endpoint.port,
+                    kind,
+                    error
+                );
+                inferred_fallback_available = false;
+                result = BrowserLauncher::enable_default_cdp_without_port_fallback(
+                    kind,
+                    logical_port,
+                    wait_for_user_profile_setup,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+            Err(error) => {
                 return Ok(BrowserControlLaunchResponse {
                     success: false,
                     status: "user_profile_connection_failed".into(),
-                    message: Some(error.to_string()),
+                    message: Some(error.into_error().to_string()),
                     browser_kind: kind.to_string(),
                     setup_url: None,
                 });
             }
-            Ok(BrowserControlLaunchResponse {
-                success: true,
-                status: "connected_user_profile".into(),
-                message: None,
-                browser_kind: kind.to_string(),
-                setup_url: None,
-            })
-        }
-        other => {
-            let response = to_launch_response(kind, other);
-            if response.success {
-                CdpClient::authorize_legacy_browser(logical_port, kind).await;
-            }
-            Ok(response)
         }
     }
 }
@@ -430,7 +478,7 @@ pub async fn browser_control_launch(
         .await
         .map_err(|e| e.to_string())?;
 
-    complete_launch(&kind, port, result).await
+    complete_launch(&kind, port, result, false).await
 }
 
 /// Open the selected browser's persistent guarded-CDP setting and wait for the
@@ -472,7 +520,7 @@ pub async fn browser_control_enable_default_cdp(
     let result = BrowserLauncher::enable_default_cdp(&kind, port)
         .await
         .map_err(|e| e.to_string())?;
-    complete_launch(&kind, port, result).await
+    complete_launch(&kind, port, result, true).await
 }
 
 /// Restart the user's default browser with CDP debug port enabled.
@@ -489,7 +537,7 @@ pub async fn browser_control_restart_with_cdp(
         .await
         .map_err(|e| e.to_string())?;
 
-    complete_launch(&kind, port, result).await
+    complete_launch(&kind, port, result, false).await
 }
 
 #[derive(Debug, Serialize)]

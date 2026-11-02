@@ -1793,7 +1793,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                                 ControlHubError::new(
                                     ErrorCode::NotAvailable,
                                     format!(
-                                        "Port {} is served by a browser with guarded remote debugging (no /json HTTP endpoints). That is a user's real browser profile, not a headless test browser; the user can connect it from Settings > Browser control.",
+                                        "Port {} answers 404 on its /json HTTP endpoints, so it is not a headless test browser. If it is a browser with guarded remote debugging, that is a user's real browser profile; the user can connect it from Settings > Browser control.",
                                         port
                                     ),
                                 )

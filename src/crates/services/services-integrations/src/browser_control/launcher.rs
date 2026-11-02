@@ -84,6 +84,11 @@ pub struct BrowserLaunchOptions {
     /// attach steals focus from whatever they were doing. Opt in only for a
     /// user-visible action such as restarting their browser from Settings.
     pub activate: bool,
+    /// Do not infer a guarded endpoint from a 404 port probe. Set after such
+    /// an inferred endpoint rejected the WebSocket upgrade, so the setup flow
+    /// waits for a real `DevToolsActivePort` instead of retrying the same
+    /// non-browser port.
+    pub skip_guarded_port_fallback: bool,
 }
 
 /// What a local CDP debug port answers on its HTTP discovery endpoint.
@@ -105,6 +110,11 @@ pub enum CdpPortProbe {
 pub const GUARDED_BROWSER_WEBSOCKET_PATH: &str = "/devtools/browser";
 
 const CDP_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// How long an explicit Settings setup waits for the consent toggle.
+const USER_PROFILE_SETUP_WAIT: Duration = Duration::from_secs(60);
+/// How long an ordinary connect waits for the normal-start fast path.
+const USER_PROFILE_FAST_PATH_WAIT: Duration = Duration::from_secs(2);
+const USER_PROFILE_SETUP_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 impl BrowserLauncher {
     /// Classify what a local CDP debug port answers. This only performs an
@@ -142,12 +152,14 @@ impl BrowserLauncher {
     }
 
     /// Browser-level endpoint for a guarded remote-debugging port whose
-    /// `DevToolsActivePort` file is not where OpenBitFun looks for it. Only
-    /// browsers with the guarded flow qualify, and a port that another
-    /// supported browser's `DevToolsActivePort` already claims is skipped
-    /// because Chrome and Edge share the default 9222 slot. The caller must
-    /// still verify the product through `Browser.getVersion` after the
-    /// approved WebSocket connects.
+    /// `DevToolsActivePort` file is not where OpenBitFun looks for it. A 404
+    /// alone does not identify a browser, so the fallback additionally
+    /// requires the selected browser to be running, and skips a port that
+    /// the other guarded browser's `DevToolsActivePort` already claims
+    /// (Chrome and Edge share the default 9222 slot). The caller must still
+    /// verify the product through `Browser.getVersion` after the approved
+    /// WebSocket connects. Only an HTTP 404 upgrade response allows a setup
+    /// fallback; authorization denials must remain failures.
     pub async fn guarded_port_debug_endpoint(
         kind: &BrowserKind,
         port: u16,
@@ -155,13 +167,31 @@ impl BrowserLauncher {
         if !Self::supports_default_cdp(kind) || port == 0 {
             return None;
         }
-        if Self::port_claimed_by_other_guarded_browser(kind, port) {
+        let probe = Self::probe_cdp_port(port).await;
+        if probe != CdpPortProbe::GuardedNoHttp {
             return None;
         }
-        if Self::probe_cdp_port(port).await != CdpPortProbe::GuardedNoHttp {
-            return None;
-        }
-        Some(Self::guarded_port_endpoint(port))
+        let selected = kind.clone();
+        let (claimed_by_other, selected_running) = Self::run_blocking(move || {
+            (
+                Self::port_claimed_by_other_guarded_browser(&selected, port),
+                Self::is_browser_running(&selected),
+            )
+        })
+        .await
+        .unwrap_or((true, false));
+        Self::guarded_port_fallback_decision(port, probe, claimed_by_other, selected_running)
+    }
+
+    /// Pure decision behind [`Self::guarded_port_debug_endpoint`].
+    fn guarded_port_fallback_decision(
+        port: u16,
+        probe: CdpPortProbe,
+        claimed_by_other: bool,
+        selected_running: bool,
+    ) -> Option<BrowserDebugEndpoint> {
+        (probe == CdpPortProbe::GuardedNoHttp && !claimed_by_other && selected_running)
+            .then(|| Self::guarded_port_endpoint(port))
     }
 
     fn guarded_port_endpoint(port: u16) -> BrowserDebugEndpoint {
@@ -169,6 +199,12 @@ impl BrowserLauncher {
             port,
             web_socket_url: format!("ws://127.0.0.1:{port}{GUARDED_BROWSER_WEBSOCKET_PATH}"),
         }
+    }
+
+    /// Whether this endpoint was inferred from a 404 port probe rather than
+    /// read from `DevToolsActivePort`, whose path always carries a browser id.
+    pub fn is_inferred_guarded_endpoint(endpoint: &BrowserDebugEndpoint) -> bool {
+        endpoint == &Self::guarded_port_endpoint(endpoint.port)
     }
 
     fn port_claimed_by_other_guarded_browser(kind: &BrowserKind, port: u16) -> bool {
@@ -181,14 +217,58 @@ impl BrowserLauncher {
             })
     }
 
+    /// Run a filesystem, TCP, or process-listing check off the async runtime.
+    async fn run_blocking<T: Send + 'static>(
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Option<T> {
+        tokio::task::spawn_blocking(work).await.ok()
+    }
+
+    /// [`Self::user_profile_debug_endpoint`] without blocking the async
+    /// runtime on its file reads and TCP probes.
+    pub async fn user_profile_debug_endpoint_async(
+        kind: &BrowserKind,
+    ) -> Option<BrowserDebugEndpoint> {
+        let kind = kind.clone();
+        Self::run_blocking(move || Self::user_profile_debug_endpoint(&kind))
+            .await
+            .flatten()
+    }
+
+    /// A running browser that can own a guarded remote-debugging port. A 404
+    /// on `/json/version` without one is an unrelated HTTP server.
+    async fn running_guarded_browser() -> Option<BrowserKind> {
+        Self::run_blocking(|| {
+            [BrowserKind::Chrome, BrowserKind::Edge]
+                .into_iter()
+                .find(Self::is_browser_running)
+        })
+        .await
+        .flatten()
+    }
+
+    /// Whether a guarded browser other than `kind` is running, in which case a
+    /// port inferred for `kind` from a 404 probe may belong to that browser.
+    pub async fn other_guarded_browser_running(kind: &BrowserKind) -> bool {
+        let selected = kind.clone();
+        Self::run_blocking(move || {
+            [BrowserKind::Chrome, BrowserKind::Edge]
+                .iter()
+                .filter(|other| **other != selected)
+                .any(Self::is_browser_running)
+        })
+        .await
+        .unwrap_or(true)
+    }
+
     /// Endpoint for the selected browser's real profile: the published
     /// `DevToolsActivePort` file first, then a guarded port that answers 404
-    /// on `/json/version`.
+    /// on `/json/version` while the selected browser is running.
     pub async fn user_profile_debug_endpoint_or_guarded_port(
         kind: &BrowserKind,
         port: u16,
     ) -> Option<BrowserDebugEndpoint> {
-        if let Some(endpoint) = Self::user_profile_debug_endpoint(kind) {
+        if let Some(endpoint) = Self::user_profile_debug_endpoint_async(kind).await {
             return Some(endpoint);
         }
         Self::guarded_port_debug_endpoint(kind, port).await
@@ -580,15 +660,34 @@ impl BrowserLauncher {
 
     /// Whether the browser's persistent, approval-based CDP preference is on.
     /// The endpoint is also accepted as proof because the browser may create it
-    /// before its Local State update has been flushed to disk.
+    /// before its Local State update has been flushed to disk. Without a live
+    /// endpoint only the stable channel's Local State counts: a Beta/Dev
+    /// channel preference says nothing about the browser that will start.
     pub fn is_default_cdp_enabled(kind: &BrowserKind) -> bool {
         if !Self::supports_default_cdp(kind) {
             return false;
         }
-        if Self::user_profile_debug_endpoint(kind).is_some() {
+        Self::default_cdp_enabled_in_dirs(&Self::user_profile_data_dirs(kind))
+    }
+
+    /// [`Self::is_default_cdp_enabled`] without blocking the async runtime on
+    /// its file reads and TCP probes.
+    pub async fn is_default_cdp_enabled_async(kind: &BrowserKind) -> bool {
+        let kind = kind.clone();
+        Self::run_blocking(move || Self::is_default_cdp_enabled(&kind))
+            .await
+            .unwrap_or(false)
+    }
+
+    /// `directories` is the candidate list, stable channel first.
+    fn default_cdp_enabled_in_dirs(directories: &[PathBuf]) -> bool {
+        if directories
+            .iter()
+            .any(|directory| Self::debug_endpoint_in_dir(directory).is_some())
+        {
             return true;
         }
-        Self::user_profile_data_dirs(kind).iter().any(|directory| {
+        directories.first().is_some_and(|directory| {
             std::fs::read_to_string(directory.join("Local State"))
                 .ok()
                 .is_some_and(|contents| Self::default_cdp_preference_enabled(&contents))
@@ -677,28 +776,53 @@ impl BrowserLauncher {
         }
     }
 
+    async fn discover_user_profile_endpoint(
+        kind: &BrowserKind,
+        port: u16,
+        allow_port_fallback: bool,
+    ) -> Option<BrowserDebugEndpoint> {
+        if allow_port_fallback {
+            Self::user_profile_debug_endpoint_or_guarded_port(kind, port).await
+        } else {
+            Self::user_profile_debug_endpoint_async(kind).await
+        }
+    }
+
     async fn prepare_user_profile_connection(
         kind: &BrowserKind,
         port: u16,
         wait_for_user_setup: bool,
+        allow_port_fallback: bool,
     ) -> Result<LaunchResult> {
-        if let Some(endpoint) = Self::user_profile_debug_endpoint_or_guarded_port(kind, port).await
+        if let Some(endpoint) =
+            Self::discover_user_profile_endpoint(kind, port, allow_port_fallback).await
         {
             return Ok(LaunchResult::UserProfileReady { endpoint });
         }
 
         let setup_url = Self::user_profile_debugging_setup_url(kind)
             .ok_or_else(|| anyhow!("{} does not support guarded user-profile CDP", kind))?;
-        let opened = Self::open_user_profile_debugging_setup(kind, setup_url);
+        let setup_kind = kind.clone();
+        let opened = Self::run_blocking(move || {
+            Self::open_user_profile_debugging_setup(&setup_kind, setup_url)
+        })
+        .await
+        .unwrap_or(false);
 
         // An explicit Settings action waits up to one minute so the user can
         // tick the browser-owned consent checkbox; an ordinary agent connect
         // only waits for the normal-start fast path before returning guidance.
-        let attempts = if wait_for_user_setup { 240 } else { 8 };
-        for _ in 0..attempts {
-            tokio::time::sleep(Duration::from_millis(250)).await;
+        // The budget is a deadline so slow probes cannot stretch it.
+        let deadline = tokio::time::Instant::now()
+            + if wait_for_user_setup {
+                USER_PROFILE_SETUP_WAIT
+            } else {
+                USER_PROFILE_FAST_PATH_WAIT
+            };
+        while tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(USER_PROFILE_SETUP_POLL_INTERVAL).await;
             if let Some(endpoint) =
-                Self::user_profile_debug_endpoint_or_guarded_port(kind, port).await
+                Self::discover_user_profile_endpoint(kind, port, allow_port_fallback).await
             {
                 return Ok(LaunchResult::UserProfileReady { endpoint });
             }
@@ -969,6 +1093,17 @@ impl BrowserLauncher {
         Self::launch_with_cdp_options(kind, port, BrowserLaunchOptions::default()).await
     }
 
+    /// Guidance when a launch targets a port that a running guarded browser
+    /// owns. A managed instance cannot bind it and the legacy HTTP attach path
+    /// cannot use it. `None` keeps the ordinary launch path.
+    fn guarded_port_launch_conflict(port: u16, owner: Option<&BrowserKind>) -> Option<String> {
+        owner.map(|owner| {
+            format!(
+                "Port {port} appears to be served by {owner} with guarded remote debugging, which has no /json HTTP endpoints. Connect it from Settings > Browser control instead."
+            )
+        })
+    }
+
     /// Same as [`launch_with_cdp`] but allows passing an isolated
     /// `--user-data-dir`. When the user is already running their main
     /// browser without CDP, an isolated profile lets us start a sibling
@@ -982,7 +1117,7 @@ impl BrowserLauncher {
             // Opportunistically reuse the real profile for any Chromium browser
             // that already publishes a browser-level endpoint. Chrome and Edge
             // additionally get a first-class setup flow when it is not enabled.
-            if let Some(endpoint) = Self::user_profile_debug_endpoint(kind) {
+            if let Some(endpoint) = Self::user_profile_debug_endpoint_async(kind).await {
                 return Ok(LaunchResult::UserProfileReady { endpoint });
             }
             if Self::supports_default_cdp(kind) {
@@ -990,6 +1125,7 @@ impl BrowserLauncher {
                     kind,
                     port,
                     options.wait_for_user_profile_setup,
+                    !options.skip_guarded_port_fallback,
                 )
                 .await;
             }
@@ -1001,14 +1137,13 @@ impl BrowserLauncher {
                 return Ok(LaunchResult::AlreadyConnected);
             }
             CdpPortProbe::GuardedNoHttp => {
-                // A guarded user-profile endpoint owns this port. A managed
-                // instance cannot bind it, and the legacy HTTP attach path
-                // cannot use it, so fail with guidance instead of a launch
-                // that never becomes ready.
-                return Err(anyhow!(
-                    "Port {} is served by a browser with guarded remote debugging, which has no /json HTTP endpoints. Connect it from Settings > Browser control instead.",
-                    port
-                ));
+                // Only a running Chrome / Edge confirms that guarded remote
+                // debugging owns this port; any other 404 server keeps the
+                // ordinary launch path and its existing not-ready result.
+                let owner = Self::running_guarded_browser().await;
+                if let Some(message) = Self::guarded_port_launch_conflict(port, owner.as_ref()) {
+                    return Err(anyhow!(message));
+                }
             }
             CdpPortProbe::Unreachable => {}
         }
@@ -1315,6 +1450,7 @@ fn linux_profile_dir_candidates(
                 "google-chrome",
                 "google-chrome-beta",
                 "google-chrome-unstable",
+                "google-chrome-canary",
             ],
             &[".var/app/com.google.Chrome/config/google-chrome"],
         ),
@@ -1324,7 +1460,7 @@ fn linux_profile_dir_candidates(
                 "microsoft-edge-beta",
                 "microsoft-edge-dev",
             ],
-            &[],
+            &[".var/app/com.microsoft.Edge/config/microsoft-edge"],
         ),
         BrowserKind::Chromium => (&["chromium"], &["snap/chromium/common/chromium"]),
         BrowserKind::Brave => (&["BraveSoftware/Brave-Browser"], &[]),
@@ -1453,6 +1589,19 @@ mod tests {
         assert!(!BrowserLauncher::default_cdp_preference_enabled("{}"));
     }
 
+    #[test]
+    fn default_cdp_preference_reads_only_the_stable_local_state() {
+        let enabled = r#"{"devtools":{"remote_debugging":{"user-enabled":true}}}"#;
+        let stable = tempfile::tempdir().unwrap();
+        let beta = tempfile::tempdir().unwrap();
+        std::fs::write(beta.path().join("Local State"), enabled).unwrap();
+        let dirs = vec![stable.path().to_path_buf(), beta.path().to_path_buf()];
+        // A Beta-only preference does not describe the stable browser.
+        assert!(!BrowserLauncher::default_cdp_enabled_in_dirs(&dirs));
+        std::fs::write(stable.path().join("Local State"), enabled).unwrap();
+        assert!(BrowserLauncher::default_cdp_enabled_in_dirs(&dirs));
+    }
+
     #[tokio::test]
     async fn probe_classifies_guarded_http_and_unreachable_ports() {
         use crate::browser_control::test_support::{closed_port, serve_fixed_http};
@@ -1482,50 +1631,97 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn guarded_port_falls_back_to_browser_websocket_for_chrome_and_edge_only() {
+    async fn guarded_port_fallback_is_limited_to_chrome_and_edge_on_a_404_port() {
         use crate::browser_control::test_support::serve_fixed_http;
 
-        let guarded = serve_fixed_http("404 Not Found", "").await;
-        let expected = format!("ws://127.0.0.1:{guarded}/devtools/browser");
-        for kind in [BrowserKind::Chrome, BrowserKind::Edge] {
-            let endpoint = BrowserLauncher::guarded_port_debug_endpoint(&kind, guarded)
-                .await
-                .expect("guarded endpoint");
-            assert_eq!(endpoint.port, guarded);
-            assert_eq!(endpoint.web_socket_url, expected);
-        }
         // Browsers without the guarded flow never guess a WebSocket.
+        let guarded = serve_fixed_http("404 Not Found", "").await;
         assert!(
             BrowserLauncher::guarded_port_debug_endpoint(&BrowserKind::Brave, guarded)
                 .await
                 .is_none()
         );
-
         // A legacy fixed port keeps the HTTP discovery path.
         let legacy = serve_fixed_http("200 OK", "{}").await;
-        assert!(
-            BrowserLauncher::guarded_port_debug_endpoint(&BrowserKind::Chrome, legacy)
+        for kind in [BrowserKind::Chrome, BrowserKind::Edge] {
+            assert!(BrowserLauncher::guarded_port_debug_endpoint(&kind, legacy)
                 .await
-                .is_none()
+                .is_none());
+        }
+    }
+
+    #[test]
+    fn guarded_port_fallback_requires_the_selected_browser_running() {
+        let port = 9222;
+        let expected = BrowserDebugEndpoint {
+            port,
+            web_socket_url: "ws://127.0.0.1:9222/devtools/browser".to_string(),
+        };
+        assert_eq!(
+            BrowserLauncher::guarded_port_fallback_decision(
+                port,
+                CdpPortProbe::GuardedNoHttp,
+                false,
+                true
+            ),
+            Some(expected.clone())
         );
+        assert!(BrowserLauncher::is_inferred_guarded_endpoint(&expected));
+        // A 404 from an unrelated server while the selected browser is not
+        // running (for example Chrome selected, Edge guarded on 9222).
+        assert_eq!(
+            BrowserLauncher::guarded_port_fallback_decision(
+                port,
+                CdpPortProbe::GuardedNoHttp,
+                false,
+                false
+            ),
+            None
+        );
+        // The other guarded browser's DevToolsActivePort claims the port.
+        assert_eq!(
+            BrowserLauncher::guarded_port_fallback_decision(
+                port,
+                CdpPortProbe::GuardedNoHttp,
+                true,
+                true
+            ),
+            None
+        );
+        for probe in [CdpPortProbe::Http, CdpPortProbe::Unreachable] {
+            assert_eq!(
+                BrowserLauncher::guarded_port_fallback_decision(port, probe, false, true),
+                None
+            );
+        }
+        // An endpoint read from DevToolsActivePort carries a browser id.
+        assert!(!BrowserLauncher::is_inferred_guarded_endpoint(
+            &BrowserDebugEndpoint {
+                port,
+                web_socket_url: "ws://127.0.0.1:9222/devtools/browser/abc".to_string(),
+            }
+        ));
+    }
+
+    #[test]
+    fn launch_conflict_requires_a_confirmed_guarded_browser() {
+        assert!(BrowserLauncher::guarded_port_launch_conflict(9222, None).is_none());
+        let message = BrowserLauncher::guarded_port_launch_conflict(9222, Some(&BrowserKind::Edge))
+            .expect("confirmed owner");
+        assert!(message.contains("Microsoft Edge"));
+        assert!(message.contains("Settings > Browser control"));
     }
 
     #[tokio::test]
-    async fn non_guarded_launch_refuses_a_port_owned_by_guarded_debugging() {
+    async fn setup_without_port_fallback_never_infers_a_404_port() {
         use crate::browser_control::test_support::serve_fixed_http;
 
-        let guarded = serve_fixed_http("404 Not Found", "").await;
-        let error = BrowserLauncher::launch_with_cdp_options(
-            &BrowserKind::Brave,
-            guarded,
-            BrowserLaunchOptions {
-                user_data_dir: Some(std::env::temp_dir().join("openbitfun-guarded-port-test")),
-                ..BrowserLaunchOptions::default()
-            },
-        )
-        .await
-        .expect_err("guarded port must not be treated as a launch target");
-        assert!(error.to_string().contains("Settings > Browser control"));
+        let port = serve_fixed_http("404 Not Found", "").await;
+        for kind in [BrowserKind::Chrome, BrowserKind::Edge] {
+            let endpoint =
+                BrowserLauncher::discover_user_profile_endpoint(&kind, port, false).await;
+            assert!(!endpoint.is_some_and(|endpoint| endpoint.port == port));
+        }
     }
 
     #[test]
@@ -1585,6 +1781,7 @@ mod tests {
                 config.join("google-chrome"),
                 config.join("google-chrome-beta"),
                 config.join("google-chrome-unstable"),
+                config.join("google-chrome-canary"),
                 home.join(".var/app/com.google.Chrome/config/google-chrome"),
             ]
         );
@@ -1594,6 +1791,7 @@ mod tests {
                 config.join("microsoft-edge"),
                 config.join("microsoft-edge-beta"),
                 config.join("microsoft-edge-dev"),
+                home.join(".var/app/com.microsoft.Edge/config/microsoft-edge"),
             ]
         );
         assert_eq!(

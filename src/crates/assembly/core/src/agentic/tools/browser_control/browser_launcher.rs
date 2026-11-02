@@ -37,6 +37,26 @@ impl BrowserLauncher {
         provider::BrowserLauncher::user_profile_debug_endpoint_or_guarded_port(kind, port).await
     }
 
+    /// Whether `endpoint` was inferred from a 404 port probe instead of a
+    /// published `DevToolsActivePort` file.
+    pub fn is_inferred_guarded_endpoint(endpoint: &BrowserDebugEndpoint) -> bool {
+        provider::BrowserLauncher::is_inferred_guarded_endpoint(endpoint)
+    }
+
+    /// Settings setup flow used after an inferred guarded endpoint rejected
+    /// the WebSocket upgrade: open the browser's Remote debugging page and
+    /// wait for a real `DevToolsActivePort`, without probing the port again.
+    pub async fn enable_default_cdp_without_port_fallback(
+        kind: &BrowserKind,
+        port: u16,
+        wait_for_user_profile_setup: bool,
+    ) -> OpenBitFunResult<LaunchResult> {
+        let mut options = Self::launch_options(None, true);
+        options.wait_for_user_profile_setup = wait_for_user_profile_setup;
+        options.skip_guarded_port_fallback = true;
+        Ok(provider::BrowserLauncher::launch_with_cdp_options(kind, port, options).await?)
+    }
+
     pub fn detect_default_browser() -> OpenBitFunResult<BrowserKind> {
         Ok(provider::BrowserLauncher::detect_default_browser()?)
     }
@@ -74,6 +94,16 @@ impl BrowserLauncher {
 
     pub fn is_default_cdp_enabled(kind: &BrowserKind) -> bool {
         provider::BrowserLauncher::is_default_cdp_enabled(kind)
+    }
+
+    pub async fn is_default_cdp_enabled_async(kind: &BrowserKind) -> bool {
+        provider::BrowserLauncher::is_default_cdp_enabled_async(kind).await
+    }
+
+    /// Whether Chrome or Edge other than `kind` is running, so a port inferred
+    /// for `kind` from a 404 probe may belong to that browser.
+    pub async fn other_guarded_browser_running(kind: &BrowserKind) -> bool {
+        provider::BrowserLauncher::other_guarded_browser_running(kind).await
     }
 
     pub fn user_profile_debugging_setup_url(kind: &BrowserKind) -> Option<&'static str> {
@@ -144,6 +174,7 @@ impl BrowserLauncher {
             managed_profile_root: Some(get_path_manager_arc().user_data_dir()),
             wait_for_user_profile_setup: false,
             activate,
+            skip_guarded_port_fallback: false,
         }
     }
 }

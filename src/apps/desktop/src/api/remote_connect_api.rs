@@ -3293,13 +3293,17 @@ pub async fn account_delete_device(targetDeviceId: String) -> Result<(), String>
 /// Returns the decrypted response JSON.
 const ACCOUNT_DEVICE_RPC_DEFAULT_TIMEOUT_MS: u64 = 120_000;
 const ACCOUNT_DEVICE_RPC_MIN_TIMEOUT_MS: u64 = 1_000;
+/// Upper bound for a controller-requested deadline. Ordinary commands keep
+/// the 120 s default; Browser Control setup asks for 185 s because it waits
+/// on browser-owned consent (see `peer_host_invoke::invoke_timeout_for`).
+const ACCOUNT_DEVICE_RPC_MAX_TIMEOUT_MS: u64 = 190_000;
 
 fn account_device_rpc_timeout_ms(requested: Option<u64>) -> u64 {
     requested
         .unwrap_or(ACCOUNT_DEVICE_RPC_DEFAULT_TIMEOUT_MS)
         .clamp(
             ACCOUNT_DEVICE_RPC_MIN_TIMEOUT_MS,
-            ACCOUNT_DEVICE_RPC_DEFAULT_TIMEOUT_MS,
+            ACCOUNT_DEVICE_RPC_MAX_TIMEOUT_MS,
         )
 }
 
@@ -3313,9 +3317,18 @@ pub async fn account_device_rpc(
     let (session, relay_url) = read_account_context_for_generation(account_generation).await?;
     let client = AccountClient::new();
     let timeout_ms = account_device_rpc_timeout_ms(timeout_ms);
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    // The relay forwards this deadline to the target as `timeoutMs`; the local
+    // guard below only bounds the controller wait for the same budget.
     let response = tokio::time::timeout(
-        std::time::Duration::from_millis(timeout_ms),
-        client.device_rpc(&relay_url, &session, &target_device_id, &command_json),
+        timeout + std::time::Duration::from_secs(5),
+        client.device_rpc_with_timeout(
+            &relay_url,
+            &session,
+            &target_device_id,
+            &command_json,
+            timeout,
+        ),
     )
     .await
     .map_err(|_| format!("device RPC timed out after {timeout_ms}ms"))?
@@ -3661,7 +3674,15 @@ mod sync_state_tests {
         );
         assert_eq!(
             account_device_rpc_timeout_ms(Some(u64::MAX)),
-            ACCOUNT_DEVICE_RPC_DEFAULT_TIMEOUT_MS
+            ACCOUNT_DEVICE_RPC_MAX_TIMEOUT_MS
+        );
+        // Browser Control setup's Peer budget must survive the clamp and
+        // still exceed the host invoke limit for those commands.
+        assert_eq!(account_device_rpc_timeout_ms(Some(185_000)), 185_000);
+        assert!(
+            account_device_rpc_timeout_ms(Some(185_000))
+                > crate::api::peer_host_invoke::BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT.as_millis()
+                    as u64
         );
     }
 

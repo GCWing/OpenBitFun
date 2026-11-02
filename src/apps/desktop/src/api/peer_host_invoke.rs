@@ -28,7 +28,7 @@ const DEFAULT_INVOKE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Browser Control setup waits for browser-owned consent: up to one minute for
 /// the Remote debugging toggle plus up to 90 seconds for the connection
 /// approval prompt. The controller adapter uses the same budget.
-const BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT: Duration = Duration::from_secs(180);
+pub(crate) const BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT: Duration = Duration::from_secs(180);
 
 fn invoke_timeout_for(command: &str) -> Duration {
     match command {

@@ -41,8 +41,9 @@ pub struct CdpVersionInfo {
 #[derive(Debug, Error)]
 pub enum CdpEndpointError {
     /// Chromium's user-approved remote debugging serves no `/json*` HTTP
-    /// discovery API; only the approved browser WebSocket works.
-    #[error("The browser on port {port} uses guarded remote debugging, which has no /json HTTP endpoints. Connect it from Settings > Browser control so OpenBitFun can use the approved browser WebSocket connection.")]
+    /// discovery API; only the approved browser WebSocket works. A 404 alone
+    /// does not prove the port is a browser, so the message stays conditional.
+    #[error("Port {port} answers 404 on its /json HTTP endpoints, so it is not a legacy CDP debug port. If it is a browser with guarded remote debugging, connect it from Settings > Browser control so OpenBitFun can use the approved browser WebSocket connection.")]
     GuardedNoHttp { port: u16 },
     #[error("Cannot reach browser CDP on port {port}: {message}")]
     VersionRequest { port: u16, message: String },

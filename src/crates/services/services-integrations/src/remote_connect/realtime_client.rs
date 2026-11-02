@@ -6,6 +6,36 @@ use serde_json::{json, Value};
 use sioc::prelude::*;
 use std::time::Duration;
 
+/// Default end-to-end device RPC deadline, unchanged for ordinary commands.
+pub const DEFAULT_RPC_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Deadlines for one relay RPC: the target's reply deadline (sent as
+/// `timeoutMs`), the Socket.IO acknowledgement wait, and the overall guard.
+/// The acknowledgement and guard keep the previous 3 s / 5 s margins over the
+/// target deadline so the target's own timeout error arrives first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RpcCallDeadlines {
+    pub target: Duration,
+    pub ack: Duration,
+    pub overall: Duration,
+}
+
+impl RpcCallDeadlines {
+    pub(crate) fn for_timeout(timeout: Duration) -> Self {
+        let target = timeout.max(Duration::from_secs(1));
+        Self {
+            target,
+            ack: target + Duration::from_secs(3),
+            overall: target + Duration::from_secs(5),
+        }
+    }
+}
+
+pub(crate) fn rpc_call_payload(target: &str, params: Value, timeout: Duration) -> Value {
+    let timeout_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
+    json!({"method":format!("{target}:invoke"),"params":params,"timeoutMs":timeout_ms})
+}
+
 /// Authentication payload shared by all Rust hosts and controllers.
 ///
 /// Every (re)connect carries the build string and control-contract protocol
@@ -219,14 +249,25 @@ impl RealtimeSender {
         Ok(())
     }
     pub async fn call(&self, target: &str, params: Value) -> Result<Value> {
+        self.call_with_timeout(target, params, DEFAULT_RPC_TIMEOUT)
+            .await
+    }
+    /// Call a target device with an explicit end-to-end deadline. The relay
+    /// forwards `timeoutMs` to the target, whose reply owner uses it as its
+    /// deadline, so a long-running command must carry its budget here.
+    pub async fn call_with_timeout(
+        &self,
+        target: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value> {
         let params = self.payloads.upload_if_large(params).await?;
-        let ack = tokio::time::timeout(Duration::from_secs(125), async {
+        let deadlines = RpcCallDeadlines::for_timeout(timeout);
+        let ack = tokio::time::timeout(deadlines.overall, async {
             self.sender
-                .emit(RpcCall(
-                    json!({"method":format!("{target}:invoke"),"params":params,"timeoutMs":120_000}),
-                ))
+                .emit(RpcCall(rpc_call_payload(target, params, deadlines.target)))
                 .await?
-                .timeout(Duration::from_secs(123))
+                .timeout(deadlines.ack)
                 .await
                 .map_err(anyhow::Error::from)
         })
@@ -254,5 +295,31 @@ impl RealtimeSender {
         .await
         .map_err(|_| anyhow!("Relay response write timed out"))??;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_rpc_payload_keeps_the_legacy_deadlines() {
+        let deadlines = RpcCallDeadlines::for_timeout(DEFAULT_RPC_TIMEOUT);
+        assert_eq!(deadlines.target, Duration::from_secs(120));
+        assert_eq!(deadlines.ack, Duration::from_secs(123));
+        assert_eq!(deadlines.overall, Duration::from_secs(125));
+        let payload = rpc_call_payload("device-1", json!({"nonce":"n"}), deadlines.target);
+        assert_eq!(payload["method"], "device-1:invoke");
+        assert_eq!(payload["timeoutMs"], 120_000);
+    }
+
+    #[test]
+    fn long_rpc_carries_its_budget_to_the_target() {
+        let deadlines = RpcCallDeadlines::for_timeout(Duration::from_millis(185_000));
+        let payload = rpc_call_payload("device-1", json!({}), deadlines.target);
+        // Hosts derive their reply deadline from this field.
+        assert_eq!(payload["timeoutMs"], 185_000);
+        assert!(deadlines.ack > deadlines.target);
+        assert!(deadlines.overall > deadlines.ack);
     }
 }
