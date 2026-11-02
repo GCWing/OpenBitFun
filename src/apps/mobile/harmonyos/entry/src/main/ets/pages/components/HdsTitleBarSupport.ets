@@ -38,13 +38,16 @@
  * The two controls are the platform's, not the app's. The back control is
  * `HdsNavDestination`'s own — this file configures no `backIcon` at all, so the
  * platform draws its own glyph in its own circular chip — and the menu trigger is
- * the system four-dot symbol, which is the one glyph the platform sizes itself
- * (`HdsNavigationIconOptions.icon` is an `IconType`, and the modifier that carries
- * a symbol into that slot comes from `SystemSymbolIcon`, the one leaf that names
- * the platform's own symbol value). The app's own bitmaps are a 38x59 return glyph
- * and a 64x19 overflow glyph, and a square platform icon slot renders the second
- * one as a dark blob: an asset that carries its own aspect ratio belongs on a
- * surface the app sizes, not in a slot the platform sizes.
+ * the system four-dot symbol, which is the one glyph the platform draws from a
+ * value rather than from an asset (`HdsNavigationIconOptions.icon` is an
+ * `IconType`, and the modifier that carries a symbol into that slot comes from
+ * `SystemSymbolIcon`, the one leaf that names the platform's own symbol value).
+ * The app's own bitmaps are a 38x59 return glyph and a 64x19 overflow glyph, and a
+ * square platform icon slot renders the second one as a dark blob: an asset that
+ * carries its own aspect ratio belongs on a surface the app sizes, not in a slot
+ * the platform sizes. The slot's *geometry* stays the platform's; the glyph's ink
+ * and its size are the two things the app states about the trigger, and both are
+ * stated on the modifier the slot takes.
  *
  * Who reads it: `AppRootPresentation` builds the conversation route's band from
  * `options()`, and the immersive preview's title bar scenario builds the same
@@ -65,7 +68,7 @@ import {
   HdsTitleBarScene,
   resolveHdsTitleBar
 } from '../policy/HdsTitleBarPolicy';
-import { ConversationHeaderPresentation } from '../policy/ConversationHeaderPolicy';
+import { ConversationHeaderPolicy, ConversationHeaderPresentation } from '../policy/ConversationHeaderPolicy';
 import { HdsTitleBarMaterialService, HdsTitleBarSnapshot } from '../../services/HdsTitleBarMaterialService';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CONVERSATION_HEADER_MENU_ANCHOR_ID } from './ConversationHeaderMenu';
@@ -186,12 +189,36 @@ export class HdsTitleBarSupport {
           value: [{
             content: {
               // The system four-dot grid, not the app's 64x19 overflow bitmap:
-              // the slot is the platform's (24vp square by default) and it owns
-              // the glyph's size, so a wide three-dot asset cannot survive it.
-              // `SystemSymbolIcon` is the one import of the platform's own symbol
-              // value — the modifier is the whole configuration, with no `width`,
-              // `height` or `fontSize` on it, because HDS sizes its own slot.
-              icon: SystemSymbolIcon.modifier($r('sys.symbol.square_grid_2x2')),
+              // the slot is the platform's (24vp square by default) and its
+              // geometry is the platform's, so a wide three-dot asset cannot
+              // survive it. `SystemSymbolIcon` is the one import of the platform's
+              // own symbol value — the modifier is the whole configuration, with no
+              // `width` or `height` on it, because a glyph forced to a box draws its
+              // ink left-anchored rather than scaling.
+              //
+              // The size *is* stated, because the platform's own default reads
+              // smaller than the system's own title bar draws this symbol: left
+              // alone, HDS put the four dots in about a quarter of its chip, while
+              // the reference on this very phone fills more than a third of the
+              // same-sized chip. `menuStyle` states a colour and no size, so the
+              // modifier's `fontSize` is the channel; the number is
+              // `ConversationHeaderPolicy.TRIGGER_GLYPH_SIZE`, the same one the
+              // wide header's `SymbolGlyph` draws, so the two postures cannot drift.
+              //
+              // `dot_grid_2x2` and not `square_grid_2x2`: both come from the same
+              // SDK symbol table and both are a 2x2 grid, but the first is four
+              // round dots and the second four small squares. The reference on
+              // this very device — the system Settings WLAN title bar's top-right
+              // control — is the dot grid, and it is the shape the app's own wide
+              // band carries, so one action keeps one glyph on both postures.
+              //
+              // The second argument is this glyph's ink, and it is the modifier
+              // that has to carry it: a slot icon that states no colour is drawn in
+              // ArkUI's own default, which does not follow the appearance, and the
+              // style-level `menuStyle.iconColor` was measured not to reach a
+              // caller-supplied modifier. See `SystemSymbolIcon`.
+              icon: SystemSymbolIcon.modifier($r('sys.symbol.dot_grid_2x2'), INK,
+                ConversationHeaderPolicy.TRIGGER_GLYPH_SIZE),
               label: params.menuLabel,
               isEnabled: true,
               // The id, not the trigger: the conversation opens its own menu
@@ -311,9 +338,16 @@ export class HdsTitleBarSupport {
    * `HdsNavigationIconItemStyle.iconColor` defaults to the immersive pair — a
    * light, appearance-independent colour on a chip whose fill *does* follow the
    * appearance — so the platform's own arrow is not guaranteed to contrast with
-   * its own chip. The app states it from the theme instead, and only for the
-   * return glyph: the menu trigger is a symbol modifier and already carries the
-   * theme's ink, which is why it never needed this. Neither chip's fill is stated
+   * its own chip. The app states it from the theme instead.
+   *
+   * The menu trigger's ink is *not* stated here, and could not be: the trigger is a
+   * `SymbolGlyphModifier`, and `menuStyle.iconColor` was measured on the phone not
+   * to reach one — stated, and then absent, the dots drew identically. Its ink is
+   * the modifier's own `fontColor`, stated where the modifier is built (in
+   * `options()` above, through `SystemSymbolIcon`), which is the same knob the wide
+   * band's `SymbolGlyph` carries. A `menuStyle` here is therefore dead
+   * configuration, and a later author reading one would believe the trigger's ink
+   * was answered in this method. Neither chip's fill is stated
    * (`backIconStyle.backgroundColor`): the chip is what the platform draws and the
    * app has no business recolouring it.
    */

@@ -15,14 +15,39 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
  * (`$r('sys.symbol.…')`) and the band's support class names no API family beyond the
  * design kit it already reads.
  *
- * Nothing is sized here. HDS owns the geometry of its own icon slot — the modifier's
- * `fontSize` is documented as not applicable, and a chip that was given an icon size
- * by the app would be a chip the app is fighting — so a caller hands over the symbol
- * and nothing else.
+ * The *size* is here because the caller owns it as much as the ink. Left alone the
+ * platform draws the symbol at its own icon size inside its own chip, and on this
+ * device that reads smaller than the system's own title bar does: measured on the
+ * phone, the four dots filled about a quarter of the chip the platform drew
+ * (`0.24 x 0.23` at 1320px) while the system Settings WLAN band's own four-dot
+ * trigger — the reference the app is held to — fills about `0.38 x 0.36` of the
+ * same-sized chip. `menuStyle` states a colour and no size at all, and HDS documents
+ * the modifier's `fontSize` as not applying to its *toolbar*'s icon items — but on
+ * the title bar's own icon slot it lands: stated as 24vp, the dots measure 51x49px
+ * in the same 134px chip, `0.38 x 0.36`, the reference ratio, with the chip
+ * unmoved. So `fontSize` is the one channel left for this slot, and this leaf sets
+ * it. The size is never a second number here — the caller passes the one named
+ * value both postures draw (`ConversationHeaderPolicy.TRIGGER_GLYPH_SIZE`).
+ *
+ * A box is still not stated. A `SymbolGlyph` forced to `.width()`/`.height()` draws
+ * its ink left-anchored inside the forced box rather than scaling, and the platform
+ * slot is 24vp square; `fontSize` is the axis that scales the ink and leaves the
+ * slot's own geometry alone.
+ *
+ * The ink is here because the slot does not answer for it. A `SymbolGlyphModifier`
+ * that states no colour is drawn in ArkUI's own default ink, which does not follow
+ * the appearance; HDS's `menuStyle.iconColor` does not reach a caller-supplied
+ * modifier either (measured on the phone: stated there, the four dots stayed
+ * near-black on a lighter chip in the dark appearance). `fontColor` on the modifier
+ * is the same knob the app's own `SymbolGlyph` carries in its wide header, and it is
+ * the one that lands in the platform's slot.
  */
 export class SystemSymbolIcon {
-  /** The modifier a platform icon slot takes, for the symbol `src` names. */
-  static modifier(src: Resource): SymbolGlyphModifier {
-    return new SymbolGlyphModifier(src);
+  /**
+   * The modifier a platform icon slot takes, for the symbol `src` names, the ink
+   * `ink` states and the `size` it draws at.
+   */
+  static modifier(src: Resource, ink: ResourceColor, size: number): SymbolGlyphModifier {
+    return new SymbolGlyphModifier(src).fontColor([ink]).fontSize(size);
   }
 }

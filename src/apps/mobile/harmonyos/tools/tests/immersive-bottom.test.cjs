@@ -1850,6 +1850,12 @@ test('the platform band has one floor at every offset, and the scroll effect tha
   assert.deepEqual(distinct, ['INK', 'MUTED', 'PAGE_BG_OVERLAY'],
     'the band states a colour for its floor, its two lines and the platform return glyph\'s ink, and nothing ' +
     'else: the chips are the platform\'s, so there is no chip fill to state');
+  // The menu trigger's ink is not in this method at all, so the two `INK`s here are
+  // counted: a control that lost its ink would otherwise pass a set comparison,
+  // because the surviving one still names `INK`.
+  assert.equal(values.filter((value) => value === 'INK').length, 2,
+    '`INK` must be stated twice in `barStyle` — the title line and the return glyph\'s ink — so that dropping ' +
+    'either is a failure and not a smaller set');
   for (const value of distinct) {
     assert.ok(tokens.includes(value),
       `${value} must be a Theme token imported by the support class: a literal colour stops following the appearance`);
@@ -1860,10 +1866,11 @@ test('the platform band has one floor at every offset, and the scroll effect tha
   // The key vocabulary is re-derived from `barStyle`: the return glyph's *ink* is
   // stated (the platform's own default for it is the immersive pair, a light and
   // appearance-independent colour on a chip whose fill does follow the appearance,
-  // so the arrow is not guaranteed to contrast with its own chip),
-  // and nothing else about that control is: no `backgroundColor`, because the chip
-  // is the platform's, and no `menuStyle` at all, because the menu trigger is a
-  // symbol modifier that already carries the theme's ink.
+  // so the arrow is not guaranteed to contrast with its own chip), and nothing else
+  // about that control is: no `backgroundColor`, because the chip is the platform's.
+  // The menu trigger is not here at all — its ink is the modifier's `fontColor`,
+  // asserted in the next test, because `menuStyle.iconColor` was measured not to
+  // reach a caller-supplied symbol modifier.
   const keys = [...barStyle.matchAll(
     /\b(backgroundStyle|contentStyle|titleStyle|menuStyle|backIconStyle|backgroundColor|iconColor|mainTitleColor|subTitleColor)\b/g)]
     .map((match) => match[1]);
@@ -1876,15 +1883,16 @@ test('the platform band has one floor at every offset, and the scroll effect tha
   // keys in the other order, and a guard that read only the first key of a block would
   // pass one of the two spellings of the very thing it exists to stop. The vocabulary
   // is one key, and only the return control has a block at all: the chip's fill is the
-  // platform's, and the menu trigger's symbol modifier already carries the theme's ink.
+  // platform's, and the menu trigger's ink rides on its own modifier.
   const controlBlocks = [...barStyle.matchAll(/(menuStyle|backIconStyle): \{([^}]*)\}/g)]
     .map((match) => [match[1], [...match[2].matchAll(/(\w+)\s*:/g)].map((key) => key[1])]);
   assert.deepEqual(controlBlocks.map((block) => block[0]), ['backIconStyle'],
-    'the return control is the only control the band styles at all: a `menuStyle` is a second chip the menu ' +
-    'trigger does not need, and there is no third control to answer for');
+    'the return control is the only control the band styles here: a `menuStyle` is dead configuration on a ' +
+    'symbol modifier trigger — measured on the phone, `menuStyle.iconColor` stated and absent drew the same ' +
+    'dots — so a block there would only make a reader believe the trigger\'s ink was answered');
   assert.deepEqual(controlBlocks[0][1].slice().sort(), ['iconColor'],
     'the return glyph may state its ink and nothing else: a `backgroundColor` there is the app recolouring the ' +
-    'platform\'s own chip, in any key order, and a `menuStyle` is a second chip the menu trigger does not need');
+    'platform\'s own chip, in any key order');
   for (const [name, text] of [['HdsTitleBarSupport', hdsTitleBarSupport], ['HdsTitleBarPolicy', hdsTitleBarPolicy],
     ['HdsTitleBarMaterialService', hdsTitleBarMaterialService], ['ConversationHeaderMenu', conversationHeaderMenu]]) {
     assert.equal(/0x[0-9a-fA-F]|'#/.test(codeOf(text)), false,
@@ -1901,22 +1909,73 @@ test('the band carries the platform\'s own controls, and a surface wears one mat
   // a 24vp square, so the wide one was rendered as a dark blob, which is the defect
   // this pins against. A screenshot cannot tell a squashed bitmap from a symbol.
   //
-  // What the app still owns about that platform control is its ink, and only its ink:
-  // measured on the phone, the platform's default for the return glyph while the floor
-  // is transparent is a light colour on a chip that follows the appearance, so the
-  // arrow was unreadable in the light appearance at rest. `barStyle()` therefore states
-  // `backIconStyle.iconColor` and nothing else about either control.
+  // What the app still owns about those platform controls is their ink, and their ink
+  // only — but each glyph takes it through a different channel. Measured on the phone,
+  // the platform's default for the return glyph is a light colour on a chip that
+  // follows the appearance, so the arrow was unreadable in the light appearance at
+  // rest; the menu trigger's default is ArkUI's own symbol ink, which does not follow
+  // the appearance either, and in the dark appearance its four dots were near-black on
+  // a lighter chip — the opposite polarity to the title beside it. The return glyph's
+  // ink is a style (`backIconStyle.iconColor`); the menu trigger's is the modifier's
+  // own `fontColor`, because `menuStyle.iconColor` was measured not to reach a
+  // caller-supplied modifier.
   const content = normalize(staticBody(hdsTitleBarSupport, 'static conversationParams('));
   assert.match(content, /menuLabel: RemoteI18n\.t\('sidebar\.more'\)/,
     'the menu trigger must keep its label: the platform draws the glyph, the app still owns the words');
   assert.match(content, /menuAnchorId: CONVERSATION_HEADER_MENU_ANCHOR_ID/,
     'the trigger must hand the conversation the id its menu opens against');
   const body = codeOf(hdsTitleBarSupport);
-  assert.equal(occurrences(body, "$r('sys.symbol.square_grid_2x2')"), 1,
+  assert.equal(occurrences(body, "$r('sys.symbol.dot_grid_2x2')"), 1,
     'the band must name the system four-dot symbol exactly once: one trigger, one glyph');
+  // The shape is named, not just "a symbol": the SDK's table carries both a dot grid
+  // and a square grid in the same 2x2 cell, and the square one is the glyph the user
+  // rejected as four small squares. A band that drifted back to it would still pass a
+  // "some system symbol" check.
+  assert.equal(occurrences(body, 'square_grid_2x2'), 0,
+    'the band must not carry the four-small-square neighbour: `dot_grid_2x2` is the four round dots the ' +
+    'platform\'s own title bars use, and the two differ by one word');
   assert.equal(occurrences(body, 'SystemSymbolIcon.modifier('), 1,
     'the band must carry that symbol in the platform modifier an HDS icon slot takes: a `ResourceStr` there ' +
     'is an image slot, and the platform draws its own back control from the same vocabulary');
+  // The trigger's ink, and where it has to be stated. This guard bites the same way the
+  // return glyph's does: the token must be the theme's, it must be handed *to the
+  // modifier*, and it must not be moved back into a style the platform ignores.
+  //
+  // The size travels with it, and from the one place both postures read. Measured on
+  // the phone at 1320px, the platform's own default drew the dots at 32x31px of ink in
+  // its 134px chip (`0.24 x 0.23` of it) while the reference this app is held to — the
+  // system Settings WLAN band's own four-dot trigger — drew 51x49px of ink in the same
+  // sized chip (`0.38 x 0.36`). A `dot_grid_2x2` at 24vp is that reference's ink field,
+  // so both postures state 24 and neither may state a number of its own: a literal
+  // here could drift from the wide header's `SymbolGlyph` without either file showing
+  // which one was right, which is the defect this pins.
+  assert.match(normalize(hdsTitleBarSupport),
+    /icon: SystemSymbolIcon\.modifier\(\$r\('sys\.symbol\.dot_grid_2x2'\), INK, ConversationHeaderPolicy\.TRIGGER_GLYPH_SIZE\)/,
+    'the menu trigger\'s ink must be handed to the modifier that draws it, from the theme: a modifier given only ' +
+    'a symbol is drawn in ArkUI\'s own ink, which does not follow the appearance — and its size must be the one ' +
+    'named value both postures draw, not the platform\'s smaller default and not a second literal');
+  assert.equal(/\bmenuStyle\b/.test(codeOf(hdsTitleBarSupport)), false,
+    'the band must not state `menuStyle.iconColor`: measured on the phone, it does not reach a caller-supplied ' +
+    'symbol modifier, so a block there is dead configuration that hides where the ink really comes from');
+  assert.match(normalize(codeOf(systemSymbolIcon)),
+    /return new SymbolGlyphModifier\(src\)\.fontColor\(\[ink\]\)\.fontSize\(size\);/,
+    'the modifier must state the ink and the size it was handed, once each: `fontColor` is the channel the slot ' +
+    'does not answer for, and `fontSize` is the only size channel an HDS icon slot leaves');
+  // The two postures draw one glyph at one optical weight, and this is what keeps them
+  // together: the header's own `SymbolGlyph` takes its `fontSize` from the same named
+  // value, and neither file may hold a second number.
+  assert.match(normalize(codeOf(conversationHeader)),
+    /SymbolGlyph\(\$r\('sys\.symbol\.dot_grid_2x2'\)\)\s*\.fontSize\(ConversationHeaderPolicy\.TRIGGER_GLYPH_SIZE\)\s*\.fontColor\(\[INK\]\)/,
+    'the wide header\'s trigger must take its glyph size from `ConversationHeaderPolicy.TRIGGER_GLYPH_SIZE`, the ' +
+    'value the platform band hands its modifier: two literals would let the postures drift apart');
+  assert.match(normalize(codeOf(conversationHeaderPolicy)),
+    /static readonly TRIGGER_GLYPH_SIZE: number = 24;/,
+    'the one glyph size both postures read must stay declared, with the measured 24 in it, in the header policy');
+  assert.equal(occurrences(codeOf(conversationHeader), 'ConversationHeaderPolicy.TRIGGER_GLYPH_SIZE'), 1,
+    'the wide header must read the shared glyph size exactly once, and only for its trigger');
+  assert.equal(/SymbolGlyph\([^)]*\)\s*\.\s*fontSize\(\s*\d/.test(normalize(codeOf(conversationHeader))), false,
+    'the wide header\'s trigger may not state a glyph size of its own: a numeric literal there is the drift this ' +
+    'guard exists for');
   assert.equal(occurrences(codeOf(systemSymbolIcon),
     "import { SymbolGlyphModifier } from '@kit.ArkUI';"), 1,
     'the platform symbol value has one home: the design kit is the only API family the band\'s own files read');
@@ -2044,7 +2103,7 @@ test('the preview drives the real band rather than a second copy of its paramete
   // The fixture names the tier table no more than it names the controls: the symbol
   // and the app's bitmaps both belong to production, and a fixture that restated one
   // would keep its capture looking right after the app had moved on.
-  for (const literal of ['GRADIENT_BLUR', 'systemMaterialEffect', 'hdsMaterial', 'remote_ref_', 'square_grid_2x2']) {
+  for (const literal of ['GRADIENT_BLUR', 'systemMaterialEffect', 'hdsMaterial', 'remote_ref_', 'dot_grid_2x2']) {
     assert.equal(preview.includes(literal), false,
       `the fixture must not restate ${literal}: the tier table and the band's controls belong to production`);
   }

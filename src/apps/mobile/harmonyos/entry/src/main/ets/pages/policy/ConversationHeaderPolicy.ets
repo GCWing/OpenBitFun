@@ -77,6 +77,34 @@ export class ConversationHeaderMenuItem {
 export class ConversationHeaderPolicy {
   static readonly REMOTE_BRAND: string = 'OpenBitFun';
 
+  /**
+   * The overflow trigger's glyph size, in vp: the one value both postures draw.
+   *
+   * The trigger is one action, so it is one glyph at one optical weight, and this
+   * number is where that is decided rather than in either of the two files that
+   * draw it — the platform title bar's menu slot (`HdsTitleBarSupport`, through
+   * `SystemSymbolIcon.modifier`) and the wide header's own `SymbolGlyph`
+   * (`ConversationHeader`). A second literal in either of those could drift from
+   * the other without a test being able to say which one was right.
+   *
+   * 24 is measured, not chosen. The reference is the system's own title bar on this
+   * phone — the Settings WLAN band's top-right four-dot trigger — captured at the
+   * same 1320px width as the app's own: its four dots fill 51x49px of a 134x135px
+   * chip, `0.381 x 0.363` of it. A `dot_grid_2x2` at 24vp draws exactly that 51px
+   * ink field, so 24 is the size at which the compact band's platform chip — 134px,
+   * the same as the reference's — matches that ratio to the pixel. The wide header
+   * has drawn at 24vp since it was added; only its glyph is newer, and at 24vp it
+   * lands on the same 51px ink field inside the header's own 42vp circle, which
+   * reads `0.36` because the circle is the app's and is slightly larger than the
+   * platform's chip. Left to itself the platform drew the same symbol at about 32px
+   * of ink in that 134px chip, `0.24 x 0.23` — the "a bit too small" this answers.
+   *
+   * The ceiling is the platform's own slot: HDS sizes its icon slot to a 24vp
+   * square, and this is a font size, not a box — the glyph's ink at 24vp is about
+   * 15vp of that square, well inside both the slot and the chip.
+   */
+  static readonly TRIGGER_GLYPH_SIZE: number = 24;
+
   static present(
     surface: ChatSurface,
     sessionTitle: string,
