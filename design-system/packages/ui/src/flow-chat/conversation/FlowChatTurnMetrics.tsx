@@ -13,6 +13,9 @@ export interface FlowChatTurnMetricsProps {
   rateValue: string | null;
   rateDescription: string;
   rateDetails?: ReactNode;
+  ttftValue?: string | null;
+  ttftDescription?: string;
+  ttftDetails?: ReactNode;
   speedLevel: 1 | 2 | 3 | 4 | null;
   focusable?: boolean;
 }
@@ -60,13 +63,14 @@ export function FlowChatMetricDetails({ rows, note }: FlowChatMetricDetailsProps
 export function FlowChatTurnMetrics({
   label, tokenValue, tokenDescription, tokenDetails, cacheHitRate,
   rateValue, rateDescription, rateDetails, speedLevel, focusable = true,
+  ttftValue = null, ttftDescription = '', ttftDetails,
 }: FlowChatTurnMetricsProps) {
   const ratio = cacheHitRate !== null && Number.isFinite(cacheHitRate)
     && cacheHitRate >= 0 && cacheHitRate <= 1 ? cacheHitRate : null;
   const hasTokenUsage = tokenValue !== null || ratio !== null;
   const speedGlyph = speedLevel === null ? undefined : speedGlyphs[speedLevel];
 
-  if (!hasTokenUsage && rateValue === null) return null;
+  if (!hasTokenUsage && rateValue === null && ttftValue === null) return null;
 
   return <div className={styles.root} role="group" aria-label={label}
     data-openbitfun-component="flow-chat-turn-metrics" data-openbitfun-part="root">
@@ -78,6 +82,10 @@ export function FlowChatTurnMetrics({
             style={{ '--_cache-dash': `${ratio * ringLength} ${ringLength}` } as CSSProperties} />}
         </span>
         {tokenValue !== null && <span>{tokenValue}</span>}
+      </FlowChatMetric>}
+      {ttftValue !== null && <FlowChatMetric content={ttftDetails ?? ttftDescription} description={ttftDescription} focusable={focusable}
+        data-openbitfun-component="flow-chat-turn-metrics" data-openbitfun-part="ttft">
+        <span>{ttftValue}</span>
       </FlowChatMetric>}
       {rateValue !== null && <FlowChatMetric content={rateDetails ?? rateDescription} description={rateDescription} focusable={focusable}
         data-openbitfun-component="flow-chat-turn-metrics" data-openbitfun-part="speed">

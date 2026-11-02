@@ -483,3 +483,23 @@
 .skills-main > .skills-main__empty {
   margin-block: var(--openbitfun-space-4);
 }
+
+.skill-scan-diagnostics {
+  margin-block-end: var(--openbitfun-space-4);
+  border: 1px solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-base);
+  padding: var(--openbitfun-space-3);
+
+  summary { cursor: pointer; }
+  p { margin-block: var(--openbitfun-space-2); }
+
+  &__content { padding-block-start: var(--openbitfun-space-2); }
+  &__items {
+    display: grid;
+    gap: var(--openbitfun-space-4);
+    padding: 0;
+    list-style: none;
+  }
+  &__path { display: block; overflow-wrap: anywhere; }
+  &__actions { display: flex; flex-wrap: wrap; gap: var(--openbitfun-space-2); }
+}

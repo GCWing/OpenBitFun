@@ -1,16 +1,11 @@
 import {
   INTERACTIVE_CAPABILITY_CATALOG,
   getInteractiveCapabilityCatalog,
+  isInteractiveCapabilityDestinationAvailable,
   type InteractiveCapability,
 } from '../interactiveCapabilityCatalog';
 import { scoreTextMatch } from '../searchMatching';
 import type { GlobalSearchProvider } from '../types';
-
-const CJK_QUERY = /[\u3400-\u9fff]/u;
-
-function resultTitle(capability: InteractiveCapability, query: string) {
-  return CJK_QUERY.test(query) ? capability.titleZh : capability.titleEn;
-}
 
 function matchingItem(capability: InteractiveCapability, query: string) {
   const queryTokens = query.trim().split(/[\s._/\\:-]+/u).filter(Boolean);
@@ -28,31 +23,22 @@ function matchingItem(capability: InteractiveCapability, query: string) {
     .sort((left, right) => right.score - left.score)[0]?.item;
 }
 
-function resultSubtitle(
-  capability: InteractiveCapability,
-  query: string,
-  item: ReturnType<typeof matchingItem>,
-) {
-  const category = INTERACTIVE_CAPABILITY_CATALOG.categories[capability.categoryId];
-  const summary = item
-    ? (CJK_QUERY.test(query) ? item.titleZh : item.titleEn)
-    : (CJK_QUERY.test(query) ? capability.summaryZh : capability.summaryEn);
-  const categoryTitle = CJK_QUERY.test(query) ? category?.titleZh : category?.titleEn;
-  return [categoryTitle, summary].filter(Boolean).join(' · ');
-}
-
 export const interactiveCapabilitySearchProvider: GlobalSearchProvider = {
   id: 'interactive-capabilities',
   groups: ['capabilities', 'settings'],
   search: (request) => {
     if (request.scope === 'content' || !request.query) return { items: [] };
 
+    const t = request.tCapabilities;
     const catalog = request.currentWorkspace?.workspaceKind === 'remote'
       ? getInteractiveCapabilityCatalog(false)
       : INTERACTIVE_CAPABILITY_CATALOG;
     const items = catalog.capabilities
-      .map((capability) => {
+      .flatMap((capability) => {
         const item = matchingItem(capability, request.query);
+        if (!isInteractiveCapabilityDestinationAvailable(item?.destination ?? capability.destination)) {
+          return [];
+        }
         const textScore = scoreTextMatch(request.query, [
           capability.id,
           capability.titleZh,
@@ -69,11 +55,15 @@ export const interactiveCapabilitySearchProvider: GlobalSearchProvider = {
           id: `capability:${capability.id}`,
           providerId: 'interactive-capabilities',
           group: capability.kind === 'setting' ? 'settings' as const : 'capabilities' as const,
-          title: resultTitle(capability, request.query),
-          subtitle: resultSubtitle(capability, request.query, item),
-          context: item ? `${capability.id}:${item.id}` : capability.id,
-          badge: capability.kind,
-          score: textScore > 0 ? textScore + directControlBonus + delegatedControlBonus : 0,
+          title: t(`search.capabilities.${capability.id}.title`),
+          subtitle: item
+            ? t(`search.capabilities.${capability.id}.items.${item.id}`)
+            : t(`search.capabilities.${capability.id}.summary`),
+          context: t(`search.categories.${capability.categoryId}`),
+          badge: t(`search.kinds.${capability.kind}`),
+          // Control coverage only breaks ties between equal textual matches.
+          // New operations must not outrank a more relevant capability.
+          score: textScore > 0 ? textScore + (directControlBonus + delegatedControlBonus) / 100 : 0,
           target: {
             kind: 'capability' as const,
             capabilityId: capability.id,

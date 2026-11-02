@@ -28,11 +28,18 @@ export const usePromptSuggestionStore = create<PromptSuggestionState>((set) => (
     suggestions: enabled ? state.suggestions : Object.fromEntries(Object.entries(state.suggestions)
       .filter(([key]) => JSON.parse(key)[0] !== surfaceId)),
   })),
-  setSuggestion: (sessionId, suggestion, surfaceId = getActiveSurfaceId()) => set((state) => (
-    state.enabledBySurface[surfaceId] === false ? state : {
-      suggestions: { ...state.suggestions, [promptSuggestionKey(sessionId, surfaceId)]: suggestion },
-    }
-  )),
+  setSuggestion: (sessionId, suggestion, surfaceId = getActiveSurfaceId()) => set((state) => {
+    if (state.enabledBySurface[surfaceId] === false) return state;
+    // Older hosts may send padded model output. Display and accept the same clean text.
+    const text = suggestion.suggestion.trim();
+    if (!text) return state;
+    return {
+      suggestions: {
+        ...state.suggestions,
+        [promptSuggestionKey(sessionId, surfaceId)]: { ...suggestion, suggestion: text },
+      },
+    };
+  }),
   clearSuggestion: (sessionId, surfaceId) => set((state) => {
     const key = promptSuggestionKey(sessionId, surfaceId);
     if (!(key in state.suggestions)) return state;

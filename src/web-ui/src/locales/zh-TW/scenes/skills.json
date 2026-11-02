@@ -231,7 +231,11 @@
     "scanIncomplete": "部分技能掃描失敗，已成功讀取的技能仍可使用。",
     "unsupportedSkills": "部分技能依賴暫不支援的能力，未載入。",
     "unsupportedField": "目前主機暫不支援技能內的 {{field}} 宣告，該技能未載入。",
-    "diagnosticsUnavailable": "目前主機不提供技能掃描診斷。"
+    "diagnosticsUnavailable": "目前主機不提供技能掃描診斷。",
+    "diagnostics": {
+      "title": "掃描詳情（{{count}} 項）",
+      "description": "已成功載入的技能可以繼續使用。修復以下檔案後，重新掃描即可更新結果。"
+    }
   },
   "deleteModal": {
     "title": "確認刪除",

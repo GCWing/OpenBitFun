@@ -404,7 +404,7 @@ const WebSearchSettingsPage: React.FC = () => {
   if (loading) {
     return (
       <ConfigPageLayout>
-        <ConfigPageHeader title={t('title')} subtitle={t('subtitle')} />
+        <ConfigPageHeader title={t('title')} />
         <ConfigPageContent><ConfigLoadingState label={t('messages.loading')} rows={5} /></ConfigPageContent>
       </ConfigPageLayout>
     );
@@ -413,7 +413,7 @@ const WebSearchSettingsPage: React.FC = () => {
   if (loadFailed) {
     return (
       <ConfigPageLayout data-openbitfun-component="config" data-openbitfun-part="root">
-        <ConfigPageHeader title={t('title')} subtitle={t('subtitle')} />
+        <ConfigPageHeader title={t('title')} />
         <ConfigPageContent>
           <ConfigRetryState
             message={t('messages.loadFailed')}
@@ -430,7 +430,6 @@ const WebSearchSettingsPage: React.FC = () => {
     <ConfigPageLayout data-openbitfun-component="config" data-openbitfun-part="root">
       <ConfigPageHeader
         title={t('title')}
-        subtitle={t('subtitle')}
       />
       <ConfigPageContent>
         <ConfigMessage message={operationMessage} />
@@ -452,7 +451,6 @@ const WebSearchSettingsPage: React.FC = () => {
         />
         <ConfigPageSection
           title={t('sections.provider.title')}
-          description={t('sections.provider.description')}
         >
           <ConfigPageRow
             label={t('fields.provider.label')}
@@ -489,7 +487,6 @@ const WebSearchSettingsPage: React.FC = () => {
         {selectedProvider === 'openbitfun_search_http' ? (
           <ConfigPageSection
             title={t('sections.http.title')}
-            description={t('sections.http.description')}
           >
             <ConfigPageRow label={t('fields.endpoint.label')} description={t('fields.endpoint.description')}>
               <Input
@@ -557,7 +554,7 @@ const WebSearchSettingsPage: React.FC = () => {
         ) : null}
 
         {credentialRequired ? (
-          <ConfigPageSection title={t('sections.credential.title')} description={t('sections.credential.description')}>
+          <ConfigPageSection title={t('sections.credential.title')}>
             <ConfigPageRow label={t('fields.credentialStatus.label')} balanced>
               <div className="web-search-settings__credential-status">
                 <span>{credentialConfigured ? t('status.configured') : t('status.missing')}</span>
@@ -585,7 +582,6 @@ const WebSearchSettingsPage: React.FC = () => {
         {selectedProvider === 'openbitfun_search_http' ? (
           <ConfigPageSection
             title={t('sections.protocol.title')}
-            description={t('sections.protocol.description')}
             extra={(
               <Tooltip content={t('actions.copyProtocol')} placement="bottom">
                 <IconButton

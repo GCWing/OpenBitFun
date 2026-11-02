@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
-import { WindowedCodeContent } from './WindowedCodeContent';
+import { getVisibleCodeLineCount, readLineHeight, WindowedCodeContent } from './WindowedCodeContent';
 
 const highlights = vi.hoisted(() => ({ ready: false }));
 vi.mock('../timeline/highlightResources', () => ({ useHighlightedLines: (content: string) => content.split('\n').map(line =>
@@ -31,7 +31,23 @@ it('keeps complete native text and a live range while token decorations change',
     expect(source.firstChild).toBe(text);
     expect(selection.toString()).toBe(content);
     expect(host.querySelector('.code-preview__decorations')?.getAttribute('aria-hidden')).toBe('true');
+    expect((host.querySelector('.code-preview__decorations') as HTMLElement).style.opacity).not.toBe('0');
   } finally {
     window.getSelection()?.removeAllRanges(); act(() => root.unmount()); host.remove(); vi.unstubAllGlobals();
   }
+});
+
+it('converts unitless line-height tokens to pixel virtualizer offsets', () => {
+  vi.stubGlobal('getComputedStyle', () => ({ lineHeight: '1.5', fontSize: '16px' }));
+  try {
+    expect(readLineHeight(document.createElement('code'))).toBe(24);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('does not virtualize the split item after a trailing newline', () => {
+  expect(getVisibleCodeLineCount(3, true)).toBe(2);
+  expect(getVisibleCodeLineCount(2, false)).toBe(2);
+  expect(getVisibleCodeLineCount(1, false)).toBe(1);
 });

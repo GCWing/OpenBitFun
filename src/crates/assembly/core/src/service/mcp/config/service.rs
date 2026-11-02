@@ -102,6 +102,26 @@ impl MCPConfigService {
         Ok(self.inner.load_all_configs().await?)
     }
 
+    pub async fn user_control_snapshot(
+        &self,
+    ) -> Result<
+        openbitfun_services_integrations::mcp::config::MCPControlConfigSnapshot,
+        openbitfun_services_integrations::mcp::config::MCPImportError,
+    > {
+        self.inner.user_control_snapshot().await
+    }
+
+    pub async fn edit_user_server(
+        &self,
+        expected_fingerprint: &str,
+        server_id: &str,
+        patch: Option<&serde_json::Map<String, serde_json::Value>>,
+    ) -> Result<(), openbitfun_services_integrations::mcp::config::MCPImportError> {
+        self.inner
+            .edit_user_server(expected_fingerprint, server_id, patch)
+            .await
+    }
+
     pub async fn get_server_config(
         &self,
         server_id: &str,

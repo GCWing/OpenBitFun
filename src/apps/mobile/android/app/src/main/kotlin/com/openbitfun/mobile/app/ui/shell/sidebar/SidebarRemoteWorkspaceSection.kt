@@ -386,7 +386,10 @@ private fun SidebarActiveDeviceBody(
                         modesOnly = true,
                         path = path,
                         expanded = createMenuOpen,
-                        onToggle = { createMenuOpen = !createMenuOpen },
+                        onToggle = {
+                            if (entry.kind == "assistant") onCreateInWorkspace(entry, "claw")
+                            else createMenuOpen = !createMenuOpen
+                        },
                         onDismiss = { createMenuOpen = false },
                         onCreateAgent = { agent -> createMenuOpen = false; onCreateInWorkspace(entry, agent) },
                     )

@@ -132,6 +132,7 @@ class FakeConnectionManager {
         targetedSessionRollback: true,
         tokenUsageStatistics: true,
         miniAppAgentContextFilesV1: true,
+        miniAppAgentImagesV1: true,
         cancelTool: true,
         toolCatalog: true,
         userQuestionResponse: true,
@@ -159,6 +160,7 @@ function createHarness(options: {
   const invalidations: string[] = [];
   const discarded: string[] = [];
   const peerModeEvents: Array<{ active: boolean; deviceId?: string }> = [];
+  const modeFlags: boolean[] = [];
   const controllerFlags: boolean[] = [];
   let latestSnapshot: PeerDeviceSurfaceSnapshot | null = null;
   let loginListener: ((loggedIn: boolean) => void) | undefined;
@@ -181,6 +183,7 @@ function createHarness(options: {
       invalidations.push(getActiveSurfaceId());
       return activateSurface(getActiveSurfaceId());
     },
+    setPeerDeviceModeActiveFlag: active => modeFlags.push(active),
     emitPeerModeChanged: detail => peerModeEvents.push(detail),
     markSurfaceSwitched: vi.fn(),
     discardSurfaceState: surfaceId => discarded.push(surfaceId),
@@ -202,6 +205,7 @@ function createHarness(options: {
     invalidations,
     discarded,
     peerModeEvents,
+    modeFlags,
     controllerFlags,
     snapshot: () => latestSnapshot!,
     reportLogin: (loggedIn: boolean) => loginListener?.(loggedIn),
@@ -227,6 +231,28 @@ describe('PeerDeviceSurfaceController switching', () => {
 
     expect(previousScope.signal.aborted).toBe(true);
     expect(observed).toEqual([{ surfaceId: 'peer-a', routedSurface: 'peer-a' }]);
+  });
+
+  it('waits for peer workspace hydration before publishing the new surface', async () => {
+    const hydrate = deferred<void>();
+    const harness = createHarness({
+      rebootstrap: async scope => {
+        await hydrate.promise;
+        scope.assertCurrent('rebootstrap workspaces');
+      },
+    });
+
+    const pending = harness.controller.switchToDevice('peer-a', 'A');
+    await vi.waitFor(() => expect(harness.commits).toEqual(['peer-a']));
+
+    expect(harness.modeFlags).toEqual([true]);
+    expect(harness.peerModeEvents).toEqual([]);
+    expect(harness.snapshot().peerMode).toEqual({ active: false });
+
+    hydrate.resolve();
+    await expect(pending).resolves.toBe('activated');
+    expect(harness.peerModeEvents).toEqual([{ active: true, deviceId: 'peer-a' }]);
+    expect(harness.snapshot().peerMode).toMatchObject({ active: true, deviceId: 'peer-a' });
   });
 
   it('coalesces a rapid switch to the last target before the first connection completes', async () => {

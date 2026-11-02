@@ -1,0 +1,65 @@
+@layer openbitfun.components {
+  .root { display: flex; flex-direction: column; align-items: center; min-inline-size: 0; max-inline-size: 100%; gap: var(--openbitfun-space-4); }
+  .control { display: flex; align-items: center; justify-content: center; gap: var(--openbitfun-space-3); max-inline-size: 100%; }
+  .swatch {
+    flex: 0 0 auto;
+    inline-size: var(--openbitfun-control-height-lg);
+    block-size: var(--openbitfun-control-height-lg);
+    padding: 0;
+    border: var(--openbitfun-border-width-strong) solid var(--openbitfun-color-surface-panel);
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--_color-picker-value);
+    box-shadow: var(--openbitfun-shadow-sm);
+    cursor: pointer;
+    transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+  .swatch:hover:not(:disabled) { transform: scale(1.06); }
+  .swatch:active:not(:disabled) { transform: scale(.96); }
+  .hex { inline-size: 11rem; max-inline-size: 100%; box-shadow: var(--openbitfun-shadow-sm); }
+  .hex input {
+    font-family: var(--openbitfun-type-code-md-font-family);
+    font-size: var(--openbitfun-type-code-md-font-size);
+    font-weight: var(--openbitfun-type-code-md-font-weight);
+    line-height: var(--openbitfun-type-code-md-line-height);
+    letter-spacing: var(--openbitfun-type-code-md-letter-spacing);
+    text-align: center;
+  }
+  .edit { display: grid; place-items: center; padding: 0; inline-size: var(--openbitfun-control-height-sm); block-size: var(--openbitfun-control-height-sm); border: 0; border-radius: var(--openbitfun-radius-pill); background: transparent; color: var(--openbitfun-color-content-secondary); cursor: pointer; }
+  .edit:hover:not(:disabled) { background: var(--openbitfun-color-surface-subtle); color: var(--openbitfun-color-content-primary); }
+  .expansion { inline-size: min(100%, 21rem); }
+  .expansion[hidden] { display: none; }
+  .palette { position: relative; inline-size: 100%; aspect-ratio: 336 / 280; isolation: isolate; }
+  .wheel { position: absolute; top: 0; left: 0; inline-size: 83.333333%; aspect-ratio: 1; border-radius: var(--openbitfun-radius-pill); background: var(--_color-picker-value); box-shadow: var(--openbitfun-shadow-base); animation: bloom var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard) both; }
+  .wheel::before { content: ''; position: absolute; inset: 7%; border-radius: inherit; background: color-mix(in srgb, var(--_color-picker-value) 12%, var(--openbitfun-color-surface-panel)); }
+  .petal {
+    position: absolute;
+    z-index: 1;
+    inline-size: 20%;
+    aspect-ratio: 1;
+    padding: 0;
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-pill);
+    box-shadow: var(--openbitfun-shadow-sm);
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    animation: unfold var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard) backwards;
+    animation-delay: calc(var(--_color-picker-petal-index) * 10ms);
+    transition: scale var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+    forced-color-adjust: none;
+  }
+  .petal:nth-child(n + 13) { z-index: 2; }
+  .petal:last-child { z-index: 3; }
+  .petal:hover:not(:disabled), .petal:focus-visible { z-index: 4; scale: 1.1; }
+  .petal[aria-pressed="true"] { border-color: var(--openbitfun-color-content-primary); }
+  .lightness { position: absolute; inset: 0; pointer-events: none; touch-action: none; outline: none; }
+  .track { display: block; inline-size: 100%; block-size: 100%; overflow: visible; }
+  .track path { pointer-events: stroke; cursor: ns-resize; }
+  .hitTrack { stroke: transparent; }
+  .thumb { position: absolute; inline-size: 9%; aspect-ratio: 1; border: var(--openbitfun-border-width-strong) solid var(--openbitfun-color-surface-panel); border-radius: var(--openbitfun-radius-pill); background: var(--_color-picker-value); box-shadow: var(--openbitfun-shadow-sm); transform: translate(-50%, -50%); pointer-events: auto; cursor: ns-resize; forced-color-adjust: none; }
+  .swatch:focus-visible, .edit:focus-visible, .petal:focus-visible, .lightness:focus-visible .thumb { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+  .root[data-disabled="true"] { opacity: var(--openbitfun-opacity-disabled); }
+  .swatch:disabled, .edit:disabled, .petal:disabled { cursor: not-allowed; }
+  @keyframes bloom { from { opacity: 0; transform: scale(.3) rotate(-12deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+  @keyframes unfold { from { opacity: 0; translate: 0 12%; scale: .6; } to { opacity: 1; translate: 0 0; scale: 1; } }
+  @media (prefers-reduced-motion: reduce) { .wheel, .petal { animation: none; } .swatch, .petal { transition: none; } }
+}

@@ -8,6 +8,7 @@ export interface MiniAppCatalogStartupRefreshDependencies {
   scheduler?: Pick<BackgroundTaskScheduler, 'schedule'>;
   refreshApps: () => Promise<void>;
   refreshRunningWorkers: () => Promise<void>;
+  inFlightKey?: string;
 }
 
 export function scheduleMiniAppCatalogStartupRefresh(
@@ -27,6 +28,6 @@ export function scheduleMiniAppCatalogStartupRefresh(
   }, {
     idle: true,
     priority: 'low',
-    inFlightKey: 'miniapp:startup-catalog-refresh',
+    inFlightKey: dependencies.inFlightKey ?? 'miniapp:startup-catalog-refresh',
   });
 }

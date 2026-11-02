@@ -39,10 +39,10 @@ pub use roots::{
 #[cfg(feature = "agent-runtime")]
 pub use selection::{
     annotate_shadowed_skills, build_mode_skill_infos, filter_candidates_for_mode,
-    filter_implicitly_invocable_skills, filter_user_invocable_skills, is_skill_globally_enabled,
-    normalize_skill_keys, resolve_default_hidden_builtin_for_explicit_invocation,
-    resolve_visible_skills, sort_skill_candidates_by_dir, sort_skills,
-    ExplicitSkillInvocationResolution, SkillCandidate,
+    filter_implicit_image_skills, filter_implicitly_invocable_skills, filter_user_invocable_skills,
+    is_skill_globally_enabled, normalize_skill_keys,
+    resolve_default_hidden_builtin_for_explicit_invocation, resolve_visible_skills,
+    sort_skill_candidates_by_dir, sort_skills, ExplicitSkillInvocationResolution, SkillCandidate,
 };
 pub use types::{
     render_loaded_skill_for_assistant, ModeSkillInfo, ModeSkillStateReason, SkillData,

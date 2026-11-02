@@ -17,20 +17,22 @@ Dispatch durable work to another OpenBitFun host; the controller may disconnect 
 
 ## 完整功能清单 / Everything included
 
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 列出可派发目标并探测版本、连接和运行能力
-  - List dispatch targets and probe their version, connectivity, and runtime capabilities
+- **智能体可直接控制 / Direct Agent control** · 列出同账户设备与已保存的 SSH 目标
+  - List same-account devices and saved SSH targets
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 为目标主机配置运行环境并安装或更新 OpenBitFun CLI
   - Provision the target runtime and install or update the OpenBitFun CLI
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 在提交任务前同步目标所需的模型配置
   - Synchronize required model configuration before submitting a job
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 把包含工作区、会话、模型和权限策略的持久任务提交到目标
-  - Submit a durable job with workspace, session, model, and permission policy to the target
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 列出派发任务并查询运行状态、结果和错误
+- **智能体可直接控制 / Direct Agent control** · 从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标
+  - Submit a durable job from the current Git workspace to a same-account device or SSH target
+- **智能体可直接控制 / Direct Agent control** · 列出派发任务并查询运行状态、结果和错误
   - List dispatched jobs and query their status, result, and errors
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 保存、追加和重新加载可断线恢复的执行记录
   - Save, append, and reload reconnectable execution transcripts
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 远程回答权限请求，并继续或取消目标端任务
-  - Answer permission requests remotely and continue or cancel target-side work
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 远程回答权限请求并继续目标端任务
+  - Answer permission requests remotely and continue target-side work
+- **智能体可直接控制 / Direct Agent control** · 取消本机派发的任务
+  - Cancel a job submitted from this host
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 将目标端结果同步回控制端，而不把控制端当作远程文件系统代理
   - Synchronize target-side results back without treating the controller as a remote-filesystem proxy
 
@@ -49,7 +51,11 @@ Dispatch durable work to another OpenBitFun host; the controller may disconnect 
 
 | 操作 / Action | 中文说明 | English description |
 | --- | --- | --- |
-| 打开对应界面 / Open the UI | 进入 OpenBitFun 中对应的功能界面。 | Open the matching feature in OpenBitFun. |
+| 列出派发目标 / List dispatch targets | 读取同账户下所有 OpenBitFun 设备（含本机，带 isCurrentDevice 标记、在线状态、型号与系统）以及本机已保存的 SSH 连接。回答“有几台设备”或派发前先调用；未登录账户时 devices 为空并说明原因。 | Read every OpenBitFun device on this account (including this one, marked isCurrentDevice, with online state, model and OS) plus this host's saved SSH connections. Call it before stating how many devices exist or before submitting; when signed out, devices is empty with a reason. |
+| 派发任务 / Submit a dispatch job | 把任务提交到另一台同账户设备（名称、别名或 device:<id>）或 SSH 目标（ssh:<connectionId>）。目标在自己的 Git worktree 中从 baseRef（默认 HEAD）开始执行，本机可以断开。仅在用户明确要求派发时调用，并明确选择 approvalPolicy；离线设备直接报错，不会在本机执行。 | Submit work to another same-account device (name, alias, or device:<id>) or SSH target (ssh:<connectionId>). The target runs in its own Git worktree branched from baseRef (default HEAD) and this host may disconnect. Call only when the user asked to dispatch, and choose approvalPolicy explicitly; an offline device is an error, never a local run. |
+| 查询派发任务 / Read dispatch job status | 按 jobId 读取本机派发任务的状态与增量事件；cursor 传上次返回值以只取新事件。 | Read state and incremental events of a job submitted from this host; pass the previous cursor to read only new events. |
+| 列出派发任务 / List dispatch jobs | 不带 target 时列出本机提交过的任务；带 target 时直接询问该目标正在持有的任务。 | Without target, list jobs submitted from this host; with target, ask that target for the jobs it owns. |
+| 取消派发任务 / Cancel a dispatch job | 取消本机提交的指定任务；目标端停止执行并保留记录。 | Cancel a job submitted from this host; the target stops it and keeps its record. |
 
 ## 可配置选项 / Configurable options
 
@@ -59,10 +65,14 @@ Dispatch durable work to another OpenBitFun host; the controller may disconnect 
 
 ## 可以直接对智能体说 / Try saying
 
+- “我有几台设备？”
+  - “How many devices do I have?”
+- “把这个任务派发到我的 MacBook 上跑”
+  - “Dispatch this task to my MacBook”
+- “看看刚才派发的任务跑完没有”
+  - “Check whether the job I dispatched has finished”
 - “打开设备管理，我想把任务派发到另一台机器”
   - “Open device management so I can dispatch work to another machine”
-- “带我配置远程任务派发”
-  - “Take me to remote task dispatch setup”
 
 智能体会先查找相关功能或设置，确认目标后再替你打开、执行或修改。完整能力目录不会预先塞进对话上下文。
 

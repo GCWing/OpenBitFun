@@ -363,6 +363,28 @@ Forwards bind 127.0.0.1 and last until stopped or the connection drops. Set expo
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "operation": {"type": "string", "enum": ["targets", "detect", "start", "list", "stop"]},
+                "target": {"type": "string"},
+                "count": {"type": "integer"},
+                "targets": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "listening_ports": {"type": "array", "items": {"type": "integer"}},
+                "local_address": {"type": "string"},
+                "local_url": {"type": "string"},
+                "local_port_moved": {"type": "boolean"},
+                "forward": {"type": "object", "additionalProperties": true},
+                "forwards": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "forward_id": {"type": "string"},
+                "note": {"type": "string"}
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

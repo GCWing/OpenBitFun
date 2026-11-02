@@ -1,4 +1,5 @@
 import { CapsulePreview } from "../preview/CapsulePreview";
+import { ColorPickerPreview } from "../preview/ColorPickerPreview";
 import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ComponentOverview } from "../preview/ComponentOverview";
 import { getComponentPresentation, getInitialPreviewState, hasComponentOverview } from "../preview/componentPresentation";
@@ -257,6 +258,7 @@ const optionLabelKeys: Readonly<Record<string, MessageKey>> = {
   hidden: "detail.option.hidden",
   inline: "detail.option.inline",
   scrolling: "detail.option.scrolling",
+  panel: "preview.state.panel",
   "focus-within": "detail.option.focus-within",
   "with-context": "detail.option.with-context",
   "with-center": "detail.option.with-center",
@@ -538,6 +540,7 @@ export function ComponentDetailPage({
     if (component.name === "Checkbox" || component.name === "Radio") return `import { ${component.name} } from "@openbitfun/ui";\n\n<${component.name}${component.name === "Checkbox" ? ` appearance="${checkboxAppearance}"` : ""} label="${t("components.preview.notifications")}" defaultChecked />`;
     if (component.name === "NumberBadge") return `import { NumberBadge } from "@openbitfun/ui";\n\n<NumberBadge value={${JSON.stringify(numberBadgeValue)}} />;`;
     if (component.name === "NumberInput") return 'import { useState } from "react";\nimport { NumberInput } from "@openbitfun/ui";\n\nfunction Example() {\n  const [value, setValue] = useState(8);\n  return <NumberInput value={value} onValueChange={setValue} />;\n}';
+    if (component.name === "ColorPicker") return 'import { ColorPicker } from "@openbitfun/ui";\n\n<ColorPicker onValueChange={setColor} />';
     if (component.name === "Empty") return `import { Empty } from "@openbitfun/ui";\n\n<Empty title="${t("components.preview.cardTitle")}" description="${t("components.preview.cardDescription")}" />`;
     if (flowChatPreview) {
       return flowChatPreview.codeSample(t);
@@ -647,7 +650,8 @@ export function ComponentDetailPage({
       return `import { Icon, Menu, MenuItem, MenuSection, MenuSeparator } from "@openbitfun/ui";\n\n<Menu\n  aria-label="${t("components.preview.menuLabel")}"\n  scrollbarVisibility="${menuShowScrollbar ? "auto" : "hidden"}"\n>\n  <MenuSection title="${t("components.preview.menuSectionTitle")}">\n    <MenuItem leading={<Icon name="session" />}>${t("components.preview.menuItemOne")}</MenuItem>\n    <MenuItem leading={<Icon name="session" />}>${t("components.preview.menuItemTwo")}</MenuItem>\n  </MenuSection>\n  <MenuSeparator />\n  <MenuSection aria-label="${t("components.preview.menuMoreSection")}">\n    <MenuItem disabled>${t("components.preview.menuDisabledItem")}</MenuItem>\n  </MenuSection>\n</Menu>`;
     }
     if (component.name === "Dialog") {
-      return `import { Button, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle } from "@openbitfun/ui";\n\n<Dialog onOpenChange={() => setOpen(false)} open={open} size="xl">\n  <DialogHeader>\n    <DialogHeading><DialogTitle>${t("components.preview.modalTitle")}</DialogTitle></DialogHeading>\n    <DialogClose />\n  </DialogHeader>\n  <DialogBody><ProviderConfigurationFields /></DialogBody>\n  <DialogFooter appearance="floating">\n    <Button onClick={() => setOpen(false)} variant="fill">${t("components.preview.modalCancel")}</Button>\n    <Button onClick={() => setOpen(false)} variant="primary">${t("components.preview.modalSave")}</Button>\n  </DialogFooter>\n</Dialog>`;
+      const geometry = previewState === "panel" ? 'preset="panel"' : 'size="xl"';
+      return `import { Button, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle } from "@openbitfun/ui";\n\n<Dialog onOpenChange={() => setOpen(false)} open={open} ${geometry}>\n  <DialogHeader>\n    <DialogHeading><DialogTitle>${t("components.preview.modalTitle")}</DialogTitle></DialogHeading>\n    <DialogClose />\n  </DialogHeader>\n  <DialogBody><ProviderConfigurationFields /></DialogBody>\n  <DialogFooter appearance="floating">\n    <Button onClick={() => setOpen(false)} variant="fill">${t("components.preview.modalCancel")}</Button>\n    <Button onClick={() => setOpen(false)} variant="primary">${t("components.preview.modalSave")}</Button>\n  </DialogFooter>\n</Dialog>`;
     }
     if (component.name === "Sheet") {
       return `import { Button, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Sheet } from "@openbitfun/ui";\n\n<Sheet onOpenChange={() => setOpen(false)} open={open} placement="right" size="lg">\n  <DialogHeader>\n    <DialogHeading><DialogTitle>${t("components.preview.modalTitle")}</DialogTitle></DialogHeading>\n    <DialogClose />\n  </DialogHeader>\n  <DialogBody><ProviderConfigurationFields /></DialogBody>\n  <DialogFooter>\n    <Button onClick={() => setOpen(false)} variant="fill">${t("components.preview.modalCancel")}</Button>\n    <Button onClick={() => setOpen(false)} variant="primary">${t("components.preview.modalSave")}</Button>\n  </DialogFooter>\n</Sheet>`;
@@ -872,6 +876,7 @@ export function ComponentDetailPage({
           onOpenChange={closePreview}
           open={overlayOpen}
           role={state === "alert" ? "alertdialog" : "dialog"}
+          preset={state === "panel" ? "panel" : "default"}
           size="xl"
         >
           <DialogHeader>
@@ -881,7 +886,7 @@ export function ComponentDetailPage({
             <DialogClose />
           </DialogHeader>
           <DialogBody style={state === "scrolling" ? { maxHeight: "40dvh" } : undefined}>{renderDialogConfigurationContent()}</DialogBody>
-          <DialogFooter appearance={state === "floating-footer" ? "floating" : "attached"}>
+          <DialogFooter appearance={state === "floating-footer" || state === "panel" ? "floating" : "attached"}>
             <Button onClick={closePreview} variant="fill">
               {t("components.preview.modalCancel")}
             </Button>
@@ -1282,6 +1287,7 @@ export function ComponentDetailPage({
       );
     }
     if (component.name === "NumberInput") return <NumberInputPreview key={state} state={state} />;
+    if (component.name === "ColorPicker") return <ColorPickerPreview key={state} state={state} />;
     if (component.name === "NumberBadge") return <NumberBadge value={numberBadgeValue} />;
     if (component.name === "Empty") {
       return (

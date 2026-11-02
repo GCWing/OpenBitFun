@@ -150,11 +150,6 @@ function subagentTooltipFields(
   const source = subagent.subagentSource ?? subagent.source;
   return [
     {
-      label: t('agentsOverview.capabilityTooltip.subagentId'),
-      value: subagent.id,
-      monospace: true,
-    },
-    {
       label: t('agentsOverview.capabilityTooltip.source'),
       value: subagentSourceLabel(source, t),
     },

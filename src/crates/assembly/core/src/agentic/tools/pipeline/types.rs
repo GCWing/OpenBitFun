@@ -192,5 +192,9 @@ pub struct ToolExecutionResult {
     /// Runtime target used for validation, permissions, hooks, and execution.
     pub effective_tool_name: String,
     pub result: crate::agentic::core::ToolResult,
+    /// Deferred definitions loaded while executing a PTC gateway call.
+    /// These are projected onto the outer RunCode message so a later round
+    /// can reuse them without turning the state into a session-global cache.
+    pub ptc_loaded_deferred_tool_specs: Vec<openbitfun_agent_tools::LoadedDeferredToolSpec>,
     pub execution_time_ms: u64,
 }

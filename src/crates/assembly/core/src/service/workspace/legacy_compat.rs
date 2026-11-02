@@ -636,6 +636,7 @@ mod tests {
         std::fs::create_dir_all(&execution).unwrap();
         let record = register_local_fixture(&execution, Some(&project)).await;
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some(execution.to_string_lossy().into_owned()),
             project_workspace_path: Some(project.to_string_lossy().into_owned()),
             ..Default::default()
@@ -666,6 +667,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let _ = fixture_workspace_service().await;
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some(root.path().to_string_lossy().into_owned()),
             ..Default::default()
         };
@@ -688,6 +690,7 @@ mod tests {
         let logical_root = format!("/srv/id-only-{}", uuid::Uuid::new_v4());
         let record = register_remote_fixture(&logical_root, "ssh-localhost", "localhost").await;
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_id: Some(record.id.clone()),
             remote_connection_id: Some("untrusted-request".into()),
             ..Default::default()
@@ -1025,6 +1028,7 @@ impl WorkspaceService {
         binding: openbitfun_runtime_ports::AgentSessionWorkspaceBinding,
     ) -> OpenBitFunResult<openbitfun_runtime_ports::AgentSessionWorkspaceBinding> {
         let mut config = crate::agentic::core::SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_id: binding.workspace_id,
             project_workspace_id: binding.project_workspace_id,
             workspace_kind: binding.workspace_kind,

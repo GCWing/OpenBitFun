@@ -11,6 +11,12 @@ import { themeModes, themeTokenCatalog, themes } from "@openbitfun/theme-openbit
 
 `themeTokenCatalog` exposes the complete public semantic theme contract for visual authoring: colors, elevation shadows, surface filters, and state opacity. UI components consume this semantic contract and never depend on reference colors directly.
 
+`effect.blur.strong` provides 32px blur and 1.3 saturation for translucent floating
+panels such as Global Search. The existing 12px `medium` filter leaves detailed
+content too distinct at lower surface opacity; its smaller blur remains appropriate
+for compact controls. The stronger role lets panels widen their blur radius
+independently and retain opaque high-contrast and reduced-transparency fallbacks.
+
 ## Foundational color scales
 
 Named numeric scales live below the semantic theme layer. Step numbers increase from light to dark, for example `ref.color.neutral.50`, `ref.color.blue.500`, and `ref.color.red.700`. Semantic tokens map those stable palette values to roles such as `color.content.primary` or `color.status.danger.content` independently in each theme mode.

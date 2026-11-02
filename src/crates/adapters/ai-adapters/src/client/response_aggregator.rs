@@ -51,6 +51,7 @@ async fn aggregate_stream_response_inner(
                     finish_reason: chunk_finish_reason,
                     provider_metadata: chunk_provider_metadata,
                     model_response_replay: _,
+                    response_model: _,
                 } = chunk;
 
                 if let Some(text) = text {

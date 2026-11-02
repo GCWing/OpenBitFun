@@ -512,13 +512,13 @@ const GeneralSettingsPage: React.FC = () => {
     <SettingsPage pageId="application.general" data-openbitfun-component="application-settings" data-openbitfun-part="root">
       <LanguageSettingsSection />
       {isTauri && (
-        <ConfigPageSection title={t('applicationGroups.startupAndUpdates.title')} description={t('applicationGroups.startupAndUpdates.description')}>
+        <ConfigPageSection title={t('applicationGroups.startupAndUpdates.title')}>
           <LaunchAtLoginSetting />
           <PreventSleepSetting />
           <AutoUpdateSetting />
         </ConfigPageSection>
       )}
-      <ConfigPageSection title={t('applicationGroups.windowAndNotifications.title')} description={t('applicationGroups.windowAndNotifications.description')}>
+      <ConfigPageSection title={t('applicationGroups.windowAndNotifications.title')}>
         <WindowBehaviorSetting />
         <NotificationSettings />
       </ConfigPageSection>

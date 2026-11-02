@@ -5,7 +5,7 @@
 use crate::process_manager;
 use log::error;
 use std::path::PathBuf;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::{collections::HashSet, process::Command, sync::OnceLock};
 
 /// Command check result
@@ -44,7 +44,8 @@ pub enum SystemError {
 }
 
 /// Platform-specific PATH entries that are commonly used but may not be present in GUI app
-/// environments (e.g. macOS apps launched from Finder).
+/// environments (e.g. macOS apps launched from Finder, Linux apps launched from a
+/// `.desktop` file instead of a login shell).
 pub fn platform_path_entries() -> Vec<PathBuf> {
     platform_path_entries_impl()
 }
@@ -67,22 +68,54 @@ fn platform_path_entries_impl() -> Vec<PathBuf> {
     dedup_existing_dirs(entries)
 }
 
-#[cfg(not(target_os = "macos"))]
+/// A GUI or `.desktop` launch normally starts with the session PATH, which on
+/// Linux commonly misses entries a login shell would add (`~/.local/bin`, a
+/// version manager's `node`/`bun`, toolchain shims). Resolve those once here so
+/// child processes spawned by the app find the same executables a terminal does.
+#[cfg(target_os = "linux")]
+fn platform_path_entries_impl() -> Vec<PathBuf> {
+    let mut entries: Vec<PathBuf> = [
+        "/usr/local/bin",
+        "/usr/local/sbin",
+        "/usr/bin",
+        "/usr/sbin",
+        "/bin",
+        "/sbin",
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .collect();
+
+    if let Some(home) = std::env::var_os("HOME") {
+        entries.push(PathBuf::from(home).join(".local").join("bin"));
+    }
+
+    entries.extend(login_shell_path_entries());
+    dedup_existing_dirs(entries)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn platform_path_entries_impl() -> Vec<PathBuf> {
     Vec::new()
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 static LOGIN_SHELL_PATH_ENTRIES: OnceLock<Vec<PathBuf>> = OnceLock::new();
 
-#[cfg(target_os = "macos")]
+/// PATH entries a GUI / `.desktop` launch is missing, resolved once per process.
+///
+/// The probe shells out with a plain [`Command`] on purpose: this is the value
+/// `process_manager` caches and applies to every child, so routing the probe
+/// through `process_manager::create_command` would recurse into the cache it is
+/// meant to initialize.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn login_shell_path_entries() -> Vec<PathBuf> {
     LOGIN_SHELL_PATH_ENTRIES
         .get_or_init(resolve_login_shell_path_entries)
         .clone()
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn resolve_login_shell_path_entries() -> Vec<PathBuf> {
     let mut shell_candidates = Vec::new();
     if let Ok(shell) = std::env::var("SHELL") {
@@ -91,8 +124,17 @@ fn resolve_login_shell_path_entries() -> Vec<PathBuf> {
             shell_candidates.push(shell.to_string());
         }
     }
-    shell_candidates.push("/bin/zsh".to_string());
-    shell_candidates.push("/bin/bash".to_string());
+    #[cfg(target_os = "macos")]
+    {
+        shell_candidates.push("/bin/zsh".to_string());
+        shell_candidates.push("/bin/bash".to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        shell_candidates.push("/bin/bash".to_string());
+        shell_candidates.push("/bin/zsh".to_string());
+        shell_candidates.push("/bin/sh".to_string());
+    }
 
     let mut seen = HashSet::new();
     for shell in shell_candidates {
@@ -156,6 +198,12 @@ fn homebrew_node_opt_bin_entries() -> Vec<PathBuf> {
     dedup_existing_dirs(entries)
 }
 
+/// Reads `PATH` from a login shell.
+///
+/// macOS keeps the direct `output()` call because Finder-launched apps there
+/// depend on this exact behavior. Linux resolves the same value with a bounded
+/// wait: an interactive-looking rc file (a prompt, a blocking `read`, a slow
+/// version manager) must not freeze the first child spawn of the app.
 #[cfg(target_os = "macos")]
 fn read_path_from_login_shell(shell: &str) -> Option<String> {
     let output = Command::new(shell)
@@ -167,7 +215,59 @@ fn read_path_from_login_shell(shell: &str) -> Option<String> {
         return None;
     }
 
-    let path_value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    normalized_login_shell_path(&output.stdout)
+}
+
+#[cfg(target_os = "linux")]
+fn read_path_from_login_shell(shell: &str) -> Option<String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    const LOGIN_SHELL_TIMEOUT: Duration = Duration::from_secs(2);
+    const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+    let mut child = Command::new(shell)
+        .arg("-lc")
+        .arg("printf '%s' \"$PATH\"")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    // Drain stdout on a helper thread so a chatty rc file cannot fill the pipe
+    // buffer and deadlock the wait below.
+    let mut stdout_pipe = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut buffer = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buffer);
+        buffer
+    });
+
+    let deadline = Instant::now() + LOGIN_SHELL_TIMEOUT;
+    let exited = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL_INTERVAL),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+        }
+    };
+
+    let stdout = reader.join().ok()?;
+    if !exited {
+        return None;
+    }
+    normalized_login_shell_path(&stdout)
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn normalized_login_shell_path(stdout: &[u8]) -> Option<String> {
+    let path_value = String::from_utf8_lossy(stdout).trim().to_string();
     if path_value.is_empty() {
         None
     } else {
@@ -175,7 +275,7 @@ fn read_path_from_login_shell(shell: &str) -> Option<String> {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn dedup_existing_dirs(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut deduped = Vec::new();
     let mut seen = HashSet::new();

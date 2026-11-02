@@ -111,8 +111,37 @@ pub fn resolve_effective_tools(
     let mut effective = Vec::new();
     let mut seen = HashSet::new();
 
+    // Keep legacy Pages overrides meaningful after the default tool is unified.
+    // A previous exclusion must not silently re-enable the capability under its
+    // new name; an explicit legacy opt-in keeps its narrower operation set.
+    let legacy_pages_override = mode_config.is_some_and(|config| {
+        config
+            .removed_tools
+            .iter()
+            .chain(&config.added_tools)
+            .any(|tool| matches!(tool.as_str(), "PagePublish" | "PageDeploy"))
+    });
+
     for tool in default_tools {
         if removed.contains(&tool) {
+            continue;
+        }
+        if tool == "PageManage"
+            && legacy_pages_override
+            && !added.iter().any(|tool| tool == "PageManage")
+        {
+            // A legacy exclusion selected a subset of the former two defaults.
+            // Preserve that subset until the user explicitly selects PageManage.
+            if removed.contains("PagePublish") || removed.contains("PageDeploy") {
+                for legacy in ["PageDeploy", "PagePublish"] {
+                    if !removed.contains(legacy)
+                        && valid_tools.contains(legacy)
+                        && seen.insert(legacy.to_string())
+                    {
+                        effective.push(legacy.to_string());
+                    }
+                }
+            }
             continue;
         }
         if seen.insert(tool.clone()) {
@@ -208,8 +237,18 @@ fn stored_agent_profile_from_overrides(
         normalize_skill_override_lists(disabled_user_skills, enabled_user_skills);
     let subagent_overrides = normalize_subagent_overrides(subagent_overrides);
 
-    added_tools.retain(|tool| !default_set.contains(tool));
-    removed_tools.retain(|tool| default_set.contains(tool));
+    let legacy_pages_override = added_tools
+        .iter()
+        .chain(&removed_tools)
+        .any(|tool| matches!(tool.as_str(), "PagePublish" | "PageDeploy"));
+    added_tools.retain(|tool| {
+        !default_set.contains(tool) || (tool == "PageManage" && legacy_pages_override)
+    });
+    removed_tools.retain(|tool| {
+        default_set.contains(tool)
+            || (default_set.contains("PageManage")
+                && matches!(tool.as_str(), "PagePublish" | "PageDeploy"))
+    });
     let removed_set: HashSet<String> = removed_tools.iter().cloned().collect();
     added_tools.retain(|tool| !removed_set.contains(tool));
 
@@ -663,6 +702,68 @@ mod tests {
     use openbitfun_runtime_ports::{PermissionEffect, PermissionRule};
     use serde_json::Value;
     use std::collections::HashSet;
+
+    #[test]
+    fn page_manage_default_preserves_legacy_tool_overrides_and_round_trip() {
+        let defaults = vec!["PageManage".into()];
+        let valid = HashSet::from([
+            "PageManage".into(),
+            "PagePublish".into(),
+            "PageDeploy".into(),
+        ]);
+        assert_eq!(
+            super::resolve_effective_tools(&defaults, None, &valid),
+            defaults
+        );
+        for legacy in ["PagePublish", "PageDeploy"] {
+            let raw = serde_json::json!({"profile_id":"Standard", "removed_tools":[legacy]});
+            let config = canonicalize_agent_profile("Standard", Some(&raw), &defaults, &valid)
+                .unwrap()
+                .unwrap();
+            let retained = if legacy == "PagePublish" {
+                "PageDeploy"
+            } else {
+                "PagePublish"
+            };
+            assert_eq!(
+                super::resolve_effective_tools(&defaults, Some(&config), &valid),
+                vec![retained]
+            );
+            let saved = serde_json::to_value(config).unwrap();
+            assert_eq!(saved["removed_tools"], raw["removed_tools"]);
+            let restored = serde_json::from_value(saved).unwrap();
+            assert_eq!(
+                super::resolve_effective_tools(&defaults, Some(&restored), &valid),
+                vec![retained]
+            );
+            let raw = serde_json::json!({"profile_id":"Standard", "added_tools":[legacy]});
+            let config = canonicalize_agent_profile("Standard", Some(&raw), &defaults, &valid)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                super::resolve_effective_tools(&defaults, Some(&config), &valid),
+                vec![legacy]
+            );
+        }
+        let raw = serde_json::json!({"profile_id":"Standard", "removed_tools":["PagePublish", "PageDeploy"]});
+        let config = canonicalize_agent_profile("Standard", Some(&raw), &defaults, &valid)
+            .unwrap()
+            .unwrap();
+        assert!(super::resolve_effective_tools(&defaults, Some(&config), &valid).is_empty());
+        let raw = serde_json::json!({"profile_id":"Standard", "removed_tools":["PagePublish"], "added_tools":["PageManage"]});
+        let config = canonicalize_agent_profile("Standard", Some(&raw), &defaults, &valid)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            super::resolve_effective_tools(&defaults, Some(&config), &valid),
+            defaults
+        );
+        let raw = serde_json::json!({"profile_id":"Standard", "removed_tools":["PageManage", "PagePublish"]});
+        let config = canonicalize_agent_profile("Standard", Some(&raw), &defaults, &valid)
+            .unwrap()
+            .unwrap();
+        assert!(super::resolve_effective_tools(&defaults, Some(&config), &valid).is_empty());
+    }
 
     #[test]
     fn canonicalization_retains_future_fields_even_without_known_overrides() {

@@ -110,3 +110,15 @@ test('1.0.0 localhost markers follow workspace kind without losing real SSH iden
   assert.equal(catalog.workspaces[1].remoteSshHost, 'localhost');
   assert.equal(catalog.workspaces[1].remoteConnectionId, 'saved');
 });
+
+test('opened assistants are pinned with stable ordering and unchanged picker history', () => {
+  const catalog = projectWorkspaceCatalog({ workspaces: [{path: '/recent'}], opened_workspaces: [
+    { workspace_id: 'remote', path: '/repo', workspace_kind: 'remote', remote_connection_id: 'ssh' },
+    { workspace_id: 'a', path: '/assistant-a', workspace_kind: 'assistant' },
+    { workspace_id: 'local', path: '/local', workspace_kind: 'normal' },
+    { workspace_id: 'b', path: '/assistant-b', workspace_kind: 'assistant' },
+  ] }, []);
+  assert.deepEqual(catalog.workspaces.map(row => row.workspaceId), ['a', 'b', 'remote', 'local']);
+  assert.equal(catalog.workspaces[2].remoteConnectionId, 'ssh');
+  assert.deepEqual(catalog.recentWorkspaces.map(row => row.path), ['/recent']);
+});

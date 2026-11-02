@@ -26,6 +26,10 @@ vi.mock('@/flow_chat/session-drivers/sessionFileNavigation', () => ({ sessionWor
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 it('docks only the composer and forwards resize suspension without remounting the transcript or draft', () => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe() {}
+    disconnect() {}
+  });
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -51,5 +55,6 @@ it('docks only the composer and forwards resize suspension without remounting th
   } finally {
     act(() => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
   }
 });

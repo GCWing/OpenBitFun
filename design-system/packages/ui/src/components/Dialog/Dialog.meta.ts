@@ -2,7 +2,7 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const dialogMeta = {
   category: "feedback",
-  description: "A compound dialog with attached or frosted floating footer anatomy on the shared overlay kernel.",
+  description: "A compound dialog with attached or floating footers and a fixed Panel Dialog preset on the shared overlay kernel.",
   maturity: "stable",
   name: "Dialog",
   props: [
@@ -12,12 +12,13 @@ export const dialogMeta = {
     { name: "open", type: "boolean" },
     { name: "onOpenChange", type: "(open: false, reason: DialogCloseReason) => void" },
     { defaultValue: "md", name: "size", type: "sm | md | lg | xl | 2xl" },
+    { defaultValue: "default", name: "preset", type: "default | panel" },
     { defaultValue: "false", name: "DialogHeader.separator", type: "boolean" },
     { defaultValue: "false", name: "DialogFooter.separator", type: "boolean" },
     { defaultValue: "true", name: "closeOnEscape", type: "boolean" },
     { defaultValue: "true", name: "closeOnPointerOutside", type: "boolean" },
   ],
-  states: ["default", "open", "alert", "scrolling", "floating-footer"],
+  states: ["default", "open", "alert", "scrolling", "floating-footer", "panel"],
   tokens: [
     "color.overlay.scrim",
     "color.surface.raised",
@@ -27,6 +28,11 @@ export const dialogMeta = {
     "color.content.muted",
     "overlay.dialog.surfaceRadius",
     "overlay.dialog.viewportGutter",
+    "overlay.dialog.panelBlockSize",
+    "overlay.dialog.maxInlineSizeXlarge",
+    "overlay.dialog.maxInlineSizeLarge",
+    "space.4",
+    "control.height.sm",
     "overlay.dialog.headerPaddingBlockStart",
     "overlay.dialog.headerPaddingBlockEnd",
     "overlay.dialog.footerPaddingBlockStart",

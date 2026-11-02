@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
@@ -40,6 +41,7 @@ const DEFAULT_CDN_BASE_URL: &str = "https://novac2c.cdn.weixin.qq.com/c2c";
 pub const MAX_WEIXIN_FILE_BYTES: u64 = 30 * 1024 * 1024;
 const CDN_UPLOAD_MAX_RETRIES: u32 = 3;
 pub const MAX_INBOUND_IMAGES: usize = 5;
+pub const MAX_INBOUND_FILES: usize = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeixinConfig {
@@ -143,6 +145,7 @@ pub struct WeixinProviderClient {
     http_client: reqwest::Client,
     typing_tickets: Arc<RwLock<HashMap<String, String>>>,
     session_pause_until_ms: Arc<RwLock<HashMap<String, i64>>>,
+    login_required: AtomicBool,
 }
 
 pub struct TypingHandle {
@@ -203,11 +206,18 @@ impl WeixinProviderClient {
             http_client: crate::reqwest_client(),
             typing_tickets: Arc::new(RwLock::new(HashMap::new())),
             session_pause_until_ms: Arc::new(RwLock::new(HashMap::new())),
+            login_required: AtomicBool::new(false),
         }
     }
 
     pub fn config(&self) -> &WeixinConfig {
         &self.config
+    }
+
+    /// A live polling task can be waiting for reauthentication. Retain this
+    /// fact until a successful authenticated poll, even after retry backoff ends.
+    pub fn requires_login(&self) -> bool {
+        self.login_required.load(Ordering::Acquire)
     }
 
     fn base_url(&self) -> String {
@@ -229,6 +239,7 @@ impl WeixinProviderClient {
     }
 
     async fn pause_session(&self) {
+        self.login_required.store(true, Ordering::Release);
         let until = now_ms() + (SESSION_PAUSE_SECS as i64) * 1000;
         self.session_pause_until_ms
             .write()
@@ -289,6 +300,11 @@ impl WeixinProviderClient {
             let ret = value["ret"].as_i64().unwrap_or(0);
             let errcode = value["errcode"].as_i64().unwrap_or(0);
             if ret != 0 || errcode != 0 {
+                if ret == WEIXIN_SESSION_EXPIRED_ERRCODE
+                    || errcode == WEIXIN_SESSION_EXPIRED_ERRCODE
+                {
+                    self.pause_session().await;
+                }
                 let errmsg = value["errmsg"]
                     .as_str()
                     .or_else(|| value["msg"].as_str())
@@ -339,6 +355,8 @@ impl WeixinProviderClient {
         let errcode = value["errcode"].as_i64().unwrap_or(0);
         if errcode == WEIXIN_SESSION_EXPIRED_ERRCODE || ret == WEIXIN_SESSION_EXPIRED_ERRCODE {
             self.pause_session().await;
+        } else if value["ret"].as_i64() == Some(0) && errcode == 0 {
+            self.login_required.store(false, Ordering::Release);
         }
         debug!(
             "weixin: getupdates ret={ret} errcode={errcode} messages={}",
@@ -617,41 +635,110 @@ impl WeixinProviderClient {
             .await
     }
 
-    pub async fn download_inbound_images(&self, msg: &Value) -> (Vec<WeixinIncomingImage>, usize) {
-        let Some(items) = msg["item_list"].as_array() else {
-            return (vec![], 0);
-        };
-        let total_with_param = items
-            .iter()
-            .filter(|item| {
-                item["type"].as_i64() == Some(2)
-                    && item["image_item"]["media"]["encrypt_query_param"]
-                        .as_str()
-                        .is_some_and(|s| !s.is_empty())
-            })
-            .count();
-        let skipped = total_with_param.saturating_sub(MAX_INBOUND_IMAGES);
-
+    pub async fn download_inbound_images(
+        &self,
+        msg: &Value,
+    ) -> Result<(Vec<WeixinIncomingImage>, usize)> {
+        let items: Vec<_> = msg["item_list"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|item| item["type"].as_i64() == Some(2))
+            .collect();
+        let skipped = items.len().saturating_sub(MAX_INBOUND_IMAGES);
         let mut images = Vec::new();
-        for item in items {
-            if images.len() >= MAX_INBOUND_IMAGES {
-                break;
-            }
-            if item["type"].as_i64() != Some(2) {
-                continue;
-            }
-            match self.inbound_image_bytes_from_item(item).await {
-                Ok(bytes) => {
-                    images.push(WeixinIncomingImage {
-                        name: format!("weixin_image_{}.jpg", images.len() + 1),
-                        mime_type: sniff_image_mime(&bytes),
-                        bytes,
-                    });
-                }
-                Err(err) => warn!("Weixin inbound image download failed: {err}"),
-            }
+        for item in items.into_iter().take(MAX_INBOUND_IMAGES) {
+            // Missing or failed media must not silently become empty/partial input.
+            let bytes = self.inbound_image_bytes_from_item(item).await?;
+            images.push(WeixinIncomingImage {
+                name: format!("weixin_image_{}.jpg", images.len() + 1),
+                mime_type: sniff_image_mime(&bytes),
+                bytes,
+            });
         }
-        (images, skipped)
+        Ok((images, skipped))
+    }
+
+    /// Files and native videos use the same CDN encryption as images. Deliver
+    /// their original bytes as session files; model-specific decoding is separate.
+    pub async fn download_inbound_files(
+        &self,
+        msg: &Value,
+    ) -> Result<Vec<super::inbound_files::InboundFile>> {
+        let items: Vec<_> = msg["item_list"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|item| matches!(item["type"].as_i64(), Some(4 | 5)))
+            .collect();
+        if items.len() > MAX_INBOUND_FILES {
+            return Err(anyhow!(
+                "At most {MAX_INBOUND_FILES} files can be received per message"
+            ));
+        }
+        let mut files = Vec::new();
+        let mut remaining = MAX_WEIXIN_FILE_BYTES as usize;
+        for item in items {
+            let is_video = item["type"].as_i64() == Some(5);
+            let file = &item[if is_video { "video_item" } else { "file_item" }];
+            // The official protocol's file len is plaintext; video_size is
+            // ciphertext (including AES padding), so never compare it to plaintext.
+            let declared_size = file["len"]
+                .as_str()
+                .and_then(|v| v.parse::<u64>().ok())
+                .or_else(|| file["len"].as_u64());
+            if declared_size.is_some_and(|size| size > remaining as u64) {
+                return Err(anyhow!("Inbound files exceed the 30 MiB message limit"));
+            }
+            let declared_cipher_size = if is_video {
+                file["video_size"].as_u64()
+            } else {
+                None
+            };
+            if declared_cipher_size
+                .is_some_and(|size| size > aes_ecb_ciphertext_len(remaining) as u64)
+            {
+                return Err(anyhow!("Inbound files exceed the 30 MiB message limit"));
+            }
+            let media = &file["media"];
+            let param = media["encrypt_query_param"].as_str().unwrap_or_default();
+            let full_url = media["full_url"]
+                .as_str()
+                .filter(|url| !url.trim().is_empty());
+            if param.is_empty() && full_url.is_none() {
+                return Err(anyhow!("File download reference is missing"));
+            }
+            let key = parse_weixin_cdn_aes_key(
+                media["aes_key"]
+                    .as_str()
+                    .ok_or_else(|| anyhow!("File decryption key is missing"))?,
+            )
+            .map_err(|_| anyhow!("Invalid file decryption key"))?;
+            let encrypted = self
+                .fetch_weixin_cdn_bytes(param, full_url, remaining)
+                .await?;
+            if declared_cipher_size.is_some_and(|size| size != encrypted.len() as u64) {
+                return Err(anyhow!("Downloaded video size does not match the message"));
+            }
+            let bytes = decrypt_aes_128_ecb_pkcs7(&encrypted, &key)
+                .map_err(|_| anyhow!("File decryption failed"))?;
+            if bytes.len() > remaining {
+                return Err(anyhow!("Inbound files exceed the 30 MiB message limit"));
+            }
+            if declared_size.is_some_and(|size| size != bytes.len() as u64) {
+                return Err(anyhow!("Downloaded file size does not match the message"));
+            }
+            remaining -= bytes.len();
+            files.push(super::inbound_files::InboundFile {
+                name: if is_video {
+                    format!("weixin_video_{}.mp4", files.len() + 1)
+                } else {
+                    file["file_name"].as_str().unwrap_or("file.bin").to_owned()
+                },
+                bytes,
+            });
+        }
+        Ok(files)
     }
 
     async fn send_message_with_items(
@@ -686,29 +773,52 @@ impl WeixinProviderClient {
         &self,
         encrypted_query_param: &str,
         full_url: Option<&str>,
+        max_plain_bytes: usize,
     ) -> Result<Vec<u8>> {
         let url = match full_url.map(str::trim).filter(|s| !s.is_empty()) {
             Some(url) => url.to_string(),
-            None => build_cdn_download_url(DEFAULT_CDN_BASE_URL, encrypted_query_param),
+            None if !encrypted_query_param.is_empty() => {
+                build_cdn_download_url(DEFAULT_CDN_BASE_URL, encrypted_query_param)
+            }
+            None => return Err(anyhow!("Media download reference is missing")),
         };
-        let client = crate::reqwest_client_builder()
+        // Signed URLs, response bodies, and encryption keys stay out of errors/logs.
+        let mut response = crate::reqwest_client_builder()
             .timeout(Duration::from_secs(120))
-            .build()?;
-        let resp = client.get(&url).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("weixin CDN GET {status}: {body}"));
+            .build()?
+            .get(url)
+            .send()
+            .await
+            .map_err(|_| anyhow!("Media download request failed"))?;
+        if !response.status().is_success() {
+            return Err(anyhow!("Media download failed: HTTP {}", response.status()));
         }
-        Ok(resp.bytes().await?.to_vec())
+        let limit = aes_ecb_ciphertext_len(max_plain_bytes);
+        if response
+            .content_length()
+            .is_some_and(|size| size > limit as u64)
+        {
+            return Err(anyhow!("Inbound media exceeds the download limit"));
+        }
+        let mut encrypted = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| anyhow!("Media download interrupted"))?
+        {
+            if chunk.len() > limit.saturating_sub(encrypted.len()) {
+                return Err(anyhow!("Inbound media exceeds the download limit"));
+            }
+            encrypted.extend_from_slice(&chunk);
+        }
+        Ok(encrypted)
     }
 
     async fn inbound_image_bytes_from_item(&self, item: &Value) -> Result<Vec<u8>> {
         let image = &item["image_item"];
         let param = image["media"]["encrypt_query_param"]
             .as_str()
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| anyhow!("image: missing encrypt_query_param"))?;
+            .unwrap_or_default();
         let full_url = image["media"]["full_url"].as_str();
 
         let key = if let Some(hex_s) = image["aeskey"].as_str().filter(|s| !s.is_empty()) {
@@ -726,11 +836,18 @@ impl WeixinProviderClient {
             None
         };
 
-        let encrypted = self.fetch_weixin_cdn_bytes(param, full_url).await?;
-        match key {
-            Some(key) => decrypt_aes_128_ecb_pkcs7(&encrypted, &key),
-            None => Ok(encrypted),
+        let encrypted = self
+            .fetch_weixin_cdn_bytes(param, full_url, MAX_WEIXIN_FILE_BYTES as usize)
+            .await?;
+        let bytes = match key {
+            Some(key) => decrypt_aes_128_ecb_pkcs7(&encrypted, &key)
+                .map_err(|_| anyhow!("Image decryption failed"))?,
+            None => encrypted,
+        };
+        if bytes.len() > MAX_WEIXIN_FILE_BYTES as usize {
+            return Err(anyhow!("Inbound image exceeds the download limit"));
         }
+        Ok(bytes)
     }
 
     async fn upload_bytes_to_weixin_cdn(
@@ -1345,6 +1462,26 @@ pub fn has_inbound_image_items(msg: &Value) -> bool {
     })
 }
 
+/// Voice transcripts are supported; raw voice currently has no audio input adapter.
+pub fn has_unsupported_media_items(msg: &Value) -> bool {
+    msg["item_list"].as_array().is_some_and(|items| {
+        items.iter().any(|item| {
+            item["type"].as_i64() == Some(3)
+                && !item["voice_item"]["text"]
+                    .as_str()
+                    .is_some_and(|text| !text.trim().is_empty())
+        })
+    })
+}
+
+pub fn has_inbound_file_items(msg: &Value) -> bool {
+    msg["item_list"].as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| matches!(item["type"].as_i64(), Some(4 | 5)))
+    })
+}
+
 pub fn body_from_message(msg: &Value) -> String {
     let Some(items) = msg["item_list"].as_array() else {
         return String::new();
@@ -1913,20 +2050,46 @@ mod tests {
     async fn stale_token_remains_an_error_while_requests_are_paused() {
         let (base, mut requests, task) = mock_ilink(vec![(0, r#"{"ret":-14}"#)]).await;
         let client = test_client(base);
+        assert!(!client.requires_login());
         let response = client
             .get_updates_once("cursor", Duration::from_secs(1))
             .await
             .unwrap();
         assert!(updates_failed(&response));
+        assert!(client.requires_login());
         let paused = client
             .get_updates_once("cursor", Duration::from_secs(1))
             .await
             .unwrap();
         assert!(updates_failed(&paused));
+        assert!(client.requires_login());
         assert!(paused.get("get_updates_buf").is_none());
         task.await.unwrap();
         assert!(requests.recv().await.is_some());
         assert!(requests.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn notify_token_expiry_requires_login_until_a_successful_authenticated_poll() {
+        let (base, _requests, task) = mock_ilink(vec![
+            (0, r#"{"ret":0,"errcode":-14,"errmsg":"session timeout"}"#),
+            (0, r#"{"ret":0,"msgs":[]}"#),
+        ])
+        .await;
+        let client = test_client(base);
+        assert!(client.notify_start().await.is_err());
+        assert!(client.requires_login());
+        client.session_pause_until_ms.write().await.clear();
+        assert!(
+            client.requires_login(),
+            "Backoff expiry is not successful authentication"
+        );
+        client
+            .get_updates_once("cursor", Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(!client.requires_login());
+        task.await.unwrap();
     }
 
     #[tokio::test]
@@ -2124,5 +2287,173 @@ mod tests {
         let body = body_from_message(&msg);
         assert!(body.contains("[引用:"));
         assert!(body.contains("reply"));
+    }
+
+    async fn mock_file_download(
+        body: Vec<u8>,
+        status: &str,
+        length: usize,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/file", listener.local_addr().unwrap());
+        let headers =
+            format!("HTTP/1.1 {status}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 8192];
+            let length = stream.read(&mut request).await.unwrap();
+            let request = String::from_utf8_lossy(&request[..length]);
+            assert!(!request.to_lowercase().contains("authorization:"));
+            stream.write_all(headers.as_bytes()).await.unwrap();
+            let _ = stream.write_all(&body).await;
+        });
+        (url, task)
+    }
+
+    #[tokio::test]
+    async fn inbound_file_download_preserves_bytes_and_supports_both_aes_key_encodings() {
+        let plain = b"pem-file-test-fixture\n\0\xff";
+        let key = [42u8; 16];
+        for encoded_key in [B64.encode(key), B64.encode(hex::encode(key))] {
+            let encrypted = encrypt_aes_128_ecb_pkcs7(plain, &key);
+            let (url, task) =
+                mock_file_download(encrypted.clone(), "200 OK", encrypted.len()).await;
+            // A full_url alone is valid in the official plugin, even without a query param.
+            let message = json!({"item_list":[{"type":4,"file_item":{
+                "file_name":"KeyPair.pem", "len":plain.len().to_string(),
+                "media":{"full_url":url,"aes_key":encoded_key}
+            }}]});
+            assert!(has_inbound_file_items(&message));
+            assert_eq!(body_from_message(&message), "");
+            let files = test_client("http://unused.invalid".into())
+                .download_inbound_files(&message)
+                .await
+                .unwrap();
+            assert_eq!(files.len(), 1);
+            assert_eq!(files[0].name, "KeyPair.pem");
+            assert_eq!(files[0].bytes, plain);
+            task.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn inbound_file_missing_metadata_and_limits_are_explicit_errors() {
+        let client = test_client("http://unused.invalid".into());
+        assert!(client
+            .download_inbound_files(&json!({"item_list":[{"type":1,"text_item":{"text":"hello"}}]}))
+            .await
+            .unwrap()
+            .is_empty());
+        for item in [
+            json!({"type":4}),
+            json!({"type":4,"file_item":{"media":{"full_url":"http://unused.invalid"}}}),
+            json!({"type":4,"file_item":{"len":MAX_WEIXIN_FILE_BYTES+1}}),
+        ] {
+            assert!(client
+                .download_inbound_files(&json!({"item_list":[item]}))
+                .await
+                .is_err());
+        }
+        assert!(client
+            .download_inbound_files(
+                &json!({"item_list":vec![json!({"type":4}); MAX_INBOUND_FILES+1]})
+            )
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn inbound_file_http_decrypt_size_and_stream_failures_do_not_become_empty_messages() {
+        let encrypted = encrypt_aes_128_ecb_pkcs7(b"fixture", &[42; 16]);
+        for (body, status, length, declared) in [
+            (vec![], "403 Forbidden", 0, 7),
+            (vec![], "200 OK", (MAX_WEIXIN_FILE_BYTES + 32) as usize, 7),
+            (vec![0], "200 OK", 1, 7),
+            (encrypted.clone(), "200 OK", encrypted.len(), 8),
+            (vec![0], "200 OK", 16, 7),
+        ] {
+            let (url, task) = mock_file_download(body, status, length).await;
+            let message = json!({"item_list":[{"type":4,"file_item":{
+                "file_name":"file.pem", "len":declared,
+                "media":{"full_url":url,"aes_key":B64.encode([42;16])}
+            }}]});
+            let error = test_client("http://unused.invalid".into())
+                .download_inbound_files(&message)
+                .await
+                .unwrap_err();
+            assert!(!error.to_string().contains("http://"));
+            task.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn image_full_url_download_and_missing_media_are_not_silently_skipped() {
+        let plain = b"binary-image-fixture";
+        let encrypted = encrypt_aes_128_ecb_pkcs7(plain, &[42; 16]);
+        let (url, task) = mock_file_download(encrypted.clone(), "200 OK", encrypted.len()).await;
+        let client = test_client("http://unused.invalid".into());
+        let (images, skipped) = client
+            .download_inbound_images(&json!({"item_list":[{"type":2,"image_item":{
+                "media":{"full_url":url,"aes_key":B64.encode([42;16])}
+            }}]}))
+            .await
+            .unwrap();
+        assert_eq!(skipped, 0);
+        assert_eq!(images[0].bytes, plain);
+        task.await.unwrap();
+        assert!(client
+            .download_inbound_images(&json!({"item_list":[{"type":2}]}))
+            .await
+            .is_err());
+        let (url, task) =
+            mock_file_download(vec![], "200 OK", (MAX_WEIXIN_FILE_BYTES + 32) as usize).await;
+        let error = client
+            .download_inbound_images(
+                &json!({"item_list":[{"type":2,"image_item":{"media":{"full_url":url}}}]}),
+            )
+            .await
+            .unwrap_err();
+        assert!(!error.to_string().contains("http://"));
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn native_video_is_downloaded_as_an_unchanged_mp4_file() {
+        let plain = b"\0\0\0\x18ftypmp42binary-video-fixture";
+        let encrypted = encrypt_aes_128_ecb_pkcs7(plain, &[42; 16]);
+        assert_ne!(encrypted.len(), plain.len());
+        for declared in [encrypted.len(), plain.len()] {
+            let (url, task) =
+                mock_file_download(encrypted.clone(), "200 OK", encrypted.len()).await;
+            let message = json!({"item_list":[{"type":5,"video_item":{
+                "video_size":declared,
+                "media":{"full_url":url,"aes_key":B64.encode([42;16])}
+            }}]});
+            assert!(has_inbound_file_items(&message));
+            assert!(!has_unsupported_media_items(&message));
+            let result = test_client("http://unused.invalid".into())
+                .download_inbound_files(&message)
+                .await;
+            if declared == encrypted.len() {
+                let files = result.unwrap();
+                assert_eq!(files[0].name, "weixin_video_1.mp4");
+                assert_eq!(files[0].bytes, plain);
+            } else {
+                assert!(result.unwrap_err().to_string().contains("video size"));
+            }
+            task.await.unwrap();
+        }
+        let client = test_client("http://unused.invalid".into());
+        assert!(client
+            .download_inbound_files(&json!({"item_list":[{"type":5}]}))
+            .await
+            .is_err());
+        assert!(client
+            .download_inbound_files(
+                &json!({"item_list":vec![json!({"type":5}); MAX_INBOUND_FILES+1]})
+            )
+            .await
+            .is_err());
     }
 }

@@ -8,11 +8,13 @@ import { Disclosure } from "../dist/index.js";
 test("Disclosure connects its trigger and region with accessible state", () => {
   const markup = renderToStaticMarkup(createElement(
     Disclosure,
-    { defaultOpen: true, summary: "Advanced" },
+    { defaultOpen: true, summary: "Advanced", headerClassName: "report-heading", triggerClassName: "report-trigger" },
     createElement("button", null, "Reset"),
   ));
 
   assert.match(markup, /data-openbitfun-component="disclosure"/);
+  assert.match(markup, /class="[^"]*report-heading" data-openbitfun-part="header"/);
+  assert.match(markup, /<button[^>]*class="[^"]*report-trigger"/);
   assert.match(markup, /data-open="true"/);
   assert.match(markup, /aria-expanded="true"/);
   assert.match(markup, /aria-controls="openbitfun-disclosure-[^"]+-content"/);

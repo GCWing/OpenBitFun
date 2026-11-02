@@ -420,6 +420,24 @@ Returns numbered lines (line number, tab, text). Choose the window needed for th
         schema
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string"},
+                "content": {"type": "string"},
+                "total_lines": {"type": "integer"},
+                "lines_read": {"type": "integer"},
+                "offset": {"type": "integer"},
+                "content_truncated": {"type": "boolean"},
+                "truncated_lines": {"type": "array", "items": {"type": "integer"}},
+                "next_offset": {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+            },
+            "required": ["file_path", "content", "total_lines", "lines_read", "offset", "content_truncated", "truncated_lines", "next_offset"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -670,14 +688,16 @@ Returns numbered lines (line number, tab, text). Choose the window needed for th
                     "total_lines": read_file_result.total_lines,
                     "lines_read": presentation.lines_read,
                     "offset": read_file_result.start_line,
-                    "tail": tail,
-                    "start_line": read_file_result.start_line,
-                    "size": read_file_result.content.len(),
-                    "hit_total_char_limit": read_file_result.hit_total_char_limit,
                     "content_truncated": read_file_result.content_truncated,
                     "truncated_lines": read_file_result.truncated_lines,
                     "next_offset": presentation.next_offset,
-                    "representation": "miniapp_context"
+                    "diagnostics": {
+                        "tail": tail,
+                        "start_line": read_file_result.start_line,
+                        "size": read_file_result.content.len(),
+                        "hit_total_char_limit": read_file_result.hit_total_char_limit,
+                        "representation": "miniapp_context"
+                    }
                 }),
                 result_for_assistant: Some(presentation.result_for_assistant),
                 image_attachments: None,
@@ -821,30 +841,32 @@ Returns numbered lines (line number, tab, text). Choose the window needed for th
             "total_lines": read_file_result.total_lines,
             "lines_read": presentation.lines_read,
             "offset": read_file_result.start_line,
-            "tail": tail,
-            "start_line": read_file_result.start_line,
-            "size": read_file_result.content.len(),
-            "hit_total_char_limit": read_file_result.hit_total_char_limit,
             "content_truncated": read_file_result.content_truncated,
             "truncated_lines": read_file_result.truncated_lines,
-            "next_offset": presentation.next_offset
+            "next_offset": presentation.next_offset,
+            "diagnostics": {
+                "tail": tail,
+                "start_line": read_file_result.start_line,
+                "size": read_file_result.content.len(),
+                "hit_total_char_limit": read_file_result.hit_total_char_limit
+            }
         });
         if let Some(metadata) = document_metadata {
-            data["representation"] = json!("extracted_markdown");
-            data["source_format"] = json!(metadata.source_format);
-            data["source_size_bytes"] = json!(metadata.source_size_bytes);
+            data["diagnostics"]["representation"] = json!("extracted_markdown");
+            data["diagnostics"]["source_format"] = json!(metadata.source_format);
+            data["diagnostics"]["source_size_bytes"] = json!(metadata.source_size_bytes);
             let pagination = metadata.pagination;
-            data["page_kind"] = json!(pagination.page_kind);
-            data["page_count"] = json!(pagination.page_count);
-            data["selected_pages"] = json!(pagination.selected_pages);
-            data["selected_page_count"] = json!(pagination.selected_page_count);
-            data["next_page"] = json!(pagination.next_page);
+            data["diagnostics"]["page_kind"] = json!(pagination.page_kind);
+            data["diagnostics"]["page_count"] = json!(pagination.page_count);
+            data["diagnostics"]["selected_pages"] = json!(pagination.selected_pages);
+            data["diagnostics"]["selected_page_count"] = json!(pagination.selected_page_count);
+            data["diagnostics"]["next_page"] = json!(pagination.next_page);
             let warnings = if let Some(coverage) = metadata.pdf_coverage {
-                data["conversion_engine"] = json!("pdf-inspector");
-                data["extraction_status"] = json!(coverage.status());
-                data["page_count"] = json!(coverage.page_count);
-                data["extracted_pages"] = json!(coverage.extracted_pages);
-                data["pages_needing_ocr"] = json!(coverage.pages_needing_ocr);
+                data["diagnostics"]["conversion_engine"] = json!("pdf-inspector");
+                data["diagnostics"]["extraction_status"] = json!(coverage.status());
+                data["diagnostics"]["page_count"] = json!(coverage.page_count);
+                data["diagnostics"]["extracted_pages"] = json!(coverage.extracted_pages);
+                data["diagnostics"]["pages_needing_ocr"] = json!(coverage.pages_needing_ocr);
                 let mut warnings = vec![
                     "Coverage describes native text extraction; images and diagrams may require visual inspection."
                         .to_string(),
@@ -866,7 +888,7 @@ Returns numbered lines (line number, tab, text). Choose the window needed for th
                 );
                 warnings
             } else {
-                data["conversion_engine"] = json!("anydoc");
+                data["diagnostics"]["conversion_engine"] = json!("anydoc");
                 let warning =
                     "Embedded images and objects are represented by their available text.";
                 let mut warnings = vec![warning.to_string()];
@@ -883,7 +905,7 @@ Returns numbered lines (line number, tab, text). Choose the window needed for th
                 );
                 warnings
             };
-            data["extraction_warnings"] = json!(warnings);
+            data["diagnostics"]["extraction_warnings"] = json!(warnings);
             let unit_hint = match pagination.page_kind {
                 "pdf_page" => "original PDF pages",
                 "slide" => "slides in presentation order",
@@ -1445,10 +1467,10 @@ mod tests {
         else {
             panic!("expected result");
         };
-        assert_eq!(data["representation"], "extracted_markdown");
-        assert_eq!(data["source_format"], "rtf");
-        assert_eq!(data["conversion_engine"], "anydoc");
-        assert_eq!(data["source_size_bytes"], source.len());
+        assert_eq!(data["diagnostics"]["representation"], "extracted_markdown");
+        assert_eq!(data["diagnostics"]["source_format"], "rtf");
+        assert_eq!(data["diagnostics"]["conversion_engine"], "anydoc");
+        assert_eq!(data["diagnostics"]["source_size_bytes"], source.len());
         assert!(data["content"]
             .as_str()
             .is_some_and(|content| content.contains("Hello from the document")));
@@ -1499,7 +1521,7 @@ mod tests {
         let message = result_for_assistant.as_deref().unwrap();
         assert!(message.contains("No text was extracted"));
         assert!(!message.contains("empty.rtf is empty"));
-        assert!(data["extraction_warnings"]
+        assert!(data["diagnostics"]["extraction_warnings"]
             .as_array()
             .unwrap()
             .iter()
@@ -1530,19 +1552,19 @@ mod tests {
         else {
             panic!("expected PDF result");
         };
-        assert_eq!(data["representation"], "extracted_markdown");
-        assert_eq!(data["source_format"], "pdf");
-        assert_eq!(data["conversion_engine"], "pdf-inspector");
-        assert_eq!(data["source_size_bytes"], source.len());
-        assert!(data["extraction_warnings"]
+        assert_eq!(data["diagnostics"]["representation"], "extracted_markdown");
+        assert_eq!(data["diagnostics"]["source_format"], "pdf");
+        assert_eq!(data["diagnostics"]["conversion_engine"], "pdf-inspector");
+        assert_eq!(data["diagnostics"]["source_size_bytes"], source.len());
+        assert!(data["diagnostics"]["extraction_warnings"]
             .as_array()
             .unwrap()
             .iter()
             .any(|warning| warning.as_str().unwrap().contains("native text extraction")));
-        assert_eq!(data["extraction_status"], "complete");
-        assert_eq!(data["page_count"], 1);
-        assert_eq!(data["extracted_pages"], json!([1]));
-        assert_eq!(data["pages_needing_ocr"], json!([]));
+        assert_eq!(data["diagnostics"]["extraction_status"], "complete");
+        assert_eq!(data["diagnostics"]["page_count"], 1);
+        assert_eq!(data["diagnostics"]["extracted_pages"], json!([1]));
+        assert_eq!(data["diagnostics"]["pages_needing_ocr"], json!([]));
         let content = data["content"].as_str().expect("content");
         assert!(content.contains("First document paragraph."), "{content}");
         assert!(content.contains("Second document paragraph."), "{content}");
@@ -1570,9 +1592,9 @@ mod tests {
             assert_eq!(data["offset"], total_lines);
             assert_eq!(data["total_lines"], total_lines);
             assert_eq!(data["lines_read"], 1);
-            assert_eq!(data["representation"], "extracted_markdown");
+            assert_eq!(data["diagnostics"]["representation"], "extracted_markdown");
             assert_eq!(data["next_offset"], Value::Null);
-            assert_eq!(data["extracted_pages"], json!([1]));
+            assert_eq!(data["diagnostics"]["extracted_pages"], json!([1]));
         }
     }
 
@@ -1604,11 +1626,11 @@ mod tests {
             else {
                 panic!("expected partial extraction");
             };
-            assert_eq!(data["source_format"], "pdf");
-            assert_eq!(data["extraction_status"], "partial");
-            assert_eq!(data["page_count"], 3);
-            assert_eq!(data["extracted_pages"], json!([1, 3]));
-            assert_eq!(data["pages_needing_ocr"], json!([2]));
+            assert_eq!(data["diagnostics"]["source_format"], "pdf");
+            assert_eq!(data["diagnostics"]["extraction_status"], "partial");
+            assert_eq!(data["diagnostics"]["page_count"], 3);
+            assert_eq!(data["diagnostics"]["extracted_pages"], json!([1, 3]));
+            assert_eq!(data["diagnostics"]["pages_needing_ocr"], json!([2]));
             let message = result_for_assistant.as_deref().expect("model response");
             assert!(
                 message.contains("2 of 3 PDF pages have reliable text"),
@@ -1647,9 +1669,9 @@ mod tests {
         else {
             panic!("expected scan status");
         };
-        assert_eq!(data["extraction_status"], "needs_ocr");
-        assert_eq!(data["extracted_pages"], json!([]));
-        assert_eq!(data["pages_needing_ocr"], json!([1, 2]));
+        assert_eq!(data["diagnostics"]["extraction_status"], "needs_ocr");
+        assert_eq!(data["diagnostics"]["extracted_pages"], json!([]));
+        assert_eq!(data["diagnostics"]["pages_needing_ocr"], json!([1, 2]));
         let message = result_for_assistant.as_deref().unwrap();
         assert!(message.contains("0 of 2 PDF pages have reliable text"));
         assert!(message.contains("Pages 1-2 need OCR or visual inspection"));
@@ -1680,9 +1702,9 @@ mod tests {
         let ToolResult::Result { data, .. } = &results[0] else {
             panic!("expected partial remote result");
         };
-        assert_eq!(data["extraction_status"], "partial");
-        assert_eq!(data["extracted_pages"], json!([1]));
-        assert_eq!(data["pages_needing_ocr"], json!([2]));
+        assert_eq!(data["diagnostics"]["extraction_status"], "partial");
+        assert_eq!(data["diagnostics"]["extracted_pages"], json!([1]));
+        assert_eq!(data["diagnostics"]["pages_needing_ocr"], json!([2]));
         assert!(data["content"]
             .as_str()
             .unwrap()
@@ -1718,7 +1740,9 @@ mod tests {
         assert_eq!(data["next_offset"], 2);
         assert_eq!(data["truncated_lines"], json!([1]));
         assert_eq!(data["content_truncated"], true);
-        assert!(!data["hit_total_char_limit"].as_bool().unwrap());
+        assert!(!data["diagnostics"]["hit_total_char_limit"]
+            .as_bool()
+            .unwrap());
         assert!(result_for_assistant
             .as_deref()
             .unwrap()
@@ -1779,8 +1803,11 @@ mod tests {
         assert!(auto_data["content"]
             .as_str()
             .is_some_and(|content| content.contains("name,value")));
-        assert_eq!(markdown_data["representation"], "extracted_markdown");
-        assert_eq!(markdown_data["source_format"], "csv");
+        assert_eq!(
+            markdown_data["diagnostics"]["representation"],
+            "extracted_markdown"
+        );
+        assert_eq!(markdown_data["diagnostics"]["source_format"], "csv");
         assert!(markdown_data["content"]
             .as_str()
             .is_some_and(|content| content.contains("| name | value |")));
@@ -1807,7 +1834,7 @@ mod tests {
             bounded_limit.load(Ordering::Relaxed),
             MAX_DOCUMENT_INPUT_BYTES
         );
-        assert_eq!(data["representation"], "extracted_markdown");
+        assert_eq!(data["diagnostics"]["representation"], "extracted_markdown");
         assert!(data["content"]
             .as_str()
             .is_some_and(|content| content.contains("Hello from remote RTF")));
@@ -1846,11 +1873,11 @@ mod tests {
                 else {
                     panic!("result");
                 };
-                assert_eq!(data["page_kind"], "pdf_page");
-                assert_eq!(data["page_count"], 3);
-                assert_eq!(data["extraction_status"], status);
-                assert_eq!(data["extracted_pages"], extracted);
-                assert_eq!(data["pages_needing_ocr"], missing);
+                assert_eq!(data["diagnostics"]["page_kind"], "pdf_page");
+                assert_eq!(data["diagnostics"]["page_count"], 3);
+                assert_eq!(data["diagnostics"]["extraction_status"], status);
+                assert_eq!(data["diagnostics"]["extracted_pages"], extracted);
+                assert_eq!(data["diagnostics"]["pages_needing_ocr"], missing);
                 assert!(result_for_assistant
                     .as_deref()
                     .unwrap()
@@ -1859,8 +1886,8 @@ mod tests {
                     let content = data["content"].as_str().unwrap();
                     assert!(content.contains("## PDF page 3"));
                     assert!(!content.contains("## PDF page 1"));
-                    assert_eq!(data["selected_pages"], "3");
-                    assert_eq!(data["selected_page_count"], 1);
+                    assert_eq!(data["diagnostics"]["selected_pages"], "3");
+                    assert_eq!(data["diagnostics"]["selected_page_count"], 1);
                 }
             }
             let error = tool
@@ -1891,8 +1918,8 @@ mod tests {
         let ToolResult::Result { data, .. } = &initial[0] else {
             panic!("result");
         };
-        assert_eq!(data["page_kind"], "text_chunk");
-        assert_eq!(data["page_count"], 3);
+        assert_eq!(data["diagnostics"]["page_kind"], "text_chunk");
+        assert_eq!(data["diagnostics"]["page_count"], 3);
         assert!(!data["truncated_lines"].as_array().unwrap().is_empty());
         let selected = tool
             .call_impl(

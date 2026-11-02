@@ -42,20 +42,25 @@ describe('Application settings presentation', () => {
     ).not.toContain('previousUnexpectedExit');
   });
 
-  it('integrates the command-shell fallback notice into the terminal section description', () => {
+  it('keeps the command-shell fallback notice with the terminal setting', () => {
     const terminalSection = readFileSync(fileURLToPath(new URL('../development/TerminalSettingsPage.tsx', import.meta.url)), 'utf8');
     const settingsSectionStart = terminalSection.indexOf('<ConfigPageSection');
     const settingsSectionEnd = terminalSection.indexOf('</ConfigPageSection>');
-    const sectionDescription = terminalSection.slice(
+    const sectionHeader = terminalSection.slice(
       settingsSectionStart,
       terminalSection.indexOf('<ConfigPageRow', settingsSectionStart),
+    );
+    const settingRow = terminalSection.slice(
+      terminalSection.indexOf('<ConfigPageRow', settingsSectionStart),
+      settingsSectionEnd,
     );
 
     expect(settingsSectionStart).toBeGreaterThanOrEqual(0);
     expect(settingsSectionEnd).toBeGreaterThan(settingsSectionStart);
-    expect(sectionDescription).toContain('description={shouldShowCmdFallbackNotice');
-    expect(sectionDescription).toContain("t('terminal.sections.terminalHintWithCmdFallback')");
-    expect(sectionDescription).toContain("t('terminal.sections.terminalHint')");
+    expect(sectionHeader).not.toContain('description=');
+    expect(settingRow).toContain('description={t(shouldShowCmdFallbackNotice');
+    expect(settingRow).toContain("'terminal.sections.terminalHintWithCmdFallback'");
+    expect(settingRow).toContain("'terminal.controls.description'");
     expect(terminalSection).not.toContain('<Alert');
   });
 });

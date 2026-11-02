@@ -10,9 +10,9 @@ auth → 私有 SMTP → Postfix → 收件方 MX:25
                   OpenDKIM
 ```
 
-本手册描述可复用的维护规则。生产实例的具体 IP、路径、已部署版本和回滚文件见
-服务器 `/etc/openbitfun-mail/README.md`。不要将 SMTP 密码、DKIM 私钥、验证码、
-认证令牌或生产 env 文件复制到仓库。
+本手册描述可复用的维护规则。实际 IP、路径、已部署版本和回滚文件只保存在你自己的
+root-only 配置中，不要写进仓库。不要将 SMTP 密码、DKIM 私钥、验证码、
+认证令牌或 env 文件复制到仓库。
 
 ## 网络与发信身份
 
@@ -20,7 +20,7 @@ auth → 私有 SMTP → Postfix → 收件方 MX:25
 - 认证容器使用同机专用 Docker 网桥的宿主机地址；只授权该容器的确切 IP。
 - Postfix 仅监听 loopback 和该网桥，不监听公网网卡，不发布公网 Docker SMTP 端口。
 - 出站 TCP 25 必须能连接收件方 MX。WAF 处理入站 HTTP(S)，不代理出站 SMTP。
-- 允许整个自有域名的发件人，例如 `hello@openbitfun.com`、`support@openbitfun.com`。
+- 允许整个自有域名的发件人，例如 `hello@example.com`、`support@example.com`。
   新增同域发件地址无需创建本地邮箱。回复能否被接收，仍取决于已有收信服务。
 - `mynetworks` 限制调用方，发件地址规则限制可使用的域名；不能仅靠发件域名防止开放中继。
 
@@ -37,7 +37,7 @@ auth → 私有 SMTP → Postfix → 收件方 MX:25
 SMTP_SECURITY=local
 SMTP_HOST=172.19.0.1
 SMTP_PORT=25
-SMTP_USERNAME=hello@openbitfun.com
+SMTP_USERNAME=hello@example.com
 SMTP_PASSWORD=
 SMTP_FROM_NAME=OpenBitFun
 ```
@@ -62,8 +62,8 @@ Ubuntu 可安装 `postfix opendkim opendkim-tools`。安装时先选择仅本地
 `/etc/postfix/main.cf` 的关键项目：
 
 ```ini
-myhostname = outbound.openbitfun.com
-myorigin = openbitfun.com
+myhostname = outbound.example.com
+myorigin = example.com
 mydestination =
 relayhost =
 default_transport = smtp
@@ -87,7 +87,7 @@ disable_vrfy_command = yes
 `/etc/postfix/allowed_sender_domains` 使用精确的域名匹配：
 
 ```text
-/^[^@[:space:]]+@openbitfun[.]com$/ OK
+/^[^@[:space:]]+@example[.]com$/ OK
 ```
 
 这是 `regexp:` 映射，修改后不运行 `postmap` 生成 hash 数据库，检查配置并 reload 即可。
@@ -112,7 +112,7 @@ OversignHeaders From
 ```
 
 `PidFile` 必须与发行版 systemd 单元一致，否则可能出现进程已运行但服务一直停留在
-`activating`。签名表用 `*@openbitfun.com` 匹配整个域名。KeyTable 指向相应 selector
+`activating`。签名表用 `*@example.com` 匹配整个域名。KeyTable 指向相应 selector
 及私钥；InternalHosts 只列 loopback 和确切的认证容器地址。
 
 私钥由 `opendkim-genkey -b 2048` 在服务器上生成，目录仅允许维护者/签名服务访问，
@@ -125,14 +125,14 @@ OversignHeaders From
 | 记录 | 作用 |
 | --- | --- |
 | `outbound` A | 指向实际出站公网 IP，不接入 WAF |
-| 该公网 IP 的 PTR | 在云厂商反向解析中指向 `outbound.openbitfun.com` |
+| 该公网 IP 的 PTR | 在云厂商反向解析中指向 `outbound.example.com` |
 | 根域 TXT SPF | 在原有 SPF 中添加 `ip4:新IP`；保留仍在使用的发信商授权，不能新增第二条 SPF |
 | `selector._domainkey` TXT | 对应 OpenDKIM selector 的完整公钥 |
 | `_dmarc` TXT | 初始使用 `v=DMARC1; p=none`；验证全部合法发信源后再考虑更严格策略 |
 
 现有 MX 和企业邮箱入口保持不变。只有发信服务，不需要新增指向本机的 MX。
 修改 DNS 后同时检查权威服务器和公共递归解析。PTR、正向地址与 SMTP HELO 身份应匹配。
-QQ 官方说明其 SPF 缓存最长可达 12 小时，换 IP 必须提前发布授权；
+部分邮件服务商会缓存 SPF，换 IP 必须提前发布授权；
 不要因缓存拒收而放宽 SPF 为 `+all` 或关闭验证。
 
 轮换 DKIM 时使用新 selector：生成新密钥、发布新公钥、确认解析与
@@ -166,7 +166,7 @@ journalctl --since '30 minutes ago' -t postfix/smtp -t postfix/smtpd -t postfix/
 测试只发给操作者明确授权的地址，不打印验证码或原始邮件正文。
 失败重试使用新验证码，不能让已过期验证码重新生效。
 
-当前实例针对验证码将队列寿命设为 10 分钟、消息大小设为 1 MiB，并限制目标并发。
+当前示例针对验证码将队列寿命设为 10 分钟、消息大小设为 1 MiB，并限制目标并发。
 这些属于业务参数；接入其他邮件类型前应评估队列寿命、退信处理和容量。
 不要直接清空整个队列来“修复”投递，按 queue ID 处理已确认可丢弃的测试邮件。
 
@@ -180,9 +180,7 @@ journalctl --since '30 minutes ago' -t postfix/smtp -t postfix/smtpd -t postfix/
    代码版本重新创建认证容器；不回退数据库、不删除用户和令牌。
 5. 回滚到外部 SMTP 只改变投递路径，必须明确记录仍使用外部提供商，不能报告为自建直投成功。
 
-官方参考：
+参考：
 [Postfix 基础配置](https://www.postfix.org/BASIC_CONFIGURATION_README.html)、
 [Postfix 中继限制](https://www.postfix.org/SMTPD_ACCESS_README.html)、
-[Postfix Milter](https://www.postfix.org/MILTER_README.html)、
-[QQ SPF 缓存说明](https://service.mail.qq.com/detail/122/72)、
-[华为云 PTR](https://support.huaweicloud.com/usermanual-dns/zh-cn_topic_0077500015.html)。
+[Postfix Milter](https://www.postfix.org/MILTER_README.html)。

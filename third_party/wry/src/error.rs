@@ -72,6 +72,9 @@ pub enum Error {
   #[cfg(any(target_os = "macos", target_os = "ios"))]
   UrlParse(#[from] url::ParseError),
   #[cfg(any(target_os = "macos", target_os = "ios"))]
+  #[error("WebView URL is unavailable")]
+  UrlUnavailable,
+  #[cfg(any(target_os = "macos", target_os = "ios"))]
   #[error("data store is currently opened")]
   DataStoreInUse,
   #[cfg(target_os = "android")]

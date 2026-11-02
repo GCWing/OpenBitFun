@@ -39,6 +39,8 @@ Install, create, and run lightweight apps inside OpenBitFun, combining UI, data,
   - Let an agent initialize, author, and validate a Mini App
 - **由专用智能体工具控制 / Delegated Agent tool** · `PublishMiniApp` · 在用户明确要求时由智能体提交已完成的 Mini App 到市场审核
   - Let an agent submit a completed Mini App for market review when explicitly requested
+- **由专用智能体工具控制 / Delegated Agent tool** · `MiniAppBrowser` · 由智能体结合源码控制 Mini App
+  - Let an agent control a Mini App using its source and live interface
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 撤回和审查市场发布，并可渲染幻灯片页面
   - Withdraw and review market releases, and render slide pages
 

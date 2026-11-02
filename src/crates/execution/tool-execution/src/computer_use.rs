@@ -8,24 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Maximum actions to track in history
 const MAX_HISTORY_SIZE: usize = 50;
 
-/// Action record for history tracking
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActionRecord {
-    pub timestamp_ms: u64,
-    pub action_type: String,
-    pub action_params: String,
-    pub success: bool,
-    pub screenshot_hash: Option<u64>,
-}
-
-/// Loop detection result
-#[derive(Debug, Clone)]
-pub struct LoopDetectionResult {
-    pub is_loop: bool,
-    pub pattern_length: usize,
-    pub repetitions: usize,
-    pub suggestion: String,
-}
+pub use openbitfun_agent_tools::computer_use_host::{ActionRecord, LoopDetectionResult};
 
 /// Computer Use session optimizer
 #[derive(Debug)]

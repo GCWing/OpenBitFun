@@ -9,13 +9,21 @@ import type {
 import { createLogger } from '@/shared/utils/logger';
 import DesktopCardCustomFrame from './DesktopCardCustomFrame';
 import {
+  chartSeries,
+  chartShare,
   countdownParts,
+  formatChartLabel,
+  formatChartValue,
   formatCountdownClock,
   formatMetricValue,
+  isKnownChartStyle,
+  lineGeometry,
   metricHint,
   metricRawValue,
   metricTone,
   progressState,
+  type ChartPoint,
+  type ChartSeries,
   type DesktopCardFormatters,
 } from './desktopCardModel';
 import { useNow } from './useNow';
@@ -126,6 +134,236 @@ export function MetricsTemplate({ template, data, formatters }: {
         );
       })}
     </dl>
+  );
+}
+
+interface ChartViewProps {
+  series: ChartSeries;
+  value: (value: number) => string;
+  label: (point: ChartPoint) => string;
+  percent: (share: number) => string;
+}
+
+/** Untoned parts step through shades of the card tone so neighbors stay distinguishable. */
+function markShade(point: ChartPoint, index: number): number | undefined {
+  return point.tone ? undefined : index % 6;
+}
+
+function ChartBars({ series, value, label, percent }: ChartViewProps) {
+  return (
+    <ol className="openbitfun-desktop-card__chart-bars">
+      {series.points.map((point, index) => {
+        const share = chartShare(point.value, series.scale);
+        const text = label(point);
+        return (
+          <li key={`${point.label}-${index}`} className="openbitfun-desktop-card__chart-bar"
+            title={point.hint ? `${text}: ${value(point.value)}\n${point.hint}` : `${text}: ${value(point.value)}`}>
+            <div className="openbitfun-desktop-card__chart-row">
+              <span className="openbitfun-desktop-card__chart-label">{text}</span>
+              <span className="openbitfun-desktop-card__chart-value">
+                {value(point.value)}
+                {series.total !== null && (
+                  <span className="openbitfun-desktop-card__muted"> · {percent(chartShare(point.value, series.total))}</span>
+                )}
+              </span>
+            </div>
+            <div className="openbitfun-desktop-card__chart-track" aria-hidden="true">
+              <span className="openbitfun-desktop-card__chart-mark" data-tone={point.tone}
+                style={{ inlineSize: `${(share * 100).toFixed(2)}%` }} />
+            </div>
+            {point.hint && <span className="openbitfun-desktop-card__chart-hint">{point.hint}</span>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ChartLegend({ series, value, label, percent, remainderLabel }: ChartViewProps & { remainderLabel: string }) {
+  return (
+    <ul className="openbitfun-desktop-card__chart-legend">
+      {series.points.map((point, index) => (
+        <li key={`${point.label}-${index}`} title={point.hint}>
+          <div className="openbitfun-desktop-card__chart-row">
+            <span className="openbitfun-desktop-card__chart-mark openbitfun-desktop-card__chart-swatch" aria-hidden="true"
+              data-tone={point.tone} data-shade={markShade(point, index)} />
+            <span className="openbitfun-desktop-card__chart-label">{label(point)}</span>
+            <span className="openbitfun-desktop-card__chart-value">{value(point.value)}</span>
+            <span className="openbitfun-desktop-card__muted openbitfun-desktop-card__chart-share">
+              {percent(chartShare(point.value, series.scale))}
+            </span>
+          </div>
+          {point.hint && <span className="openbitfun-desktop-card__chart-hint">{point.hint}</span>}
+        </li>
+      ))}
+      {series.remainder > 0 && (
+        <li data-remainder="true">
+          <div className="openbitfun-desktop-card__chart-row">
+            <span className="openbitfun-desktop-card__chart-mark openbitfun-desktop-card__chart-swatch" aria-hidden="true"
+              data-remainder="true" />
+            <span className="openbitfun-desktop-card__chart-label">{remainderLabel}</span>
+            <span className="openbitfun-desktop-card__chart-value">{value(series.remainder)}</span>
+            <span className="openbitfun-desktop-card__muted openbitfun-desktop-card__chart-share">
+              {percent(chartShare(series.remainder, series.scale))}
+            </span>
+          </div>
+        </li>
+      )}
+    </ul>
+  );
+}
+
+function ChartTotal({ series, value, percent }: ChartViewProps) {
+  const { t } = useI18n('components');
+  return (
+    <div className="openbitfun-desktop-card__chart-summary">
+      <span className="openbitfun-desktop-card__chart-total">{value(series.sum)}</span>
+      {series.total !== null && (
+        <span className="openbitfun-desktop-card__muted">
+          {t('desktopCard.chart.ofTotal', { total: value(series.total) })} · {percent(chartShare(series.sum, series.total))}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ChartStacked(props: ChartViewProps & { remainderLabel: string }) {
+  const { series } = props;
+  return (
+    <>
+      <ChartTotal {...props} />
+      <div className="openbitfun-desktop-card__chart-stack" aria-hidden="true">
+        {series.points.map((point, index) => (
+          <span key={`${point.label}-${index}`} className="openbitfun-desktop-card__chart-mark"
+            data-tone={point.tone} data-shade={markShade(point, index)}
+            style={{ inlineSize: `${(chartShare(point.value, series.scale) * 100).toFixed(2)}%` }} />
+        ))}
+      </div>
+      <ChartLegend {...props} />
+    </>
+  );
+}
+
+const DONUT_RADIUS = 15.9155;
+
+function ChartDonut(props: ChartViewProps & { remainderLabel: string }) {
+  const { series, value, percent } = props;
+  let offset = 0;
+  const segments = series.points.map((point, index) => {
+    const length = chartShare(point.value, series.scale) * 100;
+    const segment = { point, index, length, start: offset };
+    offset += length;
+    return segment;
+  });
+  return (
+    <div className="openbitfun-desktop-card__chart-donut-layout">
+      <div className="openbitfun-desktop-card__chart-donut">
+        <svg viewBox="0 0 36 36" aria-hidden="true">
+          <circle className="openbitfun-desktop-card__chart-mark" data-remainder="true"
+            cx="18" cy="18" r={DONUT_RADIUS} fill="none" strokeWidth="4" />
+          {segments.filter(segment => segment.length > 0).map(({ point, index, length, start }) => (
+            <circle key={`${point.label}-${index}`} className="openbitfun-desktop-card__chart-mark"
+              data-tone={point.tone} data-shade={markShade(point, index)}
+              cx="18" cy="18" r={DONUT_RADIUS} fill="none" strokeWidth="4"
+              strokeDasharray={`${length.toFixed(3)} ${(100 - length).toFixed(3)}`}
+              strokeDashoffset={(25 - start).toFixed(3)} />
+          ))}
+        </svg>
+        <span className="openbitfun-desktop-card__chart-donut-center">
+          {series.total !== null ? percent(chartShare(series.sum, series.total)) : value(series.sum)}
+        </span>
+      </div>
+      <ChartLegend {...props} />
+    </div>
+  );
+}
+
+function ChartColumns({ series, value, label }: ChartViewProps) {
+  const count = series.points.length;
+  const showValues = count <= 8;
+  const labelStep = Math.ceil(count / 8);
+  return (
+    <div className="openbitfun-desktop-card__chart-columns" style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}>
+      {series.points.map((point, index) => {
+        const text = label(point);
+        const showLabel = index % labelStep === 0 || index === count - 1;
+        return (
+          <div key={`${point.label}-${index}`} className="openbitfun-desktop-card__chart-column"
+            title={point.hint ? `${text}: ${value(point.value)}\n${point.hint}` : `${text}: ${value(point.value)}`}>
+            {showValues && <span className="openbitfun-desktop-card__chart-column-value">{value(point.value)}</span>}
+            <div className="openbitfun-desktop-card__chart-column-track" aria-hidden="true">
+              <span className="openbitfun-desktop-card__chart-mark" data-tone={point.tone}
+                style={{ blockSize: `${(chartShare(point.value, series.scale) * 100).toFixed(2)}%` }} />
+            </div>
+            <span className="openbitfun-desktop-card__chart-column-label">{showLabel ? text : ''}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChartLine({ series, value, label }: ChartViewProps) {
+  const { t } = useI18n('components');
+  const geometry = lineGeometry(series.points);
+  if (!geometry) return <p className="openbitfun-desktop-card__empty">{t('desktopCard.chart.empty')}</p>;
+  const first = series.points[0];
+  const last = series.points[series.points.length - 1];
+  const change = geometry.last - geometry.first;
+  const changeText = `${change > 0 ? '+' : change < 0 ? '−' : '±'}${value(Math.abs(change))}`;
+  return (
+    <>
+      <div className="openbitfun-desktop-card__chart-summary">
+        <span className="openbitfun-desktop-card__chart-total">{value(geometry.last)}</span>
+        <span className="openbitfun-desktop-card__muted">
+          {t('desktopCard.chart.changeSince', { change: changeText, label: label(first) })}
+        </span>
+      </div>
+      <svg className="openbitfun-desktop-card__chart-line" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+        <path className="openbitfun-desktop-card__chart-area" d={geometry.area} />
+        <polyline className="openbitfun-desktop-card__chart-stroke" points={geometry.line} fill="none"
+          vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="openbitfun-desktop-card__chart-axis openbitfun-desktop-card__muted">
+        <span>{label(first)}</span>
+        <span>{t('desktopCard.chart.range', { min: value(geometry.min), max: value(geometry.max) })}</span>
+        <span>{label(last)}</span>
+      </div>
+    </>
+  );
+}
+
+export function ChartTemplate({ template, data, formatters }: {
+  template: TemplateOf<'chart'>;
+  data: unknown;
+  formatters: DesktopCardFormatters;
+}) {
+  const { t } = useI18n('components');
+  if (!isKnownChartStyle(template.chart)) {
+    return <p className="openbitfun-desktop-card__empty">{t('desktopCard.unsupportedTemplate')}</p>;
+  }
+  const series = chartSeries(template, data, t('desktopCard.chart.other'));
+  if (series.points.length === 0) {
+    return <p className="openbitfun-desktop-card__empty">{t('desktopCard.chart.empty')}</p>;
+  }
+  const props: ChartViewProps = {
+    series,
+    value: amount => formatChartValue(template, amount, formatters),
+    label: point => formatChartLabel(template, point.label, formatters),
+    percent: share => formatters.formatNumber(share, { style: 'percent', maximumFractionDigits: share > 0 && share < 0.01 ? 1 : 0 }),
+  };
+  const remainderLabel = template.remainderLabel || t('desktopCard.chart.remaining');
+  const summary = series.points.map(point => `${props.label(point)} ${props.value(point.value)}`).join(', ');
+  return (
+    <figure className="openbitfun-desktop-card__chart" data-chart={template.chart} role="group" aria-label={summary}
+      data-openbitfun-component="desktop-card" data-openbitfun-part="chart">
+      {template.chart === 'bar' && <ChartBars {...props} />}
+      {template.chart === 'column' && <ChartColumns {...props} />}
+      {template.chart === 'line' && <ChartLine {...props} />}
+      {template.chart === 'stacked' && <ChartStacked {...props} remainderLabel={remainderLabel} />}
+      {template.chart === 'donut' && <ChartDonut {...props} remainderLabel={remainderLabel} />}
+      {template.caption && <figcaption className="openbitfun-desktop-card__chart-caption">{template.caption}</figcaption>}
+    </figure>
   );
 }
 

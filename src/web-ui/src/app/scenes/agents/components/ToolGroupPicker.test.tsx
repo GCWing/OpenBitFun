@@ -54,11 +54,39 @@ describe('flat tool presentation', () => {
     ));
     expect(container.querySelectorAll('h4')).toHaveLength(0);
     expect(container.textContent).not.toContain('agentsOverview.toolGroups.manageGroups');
-    const controls = [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    const controls = [...container.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')];
     expect(controls).toHaveLength(3);
     const write = controls.find(control => control.getAttribute('aria-label')?.startsWith('Write'))!;
     act(() => write.click());
     expect(onSelectionChange).toHaveBeenCalledWith(['Read', 'unavailable_existing_tool', 'Write']);
+  });
+
+  it('keeps selected capsules first while preserving unavailable selections', () => {
+    let selection = ['Read', 'unavailable_existing_tool'];
+    const onSelectionChange = (names: string[]) => {
+      selection = names;
+      renderPicker();
+    };
+    const renderPicker = () => root.render(
+      <ToolGroupPicker
+        grouped={false}
+        tools={tools}
+        userGroups={userGroups}
+        selectedToolNames={selection}
+        onSelectionChange={onSelectionChange}
+        onSaveUserGroups={vi.fn()}
+      />,
+    );
+    const capsules = () => [...container.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')];
+    const names = () => capsules().map(control => control.textContent);
+    act(renderPicker);
+    expect(names()).toEqual(['Read', 'ExecCommand', 'Write']);
+    act(() => capsules().find(control => control.textContent === 'Write')!.click());
+    expect(names()).toEqual(['Read', 'Write', 'ExecCommand']);
+    expect(capsules().find(control => control.textContent === 'Write')!.getAttribute('aria-pressed')).toBe('true');
+    act(() => capsules().find(control => control.textContent === 'Read')!.click());
+    expect(names()).toEqual(['Write', 'ExecCommand', 'Read']);
+    expect(selection).toEqual(['unavailable_existing_tool', 'Write']);
   });
 
   it('retains grouped presentation for existing consumers by default', () => {

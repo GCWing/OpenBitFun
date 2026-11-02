@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-export type FieldSurface = "ambient" | "default";
+export type FieldSurface = "ambient" | "default" | "filled";
 
 export const FieldSurfaceContext = createContext<FieldSurface>("default");
 

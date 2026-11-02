@@ -6,6 +6,99 @@
 
 ## Background
 
+### Current side-panel scope
+
+The side panel displays session/project identity, context
+composition, and cumulative token shares. The former Usage details chapter and
+its Overview, Models, Tools, Files, Errors, and Slowest tabs are removed. Chat
+cards retain their report entry and compact summaries, but no longer offer jumps
+to those removed tabs. Report data and Markdown export remain intact. Saved
+panel tab hints are accepted and show the summary. Appearance parts now describe
+the remaining UI; overrides for removed detail parts follow the existing
+structured incompatibility diagnostics without rewriting saved packages. Detailed
+tab and navigation descriptions in the earlier implementation stages below are
+historical, not the current side-panel UI.
+
+The session title is centered independently of the copy action. The generation
+timestamp is omitted from the panel header; report and export timestamps remain intact.
+
+The system-prompt, tool-definition, rules, skills, MCP/dynamic-tools and subagent
+legend rows expose an external-link button on hover or keyboard focus. Each opens
+its own read-only preview tab. Tool definitions use a searchable, expandable
+`tool-definitions` document reader, showing tool descriptions and parameter types,
+required flags, defaults, enums, nested structures and schema constraints. It
+projects the existing captured definition array without altering persisted
+sessions; the Markdown envelope and calling instructions remain compatible with
+older captures. Other categories use the standard `markdown-editor`. The executing host replaces a single
+session-local `usage-context.json` snapshot when preparing a request, using the
+same typed sources as the category estimates. It includes prompt/reminder text,
+native tool schemas and the model-visible Skill/GetToolSpec results; it does not
+reload today's catalog or workspace files to reconstruct earlier content.
+
+An explicit `contextPreviewCategory` request returns only that category in
+`contextPreview`, including its capture time. Empty captured categories open an
+empty-content message; absent snapshots/categories return unavailable. A snapshot
+whose owning turn has been replaced or reverted is not exposed. This is the
+latest prepared request, not a historical request selected from the chart.
+The older `includeSystemPromptPreview` / `systemPromptPreview` cached-system-message
+path remains readable as a fallback for older hosts and sessions. Ordinary usage
+reports, persisted `/usage` results, and Markdown exports remain content-free.
+Dispatch projections refuse preview instead of reading the controller's cache.
+Tab identity and late responses remain scoped to the originating device, session,
+and category; no filesystem editor path is created, and the standard Markdown
+editor stays read-only in rich and source modes. Retained tool-definition Markdown
+tabs also render through the structured reader and retain their tab identity.
+
+### Context composition and token shares
+
+The side panel separates the latest recorded parent request's context composition
+from cumulative session token usage. The context donut has eight categories:
+system prompt (including runtime context), tool definitions, rules (workspace/user
+instructions), skills, MCP/dynamic tools, subagent definitions, summarized
+conversation, and conversation. Typed runtime message/reminder provenance assigns
+categories; user-authored text is never classified by matching prompt headings.
+Counts use the runtime token estimator, are labelled estimates, and are not
+provider billing counts or measured context-window occupancy.
+
+Numeric-only composition snapshots travel in the existing opaque usage-record
+`token_details.openbitfunModelRequest.contextComposition` field. The additive
+optional report `context` field projects the newest in-scope parent request;
+subagent records do not replace it. A newer request without a snapshot does not
+reuse stale composition. Old records and external hosts without this telemetry
+show an explicit empty state, while existing report totals remain usable.
+The same runtime/report path runs on the executing host for local, SSH, Peer,
+and detached jobs; no controller filesystem reads or new commands are required.
+
+The leading project, cumulative token, and turn facts use the home overview's
+rounded outline and inset vertical dividers, with centered values above labels.
+The Token Usage section precedes context composition. Its continuous horizontal bar groups
+cumulative tokens into input and output, with total tokens as the denominator.
+With recorded cache counts, the input group splits into cached and remaining
+parts in two shades of blue; output stays purple. Group labels above the bar show
+input/output totals and shares. Cache hit rate appears in parentheses immediately
+after the input share, with the cached/input calculation in its tooltip. The child legend
+shows percentages of input, with counts and the denominator in tooltips. Parent
+hover/focus highlights both input parts; a child highlights its own segment and
+parent label. For complete telemetry, remaining input is labelled uncached. Partial
+telemetry still plots recorded cache reads, but labels the remainder as remaining
+input, including unknown cache usage. The inline hit percentage uses an explicit
+lower-bound marker (≥) over all input tokens and a scope explanation in its tooltip;
+it does not extrapolate the reported-call hit rate to unreported calls. Missing
+or invalid cache counts keep a single input segment. Invalid or inconsistent
+totals never produce invented segments.
+Child widths are normalized within each parent group so they fill that group
+instead of applying the overall share a second time. Nonzero groups and segments
+have small visibility minimums; labels retain the actual percentages and zero
+segments are omitted.
+
+The token-level hit rate uses summed cache reads divided by summed total input
+over the same records, not an average of per-request percentages or a share of
+input plus output. This follows the [OpenAI caching guide](https://developers.openai.com/api/docs/guides/prompt-caching).
+The adapter already normalizes [Anthropic usage](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+by adding ordinary input, cache reads and cache writes; only reads enter the hit
+numerator. The report's partial-coverage rate covers reported records only, so it
+is not presented as the overall input hit rate or used to infer uncached input.
+
 Long OpenBitFun sessions can include model streaming, tool execution, Git operations, file writes, Skills, MCP calls, context compression, subagents, retries, user confirmation waits, and file diffs. The chat transcript shows what happened, but it does not yet answer the user's operational questions:
 
 - What recorded runtime spans are available for the session, and where are they approximate?

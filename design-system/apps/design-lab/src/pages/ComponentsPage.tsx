@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ComponentDetailPage } from "./ComponentDetailPage";
 import { BrandPreview } from "../preview/BrandPreview";
 import { CapsulePreview } from "../preview/CapsulePreview";
+import { ColorPickerPreview } from "../preview/ColorPickerPreview";
 import { AppWindow, Heading, Keyboard, List, Rows3, MousePointerClick, PanelTop, ToggleLeft } from "lucide-react";
 import { VoiceCallPreview, VoiceParticlePreview } from "../components/VoiceCallPreview";
 import {
@@ -189,6 +190,7 @@ const componentIcons = {
 
 export function ComponentCardPreview({ component }: { component: ComponentMeta }) {
   const { t } = useI18n();
+  if (component.name === "ColorPicker") return <ColorPickerPreview />;
   if (component.category === "brand") return <BrandPreview name={component.name} active={false} />;
   if (component.name === "VoiceCallPanel") return <VoiceCallPreview compact />;
   if (component.name === "VoiceParticleLogo") return <VoiceParticlePreview />;

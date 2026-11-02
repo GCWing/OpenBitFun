@@ -454,5 +454,17 @@
     "unavailable": "無法在此處為 \"{{path}}\" 授予 Git 所有權信任，請在持有該儲存庫的機器上授予。",
     "unavailableWithCommand": "無法在此處為 \"{{path}}\" 授予 Git 所有權信任。請在持有該儲存庫的機器上執行：\n\n{{command}}",
     "required": "在你信任其所有權之前，Git 不會讀取 \"{{path}}\"。"
+  },
+  "workingCopy": {
+    "openWorkspace": "開啟工作區後即可查看變更。",
+    "currentHost": "目前主機",
+    "clean": "工作區乾淨",
+    "cleanDescription": "此儲存庫沒有尚未提交的變更。",
+    "upstreamComparison": "相對上游：領先 {{ahead}} 個提交 · 落後 {{behind}} 個提交",
+    "unpushed": "本機仍有尚未推送的提交。準備好後，可使用上方的推送按鈕。",
+    "remoteSnapshot": "可在分支頁面查看追蹤關係與遠端同步狀態。",
+    "statusUnavailable": "無法取得 Git 狀態",
+    "selectFile": "選擇檔案以查看變更",
+    "conflicts": "{{count}} 個檔案存在未解決的衝突。"
   }
 }

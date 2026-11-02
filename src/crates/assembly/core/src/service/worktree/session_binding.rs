@@ -218,6 +218,7 @@ async fn load_binding_context(
                     )
                 })?;
             let mut config = crate::agentic::core::SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_id: metadata.workspace_id.clone(),
                 project_workspace_id: metadata.project_workspace_id.clone(),
                 workspace_path: metadata

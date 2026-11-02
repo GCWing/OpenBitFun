@@ -457,12 +457,69 @@ pub async fn apply_legacy_config_mutation(
     path: &str,
     value: Value,
 ) -> Result<AppliedLegacyProductConfig, String> {
+    apply_legacy_config_mutation_with_model_snapshot(config_service, path, value, None).await
+}
+
+// JavaScript's JSON round trip encodes 1.0 as 1. Accept that wire-equivalent
+// representation without collapsing distinct large integer revisions/metadata
+// through a lossy f64 comparison.
+fn model_snapshot_matches(current: &Value, expected: &Value) -> bool {
+    if current == expected {
+        return true;
+    }
+    match (current, expected) {
+        (Value::Number(a), Value::Number(b)) if a.is_f64() != b.is_f64() => {
+            let (float, integer) = if a.is_f64() { (a, b) } else { (b, a) };
+            let Some(float) = float.as_f64() else {
+                return false;
+            };
+            float.abs() <= 9_007_199_254_740_991.0 && integer.as_f64() == Some(float)
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| model_snapshot_matches(a, b))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter().all(|(key, value)| {
+                    b.get(key)
+                        .is_some_and(|expected| model_snapshot_matches(value, expected))
+                })
+        }
+        _ => false,
+    }
+}
+
+/// Model editors on negotiated hosts submit the exact host snapshot they read.
+/// Compare it inside the configuration owner's mutation lock, including when a
+/// pool becomes a fixed binding (which no longer carries a policy revision).
+pub async fn apply_legacy_config_mutation_with_model_snapshot(
+    config_service: &ConfigService,
+    path: &str,
+    value: Value,
+    expected_models: Option<Value>,
+) -> Result<AppliedLegacyProductConfig, String> {
     let controlled_bindings = validate_legacy_config_mutation(path, &value)?;
     validate_config_semantics(path, &value)?;
-    let changed = config_service
-        .set_config_if_changed(path, value)
-        .await
-        .map_err(|error| error.to_string())?;
+    let changed = if let Some(expected) = expected_models {
+        if path != "ai.models" || !expected.is_array() {
+            return Err("A model snapshot requires the ai.models array path".into());
+        }
+        config_service.update_config::<Value, bool>(path, |current| {
+            if !model_snapshot_matches(current, &expected) {
+                return Err(crate::util::errors::OpenBitFunError::config(
+                    "SUBSCRIPTION_ACCOUNT_POOL_CONFLICT: Model configuration changed while it was being edited",
+                ));
+            }
+            let changed = *current != value;
+            *current = value;
+            Ok(changed)
+        }).await.map_err(|error| error.to_string())?
+    } else {
+        config_service
+            .set_config_if_changed(path, value)
+            .await
+            .map_err(|error| error.to_string())?
+    };
     let effective_value = config_service
         .get_config(Some(path))
         .await
@@ -705,6 +762,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tool_presentation_mode_product_control_round_trips_from_native_default() {
+        let (service, _dir) = test_service("product-control-tool-presentation-mode").await;
+        let capability = product_capability("setting.tools.execution").unwrap();
+        let option = capability
+            .options
+            .iter()
+            .find(|option| option.id == "tool-presentation-mode")
+            .expect("tool presentation mode option");
+
+        assert_eq!(
+            read_config_backed_option(&service, option)
+                .await
+                .expect("native default should be readable"),
+            Some(Value::String("native".to_string()))
+        );
+
+        let applied =
+            configure_config_backed_option(&service, option, &Value::String("ptc".to_string()))
+                .await
+                .expect("PTC should be accepted")
+                .expect("tool presentation mode is config-backed");
+        assert_eq!(applied.changed_path, "ai.tool_presentation_mode");
+        assert_eq!(applied.effective_value, Value::String("ptc".to_string()));
+
+        let applied_python = configure_config_backed_option(
+            &service,
+            option,
+            &Value::String("ptc_python".to_string()),
+        )
+        .await
+        .expect("PTC Python should be accepted")
+        .expect("tool presentation mode is config-backed");
+        assert_eq!(
+            applied_python.effective_value,
+            Value::String("ptc_python".to_string())
+        );
+        assert_eq!(
+            read_config_backed_option(&service, option)
+                .await
+                .expect("PTC Python should be readable"),
+            Some(Value::String("ptc_python".to_string()))
+        );
+    }
+
+    #[tokio::test]
     async fn shared_executor_orders_typed_and_legacy_callers_in_one_revision_stream() {
         let (service, _dir) = test_service("product-control-shared-executor").await;
         let executor = SharedProductControlExecutor::new(Arc::new(service));
@@ -737,6 +839,109 @@ mod tests {
             legacy["controlledBindings"][0]["optionId"],
             "deferred-tool-loading"
         );
+    }
+
+    #[tokio::test]
+    async fn model_snapshot_rejects_concurrent_same_epoch_and_pool_to_fixed_overwrites() {
+        use crate::service::config::types::{AIModelConfig, AuthConfig, SubscriptionProvider};
+        let (service, dir) = test_service("account-model-cas").await;
+        let model = AIModelConfig {
+            id: "subscription-model".into(),
+            temperature: Some(1.0),
+            auth: AuthConfig::SubscriptionPool {
+                provider: SubscriptionProvider::Codex,
+                accounts: vec!["codex".into(), "backup".into()],
+                revision: 5,
+            },
+            ..Default::default()
+        };
+        service.set_config("ai.models", vec![model]).await.unwrap();
+        let mut snapshot: Value = service.get_config(Some("ai.models")).await.unwrap();
+        // The actual browser returns an integer JSON number for this f64.
+        snapshot[0]["temperature"] = Value::from(1);
+        let mut first = snapshot.clone();
+        first[0]["auth"]["accounts"] = serde_json::json!(["backup", "codex"]);
+        first[0]["auth"]["revision"] = Value::from(6);
+        let mut second = snapshot.clone();
+        second[0]["auth"]["accounts"] = serde_json::json!(["codex"]);
+        second[0]["auth"]["revision"] = Value::from(6);
+        apply_legacy_config_mutation_with_model_snapshot(
+            &service,
+            "ai.models",
+            first,
+            Some(snapshot.clone()),
+        )
+        .await
+        .unwrap();
+        let committed: Value = service.get_config(Some("ai.models")).await.unwrap();
+        let config_file =
+            PathManager::with_user_root_for_tests(dir.path().join("account-model-cas"))
+                .app_config_file();
+        let committed_bytes = std::fs::read(&config_file).unwrap();
+        let changes = service.subscribe_local_changes();
+        for replacement in [second, {
+            let mut fixed = snapshot.clone();
+            fixed[0]["auth"] = serde_json::json!({"type":"subscription", "provider":"codex"});
+            fixed
+        }] {
+            let error = apply_legacy_config_mutation_with_model_snapshot(
+                &service,
+                "ai.models",
+                replacement,
+                Some(snapshot.clone()),
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                error.contains("SUBSCRIPTION_ACCOUNT_POOL_CONFLICT"),
+                "{error}"
+            );
+            assert_eq!(
+                service
+                    .get_config::<Value>(Some("ai.models"))
+                    .await
+                    .unwrap(),
+                committed
+            );
+            assert_eq!(std::fs::read(&config_file).unwrap(), committed_bytes);
+            assert!(!changes.has_changed().unwrap());
+        }
+        let mut fixed = committed.clone();
+        fixed[0]["auth"] = serde_json::json!({"type":"subscription", "provider":"codex"});
+        apply_legacy_config_mutation_with_model_snapshot(
+            &service,
+            "ai.models",
+            fixed,
+            Some(committed),
+        )
+        .await
+        .unwrap();
+        let current: Value = service.get_config(Some("ai.models")).await.unwrap();
+        assert_eq!(current[0]["auth"]["type"], "subscription");
+    }
+
+    #[test]
+    fn model_snapshot_comparison_preserves_large_epochs_and_opaque_metadata() {
+        assert!(model_snapshot_matches(
+            &serde_json::json!([{"temperature":1.0}]),
+            &serde_json::json!([{"temperature":1}])
+        ));
+        assert!(!model_snapshot_matches(
+            &Value::from(9_007_199_254_740_993_u64),
+            &Value::from(9_007_199_254_740_992_f64)
+        ));
+        assert!(!model_snapshot_matches(
+            &serde_json::json!({"epoch":9_007_199_254_740_993_u64}),
+            &serde_json::json!({"epoch":9_007_199_254_740_992_u64})
+        ));
+        assert!(!model_snapshot_matches(
+            &serde_json::json!({"future":true}),
+            &serde_json::json!({})
+        ));
+        assert!(!model_snapshot_matches(
+            &serde_json::json!(["a", "b"]),
+            &serde_json::json!(["b", "a"])
+        ));
     }
 
     #[tokio::test]

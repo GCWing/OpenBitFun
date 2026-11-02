@@ -15,14 +15,17 @@ pub(crate) fn select_agentic_system_profile(profile: DeliveryProfile) -> Result<
 pub(crate) async fn init_agentic_system(
     profile: DeliveryProfile,
     runtime_ownership: Arc<CoreRuntimeOwnership>,
+    computer_use_host: Option<
+        openbitfun_core::agentic::tools::computer_use_host::ComputerUseHostRef,
+    >,
 ) -> Result<AgenticSystem> {
-    let system =
-        openbitfun_core::agentic::system::init_agentic_system_for_profile_with_runtime_ownership(
-            profile,
-            runtime_ownership,
-        )
-        .await
-        .context("Failed to initialize agentic system")?;
+    let system = openbitfun_core::agentic::system::init_agentic_system_with_computer_use_host(
+        profile,
+        runtime_ownership,
+        computer_use_host,
+    )
+    .await
+    .context("Failed to initialize agentic system")?;
     system
         .coordinator
         .set_terminal_port(CoreRuntimeServicesProvider::terminal_port());

@@ -1,8 +1,8 @@
 //! xAI (SuperGrok) account login and credential resolution.
 //!
 //! Authentication uses xAI's public Grok CLI OAuth client with the RFC 8628
-//! device flow. Subscription inference uses xAI's normal Responses endpoint,
-//! matching OpenCode's built-in xAI auth plugin.
+//! device flow. Subscription models and inference use Grok Build's authenticated
+//! proxy; the public api.x.ai service is a separate API-key product.
 
 use super::device_flow::{poll_device_code, DevicePoll};
 use super::jwt;
@@ -19,9 +19,10 @@ const DEVICE_AUTHORIZATION_URL: &str = "https://auth.x.ai/oauth2/device/code";
 const TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
 const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const SCOPE: &str = "openid profile email offline_access grok-cli:access api:access";
-const XAI_BASE_URL: &str = "https://api.x.ai/v1";
-const XAI_REQUEST_URL: &str = "https://api.x.ai/v1/responses";
-const DEFAULT_MODEL: &str = "grok-4.5";
+const XAI_BASE_URL: &str = "https://cli-chat-proxy.grok.com/v1";
+const XAI_REQUEST_URL: &str = "https://cli-chat-proxy.grok.com/v1/responses";
+const DEFAULT_MODEL: &str = "grok-4.7";
+const GROK_CLIENT_VERSION: &str = "1.0.41";
 const STORE_KEY: &str = "grok";
 const DEFAULT_TOKEN_LIFETIME_SECS: i64 = 60 * 60;
 const DEFAULT_DEVICE_LIFETIME_SECS: i64 = 5 * 60;
@@ -264,7 +265,11 @@ fn metadata_from(
     }
 }
 
-async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result<()> {
+async fn persist_tokens_for_account(
+    slot: &str,
+    tokens: TokenResponse,
+    expected_revision: u64,
+) -> Result<()> {
     if tokens.access_token.trim().is_empty() {
         return Err(anyhow!("xAI token response missing access_token"));
     }
@@ -277,8 +282,9 @@ async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result
     let expires = jwt::effective_expiry_ms(&tokens.access_token, expires);
     let account_id = account_id_from(&tokens);
     let metadata = metadata_from(&tokens, None);
-    let outcome = store::upsert_if_revision(
-        STORE_KEY,
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Grok,
+        slot,
         expected_revision,
         StoredCredential::Oauth {
             refresh,
@@ -318,7 +324,8 @@ async fn refresh(refresh_token: &str, options: &SubscriptionHttpOptions) -> Resu
 
 /// Starts the device-code login flow. The verification URL and user code are
 /// returned immediately; the runner polls in the background.
-pub(crate) async fn begin_login(
+pub(crate) async fn begin_login_for_account(
+    slot: String,
     cancel: CancellationToken,
     expected_revision: u64,
     options: SubscriptionHttpOptions,
@@ -349,7 +356,9 @@ pub(crate) async fn begin_login(
                 .await
                 .context("complete xAI device authorization")
             },
-            move |tokens| persist_tokens(tokens, expected_revision),
+            move |tokens| async move {
+                persist_tokens_for_account(&slot, tokens, expected_revision).await
+            },
         )
         .await
     };
@@ -364,9 +373,29 @@ pub(crate) async fn begin_login(
     })
 }
 
-async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)> {
-    let _refresh_lease = store::acquire_provider_refresh_lease(STORE_KEY).await?;
-    let snapshot = store::load_entry_with_revision(STORE_KEY).await?;
+async fn ensure_fresh_for_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<(String, i64)> {
+    let (slot, rejected_access, options) = (
+        slot.to_owned(),
+        rejected_access.map(str::to_owned),
+        options.clone(),
+    );
+    super::complete_credential_refresh(async move {
+        ensure_fresh_in_account(&slot, rejected_access.as_deref(), &options).await
+    })
+    .await
+}
+
+async fn ensure_fresh_in_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<(String, i64)> {
+    let _refresh_lease = store::acquire_provider_refresh_lease(slot).await?;
+    let snapshot = store::load_entry_with_revision(slot).await?;
     let entry = snapshot
         .credential
         .ok_or_else(|| anyhow!("xAI is not connected; sign in first"))?;
@@ -384,7 +413,10 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
     let now = now_ms();
     let expires = jwt::effective_expiry_ms(&access, expires);
     let refresh_leeway = refresh_leeway_ms(&access, expires, now);
-    if expires > now + refresh_leeway && !super::jwt::expires_within(&access, now, refresh_leeway) {
+    if rejected_access != Some(access.as_str())
+        && expires > now + refresh_leeway
+        && !super::jwt::expires_within(&access, now, refresh_leeway)
+    {
         return Ok((access, expires));
     }
 
@@ -402,8 +434,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
     let new_account_id = account_id_from(&refreshed).or(account_id);
     let new_metadata = metadata_from(&refreshed, metadata);
     let new_access = refreshed.access_token.clone();
-    let outcome = store::upsert_if_revision(
-        STORE_KEY,
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Grok,
+        slot,
         snapshot.revision,
         StoredCredential::Oauth {
             refresh: new_refresh,
@@ -420,8 +453,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
             Ok((new_access, new_expires))
         }
         store::ConditionalCommitOutcome::Conflict { current_revision } => {
-            let current = super::load_current_store_after_conflict(
+            let current = super::load_account_store_after_conflict(
                 super::SubscriptionProvider::Grok,
+                slot,
                 current_revision,
             )
             .await?;
@@ -444,18 +478,85 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
 
 fn inference_headers() -> HashMap<String, String> {
     let mut headers = HashMap::new();
-    headers.insert("User-Agent".to_string(), opencode_user_agent());
+    let os = std::env::consts::OS;
+    headers.insert(
+        "User-Agent".to_string(),
+        format!(
+            "grok-shell/{GROK_CLIENT_VERSION} ({os}; {})",
+            std::env::consts::ARCH
+        ),
+    );
+    headers.insert("x-grok-client-version".into(), GROK_CLIENT_VERSION.into());
+    headers.insert("x-xai-token-auth".into(), "xai-grok-cli".into());
+    headers.insert("x-grok-client-identifier".into(), "grok-shell".into());
+    headers.insert("x-grok-client-mode".into(), "headless".into());
     headers
+}
+
+pub(crate) fn request_route() -> (&'static str, &'static str, &'static str) {
+    ("responses", XAI_BASE_URL, XAI_REQUEST_URL)
+}
+
+pub(crate) async fn list_models(
+    client: &crate::AIClient,
+) -> Result<Vec<crate::types::RemoteModelInfo>> {
+    let response = crate::providers::openai::common::apply_headers(
+        client,
+        client.client.get(format!("{XAI_BASE_URL}/models")),
+    )
+    .send()
+    .await
+    .context("read Grok Build account model catalog")?
+    .error_for_status()
+    .context("Grok Build refused account model discovery")?;
+    let payload: serde_json::Value = response
+        .json()
+        .await
+        .context("parse Grok Build model catalog")?;
+    parse_models(&payload)
+}
+
+fn parse_models(payload: &serde_json::Value) -> Result<Vec<crate::types::RemoteModelInfo>> {
+    let entries = payload["data"]
+        .as_array()
+        .ok_or_else(|| anyhow!("Grok Build model catalog is missing data"))?;
+    let models = crate::client::utils::dedupe_remote_models(
+        entries
+            .iter()
+            .filter_map(|entry| {
+                let id = entry["id"].as_str()?.trim();
+                let backend = entry["api_backend"].as_str().unwrap_or("responses");
+                if id.is_empty() || backend != "responses" {
+                    return None;
+                }
+                Some(crate::types::RemoteModelInfo {
+                    id: id.into(),
+                    display_name: entry["name"]
+                        .as_str()
+                        .filter(|name| !name.trim().is_empty())
+                        .map(str::to_owned),
+                    routing: None,
+                })
+            })
+            .collect(),
+    );
+    if models.is_empty() {
+        return Err(anyhow!(
+            "Grok Build listed no Responses models for this account"
+        ));
+    }
+    Ok(models)
 }
 
 /// Resolves the runtime credential and pins it to xAI's trusted Responses
 /// endpoint. The selected model remains in the normal request body.
-pub(crate) async fn resolve_for(
+pub(crate) async fn resolve_for_account(
+    slot: &str,
     _model: &str,
     options: &SubscriptionHttpOptions,
 ) -> Result<ResolvedCredential> {
     let headers = inference_headers();
-    let (access, expires) = ensure_fresh(options).await?;
+    let (access, expires) = ensure_fresh_for_account(slot, None, options).await?;
 
     Ok(ResolvedCredential {
         api_key: access,
@@ -476,8 +577,64 @@ pub(crate) fn suggested() -> (&'static str, &'static str, &'static str) {
     ("responses", XAI_BASE_URL, DEFAULT_MODEL)
 }
 
+pub(crate) async fn resolve_for(
+    model: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<ResolvedCredential> {
+    resolve_for_account(STORE_KEY, model, options).await
+}
+
+pub(crate) async fn recover_rejected_account(
+    slot: &str,
+    rejected_access: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<()> {
+    ensure_fresh_for_account(slot, Some(rejected_access), options).await?;
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[ignore = "Reads the selected OpenBitFun Grok account's catalog from official xAI services; no inference requests"]
+    async fn live_grok_model_catalog() {
+        let slot = std::env::var("OPENBITFUN_LIVE_GROK_ACCOUNT")
+            .expect("select an exact in-app account slot");
+        super::super::accounts::validate_account_id(
+            super::super::SubscriptionProvider::Grok,
+            &slot,
+        )
+        .unwrap();
+        let proxy = std::env::var("OPENBITFUN_LIVE_SUBSCRIPTION_PROXY")
+            .ok()
+            .map(|url| crate::types::ProxyConfig {
+                enabled: true,
+                url,
+                username: None,
+                password: None,
+            });
+        let options = super::SubscriptionHttpOptions::new(proxy.clone(), false);
+        let resolved = super::resolve_for_account(&slot, "model-discovery", &options)
+            .await
+            .unwrap();
+        // Old persisted public routes must be overridden in the same transient
+        // client configuration used by the application's discovery command.
+        let mut config: crate::types::AIConfig = serde_json::from_value(serde_json::json!({
+            "name":"live-grok-catalog", "model":"model-discovery", "format":"responses",
+            "base_url":"https://api.x.ai/v1", "request_url":"https://api.x.ai/v1/responses",
+            "api_key":"", "context_window":4096, "inline_think_in_text":false, "skip_ssl_verify":false
+        })).unwrap();
+        resolved.apply_to(&mut config);
+        let client = crate::AIClient::new_with_proxy(config, proxy)
+            .with_subscription_provider(super::super::SubscriptionProvider::Grok);
+        let models = client.list_models().await.unwrap();
+        assert!(!models.is_empty());
+        println!(
+            "Grok Build model_count={} model_ids={:?}",
+            models.len(),
+            models.iter().map(|model| &model.id).collect::<Vec<_>>()
+        );
+    }
+
     use super::{
         classify_device_poll_error, inference_headers, suggested, validate_user_code,
         validate_verification_url, DeviceCodeResponse, DevicePoll, TokenErrorResponse,
@@ -524,17 +681,61 @@ mod tests {
     }
 
     #[test]
-    fn uses_standard_xai_responses_route_and_opencode_user_agent() {
+    fn subscription_requests_use_grok_build_route_and_required_headers() {
         assert_eq!(suggested(), ("responses", XAI_BASE_URL, DEFAULT_MODEL));
-        assert_eq!(XAI_REQUEST_URL, "https://api.x.ai/v1/responses");
-        let headers = inference_headers();
         assert_eq!(
-            headers.get("User-Agent").map(String::as_str),
-            Some(concat!("opencode/", "1.18.29"))
+            XAI_REQUEST_URL,
+            "https://cli-chat-proxy.grok.com/v1/responses"
         );
-        assert_eq!(super::super::OPENCODE_COMPAT_VERSION, "1.18.29");
-        assert!(!headers.contains_key("X-XAI-Token-Auth"));
+        let headers = inference_headers();
+        assert!(headers["User-Agent"].starts_with("grok-shell/"));
+        assert_eq!(headers["x-xai-token-auth"], "xai-grok-cli");
+        assert_eq!(headers["x-grok-client-identifier"], "grok-shell");
+        assert_eq!(headers["x-grok-client-mode"], "headless");
         assert!(!headers.contains_key("x-grok-model-override"));
+    }
+
+    #[test]
+    fn catalog_preserves_wire_ids_names_and_filters_unsupported_protocols() {
+        let models = super::parse_models(&serde_json::json!({"data":[
+            {"id":"grok-4.7","name":"Grok 4.7","api_backend":"responses"},
+            {"id":"legacy","api_backend":"chat_completions"},
+            {"id":"grok-4.7"}, {"id":"custom"}, {"id":" "}
+        ]}))
+        .unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "grok-4.7");
+        assert_eq!(models[0].display_name.as_deref(), Some("Grok 4.7"));
+        assert_eq!(models[1].id, "custom");
+        for invalid in [
+            serde_json::json!({}),
+            serde_json::json!({"data":[]}),
+            serde_json::json!({"data":[{"id":"other","api_backend":"chat_completions"}]}),
+        ] {
+            assert!(super::parse_models(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn legacy_subscription_configs_use_build_routes_without_rewriting_the_model_or_key() {
+        let saved = serde_json::json!({
+            "name":"legacy-grok", "model":"grok-4.5", "format":"responses",
+            "base_url":"https://api.x.ai/v1", "request_url":"https://api.x.ai/v1/responses",
+            "api_key":"synthetic-old-key", "context_window":4096,
+            "inline_think_in_text":false, "skip_ssl_verify":false
+        });
+        let mut config: crate::types::AIConfig = serde_json::from_value(saved.clone()).unwrap();
+        super::super::prepare_account_request_route(
+            super::super::SubscriptionProvider::Grok,
+            &mut config,
+        )
+        .unwrap();
+        assert_eq!(config.base_url, XAI_BASE_URL);
+        assert_eq!(config.request_url, XAI_REQUEST_URL);
+        assert_eq!(config.model, "grok-4.5");
+        assert_eq!(config.api_key, "synthetic-old-key");
+        let read_again: crate::types::AIConfig = serde_json::from_value(saved).unwrap();
+        assert_eq!(read_again.base_url, "https://api.x.ai/v1");
     }
 
     #[test]

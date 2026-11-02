@@ -37,7 +37,9 @@ export function ExternalHistoryNotice({ session, active }: { session?: Session; 
   const unsupportedSurface = surface.surfaceId !== 'local';
   const key = JSON.stringify([surface.epoch, session?.sessionId, sourceId]);
   const notice = feedback?.key === key ? feedback : undefined;
-  const missing = session?.externalHistory?.sourceStatus === 'unavailable';
+  const unavailable = session?.externalHistory?.sourceStatus === 'unavailable';
+  const unsupported = session?.externalHistory?.sourceStatus === 'unsupported';
+  const missing = unavailable;
   const source = isExternalSessionEcosystem(sourceName) ? EXTERNAL_SESSION_NAMES[sourceName] : sourceName;
 
   async function openSource() {
@@ -86,6 +88,7 @@ export function ExternalHistoryNotice({ session, active }: { session?: Session; 
     data-openbitfun-product-component="external-history-notice" data-openbitfun-product-part="root">
     <span>{t(followed ? 'externalHistory.followHint' : 'externalHistory.branchHint', { source })}</span>
     {unsupportedSurface && <span>{t('externalHistory.unsupportedSurface')}</span>}
+    {unsupported && <span>{t('externalHistory.unsupported')}</span>}
     {missing && <span>{t(session?.externalHistory?.contentVersion
       ? 'externalHistory.unavailable' : 'externalHistory.unavailableWithoutCache')}</span>}
     {notice && <span>{t(notice.message)}</span>}

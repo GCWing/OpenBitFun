@@ -5,6 +5,7 @@ import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { useI18n } from '@/infrastructure/i18n';
 import { renderMiniAppIcon } from '../utils/miniAppIcons';
 import { pickLocalizedString } from '../utils/pickLocalizedString';
+import { useMiniAppNavigation } from '../miniAppNavigationStore';
 import type { MiniAppLibraryStatus } from './MiniAppLibraryRow';
 import './MiniAppInstalledCard.scss';
 
@@ -27,6 +28,8 @@ export default function MiniAppInstalledCard({
   launchDisabled, launchDisabledReason, busy,
 }: MiniAppInstalledCardProps) {
   const { t, currentLanguage } = useI18n('scenes/miniapp');
+  const { pinnedAppIds, setPinned } = useMiniAppNavigation();
+  const pinned = pinnedAppIds.includes(app.id);
   const menuId = useId();
   const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -87,6 +90,8 @@ export default function MiniAppInstalledCard({
         title={systemAppSupported ? undefined : t('presentation.unsupported')}
         aria-description={systemAppSupported ? undefined : t('presentation.unsupported')}
         items={[
+          { id: 'navigation', label: t(pinned ? 'navigation.remove' : 'navigation.add'), icon: <Icon name="pin" size="sm" />,
+            onSelect: () => setPinned(app.id, !pinned) },
           { id: 'install', label: t('presentation.install'), icon: <Icon glyph={MonitorDown} size="sm" />,
             disabled: !systemAppSupported || actionsDisabled, onSelect: () => void addToSystem() },
           { id: 'delete', label: t('card.delete'), icon: <Icon name="delete" size="sm" />,

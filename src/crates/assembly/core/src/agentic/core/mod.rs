@@ -22,6 +22,6 @@ pub use openbitfun_agent_runtime::prompt_markup::{
 pub use session::{
     sanitize_persisted_session_state, CompressionState, PersistedSessionStateFile, Session,
     SessionAgentRouteOwner, SessionConfig, SessionContinuationPolicy, SessionKind,
-    SessionModelBindingPolicy, SessionSummary,
+    SessionModelBindingPolicy, SessionSummary, ToolPresentationMode,
 };
 pub use state::{ProcessingPhase, SessionState, ToolExecutionState};

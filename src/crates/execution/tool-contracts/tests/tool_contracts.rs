@@ -1458,22 +1458,18 @@ fn runtime_artifact_reference_owner_preserves_session_prefix_and_rejects_escape(
 }
 
 #[test]
-fn deferred_tool_usage_gate_preserves_get_tool_spec_unlock_contract() {
+fn deferred_tool_usage_allows_calls_without_a_loaded_spec() {
     let deferred_tools = vec!["WebFetch".to_string()];
     let loaded_deferred_tool_specs = Vec::new();
 
-    let err = validate_deferred_tool_usage(
+    validate_deferred_tool_usage(
         "WebFetch",
         &deferred_tools,
         &loaded_deferred_tool_specs,
         0,
         GET_TOOL_SPEC_TOOL_NAME,
     )
-    .expect_err("deferred tool should require GetToolSpec unlock");
-    assert_eq!(
-        err.to_string(),
-        "Tool 'WebFetch' has no loaded definition in the current context. Call GetToolSpec with {\"tool_name\":\"WebFetch\"} to read its full usage instructions and input schema before invoking it. If compaction removed an earlier definition, reload it even if the summary says it was loaded."
-    );
+    .expect("deferred exposure must not block execution when no spec is loaded");
 
     let loaded_deferred_tool_specs = vec![LoadedDeferredToolSpec {
         tool_name: "WebFetch".to_string(),
@@ -1510,7 +1506,19 @@ fn deferred_tool_usage_gate_preserves_get_tool_spec_unlock_contract() {
         0,
         GET_TOOL_SPEC_TOOL_NAME,
     )
-    .expect("GetToolSpec itself is the unlock path");
+    .expect("GetToolSpec remains executable");
+
+    validate_deferred_tool_usage(
+        "WebFetch",
+        &[],
+        &[LoadedDeferredToolSpec {
+            tool_name: "WebFetch".to_string(),
+            catalog_generation: 41,
+        }],
+        42,
+        GET_TOOL_SPEC_TOOL_NAME,
+    )
+    .expect("a stale receipt must not affect a tool that is no longer deferred");
 }
 
 #[test]

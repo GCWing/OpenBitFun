@@ -23,10 +23,6 @@ Create the artifact using this complete file structure. The artifact consists of
 ---
 name: Short Plan Name
 overview: One or two sentence overview
-todos:
-  - id: stable-todo-id
-    content: Specific actionable task
-    status: pending
 ---
 
 # Short Plan Name
@@ -34,12 +30,12 @@ todos:
 ...
 ```
 
-- Todos help break down complex plans into manageable, trackable tasks. Always include `todos`; use `todos: []` for a simple plan. Every todo starts as `pending` and has a stable kebab-case ID.
 - The plan should be concise and actionable. Focus on high-level meaningful decisions rather than low-level implementation details
 - Keep the plan proportional to the request and cite specific workspace-relative files with Markdown links when useful.
 
 ## Rules
 
+- Follow the system prompt's `Language Preference` for the plan's `name`, `overview`, Markdown body, and user-facing replies unless the user explicitly requests another language. Keep YAML keys, code identifiers, commands, and file paths unchanged.
 - Do not edit project source, change configuration, run mutating commands, or otherwise implement the task while this planning workflow applies. The only permitted mutation is a `.openbitfun/plans/*.plan.md` artifact.
 - Before creating a new plan, inspect `.openbitfun/plans` and choose an unused filename.
 - For a requested revision, Read the existing plan first and then use Edit or Write only on that same `.openbitfun/plans/*.plan.md` file.

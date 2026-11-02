@@ -197,6 +197,32 @@ impl Tool for ListModelsTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "query": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "match_count": {"type": "integer"},
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "provider_name": {"type": "string"},
+                            "model_id": {"type": "string"},
+                            "model_name": {"type": "string"}
+                        },
+                        "required": ["provider_name", "model_id", "model_name"],
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "required": ["success", "query", "match_count", "models"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

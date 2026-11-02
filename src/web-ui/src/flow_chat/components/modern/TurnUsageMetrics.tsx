@@ -4,9 +4,10 @@ import { formatTokenCount } from '@/shared/utils/tokenUsageFormatting';
 import type { TokenUsage } from '../../types/flow-chat';
 import { getTurnUsageMetrics } from '../../utils/turnUsageMetrics';
 
-export function TurnUsageMetrics({ usage, durationMs, focusable }: {
+export function TurnUsageMetrics({ usage, durationMs, ttftMs, focusable }: {
   usage?: TokenUsage;
   durationMs?: number;
+  ttftMs?: number;
   focusable: boolean;
 }) {
   const { t, formatNumber } = useI18n('flow-chat');
@@ -14,6 +15,9 @@ export function TurnUsageMetrics({ usage, durationMs, focusable }: {
   const count = (value?: number | null) => typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? formatTokenCount(value, formatNumber) : null;
   const rate = outputRate === null ? null : formatNumber(outputRate, { maximumFractionDigits: 1 });
+  const ttft = typeof ttftMs === 'number' && Number.isFinite(ttftMs) && ttftMs >= 0
+    ? formatNumber(ttftMs / 1000, { style: 'unit', unit: 'second', maximumFractionDigits: 2 }) : null;
+  const ttftRows = ttft === null ? [] : [{ label: t('modelRound.metrics.ttft'), value: ttft }];
   const speedLabels = {
     1: t('modelRound.metrics.slow'),
     2: t('modelRound.metrics.normal'),
@@ -39,6 +43,9 @@ export function TurnUsageMetrics({ usage, durationMs, focusable }: {
     tokenDescription={tokenRows.map(row => `${row.label}: ${row.value}`).join(' · ')}
     tokenDetails={<FlowChatMetricDetails rows={tokenRows} />}
     cacheHitRate={cacheHitRate}
+    ttftValue={ttft === null ? null : t('modelRound.metrics.ttftValue', { value: ttft })}
+    ttftDescription={ttftRows.map(row => `${row.label}: ${row.value}`).join(' · ')}
+    ttftDetails={<FlowChatMetricDetails rows={ttftRows} note={t('modelRound.metrics.ttftBasis')} />}
     rateValue={rate === null ? null : t('modelRound.metrics.rateValue', { value: rate })}
     rateDescription={rateRows.map(row => `${row.label}: ${row.value}`).join(' · ')}
     rateDetails={<FlowChatMetricDetails rows={rateRows} note={t('modelRound.metrics.rateBasis')} />}

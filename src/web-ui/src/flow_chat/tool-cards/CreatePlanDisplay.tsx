@@ -16,7 +16,8 @@ import { ideControl } from '@/shared/services/ide-control/api';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { fileSystemService } from '@/tools/file-system/services/FileSystemService';
-import { planBuildStateService } from '@/shared/services/PlanBuildStateService';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { planBuildStateService, type PlanBuildStatus } from '@/shared/services/PlanBuildStateService';
 import { Tooltip, Icon } from '@openbitfun/ui';
 import { createLogger } from '@/shared/utils/logger';
 import { notificationService } from '@/shared/notification-system';
@@ -27,6 +28,7 @@ import { createTodoRenderItems } from './todoRenderItems';
 import { useOptionalCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { isRemoteWorkspace } from '@/shared/types';
 import { parsePlanMarkdown, type PlanTodo } from '@/shared/plan/planDocument';
+import { planBuildPrompt } from '@/shared/plan/planBuildPrompt';
 import './CreatePlanDisplay.scss';
 
 const log = createLogger('PlanDisplay');
@@ -108,8 +110,8 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
   });
   
   // Initialize build state from the shared service to survive unmounts.
-  const [isBuildStarted, setIsBuildStarted] = useState(() => {
-    return planFilePath ? planBuildStateService.isBuildActive(planFileRef) : false;
+  const [buildStatus, setBuildStatus] = useState<PlanBuildStatus>(() => {
+    return planFilePath ? planBuildStateService.getBuildStatus(planFileRef) : 'build';
   });
   const [isSavingToProject, setIsSavingToProject] = useState(false);
   const [hasSavedToProject, setHasSavedToProject] = useState(false);
@@ -172,28 +174,11 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
   useEffect(() => {
     if (!planFilePath) return;
     
-    // Sync initial state (in case planFilePath just became available).
-    setIsBuildStarted(planBuildStateService.isBuildActive(planFileRef));
-    
-    const unsubscribe = planBuildStateService.subscribe(planFileRef, (event) => {
-      setIsBuildStarted(event.isBuilding);
-      
-      if (event.updatedTodos) {
-        const cached = planDataCache.get(effectiveCacheKey);
-        const newPlanData: PlanData = {
-          name: cached?.name || initialName,
-          overview: cached?.overview || initialOverview,
-          todos: event.updatedTodos,
-          planFilePath: planFilePath,
-          planContent: event.planContent || cached?.planContent,
-        };
-        setRefreshedData(newPlanData);
-        planDataCache.set(effectiveCacheKey, newPlanData);
-      }
-    });
-    
+    setBuildStatus(planBuildStateService.getBuildStatus(planFileRef));
+    const unsubscribe = planBuildStateService.subscribe(planFileRef, setBuildStatus);
+
     return unsubscribe;
-  }, [planFilePath, planFileRef, effectiveCacheKey, initialName, initialOverview]);
+  }, [planFilePath, planFileRef]);
 
   // Load latest content on mount and refresh on file changes.
   useEffect(() => {
@@ -204,11 +189,6 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
     const normalizedPlanPath = planFilePath.replace(/\\/g, '/');
 
     const loadFromFile = async () => {
-      // Skip refresh while writing to avoid feedback loops.
-      if (planBuildStateService.isFileWriting(planFileRef)) {
-        return;
-      }
-
       try {
         const content = await readPlanContent();
         const parsed = parsePlanMarkdown(content);
@@ -272,28 +252,6 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
       }
     };
   }, [effectiveCacheKey, planFilePath, planFileRef, planDirectoryPath, readPlanContent, initialName, initialOverview, initialTodos, status]);
-
-  // Build button status transitions: build -> building -> built.
-  const buildStatus = useMemo((): 'build' | 'building' | 'built' => {
-    if (planData?.todos?.length) {
-      const statuses = planData.todos.map(t => t.status);
-      if (statuses.every(s => s === 'completed')) {
-        return 'built';
-      }
-    }
-    if (isBuildStarted) {
-      return 'building';
-    }
-    return 'build';
-  }, [planData, isBuildStarted]);
-
-  useEffect(() => {
-    if (buildStatus === 'built') {
-      if (isBuildStarted) {
-        setIsBuildStarted(false);
-      }
-    }
-  }, [buildStatus, isBuildStarted]);
 
   const planFileName = useMemo(() => {
     return basenamePath(planFilePath);
@@ -362,12 +320,15 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
   const handleBuild = useCallback(async () => {
     if (!planFilePath || buildStatus !== 'build') return;
     
+    const scope = getActiveSurfaceScope();
     try {
-      const sessionId = flowChatManager.getCurrentSession()?.sessionId;
+      const session = flowChatManager.getCurrentSession();
+      const sessionId = session?.sessionId;
       if (!sessionId) {
         throw new Error('No active session');
       }
       const content = await readPlanContent();
+      scope.assertCurrent('build plan');
       const parsed = parsePlanMarkdown(content);
       
       const latestPlanData: PlanData = {
@@ -382,20 +343,17 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
       planDataCache.set(effectiveCacheKey, latestPlanData);
 
       // Register build in shared service (notifies all subscribers including PlanViewer).
-      const todoIds = latestPlanData.todos.map(t => t.id);
       const turnId = planBuildStateService.startBuild({
         sessionId,
         planFilePath,
-        todoIds,
+        turnId: session?.draft?.turnId,
         workspaceId: effectiveWorkspaceId,
         workspacePath: effectiveWorkspacePath,
         remoteConnectionId: effectiveRemoteConnectionId,
       });
       if (!turnId) return;
 
-      const message = `Implement the plan at \`${latestPlanData.planFilePath}\`.
-
-Read the plan file before making changes and treat it as the source of truth. Do not edit the plan file directly. Track progress with TodoWrite using the existing todo IDs from the plan frontmatter; do not rename or invent IDs. Start with the first pending todo and continue until all todos are completed.`;
+      const message = planBuildPrompt(latestPlanData.planFilePath);
 
       const displayMessage = `Build Plan: ${latestPlanData.name}`;
       await flowChatManager.sendMessage(
@@ -407,6 +365,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
         { turnId },
       );
     } catch (error) {
+      if (!scope.isCurrent()) return;
       log.error('Build failed', { cacheKey: effectiveCacheKey, planFilePath, error });
       planBuildStateService.cancelBuild(planFileRef);
     }

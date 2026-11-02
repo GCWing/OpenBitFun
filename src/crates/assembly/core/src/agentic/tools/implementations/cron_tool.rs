@@ -809,6 +809,42 @@ Patch schema for "update":
         })
     }
 
+    fn output_schema(&self) -> Value {
+        let job = json!({
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "schedule": {"type": "object", "additionalProperties": true},
+                "enabled": {"type": "boolean"},
+                "sessionId": {"type": "string"},
+                "workspacePath": {"type": "string"}
+            },
+            "required": ["id", "name", "schedule", "enabled", "sessionId", "workspacePath"],
+            "additionalProperties": false
+        });
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["get_time", "list", "add", "update", "remove", "run", "report"]},
+                "now": {"type": "string", "description": "Current local time in RFC 3339 format for get_time."},
+                "workspace": {"type": "string"},
+                "session_id": {"type": "string"},
+                "count": {"type": "integer"},
+                "job_id": {"type": "string"},
+                "deleted": {"type": "boolean"},
+                "report": {"type": "object", "additionalProperties": true},
+                "jobs": {
+                    "type": "array",
+                    "items": job
+                },
+                "job": job
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -1135,7 +1171,7 @@ Patch schema for "update":
             }
             CronAction::List => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let session_id =
                     self.resolve_effective_session_id(params.session_id.as_deref(), context)?;
@@ -1205,7 +1241,7 @@ Patch schema for "update":
             }
             CronAction::Add => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let session_id =
                     self.resolve_effective_session_id(params.session_id.as_deref(), context)?;
@@ -1250,7 +1286,7 @@ Patch schema for "update":
             }
             CronAction::Update => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let job_id = params.job_id.ok_or_else(|| {
                     OpenBitFunError::tool("job_id is required for update".to_string())
@@ -1302,7 +1338,7 @@ Patch schema for "update":
             }
             CronAction::Remove => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let job_id = params.job_id.ok_or_else(|| {
                     OpenBitFunError::tool("job_id is required for remove".to_string())
@@ -1329,7 +1365,7 @@ Patch schema for "update":
             }
             CronAction::Run => {
                 let cron_service = get_global_cron_service().ok_or_else(|| {
-                    OpenBitFunError::tool("cron service not initialized".to_string())
+                    OpenBitFunError::tool("Scheduled jobs are unavailable in this execution host. Use a host with scheduled-job support and keep it running until the job is due.".to_string())
                 })?;
                 let job_id = params.job_id.ok_or_else(|| {
                     OpenBitFunError::tool("job_id is required for run".to_string())

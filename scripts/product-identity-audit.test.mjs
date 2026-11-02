@@ -149,7 +149,7 @@ test('limits retired identity data to the one-time production migration boundary
   assert.deepEqual(
     violationsFor(
       `RETIRED_VERSION_FIELDS = ("${retiredField}",)`,
-      'deploy/openbitfun-host/migrate-market-data-v1.py',
+      'deploy/market-data-migration/migrate-market-data-v1.py',
     ),
     [],
   );

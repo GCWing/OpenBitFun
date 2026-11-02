@@ -194,6 +194,19 @@ pub struct ComputerUseImageGlobalBounds {
     pub height: f64,
 }
 
+/// A rectangle of an earlier observation to capture again at higher detail,
+/// in that screenshot's image pixels. The zoomed image is an observation of
+/// the same bound window with its own screenshot_id and coordinate mapping.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ComputerUseZoomRegion {
+    pub screenshot_id: String,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Screenshot payload for the model and for pointer coordinate mapping.
 /// The `ComputerUse` tool embeds these fields in tool-result JSON and adds **`hierarchical_navigation`**
 /// (`full_display` vs `region_crop`, plus **`shortcut_policy`**).
@@ -519,6 +532,21 @@ impl AppWindowInfo {
                 std::cmp::Reverse(area),
             )
         });
+    }
+
+    /// Case-insensitive substring match on the application name, bundle
+    /// identifier or title, so one query reaches an app's helper processes.
+    pub fn matches_query(&self, query: &str) -> bool {
+        let query = query.trim().to_lowercase();
+        !query.is_empty()
+            && [
+                Some(self.application.as_str()),
+                self.bundle_id.as_deref(),
+                Some(self.title.as_str()),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|field| field.to_lowercase().contains(&query))
     }
 }
 
@@ -2367,6 +2395,28 @@ mod settle_and_overlay_tests {
         let window: AppWindowInfo = serde_json::from_value(old.clone()).unwrap();
         assert!(window.bounds.is_none());
         assert_eq!(serde_json::to_value(&window).unwrap(), old);
+    }
+
+    #[test]
+    fn window_query_matches_application_bundle_or_title_case_insensitively() {
+        let window = |application: &str, bundle_id: Option<&str>, title: &str| AppWindowInfo {
+            pid: 1,
+            window_id: 1,
+            application: application.into(),
+            title: title.into(),
+            bundle_id: bundle_id.map(Into::into),
+            is_on_screen: Some(true),
+            bounds: None,
+        };
+        let helper = window("WeChatAppEx", Some("com.tencent.flue.WeChatAppEx"), "");
+        let host = window("WeChat", Some("com.tencent.xinWeChat"), "羊了个羊：星球");
+        assert!(helper.matches_query("wechat"));
+        assert!(host.matches_query(" WECHAT "));
+        assert!(host.matches_query("羊了个羊"));
+        assert!(helper.matches_query("flue"));
+        assert!(!helper.matches_query("羊了个羊"));
+        assert!(!host.matches_query("   "));
+        assert!(!window("Finder", None, "").matches_query("wechat"));
     }
 
     #[test]

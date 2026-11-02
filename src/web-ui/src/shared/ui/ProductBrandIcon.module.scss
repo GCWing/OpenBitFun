@@ -1,0 +1,25 @@
+.icon {
+  display: inline-flex;
+  flex: none;
+  user-select: none;
+
+  > img {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: contain;
+  }
+
+  > .dark { display: none; }
+
+  :global([data-color-scheme='dark']) & {
+    > .light { display: none; }
+    > .dark { display: block; }
+  }
+}
+
+.monochrome {
+  background-color: var(--openbitfun-color-content-primary);
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}

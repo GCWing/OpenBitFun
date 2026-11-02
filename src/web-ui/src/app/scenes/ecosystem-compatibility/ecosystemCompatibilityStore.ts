@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useSceneStore } from '@/app/stores/sceneStore';
+import { useSettingsStore } from '@/app/scenes/settings/settingsStore';
 import type { EcosystemProductId } from './ecosystemCompatibilityModel';
 
 /** Legacy external-sources destinations focus the discovery switch in the header. */
@@ -32,12 +33,13 @@ export const useEcosystemCompatibilityStore = create<EcosystemCompatibilityState
   })),
 }));
 
-/** Opens the product surface and optionally selects one of its real owner views. */
+/** Opens the settings destination while preserving product and owner deep links. */
 export function openEcosystemCompatibility(
   destination?: EcosystemCompatibilityDestination,
 ): void {
   if (destination) {
     useEcosystemCompatibilityStore.getState().openDestination(destination);
   }
-  useSceneStore.getState().openScene('ecosystem-compatibility');
+  useSettingsStore.getState().openPage('tools.external-import');
+  useSceneStore.getState().openScene('settings');
 }

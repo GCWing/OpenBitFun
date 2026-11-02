@@ -3,6 +3,8 @@
 //! Integrates file operations, file tree building, search, and related functionality.
 
 pub mod factory;
+#[cfg(feature = "remote-connect")]
+pub mod html_preview;
 pub mod listing;
 #[cfg(feature = "ssh-remote")]
 pub mod path_operations;

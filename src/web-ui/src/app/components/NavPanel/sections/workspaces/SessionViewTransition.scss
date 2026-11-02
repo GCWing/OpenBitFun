@@ -1,0 +1,32 @@
+.openbitfun-nav-panel {
+  &__session-view-transition {
+    position: relative;
+    min-width: 0;
+    width: 100%;
+    &[data-openbitfun-state~='transitioning'] {
+      // Only the switch owns anchoring; ordinary list updates keep native anchoring.
+      overflow-anchor: none;
+      overflow: clip;
+
+      .openbitfun-nav-panel__workspace-item-sessions:not(.is-collapsed) {
+        overflow: visible;
+      }
+    }
+  }
+
+  &__session-view-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: var(--openbitfun-space-2);
+  }
+
+  // Decorative exit copies stay inside the navigation's clipping/scrolling
+  // surface. They never participate in layout, hit testing or accessibility.
+  &__session-view-exits {
+    position: absolute;
+    inset: 0;
+    overflow: clip;
+    pointer-events: none;
+  }
+}

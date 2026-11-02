@@ -1,5 +1,5 @@
 // The production presentation model can be verified without a desktop session.
-#include "../../src/apps/desktop/src/computer_use/pointer_motion.h"
+#include "../../src/crates/services/computer-use/src/computer_use/pointer_motion.h"
 #include <assert.h>
 #include <stdio.h>
 

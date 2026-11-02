@@ -42,6 +42,10 @@ and embedded hosts.
 Run `cargo test -p openbitfun-relay-service` and
 `node scripts/check-core-boundaries.mjs` after changes.
 
+For Pages upload, generation fencing, metadata preconditions, and legacy-client
+compatibility, the focused entry point is
+`cargo test --locked -p openbitfun-relay-service --lib routes::pages::tests`.
+
 Account identity supports independent GitHub and email-code users. Preserve legacy
 numeric GitHub Relay IDs; email `accountId` values occupy the `email-` namespace.
 Never derive identity from the caller's claimed user ID or display name. New

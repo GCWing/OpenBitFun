@@ -95,19 +95,21 @@ test("field surface context reaches canonical field shells and resets for nested
     ["number-input", createElement(NumberInput, { onValueChange() {}, value: 1 })],
   ];
 
-  controls.forEach(([component, control]) => {
-    const markup = renderToStaticMarkup(
-      createElement(FieldGroup, { fieldSurface: "ambient" }, control),
-    );
-    assert.match(markup, new RegExp(`data-openbitfun-component="${component}"[^>]+data-field-surface="ambient"`));
-  });
+  for (const fieldSurface of ["ambient", "filled"]) {
+    controls.forEach(([component, control]) => {
+      const markup = renderToStaticMarkup(
+        createElement(FieldGroup, { fieldSurface }, control),
+      );
+      assert.match(markup, new RegExp(`data-openbitfun-component="${component}"[^>]+data-field-surface="${fieldSurface}"`));
+    });
 
-  const nestedMarkup = renderToStaticMarkup(
-    createElement(FieldGroup, { fieldSurface: "ambient" },
-      createElement(FieldGroup, { fieldSurface: "default" }, createElement(Input)),
-    ),
-  );
-  assert.match(nestedMarkup, /data-openbitfun-component="input"[^>]+data-field-surface="default"/);
+    const nestedMarkup = renderToStaticMarkup(
+      createElement(FieldGroup, { fieldSurface },
+        createElement(FieldGroup, { fieldSurface: "default" }, createElement(Input)),
+      ),
+    );
+    assert.match(nestedMarkup, /data-openbitfun-component="input"[^>]+data-field-surface="default"/);
+  }
 });
 
 test("ambient field groups preserve opaque overlays while field shells reuse the group surface", async () => {

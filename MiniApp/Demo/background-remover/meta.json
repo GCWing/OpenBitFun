@@ -1,0 +1,31 @@
+{
+  "id": "background-remover",
+  "name": "轻抠",
+  "description": "为图标和 Logo 去除纯色或近似纯色背景。图片仅在当前设备处理，支持背景取色、容差调整和透明 PNG 导出。",
+  "icon": "Scissors",
+  "category": "creative",
+  "tags": ["image", "background", "transparent", "icon"],
+  "version": 1,
+  "created_at": 0,
+  "updated_at": 0,
+  "permissions": {
+    "fs": { "read": [], "write": ["{user-selected}"] },
+    "shell": { "allow": [] },
+    "net": { "allow": [] },
+    "node": { "enabled": false }
+  },
+  "i18n": {
+    "locales": {
+      "zh-CN": {
+        "name": "轻抠",
+        "description": "图标、Logo 简单背景抠图，自动识别背景、手动取色，本地导出透明 PNG。",
+        "tags": ["图片", "抠图", "透明背景", "图标"]
+      },
+      "en-US": {
+        "name": "Background Remover",
+        "description": "Remove simple backgrounds from icons and logos, pick a background color, and export transparent PNGs locally.",
+        "tags": ["image", "background removal", "transparent", "icon"]
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   useCallback,
@@ -68,6 +69,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   const resolvedInvalid = invalid || (ariaInvalid !== undefined && ariaInvalid !== false && ariaInvalid !== "false");
   const hasSupport = Boolean((resolvedInvalid && errorMessage) || (!resolvedInvalid && hint) || showCount);
 
+  const fieldAccessibility = useFieldAccessibility({
+    ...props,
+    "aria-describedby": [ariaDescribedBy, hasSupport ? supportId : undefined].filter(Boolean).join(" "),
+  }, Boolean(label));
+
   const resizeToContent = useCallback((node: HTMLTextAreaElement) => {
     if (!autoResize) return;
     node.style.height = "auto";
@@ -111,7 +117,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       )}
       <textarea
         {...props}
-        aria-describedby={hasSupport ? supportId : ariaDescribedBy}
+        {...fieldAccessibility}
         aria-invalid={resolvedInvalid || undefined}
         className={styles.textarea}
         data-openbitfun-part="input"

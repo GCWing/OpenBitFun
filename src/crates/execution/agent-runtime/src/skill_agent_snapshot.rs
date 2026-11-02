@@ -385,6 +385,7 @@ pub fn build_skill_agent_tool_listing_sections_from_snapshot(
             .deferred_tools
             .as_deref()
             .and_then(render_full_deferred_tool_listing_body),
+        ptc_tool_calling_guide: None,
     }
 }
 

@@ -20,4 +20,5 @@ pub mod runtime;
 pub mod runtime_facade;
 pub mod storage;
 pub mod types;
+pub mod web_surface;
 pub mod worker;

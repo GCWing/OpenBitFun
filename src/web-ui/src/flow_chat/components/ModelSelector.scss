@@ -261,6 +261,34 @@ $model-mode-dust-sizes: ();
       }
     }
 
+    &[data-mode-empty='true'] {
+      --openbitfun-overlay-menu-surface-padding: 0px;
+      --openbitfun-overlay-menu-scrollbar-gap: 0px;
+
+      > [data-openbitfun-component='scroll-area'] > [data-openbitfun-menu-list] > .openbitfun-model-selector__mode-empty {
+        min-block-size: var(--_model-selector-card-height);
+      }
+
+      .openbitfun-model-selector__settings-card {
+        display: grid;
+        min-block-size: var(--_model-selector-card-height);
+        // Mirror the footer's space above the empty state to center on the full card.
+        grid-template-rows:
+          minmax(var(--openbitfun-control-height-md), 1fr)
+          auto
+          minmax(var(--openbitfun-control-height-md), 1fr);
+      }
+
+      .openbitfun-model-selector__settings-general {
+        grid-row: 2;
+      }
+
+      .openbitfun-model-selector__settings-model-section {
+        grid-row: 3;
+        align-self: end;
+      }
+    }
+
     &[data-model-mode='smart'][data-menu-level='settings'] {
       --_model-mode-tint: color-mix(in oklch, var(--openbitfun-color-accent-secondary) 80%, var(--openbitfun-color-link-default));
       --_model-mode-sky: color-mix(
@@ -498,10 +526,9 @@ $model-mode-dust-sizes: ();
     max-inline-size: 60%;
   }
 
-  &__pool-empty {
+  &__mode-empty {
     align-items: center;
     justify-content: center;
-    padding-block: var(--openbitfun-space-3);
   }
 
   &__settings-card {
@@ -613,8 +640,8 @@ $model-mode-dust-sizes: ();
   }
 
   &__picker-results {
-    // Filtering preserves the list height; only a constrained viewport may shrink it.
-    block-size: calc(var(--openbitfun-space-16) * 4);
+    // Fit short lists while keeping long lists within the existing scroll limit.
+    max-block-size: calc(var(--openbitfun-space-16) * 4);
     flex: 0 1 auto;
     min-block-size: 0;
     min-inline-size: 0;
@@ -622,8 +649,6 @@ $model-mode-dust-sizes: ();
     > .openbitfun-model-selector__level {
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      min-block-size: 100%;
     }
   }
 
@@ -975,6 +1000,8 @@ $model-mode-dust-sizes: ();
 
   &__option-provider {
     color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-meta-font-size);
+    font-weight: var(--openbitfun-type-meta-font-weight);
   }
 
   &__option-meta {

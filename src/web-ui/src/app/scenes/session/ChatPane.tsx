@@ -7,10 +7,13 @@
 
 import React, { useCallback, memo, useRef, useState, useMemo, useContext } from 'react';
 import { SplitViewPrimaryDock } from '@openbitfun/ui';
+import { useStore } from 'zustand';
+import { flowChatWidthStore } from '@/infrastructure/appearance/preferences/flowChatWidthStore';
 import { ChatFileDropOverlay } from './ChatFileDropOverlay';
 import type { FileDropPreview, FileDropPosition } from '@/shared/types/fileDropPreview';
 import { ModernFlowChatContainer as FlowChatContainer } from '../../../flow_chat/components/modern/ModernFlowChatContainer';
 import { ChatInput } from '../../../flow_chat/components/ChatInput';
+import { FlowChatWidthBoundary } from '@/flow_chat/components/FlowChatWidthBoundary';
 import type { ChatInputRegistration } from '../../../flow_chat/components/chatInputRegistration';
 import { createTab } from '@/shared/utils/tabUtils';
 import { type LineRange } from '@/shared/editor/LineRange';
@@ -68,6 +71,8 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
 }) => {
   const isSceneActive = useContext(ConversationTextVisibilityContext) && hostActive;
   const fileDropTargetRef = useRef<HTMLDivElement>(null);
+  const [isColumnResizing, setIsColumnResizing] = useState(false);
+  const contentWidth = useStore(flowChatWidthStore, state => state.preferredWidth);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const [filePreview, setFilePreview] = useState<FileDropPreview | null>(null);
   const fileDragPosition = useRef<FileDropPosition | null>(null);
@@ -137,7 +142,8 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
       <FlowChatContainer
         className="openbitfun-chat-pane__chat-container"
         isViewportActive={isSceneActive}
-        resizeSuspended={resizeSuspended}
+        resizeSuspended={resizeSuspended || isColumnResizing}
+        contentWidth={contentWidth}
         isRightPanelOpen={isRightPanelOpen}
         onToggleRightPanel={onToggleRightPanel}
         emptyState={emptyState}
@@ -155,11 +161,12 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
             onFileDragPreviewChange={setFilePreview}
             onFileDragPositionChange={updateFileDragPosition}
             isSceneActive={isSceneActive}
-            layoutResizeSuspended={isDragging}
+            layoutResizeSuspended={isDragging || isColumnResizing}
             registration={chatInputRegistration}
           />
         </SplitViewPrimaryDock>
       )}
+      <FlowChatWidthBoundary paneRef={fileDropTargetRef} active={isSceneActive} onResizingChange={setIsColumnResizing} />
       {showChatInput && isSceneActive && isFileDragOver && (
         <ChatFileDropOverlay preview={filePreview} positionRef={fileDragPosition} />
       )}

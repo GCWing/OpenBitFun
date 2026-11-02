@@ -37,12 +37,12 @@ vi.mock('./ecosystemCompatibilityStore', () => ({
 }));
 vi.mock('@openbitfun/ui', async () => {
   const { createElement, forwardRef } = await import('react');
-  const { Alert, Button, SegmentedControl, Switch, ToolbarGroup, ToolbarSeparator, Tooltip } = await vi.importActual<typeof import('@openbitfun/ui')>('@openbitfun/ui');
+  const { Alert, Button, FieldGroup, FormSection, SegmentedControl, Switch, ToolbarGroup, ToolbarSeparator, Tooltip } = await vi.importActual<typeof import('@openbitfun/ui')>('@openbitfun/ui');
   const Wrapper = forwardRef<HTMLDivElement, { children?: React.ReactNode }>(
     ({ children }, ref) => createElement('div', { ref }, children),
   );
   return {
-    Alert, Button, SegmentedControl,
+    Alert, Button, FieldGroup, FormSection, SegmentedControl,
     ...Object.fromEntries(['LoadingState',
       'OverflowText', 'ScrollArea', 'SearchField', 'Select', 'StatusPill', 'Textarea', 'DialogBody', 'DialogFooter', 'DialogHeader', 'DialogHeaderActions', 'DialogDescription', 'DialogHeading', 'DialogTitle'].map((name) => [name, Wrapper])),
     Switch, ToolbarGroup, ToolbarSeparator, Tooltip,

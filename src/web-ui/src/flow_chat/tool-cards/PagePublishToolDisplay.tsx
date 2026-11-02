@@ -9,21 +9,11 @@ import { useTranslation } from 'react-i18next';
 import type { ToolCardProps } from '../types/flow-chat';
 import { PagePublishToolCard } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
-import { pageAPI } from '@/infrastructure/api/service-api/PageAPI';
-import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
-import { notificationService } from '@/shared/notification-system';
+import { usePageToolOpen } from './usePageToolOpen';
 
-async function openPage(slug: string, knownGeneration?: string, versionId?: string) {
-  if (!slug) return;
-  const generation = knownGeneration || (await pageAPI.listPages())
-    .find((page) => page.slug === slug)?.generation;
-  if (generation == null) throw new Error('Page no longer exists');
-  const link = await pageAPI.createOpenLink(slug, generation, versionId);
-  await systemAPI.openExternal(link.open_url);
-}
-
-export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
+export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem, sessionId }) => {
   const { t } = useTranslation('flow-chat');
+  const { canOpen, openPage, unavailableReason } = usePageToolOpen(sessionId);
   const { status, toolResult, partialParams, isParamsStreaming, toolCall } = toolItem;
   const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
 
@@ -123,11 +113,10 @@ export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
                 size="sm"
                 icon={<Icon name="arrow-up-right" size="sm" />}
                 aria-label={t('toolCards.pagePublish.openProduction')}
-                title={t('toolCards.pagePublish.openProduction')}
+                disabled={!canOpen}
+                title={!canOpen ? unavailableReason : t('toolCards.pagePublish.openProduction')}
                 data-testid="chat-page-publish-open-prod-btn"
-                onClick={() => void openPage(slug, generation).catch(() => {
-                  notificationService.error(t('toolCards.pagePublish.openFailed'));
-                })}
+                onClick={() => void openPage(slug, generation)}
               />
             )}
             {previewPath && versionId && (
@@ -137,11 +126,10 @@ export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
                 size="sm"
                 icon={<Icon name="eye" size="sm" />}
                 aria-label={t('toolCards.pagePublish.openPreview')}
-                title={t('toolCards.pagePublish.openPreview')}
+                disabled={!canOpen}
+                title={!canOpen ? unavailableReason : t('toolCards.pagePublish.openPreview')}
                 data-testid="chat-page-publish-open-preview-btn"
-                onClick={() => void openPage(slug, generation, versionId).catch(() => {
-                  notificationService.error(t('toolCards.pagePublish.openFailed'));
-                })}
+                onClick={() => void openPage(slug, generation, versionId)}
               />
             )}
           </>

@@ -2,11 +2,15 @@ import { appearanceService } from '@/infrastructure/appearance';
 import { configManager } from '@/infrastructure/config';
 import { i18nService } from '@/infrastructure/i18n';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
+import { globalEventBus } from '@/infrastructure/event-bus';
+import { MCP_CONFIG_CHANGED } from '@/infrastructure/mcp/configEvents';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyOpenBitFunControlEffect,
   executeOpenBitFunPresentationRequest,
   initializeOpenBitFunControlBridge,
+  type OpenBitFunControlAppliedEvent,
 } from './openBitFunControlBridge';
 
 const mocks = vi.hoisted(() => ({
@@ -57,6 +61,40 @@ describe('OpenBitFunControl presentation bridge', () => {
       'setting.application.shortcuts',
       { itemId: 'shortcut-browser' },
     );
+  });
+
+  it.each([false, true])('refreshes native MCP changes only on the originating surface (switch: %s)', async (switchSurface) => {
+    let applied: ((event: OpenBitFunControlAppliedEvent) => void) | undefined;
+    vi.spyOn(api, 'listen').mockImplementation((event, callback) => {
+      if (event === 'agentic://openbitfun-control-applied') {
+        applied = callback as typeof applied;
+      }
+      return vi.fn();
+    });
+    vi.spyOn(api, 'invoke').mockRejectedValue(new Error('Host unavailable'));
+    // Keep bridge lifecycle isolated while exercising its registered callback.
+    await expect(initializeOpenBitFunControlBridge()).rejects.toThrow('Host unavailable');
+    let finishReload!: () => void;
+    const reloaded = new Promise<void>(resolve => { finishReload = resolve; });
+    vi.spyOn(configManager, 'applyExternalReload').mockReturnValue(reloaded);
+    const changed = vi.fn();
+    const unsubscribe = globalEventBus.on(MCP_CONFIG_CHANGED, changed);
+    activateSurface('mcp-peer');
+    try {
+      applied!({ capabilityId: 'setting.tools.mcp', changedPaths: ['mcp_servers'] });
+      expect(changed).not.toHaveBeenCalled();
+      if (switchSurface) activateSurface('local');
+      finishReload();
+      await reloaded;
+      if (switchSurface) {
+        expect(changed).not.toHaveBeenCalled();
+      } else {
+        expect(changed).toHaveBeenCalledExactlyOnceWith({ surfaceId: 'mcp-peer' });
+      }
+    } finally {
+      unsubscribe();
+      activateSurface('local');
+    }
   });
 
   it('executes only a generated product-action binding', async () => {

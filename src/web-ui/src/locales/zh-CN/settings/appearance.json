@@ -1,6 +1,14 @@
 {
+  "contentWidth": {
+    "title": "对话内容宽度",
+    "label": "偏好宽度",
+    "description": "最小 {{min}} px。显示宽度会根据面板自动收窄，并保留两侧间距。也可拖拽内容边界调整，设置会在当前设备记忆。",
+    "reset": "恢复默认",
+    "decrease": "缩小对话内容宽度",
+    "increase": "增大对话内容宽度"
+  },
   "title": "外观",
-  "subtitle": "调整界面语言、主题与字体大小",
+  "subtitle": "调整主题与字体大小",
   "sessionPanel": {
     "title": "会话侧边面板",
     "displayMode": "面板布局",
@@ -168,5 +176,20 @@
       "allowedParts": "查看当前可用部件",
       "dismiss": "关闭问题详情"
     }
+  },
+  "sidebar": {
+    "title": "左侧导航栏",
+    "reset": "恢复默认",
+    "alwaysVisible": "始终显示",
+    "pinned": "已固定页面",
+    "empty": "尚未固定其他页面",
+    "available": "可添加页面",
+    "moveUp": "上移{{name}}",
+    "moveDown": "下移{{name}}",
+    "remove": "取消固定{{name}}",
+    "addEntry": "固定{{name}}",
+    "noResults": "没有其他可添加的页面",
+    "saveFailed": "保存失败，仍使用之前的导航布局，请重试。",
+    "readFailed": "当前版本无法读取已保存的导航偏好，原数据已保留。可通过恢复默认来替换。"
   }
 }

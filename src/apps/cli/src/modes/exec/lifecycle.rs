@@ -40,6 +40,24 @@ pub(super) fn effective_event_invocation<'a>(
     (derived_name, effective_input)
 }
 
+pub(super) fn observed_model_backfill_target<'a>(
+    stored_routing_mode: Option<&str>,
+    observed_model_id: &'a str,
+) -> Option<&'a str> {
+    // Observing an actual model is not a user model selection. Retain saved
+    // Smart intent even when this release disables its runtime routing.
+    if stored_routing_mode == Some("smart")
+        || openbitfun_core::agentic::execution::round_model_routing::configuration::routing_enabled(
+            stored_routing_mode,
+        )
+        .unwrap_or(true)
+    {
+        return None;
+    }
+    let trimmed = observed_model_id.trim();
+    (!trimmed.is_empty() && !matches!(trimmed, "default" | "primary" | "fast")).then_some(trimmed)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ExecOutputFormat {
     Text,
@@ -1393,10 +1411,22 @@ impl ExecMode {
     }
 
     async fn record_resolved_model_config_id(&self, session_id: &str, model_config_id: &str) {
-        let trimmed = model_config_id.trim();
-        if trimmed.is_empty() || matches!(trimmed, "default" | "primary" | "fast") {
+        // A routed round reports the model that actually executed that round. It
+        // must not replace the session's admitted primary model with the fast
+        // candidate merely because the latest round happened to be simple.
+        let Ok(Some(session)) = self
+            .runtime
+            .compatibility()
+            .loaded_session_snapshot(session_id)
+        else {
             return;
-        }
+        };
+        let Some(trimmed) = observed_model_backfill_target(
+            session.config.model_routing.as_deref(),
+            model_config_id,
+        ) else {
+            return;
+        };
 
         if let Err(error) = self.agent.update_session_model(session_id, trimmed).await {
             tracing::debug!(

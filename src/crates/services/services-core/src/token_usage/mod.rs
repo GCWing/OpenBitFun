@@ -12,9 +12,10 @@ pub use request::{ResolvedTokenUsageStatisticsRequest, TokenUsageStatisticsReque
 pub use service::TokenUsageService;
 #[cfg(feature = "token-usage-statistics")]
 pub use statistics::{
-    aggregate_statistics, aggregate_statistics_with_time_zone, UsageAttribution,
-    UsageAttributionStatus, UsageDimensionAttribution, UsageGranularity, UsageStatistics,
-    UsageStatisticsEntry, UsageStatisticsFilter, UsageStatisticsFilterKind, UsageTrendPoint,
+    aggregate_statistics, aggregate_statistics_with_time_zone, AccountUsageStatistics,
+    UsageAttemptSummary, UsageAttribution, UsageAttributionStatus, UsageDimensionAttribution,
+    UsageGranularity, UsageStatistics, UsageStatisticsEntry, UsageStatisticsFilter,
+    UsageStatisticsFilterKind, UsageTrendPoint,
 };
 pub use types::{
     ModelTokenStats, SessionTokenStats, TimeRange, TokenUsageQuery, TokenUsageRecord,

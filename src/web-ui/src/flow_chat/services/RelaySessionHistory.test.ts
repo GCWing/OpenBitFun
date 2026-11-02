@@ -24,7 +24,11 @@ import { RelaySessionHistory } from './RelaySessionHistory';
 
 describe('RelaySessionHistory', () => {
   beforeEach(() => { vi.clearAllMocks(); fixture.current = true; });
-  afterEach(() => { vi.useRealTimers(); });
+  afterEach(() => {
+    if (vi.isFakeTimers()) vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it('registers before cache replay, then uses the same subscription for older pages', async () => {
     const apply = vi.fn();
@@ -72,6 +76,176 @@ describe('RelaySessionHistory', () => {
     expect(apply).not.toHaveBeenCalled();
     expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
   });
+  it('flushes a replayed page once, before its ready event', async () => {
+    const order: string[] = [];
+    fixture.subscribe.mockImplementation(async () => {
+      for (let index = 0; index < 50; index += 1) fixture.record?.({ sessionId: 'session', id: `item/${index}` });
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 50 });
+      return 'subscription';
+    });
+    const history = new RelaySessionHistory('session', () => order.push('record'), () => order.push('ready'), vi.fn(),
+      undefined, () => order.push('flush'));
+    await history.open();
+    expect(order.filter(entry => entry === 'flush')).toHaveLength(1);
+    expect(order.slice(-2)).toEqual(['flush', 'ready']);
+    history.close();
+  });
+
+  it('keeps a page in one batch across frames but cannot be stalled by it', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150 });
+      return 'subscription';
+    });
+    fixture.older.mockImplementation(() => new Promise<void>(() => {}));
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    void history.loadOlder().catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    for (let index = 0; index < 20; index += 1) {
+      fixture.record?.({ sessionId: 'session', id: `item/${index}` });
+      await vi.advanceTimersByTimeAsync(5);
+    }
+    expect(flush).not.toHaveBeenCalled();
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 150 });
+    expect(flush).toHaveBeenCalledOnce();
+
+    void history.loadOlder().catch(() => {});
+    fixture.record?.({ sessionId: 'session', id: 'item/stalled' });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(flush).toHaveBeenCalledTimes(2);
+    history.close();
+  });
+
+  it('flushes live records that have no ready event once per frame', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
+      return 'subscription';
+    });
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    fixture.record?.({ sessionId: 'session', id: 'item/1' });
+    fixture.record?.({ sessionId: 'session', id: 'item/2' });
+    expect(flush).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(flush).toHaveBeenCalledOnce();
+
+    fixture.record?.({ sessionId: 'session', id: 'item/3' });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(flush).toHaveBeenCalledTimes(2);
+    history.close();
+  });
+
+  it('flushes at once when a record cannot wait for the next frame', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
+      return 'subscription';
+    });
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', record => (record as any).id === 'item/final',
+      vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    fixture.record?.({ sessionId: 'session', id: 'item/1' });
+    expect(flush).not.toHaveBeenCalled();
+    fixture.record?.({ sessionId: 'session', id: 'item/final' });
+    expect(flush).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(flush).toHaveBeenCalledOnce();
+    history.close();
+  });
+
+  it('flushes on a visibility change instead of waiting for a throttled timer', async () => {
+    vi.useFakeTimers();
+    const listeners: Array<() => void> = [];
+    vi.stubGlobal('document', {
+      visibilityState: 'hidden',
+      addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+      removeEventListener: vi.fn(),
+    });
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
+      return 'subscription';
+    });
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    listeners.forEach(listener => listener());
+    expect(flush).not.toHaveBeenCalled();
+    fixture.record?.({ sessionId: 'session', id: 'item/1' });
+    listeners.forEach(listener => listener());
+    expect(flush).toHaveBeenCalledOnce();
+    history.close();
+  });
+
+  it('reports a flush failure and does not announce the page as ready', async () => {
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.record?.({ sessionId: 'session', id: 'item/1' });
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 1 });
+      return 'subscription';
+    });
+    const ready = vi.fn();
+    const error = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), ready, error, undefined, () => {
+      throw new Error('Unrenderable record');
+    });
+    await expect(history.open()).rejects.toThrow('Unrenderable record');
+    expect(error).toHaveBeenCalledOnce();
+    expect(ready).not.toHaveBeenCalled();
+  });
+
+  it('renders received records before a sync error and on close', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
+      return 'subscription';
+    });
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    fixture.record?.({ sessionId: 'session', id: 'item/1' });
+    fixture.error?.({ sessionId: 'session', targetDeviceId: 'host', message: 'Page failed' });
+    expect(flush).toHaveBeenCalledOnce();
+
+    fixture.record?.({ sessionId: 'session', id: 'item/2' });
+    history.close();
+    expect(flush).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(flush).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves records pending when the surface changed before the flush', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
+      return 'subscription';
+    });
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    fixture.record?.({ sessionId: 'session', id: 'item/1' });
+    fixture.current = false;
+    await vi.advanceTimersByTimeAsync(16);
+    history.close();
+
+    expect(flush).not.toHaveBeenCalled();
+  });
+
   it('rejects an older page when its reducer fails even if the host RPC succeeds', async () => {
     fixture.subscribe.mockImplementation(async () => {
       fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150 });

@@ -85,6 +85,7 @@ mod tests {
 
     fn parent_session() -> Session {
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some("/workspace/project".to_string()),
             remote_connection_id: Some("remote-1".to_string()),
             remote_ssh_host: Some("prod-box".to_string()),

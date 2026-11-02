@@ -9,10 +9,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MiniApp } from '@/infrastructure/api/service-api/MiniAppAPI';
 import MiniAppRunner from './MiniAppRunner';
+import { getMiniAppAgentSurface } from '../agent/miniAppAgentSurfaceRegistry';
 
 const bridgeMock = vi.hoisted(() => ({
   ready: false,
   useMiniAppBridge: vi.fn(),
+}));
+
+vi.mock('../miniAppPresentationStore', () => ({
+  useMiniAppPresentationStore: (selector: (state: unknown) => unknown) => selector({ tabs: {} }),
 }));
 
 vi.mock('../hooks/useMiniAppBridge', () => ({
@@ -85,6 +90,9 @@ describe('MiniAppRunner strict bridge startup', () => {
     expect(iframe.getAttribute('src')).toBe('blob:market-lens-1');
     expect(iframe.getAttribute('srcdoc')).toBeNull();
     expect(iframe.getAttribute('sandbox')).toBe('allow-scripts allow-downloads');
+    expect(getMiniAppAgentSurface(app.id)).toMatchObject({ iframe, ready: false });
+    await act(async () => { iframe.dispatchEvent(new Event('load')); });
+    expect(getMiniAppAgentSurface(app.id)).toMatchObject({ iframe, ready: true });
 
     const updatedApp = {
       ...app,
@@ -97,6 +105,9 @@ describe('MiniAppRunner strict bridge startup', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:market-lens-1');
     iframe = container.querySelector('iframe') as HTMLIFrameElement;
     expect(iframe.getAttribute('src')).toBe('blob:market-lens-2');
+    expect(getMiniAppAgentSurface(app.id)).toMatchObject({ iframe, ready: false });
+    await act(async () => { iframe.dispatchEvent(new Event('load')); });
+    expect(getMiniAppAgentSurface(app.id)).toMatchObject({ iframe, ready: true });
 
     await act(async () => {
       root?.unmount();
@@ -104,6 +115,37 @@ describe('MiniAppRunner strict bridge startup', () => {
     root = null;
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:market-lens-2');
   });
+  it('retires the old document and bridge when ordinary compiled HTML changes', async () => {
+    bridgeMock.ready = true;
+    await act(async () => { root?.render(<MiniAppRunner app={app} />); });
+    const oldFrame = container.querySelector('iframe')!;
+    const oldWindow = oldFrame.contentWindow!;
+    const oldEntry = getMiniAppAgentSurface(app.id)!;
+    await act(async () => { root?.render(<MiniAppRunner app={{ ...app, name: 'Renamed app' }} />); });
+    expect(container.querySelector('iframe')).toBe(oldFrame);
+    expect(getMiniAppAgentSurface(app.id)).toBe(oldEntry);
+    const announce = (source: Window, capabilities: string[]) => window.dispatchEvent(new MessageEvent('message', {
+      source, data: { type: 'openbitfun:miniapp-agent-ready', appId: app.id, schemaVersion: 'agent.v1', capabilities },
+    }));
+    announce(oldWindow, ['act']);
+    const pending = oldEntry.bridge.act('old-document', { type: 'save' });
+    const retired = expect(pending).rejects.toThrow('SURFACE_UNAVAILABLE');
+    await act(async () => { root?.render(<MiniAppRunner app={{ ...app, compiled_html: '<html><body>Replacement</body></html>' }} />); });
+    await retired;
+    const nextFrame = container.querySelector('iframe')!;
+    const nextEntry = getMiniAppAgentSurface(app.id)!;
+    expect(nextFrame).not.toBe(oldFrame);
+    expect(oldFrame.isConnected).toBe(false);
+    expect(nextEntry.bridge).not.toBe(oldEntry.bridge);
+    expect(nextEntry.bridge.announced).toBe(false);
+    // Queued messages from the retired Window cannot declare or complete work
+    // for the new frame, even with the same app and request ids.
+    announce(oldWindow, ['act']);
+    expect(nextEntry.bridge.announced).toBe(false);
+    announce(nextFrame.contentWindow!, ['observe']);
+    expect(nextEntry.bridge.capabilities).toEqual(['observe']);
+  });
+
   it('delivers only declared enabled chrome actions to its own iframe and releases the binding', async () => {
     const ref = { current: null as ((actionId: string) => void) | null };
     const customApp = { ...app, chrome: { titlebar: { actions: [

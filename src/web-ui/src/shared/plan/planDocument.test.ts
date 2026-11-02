@@ -29,6 +29,15 @@ describe('planDocument', () => {
     });
   });
 
+  it('round trips a plan without adding legacy todos', () => {
+    const source = '---\nname: Plan\noverview: Overview\nowner: team\n---\n\n# Plan';
+    const document = parsePlanMarkdown(source);
+    expect(document.todos).toEqual([]);
+    const serialized = serializePlanMarkdown(document);
+    expect(serialized).not.toContain('todos:');
+    expect(parsePlanMarkdown(serialized)).toEqual(document);
+  });
+
   it('rejects incomplete plan frontmatter', () => {
     expect(() => parsePlanMarkdown(`---\nname: Missing overview\n---\n\n# Plan`))
       .toThrow("Plan frontmatter field 'overview'");

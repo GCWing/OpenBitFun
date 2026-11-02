@@ -285,6 +285,19 @@ impl Tool for ListMCPResourcesTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string"},
+                "count": {"type": "integer"},
+                "resources": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+            },
+            "required": ["server_id", "count", "resources"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -405,6 +418,20 @@ impl Tool for ReadMCPResourceTool {
                 }
             },
             "required": ["server_id", "uri"],
+            "additionalProperties": false
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string"},
+                "uri": {"type": "string"},
+                "content_count": {"type": "integer"},
+                "contents": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+            },
+            "required": ["server_id", "uri", "content_count", "contents"],
             "additionalProperties": false
         })
     }
@@ -540,6 +567,19 @@ impl Tool for ListMCPPromptsTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string"},
+                "count": {"type": "integer"},
+                "prompts": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+            },
+            "required": ["server_id", "count", "prompts"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -667,6 +707,22 @@ impl Tool for GetMCPPromptTool {
                 }
             },
             "required": ["server_id", "name"],
+            "additionalProperties": false
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string"},
+                "name": {"type": "string"},
+                "arguments": {"anyOf": [{"type": "object", "additionalProperties": {"type": "string"}}, {"type": "null"}]},
+                "description": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "messages": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "prompt_text": {"type": "string"}
+            },
+            "required": ["server_id", "name", "messages", "prompt_text"],
             "additionalProperties": false
         })
     }

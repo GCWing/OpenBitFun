@@ -109,3 +109,18 @@ Verification: `pnpm --dir src/mobile-web run test:host-queue` covers ambiguous
 retries and a real Chromium page close/reopen with IndexedDB. The browser tests
 use simulated host/relay data and disposable profiles; they are not evidence of
 a physical phone or an SSH workspace test.
+
+### Project icons
+
+Recent-project and compact sidebar rows display the owning host's project icon when it
+advertises `workspace_icon_read_v1`. Built-in project categories use the same Lucide artwork
+as Desktop, including life/hobby categories. Theme changes select the light/dark image locally;
+a legacy single image serves both themes, and a missing variant falls back to the available
+image without rewriting host metadata. Missing or unknown glyph IDs fall back to the folder/server shape without
+altering host settings. Older hosts retain their existing default icons. Images
+are fetched through authenticated RemoteCommand requests by workspace ID, never by a
+controller-local file path. Reconnect/catalog refresh reloads the host projection; target
+epochs prevent a late response from another device replacing the current icon. Icon editing
+is available in the Desktop controller; mobile/IM editing requests receive an explicit
+unsupported response. A failed image read preserves host settings and displays a fallback
+with an unavailable hint.

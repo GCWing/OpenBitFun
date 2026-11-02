@@ -56,6 +56,7 @@ function installAgentBackend(app) {
         displayText: options.displayText || input.instruction,
         sessionId: options.sessionId,
         appDataWorkspace: options.appDataWorkspace,
+        imageContexts: options.imageContexts,
       });
       if (!result?.sessionId || !result?.turnId) {
         throw new Error('PPT Live agent backend did not return sessionId/turnId');

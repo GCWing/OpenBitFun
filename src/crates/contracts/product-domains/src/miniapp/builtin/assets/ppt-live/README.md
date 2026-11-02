@@ -34,7 +34,7 @@ PPT Live 同时是 OpenBitFun **Agentic MiniApp** 的样板间：它自己**没�
 | `app.agent.ensureSession(options)` | 在主题打开时创建或重新绑定专属隐藏会话；PPT Live 用 `agentSession.id` 恢复老主题，用新的 appdata 工作目录初始化新主题 |
 | `app.agent.run(prompt, options)` | `prompt` 承载 MiniApp 内部任务协议；`options.displayText` 单独承载会话框中显示的用户原始输入，避免把内部 prompt 或通用占位文案展示给用户 |
 | `app.chat.claimComposer(options)` | 注册到标准气泡聊天窗；本应用 tab 激活时用户输入改送本应用。可声明 `title`、`composer.placeholder` 与 `welcome`（标题、说明、工作区标签、示例 prompt），由宿主在共享组件内按主题安全渲染。不能修改面板尺寸、输入器布局或控件。幂等 upsert，locale 变更时重调可更新文案 |
-| `app.chat.onUserMessage(fn)` | 接收共享 ChatInput 或实时语音的提交，payload 至少含 `{ text }`，并可包含 `displayText`、`contexts`、`composerPresentation`、`sessionId`、`workspacePath`、`requestId` 与 `source`。回调应返回覆盖完整处理周期的 Promise，宿主据此等待 MiniApp 后处理完成 |
+| `app.chat.onUserMessage(fn)` | 接收共享 ChatInput 或实时语音的提交，payload 至少含 `{ text }`，并可包含 `displayText`、`contexts`、`imageContexts`、`composerPresentation`、`sessionId`、`workspacePath`、`requestId` 与 `source`。回调应返回覆盖完整处理周期的 Promise，宿主据此等待 MiniApp 后处理完成 |
 | `app.chat.focusSession(sessionId)` | 把经校验的本应用 Agent 会话绑定到气泡；气泡打开时临时展示该会话，关闭后恢复用户原来的普通会话 |
 | `app.chat.clearSession()` | 新建或切换主题时先清除旧绑定，避免准备新会话期间短暂显示上一个主题 |
 | `app.chat.setComposerDraft(text)` | 展开气泡并预填输入框，**不发送**——欢迎页的示例 prompt 用它，用户仍可编辑后再发 |
@@ -48,7 +48,28 @@ PPT Live 同时是 OpenBitFun **Agentic MiniApp** 的样板间：它自己**没�
 
 ```bash
 node --test src/crates/contracts/product-domains/src/miniapp/builtin/assets/ppt-live/test/topic-sessions.test.mjs
+node --test src/crates/contracts/product-domains/src/miniapp/builtin/assets/ppt-live/test/image-input.test.mjs
 ```
+
+Hi 气泡与普通会话共用 ChatInput，支持文字加最多五张粘贴或选择的图片，也支持仅图片提交。
+图片沿用普通会话的模型配置：多模态主模型直接接收图片；文本主模型通过 `analyze_image`
+调用已配置的读图模型。prompt 中直接写文件路径仍按原有 Agent 工具权限读取。
+宿主先复用聊天图片处理器，把用户选中的图片转换为
+`imageContexts`（`id`、`data_url`、`mime_type`、可选 `metadata`），再交给 MiniApp；
+模型输入会移除 `#img:` 展示标记，`displayText` 保留原始输入。PPT Live 将图片放在
+`app.agent.run(prompt, { imageContexts })` 的选项中，包括同一次生成的恢复重试，不能把
+base64 拼进 prompt / input JSON。Runtime 负责落盘、模型输入和会话图片历史。
+
+兼容旧 MiniApp：返回的 `onUserMessage` Promise 未完成期间，SDK 会把该消息图片自动带到
+同一会话首次成功接受的 Agent turn；后续 turn 复用已持久化上下文。消息完成后不再继承。
+并发处理同一会话的多条消息时，应传 `chatRequestId: payload.requestId` 或明确传
+`imageContexts`，SDK 不会猜测图片归属。首次成功提交时显式传入的图片（包括禁用继承的
+空数组）也会记录为该会话的附件选择，后续调用不会再自动附上同一批图片。
+
+图片必须携带像素，MiniApp 不能通过 `image_path` 获取额外的宿主文件权限。读取失败会
+保留输入草稿，不能退化为仅发送文字。Peer Device Mode 在投递消息及调用 Agent 两处检查
+`miniapp_agent_images_v1`；旧 Desktop 或无 MiniApp runtime 的 CLI peer 明确返回不支持。
+普通无图消息保持旧协议兼容。独立 MiniApp Shell 的输入器仍是文本输入，本文的附件入口是主窗口 Hi 气泡。
 
 > 认领是按 **runner 实例**（token）而不是 appId 记账的：AI 定制时同一个 appId 会同时挂载
 > 已安装实例和草稿预览实例，若按 appId 路由，一条气泡消息会让两个 iframe 各跑一次 agent。

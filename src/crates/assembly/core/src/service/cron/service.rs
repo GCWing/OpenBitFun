@@ -819,6 +819,7 @@ impl CronService {
                         format!("Scheduled: {}", enqueue_input.job_name.trim()),
                         launch.agent_type.clone(),
                         SessionConfig {
+                            tool_presentation_mode: Default::default(),
                             workspace_path: Some(workspace.workspace_path.clone()),
                             project_workspace_path: workspace.project_workspace_path.clone(),
                             execution_target: workspace.execution_target.clone(),

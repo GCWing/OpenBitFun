@@ -22,6 +22,7 @@ import { ToolCapsulePresentationProvider, useToolCapsulePresentation } from './T
 import { TOOL_CAPSULE_COLLAPSE_DURATION_MS, useToolCapsuleMotion } from '../motion/capsuleMotion';
 import { classNames } from "../../internal/classNames";
 import { OverflowText } from "../../primitives/OverflowText";
+import { inertProps } from "../../internal/inert";
 import styles from "./FlowChatToolCard.module.css";
 
 export type FlowChatToolStatus =
@@ -223,7 +224,7 @@ function CollapsibleRegion({
       ref={regionRef}
       id={id}
       aria-hidden={!open}
-      {...{ inert: !open ? '' : undefined }}
+      {...inertProps(!open)}
       className={styles.collapse}
       data-animate={disableAnimation ? "false" : "true"}
       data-openbitfun-component="flow-chat-tool-card"

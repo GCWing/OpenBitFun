@@ -161,6 +161,7 @@ impl RuntimeServices {
             RuntimeServiceCapability::RemoteWorkspace => self.remote_workspace.is_some(),
             RuntimeServiceCapability::RemoteProjection => self.remote_projection.is_some(),
             RuntimeServiceCapability::RemoteCapabilities => self.remote_capabilities.is_some(),
+            RuntimeServiceCapability::PtcRuntime => false,
         }
     }
 

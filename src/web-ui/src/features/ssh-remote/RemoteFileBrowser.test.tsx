@@ -44,6 +44,8 @@ it('renames a remote file once and keeps IME and outside clicks from dismissing 
     expect(dialog.getAttribute('data-openbitfun-component')).toBe('dialog');
     const input = dialog.querySelector('input')!;
     expect(input.value).toBe('old.txt');
+    expect(document.activeElement).toBe(input);
+    expect(dialog.querySelector(`label[for="${input.id}"]`)?.textContent).toContain('ssh.remote.name');
     act(() => {
       input.value = 'new.txt';
       Simulate.change(input);
@@ -121,6 +123,47 @@ describe('remote directory link navigation', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it('names the modal and exposes directory navigation to the keyboard', async () => {
+    api.readDir.mockResolvedValueOnce([fileEntry, linkEntry]).mockResolvedValueOnce([]);
+    await render();
+    const dialog = document.querySelector<HTMLElement>('.remote-file-browser[role="dialog"]')!;
+    expect(document.getElementById(dialog.getAttribute('aria-labelledby')!)?.textContent).toBe('ssh.remote.selectWorkspace');
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('.remote-file-browser__entry-button')];
+    expect(buttons).toHaveLength(3);
+    act(() => buttons[0].focus());
+    act(() => buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(document.activeElement).toBe(buttons[1]);
+    act(() => buttons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
+    expect(document.activeElement).toBe(buttons.at(-1));
+    act(() => buttons.at(-1)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })));
+    expect(document.activeElement).toBe(buttons[0]);
+    await act(async () => buttons[1].click());
+    expect(api.readDir).toHaveBeenLastCalledWith('ssh-host', linkEntry.path);
+    expect(api.readDir).toHaveBeenCalledTimes(2);
+  });
+
+  it('opens entry actions with Shift+F10 within the owning modal', async () => {
+    await render();
+    const file = row(fileEntry.name).querySelector<HTMLButtonElement>('.remote-file-browser__entry-button')!;
+    act(() => file.focus());
+    await act(async () => file.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true })));
+    const rename = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent === 'ssh.remote.rename')!;
+    expect(rename).toBeDefined();
+    await act(async () => rename.click());
+    const input = document.querySelector<HTMLInputElement>('.remote-file-browser__dialog input')!;
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe(fileEntry.name);
+  });
+
+  it('provides a keyboard-focusable path editor with an accessible name', async () => {
+    await render();
+    const edit = document.querySelector<HTMLButtonElement>('button[aria-label="ssh.remote.clickToEditPath"]')!;
+    act(() => edit.focus());
+    expect(document.activeElement).toBe(edit);
+    await act(async () => edit.click());
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="peerDirectoryPicker.path"]')?.value).toBe('/srv/project');
   });
 
   it.each(['click', 'double click', 'context menu'])('opens a directory symlink through %s and preserves its POSIX path', async (action) => {

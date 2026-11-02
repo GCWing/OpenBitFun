@@ -555,6 +555,9 @@ mod tests {
             tool_image_attachments: None,
             model_response_replay: Some(ModelResponseReplay {
                 protocol: "openai_responses".to_string(),
+                channel_origin: None,
+                channel_fingerprint: None,
+                account_origin: None,
                 items,
             }),
         }

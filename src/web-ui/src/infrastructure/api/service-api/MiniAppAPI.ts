@@ -1,5 +1,6 @@
 import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
+import type { ImageContextData } from './ImageContextTypes';
 
 import type { MiniAppChrome } from '../../../../../shared/miniapp-chrome/titlebar';
 export type { MiniAppChrome, MiniAppChromeAction } from '../../../../../shared/miniapp-chrome/titlebar';
@@ -108,6 +109,8 @@ export interface AgentContextFile {
 }
 
 export interface AgentRunOptions {
+  /** Inline attachments from chat:userMessage; arbitrary host paths are not accepted. */
+  imageContexts?: ImageContextData[];
   runId?: string;
   sessionName?: string;
   /**
@@ -757,6 +760,7 @@ export class MiniAppAPI {
           appDataWorkspace: options?.appDataWorkspace,
           model: options?.model,
           contextFiles: options?.contextFiles,
+          imageContexts: options?.imageContexts,
         }
       });
     } catch (error) {

@@ -142,9 +142,18 @@ const ThinkingDetailPanel = lazyWithRecovery(() =>
   }))
 );
 
+const TrajectoryRangeDetails = lazyWithRecovery(() => import('@/flow_chat/trajectory/TrajectoryDetails').then(module => ({ default: module.TrajectoryRangeDetails })));
+const TrajectoryDetails = lazyWithRecovery(() => import('@/flow_chat/trajectory/TrajectoryDetails').then(module => ({ default: module.TrajectoryDetails })));
+
 const SessionUsagePanel = lazyWithRecovery(() =>
   import('@/flow_chat/components/usage/SessionUsagePanel').then(module => ({
     default: module.SessionUsagePanel
+  }))
+);
+
+const ToolDefinitionsPreview = lazyWithRecovery(() =>
+  import('@/flow_chat/components/usage/ToolDefinitionsPreview').then(module => ({
+    default: module.ToolDefinitionsPreview,
   }))
 );
 
@@ -331,6 +340,13 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
         const markdownWorkspacePath = markdownEditorData.workspacePath || workspacePath;
         const markdownJumpToLine = markdownEditorData.jumpToLine ?? markdownEditorData.jumpToRange?.start;
         const markdownJumpToColumn = markdownEditorData.jumpToColumn;
+
+        // Retained tabs from the earlier read-only Markdown preview use the same reader.
+        if (markdownEditorData.readOnly && !markdownFilePath && typeof markdownInitialContent === 'string'
+          && content.metadata?.sessionId
+          && content.metadata.duplicateCheckKey === `session-context-toolDefinitions-${content.metadata.sessionId}`) {
+          return renderLazyEditor(<ToolDefinitionsPreview content={markdownInitialContent} />);
+        }
 
         return (
           <div className="openbitfun-flexible-panel__markdown-editor" data-openbitfun-component="flexible-panel" data-openbitfun-part="markdownEditor">
@@ -874,6 +890,12 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
           </React.Suspense>
         );
 
+      case 'tool-definitions':
+        return renderLazyEditor(<ToolDefinitionsPreview content={typeof content.data?.content === 'string' ? content.data.content : ''} />);
+
+      case 'session-trajectory':
+        return renderLazyEditor(content.data?.range ? <TrajectoryRangeDetails {...content.data} /> : <TrajectoryDetails {...content.data} />);
+
       case 'session-usage':
         return (
           <React.Suspense fallback={<div className="openbitfun-flexible-panel__loading" data-openbitfun-component="flexible-panel" data-openbitfun-part="loading" data-openbitfun-state="loading">{t('flexiblePanel.loading.taskDetail')}</div>}>
@@ -881,8 +903,17 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
               report={content.data?.report}
               markdown={content.data?.markdown}
               sessionId={content.data?.sessionId}
+              sessionTitle={content.data?.sessionTitle}
+              isLoading={content.data?.isLoading}
+              error={content.data?.error}
+              workspaceId={content.data?.workspaceId ?? content.data?.report?.workspace?.workspaceId}
               workspacePath={content.data?.workspacePath || workspacePath}
               initialTab={content.data?.initialTab}
+              onTitleChange={title => {
+                if (content.title !== title) {
+                  onContentChange?.({ ...content, title, data: { ...content.data, title } });
+                }
+              }}
             />
           </React.Suspense>
         );
@@ -919,10 +950,12 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
         return (
           <React.Suspense fallback={<div className="openbitfun-flexible-panel__loading" data-openbitfun-component="flexible-panel" data-openbitfun-part="loading" data-openbitfun-state="loading">{t('flexiblePanel.loading.terminal')}</div>}>
             <BrowserPanel
-              key={content.data?.openRequestId ?? 'browser-panel'}
+              key={content.data?.targetId ?? content.data?.openRequestId ?? 'browser-panel'}
               isActive={isActive}
               initialUrl={content.data?.url}
               openRequestId={content.data?.openRequestId}
+              targetId={content.data?.targetId}
+              conversationId={content.data?.conversationId}
             />
           </React.Suspense>
         );

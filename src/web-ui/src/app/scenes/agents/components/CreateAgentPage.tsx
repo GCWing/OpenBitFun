@@ -1,4 +1,4 @@
-import { Button, DialogBody, DialogClose, Icon, Input, PageHeader, ScrollArea, SetupWizard, Switch, Tooltip, type IconSource } from '@openbitfun/ui';
+import { Button, Checkbox, DialogBody, DialogClose, Icon, IconButton, Input, PageHeader, ScrollArea, SetupWizard, Switch, Tooltip, type IconSource } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FileText,
@@ -14,22 +14,25 @@ import {
 } from '@/infrastructure/api/service-api/CustomAgentAPI';
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
+import type { WorkspaceInfo } from '@/shared/types';
 import { useNotification } from '@/shared/notification-system';
 import { isUserSelectableToolName } from '@/shared/utils/toolVisibility';
 import { useAgentsStore } from '../agentsStore';
+import { isAgentProfileConfigurableToolName } from '../agentToolVisibility';
 import {
-  filterToolsForReviewMode,
-  normalizeReviewModeState,
+  filterToolsForReadonlyMode,
+  normalizeToolPermissionState,
   type SubagentEditorToolInfo,
 } from './subagentEditorUtils';
+import { createSuggestedAgentId } from './suggestAgentId';
 import { ToolGroupPicker, ToolGroupSummary } from './ToolGroupPicker';
+import { setToolGroupSelection } from './toolGroups';
 import { useUserToolGroups } from './useUserToolGroups';
 import '../AgentsView.scss';
 import './CreateAgentPage.scss';
 
 const MEditor = React.lazy(() => import('@/tools/editor/meditor/components/MEditor').then((module) => ({ default: module.MEditor })));
 
-const ID_REGEX = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const DEFAULT_MODE_POLICY: UserContextSection[] = [
   'workspace_context',
   'workspace_instructions',
@@ -82,12 +85,12 @@ function defaultPolicyForKind(kind: CustomAgentKind): UserContextSection[] {
 function defaultSelectedTools(
   tools: SubagentEditorToolInfo[],
   kind: CustomAgentKind,
-  review: boolean,
+  readonly: boolean,
 ): Set<string> {
   const defaultTools =
     kind === 'mode' ? DEFAULT_CUSTOM_MODE_TOOLS : DEFAULT_CUSTOM_SUBAGENT_TOOLS;
   const selectableToolNames = new Set(
-    filterToolsForReviewMode(tools, kind === 'subagent' && review).map((tool) => tool.name),
+    filterToolsForReadonlyMode(tools, readonly).map((tool) => tool.name),
   );
 
   return new Set(
@@ -96,24 +99,29 @@ function defaultSelectedTools(
 }
 
 interface CreateAgentPageProps {
+  workspace?: WorkspaceInfo;
+  initialLevel?: CustomAgentLevel;
   standalone?: boolean;
   titleId?: string;
   onCancel?: () => void;
   onCreated?: () => void;
 }
 
-const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, titleId, onCancel, onCreated }) => {
+const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, titleId, onCancel, onCreated, workspace: targetWorkspace, initialLevel = 'user' }) => {
   const { t, formatNumber } = useI18n('scenes/agents');
   const notification = useNotification();
-  const { hasWorkspace, workspace } = useCurrentWorkspace();
+  const current = useCurrentWorkspace();
+  const workspace = targetWorkspace ?? current.workspace;
+  const hasWorkspace = Boolean(workspace);
   const workspaceId = workspace?.id;
   const { openHome, agentEditorMode, editingAgentId } = useAgentsStore();
   const closeEditor = onCancel ?? openHome;
   const formInstanceId = React.useId();
   const formId = `${formInstanceId}-custom-agent-form`;
-  const fieldId = (field: string) => `${formInstanceId}-custom-agent-${field}`;
+  const fieldId = useCallback((field: string) => `${formInstanceId}-custom-agent-${field}`, [formInstanceId]);
   const formRef = useRef<HTMLFormElement>(null);
   const promptControlRef = useRef<HTMLDivElement>(null);
+  const toolEditButtonRef = useRef<HTMLButtonElement>(null);
   const [step, setStep] = useState(0);
   const steps = [
     {
@@ -156,11 +164,11 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
 
   const isEdit = !standalone && agentEditorMode === 'edit' && Boolean(editingAgentId);
 
-  const [kind, setKind] = useState<CustomAgentKind>('mode');
-  const [level, setLevel] = useState<CustomAgentLevel>('user');
-  const [agentId, setAgentId] = useState('');
-  const [agentIdError, setAgentIdError] = useState<string | null>(null);
+  const [kind, setKind] = useState<CustomAgentKind>(initialLevel === 'project' ? 'subagent' : 'mode');
+  const [level, setLevel] = useState<CustomAgentLevel>(initialLevel);
+  const [agentId, setAgentId] = useState(createSuggestedAgentId);
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState(false);
   const [description, setDescription] = useState('');
   const [descriptionError, setDescriptionError] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -174,6 +182,8 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
   const [toolsEditing, setToolsEditing] = useState(false);
   const [pendingTools, setPendingTools] = useState<Set<string> | null>(null);
+  const [pendingReadonly, setPendingReadonly] = useState<boolean | null>(null);
+  const toolSelectionInitialized = useRef(false);
   const [userContextPolicy, setUserContextPolicy] = useState<Set<UserContextSection>>(
     () => new Set(defaultPolicyForKind('mode')),
   );
@@ -227,27 +237,24 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     if (isEdit) {
       return;
     }
-    setLevel('user');
+    setLevel(kind === 'subagent' ? initialLevel : 'user');
     setReadonly(defaultReadonlyForKind(kind));
     setReview(false);
     setUserContextPolicy(new Set(defaultPolicyForKind(kind)));
     setSelectedTools(new Set());
+    toolSelectionInitialized.current = false;
     setToolsEditing(false);
     setPendingTools(null);
-  }, [isEdit, kind]);
+    setPendingReadonly(null);
+  }, [isEdit, kind, initialLevel]);
 
   useEffect(() => {
-    if (isEdit || toolInfos.length === 0) {
+    if (isEdit || toolInfos.length === 0 || toolSelectionInitialized.current) {
       return;
     }
-
-    setSelectedTools((prev) => {
-      if (prev.size > 0) {
-        return prev;
-      }
-      return defaultSelectedTools(toolInfos, kind, review);
-    });
-  }, [isEdit, kind, review, toolInfos]);
+    toolSelectionInitialized.current = true;
+    setSelectedTools(defaultSelectedTools(toolInfos, kind, defaultReadonlyForKind(kind)));
+  }, [isEdit, kind, toolInfos]);
 
   useEffect(() => {
     if (!isEdit || !editingAgentId) {
@@ -280,8 +287,8 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
         setSelectedTools(new Set(detail.tools ?? []));
         setToolsEditing(false);
         setPendingTools(null);
+        setPendingReadonly(null);
         setUserContextPolicy(new Set(detail.userContextPolicy));
-        setAgentIdError(null);
       } catch (error) {
         if (cancelled) {
           return;
@@ -299,19 +306,6 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     };
   }, [editingAgentId, isEdit, workspaceId]);
 
-  const validateAgentId = useCallback(
-    (value: string) => {
-      if (!value.trim()) {
-        return t('agentsOverview.form.idRequired');
-      }
-      if (!ID_REGEX.test(value.trim())) {
-        return t('agentsOverview.form.idFormat');
-      }
-      return null;
-    },
-    [t],
-  );
-
   const toggleContextSection = useCallback((section: UserContextSection) => {
     setUserContextPolicy((prev) => {
       const next = new Set(prev);
@@ -327,7 +321,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
   const handleReviewChange = useCallback(
     (nextReview: boolean) => {
       setReview(nextReview);
-      const next = normalizeReviewModeState({
+      const next = normalizeToolPermissionState({
         review: nextReview,
         readonly,
         selectedTools,
@@ -335,25 +329,36 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
       });
       setReadonly(next.readonly);
       setSelectedTools(next.selectedTools);
-      setPendingTools((current) => current ? new Set(next.selectedTools) : null);
+      setPendingTools((current) => current ? normalizeToolPermissionState({
+        review: nextReview,
+        readonly: pendingReadonly ?? readonly,
+        selectedTools: current,
+        availableTools: toolInfos,
+      }).selectedTools : null);
+      if (nextReview && toolsEditing) setPendingReadonly(true);
     },
-    [readonly, selectedTools, toolInfos],
+    [pendingReadonly, readonly, selectedTools, toolInfos, toolsEditing],
   );
 
   const handleReadonlyChange = useCallback(
     (nextReadonly: boolean) => {
-      if (review) {
-        setReadonly(true);
-        return;
-      }
-      setReadonly(nextReadonly);
+      const next = normalizeToolPermissionState({
+        review,
+        readonly: nextReadonly,
+        selectedTools: pendingTools ?? selectedTools,
+        availableTools: toolInfos,
+      });
+      setPendingReadonly(next.readonly);
+      setPendingTools(next.selectedTools);
     },
-    [review],
+    [pendingTools, review, selectedTools, toolInfos],
   );
 
+  const toolReadonly = pendingReadonly ?? readonly;
   const selectableTools = useMemo(
-    () => filterToolsForReviewMode(toolInfos, kind === 'subagent' && review),
-    [kind, review, toolInfos],
+    () => filterToolsForReadonlyMode(toolInfos, toolReadonly || (kind === 'subagent' && review))
+      .filter((tool) => isAgentProfileConfigurableToolName(tool.name)),
+    [kind, review, toolInfos, toolReadonly],
   );
   const selectableGroupTools = useMemo(() => selectableTools.map((tool) => ({
     name: tool.name,
@@ -362,13 +367,22 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     needs_permissions: tool.needsPermissions,
     dynamic_info: tool.dynamicInfo,
   })), [selectableTools]);
-  const managementGroupTools = useMemo(() => toolInfos.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    is_readonly: tool.isReadonly,
-    needs_permissions: tool.needsPermissions,
-    dynamic_info: tool.dynamicInfo,
-  })), [toolInfos]);
+  const toolSelectionDraft = pendingTools ?? selectedTools;
+  const selectedSelectableToolCount = selectableTools.filter((tool) => toolSelectionDraft.has(tool.name)).length;
+  const allSelectableToolsSelected = selectableTools.length > 0 && selectedSelectableToolCount === selectableTools.length;
+  const readonlyToolsMissing = toolReadonly && selectedSelectableToolCount === 0;
+  const managementGroupTools = useMemo(
+    () => toolInfos
+      .filter((tool) => isAgentProfileConfigurableToolName(tool.name))
+      .map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        is_readonly: tool.isReadonly,
+        needs_permissions: tool.needsPermissions,
+        dynamic_info: tool.dynamicInfo,
+      })),
+    [toolInfos],
+  );
 
   const contextSectionLabels: Record<UserContextSection, string> = {
     workspace_context: t('agentsOverview.form.contextWorkspaceContext'),
@@ -381,22 +395,21 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     project_layout: t('agentsOverview.form.contextProjectLayoutTooltip'),
   };
 
-  const focusField = (field: string) => {
+  const focusField = useCallback((field: string) => {
     if (field === 'prompt') {
       promptControlRef.current?.querySelector<HTMLElement>('[contenteditable="true"], textarea')?.focus({ preventScroll: true });
       return;
     }
     const control = formRef.current?.elements.namedItem(fieldId(field));
     if (control instanceof HTMLElement) control.focus();
-  };
+  }, [fieldId]);
 
   const handleNext = () => {
     if (step === 0) {
-      const idError = validateAgentId(agentId);
-      setAgentIdError(idError);
+      setNameError(!name.trim());
       setDescriptionError(!description.trim());
-      if (idError || !description.trim()) {
-        focusField(idError ? 'id' : 'description');
+      if (!name.trim() || !description.trim()) {
+        focusField(!name.trim() ? 'name' : 'description');
         return;
       }
     }
@@ -411,9 +424,9 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
   };
 
   const handleSubmit = useCallback(async () => {
-    const nextAgentIdError = validateAgentId(agentId);
-    setAgentIdError(nextAgentIdError);
-    if (nextAgentIdError) {
+    if (!name.trim()) {
+      setNameError(true);
+      focusField('name');
       return;
     }
     if (!description.trim()) {
@@ -435,22 +448,32 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     if (isEdit && !editingAgentId) {
       return;
     }
+    const submittedTools = normalizeToolPermissionState({
+      review: kind === 'subagent' && review,
+      readonly,
+      selectedTools,
+      availableTools: toolInfos,
+    }).selectedTools;
+    // Empty selections use host defaults, which may include writable tools.
+    if (readonly && submittedTools.size === 0) {
+      notification.error(t('agentsOverview.form.readonlyToolsRequired'));
+      return;
+    }
 
     const scope = getActiveSurfaceScope();
     setSubmitting(true);
     try {
       const normalizedId = agentId.trim();
-      const effectiveName = name.trim() || normalizedId;
       const payload = {
         kind,
         level: kind === 'subagent' ? level : 'user',
         id: normalizedId,
-        name: effectiveName,
+        name: name.trim(),
         description: description.trim(),
         prompt: prompt.trim(),
         readonly,
         review: kind === 'subagent' ? review : false,
-        tools: selectedTools.size > 0 ? Array.from(selectedTools) : undefined,
+        tools: submittedTools.size > 0 ? Array.from(submittedTools) : undefined,
         userContextPolicy: Array.from(userContextPolicy),
         workspaceId: kind === 'subagent' && level === 'project' ? workspaceId : undefined,
       } as const;
@@ -492,6 +515,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     agentId,
     description,
     editingAgentId,
+    focusField,
     isEdit,
     kind,
     level,
@@ -503,9 +527,9 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     readonly,
     review,
     selectedTools,
+    toolInfos,
     t,
     userContextPolicy,
-    validateAgentId,
     workspaceId,
   ]);
 
@@ -562,37 +586,68 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     );
   }
 
-  const permissionControls = (
-    <div className="th-create-panel__field th-create-panel__field--row">
+  const permissionControls = kind === 'subagent' ? (
+    <details className="th-create-panel__field">
+      <summary>{t('agentsOverview.form.review')}</summary>
       <div className="th-create-panel__readonly-row">
         <span className="th-create-panel__label">
-          {t('agentsOverview.form.readonly')}
+          {t('agentsOverview.form.review')}
         </span>
         <Switch
-          checked={readonly}
-          disabled={kind === 'subagent' && review}
-          onChange={(event) => handleReadonlyChange(event.target.checked)}
-          aria-label={t('agentsOverview.form.readonly')}
+          checked={review}
+          onChange={(event) => handleReviewChange(event.target.checked)}
+          aria-label={t('agentsOverview.form.review')}
         />
       </div>
-      {kind === 'subagent' ? (
-        <div className="th-create-panel__readonly-row">
-          <span className="th-create-panel__label">
-            {t('agentsOverview.form.review')}
-          </span>
-          <Switch
-            checked={review}
-            onChange={(event) => handleReviewChange(event.target.checked)}
-            aria-label={t('agentsOverview.form.review')}
-          />
-        </div>
-      ) : null}
-    </div>
-  );
+    </details>
+  ) : null;
   const basicInformation = (
     <div className="th-create-page__section">
       <div className="th-create-page__section-heading" data-openbitfun-component="create-agent-page" data-openbitfun-part="sectionHeading">
         <h3>{t('agentsOverview.form.basicInformation')}</h3>
+      </div>
+
+      <div className="th-create-panel__field">
+        <label className="th-create-panel__label" htmlFor={fieldId('name')}>
+          {t('agentsOverview.form.name')}
+        </label>
+        <Input
+          id={fieldId('name')}
+          value={name}
+          onChange={(event) => {
+            const nextName = event.target.value;
+            setName(nextName);
+            setNameError(false);
+          }}
+          invalid={nameError}
+          aria-describedby={nameError ? fieldId('name-error') : undefined}
+          placeholder={t(isEdit ? 'agentsOverview.form.namePlaceholder' : 'agentsOverview.form.createNamePlaceholder')}
+          size="sm"
+        />
+        {nameError && <span id={fieldId('name-error')} className="th-create-panel__error" role="alert">{t('agentsOverview.form.nameRequired')}</span>}
+      </div>
+
+      <div className="th-create-panel__field">
+        <label className="th-create-panel__label" htmlFor={fieldId('description')}>
+          {t('agentsOverview.form.description')}
+        </label>
+        <Input
+          id={fieldId('description')}
+          value={description}
+          onChange={(event) => {
+            setDescription(event.target.value);
+            setDescriptionError(false);
+          }}
+          invalid={descriptionError}
+          aria-describedby={descriptionError ? fieldId('description-error') : undefined}
+          placeholder={t('agentsOverview.form.descPlaceholder')}
+          size="sm"
+        />
+        {descriptionError && (
+          <span id={fieldId('description-error')} className="th-create-panel__error" role="alert">
+            {t('agentsOverview.form.descRequired')}
+          </span>
+        )}
       </div>
 
       <div className="th-create-panel__field" data-openbitfun-component="create-agent-page" data-openbitfun-part="field">
@@ -631,67 +686,6 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
             </Tooltip>
           ))}
         </div>
-      </div>
-
-      <div className="th-create-panel__identity-fields">
-        <div className="th-create-panel__field">
-          <label className="th-create-panel__label" htmlFor={fieldId('id')}>
-            {t('agentsOverview.form.id')}
-          </label>
-          <Input
-            id={fieldId('id')}
-            value={agentId}
-            onChange={(event) => {
-              setAgentId(event.target.value);
-              setAgentIdError(validateAgentId(event.target.value));
-            }}
-            onBlur={() => setAgentIdError(validateAgentId(agentId))}
-            placeholder={t('agentsOverview.form.idPlaceholder')}
-            invalid={!!agentIdError}
-            aria-describedby={agentIdError ? fieldId('id-error') : undefined}
-            disabled={isEdit}
-            size="sm"
-          />
-          {agentIdError ? (
-            <span id={fieldId('id-error')} className="th-create-panel__error" data-openbitfun-component="create-agent-page" data-openbitfun-part="error" role="alert">{agentIdError}</span>
-          ) : null}
-        </div>
-
-        <div className="th-create-panel__field">
-          <label className="th-create-panel__label" htmlFor={fieldId('name')}>
-            {t('agentsOverview.form.name')}
-          </label>
-          <Input
-            id={fieldId('name')}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t('agentsOverview.form.namePlaceholder')}
-            size="sm"
-          />
-        </div>
-      </div>
-
-      <div className="th-create-panel__field">
-        <label className="th-create-panel__label" htmlFor={fieldId('description')}>
-          {t('agentsOverview.form.description')}
-        </label>
-        <Input
-          id={fieldId('description')}
-          value={description}
-          onChange={(event) => {
-            setDescription(event.target.value);
-            setDescriptionError(false);
-          }}
-          invalid={descriptionError}
-          aria-describedby={descriptionError ? fieldId('description-error') : undefined}
-          placeholder={t('agentsOverview.form.descPlaceholder')}
-          size="sm"
-        />
-        {descriptionError && (
-          <span id={fieldId('description-error')} className="th-create-panel__error" role="alert">
-            {t('agentsOverview.form.descRequired')}
-          </span>
-        )}
       </div>
 
       {kind === 'subagent' ? (
@@ -733,10 +727,9 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
           </div>
         </div>
       ) : null}
-      {!standalone && permissionControls}
     </div>
   );
-  const toolSelection = selectableTools.length > 0 ? (
+  const toolSelection = toolInfos.some((tool) => isAgentProfileConfigurableToolName(tool.name)) ? (
     <div className="th-create-page__section th-create-page__section--tools">
       <div className="th-create-panel__field-head">
         <div
@@ -745,16 +738,29 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
           data-openbitfun-part="sectionHeading"
         >
           <h3>{t('agentsOverview.form.tools')}</h3>
-          <span className="th-create-panel__label-hint">
-            {kind === 'subagent' && review
-              ? t('agentsOverview.form.reviewToolsHint')
-              : t('agentsOverview.form.toolsHint', {
-                  optionalLabel: t('agentsOverview.form.toolsOptional'),
-                })}
-          </span>
         </div>
-        {standalone ? null : toolsEditing ? (
+        {toolsEditing ? (
           <div className="th-create-panel__tool-edit-actions">
+            <div className="th-create-panel__readonly-row">
+              <span className="th-create-panel__label">{t('agentsOverview.form.readonly')}</span>
+              <Switch
+                checked={toolReadonly}
+                disabled={submitting || (kind === 'subagent' && review)}
+                onChange={(event) => handleReadonlyChange(event.target.checked)}
+                aria-label={t('agentsOverview.form.readonly')}
+              />
+            </div>
+            <Checkbox
+              size="sm"
+              label={t('agentsOverview.selectAll')}
+              aria-label={t('agentsOverview.selectAll')}
+              checked={allSelectableToolsSelected}
+              indeterminate={selectedSelectableToolCount > 0 && !allSelectableToolsSelected}
+              onCheckedChange={(checked) => setPendingTools(new Set(setToolGroupSelection(
+                Array.from(toolSelectionDraft), selectableTools.map((tool) => tool.name), checked,
+              )))}
+              disabled={submitting || selectableTools.length === 0}
+            />
             <Button
               type="button"
               variant="fill"
@@ -762,6 +768,8 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
               onClick={() => {
                 setToolsEditing(false);
                 setPendingTools(null);
+                setPendingReadonly(null);
+                requestAnimationFrame(() => toolEditButtonRef.current?.focus());
               }}
               disabled={submitting}
             >
@@ -773,8 +781,11 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
               size="sm"
               onClick={() => {
                 setSelectedTools(new Set(pendingTools ?? selectedTools));
+                setReadonly(toolReadonly);
                 setToolsEditing(false);
                 setPendingTools(null);
+                setPendingReadonly(null);
+                requestAnimationFrame(() => toolEditButtonRef.current?.focus());
               }}
               disabled={submitting}
             >
@@ -782,58 +793,54 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
             </Button>
           </div>
         ) : (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setPendingTools(new Set(selectedTools));
-              setToolsEditing(true);
-            }}
-            disabled={submitting}
-            leadingIcon={<Icon name="settings" size="sm" aria-hidden="true" />}
-          >
-            {t('agentsOverview.toolsEdit')}
-          </Button>
+          <Tooltip content={t('agentsOverview.form.customizeTools')}>
+            <IconButton
+              ref={toolEditButtonRef}
+              type="button"
+              variant="quiet"
+              size="sm"
+              aria-label={t('agentsOverview.form.customizeTools')}
+              aria-controls={fieldId('tools')}
+              aria-expanded={toolsEditing}
+              onClick={() => {
+                setPendingTools(new Set(selectedTools));
+                setPendingReadonly(readonly);
+                setToolsEditing(true);
+              }}
+              disabled={submitting}
+              icon={<Icon name="edit" size="sm" />}
+            />
+          </Tooltip>
         )}
       </div>
-      {standalone ? (
-        <ToolGroupPicker
-          grouped={false}
-          tools={selectableGroupTools}
-          managementTools={managementGroupTools}
-          selectedToolNames={Array.from(selectedTools)}
-          userGroups={userToolGroups}
-          onSelectionChange={(toolNames) => setSelectedTools(new Set(toolNames))}
-          onSaveUserGroups={saveUserToolGroups}
-          disabled={submitting}
-          testId="custom-agent-tool-groups"
-        />
-      ) : toolsEditing ? (
-        <ScrollArea className="th-create-panel__tool-editor" overscrollBehaviorY="contain">
+      <ScrollArea
+        id={fieldId('tools')}
+        className="th-create-panel__tool-summary"
+        overscrollBehaviorY="contain"
+      >
+        {toolsEditing ? (
           <ToolGroupPicker
             grouped={false}
             tools={selectableGroupTools}
             managementTools={managementGroupTools}
-            selectedToolNames={Array.from(pendingTools ?? selectedTools)}
+            selectedToolNames={Array.from(toolSelectionDraft)}
             userGroups={userToolGroups}
             onSelectionChange={(toolNames) => setPendingTools(new Set(toolNames))}
             onSaveUserGroups={saveUserToolGroups}
             disabled={submitting}
             testId="custom-agent-tool-groups"
           />
-        </ScrollArea>
-      ) : (
-        <ScrollArea
-          className="th-create-panel__tool-summary"
-        >
+        ) : (
           <ToolGroupSummary
             grouped={false}
             tools={selectableGroupTools}
             selectedToolNames={Array.from(selectedTools)}
             userGroups={userToolGroups}
           />
-        </ScrollArea>
+        )}
+      </ScrollArea>
+      {readonlyToolsMissing && (
+        <p className="th-create-panel__error" role="alert">{t('agentsOverview.form.readonlyToolsRequired')}</p>
       )}
     </div>
   ) : null;
@@ -844,6 +851,15 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
           {t('agentsOverview.form.prompt')}
         </span>
       </h3>
+      {!isEdit && !prompt.trim() && (
+        <div className="th-create-panel__field">
+          <p className="th-create-panel__label-hint">{t('agentsOverview.form.promptGuide')}</p>
+          <Button type="button" size="sm" variant="outline" onClick={() => {
+            setPrompt(t('agentsOverview.form.promptTemplate', { goal: description.trim() }));
+            setPromptError(false);
+          }}>{t('agentsOverview.form.usePromptTemplate')}</Button>
+        </div>
+      )}
       <div
         className="th-create-panel__prompt-editor"
         data-openbitfun-component="create-agent-page"
@@ -950,7 +966,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
         form={formId}
         variant="primary"
         size="sm"
-        disabled={submitting || toolsEditing || (standalone && step === 2 && (toolsLoading || toolsLoadError))}
+        disabled={submitting || ((toolsEditing || readonlyToolsMissing) && (!standalone || step === 2)) || (standalone && step === 2 && (toolsLoading || toolsLoadError))}
         loading={submitting}
       >
         {standalone && step < 2 ? t('agentsOverview.form.wizard.next') : submitLabel}
@@ -967,7 +983,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
       data-openbitfun-part="form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (submitting || toolsEditing) return;
+        if (submitting || (toolsEditing && (!standalone || step === 2))) return;
         if (standalone && step < 2) {
           handleNext();
           return;
@@ -982,7 +998,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
             {(!standalone || step === 0) && basicInformation}
             {(!standalone || step === 2) && (
               <>
-                {standalone && permissionControls}
+                {permissionControls}
                 {standalone && toolsLoading ? (
                   <p className="th__title-sub" role="status">{t('agentsOverview.form.wizard.loadingTools')}</p>
                 ) : standalone && toolsLoadError ? (
@@ -995,7 +1011,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
                 ) : (
                   <>
                     {toolSelection}
-                    {standalone && selectableTools.length === 0 && (
+                    {standalone && !toolInfos.some((tool) => isAgentProfileConfigurableToolName(tool.name)) && (
                       <p className="th__title-sub">{t('agentsOverview.form.wizard.noTools')}</p>
                     )}
                   </>

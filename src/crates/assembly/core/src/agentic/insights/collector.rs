@@ -621,6 +621,8 @@ fn compute_active_duration_millis(
             workspace_path: Some(workspace_path.to_string_lossy().to_string()),
             remote_connection_id: None,
             remote_ssh_host: None,
+            include_system_prompt_preview: false,
+            context_preview_category: None,
             include_hidden_subagents: false,
         },
         turns,
@@ -1151,9 +1153,11 @@ mod tests {
             provider_id: None,
             model_config_id: None,
             effective_model_name: None,
+            routing: None,
             first_chunk_ms: None,
             first_visible_output_ms: None,
             stream_duration_ms: None,
+            ttft_ms: None,
             attempt_count: None,
             attempt_diagnostics: vec![],
             failure_category: None,
@@ -1171,6 +1175,7 @@ mod tests {
         first.token_usage = Some(DialogTurnTokenUsageData {
             input_tokens: 1_200,
             output_tokens: Some(300),
+            cached_tokens: None,
             total_tokens: 1_500,
             timestamp: 2_000,
         });
@@ -1178,6 +1183,7 @@ mod tests {
         second.token_usage = Some(DialogTurnTokenUsageData {
             input_tokens: 800,
             output_tokens: None,
+            cached_tokens: None,
             total_tokens: 900,
             timestamp: 4_000,
         });

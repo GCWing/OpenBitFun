@@ -95,7 +95,7 @@ fn packed_stream_chunks_advance_sequence_without_duplicate_messages() {
 }
 
 #[test]
-fn future_versions_unknown_required_events_and_truncated_results_fail_loudly() {
+fn unsupported_versions_fail_loudly_but_unknown_events_are_omitted() {
     let mut rows = conversation();
     rows[0]["version"] = 1.into();
     assert!(translate(&transcript(&rows), "one")
@@ -104,17 +104,37 @@ fn future_versions_unknown_required_events_and_truncated_results_fail_loudly() {
         .contains("version"));
     rows[0] = header();
     rows.push(json!({"type":"future/state","data":{}}));
-    assert!(translate(&transcript(&rows), "one")
-        .err()
-        .unwrap()
-        .contains("future/state"));
-    rows.last_mut().unwrap()["ignorable"] = true.into();
-    assert!(translate(&transcript(&rows), "one").is_ok());
+    let (_, warnings) = translate(&transcript(&rows), "one").unwrap();
+    assert!(warnings
+        .iter()
+        .any(|item| item.code == "unknown_events_omitted"));
     rows.truncate(6);
     assert_eq!(
         translate(&transcript(&rows), "one").unwrap().0[0].status,
         ExternalSessionStatus::Interrupted
     );
+}
+
+#[test]
+fn empty_seed_session_returns_empty_history() {
+    let text = transcript(&[
+        header(),
+        json!({"type":"permission/preset","data":{}}),
+        json!({"type":"sandbox/mode","data":{}}),
+        json!({"type":"approval/policy","data":{}}),
+        json!({"type":"session/end-seed","data":{}}),
+    ]);
+    let (turns, warnings) = translate(&text, "one").unwrap();
+    assert!(turns.is_empty());
+    assert!(warnings.is_empty());
+}
+
+#[test]
+fn unsupported_source_version_is_classified_separately() {
+    let mut rows = conversation();
+    rows[0]["version"] = 1.into();
+    let error = super::header(&transcript(&rows)).unwrap_err();
+    assert!(is_unsupported_error(&error));
 }
 
 fn write_session(root: &Path, text: &str, compressed: bool) -> PathBuf {
@@ -240,4 +260,26 @@ fn inspect_installed_dsh_session_read_only() {
         doc.turns.len(),
         tools.len()
     );
+}
+
+#[test]
+#[ignore = "Reads every installed DeepSeek Harness history without modifying it"]
+fn inspect_all_installed_dsh_sessions_read_only() {
+    let reader = DshSessionReader::default();
+    let catalog = reader.discover_all().unwrap();
+    assert!(catalog.candidates.len() >= 5);
+    for candidate in catalog.candidates {
+        let path = PathBuf::from(candidate.source_location.as_ref().unwrap());
+        let before = std::fs::read(&path).unwrap();
+        let document = reader
+            .read_candidate(&candidate.candidate_id, ExternalSessionImportMode::Full)
+            .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        eprintln!(
+            "Installed DeepSeek Harness {}: {} turns, {} warnings, source unchanged",
+            candidate.source_session_id,
+            document.turns.len(),
+            document.warnings.len()
+        );
+    }
 }

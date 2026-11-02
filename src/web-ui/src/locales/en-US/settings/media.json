@@ -1,0 +1,205 @@
+{
+  "title": "Image generation",
+  "subtitle": "Image services are separate from chat models: whenever an image is generated, the service selected here is used, whatever model the session is running.",
+  "loadFailed": "Unable to load image generation settings.",
+  "retry": "Retry",
+  "default": {
+    "label": "Default service",
+    "description": "Default model for generating images. You can also choose an existing Codex subscription model.",
+    "placeholder": "Choose an image model",
+    "unavailable": "Selected model unavailable"
+  },
+  "empty": {
+    "title": "No image service configured yet",
+    "description": "Add a service to let the agent generate images. Until then, image generation stays unavailable."
+  },
+  "card": {
+    "defaultBadge": "Default",
+    "model": "Model",
+    "endpoint": "Endpoint",
+    "toggleEnabled": "Enable this service",
+    "apiKeyBadge": "API key",
+    "subscriptionBadge": "Subscription · {{provider}}"
+  },
+  "actions": {
+    "add": "Add service",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "messages": {
+    "saved": "Image service settings saved.",
+    "saveFailed": "Unable to save image service settings.",
+    "deleted": "Image service deleted."
+  },
+  "delete": {
+    "title": "Delete image service",
+    "message": "Delete \"{{name}}\"? Images already generated stay on disk.",
+    "confirm": "Delete"
+  },
+  "dialect": {
+    "openaiImages": {
+      "name": "OpenAI Images",
+      "description": "The `POST /images/generations` JSON API. Works with OpenAI and with most compatible relay services."
+    },
+    "dashscopeNative": {
+      "name": "Qwen native (DashScope)",
+      "description": "Alibaba Cloud DashScope multimodal generation, used by Qwen image models."
+    },
+    "chatgptCodex": {
+      "name": "ChatGPT subscription (Codex)",
+      "description": "Generates through a ChatGPT Plus / Pro / Team subscription: a chat model calls its built-in image tool and answers with a stream of events. This is a separate billing path from an API key."
+    }
+  },
+  "subscriptionLabels": {
+    "codex": "Codex",
+    "antigravity": "Antigravity",
+    "opencode": "OpenCode",
+    "grok": "Grok",
+    "hermes": "Hermes"
+  },
+  "wizard": {
+    "titleCreate": "Add or import an image model",
+    "titleEdit": "Edit image model",
+    "guideLabel": "Setup steps",
+    "progress": "{{current}} / {{total}}",
+    "back": "Back",
+    "next": "Continue",
+    "steps": {
+      "dialect": {
+        "label": "Protocol",
+        "title": "Which protocol does the service speak?",
+        "description": "The protocol decides the request body, the endpoint path and the result shape. Pick the one the provider documents for image generation."
+      },
+      "connection": {
+        "label": "Connection",
+        "title": "Where is it and how do we authenticate?",
+        "description": "Enter the service root, the credential and the image model id. A relay service needs its own base URL."
+      },
+      "parameters": {
+        "label": "Parameters",
+        "title": "What should every image request default to?",
+        "description": "These values apply whenever a request does not override them. Size syntax follows the selected protocol."
+      },
+      "test": {
+        "label": "Check",
+        "title": "Generate one image to confirm the setup",
+        "description": "This is the only reliable check: it proves the endpoint, credential, model and protocol all match."
+      }
+    },
+    "auth": {
+      "label": "Authentication",
+      "apiKey": "API key",
+      "subscription": "Subscription login",
+      "apiKeyHint": "Use this service's own key, stored locally with the rest of your settings.",
+      "subscriptionHint": "Uses the imported {{provider}} login and resolves its access token while sending.",
+      "subscriptionCaveat": "A subscription login only covers what the provider opens to it, usually its own chat endpoints. For example, OpenAI's image endpoint requires the api.model.images.request scope, which chat subscription logins normally lack. The check returns the provider's own error in that case; use an API key instead.",
+      "subscriptionRouteHint": "This protocol is driven by the {{provider}} subscription login; the token is resolved while sending.",
+      "subscriptionRouteNote": "This path spends subscription allowance, not API key credit. The address, the model catalog and the access token all come from the login, so nothing needs to be filled in here. If the login has expired, re-authorize it under subscription logins first."
+    },
+    "reuse": {
+      "label": "Reuse a configured credential",
+      "hint": "Pick a chat model to copy its key and address, or pick a subscription model to reuse that login. Review them before saving.",
+      "none": "Do not reuse"
+    },
+    "fields": {
+      "endpoint": {
+        "label": "Effective request address",
+        "unresolved": "Shown once a service address is entered"
+      },
+      "baseUrl": {
+        "label": "Service address",
+        "hint": "The request is sent to this address plus {{path}}.",
+        "subscriptionHint": "Leave it empty to use the address the subscription login returns. If that address does not serve images, enter the image service address explicitly.",
+        "subscriptionRouteHint": "Supplied by the subscription login and not editable. After saving, the address actually used is whatever the login returns."
+      },
+      "requestUrl": {
+        "label": "Full request address (optional)",
+        "hint": "Replaces service address plus endpoint path. Use it for a dedicated instance or a gateway."
+      },
+      "apiKey": {
+        "label": "API key",
+        "hint": "Stored locally with the rest of your settings."
+      },
+      "modelName": {
+        "label": "Image model id",
+        "hint": "The exact model id the provider expects for image generation, not a chat model.",
+        "subscriptionPlaceholder": "Empty uses any model the account offers",
+        "subscriptionHint": "This is the chat model that drives the image tool, not an image model name. Leave it empty to pick one from the account's catalog automatically."
+      },
+      "name": {
+        "label": "Display name",
+        "hint": "Optional. Defaults to the model id."
+      },
+      "size": {
+        "label": "Default size",
+        "hint": "Sizes are written in {{dialect}} syntax."
+      },
+      "n": {
+        "label": "Images per request",
+        "hint": "Between 1 and {{max}}."
+      },
+      "quality": {
+        "label": "Quality"
+      },
+      "background": {
+        "label": "Background"
+      },
+      "negativePrompt": {
+        "label": "Negative prompt",
+        "hint": "Content the model should avoid."
+      },
+      "promptExtend": {
+        "label": "Rewrite the prompt",
+        "hint": "Lets the provider expand short prompts into a fuller description."
+      },
+      "watermark": {
+        "label": "Add a watermark"
+      }
+    },
+    "validation": {
+      "unsupportedAuth": "Image generation does not support subscription account pools. Choose a single account.",
+      "duplicate": "An identical image configuration already exists. Edit the existing entry instead.",
+      "baseUrlInvalid": "Enter a valid http or https address.",
+      "modelRequired": "Enter the image model id.",
+      "apiKeyRequired": "Enter the API key."
+    },
+    "test": {
+      "billed": "The check generates a real image and is billed by your provider.",
+      "promptLabel": "Prompt used for the check",
+      "run": "Generate test image",
+      "running": "Generating...",
+      "success": "Image generated in {{time}} ms.",
+      "failed": "The check failed.",
+      "previewAlt": "Image generated by the test"
+    },
+    "errors": {
+      "config": "This service is incomplete. Check the address, credential and model id.",
+      "auth": "The provider rejected the credential. Check that it belongs to this address, and whether the subscription login may call the image endpoint.",
+      "invalid_request": "The provider rejected the request. This usually means the protocol does not match the service, or a parameter is not supported.",
+      "content_filtered": "The provider's safety system blocked this prompt. Try a different subject.",
+      "rate_limited": "The provider is rate limiting or the quota is exhausted. Try again later.",
+      "timeout": "The provider did not answer in time.",
+      "transport": "The address could not be reached. If the service is only reachable through a local proxy, leave the proxy empty to follow the system proxy, or set the proxy address in the proxy settings.",
+      "missingScope": "The credential authenticated but lacks the image permission (the provider requires a scope such as api.model.images.request). A subscription login usually covers only its own chat endpoints, so use the provider API key for image generation.",
+      "provider": "The provider reported an internal error.",
+      "empty_result": "The provider answered but returned no image."
+    }
+  },
+  "acquisition": {
+    "label": "Image models",
+    "description": "Add an image service or import an existing model configuration",
+    "add": "Add model",
+    "empty": "No image models added",
+    "remove": "Delete image model {{name}}"
+  },
+  "import": {
+    "source": "Configuration source",
+    "manual": "Add a service manually",
+    "saved": "Current configuration",
+    "hint": "Reuse an existing provider connection or configure an image service.",
+    "subscriptionHint": "Uses your imported subscription account. No additional key or address is needed."
+  },
+  "advanced": "Advanced settings",
+  "automatic": "Model default"
+}

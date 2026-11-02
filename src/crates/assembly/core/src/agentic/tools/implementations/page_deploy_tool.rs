@@ -33,6 +33,8 @@ impl Tool for PageDeployTool {
 
 Requires a logged-in GitHub account. This tool is only available after account login. To create or update page content and publish, use PagePublish instead. Existing versions can also be reviewed from the Pages scene.
 
+When the user has requested deployment, call the tool directly; the permission system requests confirmation only in Ask mode. Auto Approve and Full Access do not need an additional confirmation.
+
 Input: slug (page path id), version_id (immutable saved version from a prior PagePublish). Returns absolute `url` plus url_path / deployed_version_id. Public links can be shared directly. Private and relay links must be opened or copied through the Pages scene/tool card so the browser receives a scoped one-time access handoff.
 
 When telling the user the link: paste the full absolute URL and put a trailing space after it (before any punctuation or newline).
@@ -64,6 +66,21 @@ Preview a version at /p/{username}/{slug}/@v/{version_id}."#
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "version_id": {"type": "string"},
+                "visibility": {"type": "string"},
+                "deployed": {"type": "boolean"},
+                "url": {"type": "string"}
+            },
+            "required": ["slug", "version_id", "visibility", "deployed"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -71,7 +88,7 @@ Preview a version at /p/{username}/{slug}/@v/{version_id}."#
     fn permission_intents(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<PermissionIntent>> {
         let slug = input
             .get("slug")
@@ -92,9 +109,10 @@ Preview a version at /p/{username}/{slug}/@v/{version_id}."#
             "permissionScope".to_string(),
             Value::String("account".to_string()),
         );
-        intent
-            .display_metadata
-            .insert("requiresFreshApproval".to_string(), Value::Bool(true));
+        intent.display_metadata.insert(
+            "requiresFreshApproval".to_string(),
+            Value::Bool(context.requires_fresh_approval()),
+        );
         intent.display_metadata.insert(
             "pageOperation".to_string(),
             Value::String("deploy".to_string()),

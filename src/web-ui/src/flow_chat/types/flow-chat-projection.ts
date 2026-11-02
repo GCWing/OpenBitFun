@@ -66,6 +66,7 @@ type VirtualContent =
       turnDurationMs?: number;
       /** Streaming window only; the throughput denominator, not turn wall time. */
       turnOutputDurationMs?: number;
+      turnTtftMs?: number;
       turnTokenUsage?: TokenUsage;
       canvasArtifactItems?: FlowToolItem[];
     }

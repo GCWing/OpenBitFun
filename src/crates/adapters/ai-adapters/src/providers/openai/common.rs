@@ -1,10 +1,11 @@
-use crate::client::quirks::{
-    apply_openai_compatible_toggle, is_deepseek_reasoning_effort_model, is_deepseek_url,
-    is_glm_52_reasoning_effort_model, is_zhipuai_url, normalize_deepseek_reasoning_effort,
-    normalize_glm_52_reasoning_effort,
-};
 use crate::client::utils::{dedupe_remote_models, normalize_base_url_for_discovery};
 use crate::client::AIClient;
+use crate::providers::reasoning::{
+    self, normalize_dashscope_reasoning_effort, normalize_deepseek_reasoning_effort,
+    normalize_glm_52_reasoning_effort, normalize_glm_53_reasoning_effort,
+    normalize_siliconflow_reasoning_effort, resolve_reasoning_rule, ReasoningApiFormat,
+    ReasoningRule,
+};
 use crate::providers::shared;
 use crate::types::{
     ReasoningPresetAction, ReasoningPresetDescriptor, RemoteModelInfo, ToolDefinition,
@@ -51,11 +52,14 @@ pub(crate) fn compile_chat_reasoning_action(
         .unwrap_or(configured_model)
         .trim()
         .to_ascii_lowercase();
-    let is_deepseek_reasoning_target = execution_provider.eq_ignore_ascii_case("deepseek")
-        || is_deepseek_url(url)
-        || is_deepseek_reasoning_effort_model(&execution_model);
-    let is_glm_52_reasoning_target = is_glm_52_reasoning_effort_model(&execution_model)
-        && (execution_provider.eq_ignore_ascii_case("zhipuai") || is_zhipuai_url(url));
+    let rule = resolve_reasoning_rule(
+        ReasoningApiFormat::OpenAiChat,
+        execution_provider,
+        url,
+        &execution_model,
+    );
+    let is_deepseek_reasoning_target = matches!(rule, ReasoningRule::DeepSeek { .. });
+    let is_glm_reasoning_target = matches!(rule, ReasoningRule::Glm52 | ReasoningRule::Glm53);
     let is_generic_reasoning = shared::is_generic_reasoning_preset(preset);
 
     match action {
@@ -83,7 +87,11 @@ pub(crate) fn compile_chat_reasoning_action(
             request_body["reasoning_effort"] = serde_json::json!(normalized);
             Ok(true)
         }
-        ReasoningPresetAction::Toggle { enabled } if is_glm_52_reasoning_target => {
+        ReasoningPresetAction::Toggle { enabled } if is_glm_reasoning_target => {
+            if matches!(rule, ReasoningRule::Glm53) && !enabled {
+                request_body["thinking"] = serde_json::json!({ "type": "enabled" });
+                return Ok(true);
+            }
             request_body["thinking"] = serde_json::json!({
                 "type": if *enabled { "enabled" } else { "disabled" }
             });
@@ -94,15 +102,67 @@ pub(crate) fn compile_chat_reasoning_action(
             }
             Ok(true)
         }
-        ReasoningPresetAction::Effort { value } if is_glm_52_reasoning_target => {
-            let normalized = normalize_glm_52_reasoning_effort(value)
-                .ok_or_else(|| anyhow!("GLM-5.2 reasoning effort '{}' is unsupported", value))?;
+        ReasoningPresetAction::Effort { value } if is_glm_reasoning_target => {
+            let normalized = match rule {
+                ReasoningRule::Glm52 => normalize_glm_52_reasoning_effort(value),
+                ReasoningRule::Glm53 => normalize_glm_53_reasoning_effort(value),
+                _ => None,
+            }
+            .ok_or_else(|| anyhow!("GLM reasoning effort '{}' is unsupported", value))?;
             request_body["thinking"] = serde_json::json!({ "type": "enabled" });
             request_body["reasoning_effort"] = serde_json::json!(normalized);
             Ok(true)
         }
+        ReasoningPresetAction::Toggle { enabled }
+            if matches!(rule, ReasoningRule::DashScope { .. })
+                || matches!(rule, ReasoningRule::SiliconFlow { .. }) =>
+        {
+            if matches!(rule, ReasoningRule::DashScope { forced: true, .. }) && !enabled {
+                return Ok(true);
+            }
+            if !reasoning::apply_openai_compatible_toggle(request_body, *enabled, url) {
+                request_body["enable_thinking"] = serde_json::json!(*enabled);
+            }
+            if !enabled {
+                request_body
+                    .as_object_mut()
+                    .map(|body| body.remove("reasoning_effort"));
+            }
+            Ok(true)
+        }
+        ReasoningPresetAction::Effort { value }
+            if matches!(rule, ReasoningRule::DashScope { effort: true, .. })
+                || matches!(rule, ReasoningRule::SiliconFlow { effort: true }) =>
+        {
+            let normalized = match rule {
+                ReasoningRule::DashScope { .. } => {
+                    normalize_dashscope_reasoning_effort(&execution_model, value)
+                }
+                ReasoningRule::SiliconFlow { .. } => normalize_siliconflow_reasoning_effort(value),
+                _ => None,
+            }
+            .ok_or_else(|| anyhow!("Reasoning effort '{}' is unsupported", value))?;
+            request_body["enable_thinking"] = serde_json::json!(true);
+            request_body["reasoning_effort"] = serde_json::json!(normalized);
+            request_body
+                .as_object_mut()
+                .map(|body| body.remove("thinking_budget"));
+            Ok(true)
+        }
+        ReasoningPresetAction::BudgetTokens { value }
+            if matches!(
+                rule,
+                ReasoningRule::DashScope { .. } | ReasoningRule::SiliconFlow { .. }
+            ) =>
+        {
+            if !reasoning::apply_openai_compatible_budget(request_body, *value, url) {
+                request_body["enable_thinking"] = serde_json::json!(true);
+                request_body["thinking_budget"] = serde_json::json!(*value);
+            }
+            Ok(true)
+        }
         ReasoningPresetAction::Toggle { enabled } if is_generic_reasoning => {
-            if !apply_openai_compatible_toggle(request_body, *enabled, url) {
+            if !reasoning::apply_openai_compatible_toggle(request_body, *enabled, url) {
                 request_body["thinking"] = serde_json::json!({
                     "type": if *enabled { "enabled" } else { "disabled" }
                 });
@@ -115,17 +175,41 @@ pub(crate) fn compile_chat_reasoning_action(
             Ok(true)
         }
         ReasoningPresetAction::Effort { value } if is_generic_reasoning => {
-            let normalized = shared::normalize_generic_reasoning_effort(value)
-                .ok_or_else(|| anyhow!("Generic reasoning effort '{}' is unsupported", value))?;
-            request_body["reasoning_effort"] = serde_json::json!(normalized);
-            Ok(true)
+            reasoning::compile_format_fallback(
+                ReasoningApiFormat::OpenAiChat,
+                &ReasoningPresetAction::Effort {
+                    value: value.clone(),
+                },
+                request_body,
+                None,
+            )
         }
         ReasoningPresetAction::Toggle { enabled } => {
-            Ok(apply_openai_compatible_toggle(request_body, *enabled, url))
+            if reasoning::apply_openai_compatible_toggle(request_body, *enabled, url) {
+                Ok(true)
+            } else {
+                reasoning::compile_format_fallback(
+                    ReasoningApiFormat::OpenAiChat,
+                    &ReasoningPresetAction::Toggle { enabled: *enabled },
+                    request_body,
+                    None,
+                )
+            }
         }
-        ReasoningPresetAction::Effort { .. } | ReasoningPresetAction::BudgetTokens { .. } => {
-            Ok(false)
-        }
+        ReasoningPresetAction::Effort { value } => reasoning::compile_format_fallback(
+            ReasoningApiFormat::OpenAiChat,
+            &ReasoningPresetAction::Effort {
+                value: value.clone(),
+            },
+            request_body,
+            None,
+        ),
+        ReasoningPresetAction::BudgetTokens { value } => reasoning::compile_format_fallback(
+            ReasoningApiFormat::OpenAiChat,
+            &ReasoningPresetAction::BudgetTokens { value: *value },
+            request_body,
+            None,
+        ),
         ReasoningPresetAction::RequestPatch { .. } => {
             unreachable!("patches are compiled by shared code")
         }
@@ -199,40 +283,6 @@ struct CodexBackendModelEntry {
     priority: Option<i64>,
 }
 
-const DEFAULT_CODEX_MODELS: &[&str] =
-    &["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"];
-
-fn parsed_gpt_version(model_id: &str) -> Option<(u32, u32)> {
-    let version = model_id.strip_prefix("gpt-")?.split('-').next()?;
-    let (major, minor) = version.split_once('.')?;
-    if minor.contains('.') {
-        return None;
-    }
-    Some((major.parse().ok()?, minor.parse().ok()?))
-}
-
-/// Mirrors OpenCode's ChatGPT subscription allowlist while keeping future
-/// versioned variants visible. Exact `gpt-5.6` and the Pro entitlement remain
-/// excluded because the subscription endpoint does not offer those products.
-fn codex_subscription_model_allowed(model_id: &str) -> bool {
-    let model_id = model_id.trim().to_ascii_lowercase();
-    if DEFAULT_CODEX_MODELS.contains(&model_id.as_str()) {
-        return true;
-    }
-    if matches!(model_id.as_str(), "gpt-5.5-pro" | "gpt-5.6") {
-        return false;
-    }
-    parsed_gpt_version(&model_id).is_some_and(|version| version > (5, 4))
-}
-
-pub(crate) fn is_known_codex_reasoning_model(model_id: &str) -> bool {
-    let model_id = model_id.trim().to_ascii_lowercase();
-    model_id == "gpt-5-codex" || codex_subscription_model_allowed(&model_id)
-}
-
-/// The account's live catalog is authoritative, including subscription-only
-/// models whose supported_in_api flag is false (that flag is for public API
-/// billing). Do not apply the offline reasoning-model heuristic here.
 fn codex_models_from_entries(mut entries: Vec<CodexBackendModelEntry>) -> Vec<RemoteModelInfo> {
     entries.retain(|model| {
         !model.slug.trim().is_empty()
@@ -359,7 +409,10 @@ pub(crate) fn convert_tools_flat(
 
 #[cfg(test)]
 mod tests {
-    use super::{attach_tools, codex_subscription_model_allowed, is_known_codex_reasoning_model};
+    use super::attach_tools;
+    use crate::providers::reasoning::{
+        codex_subscription_model_allowed, is_known_codex_reasoning_model,
+    };
     use serde_json::json;
 
     #[test]

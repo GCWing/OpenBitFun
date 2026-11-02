@@ -16,7 +16,7 @@ use gtk::{
   gdk::WindowState,
   glib::{self, translate::ToGlibPtr},
   prelude::*,
-  CssProvider, EventBox, Settings,
+  CssProvider, Settings,
 };
 
 use crate::{
@@ -191,9 +191,74 @@ impl Window {
     window.set_visible(attributes.visible);
     window.set_decorated(attributes.decorations);
     if window.display().backend().is_wayland() && !attributes.decorations {
-      // Enable CSD to prevent compositor from rendering server-side decorations
-      let event_box = EventBox::new();
-      window.set_titlebar(Some(&event_box));
+      // An undecorated window also loses the client-side decoration GTK draws
+      // around the frame, which is where the rounded corners and the drop shadow
+      // come from. Keep GTK-level decorations on so that chrome keeps rendering,
+      // and collapse the titlebar instead: a header bar without title or window
+      // buttons takes no height and leaves only the frame.
+      window.set_decorated(true);
+      // A header bar keeps one themed border row even at zero height, which the
+      // transparent window then shows as a stripe above the webview. A plain box
+      // has no themed chrome of its own, so the titlebar collapses to nothing.
+      let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+      header.set_size_request(-1, 0);
+      let empty_title = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+      header.pack_start(&empty_title, false, false, 0);
+      header
+        .style_context()
+        .add_class("openbitfun-collapsed-titlebar");
+      window.set_titlebar(Some(&header));
+      // GTK paints the frame background on the `decoration` CSS node, and it
+      // also clips the webview to that node's shape, so the node decides the
+      // window outline: the theme rounds only the top (windows historically sit
+      // on the screen edge) and leaves the bottom square. The shell draws a
+      // four-corner radius inside the webview, so clear the node's own paint and
+      // round all four corners while the window floats. A maximized window keeps
+      // the theme's square, shadowless decoration through the state class below,
+      // so it still fills the screen.
+      window
+        .style_context()
+        .add_class("openbitfun-client-frame");
+      if !window.is_maximized() {
+        window
+          .style_context()
+          .add_class("openbitfun-frame-rounded");
+      }
+      window.connect_window_state_event(move |window, event| {
+        if event.changed_mask().contains(WindowState::MAXIMIZED) {
+          let maximized = event.new_window_state().contains(WindowState::MAXIMIZED);
+          let style = window.style_context();
+          if maximized {
+            style.remove_class("openbitfun-frame-rounded");
+          } else {
+            style.add_class("openbitfun-frame-rounded");
+          }
+          log::debug!("GTK frame radius class updated: maximized={}", maximized);
+        }
+        glib::Propagation::Proceed
+      });
+      let frame_css = CssProvider::new();
+      if let Err(error) = frame_css.load_from_data(
+        b".openbitfun-collapsed-titlebar,
+          .openbitfun-collapsed-titlebar.titlebar { min-height: 0; min-width: 0; padding: 0; margin: 0;
+            border: none; border-width: 0; box-shadow: none; background: none; background-image: none; outline: none; }
+          .openbitfun-collapsed-titlebar box,
+          .openbitfun-collapsed-titlebar label { min-height: 0; padding: 0; margin: 0; }
+          window.openbitfun-client-frame decoration { background: none; background-image: none; }
+          window.openbitfun-frame-rounded decoration { border-radius: 12px; }",
+      ) {
+        log::warn!("Failed to load the collapsed titlebar style: {}", error);
+      }
+      // The titlebar lives in the window's own decoration tree, so a provider on
+      // the window's style context does not reliably reach it. Scope the rule to
+      // the class instead and install it for the screen.
+      if let Some(screen) = gtk::gdk::Screen::default() {
+        gtk::StyleContext::add_provider_for_screen(
+          &screen,
+          &frame_css,
+          gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+      }
     }
 
     if attributes.always_on_bottom {

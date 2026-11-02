@@ -24,4 +24,13 @@
   .root[data-variant="default"] .buttons .stepButton + .stepButton { border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border); }
   @media (prefers-reduced-motion: reduce) { .control { transition: none; } }
   @media (forced-colors: active) { .control { border-color: ButtonText; } .root .control:focus-within { border-color: Highlight; } }
+
+  /* Filled fields keep standard borders over the grouped-field background. */
+  .root[data-field-surface="filled"] .control {
+    background: var(--openbitfun-color-field-group-background);
+  }
+
+  .root[data-field-surface="filled"] .control:hover {
+    background: var(--openbitfun-color-field-background-hover);
+  }
 }

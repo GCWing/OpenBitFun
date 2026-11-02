@@ -4,13 +4,41 @@ use crate::peer_host::{
     state::PeerHostState,
 };
 use openbitfun_core::service::{
+    remote_connect::host_stream::HostStreamHub,
     remote_ssh::{get_remote_workspace_manager, RemoteTerminalManager},
     terminal::{
-        CloseSessionRequest, CreateSessionRequest, ResizeRequest, TerminalApi, WriteRequest,
+        session::SessionStatus, CloseSessionRequest, CreateSessionRequest, ResizeRequest,
+        TerminalApi, WriteRequest,
     },
 };
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
+
+/// Lifecycle facts on `terminal-<id>`. Output stays in the replay log; these
+/// tell a controller when no more of it will come.
+const TERMINAL_EXIT_EVENT: &str = "terminal-exit";
+const TERMINAL_CLOSED_EVENT: &str = "terminal-closed";
+const TERMINAL_EXIT_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+async fn publish_lifecycle(hub: &HostStreamHub, id: &str, event: &str, mut payload: Value) {
+    payload["terminal_id"] = json!(id);
+    if let Err(error) = hub
+        .append(format!("terminal-{id}"), event.into(), payload)
+        .await
+    {
+        tracing::debug!(
+            "Terminal lifecycle event was not published: terminal={id} event={event} error={error}"
+        );
+    }
+}
+
+/// `Some(code)` once the PTY has exited; the code itself may be unknown.
+fn exited_code(status: Option<&SessionStatus>) -> Option<Option<i32>> {
+    match status? {
+        SessionStatus::Exited { exit_code } => Some(*exit_code),
+        _ => None,
+    }
+}
 
 fn api() -> Result<TerminalApi, String> {
     TerminalApi::from_singleton().map_err(|e| e.to_string())
@@ -136,7 +164,37 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
                     tokio::select! { output = rx.recv() => output, _ = closed.changed() => break };
                 match output {
                     Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(_) => break,
+                    Err(_) => {
+                        // The SSH channel ended, so the shell is gone. The channel
+                        // does not report an exit code.
+                        publish_lifecycle(
+                            &hub,
+                            &id,
+                            TERMINAL_EXIT_EVENT,
+                            json!({"exit_code":Value::Null}),
+                        )
+                        .await;
+                        // The record, and its replay, outlive the channel until the
+                        // tab is closed.
+                        let mut removal_check = tokio::time::interval(TERMINAL_EXIT_CHECK_INTERVAL);
+                        removal_check
+                            .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                        loop {
+                            if *closed.borrow() {
+                                break;
+                            }
+                            tokio::select! {
+                                _ = removal_check.tick() => {
+                                    if manager.replay_cursor(&id).await.is_none() {
+                                        publish_lifecycle(&hub, &id, TERMINAL_CLOSED_EVENT, json!({})).await;
+                                        break;
+                                    }
+                                }
+                                _ = closed.changed() => break,
+                            }
+                        }
+                        break;
+                    }
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(75)).await;
                 if *closed.borrow() {
@@ -144,6 +202,7 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
                 }
                 while rx.try_recv().is_ok() {}
                 let Some(cursor) = manager.replay_cursor(&id).await else {
+                    publish_lifecycle(&hub, &id, TERMINAL_CLOSED_EVENT, json!({})).await;
                     break;
                 };
                 if hub
@@ -196,16 +255,32 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
     )
     .await
     .map_err(|e| e.to_string())?;
+    let manager = terminal.session_manager();
     tokio::spawn(async move {
         let mut closed = hub.subscribe_closed();
+        // The replay watch only moves on output; a shell can exit without any.
+        let mut exit_check = tokio::time::interval(TERMINAL_EXIT_CHECK_INTERVAL);
+        exit_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut exit_published = false;
         loop {
             if *closed.borrow() {
                 break;
             }
-            if tokio::select! { changed = rx.changed() => changed, _ = closed.changed() => break }
-                .is_err()
-            {
-                break;
+            tokio::select! {
+                changed = rx.changed() => {
+                    if changed.is_err() {
+                        publish_lifecycle(&hub, &id, TERMINAL_CLOSED_EVENT, json!({})).await;
+                        break;
+                    }
+                }
+                _ = exit_check.tick(), if !exit_published => {
+                    if let Some(exit_code) = exited_code(manager.session_status(&id).await.as_ref()) {
+                        exit_published = true;
+                        publish_lifecycle(&hub, &id, TERMINAL_EXIT_EVENT, json!({"exit_code":exit_code})).await;
+                    }
+                    continue;
+                }
+                _ = closed.changed() => break,
             }
             tokio::time::sleep(std::time::Duration::from_millis(75)).await;
             if *closed.borrow() {
@@ -419,4 +494,23 @@ pub(crate) async fn execute(args: &Value) -> Result<Value, String> {
             .map_err(|e| e.to_string())?
     };
     serde_json::to_value(result).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_is_reported_only_for_an_exited_session() {
+        assert_eq!(exited_code(None), None);
+        assert_eq!(exited_code(Some(&SessionStatus::Active)), None);
+        assert_eq!(
+            exited_code(Some(&SessionStatus::Exited { exit_code: Some(7) })),
+            Some(Some(7))
+        );
+        assert_eq!(
+            exited_code(Some(&SessionStatus::Exited { exit_code: None })),
+            Some(None)
+        );
+    }
 }

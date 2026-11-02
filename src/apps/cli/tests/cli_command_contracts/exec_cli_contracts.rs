@@ -141,6 +141,47 @@ fn cli_agent_controls_its_own_isolated_config_through_openbitfun_control() {
 }
 
 #[test]
+fn scheduled_jobs_invalid_store_is_preserved_and_does_not_block_cli_turns() {
+    use serde_json::json;
+    let server = MockOpenAiServer::tool_sequence(vec![
+        ("GetToolSpec".into(), json!({"tool_name":"Cron"})),
+        (
+            "CallDeferredTool".into(),
+            json!({"tool_name":"Cron","args":{"action":"list"}}),
+        ),
+    ]);
+    let environment = CliTestEnvironment::new();
+    environment.configure_tool_loop_mock_model(server.base_url());
+    let path = environment.cron_jobs_path();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let unsupported_store = r#"{"version":999,"jobs":[{"futureField":"keep-me"}]}"#;
+    std::fs::write(&path, unsupported_store).unwrap();
+    let mut command = environment.std_command();
+    command.args([
+        "exec",
+        "List scheduled jobs",
+        "--auto",
+        "--no-verify-final-changes",
+        "--output-format",
+        "json",
+    ]);
+    let output = command_output_with_timeout(&mut command, std::time::Duration::from_secs(60));
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        stderr(&output),
+        stdout(&output)
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), unsupported_store);
+    server.assert_chat_completion_requests(3);
+    let messages = server.chat_completion_request_bodies()[2]["messages"].to_string();
+    assert!(
+        messages.contains("Scheduled jobs are unavailable in this execution host"),
+        "{messages}"
+    );
+}
+
+#[test]
 fn exec_rejects_auto_with_legacy_confirm() {
     let output = run_cli(&["exec", "task", "--auto", "--confirm"]);
     let stderr = stderr(&output);
@@ -676,5 +717,202 @@ fn stream_json_disconnect_then_authorization_failure_emits_one_error_terminal() 
             !(value["event"]["type"] == "DialogTurnCompleted" && value["event"]["success"] == true)
         }),
         "provider disconnect emitted a successful completion: {stdout}"
+    );
+}
+
+#[test]
+fn computer_use_default_is_enabled_without_requesting_graphical_access() {
+    let environment = CliTestEnvironment::new();
+    let mut command = environment.std_command();
+    command
+        .env("SSH_CONNECTION", "fixture")
+        .args(["computer-use", "status"]);
+    let output = command_output_with_timeout(&mut command, std::time::Duration::from_secs(15));
+    assert!(output.status.success(), "{}", stderr(&output));
+    let status: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(status["computer_use_enabled"], true);
+    assert_eq!(status["provider_available"], false);
+    assert!(status["permissions"].is_null());
+}
+
+#[test]
+fn computer_use_setting_survives_restart_without_a_graphical_session() {
+    let environment = CliTestEnvironment::new();
+    for (action, enabled) in [("enable", true), ("disable", false)] {
+        let mut command = environment.std_command();
+        command
+            .env("SSH_CONNECTION", "fixture")
+            .args(["computer-use", action]);
+        let output = command_output_with_timeout(&mut command, std::time::Duration::from_secs(15));
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(
+            environment.app_config()["ai"]["computer_use_enabled"],
+            enabled
+        );
+
+        let mut status = environment.std_command();
+        status
+            .env("SSH_CONNECTION", "fixture")
+            .args(["computer-use", "status"]);
+        let output = command_output_with_timeout(&mut status, std::time::Duration::from_secs(15));
+        assert!(output.status.success(), "{}", stderr(&output));
+        let status: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(status["computer_use_enabled"], enabled);
+        assert_eq!(status["provider_available"], false);
+        assert!(status["unavailable_reason"]
+            .as_str()
+            .unwrap()
+            .contains("GUI_SESSION_UNAVAILABLE"));
+        assert!(status["permissions"].is_null());
+    }
+}
+
+fn computer_use_agent_status(ssh: bool) -> Vec<serde_json::Value> {
+    let server = MockOpenAiServer::tool_sequence(vec![(
+        "ComputerUse".into(),
+        serde_json::json!({"action":"control_status"}),
+    )]);
+    let environment = CliTestEnvironment::new();
+    environment.configure_tool_loop_mock_model(server.base_url());
+    let mut command = environment.std_command();
+    if ssh {
+        command.env("SSH_CONNECTION", "fixture");
+    }
+    command.args([
+        "exec",
+        "Read native control status only; do not capture or operate an application",
+        "--auto",
+        "--no-verify-final-changes",
+        "--output-format",
+        "json",
+    ]);
+    let output = command_output_with_timeout(&mut command, std::time::Duration::from_secs(60));
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        stderr(&output),
+        stdout(&output)
+    );
+    server.assert_chat_completion_requests(2);
+    server.chat_completion_request_bodies()
+}
+
+#[test]
+fn computer_use_provider_does_not_determine_cli_terminal_availability() {
+    let server = MockOpenAiServer::tool_sequence(vec![(
+        "ControlHub".into(),
+        serde_json::json!({"domain":"meta","action":"capabilities"}),
+    )]);
+    let environment = CliTestEnvironment::new();
+    environment.configure_tool_loop_mock_model(server.base_url());
+    let mut command = environment.std_command();
+    command.env("SSH_CONNECTION", "fixture").args([
+        "exec",
+        "Report registered capabilities without starting a terminal or capturing a screen",
+        "--auto",
+        "--no-verify-final-changes",
+        "--output-format",
+        "json",
+    ]);
+    let output = command_output_with_timeout(&mut command, std::time::Duration::from_secs(60));
+    assert!(output.status.success(), "{}", stderr(&output));
+    server.assert_chat_completion_requests(2);
+    let requests = server.chat_completion_request_bodies();
+    let message = requests[1]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "tool")
+        .expect("capability tool result");
+    let payload: serde_json::Value = serde_json::from_str(message["content"].as_str().unwrap())
+        .unwrap_or_else(|error| panic!("invalid capability payload: {error}: {message}"));
+    assert_eq!(payload["domains"]["terminal"]["available"], true);
+    assert_eq!(payload["computer_use"]["available"], false);
+}
+
+#[test]
+fn computer_use_is_not_exposed_by_an_ssh_execution_host() {
+    let requests = computer_use_agent_status(true);
+    assert!(requests[0]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|tool| tool["function"]["name"] != "ComputerUse"));
+    assert!(!requests[1]["messages"]
+        .to_string()
+        .contains("agent-directed-control-v1"));
+}
+
+#[test]
+#[ignore = "requires a local graphical login session; reads status only and requests no OS consent"]
+fn computer_use_graphical_cli_routes_the_real_tool_to_the_native_provider() {
+    let requests = computer_use_agent_status(false);
+    assert!(requests[0]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|tool| tool["function"]["name"] == "ComputerUse"));
+    let reply = requests[1]["messages"].to_string();
+    assert!(
+        reply.contains("agent-directed-control-v1"),
+        "native provider was not called: {reply}"
+    );
+    assert!(reply.contains("stop-control"), "{reply}");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "requires the disposable AX fixture plus Accessibility and Screen Recording; run test-native-ax-context.mjs --cli"]
+fn computer_use_native_cli_observes_and_stops_fixture() {
+    use serde_json::json;
+    let pid: i32 = std::env::var("OPENBITFUN_AX_FIXTURE_PID")
+        .expect("disposable fixture PID")
+        .parse()
+        .unwrap();
+    let server = MockOpenAiServer::tool_sequence(vec![
+        (
+            "ComputerUse".into(),
+            json!({"action":"get_app_state","app":{"pid":pid}}),
+        ),
+        ("ComputerUse".into(), json!({"action":"stop_control"})),
+        ("ComputerUse".into(), json!({"action":"control_status"})),
+    ]);
+    let environment = CliTestEnvironment::new();
+    environment.configure_tool_loop_image_model(server.base_url());
+    let mut command = environment.std_command();
+    command.args([
+        "exec",
+        "Observe the disposable OpenBitFun AX context fixture, then stop control",
+        "--auto",
+        "--no-verify-final-changes",
+        "--output-format",
+        "json",
+    ]);
+    let output = command_output_with_timeout(&mut command, std::time::Duration::from_secs(60));
+    assert!(output.status.success(), "{}", stderr(&output));
+    server.assert_chat_completion_requests(4);
+    let requests = server.chat_completion_request_bodies();
+    let observation = requests[1]["messages"].to_string();
+    assert!(
+        observation.contains("context-value"),
+        "fixture AX text was not observed"
+    );
+    assert!(
+        observation.contains("Save report"),
+        "fixture button was not observed"
+    );
+    assert!(
+        observation.contains("screenshot_id"),
+        "capture was not bound to an observation"
+    );
+    assert!(
+        observation.contains("data:image/"),
+        "native window capture did not reach the model"
+    );
+    let stopped =
+        requests[3]["messages"].as_array().unwrap().last().unwrap()["content"].to_string();
+    assert!(
+        stopped.contains("stopped"),
+        "native control was not stopped: {stopped}"
     );
 }

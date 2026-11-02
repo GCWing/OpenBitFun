@@ -2,7 +2,7 @@
 //! Never retries a submitted step; a new model decision starts a new program.
 use crate::agentic::tools::computer_use_host::{
     AppInputAction, AppInputSettle, AppInputSettlePolicy, AppInputSettleStatus, AppSelector,
-    AppStateSnapshot, ComputerUseHost, ControlSnapshot,
+    AppStateSnapshot, AppWindowInfo, ComputerUseHost, ControlSnapshot,
 };
 use crate::agentic::tools::framework::ToolUseContext;
 use serde_json::{json, Value};
@@ -27,6 +27,7 @@ pub(super) async fn execute(
 ) -> ProgramObservation {
     let initial_control = host.control_snapshot();
     let started = std::time::Instant::now();
+    let windows_before = live_windows(host).await;
     let requested = steps.len();
     let mut receipts = Vec::new();
     let mut completed = 0;
@@ -107,18 +108,71 @@ pub(super) async fn execute(
         .and_then(ToolUseContext::cancellation_token)
         .is_some_and(|token| token.is_cancelled())
         || !same_active_control(&initial_control, &host.control_snapshot());
-    ProgramObservation {
-        receipt: json!({
-            "action":"app_batch", "target_app":app,
-            "status":if interrupted {"cancelled"} else if completed == requested {"submitted"} else {"partial"},
-            "requested_steps":requested,"completed_steps":completed,"steps":receipts,
-            "observation_error":observation_error,"elapsed_ms":started.elapsed().as_millis(),
-            "settle":settle,
-            "observation_elapsed_ms":observation_started.elapsed().as_millis(),
-            "verification":"Submission is not proof of task completion. Inspect the final observation; never replay the whole batch to repair a failed step or observation. Unattempted steps were not executed."
-        }),
-        snapshot,
+    let opened = match windows_before {
+        Some(before) if input_submitted && !interrupted => {
+            opened_windows(host, &before, &app, snapshot.as_ref()).await
+        }
+        _ => Vec::new(),
+    };
+    let mut receipt = json!({
+        "action":"app_batch", "target_app":app,
+        "status":if interrupted {"cancelled"} else if completed == requested {"submitted"} else {"partial"},
+        "requested_steps":requested,"completed_steps":completed,"steps":receipts,
+        "observation_error":observation_error,"elapsed_ms":started.elapsed().as_millis(),
+        "settle":settle,
+        "observation_elapsed_ms":observation_started.elapsed().as_millis(),
+        "verification":"Submission is not proof of task completion. Inspect the final observation; never replay the whole batch to repair a failed step or observation. Unattempted steps were not executed."
+    });
+    if !opened.is_empty() {
+        receipt["opened_windows"] = json!(opened);
+        receipt["opened_windows_hint"] = json!("These top-level windows appeared on screen while this input was processed, possibly in another process (an app helper, a dialog service or a launched application). The observation above is still the bound window. If the task continues in one of them, observe it with get_app_state app:{pid,window_id}; nothing was selected automatically.");
     }
+    ProgramObservation { receipt, snapshot }
+}
+
+/// Bound for the windows reported as opened by one input program.
+const MAX_OPENED_WINDOWS: usize = 6;
+
+/// On-screen top-level windows, or `None` when the host has no window
+/// discovery. A failed inventory only disables the opened-window report.
+async fn live_windows(host: &dyn ComputerUseHost) -> Option<std::collections::HashSet<(i32, u64)>> {
+    let windows = host.list_windows(None).await.ok()?;
+    Some(
+        windows
+            .into_iter()
+            .filter(|window| window.is_on_screen != Some(false))
+            .map(|window| (window.pid, window.window_id))
+            .collect(),
+    )
+}
+
+/// Windows that became visible during the input, across processes: a click
+/// often opens its result in a helper process or another application. The
+/// bound window, its own popups and this host's overlays are not reported.
+async fn opened_windows(
+    host: &dyn ComputerUseHost,
+    before: &std::collections::HashSet<(i32, u64)>,
+    app: &AppSelector,
+    snapshot: Option<&AppStateSnapshot>,
+) -> Vec<AppWindowInfo> {
+    let Ok(mut windows) = host.list_windows(None).await else {
+        return Vec::new();
+    };
+    let own_pid = i32::try_from(std::process::id()).unwrap_or_default();
+    let auxiliary: std::collections::HashSet<u64> = snapshot
+        .and_then(|snapshot| snapshot.screenshot.as_ref())
+        .map(|shot| shot.auxiliary_windows.iter().map(|w| w.window_id).collect())
+        .unwrap_or_default();
+    windows.retain(|window| {
+        window.is_on_screen != Some(false)
+            && !before.contains(&(window.pid, window.window_id))
+            && window.pid != own_pid
+            && Some(window.window_id) != app.window_id
+            && !auxiliary.contains(&window.window_id)
+    });
+    AppWindowInfo::sort_for_discovery(&mut windows);
+    windows.truncate(MAX_OPENED_WINDOWS);
+    windows
 }
 
 /// Settling only waits for pixels and is safe to abandon on cancellation; a

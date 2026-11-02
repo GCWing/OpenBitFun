@@ -116,7 +116,7 @@ mod tests {
             } => {
                 assert_eq!(data["content"], "hello from webfetch");
                 assert_eq!(data["format"], "markdown");
-                assert_eq!(data["content_representation"], "plain_text");
+                assert_eq!(data["diagnostics"]["content_representation"], "plain_text");
                 assert!(data["title"].is_null());
                 assert_eq!(result_for_assistant.as_deref(), Some("hello from webfetch"));
             }
@@ -152,8 +152,8 @@ mod tests {
             } => {
                 let content = data["content"].as_str().expect("content string");
                 assert_eq!(data["format"], "markdown");
-                assert_eq!(data["content_representation"], "markdown");
-                assert_eq!(data["extractor"], "legible");
+                assert_eq!(data["diagnostics"]["content_representation"], "markdown");
+                assert_eq!(data["diagnostics"]["extractor"], "legible");
                 assert_eq!(data["title"], "Hello World");
                 assert_eq!(data["content_length"].as_u64(), Some(content.len() as u64));
                 assert!(content.contains("primary article content"));

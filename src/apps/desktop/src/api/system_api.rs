@@ -692,7 +692,7 @@ fn main_window_fullscreen_restore_maximized() -> &'static Mutex<bool> {
 }
 
 fn read_main_window_fullscreen_response(
-    window: &tauri::WebviewWindow,
+    window: &tauri::Window,
     fallback_fullscreen: bool,
     fallback_maximized: bool,
 ) -> ToggleMainWindowFullscreenResponse {
@@ -747,7 +747,7 @@ pub async fn minimize_to_tray(
     if let Err(error) = crate::tray::setup_tray(&app, &startup_trace) {
         log::warn!("Failed to initialize tray before minimizing: {}", error);
     }
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         window.hide().map_err(|e| e.to_string())?;
         log::info!("Main window minimized to tray via command");
     }
@@ -785,7 +785,7 @@ pub async fn startup_window_control(
     app: tauri::AppHandle,
     request: StartupWindowControlRequest,
 ) -> Result<StartupWindowControlResponse, String> {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         return Err("Main window not found".to_string());
     };
 
@@ -871,7 +871,7 @@ pub async fn toggle_main_window_fullscreen(
     request: ToggleMainWindowFullscreenRequest,
 ) -> Result<ToggleMainWindowFullscreenResponse, String> {
     let _ = request;
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         return Err("Main window not found".to_string());
     };
 
@@ -938,7 +938,7 @@ pub async fn toggle_main_window_fullscreen(
 
 fn apply_main_window_fullscreen_monitor_bounds(
     app: &tauri::AppHandle,
-    window: &tauri::WebviewWindow,
+    window: &tauri::Window,
 ) -> Result<(), String> {
     let monitor = window
         .current_monitor()
@@ -1067,7 +1067,7 @@ fn notification_response_activates_main_window(
 
 #[cfg(target_os = "windows")]
 fn activate_main_window_from_notification(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         log::warn!("Failed to activate main window from notification: main window not found");
         return;
     };

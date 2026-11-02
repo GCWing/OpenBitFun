@@ -28,7 +28,8 @@ impl BuiltInBrowserHost for BrowserFixture {
             id: format!("embedded-browser-panel-view-fixture-{}", pages.len()),
             url: request.url.clone(),
             title: "Fixture".into(),
-            active: true,
+            active: false,
+            conversation_id: request.conversation_id.clone(),
         };
         self.opens.lock().unwrap().push(request);
         pages.push(target.clone());
@@ -60,6 +61,11 @@ impl BuiltInBrowserHost for BrowserFixture {
                 Ok(json!({"frameId":page.id}))
             }
             "Runtime.evaluate" => {
+                if *self.navigation_error.lock().unwrap() {
+                    return Err(
+                        "[NOT_AVAILABLE] Navigation failed: net::ERR_NAME_NOT_RESOLVED".into(),
+                    );
+                }
                 let expression = params["expression"].as_str().unwrap_or("");
                 let value = if expression.contains("offscreen_count") {
                     if *self.snapshot_error.lock().unwrap() {
@@ -136,6 +142,10 @@ async fn cold_navigation_observes_once_and_keeps_conversations_on_their_pages() 
     assert_eq!(first["data"]["loaded"], true);
     assert!(text.contains("BODY_AFTER_EXCERPT"));
     assert_eq!(host.opens.lock().unwrap().len(), 1);
+    assert_eq!(
+        host.opens.lock().unwrap()[0].conversation_id.as_deref(),
+        a.session_id.as_deref()
+    );
     assert!(!host
         .commands
         .lock()
@@ -189,6 +199,73 @@ async fn cold_navigation_observes_once_and_keeps_conversations_on_their_pages() 
 }
 
 #[tokio::test]
+async fn background_pages_are_private_to_their_conversations_even_with_an_explicit_foreign_id() {
+    let _guard = TEST_HOST_LOCK.lock().await;
+    let host = Arc::new(BrowserFixture::default());
+    set_builtin_browser_host(host.clone());
+    let a = context("isolated-browser-a");
+    let b = context("isolated-browser-b");
+    let ((first, _), (second, _)) = tokio::join!(
+        call(
+            "navigate",
+            json!({"url":"https://a.example","observe":"article"}),
+            &a
+        ),
+        call(
+            "navigate",
+            json!({"url":"https://b.example","observe":"article"}),
+            &b
+        ),
+    );
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(second["ok"], true, "{second}");
+    let a_id = first["data"]["session_id"].as_str().unwrap();
+    let b_id = second["data"]["session_id"].as_str().unwrap();
+    assert_ne!(a_id, b_id);
+    // Simulate B being visible while A's native document remains hidden.
+    for page in host.pages.lock().unwrap().iter_mut() {
+        page.active = page.id == b_id;
+    }
+    for action in ["list_pages", "tab_query"] {
+        let (inventory, _) = call(action, json!({"target":"builtin"}), &a).await;
+        assert_eq!(
+            inventory["data"]["pages"].as_array().unwrap().len(),
+            1,
+            "{inventory}"
+        );
+        assert_eq!(inventory["data"]["pages"][0]["id"], a_id);
+        assert_eq!(inventory["data"]["default_session_id"], a_id);
+    }
+    let (article, _) = call("read_article", json!({}), &a).await;
+    assert_eq!(article["data"]["session_id"], a_id);
+    let before = host.commands.lock().unwrap().len();
+    for action in [
+        "navigate",
+        "connect",
+        "switch_page",
+        "read_article",
+        "close",
+    ] {
+        let mut params = json!({"target":"builtin","session_id":b_id,"page_id":b_id});
+        if action == "navigate" {
+            params["url"] = json!("https://wrong.example");
+        }
+        let (rejected, _) = call(action, params, &a).await;
+        assert_eq!(rejected["ok"], false, "{action}: {rejected}");
+    }
+    assert_eq!(
+        host.commands.lock().unwrap().len(),
+        before,
+        "Foreign selections must fail before page IO"
+    );
+    release_browser_selection("isolated-browser-a").await;
+    assert_eq!(host.pages.lock().unwrap().len(), 1);
+    let (remaining, _) = call("get_url", json!({}), &b).await;
+    assert_eq!(remaining["data"]["url"], "https://b.example");
+    release_browser_selection("isolated-browser-b").await;
+}
+
+#[tokio::test]
 async fn navigation_observation_and_fetch_failures_keep_partial_evidence() {
     let _guard = TEST_HOST_LOCK.lock().await;
     let host = Arc::new(BrowserFixture::default());
@@ -204,6 +281,7 @@ async fn navigation_observation_and_fetch_failures_keep_partial_evidence() {
     assert_eq!(opened["ok"], true);
     assert!(opened["data"]["observation_error"].is_object());
     assert!(text.contains("observation_error"));
+    assert!(text.contains("Built-in browser adapter failed for Runtime.evaluate"));
     assert_eq!(host.opens.lock().unwrap().len(), 1);
     *host.navigation_error.lock().unwrap() = true;
     let (failed, text) = call("navigate", json!({"url":"https://invalid.example"}), &ctx).await;
@@ -222,6 +300,12 @@ async fn navigation_observation_and_fetch_failures_keep_partial_evidence() {
             .count(),
         1
     );
+
+    let (failed_wait, text) = call("wait", json!({"condition":"load"}), &ctx).await;
+    assert_eq!(failed_wait["ok"], false);
+    assert_eq!(failed_wait["error"]["code"], "NOT_AVAILABLE");
+    assert!(text.contains("Navigation failed"));
+    *host.navigation_error.lock().unwrap() = false;
 
     *host.fetch_response.lock().unwrap() = json!({"error":"CORS blocked"});
     let (cors, text) = call("fetch", json!({"url":"https://other.example"}), &ctx).await;

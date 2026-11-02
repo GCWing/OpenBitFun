@@ -215,8 +215,8 @@ The beta invocation writes below `/release/beta` and intentionally skips the
 stable-only CLI and Relay floating manifests.
 
 Production cron must run this in-repo script from the OpenBitFun checkout. Do not
-create a detached copy. Host paths, Nginx, and the rest of the origin restore
-steps live in [`deploy/openbitfun-host/README.md`](../../deploy/openbitfun-host/README.md).
+create a detached copy. Host-specific Nginx and restore paths belong to your own
+deployment and are not published here.
 The sync resolves the exact release directory from the updater manifest once;
 Relay and Linux metadata use that same directory to avoid mixed-version reads
 when GitHub's latest-release pointer changes. Publication also compares the

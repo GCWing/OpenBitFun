@@ -73,5 +73,19 @@ class WorkspaceCatalogTest {
         assertEquals("localhost", catalog.workspaces[1].remoteSshHost)
     }
 
+    @Test
+    fun openedAssistantsComeFirstWithoutReorderingPeersOrPickerHistory() {
+        val response = decode("""{"workspaces":[{"path":"/recent"}],"opened_workspaces":[
+            {"workspace_id":"remote","path":"/repo","workspace_kind":"remote","remote_connection_id":"ssh"},
+            {"workspace_id":"a","path":"/assistant-a","workspace_kind":"assistant"},
+            {"workspace_id":"local","path":"/local","workspace_kind":"normal"},
+            {"workspace_id":"b","path":"/assistant-b","workspace_kind":"assistant"}
+        ]}""")
+        val catalog = response.sidebarCatalog(emptyList())
+        assertEquals(listOf("a", "b", "remote", "local"), catalog.workspaces.map { it.workspaceId })
+        assertEquals("ssh", catalog.workspaces[2].remoteConnectionId)
+        assertEquals("/recent", catalog.recentWorkspaces.single().path)
+    }
+
     private fun decode(wire: String): RecentWorkspaceListResponse = RelayJson.decodeFromString(wire)
 }

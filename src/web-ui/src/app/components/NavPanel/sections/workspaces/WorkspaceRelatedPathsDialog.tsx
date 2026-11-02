@@ -1,9 +1,6 @@
 import {
   Alert,
   Button,
-  Card,
-  CardBody,
-  CardHeader,
   Field,
   FormSection,
   IconButton,
@@ -35,8 +32,8 @@ import { sshApi } from '@/features/ssh-remote/sshApi';
 import RemoteFileBrowser from '@/features/ssh-remote/RemoteFileBrowser';
 import { createLogger } from '@/shared/utils/logger';
 import { isRemoteWorkspace, type RelatedPath, type WorkspaceInfo } from '@/shared/types';
-import { FolderOpen, FolderPlus, Server } from 'lucide-react';
-import { ProjectFolderItem, ProjectFolderList } from '@/app/components/ProjectFolderList/ProjectFolderList';
+import { FolderOpen, Server } from 'lucide-react';
+import { WorkspaceRelatedPathAddDialog } from './WorkspaceRelatedPathAddDialog';
 import './WorkspaceRelatedPathsDialog.scss';
 
 const log = createLogger('WorkspaceRelatedPathsDialog');
@@ -45,6 +42,7 @@ interface WorkspaceRelatedPathsDialogProps {
   workspace: WorkspaceInfo;
   isOpen: boolean;
   onClose: () => void;
+  initialAdd?: boolean;
 }
 
 interface DraftRelatedPath {
@@ -72,7 +70,7 @@ function normalizeDrafts(drafts: DraftRelatedPath[]): RelatedPath[] {
   }));
 }
 
-export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogProps> = ({
+const WorkspaceRelatedPathsManager: React.FC<WorkspaceRelatedPathsDialogProps> = ({
   workspace,
   isOpen,
   onClose,
@@ -81,6 +79,7 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
   const { updateWorkspaceRelatedPaths } = useWorkspaceContext();
   const [drafts, setDrafts] = useState<DraftRelatedPath[]>([]);
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [browsingIndex, setBrowsingIndex] = useState<number | null>(null);
@@ -195,10 +194,7 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
   };
 
   const handleAddDraft = () => {
-    const draft = createDraft();
-    setDrafts(current => [...current, draft]);
-    setEditingDraftId(draft.id);
-    setError(null);
+    setAdding(true);
   };
 
   const handleRemoveDraft = (draftId: string) => {
@@ -253,19 +249,27 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
     const normalized = remoteWorkspace ? path : path.replace(/\\/g, '/');
     return normalized.replace(/\/+$/, '').split('/').pop() || path;
   };
-  const directoryIcon = remoteWorkspace ? <Icon glyph={Server} size="sm" /> : undefined;
+  const directoryIcon = remoteWorkspace ? <Icon glyph={Server} size="sm" /> : <Icon name="folder" size="sm" />;
 
   const addDirectoryButton = (
     <Button
       type="button"
-      variant="fill"
+      variant="quiet"
       size="sm"
-      leadingIcon={<Icon glyph={FolderPlus} size="sm" />}
+      leadingIcon={<Icon name="plus" size="sm" />}
       onClick={handleAddDraft}
       disabled={saving}
     >
       {t('nav.workspaces.relatedPaths.dialog.add')}
     </Button>
+  );
+
+  const tableHeader = (
+    <div role="row" className="resource-table__row resource-table__header">
+      <div role="columnheader">{t('nav.workspaces.relatedPaths.dialog.columns.directory')}</div>
+      <div role="columnheader">{t('nav.workspaces.relatedPaths.dialog.columns.description')}</div>
+      <div role="columnheader">{t('nav.workspaces.relatedPaths.dialog.columns.actions')}</div>
+    </div>
   );
 
   return (
@@ -275,7 +279,8 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
         onOpenChange={(nextOpen) => {
           if (!nextOpen && !saving) onClose();
         }}
-        size="md"
+        size="xl"
+        className="workspace-related-paths-dialog__modal"
       >
         <DialogHeader>
           <DialogHeading>
@@ -297,46 +302,33 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
             data-openbitfun-part="root"
             aria-busy={saving}
           >
-            <Card appearance="neutral" radius="lg">
-              <CardBody padding="md" className="workspace-related-paths-dialog__folders">
-                <div className="workspace-related-paths-dialog__add">{addDirectoryButton}</div>
-                <ProjectFolderList label={t('nav.workspaces.relatedPaths.dialog.title')}>
-                  <ProjectFolderItem
-                    name={workspace.name}
-                    path={workspace.rootPath}
-                    leading={directoryIcon}
-                    actions={<StatusPill tone="neutral">{t('nav.workspaces.relatedPaths.dialog.primaryDirectory')}</StatusPill>}
-                  />
-                  {drafts.map((draft, index) => (
-                    <ProjectFolderItem
-                      key={draft.id}
-                      name={directoryName(draft.path) || t('nav.workspaces.relatedPaths.dialog.itemLabel', { index: index + 2 })}
-                      path={draft.path}
-                      leading={directoryIcon}
-                      editorId={`related-directory-${draft.id}`}
-                      actions={(
-                        <>
-                          <IconButton
-                            aria-label={t('actions.edit')}
-                            aria-expanded={editingDraftId === draft.id}
-                            aria-controls={`related-directory-${draft.id}`}
-                            icon={<Icon name="edit" size="sm" />}
-                            size="xs"
-                            onClick={() => setEditingDraftId(current => current === draft.id ? null : draft.id)}
-                            disabled={saving}
-                          />
-                          <IconButton
-                            aria-label={t('newProject.removeFolder', { name: directoryName(draft.path) })}
-                            icon={<Icon name="xmark" size="sm" />}
-                            size="xs"
-                            onClick={() => handleRemoveDraft(draft.id)}
-                            disabled={saving}
-                          />
-                        </>
-                      )}
-                    >
-                      {editingDraftId === draft.id && (
-                        <>
+            <div className="workspace-related-paths-dialog__toolbar">{addDirectoryButton}</div>
+            <div className="workspace-related-paths-dialog__list">
+              <div role="table" className="workspace-related-paths-dialog__table" aria-label={t('nav.workspaces.relatedPaths.dialog.title')}>
+                {tableHeader}
+
+                <div role="row" className="resource-table__row workspace-related-paths-dialog__row">
+                  <DirectoryCells name={workspace.name} path={workspace.rootPath} icon={directoryIcon}
+                    actions={<StatusPill tone="neutral">{t('nav.workspaces.relatedPaths.dialog.primaryDirectory')}</StatusPill>} />
+                </div>
+                {drafts.map((draft, index) => (
+                  <React.Fragment key={draft.id}>
+                    <div role="row" className="resource-table__row workspace-related-paths-dialog__row" data-editing={editingDraftId === draft.id}>
+                      <DirectoryCells
+                        name={directoryName(draft.path) || t('nav.workspaces.relatedPaths.dialog.itemLabel', { index: index + 2 })}
+                        path={draft.path} description={draft.description} icon={directoryIcon}
+                        actions={<>
+                          <IconButton aria-label={t('actions.edit')} aria-expanded={editingDraftId === draft.id}
+                            aria-controls={`related-directory-${draft.id}`} icon={<Icon name="edit" size="sm" />} size="sm"
+                            onClick={() => setEditingDraftId(current => current === draft.id ? null : draft.id)} disabled={saving} />
+                          <IconButton aria-label={t('newProject.removeFolder', { name: directoryName(draft.path) })}
+                            icon={<Icon name="delete" size="sm" />} size="sm" tone="danger"
+                            onClick={() => handleRemoveDraft(draft.id)} disabled={saving} />
+                        </>} />
+                    </div>
+                    {editingDraftId === draft.id && <div role="row" className="resource-table__row resource-table__details workspace-related-paths-dialog__editor-row">
+                      <div role="cell" aria-colspan={3}>
+                        <div className="workspace-related-paths-dialog__editor" id={`related-directory-${draft.id}`}>
                           <Field
                             label={t('nav.workspaces.relatedPaths.dialog.pathPlaceholder')}
                             controlWidth="fill"
@@ -374,13 +366,14 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
                               variant="outlined"
                             />
                           </Field>
-                        </>
-                      )}
-                    </ProjectFolderItem>
-                  ))}
-                </ProjectFolderList>
-              </CardBody>
-            </Card>
+                        </div>
+                      </div>
+                    </div>}
+                  </React.Fragment>
+                ))}
+
+              </div>
+            </div>
 
             {externalReferencesLoading && (
               <LoadingState size="sm" role="status">
@@ -395,20 +388,18 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
                 {externalReferencesFailed && (
                   <Alert tone="warning" role="status" message={t('nav.workspaces.relatedPaths.messages.externalLoadFailed')} />
                 )}
-                {visibleExternalReferences.map(reference => (
-                  <Card key={reference.stableKey} padding="sm" gap="sm">
-                    <CardHeader
-                      title={<OverflowText>@{reference.alias}</OverflowText>}
-                      actions={<StatusPill tone="neutral">{reference.sourceDisplayName}</StatusPill>}
-                    />
-                    <CardBody>
-                      <div className="workspace-related-paths-dialog__external-path">{reference.path}</div>
-                      {reference.description && (
-                        <div className="workspace-related-paths-dialog__external-description">{reference.description}</div>
-                      )}
-                    </CardBody>
-                  </Card>
-                ))}
+                {visibleExternalReferences.length > 0 && <div className="workspace-related-paths-dialog__list">
+                  <div role="table" className="workspace-related-paths-dialog__table" aria-label={t('nav.workspaces.relatedPaths.dialog.externalHeading')}>
+                    {tableHeader}
+
+                    {visibleExternalReferences.map(reference => <div role="row" key={reference.stableKey} className="resource-table__row workspace-related-paths-dialog__row">
+                      <DirectoryCells name={`@${reference.alias}`} path={reference.path} description={reference.description}
+                        icon={<Icon name="folder" size="sm" />}
+                        actions={<StatusPill tone="neutral">{reference.sourceDisplayName}</StatusPill>} />
+                    </div>)}
+
+                  </div>
+                </div>}
                 {externalReferenceDiagnostics.length > 0 && (
                   <Disclosure
                     presentation="native"
@@ -456,6 +447,8 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
             </Button>
           </div>
         </DialogFooter>
+        {isOpen && adding && <WorkspaceRelatedPathAddDialog workspace={workspace} isOpen onClose={() => setAdding(false)}
+          onAdd={directory => { setDrafts(current => [...current, createDraft(directory)]); setError(null); }} />}
       </Dialog>
 
       {remoteWorkspace && connectionId && browsingIndex !== null ? (
@@ -474,5 +467,32 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
     </>
   );
 };
+
+function DirectoryCells({ name, path, description, icon, actions }: {
+  name: string;
+  path: string;
+  description?: string;
+  icon: React.ReactNode;
+  actions: React.ReactNode;
+}) {
+  return <>
+    <div role="cell" className="workspace-related-paths-dialog__directory">
+      <div className="workspace-related-paths-dialog__identity">
+        <span className="workspace-related-paths-dialog__icon" aria-hidden="true">{icon}</span>
+        <div className="workspace-related-paths-dialog__copy">
+          <OverflowText className="workspace-related-paths-dialog__name">{name}</OverflowText>
+          {path && <OverflowText className="workspace-related-paths-dialog__path" title={path}>{path}</OverflowText>}
+        </div>
+      </div>
+    </div>
+    <div role="cell" className="workspace-related-paths-dialog__description">{description || '—'}</div>
+    <div role="cell" className="workspace-related-paths-dialog__actions"><div>{actions}</div></div>
+  </>;
+}
+
+
+export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogProps> = props => props.initialAdd
+  ? <WorkspaceRelatedPathAddDialog workspace={props.workspace} isOpen={props.isOpen} onClose={props.onClose} />
+  : <WorkspaceRelatedPathsManager {...props} />;
 
 export default WorkspaceRelatedPathsDialog;

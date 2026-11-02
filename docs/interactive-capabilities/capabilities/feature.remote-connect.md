@@ -19,11 +19,11 @@ Connect to this host from mobile, a bot, or another OpenBitFun device to inspect
 
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择局域网或官方 Relay
   - Choose LAN or the official Relay
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 启动、停止 Remote Connect 并查看实时连接状态和设备信息
+- **智能体可直接控制 / Direct Agent control** · 启动、停止 Remote Connect 并查看实时连接状态和设备信息
   - Start or stop Remote Connect and inspect live status and device information
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看局域网 IP、网络信息与可分享的连接配置
   - Inspect LAN IP, network details, and shareable connection configuration
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 配置飞书、Telegram、微信等 Bot 并单独停止 Bot
+- **智能体可直接控制 / Direct Agent control** · 配置飞书、Telegram、微信等 Bot 并单独停止 Bot
   - Configure Feishu, Telegram, WeChat, and other bots, and stop a bot independently
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 使用 GitHub 登录、退出并查看身份状态
   - Sign in with GitHub, sign out, and inspect identity status
@@ -47,7 +47,13 @@ Connect to this host from mobile, a bot, or another OpenBitFun device to inspect
 
 | 操作 / Action | 中文说明 | English description |
 | --- | --- | --- |
-| 打开对应界面 / Open the UI | 进入 OpenBitFun 中对应的功能界面。 | Open the matching feature in OpenBitFun. |
+| 查看远控状态 / Inspect Remote Connect status | 读取当前执行主机的监听、配对、停用与恢复错误；不返回凭据，监听任务存活不等于消息已完成往返。 | Read listener, pairing, disabled and restore-error state on the executing host without credentials. A live listener task does not prove a message round trip. |
+| 启动远控渠道 / Start a Remote Connect channel | 启动指定机器人或手机网页远控。CLI 自动启动 daemon，退出当前聊天后继续监听。新机器人需将返回的配对码发给机器人；CLI 不支持局域网 Relay。 | Start the selected bot or Mobile Web. CLI starts its daemon and keeps listening after this chat exits. Send the returned pairing code to a new bot. CLI does not host a LAN Relay. |
+| 停用远控渠道 / Stop a Remote Connect channel | 停用选定渠道并保留配置和会话。机器人停用状态跨重启保留。关闭手机网页会同时断开该主机的 Peer 设备路由，机器人保持运行。 | Stop the selected channel while retaining configuration and sessions. Bot disablement survives restart. Stopping Mobile Web also disconnects Peer routing on this host; bots keep running. |
+| 从主机凭据文件配置机器人 / Configure a bot from a private host credential file | 读取执行主机上用户提供的私有 JSON 凭据文件并保存配置；不会自动启动。文件包含 bot_type 和对应凭据字段，需绝对路径和仅所有者可读权限；不要把凭据贴到聊天中。远程工作区路径不能用作主机凭据路径。 | Load a user-supplied private JSON BotConfig file on the executing host, with bot_type and provider credential fields; save without starting. Requires an absolute host path and owner-only permissions. Do not paste credentials into chat or use a remote-workspace path. |
+| 开始微信扫码登录 / Begin WeChat QR login | 生成微信登录二维码。CLI TUI 在工具卡片中直接显示 qrTerminal，无需模型重写；其他终端逐字显示，图形界面显示 qrImageUrl，再用 sessionKey 轮询。扫码本身尚未完成机器人监听和配对。 | Create a WeChat login QR. CLI TUI renders qrTerminal in the tool card without model transcription; other terminals show it verbatim and graphical surfaces show qrImageUrl. Poll using sessionKey; scanning alone does not complete listening and pairing. |
+| 完成微信登录并启动监听 / Complete WeChat login and start listening | 轮询同一登录会话。确认后在主机保存凭据并启动监听，向用户展示返回的机器人配对码。凭据不会返回给模型。 | Poll the same login session. Confirmation saves credentials on the host and starts listening; show the returned bot pairing code. Credentials are never returned to the model. |
+| 设置机器人详细输出 / Set bot verbose output | 切换所有机器人的详细输出模式并保存。 | Persist verbose output mode for all bot channels. |
 
 ## 可配置选项 / Configurable options
 
@@ -63,6 +69,12 @@ Connect to this host from mobile, a bot, or another OpenBitFun device to inspect
   - “I want to configure mobile remote control”
 - “带我管理已连接设备”
   - “Take me to connected-device management”
+- “启动微信机器人并持续监听消息”
+  - “Start the WeChat bot and keep listening”
+- “关闭 Telegram 机器人”
+  - “Stop the Telegram bot”
+- “开启手机网页远控”
+  - “Enable Mobile Web remote control”
 
 智能体会先查找相关功能或设置，确认目标后再替你打开、执行或修改。完整能力目录不会预先塞进对话上下文。
 

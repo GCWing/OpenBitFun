@@ -171,6 +171,19 @@ impl Tool for AgentSpawnTool {
         Self::agent_spawn_input_schema()
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"const": "started"},
+                "agent_id": {"type": "string"},
+                "bg_task_id": {"type": "string"}
+            },
+            "required": ["status", "agent_id", "bg_task_id"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -312,6 +325,19 @@ impl Tool for AgentSendInputTool {
 
     fn input_schema(&self) -> Value {
         Self::agent_send_input_schema()
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"const": "started"},
+                "agent_id": {"type": "string"},
+                "bg_task_id": {"type": "string"}
+            },
+            "required": ["status", "agent_id", "bg_task_id"],
+            "additionalProperties": false
+        })
     }
 
     fn is_readonly(&self) -> bool {

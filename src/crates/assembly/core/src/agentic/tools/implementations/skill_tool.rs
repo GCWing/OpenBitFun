@@ -148,6 +148,26 @@ impl Tool for SkillTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "skill_name": {"type": "string"},
+                "skill_key": {"type": "string"},
+                "source_slot": {"type": "string"},
+                "source_id": {"type": "string"},
+                "source_label": {"type": "string"},
+                "description": {"type": "string"},
+                "location": {"type": "string"},
+                "content": {"type": "string"},
+                "compatibility_warnings": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["success", "skill_name", "skill_key", "content"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

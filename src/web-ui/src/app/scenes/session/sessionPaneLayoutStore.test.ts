@@ -8,6 +8,19 @@ function preferences(values: Record<string, string> = {}) {
 }
 
 describe('workbench pane layout compatibility', () => {
+  it('reveals background output only when its owning session is activated', () => {
+    const store = createSessionPaneLayoutStore(preferences());
+    const pane = store.getState();
+    pane.activate('local', 'b');
+    const activeKey = store.getState().activeKey;
+    pane.showContentForSession('local', 'a');
+    expect(store.getState().activeKey).toBe(activeKey);
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    pane.activate('local', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('split');
+    pane.activate('peer', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+  });
   it('applies the local display preference immediately, retaining device modes and separate widths', () => {
     const storage = preferences({ [STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH]: '640' });
     const store = createSessionPaneLayoutStore(storage);
@@ -63,7 +76,7 @@ describe('workbench pane layout compatibility', () => {
     expect(storage.setItem.mock.calls.some(([key]) => key === STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH)).toBe(false);
   });
 
-  it('keeps mode across sessions on one device and restores each device independently', () => {
+  it('remembers the open state per session while sharing geometry across sessions', () => {
     const storage = preferences();
     const store = createSessionPaneLayoutStore(storage);
     const pane = store.getState();
@@ -76,7 +89,7 @@ describe('workbench pane layout compatibility', () => {
     expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
     pane.showContent();
     pane.activate('local', 'b');
-    expect(selectSessionPaneMode(store.getState())).toBe('content-only');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
     pane.activate('local', 'a');
     expect(selectSessionPaneMode(store.getState())).toBe('content-only');
     pane.activate('peer', 'a');
@@ -84,6 +97,48 @@ describe('workbench pane layout compatibility', () => {
     const reopened = createSessionPaneLayoutStore(storage).getState();
     expect(reopened).toMatchObject({ contentSide: 'left', preferredRightPaneWidth: 720 });
     expect(selectSessionPaneMode(reopened)).toBe('chat-only');
+  });
+
+  it('does not open the pane in a session because a neighbouring session had it open', () => {
+    const store = createSessionPaneLayoutStore(preferences());
+    const pane = store.getState();
+    pane.activate('local', 'with-pane');
+    pane.showContent();
+    expect(selectSessionPaneMode(store.getState())).toBe('split');
+    pane.activate('local', 'never-opened');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    pane.activate('local', 'with-pane');
+    expect(selectSessionPaneMode(store.getState())).toBe('split');
+  });
+
+  it('keeps session memories of one surface apart without leaking the empty workbench state', () => {
+    const store = createSessionPaneLayoutStore(preferences());
+    const pane = store.getState();
+    pane.showContent();
+    expect(selectSessionPaneMode(store.getState())).toBe('split');
+    pane.activate('local', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    pane.activate('local', null);
+    expect(selectSessionPaneMode(store.getState())).toBe('split');
+    pane.activate('peer', null);
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    pane.activate('local', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+  });
+
+  it('drops every surface session memory on a device reset', () => {
+    const store = createSessionPaneLayoutStore(preferences());
+    const pane = store.getState();
+    pane.activate('local', 'a');
+    pane.showContent();
+    pane.activate('peer', 'a');
+    pane.showContent();
+    pane.resetSessionMemory();
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    pane.activate('local', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    pane.activate('peer', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
   });
 
   it('normalizes contradictory legacy flags in one update and retains a readable legacy shape', () => {

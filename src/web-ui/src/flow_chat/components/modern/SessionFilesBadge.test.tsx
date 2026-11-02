@@ -10,6 +10,7 @@ import { notificationService } from '../../../shared/notification-system';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
+  quickActions: [] as Array<{ id: string; label: string; prompt: string; enabled: boolean }>,
   files: [] as Array<{ filePath: string; sessionId: string }>,
   getSessionFileDiffStats: vi.fn(),
   getOperationDiff: vi.fn(),
@@ -25,8 +26,9 @@ vi.mock('react-i18next', () => ({
     type: '3rdParty',
     init: vi.fn(),
   },
-  useTranslation: () => ({
+  useTranslation: (namespace: string) => ({
     t: (key: string, options?: Record<string, unknown>) => {
+      if (namespace === 'settings/quick-actions' && key === 'quickActions.defaults.commit.label') return '提交';
       const messages: Record<string, string> = {
         'sessionFilesBadge.actionsButton': 'Actions',
         'sessionFilesBadge.actionsMenuHint': 'Quick actions',
@@ -67,7 +69,7 @@ vi.mock('../../../shared/utils/tabUtils', () => ({
   createDiffEditorTab: vi.fn(),
 }));
 
-vi.mock('../../../infrastructure/api', () => ({
+vi.mock('../../../infrastructure/api/service-api/SnapshotAPI', () => ({
   snapshotAPI: {
     getSessionFileDiffStats: mocks.getSessionFileDiffStats,
     getOperationDiff: mocks.getOperationDiff,
@@ -131,7 +133,7 @@ vi.mock('../../hooks/useSessionStateMachine', () => ({
 vi.mock('@/infrastructure/config/services/AIExperienceConfigService', () => ({
   DEFAULT_QUICK_ACTIONS: [{ id: 'fixture-default', label: 'Default fixture action', prompt: 'fixture', enabled: true }],
   aiExperienceConfigService: {
-    getSettings: () => ({ quick_actions: [] }),
+    getSettings: () => ({ quick_actions: mocks.quickActions }),
     addChangeListener: (listener: (settings: { quick_actions: unknown[] }) => void) => {
       mocks.settingsListeners.add(listener);
       return () => mocks.settingsListeners.delete(listener);
@@ -139,9 +141,6 @@ vi.mock('@/infrastructure/config/services/AIExperienceConfigService', () => ({
   },
 }));
 
-vi.mock('@/infrastructure/config/services/quickActionLocalization', () => ({
-  resolveQuickActionText: vi.fn(),
-}));
 
 vi.mock('../../utils/deepReviewCapacityGuard', () => ({
   deriveDeepReviewSessionConcurrencyGuard: vi.fn(),
@@ -167,6 +166,7 @@ describe('SessionFilesBadge', () => {
     container = dom.window.document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);
 
+    mocks.quickActions = [];
     mocks.files = [
       { filePath: 'src/current-session.ts', sessionId: 'session-1' },
       { filePath: 'src/stale-session.ts', sessionId: 'session-1' },
@@ -268,6 +268,20 @@ describe('SessionFilesBadge', () => {
     expect(dom.window.document.body.textContent).not.toContain('Deep review');
     // The persisted [] means the user removed all quick actions.
     expect(dom.window.document.body.textContent).not.toContain('Default fixture action');
+  });
+
+  it('loads built-in action names from their owning namespace and retains custom names', async () => {
+    mocks.quickActions = [
+      { id: 'commit', label: 'Commit', prompt: 'Commit all current code changes', enabled: true },
+      { id: 'custom', label: 'My workflow', prompt: 'custom task', enabled: true },
+    ];
+    await act(async () => { root.render(<SessionFilesBadge sessionId="session-1" />); });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.session-files-badge__review-btn')!.click();
+    });
+    expect(dom.window.document.body.textContent).toContain('提交');
+    expect(dom.window.document.body.textContent).toContain('My workflow');
+    expect(dom.window.document.body.textContent).not.toContain('Commit');
   });
 
   it('shows a localized error when Review cannot be prepared', async () => {

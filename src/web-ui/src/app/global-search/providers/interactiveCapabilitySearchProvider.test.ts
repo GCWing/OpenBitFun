@@ -1,9 +1,19 @@
+import en from '@/locales/en-US/scenes/capabilities.json';
+import cn from '@/locales/zh-CN/scenes/capabilities.json';
+import tw from '@/locales/zh-TW/scenes/capabilities.json';
 import { describe, expect, it } from 'vitest';
 import { INTERACTIVE_CAPABILITY_CATALOG } from '../interactiveCapabilityCatalog';
 import type { GlobalSearchRequest } from '../types';
 import { interactiveCapabilitySearchProvider } from './interactiveCapabilitySearchProvider';
 
-function request(query: string): GlobalSearchRequest {
+const resources = { 'en-US': en, 'zh-CN': cn, 'zh-TW': tw };
+function translate(locale: keyof typeof resources, key: string): string {
+  const value = key.split('.').reduce<unknown>((current, segment) =>
+    current && typeof current === 'object' ? (current as Record<string, unknown>)[segment] : undefined, resources[locale]);
+  expect(typeof value, `${locale}:${key}`).toBe('string');
+  return String(value);
+}
+function request(query: string, locale: keyof typeof resources = 'en-US'): GlobalSearchRequest {
   return {
     rawQuery: query,
     query,
@@ -12,11 +22,47 @@ function request(query: string): GlobalSearchRequest {
     currentWorkspace: null,
     limitPerGroup: 20,
     tCommon: (key) => key,
+    tCapabilities: key => translate(locale, key),
     tSettings: (key) => key,
   };
 }
 
 describe('interactiveCapabilitySearchProvider', () => {
+  it.each(['en-US', 'zh-CN', 'zh-TW'] as const)('uses %s display labels for both English and Chinese queries', async locale => {
+    const labels: string[] = [];
+    for (const query of ['terminal', '终端']) {
+      const result = await interactiveCapabilitySearchProvider.search(request(query, locale), new AbortController().signal);
+      const terminal = result.items.find(item => item.target.kind === 'capability' && item.target.capabilityId === 'feature.terminal')!;
+      labels.push(terminal.title);
+      expect(terminal.context).not.toContain('feature.');
+      expect(terminal.badge).toBe(translate(locale, 'search.kinds.feature'));
+    }
+    expect(labels[0]).toBe(labels[1]);
+    expect(labels[0]).toBe(translate(locale, 'search.capabilities.feature.terminal.title'));
+  });
+
+  it('provides translated labels for every catalog target and subview', () => {
+    for (const locale of Object.keys(resources) as Array<keyof typeof resources>) {
+      for (const capability of INTERACTIVE_CAPABILITY_CATALOG.capabilities) {
+        translate(locale, `search.capabilities.${capability.id}.title`);
+        translate(locale, `search.capabilities.${capability.id}.summary`);
+        translate(locale, `search.categories.${capability.categoryId}`);
+        for (const item of capability.items) translate(locale, `search.capabilities.${capability.id}.items.${item.id}`);
+      }
+    }
+  });
+
+  it.each(['en-US', 'zh-CN', 'zh-TW'] as const)('discovers image generation with a localized %s label', async locale => {
+    const result = await interactiveCapabilitySearchProvider.search(
+      request('generate_image', locale),
+      new AbortController().signal,
+    );
+    const imageGeneration = result.items.find(item => item.target.kind === 'capability'
+      && item.target.capabilityId === 'feature.ai-assistant');
+    expect(imageGeneration?.target).toMatchObject({ kind: 'capability', itemId: 'image-generation' });
+    expect(imageGeneration?.subtitle).toBe(translate(locale, 'search.capabilities.feature.ai-assistant.items.image-generation'));
+  });
+
   it('restores accelerated search in the settings catalog', () => {
     const capability = INTERACTIVE_CAPABILITY_CATALOG.capabilities.find(
       ({ id }) => id === 'setting.workspace.session',
@@ -102,9 +148,9 @@ describe('interactiveCapabilitySearchProvider', () => {
         && item.target.capabilityId === 'feature.browser');
       expect(browser).toBeDefined();
       expect(browser?.subtitle.toLowerCase()).toContain(
-        query === '元素选择器' ? '元素选择器' : 'element picker',
+        'element picker',
       );
-      expect(browser?.context).toContain('feature.browser:element-picker');
+      expect(browser?.context).toBe('Projects & development');
     }
   });
 
@@ -128,6 +174,12 @@ describe('interactiveCapabilitySearchProvider', () => {
         request(acceptance.query),
         new AbortController().signal,
       );
+      // Git remains in the host discovery contract, but no longer has a Web UI panel entry.
+      if (acceptance.expectedFirstCapabilityId === 'feature.git') {
+        expect(result.items.some(item => item.target.kind === 'capability'
+          && item.target.capabilityId === 'feature.git')).toBe(false);
+        continue;
+      }
       const ranked = [...result.items].sort((left, right) => right.score - left.score);
       expect(
         ranked[0]?.target.kind === 'capability' ? ranked[0].target.capabilityId : undefined,

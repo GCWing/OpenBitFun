@@ -150,6 +150,8 @@ async fn runtime_delegates_narrow_session_operations_to_registered_ports() {
             workspace_path: Some("D:/workspace/project".to_string()),
             remote_connection_id: None,
             remote_ssh_host: None,
+            include_system_prompt_preview: false,
+            context_preview_category: None,
             include_hidden_subagents: true,
         })
         .await

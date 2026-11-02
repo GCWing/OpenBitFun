@@ -37471,7 +37471,8 @@ function installAgentBackend(app) {
         sessionName: "PPT Live",
         displayText: options.displayText || input.instruction,
         sessionId: options.sessionId,
-        appDataWorkspace: options.appDataWorkspace
+        appDataWorkspace: options.appDataWorkspace,
+        imageContexts: options.imageContexts
       });
       if (!result?.sessionId || !result?.turnId) {
         throw new Error("PPT Live agent backend did not return sessionId/turnId");
@@ -38448,7 +38449,7 @@ function isStarterDeck2() {
 function hasUsableDeckForRevision() {
   return Array.isArray(state.slides) && state.slides.length > 0 && !isDefaultDraft() && !isStarterDeck2() && !isRecoverableWorkingOnlyState(state);
 }
-async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction) {
+async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction, imageContexts) {
   if (topicChangeInFlight || promptSubmitGuard || backendRunInFlight) {
     setStatus(translate("bubbleBusy"));
     throw new Error(translate("bubbleBusy"));
@@ -38469,7 +38470,8 @@ async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction
     await runPptLiveBackend("auto", instruction, {
       includeTopic: !reviseExistingDeck,
       persistBeforeRun: true,
-      displayText
+      displayText,
+      imageContexts
     });
     return;
   } catch (error2) {
@@ -38970,7 +38972,8 @@ async function runPptLiveBackend(operation, instruction, options = {}) {
       await persist(true);
     }
     await runCoworkDeckGeneration(operation, instruction, {
-      displayText: options.displayText
+      displayText: options.displayText,
+      imageContexts: options.imageContexts
     });
   } finally {
     backendRunInFlight = false;
@@ -38998,7 +39001,8 @@ async function executeBackendTurn(requestInput, hooks = {}, options = {}) {
       idempotencyKey: `ppt-live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       sessionId: options.sessionId || void 0,
       appDataWorkspace: options.appDataWorkspace || void 0,
-      displayText: options.displayText || requestInput.instruction
+      displayText: options.displayText || requestInput.instruction,
+      imageContexts: options.imageContexts
     });
     sessionId = result?.sessionId || null;
     turnId = result?.turnId || result?.actionRunId || null;
@@ -39478,6 +39482,9 @@ async function runCoworkDeckGeneration(operation, instruction, options = {}) {
           sessionId: retrySession?.id || void 0,
           appDataWorkspace: retrySession?.project?.workspaceSubdir,
           resultKind: project ? "text" : void 0,
+          // Keep the same references during recovery; the Runtime persists
+          // them by content so a retry cannot lose or duplicate stored files.
+          imageContexts: options.imageContexts,
           displayText: attempt === 1 ? options.displayText || instruction : translate("generationRetryDisplayText", { attempt, max: maxAttempts })
         });
         retrySession.id = sessionId || retrySession.id;
@@ -41178,6 +41185,6 @@ runtime().chat?.onUserMessage?.((payload) => {
   if (topicChangeInFlight || payload?.sessionId && payload.sessionId !== state.agentSession?.id) {
     throw new Error(translate("topicSessionChanged"));
   }
-  return submitInstruction(text2, displayText);
+  return submitInstruction(text2, displayText, payload?.imageContexts);
 });
 init();

@@ -108,6 +108,7 @@ impl From<MessageDelta> for UnifiedResponse {
                 .map(map_anthropic_stop_reason),
             finish_reason: value.delta.stop_reason,
             provider_metadata: None,
+            response_model: None,
             model_response_replay: None,
         }
     }

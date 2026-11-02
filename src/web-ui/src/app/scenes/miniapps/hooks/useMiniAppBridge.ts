@@ -30,6 +30,7 @@ import {
   type MiniAppComposerMessageDetail,
 } from '../miniAppStore';
 import {
+  acceptMiniAppComposerMessage,
   completeMiniAppComposerMessage,
   rejectPendingMiniAppComposerMessages,
 } from '../miniAppComposerMessages';
@@ -38,6 +39,7 @@ import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { beginMiniAppOperation, isMiniAppClosing, trackMiniAppStream } from '../miniAppLifecycle';
+import type { ImageContextData } from '@/infrastructure/api/service-api/ImageContextTypes';
 
 interface JSONRPC {
   jsonrpc?: string;
@@ -387,6 +389,10 @@ export function useMiniAppBridge(
             return;
           }
           if (method === 'agent.run') {
+            if (params.imageContexts !== undefined && !Array.isArray(params.imageContexts)) {
+              replyError('agent.run: imageContexts must be an array when provided.');
+              return;
+            }
             if (params.contextFiles !== undefined && !Array.isArray(params.contextFiles)) {
               replyError('agent.run: contextFiles must be an array when provided.');
               return;
@@ -430,9 +436,13 @@ export function useMiniAppBridge(
                 contextFiles: params.contextFiles as
                   | Array<{ name: string; content: string }>
                   | undefined,
+                imageContexts: params.imageContexts as ImageContextData[] | undefined,
               },
             );
             agentSessionIdsRef.current.add(result.sessionId);
+            if (typeof params.chatRequestId === 'string') {
+              acceptMiniAppComposerMessage(composerTokenRef.current, params.chatRequestId);
+            }
             reply(result);
             return;
           }
@@ -713,7 +723,8 @@ export function useMiniAppBridge(
       }
       if (typeof detail.text !== 'string') return;
       const currentClaim = useMiniAppStore.getState().composerClaims[app.id];
-      if (detail.sessionId && currentClaim?.sessionId !== detail.sessionId) {
+      if (currentClaim?.token !== composerTokenRef.current
+        || (detail.sessionId && currentClaim?.sessionId !== detail.sessionId)) {
         if (detail.requestId) {
           completeMiniAppComposerMessage(
             composerTokenRef.current,
@@ -727,6 +738,7 @@ export function useMiniAppBridge(
         text: detail.text,
         ...(detail.displayText !== undefined ? { displayText: detail.displayText } : {}),
         ...(detail.contexts !== undefined ? { contexts: detail.contexts } : {}),
+        ...(detail.imageContexts !== undefined ? { imageContexts: detail.imageContexts } : {}),
         ...(detail.composerPresentation !== undefined
           ? { composerPresentation: detail.composerPresentation }
           : {}),

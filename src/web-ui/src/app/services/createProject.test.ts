@@ -29,6 +29,16 @@ describe('project composition', () => {
     expect(updateWorkspaceInfo).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])('rejects an assistant root instead of renaming it or reporting project success (remote=%s)', async remote => {
+    openWorkspace.mockResolvedValue(record({ workspaceKind: 'assistant' }));
+    const openRemote = vi.fn().mockResolvedValue(record({ workspaceKind: 'assistant' }));
+    const folder = { path: '/srv/assistant', ...(remote ? { remote: { connectionId: 'ssh-1', connectionName: 'Host' } } : {}) };
+    await expect(createProject({ name: 'New project', folders: [folder] }, openRemote))
+      .rejects.toMatchObject({ name: 'AssistantProjectFolderError' });
+    expect(updateWorkspaceInfo).not.toHaveBeenCalled();
+    expect(createDirectory).not.toHaveBeenCalled();
+  });
+
   it('persists a unified name and associated folders together without discarding old associations', async () => {
     openWorkspace.mockResolvedValue(record({ relatedPaths: [{ path: '/srv/docs', description: 'Docs' }] }));
     await createProject({ name: '  Product  ', folders: [

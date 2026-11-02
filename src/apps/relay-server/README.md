@@ -164,6 +164,12 @@ account APIs are enabled. Published Pages must use an origin separate from the
 account sign-in surface. Without both isolated origins, the standalone host
 returns 503 for `/api/pages`, `/api/page-auth`, and `/p` routes.
 
+`POST /api/pages/check-files` advertises `metadata_preconditions_supported`.
+Content updates use optional `expected_visibility` and `expected_title` on
+version freeze to reject concurrent metadata changes under the Page write lease.
+Older clients omit these fields and retain their existing publishing behavior;
+new clients require this capability before attempting a content-only update.
+
 Application limits do not replace network-layer protection. Public deployment
 also requires bounded proxy connections and request bodies, TLS, upstream DDoS
 protection, and alerts for saturation, rejected requests, and disk growth.

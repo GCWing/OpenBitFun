@@ -1170,12 +1170,11 @@ jobs:
           echo "Beta channel manifest did not converge to ${CANDIDATE_VERSION}." >&2
           exit 1
 
-      # Nudge the openbitfun.com mirror to sync now instead of on its next
-      # 10-minute cron tick. Until the mirror has these bytes, CN clients have
+      # Nudge the configured download mirror to sync now instead of on its next
+      # 10-minute cron tick. Until the mirror has these bytes, clients have
       # only the GitHub origin to fall back to. Best effort: the cron run is
       # still the source of truth, so a failed or unconfigured ping never fails
       # the release. Receiver: scripts/openbitfun-release-sync.sh.
-      # Host restore: deploy/openbitfun-host/README.md.
       - name: Request openbitfun mirror sync
         if: github.repository == 'GCWing/OpenBitFun'
         continue-on-error: true

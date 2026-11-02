@@ -247,6 +247,15 @@ impl Tool for AnalyzeImageTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {"analysis": {"type": "string"}},
+            "required": ["analysis"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

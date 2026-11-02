@@ -14,7 +14,7 @@ import TodoEditor from './TodoEditor';
 
 vi.mock('@/infrastructure/i18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key,
+    t: (key: string) => key === 'shared:agents.Standard' ? '标准' : key,
   }),
 }));
 
@@ -225,6 +225,8 @@ describeWithJsdom('TodoEditor', () => {
     expect(container.textContent).toContain('editor.smartExecution.title');
     expect(container.textContent).toContain('editor.sections.prompt');
     expect(container.querySelector('textarea')?.maxLength).toBe(1000);
+    expect(container.textContent).toContain('标准');
+    expect(container.textContent).not.toContain('Agentic');
 
     const advancedToggle = container.querySelector<HTMLButtonElement>(
       '[data-testid="todos-editor-advanced-toggle"]',

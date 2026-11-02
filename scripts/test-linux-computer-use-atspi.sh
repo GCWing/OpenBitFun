@@ -48,4 +48,4 @@ for attempt in {1..100}; do
   sleep 0.1
 done
 [[ -s "$fixture_ready" ]] || { echo "GTK fixture readiness timed out." >&2; exit 1; }
-node scripts/test-linux-computer-use-native.mjs atspi_semantic_fixture -- --ignored --nocapture --test-threads=1
+cargo test --locked -p openbitfun-computer-use --lib atspi_semantic_fixture -- --ignored --nocapture --test-threads=1

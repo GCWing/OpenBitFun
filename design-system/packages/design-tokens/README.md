@@ -82,8 +82,8 @@ box in `OverflowText`. The browser includes the selected font's ascent/descent;
 existing numeric leading roles cannot express those platform-dependent metrics.
 The outer line box retains any larger leading supplied by its owning control.
 
-`layout.searchDialog` owns the shared Lab/product search composition: 800 × 460
-when space permits, 20px inset and query-to-scope gap, and a 30px query row.
+`layout.searchDialog` owns the shared Lab/product search composition: 744 × 460
+when space permits (approximately the golden ratio), 20px inset and query-to-scope gap, and a 30px query row.
 Only the query shell scopes `control.searchField.height.sm`; general Input and Button sizes
 retain their defaults. Results scroll within the available viewport.
 

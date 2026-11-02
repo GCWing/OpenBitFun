@@ -15,6 +15,7 @@ const categoryKeys: Readonly<Record<string, MessageKey>> = {
 };
 
 const descriptionKeys: Readonly<Record<string, MessageKey>> = {
+  ColorPicker: "component.ColorPicker.description",
   MobileAvatar: "component.MobileAvatar.description",
   MobileCheckbox: "component.MobileCheckbox.description",
   MobileRadioGroup: "component.MobileRadioGroup.description",

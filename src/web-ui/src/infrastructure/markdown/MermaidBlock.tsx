@@ -35,13 +35,7 @@ export interface MermaidBlockProps {
   className?: string;
 }
 
-type RenderState = 'streaming' | 'incomplete' | 'loading' | 'rendered' | 'error';
-
-const isCodeComplete = (code: string): boolean => {
-  const trimmed = code.trim();
-  if (!trimmed) return false;
-  return /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|gitGraph|mindmap|timeline|quadrantChart)/m.test(trimmed);
-};
+type RenderState = 'streaming' | 'loading' | 'rendered' | 'error';
 
 export const MermaidBlock: React.FC<MermaidBlockProps> = ({
   code,
@@ -53,9 +47,8 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
   const cachedSvg = svgCache.get(cacheKey);
   
   const [state, setState] = useState<RenderState>(() => {
-    if (cachedSvg) return 'rendered';
     if (isStreaming) return 'streaming';
-    if (!code.trim() || !isCodeComplete(code)) return 'incomplete';
+    if (cachedSvg) return 'rendered';
     return 'loading';
   });
   const [svgContent, setSvgContent] = useState<string>(cachedSvg || '');
@@ -68,62 +61,13 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
   );
   
   const mermaidService = useRef(MermaidService.getInstance());
-  const renderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const currentCodeRef = useRef<string>('');
-
-  const renderDiagram = useCallback(async (codeToRender: string) => {
-    const trimmedCode = codeToRender.trim();
-    const key = getCacheKey(trimmedCode);
-    
-    if (!isCodeComplete(trimmedCode)) {
-      setState('incomplete');
-      return;
-    }
-
-    const cached = svgCache.get(key);
-    if (cached) {
-      setSvgContent(cached);
-      setState('rendered');
-      return;
-    }
-
-    setState('loading');
-    setError('');
-
-    try {
-      const svg = await mermaidService.current.renderDiagram(trimmedCode);
-      if (currentCodeRef.current === trimmedCode) {
-        svgCache.set(key, svg, (key.length + svg.length) * 2);
-        setSvgContent(svg);
-        setState('rendered');
-      }
-    } catch (err) {
-      if (currentCodeRef.current === trimmedCode) {
-        setError(err instanceof Error ? err.message : t('mermaidBlock.renderFailed'));
-        setState('error');
-      }
-    }
-  }, [t]);
-
   useEffect(() => {
-    const trimmedCode = code.trim();
-    currentCodeRef.current = trimmedCode;
-
-    if (renderTimeoutRef.current) {
-      clearTimeout(renderTimeoutRef.current);
-      renderTimeoutRef.current = null;
-    }
-
     if (isStreaming) {
       setState('streaming');
       return;
     }
 
-    if (!trimmedCode || !isCodeComplete(trimmedCode)) {
-      setState('incomplete');
-      return;
-    }
-
+    const trimmedCode = code.trim();
     const key = getCacheKey(trimmedCode);
     const cached = svgCache.get(key);
     if (cached) {
@@ -132,16 +76,25 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
       return;
     }
 
-    renderTimeoutRef.current = setTimeout(() => {
-      renderDiagram(trimmedCode);
+    // The Mermaid parser owns supported syntax. A completed code fence must
+    // either render or report a real parse error, never wait for more content.
+    let cancelled = false;
+    setState('loading');
+    setError('');
+    const timeout = setTimeout(() => {
+      void mermaidService.current.renderDiagram(trimmedCode).then(svg => {
+        if (cancelled) return;
+        svgCache.set(key, svg, (key.length + svg.length) * 2);
+        setSvgContent(svg);
+        setState('rendered');
+      }).catch(err => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : t('mermaidBlock.renderFailed'));
+        setState('error');
+      });
     }, 200);
-
-    return () => {
-      if (renderTimeoutRef.current) {
-        clearTimeout(renderTimeoutRef.current);
-      }
-    };
-  }, [code, isStreaming, renderDiagram, currentAppearanceRevision]);
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [code, isStreaming, t, currentAppearanceRevision]);
 
   useEffect(() => {
     return mermaidAppearanceAdapter.subscribe(() => {
@@ -172,21 +125,6 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
                 <code>{code}</code>
                 <span className="streaming-cursor">█</span>
               </pre>
-            </div>
-          </div>
-        );
-
-      case 'incomplete':
-        return (
-          <div className="mermaid-block__incomplete">
-            <div data-openbitfun-component="mermaid-block" data-openbitfun-part="codePreview" className="mermaid-block__code-preview">
-              <pre data-openbitfun-component="mermaid-block" data-openbitfun-part="code" className="mermaid-code">
-                <code>{code}</code>
-              </pre>
-            </div>
-            <div data-openbitfun-component="mermaid-block" data-openbitfun-part="hint" className="mermaid-block__hint">
-              <AlertCircle size={14} />
-              <span>{t('mermaidBlock.codeIncomplete')}</span>
             </div>
           </div>
         );
@@ -246,7 +184,7 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
       case 'error':
         return (
           <div data-openbitfun-component="mermaid-block" data-openbitfun-part="error" className="mermaid-block__error">
-            <div className="mermaid-block__error-message">
+            <div className="mermaid-block__error-message" role="alert">
               <AlertCircle size={16} />
               <span>{t('mermaidBlock.renderFailed')}: {error}</span>
             </div>

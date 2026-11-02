@@ -4,6 +4,7 @@ import { PeerDeviceProvider } from '@/infrastructure/peer-device/PeerDeviceConte
 import { PeerHostInvokeBridge } from '@/infrastructure/peer-device/PeerHostInvokeBridge';
 import { PeerDirectoryPickerHost } from '@/infrastructure/peer-device/PeerDirectoryPickerHost';
 import { MiniAppPresence } from '@/app/scenes/miniapps/MiniAppPresence';
+import { MiniAppAgentSurface } from '@/app/scenes/miniapps/agent/MiniAppAgentSurface';
 
 /** Loaded only by the workbench window, never by the desktop companion. */
 export default function MainApplicationRoot() {
@@ -13,6 +14,7 @@ export default function MainApplicationRoot() {
         <PeerHostInvokeBridge />
         <PeerDirectoryPickerHost />
         <MiniAppPresence />
+        <MiniAppAgentSurface />
         <App />
       </PeerDeviceProvider>
     </WorkspaceProvider>

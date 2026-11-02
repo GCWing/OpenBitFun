@@ -87,6 +87,10 @@
       "workspaceGit": {
         "label": "Workspace & Git",
         "description": "Configure file search, commit attribution, and worktrees, and manage isolated working directories"
+      },
+      "externalImport": {
+        "label": "External import",
+        "description": "Import and manage content from other AI applications"
       }
     },
     "views": {
@@ -108,7 +112,8 @@
       "hooks": "Event Hooks",
       "pet": "Pet",
       "voice-call": "Real-time voice calls",
-      "desktop-cards": "Desktop cards"
+      "desktop-cards": "Desktop cards",
+      "sidebar-navigation": "Left sidebar"
     }
   },
   "changeGuard": {
@@ -281,7 +286,7 @@
         "toggleBoth": "Collapse All Panels"
       },
       "nav": {
-        "toggleSearch": "Open navigation search"
+        "toggleSearch": "Open global search"
       },
       "scene": {
         "focusMerged": "Switch scene",
@@ -312,7 +317,8 @@
         "stopGeneration": "Stop Generation",
         "activateInput": "Activate Input",
         "newSession": "$t(shared:sessions.new)",
-        "insertNewline": "Insert Newline in Chat Input"
+        "insertNewline": "Insert Newline in Chat Input",
+        "search": "Search this conversation"
       },
       "filetree": {
         "rename": "Rename",
@@ -340,6 +346,12 @@
       "canvas": "Active when the editor canvas or a code editor inside it has focus",
       "filetree": "Active when the file tree has focus",
       "git": "Active when the Git panel has focus"
+    },
+    "reserved": {
+      "appSwitch": "Reserved for switching applications. Choose another shortcut.",
+      "systemSearch": "Reserved for system search. Choose another shortcut.",
+      "secureAttention": "Reserved for Windows security. Choose another shortcut.",
+      "systemKey": "Uses the Windows system key. Choose another shortcut."
     }
   },
   "advanced": {

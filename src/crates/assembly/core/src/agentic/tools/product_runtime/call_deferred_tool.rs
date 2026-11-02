@@ -42,6 +42,19 @@ impl Tool for CallDeferredTool {
         call_deferred_tool_input_schema()
     }
 
+    fn output_schema(&self) -> Value {
+        serde_json::json!({
+            "anyOf": [
+                {"type": "null"},
+                {"type": "boolean"},
+                {"type": "number"},
+                {"type": "string"},
+                {"type": "array", "items": {}},
+                {"type": "object", "additionalProperties": true}
+            ]
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

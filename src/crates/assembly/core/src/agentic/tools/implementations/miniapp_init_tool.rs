@@ -18,10 +18,38 @@ const SKELETON_HTML: &str = r#"<!DOCTYPE html>
 </body>
 </html>"#;
 
-const SKELETON_UI_JS: &str = r#"// ESM module — use import, not require. Example:
-// import React from 'react';
-// const files = await app.fs.readdir('.');
-// document.getElementById('app').textContent = JSON.stringify(files, null, 2);
+const SKELETON_UI_JS: &str = r#"// ESM module — use import, not require.
+// Replace this small example with the app's business state and operations.
+// UI handlers and Agent actions must call the same functions on this instance.
+const state = { text: '' };
+const input = document.createElement('textarea');
+const labels = { 'en-US': 'Text', 'zh-CN': '文本', 'zh-TW': '文字' };
+const updateLabel = () => input.setAttribute('aria-label', labels[app.locale] || labels['en-US']);
+updateLabel();
+app.onLocaleChange?.(updateLabel);
+document.getElementById('app').appendChild(input);
+
+function setText(text) {
+  if (typeof text !== 'string' || text.length > 2048) {
+    throw new Error('text must be a string of at most 2048 characters');
+  }
+  state.text = text;
+  input.value = text;
+  return { text: state.text };
+}
+input.maxLength = 2048;
+input.addEventListener('input', () => setText(input.value));
+
+// Optional chaining keeps the UI working on older hosts without expose().
+// Register after restoring persisted state in apps that have async startup.
+app.agent?.expose?.({
+  observe: () => ({ text: state.text }),
+  actions: ['set-text'],
+  act: (action) => {
+    if (action?.type === 'set-text') return setText(action.text);
+    throw new Error('Unsupported action');
+  },
+});
 "#;
 
 const SKELETON_WORKER_JS: &str = r#"// Node.js Worker — export methods callable via app.call('methodName', params).
@@ -69,6 +97,8 @@ Input: name, description, icon, category. The tool creates the app directory and
 - manifest (meta.json), source/index.html, source/style.css, source/ui.js, source/worker.js,
   package.json, storage.json.
 
+The UI skeleton includes live state and app.agent.expose() with a shared UI/Agent operation. Replace its example with the app's actual business state and semantic actions; keep observations bounded, validate action parameters before mutation, and reject unsupported actions. Normal Agent operation must use these functions on the current instance without rewriting source or reloading it. Older hosts without expose() must retain a working UI.
+
 Returns app_id and the app root directory. Use the root directory and file names above with Read/Write/Edit to implement the app, then call FinalizeMiniApp with the returned app_id. FinalizeMiniApp recompiles the edited files, persists the new content revision, and refreshes already-open runtimes. The MiniApp uses window.app (app.fs, app.call, app.dialog, etc.) — see miniapp-dev skill for API reference."#
             .to_string())
     }
@@ -100,6 +130,18 @@ Returns app_id and the app root directory. Use the root directory and file names
                     "description": "Category: utility, media, dev, productivity. Default 'utility'."
                 }
             }
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "app_id": {"type": "string"},
+                "path": {"type": "string"}
+            },
+            "required": ["app_id", "path"],
+            "additionalProperties": false
         })
     }
 

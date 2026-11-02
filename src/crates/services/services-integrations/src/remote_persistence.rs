@@ -439,6 +439,7 @@ pub struct SavedBotConnectionRecord {
 }
 
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RemoteConnectFormStateRecord {
     pub telegram_bot_token: String,
     pub feishu_app_id: String,
@@ -459,6 +460,8 @@ pub struct BotPersistenceRecord {
     pub form_state: RemoteConnectFormStateRecord,
     #[serde(default)]
     pub verbose_mode: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_bots: Vec<String>,
 }
 
 impl std::fmt::Debug for BotPersistenceRecord {

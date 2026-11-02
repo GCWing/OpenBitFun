@@ -64,6 +64,32 @@ pub(crate) fn runtime_hook_registry() -> RuntimeHookRegistry {
         .clone()
 }
 
+/// Environment every command hook inherits from the host.
+///
+/// A Linux GUI or `.desktop` launch starts with the session `PATH`, which lacks
+/// the login-shell entries `process_manager` already merges into the app's other
+/// child processes. Hooks spawn their own command, so pass the same `PATH` here
+/// and a hook script resolves `node`/`uvx` exactly like a terminal would.
+/// macOS and Windows keep the inherited environment unchanged.
+#[cfg(target_os = "linux")]
+pub(crate) fn hook_environment_defaults() -> BTreeMap<String, String> {
+    match openbitfun_services_core::process_manager::platform_path_env() {
+        // An environment map is UTF-8; Linux PATH values are already text in
+        // every configuration the app supports.
+        Some(path) => BTreeMap::from([("PATH".to_string(), path.to_string_lossy().into_owned())]),
+        None => BTreeMap::new(),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn hook_environment_defaults() -> BTreeMap<String, String> {
+    BTreeMap::new()
+}
+
+fn hook_engine(registry: RuntimeHookRegistry) -> AgentHookEngine {
+    AgentHookEngine::with_registry(registry).with_environment_defaults(hook_environment_defaults())
+}
+
 #[cfg(feature = "opencode-plugin-host")]
 pub(crate) fn plugin_hook_registry(_workspace_scope: &str) -> RuntimeHookRegistry {
     runtime_hook_registry()
@@ -1101,7 +1127,7 @@ pub(crate) fn build_engine(paths: &[(AgentHookScope, PathBuf)]) -> AgentHookEngi
     for issue in &issues {
         warn!("Agent hook configuration issue: {issue}");
     }
-    AgentHookEngine::new(settings)
+    AgentHookEngine::new(settings).with_environment_defaults(hook_environment_defaults())
 }
 
 async fn engine_for(
@@ -1140,7 +1166,7 @@ async fn engine_for(
                 project_hooks_enabled,
                 imported_generation,
             ) {
-                return Some(AgentHookEngine::with_registry(runtime_hook_registry()));
+                return Some(hook_engine(runtime_hook_registry()));
             }
         }
     }
@@ -1203,7 +1229,7 @@ async fn engine_for(
             imported_generation,
         },
     );
-    Some(AgentHookEngine::with_registry(runtime_hook_registry()))
+    Some(hook_engine(runtime_hook_registry()))
 }
 
 fn reusable_cached_hook_source(

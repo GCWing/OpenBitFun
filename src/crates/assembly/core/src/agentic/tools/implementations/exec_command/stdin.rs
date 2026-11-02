@@ -149,6 +149,21 @@ Output is only what was produced during this tool call's wait window."#
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "wall_time_seconds": {"type": "number"},
+                "output": {"type": "string"},
+                "session_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "exit_code": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "completion": {"anyOf": [{"type": "object", "properties": {"source": {"type": "string"}, "status": {"type": "string"}}, "additionalProperties": false}, {"type": "null"}]}
+            },
+            "required": ["wall_time_seconds", "output", "session_id", "exit_code", "completion"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

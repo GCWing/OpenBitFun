@@ -118,6 +118,27 @@ text on another frame, while the row aim could still reassert itself later.
 Gestures, a superseding search request, and session teardown abandon pending
 search resolution. Search styling owns no viewport writes.
 
+**Trajectory selection uses the same one-shot owner.** The header trajectory keeps
+only bounded event summaries; hover, range brushing and search indexing never
+activate a history window or write the transcript viewport. Selection resolves a
+stable Turn/item identity, expands its group and uses `focusItem` or
+`scrollToSearchMatch`. `prepareItemNavigation` releases follow/old aims without
+claiming a reader gesture, which would outrank and refuse the requested placement.
+Both paths acknowledge a mounted target only after the viewport register permits
+positioning; trajectory selection and detail content commit on that acknowledgement.
+Item focus carries its source row/round when needed: retry
+history opens through reader state, group filters clear before materializing the
+member, and a visible collapsed card can anchor even if its body text is hidden.
+A local history window is presented before the item is aimed;
+there is no intermediate Turn scroll. Peer bodies come from the canonical record
+replica, paging only until the selected Turn is present. Device/session changes,
+a later selection and reader gestures invalidate pending navigation. Right-panel
+range endpoint actions include the originating viewport ID to isolate split chats.
+The passive item overlay covers the full target with the semantic accent surface;
+its short marker aligns to the leading tool icon, including icons in the gutter.
+Text search retains its word highlights and current-line presentation. Repeated
+focus requests have independent lifetimes, so an older timeout cannot clear a new one.
+
 **The current Turn is not always the first visible Turn.** The top alignment
 gap can leave a sliver of the preceding Turn on screen; the content-end clamp
 can leave several earlier Turns visible. `VirtualMessageList` remembers the

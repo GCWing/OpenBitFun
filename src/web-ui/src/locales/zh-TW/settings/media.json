@@ -1,0 +1,205 @@
+{
+  "title": "圖像生成",
+  "subtitle": "圖像服務與對話模型彼此獨立：無論工作階段正在使用哪個模型，生成圖片時都會使用這裡選定的服務。",
+  "loadFailed": "無法載入圖像生成設定。",
+  "retry": "重試",
+  "default": {
+    "label": "預設服務",
+    "description": "產生圖片時使用的預設模型，也可直接選擇已設定的 Codex 訂閱模型。",
+    "placeholder": "選擇圖像生成模型",
+    "unavailable": "已選擇的模型無法使用"
+  },
+  "empty": {
+    "title": "尚未設定圖像服務",
+    "description": "新增一個服務後，代理才能生成圖片；在此之前圖像生成維持不可用。"
+  },
+  "card": {
+    "defaultBadge": "預設",
+    "model": "模型",
+    "endpoint": "介面位址",
+    "toggleEnabled": "啟用此服務",
+    "apiKeyBadge": "API 金鑰",
+    "subscriptionBadge": "訂閱 · {{provider}}"
+  },
+  "actions": {
+    "add": "新增服務",
+    "delete": "刪除",
+    "cancel": "取消",
+    "save": "儲存"
+  },
+  "messages": {
+    "saved": "圖像服務設定已儲存。",
+    "saveFailed": "無法儲存圖像服務設定。",
+    "deleted": "圖像服務已刪除。"
+  },
+  "delete": {
+    "title": "刪除圖像服務",
+    "message": "確定刪除「{{name}}」嗎？已生成的圖片仍保留在磁碟上。",
+    "confirm": "刪除"
+  },
+  "dialect": {
+    "openaiImages": {
+      "name": "OpenAI Images",
+      "description": "即 `POST /images/generations` 這個 JSON 介面。適用於 OpenAI 以及大多數相容中轉服務。"
+    },
+    "dashscopeNative": {
+      "name": "通義千問原生（DashScope）",
+      "description": "阿里雲百鍊 DashScope 的多模態生成介面，供千問圖像模型使用。"
+    },
+    "chatgptCodex": {
+      "name": "ChatGPT 訂閱（Codex）",
+      "description": "使用 ChatGPT Plus / Pro / Team 訂閱出圖：請求由對話模型呼叫內建圖像工具完成，回應是串流事件。與 API 金鑰計費是兩條不同的路。"
+    }
+  },
+  "subscriptionLabels": {
+    "codex": "Codex",
+    "antigravity": "Antigravity",
+    "opencode": "OpenCode",
+    "grok": "Grok",
+    "hermes": "Hermes"
+  },
+  "wizard": {
+    "titleCreate": "新增或匯入圖像模型",
+    "titleEdit": "編輯圖像模型",
+    "guideLabel": "設定步驟",
+    "progress": "{{current}} / {{total}}",
+    "back": "上一步",
+    "next": "繼續",
+    "steps": {
+      "dialect": {
+        "label": "協定",
+        "title": "這個服務使用哪種協定？",
+        "description": "協定決定了請求內容、介面路徑和回應結構。請選擇服務商文件中標註用於圖像生成的那一種。"
+      },
+      "connection": {
+        "label": "連線",
+        "title": "位址是什麼，如何驗證？",
+        "description": "填寫服務根位址、憑證和圖像模型 ID。中轉服務必須填它自己的位址。"
+      },
+      "parameters": {
+        "label": "參數",
+        "title": "每次生成預設使用什麼參數？",
+        "description": "這裡的值作為預設值生效，單次請求可以覆寫。尺寸寫法跟隨所選的協定。"
+      },
+      "test": {
+        "label": "驗證",
+        "title": "生成一張圖片來確認設定",
+        "description": "這是唯一可靠的驗證方式：它能同時證明位址、憑證、模型和協定是相符的。"
+      }
+    },
+    "auth": {
+      "label": "驗證方式",
+      "apiKey": "API 金鑰",
+      "subscription": "訂閱登入",
+      "apiKeyHint": "使用這個服務自己的金鑰，與其他設定一起儲存在本機。",
+      "subscriptionHint": "使用已匯入的 {{provider}} 登入，請求時自動解析存取權杖。",
+      "subscriptionCaveat": "訂閱登入由服務商按其產品開放範圍授權，一般只涵蓋自家對話介面。例如 OpenAI 圖像介面要求 api.model.images.request 權限，對話類訂閱登入通常不含該權限。測試會原樣回傳服務商錯誤，此時請改用 API 金鑰。",
+      "subscriptionRouteHint": "此協定由 {{provider}} 訂閱登入驅動，權杖在請求時解析。",
+      "subscriptionRouteNote": "這條路徑消耗的是訂閱額度，不是 API 金鑰額度。位址、模型目錄與存取權杖都由訂閱登入提供，無需手動填寫；若登入失效，請先在訂閱登入處重新授權。"
+    },
+    "reuse": {
+      "label": "沿用已設定的憑證",
+      "hint": "選取一個對話模型即可複製它的金鑰與位址；選取訂閱模型則沿用該訂閱登入。儲存前請確認是否正確。",
+      "none": "不沿用"
+    },
+    "fields": {
+      "endpoint": {
+        "label": "實際請求位址",
+        "unresolved": "填寫服務位址後顯示"
+      },
+      "baseUrl": {
+        "label": "服務位址",
+        "hint": "請求會送往該位址加上 {{path}}。",
+        "subscriptionHint": "留空則使用訂閱登入回傳的位址；若該位址不提供圖像介面，請明確填寫圖像服務位址。",
+        "subscriptionRouteHint": "由訂閱登入解析提供，無法編輯。儲存後實際送往的位址以訂閱回傳值為準。"
+      },
+      "requestUrl": {
+        "label": "完整請求位址（選填）",
+        "hint": "填寫後取代「服務位址 + 介面路徑」，用於專屬執行個體或閘道。"
+      },
+      "apiKey": {
+        "label": "API 金鑰",
+        "hint": "與其他設定一起儲存在本機。"
+      },
+      "modelName": {
+        "label": "圖像模型 ID",
+        "hint": "填服務商用於圖像生成的正確模型 ID，不是對話模型。",
+        "subscriptionPlaceholder": "留空則使用帳號可用的模型",
+        "subscriptionHint": "這裡填的是驅動圖像工具的對話模型，不是圖像模型名稱；留空會依帳號可用模型自動選擇。"
+      },
+      "name": {
+        "label": "顯示名稱",
+        "hint": "可留空，預設使用模型 ID。"
+      },
+      "size": {
+        "label": "預設尺寸",
+        "hint": "尺寸按 {{dialect}} 的寫法填寫。"
+      },
+      "n": {
+        "label": "每次生成張數",
+        "hint": "取值 1 至 {{max}}。"
+      },
+      "quality": {
+        "label": "品質"
+      },
+      "background": {
+        "label": "背景"
+      },
+      "negativePrompt": {
+        "label": "反向提示詞",
+        "hint": "希望模型避免出現的內容。"
+      },
+      "promptExtend": {
+        "label": "改寫提示詞",
+        "hint": "允許服務商把簡短提示擴寫為更完整的描述。"
+      },
+      "watermark": {
+        "label": "加入浮水印"
+      }
+    },
+    "validation": {
+      "unsupportedAuth": "圖像生成暫不支援訂閱帳號池，請選擇單一帳號。",
+      "duplicate": "已存在相同的圖像生成設定，請編輯現有設定。",
+      "baseUrlInvalid": "請填寫有效的 http 或 https 位址。",
+      "modelRequired": "請填寫圖像模型 ID。",
+      "apiKeyRequired": "請填寫 API 金鑰。"
+    },
+    "test": {
+      "billed": "測試會真實生成一張圖片，服務商會正常計費。",
+      "promptLabel": "測試使用的提示詞",
+      "run": "生成測試圖片",
+      "running": "生成中…",
+      "success": "已生成圖片，耗時 {{time}} 毫秒。",
+      "failed": "測試失敗。",
+      "previewAlt": "測試生成的圖片"
+    },
+    "errors": {
+      "config": "該服務設定不完整，請檢查位址、憑證和模型 ID。",
+      "auth": "服務商拒絕了憑證，請確認該憑證屬於這個位址，或該訂閱登入能否呼叫圖像介面。",
+      "invalid_request": "服務商拒絕了請求。通常是協定選錯，或某個參數不被支援。",
+      "content_filtered": "提示詞被服務商的安全審核攔截，請更換描述內容。",
+      "rate_limited": "觸發限流或額度已用盡，請稍後再試。",
+      "timeout": "服務商未在預期時間內回應。",
+      "transport": "無法連線到該位址。若必須經本機代理才能存取該服務，請保持代理為空以跟隨系統代理，或在代理設定中填寫代理位址。",
+      "missingScope": "該憑證已通過身分驗證，但缺少圖像介面權限（服務商要求 api.model.images.request 等範圍）。訂閱登入通常只涵蓋自家對話介面，請改用服務商的 API 金鑰。",
+      "provider": "服務商回傳內部錯誤。",
+      "empty_result": "服務商回應成功但沒有回傳圖片。"
+    }
+  },
+  "acquisition": {
+    "label": "圖像生成模型",
+    "description": "新增圖像服務，或匯入現有模型設定",
+    "add": "新增模型",
+    "empty": "尚未新增圖像模型",
+    "remove": "刪除圖像模型 {{name}}"
+  },
+  "import": {
+    "source": "設定來源",
+    "manual": "手動新增服務",
+    "saved": "目前設定",
+    "hint": "重用現有服務供應商的連線，或手動設定圖像服務。",
+    "subscriptionHint": "使用已匯入的訂閱帳號，無需重複填寫金鑰與位址。"
+  },
+  "advanced": "進階設定",
+  "automatic": "跟隨模型預設值"
+}

@@ -37,6 +37,8 @@ export interface AgentCompanionPetProps {
   pet?: AgentCompanionPetSelection | null;
   nativePetdexSize?: boolean;
   petdexScale?: number;
+  /** Fits the native petdex frame into this box, preserving its aspect ratio. */
+  petdexMaxSize?: { width: number; height: number };
   lookDirection?: number | null;
   action?: 'jumping' | 'waving' | 'failed' | null;
   dragDirection?: 'left' | 'right';
@@ -294,6 +296,7 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
   pet = null,
   nativePetdexSize = false,
   petdexScale = 1,
+  petdexMaxSize,
   lookDirection = null,
   action = null,
   dragDirection = 'left',
@@ -309,6 +312,8 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
   const [failedPet, setFailedPet] = useState<AgentCompanionPetSelection | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [petFrameSize, setPetFrameSize] = useState<{ width: number; height: number } | null>(null);
+  const petdexMaxWidth = petdexMaxSize?.width;
+  const petdexMaxHeight = petdexMaxSize?.height;
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReducedMotion(media.matches);
@@ -356,7 +361,15 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
         return;
       }
       if (!nativePetdexSize) return;
-      const scale = Number.isFinite(petdexScale) && petdexScale > 0 ? petdexScale : 1;
+      const baseScale = Number.isFinite(petdexScale) && petdexScale > 0 ? petdexScale : 1;
+      const fitScale = (limit: number | undefined, size: number) => (
+        limit !== undefined && Number.isFinite(limit) && limit > 0 ? limit / size : Infinity
+      );
+      const scale = Math.min(
+        baseScale,
+        fitScale(petdexMaxWidth, frameSize.width),
+        fitScale(petdexMaxHeight, frameSize.height),
+      );
       const nextSize = {
         width: Math.max(1, Math.round(frameSize.width * scale)),
         height: Math.max(1, Math.round(frameSize.height * scale)),
@@ -375,7 +388,7 @@ export const AgentCompanionPet: React.FC<AgentCompanionPetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [layout, nativePetdexSize, onPetFrameSizeChange, pet, petSrc, petdexScale]);
+  }, [layout, nativePetdexSize, onPetFrameSizeChange, pet, petSrc, petdexMaxHeight, petdexMaxWidth, petdexScale]);
 
   const [transitioning, setTransitioning] = useState(false);
   const prevMoodRef = useRef<AgentCompanionPetMood>(mood);

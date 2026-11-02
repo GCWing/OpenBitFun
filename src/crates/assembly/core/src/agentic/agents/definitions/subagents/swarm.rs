@@ -137,6 +137,7 @@ impl SwarmWorkerAgent {
                 "Read",
                 "view_image",
                 "analyze_image",
+                "generate_image",
                 "Glob",
                 "Grep",
                 "Write",

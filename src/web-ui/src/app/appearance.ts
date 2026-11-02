@@ -34,6 +34,7 @@ export const workbenchAppearanceDescriptor: AppearanceSurfaceDescriptor = {
         'content',
         'miniapp',
         'profile',
+        'project-resources',
         'agents',
         'skills',
         'miniapps',

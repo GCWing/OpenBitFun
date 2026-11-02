@@ -62,6 +62,15 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/modelEdi
 These checks cover draft isolation and source contracts, not rendered visuals
 or remote runtime behavior.
 
+For image-service credential reuse, subscription routing, and legacy drafts:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/components/image-generation/imageDialects.test.ts src/infrastructure/config/components/image-generation/imageModels.test.ts src/infrastructure/config/components/image-generation/ImageGenerationSettings.test.tsx
+```
+
+These fixtures cover imports, default selection, save failures, and simulated
+device activation. They do not exercise a real provider or remote host.
+
 For the device-scoped model catalog and non-blocking session/default selection:
 
 ```bash
@@ -72,3 +81,24 @@ Keep warm catalogs while refreshing, invalidate them only for catalog/model
 facts, and isolate all snapshots and pending work by surface activation. An
 existing session commits its selection before remembering future defaults;
 explicit model reads before send must not await the future-default write.
+
+For model selection persistence and configured-channel billing annotations:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/components/ModelSelectorProviderLevels.test.tsx src/infrastructure/config/services/modelBilling.test.ts src/infrastructure/config/services/modelTags.test.ts src/infrastructure/config/components/ModelBillingDetails.test.tsx
+```
+
+Billing annotations are advisory metadata, not runtime billing or fallback
+authorization. Unknown prices are not zero and subscription authentication is
+not evidence of a per-token tariff. Keep the configured channel identity and
+source visible, preserve unreadable records, and invalidate stale annotations
+when the channel changes. The tests simulate device switches; live SSH, relay,
+peer and dispatch paths require separate integration evidence.
+
+For Router configuration writes, peer capability negotiation and protocol-test feedback:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/components/ModelRouterSettings.test.tsx src/flow_chat/hooks/useModelRouting.test.tsx src/flow_chat/services/sessionDraftService.test.ts src/infrastructure/api/adapters/peer-device-adapter.test.ts
+```
+
+These fixtures use mocked hosts. They do not establish connectivity to a deployed Router.

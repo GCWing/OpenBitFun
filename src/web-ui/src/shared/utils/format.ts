@@ -2,20 +2,11 @@
  * Formatting utilities for tool display
  */
 
-export const formatDuration = (durationMs: number): string => {
-  if (durationMs < 1000) {
-    return `${Math.round(durationMs)}ms`;
-  }
-  
-  const seconds = durationMs / 1000;
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
-  }
-  
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
-  return `${minutes}m ${remainingSeconds}s`;
-};
+import { formatDuration as formatLocalizedDuration, type DurationPrecision } from '../../../../shared/i18n/formatDuration';
+import { i18nService } from '@/infrastructure/i18n/core/I18nService';
+
+export const formatDuration = (durationMs: number, precision: DurationPrecision = 'precise'): string =>
+  formatLocalizedDuration(durationMs, (value, options) => i18nService.formatNumber(value, options), precision);
 
 export const formatCost = (costUSD: number): string => {
   if (costUSD < 0.001) {

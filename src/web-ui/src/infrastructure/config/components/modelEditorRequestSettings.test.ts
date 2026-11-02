@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { getModelEditorRequestSettings, prepareModelEditorRequestSettingsForSave, updateModelEditorRequestSettings } from './modelEditorRequestSettings';
 
 describe('model editor request drafts', () => {
+  it('keeps image limits per model and clears the optional value without changing legacy defaults', () => {
+    const drafts = [
+      { key: 'limited', requestSettings: getModelEditorRequestSettings({ max_images_per_request: 3 }) },
+      { key: 'legacy', requestSettings: getModelEditorRequestSettings() },
+    ];
+    expect(prepareModelEditorRequestSettingsForSave(drafts[0].requestSettings).max_images_per_request).toBe(3);
+    const edited = updateModelEditorRequestSettings(drafts, { max_images_per_request: 2 }, 'legacy');
+    expect(edited[0].requestSettings.max_images_per_request).toBe(3);
+    expect(edited[1].requestSettings.max_images_per_request).toBe(2);
+    const cleared = updateModelEditorRequestSettings(edited, { max_images_per_request: undefined }, 'limited');
+    expect(JSON.parse(JSON.stringify(prepareModelEditorRequestSettingsForSave(cleared[0].requestSettings))))
+      .not.toHaveProperty('max_images_per_request');
+    expect(drafts[1].requestSettings.max_images_per_request).toBeUndefined();
+  });
   it.each(['', ' \n\t '])('clears a previously saved custom body when the editor contains %j', body => {
     const persisted = { custom_request_body: '{"temperature":0.2}', custom_request_body_mode: 'trim' as const };
     const drafts = [{ key: 'model', requestSettings: getModelEditorRequestSettings(persisted) }];

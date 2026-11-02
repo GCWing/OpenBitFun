@@ -87,6 +87,11 @@ cargo test -p openbitfun-desktop --lib window_state_support::tests
 pnpm --dir src/web-ui run test:run src/app/startup/startupPerformanceContract.test.ts
 ```
 
+macOS 浏览器空 URL 和原生导航失败使用
+[`third_party/wry/OPENBITFUN-PATCH.md`](../../../third_party/wry/OPENBITFUN-PATCH.md)
+中的 `wkwebview_url` 原生回归测试，并运行下方 Desktop 构建。测试覆盖原生 URL
+读取、页面加载回调、导航失败和手动导航恢复，不覆盖远程主机。panic hook 返回不代表捕获了 panic，日志不能宣称恢复成功。
+
 如果改动影响启动、WebDriver、browser/computer-use 或打包行为，还需要运行：
 
 ```bash

@@ -4,9 +4,21 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "05afb29f354928738ed26d4275819bbe3c165c7878bb24996b5169639ba03330",
-  "ownerDigest": "6faa00479189d7f7bc6df3de0898732bec1ef8ec4333ebd8b8e33e8c42a0a9f3",
+  "digest": "513e184cc2d93f183cdea258516f532caf58ac6400ef76dce9b54f6de0752627",
+  "ownerDigest": "3cc6d7d869b2c90c2161494a854b5ff7eb72ea69a1a28e40ccd42065fb3382e2",
   "searchAcceptance": [
+    {
+      "id": "native-image-generation",
+      "query": "generate_image",
+      "expectedFirstCapabilityId": "feature.ai-assistant",
+      "expectedCapabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "expectedItem": {
+        "capabilityId": "feature.ai-assistant",
+        "itemId": "image-generation"
+      }
+    },
     {
       "id": "companion-pet-mixed",
       "query": "宠物 pet mascot 桌面宠物",
@@ -141,17 +153,33 @@
         "capabilityId": "setting.tools.execution",
         "itemId": "timeouts"
       }
+    },
+    {
+      "id": "mcp-control-chinese",
+      "query": "MCP 服务器",
+      "expectedFirstCapabilityId": "setting.tools.mcp",
+      "expectedCapabilityIds": [
+        "setting.tools.mcp"
+      ]
+    },
+    {
+      "id": "mcp-control-english",
+      "query": "MCP server configuration",
+      "expectedFirstCapabilityId": "setting.tools.mcp",
+      "expectedCapabilityIds": [
+        "setting.tools.mcp"
+      ]
     }
   ],
   "counts": {
-    "features": 23,
-    "settings": 21,
+    "features": 22,
+    "settings": 22,
     "userFacing": 44,
-    "documentedItems": 332,
+    "documentedItems": 338,
     "controlCoverage": {
-      "direct": 51,
-      "delegated": 65,
-      "interactive": 216,
+      "direct": 62,
+      "delegated": 72,
+      "interactive": 204,
       "unsupported": 0
     }
   },
@@ -202,6 +230,7 @@
         "session-lifecycle",
         "model-mode-permissions",
         "creative-frontend-authoring",
+        "image-generation",
         "turn-control",
         "permission-mailbox",
         "history-search",
@@ -437,6 +466,51 @@
         "Read",
         "Write",
         "Edit"
+      ],
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      }
+    },
+    {
+      "id": "feature.ai-assistant:delegate:image-generation",
+      "capabilityId": "feature.ai-assistant",
+      "itemIds": [
+        "image-generation"
+      ],
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "delegateTools": [
+        "generate_image"
       ],
       "presentationTarget": {
         "kind": "scene",
@@ -1806,7 +1880,8 @@
         "file-watch",
         "workspace-search",
         "remote-open",
-        "project-health"
+        "project-health",
+        "workspace-icon"
       ],
       "kind": "query",
       "risk": "read",
@@ -2260,6 +2335,52 @@
         "additionalProperties": true
       },
       "openReason": "unstructuredInteraction",
+      "presentationTarget": {
+        "kind": "action",
+        "actionId": "project.open"
+      }
+    },
+    {
+      "id": "feature.projects:open:workspace-icon",
+      "capabilityId": "feature.projects",
+      "itemIds": [
+        "workspace-icon"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "visualSelection",
       "presentationTarget": {
         "kind": "action",
         "actionId": "project.open"
@@ -5765,6 +5886,7 @@
         "versions",
         "agent-authoring",
         "agent-market-submit",
+        "agent-operate-app",
         "publishing"
       ],
       "kind": "query",
@@ -6705,6 +6827,51 @@
       },
       "delegateTools": [
         "PublishMiniApp"
+      ],
+      "presentationTarget": {
+        "kind": "action",
+        "actionId": "surface.miniapps.open"
+      }
+    },
+    {
+      "id": "feature.miniapps:delegate:agent-operate-app",
+      "capabilityId": "feature.miniapps",
+      "itemIds": [
+        "agent-operate-app"
+      ],
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "delegateTools": [
+        "MiniAppBrowser"
       ],
       "presentationTarget": {
         "kind": "action",
@@ -7926,8 +8093,8 @@
         "kind": "static"
       },
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -7972,8 +8139,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8018,8 +8185,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8064,8 +8231,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8110,8 +8277,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8156,8 +8323,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8202,8 +8369,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8248,8 +8415,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8294,8 +8461,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8340,8 +8507,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8386,8 +8553,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -8432,8 +8599,8 @@
       },
       "openReason": "unstructuredInteraction",
       "presentationTarget": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       }
     },
     {
@@ -9008,6 +9175,413 @@
       }
     },
     {
+      "id": "feature.remote-connect:operation:status",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "start-stop-status",
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:start",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "start-stop-status",
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "lanIp": {
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "weixin",
+              "telegram",
+              "feishu",
+              "mobile_web",
+              "lan"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:stop",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "start-stop-status",
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "enum": [
+              "weixin",
+              "telegram",
+              "feishu",
+              "mobile_web",
+              "lan"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:configure-bot",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "credentialsFile": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "weixin",
+              "telegram",
+              "feishu"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "credentialsFile"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:weixin-login-start",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:weixin-login-poll",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "verifyCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:set-bot-verbose",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
       "id": "feature.remote-connect:open:connection-methods",
       "capabilityId": "feature.remote-connect",
       "itemIds": [
@@ -9054,102 +9628,10 @@
       }
     },
     {
-      "id": "feature.remote-connect:open:start-stop-status",
-      "capabilityId": "feature.remote-connect",
-      "itemIds": [
-        "start-stop-status"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect"
-      }
-    },
-    {
       "id": "feature.remote-connect:open:network",
       "capabilityId": "feature.remote-connect",
       "itemIds": [
         "network"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect"
-      }
-    },
-    {
-      "id": "feature.remote-connect:open:bots",
-      "capabilityId": "feature.remote-connect",
-      "itemIds": [
-        "bots"
       ],
       "kind": "open",
       "risk": "ui",
@@ -9340,6 +9822,7 @@
         "status-list",
         "transcript",
         "permission-continuation",
+        "cancel",
         "result-sync"
       ],
       "kind": "query",
@@ -9385,27 +9868,78 @@
       }
     },
     {
-      "id": "feature.detached-dispatch:open:targets",
+      "id": "feature.detached-dispatch:operation:list-targets",
       "capabilityId": "feature.detached-dispatch",
       "itemIds": [
         "targets"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
             "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:submit",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "submit"
+      ],
+      "kind": "operation",
+      "risk": "execute",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
           ]
         },
         "remoteControl": {
@@ -9413,18 +9947,255 @@
         },
         "detachedDispatch": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "A detached dispatch job cannot dispatch further work"
         }
       },
       "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "approvalPolicy": {
+            "enum": [
+              "auto",
+              "reject-and-report"
+            ],
+            "type": "string"
+          },
+          "baseRef": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "includeUncommitted": {
+            "type": "boolean"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 32768,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspacePath": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "prompt",
+          "approvalPolicy",
+          "workspacePath"
+        ],
+        "type": "object"
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:status",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "status-list"
+      ],
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "jobId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:list-jobs",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "status-list"
+      ],
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:cancel",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "cancel"
+      ],
+      "kind": "operation",
+      "risk": "destructive",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
       "presentationTarget": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect",
@@ -9487,104 +10258,6 @@
       "capabilityId": "feature.detached-dispatch",
       "itemIds": [
         "model-sync"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect",
-        "detail": {
-          "group": "account"
-        }
-      }
-    },
-    {
-      "id": "feature.detached-dispatch:open:submit",
-      "capabilityId": "feature.detached-dispatch",
-      "itemIds": [
-        "submit"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect",
-        "detail": {
-          "group": "account"
-        }
-      }
-    },
-    {
-      "id": "feature.detached-dispatch:open:status-list",
-      "capabilityId": "feature.detached-dispatch",
-      "itemIds": [
-        "status-list"
       ],
       "kind": "open",
       "risk": "ui",
@@ -9828,92 +10501,90 @@
       }
     },
     {
-      "id": "feature.pages:open:pages-list",
+      "id": "feature.pages:delegate:pages-list",
       "capabilityId": "feature.pages",
       "itemIds": [
         "pages-list"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_v1"
           ]
         },
         "remoteControl": {
           "available": true
         },
         "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         }
       },
       "inputSchema": {
         "type": "object",
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "delegateTools": [
+        "PageManage"
+      ],
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "pages"
       }
     },
     {
-      "id": "feature.pages:open:immutable-versions",
+      "id": "feature.pages:delegate:immutable-versions",
       "capabilityId": "feature.pages",
       "itemIds": [
         "immutable-versions"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_v1"
           ]
         },
         "remoteControl": {
           "available": true
         },
         "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         }
       },
       "inputSchema": {
         "type": "object",
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "delegateTools": [
+        "PageManage"
+      ],
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "pages"
@@ -9957,8 +10628,7 @@
         "additionalProperties": true
       },
       "delegateTools": [
-        "PagePublish",
-        "PageDeploy"
+        "PageManage"
       ],
       "presentationTarget": {
         "kind": "scene",
@@ -9966,46 +10636,45 @@
       }
     },
     {
-      "id": "feature.pages:open:visibility",
+      "id": "feature.pages:delegate:visibility",
       "capabilityId": "feature.pages",
       "itemIds": [
         "visibility"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_v1"
           ]
         },
         "remoteControl": {
           "available": true
         },
         "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         }
       },
       "inputSchema": {
         "type": "object",
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "delegateTools": [
+        "PageManage"
+      ],
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "pages"
@@ -10058,92 +10727,90 @@
       }
     },
     {
-      "id": "feature.pages:open:unpublish",
+      "id": "feature.pages:delegate:unpublish",
       "capabilityId": "feature.pages",
       "itemIds": [
         "unpublish"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_v1"
           ]
         },
         "remoteControl": {
           "available": true
         },
         "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         }
       },
       "inputSchema": {
         "type": "object",
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "delegateTools": [
+        "PageManage"
+      ],
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "pages"
       }
     },
     {
-      "id": "feature.pages:open:delete",
+      "id": "feature.pages:delegate:delete",
       "capabilityId": "feature.pages",
       "itemIds": [
         "delete"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_v1"
           ]
         },
         "remoteControl": {
           "available": true
         },
         "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         }
       },
       "inputSchema": {
         "type": "object",
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "delegateTools": [
+        "PageManage"
+      ],
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "pages"
@@ -13958,6 +14625,7 @@
         "available-models",
         "model-catalog",
         "advanced-request",
+        "smart-routing",
         "connection-test",
         "model-pools"
       ],
@@ -14502,6 +15170,52 @@
         "additionalProperties": true
       },
       "openReason": "secretEntry",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.models"
+      }
+    },
+    {
+      "id": "setting.ai.models:open:smart-routing",
+      "capabilityId": "setting.ai.models",
+      "itemIds": [
+        "smart-routing"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "unstructuredInteraction",
       "presentationTarget": {
         "kind": "settings",
         "pageId": "ai.models"
@@ -16039,6 +16753,7 @@
         "global-project-rules",
         "remembered-grants",
         "deferred-tools",
+        "tool-presentation",
         "parallelism",
         "timeouts",
         "review-capacity",
@@ -16162,6 +16877,55 @@
       },
       "inputSchema": {
         "type": "boolean"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "static"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "tools.execution"
+      }
+    },
+    {
+      "id": "setting.tools.execution:option:tool-presentation-mode",
+      "capabilityId": "setting.tools.execution",
+      "itemIds": [
+        "tool-presentation"
+      ],
+      "kind": "option",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "string",
+        "enum": [
+          "native",
+          "ptc",
+          "ptc_python"
+        ]
       },
       "outputSchema": {
         "type": "object",
@@ -17805,27 +18569,30 @@
       }
     },
     {
-      "id": "setting.tools.mcp:open:json-config",
+      "id": "setting.tools.mcp:operation:list-servers",
       "capabilityId": "setting.tools.mcp",
       "itemIds": [
-        "json-config"
+        "json-config",
+        "server-types",
+        "lifecycle",
+        "status"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
             "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_native_v1"
           ]
         },
         "remoteControl": {
@@ -17833,45 +18600,49 @@
         },
         "detachedDispatch": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         }
       },
       "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
+        "additionalProperties": false,
+        "type": "object"
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "mcp"
+      },
       "presentationTarget": {
         "kind": "settings",
         "pageId": "tools.mcp"
       }
     },
     {
-      "id": "setting.tools.mcp:open:server-types",
+      "id": "setting.tools.mcp:operation:configure-server",
       "capabilityId": "setting.tools.mcp",
       "itemIds": [
+        "json-config",
         "server-types"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
             "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_native_v1"
           ]
         },
         "remoteControl": {
@@ -17879,45 +18650,155 @@
         },
         "detachedDispatch": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         }
       },
       "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "description": "Patch non-secret fields of one server; omitted fields and existing credentials are preserved. New stdio servers require command; HTTP/SSE servers require url. Use null to remove an obsolete string field when switching transport. Credentials, environment and headers are entered through the protected MCP settings flow, never by reading existing secrets or putting secrets in command/args/url. Saving reconciles runtime state; autoStart defaults to true. Inspect the returned status instead of assuming connection succeeded.",
+            "properties": {
+              "args": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "autoStart": {
+                "type": "boolean"
+              },
+              "command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "inheritParentEnvironment": {
+                "type": "boolean"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "oauthEnabled": {
+                "type": "boolean"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transport": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "expectedFingerprint": {
+            "description": "Copy the fingerprint returned by list-servers. Reload after a conflict; never overwrite a concurrent edit.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "serverId": {
+            "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "workingDirectory": {
+            "description": "Optional directory on the OpenBitFun product host for a local process; never a remote workspace path.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "expectedFingerprint",
+          "config"
+        ],
+        "type": "object"
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "mcp"
+      },
       "presentationTarget": {
         "kind": "settings",
         "pageId": "tools.mcp"
       }
     },
     {
-      "id": "setting.tools.mcp:open:lifecycle",
+      "id": "setting.tools.mcp:operation:start-server",
       "capabilityId": "setting.tools.mcp",
       "itemIds": [
         "lifecycle"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
             "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_native_v1"
           ]
         },
         "remoteControl": {
@@ -17925,45 +18806,58 @@
         },
         "detachedDispatch": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         }
       },
       "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
+        "additionalProperties": false,
+        "properties": {
+          "serverId": {
+            "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId"
+        ],
+        "type": "object"
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "mcp"
+      },
       "presentationTarget": {
         "kind": "settings",
         "pageId": "tools.mcp"
       }
     },
     {
-      "id": "setting.tools.mcp:open:status",
+      "id": "setting.tools.mcp:operation:stop-server",
       "capabilityId": "setting.tools.mcp",
       "itemIds": [
-        "status"
+        "lifecycle"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
             "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_native_v1"
           ]
         },
         "remoteControl": {
@@ -17971,18 +18865,155 @@
         },
         "detachedDispatch": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "This command requires a native product-host provider"
         }
       },
       "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
+        "additionalProperties": false,
+        "properties": {
+          "serverId": {
+            "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId"
+        ],
+        "type": "object"
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "mcp"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "tools.mcp"
+      }
+    },
+    {
+      "id": "setting.tools.mcp:operation:restart-server",
+      "capabilityId": "setting.tools.mcp",
+      "itemIds": [
+        "lifecycle"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This command requires a native product-host provider"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This command requires a native product-host provider"
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "serverId": {
+            "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "mcp"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "tools.mcp"
+      }
+    },
+    {
+      "id": "setting.tools.mcp:operation:delete-server",
+      "capabilityId": "setting.tools.mcp",
+      "itemIds": [
+        "lifecycle"
+      ],
+      "kind": "operation",
+      "risk": "destructive",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This command requires a native product-host provider"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This command requires a native product-host provider"
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedFingerprint": {
+            "description": "Copy the fingerprint returned by list-servers. Reload after a conflict; never overwrite a concurrent edit.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "serverId": {
+            "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "expectedFingerprint"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "mcp"
+      },
       "presentationTarget": {
         "kind": "settings",
         "pageId": "tools.mcp"
@@ -19381,7 +20412,8 @@
           "warn",
           "info",
           "debug",
-          "trace"
+          "trace",
+          "off"
         ]
       },
       "outputSchema": {
@@ -19774,6 +20806,27 @@
           }
         },
         {
+          "id": "image-generation",
+          "titleZh": "通过已配置的默认图像模型生成图片",
+          "titleEn": "Generate images with the configured default image model",
+          "control": {
+            "kind": "delegate",
+            "tools": [
+              "generate_image"
+            ],
+            "workflowZh": [
+              "使用 generate_image 按用户描述生成图片，默认省略 service_id 以使用已配置的默认图像模型",
+              "按需指定数量和尺寸，通过返回的文件路径交付图片；远程工作区文件通过当前工作区数据面读写",
+              "缺少配置、认证失败或额度不足时明确报告，不自动切换到其他服务"
+            ],
+            "workflowEn": [
+              "Use generate_image to create images from the user's description; omit service_id to use the configured default image model",
+              "Specify count and size when needed and deliver the returned file paths; access remote workspace files through the active workspace data plane",
+              "Report missing configuration, authentication failures, or quota limits explicitly without automatically switching services"
+            ]
+          }
+        },
+        {
           "id": "turn-control",
           "titleZh": "开始、引导、打断、取消或恢复一次智能体运行",
           "titleEn": "Start, steer, interrupt, cancel, or recover an agent turn",
@@ -20039,6 +21092,8 @@
         "Choose the model, work mode, memory mode, and permission mode per session",
         "让创造模式扩展客户端界面与运行时能力",
         "Extend client UI and runtime capabilities in Creative mode",
+        "通过已配置的默认图像模型生成图片",
+        "Generate images with the configured default image model",
         "开始、引导、打断、取消或恢复一次智能体运行",
         "Start, steer, interrupt, cancel, or recover an agent turn",
         "查看并逐个或批量回答等待中的权限请求",
@@ -20079,6 +21134,13 @@
         "Call FrontendWorkbench prepare on the local Desktop in Creative mode, read the packaged API, and edit only draft CSS, JavaScript and owned assets without source or build tools",
         "Apply with the original draft ID; the host starts the immutable review window's 15-second countdown only after the real shell and customization activate, and apply waits for a final confirmed or rolled_back outcome",
         "Compose commands, state and events into reusable capabilities; use FrontendWorkbench inspect to discover schemas and diagnostics, then invoke to verify execution",
+        "generate_image",
+        "使用 generate_image 按用户描述生成图片，默认省略 service_id 以使用已配置的默认图像模型",
+        "按需指定数量和尺寸，通过返回的文件路径交付图片；远程工作区文件通过当前工作区数据面读写",
+        "缺少配置、认证失败或额度不足时明确报告，不自动切换到其他服务",
+        "Use generate_image to create images from the user's description; omit service_id to use the configured default image model",
+        "Specify count and size when needed and deliver the returned file paths; access remote workspace files through the active workspace data plane",
+        "Report missing configuration, authentication failures, or quota limits explicitly without automatically switching services",
         "ListWorkspaces",
         "SessionControl",
         "SessionHistory",
@@ -20579,13 +21641,13 @@
         },
         {
           "id": "file-watch",
-          "titleZh": "监听项目文件变化并查看当前监听路径",
-          "titleEn": "Watch project file changes and inspect active watched paths",
+          "titleZh": "监听项目文件变化、检查监听状态并在失败后恢复",
+          "titleEn": "Watch project file changes, inspect watch status, and recover a stopped watcher",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“监听项目文件变化并查看当前监听路径”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Watch project file changes and inspect active watched paths” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "reasonZh": "“监听项目文件变化、检查监听状态并在失败后恢复”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+            "reasonEn": "“Watch project file changes, inspect watch status, and recover a stopped watcher” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           }
         },
         {
@@ -20619,6 +21681,17 @@
             "reasonCode": "unstructuredInteraction",
             "reasonZh": "“查看当前工作区、应用状态、健康状态与统计信息”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
             "reasonEn": "“Inspect the current workspace, app state, health, and statistics” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+          }
+        },
+        {
+          "id": "workspace-icon",
+          "titleZh": "选择项目图案和颜色，或使用自定义图片",
+          "titleEn": "Choose project icon shapes and colors, or use a custom image",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "点击项目资源页的大图标，从工作学习或生活兴趣分类选择图案及颜色，或分别上传浅色、深色图片，预览后保存到工作区所属主机。",
+            "reasonEn": "Click the large icon on the Project resources page to choose a work/study or life/hobby icon and color, or upload separate light and dark images, preview them, then save on the workspace host."
           }
         }
       ],
@@ -20709,14 +21782,16 @@
         "Review, clean up, and reopen recently used projects",
         "扫描并维护工作区名称、信息、关联目录和 Persona 文件",
         "Scan and maintain workspace names, metadata, related directories, and persona files",
-        "监听项目文件变化并查看当前监听路径",
-        "Watch project file changes and inspect active watched paths",
+        "监听项目文件变化、检查监听状态并在失败后恢复",
+        "Watch project file changes, inspect watch status, and recover a stopped watcher",
         "按文件名、路径或文件内容搜索本地工作区",
         "Search local workspaces by filename, path, or file content",
         "从项目流程打开 SSH 或其他远程工作区",
         "Open SSH and other remote workspaces from the project flow",
         "查看当前工作区、应用状态、健康状态与统计信息",
         "Inspect the current workspace, app state, health, and statistics",
+        "选择项目图案和颜色，或使用自定义图片",
+        "Choose project icon shapes and colors, or use a custom image",
         "帮我打开一个项目",
         "打开新建项目的界面",
         "Help me open a project",
@@ -22917,6 +23992,25 @@
           }
         },
         {
+          "id": "agent-operate-app",
+          "titleZh": "由智能体结合源码控制 Mini App",
+          "titleEn": "Let an agent control a Mini App using its source and live interface",
+          "control": {
+            "kind": "delegate",
+            "tools": [
+              "MiniAppBrowser"
+            ],
+            "workflowZh": [
+              "先用 OpenBitFunControl 的 get 查询 feature.miniapps，并按 schema 用 inspect-app 读取源码，理解业务函数、动作参数和状态；源码更新属于应用改造，不是日常操作的前置步骤",
+              "用 MiniAppBrowser 的 open 连接当前实例，优先 observe_bridge 读取业务状态、act_bridge 执行语义动作并核对结果，保留用户草稿，不改源码、不重载、不切换呈现。旧应用缺少接口时使用可用的 DOM/输入或说明限制；自动活动信息不能代替业务状态"
+            ],
+            "workflowEn": [
+              "Use OpenBitFunControl get for feature.miniapps, then inspect-app source to understand business functions, action parameters, and state. Source updates are app enhancements, not prerequisites for routine operation",
+              "Open the current instance with MiniAppBrowser; prefer observe_bridge for business state and act_bridge for semantic operations and result verification. Preserve drafts without editing source, reloading, or changing presentation. For legacy apps use available DOM/input controls or report the gap; activity is not business state"
+            ]
+          }
+        },
+        {
           "id": "publishing",
           "titleZh": "撤回和审查市场发布，并可渲染幻灯片页面",
           "titleEn": "Withdraw and review market releases, and render slide pages",
@@ -23286,6 +24380,8 @@
         "Let an agent initialize, author, and validate a Mini App",
         "在用户明确要求时由智能体提交已完成的 Mini App 到市场审核",
         "Let an agent submit a completed Mini App for market review when explicitly requested",
+        "由智能体结合源码控制 Mini App",
+        "Let an agent control a Mini App using its source and live interface",
         "撤回和审查市场发布，并可渲染幻灯片页面",
         "Withdraw and review market releases, and render slide pages",
         "打开 Mini Apps",
@@ -23311,7 +24407,12 @@
         "仅在用户明确要求对外提交时调用 PublishMiniApp，并提供已完成应用、许可与发布说明",
         "登录、校验或上传返回可恢复状态时，向用户展示具体下一步，不把待授权或待审核状态报告成发布成功",
         "Call PublishMiniApp only after an explicit request to submit externally, with the completed app, license, and release notes",
-        "When authentication, validation, or upload returns a resumable state, show the exact next step and never report pending authorization or review as published"
+        "When authentication, validation, or upload returns a resumable state, show the exact next step and never report pending authorization or review as published",
+        "MiniAppBrowser",
+        "先用 OpenBitFunControl 的 get 查询 feature.miniapps，并按 schema 用 inspect-app 读取源码，理解业务函数、动作参数和状态；源码更新属于应用改造，不是日常操作的前置步骤",
+        "用 MiniAppBrowser 的 open 连接当前实例，优先 observe_bridge 读取业务状态、act_bridge 执行语义动作并核对结果，保留用户草稿，不改源码、不重载、不切换呈现。旧应用缺少接口时使用可用的 DOM/输入或说明限制；自动活动信息不能代替业务状态",
+        "Use OpenBitFunControl get for feature.miniapps, then inspect-app source to understand business functions, action parameters, and state. Source updates are app enhancements, not prerequisites for routine operation",
+        "Open the current instance with MiniAppBrowser; prefer observe_bridge for business state and act_bridge for semantic operations and result verification. Preserve drafts without editing source, reloading, or changing presentation. For legacy apps use available DOM/input controls or report the gap; activity is not business state"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.miniapps/"
     },
@@ -23921,7 +25022,7 @@
     },
     {
       "id": "feature.ecosystem-compatibility",
-      "kind": "feature",
+      "kind": "setting",
       "categoryId": "automation",
       "titleZh": "外部导入",
       "titleEn": "External Import",
@@ -23956,14 +25057,14 @@
       ],
       "highlightsZh": [
         "按已识别与更多应用浏览；可发现表示支持查找，分类状态表示当前结果",
-        "自动发现只控制列表更新；关闭后保留结果，仍可手动刷新，已接入的功能照常运行",
+        "自动发现控制列表更新；关闭后立即隐藏对应来源的跟随会话，已分叉副本继续保留",
         "审阅并导入受支持的 Skill、MCP 与 Hook；Command、Tool、子智能体暂无副本导入",
         "已导入表示副本已保存；在对应管理页确认启用与连接",
         "Codex、Zcode 会话按工作区自动发现；打开来源时刷新历史，首次发送创建独立分支，可移除和重新添加来源"
       ],
       "highlightsEn": [
         "Browse identified and more apps; discovery coverage and current category results are separate",
-        "Automatic discovery controls list updates; pausing retains results and allows manual refresh without changing active integrations",
+        "Automatic discovery controls list updates; disabling immediately hides source-following sessions while retaining local forks",
         "Review and import supported Skills, MCP and Hooks; command, tool and subagent copy import is unavailable",
         "Imported means a copy was saved; confirm activation and connection in the relevant settings",
         "Discover Codex and Zcode sessions by workspace, refresh history on open, continue in a new branch on first send, and remove or restore source views"
@@ -24092,15 +25193,15 @@
         }
       ],
       "stepsZh": [
-        "打开“外部导入”并选择应用",
-        "在左侧导航搜索框上方切换自动发现，悬停查看说明；关闭后保留结果，也可手动刷新",
+        "打开“设置 → 工具与集成 → 外部导入”并选择应用",
+        "在外部应用标题旁切换自动发现，悬停查看说明；关闭后立即隐藏对应来源的跟随会话，已分叉副本继续保留",
         "查看分类状态，打开分类弹窗浏览、搜索并选择内容",
         "审阅可导入项目并确认创建副本；Command、Tool、子智能体按已有兼容功能使用",
         "前往对应管理页确认副本启用或连接；当前页不将“已导入”视为可用"
       ],
       "stepsEn": [
-        "Open External Import and choose an app",
-        "Toggle automatic discovery above the sidebar search and hover for details; pausing retains results and manual refresh remains available",
+        "Open Settings → Tools & integrations → External import and choose an app",
+        "Toggle automatic discovery beside the External apps heading and hover for details; disabling immediately hides source-following sessions while local forks remain visible",
         "Inspect category status, then open a category dialog to browse, search, and select content",
         "Review importable items and confirm copies; use commands, tools and subagents through existing compatibility features",
         "Confirm copy activation or connection in the relevant settings; Imported does not mean available"
@@ -24114,8 +25215,8 @@
         "I want to migrate my Claude Code configuration"
       ],
       "destination": {
-        "kind": "action",
-        "actionId": "surface.ecosystemCompatibility.open"
+        "kind": "settings",
+        "pageId": "tools.external-import"
       },
       "operations": [],
       "options": [],
@@ -24144,12 +25245,12 @@
         "Z.ai",
         "session import",
         "按已识别与更多应用浏览；可发现表示支持查找，分类状态表示当前结果",
-        "自动发现只控制列表更新；关闭后保留结果，仍可手动刷新，已接入的功能照常运行",
+        "自动发现控制列表更新；关闭后立即隐藏对应来源的跟随会话，已分叉副本继续保留",
         "审阅并导入受支持的 Skill、MCP 与 Hook；Command、Tool、子智能体暂无副本导入",
         "已导入表示副本已保存；在对应管理页确认启用与连接",
         "Codex、Zcode 会话按工作区自动发现；打开来源时刷新历史，首次发送创建独立分支，可移除和重新添加来源",
         "Browse identified and more apps; discovery coverage and current category results are separate",
-        "Automatic discovery controls list updates; pausing retains results and allows manual refresh without changing active integrations",
+        "Automatic discovery controls list updates; disabling immediately hides source-following sessions while retaining local forks",
         "Review and import supported Skills, MCP and Hooks; command, tool and subagent copy import is unavailable",
         "Imported means a copy was saved; confirm activation and connection in the relevant settings",
         "Discover Codex and Zcode sessions by workspace, refresh history on open, continue in a new branch on first send, and remove or restore source views",
@@ -24514,10 +25615,13 @@
           "titleZh": "启动、停止 Remote Connect 并查看实时连接状态和设备信息",
           "titleEn": "Start or stop Remote Connect and inspect live status and device information",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“启动、停止 Remote Connect 并查看实时连接状态和设备信息”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Start or stop Remote Connect and inspect live status and device information” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "status",
+              "start",
+              "stop"
+            ],
+            "options": []
           }
         },
         {
@@ -24536,10 +25640,17 @@
           "titleZh": "配置飞书、Telegram、微信等 Bot 并单独停止 Bot",
           "titleEn": "Configure Feishu, Telegram, WeChat, and other bots, and stop a bot independently",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“配置飞书、Telegram、微信等 Bot 并单独停止 Bot”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Configure Feishu, Telegram, WeChat, and other bots, and stop a bot independently” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "configure-bot",
+              "weixin-login-start",
+              "weixin-login-poll",
+              "set-bot-verbose",
+              "start",
+              "stop",
+              "status"
+            ],
+            "options": []
           }
         },
         {
@@ -24560,8 +25671,8 @@
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。",
-            "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user."
+            "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。读取设备列表请调用 feature.detached-dispatch 的 list-targets。",
+            "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user. To read the device list, call list-targets on feature.detached-dispatch."
           }
         },
         {
@@ -24589,18 +25700,222 @@
       "agentExamplesZh": [
         "打开 Remote Connect",
         "我想配置手机远程控制",
-        "带我管理已连接设备"
+        "带我管理已连接设备",
+        "启动微信机器人并持续监听消息",
+        "关闭 Telegram 机器人",
+        "开启手机网页远控"
       ],
       "agentExamplesEn": [
         "Open Remote Connect",
         "I want to configure mobile remote control",
-        "Take me to connected-device management"
+        "Take me to connected-device management",
+        "Start the WeChat bot and keep listening",
+        "Stop the Telegram bot",
+        "Enable Mobile Web remote control"
       ],
       "destination": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect"
       },
-      "operations": [],
+      "operations": [
+        {
+          "id": "status",
+          "titleZh": "查看远控状态",
+          "titleEn": "Inspect Remote Connect status",
+          "descriptionZh": "读取当前执行主机的监听、配对、停用与恢复错误；不返回凭据，监听任务存活不等于消息已完成往返。",
+          "descriptionEn": "Read listener, pairing, disabled and restore-error state on the executing host without credentials. A live listener task does not prove a message round trip.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "status"
+          }
+        },
+        {
+          "id": "start",
+          "titleZh": "启动远控渠道",
+          "titleEn": "Start a Remote Connect channel",
+          "descriptionZh": "启动指定机器人或手机网页远控。CLI 自动启动 daemon，退出当前聊天后继续监听。新机器人需将返回的配对码发给机器人；CLI 不支持局域网 Relay。",
+          "descriptionEn": "Start the selected bot or Mobile Web. CLI starts its daemon and keeps listening after this chat exits. Send the returned pairing code to a new bot. CLI does not host a LAN Relay.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "lanIp": {
+                "type": "string"
+              },
+              "method": {
+                "enum": [
+                  "weixin",
+                  "telegram",
+                  "feishu",
+                  "mobile_web",
+                  "lan"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "method"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "start"
+          }
+        },
+        {
+          "id": "stop",
+          "titleZh": "停用远控渠道",
+          "titleEn": "Stop a Remote Connect channel",
+          "descriptionZh": "停用选定渠道并保留配置和会话。机器人停用状态跨重启保留。关闭手机网页会同时断开该主机的 Peer 设备路由，机器人保持运行。",
+          "descriptionEn": "Stop the selected channel while retaining configuration and sessions. Bot disablement survives restart. Stopping Mobile Web also disconnects Peer routing on this host; bots keep running.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "method": {
+                "enum": [
+                  "weixin",
+                  "telegram",
+                  "feishu",
+                  "mobile_web",
+                  "lan"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "method"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "stop"
+          }
+        },
+        {
+          "id": "configure-bot",
+          "titleZh": "从主机凭据文件配置机器人",
+          "titleEn": "Configure a bot from a private host credential file",
+          "descriptionZh": "读取执行主机上用户提供的私有 JSON 凭据文件并保存配置；不会自动启动。文件包含 bot_type 和对应凭据字段，需绝对路径和仅所有者可读权限；不要把凭据贴到聊天中。远程工作区路径不能用作主机凭据路径。",
+          "descriptionEn": "Load a user-supplied private JSON BotConfig file on the executing host, with bot_type and provider credential fields; save without starting. Requires an absolute host path and owner-only permissions. Do not paste credentials into chat or use a remote-workspace path.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "credentialsFile": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "method": {
+                "enum": [
+                  "weixin",
+                  "telegram",
+                  "feishu"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "method",
+              "credentialsFile"
+            ],
+            "type": "object"
+          },
+          "argumentScopes": {
+            "credentialsFile": "productHostLocal"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "configure-bot"
+          }
+        },
+        {
+          "id": "weixin-login-start",
+          "titleZh": "开始微信扫码登录",
+          "titleEn": "Begin WeChat QR login",
+          "descriptionZh": "生成微信登录二维码。CLI TUI 在工具卡片中直接显示 qrTerminal，无需模型重写；其他终端逐字显示，图形界面显示 qrImageUrl，再用 sessionKey 轮询。扫码本身尚未完成机器人监听和配对。",
+          "descriptionEn": "Create a WeChat login QR. CLI TUI renders qrTerminal in the tool card without model transcription; other terminals show it verbatim and graphical surfaces show qrImageUrl. Poll using sessionKey; scanning alone does not complete listening and pairing.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "weixin-login-start"
+          }
+        },
+        {
+          "id": "weixin-login-poll",
+          "titleZh": "完成微信登录并启动监听",
+          "titleEn": "Complete WeChat login and start listening",
+          "descriptionZh": "轮询同一登录会话。确认后在主机保存凭据并启动监听，向用户展示返回的机器人配对码。凭据不会返回给模型。",
+          "descriptionEn": "Poll the same login session. Confirmation saves credentials on the host and starts listening; show the returned bot pairing code. Credentials are never returned to the model.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "sessionKey": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "verifyCode": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "weixin-login-poll"
+          }
+        },
+        {
+          "id": "set-bot-verbose",
+          "titleZh": "设置机器人详细输出",
+          "titleEn": "Set bot verbose output",
+          "descriptionZh": "切换所有机器人的详细输出模式并保存。",
+          "descriptionEn": "Persist verbose output mode for all bot channels.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "set-bot-verbose"
+          }
+        }
+      ],
       "options": [],
       "searchTerms": [
         "feature.remote-connect",
@@ -24647,9 +25962,15 @@
         "打开 Remote Connect",
         "我想配置手机远程控制",
         "带我管理已连接设备",
+        "启动微信机器人并持续监听消息",
+        "关闭 Telegram 机器人",
+        "开启手机网页远控",
         "Open Remote Connect",
         "I want to configure mobile remote control",
-        "Take me to connected-device management"
+        "Take me to connected-device management",
+        "Start the WeChat bot and keep listening",
+        "Stop the Telegram bot",
+        "Enable Mobile Web remote control"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.remote-connect/"
     },
@@ -24676,25 +25997,26 @@
         "offline job"
       ],
       "highlightsZh": [
-        "发现与探测目标主机",
-        "派发、继续或取消任务",
+        "列出同账户设备与 SSH 目标",
+        "派发、查询或取消任务",
         "断线后重新加载事件与执行记录"
       ],
       "highlightsEn": [
-        "Discover and probe target hosts",
-        "Dispatch, continue, or cancel jobs",
+        "List same-account devices and SSH targets",
+        "Dispatch, inspect, or cancel jobs",
         "Reload events and execution history after reconnecting"
       ],
       "items": [
         {
           "id": "targets",
-          "titleZh": "列出可派发目标并探测版本、连接和运行能力",
-          "titleEn": "List dispatch targets and probe their version, connectivity, and runtime capabilities",
+          "titleZh": "列出同账户设备与已保存的 SSH 目标",
+          "titleEn": "List same-account devices and saved SSH targets",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出可派发目标并探测版本、连接和运行能力”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“List dispatch targets and probe their version, connectivity, and runtime capabilities” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-targets"
+            ],
+            "options": []
           }
         },
         {
@@ -24721,13 +26043,14 @@
         },
         {
           "id": "submit",
-          "titleZh": "把包含工作区、会话、模型和权限策略的持久任务提交到目标",
-          "titleEn": "Submit a durable job with workspace, session, model, and permission policy to the target",
+          "titleZh": "从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标",
+          "titleEn": "Submit a durable job from the current Git workspace to a same-account device or SSH target",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“把包含工作区、会话、模型和权限策略的持久任务提交到目标”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Submit a durable job with workspace, session, model, and permission policy to the target” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "submit"
+            ],
+            "options": []
           }
         },
         {
@@ -24735,10 +26058,12 @@
           "titleZh": "列出派发任务并查询运行状态、结果和错误",
           "titleEn": "List dispatched jobs and query their status, result, and errors",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出派发任务并查询运行状态、结果和错误”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“List dispatched jobs and query their status, result, and errors” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-jobs",
+              "status"
+            ],
+            "options": []
           }
         },
         {
@@ -24754,13 +26079,25 @@
         },
         {
           "id": "permission-continuation",
-          "titleZh": "远程回答权限请求，并继续或取消目标端任务",
-          "titleEn": "Answer permission requests remotely and continue or cancel target-side work",
+          "titleZh": "远程回答权限请求并继续目标端任务",
+          "titleEn": "Answer permission requests remotely and continue target-side work",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“远程回答权限请求，并继续或取消目标端任务”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Answer permission requests remotely and continue or cancel target-side work” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "reasonZh": "“远程回答权限请求并继续目标端任务”需要用户逐条确认权限与后续输入，目前没有能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+            "reasonEn": "“Answer permission requests remotely and continue target-side work” needs the user to confirm each permission and follow-up input and has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+          }
+        },
+        {
+          "id": "cancel",
+          "titleZh": "取消本机派发的任务",
+          "titleEn": "Cancel a job submitted from this host",
+          "control": {
+            "kind": "direct",
+            "operations": [
+              "cancel"
+            ],
+            "options": []
           }
         },
         {
@@ -24786,12 +26123,16 @@
         "Submit the work and follow its job status"
       ],
       "agentExamplesZh": [
-        "打开设备管理，我想把任务派发到另一台机器",
-        "带我配置远程任务派发"
+        "我有几台设备？",
+        "把这个任务派发到我的 MacBook 上跑",
+        "看看刚才派发的任务跑完没有",
+        "打开设备管理，我想把任务派发到另一台机器"
       ],
       "agentExamplesEn": [
-        "Open device management so I can dispatch work to another machine",
-        "Take me to remote task dispatch setup"
+        "How many devices do I have?",
+        "Dispatch this task to my MacBook",
+        "Check whether the job I dispatched has finished",
+        "Open device management so I can dispatch work to another machine"
       ],
       "destination": {
         "kind": "event",
@@ -24800,7 +26141,182 @@
           "group": "account"
         }
       },
-      "operations": [],
+      "operations": [
+        {
+          "id": "list-targets",
+          "titleZh": "列出派发目标",
+          "titleEn": "List dispatch targets",
+          "descriptionZh": "读取同账户下所有 OpenBitFun 设备（含本机，带 isCurrentDevice 标记、在线状态、型号与系统）以及本机已保存的 SSH 连接。回答“有几台设备”或派发前先调用；未登录账户时 devices 为空并说明原因。",
+          "descriptionEn": "Read every OpenBitFun device on this account (including this one, marked isCurrentDevice, with online state, model and OS) plus this host's saved SSH connections. Call it before stating how many devices exist or before submitting; when signed out, devices is empty with a reason.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "detached-dispatch",
+            "operationId": "list-targets"
+          }
+        },
+        {
+          "id": "submit",
+          "titleZh": "派发任务",
+          "titleEn": "Submit a dispatch job",
+          "descriptionZh": "把任务提交到另一台同账户设备（名称、别名或 device:<id>）或 SSH 目标（ssh:<connectionId>）。目标在自己的 Git worktree 中从 baseRef（默认 HEAD）开始执行，本机可以断开。仅在用户明确要求派发时调用，并明确选择 approvalPolicy；离线设备直接报错，不会在本机执行。",
+          "descriptionEn": "Submit work to another same-account device (name, alias, or device:<id>) or SSH target (ssh:<connectionId>). The target runs in its own Git worktree branched from baseRef (default HEAD) and this host may disconnect. Call only when the user asked to dispatch, and choose approvalPolicy explicitly; an offline device is an error, never a local run.",
+          "risk": "execute",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "agent": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "approvalPolicy": {
+                "enum": [
+                  "auto",
+                  "reject-and-report"
+                ],
+                "type": "string"
+              },
+              "baseRef": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "includeUncommitted": {
+                "type": "boolean"
+              },
+              "model": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "prompt": {
+                "maxLength": 32768,
+                "minLength": 1,
+                "type": "string"
+              },
+              "target": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "workspacePath": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "prompt",
+              "approvalPolicy",
+              "workspacePath"
+            ],
+            "type": "object"
+          },
+          "argumentScopes": {
+            "workspacePath": "productHostLocal"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "detached-dispatch",
+            "operationId": "submit"
+          }
+        },
+        {
+          "id": "status",
+          "titleZh": "查询派发任务",
+          "titleEn": "Read dispatch job status",
+          "descriptionZh": "按 jobId 读取本机派发任务的状态与增量事件；cursor 传上次返回值以只取新事件。",
+          "descriptionEn": "Read state and incremental events of a job submitted from this host; pass the previous cursor to read only new events.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "cursor": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "jobId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "detached-dispatch",
+            "operationId": "status"
+          }
+        },
+        {
+          "id": "list-jobs",
+          "titleZh": "列出派发任务",
+          "titleEn": "List dispatch jobs",
+          "descriptionZh": "不带 target 时列出本机提交过的任务；带 target 时直接询问该目标正在持有的任务。",
+          "descriptionEn": "Without target, list jobs submitted from this host; with target, ask that target for the jobs it owns.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "target": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "detached-dispatch",
+            "operationId": "list-jobs"
+          }
+        },
+        {
+          "id": "cancel",
+          "titleZh": "取消派发任务",
+          "titleEn": "Cancel a dispatch job",
+          "descriptionZh": "取消本机提交的指定任务；目标端停止执行并保留记录。",
+          "descriptionEn": "Cancel a job submitted from this host; the target stops it and keeps its record.",
+          "risk": "destructive",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "jobId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "detached-dispatch",
+            "operationId": "cancel"
+          }
+        }
+      ],
       "options": [],
       "searchTerms": [
         "feature.detached-dispatch",
@@ -24817,32 +26333,38 @@
         "remote execution",
         "target host",
         "offline job",
-        "发现与探测目标主机",
-        "派发、继续或取消任务",
+        "列出同账户设备与 SSH 目标",
+        "派发、查询或取消任务",
         "断线后重新加载事件与执行记录",
-        "Discover and probe target hosts",
-        "Dispatch, continue, or cancel jobs",
+        "List same-account devices and SSH targets",
+        "Dispatch, inspect, or cancel jobs",
         "Reload events and execution history after reconnecting",
-        "列出可派发目标并探测版本、连接和运行能力",
-        "List dispatch targets and probe their version, connectivity, and runtime capabilities",
+        "列出同账户设备与已保存的 SSH 目标",
+        "List same-account devices and saved SSH targets",
         "为目标主机配置运行环境并安装或更新 OpenBitFun CLI",
         "Provision the target runtime and install or update the OpenBitFun CLI",
         "在提交任务前同步目标所需的模型配置",
         "Synchronize required model configuration before submitting a job",
-        "把包含工作区、会话、模型和权限策略的持久任务提交到目标",
-        "Submit a durable job with workspace, session, model, and permission policy to the target",
+        "从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标",
+        "Submit a durable job from the current Git workspace to a same-account device or SSH target",
         "列出派发任务并查询运行状态、结果和错误",
         "List dispatched jobs and query their status, result, and errors",
         "保存、追加和重新加载可断线恢复的执行记录",
         "Save, append, and reload reconnectable execution transcripts",
-        "远程回答权限请求，并继续或取消目标端任务",
-        "Answer permission requests remotely and continue or cancel target-side work",
+        "远程回答权限请求并继续目标端任务",
+        "Answer permission requests remotely and continue target-side work",
+        "取消本机派发的任务",
+        "Cancel a job submitted from this host",
         "将目标端结果同步回控制端，而不把控制端当作远程文件系统代理",
         "Synchronize target-side results back without treating the controller as a remote-filesystem proxy",
+        "我有几台设备？",
+        "把这个任务派发到我的 MacBook 上跑",
+        "看看刚才派发的任务跑完没有",
         "打开设备管理，我想把任务派发到另一台机器",
-        "带我配置远程任务派发",
-        "Open device management so I can dispatch work to another machine",
-        "Take me to remote task dispatch setup"
+        "How many devices do I have?",
+        "Dispatch this task to my MacBook",
+        "Check whether the job I dispatched has finished",
+        "Open device management so I can dispatch work to another machine"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.detached-dispatch/"
     },
@@ -24886,10 +26408,16 @@
           "titleZh": "查看账户下的 Pages 与每个页面的当前发布状态",
           "titleEn": "List account Pages and inspect each page's current publishing state",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“查看账户下的 Pages 与每个页面的当前发布状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“List account Pages and inspect each page's current publishing state” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "delegate",
+            "tools": [
+              "PageManage"
+            ],
+            "workflowZh": [
+              "使用 PageManage action=list 列出已发布页面的名称、URL、权限和更新时间；published_only=false 包含未发布页面"
+            ],
+            "workflowEn": [
+              "Use PageManage action=list for published Page names, URLs, visibility and update times; published_only=false includes unpublished Pages"
+            ]
           }
         },
         {
@@ -24897,10 +26425,16 @@
           "titleZh": "保存不可变页面版本并浏览版本历史",
           "titleEn": "Save immutable page versions and browse version history",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“保存不可变页面版本并浏览版本历史”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Save immutable page versions and browse version history” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "delegate",
+            "tools": [
+              "PageManage"
+            ],
+            "workflowZh": [
+              "使用 PageManage action=publish/update 保存完整内容为新版本，action=versions 查看版本历史"
+            ],
+            "workflowEn": [
+              "Use PageManage action=publish/update to save complete content as a new version, and action=versions for history"
+            ]
           }
         },
         {
@@ -24910,16 +26444,13 @@
           "control": {
             "kind": "delegate",
             "tools": [
-              "PagePublish",
-              "PageDeploy"
+              "PageManage"
             ],
             "workflowZh": [
-              "新建内容或保存新版本时用 PagePublish；只有用户明确要求上线时才设置 deploy，并确认可见性",
-              "切换到已保存版本或回滚时用 PageDeploy；私有/relay 链接通过 Pages 场景或工具卡安全打开"
+              "使用 PageManage action=publish/update 保存内容；仅用户要求上线时设置 deploy=true；action=deploy 切换到已有版本"
             ],
             "workflowEn": [
-              "Use PagePublish for new content or a new saved version; set deploy only when the user explicitly asks to publish and confirm visibility",
-              "Use PageDeploy to promote or roll back to an existing saved version; open private/relay links safely through the Pages scene or tool card"
+              "Use PageManage action=publish/update to save content, set deploy=true only when requested, and action=deploy to promote an existing version"
             ]
           }
         },
@@ -24928,10 +26459,16 @@
           "titleZh": "更新标题、公开/私有可见性和访问设置",
           "titleEn": "Update titles, public/private visibility, and access settings",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“更新标题、公开/私有可见性和访问设置”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Update titles, public/private visibility, and access settings” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "delegate",
+            "tools": [
+              "PageManage"
+            ],
+            "workflowZh": [
+              "使用 PageManage action=update 修改标题，action=permissions 将访问权限设置为 private、relay 或 public"
+            ],
+            "workflowEn": [
+              "Use PageManage action=update for the title and action=permissions to set private, relay or public visibility"
+            ]
           }
         },
         {
@@ -24950,10 +26487,16 @@
           "titleZh": "取消发布页面，同时保留可再次发布的版本",
           "titleEn": "Unpublish a page while retaining versions for later publication",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“取消发布页面，同时保留可再次发布的版本”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Unpublish a page while retaining versions for later publication” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "delegate",
+            "tools": [
+              "PageManage"
+            ],
+            "workflowZh": [
+              "使用 PageManage action=unpublish 下线页面并保留已保存版本"
+            ],
+            "workflowEn": [
+              "Use PageManage action=unpublish to take a Page offline while retaining saved versions"
+            ]
           }
         },
         {
@@ -24961,10 +26504,16 @@
           "titleZh": "删除单个版本或整个 Page",
           "titleEn": "Delete an individual version or an entire Page",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“删除单个版本或整个 Page”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Delete an individual version or an entire Page” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "delegate",
+            "tools": [
+              "PageManage"
+            ],
+            "workflowZh": [
+              "使用 PageManage action=delete 删除整个页面；提供 version_id 时仅删除该版本"
+            ],
+            "workflowEn": [
+              "Use PageManage action=delete to delete a Page, or supply version_id to delete only that version"
+            ]
           }
         }
       ],
@@ -24979,12 +26528,14 @@
         "Choose a page and confirm publishing and visibility"
       ],
       "agentExamplesZh": [
-        "打开 Pages",
-        "带我管理已发布的页面"
+        "列出我已发布的 Pages",
+        "把这个页面改成私有",
+        "更新这个页面的内容并上线"
       ],
       "agentExamplesEn": [
-        "Open Pages",
-        "Take me to my published pages"
+        "List my published Pages",
+        "Make this Page private",
+        "Update this Page content and deploy it"
       ],
       "destination": {
         "kind": "scene",
@@ -25030,16 +26581,25 @@
         "Unpublish a page while retaining versions for later publication",
         "删除单个版本或整个 Page",
         "Delete an individual version or an entire Page",
-        "打开 Pages",
-        "带我管理已发布的页面",
-        "Open Pages",
-        "Take me to my published pages",
-        "PagePublish",
-        "PageDeploy",
-        "新建内容或保存新版本时用 PagePublish；只有用户明确要求上线时才设置 deploy，并确认可见性",
-        "切换到已保存版本或回滚时用 PageDeploy；私有/relay 链接通过 Pages 场景或工具卡安全打开",
-        "Use PagePublish for new content or a new saved version; set deploy only when the user explicitly asks to publish and confirm visibility",
-        "Use PageDeploy to promote or roll back to an existing saved version; open private/relay links safely through the Pages scene or tool card"
+        "列出我已发布的 Pages",
+        "把这个页面改成私有",
+        "更新这个页面的内容并上线",
+        "List my published Pages",
+        "Make this Page private",
+        "Update this Page content and deploy it",
+        "PageManage",
+        "使用 PageManage action=list 列出已发布页面的名称、URL、权限和更新时间；published_only=false 包含未发布页面",
+        "Use PageManage action=list for published Page names, URLs, visibility and update times; published_only=false includes unpublished Pages",
+        "使用 PageManage action=publish/update 保存完整内容为新版本，action=versions 查看版本历史",
+        "Use PageManage action=publish/update to save complete content as a new version, and action=versions for history",
+        "使用 PageManage action=publish/update 保存内容；仅用户要求上线时设置 deploy=true；action=deploy 切换到已有版本",
+        "Use PageManage action=publish/update to save content, set deploy=true only when requested, and action=deploy to promote an existing version",
+        "使用 PageManage action=update 修改标题，action=permissions 将访问权限设置为 private、relay 或 public",
+        "Use PageManage action=update for the title and action=permissions to set private, relay or public visibility",
+        "使用 PageManage action=unpublish 下线页面并保留已保存版本",
+        "Use PageManage action=unpublish to take a Page offline while retaining saved versions",
+        "使用 PageManage action=delete 删除整个页面；提供 version_id 时仅删除该版本",
+        "Use PageManage action=delete to delete a Page, or supply version_id to delete only that version"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.pages/"
     },
@@ -25509,8 +27069,8 @@
       "items": [
         {
           "id": "agent-cards",
-          "titleZh": "按需求或在任务过程中创建倒计时、清单、便签、进度、指标、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据",
-          "titleEn": "Create countdown, checklist, note, progress, metrics, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
+          "titleZh": "按需求或在任务过程中创建倒计时、清单、便签、进度、指标、图表、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据",
+          "titleEn": "Create countdown, checklist, note, progress, metrics, chart, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
           "control": {
             "kind": "delegate",
             "tools": [
@@ -25572,8 +27132,8 @@
         },
         {
           "id": "drag-restore",
-          "titleZh": "拖动卡片到桌面任意位置；关闭 OpenBitFun 时卡片消失，重新打开后按原位置恢复",
-          "titleEn": "Drag cards anywhere on the desktop; they disappear when OpenBitFun closes and return to the same positions when it reopens",
+          "titleZh": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
+          "titleEn": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
           "control": {
             "kind": "open",
             "reasonCode": "visualSelection",
@@ -25642,14 +27202,14 @@
         "Agents create and update cards when useful",
         "View, show, hide, or delete cards from Home",
         "Drag cards; positions are restored after restart",
-        "按需求或在任务过程中创建倒计时、清单、便签、进度、指标、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据",
-        "Create countdown, checklist, note, progress, metrics, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
+        "按需求或在任务过程中创建倒计时、清单、便签、进度、指标、图表、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据",
+        "Create countdown, checklist, note, progress, metrics, chart, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
         "在首页“小卡片”区查看全部卡片，并显示、隐藏或删除单张卡片",
         "See every card in the Home Desktop cards section, and show, hide, or delete individual cards",
         "在卡片上刷新数据、勾选清单项、切换置顶、打开链接或回到来源会话",
         "Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card",
-        "拖动卡片到桌面任意位置；关闭 OpenBitFun 时卡片消失，重新打开后按原位置恢复",
-        "Drag cards anywhere on the desktop; they disappear when OpenBitFun closes and return to the same positions when it reopens",
+        "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
+        "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
         "20 分钟后提醒我开会",
         "做一张卡片帮我盯着这个 PR 的状态",
         "Remind me about the meeting in 20 minutes",
@@ -27735,14 +29295,25 @@
           }
         },
         {
-          "id": "connection-test",
-          "titleZh": "保存前测试供应商或模型连接并刷新运行时客户端",
-          "titleEn": "Test provider or model connectivity before saving and refresh the runtime client",
+          "id": "smart-routing",
+          "titleZh": "查看智能模式可用状态（暂未开放）",
+          "titleEn": "View smart-mode availability (not released)",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“保存前测试供应商或模型连接并刷新运行时客户端”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Test provider or model connectivity before saving and refresh the runtime client” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "reasonZh": "“查看智能模式可用状态（暂未开放）”在模型设置页展示执行宿主的发布可用性；当前版本不提供智能模式配置或开启操作",
+            "reasonEn": "\"View smart-mode availability (not released)\" opens model settings to inspect execution-host availability. This release disables smart-mode configuration and activation."
+          }
+        },
+        {
+          "id": "connection-test",
+          "titleZh": "测试模型连接或图像生成，并刷新运行时客户端",
+          "titleEn": "Test model connections or image generation and refresh the runtime client",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“测试模型连接或图像生成，并刷新运行时客户端”需要用户在配置表单中选择服务并主动发起；图像服务测试会实际生成图片并可能消耗额度，智能体只能打开对应设置入口。",
+            "reasonEn": "“Test model connections or image generation and refresh the runtime client” requires the user to select a configuration and start the test from its form; image-service tests generate an actual image and may consume quota, so the Agent can only open the settings entry."
           }
         },
         {
@@ -27864,8 +29435,10 @@
         "Inspect models.dev catalog status, refresh it manually, and reveal its local cache",
         "为供应商添加自定义 Header、请求体字段与 SSL 行为",
         "Add custom headers, request-body fields, and SSL behavior per provider",
-        "保存前测试供应商或模型连接并刷新运行时客户端",
-        "Test provider or model connectivity before saving and refresh the runtime client",
+        "查看智能模式可用状态（暂未开放）",
+        "View smart-mode availability (not released)",
+        "测试模型连接或图像生成，并刷新运行时客户端",
+        "Test model connections or image generation and refresh the runtime client",
         "管理模型池、路由策略与会话模型选择",
         "Manage model pools, routing strategies, and session model selection",
         "打开模型设置",
@@ -28869,13 +30442,15 @@
       "categoryId": "assistant",
       "titleZh": "执行与权限控制",
       "titleEn": "Execution & permissions",
-      "summaryZh": "管理智能体工具权限、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
-      "summaryEn": "Manage agent tool permissions, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
+      "summaryZh": "管理智能体工具权限、呈现模式、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
+      "summaryEn": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
       "keywordsZh": [
         "执行控制",
         "工具权限",
         "工具调用超时",
         "延迟加载工具",
+        "工具呈现模式",
+        "PTC",
         "审批",
         "并行",
         "超时",
@@ -28887,6 +30462,8 @@
         "execution control",
         "tool permissions",
         "deferred tool loading",
+        "tool presentation",
+        "PTC",
         "approval",
         "parallel",
         "timeout",
@@ -28987,6 +30564,25 @@
             "options": [
               {
                 "id": "deferred-tool-loading"
+              }
+            ]
+          }
+        },
+        {
+          "id": "tool-presentation",
+          "titleZh": "选择模型使用原生模式、PTC TypeScript 或 PTC Python 模式",
+          "titleEn": "Choose native, PTC TypeScript, or PTC Python mode for the model",
+          "destination": {
+            "kind": "settings",
+            "pageId": "tools.execution",
+            "viewId": "advanced"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "tool-presentation-mode"
               }
             ]
           }
@@ -29175,6 +30771,25 @@
           }
         },
         {
+          "id": "tool-presentation-mode",
+          "titleZh": "工具呈现模式",
+          "titleEn": "Tool presentation mode",
+          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript/Python 调用工具。",
+          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript or Python.",
+          "valueSchema": {
+            "type": "string",
+            "enum": [
+              "native",
+              "ptc",
+              "ptc_python"
+            ]
+          },
+          "handler": {
+            "kind": "config",
+            "path": "ai.tool_presentation_mode"
+          }
+        },
+        {
           "id": "subagent-batch-policy",
           "titleZh": "子智能体批量执行策略",
           "titleEn": "Subagent batch policy",
@@ -29295,6 +30910,8 @@
         "工具权限",
         "工具调用超时",
         "延迟加载工具",
+        "工具呈现模式",
+        "PTC",
         "审批",
         "并行",
         "超时",
@@ -29304,6 +30921,7 @@
         "execution control",
         "tool permissions",
         "deferred tool loading",
+        "tool presentation",
         "approval",
         "parallel",
         "timeout",
@@ -29326,6 +30944,8 @@
         "Review, revoke, or clear remembered project permission grants and audit records",
         "按需延迟加载工具定义以减少智能体初始上下文",
         "Deferred tool loading on demand to reduce initial agent context",
+        "选择模型使用原生模式、PTC TypeScript 或 PTC Python 模式",
+        "Choose native, PTC TypeScript, or PTC Python mode for the model",
         "设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略",
         "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
         "设置或取消单次工具调用超时",
@@ -30180,13 +31800,15 @@
       "items": [
         {
           "id": "json-config",
-          "titleZh": "用表单或 JSON 查看和保存全部 MCP 服务器配置",
-          "titleEn": "View and save all MCP server configuration through forms or JSON",
+          "titleZh": "查看服务器状态并按服务器保存非秘密配置",
+          "titleEn": "Inspect server state and save non-secret configuration per server",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“用表单或 JSON 查看和保存全部 MCP 服务器配置”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“View and save all MCP server configuration through forms or JSON” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-servers",
+              "configure-server"
+            ],
+            "options": []
           }
         },
         {
@@ -30194,10 +31816,12 @@
           "titleZh": "添加本地进程、远程 HTTP/SSE 或容器 MCP 服务器",
           "titleEn": "Add local-process, remote HTTP/SSE, or container MCP servers",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“添加本地进程、远程 HTTP/SSE 或容器 MCP 服务器”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Add local-process, remote HTTP/SSE, or container MCP servers” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-servers",
+              "configure-server"
+            ],
+            "options": []
           }
         },
         {
@@ -30205,10 +31829,15 @@
           "titleZh": "启动、停止、重启和删除单个 MCP 服务器",
           "titleEn": "Start, stop, restart, and delete individual MCP servers",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“启动、停止、重启和删除单个 MCP 服务器”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Start, stop, restart, and delete individual MCP servers” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-servers",
+              "start-server",
+              "stop-server",
+              "restart-server",
+              "delete-server"
+            ],
+            "options": []
           }
         },
         {
@@ -30216,10 +31845,11 @@
           "titleZh": "查看初始化、连接、健康、重连、鉴权和失败状态",
           "titleEn": "Inspect initialization, connection, health, reconnecting, authentication, and failure states",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“查看初始化、连接、健康、重连、鉴权和失败状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Inspect initialization, connection, health, reconnecting, authentication, and failure states” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-servers"
+            ],
+            "options": []
           }
         },
         {
@@ -30255,11 +31885,11 @@
               "GetMCPPrompt"
             ],
             "workflowZh": [
-              "先对明确的 server_id 调用 ListMCPPrompts；不知道服务器时先打开 MCP 设置查看已连接项",
+              "先通过 list-servers 取得用户服务器 ID，再对明确的 server_id 调用 ListMCPPrompts",
               "取得名称和参数模式后用 GetMCPPrompt 渲染指定 Prompt；连接或权限失败必须原样返回"
             ],
             "workflowEn": [
-              "Call ListMCPPrompts for an explicit server_id; if the server is unknown, open MCP settings to inspect connected servers first",
+              "Resolve a user server ID with list-servers, then call ListMCPPrompts for that explicit server_id",
               "After obtaining the name and argument shape, render it with GetMCPPrompt and preserve connection or permission failures"
             ]
           }
@@ -30319,17 +31949,280 @@
       ],
       "agentExamplesZh": [
         "打开 MCP 设置",
-        "带我管理 MCP 服务器"
+        "带我管理 MCP 服务器",
+        "帮我配置 MCP 服务器",
+        "重启指定 MCP 服务器"
       ],
       "agentExamplesEn": [
         "Open MCP settings",
-        "Take me to MCP server management"
+        "Take me to MCP server management",
+        "Configure an MCP server for me",
+        "Restart a specific MCP server"
       ],
       "destination": {
         "kind": "settings",
         "pageId": "tools.mcp"
       },
-      "operations": [],
+      "operations": [
+        {
+          "id": "list-servers",
+          "titleZh": "列出服务器与状态",
+          "titleEn": "List servers and state",
+          "descriptionZh": "返回当前产品宿主用户级服务器 ID、连接状态和配置版本，不返回已有凭据、命令参数或 URL。",
+          "descriptionEn": "Return user server IDs, connection state, and the configuration fingerprint on the executing product host without exposing stored credentials, command arguments, or URLs.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "mcp",
+            "operationId": "list"
+          }
+        },
+        {
+          "id": "configure-server",
+          "titleZh": "添加或修改服务器",
+          "titleEn": "Add or update a server",
+          "descriptionZh": "先列出服务器取得 expectedFingerprint，再按 serverId 增量保存非秘密配置；保留其他服务器、未提供字段和已有凭据。保存后检查 runtimeReconciled 和连接状态，不能把写入成功当作连接成功。",
+          "descriptionEn": "List servers for expectedFingerprint, then patch non-secret configuration by serverId. Preserve other servers, omitted fields, and stored credentials. Check runtimeReconciled and connection state after saving; persistence is not proof of connectivity.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "additionalProperties": false,
+                "description": "Patch non-secret fields of one server; omitted fields and existing credentials are preserved. New stdio servers require command; HTTP/SSE servers require url. Use null to remove an obsolete string field when switching transport. Credentials, environment and headers are entered through the protected MCP settings flow, never by reading existing secrets or putting secrets in command/args/url. Saving reconciles runtime state; autoStart defaults to true. Inspect the returned status instead of assuming connection succeeded.",
+                "properties": {
+                  "args": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "autoStart": {
+                    "type": "boolean"
+                  },
+                  "command": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "inheritParentEnvironment": {
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "oauthEnabled": {
+                    "type": "boolean"
+                  },
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "transport": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              "expectedFingerprint": {
+                "description": "Copy the fingerprint returned by list-servers. Reload after a conflict; never overwrite a concurrent edit.",
+                "minLength": 1,
+                "type": "string"
+              },
+              "serverId": {
+                "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+                "minLength": 1,
+                "type": "string"
+              },
+              "workingDirectory": {
+                "description": "Optional directory on the OpenBitFun product host for a local process; never a remote workspace path.",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "serverId",
+              "expectedFingerprint",
+              "config"
+            ],
+            "type": "object"
+          },
+          "argumentScopes": {
+            "workingDirectory": "productHostLocal"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "mcp",
+            "operationId": "configure"
+          }
+        },
+        {
+          "id": "start-server",
+          "titleZh": "启动服务器",
+          "titleEn": "Start a server",
+          "descriptionZh": "按返回的用户服务器 ID 启动服务并回读状态；需要 OAuth 时保留用户授权流程。",
+          "descriptionEn": "Start a returned user server ID and read back state; preserve the user authorization flow when OAuth is required.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "serverId": {
+                "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "serverId"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "mcp",
+            "operationId": "start"
+          }
+        },
+        {
+          "id": "stop-server",
+          "titleZh": "停止服务器",
+          "titleEn": "Stop a server",
+          "descriptionZh": "停止指定用户服务器并保留配置。",
+          "descriptionEn": "Stop the selected user server while preserving its configuration.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "serverId": {
+                "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "serverId"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "mcp",
+            "operationId": "stop"
+          }
+        },
+        {
+          "id": "restart-server",
+          "titleZh": "重启服务器",
+          "titleEn": "Restart a server",
+          "descriptionZh": "重启指定用户服务器并回读状态，不重新写入配置。",
+          "descriptionEn": "Restart the selected user server and read back state without rewriting configuration.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "serverId": {
+                "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "serverId"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "mcp",
+            "operationId": "restart"
+          }
+        },
+        {
+          "id": "delete-server",
+          "titleZh": "删除服务器",
+          "titleEn": "Delete a server",
+          "descriptionZh": "仅在用户要求时，使用最新 expectedFingerprint 删除指定用户服务器并清理对应运行时。",
+          "descriptionEn": "Only when requested, use the latest expectedFingerprint to remove the selected user server and reconcile its runtime.",
+          "risk": "destructive",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "expectedFingerprint": {
+                "description": "Copy the fingerprint returned by list-servers. Reload after a conflict; never overwrite a concurrent edit.",
+                "minLength": 1,
+                "type": "string"
+              },
+              "serverId": {
+                "description": "Exact user server ID from list-servers, or a new ID when adding a server. These settings belong to the executing OpenBitFun product host, not the workspace host.",
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "serverId",
+              "expectedFingerprint"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "mcp",
+            "operationId": "delete"
+          }
+        }
+      ],
       "options": [],
       "searchTerms": [
         "setting.tools.mcp",
@@ -30352,8 +32245,8 @@
         "Add local or remote MCP servers",
         "Inspect connection health and tool inventory",
         "Complete remote OAuth authorization",
-        "用表单或 JSON 查看和保存全部 MCP 服务器配置",
-        "View and save all MCP server configuration through forms or JSON",
+        "查看服务器状态并按服务器保存非秘密配置",
+        "Inspect server state and save non-secret configuration per server",
         "添加本地进程、远程 HTTP/SSE 或容器 MCP 服务器",
         "Add local-process, remote HTTP/SSE, or container MCP servers",
         "启动、停止、重启和删除单个 MCP 服务器",
@@ -30374,13 +32267,17 @@
         "Open MCP App/UI surfaces, exchange messages, and answer interaction requests",
         "打开 MCP 设置",
         "带我管理 MCP 服务器",
+        "帮我配置 MCP 服务器",
+        "重启指定 MCP 服务器",
         "Open MCP settings",
         "Take me to MCP server management",
+        "Configure an MCP server for me",
+        "Restart a specific MCP server",
         "ListMCPPrompts",
         "GetMCPPrompt",
-        "先对明确的 server_id 调用 ListMCPPrompts；不知道服务器时先打开 MCP 设置查看已连接项",
+        "先通过 list-servers 取得用户服务器 ID，再对明确的 server_id 调用 ListMCPPrompts",
         "取得名称和参数模式后用 GetMCPPrompt 渲染指定 Prompt；连接或权限失败必须原样返回",
-        "Call ListMCPPrompts for an explicit server_id; if the server is unknown, open MCP settings to inspect connected servers first",
+        "Resolve a user server ID with list-servers, then call ListMCPPrompts for that explicit server_id",
         "After obtaining the name and argument shape, render it with GetMCPPrompt and preserve connection or permission failures",
         "ListMCPResources",
         "ReadMCPResource",
@@ -31079,7 +32976,8 @@
               "warn",
               "info",
               "debug",
-              "trace"
+              "trace",
+              "off"
             ]
           },
           "handler": {

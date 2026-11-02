@@ -233,6 +233,10 @@ pub struct GetSessionUsageReportRequest {
     pub remote_ssh_host: Option<String>,
     #[serde(default = "default_include_hidden_subagents")]
     pub include_hidden_subagents: bool,
+    #[serde(default)]
+    pub include_system_prompt_preview: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_preview_category: Option<openbitfun_core_types::UsageContextCategory>,
 }
 
 fn default_include_hidden_subagents() -> bool {
@@ -553,6 +557,8 @@ pub async fn get_session_usage_report(
             ),
             request.session_id,
             request.include_hidden_subagents,
+            request.include_system_prompt_preview,
+            request.context_preview_category,
         )
         .await
         .map_err(|error| {

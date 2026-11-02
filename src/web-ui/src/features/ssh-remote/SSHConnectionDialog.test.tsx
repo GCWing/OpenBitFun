@@ -5,14 +5,20 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SSHConnectionDialog } from './SSHConnectionDialog';
+import type { WorkspaceConnectionTarget } from './types';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', async importOriginal => ({
+  ...await importOriginal<typeof import('@/infrastructure/api/service-api/RemoteConnectAPI')>(),
+  remoteConnectAPI: { getDeviceInfo: async () => ({ device_id: 'local', device_name: 'Workstation' }) },
+}));
 
 const sshApiMock = vi.hoisted(() => ({
   listSavedConnections: vi.fn(),
   listSSHConfigHosts: vi.fn(),
   getSSHConfig: vi.fn(),
   listWslDistributions: vi.fn(),
+  listDockerContainers: vi.fn().mockResolvedValue([]),
 }));
 
 const remoteContextMock = vi.hoisted(() => ({
@@ -51,8 +57,8 @@ vi.mock('./SSHAuthPromptDialog', () => ({
   SSHAuthPromptDialog: () => null,
 }));
 
-vi.mock('@openbitfun/ui', () => ({
-  Alert: () => null,
+vi.mock('@openbitfun/ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@openbitfun/ui')>(),
   Icon: ({ name, ...props }: { name: string } & React.HTMLAttributes<HTMLSpanElement>) => <span data-icon={name} {...props} />,
   OverflowText: ({ children, behavior: _behavior, marqueeActive: _marqueeActive, ...props }: any) => <span {...props}>{children}</span>,
   Dialog: ({
@@ -79,38 +85,32 @@ vi.mock('@openbitfun/ui', () => ({
   IconButton: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type="button" {...props}>{children}</button>
   ),
-  Field: ({
-    label,
-    children,
-  }: React.PropsWithChildren<{ label?: string }>) => (
-    <label>
-      {label}
-      {React.isValidElement(children)
-        ? React.cloneElement(
-            children as React.ReactElement<{ 'aria-label'?: string }>,
-            { 'aria-label': label },
-          )
-        : children}
-    </label>
-  ),
   Input: ({
     leading,
     trailing,
+    size: _size,
+    hideNativePasswordReveal: _hideNativePasswordReveal,
     ...props
   }: React.InputHTMLAttributes<HTMLInputElement> & {
     leading?: React.ReactNode;
     trailing?: React.ReactNode;
+    hideNativePasswordReveal?: boolean;
   }) => <label>{leading}<input {...props} />{trailing}</label>,
+  Combobox: ({ value, onValueChange, placeholder, 'aria-label': label }: {
+    value: string; onValueChange: (value: string) => void; placeholder: string; 'aria-label'?: string;
+  }) => <input aria-label={label} placeholder={placeholder} value={value} onChange={event => onValueChange(event.target.value)} />,
   Select: ({
     options,
     value,
     onValueChange,
+    'aria-label': label,
   }: {
+    'aria-label'?: string;
     options: Array<{ label: string; value: string }>;
     value: string;
     onValueChange: (value: string) => void;
   }) => (
-    <select value={value} onChange={(event) => onValueChange(event.target.value)}>
+    <select aria-label={label} value={value} onChange={(event) => onValueChange(event.target.value)}>
       {options.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}
@@ -140,10 +140,12 @@ vi.mock('@openbitfun/ui', () => ({
   // mirrors that accessible name via aria-label so queries stay realistic.
   Field: ({
     label,
+    labelAction,
     error,
     children,
-  }: { label?: React.ReactNode; error?: React.ReactNode; children: React.ReactElement }) => (
+  }: { label?: React.ReactNode; labelAction?: React.ReactNode; error?: React.ReactNode; children: React.ReactElement }) => (
     <div>
+      {labelAction}
       {React.cloneElement(children as React.ReactElement<Record<string, unknown>>, {
         'aria-label': typeof label === 'string' ? label : undefined,
       })}
@@ -180,9 +182,9 @@ describe('SSHConnectionDialog', () => {
     container.remove();
   });
 
-  async function renderDialog(onClose = vi.fn()): Promise<void> {
+  async function renderDialog(onClose = vi.fn(), initialTargetType?: WorkspaceConnectionTarget): Promise<void> {
     await act(async () => {
-      root.render(<SSHConnectionDialog open onClose={onClose} />);
+      root.render(<SSHConnectionDialog open onClose={onClose} initialTargetType={initialTargetType} />);
     });
     await act(async () => {
       await Promise.resolve();
@@ -208,10 +210,35 @@ describe('SSHConnectionDialog', () => {
     });
   }
 
-  function findTargetSelect(): HTMLSelectElement | null {
-    return Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find((select) => (
-      select.querySelector('option[value="localDocker"]') !== null
-    )) ?? null;
+  function sourceOption(dimension: number, value: string): HTMLButtonElement {
+    return container.querySelectorAll('[role="radiogroup"]')[dimension]
+      .querySelector<HTMLButtonElement>(`[data-openbitfun-value="${value}"]`)!;
+  }
+
+  function selectTarget(target: WorkspaceConnectionTarget): void {
+    act(() => sourceOption(0, target === 'localDocker' || target === 'wsl' ? 'current' : 'other').click());
+    act(() => sourceOption(1, target === 'wsl' ? 'wsl' : target === 'ssh' ? 'system' : 'container').click());
+    if (target === 'containerSshd') {
+      setSelectValue(container.querySelector('select[aria-label="workspaceSource.containerConnection"]'), target);
+    }
+  }
+
+  function expectTarget(target: WorkspaceConnectionTarget): void {
+    expect(sourceOption(0, target === 'localDocker' || target === 'wsl' ? 'current' : 'other').getAttribute('aria-checked')).toBe('true');
+    expect(sourceOption(1, target === 'wsl' ? 'wsl' : target === 'ssh' ? 'system' : 'container').getAttribute('aria-checked')).toBe('true');
+    if (target === 'containerSshd' || target === 'remoteDocker') {
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="workspaceSource.containerConnection"]')?.value).toBe(target);
+    }
+  }
+
+  function openAdvanced(): void {
+    const toggle = container.querySelector<HTMLButtonElement>('[data-openbitfun-component="disclosure"] button[aria-expanded]')!;
+    if (toggle.getAttribute('aria-expanded') !== 'true') act(() => toggle.click());
+  }
+
+  function useSavedConnections(): void {
+    const tab = container.querySelector<HTMLButtonElement>('[role="tab"][data-openbitfun-value="saved"]')!;
+    act(() => tab.click());
   }
 
   function findConnectButton(): HTMLButtonElement | undefined {
@@ -219,10 +246,35 @@ describe('SSHConnectionDialog', () => {
       .find((button) => button.textContent?.includes('ssh.remote.connect'));
   }
 
+  it.each(['ssh', 'wsl', 'localDocker', 'remoteDocker', 'containerSshd'] as const)(
+    'opens the %s form requested by project creation', async target => {
+      await renderDialog(vi.fn(), target);
+      expectTarget(target);
+      if (target === 'wsl') {
+        expect(sshApiMock.listWslDistributions).toHaveBeenCalled();
+        expect(container.querySelector('input[aria-label="ssh.remote.host"]')).toBeNull();
+      } else if (target === 'localDocker') {
+        expect(sshApiMock.listWslDistributions).toHaveBeenCalled();
+      } else {
+        expect(sshApiMock.listWslDistributions).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('uses the newly requested source after closing a different connection form', async () => {
+    const onClose = vi.fn();
+    await renderDialog(onClose, 'wsl');
+    await act(async () => root.render(<SSHConnectionDialog open={false} onClose={onClose} initialTargetType="wsl" />));
+    await renderDialog(onClose, 'localDocker');
+    expectTarget('localDocker');
+    expect(container.querySelector('input[aria-label="ssh.remote.wslUser"]')).toBeNull();
+    expect(container.querySelector('input[placeholder="ssh.remote.containerNamePlaceholder"]')).not.toBeNull();
+  });
+
   it('keeps optional connection fields collapsed for a new connection', async () => {
     await renderDialog();
 
-    const toggle = container.querySelector<HTMLButtonElement>('button[aria-expanded]');
+    const toggle = container.querySelector<HTMLButtonElement>('[data-openbitfun-component="disclosure"] button[aria-expanded]');
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     expect(container.querySelector('input[aria-label="ssh.remote.connectionName"]')).toBeNull();
     expect(container.querySelector('input[aria-label="ssh.remote.proxyJump"]')).toBeNull();
@@ -265,13 +317,13 @@ describe('SSHConnectionDialog', () => {
     ]);
 
     await renderDialog();
-    const editButton = container.querySelector<HTMLButtonElement>('button[title="actions.edit"]');
+    const editButton = container.querySelector<HTMLButtonElement>('button[aria-label^="actions.edit"]');
 
     act(() => {
       editButton?.click();
     });
 
-    const toggle = container.querySelector<HTMLButtonElement>('button[aria-expanded]');
+    const toggle = container.querySelector<HTMLButtonElement>('[data-openbitfun-component="disclosure"] button[aria-expanded]');
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
     expect(
       container.querySelector<HTMLInputElement>('input[aria-label="ssh.remote.proxyJump"]')?.value
@@ -295,11 +347,12 @@ describe('SSHConnectionDialog', () => {
     ]);
     await renderDialog();
 
-    const editButton = container.querySelector<HTMLButtonElement>('button[title="actions.edit"]');
+    const editButton = container.querySelector<HTMLButtonElement>('button[aria-label^="actions.edit"]');
     act(() => {
       editButton?.click();
     });
 
+    openAdvanced();
     const browseCertificate = container.querySelector<HTMLButtonElement>(
       'button[aria-label="ssh.remote.browseCertificate"]'
     );
@@ -316,6 +369,19 @@ describe('SSHConnectionDialog', () => {
       container.querySelector<HTMLInputElement>('input[aria-label="ssh.remote.certificatePath"]')?.value
     ).toBe('/keys/dev-cert.pub');
   });
+
+  it.each(['22abc', '22.5', '2e2', '', '0', '65536'])(
+    'rejects the complete invalid port value %j before connecting', async port => {
+      await renderDialog();
+      setInputValue('ssh.remote.host', 'example.test');
+      setInputValue('ssh.remote.username', 'dev');
+      setInputValue('ssh.remote.password', 'secret');
+      setInputValue('ssh.remote.port', port);
+      await act(async () => findConnectButton()?.click());
+      expect(remoteContextMock.connect).not.toHaveBeenCalled();
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain('ssh.remote.portInvalid');
+    },
+  );
 
   it('notifies the controlling surface after a successful connection', async () => {
     const onClose = vi.fn();
@@ -354,21 +420,29 @@ describe('SSHConnectionDialog', () => {
     'builds the expected connection config for %s',
     async (_label, targetType, local, access) => {
       remoteContextMock.connect.mockResolvedValue(undefined);
+      if (targetType === 'remoteDocker') sshApiMock.listSavedConnections.mockResolvedValue([{ id: 'ssh-dev@example.test', name: 'Host', host: 'example.test', port: 22, username: 'dev', authType: { type: 'PrivateKey', keyPath: '/keys/dev' } }]);
       await renderDialog();
 
-      setSelectValue(findTargetSelect(), targetType);
+      selectTarget(targetType);
       const containerNameInput = container.querySelector<HTMLInputElement>(
         'input[placeholder="ssh.remote.containerNamePlaceholder"]',
       );
-      expect(containerNameInput).not.toBeNull();
-      act(() => {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-        setter?.call(containerNameInput, 'devbox');
-        containerNameInput?.dispatchEvent(new Event('input', { bubbles: true }));
-      });
+      if (targetType === 'containerSshd') expect(containerNameInput).toBeNull();
+      else {
+        expect(containerNameInput).not.toBeNull();
+        act(() => {
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+          setter?.call(containerNameInput, 'devbox');
+          containerNameInput?.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      }
 
-      if (!local) {
-        setInputValue('ssh.remote.host', 'example.test');
+      if (targetType === 'remoteDocker') {
+        await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="workspaceSource.sshHost"] button[aria-pressed]')!.click());
+        const input = container.querySelector<HTMLInputElement>('input[placeholder="ssh.remote.containerNamePlaceholder"]')!;
+        act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'devbox'); input.dispatchEvent(new Event('input', { bubbles: true })); });
+      } else if (!local) {
+        setInputValue(targetType === 'containerSshd' ? 'workspaceSource.containerAddress' : 'workspaceSource.dockerHostAddress', 'example.test');
         setInputValue('ssh.remote.username', 'dev');
         setInputValue('ssh.remote.password', 'secret');
       }
@@ -383,7 +457,7 @@ describe('SSHConnectionDialog', () => {
 
       const expectedId = local
         ? 'docker-local-devbox'
-        : 'ssh-dev@example.test-container-devbox';
+        : targetType === 'containerSshd' ? 'ssh-dev@example.test-container-example.test' : 'ssh-dev@example.test-container-devbox';
       expect(remoteContextMock.connect).toHaveBeenCalledWith(
         expectedId,
         expect.objectContaining({
@@ -392,9 +466,9 @@ describe('SSHConnectionDialog', () => {
           username: local ? 'docker' : 'dev',
           auth: local
             ? { type: 'PrivateKey', keyPath: '' }
-            : { type: 'Password', password: 'secret' },
+            : targetType === 'remoteDocker' ? { type: 'PrivateKey', keyPath: '/keys/dev' } : { type: 'Password', password: 'secret' },
           container: {
-            name: 'devbox',
+            name: targetType === 'containerSshd' ? 'example.test' : 'devbox',
             access,
             local,
             dockerPath: 'docker',
@@ -408,8 +482,9 @@ describe('SSHConnectionDialog', () => {
     },
   );
   async function selectWsl(): Promise<void> {
-    setSelectValue(findTargetSelect(), 'wsl');
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => sourceOption(0, 'current').click());
+    await act(async () => sourceOption(1, 'wsl').click());
+    openAdvanced();
   }
 
   it('connects to an installed WSL distribution without SSH or Docker credentials', async () => {
@@ -436,9 +511,9 @@ describe('SSHConnectionDialog', () => {
     await selectWsl();
     setInputValue('ssh.remote.wslUser', 'ops');
     await act(async () => { findConnectButton()?.click(); });
-    const distribution = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.querySelector('option[value="Ubuntu"]')) ?? null;
-    setSelectValue(distribution, 'Ubuntu');
+    const distribution = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="ssh.remote.wslDistribution"] button'))
+      .find(button => button.textContent === 'Ubuntu')!;
+    act(() => distribution.click());
     setInputValue('ssh.remote.wslUser', 'dev-ops');
     await act(async () => { findConnectButton()?.click(); });
     expect(remoteContextMock.connect.mock.calls[0]?.[0]).not.toBe(remoteContextMock.connect.mock.calls[1]?.[0]);
@@ -451,7 +526,8 @@ describe('SSHConnectionDialog', () => {
     sshApiMock.listWslDistributions.mockResolvedValue(result);
     await renderDialog();
     await selectWsl();
-    expect(container.textContent).toContain(hint);
+    if (result.supported) expect(container.textContent).toContain(hint);
+    else expect(container.textContent).not.toContain(hint);
     expect(findConnectButton()?.disabled).toBe(true);
     expect(remoteContextMock.connect).not.toHaveBeenCalled();
   });
@@ -460,10 +536,13 @@ describe('SSHConnectionDialog', () => {
     sshApiMock.listWslDistributions.mockRejectedValueOnce(new Error('wsl.exe unavailable'));
     await renderDialog();
     await selectWsl();
-    expect(container.textContent).toContain('wsl.exe unavailable');
+    expect(container.textContent).toContain('ssh.remote.wslDiscoveryFailed');
     expect(findConnectButton()?.disabled).toBe(true);
-    const refresh = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('ssh.remote.wslRefresh'));
-    await act(async () => { refresh?.click(); });
+    expect(sourceOption(1, 'wsl').disabled).toBe(true);
+    const refresh = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'workspaceSource.refreshOptions')!;
+    await act(async () => refresh.click());
+    expect(sourceOption(1, 'wsl').disabled).toBe(false);
+    await selectWsl();
     expect(findConnectButton()?.disabled).toBe(false);
   });
 
@@ -474,12 +553,19 @@ describe('SSHConnectionDialog', () => {
       username: 'dev', authType: { type: 'PrivateKey', keyPath: '' }, wsl,
     }]);
     remoteContextMock.connect.mockResolvedValue(undefined);
-    await renderDialog();
-    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="actions.edit"]')?.click(); });
-    expect(findTargetSelect()?.value).toBe('wsl');
+    await renderDialog(vi.fn(), 'wsl');
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label^="actions.edit"]')?.click(); });
+    expectTarget('wsl');
     expect(container.querySelector<HTMLInputElement>('input[aria-label="ssh.remote.wslUser"]')?.value).toBe('dev');
-    await act(async () => { container.querySelector<HTMLButtonElement>('button[title="ssh.remote.connect"]')?.click(); });
+    await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('footer button')).find(button => button.textContent === 'actions.cancel')?.click(); });
+    useSavedConnections();
+    act(() => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="connectionList"] button[aria-pressed]')?.click());
+    await act(async () => { findConnectButton()?.click(); });
     expect(remoteContextMock.connect).toHaveBeenCalledWith('wsl-Debian@dev', expect.objectContaining({ wsl }), { browseAfterConnect: true });
+    selectTarget('ssh');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="ssh.remote.host"]')?.value).toBe('');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="ssh.remote.port"]')?.value).toBe('22');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="ssh.remote.username"]')?.value).toBe('');
   });
 
 });

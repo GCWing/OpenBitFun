@@ -615,6 +615,8 @@ pub struct ToolListingSections {
     pub agent_listing: Option<String>,
     pub direct_tool_listing: Option<String>,
     pub deferred_tool_listing: Option<String>,
+    /// PTC's generated TypeScript SDK, rendered as a conversation-start guide.
+    pub ptc_tool_calling_guide: Option<String>,
 }
 
 impl ToolListingSections {
@@ -623,6 +625,7 @@ impl ToolListingSections {
             && self.agent_listing.is_none()
             && self.direct_tool_listing.is_none()
             && self.deferred_tool_listing.is_none()
+            && self.ptc_tool_calling_guide.is_none()
     }
 
     pub fn render_skill_listing_reminder(&self) -> Option<String> {
@@ -675,6 +678,7 @@ impl ToolListingSections {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PrependedPromptReminders {
     pub deferred_tool_listing: Option<String>,
+    pub ptc_tool_calling_guide: Option<String>,
     pub skill_listing: Option<String>,
     pub agent_listing: Option<String>,
     pub runtime_context: Option<String>,
@@ -686,6 +690,9 @@ impl PrependedPromptReminders {
         let mut reminders = Vec::new();
         if let Some(deferred_tool_listing) = self.deferred_tool_listing.as_deref() {
             reminders.push(deferred_tool_listing);
+        }
+        if let Some(ptc_tool_calling_guide) = self.ptc_tool_calling_guide.as_deref() {
+            reminders.push(ptc_tool_calling_guide);
         }
         if let Some(skill_listing) = self.skill_listing.as_deref() {
             reminders.push(skill_listing);

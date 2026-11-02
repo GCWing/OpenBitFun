@@ -129,7 +129,20 @@ async fn exchange_code(
     resp.json().await.context("parse codex token response")
 }
 
-async fn refresh(refresh_token: &str, options: &SubscriptionHttpOptions) -> Result<TokenResponse> {
+#[derive(Debug)]
+struct RefreshGrantRejected;
+impl std::fmt::Display for RefreshGrantRejected {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Codex refresh grant was rejected; sign in to this account again")
+    }
+}
+impl std::error::Error for RefreshGrantRejected {}
+
+async fn refresh(
+    refresh_token: &str,
+    options: &SubscriptionHttpOptions,
+    endpoint: &str,
+) -> Result<TokenResponse> {
     let client = http_client(options)?;
     let params = [
         ("grant_type", "refresh_token"),
@@ -137,7 +150,7 @@ async fn refresh(refresh_token: &str, options: &SubscriptionHttpOptions) -> Resu
         ("client_id", CLIENT_ID),
     ];
     let resp = client
-        .post(format!("{ISSUER}/oauth/token"))
+        .post(endpoint)
         .header(reqwest::header::USER_AGENT, user_agent())
         .header(reqwest::header::ACCEPT, "application/json")
         .form(&params)
@@ -147,6 +160,22 @@ async fn refresh(refresh_token: &str, options: &SubscriptionHttpOptions) -> Resu
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
+        if matches!(
+            status,
+            reqwest::StatusCode::BAD_REQUEST | reqwest::StatusCode::UNAUTHORIZED
+        ) && serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("error")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .as_deref()
+            == Some("invalid_grant")
+        {
+            return Err(RefreshGrantRejected.into());
+        }
         return Err(anyhow!("codex token refresh failed: HTTP {status}: {body}"));
     }
     resp.json().await.context("parse codex token response")
@@ -238,7 +267,11 @@ fn metadata_from(tokens: &TokenResponse) -> Option<serde_json::Value> {
     Some(serde_json::json!({ "email": email }))
 }
 
-async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result<()> {
+async fn persist_tokens(
+    store_key: &str,
+    tokens: TokenResponse,
+    expected_revision: u64,
+) -> Result<()> {
     let access = tokens
         .access_token
         .clone()
@@ -251,8 +284,21 @@ async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result
     let expires = jwt::effective_expiry_ms(&access, expires);
     let account_id = account_id_from(&tokens);
     let metadata = metadata_from(&tokens);
+    if store_key != STORE_KEY {
+        let identity = account_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+            .ok_or_else(|| {
+                anyhow!("Codex account authorization is missing its account identity")
+            })?;
+        if let Some(previous) = store::oauth_account_identity(store_key).await? {
+            if previous.as_deref() != Some(identity) {
+                return Err(anyhow!("Codex reauthentication returned a different account; add it as a new account instead"));
+            }
+        }
+    }
     let outcome = store::upsert_if_revision(
-        STORE_KEY,
+        store_key,
         expected_revision,
         StoredCredential::Oauth {
             refresh,
@@ -269,6 +315,7 @@ async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result
 }
 
 async fn begin_browser_login(
+    store_key: String,
     cancel: CancellationToken,
     expected_revision: u64,
     options: SubscriptionHttpOptions,
@@ -293,7 +340,7 @@ async fn begin_browser_login(
                     .ok_or_else(|| anyhow!("codex callback missing code"))?;
                 exchange_code(&code, &verifier, &redirect_uri, &options).await
             },
-            move |tokens| persist_tokens(tokens, expected_revision),
+            move |tokens| async move { persist_tokens(&store_key, tokens, expected_revision).await },
         )
         .await
     };
@@ -309,6 +356,7 @@ async fn begin_browser_login(
 }
 
 async fn begin_device_login(
+    store_key: String,
     cancel: CancellationToken,
     expected_revision: u64,
     options: SubscriptionHttpOptions,
@@ -329,7 +377,7 @@ async fn begin_device_login(
                 )
                 .await
             },
-            move |tokens| persist_tokens(tokens, expected_revision),
+            move |tokens| async move { persist_tokens(&store_key, tokens, expected_revision).await },
         )
         .await
     };
@@ -346,27 +394,35 @@ async fn begin_device_login(
 /// Starts the selected OpenCode-compatible Codex authorization flow. Legacy
 /// callers that do not select a method keep browser-first behavior, with a
 /// device-flow fallback when the registered loopback callback is unavailable.
-pub(crate) async fn begin_login(
+pub(crate) async fn begin_login_for_account(
+    store_key: String,
     cancel: CancellationToken,
     expected_revision: u64,
     method: Option<super::SubscriptionLoginMethod>,
     options: SubscriptionHttpOptions,
 ) -> Result<StartedLogin> {
+    super::accounts::validate_account_id(super::SubscriptionProvider::Codex, &store_key)?;
     match method {
         Some(super::SubscriptionLoginMethod::Browser) => {
-            begin_browser_login(cancel, expected_revision, options).await
+            begin_browser_login(store_key, cancel, expected_revision, options).await
         }
         Some(super::SubscriptionLoginMethod::Device) => {
-            begin_device_login(cancel, expected_revision, options).await
+            begin_device_login(store_key, cancel, expected_revision, options).await
         }
-        None => match begin_browser_login(cancel.clone(), expected_revision, options.clone()).await
+        None => match begin_browser_login(
+            store_key.clone(),
+            cancel.clone(),
+            expected_revision,
+            options.clone(),
+        )
+        .await
         {
             Ok(started) => Ok(started),
             Err(browser_error) => {
                 log::info!(
                 "Codex browser login unavailable; using device authorization: {browser_error:#}"
             );
-                begin_device_login(cancel, expected_revision, options)
+                begin_device_login(store_key, cancel, expected_revision, options)
                 .await
                 .with_context(|| {
                     format!(
@@ -380,9 +436,21 @@ pub(crate) async fn begin_login(
 
 /// Ensures the stored access token is fresh, refreshing it when needed. Returns
 /// the current `(access, account_id, expires_ms)`.
-async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, Option<String>, i64)> {
-    let _refresh_lease = store::acquire_provider_refresh_lease(STORE_KEY).await?;
-    let snapshot = store::load_entry_with_revision(STORE_KEY).await?;
+async fn ensure_fresh(
+    store_key: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<(String, Option<String>, i64, u64)> {
+    ensure_fresh_at(store_key, options, None, &format!("{ISSUER}/oauth/token")).await
+}
+
+async fn ensure_fresh_at(
+    store_key: &str,
+    options: &SubscriptionHttpOptions,
+    rejected: Option<(&str, Option<&str>)>,
+    refresh_endpoint: &str,
+) -> Result<(String, Option<String>, i64, u64)> {
+    let _refresh_lease = store::acquire_provider_refresh_lease(store_key).await?;
+    let snapshot = store::load_entry_with_revision(store_key).await?;
     let entry = snapshot
         .credential
         .ok_or_else(|| anyhow!("Codex is not connected; sign in first"))?;
@@ -398,11 +466,35 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, Opti
     };
 
     let expires = jwt::effective_expiry_ms(&access, expires);
-    if expires > now_ms() + REFRESH_LEEWAY_MS {
-        return Ok((access, account_id, expires));
+    let current_identity = account_id
+        .clone()
+        .or_else(|| jwt::chatgpt_account_id(&access));
+    if rejected
+        .is_some_and(|(_, expected_identity)| current_identity.as_deref() != expected_identity)
+    {
+        return Err(anyhow!(
+            "Codex account identity changed after the rejected request"
+        ));
+    }
+    let force_refresh = rejected.is_some_and(|(rejected_access, _)| rejected_access == access);
+    if !force_refresh && expires > now_ms() + REFRESH_LEEWAY_MS {
+        return Ok((access, account_id, expires, snapshot.revision));
     }
 
-    let refreshed = refresh(&refresh_token, options).await?;
+    let refreshed = match refresh(&refresh_token, options, refresh_endpoint).await {
+        Ok(refreshed) => refreshed,
+        Err(error) => {
+            if error.is::<RefreshGrantRejected>() {
+                if let store::ConditionalCommitOutcome::Conflict { current_revision } =
+                    store::require_reauthentication_if_revision(store_key, snapshot.revision)
+                        .await?
+                {
+                    return credential_after_refresh_conflict(store_key, current_revision).await;
+                }
+            }
+            return Err(error);
+        }
+    };
     let new_access = refreshed
         .access_token
         .clone()
@@ -410,10 +502,20 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, Opti
     let new_refresh = refreshed.refresh_token.clone().unwrap_or(refresh_token);
     let new_expires = now_ms() + refreshed.expires_in.unwrap_or(3600) * 1000;
     let new_expires = jwt::effective_expiry_ms(&new_access, new_expires);
-    let new_account_id = account_id_from(&refreshed).or(account_id);
+    let refreshed_account_id = account_id_from(&refreshed);
+    if (store_key != STORE_KEY || rejected.is_some())
+        && refreshed_account_id
+            .as_ref()
+            .is_some_and(|id| Some(id) != current_identity.as_ref())
+    {
+        return Err(anyhow!(
+            "Codex token refresh returned a different account identity"
+        ));
+    }
+    let new_account_id = refreshed_account_id.or(current_identity);
     let new_metadata = metadata_from(&refreshed).or(metadata);
     let outcome = store::upsert_if_revision(
-        STORE_KEY,
+        store_key,
         snapshot.revision,
         StoredCredential::Oauth {
             refresh: new_refresh,
@@ -425,41 +527,118 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, Opti
     )
     .await?;
     match outcome {
-        store::ConditionalCommitOutcome::Committed { .. } => {
+        store::ConditionalCommitOutcome::Committed { revision } => {
             log::info!("codex subscription tokens refreshed");
-            Ok((new_access, new_account_id, new_expires))
+            Ok((new_access, new_account_id, new_expires, revision))
         }
         store::ConditionalCommitOutcome::Conflict { current_revision } => {
-            let current = super::load_current_store_after_conflict(
-                super::SubscriptionProvider::Codex,
-                current_revision,
-            )
-            .await?;
-            match current.credential {
-                Some(StoredCredential::Oauth {
-                    access,
-                    expires,
-                    account_id,
-                    ..
-                }) if jwt::effective_expiry_ms(&access, expires) > now_ms() => {
-                    log::info!("codex refresh reused tokens committed by a concurrent refresh");
-                    let expires = jwt::effective_expiry_ms(&access, expires);
-                    Ok((access, account_id, expires))
-                }
-                _ => Err(super::store_revision_conflict(
-                    super::SubscriptionProvider::Codex,
-                    current_revision,
-                )),
-            }
+            credential_after_refresh_conflict(store_key, current_revision).await
         }
     }
 }
 
+async fn credential_after_refresh_conflict(
+    store_key: &str,
+    current_revision: u64,
+) -> Result<(String, Option<String>, i64, u64)> {
+    let current = store::load_entry_with_revision(store_key).await?;
+    match current.credential {
+        Some(StoredCredential::Oauth {
+            access,
+            expires,
+            account_id,
+            ..
+        }) if jwt::effective_expiry_ms(&access, expires) > now_ms() => {
+            log::info!("codex refresh reused credentials committed by a concurrent account update");
+            let expires = jwt::effective_expiry_ms(&access, expires);
+            Ok((access, account_id, expires, current.revision))
+        }
+        _ => Err(super::store_revision_conflict(
+            super::SubscriptionProvider::Codex,
+            current_revision,
+        )),
+    }
+}
+
+pub(super) async fn recover_rejected_account(
+    store_key: &str,
+    rejected_access: &str,
+    upstream_account_id: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<()> {
+    super::accounts::validate_account_id(super::SubscriptionProvider::Codex, store_key)?;
+    recover_rejected_account_at(
+        store_key,
+        rejected_access,
+        upstream_account_id,
+        options,
+        &format!("{ISSUER}/oauth/token"),
+    )
+    .await
+}
+
+async fn recover_rejected_account_at(
+    store_key: &str,
+    rejected_access: &str,
+    upstream_account_id: Option<&str>,
+    options: &SubscriptionHttpOptions,
+    endpoint: &str,
+) -> Result<()> {
+    let (store_key, rejected_access, upstream_account_id, options, endpoint) = (
+        store_key.to_owned(),
+        rejected_access.to_owned(),
+        upstream_account_id.map(str::to_owned),
+        options.clone(),
+        endpoint.to_owned(),
+    );
+    // Once OAuth rotates a refresh token, finishing the local CAS commit is
+    // independent of the model turn's cancellation. The account lease remains
+    // owned by this task; logout/disable still invalidate its commit revision.
+    tokio::spawn(async move {
+        let (access, identity, _, _) = ensure_fresh_at(
+            &store_key,
+            &options,
+            Some((&rejected_access, upstream_account_id.as_deref())),
+            &endpoint,
+        )
+        .await?;
+        if identity.or_else(|| jwt::chatgpt_account_id(&access)) != upstream_account_id {
+            return Err(anyhow!(
+                "Codex account identity changed during authentication recovery"
+            ));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| anyhow!("Codex authentication recovery task stopped"))?
+}
+
 /// Resolves the runtime credential (refreshing tokens if required).
 pub(crate) async fn resolve(options: &SubscriptionHttpOptions) -> Result<ResolvedCredential> {
-    let (access, account_id, expires) = ensure_fresh(options).await?;
+    resolve_account(STORE_KEY, options).await
+}
+
+pub(super) async fn resolve_account(
+    store_key: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<ResolvedCredential> {
+    Ok(resolve_account_versioned(store_key, options).await?.0)
+}
+
+pub(super) async fn resolve_account_versioned(
+    store_key: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<(ResolvedCredential, u64)> {
+    super::accounts::validate_account_id(super::SubscriptionProvider::Codex, store_key)?;
+    let (access, account_id, expires, revision) = ensure_fresh(store_key, options).await?;
+    let account_id = account_id.or_else(|| jwt::chatgpt_account_id(&access));
+    if store_key != STORE_KEY && account_id.as_deref().is_none_or(|id| id.trim().is_empty()) {
+        return Err(anyhow!(
+            "Codex account is missing its upstream identity; sign in to this account again"
+        ));
+    }
     let mut headers = HashMap::new();
-    if let Some(account) = account_id.or_else(|| jwt::chatgpt_account_id(&access)) {
+    if let Some(account) = account_id {
         headers.insert("ChatGPT-Account-ID".to_string(), account);
     }
     headers.insert("originator".to_string(), "openbitfun".to_string());
@@ -468,14 +647,22 @@ pub(crate) async fn resolve(options: &SubscriptionHttpOptions) -> Result<Resolve
         headers.insert("x-openai-internal-codex-residency".to_string(), residency);
     }
 
-    Ok(ResolvedCredential {
-        api_key: access,
-        base_url: Some(CHATGPT_BASE_URL.to_string()),
-        request_url: Some(CHATGPT_REQUEST_URL.to_string()),
-        format: Some("responses".to_string()),
-        extra_headers: headers,
-        expires_at: Some(expires / 1000),
-    })
+    let (format, base_url, request_url) = request_route();
+    Ok((
+        ResolvedCredential {
+            api_key: access,
+            base_url: Some(base_url.to_string()),
+            request_url: Some(request_url.to_string()),
+            format: Some(format.to_string()),
+            extra_headers: headers,
+            expires_at: Some(expires / 1000),
+        },
+        revision,
+    ))
+}
+
+pub(super) fn request_route() -> (&'static str, &'static str, &'static str) {
+    ("responses", CHATGPT_BASE_URL, CHATGPT_REQUEST_URL)
 }
 
 /// Provider metadata used to seed a new model entry.
@@ -490,6 +677,481 @@ mod tests {
         DEFAULT_MODEL,
     };
     use crate::subscription_auth::pkce::Pkce;
+
+    struct RecoveryEndpoint {
+        url: String,
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        started: std::sync::Arc<tokio::sync::Notify>,
+        release: std::sync::Arc<tokio::sync::Notify>,
+        task: tokio::task::JoinHandle<()>,
+    }
+    impl Drop for RecoveryEndpoint {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+    impl RecoveryEndpoint {
+        async fn new(hold: bool) -> Self {
+            Self::with_reply(hold, 200, serde_json::json!({"access_token":"renewed-access", "refresh_token":"renewed-refresh", "expires_in":3600})).await
+        }
+        async fn with_reply(hold: bool, status: u16, reply: serde_json::Value) -> Self {
+            use std::sync::{
+                atomic::{AtomicUsize, Ordering},
+                Arc,
+            };
+            let calls = Arc::new(AtomicUsize::new(0));
+            let started = Arc::new(tokio::sync::Notify::new());
+            let release = Arc::new(tokio::sync::Notify::new());
+            let (count, signal, wait) = (calls.clone(), started.clone(), release.clone());
+            let app = axum::Router::new().route(
+                "/token",
+                axum::routing::post(move || {
+                    let (count, signal, wait) = (count.clone(), signal.clone(), wait.clone());
+                    let reply = reply.clone();
+                    async move {
+                        count.fetch_add(1, Ordering::SeqCst);
+                        signal.notify_one();
+                        if hold {
+                            wait.notified().await;
+                        }
+                        (
+                            axum::http::StatusCode::from_u16(status).unwrap(),
+                            axum::Json(reply),
+                        )
+                    }
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .unwrap();
+            let url = format!("http://{}/token", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            Self {
+                url,
+                calls,
+                started,
+                release,
+                task,
+            }
+        }
+    }
+    async fn recovery_account(id: &str, seat: &str) -> u64 {
+        use crate::subscription_auth::{store, StoredCredential};
+        store::upsert(
+            id,
+            StoredCredential::Oauth {
+                access: "rejected-access".into(),
+                refresh: "initial-refresh".into(),
+                expires: super::now_ms() + 3_600_000,
+                account_id: Some(seat.into()),
+                metadata: None,
+            },
+        )
+        .await
+        .unwrap();
+        store::credential_revision(id).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn rejected_unexpired_tokens_refresh_once_and_reuse_a_concurrent_replacement() {
+        use crate::subscription_auth::{store, tests, SubscriptionHttpOptions};
+        let _guard = tests::test_lock().lock().await;
+        store::set_store_path_for_test(tests::temp_store_path());
+        let id = format!("codex-account-{}", uuid::Uuid::new_v4());
+        let revision = recovery_account(&id, "seat-one").await;
+        let endpoint = RecoveryEndpoint::new(false).await;
+        let options = SubscriptionHttpOptions::default();
+        let (first, second) = tokio::join!(
+            super::recover_rejected_account_at(
+                &id,
+                "rejected-access",
+                Some("seat-one"),
+                &options,
+                &endpoint.url
+            ),
+            super::recover_rejected_account_at(
+                &id,
+                "rejected-access",
+                Some("seat-one"),
+                &options,
+                &endpoint.url
+            )
+        );
+        first.unwrap();
+        second.unwrap();
+        assert_eq!(endpoint.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(store::credential_revision(&id).await.unwrap() > revision);
+        assert!(
+            matches!(store::load_entry(&id).await.unwrap(), Some(crate::subscription_auth::StoredCredential::Oauth { access, .. }) if access == "renewed-access")
+        );
+    }
+
+    #[tokio::test]
+    async fn logout_and_disable_win_over_an_inflight_rejected_token_recovery() {
+        use crate::subscription_auth::{
+            self, store, tests, SubscriptionHttpOptions, SubscriptionProvider,
+        };
+        let _guard = tests::test_lock().lock().await;
+        for disable in [false, true] {
+            store::set_store_path_for_test(tests::temp_store_path());
+            let id = format!("codex-account-{}", uuid::Uuid::new_v4());
+            recovery_account(&id, "seat-one").await;
+            let endpoint = RecoveryEndpoint::new(true).await;
+            let (slot, url) = (id.clone(), endpoint.url.clone());
+            let recovery = tokio::spawn(async move {
+                super::recover_rejected_account_at(
+                    &slot,
+                    "rejected-access",
+                    Some("seat-one"),
+                    &SubscriptionHttpOptions::default(),
+                    &url,
+                )
+                .await
+            });
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                endpoint.started.notified(),
+            )
+            .await
+            .unwrap();
+            if disable {
+                subscription_auth::set_account_instance_enabled(
+                    SubscriptionProvider::Codex,
+                    &id,
+                    false,
+                )
+                .await
+                .unwrap();
+            } else {
+                subscription_auth::logout_account(SubscriptionProvider::Codex, &id)
+                    .await
+                    .unwrap();
+            }
+            let revision = store::credential_revision(&id).await.unwrap();
+            endpoint.release.notify_one();
+            assert!(recovery.await.unwrap().is_err());
+            assert_eq!(store::credential_revision(&id).await.unwrap(), revision);
+            if disable {
+                subscription_auth::set_account_instance_enabled(
+                    SubscriptionProvider::Codex,
+                    &id,
+                    true,
+                )
+                .await
+                .unwrap();
+                assert!(
+                    matches!(store::load_entry(&id).await.unwrap(), Some(subscription_auth::StoredCredential::Oauth { access, .. }) if access == "rejected-access")
+                );
+            } else {
+                assert!(store::load_entry(&id).await.unwrap().is_none());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_model_wait_does_not_abandon_a_rotated_oauth_credential() {
+        use crate::subscription_auth::{store, tests, SubscriptionHttpOptions};
+        let _guard = tests::test_lock().lock().await;
+        store::set_store_path_for_test(tests::temp_store_path());
+        let id = format!("codex-account-{}", uuid::Uuid::new_v4());
+        let revision = recovery_account(&id, "seat-one").await;
+        let endpoint = RecoveryEndpoint::new(true).await;
+        let (slot, url) = (id.clone(), endpoint.url.clone());
+        let waiting_turn = tokio::spawn(async move {
+            super::recover_rejected_account_at(
+                &slot,
+                "rejected-access",
+                Some("seat-one"),
+                &SubscriptionHttpOptions::default(),
+                &url,
+            )
+            .await
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            endpoint.started.notified(),
+        )
+        .await
+        .unwrap();
+        waiting_turn.abort();
+        assert!(waiting_turn.await.unwrap_err().is_cancelled());
+        endpoint.release.notify_one();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while store::credential_revision(&id).await.unwrap() == revision {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            matches!(store::load_entry(&id).await.unwrap(), Some(crate::subscription_auth::StoredCredential::Oauth { access, .. }) if access == "renewed-access")
+        );
+        assert_eq!(endpoint.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn rejected_request_cannot_refresh_a_different_default_account_identity() {
+        use crate::subscription_auth::{store, tests, SubscriptionHttpOptions};
+        let _guard = tests::test_lock().lock().await;
+        store::set_store_path_for_test(tests::temp_store_path());
+        let revision = recovery_account("codex", "new-seat").await;
+        let endpoint = RecoveryEndpoint::new(false).await;
+        assert!(super::recover_rejected_account_at(
+            "codex",
+            "rejected-access",
+            Some("old-seat"),
+            &SubscriptionHttpOptions::default(),
+            &endpoint.url
+        )
+        .await
+        .is_err());
+        assert_eq!(endpoint.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(store::credential_revision("codex").await.unwrap(), revision);
+    }
+
+    #[tokio::test]
+    async fn only_permanent_refresh_grant_rejections_require_reauthentication_and_keep_vault_refs()
+    {
+        use crate::subscription_auth::{store, tests, SubscriptionHttpOptions};
+        let _guard = tests::test_lock().lock().await;
+        for (status, code, permanent) in [
+            (400, "invalid_grant", true),
+            (401, "invalid_grant", true),
+            (503, "invalid_grant", false),
+            (400, "invalid_client", false),
+        ] {
+            let path = tests::temp_store_path();
+            store::set_store_path_for_test(path.clone());
+            let id = format!("codex-account-{}", uuid::Uuid::new_v4());
+            let revision = recovery_account(&id, "seat-one").await;
+            let before: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            let endpoint =
+                RecoveryEndpoint::with_reply(false, status, serde_json::json!({"error":code}))
+                    .await;
+            assert!(super::recover_rejected_account_at(
+                &id,
+                "rejected-access",
+                Some("seat-one"),
+                &SubscriptionHttpOptions::default(),
+                &endpoint.url
+            )
+            .await
+            .is_err());
+            let state = store::load_with_state().await.unwrap();
+            assert_eq!(state.requires_reauthentication.contains(&id), permanent);
+            assert_eq!(state.credentials.contains_key(&id), !permanent);
+            assert_eq!(
+                store::credential_revision(&id).await.unwrap(),
+                revision + u64::from(permanent)
+            );
+            let after: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            for field in [
+                "secret_set_id",
+                "refresh_parts",
+                "access_parts",
+                "account_id",
+            ] {
+                assert_eq!(
+                    before["accounts"][&id][field],
+                    after["accounts"][&id][field]
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stale_invalid_grant_response_reuses_a_newer_login_without_marking_it_invalid() {
+        use crate::subscription_auth::{store, tests, SubscriptionHttpOptions};
+        let _guard = tests::test_lock().lock().await;
+        store::set_store_path_for_test(tests::temp_store_path());
+        let id = format!("codex-account-{}", uuid::Uuid::new_v4());
+        recovery_account(&id, "seat-one").await;
+        let endpoint =
+            RecoveryEndpoint::with_reply(true, 400, serde_json::json!({"error":"invalid_grant"}))
+                .await;
+        let (slot, url) = (id.clone(), endpoint.url.clone());
+        let recovery = tokio::spawn(async move {
+            super::recover_rejected_account_at(
+                &slot,
+                "rejected-access",
+                Some("seat-one"),
+                &SubscriptionHttpOptions::default(),
+                &url,
+            )
+            .await
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            endpoint.started.notified(),
+        )
+        .await
+        .unwrap();
+        store::upsert(
+            &id,
+            crate::subscription_auth::StoredCredential::Oauth {
+                access: "new-login-access".into(),
+                refresh: "new-login-refresh".into(),
+                expires: super::now_ms() + 3_600_000,
+                account_id: Some("seat-one".into()),
+                metadata: None,
+            },
+        )
+        .await
+        .unwrap();
+        let revision = store::credential_revision(&id).await.unwrap();
+        endpoint.release.notify_one();
+        recovery.await.unwrap().unwrap();
+        assert_eq!(store::credential_revision(&id).await.unwrap(), revision);
+        assert!(!store::load_with_state()
+            .await
+            .unwrap()
+            .requires_reauthentication
+            .contains(&id));
+        assert!(
+            matches!(store::load_entry(&id).await.unwrap(), Some(crate::subscription_auth::StoredCredential::Oauth { access, .. }) if access == "new-login-access")
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_token_recovery_cannot_commit_a_different_seat_returned_by_oauth() {
+        use crate::subscription_auth::{store, tests, SubscriptionHttpOptions};
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let _guard = tests::test_lock().lock().await;
+        for id in [
+            "codex".into(),
+            format!("codex-account-{}", uuid::Uuid::new_v4()),
+        ] {
+            store::set_store_path_for_test(tests::temp_store_path());
+            let revision = recovery_account(&id, "seat-one").await;
+            let id_token = format!("header.{}.signature", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&serde_json::json!({"https://api.openai.com/auth":{"chatgpt_account_id":"wrong-seat"}})).unwrap()));
+            let endpoint = RecoveryEndpoint::with_reply(false, 200, serde_json::json!({"access_token":"wrong-access", "refresh_token":"wrong-refresh", "id_token":id_token, "expires_in":3600})).await;
+            assert!(super::recover_rejected_account_at(
+                &id,
+                "rejected-access",
+                Some("seat-one"),
+                &SubscriptionHttpOptions::default(),
+                &endpoint.url
+            )
+            .await
+            .is_err());
+            assert_eq!(store::credential_revision(&id).await.unwrap(), revision);
+            assert!(
+                matches!(store::load_entry(&id).await.unwrap(), Some(crate::subscription_auth::StoredCredential::Oauth { access, .. }) if access == "rejected-access")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_reauthentication_marker_commit_preserves_epoch_metadata_and_credentials() {
+        use crate::subscription_auth::{store, tests, SubscriptionHttpOptions};
+        let _guard = tests::test_lock().lock().await;
+        let path = tests::temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let id = format!("codex-account-{}", uuid::Uuid::new_v4());
+        let revision = recovery_account(&id, "seat-one").await;
+        let before = std::fs::read(&path).unwrap();
+        let endpoint =
+            RecoveryEndpoint::with_reply(false, 400, serde_json::json!({"error":"invalid_grant"}))
+                .await;
+        store::set_test_metadata_write_failure(true);
+        let result = super::recover_rejected_account_at(
+            &id,
+            "rejected-access",
+            Some("seat-one"),
+            &SubscriptionHttpOptions::default(),
+            &endpoint.url,
+        )
+        .await;
+        store::set_test_metadata_write_failure(false);
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(store::credential_revision(&id).await.unwrap(), revision);
+        assert!(
+            matches!(store::load_entry(&id).await.unwrap(), Some(crate::subscription_auth::StoredCredential::Oauth { access, .. }) if access == "rejected-access")
+        );
+    }
+
+    #[tokio::test]
+    async fn reauthentication_cannot_replace_a_named_account_with_another_seat() {
+        use super::{persist_tokens, TokenResponse};
+        use crate::subscription_auth::{store, tests, StoredCredential};
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let _guard = tests::test_lock().lock().await;
+        let path = tests::temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        let tokens = |seat: &str, access: &str| {
+            TokenResponse {
+            id_token: Some(format!("header.{}.signature", URL_SAFE_NO_PAD.encode(
+                serde_json::to_vec(&serde_json::json!({"https://api.openai.com/auth":{"chatgpt_account_id":seat},"email":"same-email@example.com"})).unwrap()
+            ))),
+            access_token: Some(access.to_string()),
+            refresh_token: Some(format!("refresh-{access}")),
+            expires_in: Some(3600),
+        }
+        };
+        persist_tokens(&slot, tokens("seat-one", "first"), 0)
+            .await
+            .unwrap();
+        let revision = store::credential_revision(&slot).await.unwrap();
+        assert!(
+            persist_tokens(&slot, tokens("seat-two", "wrong-seat"), revision)
+                .await
+                .is_err()
+        );
+        assert_eq!(store::credential_revision(&slot).await.unwrap(), revision);
+        assert!(
+            matches!(store::load_entry(&slot).await.unwrap(), Some(StoredCredential::Oauth { access, .. }) if access == "first")
+        );
+        // A lost vault secret does not erase the committed seat identity.
+        let mut metadata: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        metadata["accounts"][&slot]["needs_reauthentication"] = serde_json::json!(true);
+        std::fs::write(&path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        assert!(store::load_entry(&slot).await.unwrap().is_none());
+        assert!(persist_tokens(
+            &slot,
+            tokens("seat-two", "wrong-seat-without-vault"),
+            revision
+        )
+        .await
+        .is_err());
+        assert_eq!(store::credential_revision(&slot).await.unwrap(), revision);
+        persist_tokens(&slot, tokens("seat-one", "renewed"), revision)
+            .await
+            .unwrap();
+        assert!(
+            matches!(store::load_entry(&slot).await.unwrap(), Some(StoredCredential::Oauth { access, .. }) if access == "renewed")
+        );
+        assert!(store::load_entry("codex").await.unwrap().is_none());
+        let revision = store::credential_revision(&slot).await.unwrap();
+        crate::subscription_auth::logout_account(
+            crate::subscription_auth::SubscriptionProvider::Codex,
+            &slot,
+        )
+        .await
+        .unwrap();
+        assert!(persist_tokens(&slot, tokens("seat-one", "stale"), revision)
+            .await
+            .is_err());
+        assert!(store::load_entry(&slot).await.unwrap().is_none());
+        let revision = store::credential_revision(&slot).await.unwrap();
+        assert!(
+            persist_tokens(&slot, tokens("seat-two", "wrong-after-logout"), revision)
+                .await
+                .is_err()
+        );
+        persist_tokens(&slot, tokens("seat-one", "reauthorized"), revision)
+            .await
+            .unwrap();
+        assert!(
+            matches!(store::load_entry(&slot).await.unwrap(), Some(StoredCredential::Oauth { access, .. }) if access == "reauthorized")
+        );
+    }
 
     #[test]
     fn uses_registered_localhost_redirect_uri() {

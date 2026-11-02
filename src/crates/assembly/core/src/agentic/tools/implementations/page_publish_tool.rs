@@ -36,7 +36,7 @@ impl Tool for PagePublishTool {
 
 Requires a logged-in GitHub account. This tool is only available after account login. Published Pages can be reviewed and managed later from the Pages scene.
 
-When you produce self-contained publishable web content (landing page, docs site, or a Page with server/worker.js) and the user is logged in, proactively ask whether they want it published to OpenBitFun Page (suggest a slug and visibility). If they already said publish/deploy/上线, proceed with permission confirmation.
+When you produce self-contained publishable web content (landing page, docs site, or a Page with server/worker.js) and the user is logged in, proactively ask whether they want it published to OpenBitFun Page (suggest a slug and visibility). If they already said publish/deploy/上线, call the tool directly; the permission system requests confirmation only in Ask mode. Auto Approve and Full Access do not need an additional confirmation.
 
 IMPORTANT — content source:
 - Prefer `files` (inline path→UTF-8 content). For agent-authored pages, pass HTML/JS directly in `files` and call PagePublish. Do NOT Write/Edit page files into the user workspace just to publish, and do NOT create folders like openbitfun-page/ unless the user explicitly asked to keep a local copy.
@@ -104,6 +104,22 @@ Use PageDeploy only to switch an already-saved version_id (rollback / promote a 
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "version_id": {"type": "string"},
+                "visibility": {"type": "string"},
+                "deployed": {"type": "boolean"},
+                "url": {"type": "string"},
+                "preview_url": {"type": "string"}
+            },
+            "required": ["slug", "version_id", "visibility", "deployed"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -111,7 +127,7 @@ Use PageDeploy only to switch an already-saved version_id (rollback / promote a 
     fn permission_intents(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<PermissionIntent>> {
         let slug = input
             .get("slug")
@@ -138,16 +154,17 @@ Use PageDeploy only to switch an already-saved version_id (rollback / promote a 
             }
         );
         let mut intent = PermissionIntent::new("page_publish", vec![resource]);
-        // Publishing decisions should stay per-call: a remembered wildcard grant could
-        // otherwise hide a later change from private preview to public production.
+        // In Ask mode, keep publishing decisions per-call so a remembered grant
+        // cannot hide a later change from private preview to public production.
         intent.save_resources.clear();
         intent.display_metadata.insert(
             "permissionScope".to_string(),
             Value::String("account".to_string()),
         );
-        intent
-            .display_metadata
-            .insert("requiresFreshApproval".to_string(), Value::Bool(true));
+        intent.display_metadata.insert(
+            "requiresFreshApproval".to_string(),
+            Value::Bool(context.requires_fresh_approval()),
+        );
         intent.display_metadata.insert(
             "pageOperation".to_string(),
             Value::String(if deploy { "publish" } else { "save" }.to_string()),

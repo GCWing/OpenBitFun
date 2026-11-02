@@ -138,11 +138,13 @@ describe('execution activity grouping', () => {
     for (const boundary of [approval, approvalFlag,
       tool('write', 'Write'), tool('edit', 'Edit'), tool('delete', 'Delete'),
       tool('agent', 'AgentSpawn'), tool('wait', 'AgentWait'), tool('question', 'AskUserQuestion'),
-      tool('code', 'RunCode'), tool('terminal', 'ControlHub', { domain: 'terminal', action: 'kill' }),
+      tool('terminal', 'ControlHub', { domain: 'terminal', action: 'kill' }),
     ]) {
       expect(buildFlowItemGroups({ items: [tool('before'), boundary, tool('after')] }).map(group => group.type))
         .toEqual(['explore', 'critical', 'explore']);
     }
+    expect(buildFlowItemGroups({ items: [tool('before'), tool('code', 'RunCode'), tool('after')] }))
+      .toMatchObject([{ type: 'explore', items: [{ id: 'before' }, { id: 'code' }, { id: 'after' }] }]);
     expect(isShellActivity(tool('deferred', 'CallDeferredTool', { tool_name: 'ExecCommand', args: { command: 'pwd' } }))).toBe(true);
     expect(isShellActivity(approval)).toBe(false);
     expect(isShellActivity(approvalFlag)).toBe(false);

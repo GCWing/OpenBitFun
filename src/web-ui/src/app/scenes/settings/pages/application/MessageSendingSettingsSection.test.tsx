@@ -30,6 +30,7 @@ describe('message sending settings persistence', () => {
   let root: Root;
   let container: HTMLDivElement;
   const select = () => container.querySelector('select')!;
+  const description = () => container.querySelector('[data-openbitfun-part="rowDescription"]')?.textContent;
   const choose = async (value: string) => act(async () => {
     select().value = value;
     select().dispatchEvent(new Event('change', { bubbles: true }));
@@ -53,12 +54,15 @@ describe('message sending settings persistence', () => {
   it('starts with immediate and persists both choices using only the preference leaf', async () => {
     await act(async () => root.render(<MessageSendingSettingsSection />));
     expect(select().value).toBe('immediate');
+    expect(description()).toBe('messageSending.immediateDescription');
     await choose('queue');
     expect(mocks.set).toHaveBeenLastCalledWith('app.flow_chat.send_during_turn', 'queue');
     expect(select().value).toBe('queue');
+    expect(description()).toBe('messageSending.queueDescription');
     await choose('immediate');
     expect(mocks.set).toHaveBeenLastCalledWith('app.flow_chat.send_during_turn', 'immediate');
     expect(select().value).toBe('immediate');
+    expect(description()).toBe('messageSending.immediateDescription');
     expect(select().disabled).toBe(false);
   });
 
@@ -67,6 +71,7 @@ describe('message sending settings persistence', () => {
     await act(async () => root.render(<MessageSendingSettingsSection />));
     await choose('queue');
     expect(select().value).toBe('immediate');
+    expect(description()).toBe('messageSending.immediateDescription');
     expect(mocks.error).toHaveBeenCalledWith('messageSending.saveFailed');
     expect(select().disabled).toBe(false);
   });
@@ -79,5 +84,6 @@ describe('message sending settings persistence', () => {
     mocks.get.mockResolvedValue('queue');
     await act(async () => container.querySelector('button')!.click());
     expect(select().value).toBe('queue');
+    expect(description()).toBe('messageSending.queueDescription');
   });
 });

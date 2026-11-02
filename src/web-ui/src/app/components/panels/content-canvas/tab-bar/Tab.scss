@@ -2,12 +2,12 @@
 .canvas-tab {
   display: flex;
   min-inline-size: 80px;
-  max-inline-size: 240px;
   position: relative;
   user-select: none;
 
   > [data-openbitfun-part='item'] {
-    max-inline-size: 100%;
+    // Let the capsule grow its action area without compressing a capped label.
+    max-inline-size: 240px;
   }
 
   &.is-preview:not(.is-task-detail) &__title {

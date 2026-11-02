@@ -87,12 +87,23 @@ fn extract_api_error(event_json: &Value) -> Option<AiProviderError> {
             Value::Number(value) => Some(value.to_string()),
             _ => None,
         });
-    Some(AiProviderError::from_parts(
+    let mut detail = AiProviderError::from_parts(
         extract_api_error_message(event_json)?,
         Some("gemini".to_string()),
         code,
         None,
-    ))
+    );
+    // This is a Google RPC status in an SSE event, not an HTTP status.
+    // Preserve more specific quota/context classifications from the message.
+    if matches!(
+        detail.category,
+        openbitfun_core_types::errors::ErrorCategory::Unknown
+            | openbitfun_core_types::errors::ErrorCategory::ModelError
+    ) && detail.provider_code.as_deref() == Some("RESOURCE_EXHAUSTED")
+    {
+        detail.category = openbitfun_core_types::errors::ErrorCategory::RateLimit;
+    }
+    Some(detail)
 }
 
 pub async fn handle_gemini_stream(
@@ -101,6 +112,45 @@ pub async fn handle_gemini_stream(
     tx_raw_sse: Option<mpsc::UnboundedSender<String>>,
     ttft_timeout: Option<Duration>,
     idle_timeout: Option<Duration>,
+) {
+    handle_gemini_stream_inner(
+        response,
+        tx_event,
+        tx_raw_sse,
+        ttft_timeout,
+        idle_timeout,
+        false,
+    )
+    .await;
+}
+
+/// Code Assist wraps the ordinary Gemini event in a response envelope.
+/// Keep that translation at the adapter boundary; public Gemini remains flat.
+pub async fn handle_gemini_code_assist_stream(
+    response: Response,
+    tx_event: mpsc::UnboundedSender<Result<UnifiedResponse>>,
+    tx_raw_sse: Option<mpsc::UnboundedSender<String>>,
+    ttft_timeout: Option<Duration>,
+    idle_timeout: Option<Duration>,
+) {
+    handle_gemini_stream_inner(
+        response,
+        tx_event,
+        tx_raw_sse,
+        ttft_timeout,
+        idle_timeout,
+        true,
+    )
+    .await;
+}
+
+async fn handle_gemini_stream_inner(
+    response: Response,
+    tx_event: mpsc::UnboundedSender<Result<UnifiedResponse>>,
+    tx_raw_sse: Option<mpsc::UnboundedSender<String>>,
+    ttft_timeout: Option<Duration>,
+    idle_timeout: Option<Duration>,
+    code_assist: bool,
 ) {
     let mut stream = response.bytes_stream().eventsource();
     let mut received_finish_reason = false;
@@ -176,6 +226,14 @@ pub async fn handle_gemini_stream(
             }
         };
 
+        // Top-level errors retain priority over an optional response envelope.
+        // Raw SSE is captured before translation for diagnostics and replay.
+        let event_json = if code_assist && event_json.get("error").is_none() {
+            event_json.get("response").cloned().unwrap_or(event_json)
+        } else {
+            event_json
+        };
+
         if let Some(mut provider_error) = extract_api_error(&event_json) {
             provider_error.message = format!(
                 "Gemini SSE API error: {}, data: {}",
@@ -236,6 +294,111 @@ mod tests {
     use super::{extract_api_error, GeminiToolCallState};
     use crate::stream::types::unified::UnifiedToolCall;
     use openbitfun_core_types::errors::ErrorCategory;
+
+    async fn parse_http_event(
+        event: serde_json::Value,
+        code_assist: bool,
+    ) -> (Vec<anyhow::Result<super::UnifiedResponse>>, Vec<String>) {
+        use axum::{body::Body, extract::State, http::header, routing::get, Router};
+        async fn serve(
+            State(body): State<String>,
+        ) -> ([(header::HeaderName, &'static str); 1], Body) {
+            (
+                [(header::CONTENT_TYPE, "text/event-stream")],
+                Body::from(body),
+            )
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/events", listener.local_addr().unwrap());
+        let payload = format!("data: {}\n\n", event);
+        let task = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new()
+                    .route("/events", get(serve))
+                    .with_state(payload),
+            )
+            .await
+            .unwrap();
+        });
+        openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(url)
+            .send()
+            .await
+            .unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, mut raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        super::handle_gemini_stream_inner(response, tx, Some(raw_tx), None, None, code_assist)
+            .await;
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+        let mut raw = Vec::new();
+        while let Some(event) = raw_rx.recv().await {
+            raw.push(event);
+        }
+        task.abort();
+        (events, raw)
+    }
+
+    #[tokio::test]
+    async fn code_assist_http_envelope_retains_text_signature_usage_and_completion() {
+        let payload = serde_json::json!({
+            "candidates":[{"content":{"parts":[{"text":"answer","thoughtSignature":"fixture-signature"}]},"finishReason":"STOP"}],
+            "usageMetadata":{"promptTokenCount":20,"candidatesTokenCount":5,"totalTokenCount":25}
+        });
+        for (event, code_assist) in [
+            (payload.clone(), false),
+            (payload.clone(), true),
+            (
+                serde_json::json!({"response":payload,"traceId":"fixture-trace"}),
+                true,
+            ),
+        ] {
+            let (events, raw) = parse_http_event(event.clone(), code_assist).await;
+            assert!(events.iter().all(Result::is_ok));
+            let events: Vec<_> = events.into_iter().map(Result::unwrap).collect();
+            assert!(events
+                .iter()
+                .any(|event| event.text.as_deref() == Some("answer")));
+            assert!(events
+                .iter()
+                .any(|event| event.thinking_signature.as_deref() == Some("fixture-signature")));
+            assert!(events
+                .iter()
+                .any(|event| event.finish_reason.as_deref() == Some("STOP")));
+            assert!(events.iter().any(|event| event
+                .usage
+                .as_ref()
+                .is_some_and(
+                    |usage| usage.prompt_token_count == 20 && usage.candidates_token_count == 5
+                )));
+            assert_eq!(raw, vec![event.to_string()]);
+        }
+    }
+
+    #[tokio::test]
+    async fn code_assist_wrapped_errors_are_classified_and_public_gemini_does_not_guess_envelopes()
+    {
+        let (events, _) = parse_http_event(serde_json::json!({"response":{"error":{"status":"RESOURCE_EXHAUSTED","message":"quota exhausted"}}}), true).await;
+        assert!(events
+            .into_iter()
+            .any(|event| event.err().is_some_and(|error| error
+                .downcast_ref::<super::AiProviderError>()
+                .is_some_and(|error| error.category == ErrorCategory::RateLimit
+                    || error.category == ErrorCategory::ProviderQuota))));
+        let (events, _) = parse_http_event(
+            serde_json::json!({"response":{"candidates":[{"finishReason":"STOP"}]}}),
+            false,
+        )
+        .await;
+        assert!(events.iter().any(Result::is_err));
+    }
 
     #[test]
     fn reuses_active_tool_id_by_omitting_follow_up_ids() {

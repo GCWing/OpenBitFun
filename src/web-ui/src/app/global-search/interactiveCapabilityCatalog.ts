@@ -14,6 +14,13 @@ export type InteractiveCapabilityDestination =
   | { kind: 'scene'; sceneId: SceneTabId }
   | { kind: 'event'; eventName: string; detail?: Record<string, unknown> };
 
+/** Git operations remain host capabilities, but their standalone panel has no entry point. */
+export function isInteractiveCapabilityDestinationAvailable(
+  destination: InteractiveCapabilityDestination,
+): boolean {
+  return destination.kind !== 'scene' || destination.sceneId !== 'git';
+}
+
 export interface InteractiveCapabilityValueSchema {
   type: 'boolean' | 'string' | 'integer' | 'number' | 'object' | 'array';
   nullable?: boolean;

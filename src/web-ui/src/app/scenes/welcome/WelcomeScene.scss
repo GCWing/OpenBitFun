@@ -13,7 +13,6 @@
   overflow: hidden;
   container-type: inline-size;
   background: var(--openbitfun-color-surface-scene);
-  animation: welcome-scene-reveal var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-enter) both;
 
   &__content {
     display: flex;
@@ -24,6 +23,9 @@
     min-height: 0;
     padding: var(--openbitfun-space-6);
     padding-block-end: max(var(--openbitfun-space-6), 12vh);
+    // Fade only transparent content. Animating the opaque scene background can
+    // clear the sidebar material outside the shell's rounded clip in WebView2.
+    animation: welcome-scene-reveal var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-enter) both;
   }
 
   &__greeting {
@@ -154,7 +156,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .welcome-scene {
-    animation: none;
+    &__content {
+      animation: none;
+    }
 
     &__cursor {
       animation: none;

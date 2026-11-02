@@ -86,7 +86,7 @@ export function ModelDiscoveryPicker({
       </Button>
       <Dialog
         id={id}
-        size="sm"
+        preset="panel"
         open={open}
         onOpenChange={onOpenChange}
         initialFocusRef={searchRef}

@@ -1,3 +1,4 @@
+import { agentName } from '@/shared/agents/identity';
 /**
  * Label helpers shared by the Todos list, calendar and editor.
  *
@@ -113,7 +114,8 @@ export function formatJobTargetLabel(job: CronJob, t: Translate): string {
   if (job.target.kind === 'session') {
     return t('target.existingSession');
   }
-  return t('target.newSession', { agentType: job.target.launch.agentType });
+  const id = job.target.launch.agentType;
+  return t('target.newSession', { agentType: agentName({ id, name: id }, t) });
 }
 
 export interface TodoWorkspaceOption {

@@ -53,7 +53,7 @@ Adjust logging level, inspect runtime log locations, and export diagnostic bundl
 
 | 选项 / Option | 可用值 / Values | 中文说明 | English description |
 | --- | --- | --- | --- |
-| 日志级别 / Log level | `error` / `warn` / `info` / `debug` / `trace` | 设置后端运行日志的详细程度。 | Set the verbosity of backend runtime logs. |
+| 日志级别 / Log level | `error` / `warn` / `info` / `debug` / `trace` / `off` | 设置后端运行日志的详细程度。 | Set the verbosity of backend runtime logs. |
 | 诊断包包含敏感信息 / Include sensitive diagnostics | `boolean` | 仅在明确需要并理解隐私风险时启用。 | Enable only when explicitly needed and after reviewing the privacy risk. |
 
 ## 可以直接对智能体说 / Try saying

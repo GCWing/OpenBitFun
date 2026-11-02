@@ -4,10 +4,12 @@
 //! only closes managed child trees; it must never close a Job containing the
 //! calling host before an updater, restart, or shutdown can finish.
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 #[cfg(windows)]
 use std::sync::LazyLock;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::sync::OnceLock;
 use tokio::process::Command as TokioCommand;
 
@@ -136,14 +138,20 @@ pub fn create_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
     cmd
 }
 
-/// Create Tokio async Command (Windows automatically adds CREATE_NO_WINDOW)
+/// Create Tokio async Command.
+///
+/// Windows adds `CREATE_NO_WINDOW`. macOS and Linux also apply the merged
+/// `PATH` described on [`apply_cached_platform_path`], because spawned tools
+/// (`npx`, `node`, `uvx`, hook scripts) must resolve the same way they do in a
+/// terminal. The synchronous [`create_command`] keeps the process `PATH`
+/// unchanged.
 pub fn create_tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> TokioCommand {
     let cmd = TokioCommand::new(program.as_ref());
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let mut cmd = cmd;
-        apply_cached_macos_path(&mut cmd);
+        apply_cached_platform_path(&mut cmd);
         cmd
     }
 
@@ -154,7 +162,7 @@ pub fn create_tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> TokioComma
         cmd
     }
 
-    #[cfg(not(any(target_os = "macos", windows)))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     cmd
 }
 
@@ -208,27 +216,54 @@ const fn inherited_job_process_group_creation_flags() -> u32 {
     CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
 }
 
-#[cfg(target_os = "macos")]
-fn apply_cached_macos_path(cmd: &mut TokioCommand) {
-    if let Some(path) = cached_macos_path_env() {
+/// Applies the cached merged `PATH` that recovers directories a GUI launch
+/// loses: macOS Finder launches and Linux `.desktop` launches both start with
+/// the session `PATH` instead of a login shell's.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn apply_cached_platform_path(cmd: &mut TokioCommand) {
+    if let Some(path) = cached_platform_path_env() {
         cmd.env("PATH", path);
     }
 }
 
-#[cfg(target_os = "macos")]
-fn cached_macos_path_env() -> Option<&'static std::ffi::OsString> {
-    static MACOS_PATH_ENV: OnceLock<Option<std::ffi::OsString>> = OnceLock::new();
-    MACOS_PATH_ENV.get_or_init(build_macos_path_env).as_ref()
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn cached_platform_path_env() -> Option<&'static std::ffi::OsString> {
+    static PLATFORM_PATH_ENV: OnceLock<Option<std::ffi::OsString>> = OnceLock::new();
+    PLATFORM_PATH_ENV
+        .get_or_init(build_platform_path_env)
+        .as_ref()
 }
 
-#[cfg(target_os = "macos")]
-fn build_macos_path_env() -> Option<std::ffi::OsString> {
-    let existing_path = std::env::var_os("PATH");
+/// Merged `PATH` that [`create_tokio_command`] applies to its children.
+///
+/// Callers that spawn a process themselves (hook handlers, non-interactive
+/// shells built outside this module) use this so their children resolve the
+/// same executables a terminal does.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn platform_path_env() -> Option<std::ffi::OsString> {
+    cached_platform_path_env().cloned()
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn build_platform_path_env() -> Option<std::ffi::OsString> {
+    merge_path_env(
+        std::env::var_os("PATH"),
+        crate::system::platform_path_entries(),
+    )
+}
+
+/// Merges the process `PATH` with platform entries: process entries keep their
+/// order and win, platform entries only fill the gaps.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn merge_path_env(
+    existing_path: Option<std::ffi::OsString>,
+    platform_entries: Vec<PathBuf>,
+) -> Option<std::ffi::OsString> {
     let mut entries = Vec::new();
     if let Some(path) = existing_path {
         entries.extend(std::env::split_paths(&path));
     }
-    entries.extend(crate::system::platform_path_entries());
+    entries.extend(platform_entries);
 
     if entries.is_empty() {
         return None;
@@ -244,6 +279,12 @@ fn build_macos_path_env() -> Option<std::ffi::OsString> {
         if seen.insert(key) {
             merged.push(path);
         }
+    }
+
+    if merged.is_empty() {
+        // Never hand a child an empty PATH: an empty override resolves nothing,
+        // while leaving PATH untouched keeps the inherited environment usable.
+        return None;
     }
 
     std::env::join_paths(merged).ok()
@@ -291,5 +332,52 @@ mod tests {
         assert_ne!(flags & CREATE_NO_WINDOW, 0);
         assert_ne!(flags & CREATE_NEW_PROCESS_GROUP, 0);
         assert_eq!(flags & CREATE_BREAKAWAY_FROM_JOB, 0);
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+mod platform_path_tests {
+    use super::merge_path_env;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    fn merged(existing: &str, extra: &[&str]) -> Vec<PathBuf> {
+        let value = merge_path_env(
+            Some(OsString::from(existing)),
+            extra.iter().map(PathBuf::from).collect(),
+        )
+        .expect("merged PATH");
+        std::env::split_paths(&value).collect()
+    }
+
+    #[test]
+    fn process_entries_keep_their_order_and_platform_entries_only_fill_gaps() {
+        let entries = merged(
+            "/usr/bin:/opt/custom:/usr/bin",
+            &["/usr/local/bin", "/opt/custom", "/usr/bin"],
+        );
+
+        assert_eq!(
+            entries,
+            vec![
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/opt/custom"),
+                PathBuf::from("/usr/local/bin"),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_empty_process_path_still_yields_platform_entries() {
+        assert_eq!(
+            merged("", &["/usr/local/bin"]),
+            vec![PathBuf::from("/usr/local/bin")]
+        );
+    }
+
+    #[test]
+    fn nothing_to_merge_keeps_the_process_path_untouched() {
+        assert!(merge_path_env(None, Vec::new()).is_none());
+        assert!(merge_path_env(Some(OsString::from("")), Vec::new()).is_none());
     }
 }

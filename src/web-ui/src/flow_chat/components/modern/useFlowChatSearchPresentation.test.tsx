@@ -3,7 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { highlightFlowChatFocusTarget, useFlowChatSearchPresentation } from './useFlowChatSearchPresentation';
-import { measureFlowChatSearchLine } from './flowChatSearchPresentation';
+import { measureFlowChatFocusItem } from './flowChatSearchPresentation';
 import type { SearchMatch } from './useFlowChatSearch';
 
 vi.mock('./flowChatSearchPresentation', async importOriginal => ({
@@ -11,6 +11,9 @@ vi.mock('./flowChatSearchPresentation', async importOriginal => ({
   // jsdom has no text layout. Check presentation ownership, not visual geometry.
   measureFlowChatSearchLine: vi.fn((_wrapper, source: HTMLElement) => ({
     top: source.dataset.flowItemId === 'located' ? 40 : 10, left: 0, width: 100, height: 20,
+  })),
+  measureFlowChatFocusItem: vi.fn(() => ({
+    top: 40, left: 0, width: 100, height: 80, markerTop: 0, markerLeft: 0, markerHeight: 20,
   })),
 }));
 
@@ -44,13 +47,13 @@ describe('shared search and source-navigation presentation', () => {
     vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks();
   });
 
-  it('uses the search line without a query and clears it after the navigation timeout', () => {
+  it('uses the full item without a query and clears it after the navigation timeout', () => {
     act(() => root.render(<Harness wrapper={wrapper} search={false} />));
     expect(host.textContent).toBe('none');
     const source = wrapper.children[1] as HTMLElement;
     act(() => { clears.push(highlightFlowChatFocusTarget(source)); });
     expect(host.textContent).toBe('40');
-    expect(measureFlowChatSearchLine).toHaveBeenLastCalledWith(wrapper, source, expect.any(Range));
+    expect(measureFlowChatFocusItem).toHaveBeenLastCalledWith(wrapper, source);
     expect(wrapper.textContent).toBe('needleSource line');
     act(() => vi.advanceTimersByTime(1600));
     expect(host.textContent).toBe('none');
@@ -63,5 +66,17 @@ describe('shared search and source-navigation presentation', () => {
     expect(host.textContent).toBe('40');
     act(() => clears[0]());
     expect(host.textContent).toBe('10');
+  });
+
+  it('keeps a repeated item focus active when the older request expires', () => {
+    act(() => root.render(<Harness wrapper={wrapper} search={false} />));
+    const source = wrapper.children[1] as HTMLElement;
+    act(() => { clears.push(highlightFlowChatFocusTarget(source)); });
+    act(() => vi.advanceTimersByTime(800));
+    act(() => { clears.push(highlightFlowChatFocusTarget(source)); });
+    act(() => vi.advanceTimersByTime(800));
+    expect(host.textContent).toBe('40');
+    act(() => vi.advanceTimersByTime(800));
+    expect(host.textContent).toBe('none');
   });
 });

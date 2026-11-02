@@ -82,6 +82,10 @@ Plugin Source 和完整 domain feature 集合一起带回 Agent Runtime。产品
 编译”的 owner 返回类型化错误。`agent-runtime` 基线计划只选择 `Basic` 与 `AgentControl`；
 它不是隐式 Delivery Profile，也不得从当前二进制已编译的 feature union 反推产品能力。
 
+图像查看与分析由 `tools-image-analysis` 独立选择；`tools-image-generation` 承载生成工具、
+配置驱动的 AI client 和生图协议适配。检查图片的窄消费者不应因此启用生成请求。完整产品和
+需要生图的 CLI、ACP、SDK Host 显式选择这两个 owner，工具 provider 与注册顺序保持稳定。
+
 ### 3.3 Workspace dependency 只提供共同底座
 
 - workspace 声明负责版本和真正跨产品共享的最小 feature；

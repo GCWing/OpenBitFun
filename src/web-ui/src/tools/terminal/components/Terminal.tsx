@@ -107,6 +107,11 @@ export interface TerminalProps {
   onResize?: (cols: number, rows: number) => void;
   onReady?: (terminal: XTerm) => void;
   /**
+   * Link activation (Ctrl/Cmd+click). When omitted the link opens externally
+   * as-is; remote terminals use this to forward loopback ports first.
+   */
+  onLinkActivate?: (uri: string) => void;
+  /**
    * Keyboard paste shortcut interceptor. Return true when the shortcut was
    * handled without reading clipboard text, for example by sending Ctrl+V to a
    * shell that owns paste behavior.
@@ -209,6 +214,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   onTitleChange,
   onResize,
   onReady,
+  onLinkActivate,
   onPasteShortcut,
   onPaste,
   preventShrinkBelowColsRef,
@@ -233,6 +239,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   const onTitleChangeRef = useRef(onTitleChange);
   const onResizeRef = useRef(onResize);
   const onReadyRef = useRef(onReady);
+  const onLinkActivateRef = useRef(onLinkActivate);
   const onPasteShortcutRef = useRef(onPasteShortcut);
   const onPasteRef = useRef(onPaste);
   const resizeSuspendedRef = useRef(resizeSuspended);
@@ -268,6 +275,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   onTitleChangeRef.current = onTitleChange;
   onResizeRef.current = onResize;
   onReadyRef.current = onReady;
+  onLinkActivateRef.current = onLinkActivate;
   onPasteShortcutRef.current = onPasteShortcut;
   onPasteRef.current = onPaste;
   resizeSuspendedRef.current = resizeSuspended;
@@ -500,6 +508,11 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
     const webLinksAddon = new WebLinksAddon(
       (event, uri) => {
         if (event.ctrlKey || event.metaKey) {
+          const activate = onLinkActivateRef.current;
+          if (activate) {
+            activate(uri);
+            return;
+          }
           systemAPI.openExternal(uri).catch((error) => {
             log.error('Failed to open external link', { uri, error });
           });

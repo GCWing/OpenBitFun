@@ -245,6 +245,20 @@ impl Tool for ViewImageTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "width": {"type": "integer"},
+                "height": {"type": "integer"},
+                "summary": {"type": "string"}
+            },
+            "required": ["path", "width", "height", "summary"],
+            "additionalProperties": true
+        })
+    }
+
     async fn is_available_in_context(&self, context: Option<&ToolUseContext>) -> bool {
         context
             .map(Self::supports_multimodal_tool_output)

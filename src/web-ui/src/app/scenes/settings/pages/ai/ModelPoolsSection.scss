@@ -88,10 +88,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.openbitfun-model-pools__editor {
-  block-size: min(640px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
-}
-
 .openbitfun-model-pools__strategies {
   display: grid;
   inline-size: 100%;
@@ -167,10 +163,6 @@
   &[data-strategy='balanced'] > img {
     transform: translateX(-50%);
   }
-}
-
-.openbitfun-model-pools__picker {
-  block-size: min(420px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
 }
 
 .openbitfun-model-pools__picker-body {

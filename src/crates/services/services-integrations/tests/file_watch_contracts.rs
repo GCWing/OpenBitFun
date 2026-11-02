@@ -1,11 +1,85 @@
 #![cfg(feature = "file-watch")]
 
+use openbitfun_events::EventEmitter;
 use openbitfun_services_integrations::file_watch::{
-    FileWatchEventKind, FileWatchService, FileWatcherConfig,
+    FileWatchEventKind, FileWatchService, FileWatcherConfig, FILE_WATCH_STATUS_CHANGED_EVENT,
 };
 use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Records product events so a contract test can assert what surfaces receive.
+struct RecordingEmitter {
+    events: tokio::sync::mpsc::UnboundedSender<(String, serde_json::Value)>,
+}
+
+#[async_trait::async_trait]
+impl EventEmitter for RecordingEmitter {
+    async fn emit(&self, event_name: &str, payload: serde_json::Value) -> anyhow::Result<()> {
+        let _ = self.events.send((event_name.to_string(), payload));
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn file_watch_status_reaches_product_events() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path().join("watched");
+    fs::create_dir_all(&root).expect("watched root");
+    let mut config = FileWatcherConfig::default();
+    config.debounce_interval_ms = 0;
+    let service = FileWatchService::new(config.clone());
+    let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+    service
+        .set_emitter(Arc::new(RecordingEmitter { events: events_tx }))
+        .await;
+
+    service
+        .watch_path(&root.to_string_lossy(), Some(config))
+        .await
+        .expect("initial watch");
+
+    let (event_name, healthy) = next_status(&mut events_rx).await;
+    assert_eq!(event_name, FILE_WATCH_STATUS_CHANGED_EVENT);
+    assert_eq!(healthy["healthy"], true);
+    assert_eq!(healthy["failure"], serde_json::Value::Null);
+    assert_eq!(healthy["watchedPaths"].as_array().map(Vec::len), Some(1));
+
+    // A watched root that disappears is a real backend failure, not a test hook.
+    fs::remove_dir_all(&root).expect("remove watched root");
+    service.rebuild_watcher().await.expect_err("missing root");
+
+    let (event_name, failed) = next_status(&mut events_rx).await;
+    assert_eq!(event_name, FILE_WATCH_STATUS_CHANGED_EVENT);
+    assert_eq!(failed["healthy"], false);
+    assert_eq!(failed["failure"]["code"], "backend_unavailable");
+    assert_eq!(failed["failure"]["hint"], serde_json::Value::Null);
+    assert_eq!(failed["failure"]["path"], root.to_string_lossy().as_ref());
+
+    fs::create_dir_all(&root).expect("recreate watched root");
+    service
+        .rebuild_watcher()
+        .await
+        .expect("rebuild after recovery");
+
+    let (_, recovered) = next_status(&mut events_rx).await;
+    assert_eq!(recovered["healthy"], true);
+    assert_eq!(recovered["failure"], serde_json::Value::Null);
+}
+
+async fn next_status(
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<(String, serde_json::Value)>,
+) -> (String, serde_json::Value) {
+    loop {
+        let (event_name, payload) = tokio::time::timeout(Duration::from_secs(5), events.recv())
+            .await
+            .expect("status event")
+            .expect("emitter channel open");
+        if event_name == FILE_WATCH_STATUS_CHANGED_EVENT {
+            return (event_name, payload);
+        }
+    }
+}
 
 #[tokio::test]
 async fn file_watch_preserves_missing_path_error() {

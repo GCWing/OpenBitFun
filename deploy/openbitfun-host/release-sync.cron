@@ -1,6 +1,0 @@
-# This file is the entire root crontab for the OpenBitFun origin.
-# Installing it replaces every root cron job. Back up `crontab -l` first.
-# Install with:
-#   crontab /root/repos/OpenBitFun/deploy/openbitfun-host/release-sync.cron
-# Requires /root/repos/OpenBitFun checked out and /srv/openbitfun-release created.
-*/10 * * * * /root/repos/OpenBitFun/scripts/openbitfun-release-sync.sh >> /var/log/openbitfun-release-sync.log 2>&1

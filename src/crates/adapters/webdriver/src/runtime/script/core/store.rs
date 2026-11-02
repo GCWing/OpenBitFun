@@ -51,7 +51,11 @@ pub(super) fn script() -> &'static str {
       if (isElementLike(value)) {
         return storeElement(value);
       }
-      if (value && typeof value === "object" && typeof value.length === "number" && typeof value !== "string") {
+      // A page result may have a numeric `length` field (for example article
+      // text metadata). Only native collections have array serialization.
+      const collectionTag = Object.prototype.toString.call(value);
+      if (Array.isArray(value) || ["[object NodeList]", "[object HTMLCollection]", "[object HTMLAllCollection]", "[object HTMLFormControlsCollection]", "[object HTMLOptionsCollection]"].includes(collectionTag)
+        || (ArrayBuffer.isView(value) && typeof value.length === "number")) {
         return Array.from(value).map((item) => serialize(item, seen));
       }
       if (value && typeof value === "object" && "x" in value && "y" in value && "width" in value && "height" in value && "top" in value && "left" in value) {
@@ -72,9 +76,6 @@ pub(super) fn script() -> &'static str {
           message: value.message,
           stack: value.stack
         };
-      }
-      if (Array.isArray(value)) {
-        return value.map((item) => serialize(item, seen));
       }
       if (typeof value === "object") {
         if (seen.has(value)) {

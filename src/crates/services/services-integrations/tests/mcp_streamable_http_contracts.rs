@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use openbitfun_services_integrations::mcp::adapter::render_mcp_tool_result_for_assistant;
 use openbitfun_services_integrations::mcp::config::ConfigLocation;
+use openbitfun_services_integrations::mcp::protocol::MCPToolResultContent;
 use openbitfun_services_integrations::mcp::server::{
     MCPConnection, MCPProcessStartContext, MCPRuntimeErrorKind, MCPServerConfig,
     MCPServerRuntimeState, MCPServerStatus, MCPServerTimeouts, MCPServerTransport, MCPServerType,
@@ -12,6 +14,9 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::task::JoinSet;
+
+const TOOL_ERROR_DETAIL: &str = "Invalid date: expected YYYY-MM-DD";
 
 #[derive(Clone, Default)]
 struct TestState {
@@ -26,6 +31,7 @@ struct TestState {
     ping_error: Arc<AtomicI32>,
     tools_error: Arc<AtomicBool>,
     tools_requests: Arc<AtomicU64>,
+    tool_call_sse: Arc<AtomicBool>,
 }
 
 struct TestRequest {
@@ -265,6 +271,44 @@ async fn handle_post(
             }
             Ok(())
         }
+        "tools/call" => {
+            let response =
+                if body.pointer("/params/name").and_then(Value::as_str) == Some("missing_tool") {
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {
+                            "code": -32602,
+                            "message": "Unknown tool: missing_tool",
+                            "data": { "tool": "missing_tool", "reason": "tool_not_registered" }
+                        }
+                    })
+                } else {
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "content": [{ "type": "text", "text": TOOL_ERROR_DETAIL }],
+                            "isError": true
+                        }
+                    })
+                };
+            let (content_type, payload) = if state.tool_call_sse.load(Ordering::SeqCst) {
+                (
+                    "text/event-stream",
+                    format!("event: message\ndata: {response}\n\n"),
+                )
+            } else {
+                ("application/json", response.to_string())
+            };
+            write_response(
+                stream,
+                "200 OK",
+                &[("Content-Type", content_type)],
+                &payload,
+            )
+            .await
+        }
         "ping" if state.ping_error.load(Ordering::SeqCst) != 0 => {
             let response = json!({"jsonrpc": "2.0", "id": id,
                 "error": {"code": state.ping_error.load(Ordering::SeqCst), "message": "fixture ping error"}});
@@ -345,6 +389,87 @@ async fn raw_status_line(addr: std::net::SocketAddr, request: &str) -> String {
         .next()
         .unwrap_or_default()
         .to_string()
+}
+
+async fn assert_streamable_http_tool_errors_reach_assistant(use_post_sse: bool) {
+    let state = TestState::default();
+    state.tool_call_sse.store(use_post_sse, Ordering::SeqCst);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let mut connections = JoinSet::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            let state = state.clone();
+            connections.spawn(async move {
+                let _ = handle_connection(stream, state).await;
+            });
+        }
+    });
+
+    let responses = tokio::time::timeout(Duration::from_secs(5), async {
+        let connection = MCPConnection::new_remote(
+            "tool-errors-test",
+            format!("http://{addr}/mcp"),
+            Default::default(),
+            false,
+        )
+        .await
+        .expect("remote connection should be created");
+        connection
+            .initialize("OpenBitFunTest", "1.0.0")
+            .await
+            .expect("initialize should succeed");
+        let execution_result = connection
+            .call_tool("hello", Some(json!({ "date": "invalid" })))
+            .await;
+        let protocol_result = connection.call_tool("missing_tool", None).await;
+        drop(connection);
+        (execution_result, protocol_result)
+    })
+    .await;
+    // Aborting the listener drops its JoinSet and cancels the persistent GET SSE handlers.
+    server.abort();
+    let _ = server.await;
+
+    let (execution_result, protocol_result) =
+        responses.expect("Streamable HTTP tool calls should complete promptly");
+    let execution_result =
+        execution_result.expect("a tool execution error should remain a valid MCP result");
+    assert!(execution_result.is_error);
+    assert!(matches!(
+        execution_result.content.as_deref(),
+        Some([MCPToolResultContent::Text { text }]) if text == TOOL_ERROR_DETAIL
+    ));
+    let assistant_text =
+        render_mcp_tool_result_for_assistant("hello", &execution_result, usize::MAX);
+    assert!(
+        assistant_text.contains(TOOL_ERROR_DETAIL),
+        "the assistant must receive the server's actionable error detail: {assistant_text}"
+    );
+
+    let protocol_error = protocol_result
+        .expect_err("a JSON-RPC error should fail the tool call")
+        .to_string();
+    for detail in [
+        "-32602",
+        "Unknown tool: missing_tool",
+        "tool_not_registered",
+    ] {
+        assert!(
+            protocol_error.contains(detail),
+            "the protocol error must preserve code, message and data: {protocol_error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn remote_mcp_tool_errors_reach_assistant_via_json() {
+    assert_streamable_http_tool_errors_reach_assistant(false).await;
+}
+
+#[tokio::test]
+async fn remote_mcp_tool_errors_reach_assistant_via_post_sse() {
+    assert_streamable_http_tool_errors_reach_assistant(true).await;
 }
 
 #[tokio::test]

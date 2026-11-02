@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly MARKET_ROOT="/srv/openbitfun-miniapp-market"
+readonly MARKET_ROOT="${MARKET_ROOT:-/srv/openbitfun-miniapp-market}"
 readonly DATA_ROOT="${MARKET_ROOT}/data"
 readonly ARTIFACT_ROOT="${MARKET_ROOT}/artifacts"
 readonly BACKUP_ROOT="${MARKET_ROOT}/backups"
@@ -11,8 +11,8 @@ readonly TODAY="$(date -u +%F)"
 readonly WEEK="$(date -u +%G-W%V)"
 readonly DAILY_TARGET="${DAILY_ROOT}/${TODAY}"
 
-if [[ "${MARKET_ROOT}" != "/srv/openbitfun-miniapp-market" ]]; then
-  echo "Unexpected backup root" >&2
+if [[ "${MARKET_ROOT}" != /* || "${MARKET_ROOT}" == "/" ]]; then
+  echo "MARKET_ROOT must be an absolute path below /" >&2
   exit 1
 fi
 

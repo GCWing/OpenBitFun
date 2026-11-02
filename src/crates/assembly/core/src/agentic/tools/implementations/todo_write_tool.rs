@@ -103,6 +103,29 @@ Each item must include:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "count": {"type": "integer"},
+                "summary": {"type": "string"},
+                "stats": {
+                    "type": "object",
+                    "properties": {
+                        "completed": {"type": "integer"},
+                        "in_progress": {"type": "integer"},
+                        "pending": {"type": "integer"}
+                    },
+                    "required": ["completed", "in_progress", "pending"],
+                    "additionalProperties": false
+                }
+            },
+            "required": ["success", "count", "summary", "stats"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

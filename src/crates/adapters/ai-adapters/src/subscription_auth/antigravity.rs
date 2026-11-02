@@ -3,8 +3,8 @@
 //! Browser PKCE login against Google OAuth on a loopback listener (preferring
 //! the registered port `51121`), then Bearer access to
 //! the Cloud Code Assist (`cloudcode-pa`) endpoint using the
-//! `gemini-code-assist` request format. Constants mirror
-//! `opencode-antigravity-auth`.
+//! `gemini-code-assist` request format. Transport follows Magpie's current
+//! Antigravity hub client and managed-project discovery contract.
 
 use super::store::{self, StoredCredential};
 use super::{
@@ -23,14 +23,12 @@ const CALLBACK_PORTS: &[u16] = &[CALLBACK_PORT];
 const AUTHORIZE_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const USER_INFO_URL: &str = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json";
-const CODE_ASSIST_BASE_URL: &str = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+const CODE_ASSIST_BASE_URL: &str = crate::providers::gemini::code_assist::ANTIGRAVITY_DAILY_BASE;
 const CODE_ASSIST_REQUEST_URL: &str =
-    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse";
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse";
 const ANTIGRAVITY_VERSION_URL: &str =
-    "https://antigravity-auto-updater-974169037036.us-central1.run.app";
-const ANTIGRAVITY_CHANGELOG_URL: &str = "https://antigravity.google/changelog";
-const ANTIGRAVITY_VERSION_FALLBACK: &str = "2.0.6";
-const GOOG_API_CLIENT: &str = "google-cloud-sdk vscode_cloudshelleditor/0.1";
+    "https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-arm64-mac.yml";
+const ANTIGRAVITY_VERSION_FALLBACK: &str = "2.23.1";
 const DEFAULT_MODEL: &str = "gemini-3-pro-high";
 const REFRESH_LEEWAY_MS: i64 = 5 * 60 * 1000;
 const STORE_KEY: &str = "antigravity";
@@ -56,20 +54,19 @@ fn client_secret() -> String {
     format!("{prefix}{suffix}")
 }
 
-/// Returns the platform-specific User-Agent and Client-Metadata platform token.
-fn platform_tokens() -> (String, &'static str) {
+/// Returns the hub User-Agent platform, independently of body metadata enums.
+fn platform_tokens() -> String {
     platform_tokens_for(std::env::consts::OS, std::env::consts::ARCH)
 }
 
-fn platform_tokens_for(os: &str, arch: &str) -> (String, &'static str) {
-    // Antigravity only advertises Windows/macOS desktop builds. The OpenCode
-    // plugin deliberately chooses from these supported fingerprints even when
-    // it runs under Linux, WSL, or a container.
-    match (os, arch) {
-        (_, "aarch64") => ("darwin/arm64".to_string(), "MACOS"),
-        ("macos", _) => ("darwin/amd64".to_string(), "MACOS"),
-        _ => ("windows/amd64".to_string(), "WINDOWS"),
-    }
+fn platform_tokens_for(os: &str, arch: &str) -> String {
+    let os = if os == "macos" { "darwin" } else { os };
+    let arch = match arch {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        arch => arch,
+    };
+    format!("{os}/{arch}")
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,10 +81,14 @@ struct TokenResponse {
     expires_in: Option<i64>,
     #[serde(default, skip_deserializing)]
     email: Option<String>,
+    #[serde(default, skip_deserializing)]
+    upstream_subject: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct UserInfoResponse {
+    #[serde(default)]
+    id: Option<String>,
     #[serde(default)]
     email: Option<String>,
 }
@@ -118,47 +119,36 @@ fn http_client(options: &SubscriptionHttpOptions) -> Result<reqwest::Client> {
 }
 
 fn parse_antigravity_version(text: &str) -> Option<String> {
-    text.split(|character: char| !(character.is_ascii_digit() || character == '.'))
-        .find_map(|candidate| {
-            let parts = candidate.split('.').collect::<Vec<_>>();
-            (parts.len() == 3
-                && parts
-                    .iter()
-                    .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit())))
-            .then(|| candidate.to_string())
-        })
+    text.lines().find_map(|line| {
+        let candidate = line
+            .trim()
+            .strip_prefix("version:")?
+            .split('#')
+            .next()?
+            .trim()
+            .trim_matches(['\'', '"']);
+        let parts = candidate.split('.').collect::<Vec<_>>();
+        (parts.len() == 3
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit())))
+        .then(|| candidate.to_string())
+    })
 }
 
 async fn fetch_antigravity_version(options: &SubscriptionHttpOptions) -> Option<String> {
     let client = http_client(options).ok()?;
-    for (url, max_chars) in [
-        (ANTIGRAVITY_VERSION_URL, None),
-        (ANTIGRAVITY_CHANGELOG_URL, Some(5_000usize)),
-    ] {
-        let response = match client.get(url).timeout(Duration::from_secs(5)).send().await {
-            Ok(response) if response.status().is_success() => response,
-            _ => continue,
-        };
-        let mut body = match response.text().await {
-            Ok(body) => body,
-            Err(_) => continue,
-        };
-        if let Some(limit) = max_chars {
-            if body.len() > limit {
-                let boundary = body
-                    .char_indices()
-                    .map(|(index, _)| index)
-                    .take_while(|index| *index <= limit)
-                    .last()
-                    .unwrap_or(0);
-                body.truncate(boundary);
-            }
-        }
-        if let Some(version) = parse_antigravity_version(&body) {
-            return Some(version);
-        }
+    let response = client
+        .get(ANTIGRAVITY_VERSION_URL)
+        .header("User-Agent", "electron-builder")
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
     }
-    None
+    parse_antigravity_version(&response.text().await.ok()?)
 }
 
 async fn antigravity_version(options: &SubscriptionHttpOptions) -> &'static str {
@@ -173,7 +163,10 @@ async fn antigravity_version(options: &SubscriptionHttpOptions) -> &'static str 
         .as_str()
 }
 
-async fn fetch_user_email(access_token: &str, options: &SubscriptionHttpOptions) -> Option<String> {
+async fn fetch_user_profile(
+    access_token: &str,
+    options: &SubscriptionHttpOptions,
+) -> Option<UserInfoResponse> {
     let response = http_client(options)
         .ok()?
         .get(USER_INFO_URL)
@@ -188,12 +181,7 @@ async fn fetch_user_email(access_token: &str, options: &SubscriptionHttpOptions)
     if !response.status().is_success() {
         return None;
     }
-    response
-        .json::<UserInfoResponse>()
-        .await
-        .ok()?
-        .email
-        .filter(|email| !email.trim().is_empty())
+    response.json::<UserInfoResponse>().await.ok()
 }
 
 async fn exchange_code(
@@ -235,7 +223,10 @@ async fn exchange_code(
         .await
         .context("parse antigravity token response")?;
     if let Some(access) = tokens.access_token.as_deref() {
-        tokens.email = fetch_user_email(access, options).await;
+        if let Some(profile) = fetch_user_profile(access, options).await {
+            tokens.email = profile.email.filter(|value| !value.trim().is_empty());
+            tokens.upstream_subject = profile.id.filter(|value| !value.trim().is_empty());
+        }
     }
     Ok(tokens)
 }
@@ -292,7 +283,11 @@ fn metadata_from(
     }
 }
 
-async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result<()> {
+async fn persist_tokens_for_account(
+    slot: &str,
+    tokens: TokenResponse,
+    expected_revision: u64,
+) -> Result<()> {
     let access = tokens
         .access_token
         .clone()
@@ -303,14 +298,17 @@ async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result
         .ok_or_else(|| anyhow!("antigravity token response missing refresh_token"))?;
     let expires = now_ms() + tokens.expires_in.unwrap_or(3600) * 1000;
     let metadata = metadata_from(&tokens, None);
-    let outcome = store::upsert_if_revision(
-        STORE_KEY,
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Antigravity,
+        slot,
         expected_revision,
         StoredCredential::Oauth {
             refresh,
             access,
             expires,
-            account_id: None,
+            account_id: tokens
+                .upstream_subject
+                .or_else(|| tokens.id_token.as_deref().and_then(jwt::subject)),
             metadata,
         },
     )
@@ -321,7 +319,8 @@ async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result
 }
 
 /// Starts the browser PKCE login flow, binding the loopback callback server.
-pub(crate) async fn begin_login(
+pub(crate) async fn begin_login_for_account(
+    slot: String,
     cancel: CancellationToken,
     expected_revision: u64,
     options: SubscriptionHttpOptions,
@@ -346,7 +345,9 @@ pub(crate) async fn begin_login(
                     .ok_or_else(|| anyhow!("antigravity callback missing code"))?;
                 exchange_code(&code, &verifier, &redirect_uri, &options).await
             },
-            move |tokens| persist_tokens(tokens, expected_revision),
+            move |tokens| async move {
+                persist_tokens_for_account(&slot, tokens, expected_revision).await
+            },
         )
         .await
     };
@@ -363,9 +364,29 @@ pub(crate) async fn begin_login(
 
 /// Ensures the stored access token is fresh, refreshing it when needed. Returns
 /// the current `(access, expires_ms)`.
-async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)> {
-    let _refresh_lease = store::acquire_provider_refresh_lease(STORE_KEY).await?;
-    let snapshot = store::load_entry_with_revision(STORE_KEY).await?;
+async fn ensure_fresh_for_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<(String, i64)> {
+    let (slot, rejected_access, options) = (
+        slot.to_owned(),
+        rejected_access.map(str::to_owned),
+        options.clone(),
+    );
+    super::complete_credential_refresh(async move {
+        ensure_fresh_in_account(&slot, rejected_access.as_deref(), &options).await
+    })
+    .await
+}
+
+async fn ensure_fresh_in_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<(String, i64)> {
+    let _refresh_lease = store::acquire_provider_refresh_lease(slot).await?;
+    let snapshot = store::load_entry_with_revision(slot).await?;
     let entry = snapshot
         .credential
         .ok_or_else(|| anyhow!("Antigravity is not connected; sign in first"))?;
@@ -380,7 +401,7 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
         return Err(anyhow!("Antigravity credential is not an OAuth login"));
     };
 
-    if expires > now_ms() + REFRESH_LEEWAY_MS {
+    if rejected_access != Some(access.as_str()) && expires > now_ms() + REFRESH_LEEWAY_MS {
         return Ok((access, expires));
     }
 
@@ -391,9 +412,15 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
         .ok_or_else(|| anyhow!("antigravity refresh response missing access_token"))?;
     let new_refresh = refreshed.refresh_token.clone().unwrap_or(refresh_token);
     let new_expires = now_ms() + refreshed.expires_in.unwrap_or(3600) * 1000;
+    let account_id = refreshed
+        .id_token
+        .as_deref()
+        .and_then(jwt::subject)
+        .or(account_id);
     let new_metadata = metadata_from(&refreshed, metadata);
-    let outcome = store::upsert_if_revision(
-        STORE_KEY,
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Antigravity,
+        slot,
         snapshot.revision,
         StoredCredential::Oauth {
             refresh: new_refresh,
@@ -410,8 +437,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
             Ok((new_access, new_expires))
         }
         store::ConditionalCommitOutcome::Conflict { current_revision } => {
-            let current = super::load_current_store_after_conflict(
+            let current = super::load_account_store_after_conflict(
                 super::SubscriptionProvider::Antigravity,
+                slot,
                 current_revision,
             )
             .await?;
@@ -434,21 +462,21 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64)
 }
 
 /// Resolves the runtime credential (refreshing tokens if required).
-pub(crate) async fn resolve(options: &SubscriptionHttpOptions) -> Result<ResolvedCredential> {
-    let (access, expires) = ensure_fresh(options).await?;
-    let (ua_platform, meta_platform) = platform_tokens();
+pub(crate) async fn resolve_account(
+    slot: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<ResolvedCredential> {
+    let (access, expires) = ensure_fresh_for_account(slot, None, options).await?;
+    let ua_platform = platform_tokens();
     let version = antigravity_version(options).await;
     let mut headers = HashMap::new();
     headers.insert(
         "User-Agent".to_string(),
-        format!("antigravity/{version} {ua_platform}"),
+        format!("antigravity/hub/{version} {ua_platform}"),
     );
-    headers.insert("X-Goog-Api-Client".to_string(), GOOG_API_CLIENT.to_string());
     headers.insert(
         "Client-Metadata".to_string(),
-        format!(
-            "{{\"ideType\":\"ANTIGRAVITY\",\"platform\":\"{meta_platform}\",\"pluginType\":\"GEMINI\"}}"
-        ),
+        "{\"ideType\":\"ANTIGRAVITY\"}".to_string(),
     );
 
     Ok(ResolvedCredential {
@@ -466,6 +494,18 @@ pub(crate) fn suggested() -> (&'static str, &'static str, &'static str) {
     ("gemini-code-assist", CODE_ASSIST_BASE_URL, DEFAULT_MODEL)
 }
 
+pub(crate) async fn resolve(options: &SubscriptionHttpOptions) -> Result<ResolvedCredential> {
+    resolve_account(STORE_KEY, options).await
+}
+
+pub(crate) async fn recover_rejected_account(
+    slot: &str,
+    rejected_access: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<()> {
+    ensure_fresh_for_account(slot, Some(rejected_access), options).await?;
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::{
@@ -486,39 +526,43 @@ mod tests {
     }
 
     #[test]
-    fn uses_only_antigravity_supported_desktop_fingerprints() {
-        assert_eq!(
-            platform_tokens_for("windows", "x86_64"),
-            ("windows/amd64".to_string(), "WINDOWS")
-        );
-        assert_eq!(
-            platform_tokens_for("windows", "aarch64"),
-            ("darwin/arm64".to_string(), "MACOS")
-        );
-        assert_eq!(
-            platform_tokens_for("macos", "aarch64"),
-            ("darwin/arm64".to_string(), "MACOS")
-        );
-        assert_eq!(
-            platform_tokens_for("linux", "x86_64"),
-            ("windows/amd64".to_string(), "WINDOWS")
-        );
-        assert_eq!(
-            platform_tokens_for("linux", "aarch64"),
-            ("darwin/arm64".to_string(), "MACOS")
-        );
+    fn hub_user_agent_uses_the_host_platform() {
+        for (os, arch, expected) in [
+            ("windows", "x86_64", "windows/amd64"),
+            ("windows", "aarch64", "windows/arm64"),
+            ("macos", "aarch64", "darwin/arm64"),
+            ("linux", "x86_64", "linux/amd64"),
+            ("linux", "aarch64", "linux/arm64"),
+        ] {
+            assert_eq!(platform_tokens_for(os, arch), expected);
+        }
     }
 
     #[test]
-    fn parses_live_antigravity_version_and_uses_current_fallback() {
-        assert_eq!(
-            parse_antigravity_version("Auto updater is running. Fixed Version: 2.0.6"),
-            Some("2.0.6".to_string())
-        );
-        assert_eq!(ANTIGRAVITY_VERSION_FALLBACK, "2.0.6");
+    fn parses_hub_update_manifest_without_treating_artifact_names_as_versions() {
+        for manifest in [
+            "version: 2.19.1\n",
+            "version: '2.19.1' # stable",
+            "version: \"2.19.1\"\n",
+        ] {
+            assert_eq!(parse_antigravity_version(manifest), Some("2.19.1".into()));
+        }
+        for invalid in [
+            "files: hub-2.19.1.dmg",
+            "version: 2.19",
+            "version: beta",
+            "version: 2.19.1.4",
+        ] {
+            assert_eq!(parse_antigravity_version(invalid), None);
+        }
+        assert_eq!(ANTIGRAVITY_VERSION_FALLBACK, "2.23.1");
         assert_eq!(
             CODE_ASSIST_BASE_URL,
-            "https://daily-cloudcode-pa.sandbox.googleapis.com"
+            "https://daily-cloudcode-pa.googleapis.com"
+        );
+        assert_eq!(
+            super::CODE_ASSIST_REQUEST_URL,
+            format!("{CODE_ASSIST_BASE_URL}/v1internal:streamGenerateContent?alt=sse")
         );
     }
 }

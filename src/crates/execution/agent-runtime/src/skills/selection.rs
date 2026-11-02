@@ -3,6 +3,7 @@ use super::keys::normalize_skill_keys as normalize_skill_key_list;
 use super::resolver::{
     resolve_skill_default_enabled_for_mode, resolve_skill_state_for_mode, UserModeSkillOverrides,
 };
+use super::roots::OPENBITFUN_USER_SKILL_SLOT;
 use super::types::{ModeSkillInfo, SkillData, SkillInfo, SkillLocation};
 use std::collections::{HashMap, HashSet};
 
@@ -161,6 +162,27 @@ pub fn filter_user_invocable_skills(skills: Vec<SkillInfo>) -> Vec<SkillInfo> {
         .collect()
 }
 
+/// Select the implicit image workflow after mode/user policy and tool availability.
+/// Explicit invocation and the installed skill inventory retain all records.
+pub fn filter_implicit_image_skills(
+    mut skills: Vec<SkillInfo>,
+    image_generation_available: bool,
+) -> Vec<SkillInfo> {
+    let is_native = |skill: &SkillInfo| skill.is_builtin && skill.dir_name == "generate-image";
+    let prefer_native = image_generation_available && skills.iter().any(is_native);
+    skills.retain(|skill| {
+        if is_native(skill) {
+            return image_generation_available;
+        }
+        !(prefer_native
+            && skill.name == "imagegen"
+            && skill.level == SkillLocation::User
+            && !skill.is_builtin
+            && skill.source_slot != OPENBITFUN_USER_SKILL_SLOT)
+    });
+    skills
+}
+
 pub fn is_skill_globally_enabled(
     skill: &SkillInfo,
     globally_disabled_user_skills: &HashSet<String>,
@@ -302,6 +324,81 @@ pub fn resolve_default_hidden_builtin_for_explicit_invocation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn native_image_skill() -> SkillInfo {
+        let mut skill = candidate(
+            "generate-image",
+            "user::openbitfun-system::generate-image",
+            "/native/generate-image",
+        )
+        .info;
+        skill.is_builtin = true;
+        skill.level = SkillLocation::User;
+        skill.source_slot = "openbitfun-system".to_string();
+        skill
+    }
+
+    fn external_image_skill() -> SkillInfo {
+        let mut skill = candidate(
+            "imagegen",
+            "user::home.codex::.system/imagegen",
+            "/external/imagegen",
+        )
+        .info;
+        skill.level = SkillLocation::User;
+        skill.source_slot = "home.codex".to_string();
+        skill
+    }
+
+    #[test]
+    fn native_image_route_replaces_only_external_user_imagegen_in_implicit_listing() {
+        let mut user_authored = external_image_skill();
+        user_authored.source_slot = OPENBITFUN_USER_SKILL_SLOT.to_string();
+        user_authored.key = "user::openbitfun::imagegen".to_string();
+        let project = candidate("imagegen", "project::codex::imagegen", "/project/imagegen").info;
+        let unrelated = candidate(
+            "brandkit",
+            "user::home.agents::brandkit",
+            "/external/brandkit",
+        )
+        .info;
+        let original = vec![
+            native_image_skill(),
+            external_image_skill(),
+            user_authored.clone(),
+            project.clone(),
+            unrelated.clone(),
+        ];
+        let selected = filter_implicit_image_skills(original.clone(), true);
+        assert_eq!(
+            selected
+                .iter()
+                .map(|skill| skill.key.as_str())
+                .collect::<Vec<_>>(),
+            [
+                original[0].key.as_str(),
+                user_authored.key.as_str(),
+                project.key.as_str(),
+                unrelated.key.as_str()
+            ]
+        );
+        assert_eq!(filter_user_invocable_skills(original).len(), 5);
+    }
+
+    #[test]
+    fn native_image_skill_is_hidden_when_its_tool_is_unavailable() {
+        let selected =
+            filter_implicit_image_skills(vec![native_image_skill(), external_image_skill()], false);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].key, external_image_skill().key);
+    }
+
+    #[test]
+    fn opting_out_of_the_native_skill_keeps_the_external_image_route() {
+        let selected = filter_implicit_image_skills(vec![external_image_skill()], true);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].key, external_image_skill().key);
+    }
 
     #[test]
     fn resolved_candidate_sort_is_case_insensitive_ascending_and_stable_for_equal_precedence() {

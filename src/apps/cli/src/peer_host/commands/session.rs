@@ -454,6 +454,21 @@ pub(crate) async fn load_session_turn_window(
     state: &PeerHostState,
     args: &Value,
 ) -> Result<Value, String> {
+    read_session_turn_window(state, args, false).await
+}
+
+pub(crate) async fn load_session_trajectory(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    read_session_turn_window(state, args, true).await
+}
+
+async fn read_session_turn_window(
+    state: &PeerHostState,
+    args: &Value,
+    trajectory: bool,
+) -> Result<Value, String> {
     let request = request_value(args);
     let session_id = validated_session_id(request)?;
     let workspace_path = resolved_session_storage_path(state, request).await?;
@@ -465,19 +480,62 @@ pub(crate) async fn load_session_turn_window(
                 workspace_path: workspace_path.clone(),
                 session_id,
                 include_internal: optional_bool(request, "includeInternal").unwrap_or(false),
-                target_storage_turn_index: request
-                    .get("targetStorageTurnIndex")
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| "targetStorageTurnIndex is required".to_string())?
-                    as usize,
+                target_storage_turn_index: if trajectory
+                    && optional_bool(request, "catalogOnly").unwrap_or(false)
+                {
+                    usize::MAX
+                } else {
+                    request
+                        .get("targetStorageTurnIndex")
+                        .and_then(Value::as_u64)
+                        .ok_or_else(|| "targetStorageTurnIndex is required".to_string())?
+                        as usize
+                },
                 expected_turn_id: optional_string(request, "expectedTurnId"),
                 expected_catalog_revision: optional_string(request, "expectedCatalogRevision"),
-                before: request.get("before").and_then(Value::as_u64).unwrap_or(4) as usize,
-                after: request.get("after").and_then(Value::as_u64).unwrap_or(12) as usize,
+                before: if trajectory {
+                    0
+                } else {
+                    request.get("before").and_then(Value::as_u64).unwrap_or(4) as usize
+                },
+                after: if trajectory {
+                    request
+                        .get("after")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(8)
+                        .clamp(1, 8) as usize
+                } else {
+                    request.get("after").and_then(Value::as_u64).unwrap_or(12) as usize
+                },
             },
         )
         .await
         .map_err(|e| format!("Failed to load session Turn window: {e}"))?;
+    if trajectory && optional_bool(request, "catalogOnly").unwrap_or(false) {
+        if let openbitfun_services_core::session::SessionTurnWindowResponse::NotFound { catalog }
+        | openbitfun_services_core::session::SessionTurnWindowResponse::Stale { catalog } =
+            response
+        {
+            return serde_json::to_value(
+                openbitfun_services_core::session::trajectory::SessionTrajectoryPage::Catalog {
+                    catalog,
+                },
+            )
+            .map_err(|e| format!("serialize trajectory catalog: {e}"));
+        }
+        return Err("Unexpected trajectory catalog response".into());
+    }
+    if trajectory {
+        let page = openbitfun_services_core::session::trajectory::project_session_trajectory(
+            response,
+            request.get("query").and_then(Value::as_str).unwrap_or(""),
+            request
+                .get("nodeOffset")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        );
+        return serde_json::to_value(page).map_err(|e| format!("serialize trajectory: {e}"));
+    }
     serde_json::to_value(response).map_err(|e| format!("serialize Turn window: {e}"))
 }
 
@@ -765,6 +823,33 @@ pub(crate) async fn get_session_thread_goal(
     Ok(json!({ "goal": goal }))
 }
 
+pub(crate) async fn get_model_routing_status(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    let request = request_value(args);
+    let session = if let Some(id) = optional_string(request, "sessionId") {
+        ensure_coordinator_session(state, args).await?;
+        Some(
+            state
+                .compatibility
+                .loaded_session_snapshot(&id)
+                .map_err(|error| error.to_string())?
+                .ok_or("Session not found")?,
+        )
+    } else {
+        None
+    };
+    let status =
+        openbitfun_core::agentic::execution::round_model_routing::configuration::session_status(
+            session.as_ref(),
+            optional_bool(request, "probe").unwrap_or(false),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    serde_json::to_value(status).map_err(|error| error.to_string())
+}
+
 pub(crate) async fn update_session_model(
     state: &PeerHostState,
     args: &Value,
@@ -772,6 +857,7 @@ pub(crate) async fn update_session_model(
     let request = request_value(args);
     let session_id = validated_session_id(request)?;
     let model_name = get_string(request, "modelName")?;
+    let routing_mode = optional_string(request, "routingMode");
     let reasoning_preset = optional_string(request, "reasoningPreset")
         .map(|preset| preset.trim().to_string())
         .filter(|preset| !preset.is_empty());
@@ -780,11 +866,12 @@ pub(crate) async fn update_session_model(
         let storage = resolved_session_storage_path(state, request).await?;
         state
             .compatibility
-            .update_session_model_selection_from_storage_path(
+            .update_session_model_selection_from_storage_path_with_routing(
                 &storage,
                 &session_id,
                 &model_name,
                 reasoning_preset.as_deref(),
+                routing_mode.as_deref(),
                 optional_bool(request, "includeInternal").unwrap_or(false),
             )
             .await
@@ -798,6 +885,7 @@ pub(crate) async fn update_session_model(
             selection: AgentSessionModelSelection {
                 model_id: model_name,
                 reasoning_preset,
+                routing_mode,
             },
         })
         .await

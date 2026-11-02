@@ -1,8 +1,4 @@
 .openbitfun-reasoning-control {
-  &__segments[data-wrap='true'] {
-    display: grid;
-  }
-
   position: relative;
   display: grid;
   place-items: center;
@@ -16,8 +12,12 @@
   line-height: var(--openbitfun-type-action-row-line-height);
   letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
 
+  &__segments[data-wrap='true'] {
+    display: grid;
+    border-radius: var(--openbitfun-radius-base);
+  }
+
   &__value {
-    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
@@ -89,11 +89,11 @@
       inline-size: max-content;
       min-inline-size: 4em;
       text-align: center;
-      font-family: var(--openbitfun-type-label-sm-font-family);
-      font-size: var(--openbitfun-type-label-sm-font-size);
+      font-family: var(--openbitfun-type-label-md-font-family);
+      font-size: var(--openbitfun-type-label-md-font-size);
       font-weight: var(--openbitfun-type-label-md-font-weight);
-      line-height: var(--openbitfun-type-label-sm-line-height);
-      letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
+      line-height: var(--openbitfun-type-action-row-line-height);
+      letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
     }
   }
 
@@ -105,32 +105,17 @@
 
     [data-openbitfun-component='segmented-control'] {
       min-inline-size: 0;
-      gap: var(--openbitfun-space-1);
-      padding: 0;
-      background: transparent;
     }
 
     [data-openbitfun-part='segment'] {
       block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
       padding-inline: var(--openbitfun-space-1);
-      color: var(--openbitfun-color-content-secondary);
-      font-family: var(--openbitfun-type-label-sm-font-family);
-      font-size: var(--openbitfun-type-label-sm-font-size);
-      font-weight: var(--openbitfun-type-label-md-font-weight);
-      line-height: var(--openbitfun-type-label-sm-line-height);
-      letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
+      font-family: var(--openbitfun-type-label-md-font-family);
+      font-size: var(--openbitfun-type-label-md-font-size);
+      line-height: var(--openbitfun-type-label-md-line-height);
+      letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
 
-      &[aria-pressed='true'] {
-        color: var(--openbitfun-color-content-primary);
-        background: var(--openbitfun-color-action-neutral-surface-hover);
-      }
-
-      &:disabled {
-        color: var(--openbitfun-color-action-neutral-content-disabled);
-      }
-
-      &:is(:hover, :focus-visible):not(:disabled) {
-        color: var(--openbitfun-color-content-primary);
+      &[aria-pressed='false']:hover:not(:disabled) {
         background: var(--openbitfun-color-action-neutral-surface-hover);
       }
     }

@@ -77,10 +77,8 @@ pub async fn debug_devtools_available() -> Result<bool, String> {
 #[tauri::command]
 #[cfg(any(debug_assertions, feature = "devtools"))]
 pub async fn debug_open_devtools(app: tauri::AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or("Main window not found")?;
-    window.open_devtools();
+    let webview = app.get_webview("main").ok_or("Main window not found")?;
+    webview.open_devtools();
     Ok(())
 }
 
@@ -88,10 +86,8 @@ pub async fn debug_open_devtools(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 #[cfg(any(debug_assertions, feature = "devtools"))]
 pub async fn debug_close_devtools(app: tauri::AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or("Main window not found")?;
-    window.close_devtools();
+    let webview = app.get_webview("main").ok_or("Main window not found")?;
+    webview.close_devtools();
     Ok(())
 }
 

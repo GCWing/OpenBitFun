@@ -38,7 +38,7 @@ export function ModelPoolMemberPicker({ models, value, disabled, onValueChange }
       aria-controls={open ? id : undefined} onClick={() => setOpen(true)}>
       {t('pools.add')}
     </Button>
-    <Dialog id={id} open={open} onOpenChange={setOpen} size="sm" initialFocusRef={searchRef}
+    <Dialog id={id} open={open} onOpenChange={setOpen} preset="panel" initialFocusRef={searchRef}
       className="openbitfun-model-pools__picker" data-testid="settings-model-pool-member-dialog">
       <DialogHeader>
         <DialogHeading><DialogTitle>{t('pools.add')}</DialogTitle></DialogHeading>

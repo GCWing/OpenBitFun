@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { OverflowText, Tooltip } from '@openbitfun/ui';
 
 import { BranchQuickSwitch } from './BranchQuickSwitch';
 
@@ -79,17 +80,22 @@ const branches = [
   { name: 'feature', current: false, remote: false, ahead: 0, behind: 0 },
 ];
 
-function Harness({ onSwitchSuccess, initiallyOpen = true, blockMessagePointer = false }: {
+function Harness({ onSwitchSuccess, initiallyOpen = true, blockMessagePointer = false, currentBranch = 'main' }: {
   onSwitchSuccess?: (branch: string) => void;
   initiallyOpen?: boolean;
   blockMessagePointer?: boolean;
+  currentBranch?: string;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const anchorRef = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <button ref={anchorRef} type="button" data-testid="branch-trigger"
-        aria-expanded={open} onClick={() => setOpen(current => !current)}>branch</button>
+      <Tooltip content={currentBranch} disabled={open}>
+        <button data-overflow-trigger ref={anchorRef} type="button" data-testid="branch-trigger"
+          aria-expanded={open} onClick={() => setOpen(current => !current)}>
+          <OverflowText>{currentBranch}</OverflowText>
+        </button>
+      </Tooltip>
       <div data-testid="flowchat-messages" onPointerDownCapture={event => {
         // FlowChat guards the message area during history transitions.
         if (blockMessagePointer) event.stopPropagation();
@@ -101,7 +107,7 @@ function Harness({ onSwitchSuccess, initiallyOpen = true, blockMessagePointer = 
         isOpen={open}
         onClose={() => setOpen(false)}
         repositoryPath={{ workspaceId: 'workspace-1' }}
-        currentBranch="main"
+        currentBranch={currentBranch}
         anchorRef={anchorRef}
         onSwitchSuccess={onSwitchSuccess}
       />
@@ -290,6 +296,8 @@ describe('BranchQuickSwitch', () => {
     const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
     const refresh = document.querySelector<HTMLButtonElement>('button[aria-label="Refresh branches"]')!;
     act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(document.querySelector('[data-testid="branch-quick-switch-option-feature"]')?.getAttribute('data-active')).toBe('true');
     await act(async () => {
       refresh.focus();
       refresh.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -314,6 +322,123 @@ describe('BranchQuickSwitch', () => {
     expect(mocks.getBranches).toHaveBeenLastCalledWith(
       { workspaceId: 'new', repositoryPath: '/remote/new' }, true, { throwOnError: true },
     );
+  });
+
+  describe('tooltip and virtual focus ownership', () => {
+    const currentBranch = 'feature/a-long-current-branch-name-that-overflows';
+    const otherBranch = 'topic/another-long-branch-name-that-overflows';
+    const revealHint = () => {
+      act(() => vi.advanceTimersByTime(1));
+      act(() => vi.advanceTimersByTime(500));
+      act(() => vi.advanceTimersByTime(20));
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 1));
+      vi.stubGlobal('cancelAnimationFrame', clearTimeout);
+      const longBranches = [
+        { ...branches[0], name: currentBranch },
+        { ...branches[1], name: otherBranch },
+      ];
+      mocks.getState.mockReturnValue({ branches: longBranches });
+      mocks.getBranches.mockResolvedValue(longBranches);
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
+        return this.hasAttribute('data-overflow') ? 80 : 0;
+      });
+      vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function () {
+        return (this.textContent?.length ?? 0) * 8;
+      });
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+        const trigger = this.getAttribute('data-testid') === 'branch-trigger';
+        const option = this.getAttribute('role') === 'option';
+        const tooltip = this.getAttribute('role') === 'tooltip';
+        const top = trigger ? 600 : option ? 350 : 260;
+        const width = trigger ? 100 : 280;
+        const height = trigger || option || tooltip ? 24 : 330;
+        return { x: 100, y: top, left: 100, top, width, height,
+          right: 100 + width, bottom: top + height, toJSON: () => ({}) } as DOMRect;
+      });
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it.each([false, true])('keeps a pending or visible trigger hint closed throughout picker opening (visible: %s)', async visible => {
+      await act(async () => root.render(<Harness initiallyOpen={false} currentBranch={currentBranch} />));
+      const trigger = container.querySelector<HTMLButtonElement>('[data-testid="branch-trigger"]')!;
+      act(() => trigger.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+      if (visible) {
+        revealHint();
+        expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(currentBranch);
+      }
+      await act(async () => trigger.click());
+      revealHint();
+
+      const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+      expect(document.activeElement).toBe(search);
+      expect(document.querySelector('[role="tooltip"]')).toBeNull();
+      expect(document.querySelector('[role="option"][data-active="true"]')).toBeNull();
+      expect(search.hasAttribute('aria-activedescendant')).toBe(false);
+
+      act(() => trigger.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+      revealHint();
+      expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    });
+
+    it('announces virtual focus only after keyboard navigation and clears it when filtering', async () => {
+      await act(async () => root.render(<Harness currentBranch={currentBranch} />));
+      const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+      const list = document.querySelector('[role="listbox"]')!;
+      expect(search.getAttribute('role')).toBe('combobox');
+      expect(search.getAttribute('aria-controls')).toBe(list.id);
+      expect(search.hasAttribute('aria-activedescendant')).toBe(false);
+
+      act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+      const active = document.querySelector('[role="option"][data-active="true"]')!;
+      expect(active.textContent).toBe(currentBranch);
+      expect(search.getAttribute('aria-activedescendant')).toBe(active.id);
+      revealHint();
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(currentBranch);
+
+      act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+      const nextActive = document.querySelector('[role="option"][data-active="true"]')!;
+      expect(nextActive.textContent).toBe(otherBranch);
+      expect(search.getAttribute('aria-activedescendant')).toBe(nextActive.id);
+      expect(active.getAttribute('aria-selected')).toBe('true');
+      expect(nextActive.getAttribute('aria-selected')).toBe('false');
+
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'topic/');
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      revealHint();
+      expect(search.hasAttribute('aria-activedescendant')).toBe(false);
+      expect(document.querySelector('[role="option"][data-active="true"]')).toBeNull();
+      expect(document.querySelector('[role="tooltip"]')).toBeNull();
+
+      mocks.checkoutBranch.mockResolvedValue({ success: true });
+      await act(async () => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+      expect(mocks.checkoutBranch).toHaveBeenCalledWith({ workspaceId: 'workspace-1' }, otherBranch);
+    });
+
+    it('anchors a hovered hint to its own row and hides it as the picker exits', async () => {
+      const media = new EventTarget();
+      Object.defineProperty(media, 'matches', { value: false });
+      vi.stubGlobal('matchMedia', () => media);
+      await act(async () => root.render(<Harness currentBranch={currentBranch} />));
+      act(() => vi.advanceTimersByTime(48));
+      const row = document.querySelector<HTMLElement>(`[data-testid="branch-quick-switch-option-${otherBranch}"]`)!;
+      act(() => row.dispatchEvent(new MouseEvent('mouseenter')));
+      revealHint();
+      const hint = document.querySelector<HTMLElement>('[role="tooltip"]')!;
+      expect(hint.textContent).toBe(otherBranch);
+      expect(row.getAttribute('aria-describedby')).toBe(hint.id);
+      expect(hint.style.top).toBe('318px');
+
+      act(() => container.querySelector<HTMLButtonElement>('[data-testid="branch-trigger"]')!.click());
+      expect(hint.closest('[hidden]')).not.toBeNull();
+      act(() => vi.advanceTimersByTime(100));
+      expect(hint.isConnected).toBe(false);
+    });
   });
 
   describe('motion lifecycle', () => {

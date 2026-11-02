@@ -16,6 +16,7 @@ import { globalEventBus } from '@/infrastructure/event-bus';
 import { requestGitRepositoryTrust } from '@/shared/services/gitTrustService';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import './GitScene.scss';
+import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 
 interface GitSceneProps {
   workspacePath?: string;
@@ -29,6 +30,8 @@ const GitScene: React.FC<GitSceneProps> = ({
   const { workspace } = useCurrentWorkspace();
   const workspacePath = workspacePathProp ?? workspace?.rootPath ?? '';
   const { t } = useTranslation('panels/git');
+  const peer = usePeerDeviceModeOptional();
+  const hostLabel = workspace?.connectionName || (peer?.peerMode.active ? peer.peerMode.deviceName : t('workingCopy.currentHost'));
   const activeView = useGitSceneStore((s) => s.activeView);
 
   const [forceReset, setForceReset] = useState(false);
@@ -103,9 +106,9 @@ const GitScene: React.FC<GitSceneProps> = ({
         return <GraphView workspaceId={workspace?.id} workspacePath={workspacePath} />;
       case 'working-copy':
       default:
-        return <WorkingCopyView workspaceId={workspace?.id} workspacePath={workspacePath} isActive={isActive} />;
+        return <WorkingCopyView hostLabel={hostLabel} workspaceId={workspace?.id} workspacePath={workspacePath} isActive={isActive} />;
     }
-  }, [activeView, isActive, workspacePath, workspace?.id]);
+  }, [activeView, isActive, workspacePath, workspace?.id, hostLabel]);
 
   if (!isActive) {
     return <div className="openbitfun-git-scene" aria-hidden="true" data-openbitfun-scene="git" data-openbitfun-part="root" data-openbitfun-view="hidden" />;

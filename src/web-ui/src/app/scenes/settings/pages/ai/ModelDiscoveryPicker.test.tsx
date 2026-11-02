@@ -73,6 +73,8 @@ describe('model discovery capsules', () => {
     click(trigger());
     expect(popup()!.getAttribute('aria-modal')).toBe('true');
     expect(popup()!.getAttribute('data-openbitfun-component')).toBe('dialog');
+    expect(popup()!.getAttribute('data-preset')).toBe('panel');
+    expect(popup()!.getAttribute('data-size')).toBe('xl');
     expect(popup()!.textContent).toContain(copy('providerSelection.fetchedModels', { count: '3' }));
     expect(capsules().map(button => button.textContent)).toEqual(['alpha', 'beta', 'gamma']);
     expect(capsules()[0].getAttribute('aria-pressed')).toBe('true');

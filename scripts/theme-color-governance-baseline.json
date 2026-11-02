@@ -312,7 +312,7 @@
       "max": 0
     },
     "colorDomainScopes.assetMetadata.uniqueColors": {
-      "max": 7
+      "max": 4
     },
     "colorDomainScopes.mermaid.occurrences": {
       "max": 0

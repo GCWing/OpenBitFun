@@ -1,11 +1,12 @@
 import {
   FieldGroup,
+  FieldAccessibilityProvider,
   FormSection,
   ScrollArea,
   type FieldGroupFieldSurface,
   type FormSectionProps,
 } from '@openbitfun/ui';
-import React from 'react';
+import React, { useId } from 'react';
 import { formatStandaloneUiCopy } from './standaloneUiCopy';
 import './ConfigPageLayout.scss';
 
@@ -187,6 +188,9 @@ export const ConfigPageRow: React.FC<ConfigPageRowProps> = ({
   balanced = false,
   ...props
 }) => {
+  const fieldId = useId();
+  const labelId = `config-row-${fieldId}-label`;
+  const descriptionId = description ? `config-row-${fieldId}-description` : undefined;
   const hasControl = children !== null && children !== undefined && children !== false;
   const cls = [
     'openbitfun-config-page-row',
@@ -201,6 +205,9 @@ export const ConfigPageRow: React.FC<ConfigPageRowProps> = ({
   return (
     <div
       className={cls}
+      role="group"
+      aria-labelledby={labelId}
+      aria-describedby={descriptionId}
       data-openbitfun-component="config"
       data-openbitfun-part="row"
       data-openbitfun-align={align}
@@ -210,7 +217,7 @@ export const ConfigPageRow: React.FC<ConfigPageRowProps> = ({
     >
       <div className="openbitfun-config-page-row__meta">
         {/* div (not p): label may contain buttons; button-in-p freezes React event path */}
-        <div className="openbitfun-config-page-row__label" data-openbitfun-component="config" data-openbitfun-part="rowLabel">
+        <div id={labelId} className="openbitfun-config-page-row__label" data-openbitfun-component="config" data-openbitfun-part="rowLabel">
           {label}
           {required ? (
             <span
@@ -224,12 +231,14 @@ export const ConfigPageRow: React.FC<ConfigPageRowProps> = ({
           ) : null}
         </div>
         {description ? (
-          <div className="openbitfun-config-page-row__description" data-openbitfun-component="config" data-openbitfun-part="rowDescription">{formatStandaloneUiCopy(description)}</div>
+          <div id={descriptionId} className="openbitfun-config-page-row__description" data-openbitfun-component="config" data-openbitfun-part="rowDescription">{formatStandaloneUiCopy(description)}</div>
         ) : null}
       </div>
       {hasControl ? (
         <div className="openbitfun-config-page-row__control" data-openbitfun-component="config" data-openbitfun-part="rowControl">
-          {children}
+          <FieldAccessibilityProvider aria-labelledby={labelId} aria-describedby={descriptionId}>
+            {children}
+          </FieldAccessibilityProvider>
         </div>
       ) : null}
     </div>

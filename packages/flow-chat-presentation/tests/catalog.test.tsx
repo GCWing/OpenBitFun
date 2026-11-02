@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { componentRegistry } from '@openbitfun/ui/registry';
-import { dedicatedToolNames, productOwnedToolNames, toolPresentationRegistry, toolsForComponent } from '../src/registry';
+import { compatibilityToolPresentationOwners, dedicatedToolNames, genericToolNames, productOwnedToolNames, toolPresentationRegistry, toolsForComponent } from '../src/registry';
 import { execScenarios } from '../src/scenarios';
 import { FlowChatComponentPreview, flowChatPreviewRegistry } from '../../../design-system/apps/design-lab/src/preview/FlowChatPreviewRegistry';
 import { I18nContext } from '../../../design-system/apps/design-lab/src/i18n/I18nProvider';
@@ -29,8 +29,16 @@ function productionAdapterNames(name: string): string[] {
 
 it('the catalog matches production adapter owners and real public exports', () => {
   const standard = Object.entries(toolPresentationRegistry).filter(([, entry]) => entry.owner === 'standard');
-  expect(productionAdapterNames('STANDARD_TOOL_CARD_ADAPTERS')).toEqual(standard.map(([name]) => name).sort());
-  expect(productionAdapterNames('PRODUCT_OWNED_TOOL_CARD_COMPONENTS')).toEqual([...productOwnedToolNames].sort());
+  const compatibility = Object.entries(compatibilityToolPresentationOwners);
+  expect(compatibility.map(([name]) => name).filter(name => dedicatedToolNames.has(name))).toEqual([]);
+  expect(productionAdapterNames('STANDARD_TOOL_CARD_ADAPTERS')).toEqual([
+    ...standard.map(([name]) => name),
+    ...compatibility.filter(([, owner]) => owner === 'standard').map(([name]) => name),
+  ].sort());
+  expect(productionAdapterNames('PRODUCT_OWNED_TOOL_CARD_COMPONENTS')).toEqual([
+    ...productOwnedToolNames,
+    ...compatibility.filter(([, owner]) => owner === 'product').map(([name]) => name),
+  ].sort());
   expect([...dedicatedToolNames].sort()).toEqual([...standard.map(([name]) => name), ...productOwnedToolNames].sort());
   const published = new Set(componentRegistry.map(({ name }) => name));
   for (const entry of Object.values(toolPresentationRegistry)) {
@@ -42,13 +50,16 @@ it('the catalog matches production adapter owners and real public exports', () =
   expect([...new Set(execScenarios.map(({ toolName }) => toolName))].sort()).toEqual(toolsForComponent('CommandToolCard').sort());
 });
 
-it('every built-in backend tool has a dedicated card or an explicit deferred gateway projection', () => {
+it('every built-in backend tool has a current, compatibility, generic or deferred gateway presentation', () => {
   const backend = read('../../../src/crates/assembly/core/src/agentic/tools/product_runtime/materialization.rs');
   const registry = backend.match(/const PRODUCT_TOOL_REGISTRATION_ORDER:[\s\S]*?= &\[([\s\S]*?)\];/);
   expect(registry).not.toBeNull();
   const names = [...registry![1].matchAll(/"([^\"]+)"/g)].map(match => match[1]);
   expect(names.length).toBeGreaterThan(50);
-  expect(names.filter(name => !dedicatedToolNames.has(name))).toEqual(['CallDeferredTool']);
+  const compatibilityNames = new Set(Object.keys(compatibilityToolPresentationOwners));
+  expect([...genericToolNames].filter(name => dedicatedToolNames.has(name) || compatibilityNames.has(name))).toEqual([]);
+  expect(names.filter(name => !dedicatedToolNames.has(name) && !compatibilityNames.has(name)).sort())
+    .toEqual([...genericToolNames, 'CallDeferredTool'].sort());
 });
 
 it('the private presentation layer has no application, store or transport dependency', () => {
@@ -61,6 +72,17 @@ it('the private presentation layer has no application, store or transport depend
 });
 
 describe.each(['en-US', 'zh-CN', 'zh-TW'] as const)('public component fixture coverage (%s)', (locale) => {
+  it.each(toolsForComponent('ImageAnalysisToolCard'))('%s has a localized image-tool action', (tool) => {
+    const key = `flowChat.builtin.tools.${tool}`;
+    const label = messages[locale][key as keyof typeof messages[typeof locale]];
+    expect(label).toBeTruthy();
+    const html = renderToString(<I18nContext.Provider value={{ locale, setLocale: () => {}, t: (message, params) => translateFromCatalog(messages, locale, message, params) }}>
+      <FlowChatComponentPreview componentName="ImageAnalysisToolCard" state="default" specimen={{ tool }} />
+    </I18nContext.Provider>);
+    expect(html).toContain(label);
+    expect(html).not.toContain(key);
+  });
+
   for (const { component, definition } of flowChatPreviewRegistry) {
     it.each(component.states)(`${component.name} / %s renders the actual registered component`, (state) => {
       const error = console.error;

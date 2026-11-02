@@ -1,6 +1,6 @@
 import { createContext } from "react";
 
-/** An explicit tooltip owns this subtree; text slots should not open another one. */
+/** An explicit tooltip owns this subtree even while disabled; text slots must not open another one. */
 export const TooltipTriggerContext = createContext(false);
 
 /** A legacy title fallback must yield to authored tooltips, not claim their trigger. */

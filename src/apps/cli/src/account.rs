@@ -242,6 +242,16 @@ impl CliAccountRoutingHost {
         self.stop_routing_locked().await;
     }
 
+    pub(crate) async fn connection_state(
+        &self,
+    ) -> openbitfun_core::service::remote_connect::relay_client::ConnectionState {
+        let client = self.relay_client.read().await.clone();
+        match client {
+            Some(client) => client.connection_state().await,
+            None => openbitfun_core::service::remote_connect::relay_client::ConnectionState::Disconnected,
+        }
+    }
+
     pub(crate) async fn stop_device_routing(&self) {
         self.stop_routing().await;
     }
@@ -675,6 +685,7 @@ impl AccountRuntimeHost for CliAccountRoutingHost {
     }
 
     async fn stop_device_routing(&self) {
+        crate::remote_control::retire_daemon_account().await;
         self.stop_routing().await;
     }
 }

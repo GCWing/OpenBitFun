@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly BACKUP_ROOT="/srv/openbitfun-skin-market/backups"
+readonly MARKET_ROOT="${MARKET_ROOT:-/srv/openbitfun-skin-market}"
+readonly BACKUP_ROOT="${MARKET_ROOT}/backups"
 readonly SOURCE="${1:-}"
 
+if [[ "${MARKET_ROOT}" != /* || "${MARKET_ROOT}" == "/" ]]; then
+  echo "MARKET_ROOT must be an absolute path below /" >&2
+  exit 2
+fi
+
 if [[ -z "${SOURCE}" || "${SOURCE}" != "${BACKUP_ROOT}/"* || ! -d "${SOURCE}" ]]; then
-  echo "Usage: $0 /srv/openbitfun-skin-market/backups/{daily|weekly}/<backup>" >&2
+  echo "Usage: $0 ${BACKUP_ROOT}/{daily|weekly}/<backup>" >&2
   exit 2
 fi
 

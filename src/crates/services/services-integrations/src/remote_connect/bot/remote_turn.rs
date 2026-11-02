@@ -6,6 +6,46 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 
 impl RemoteBotTarget {
+    pub async fn require_session_attachments(&self) -> Result<(), String> {
+        let info = self.rpc(json!({"cmd":"get_workspace_info"})).await?;
+        if !info["capabilities"].as_array().is_some_and(|capabilities| {
+            capabilities.iter().any(|value| {
+                value.as_str()
+                    == Some(crate::remote_connect::REMOTE_CAPABILITY_SESSION_ATTACHMENTS_V1)
+            })
+        }) {
+            return Err("Execution host does not support session attachments; upgrade OpenBitFun on that device".into());
+        }
+        Ok(())
+    }
+
+    /// File bytes travel in the existing authenticated, encrypted bulk RPC lane.
+    /// 30 MiB becomes under 54 MiB after both base64 envelopes (64 MiB limit).
+    pub async fn store_attachment(
+        &self,
+        file: &super::inbound_files::InboundFile,
+    ) -> Result<String, String> {
+        if file.bytes.len() > super::inbound_files::MAX_SESSION_ATTACHMENT_BYTES {
+            return Err("Session attachment exceeds the transfer limit".into());
+        }
+        let attachment_id = uuid::Uuid::new_v4().to_string();
+        let reply = self.rpc(json!({"cmd":"store_session_attachment", "session_id": self.session_id,
+            "attachment": {"attachment_id":attachment_id,"name":file.name,"content_base64": STANDARD.encode(&file.bytes)}
+        })).await?;
+        if reply["resp"] != "session_attachment_stored"
+            || reply["session_id"] != self.session_id
+            || reply["attachment"]["attachment_id"] != attachment_id
+            || reply["attachment"]["size"].as_u64() != Some(file.bytes.len() as u64)
+        {
+            return Err("Execution host did not acknowledge the complete attachment".into());
+        }
+        reply["attachment"]["path"]
+            .as_str()
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| "Execution host omitted the attachment path".into())
+    }
+
     async fn rpc_response(&self, command: Value) -> Result<Value, String> {
         let reply = AccountClient::new()
             .device_rpc(

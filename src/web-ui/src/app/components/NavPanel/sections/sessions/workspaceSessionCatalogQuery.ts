@@ -23,32 +23,19 @@ export function workspaceSessionCatalogTotal(visibleCount: number, catalog: { pa
     ? (catalog.total ?? 0) + visibleCount - (catalog.knownCount ?? visibleCount) : 0);
 }
 
-/** Select supported views and the ordering changes that restart their reader.
- * Newly hydrated rows alone must not invalidate an in-progress catalog. */
+/** Select supported views. Only a view change restarts their reader: a session
+ * that starts running moves ahead of rows whose relative order is unchanged,
+ * so the local projection reorders it without discarding the host pages. */
 export function workspaceSessionCatalogQuery(
   workspaceId: string | undefined,
   ordering: WorkspaceSessionOrdering,
   show: WorkspaceSessionShow,
   filters: WorkspaceSessionFilters,
   source: string,
-  sessions: Iterable<Session>,
-  getSortTimestamp: (session: Session) => number,
 ): SessionCatalogQuery | undefined {
   if (!workspaceId || (ordering !== 'updated' && ordering !== 'created')
     || show !== 'all' || hasWorkspaceSessionFilters(filters)) return;
-  const sortTimestamps: Record<string, number> = {};
-  if (ordering === 'updated') {
-    for (const session of sessions) {
-      if (!sessionBelongsToWorkspaceNavRow(session, workspaceId)) continue;
-      const timestamp = getSortTimestamp(session);
-      if (timestamp !== (session.lastFinishedAt ?? session.createdAt)) {
-        sortTimestamps[session.sessionId] = timestamp;
-      }
-    }
-  }
-  return { workspaceId, ordering, source,
-    ...(Object.keys(sortTimestamps).length ? { sortTimestamps } : {}),
-  };
+  return { workspaceId, ordering, source };
 }
 
 /** Bind every observed timestamp before reading a new host catalog. Matching

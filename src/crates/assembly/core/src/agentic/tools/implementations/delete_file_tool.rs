@@ -107,6 +107,19 @@ Important notes:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "path": {"type": "string"},
+                "is_directory": {"type": "boolean"}
+            },
+            "required": ["success", "path", "is_directory"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

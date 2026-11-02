@@ -312,6 +312,7 @@ impl SessionStorePort for CoreSessionStorePort {
 
         let workspace_path = request.workspace_path.to_string_lossy().to_string();
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some(workspace_path.clone()),
             remote_connection_id: request.remote_connection_id,
             remote_ssh_host: request.remote_ssh_host,

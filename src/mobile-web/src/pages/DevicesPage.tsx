@@ -88,13 +88,13 @@ const DevicesPage: React.FC<Props> = ({ client, onBack, onDeviceSelected = onBac
   const automaticSelectionAttemptedRef = useRef(false);
   const sortedDevices = useMemo(() => {
     const listedDevices = devices.filter((device) => (
-    device.device_id !== client.controllerDeviceId
-  )).sort((left, right) => {
-    const leftCurrent = left.device_id === client.targetDeviceId;
-    const rightCurrent = right.device_id === client.targetDeviceId;
-    if (leftCurrent !== rightCurrent) return leftCurrent ? -1 : 1;
-    if (left.online !== right.online) return left.online ? -1 : 1;
-    return deviceDisplayName(left).localeCompare(deviceDisplayName(right));
+      device.device_id !== client.controllerDeviceId
+    )).sort((left, right) => {
+      if (left.online !== right.online) return left.online ? -1 : 1;
+      const leftCurrent = left.device_id === client.targetDeviceId;
+      const rightCurrent = right.device_id === client.targetDeviceId;
+      if (leftCurrent !== rightCurrent) return leftCurrent ? -1 : 1;
+      return deviceDisplayName(left).localeCompare(deviceDisplayName(right));
     });
     return listedDevices;
   }, [client, client.controllerDeviceId, client.targetDeviceId, connectionHealth, devices]);

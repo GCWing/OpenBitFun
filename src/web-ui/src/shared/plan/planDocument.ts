@@ -85,7 +85,7 @@ export function serializePlanMarkdown(
     ...document.frontmatter,
     name,
     overview,
-    todos,
+    ...(overrides.todos !== undefined || 'todos' in document.frontmatter ? { todos } : {}),
   });
 
   return `---\n${frontmatter}---\n\n${planContent}`;

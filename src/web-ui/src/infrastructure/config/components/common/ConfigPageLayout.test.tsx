@@ -3,7 +3,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  Checkbox,
   Combobox,
+  Field,
+  Textarea,
   Input,
   MultiSelect,
   NumberInput,
@@ -43,6 +46,51 @@ describe('ConfigPageLayout', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it.each([
+    ['switch', <Switch />, 'input'],
+    ['input', <Input />, 'input'],
+    ['search', <SearchField />, 'input'],
+    ['checkbox', <Checkbox />, 'input'],
+    ['textarea', <Textarea hint="Additional help" />, 'textarea'],
+    ['select', <Select size="sm" options={[{ label: 'English', value: 'en' }]} />, 'button'],
+    ['combobox', <Combobox size="sm" options={[]} />, 'button'],
+    ['multi-select', <MultiSelect size="sm" options={[]} />, 'button'],
+    ['number', <NumberInput value={1} onValueChange={() => {}} />, 'input'],
+  ])('names a wrapped %s from its visible settings label', (_name, control, selector) => {
+    act(() => root.render(
+      <ConfigPageRow label="Setting name" description="Setting explanation">
+        <div><div>{control}</div></div>
+      </ConfigPageRow>,
+    ));
+    const element = container.querySelector(String(selector))!;
+    const label = document.getElementById(element.getAttribute('aria-labelledby')!);
+    expect(label?.textContent).toBe('Setting name');
+    const descriptions = element.getAttribute('aria-describedby')!.split(' ')
+      .map(id => document.getElementById(id)?.textContent);
+    expect(descriptions).toContain('Setting explanation');
+    if (_name === 'textarea') expect(descriptions).toContain('Additional help');
+  });
+
+  it('preserves individual names and descriptions in composite and nested fields', () => {
+    act(() => root.render(
+      <ConfigPageRow label="Connection" description="Connection explanation">
+        <Input aria-label="Host" aria-describedby="host-help" />
+        <span id="host-help">Host explanation</span>
+        <Input aria-labelledby="port-label" />
+        <span id="port-label">Port</span>
+        <Field label="Nested field" description="Nested explanation"><Input id="nested" /></Field>
+      </ConfigPageRow>,
+    ));
+    const [host, port, nested] = container.querySelectorAll('input');
+    expect(host.getAttribute('aria-label')).toBe('Host');
+    expect(host.hasAttribute('aria-labelledby')).toBe(false);
+    expect(host.getAttribute('aria-describedby')?.split(' ')[0]).toBe('host-help');
+    expect(port.getAttribute('aria-labelledby')).toBe('port-label');
+    expect(nested.hasAttribute('aria-labelledby')).toBe(false);
+    expect(nested.getAttribute('aria-describedby')).toBe('nested-description');
+    expect(container.querySelector('label[for="nested"]')?.textContent).toBe('Nested field');
   });
 
   it('preserves the standard section stack inside a shared wrapper', () => {

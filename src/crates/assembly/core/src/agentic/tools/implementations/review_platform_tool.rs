@@ -382,6 +382,41 @@ When returning pull request results to the user, include the provider web URL so
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "action": {"type": "string"},
+                "repositoryPath": {"type": "string"},
+                "remoteId": {"type": "string"},
+                "status": {"type": "string"},
+                "authChallenge": {"type": "object", "additionalProperties": true},
+                "openPanel": {"anyOf": [{"type": "object", "additionalProperties": true}, {"type": "null"}]},
+                "snapshot": {"type": "object", "additionalProperties": true},
+                "pullRequest": {"type": "object", "additionalProperties": true},
+                "body": {"type": "string"},
+                "ci": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "files": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "commits": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "threads": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "section": {"type": "string"},
+                "pagination": {"type": "object", "additionalProperties": true},
+                "items": {"type": "array", "items": {}},
+                "total": {"type": "integer"},
+                "hasNext": {"type": "boolean"},
+                "pullRequestId": {"type": "string"},
+                "ciItemId": {"type": "string"},
+                "log": {"type": "string"},
+                "truncated": {"type": "boolean"},
+                "message": {"type": "string"},
+                "result": {"type": "object", "additionalProperties": true},
+                "remotes": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+            },
+            "required": ["action"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

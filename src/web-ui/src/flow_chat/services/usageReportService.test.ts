@@ -4,10 +4,15 @@ import type {
 } from '@/infrastructure/api/service-api/SessionAPI';
 import type { FlowChatState, Session } from '../types/flow-chat';
 import { flowChatStore } from '../store/FlowChatStore';
-import {
-  closeSessionUsageModal,
-  getSessionUsageModalState,
-} from '../components/usage/sessionUsageModalState';
+import { useAgentCanvasStore, switchAgentCanvasScope, forgetAgentCanvasSession } from '@/app/components/panels/content-canvas/stores/canvasStore';
+import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+
+vi.mock('@/shared/utils/tabUtils', () => ({ createTab: vi.fn() }));
+
+const panelContent = () => useAgentCanvasStore.getState().primaryGroup.tabs.find(tab => tab.content.type === 'session-usage')?.content;
+const panelData = () => panelContent()?.data;
+const closePanel = () => useAgentCanvasStore.getState().closeAllTabs();
 
 const sessionApiMocks = vi.hoisted(() => ({
   getSessionUsageReport: vi.fn(),
@@ -105,6 +110,7 @@ const usageReport = (overrides: Partial<SessionUsageReport> = {}): SessionUsageR
 
 const uiParams = {
   isProcessing: false,
+  reportTitle: 'Context Usage Report',
   busyMessage: 'busy',
   noWorkspaceMessage: 'missing workspace',
   failedTitle: 'failed',
@@ -117,6 +123,11 @@ const transcriptOf = (sessionId = 'session-1') => (
 
 describe('runUsageReportCommand', () => {
   beforeEach(() => {
+    activateSurface('local');
+    forgetAgentCanvasSession('session-1');
+    forgetAgentCanvasSession('session-2');
+    switchAgentCanvasScope('session-1');
+    useContentResourceStore.setState({ resources: {} });
     flowChatStore.setState((): FlowChatState => ({
       sessions: new Map([['session-1', createSession()]]),
       activeSessionId: 'session-1',
@@ -125,11 +136,57 @@ describe('runUsageReportCommand', () => {
   });
 
   afterEach(() => {
-    closeSessionUsageModal();
+    closePanel();
     flowChatStore.setState((): FlowChatState => ({
       sessions: new Map(),
       activeSessionId: null,
     }));
+  });
+
+  it('defaults newly generated report tabs to the context report title', async () => {
+    sessionApiMocks.getSessionUsageReport.mockResolvedValue(usageReport());
+    const { runUsageReportCommand } = await import('./usageReportService');
+    await runUsageReportCommand({ session: createSession(), ...uiParams, reportTitle: undefined });
+    expect(panelContent()?.title).toBe('Context Usage Report');
+  });
+
+  it('presents a read-only overview during a turn without creating a side-panel tab', async () => {
+    const report = usageReport();
+    sessionApiMocks.getSessionUsageReport.mockResolvedValue(report);
+    const presentReport = vi.fn(() => true);
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const result = await runUsageReportCommand({ session: createSession(), ...uiParams, isProcessing: true, presentReport });
+    expect(result.shown).toBe(true);
+    expect(presentReport).toHaveBeenCalledWith(report);
+    expect(panelContent()).toBeUndefined();
+    expect(transcriptOf()).toEqual([]);
+  });
+
+  it('routes inline dispatch reports to the supplied source and discards an old peer response', async () => {
+    activateSurface('peer-a');
+    let resolve!: (report: SessionUsageReport) => void;
+    const fetchReport = vi.fn(() => new Promise<SessionUsageReport>(done => { resolve = done; }));
+    const presentReport = vi.fn(() => true);
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const pending = runUsageReportCommand({ session: createSession(), ...uiParams, fetchReport, presentReport });
+    expect(panelContent()).toBeUndefined();
+    activateSurface('peer-b');
+    resolve(usageReport());
+    expect((await pending).shown).toBe(false);
+    expect(presentReport).not.toHaveBeenCalled();
+    expect(sessionApiMocks.getSessionUsageReport).not.toHaveBeenCalled();
+  });
+
+  it('opens a legacy report payload without a title and preserves its data through a round trip', async () => {
+    const { buildSessionUsagePanelContent } = await import('./openSessionUsageReport');
+    const legacy = JSON.parse(JSON.stringify({
+      report: usageReport(), markdown: '# Legacy report', sessionId: 'session-1',
+      workspacePath: 'D:/workspace/OpenBitFun', initialTab: 'overview',
+    }));
+    const content = buildSessionUsagePanelContent(legacy);
+    expect(content.title).toBe('Context Usage Report');
+    expect(content.metadata?.sessionId).toBe('session-1');
+    expect(JSON.parse(JSON.stringify(content)).data).toEqual(legacy);
   });
 
   it('shows the waiting state immediately and replaces it with the report', async () => {
@@ -143,21 +200,22 @@ describe('runUsageReportCommand', () => {
 
     // Open before the request resolves. The wait is the whole reason the report
     // used to be inserted as a turn in two stages.
-    expect(getSessionUsageModalState()).toMatchObject({
-      open: true,
+    expect(panelData()).toMatchObject({
       isLoading: true,
       sessionId: 'session-1',
     });
-    expect(getSessionUsageModalState().report).toBeUndefined();
+    expect(panelData().report).toBeUndefined();
+    expect(panelContent()?.title).toBe('Context Usage Report');
 
     resolveReport(usageReport());
     const result = await pending;
 
     expect(result.shown).toBe(true);
-    const state = getSessionUsageModalState();
-    expect(state).toMatchObject({ open: true, isLoading: false });
+    const state = panelData();
+    expect(state).toMatchObject({ isLoading: false });
     expect(state.report?.reportId).toBe('usage-report-1');
     expect(state.markdown).toContain('# Session Usage Report');
+    expect(panelContent()?.title).toBe('Context Usage Report');
     expect(state.markdown).toContain('Session span');
     expect(state.markdown).toContain('not reported');
     expect(state.markdown).not.toContain('Wall time');
@@ -184,7 +242,7 @@ describe('runUsageReportCommand', () => {
     expect(transcriptOf()).toEqual([]);
   });
 
-  it('closes the waiting state when the report cannot be produced', async () => {
+  it('shows the failure in the panel when the report cannot be produced', async () => {
     sessionApiMocks.getSessionUsageReport.mockRejectedValueOnce(new Error('report failed'));
     const { runUsageReportCommand } = await import('./usageReportService');
 
@@ -192,7 +250,7 @@ describe('runUsageReportCommand', () => {
       .rejects.toThrow('report failed');
 
     // Left open it would wait forever: no second request is coming.
-    expect(getSessionUsageModalState().open).toBe(false);
+    expect(panelData()).toMatchObject({ isLoading: false, error: 'report failed' });
     expect(transcriptOf()).toEqual([]);
   });
 
@@ -205,7 +263,94 @@ describe('runUsageReportCommand', () => {
     });
 
     expect(result).toMatchObject({ shown: false, reason: 'missing_workspace' });
-    expect(getSessionUsageModalState().open).toBe(false);
+    expect(panelData()).toBeUndefined();
+  });
+
+  it('does not reopen a panel closed while loading', async () => {
+    let resolve!: (report: SessionUsageReport) => void;
+    sessionApiMocks.getSessionUsageReport.mockReturnValue(new Promise<SessionUsageReport>(done => { resolve = done; }));
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const pending = runUsageReportCommand({ session: createSession(), ...uiParams });
+    closePanel();
+    resolve(usageReport());
+    expect((await pending).shown).toBe(false);
+    expect(panelData()).toBeUndefined();
+  });
+
+  it('keeps an explicitly reopened report from getting stuck in its old loading state', async () => {
+    let resolve!: (report: SessionUsageReport) => void;
+    sessionApiMocks.getSessionUsageReport.mockReturnValue(new Promise<SessionUsageReport>(done => { resolve = done; }));
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const pending = runUsageReportCommand({ session: createSession(), ...uiParams });
+    const store = useAgentCanvasStore.getState();
+    store.closeTab(store.primaryGroup.tabs[0].id, 'primary');
+    resolve(usageReport());
+    expect((await pending).shown).toBe(false);
+    expect(panelData()).toBeUndefined();
+    store.reopenClosedTab();
+    expect(panelData()).toMatchObject({ isLoading: false, report: { reportId: 'usage-report-1' } });
+  });
+
+  it('updates the owning session snapshot without selecting it after a session switch', async () => {
+    let resolve!: (report: SessionUsageReport) => void;
+    sessionApiMocks.getSessionUsageReport.mockReturnValue(new Promise<SessionUsageReport>(done => { resolve = done; }));
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const pending = runUsageReportCommand({ session: createSession(), ...uiParams });
+    switchAgentCanvasScope('session-2');
+    resolve(usageReport());
+    expect((await pending).shown).toBe(true);
+    expect(useAgentCanvasStore.getState().scopeKey).toBe('session-2');
+    expect(panelData()).toBeUndefined();
+    switchAgentCanvasScope('session-1');
+    expect(panelData().report.reportId).toBe('usage-report-1');
+  });
+
+  it('ignores an older request when the same session is refreshed', async () => {
+    let resolve!: (report: SessionUsageReport) => void;
+    sessionApiMocks.getSessionUsageReport.mockReturnValueOnce(new Promise<SessionUsageReport>(done => { resolve = done; }));
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const old = runUsageReportCommand({ session: createSession(), ...uiParams });
+    sessionApiMocks.getSessionUsageReport.mockResolvedValueOnce(usageReport({ reportId: 'new-report' }));
+    await runUsageReportCommand({ session: createSession(), ...uiParams });
+    resolve(usageReport());
+    expect((await old).shown).toBe(false);
+    expect(panelData().report.reportId).toBe('new-report');
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
+  });
+
+  it('ignores results from a previous device activation', async () => {
+    let resolve!: (report: SessionUsageReport) => void;
+    activateSurface('peer-a');
+    sessionApiMocks.getSessionUsageReport.mockReturnValue(new Promise<SessionUsageReport>(done => { resolve = done; }));
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const pending = runUsageReportCommand({ session: createSession(), ...uiParams });
+    activateSurface('peer-b');
+    resolve(usageReport());
+    expect((await pending).shown).toBe(false);
+    expect(panelData().report).toBeUndefined();
+  });
+
+  it('uses the dispatch report source without calling the local report API', async () => {
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const fetchReport = vi.fn().mockResolvedValue(usageReport({ workspace: { kind: 'remote_ssh', pathLabel: '/srv/project' } }));
+    await runUsageReportCommand({ session: createSession(), ...uiParams, fetchReport });
+    expect(fetchReport).toHaveBeenCalledOnce();
+    expect(sessionApiMocks.getSessionUsageReport).not.toHaveBeenCalled();
+    expect(panelData().report.workspace.kind).toBe('remote_ssh');
+  });
+
+  it('completes a pending panel moved to a main workbench tab', async () => {
+    let resolve!: (report: SessionUsageReport) => void;
+    sessionApiMocks.getSessionUsageReport.mockReturnValue(new Promise<SessionUsageReport>(done => { resolve = done; }));
+    const { runUsageReportCommand } = await import('./usageReportService');
+    const pending = runUsageReportCommand({ session: createSession(), ...uiParams });
+    const resourceId = useContentResourceStore.getState().open(panelContent()!, {
+      surfaceId: 'local', workspaceId: 'workspace-1', workspacePath: 'D:/workspace/OpenBitFun',
+    });
+    closePanel();
+    resolve(usageReport());
+    expect((await pending).shown).toBe(true);
+    expect(useContentResourceStore.getState().resources[resourceId].content.data.report.reportId).toBe('usage-report-1');
   });
 
   it('infers legacy model rows from the session model without showing raw missing-model copy', async () => {
@@ -239,7 +384,7 @@ describe('runUsageReportCommand', () => {
     });
     expect(result.report?.slowest[0].label).not.toBe('unknown_model');
 
-    const state = getSessionUsageModalState();
+    const state = panelData();
     expect(state.report?.models[0]).toMatchObject({
       modelId: 'gpt-5.4',
       modelIdSource: 'inferred_session_model',
@@ -283,11 +428,11 @@ describe('runUsageReportCommand', () => {
         modelIdSource: 'legacy_missing',
       });
 
-      const { markdown } = getSessionUsageModalState();
+      const { markdown } = panelData();
       expect(markdown).toContain('Legacy model not tracked');
       expect(markdown).not.toContain(opaqueModelId);
       expect(markdown).not.toContain('(inferred)');
-      closeSessionUsageModal();
+      closePanel();
     }
   });
 
@@ -321,7 +466,7 @@ describe('runUsageReportCommand', () => {
       modelIdSource: 'legacy_missing',
     });
 
-    const { markdown } = getSessionUsageModalState();
+    const { markdown } = panelData();
     expect(markdown).toContain('Legacy model not tracked');
     expect(markdown).not.toContain('model round');
   });

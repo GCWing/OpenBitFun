@@ -123,6 +123,7 @@ async fn session_model_selection_forwards_model_and_reasoning_preset_atomically(
         selection: AgentSessionModelSelection {
             model_id: "provider/model".to_string(),
             reasoning_preset: Some("high".to_string()),
+            routing_mode: None,
         },
     };
 

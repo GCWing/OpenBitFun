@@ -7,6 +7,9 @@
 pub(crate) mod format;
 pub(crate) mod healthcheck;
 pub(crate) mod http;
+mod image_budget;
+#[cfg(feature = "image-generation")]
+pub mod image_generation;
 pub(crate) mod quirks;
 mod request_capacity;
 pub(crate) mod response_aggregator;
@@ -25,10 +28,17 @@ use log::warn;
 use openbitfun_core_types::errors::AiProviderError;
 use reqwest::Client;
 use std::time::Duration;
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 use tokio::sync::mpsc;
 
 const SEND_MESSAGE_STREAM_ATTEMPTS: usize = openbitfun_agent_stream::retry::MAX_MODEL_ATTEMPTS;
 const TEST_CONNECTION_STREAM_ATTEMPTS: usize = 5;
+
+/// The host owns approved configuration and supplies this check. The adapter
+/// calls it after transport admission and before every actual HTTP send.
+pub trait ModelRequestAuthorization: fmt::Debug + Send + Sync {
+    fn validate(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+}
 
 /// Streamed response result with the parsed stream and optional raw SSE receiver.
 pub struct StreamResponse {
@@ -57,15 +67,22 @@ pub struct AIClient {
     pub(crate) stream_options: StreamOptions,
     pub(crate) model_reasoning_preset: Option<ReasoningPresetDescriptor>,
     pub(crate) selected_reasoning_preset: Option<ReasoningPresetDescriptor>,
+    pub(crate) request_authorization: Option<Arc<dyn ModelRequestAuthorization>>,
     #[cfg(feature = "subscription-auth")]
     subscription_provider: Option<crate::subscription_auth::SubscriptionProvider>,
+    #[cfg(feature = "subscription-auth")]
+    pub(crate) account_identity:
+        Option<crate::subscription_auth::request_identity::AccountRequestIdentity>,
 }
 
 impl AIClient {
     pub(crate) const TEST_IMAGE_EXPECTED_CODE: &'static str = "BYGR";
     pub(crate) const TEST_IMAGE_PNG_BASE64: &'static str =
         "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAACBklEQVR42u3ZsREAIAwDMYf9dw4txwJupI7Wua+YZEPBfO91h4ZjAgQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABIAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAAAAAAAEDRZI3QGf7jDvEPAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAAAjABAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQALwuLkoG8OSfau4AAAAASUVORK5CYII=";
-    pub(crate) const STREAM_CONNECT_TIMEOUT_SECS: u64 = 10;
+    // This includes the proxy tunnel and TLS handshake. A working proxy may
+    // need more than 10s before HTTP starts; the per-call TTFT budget still
+    // bounds the complete send and first effective output.
+    pub(crate) const STREAM_CONNECT_TIMEOUT_SECS: u64 = 30;
     pub(crate) const HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 30;
     pub(crate) const HTTP_TCP_KEEPALIVE_SECS: u64 = 60;
 
@@ -92,9 +109,20 @@ impl AIClient {
             stream_options,
             model_reasoning_preset: None,
             selected_reasoning_preset: None,
+            request_authorization: None,
             #[cfg(feature = "subscription-auth")]
             subscription_provider: None,
+            #[cfg(feature = "subscription-auth")]
+            account_identity: None,
         }
+    }
+
+    pub fn with_request_authorization(
+        mut self,
+        authorization: Arc<dyn ModelRequestAuthorization>,
+    ) -> Self {
+        self.request_authorization = Some(authorization);
+        self
     }
 
     /// Enable provider policy only after resolving an explicit subscription login.
@@ -105,6 +133,45 @@ impl AIClient {
         provider: crate::subscription_auth::SubscriptionProvider,
     ) -> Self {
         self.subscription_provider = Some(provider);
+        self.account_identity = None;
+        self
+    }
+
+    /// Attach a stable slot only after resolving its credential. Live identity
+    /// is checked before each send and is never inferred from a request URL.
+    #[cfg(feature = "subscription-auth")]
+    pub fn with_subscription_account(
+        mut self,
+        provider: crate::subscription_auth::SubscriptionProvider,
+        account_id: &str,
+    ) -> Self {
+        self.subscription_provider = Some(provider);
+        self.account_identity = (provider == crate::subscription_auth::SubscriptionProvider::Codex)
+            .then(|| {
+                crate::subscription_auth::request_identity::AccountRequestIdentity::bind(
+                    &self, account_id,
+                )
+            });
+        self
+    }
+
+    /// Explicit subscription identity; ordinary API-key clients return None.
+    #[cfg(feature = "subscription-auth")]
+    pub(crate) fn with_resolved_subscription_account(
+        mut self,
+        provider: crate::subscription_auth::SubscriptionProvider,
+        account_id: &str,
+        upstream_account_id: Option<String>,
+    ) -> Self {
+        self.subscription_provider = Some(provider);
+        self.account_identity = Some(
+            crate::subscription_auth::request_identity::AccountRequestIdentity::bind_resolved(
+                &self,
+                provider,
+                account_id,
+                upstream_account_id,
+            ),
+        );
         self
     }
 
@@ -118,6 +185,64 @@ impl AIClient {
         {
             None
         }
+    }
+
+    /// Identity for replaying signed/opaque history, never a serialized secret.
+    /// Codex has stable seat provenance and may rotate its access token. Other
+    /// credentials lack that proof, so rotation conservatively needs a new chat.
+    pub fn channel_replay_fingerprint(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut headers = self
+            .config
+            .custom_headers
+            .as_ref()
+            .map(|headers| headers.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        headers.sort_by(|left, right| left.0.cmp(right.0));
+        let credential = (self.subscription_provider_key() != Some("codex"))
+            .then_some(self.config.api_key.as_str());
+        let bytes = serde_json::to_vec(&(
+            &self.config.format,
+            &self.config.model,
+            &self.config.base_url,
+            &self.config.request_url,
+            credential,
+            headers,
+            &self.config.custom_request_body,
+            &self.config.custom_request_body_mode,
+        ))
+        .expect("channel request identity serializes");
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    /// Provenance of the credential already attached to this client. Provider
+    /// account headers are interpreted here, never by runtime orchestration.
+    pub fn subscription_account_origin(
+        &self,
+        account_id: &str,
+    ) -> Option<openbitfun_core_types::ModelAccountOrigin> {
+        let provider = self.subscription_provider_key()?;
+        #[cfg(feature = "subscription-auth")]
+        if provider != "codex" {
+            if let Some(identity) = &self.account_identity {
+                return identity.origin(account_id);
+            }
+        }
+        let upstream_account_id = match provider {
+            "codex" => self.config.custom_headers.as_ref().and_then(|headers| {
+                headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("chatgpt-account-id"))
+                    .map(|(_, value)| value.clone())
+                    .filter(|value| !value.trim().is_empty())
+            }),
+            _ => None,
+        };
+        Some(openbitfun_core_types::ModelAccountOrigin {
+            provider: provider.into(),
+            account_id: account_id.into(),
+            upstream_account_id,
+        })
     }
 
     /// Returns the configured idle timeout between streamed chunks, if any.
@@ -277,22 +402,6 @@ impl AIClient {
         trace: Option<ModelExchangeTraceConfig>,
     ) -> Result<StreamResponse> {
         let custom_body = self.config.custom_request_body.clone();
-        if matches!(
-            ApiFormat::parse(&self.config.format)?,
-            ApiFormat::OpenAIResponses
-        ) {
-            return openai::responses::send_stream(
-                self,
-                messages,
-                tools,
-                custom_body,
-                1,
-                trace,
-                request_context,
-            )
-            .await;
-        }
-
         self.send_message_stream_with_extra_body_and_max_attempts(
             messages,
             tools,
@@ -487,6 +596,10 @@ impl AIClient {
         trace: Option<ModelExchangeTraceConfig>,
         request_context: Option<ModelRequestContext>,
     ) -> Result<StreamResponse> {
+        // Project only the outgoing copy, against the actual selected client.
+        // Account/channel failover and direct analysis calls share this boundary.
+        let messages = image_budget::project(messages, self.config.max_images_per_request)?;
+        image_budget::validate_extra_body(self.config.max_images_per_request, extra_body.as_ref())?;
         match ApiFormat::parse(&self.config.format)? {
             ApiFormat::OpenAIChat => {
                 openai::chat::send_stream(
@@ -574,6 +687,29 @@ impl AIClient {
     pub async fn list_models(&self) -> Result<Vec<RemoteModelInfo>> {
         if let Some(plan) = crate::opencode_catalog::api_key_plan(&self.config.base_url) {
             return crate::opencode_catalog::api_key_models(&self.client, plan).await;
+        }
+        #[cfg(feature = "subscription-auth")]
+        if let Some(provider) = self.subscription_provider {
+            use crate::subscription_auth::SubscriptionProvider;
+            if matches!(
+                provider,
+                SubscriptionProvider::Grok
+                    | SubscriptionProvider::Zcode
+                    | SubscriptionProvider::ZcodeCn
+            ) {
+                if let Some(authorization) = &self.request_authorization {
+                    authorization.validate().await?;
+                }
+                if let Some(identity) = &self.account_identity {
+                    identity.validate(self).await?;
+                }
+                return match provider {
+                    SubscriptionProvider::Grok => {
+                        crate::subscription_auth::grok::list_models(self).await
+                    }
+                    _ => crate::subscription_auth::zcode::list_models(self, provider).await,
+                };
+            }
         }
         match ApiFormat::parse(&self.config.format)? {
             ApiFormat::OpenAIChat | ApiFormat::OpenAIResponses => {
@@ -697,6 +833,23 @@ mod tests {
         ([(CONTENT_TYPE, "text/event-stream")], payload)
     }
 
+    #[cfg(feature = "subscription-auth")]
+    #[test]
+    fn subscription_account_provenance_requires_explicit_provider_identity() {
+        let mut client = make_test_client("responses", None);
+        client.config.custom_headers = Some(std::collections::HashMap::from([(
+            "chatgpt-account-id".into(),
+            "seat-1".into(),
+        )]));
+        assert!(client.subscription_account_origin("slot-1").is_none());
+        let client = client
+            .with_subscription_provider(crate::subscription_auth::SubscriptionProvider::Codex);
+        let origin = client.subscription_account_origin("slot-1").unwrap();
+        assert_eq!(origin.provider, "codex");
+        assert_eq!(origin.account_id, "slot-1");
+        assert_eq!(origin.upstream_account_id.as_deref(), Some("seat-1"));
+    }
+
     fn make_test_client(format: &str, custom_request_body: Option<Value>) -> AIClient {
         AIClient::new(AIConfig {
             name: format!("{}-test", format),
@@ -707,6 +860,7 @@ mod tests {
             format: format.to_string(),
             context_window: 128000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1171,6 +1325,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1204,6 +1359,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1236,6 +1392,7 @@ mod tests {
             format: "gemini".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: Some(0.2),
             top_p: Some(0.8),
             inline_think_in_text: false,
@@ -1318,6 +1475,7 @@ mod tests {
             format: "gemini".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1355,7 +1513,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_chat_rejects_unmapped_model_config_toggle_for_an_unverified_endpoint() {
+    fn openai_chat_uses_format_fallback_for_an_unverified_endpoint() {
         let client = AIClient::new(AIConfig {
             name: "openai-compatible".to_string(),
             base_url: "https://example.com/v1".to_string(),
@@ -1365,6 +1523,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1379,16 +1538,16 @@ mod tests {
             vec![ReasoningPresetAction::Toggle { enabled: true }],
         ));
 
-        let error = openai::chat::try_build_request_body(
+        let body = openai::chat::try_build_request_body(
             &client,
             &client.config.request_url,
             vec![json!({ "role": "user", "content": "hello" })],
             None,
             None,
         )
-        .expect_err("an unverified compatible endpoint must reject generic toggle");
+        .expect("an unverified compatible endpoint should use the format fallback");
 
-        assert!(error.to_string().contains("unsupported"));
+        assert_eq!(body["reasoning_effort"], "medium");
     }
 
     #[test]
@@ -1402,6 +1561,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1427,7 +1587,7 @@ mod tests {
         );
 
         assert_eq!(request_body["thinking"]["type"], "enabled");
-        assert_eq!(request_body["reasoning_effort"], "max");
+        assert_eq!(request_body["reasoning_effort"], "high");
     }
 
     #[test]
@@ -1441,6 +1601,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1478,6 +1639,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1519,6 +1681,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1632,7 +1795,7 @@ mod tests {
     }
 
     #[test]
-    fn build_openbitfun_openai_request_body_maps_deepseek_pro_xhigh_to_max() {
+    fn build_openbitfun_openai_request_body_maps_deepseek_pro_xhigh_to_high() {
         let mut client = make_test_client("openai", None);
         client.config.name = "openbitfun".to_string();
         client.config.base_url = "https://api.openbitfun.com/v1".to_string();
@@ -1656,7 +1819,7 @@ mod tests {
         );
 
         assert_eq!(request_body["thinking"]["type"], "enabled");
-        assert_eq!(request_body["reasoning_effort"], "max");
+        assert_eq!(request_body["reasoning_effort"], "high");
     }
 
     #[test]
@@ -1696,6 +1859,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128_000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1735,6 +1899,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1762,6 +1927,60 @@ mod tests {
     }
 
     #[test]
+    fn siliconflow_effort_and_budget_use_documented_fields() {
+        let base_config = || AIConfig {
+            name: "siliconflow".to_string(),
+            base_url: "https://api.siliconflow.cn/v1".to_string(),
+            request_url: "https://api.siliconflow.cn/v1/chat/completions".to_string(),
+            api_key: "test-key".to_string(),
+            model: "Pro/zai-org/GLM-5.2".to_string(),
+            format: "openai".to_string(),
+            context_window: 128000,
+            max_tokens: Some(4096),
+            max_images_per_request: None,
+            temperature: None,
+            top_p: None,
+            inline_think_in_text: false,
+            custom_headers: None,
+            custom_headers_mode: None,
+            skip_ssl_verify: false,
+            custom_request_body: None,
+            custom_request_body_mode: None,
+        };
+
+        let effort_client = AIClient::new(base_config()).with_reasoning_preset(&reasoning_preset(
+            "high",
+            vec![ReasoningPresetAction::Effort {
+                value: "xhigh".to_string(),
+            }],
+        ));
+        let effort_body = openai::chat::build_request_body(
+            &effort_client,
+            &effort_client.config.request_url,
+            vec![json!({ "role": "user", "content": "hello" })],
+            None,
+            None,
+        );
+        assert_eq!(effort_body["enable_thinking"], true);
+        assert_eq!(effort_body["reasoning_effort"], "max");
+        assert!(effort_body.get("thinking_budget").is_none());
+
+        let budget_client = AIClient::new(base_config()).with_reasoning_preset(&reasoning_preset(
+            "budget",
+            vec![ReasoningPresetAction::BudgetTokens { value: 4096 }],
+        ));
+        let budget_body = openai::chat::build_request_body(
+            &budget_client,
+            &budget_client.config.request_url,
+            vec![json!({ "role": "user", "content": "hello" })],
+            None,
+            None,
+        );
+        assert_eq!(budget_body["enable_thinking"], true);
+        assert_eq!(budget_body["thinking_budget"], 4096);
+    }
+
+    #[test]
     fn build_responses_request_body_applies_explicit_none_effort() {
         let client = AIClient::new(AIConfig {
             name: "responses".to_string(),
@@ -1772,6 +1991,7 @@ mod tests {
             format: "responses".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1813,6 +2033,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1853,6 +2074,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1892,6 +2114,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1931,6 +2154,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1972,6 +2196,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2006,6 +2231,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2033,7 +2259,7 @@ mod tests {
 
         assert_eq!(request_body["thinking"]["type"], "enabled");
         assert!(request_body["thinking"].get("budget_tokens").is_none());
-        assert_eq!(request_body["output_config"]["effort"], "max");
+        assert_eq!(request_body["output_config"]["effort"], "high");
     }
 
     #[test]
@@ -2047,6 +2273,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2089,6 +2316,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2129,6 +2357,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2167,6 +2396,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2207,6 +2437,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2249,6 +2480,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(4000),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2287,6 +2519,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2321,6 +2554,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2359,6 +2593,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

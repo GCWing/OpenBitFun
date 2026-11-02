@@ -5,6 +5,8 @@ export type SkillsView = InstalledFilter | 'groups';
 export type SkillTab = 'installed' | 'discover';
 
 interface SkillsSceneState {
+  activeTab: SkillTab;
+  setActiveTab: (tab: SkillTab) => void;
   nativeNavigationRequest: number;
   nativeNavigationTarget: SkillTab;
   openNativeSkills: (target?: SkillTab) => void;
@@ -20,9 +22,12 @@ interface SkillsSceneState {
 }
 
 export const useSkillsSceneStore = create<SkillsSceneState>((set) => ({
+  activeTab: 'installed',
+  setActiveTab: activeTab => set({ activeTab }),
   nativeNavigationRequest: 0,
   nativeNavigationTarget: 'installed',
   openNativeSkills: (target = 'installed') => set((state) => ({
+    activeTab: target,
     nativeNavigationRequest: state.nativeNavigationRequest + 1,
     nativeNavigationTarget: target,
     installedView: 'all',

@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeFlowChatSearchLineBox,
+  measureFlowChatFocusItem,
   resolveFlowChatSearchPresentation,
 } from './flowChatSearchPresentation';
 import type { SearchMatch } from './useFlowChatSearch';
@@ -50,6 +51,34 @@ describe('FlowChat search text presentation', () => {
     const result = resolveFlowChatSearchPresentation(wrapper, 'needle', matches, matches[0]);
 
     expect(result).toEqual({ currentRange: null, currentRoot: null, otherRanges: [] });
+  });
+});
+
+describe('FlowChat item navigation geometry', () => {
+  it('covers the whole tool and anchors the short marker to its leading icon, including gutter icons', () => {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = '<div data-flow-item-id="tool"><span data-openbitfun-component="flow-chat-tool-card" data-openbitfun-part="icon"></span><button>Tool name</button></div>';
+    const item = wrapper.firstElementChild as HTMLElement;
+    const icon = item.firstElementChild as HTMLElement;
+    wrapper.getBoundingClientRect = () => new DOMRect(100, 100, 800, 300);
+    item.getBoundingClientRect = () => new DOMRect(132, 120, 700, 180);
+    icon.getBoundingClientRect = () => new DOMRect(108, 124, 16, 16);
+    expect(measureFlowChatFocusItem(wrapper, item)).toEqual({
+      left: 8, top: 20, width: 724, height: 180, markerLeft: 0, markerTop: 4, markerHeight: 16,
+    });
+  });
+
+  it('covers the user message bubble when navigation resolves its inner text content', () => {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = '<div class="user-message-item"><div class="user-message-item__content"></div></div>';
+    const item = wrapper.firstElementChild as HTMLElement;
+    wrapper.getBoundingClientRect = () => new DOMRect(100, 100, 800, 300);
+    item.getBoundingClientRect = () => new DOMRect(120, 140, 500, 80);
+    expect(measureFlowChatFocusItem(wrapper, item.firstElementChild as HTMLElement)).toMatchObject({
+      left: 20, top: 40, width: 500, height: 80,
+    });
+    item.getBoundingClientRect = () => new DOMRect();
+    expect(measureFlowChatFocusItem(wrapper, item)).toBeNull();
   });
 });
 

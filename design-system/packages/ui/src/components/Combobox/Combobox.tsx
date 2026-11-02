@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   useCallback,
@@ -501,13 +502,14 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
   const activeDescendant = resolvedOpen && activeIndex >= 0
     ? optionId(activeIndex)
     : undefined;
+  const fieldAccessibility = useFieldAccessibility({ ...props, "aria-describedby": ariaDescribedBy }, Boolean(label));
   const resolvedTriggerLabel = ariaLabel
-    ?? (label || providedId || typeof placeholder !== "string" ? undefined : placeholder);
+    ?? (label || fieldAccessibility["aria-labelledby"] || providedId || typeof placeholder !== "string" ? undefined : placeholder);
   const resolvedLabelledBy = ariaLabel
     ? ariaLabelledBy
-    : ariaLabelledBy ?? (label ? labelId : undefined);
+    : ariaLabelledBy ?? (label ? labelId : fieldAccessibility["aria-labelledby"]);
   const resolvedDescribedBy = [
-    ariaDescribedBy,
+    fieldAccessibility["aria-describedby"],
     errorMessage ? errorId : undefined,
   ].filter(Boolean).join(" ") || undefined;
 

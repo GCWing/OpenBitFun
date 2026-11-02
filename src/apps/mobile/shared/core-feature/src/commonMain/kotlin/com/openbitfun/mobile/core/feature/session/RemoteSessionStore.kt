@@ -207,6 +207,12 @@ public class RemoteSessionStore internal constructor(
     public val supportsWorkspaceIdReferences: Boolean?
         get() = if (hostCapabilitiesKnown) WorkspaceReferencePolicy.supportsWorkspaceIdReferences(hostCapabilities) else null
 
+    /** The workspace identity used by the current session-list requests. */
+    public val activeWorkspaceIdentity: RemoteWorkspaceIdentity?
+        get() = workspacePath.trim().takeIf(String::isNotEmpty)?.let {
+            RemoteWorkspaceIdentity(it, workspaceConnectionId, workspaceSshHost, workspaceId)
+        }
+
     public fun dispatch(intent: RemoteSessionIntent) {
         val current = _state.value as? RemoteSessionUiState.Ready
         when (intent) {
@@ -463,8 +469,8 @@ public class RemoteSessionStore internal constructor(
     }
 
     /** Persists the directory's merged cross-workspace snapshot for offline restore. */
-    internal fun persistDirectorySessions(sessions: List<RemoteSession>) {
-        savePersistedSessions(sessions, false)
+    internal fun persistDirectorySessions(sessions: List<RemoteSession>, hasMore: Boolean = false) {
+        savePersistedSessions(sessions, hasMore)
     }
 
     private fun loadWorkspaceSessions(path: String, force: Boolean, remoteConnectionId: String?, remoteSshHost: String?, workspaceId: String?) {
@@ -1712,7 +1718,7 @@ public class RemoteSessionStore internal constructor(
             renderVersion = null,
             turnId = clientTurnId,
             detail = null,
-            timestamp = null,
+            timestamp = Clock.System.now().toString(),
             thinking = null,
             tools = null,
             items = null,

@@ -121,6 +121,23 @@ fn responses_completed_tool_call_completion(saw_function_call: bool) -> ToolCall
     }
 }
 
+fn response_model_observation(event: &Value) -> Option<String> {
+    match event.get("type")?.as_str()? {
+        "response.created"
+        | "response.in_progress"
+        | "response.completed"
+        | "response.done"
+        | "response.incomplete"
+        | "response.failed" => event
+            .get("response")?
+            .get("model")?
+            .as_str()
+            .filter(|model| !model.trim().is_empty())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
 fn emit_unified_response(
     timeout_controller: &mut StreamTimeoutController,
     tx_event: &mpsc::UnboundedSender<Result<UnifiedResponse>>,
@@ -343,12 +360,21 @@ fn extract_api_error(event_json: &Value) -> Option<AiProviderError> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .or_else(|| extract_api_error_message(event_json))?;
-    Some(AiProviderError::from_parts(
-        message,
-        Some("openai_responses".to_string()),
-        code,
-        None,
-    ))
+    Some(
+        AiProviderError::from_parts(message, Some("openai_responses".to_string()), code, None)
+            .with_retry_after_ms(error.and_then(stream_recovery_hint_ms)),
+    )
+}
+
+/// `response.failed` usage-limit errors carry the allowance reset in the same
+/// fields as the HTTP body; routing uses it as the account cooldown.
+fn stream_recovery_hint_ms(error: &Value) -> Option<u64> {
+    const MAX_HINT_SECONDS: u64 = 8 * 24 * 60 * 60;
+    let seconds = match error.get("resets_at").and_then(Value::as_i64) {
+        Some(at) => u64::try_from(at - chrono::Utc::now().timestamp()).ok()?,
+        None => error.get("resets_in_seconds").and_then(Value::as_u64)?,
+    };
+    (seconds > 0).then(|| seconds.min(MAX_HINT_SECONDS).saturating_mul(1000))
 }
 
 pub async fn handle_responses_stream(
@@ -439,6 +465,20 @@ pub async fn handle_responses_stream(
                 return;
             }
         };
+
+        // Model metadata is observational, never effective output. Emit it
+        // before a possible provider error so failed attempts retain the fact.
+        if let Some(model) = response_model_observation(&event_json) {
+            emit_unified_response(
+                &mut timeout_controller,
+                &tx_event,
+                &mut stats,
+                UnifiedResponse {
+                    response_model: Some(model),
+                    ..Default::default()
+                },
+            );
+        }
 
         if let Some(mut provider_error) = extract_api_error(&event_json) {
             provider_error.message = format!(
@@ -907,6 +947,43 @@ mod tests {
     use tokio::sync::mpsc;
 
     #[test]
+    fn response_model_is_an_explicit_lifecycle_observation_including_failures() {
+        for kind in [
+            "response.created",
+            "response.in_progress",
+            "response.completed",
+            "response.done",
+            "response.incomplete",
+            "response.failed",
+        ] {
+            assert_eq!(
+                super::response_model_observation(
+                    &json!({"type":kind,"response":{"model":"reported-snapshot"}})
+                )
+                .as_deref(),
+                Some("reported-snapshot")
+            );
+            for response in [
+                json!({}),
+                json!({"model":null}),
+                json!({"model":" "}),
+                json!({"model":42}),
+            ] {
+                assert_eq!(
+                    super::response_model_observation(&json!({"type":kind,"response":response})),
+                    None
+                );
+            }
+        }
+        assert_eq!(
+            super::response_model_observation(
+                &json!({"type":"response.output_text.delta", "model":"requested-model", "response":{"model":"not-a-response-lifecycle"}})
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn extracts_api_error_message_from_response_error() {
         let event = json!({
             "type": "response.failed",
@@ -941,6 +1018,24 @@ mod tests {
             error.provider_code.as_deref(),
             Some("context_length_exceeded")
         );
+    }
+
+    #[test]
+    fn streamed_usage_limit_is_quota_with_its_reset_hint() {
+        let event = json!({
+            "type": "response.failed",
+            "response": {
+                "error": {
+                    "type": "usage_limit_reached",
+                    "message": "The usage limit has been reached",
+                    "resets_in_seconds": 120
+                }
+            }
+        });
+
+        let error = extract_api_error(&event).expect("provider error");
+        assert_eq!(error.category, ErrorCategory::ProviderQuota);
+        assert_eq!(error.retry_after_ms, Some(120_000));
     }
 
     #[test]

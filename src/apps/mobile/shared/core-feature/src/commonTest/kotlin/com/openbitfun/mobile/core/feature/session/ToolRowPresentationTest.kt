@@ -19,6 +19,15 @@ class ToolRowPresentationTest {
     }
 
     @Test
+    fun failedCallsFoldWithCompletedWorkWithoutLosingTheirDetails() {
+        val failed = tool("fetch", ToolKind.WEB, ToolPhase.FAILED).copy(output = "HTTP 404")
+        val rows = collapseToolRows(listOf(tool("read", ToolKind.DOCUMENT), failed))
+        val group = assertIs<ToolRow.Collapsed>(rows.single())
+        assertEquals(ToolPhase.FAILED, group.tools.last().phase)
+        assertEquals("HTTP 404", group.tools.last().output)
+    }
+
+    @Test
     fun leavesAttentionAndPlanToolsVisible() {
         val rows = collapseToolRows(
             listOf(

@@ -42,6 +42,7 @@ import { createLogger } from '@/shared/utils/logger';
 import { useInstalledSkills } from './hooks/useInstalledSkills';
 import { useSkillsPagination } from './hooks/useSkillsPagination';
 import { useSkillsPageLayout } from './hooks/useSkillsPageLayout';
+import { SkillScanDiagnostics } from './components/SkillScanDiagnostics';
 import { SkillsPagination } from './components/SkillsPagination';
 import { useSkillMarket } from './hooks/useSkillMarket';
 import { SkillMarketSettings } from '@/infrastructure/config/components/SkillMarketSettings';
@@ -52,7 +53,7 @@ import SkillGroupsView from './components/SkillGroupsView';
 import { useUserSkillGroups } from '@/features/skill-groups/useUserSkillGroups';
 import { resolveSkillGroups } from '@/features/skill-groups/skillGroups';
 import './SkillsScene.scss';
-import { useSkillsSceneStore, type SkillsView, type SkillTab } from './skillsSceneStore';
+import { useSkillsSceneStore, type SkillsView } from './skillsSceneStore';
 import { formatSkillDetailPath } from './skillDetailPath';
 import { useGallerySceneAutoRefresh } from '@/app/hooks/useGallerySceneAutoRefresh';
 
@@ -103,6 +104,8 @@ const SkillsScene: React.FC = () => {
   const [marketPageSize, setMarketPageSize] = useState(10);
   const focusPage = useRef(false);
   const {
+    activeTab,
+    setActiveTab,
     nativeNavigationRequest,
     nativeNavigationTarget,
     searchDraft,
@@ -118,7 +121,6 @@ const SkillsScene: React.FC = () => {
 
   const [marketSettingsOpen, setMarketSettingsOpen] = useState(false);
   useEffect(() => { if (!desktopConfigAvailable) setMarketSettingsOpen(false); }, [desktopConfigAvailable]);
-  const [activeTab, setActiveTab] = useState<SkillTab>('installed');
   const [deleteTarget, setDeleteTarget] = useState<SkillInfo | null>(null);
   const [installedSearch, setInstalledSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
@@ -134,7 +136,7 @@ const SkillsScene: React.FC = () => {
     setActiveTab(desktopConfigAvailable ? nativeNavigationTarget : 'installed');
     setInstalledSearch('');
     setSelectedDetail(null);
-  }, [nativeNavigationRequest, nativeNavigationTarget, desktopConfigAvailable]);
+  }, [nativeNavigationRequest, nativeNavigationTarget, desktopConfigAvailable, setActiveTab]);
 
   const installed = useInstalledSkills({
     searchQuery: installedSearch,
@@ -195,7 +197,7 @@ const SkillsScene: React.FC = () => {
     setAddFormOpen(false);
     setDeleteTarget(null);
     setSelectedDetail(null);
-  }, [desktopConfigAvailable, setAddFormOpen]);
+  }, [desktopConfigAvailable, setAddFormOpen, setActiveTab]);
 
   const market = useSkillMarket({
     searchQuery: marketQuery,
@@ -420,6 +422,18 @@ const SkillsScene: React.FC = () => {
             {activeTab === 'installed' && (
               <div className="skills-installed" id="skills-panel-installed" role="region" aria-label={t('installed.titleAll')} data-openbitfun-scene="skills" data-openbitfun-part="installed">
                 <div className="skills-main" data-openbitfun-scene="skills" data-openbitfun-part="main">
+                  {desktopConfigAvailable && (
+                    <SkillScanDiagnostics
+                      key={installed.catalogContextKey}
+                      diagnostics={installed.diagnostics}
+                      diagnosticsAvailable={installed.diagnosticsAvailable}
+                      loading={installed.loading}
+                      canRevealPath={canRevealSkillPath}
+                      onRetry={() => { void installed.loadSkills(true); }}
+                      onCopyPath={handleCopySkillPath}
+                      onRevealPath={handleRevealSkillPath}
+                    />
+                  )}
                   {!desktopConfigAvailable ? (
                     <div className="skills-main__empty" data-testid="skills-management-unavailable" data-openbitfun-scene="skills" data-openbitfun-part="empty">
                       <Icon name="book-open" size="lg" />

@@ -161,6 +161,20 @@ impl Tool for AgentControlTool {
         Self::input_schema()
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "action": {"type": "string"},
+                "agent_ids": {"type": "array", "items": {"type": "string"}},
+                "interrupted_background_tasks": {"type": "integer"},
+                "deleted_agents": {"type": "integer"}
+            },
+            "required": ["action"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

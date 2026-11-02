@@ -198,23 +198,19 @@
 }
 
 .th-create-panel__field-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: var(--openbitfun-space-3);
 }
 
 .th-create-panel__tool-edit-actions {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--openbitfun-space-2);
-}
-
-.th-create-panel__tool-editor {
-  height: min(360px, 40vh);
-  min-height: 0;
-  scrollbar-gutter: stable;
 }
 
 .th-create-panel__tool-summary {
@@ -385,12 +381,4 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .th-create-panel__field-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .th-create-panel__tool-edit-actions {
-    justify-content: flex-start;
-  }
 }

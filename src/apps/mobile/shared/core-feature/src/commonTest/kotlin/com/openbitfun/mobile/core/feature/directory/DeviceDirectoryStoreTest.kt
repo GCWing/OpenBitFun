@@ -1,6 +1,7 @@
 package com.openbitfun.mobile.core.feature.directory
 
 import com.openbitfun.mobile.core.domain.RemoteSession
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
 import com.openbitfun.mobile.core.feature.session.RemoteSessionStore
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceStore
 import com.openbitfun.mobile.core.persistence.ChatLocalStore
@@ -430,6 +431,54 @@ class DeviceDirectoryStoreTest {
         assertEquals("Server title", calibrated.title)
         assertEquals("Server assistant", calibrated.workspaceName)
         assertEquals(1, store.state.value.device("a")!!.sessions.count { it.id == "created" })
+    }
+
+    @Test
+    fun authoritativeWorkspaceSessionSnapshotUpdatesDirectoryAndItsCache() = runTest {
+        val transport = FakeDeviceTransport("a")
+        val sessions = MemoryDirectorySessions()
+        val store = DeviceDirectoryStore.create(
+            this,
+            CachedDeviceStoreFactory(transport, sessions, MemoryDirectoryWorkspaces()),
+        )
+        store.dispatch(DeviceDirectoryIntent.Sync(listOf(DeviceDirectoryDevice("a", true))))
+        store.dispatch(DeviceDirectoryIntent.Load("a"))
+        advanceUntilIdle()
+        store.dispatch(DeviceDirectoryIntent.SetWorkspaceExpanded("a", "/repo-a", true))
+        advanceUntilIdle()
+        assertEquals(listOf("s-a"), store.state.value.device("a")!!.sessions.map { it.id })
+
+        val otherWorkspaceSession = RemoteSession(
+            id = "other-session", title = "Other", agentType = "code", status = "idle",
+            updatedAt = "other-time", createdAt = "other-time", messageCount = 0,
+            workspacePath = "/other", workspaceName = "Other",
+        )
+        assertTrue(store.reconcileCreatedSession(store.reconcileKey("a")!!, otherWorkspaceSession))
+
+        val snapshot = listOf(
+            RemoteSession(
+                id = "new-session", title = "New", agentType = "code", status = "idle",
+                updatedAt = "new-time", createdAt = "new-time", messageCount = 0,
+                workspacePath = "/repo-a", workspaceName = "Repo a",
+            ),
+        )
+        val identity = RemoteWorkspaceIdentity("/repo-a", null, null, null)
+        assertTrue(
+            store.reconcileWorkspaceSessions(
+                "a",
+                identity,
+                snapshot,
+                hasMore = false,
+            ),
+        )
+        val updated = store.state.value.device("a")!!
+        assertEquals(listOf("new-session", "other-session"), updated.sessions.map { it.id })
+        assertEquals(listOf("new-session"), updated.sessionsForWorkspace(identity).map { it.id })
+        assertEquals(listOf("other-session"), updated.sessions.filter { it.id == "other-session" }.map { it.id })
+        assertEquals(
+            listOf("new-session", "other-session"),
+            sessions.byDevice.getValue("a").map { it.sessionId },
+        )
     }
 
     @Test

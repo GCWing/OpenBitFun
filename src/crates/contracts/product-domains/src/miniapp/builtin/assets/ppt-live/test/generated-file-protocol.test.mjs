@@ -260,7 +260,7 @@ test('PPT topic lifecycle eagerly creates or rebinds its dedicated session', asy
     uiSource,
     /displayText: attempt === 1[\s\S]*generationRetryDisplayText/,
   );
-  assert.match(uiSource, /return submitInstruction\(text, displayText\);/);
+  assert.match(uiSource, /return submitInstruction\(text, displayText, payload\?\.imageContexts\);/);
   assert.doesNotMatch(
     uiSource,
     /buildDeckRunRequestInput\([\s\S]{0,180}sessionId: retrySession\?\.id/,

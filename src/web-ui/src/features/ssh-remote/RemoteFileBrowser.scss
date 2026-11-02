@@ -1,52 +1,19 @@
 /**
  * Remote File Browser Styles
  */
-@use '@/shared/styles/surface-recipes' as surfaces;
-
-.remote-file-browser-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--openbitfun-color-content-on-light) 60%, transparent);
-  backdrop-filter: blur(4px);
-  z-index: 260;
-  animation: remote-file-browser-fade-in 0.2s ease;
-
-}
-
-@keyframes remote-file-browser-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+@use '@/shared/styles/overlay-layout' as overlay-layout;
 
 .remote-file-browser {
-  @include surfaces.dialog;
+  @include overlay-layout.workspace-dialog-size;
 
-  display: flex;
-  flex-direction: column;
-  height: 80vh;
-  width: 90vw;
-  max-width: 1000px;
-  overflow: hidden;
-  animation: remote-file-browser-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-
-  &__header {
+  &__layout,
+  &__body {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-block: 16px;
-    padding-inline: 20px 16px;
-    border-bottom: 1px solid var(--openbitfun-color-border-subtle);
-    flex-shrink: 0;
-
-    &-title {
-      font-size: var(--openbitfun-type-flow-title-font-size);
-      font-weight: var(--openbitfun-type-label-selected-font-weight);
-      color: var(--openbitfun-color-content-primary);
-      margin: 0;
-    }
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
   }
 
   // Path breadcrumb
@@ -54,7 +21,8 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 10px 20px;
+    padding-block: 10px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
     background: var(--openbitfun-color-surface-tertiary);
     border-bottom: 1px solid var(--openbitfun-color-border-subtle);
     flex-shrink: 0;
@@ -152,7 +120,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 20px;
+    padding-block: 10px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
     border-bottom: 1px solid var(--openbitfun-color-border-subtle);
     flex-shrink: 0;
   }
@@ -189,7 +158,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 20px;
+    padding-block: 8px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
     font-size: var(--openbitfun-type-label-md-font-size);
     color: var(--openbitfun-color-content-secondary);
     border-bottom: 1px solid var(--openbitfun-color-border-subtle);
@@ -210,7 +180,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin: 16px 20px;
+    margin-block: 16px;
+    margin-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
     padding: 12px 14px;
     background: var(--openbitfun-color-status-danger-surface);
     border: 1px solid var(--openbitfun-color-status-danger-border);
@@ -295,7 +266,7 @@
     z-index: 1;
 
     th {
-      padding: 10px 20px;
+      padding: 10px var(--openbitfun-space-3);
       font-size: var(--openbitfun-type-meta-font-size);
       font-weight: var(--openbitfun-type-label-selected-font-weight);
       color: var(--openbitfun-color-content-muted);
@@ -311,6 +282,16 @@
   &__thead th#{&}__th--size,
   &__thead th#{&}__th--date {
     text-align: right;
+  }
+
+  &__thead th#{&}__th--name,
+  &__tbody td#{&}__td--name {
+    padding-inline-start: var(--openbitfun-overlay-dialog-header-padding-inline);
+  }
+
+  &__thead th#{&}__th--date,
+  &__tbody td#{&}__td--date {
+    padding-inline-end: var(--openbitfun-overlay-dialog-header-padding-inline);
   }
 
   &__tbody td#{&}__td--size,
@@ -334,7 +315,7 @@
   }
 
   &__tbody {
-    tr {
+    .remote-file-browser__row {
       border-bottom: 1px solid var(--openbitfun-color-border-subtle);
       transition: background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
       cursor: pointer;
@@ -353,17 +334,16 @@
     }
 
     td {
-      padding: 10px 20px;
+      padding: 10px var(--openbitfun-space-3);
       font-size: var(--openbitfun-type-label-md-font-size);
       color: var(--openbitfun-color-content-primary);
     }
   }
 
-  &__name-cell {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
+  &__entry-button {
+    max-inline-size: 100%;
+    justify-content: flex-start;
+    padding-inline: 0;
   }
 
   &__td {
@@ -410,7 +390,7 @@
 
   &__empty {
     text-align: center;
-    padding: 48px 20px !important;
+    padding: 48px var(--openbitfun-overlay-dialog-header-padding-inline) !important;
     color: var(--openbitfun-color-content-muted);
   }
 
@@ -418,78 +398,12 @@
   &__context-menu {
     position: fixed;
     min-width: 160px;
-    z-index: 100;
-  }
-
-  // Dialog overlay
-  &__dialog-overlay {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-light) 60%, transparent);
-    z-index: 270;
-  }
-
-  &__dialog {
-    @include surfaces.dialog;
-
-    width: 100%;
-    max-width: 380px;
-    padding: 20px;
-  }
-
-  &__dialog-title {
-    font-size: var(--openbitfun-type-flow-title-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    color: var(--openbitfun-color-content-primary);
-    margin: 0 0 16px 0;
-  }
-
-  &__dialog-input {
-    width: 100%;
-    padding: 10px 12px;
-    background: var(--openbitfun-color-surface-canvas);
-    border: 1px solid var(--openbitfun-color-border-default);
-    border-radius: 6px;
-    font-size: var(--openbitfun-type-body-md-font-size);
-    font-family:var(--openbitfun-type-code-md-font-family);
-    color: var(--openbitfun-color-content-primary);
-    outline: none;
-    transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-    box-sizing: border-box;
-
-    &::placeholder {
-      color: var(--openbitfun-color-content-muted);
-    }
-
-    &:focus {
-      border-color: var(--openbitfun-color-accent-default);
-    }
-  }
-
-  &__dialog-input-field {
-    width: 100%;
-  }
-
-  &__dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
-
   }
 
   // Footer
   &__footer {
-    display: flex;
-    align-items: center;
+    flex-wrap: wrap;
     justify-content: space-between;
-    padding: 10px 20px;
-    border-top: 1px solid var(--openbitfun-color-border-subtle);
-    flex-shrink: 0;
-    background: var(--openbitfun-color-surface-panel);
   }
 
   &__footer-info {
@@ -527,20 +441,7 @@
   to { transform: rotate(360deg); }
 }
 
-@keyframes remote-file-browser-slide-in {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .remote-file-browser-overlay,
-  .remote-file-browser,
   .remote-file-browser__spinner,
   .remote-file-browser__spinner-inline {
     animation: none;
@@ -550,17 +451,4 @@
   .remote-file-browser__toolbar-btn {
     transition: none;
   }
-}
-
-.remote-file-browser__dialog-overlay[data-openbitfun-component='dialog'] {
-  padding: 0;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  animation: none;
-}
-.remote-file-browser__dialog[data-openbitfun-component='dialog'] {
-  display: block;
-  max-inline-size: 380px;
-  max-block-size: none;
-  animation: none;
 }

@@ -13,10 +13,12 @@ use openbitfun_ai_adapters::{
     ModelExchangeRequestAttempt, ModelExchangeRequestTraceHandle, ModelExchangeResponseTrace,
     ModelExchangeRoundAttempt, ModelExchangeTraceConfig, ModelExchangeTraceSink,
 };
+use openbitfun_services_core::json_store::JsonFileStore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -37,7 +39,27 @@ struct ModelExchangeTraceRecord {
     capture_mode: ModelExchangeTracingMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     response: Option<ModelExchangeResponseTrace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timing: Option<ModelExchangeTraceTiming>,
     request: ModelExchangeTraceRequestRecord,
+}
+
+/// Adapter attempt lifecycle, including stream processing and trace-start IO.
+/// Provider-capacity queueing, retry backoff and tools are outside this span.
+/// An unfinished attempt deliberately has no end or duration, never a fake zero.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ModelExchangeTraceTiming {
+    started_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finished_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingModelExchangeTrace {
+    path: PathBuf,
+    started_at: Instant,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -111,7 +133,7 @@ struct WorkspaceModelExchangeTraceSink {
     provider: String,
     api_format: String,
     model_id: String,
-    trace_paths: DashMap<String, PathBuf>,
+    trace_paths: DashMap<String, PendingModelExchangeTrace>,
 }
 
 // Reverse declaration order preserves the previous function-parameter drop
@@ -182,9 +204,8 @@ impl WorkspaceModelExchangeTraceSink {
                 .map_err(|error| format!("Failed to create trace directory: {}", error))?;
         }
 
-        let bytes = serde_json::to_vec_pretty(record)
-            .map_err(|error| format!("Failed to serialize trace record: {}", error))?;
-        tokio::fs::write(path, bytes)
+        JsonFileStore
+            .write_atomic_strict(path, record)
             .await
             .map_err(|error| format!("Failed to write trace record: {}", error))
     }
@@ -202,16 +223,27 @@ impl WorkspaceModelExchangeTraceSink {
         trace_id: &str,
         response: &ModelExchangeResponseTrace,
     ) -> Result<(), String> {
-        let Some(path) = self
-            .trace_paths
-            .get(trace_id)
-            .map(|entry| entry.value().clone())
-        else {
+        let Some((path, duration_ms)) = self.trace_paths.get(trace_id).map(|entry| {
+            let pending = entry.value();
+            (
+                pending.path.clone(),
+                pending
+                    .started_at
+                    .elapsed()
+                    .as_millis()
+                    .min(u64::MAX as u128) as u64,
+            )
+        }) else {
             return Ok(());
         };
+        let finished_at = Utc::now();
 
         let mut record = self.read_record(&path).await?;
         record.response = Some(self.sanitize_response(response));
+        if let Some(timing) = record.timing.as_mut() {
+            timing.finished_at = Some(finished_at);
+            timing.duration_ms = Some(duration_ms);
+        }
         self.write_record(&path, &record).await?;
         self.trace_paths.remove(trace_id);
         Ok(())
@@ -260,6 +292,8 @@ impl ModelExchangeTraceSink for WorkspaceModelExchangeTraceSink {
         &self,
         attempt: &ModelExchangeRequestAttempt,
     ) -> Option<ModelExchangeRequestTraceHandle> {
+        let started_at = Instant::now();
+        let recorded_at = Utc::now();
         let sequence = match self.allocate_sequence().await {
             Ok(value) => value,
             Err(error) => {
@@ -277,7 +311,7 @@ impl ModelExchangeTraceSink for WorkspaceModelExchangeTraceSink {
             version: TRACE_LAYOUT_VERSION,
             trace_id: trace_id.clone(),
             sequence,
-            recorded_at: Utc::now(),
+            recorded_at,
             session_id: self.session_id.clone(),
             turn_id: self.turn_id.clone(),
             operation_kind: self.operation_kind.clone(),
@@ -285,6 +319,11 @@ impl ModelExchangeTraceSink for WorkspaceModelExchangeTraceSink {
             operation_trigger: self.operation_trigger.clone(),
             capture_mode: self.policy.mode,
             response: None,
+            timing: Some(ModelExchangeTraceTiming {
+                started_at: recorded_at,
+                finished_at: None,
+                duration_ms: None,
+            }),
             request: ModelExchangeTraceRequestRecord {
                 provider: self.provider.clone(),
                 api_format: self.api_format.clone(),
@@ -304,7 +343,10 @@ impl ModelExchangeTraceSink for WorkspaceModelExchangeTraceSink {
             return None;
         }
 
-        self.trace_paths.insert(trace_id.clone(), path);
+        self.trace_paths.insert(
+            trace_id.clone(),
+            PendingModelExchangeTrace { path, started_at },
+        );
         Some(ModelExchangeRequestTraceHandle { trace_id })
     }
 
@@ -544,6 +586,7 @@ mod tests {
             .get(&handle.trace_id)
             .expect("trace path should be registered")
             .value()
+            .path
             .clone();
         let record = sink
             .read_record(&path)
@@ -570,5 +613,77 @@ mod tests {
             record.request.body,
             Some(serde_json::json!({"request": "body"}))
         );
+
+        let pending = serde_json::to_value(&record).unwrap();
+        assert!(pending["timing"]["started_at"].is_string());
+        assert!(pending["timing"]["finished_at"].is_null());
+        assert!(pending["timing"]["duration_ms"].is_null());
+        assert!(record.response.is_none());
+
+        sink.request_attempt_failed(Some(&handle), "synthetic transport failure")
+            .await;
+        let completed = sink.read_record(&path).await.unwrap();
+        let completed = serde_json::to_value(completed).unwrap();
+        assert_eq!(completed["response"]["kind"], "error");
+        assert_eq!(
+            completed["timing"]["started_at"],
+            pending["timing"]["started_at"]
+        );
+        assert!(completed["timing"]["finished_at"].is_string());
+        assert!(completed["timing"]["duration_ms"].is_u64());
+        assert!(completed["response"]["usage"].is_null());
+        assert!(!sink.trace_paths.contains_key(&handle.trace_id));
+
+        // Legacy traces have no timing; round-trip them without inventing data.
+        let mut legacy = completed;
+        legacy.as_object_mut().unwrap().remove("timing");
+        let legacy: ModelExchangeTraceRecord = serde_json::from_value(legacy).unwrap();
+        assert!(legacy.timing.is_none());
+        assert!(serde_json::to_value(&legacy)
+            .unwrap()
+            .get("timing")
+            .is_none());
+
+        let response = ModelExchangeResponseTrace {
+            kind: "completed".to_string(),
+            assistant_text: Some("synthetic response".to_string()),
+            thinking: Some("synthetic reasoning".to_string()),
+            tool_calls: None,
+            usage: Some(serde_json::json!({"prompt_tokens": 7, "completion_tokens": 3})),
+            provider_metadata: None,
+            partial_recovery_reason: None,
+            error: None,
+        };
+        let mut sink = sink;
+        sink.policy = ModelExchangeTracePolicy::from_config(ModelExchangeTracingConfig {
+            mode: ModelExchangeTracingMode::UsageOnly,
+        })
+        .unwrap();
+        let success = sink
+            .request_attempt_started(&ModelExchangeRequestAttempt {
+                request_url: "https://example.invalid/model".to_string(),
+                request_body: None,
+                attempt_number: 3,
+                round_attempt: None,
+            })
+            .await
+            .unwrap();
+        let success_path = sink
+            .trace_paths
+            .get(&success.trace_id)
+            .unwrap()
+            .path
+            .clone();
+        sink.request_attempt_completed(&success, &response).await;
+        let success_record = sink.read_record(&success_path).await.unwrap();
+        let success_timing = success_record.timing.unwrap();
+        assert!(success_timing.finished_at.unwrap() >= success_timing.started_at);
+        assert!(success_timing.duration_ms.is_some());
+        let recorded_response = success_record.response.unwrap();
+        assert_eq!(recorded_response.usage, response.usage);
+        assert!(recorded_response.assistant_text.is_none());
+        assert!(recorded_response.thinking.is_none());
+        assert_eq!(success_record.request.attempt_number, 3);
+        assert!(!sink.trace_paths.contains_key(&success.trace_id));
     }
 }

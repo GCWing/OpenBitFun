@@ -20,6 +20,7 @@ const presentations: Record<string, ComponentPresentation> = {
   NavigationPanel: "composition", PageHeader: "composition", ScrollArea: "composition", SplitView: "composition",
   SegmentedControl: "composition", TabGroup: "composition",
   SetupWizard: "composition",
+  ColorPicker: "composition",
   Icon: "icons", RollingText: "motion", ShimmerText: "motion", VoiceCallPanel: "motion",
   ThinkingIndicator: "motion",
   MobileBadge: "compact", MobileButton: "compact", MobileIconButton: "compact",
@@ -38,6 +39,7 @@ const presentations: Record<string, ComponentPresentation> = {
 };
 
 const initialStates: Record<string, string> = {
+  ColorPicker: "expanded",
   Card: "raised", Disclosure: "open", Composer: "with-context", Switch: "off",
   StatusPill: "success", Toolbar: "with-center", TabGroup: "selected", SegmentedControl: "selected",
   Listbox: "selected-option", NavigationPanel: "selected-item", ScrollArea: "auto",

@@ -447,6 +447,23 @@ impl Tool for LaunchReviewAgentTool {
         Self::launch_input_schema()
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "status": {"type": "string"},
+                "session_id": {"type": "string"},
+                "task_id": {"type": "string"},
+                "agent_type": {"type": "string"},
+                "result": {"anyOf": [{"type": "null"}, {"type": "string"}, {"type": "object", "additionalProperties": true}]},
+                "output": {"type": "string"},
+                "error": {"type": "string"}
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

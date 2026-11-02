@@ -1,0 +1,205 @@
+{
+  "title": "图像生成",
+  "subtitle": "图像服务与对话模型相互独立：无论会话正在使用哪个模型，生成图片时都会使用这里选定的服务。",
+  "loadFailed": "无法加载图像生成设置。",
+  "retry": "重试",
+  "default": {
+    "label": "默认服务",
+    "description": "生成图片时使用的默认模型，也可直接选择已配置的 Codex 订阅模型。",
+    "placeholder": "选择图像生成模型",
+    "unavailable": "已选择的模型不可用"
+  },
+  "empty": {
+    "title": "尚未配置图像服务",
+    "description": "添加一个服务后，智能体才能生成图片；在此之前图像生成保持不可用。"
+  },
+  "card": {
+    "defaultBadge": "默认",
+    "model": "模型",
+    "endpoint": "接口地址",
+    "toggleEnabled": "启用此服务",
+    "apiKeyBadge": "API 密钥",
+    "subscriptionBadge": "订阅 · {{provider}}"
+  },
+  "actions": {
+    "add": "添加服务",
+    "delete": "删除",
+    "cancel": "取消",
+    "save": "保存"
+  },
+  "messages": {
+    "saved": "图像服务设置已保存。",
+    "saveFailed": "无法保存图像服务设置。",
+    "deleted": "图像服务已删除。"
+  },
+  "delete": {
+    "title": "删除图像服务",
+    "message": "确定删除「{{name}}」吗？已生成的图片仍保留在磁盘上。",
+    "confirm": "删除"
+  },
+  "dialect": {
+    "openaiImages": {
+      "name": "OpenAI Images",
+      "description": "即 `POST /images/generations` 这个 JSON 接口。适用于 OpenAI 以及大多数兼容中转服务。"
+    },
+    "dashscopeNative": {
+      "name": "通义千问原生（DashScope）",
+      "description": "阿里云百炼 DashScope 的多模态生成接口，供千问图像模型使用。"
+    },
+    "chatgptCodex": {
+      "name": "ChatGPT 订阅（Codex）",
+      "description": "使用 ChatGPT Plus / Pro / Team 订阅出图：请求由对话模型调用内置图像工具完成，响应是流式事件。与 API 密钥计费是两条不同的路。"
+    }
+  },
+  "subscriptionLabels": {
+    "codex": "Codex",
+    "antigravity": "Antigravity",
+    "opencode": "OpenCode",
+    "grok": "Grok",
+    "hermes": "Hermes"
+  },
+  "wizard": {
+    "titleCreate": "添加或导入图像模型",
+    "titleEdit": "编辑图像模型",
+    "guideLabel": "配置步骤",
+    "progress": "{{current}} / {{total}}",
+    "back": "上一步",
+    "next": "继续",
+    "steps": {
+      "dialect": {
+        "label": "协议",
+        "title": "这个服务使用哪种协议？",
+        "description": "协议决定了请求体、接口路径和返回结构。请选择服务商文档中标注用于图像生成的那一种。"
+      },
+      "connection": {
+        "label": "连接",
+        "title": "地址是什么，如何鉴权？",
+        "description": "填写服务根地址、凭据和图像模型 ID。中转服务必须填它自己的地址。"
+      },
+      "parameters": {
+        "label": "参数",
+        "title": "每次生成默认使用什么参数？",
+        "description": "这里的值作为默认值生效，单次请求可以覆盖。尺寸写法跟随所选的协议。"
+      },
+      "test": {
+        "label": "验证",
+        "title": "生成一张图片来确认配置",
+        "description": "这是唯一可靠的验证方式：它能同时证明地址、凭据、模型和协议是匹配的。"
+      }
+    },
+    "auth": {
+      "label": "鉴权方式",
+      "apiKey": "API 密钥",
+      "subscription": "订阅登录",
+      "apiKeyHint": "使用这个服务自己的密钥，与其他设置一起保存在本地。",
+      "subscriptionHint": "使用已导入的 {{provider}} 登录，请求时自动解析访问令牌。",
+      "subscriptionCaveat": "订阅登录由服务商按其产品开放范围授权，一般只覆盖自家对话接口。例如 OpenAI 图像接口要求 api.model.images.request 权限，对话类订阅登录通常不含该权限。测试会原样返回服务商错误，此时请改用 API 密钥。",
+      "subscriptionRouteHint": "该协议由 {{provider}} 订阅登录驱动，令牌在发送时解析。",
+      "subscriptionRouteNote": "这条路径消耗的是订阅额度，不是 API 密钥额度。地址、模型目录和访问令牌都由订阅登录提供，无需手工填写；若登录失效，请先在订阅登录处重新授权。"
+    },
+    "reuse": {
+      "label": "复用已配置的凭据",
+      "hint": "选中一个对话模型即可复制它的密钥与地址；选中订阅模型则复用该订阅登录。保存前请确认是否正确。",
+      "none": "不复用"
+    },
+    "fields": {
+      "endpoint": {
+        "label": "实际请求地址",
+        "unresolved": "填写服务地址后显示"
+      },
+      "baseUrl": {
+        "label": "服务地址",
+        "hint": "请求会发往该地址加上 {{path}}。",
+        "subscriptionHint": "留空则使用订阅登录返回的地址；若该地址不提供图像接口，请显式填写图像服务地址。",
+        "subscriptionRouteHint": "由订阅登录解析提供，不可编辑。保存后实际发往的地址以订阅返回值为准。"
+      },
+      "requestUrl": {
+        "label": "完整请求地址（可选）",
+        "hint": "填写后替代「服务地址 + 接口路径」，用于专有实例或网关。"
+      },
+      "apiKey": {
+        "label": "API 密钥",
+        "hint": "与其他设置一起保存在本地。"
+      },
+      "modelName": {
+        "label": "图像模型 ID",
+        "hint": "填服务商用于图像生成的确切模型 ID，不是对话模型。",
+        "subscriptionPlaceholder": "留空则使用账号可用的模型",
+        "subscriptionHint": "这里填的是驱动图像工具的对话模型，不是图像模型名；留空会按账号可用模型自动选择。"
+      },
+      "name": {
+        "label": "显示名称",
+        "hint": "可留空，默认使用模型 ID。"
+      },
+      "size": {
+        "label": "默认尺寸",
+        "hint": "尺寸按 {{dialect}} 的写法填写。"
+      },
+      "n": {
+        "label": "每次生成张数",
+        "hint": "取值 1 至 {{max}}。"
+      },
+      "quality": {
+        "label": "质量"
+      },
+      "background": {
+        "label": "背景"
+      },
+      "negativePrompt": {
+        "label": "反向提示词",
+        "hint": "希望模型避免出现的内容。"
+      },
+      "promptExtend": {
+        "label": "改写提示词",
+        "hint": "允许服务商把简短提示扩写为更完整的描述。"
+      },
+      "watermark": {
+        "label": "添加水印"
+      }
+    },
+    "validation": {
+      "unsupportedAuth": "图像生成暂不支持订阅账号池，请选择单个账号。",
+      "duplicate": "已存在相同的图像生成配置，请编辑已有配置。",
+      "baseUrlInvalid": "请填写有效的 http 或 https 地址。",
+      "modelRequired": "请填写图像模型 ID。",
+      "apiKeyRequired": "请填写 API 密钥。"
+    },
+    "test": {
+      "billed": "测试会真实生成一张图片，服务商会正常计费。",
+      "promptLabel": "测试使用的提示词",
+      "run": "生成测试图片",
+      "running": "生成中…",
+      "success": "已生成图片，耗时 {{time}} 毫秒。",
+      "failed": "测试失败。",
+      "previewAlt": "测试生成的图片"
+    },
+    "errors": {
+      "config": "该服务配置不完整，请检查地址、凭据和模型 ID。",
+      "auth": "服务商拒绝了凭据，请确认该凭据属于这个地址，或该订阅登录能否调用图像接口。",
+      "invalid_request": "服务商拒绝了请求。通常是协议选错，或某个参数不被支持。",
+      "content_filtered": "提示词被服务商的安全审核拦截，请更换描述内容。",
+      "rate_limited": "触发限流或额度已用尽，请稍后再试。",
+      "timeout": "服务商未在预期时间内响应。",
+      "transport": "无法连接到该地址。若必须经本地代理才能访问该服务，请保持代理为空以跟随系统代理，或在代理设置中填写代理地址。",
+      "missingScope": "该凭据已通过身份验证，但缺少图像接口权限（服务商要求 api.model.images.request 等范围）。订阅登录通常只覆盖自家对话接口，请改用服务商的 API 密钥。",
+      "provider": "服务商返回内部错误。",
+      "empty_result": "服务商响应成功但没有返回图片。"
+    }
+  },
+  "acquisition": {
+    "label": "图像生成模型",
+    "description": "添加图像服务，或导入已有模型配置",
+    "add": "添加模型",
+    "empty": "尚未添加图像模型",
+    "remove": "删除图像模型 {{name}}"
+  },
+  "import": {
+    "source": "配置来源",
+    "manual": "手动添加服务",
+    "saved": "当前配置",
+    "hint": "复用已有服务提供方的连接，或手动配置图像服务。",
+    "subscriptionHint": "使用已导入的订阅账号，无需重复填写密钥和地址。"
+  },
+  "advanced": "高级设置",
+  "automatic": "跟随模型默认值"
+}

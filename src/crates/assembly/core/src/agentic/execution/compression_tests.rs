@@ -101,6 +101,7 @@ async fn prefetch_session(
             "prefetch test".into(),
             "Standard".into(),
             crate::agentic::core::SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(path.to_string_lossy().into_owned()),
                 ..Default::default()
             },
@@ -541,6 +542,7 @@ async fn compression_failure_preserves_context_and_success_count() {
             "compression test".into(),
             "Standard".into(),
             crate::agentic::core::SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(_temp.path().to_string_lossy().into_owned()),
                 ..Default::default()
             },

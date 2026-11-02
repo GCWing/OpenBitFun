@@ -2,6 +2,8 @@ import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { appearanceService } from '@/infrastructure/appearance';
 import { configManager } from '@/infrastructure/config';
 import { i18nService, type LocaleId } from '@/infrastructure/i18n';
+import { notifyMcpConfigChanged } from '@/infrastructure/mcp/configEvents';
+import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
 import { listenForCreationRequests } from '@/infrastructure/creation/creationBridge';
 import { activateInteractiveCapability } from './interactiveCapabilityActivator';
@@ -176,9 +178,14 @@ async function handleEffect(event: OpenBitFunControlEffectEvent): Promise<void> 
 }
 
 async function handleAppliedEvent(event: OpenBitFunControlAppliedEvent): Promise<void> {
+  const scope = getActiveSurfaceScope();
   try {
     await configManager.applyExternalReload();
+    if (event.capabilityId === 'setting.tools.mcp' && event.changedPaths.includes('mcp_servers')) {
+      notifyMcpConfigChanged(scope);
+    }
   } catch (error) {
+    if (isSurfaceChangedError(error)) return;
     log.warn('Failed to reload a non-transactional ProductControl projection', {
       capabilityId: event.capabilityId,
       operationId: event.operationId,

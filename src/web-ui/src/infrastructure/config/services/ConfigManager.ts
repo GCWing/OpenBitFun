@@ -14,6 +14,13 @@ import { extractProviderSegmentFromBaseUrl, matchProviderCatalogItemByBaseUrl, n
 const log = createLogger('ConfigManager');
 const PROVIDER_INSTANCE_METADATA_KEY = 'provider_instance_id';
 
+export class ConfigConflictError extends Error {
+  constructor() {
+    super('Configuration changed while it was being edited');
+    this.name = 'ConfigConflictError';
+  }
+}
+
 declare global {
   // Injected by the desktop webview initialization script before the frontend
   // bundle runs. It avoids a startup-window IPC for the initial shortcut load.
@@ -665,13 +672,14 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   /** Apply an edit to a fresh host value inside the client mutation queue. */
-  async updateConfig<T>(path: string, update: (current: T) => T): Promise<T> {
+  async updateConfig<T>(path: string, update: (current: T) => T, options?: { expectedValue: T }): Promise<T> {
     const scope = getActiveSurfaceScope();
     // Model writes also reconcile default selectors on the host. Invalidate
     // their cached siblings and serialize edits to the whole AI section.
     const mutationPath = path === 'ai.models' ? 'ai' : path;
     let previous!: T;
     let next!: T;
+    let confirmed = true;
     await this.runMutation(mutationPath, async () => {
       // Deliberately bypass cached/read-failure defaults: an unavailable host
       // must not turn a partial edit into replacement of its config with [].
@@ -681,10 +689,38 @@ class ConfigManagerImpl implements IConfigManager {
       if (previous === undefined || previous === null) {
         throw new Error(`Cannot update unavailable config: ${path}`);
       }
+      if (options && !configValuesEqual(previous, options.expectedValue)) {
+        throw new ConfigConflictError();
+      }
+      // Preserve the raw host shape, before compatibility projection or an
+      // in-place edit. The host compares it under its configuration lock.
+      const expectedModels = path === 'ai.models' ? structuredClone(value) : undefined;
       next = update(previous);
-      await configAPI.setConfig(path, next);
+      if (path === 'ai.models') {
+        try {
+          await configAPI.setConfig(path, next, { expectedModels });
+        } catch (error) {
+          if (String(error).includes('SUBSCRIPTION_ACCOUNT_POOL_CONFLICT')) throw new ConfigConflictError();
+          throw error;
+        }
+        scope.assertCurrent('read committed configuration');
+        // Pool epochs and normalized fields belong to the host. Reopening an
+        // editor must start from the committed value, not our pre-commit draft.
+        try {
+          const committed = await configAPI.getConfig(path);
+          if (!Array.isArray(committed)) throw new Error('Committed model configuration is unavailable');
+          next = await this.resolveLegacyAiModels(committed) as T;
+        } catch (error) {
+          // The write was acknowledged. Do not report it as a failed mutation
+          // or cache an unconfirmed revision if the host disconnected afterward.
+          confirmed = false;
+          log.warn('Failed to read committed model configuration', { error });
+        }
+      } else {
+        await configAPI.setConfig(path, next);
+      }
     }, () => {
-      this.configCache.set(path, next);
+      if (confirmed) this.configCache.set(path, next);
       if (mutationPath === path) {
         this.notifyConfigChange(path, previous, next);
       } else {

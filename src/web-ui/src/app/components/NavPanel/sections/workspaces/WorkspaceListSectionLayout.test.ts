@@ -263,10 +263,12 @@ describe('WorkspaceListSection layout styles', () => {
     const itemSource = readWorkspaceItemSource();
     const listSource = readWorkspaceListSource();
     const stylesheet = readWorkspaceListStylesheet();
+    const iconSource = readFileSync(fileURLToPath(new URL('../../../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
 
     expect(itemSource).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
-    expect(itemSource).toContain('<Icon glyph={Server} size="sm" />');
-    expect(itemSource).toContain('<Icon name="folder" size="sm" />');
+    expect(itemSource).toContain('<WorkspaceIcon workspace={workspace} />');
+    expect(iconSource).toContain('projectGlyphs[glyph] : remote ? Server : Folder');
+    expect(iconSource).toContain('<Icon glyph={artwork} size="sm"');
     expect(itemSource).not.toContain('SessionGroup');
     expect(listSource).not.toContain('nav.sessions.viewMenu.grouping.all');
     expect(listSource).not.toContain('workspace-all-sessions-header');
@@ -279,14 +281,14 @@ describe('WorkspaceListSection layout styles', () => {
       .toContain('opacity: 1;');
   });
 
-  it('keeps assistant history in a dialog without inline disclosure or a resource shortcut', () => {
+  it('expands assistant history below its row with a collapse icon and no resource shortcut', () => {
     const source = readWorkspaceItemSource();
     const start = source.indexOf('if (workspace.workspaceKind === WorkspaceKind.Assistant)');
     const assistant = source.slice(start, source.indexOf('\n  return (', start));
 
     expect(assistant).not.toContain('nav-workspace-session-region');
     expect(assistant).not.toContain('nav-workspace-sessions-toggle');
-    expect(assistant).not.toContain('nav-workspace-files-btn');
+    expect(assistant).not.toContain('nav-workspace-project-resources-btn');
     expect(assistant).not.toContain('handleCollapseToggle');
     for (const removedAction of ['project-permissions', 'reveal', 'open-session-storage', 'manage-sessions', 'copy-path']) {
       expect(assistant).not.toContain(`data-testid="nav-workspace-menu-${removedAction}"`);
@@ -296,7 +298,14 @@ describe('WorkspaceListSection layout styles', () => {
     expect(source).toContain('useNurseryStore.getState().openAssistant(workspace.id)');
     expect(source).toContain("useSceneStore.getState().openScene('assistant')");
     expect(assistant).toContain('{assistantHistoryOpen && (');
-    expect(assistant).toContain('onClose={() => setAssistantHistoryOpen(false)}');
+    expect(assistant).toContain('data-testid="nav-assistant-session-region"');
+    expect(assistant).toContain('hidden={!assistantHistoryOpen}');
+    expect(assistant).toContain('aria-expanded={assistantHistoryOpen}');
+    expect(assistant).toContain('aria-controls={assistantHistoryId}');
+    expect(assistant).toContain('setAssistantHistoryOpen(open => !open)');
+    expect(assistant).toContain('glyph={assistantHistoryOpen ? ChevronUp : History}');
+    expect(assistant).not.toContain('aria-haspopup="dialog"');
+    expect(assistant).not.toContain('AssistantSessionHistoryDialog');
     expect(assistant).toContain('handleOpenLatestAssistantSession');
   });
 });

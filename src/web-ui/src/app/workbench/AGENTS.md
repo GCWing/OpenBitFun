@@ -33,3 +33,11 @@ pnpm --dir src/web-ui exec vitest run src/shared/ui/SplitView.test.tsx src/app/w
 
 These DOM fixtures cover split/overlay gestures, cancellation, resize bounds and
 measurement recovery. They do not establish native frame timing or live remote behavior.
+
+For the empty content pane's workspace-scoped file/terminal actions and closed-content recovery:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/session/AuxPaneEmptyState.test.tsx src/app/scenes/session/AuxPane.session-switch.test.tsx src/app/scenes/terminal/TerminalActionBridge.test.tsx src/app/workbench/workbenchContent.test.ts src/app/workbench/WorkbenchLayout.test.tsx
+```
+
+These fixtures verify routing and ownership; verify native presentation separately.

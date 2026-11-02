@@ -35,6 +35,7 @@ mod macos_window_chrome;
 #[cfg(target_os = "macos")]
 mod macos_window_close;
 mod miniapp_desktop;
+mod miniapp_web_host;
 
 // Keep one macro expansion: on macOS it emits a process-wide Info.plist symbol.
 fn desktop_context() -> tauri::Context<tauri::Wry> {
@@ -51,7 +52,7 @@ mod window_state_support;
 mod window_webview_geometry;
 
 use openbitfun_agent_runtime::sdk::{attach_session_event_cursor, SessionEventJournal};
-use openbitfun_core::agentic::tools::computer_use_capability::set_computer_use_desktop_available;
+use openbitfun_core::agentic::tools::computer_use_capability::set_computer_use_host_available;
 use openbitfun_core::agentic::tools::computer_use_host::ComputerUseHostRef;
 use openbitfun_core::infrastructure::ai::AIClientFactory;
 use openbitfun_core::infrastructure::{get_path_manager_arc, try_get_path_manager_arc};
@@ -238,7 +239,7 @@ async fn hide_main_window_on_macos(
 fn show_main_window_on_macos(app: &tauri::AppHandle, reason: &str) {
     cancel_main_window_close_request_on_macos(app);
 
-    let Some(main_window) = app.get_webview_window("main") else {
+    let Some(main_window) = app.get_window("main") else {
         handle_secondary_launch(app);
         return;
     };
@@ -283,7 +284,7 @@ fn show_main_window_for_secondary_launch(
     app: &tauri::AppHandle,
     attempt: &str,
 ) -> Result<(), String> {
-    if app.get_webview_window("main").is_none() {
+    if app.get_window("main").is_none() {
         #[cfg(target_os = "macos")]
         let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
         let trace = app.state::<DesktopStartupTrace>();
@@ -298,7 +299,7 @@ fn show_main_window_for_secondary_launch(
             ),
         );
     }
-    let Some(main_window) = app.get_webview_window("main") else {
+    let Some(main_window) = app.get_window("main") else {
         return Err("main window not found".to_string());
     };
 
@@ -430,6 +431,36 @@ fn get_startup_native_trace(
 /// Tauri application entry point
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
+    // E2E profiles must isolate authentication as well as ordinary config.
+    // Use the existing encrypted fixture vault on every platform, before any
+    // account discovery or background refresh can touch the normal profile.
+    if e2e_storage_guard_enabled() {
+        let paths = match openbitfun_core::infrastructure::PathManager::new() {
+            Ok(paths) => paths,
+            Err(error) => {
+                eprintln!("Failed to initialize isolated E2E authentication storage: {error}");
+                return;
+            }
+        };
+        openbitfun_core::infrastructure::subscription_auth::store::set_store_path_and_file_vault_for_test(
+            paths.user_data_dir().join("subscription_auth.json"),
+        );
+        #[cfg(not(debug_assertions))]
+        if std::env::var_os("OPENBITFUN_E2E_SUBSCRIPTION_CA_FILE").is_some() {
+            eprintln!("Isolated subscription mock TLS requires a debug build");
+            return;
+        }
+        #[cfg(debug_assertions)]
+        if let Some(certificate_path) = std::env::var_os("OPENBITFUN_E2E_SUBSCRIPTION_CA_FILE") {
+            let result = std::fs::read(certificate_path)
+                .map_err(|error| error.to_string())
+                .and_then(|pem| openbitfun_core::infrastructure::subscription_auth::set_isolated_http_root_certificate_for_test(&pem).map_err(|error| error.to_string()));
+            if let Err(error) = result {
+                eprintln!("Failed to initialize isolated E2E subscription TLS: {error}");
+                return;
+            }
+        }
+    }
     match miniapp_desktop::launch_manifest() {
         Ok(Some(manifest)) => {
             if let Err(error) = miniapp_desktop::run_shell(manifest) {
@@ -444,14 +475,16 @@ pub async fn run() {
         Ok(None) => {}
     }
     let miniapp_background = std::env::args_os().any(|arg| arg == "--miniapp-background");
-    let _miniapp_host_owner = match miniapp_desktop::claim_host(miniapp_background).await {
-        Ok(Some(owner)) => owner,
-        Ok(None) => return,
-        Err(error) => {
-            show_fatal_startup_error(&error);
-            return;
-        }
-    };
+    let miniapp_host_channel = miniapp_desktop::host_channel();
+    let _miniapp_host_owner =
+        match miniapp_desktop::claim_host(miniapp_background, miniapp_host_channel).await {
+            Ok(Some(owner)) => owner,
+            Ok(None) => return,
+            Err(error) => {
+                show_fatal_startup_error(&error);
+                return;
+            }
+        };
     let startup_started = Instant::now();
     let startup_trace_id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -734,6 +767,7 @@ pub async fn run() {
         // group would make the E2E child exit before WebDriver can attach.
         if !logging::is_embedded_webdriver_mode()
             && std::env::var_os("OPENBITFUN_USER_ROOT").is_none()
+            && miniapp_host_channel.is_default()
         {
             builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
                 log::info!(
@@ -768,7 +802,7 @@ pub async fn run() {
         // window-state: its exit hook can overwrite repairs with stale cached data.
         .manage(window_state_support::MainWindowState::default())
         .manage(app_state)
-        .manage(miniapp_desktop::DesktopMiniApps::default())
+        .manage(miniapp_desktop::DesktopMiniApps::new(miniapp_host_channel))
         .manage(sleep_prevention::SleepPreventionState::default())
         .manage(desktop_runtime)
         .manage(coordinator_state)
@@ -789,7 +823,7 @@ pub async fn run() {
                     tauri::webview::PageLoadEvent::Finished => "finished",
                 };
                 let url = payload.url().to_string();
-                api::browser_api::update_browser_target_url(label, &url);
+                api::browser_api::update_browser_target_page_load(label, event, &url);
                 openbitfun_core::agentic::tools::browser_control::builtin_browser::publish_builtin_browser_page_load(
                     label,
                     event,
@@ -1103,6 +1137,7 @@ pub async fn run() {
             openbitfun_webdriver::maybe_start(app_handle.clone());
             builtin_browser_host::install(app_handle.clone());
             openbitfun_control_host::install(app_handle.clone());
+            miniapp_web_host::install(app_handle.clone());
             if !miniapp_background {
                 if let Err(error) = desktop_cards::install(&app_handle) {
                     log::warn!("Desktop cards unavailable: {}", error);
@@ -1341,6 +1376,7 @@ pub async fn run() {
             api::agentic_api::create_session,
             api::agentic_api::update_session_mode,
             api::agentic_api::update_session_model,
+            api::agentic_api::get_model_routing_status,
             api::model_pool_api::get_model_pools,
             api::model_pool_api::retry_model_pool_member,
             api::model_pool_api::save_model_pool,
@@ -1383,6 +1419,7 @@ pub async fn run() {
             api::agentic_api::restore_session_view,
             api::agentic_api::load_session_event_backfill,
             api::agentic_api::load_session_turn_window,
+            api::agentic_api::load_session_trajectory,
             api::agentic_api::restore_session_with_turns,
             api::agentic_api::reset_memory,
             api::agentic_api::get_memory_paths,
@@ -1459,12 +1496,21 @@ pub async fn run() {
             openbitfun_control_host::mark_openbitfun_control_surface_unready,
             openbitfun_control_host::product_control_invoke,
             openbitfun_control_host::report_openbitfun_control_result,
+            miniapp_web_host::mark_miniapp_web_surface_ready,
+            miniapp_web_host::report_miniapp_web_result,
             get_health_status,
             get_statistics,
             test_ai_connection,
             test_ai_config_connection,
+            test_image_generation_service,
             list_ai_models_by_config,
             list_subscription_accounts,
+            list_subscription_account_instances,
+            get_subscription_account_quota,
+            start_subscription_account_login,
+            logout_subscription_account_instance,
+            set_subscription_account_enabled,
+            refresh_subscription_account_instance,
             start_subscription_login,
             get_subscription_login_status,
             cancel_subscription_login,
@@ -1475,6 +1521,8 @@ pub async fn run() {
             get_app_state,
             update_app_status,
             update_workspace_info,
+            get_workspace_icon,
+            set_workspace_icon,
             appearance::show_agent_companion_desktop_pet,
             appearance::hide_agent_companion_desktop_pet,
             appearance::resize_agent_companion_desktop_pet,
@@ -1525,6 +1573,8 @@ pub async fn run() {
             start_file_watch,
             stop_file_watch,
             get_watched_paths,
+            get_file_watch_status,
+            retry_file_watch,
             get_clipboard_files,
             get_clipboard_image,
             api::browser_file_drop_api::resolve_browser_dropped_file_paths,
@@ -1959,6 +2009,7 @@ pub async fn run() {
             api::browser_api::browser_webview_set_agent_target_state,
             api::browser_api::browser_get_url,
             api::html_preview_api::html_preview_create,
+            api::html_preview_api::html_preview_read_resource,
             api::html_preview_api::html_preview_release,
             // Browser Control API (CDP-based user browser control)
             api::browser_control_api::browser_control_list_browsers,
@@ -2044,7 +2095,7 @@ pub async fn run() {
             app.run(|app_handle, event| match event {
                 tauri::RunEvent::ExitRequested { api, code, .. } => {
                     if code.is_none()
-                        && (app_handle.get_webview_window("main").is_none()
+                        && (app_handle.get_window("main").is_none()
                             || app_handle
                                 .state::<miniapp_desktop::DesktopMiniApps>()
                                 .instances
@@ -2102,6 +2153,16 @@ async fn init_agentic_system() -> anyhow::Result<(
 
     let path_manager = try_get_path_manager_arc()?;
     let persistence_manager = Arc::new(persistence::PersistenceManager::new(path_manager.clone())?);
+    // The round executor captures this service at construction so failed or
+    // cancelled attempts with unknown usage persist without a usage event.
+    let token_usage_service = Arc::new(
+        openbitfun_core::service::token_usage::TokenUsageService::new(path_manager.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initialize token usage service: {}", e))?,
+    );
+    openbitfun_core::service::token_usage::set_global_token_usage_service(
+        token_usage_service.clone(),
+    );
 
     let context_store = Arc::new(session::SessionContextStore::new());
     let context_compressor = Arc::new(session::ContextCompressor::new());
@@ -2118,9 +2179,17 @@ async fn init_agentic_system() -> anyhow::Result<(
         openbitfun_core::product_runtime::core_permission_request_manager()
             .map_err(anyhow::Error::msg)?;
 
+    if let Ok(paths) = openbitfun_core::infrastructure::try_get_path_manager_arc() {
+        openbitfun_computer_use::set_ocr_debug_directory(
+            paths
+                .default_assistant_workspace_dir(None)
+                .join(openbitfun_core_types::product_identity::hidden_data_directory())
+                .join("computer_use_debug"),
+        );
+    }
     let computer_use_host: ComputerUseHostRef =
         Arc::new(computer_use::DesktopComputerUseHost::new());
-    set_computer_use_desktop_available(true);
+    set_computer_use_host_available(true);
 
     let tool_pipeline = Arc::new(
         tools::pipeline::ToolPipeline::new(
@@ -2140,13 +2209,14 @@ async fn init_agentic_system() -> anyhow::Result<(
 
     let execution_config = execution::execution_engine_config_from_global_config().await;
 
-    let execution_engine = Arc::new(execution::ExecutionEngine::new(
+    let execution_engine = execution::ExecutionEngine::new(
         round_executor,
         event_queue.clone(),
         session_manager.clone(),
         context_compressor,
         execution_config,
-    ));
+    );
+    let execution_engine = Arc::new(execution_engine);
 
     let runtime_ownership = Arc::new(
         openbitfun_core::runtime_ownership::CoreRuntimeOwnership::embedded(
@@ -2171,12 +2241,8 @@ async fn init_agentic_system() -> anyhow::Result<(
 
     coordination::ConversationCoordinator::set_global(coordinator.clone());
 
-    // Initialize token usage service and register subscriber
-    let token_usage_service = Arc::new(
-        openbitfun_core::service::token_usage::TokenUsageService::new(path_manager.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initialize token usage service: {}", e))?,
-    );
+    // The subscriber reuses the round executor's authority. Known-usage events
+    // deduplicate by attempt ID; unknown usage is recorded directly by the round.
     let token_usage_subscriber = Arc::new(
         openbitfun_core::service::token_usage::TokenUsageSubscriber::new(
             token_usage_service.clone(),
@@ -2305,16 +2371,6 @@ fn setup_panic_hook() {
             thread_id,
         );
 
-        // Known wry bug: WKWebView.URL() returns nil after navigating to an
-        // invalid address, causing url_from_webview to panic on unwrap().
-        // This is non-fatal — the webview is still alive — so we log and
-        // continue instead of killing the process.
-        // See: https://github.com/tauri-apps/wry/pull/1554
-        if location.contains("wry") && location.contains("wkwebview") {
-            log::warn!("Suppressed non-fatal wry/wkwebview panic, application continues");
-            return;
-        }
-
         if message.contains("WSAStartup") || message.contains("10093") || message.contains("hyper")
         {
             log::error!("Network-related crash detected, possible solutions:");
@@ -2323,16 +2379,11 @@ fn setup_panic_hook() {
             log::error!("  3) Run as administrator");
         }
 
-        // ── Recovery strategy ──────────────────────────────────────────
-        // Main-thread panics are unrecoverable — the event loop is gone.
-        // Spawned-thread panics only kill that thread; the rest of the
-        // application can continue.  We log a clear message and skip the
-        // hard exit so the user isn't forced to restart.
+        // Returning from a panic hook does not catch the panic. Leave worker
+        // panics to the runtime and any caller-owned unwind boundary; main-thread
+        // panics follow the application's fatal cleanup and exit path.
         if !is_main_thread {
-            log::warn!(
-                "Non-main thread panicked — application will continue. \
-                 The affected feature may be degraded until the next restart."
-            );
+            log::warn!("Non-main-thread panic recorded; deferring to the panic runtime");
             return;
         }
 

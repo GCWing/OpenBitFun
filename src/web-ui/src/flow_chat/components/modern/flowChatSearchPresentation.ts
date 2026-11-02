@@ -1,4 +1,5 @@
 import {
+  findFlowChatFocusTextRange,
   findFlowChatSearchTextRanges,
   getFlowChatSearchTextRoot,
 } from './flowChatSearchDom';
@@ -9,6 +10,35 @@ export interface FlowChatSearchLineBox {
   left: number;
   width: number;
   height: number;
+}
+
+export interface FlowChatFocusBox extends FlowChatSearchLineBox {
+  markerTop: number;
+  markerLeft: number;
+  markerHeight: number;
+}
+
+/** Item navigation covers the whole item; its short marker follows the leading icon. */
+export function measureFlowChatFocusItem(wrapper: HTMLElement, source: HTMLElement): FlowChatFocusBox | null {
+  const item = source.closest<HTMLElement>('[data-flow-item-id], [data-tool-card-id], .user-message-item') ?? source;
+  if (!wrapper.contains(item)) return null;
+  const itemRect = item.getBoundingClientRect();
+  if (itemRect.width <= 0 || itemRect.height <= 0) return null;
+  const icon = item.querySelector<HTMLElement>('[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="icon"]');
+  const iconRect = icon?.getBoundingClientRect();
+  const visibleIcon = iconRect && iconRect.width > 0 && iconRect.height > 0 ? iconRect : undefined;
+  const leading = visibleIcon ?? Array.from(findFlowChatFocusTextRange(source)?.getClientRects() ?? [])
+    .find(rect => rect.width > 0 && rect.height > 0) ?? itemRect;
+  const wrapperRect = wrapper.getBoundingClientRect();
+  // Tool icons can sit in the reading gutter, outside the item's text bounds.
+  const left = Math.min(itemRect.left, leading.left);
+  const right = Math.max(itemRect.right, leading.right);
+  const top = Math.min(itemRect.top, leading.top);
+  const bottom = Math.max(itemRect.bottom, leading.bottom);
+  return {
+    top: top - wrapperRect.top, left: left - wrapperRect.left, width: right - left, height: bottom - top,
+    markerTop: leading.top - top, markerLeft: visibleIcon ? leading.left - left : 0, markerHeight: leading.height,
+  };
 }
 
 type Rect = Pick<DOMRectReadOnly, 'top' | 'bottom' | 'left' | 'right' | 'width' | 'height'>;

@@ -16,9 +16,10 @@ use crate::agentic::tools::browser_control::browser_launcher::{
     BrowserKind, BrowserLauncher, DEFAULT_CDP_PORT,
 };
 use crate::agentic::tools::browser_control::builtin_browser::{
-    builtin_browser_host_available, connect_builtin_browser, connect_builtin_browser_matching,
-    default_builtin_browser_target_id, list_builtin_browser_targets, open_builtin_browser,
-    set_default_builtin_browser_target, BuiltInBrowserClient, BuiltInBrowserOpenRequest,
+    builtin_browser_host_available, connect_builtin_browser_for_session,
+    default_builtin_browser_target_id, list_builtin_browser_targets_for_session,
+    open_builtin_browser, set_default_builtin_browser_target, BuiltInBrowserClient,
+    BuiltInBrowserOpenRequest,
 };
 use crate::agentic::tools::browser_control::cdp_client::{CdpClient, CdpPageInfo, CdpVersionInfo};
 use crate::agentic::tools::browser_control::session_registry::{
@@ -51,10 +52,9 @@ static BROWSER_SESSIONS: std::sync::OnceLock<Arc<BrowserSessionRegistry>> =
 /// the headed browser sitting on that port.
 const DEFAULT_HEADLESS_CDP_PORT: u16 = DEFAULT_CDP_PORT + 1;
 
-/// Computer Use is an independent switch from browser control (`ai.computer_use_enabled`
-/// defaults to off, and there is no desktop host outside the desktop app), so ControlHub
+/// Computer Use has an independent setting and native provider from browser control, so ControlHub
 /// must never route recovery through a tool that is absent from the agent's tool list.
-const COMPUTER_USE_UNAVAILABLE_HINT: &str = "Desktop automation is unavailable in this session (Computer Use is off in Settings, or there is no desktop host). Do not call ComputerUse — it is not in your tool list. Use ControlHub browser.navigate for http(s) URLs on a Desktop host and ExecCommand for local files and scripts; ask the user to enable Computer Use in Settings if desktop control is genuinely required.";
+const COMPUTER_USE_UNAVAILABLE_HINT: &str = "Desktop automation is unavailable in this session (Computer Use is disabled, or the executing host has no native graphical provider). Do not call ComputerUse — it is not in your tool list. Use an available ControlHub browser target for http(s) URLs and ExecCommand for local files and scripts. A disabled setting can be changed in Settings or with `openbitfun computer-use enable`; native control also requires a graphical login session on the executing host.";
 
 fn browser_sessions() -> Arc<BrowserSessionRegistry> {
     BROWSER_SESSIONS
@@ -65,6 +65,21 @@ fn browser_sessions() -> Arc<BrowserSessionRegistry> {
 pub(crate) async fn release_browser_selection(owner: &str) {
     if let Some(registry) = BROWSER_SESSIONS.get() {
         registry.release_selection(owner).await;
+    }
+    // Session deletion releases its native pages, including hidden panels.
+    if builtin_browser_host_available() {
+        if let Ok(targets) = list_builtin_browser_targets_for_session(Some(owner)).await {
+            for target in targets {
+                if let Ok(client) =
+                    connect_builtin_browser_for_session(Some(&target.id), None, None, Some(owner))
+                        .await
+                {
+                    if let Err(error) = client.send("Page.close", None).await {
+                        log::warn!("Close session browser failed: conversation_id={}, target_id={}, error={}", owner, target.id, error);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -226,6 +241,7 @@ impl ControlHubTool {
 
     fn builtin_target_json(
         target: &crate::agentic::tools::browser_control::BuiltInBrowserTarget,
+        selected_id: Option<&str>,
     ) -> Value {
         json!({
             "id": target.id,
@@ -235,7 +251,7 @@ impl ControlHubTool {
             "type": "page",
             "target": "builtin",
             "active": target.active,
-            "is_default_session": default_builtin_browser_target_id().as_deref() == Some(target.id.as_str()),
+            "is_default_session": selected_id == Some(target.id.as_str()),
         })
     }
 
@@ -611,14 +627,12 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
     ) -> OpenBitFunResult<Vec<ToolResult>> {
         match action {
             "capabilities" => {
-                // `terminal` (TerminalApi) is delivered through a global
-                // registry rather than a field on the context, so we can't be
-                // 100% sure here without round-tripping. We report "likely
-                // available iff a desktop host is present" because that bridge
-                // only exists in OpenBitFun's desktop runtime; the actual call will
-                // surface a clean error if the bridge is offline.
+                // CLI and Desktop register terminal and GUI providers separately.
+                // Read the same terminal registry used by the action dispatcher;
+                // this probe neither initializes the service nor opens a session.
                 let is_remote = context.is_remote();
-                let likely_terminal_available = !is_remote && context.computer_use_host.is_some();
+                let terminal_available =
+                    !is_remote && crate::service::terminal::TerminalApi::from_singleton().is_ok();
                 let browser_session_ids = if is_remote {
                     Vec::new()
                 } else {
@@ -627,7 +641,9 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                 let browser_session_count = browser_session_ids.len();
                 let builtin_host_available = !is_remote && builtin_browser_host_available();
                 let (builtin_targets, discovery_error) = if builtin_host_available {
-                    match list_builtin_browser_targets().await {
+                    match list_builtin_browser_targets_for_session(context.session_id.as_deref())
+                        .await
+                    {
                         Ok(targets) => (targets, None),
                         Err(error) => (Vec::new(), Some(error.to_string())),
                     }
@@ -635,17 +651,24 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     (Vec::new(), None)
                 };
                 let builtin_target_count = builtin_targets.len();
-                let builtin_default = if is_remote {
-                    None
-                } else {
-                    default_builtin_browser_target_id()
-                };
                 let selection =
                     if let Some(owner) = context.session_id.as_deref().filter(|_| !is_remote) {
                         browser_sessions().selection(owner).await
                     } else {
                         None
                     };
+                let builtin_default = selection
+                    .as_ref()
+                    .filter(|selection| selection.target == "builtin")
+                    .map(|selection| selection.session_id.clone())
+                    .or_else(|| {
+                        context
+                            .session_id
+                            .is_none()
+                            .then(default_builtin_browser_target_id)
+                            .flatten()
+                    })
+                    .filter(|id| builtin_targets.iter().any(|target| &target.id == id));
                 let browser_default = selection
                     .as_ref()
                     .filter(|selection| selection.target == "external")
@@ -719,7 +742,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                             "default_target": selection.as_ref().map(|s| s.target.as_str()).unwrap_or(if builtin_host_available { "builtin" } else { "external" }),
                             "shared_action_contract": true,
                         },
-                        "terminal": { "available": likely_terminal_available, "reason": if likely_terminal_available { Value::Null } else { json!("TerminalApi is only available in contexts that registered it") } },
+                        "terminal": { "available": terminal_available, "reason": if terminal_available { Value::Null } else { json!("TerminalApi is only available in local workspace contexts that registered it") } },
                         "meta":     { "available": true },
                     },
                     "local_client": {
@@ -736,7 +759,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                         } else if is_remote {
                             json!("Not available in remote workspace sessions")
                         } else {
-                            json!("Computer Use is disabled (ai.computer_use_enabled = false) or no desktop host is present")
+                            json!("Computer Use is disabled (ai.computer_use_enabled = false) or the executing host has no native provider")
                         },
                     },
                     "schema_version": "1.6",
@@ -1267,16 +1290,18 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
             let target_title = params.get("target_title").and_then(Value::as_str);
             let exact_selection =
                 requested_id.is_some() || target_url.is_some() || target_title.is_some();
-            let pages = match list_builtin_browser_targets().await {
-                Ok(pages) => pages,
-                Err(error) => {
-                    return Ok(err_response(
-                        "browser",
-                        action,
-                        Self::builtin_open_error(error),
-                    ))
-                }
-            };
+            let pages =
+                match list_builtin_browser_targets_for_session(context.session_id.as_deref()).await
+                {
+                    Ok(pages) => pages,
+                    Err(error) => {
+                        return Ok(err_response(
+                            "browser",
+                            action,
+                            Self::builtin_open_error(error),
+                        ))
+                    }
+                };
             // A new conversation gets its own page. Existing callers without
             // an owner can keep using the active page. Never recover a stale
             // explicit selection by opening or mutating some other page.
@@ -1299,6 +1324,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     url: url.clone(),
                     title: title.to_string(),
                     replace_existing,
+                    conversation_id: context.session_id.clone(),
                 })
                 .await
                 {
@@ -1316,7 +1342,13 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     }
                 }
             } else {
-                match connect_builtin_browser_matching(requested_id, target_url, target_title).await
+                match connect_builtin_browser_for_session(
+                    requested_id,
+                    target_url,
+                    target_title,
+                    context.session_id.as_deref(),
+                )
+                .await
                 {
                     Ok(client) => client,
                     Err(error) => {
@@ -1702,10 +1734,11 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     let target_url = params.get("target_url").and_then(Value::as_str);
                     let target_title = params.get("target_title").and_then(Value::as_str);
                     let targeted = target_url.is_some() || target_title.is_some();
-                    let client = match connect_builtin_browser_matching(
+                    let client = match connect_builtin_browser_for_session(
                         session_id_param.as_deref(),
                         target_url,
                         target_title,
+                        context.session_id.as_deref(),
                     )
                     .await
                     {
@@ -1982,7 +2015,11 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
 
             "list_pages" => {
                 if browser_target_kind == BrowserTargetKind::BuiltIn {
-                    let targets = match list_builtin_browser_targets().await {
+                    let targets = match list_builtin_browser_targets_for_session(
+                        context.session_id.as_deref(),
+                    )
+                    .await
+                    {
                         Ok(targets) => targets,
                         Err(error) => {
                             return Ok(err_response(
@@ -1994,7 +2031,14 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     };
                     let pages = targets
                         .iter()
-                        .map(Self::builtin_target_json)
+                        .map(|target| {
+                            Self::builtin_target_json(
+                                target,
+                                session_id_param
+                                    .as_deref()
+                                    .or(default_builtin_browser_target_id().as_deref()),
+                            )
+                        })
                         .collect::<Vec<_>>();
                     let default_id = page_inventory_default_id(
                         &pages,
@@ -2071,7 +2115,11 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     .max(1);
 
                 let (pages, default_id) = if browser_target_kind == BrowserTargetKind::BuiltIn {
-                    let targets = match list_builtin_browser_targets().await {
+                    let targets = match list_builtin_browser_targets_for_session(
+                        context.session_id.as_deref(),
+                    )
+                    .await
+                    {
                         Ok(targets) => targets,
                         Err(error) => {
                             return Ok(err_response(
@@ -2084,7 +2132,14 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     (
                         targets
                             .iter()
-                            .map(Self::builtin_target_json)
+                            .map(|target| {
+                                Self::builtin_target_json(
+                                    target,
+                                    session_id_param
+                                        .as_deref()
+                                        .or(default_builtin_browser_target_id().as_deref()),
+                                )
+                            })
                             .collect::<Vec<_>>(),
                         default_builtin_browser_target_id(),
                     )
@@ -2192,6 +2247,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                         url: url.clone(),
                         title: "Browser".to_string(),
                         replace_existing: false,
+                        conversation_id: context.session_id.clone(),
                     })
                     .await
                     {
@@ -2212,7 +2268,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                             "session_id": target.id,
                             "page_url": target.url,
                             "page_title": target.title,
-                            "activated": true,
+                            "activated": target.active,
                         }),
                         Some(format!(
                             "New built-in browser page opened: {} (session {})",
@@ -2269,7 +2325,14 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                         OpenBitFunError::tool("switch_page requires 'page_id'".to_string())
                     })?;
                 if browser_target_kind == BrowserTargetKind::BuiltIn {
-                    let client = match connect_builtin_browser(Some(page_id)).await {
+                    let client = match connect_builtin_browser_for_session(
+                        Some(page_id),
+                        None,
+                        None,
+                        context.session_id.as_deref(),
+                    )
+                    .await
+                    {
                         Ok(client) => client,
                         Err(error) => {
                             return Ok(err_response(
@@ -2279,7 +2342,9 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                             ));
                         }
                     };
-                    set_default_builtin_browser_target(Some(page_id.to_string()));
+                    if context.session_id.is_none() {
+                        set_default_builtin_browser_target(Some(page_id.to_string()));
+                    }
                     return Ok(vec![ToolResult::ok(
                         json!({
                             "success": true,
@@ -2376,7 +2441,11 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                     if action != "list_sessions" {
                         return Ok(Self::builtin_extension_error(action));
                     }
-                    let targets = match list_builtin_browser_targets().await {
+                    let targets = match list_builtin_browser_targets_for_session(
+                        context.session_id.as_deref(),
+                    )
+                    .await
+                    {
                         Ok(targets) => targets,
                         Err(error) => {
                             return Ok(err_response(
@@ -2598,7 +2667,14 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                 // Resolve a target adapter, then run every portable operation
                 // through the one shared BrowserActions implementation.
                 let target = if browser_target_kind == BrowserTargetKind::BuiltIn {
-                    match connect_builtin_browser(session_id_param.as_deref()).await {
+                    match connect_builtin_browser_for_session(
+                        session_id_param.as_deref(),
+                        None,
+                        None,
+                        context.session_id.as_deref(),
+                    )
+                    .await
+                    {
                         Ok(client) => ResolvedBrowserTarget::BuiltIn(client),
                         Err(error) => {
                             let code = if session_id_param.is_some() {
@@ -2843,16 +2919,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                         // model never sees just invites endless retries with
                         // different params. Soft-degrade inside the envelope
                         // rather than erroring, so the turn is not broken.
-                        let text_only = !context.primary_model_supports_image_understanding();
-                        let no_multimodal_tool_output = !context
-                            .primary_model_facts()
-                            .multimodal_tool_output_supported();
-                        if text_only || no_multimodal_tool_output {
-                            let reason = if text_only {
-                                "primary_model_is_text_only"
-                            } else {
-                                "provider_no_multimodal_tool_output"
-                            };
+                        if let Some(reason) = context.image_observation_unavailable_reason() {
                             return Ok(vec![ToolResult::ok(
                                 json!({
                                     "success": false,
@@ -3569,6 +3636,30 @@ impl Tool for ControlHubTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "domain": {"type": "string", "enum": ["browser", "terminal", "meta"]},
+                "action": {"type": "string"},
+                "summary": {"type": "string"},
+                "data": {
+                    "anyOf": [
+                        {"type": "null"}, {"type": "boolean"}, {"type": "number"},
+                        {"type": "string"}, {"type": "array", "items": {}},
+                        {"type": "object", "additionalProperties": true}
+                    ]
+                },
+                "error": {"type": "object", "additionalProperties": true},
+                "target": {"type": "string"},
+                "session_id": {"type": "string"}
+            },
+            "required": ["ok", "domain", "action"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
         false
     }
@@ -4056,6 +4147,7 @@ mod control_hub_tests {
                 url: request.url,
                 title: request.title,
                 active: true,
+                conversation_id: None,
             })
         }
 
@@ -4065,6 +4157,7 @@ mod control_hub_tests {
                 url: "https://example.com".to_string(),
                 title: "Example".to_string(),
                 active: true,
+                conversation_id: None,
             }])
         }
 

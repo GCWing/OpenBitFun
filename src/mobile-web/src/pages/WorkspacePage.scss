@@ -67,11 +67,12 @@
   .device-tools-page__tabs {
     display: flex; gap: 24px;
     border-bottom: 1px solid var(--openbitfun-color-border-subtle);
-    button {
+    [data-openbitfun-component="mobile-button"] {
       display: flex; align-items: center; justify-content: center; gap: 8px;
       min-height: 44px; padding: 0 4px; border: 0; border-bottom: 2px solid transparent;
-      border-radius: 0; background: transparent; box-shadow: none; font: inherit;
+      background: transparent; box-shadow: none; font: inherit;
       color: var(--openbitfun-color-content-secondary);
+      &, &:hover, &:active, &:focus { border-radius: 0; }
       &[aria-selected='true'] { color: var(--openbitfun-color-content-primary); border-bottom-color: currentColor; }
     }
   }

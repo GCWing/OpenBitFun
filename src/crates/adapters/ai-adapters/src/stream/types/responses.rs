@@ -109,6 +109,7 @@ pub fn parse_responses_output_item(
             tool_call_completion: None,
             finish_reason: None,
             provider_metadata: None,
+            response_model: None,
             model_response_replay: None,
         }),
         "message" => {
@@ -136,6 +137,7 @@ pub fn parse_responses_output_item(
                 tool_call_completion: None,
                 finish_reason: None,
                 provider_metadata: None,
+                response_model: None,
                 model_response_replay: None,
             })
         }

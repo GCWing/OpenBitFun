@@ -9,5 +9,7 @@ export const chatPaneAppearanceDescriptor: AppearanceSurfaceDescriptor = {
       visualRole: 'continuous-surface',
       continuityGroup: 'session-workspace',
     },
+    { id: 'widthBoundary', propertyProfile: 'layout' },
+    { id: 'widthHandle', propertyProfile: 'layout' },
   ],
 };

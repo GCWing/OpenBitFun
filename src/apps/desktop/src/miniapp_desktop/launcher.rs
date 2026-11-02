@@ -541,6 +541,8 @@ mod tests {
             workspace_path: None,
             data_dir: root.join("data"),
             user_root: root.to_path_buf(),
+            host_channel: Default::default(),
+            product_home: None,
             host_executable: PathBuf::from("/usr/bin/true"),
             name: "Notes & Files".into(),
             extra: Default::default(),

@@ -110,6 +110,37 @@ impl CaptureGeometry {
         ))
     }
 
+    /// The global frame covered by an image pixel rectangle. The rectangle
+    /// must lie inside the image content; padding is never part of a region.
+    pub fn image_rect_to_global(
+        &self,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<[f64; 4], String> {
+        let [left, top, content_width, content_height] = self.content;
+        let inside = width > 0
+            && height > 0
+            && x >= left
+            && y >= top
+            && x.checked_add(width)
+                .is_some_and(|right| right <= left + content_width)
+            && y.checked_add(height)
+                .is_some_and(|bottom| bottom <= top + content_height);
+        if !inside {
+            return Err("[INVALID_COORDINATES] Region must be a nonempty rectangle inside the captured image content".into());
+        }
+        let scale_x = self.bounds[2] / f64::from(content_width);
+        let scale_y = self.bounds[3] / f64::from(content_height);
+        Ok([
+            self.bounds[0] + f64::from(x - left) * scale_x,
+            self.bounds[1] + f64::from(y - top) * scale_y,
+            f64::from(width) * scale_x,
+            f64::from(height) * scale_y,
+        ])
+    }
+
     pub fn global_to_image(&self, x: f64, y: f64) -> Result<(f64, f64), String> {
         if !contains(self.bounds, [x, y]) {
             return Err("[INVALID_COORDINATES] Point is outside the captured window".into());
@@ -299,6 +330,32 @@ mod tests {
         bounds.width = f64::MAX;
         bounds.left = f64::MAX;
         assert!(CaptureGeometry::new(10, 10, &content, &bounds).is_err());
+    }
+
+    #[test]
+    fn image_regions_map_to_the_covered_global_frame_and_reject_padding() {
+        let map = geometry();
+        assert_eq!(
+            map.image_rect_to_global(10, 20, 200, 100).unwrap(),
+            [-1200.25, 40.5, 400.0, 150.0]
+        );
+        assert_eq!(
+            map.image_rect_to_global(60, 40, 50, 20).unwrap(),
+            [-1100.25, 70.5, 100.0, 30.0]
+        );
+        for (x, y, width, height) in [
+            (9, 20, 10, 10),
+            (10, 19, 10, 10),
+            (200, 20, 11, 10),
+            (10, 110, 10, 11),
+            (10, 20, 0, 10),
+            (u32::MAX, 20, 10, 10),
+        ] {
+            assert!(
+                map.image_rect_to_global(x, y, width, height).is_err(),
+                "{x},{y},{width},{height}"
+            );
+        }
     }
 
     #[test]

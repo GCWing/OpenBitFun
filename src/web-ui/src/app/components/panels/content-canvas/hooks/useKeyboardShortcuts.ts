@@ -7,6 +7,7 @@
  */
 
 import { useCallback } from 'react';
+import { CANVAS_OVERVIEW_SHORTCUT } from '@/shared/constants/shortcuts';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTargetService';
 import { useCanvasStore } from '../stores';
@@ -63,7 +64,7 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions = {}) 
   // Mission control
   useShortcut(
     'canvas.missionControl',
-    { key: 'Tab', ctrl: true, scope: 'canvas', allowInInput: true },
+    CANVAS_OVERVIEW_SHORTCUT,
     () => toggleMissionControl(),
     {
       enabled: enabled && missionControlEnabled,

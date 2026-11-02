@@ -7,6 +7,8 @@ export const disclosureMeta = {
   name: "Disclosure",
   props: [
     { name: "renderHeader", type: "(triggerProps: DisclosureTriggerProps) => ReactNode" },
+    { name: "headerClassName", type: "string" },
+    { name: "triggerClassName", type: "string" },
     { name: "contentClassName", type: "string" },
     { name: "contentInnerClassName", type: "string" },
     { name: "unmountOnClose", type: "boolean", defaultValue: "false" },

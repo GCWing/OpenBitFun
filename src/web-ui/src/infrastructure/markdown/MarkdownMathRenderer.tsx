@@ -13,6 +13,7 @@ import type { Pluggable } from 'unified';
 import 'katex/dist/katex.min.css';
 import { rehypeSourceRange, type MarkdownSourceRange } from './rehypeSourceRange';
 import { rehypeWindowsDrivePaths } from './rehypeWindowsDrivePaths';
+import { rehypeImageThumbnails } from './rehypeImageThumbnails';
 
 interface MarkdownMathRendererProps {
   markdownContent: string;
@@ -23,6 +24,7 @@ interface MarkdownMathRendererProps {
   urlTransform: (value: string) => string;
   sourceRange?: MarkdownSourceRange;
   inline?: boolean;
+  imageThumbnails?: boolean;
 }
 
 export const MarkdownMathRenderer: React.FC<MarkdownMathRendererProps> = ({
@@ -34,11 +36,12 @@ export const MarkdownMathRenderer: React.FC<MarkdownMathRendererProps> = ({
   urlTransform,
   sourceRange,
   inline = false,
+  imageThumbnails = false,
 }) => {
   const content = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkComputerFileLinks]}
-      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex]}
+      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex, [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
       urlTransform={urlTransform}
       components={components}
     >

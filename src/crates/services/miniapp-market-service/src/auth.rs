@@ -291,17 +291,19 @@ impl AuthService {
                 "Sign-in is busy. Please try again shortly.",
             ));
         }
+        let auth_base_url = self.config.auth_base_url();
         let authorization_url = if all_methods {
             let ticket = self
                 .create_login_flow(&mut transaction, Some(&transaction_id), "/miniapp/")
                 .await?;
-            format!("https://auth.openbitfun.com/sign-in#ticket={ticket}")
+            format!("{auth_base_url}/sign-in#ticket={ticket}")
         } else {
+            let complete_url = format!("{auth_base_url}/complete");
             self.create_oauth_flow_in_transaction(
                 &mut transaction,
                 "desktop",
                 Some(&transaction_id),
-                "https://auth.openbitfun.com/complete",
+                &complete_url,
             )
             .await?
         };
@@ -835,7 +837,9 @@ pub(super) fn safe_return_to(value: &str) -> String {
     {
         return FALLBACK.to_string();
     }
-    let Ok(base) = Url::parse("https://market.openbitfun.com/") else {
+    // Only absolute paths reach this point, so the origin is irrelevant. Use a
+    // reserved host instead of coupling the validator to a deployment hostname.
+    let Ok(base) = Url::parse("https://market.invalid/") else {
         return FALLBACK.to_string();
     };
     let Ok(target) = base.join(value) else {

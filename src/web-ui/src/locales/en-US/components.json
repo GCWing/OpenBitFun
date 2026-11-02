@@ -584,7 +584,15 @@
     "dropRight": "Right",
     "dropTop": "Top",
     "dropBottom": "Bottom",
-    "dropCenter": "Drop"
+    "dropCenter": "Drop",
+    "empty": {
+      "title": "Nothing open",
+      "workspaceUnavailable": "Workspace disconnected. Please reconnect.",
+      "selectWorkspace": "Select a workspace first.",
+      "browseFiles": "Browse files",
+      "newTerminal": "New terminal",
+      "reopen": "Reopen {{title}}"
+    }
   },
   "flexiblePanel": {
     "empty": {
@@ -660,6 +668,7 @@
     "loadFailed": "This card could not be loaded.",
     "unsupportedTemplate": "This card needs a newer version of OpenBitFun.",
     "updated": "Updated {{time}}",
+    "updatedWithWarning": "Updated {{time}}, some data may be missing",
     "refreshFailed": "Refresh failed: {{error}}",
     "menu": {
       "more": "More actions",
@@ -683,6 +692,14 @@
     },
     "checklist": {
       "empty": "No items"
+    },
+    "chart": {
+      "empty": "No data to chart yet",
+      "other": "Other",
+      "remaining": "Remaining",
+      "ofTotal": "of {{total}}",
+      "changeSince": "{{change}} since {{label}}",
+      "range": "{{min}} – {{max}}"
     },
     "cron": {
       "failed": "Could not load the scheduled job.",

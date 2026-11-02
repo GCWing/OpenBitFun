@@ -450,7 +450,6 @@ const UsageStatisticsSettingsPage: React.FC = () => {
     >
       <ConfigPageHeader
         title={t('title')}
-        subtitle={t('subtitle')}
         extra={(
           <ConfigRefreshButton
             tooltip={t('refresh')}
@@ -466,7 +465,6 @@ const UsageStatisticsSettingsPage: React.FC = () => {
 
           <ConfigPageSection
             title={t('overview.title')}
-            description={t('overview.description', { timeZone })}
             data-openbitfun-component="usage-statistics-config"
             data-openbitfun-part="overview"
           >

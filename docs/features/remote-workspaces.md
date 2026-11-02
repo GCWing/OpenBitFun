@@ -23,7 +23,7 @@ paths or commands with Windows semantics.
 
 ## Windows WSL
 
-Choose **Windows WSL** as its own workspace target. OpenBitFun discovers installed
+Choose **This computer → WSL** in the work-location and environment controls. OpenBitFun discovers installed
 distributions on the executing Windows host and connects through `wsl.exe`.
 See [Desktop WSL setup](../../src/apps/desktop/README.md#windows-wsl-workspaces)
 for prerequisites, user selection, and remote-surface support.
@@ -46,20 +46,21 @@ timeouts, whole-chain retries, and challenge-round limits.
 
 ## Docker targets
 
-For **Docker on SSH host**, OpenBitFun first establishes the SSH connection (and
+For **Remote host → Container → Through the Docker host**, OpenBitFun first establishes the SSH connection (and
 optional jump chain), then wraps workspace operations with:
 
 ```text
 docker exec -i [--user USER] CONTAINER SHELL -lc COMMAND
 ```
 
-For **Local Docker container**, the same command runs through the local Docker
-CLI without opening SSH. The Docker executable, container user, and container
-shell are configurable.
+For **This computer → Container**, the same command runs through that host's
+Docker CLI without opening SSH. The Docker executable, container user, and
+container shell are configurable under **Advanced settings**.
 
-For **Container sshd**, the normal host, port, user, and authentication fields
+For **Remote host → Container → SSH directly to the container**, the host, port, user, and authentication fields
 must point directly to the container's sshd endpoint. Optional jump hosts use
-the same SSH path described above.
+the same SSH path described above. No Docker container ID is required; existing
+saved container metadata is retained when a profile is edited.
 
 `Auto` probes the container's published `22/tcp` endpoint and completes an SSH
 handshake. If sshd is unavailable or rejects authentication, OpenBitFun falls back

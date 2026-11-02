@@ -120,10 +120,13 @@ export const TabBar: React.FC<TabBarProps> = ({
     }
   }, [activeTabId]);
 
+  // The inset is an output of updateOverflow. Depending on it here makes a
+  // layout measurement schedule itself again while the overflow capsule is
+  // mounting or unmounting.
   useLayoutEffect(() => {
     revealActiveTab();
     updateOverflow();
-  }, [overflowInset, revealActiveTab, updateOverflow]);
+  }, [revealActiveTab, updateOverflow]);
 
   useLayoutEffect(updateOverflow, [updateOverflow, overflowTabIds.length]);
 
@@ -136,7 +139,11 @@ export const TabBar: React.FC<TabBarProps> = ({
         updateOverflow();
       });
     });
-    for (const element of [containerRef.current, tabsListRef.current, overflowRef.current, ...tabWrapperRefs.current.values()]) {
+    // The overflow capsule is sized by overflowTabIds, which is itself derived
+    // from this measurement. Observing that output would feed its own layout
+    // change back into the observer; the overflow-length layout effect covers
+    // its mount/unmount transition instead.
+    for (const element of [containerRef.current, tabsListRef.current, ...tabWrapperRefs.current.values()]) {
       if (element) observer.observe(element);
     }
     return () => {

@@ -1,5 +1,7 @@
-use log::{debug, error};
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use log::{debug, error, warn};
+use notify::{
+    Config, Error as NotifyError, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use openbitfun_events::EventEmitter;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -9,7 +11,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, RwLock as StdRwLock};
 use tokio::sync::{broadcast, mpsc, Mutex};
 
-use super::types::{FileWatchEvent, FileWatchEventKind, FileWatcherConfig};
+use super::types::{
+    FileWatchEvent, FileWatchEventKind, FileWatchFailure, FileWatchFailureCode, FileWatchStatus,
+    FileWatcherConfig,
+};
+
+/// Event name carrying [`FileWatchStatus`] changes to product surfaces.
+pub const FILE_WATCH_STATUS_CHANGED_EVENT: &str = "file-watch-status-changed";
 
 #[derive(Clone)]
 struct WatchedPath {
@@ -35,6 +43,7 @@ const EVENT_CHANNEL_CAPACITY: usize = 64;
 
 struct FileWatchHealth {
     healthy: AtomicBool,
+    failure: StdMutex<Option<FileWatchFailure>>,
     sender: broadcast::Sender<()>,
 }
 
@@ -43,6 +52,7 @@ impl FileWatchHealth {
         let (sender, _) = broadcast::channel(8);
         Self {
             healthy: AtomicBool::new(true),
+            failure: StdMutex::new(None),
             sender,
         }
     }
@@ -51,19 +61,123 @@ impl FileWatchHealth {
         self.healthy.load(Ordering::Acquire)
     }
 
+    fn failure(&self) -> Option<FileWatchFailure> {
+        failure_slot(&self.failure).clone()
+    }
+
     fn subscribe(&self) -> broadcast::Receiver<()> {
         self.sender.subscribe()
     }
 
     fn mark_healthy(&self) {
+        *failure_slot(&self.failure) = None;
         self.healthy.store(true, Ordering::Release);
     }
 
-    fn mark_unhealthy(&self) {
+    fn mark_unhealthy(&self, failure: FileWatchFailure) {
+        *failure_slot(&self.failure) = Some(failure);
         if self.healthy.swap(false, Ordering::AcqRel) {
             let _ = self.sender.send(());
         }
     }
+}
+
+fn failure_slot(
+    lock: &StdMutex<Option<FileWatchFailure>>,
+) -> std::sync::MutexGuard<'_, Option<FileWatchFailure>> {
+    lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Maps a native backend error onto the product failure contract.
+///
+/// `ErrorKind::MaxFilesWatch` is produced only by the inotify backend, which
+/// translates `ENOSPC` for exactly this purpose; Windows and macOS backends
+/// never emit it, so they keep the generic backend path.
+fn classify_notify_failure(error: &NotifyError, path: Option<&Path>) -> FileWatchFailure {
+    let code = match error.kind {
+        notify::ErrorKind::MaxFilesWatch => FileWatchFailureCode::WatchLimitExceeded,
+        _ => FileWatchFailureCode::BackendUnavailable,
+    };
+    let mut detail = error.to_string();
+    if code == FileWatchFailureCode::WatchLimitExceeded {
+        if let Some(limit) = watch_limit_current_value() {
+            detail.push_str(&format!(" (fs.inotify.max_user_watches={limit})"));
+        }
+    }
+    FileWatchFailure {
+        code,
+        detail,
+        hint: match code {
+            FileWatchFailureCode::WatchLimitExceeded => watch_limit_remediation(),
+            FileWatchFailureCode::BackendUnavailable => None,
+        },
+        path: path
+            .map(Path::to_path_buf)
+            .or_else(|| error.paths.first().cloned())
+            .map(|path| path.to_string_lossy().into_owned()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn watch_limit_current_value() -> Option<u64> {
+    std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn watch_limit_current_value() -> Option<u64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn watch_limit_remediation() -> Option<String> {
+    const LIMIT: &str = "524288";
+    Some(format!(
+        "sudo sysctl -w fs.inotify.max_user_watches={LIMIT}\n\
+         printf 'fs.inotify.max_user_watches={LIMIT}\\n' | \
+         sudo tee /etc/sysctl.d/99-openbitfun-inotify.conf"
+    ))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn watch_limit_remediation() -> Option<String> {
+    None
+}
+
+fn snapshot_status(health: &FileWatchHealth, watched_paths: &WatchedPaths) -> FileWatchStatus {
+    let mut watched = read_watched_paths(watched_paths)
+        .keys()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    watched.sort();
+    FileWatchStatus {
+        healthy: health.is_healthy(),
+        watched_paths: watched,
+        failure: health.failure(),
+    }
+}
+
+/// Broadcasts one status snapshot. Cheap no-op while nothing subscribes, which
+/// keeps it safe to call from the native watcher thread.
+fn broadcast_status(
+    health: &FileWatchHealth,
+    watched_paths: &WatchedPaths,
+    sender: &broadcast::Sender<FileWatchStatus>,
+) {
+    if sender.receiver_count() == 0 {
+        return;
+    }
+    let status = snapshot_status(health, watched_paths);
+    debug!(
+        "File watch status changed: healthy={} watched_roots={} failure={:?}",
+        status.healthy,
+        status.watched_paths.len(),
+        status.failure.as_ref().map(|failure| failure.code)
+    );
+    let _ = sender.send(status);
 }
 
 fn read_watched_paths(
@@ -114,6 +228,7 @@ pub struct FileWatchService {
     watched_paths: Arc<WatchedPaths>,
     event_buffer: Arc<StdMutex<Vec<FileWatchEvent>>>,
     event_sender: broadcast::Sender<Vec<FileWatchEvent>>,
+    status_sender: broadcast::Sender<FileWatchStatus>,
     health: Arc<FileWatchHealth>,
     active_watcher_instance: Arc<AtomicU64>,
     config: FileWatcherConfig,
@@ -134,6 +249,7 @@ fn lock_event_buffer(
 impl FileWatchService {
     pub fn new(config: FileWatcherConfig) -> Self {
         let (event_sender, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
+        let (status_sender, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         Self {
             emitter_dispatch: Arc::new(StdRwLock::new(None)),
             watcher: Arc::new(Mutex::new(None)),
@@ -141,6 +257,7 @@ impl FileWatchService {
             watched_paths: Arc::new(StdRwLock::new(HashMap::new())),
             event_buffer: Arc::new(StdMutex::new(Vec::new())),
             event_sender,
+            status_sender,
             health: Arc::new(FileWatchHealth::new()),
             active_watcher_instance: Arc::new(AtomicU64::new(0)),
             config,
@@ -163,10 +280,43 @@ impl FileWatchService {
         self.health.is_healthy()
     }
 
+    /// Current watch coverage. Readable at any time, including while the
+    /// backend is unhealthy, so surfaces can explain a stale view.
+    pub fn status(&self) -> FileWatchStatus {
+        snapshot_status(&self.health, &self.watched_paths)
+    }
+
+    /// Subscribe to status transitions and failure-detail updates.
+    pub fn subscribe_status(&self) -> broadcast::Receiver<FileWatchStatus> {
+        self.status_sender.subscribe()
+    }
+
+    fn publish_status(&self) {
+        broadcast_status(&self.health, &self.watched_paths, &self.status_sender);
+    }
+
     pub async fn set_emitter(&self, emitter: Arc<dyn EventEmitter>) {
-        self.set_emitter_dispatch(move |events| {
+        self.set_emitter_dispatch({
             let emitter = emitter.clone();
-            async move { Self::emit_events(&emitter, &events).await }
+            move |events| {
+                let emitter = emitter.clone();
+                async move { Self::emit_events(&emitter, &events).await }
+            }
+        });
+
+        let mut status_events = self.status_sender.subscribe();
+        tokio::spawn(async move {
+            while let Ok(status) = status_events.recv().await {
+                if let Err(error) = emitter
+                    .emit(
+                        FILE_WATCH_STATUS_CHANGED_EVENT,
+                        serde_json::to_value(&status).unwrap_or(serde_json::Value::Null),
+                    )
+                    .await
+                {
+                    warn!("Failed to emit file watch status: {}", error);
+                }
+            }
         });
     }
 
@@ -257,7 +407,9 @@ impl FileWatchService {
                     let _ = watcher.unwatch(&path_buf);
                 }
                 if let Err(error) = watcher.watch(&path_buf, mode) {
-                    self.health.mark_unhealthy();
+                    self.health
+                        .mark_unhealthy(classify_notify_failure(&error, Some(&path_buf)));
+                    self.publish_status();
                     return Err(format!(
                         "Failed to watch path {}: {}",
                         path_buf.display(),
@@ -290,6 +442,7 @@ impl FileWatchService {
             self.active_watcher_instance.fetch_add(1, Ordering::AcqRel);
             *watcher_guard = None;
             self.health.mark_healthy();
+            self.publish_status();
         } else if removed {
             if let Some(watcher) = watcher_guard.as_mut() {
                 // The path may never have been registered (e.g. it was missing
@@ -316,6 +469,7 @@ impl FileWatchService {
             self.active_watcher_instance.fetch_add(1, Ordering::AcqRel);
             *watcher_guard = None;
             self.health.mark_healthy();
+            self.publish_status();
             return Ok(());
         }
 
@@ -323,7 +477,9 @@ impl FileWatchService {
         let mut watcher = match RecommendedWatcher::new(tx, Config::default()) {
             Ok(watcher) => watcher,
             Err(error) => {
-                self.health.mark_unhealthy();
+                self.health
+                    .mark_unhealthy(classify_notify_failure(&error, None));
+                self.publish_status();
                 return Err(format!("Failed to create watcher: {}", error));
             }
         };
@@ -336,7 +492,9 @@ impl FileWatchService {
             };
 
             if let Err(error) = watcher.watch(&path, mode) {
-                self.health.mark_unhealthy();
+                self.health
+                    .mark_unhealthy(classify_notify_failure(&error, Some(&path)));
+                self.publish_status();
                 return Err(format!(
                     "Failed to watch path {}: {}",
                     path.display(),
@@ -355,12 +513,14 @@ impl FileWatchService {
             *watcher_guard = Some(watcher);
         }
         self.health.mark_healthy();
+        self.publish_status();
 
         let event_buffer = self.event_buffer.clone();
         let emitter_dispatch = self.emitter_dispatch.clone();
         let default_debounce_ms = self.config.debounce_interval_ms;
         let watched_paths = self.watched_paths.clone();
         let event_sender = self.event_sender.clone();
+        let status_sender = self.status_sender.clone();
         let health = self.health.clone();
         let active_watcher_instance = self.active_watcher_instance.clone();
         // The native receiver lives for as long as its OS watcher. Keeping that
@@ -387,13 +547,18 @@ impl FileWatchService {
                         Ok(Err(error)) => {
                             error!("File watch error: {}", error);
                             if active_watcher_instance.load(Ordering::Acquire) == watcher_instance {
-                                health.mark_unhealthy();
+                                health.mark_unhealthy(classify_notify_failure(&error, None));
+                                broadcast_status(&health, &watched_paths, &status_sender);
                             }
                         }
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                             if active_watcher_instance.load(Ordering::Acquire) == watcher_instance {
-                                health.mark_unhealthy();
+                                health.mark_unhealthy(FileWatchFailure::backend_unavailable(
+                                    "file watch backend channel closed",
+                                    None,
+                                ));
+                                broadcast_status(&health, &watched_paths, &status_sender);
                             }
                             break;
                         }
@@ -419,7 +584,12 @@ impl FileWatchService {
         if let Err(error) = worker {
             self.active_watcher_instance.fetch_add(1, Ordering::AcqRel);
             *self.watcher.lock().await = None;
-            self.health.mark_unhealthy();
+            self.health
+                .mark_unhealthy(FileWatchFailure::backend_unavailable(
+                    format!("failed to start file watch worker: {error}"),
+                    None,
+                ));
+            self.publish_status();
             return Err(format!("Failed to start file watch worker: {error}"));
         }
 
@@ -686,10 +856,10 @@ fn project_event_path(registered_root: &Path, backend_root: &Path, event_path: &
 #[cfg(test)]
 mod tests {
     use super::{
-        preferred_event_registration, read_watched_paths, refresh_watch_registrations,
-        write_watched_paths, FileWatchService, WatchedPath,
+        classify_notify_failure, preferred_event_registration, read_watched_paths,
+        refresh_watch_registrations, write_watched_paths, FileWatchService, WatchedPath,
     };
-    use crate::file_watch::FileWatcherConfig;
+    use crate::file_watch::{FileWatchFailure, FileWatchFailureCode, FileWatcherConfig};
     use notify::event::CreateKind;
     use notify::{Event, EventKind};
     use std::collections::HashMap;
@@ -818,7 +988,9 @@ mod tests {
             .await
             .expect("initial watch");
 
-        service.health.mark_unhealthy();
+        service
+            .health
+            .mark_unhealthy(FileWatchFailure::backend_unavailable("test failure", None));
 
         failures.recv().await.expect("health failure notification");
         service
@@ -855,6 +1027,75 @@ mod tests {
 
         assert!(error.contains("Failed to watch path"));
         assert!(!service.is_healthy());
+
+        let status = service.status();
+        let failure = status.failure.expect("a failed rebuild reports its reason");
+        assert_eq!(failure.code, FileWatchFailureCode::BackendUnavailable);
+        assert_eq!(
+            failure.path.as_deref(),
+            Some(missing.to_string_lossy().as_ref())
+        );
+        assert!(failure.hint.is_none());
+    }
+
+    #[test]
+    fn a_watch_limit_failure_maps_to_the_limit_code() {
+        let error = notify::Error::new(notify::ErrorKind::MaxFilesWatch);
+
+        let failure = classify_notify_failure(&error, Some(Path::new("/tmp/workspace")));
+
+        assert_eq!(failure.code, FileWatchFailureCode::WatchLimitExceeded);
+        assert_eq!(failure.path.as_deref(), Some("/tmp/workspace"));
+        // The remediation command belongs to inotify only; other platforms have
+        // no such quota, so they must not be handed a Linux sysctl command.
+        #[cfg(target_os = "linux")]
+        assert!(failure
+            .hint
+            .as_deref()
+            .is_some_and(|hint| hint.contains("fs.inotify.max_user_watches")));
+        #[cfg(not(target_os = "linux"))]
+        assert!(failure.hint.is_none());
+    }
+
+    #[test]
+    fn a_generic_backend_failure_reports_no_hint() {
+        let error = notify::Error::new(notify::ErrorKind::Generic("backend down".to_string()));
+
+        let failure = classify_notify_failure(&error, None);
+
+        assert_eq!(failure.code, FileWatchFailureCode::BackendUnavailable);
+        assert!(failure.hint.is_none());
+        assert_eq!(failure.detail, "backend down");
+    }
+
+    #[test]
+    fn status_reports_the_failure_and_clears_it_after_recovery() {
+        let service = FileWatchService::new(FileWatcherConfig::default());
+        let mut statuses = service.subscribe_status();
+
+        let initial = service.status();
+        assert!(initial.healthy);
+        assert!(initial.failure.is_none());
+
+        service.health.mark_unhealthy(classify_notify_failure(
+            &notify::Error::new(notify::ErrorKind::MaxFilesWatch),
+            None,
+        ));
+        service.publish_status();
+
+        let reported = statuses.try_recv().expect("status push on failure");
+        assert!(!reported.healthy);
+        assert_eq!(
+            reported.failure.expect("failure detail").code,
+            FileWatchFailureCode::WatchLimitExceeded
+        );
+
+        service.health.mark_healthy();
+        service.publish_status();
+
+        let recovered = statuses.try_recv().expect("status push on recovery");
+        assert!(recovered.healthy);
+        assert!(recovered.failure.is_none());
     }
 
     #[test]
@@ -957,6 +1198,17 @@ pub async fn stop_file_watch(path: String) -> Result<(), String> {
 pub async fn get_watched_paths() -> Result<Vec<String>, String> {
     let watcher = get_global_file_watch_service();
     Ok(watcher.get_watched_paths().await)
+}
+
+pub fn get_file_watch_status() -> FileWatchStatus {
+    get_global_file_watch_service().status()
+}
+
+/// Re-registers every watched root on a fresh native watcher, which is the only
+/// way a surface can recover from a backend failure (for example after the user
+/// raises a watch quota).
+pub async fn retry_file_watch() -> Result<(), String> {
+    get_global_file_watch_service().rebuild_watcher().await
 }
 
 pub fn initialize_file_watch_service(emitter: Arc<dyn EventEmitter>) {

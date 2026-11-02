@@ -101,6 +101,8 @@ pub struct ToolSnapshotItem {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    #[serde(default)]
+    pub output_schema: Value,
     pub short_description: String,
     pub provider: ToolProviderIdentity,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,6 +235,7 @@ pub async fn materialize_tool_snapshot<Tool: ToolRegistryItem + ?Sized>(
             name: tool.name().to_string(),
             description: tool.description().await?,
             input_schema: tool.input_schema_for_model().await,
+            output_schema: tool.output_schema(),
             short_description: tool.short_description(),
             provider,
             dynamic_info,

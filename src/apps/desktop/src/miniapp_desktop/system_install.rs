@@ -20,8 +20,12 @@ pub(super) fn applications_directory() -> Result<PathBuf, String> {
     Err("System MiniApp launchers are unsupported on this platform".into())
 }
 
-fn records(data_dir: &Path, app_id: &str) -> Result<Vec<LaunchRecord>, String> {
-    let root = data_dir.join("miniapp-desktop/launchers");
+fn records(
+    data_dir: &Path,
+    app_id: &str,
+    channel: super::ipc::HostChannel,
+) -> Result<Vec<LaunchRecord>, String> {
+    let root = channel.directory(data_dir).join("launchers");
     if !root.try_exists().map_err(|e| e.to_string())? {
         return Ok(Vec::new());
     }
@@ -32,7 +36,8 @@ fn records(data_dir: &Path, app_id: &str) -> Result<Vec<LaunchRecord>, String> {
             continue;
         }
         let record = read_record(&path)?;
-        if record.app_id == app_id && record.data_dir == data_dir {
+        if record.app_id == app_id && record.data_dir == data_dir && record.host_channel == channel
+        {
             records.push(record);
         }
     }
@@ -59,12 +64,26 @@ fn installed_in(applications: &Path, records: &[LaunchRecord]) -> Result<Vec<Pat
     Ok(paths)
 }
 
-pub(super) fn status(data_dir: &Path, app_id: &str) -> Result<Vec<PathBuf>, String> {
-    installed_in(&applications_directory()?, &records(data_dir, app_id)?)
+pub(super) fn status(
+    data_dir: &Path,
+    app_id: &str,
+    channel: super::ipc::HostChannel,
+) -> Result<Vec<PathBuf>, String> {
+    installed_in(
+        &applications_directory()?,
+        &records(data_dir, app_id, channel)?,
+    )
 }
 
-pub(super) fn uninstall(data_dir: &Path, app_id: &str) -> Result<(), String> {
-    uninstall_in(&applications_directory()?, &records(data_dir, app_id)?)
+pub(super) fn uninstall(
+    data_dir: &Path,
+    app_id: &str,
+    channel: super::ipc::HostChannel,
+) -> Result<(), String> {
+    uninstall_in(
+        &applications_directory()?,
+        &records(data_dir, app_id, channel)?,
+    )
 }
 
 fn uninstall_in(applications: &Path, records: &[LaunchRecord]) -> Result<(), String> {
@@ -179,6 +198,8 @@ mod tests {
             workspace_path: None,
             data_dir: root.join("data"),
             user_root: root.to_path_buf(),
+            host_channel: Default::default(),
+            product_home: None,
             host_executable: root.join("OpenBitFun"),
             name: "Notes".into(),
             extra: Default::default(),
@@ -235,7 +256,7 @@ mod tests {
         std::fs::create_dir_all(external.join("Contents/Resources")).unwrap();
         ipc_record(&external, &record);
         std::os::unix::fs::symlink(&external, applications.join("Linked.app")).unwrap();
-        let records = records(&record.data_dir, &record.app_id).unwrap();
+        let records = records(&record.data_dir, &record.app_id, record.host_channel).unwrap();
         assert_eq!(
             installed_in(&applications, &records).unwrap(),
             vec![owned.clone()]

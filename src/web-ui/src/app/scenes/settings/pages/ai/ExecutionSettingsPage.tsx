@@ -41,6 +41,7 @@ type DescribedSelectOption = SelectOption & { description?: string };
 const log = createLogger('ExecutionSettingsPage');
 
 type SubagentBatchExecutionPolicy = 'safe_only' | 'force_parallel' | 'serial';
+type ToolPresentationMode = 'native' | 'ptc' | 'ptc_python';
 
 const DEFAULT_SUBAGENT_BATCH_EXECUTION_POLICY: SubagentBatchExecutionPolicy = 'force_parallel';
 
@@ -67,7 +68,7 @@ const ExecutionSettingsPage: React.FC = () => {
 
   const { buildModelOption } = useModelSelectPresentation();
 
-  const seed = useConfigSeed([modelSelectionsConfigPath(), 'ai.models', 'ai.enable_deferred_tool_loading', 'ai.subagent_max_concurrency', 'ai.swarm_max_concurrency', 'ai.tool_execution_timeout_secs', 'ai.subagent_batch_execution_policy', 'ai.user_question_timeout_secs']);
+  const seed = useConfigSeed([modelSelectionsConfigPath(), 'ai.models', 'ai.enable_deferred_tool_loading', 'ai.subagent_max_concurrency', 'ai.swarm_max_concurrency', 'ai.tool_execution_timeout_secs', 'ai.subagent_batch_execution_policy', 'ai.user_question_timeout_secs', 'ai.tool_presentation_mode']);
   let seededSelections: AgentModelSelections | undefined;
   if (seed.loaded) {
     try { seededSelections = effectiveModelSelections(seed.get(modelSelectionsConfigPath(), undefined)); }
@@ -105,6 +106,15 @@ const ExecutionSettingsPage: React.FC = () => {
 
   const [deferredToolLoadingConfigSaving, setDeferredToolLoadingConfigSaving] = useState(false);
 
+  const [toolPresentationMode, setToolPresentationMode] = useState<ToolPresentationMode>(
+    (() => {
+      const value = seed.get<ToolPresentationMode | null>('ai.tool_presentation_mode', 'native');
+      return value === 'ptc' || value === 'ptc_python' ? value : 'native';
+    })(),
+  );
+
+  const [toolPresentationModeSaving, setToolPresentationModeSaving] = useState(false);
+
   const subagentBatchExecutionPolicyOptions: DescribedSelectOption[] = [
     {
       value: 'safe_only',
@@ -133,6 +143,27 @@ const ExecutionSettingsPage: React.FC = () => {
       setEnableDeferredToolLoading(previous);
     } finally {
       setDeferredToolLoadingConfigSaving(false);
+    }
+  };
+
+  const handleToolPresentationModeChange = async (value: string | number | (string | number)[]) => {
+    const selected = String(Array.isArray(value) ? value[0] : value);
+    const nextMode: ToolPresentationMode = selected === 'ptc' || selected === 'ptc_python'
+      ? selected
+      : 'native';
+    if (nextMode === toolPresentationMode) return;
+    const previousMode = toolPresentationMode;
+    setToolPresentationMode(nextMode);
+    setToolPresentationModeSaving(true);
+    try {
+      await configManager.setConfig('ai.tool_presentation_mode', nextMode);
+      notificationService.success(t('messages.saveSuccess'), { duration: 2000 });
+    } catch (error) {
+      log.error('Failed to save tool presentation mode', error);
+      setToolPresentationMode(previousMode);
+      notificationService.error(t('messages.saveFailed'));
+    } finally {
+      setToolPresentationModeSaving(false);
     }
   };
 
@@ -285,6 +316,7 @@ const ExecutionSettingsPage: React.FC = () => {
         execTimeout,
         loadedSubagentBatchExecutionPolicy,
         loadedUserQuestionTimeout,
+        loadedToolPresentationMode,
         poolDocument,
       ] = await Promise.all([
         readModelSelections(),
@@ -295,6 +327,7 @@ const ExecutionSettingsPage: React.FC = () => {
         configManager.getConfig<number | null>('ai.tool_execution_timeout_secs'),
         configManager.getConfig<SubagentBatchExecutionPolicy>('ai.subagent_batch_execution_policy'),
         configManager.getOptionalConfig<number | null>('ai.user_question_timeout_secs'),
+        configManager.getOptionalConfig<string>('ai.tool_presentation_mode'),
         supportsModelPools() ? configManager.getOptionalConfig<ModelPoolDocument>('ai.model_pools') : Promise.resolve(undefined),
       ]);
       setSubagentDefaultModel(loadedSubagentDefaultModel.subagents.default);
@@ -312,6 +345,11 @@ const ExecutionSettingsPage: React.FC = () => {
         ? '180'
         : loadedUserQuestionTimeout === null ? '0' : String(loadedUserQuestionTimeout));
       setSubagentBatchExecutionPolicy(normalizeSubagentBatchExecutionPolicy(loadedSubagentBatchExecutionPolicy));
+      setToolPresentationMode(
+        loadedToolPresentationMode === 'ptc' || loadedToolPresentationMode === 'ptc_python'
+          ? loadedToolPresentationMode
+          : 'native',
+      );
 
       hasLoadedPageDataRef.current = true;
     } catch (error) {
@@ -356,7 +394,6 @@ const ExecutionSettingsPage: React.FC = () => {
 
           <ConfigPageSection
             title={t('deferredToolLoading.sectionTitle')}
-            description={t('deferredToolLoading.sectionDescription')}
           >
             <ConfigPageRow
               label={t('common.enable')}
@@ -373,10 +410,33 @@ const ExecutionSettingsPage: React.FC = () => {
             </ConfigPageRow>
           </ConfigPageSection>
 
+          <ConfigPageSection
+            title={t('toolPresentation.sectionTitle')}
+          >
+            <ConfigPageRow
+              label={t('toolPresentation.mode')}
+              description={t('toolPresentation.description')}
+              align="center"
+            >
+              <div className="openbitfun-runtime-settings__row-control" data-openbitfun-component="runtime-settings" data-openbitfun-part="control">
+                <Select
+                  size="sm"
+                  value={toolPresentationMode}
+                  options={[
+                    { value: 'native', label: t('toolPresentation.native') },
+                    { value: 'ptc', label: t('toolPresentation.ptc'), tooltip: t('toolPresentation.ptcTooltip') },
+                    { value: 'ptc_python', label: t('toolPresentation.ptcPython'), tooltip: t('toolPresentation.ptcPythonTooltip') },
+                  ]}
+                  disabled={toolPresentationModeSaving}
+                  onValueChange={handleToolPresentationModeChange}
+                />
+              </div>
+            </ConfigPageRow>
+          </ConfigPageSection>
+
           {/* ── Tool execution behavior ────────────────────────────── */}
           <ConfigPageSection
             title={t('toolExecution.sectionTitle')}
-            description={t('toolExecution.sectionDescription')}
           >
             <ConfigPageRow
               label={tTools('config.executionTimeout')}
@@ -420,7 +480,6 @@ const ExecutionSettingsPage: React.FC = () => {
 
           <ConfigPageSection
             title={tTools('section.subagents.title')}
-            description={tTools('section.subagents.description')}
           >
             <ConfigPageRow
               className="openbitfun-runtime-settings__subagent-model-row"

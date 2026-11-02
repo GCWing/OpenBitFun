@@ -95,6 +95,9 @@ pub(crate) fn model_from_mutation(
         api_key,
         context_window: mutation.context_window,
         max_tokens: mutation.max_tokens,
+        max_images_per_request: mutation
+            .max_images_per_request
+            .unwrap_or(current.max_images_per_request),
         temperature: current.temperature,
         top_p: current.top_p,
         enabled: mutation.enabled,
@@ -110,6 +113,7 @@ pub(crate) fn model_from_mutation(
         custom_request_body,
         custom_request_body_mode: current.custom_request_body_mode,
         auth: current.auth,
+        channel_routing: current.channel_routing,
     })
 }
 
@@ -185,6 +189,32 @@ mod tests {
             }
         }))
         .expect("test AI config should deserialize")
+    }
+
+    #[test]
+    fn legacy_model_mutation_preserves_channel_selection_and_credentials() {
+        let mutation: ModelMutation = serde_json::from_value(serde_json::json!({
+            "id":"model-1", "name":"Edited", "provider":"openai", "modelName":"model",
+            "baseUrl":"https://fixture.invalid/v1", "enabled":true,
+            "inlineThinkInText":false, "skipSslVerify":false
+        }))
+        .unwrap();
+        let existing = openbitfun_core::service::config::AIModelConfig {
+            api_key: "synthetic-existing".into(),
+            max_images_per_request: Some(3),
+            channel_routing: Some(serde_json::from_value(serde_json::json!({"version":1,"fallback_model_ids":["backup"],"manual_channel":"backup"})).unwrap()),
+            ..Default::default()
+        };
+        let preserved = model_from_mutation(mutation.clone(), Some(existing.clone())).unwrap();
+        assert_eq!(preserved.channel_routing, existing.channel_routing);
+        assert_eq!(preserved.api_key, existing.api_key);
+        assert_eq!(preserved.max_images_per_request, Some(3));
+        assert_eq!(preserved.name, "Edited");
+
+        let mut limited = mutation;
+        limited.max_images_per_request = Some(Some(5));
+        let updated = model_from_mutation(limited, Some(existing)).unwrap();
+        assert_eq!(updated.max_images_per_request, Some(5));
     }
 
     #[test]

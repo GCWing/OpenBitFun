@@ -42,6 +42,17 @@ describe('PendingQueueModule', () => {
     expect(window.localStorage.getItem(`flowChat.pendingQueue.${sessionId}`)).toBeNull();
   });
 
+  it('persists reserved turn IDs while retaining older queue entries without one', () => {
+    const sessionId = testSession();
+    pendingQueueManager.enqueue({ sessionId, content: 'legacy message' });
+    pendingQueueManager.enqueue({ sessionId, content: 'plan build', turnId: 'plan-turn' });
+    const key = `openbitfun.flowChat.pendingQueue.v1.${encodeURIComponent(JSON.stringify([LOCAL_SURFACE_ID, sessionId]))}`;
+    const roundTripped = JSON.parse(window.localStorage.getItem(key)!);
+    expect(roundTripped[0].turnId).toBeUndefined();
+    expect(roundTripped[1].turnId).toBe('plan-turn');
+    expect(roundTripped.map((item: { content: string }) => item.content)).toEqual(['legacy message', 'plan build']);
+  });
+
   it('promotes an existing item for explicit drain without rebuilding or losing its payload', () => {
     const sessionId = testSession();
     pendingQueueManager.enqueue({ sessionId, content: 'first' });

@@ -1,3 +1,4 @@
+import { agentName } from '@/shared/agents/identity';
 /**
  * Create / edit form for a Todo.
  *
@@ -113,18 +114,18 @@ const TodoEditor: React.FC<TodoEditorProps> = ({
 
   const agentTypeOptions = useMemo(() => {
     if (isAssistantWorkspace) {
-      return [{ value: ASSISTANT_WORKSPACE_AGENT_TYPE, label: ASSISTANT_WORKSPACE_AGENT_TYPE }];
+      return [{ value: ASSISTANT_WORKSPACE_AGENT_TYPE, label: agentName({ id: ASSISTANT_WORKSPACE_AGENT_TYPE, name: ASSISTANT_WORKSPACE_AGENT_TYPE }, t) }];
     }
 
     const options = availableModes
       .filter((mode) => mode.id !== ASSISTANT_WORKSPACE_AGENT_TYPE)
-      .map((mode) => ({ value: mode.id, label: mode.name?.trim() || mode.id }));
+      .map((mode) => ({ value: mode.id, label: agentName(mode, t) }));
 
     if (draft.agentType && !options.some((option) => option.value === draft.agentType)) {
-      options.push({ value: draft.agentType, label: draft.agentType });
+      options.push({ value: draft.agentType, label: agentName({ id: draft.agentType, name: draft.agentType }, t) });
     }
     return options;
-  }, [availableModes, draft.agentType, isAssistantWorkspace]);
+  }, [availableModes, draft.agentType, isAssistantWorkspace, t]);
 
   const workspaceSelectOptions = useMemo(
     () => workspaceOptions.map((option) => ({

@@ -1,19 +1,18 @@
 /**
  * Modern FlowChat Store
- * High-performance state management using Zustand + Immer
+ * High-performance state management using Zustand
  * Preserves original concept: Session → DialogTurn → ModelRound → FlowItem
  */
 
 import { create, useStore } from 'zustand';
 import { createContext, useContext } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { immer } from 'zustand/middleware/immer';
 import type { Session, DialogTurn, ModelRound, ModelRoundAttempt, FlowThinkingItem, FlowUserSteeringItem, AnyFlowItem } from '../types/flow-chat';
 import { flowChatStore } from './FlowChatStore';
 import { getTurnCompletionNotice } from '../utils/turnCompletionNotice';
 import { createAbsoluteSessionTurnIndexResolver } from '../utils/flowChatTurnOrdinal';
 import { collectCanvasArtifactToolItems } from '../utils/canvasArtifactPresentation';
-import { getTurnOutputDurationMs } from '../utils/turnUsageMetrics';
+import { getTurnOutputDurationMs, getTurnTtftMs } from '../utils/turnUsageMetrics';
 import { projectAdjacentFlowGroups } from '../grouping/groupProjection';
 import { hasModelRoundNarrative } from '../grouping/roundGroups';
 import { isSuppressedBackgroundTurn } from '../utils/backgroundDelivery';
@@ -263,6 +262,7 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
     
     const isTurnComplete = turn.status === 'completed' || turn.status === 'cancelled' || turn.status === 'error';
     const turnOutputDurationMs = getTurnOutputDurationMs(turn.modelRounds);
+    const turnTtftMs = getTurnTtftMs(turn.modelRounds);
     const canvasArtifactItems = collectCanvasArtifactToolItems(turn.modelRounds);
     const canvasAttachmentHostRoundId = [...renderEntries]
       .reverse()
@@ -296,6 +296,7 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
             ? Math.max(0, turn.endTime - turn.startTime)
             : undefined,
           turnOutputDurationMs,
+          turnTtftMs,
           turnTokenUsage: turn.tokenUsage,
           canvasArtifactItems: isTurnComplete && round.id === canvasAttachmentHostRoundId
             ? canvasArtifactItems
@@ -380,7 +381,7 @@ function getInitialModernState(): Pick<
 }
 
 export const createModernFlowChatStore = (initialSession?: Session | null) => create<ModernFlowChatState>()(
-  immer((set, get) => ({
+  (set, get) => ({
     ...(initialSession === undefined ? getInitialModernState() : {
       activeSession: initialSession,
       virtualItems: sessionToVirtualItems(initialSession),
@@ -389,28 +390,28 @@ export const createModernFlowChatStore = (initialSession?: Session | null) => cr
 
     setActiveSession: (session) => {
       const items = sessionToVirtualItems(session);
-      set((state) => {
-        if (state.activeSession?.sessionId !== session?.sessionId) {
-          state.visibleTurnInfo = null;
-        }
-        state.activeSession = session;
-        state.virtualItems = items;
-      });
+      set((state) => ({
+        ...(state.activeSession?.sessionId !== session?.sessionId ? { visibleTurnInfo: null } : null),
+        activeSession: session,
+        virtualItems: items,
+      }));
     },
 
     updateVirtualItems: () => {
       const session = get().activeSession;
       const items = sessionToVirtualItems(session);
-      
-      set((state) => {
-        state.virtualItems = items;
-      });
+
+      set((state) => ({
+        ...state,
+        virtualItems: items,
+      }));
     },
 
     setVisibleTurnInfo: (info) => {
-      set((state) => {
-        state.visibleTurnInfo = info;
-      });
+      set((state) => ({
+        ...state,
+        visibleTurnInfo: info,
+      }));
     },
 
     clear: () => {
@@ -421,14 +422,16 @@ export const createModernFlowChatStore = (initialSession?: Session | null) => cr
       cachedTotalTurnCount = undefined;
       cachedVirtualItems = [];
       cachedTurnItems = new WeakMap();
+      cachedNeedsUserAttention = undefined;
 
-      set((state) => {
-        state.activeSession = null;
-        state.virtualItems = [];
-        state.visibleTurnInfo = null;
-      });
+      set((state) => ({
+        ...state,
+        activeSession: null,
+        virtualItems: [],
+        visibleTurnInfo: null,
+      }));
     },
-  }))
+  })
 );
 
 const defaultModernFlowChatStore = createModernFlowChatStore();

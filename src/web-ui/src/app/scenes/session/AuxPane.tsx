@@ -21,6 +21,7 @@ import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { isCanvasTabVisibleForSession } from '../../components/panels/content-canvas/types';
 
 import './AuxPane.scss';
+import { AuxPaneEmptyState } from './AuxPaneEmptyState';
 
 const log = createLogger('AuxPane');
 
@@ -181,15 +182,7 @@ const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
           terminalResizeSuspended={terminalResizeSuspended}
           resizeSuspended={resizeSuspended}
           missionControlEnabled={false}
-          emptyState={
-            <div
-              className="openbitfun-aux-pane__empty-state"
-              data-openbitfun-component="aux-pane"
-              data-openbitfun-part="emptyState"
-            >
-              {t('canvas.noContentOpen')}
-            </div>
-          }
+          emptyState={<AuxPaneEmptyState workspacePath={workspacePath} sessionId={activeSessionId} />}
         />
       </div>
     );

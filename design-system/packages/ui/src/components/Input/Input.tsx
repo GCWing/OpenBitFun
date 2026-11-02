@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   useRef,
@@ -41,6 +42,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
   type = "text",
   ...props
 }, ref) {
+  const fieldAccessibility = useFieldAccessibility(props);
   const compositionActiveRef = useRef(false);
   const fieldSurface = useFieldSurface();
   const handleChange: ChangeEventHandler<HTMLInputElement> = (event) => {
@@ -67,6 +69,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
       )}
       <input
         {...props}
+        {...fieldAccessibility}
         aria-invalid={resolvedAriaInvalid}
         className={styles.input}
         data-hide-native-password-reveal={hideNativePasswordReveal ? "true" : undefined}

@@ -14,6 +14,9 @@ import { appManager } from '@/app/services/AppManager';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { activateSurface, getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
+import { PeerDeviceContext, type PeerDeviceContextValue } from '@/infrastructure/peer-device/peerDeviceContextState';
+import type { PeerHostCapabilities } from '@/infrastructure/peer-device/PeerConnectionManager';
+import { useFlowChatHttpLinkClick } from '@/flow_chat/components/modern/useFlowChatHttpLinkClick';
 
 /** The chat session's workspace record; content opened from chat links is routed by its ID. */
 const SESSION_WORKSPACE = vi.hoisted(() => ({
@@ -46,6 +49,10 @@ vi.mock('@/infrastructure/api', () => ({
   systemAPI: {
     openExternal: (...args: unknown[]) => mocks.openExternal(...args),
   },
+}));
+
+vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({
+  systemAPI: { openExternal: (...args: unknown[]) => mocks.openExternal(...args) },
 }));
 
 vi.mock('@/infrastructure/i18n', () => ({
@@ -120,6 +127,34 @@ vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
 const EXAMPLE_WORKSPACE = 'C:\\ExampleWorkspace';
 const EXAMPLE_ABSOLUTE_README = 'D:\\SampleDocs\\Guides\\README.md';
 
+function ChatPullRequestLink({ url, workspaceId = SESSION_WORKSPACE.id }: { url: string; workspaceId?: string }) {
+  const onHttpLinkClick = useFlowChatHttpLinkClick(workspaceId, SESSION_WORKSPACE.rootPath);
+  return <MarkdownRenderer content={`[PR](${url})`} onHttpLinkClick={onHttpLinkClick} />;
+}
+
+function peerContext(capabilities: Partial<PeerHostCapabilities> | null): PeerDeviceContextValue {
+  return {
+    peerMode: { active: true, deviceId: 'linux-peer', deviceName: 'Linux CLI' },
+    attachments: [],
+    currentPeerCapabilities: capabilities === null ? null : {
+      idempotentDialogSubmit: false,
+      targetedSessionRollback: false,
+      tokenUsageStatistics: false,
+      miniAppAgentContextFilesV1: false,
+      miniAppAgentImagesV1: false,
+      cancelTool: null,
+      toolCatalog: null,
+      userQuestionResponse: null,
+      hostKind: null,
+      ...capabilities,
+    },
+    switchToDevice: vi.fn(),
+    switchToLocal: vi.fn(),
+    disconnectDevice: vi.fn(),
+    disconnectAllDevices: vi.fn(),
+  };
+}
+
 describe('Markdown file links', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -170,6 +205,7 @@ describe('Markdown file links', () => {
     mocks.revealInExplorer.mockReset();
     mocks.readFileContent.mockReset();
     mocks.openExternal.mockReset();
+    mocks.openExternal.mockResolvedValue(undefined);
     mocks.openFileInBestTarget.mockReset();
     mocks.openHtmlFileInExternalBrowser.mockReset();
     mocks.renderMath.mockReset();
@@ -477,6 +513,88 @@ Second paragraph.
     } finally {
       useAgentCanvasStore.getState().reset();
     }
+  });
+
+  it.each([
+    ['legacy CLI', { hostKind: 'cli' }],
+    ['unprobed peer', null],
+    ['unknown peer', { hostKind: null }],
+    ['explicitly unsupported Desktop', { hostKind: 'desktop', reviewPlatformV1: false }],
+  ] as const)('opens PR links in the system browser for %s without creating a panel', async (_label, capabilities) => {
+    container.className = 'openbitfun-session-scene modern-flowchat-container';
+    activateSurface('linux-peer');
+    openSessionHost();
+    const url = 'https://github.com/GCWing/OpenBitFun/pull/3573/files?diff=split#diff-example';
+    await act(async () => root.render(
+      <PeerDeviceContext.Provider value={peerContext(capabilities)}>
+        <ChatPullRequestLink url={url} />
+      </PeerDeviceContext.Provider>,
+    ));
+    await act(async () => container.querySelector<HTMLAnchorElement>('a')?.click());
+
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
+    expect(selectSessionPaneMode(sessionPaneLayoutStore.getState())).toBe('chat-only');
+    expect(mocks.getCurrentWorkspacePath).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['local', null],
+    ['legacy Desktop', peerContext({ hostKind: 'desktop' })],
+    ['capable peer', peerContext({ hostKind: 'cli', reviewPlatformV1: true })],
+  ] as const)('keeps supported PR links in the detail panel on %s', async (_label, peer) => {
+    container.className = 'openbitfun-session-scene modern-flowchat-container';
+    if (peer) activateSurface('linux-peer');
+    openSessionHost();
+    const url = 'https://github.com/GCWing/OpenBitFun/pull/3573';
+    await act(async () => root.render(
+      <PeerDeviceContext.Provider value={peer}>
+        <ChatPullRequestLink url={url} />
+      </PeerDeviceContext.Provider>,
+    ));
+    await act(async () => container.querySelector<HTMLAnchorElement>('a')?.click());
+
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content).toMatchObject({
+      type: 'review-platform-pr-detail',
+      data: { workspaceId: SESSION_WORKSPACE.id, pullRequestId: '3573', pullRequestUrl: url },
+    });
+  });
+
+  it('updates PR link routing when switching from a Desktop peer to a CLI peer', async () => {
+    container.className = 'openbitfun-session-scene modern-flowchat-container';
+    const url = 'https://gitlab.example.com/team/repo/-/merge_requests/12';
+    const renderLink = (hostKind: 'desktop' | 'cli') => root.render(
+      <PeerDeviceContext.Provider value={peerContext({ hostKind })}>
+        <ChatPullRequestLink url={url} />
+      </PeerDeviceContext.Provider>,
+    );
+    await act(async () => renderLink('desktop'));
+    await act(async () => renderLink('cli'));
+    await act(async () => container.querySelector<HTMLAnchorElement>('a')?.click());
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
+  });
+
+  it.each(['metaKey', 'ctrlKey', 'shiftKey', 'altKey'])('honors %s on a PR link', async modifier => {
+    container.className = 'openbitfun-session-scene modern-flowchat-container';
+    openSessionHost();
+    const url = 'https://github.com/GCWing/OpenBitFun/pull/3573';
+    await act(async () => root.render(<ChatPullRequestLink url={url} />));
+    await act(async () => container.querySelector<HTMLAnchorElement>('a')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true, [modifier]: true }),
+    ));
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
+  });
+
+  it('opens PR links without a workspace in the system browser', async () => {
+    const url = 'https://gitee.com/team/repo/pulls/12';
+    await act(async () => root.render(<ChatPullRequestLink url={url} workspaceId="" />));
+    await act(async () => container.querySelector<HTMLAnchorElement>('a')?.click());
+    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
   });
 
   it('opens chat http links in the built-in browser by default', async () => {
@@ -1150,6 +1268,65 @@ Second paragraph.
       'base64',
       'remote-connection-1',
     );
+  });
+
+  it('groups conversation images across paragraphs and line breaks while preserving text and linked badges', async () => {
+    const content = 'Before\n\n![Landscape](data:image/png;base64,YQ==)\n\n![Portrait](data:image/png;base64,Yg==)\n![Third](data:image/png;base64,Yw==)\n\nAfter\n\n[![Badge](https://example.com/badge.png)](https://example.com)';
+    await act(async () => root.render(<MarkdownRenderer content={content} imageThumbnails />));
+    const galleries = container.querySelectorAll('.markdown-image-gallery');
+    expect(galleries).toHaveLength(1);
+    expect(galleries[0].querySelectorAll('.markdown-image-tile')).toHaveLength(3);
+    expect(galleries[0].classList.contains('markdown-image-gallery--single')).toBe(false);
+    expect([...container.querySelectorAll('.markdown-paragraph')].map(node => node.textContent)).toEqual(['Before', 'After', '']);
+    expect(container.querySelector('a img[alt="Badge"]')).not.toBeNull();
+    expect(container.querySelector('a img[alt="Badge"]')?.getAttribute('role')).toBeNull();
+    expect(container.querySelector('.markdown-renderer--thumbnails')).not.toBeNull();
+  });
+
+  it('keeps document images in their original paragraphs unless thumbnails are requested', async () => {
+    await act(async () => root.render(<MarkdownRenderer content={'![Document](data:image/png;base64,YQ==)'} />));
+    expect(container.querySelector('.markdown-image-gallery')).toBeNull();
+    expect(container.querySelector('.markdown-paragraph > img')).not.toBeNull();
+  });
+
+  it('opens the selected original image by keyboard and retains resolved images as the gallery streams', async () => {
+    const content = '![First](data:image/png;base64,YQ==)';
+    await act(async () => root.render(<MarkdownRenderer content={content} imageThumbnails isStreaming />));
+    const first = container.querySelector('img');
+    expect(container.querySelector('.markdown-image-gallery--single')).not.toBeNull();
+    await act(async () => root.render(<MarkdownRenderer content={`${content}\n\n![Second](data:image/png;base64,Yg==)`} imageThumbnails isStreaming />));
+    expect(container.querySelector('img')).toBe(first);
+    const second = container.querySelector<HTMLImageElement>('img[alt="Second"]')!;
+    expect(second.getAttribute('tabindex')).toBe('0');
+    await act(async () => second.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(document.querySelector('.image-lightbox img')?.getAttribute('src')).toBe('data:image/png;base64,Yg==');
+    await act(async () => document.querySelector<HTMLButtonElement>('.image-lightbox-close')?.click());
+    expect(document.querySelector('.image-lightbox')).toBeNull();
+  });
+
+  it('previews dispatch gallery bytes from the session reader without accessing the controller filesystem', async () => {
+    const read = vi.fn().mockResolvedValue('data:image/png;base64,dGFyZ2V0');
+    await act(async () => root.render(<MarkdownRenderer content={'![Target](/target/image.png)'} imageThumbnails
+      fileActionsViaCallbackOnly onImageRead={read} />));
+    expect(read).toHaveBeenCalledWith('/target/image.png');
+    expect(mocks.readFileContent).not.toHaveBeenCalled();
+    const image = container.querySelector<HTMLImageElement>('.markdown-image-tile img')!;
+    await act(async () => image.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
+    expect(document.querySelector('.image-lightbox img')?.getAttribute('src')).toBe('data:image/png;base64,dGFyZ2V0');
+    await act(async () => activateSurface('peer:other-gallery-host'));
+    expect(document.querySelector('.image-lightbox')).toBeNull();
+  });
+
+  it('keeps failed session images retryable inside a thumbnail tile', async () => {
+    const read = vi.fn().mockRejectedValueOnce(new Error('target offline')).mockResolvedValueOnce('data:image/png;base64,b2s=');
+    await act(async () => root.render(<MarkdownRenderer content={'![Target](/target/retry.png)'} imageThumbnails
+      fileActionsViaCallbackOnly onImageRead={read} />));
+    const tile = container.querySelector('.markdown-image-tile')!;
+    expect(tile.querySelector('img')).toBeNull();
+    const retry = [...tile.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('common:retry'))!;
+    await act(async () => retry.click());
+    expect(read).toHaveBeenLastCalledWith('/target/retry.png', true);
+    expect(tile.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,b2s=');
   });
 
   it('previews the resolved bytes of a markdown image and closes on the scrim or the close button', async () => {

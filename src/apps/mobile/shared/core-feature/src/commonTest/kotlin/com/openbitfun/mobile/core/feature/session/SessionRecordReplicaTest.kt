@@ -7,7 +7,7 @@ class SessionRecordReplicaTest {
     private fun record(revision: Long, status: String, text: String): JsonObject = buildJsonObject {
         put("sessionId", "s"); put("id", "item/i"); put("revision", revision)
         put("turn", buildJsonObject {
-            put("sessionId", "s"); put("turnId", "t"); put("turnIndex", 0); put("status", status)
+            put("sessionId", "s"); put("turnId", "t"); put("turnIndex", 0); put("status", status); put("timestamp", 1700000001000L)
             put("userMessage", buildJsonObject { put("id", "u"); put("content", "question"); put("timestamp", 1) })
         })
         put("round", buildJsonObject { put("id", "r"); put("turnId", "t"); put("roundIndex", 0) })
@@ -23,6 +23,8 @@ class SessionRecordReplicaTest {
         assertEquals("u", messages[0].id)
         assertEquals("hello world", messages[1].text)
         assertEquals("completed", messages[1].status)
+        assertEquals("1", messages[0].timestamp)
+        assertEquals("1700000001000", messages[1].timestamp)
     }
     @Test fun turnRecordUserMessageOutlivesTheHeadersItsChildrenRepeat() {
         val replica = SessionRecordReplica("s")

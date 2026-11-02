@@ -595,6 +595,7 @@ mod tests {
             format: "responses".to_string(),
             context_window: 128_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

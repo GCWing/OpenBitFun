@@ -35,6 +35,7 @@ pub(crate) struct ModelFormResult {
     pub provider_format: String,
     pub context_window: u32,
     pub max_tokens: u32,
+    pub max_images_per_request: Option<usize>,
     pub reasoning_preset_options: Vec<String>,
     pub reasoning: Option<ReasoningConfig>,
     pub inline_think_in_text: bool,
@@ -73,6 +74,7 @@ impl ModelFormResult {
             provider_format: model.provider,
             context_window: model.context_window.unwrap_or(300_000),
             max_tokens: model.max_tokens.unwrap_or(8_192),
+            max_images_per_request: model.max_images_per_request,
             reasoning_preset_options: projection.reasoning_preset_options,
             reasoning: projection.reasoning,
             inline_think_in_text: projection.inline_think_in_text,
@@ -114,6 +116,7 @@ impl ModelFormResult {
             custom_request_body: Some(optional_secret(&self.custom_request_body)),
             context_window: Some(self.context_window),
             max_tokens: Some(self.max_tokens),
+            max_images_per_request: Some(self.max_images_per_request),
             enabled: true,
             reasoning: self.reasoning.clone(),
             inline_think_in_text: self.inline_think_in_text,
@@ -146,6 +149,7 @@ enum FormField {
     ProviderFormat,
     ContextWindow,
     MaxTokens,
+    MaxImagesPerRequest,
     DefaultReasoningPreset,
     // ── Advanced fields (Ctrl+A) ──
     SkipSslVerify,
@@ -169,6 +173,7 @@ pub(super) struct ModelConfigFormState {
     provider_format_index: usize,
     context_window: String,
     max_tokens: String,
+    max_images_per_request: String,
     reasoning_preset_options: Vec<String>,
     reasoning_preset_index: usize,
     initial_reasoning_preset: Option<String>,
@@ -204,6 +209,7 @@ impl ModelConfigFormState {
             provider_format_index: 0,
             context_window: "300000".into(),
             max_tokens: "8192".into(),
+            max_images_per_request: String::new(),
             reasoning_preset_options: Vec::new(),
             reasoning_preset_index: 0,
             initial_reasoning_preset: None,
@@ -235,6 +241,7 @@ impl ModelConfigFormState {
         self.provider_format_index = 0;
         self.context_window = "300000".into();
         self.max_tokens = "8192".into();
+        self.max_images_per_request.clear();
         self.reasoning_preset_options.clear();
         self.reasoning_preset_index = 0;
         self.initial_reasoning_preset = None;
@@ -275,6 +282,7 @@ impl ModelConfigFormState {
             .unwrap_or(0);
         self.context_window = "300000".into();
         self.max_tokens = "8192".into();
+        self.max_images_per_request.clear();
         self.reasoning_preset_options.clear();
         self.reasoning_preset_index = 0;
         self.initial_reasoning_preset = None;
@@ -305,6 +313,10 @@ impl ModelConfigFormState {
             .unwrap_or(0);
         self.context_window = result.context_window.to_string();
         self.max_tokens = result.max_tokens.to_string();
+        self.max_images_per_request = result
+            .max_images_per_request
+            .map(|value| value.to_string())
+            .unwrap_or_default();
         self.reasoning_preset_options = result.reasoning_preset_options.clone();
         let default_preset = result
             .reasoning
@@ -364,6 +376,7 @@ impl ModelConfigFormState {
             FormField::ProviderFormat,
             FormField::ContextWindow,
             FormField::MaxTokens,
+            FormField::MaxImagesPerRequest,
             FormField::DefaultReasoningPreset,
         ];
         if self.show_advanced {
@@ -413,6 +426,7 @@ impl ModelConfigFormState {
             FormField::ApiKey => &self.api_key,
             FormField::ContextWindow => &self.context_window,
             FormField::MaxTokens => &self.max_tokens,
+            FormField::MaxImagesPerRequest => &self.max_images_per_request,
             FormField::CustomHeaders => &self.custom_headers,
             FormField::CustomRequestBody => &self.custom_request_body,
             // Non-text fields
@@ -431,6 +445,7 @@ impl ModelConfigFormState {
             FormField::ApiKey => Some(&mut self.api_key),
             FormField::ContextWindow => Some(&mut self.context_window),
             FormField::MaxTokens => Some(&mut self.max_tokens),
+            FormField::MaxImagesPerRequest => Some(&mut self.max_images_per_request),
             FormField::CustomHeaders => Some(&mut self.custom_headers),
             FormField::CustomRequestBody => Some(&mut self.custom_request_body),
             _ => None,
@@ -526,6 +541,13 @@ impl ModelConfigFormState {
         if self.max_tokens.trim().parse::<u32>().is_err() {
             return Some("Max tokens must be a number".into());
         }
+        if !self.max_images_per_request.trim().is_empty() {
+            match self.max_images_per_request.trim().parse::<usize>() {
+                Ok(0) => return Some("Max images per request must be greater than zero".into()),
+                Ok(_) => {}
+                Err(_) => return Some("Max images per request must be a positive number".into()),
+            }
+        }
         // Validate JSON fields if non-empty
         if !self.custom_headers.trim().is_empty()
             && serde_json::from_str::<serde_json::Value>(self.custom_headers.trim()).is_err()
@@ -561,6 +583,7 @@ impl ModelConfigFormState {
             provider_format: PROVIDER_FORMATS[self.provider_format_index].to_string(),
             context_window: self.context_window.trim().parse().unwrap_or(300_000),
             max_tokens: self.max_tokens.trim().parse().unwrap_or(8192),
+            max_images_per_request: self.max_images_per_request.trim().parse().ok(),
             reasoning_preset_options: self.reasoning_preset_options.clone(),
             reasoning,
             inline_think_in_text: self.inline_think_in_text,
@@ -942,6 +965,7 @@ impl ModelConfigFormState {
             FormField::ProviderFormat => "Provider Format",
             FormField::ContextWindow => "Context Window",
             FormField::MaxTokens => "Max Output Tokens",
+            FormField::MaxImagesPerRequest => "Max Images Per Request",
             FormField::DefaultReasoningPreset => "Default Reasoning Preset",
             FormField::SkipSslVerify => "Skip SSL Verify",
             FormField::CustomHeaders => "Custom Headers (JSON)",
@@ -1116,6 +1140,7 @@ impl ModelConfigFormState {
                     FormField::ApiKey => &self.api_key,
                     FormField::ContextWindow => &self.context_window,
                     FormField::MaxTokens => &self.max_tokens,
+                    FormField::MaxImagesPerRequest => &self.max_images_per_request,
                     FormField::CustomHeaders => &self.custom_headers,
                     FormField::CustomRequestBody => &self.custom_request_body,
                     _ => "",
@@ -1239,6 +1264,7 @@ impl ModelConfigFormState {
             FormField::ProviderFormat => "",
             FormField::ContextWindow => "300000",
             FormField::MaxTokens => "8192",
+            FormField::MaxImagesPerRequest => "Unlimited",
             FormField::DefaultReasoningPreset => "",
             FormField::SkipSslVerify => "",
             FormField::CustomHeaders => r#"e.g. {"X-Custom": "value"}"#,

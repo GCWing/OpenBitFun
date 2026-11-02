@@ -5,8 +5,10 @@
 
 mod command;
 pub mod feishu;
+pub mod inbound_files;
 mod locale;
 mod menu;
+mod ownership;
 pub mod remote_turn;
 mod state;
 pub mod telegram;
@@ -19,6 +21,7 @@ pub use command::{parse_command, BotCommand};
 pub use feishu::{FeishuBotApi, FeishuConfig};
 pub use locale::{fmt_count, strings_for, BotLanguage, BotStrings};
 pub use menu::{MenuItem, MenuItemStyle, MenuView};
+pub use ownership::BotListenerLease;
 pub use state::{
     BotAction, BotActionStyle, BotChatState, BotDisplayMode, BotInteractionHandler,
     BotInteractiveRequest, BotMessageSender, BotQuestion, BotQuestionOption, BotWorkspaceChoice,
@@ -45,6 +48,72 @@ pub enum BotConfig {
     },
 }
 
+impl BotConfig {
+    pub fn bot_type(&self) -> &'static str {
+        match self {
+            Self::Feishu { .. } => "feishu",
+            Self::Telegram { .. } => "telegram",
+            Self::Weixin { .. } => "weixin",
+        }
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let valid = match self {
+            Self::Feishu { app_id, app_secret } => {
+                !app_id.trim().is_empty() && !app_secret.trim().is_empty()
+            }
+            Self::Telegram { bot_token } => !bot_token.trim().is_empty(),
+            Self::Weixin {
+                ilink_token,
+                bot_account_id,
+                ..
+            } => !ilink_token.trim().is_empty() && !bot_account_id.trim().is_empty(),
+        };
+        anyhow::ensure!(valid, "Bot credentials are incomplete");
+        Ok(())
+    }
+}
+
+/// Read credentials supplied explicitly by the user on the executing product host.
+/// Never return file contents or credential values in an error or management result.
+pub async fn read_bot_credentials_file(path: std::path::PathBuf) -> anyhow::Result<BotConfig> {
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        anyhow::ensure!(
+            path.is_absolute(),
+            "credentialsFile must be an absolute path on the executing product host"
+        );
+        let metadata = std::fs::symlink_metadata(&path)?;
+        anyhow::ensure!(
+            metadata.file_type().is_file(),
+            "Bot credentials must be supplied in a regular file"
+        );
+        let file = std::fs::File::open(&path)?;
+        let metadata = file.metadata()?;
+        anyhow::ensure!(
+            metadata.is_file() && metadata.len() <= 16 * 1024,
+            "Bot credential file is too large or not a regular file"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            anyhow::ensure!(
+                metadata.permissions().mode() & 0o077 == 0,
+                "Bot credential file must have owner-only permissions (chmod 600)"
+            );
+        }
+        let mut bytes = Vec::new();
+        file.take(16 * 1024 + 1).read_to_end(&mut bytes)?;
+        anyhow::ensure!(bytes.len() <= 16 * 1024, "Bot credential file is too large");
+        let config: BotConfig = serde_json::from_slice(&bytes).map_err(|_| {
+            anyhow::anyhow!("Invalid bot credential file; expected a BotConfig JSON object")
+        })?;
+        config.validate()?;
+        Ok(config)
+    })
+    .await?
+}
+
 /// Pairing state for bot-based connections.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BotPairingInfo {
@@ -68,6 +137,7 @@ pub struct SavedBotConnection {
 
 /// Persisted remote-connect form values shown in the desktop dialog.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RemoteConnectFormState {
     pub telegram_bot_token: String,
     pub feishu_app_id: String,
@@ -98,6 +168,10 @@ pub struct BotPersistenceData {
     /// Defaults to `false` (concise mode).
     #[serde(default)]
     pub verbose_mode: bool,
+    /// Explicitly stopped channels retain their credentials and chat state.
+    /// Older records have no disabled channels and keep their restore behavior.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_bots: Vec<String>,
 }
 
 impl BotPersistenceData {
@@ -526,21 +600,33 @@ fn bot_persistence_backup_path(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn load_bot_persistence_unlocked() -> BotPersistenceData {
-    let Some(path) = bot_persistence_path() else {
-        return BotPersistenceData::default();
-    };
-    match crate::remote_persistence::read_bot_persistence(&path) {
-        Ok(Some(data)) => serde_json::to_value(data)
-            .ok()
-            .and_then(|value| serde_json::from_value(value).ok())
-            .unwrap_or_default(),
-        Ok(None) | Err(_) => {
-            // A backup without the canonical file means the process stopped
-            // during the Windows replace dance. Fail closed instead of
-            // restoring a pre-clear account context.
-            BotPersistenceData::default()
+    try_load_bot_persistence_unlocked().unwrap_or_else(|error| {
+        log::error!("Bot persistence is unavailable; existing data was preserved: {error}");
+        BotPersistenceData::default()
+    })
+}
+
+fn try_load_bot_persistence_unlocked() -> anyhow::Result<BotPersistenceData> {
+    let path = bot_persistence_path()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine bot persistence location"))?;
+    load_bot_persistence_at(&path)
+}
+
+fn load_bot_persistence_at(path: &std::path::Path) -> anyhow::Result<BotPersistenceData> {
+    match crate::remote_persistence::read_bot_persistence(path)? {
+        Some(data) => Ok(serde_json::from_value(serde_json::to_value(data)?)?),
+        None if bot_persistence_backup_path(path).exists() => {
+            anyhow::bail!(
+                "Bot persistence has an unfinished replacement; preserve the backup for recovery"
+            )
         }
+        None => Ok(BotPersistenceData::default()),
     }
+}
+
+pub fn try_load_bot_persistence() -> anyhow::Result<BotPersistenceData> {
+    let _persistence = bot_persistence_lock();
+    try_load_bot_persistence_unlocked()
 }
 
 fn write_bot_persistence_atomic(path: &std::path::Path, json: &[u8]) -> std::io::Result<()> {
@@ -645,12 +731,44 @@ pub fn save_bot_persistence(data: &BotPersistenceData) {
 /// Apply one read-modify-write transaction to the shared bot persistence
 /// document. Individual platform loops run concurrently, so separate
 /// `load`/`save` calls can otherwise overwrite another bot's update.
-pub fn update_bot_persistence<R>(update: impl FnOnce(&mut BotPersistenceData) -> R) -> R {
+pub fn try_update_bot_persistence<R>(
+    update: impl FnOnce(&mut BotPersistenceData) -> R,
+) -> anyhow::Result<R> {
     let _persistence = bot_persistence_lock();
-    let mut data = load_bot_persistence_unlocked();
+    let path = bot_persistence_path()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine bot persistence location"))?;
+    update_bot_persistence_at(&path, update)
+}
+
+fn update_bot_persistence_at<R>(
+    path: &std::path::Path,
+    update: impl FnOnce(&mut BotPersistenceData) -> R,
+) -> anyhow::Result<R> {
+    // Desktop and daemon may own different providers in the same product home.
+    // The process mutex alone cannot protect their shared persistence document.
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Missing persistence directory"))?;
+    std::fs::create_dir_all(parent)?;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path.with_extension("lock"))?;
+    fs2::FileExt::lock_exclusive(&lock)?;
+    let mut data = load_bot_persistence_at(path)?;
     let result = update(&mut data);
-    save_bot_persistence_unlocked(&data);
-    result
+    let json = serde_json::to_vec_pretty(&data)?;
+    serde_json::from_slice::<crate::remote_persistence::BotPersistenceRecord>(&json)?.validate()?;
+    write_bot_persistence_atomic(path, &json)?;
+    Ok(result)
+}
+
+pub fn update_bot_persistence(update: impl FnOnce(&mut BotPersistenceData)) {
+    if let Err(error) = try_update_bot_persistence(update) {
+        log::error!("Failed to update bot persistence; existing data was preserved: {error}");
+    }
 }
 
 /// Remove persisted account-device context for every bot connection. This is
@@ -670,6 +788,11 @@ mod tests {
         bot_persistence_backup_path, collect_auto_push_files, extract_downloadable_file_paths,
         resolve_workspace_path, write_bot_persistence_atomic,
     };
+    use super::{
+        load_bot_persistence_at, update_bot_persistence_at, RemoteConnectFormState,
+        SavedBotConnection,
+    };
+    use serde::Deserialize;
 
     fn make_temp_workspace() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
         let base = std::env::temp_dir().join(format!(
@@ -682,6 +805,81 @@ mod tests {
         std::fs::create_dir_all(&artifacts).unwrap();
         std::fs::write(&report, b"ppt").unwrap();
         (base, workspace, report)
+    }
+
+    #[test]
+    fn bot_management_legacy_roundtrip_and_disabled_restart_state() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("remote_connect_persistence.json");
+        let legacy = serde_json::json!({
+            "connections": [{"account_user_id":"account", "bot_type":"telegram", "chat_id":"chat", "config":{"bot_type":"telegram", "bot_token":"fixture-token"},
+                "chat_state":{"chat_id":"chat", "paired":true,"current_workspace":null,"current_assistant":null,"current_session_id":"session"}, "connected_at":1}],
+            "form_state":{"telegram_bot_token":"fixture-token"}, "verbose_mode":false
+        });
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert!(load_bot_persistence_at(&path)
+            .unwrap()
+            .disabled_bots
+            .is_empty());
+        update_bot_persistence_at(&path, |data| data.disabled_bots.push("telegram".into()))
+            .unwrap();
+        let stopped = load_bot_persistence_at(&path).unwrap();
+        assert_eq!(stopped.disabled_bots, ["telegram"]);
+        assert_eq!(
+            stopped.connections[0]
+                .chat_state
+                .current_session_id
+                .as_deref(),
+            Some("session")
+        );
+        assert_eq!(stopped.form_state.telegram_bot_token, "fixture-token");
+        // A pre-field reader ignores the additive field and can still decode
+        // the original connection and credentials.
+        #[derive(Deserialize)]
+        struct Legacy {
+            connections: Vec<SavedBotConnection>,
+            form_state: RemoteConnectFormState,
+        }
+        let old: Legacy = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(old.connections.len(), 1);
+        assert_eq!(old.form_state.telegram_bot_token, "fixture-token");
+        update_bot_persistence_at(&path, |data| data.disabled_bots.clear()).unwrap();
+        assert!(load_bot_persistence_at(&path)
+            .unwrap()
+            .disabled_bots
+            .is_empty());
+    }
+
+    #[test]
+    fn bot_management_preserves_unreadable_records() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("remote_connect_persistence.json");
+        let corrupt = br#"{"connections":[{"bot_type":"future-provider"}]}"#;
+        std::fs::write(&path, corrupt).unwrap();
+        assert!(update_bot_persistence_at(&path, |data| data.verbose_mode = true).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), corrupt);
+    }
+
+    #[test]
+    fn bot_management_concurrent_writers_preserve_both_channels() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("remote_connect_persistence.json");
+        let workers: Vec<_> = ["telegram", "weixin"]
+            .into_iter()
+            .map(|method| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    update_bot_persistence_at(&path, |data| data.disabled_bots.push(method.into()))
+                        .unwrap()
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let saved = load_bot_persistence_at(&path).unwrap();
+        assert!(saved.disabled_bots.contains(&"telegram".into()));
+        assert!(saved.disabled_bots.contains(&"weixin".into()));
     }
 
     #[test]

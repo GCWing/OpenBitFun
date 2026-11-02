@@ -1,0 +1,88 @@
+.openbitfun-session-tab-history {
+  --_session-history-source-width: 0px;
+  --_session-history-source-height: var(--openbitfun-control-tab-group-item-height-sm);
+  --_session-history-source-left: 0px;
+  --_session-history-source-top: 0px;
+
+  // Keep the moving clip opaque so live chat content does not need backdrop sampling.
+  inline-size: max(220px, var(--_session-history-source-width));
+  padding: 0;
+  border: 0;
+  border-radius: var(--openbitfun-radius-lg);
+  outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  outline-offset: calc(-0.5 * var(--openbitfun-border-width-default));
+  color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-surface-raised);
+  box-shadow: var(--openbitfun-shadow-overlay);
+  opacity: 1;
+  translate: none;
+  transition: none;
+
+  --_session-history-capsule: inset(
+    var(--_session-history-source-top)
+    calc(100% - var(--_session-history-source-left) - var(--_session-history-source-width))
+    calc(100% - var(--_session-history-source-top) - var(--_session-history-source-height))
+    var(--_session-history-source-left)
+    round calc(var(--_session-history-source-height) / 2)
+  );
+
+  &[data-state='entering'] {
+    clip-path: var(--_session-history-capsule);
+  }
+
+  &[data-state='entered'] {
+    // Reveal both axes together; backwards fill releases the clip and shadow at rest.
+    animation: session-tab-history-expand var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-enter) backwards;
+  }
+
+  &[data-state='exiting'] {
+    pointer-events: none;
+    animation: session-tab-history-collapse var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-exit) both;
+  }
+
+  &__header {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-control-tab-group-item-gap);
+    inline-size: 100%;
+    block-size: var(--_session-history-source-height);
+    padding: 0 var(--openbitfun-control-tab-group-item-padding-inline-sm);
+    border: 0;
+    border-radius: inherit;
+    color: inherit;
+    background: transparent;
+    font-family: var(--openbitfun-type-label-md-font-family);
+    font-size: var(--openbitfun-type-label-md-font-size);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: var(--openbitfun-type-label-md-line-height);
+    letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  &__rows {
+    padding: var(--openbitfun-space-1);
+    border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &[data-state] { animation: none; clip-path: none; }
+  }
+
+  @media (forced-colors: active) {
+    outline-color: ButtonText;
+    background: Canvas;
+    box-shadow: none;
+  }
+}
+
+@keyframes session-tab-history-expand {
+  0% { clip-path: var(--_session-history-capsule); }
+  100% { clip-path: inset(0 round var(--openbitfun-radius-lg)); }
+}
+
+@keyframes session-tab-history-collapse {
+  0% { clip-path: inset(0 round var(--openbitfun-radius-lg)); }
+  100% { clip-path: var(--_session-history-capsule); }
+}

@@ -255,6 +255,7 @@ pub(crate) async fn send_stream(
     let ttft_timeout = client.stream_options.ttft_timeout;
 
     execute_sse_request(
+        Some(client),
         "Codex ChatGPT Responses API",
         &url,
         &request_body,

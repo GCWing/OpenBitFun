@@ -7,6 +7,7 @@ import icons from '../../../../../../shared/miniapp-chrome/icons.generated.json'
 import windowLabels from '../../../../../../shared/miniapp-chrome/labels.generated.json';
 import { mountMiniAppChat } from '../../../../../../apps/miniapp-shell/src/miniapp-chat';
 import chatLabels from '../../../../../../apps/miniapp-shell/src/chat-labels.json';
+import { bootBusinessApp } from '../agent/__tests__/businessFixture';
 
 const html = readFileSync(resolve(process.cwd(), '../apps/miniapp-shell/src/shell.html'), 'utf8');
 const source = html.slice(html.indexOf('(() => {'), html.indexOf('</script>'));
@@ -48,6 +49,161 @@ function run(overrides: Record<string, (request: { operation: string; params?: R
 }
 
 describe('MiniApp Shell presentation handoff', () => {
+  it('runs real business actions through the Shell relay without reloading its unsaved document', async () => {
+    let answerPoll!: (value: unknown) => void;
+    const call = run({
+      poll: () => new Promise(resolve => { answerPoll = resolve; }),
+      agentClaim: () => ({ accepted: true }),
+      permissions: () => ({ requests: [] }),
+    });
+    await flush();
+    const frame = document.querySelector('iframe')!;
+    const rt = await bootBusinessApp(frame);
+    frame.dispatchEvent(new Event('load')); await flush();
+    const draft = 'Unsaved: alice@example.com';
+    const input = rt.input('test-text', draft);
+    const write = vi.spyOn(rt.doc, 'write');
+    const initialSource = frame.getAttribute('src');
+    const beforeBoots = call.mock.calls.filter(([, v]) => v.request.operation === 'bootstrap').length;
+    let sequence = 0;
+    const request = async (method: string, action?: unknown) => {
+      const requestId = `business-${++sequence}`;
+      answerPoll({ events: [{ sequence, event: 'agentRequest', payload: {
+        requestId, schemaVersion: 'agent.v1', method, action, expiresAt: Date.now() + 10000,
+      } }], cursor: sequence });
+      await flush();
+      const answer = call.mock.calls.find(([, v]) => v.request.operation === 'agentResponse' && v.request.params?.requestId === requestId);
+      expect(answer).toBeDefined();
+      // Start the next long poll, but stay ahead of the 350ms persistence timer.
+      await vi.advanceTimersByTimeAsync(50);
+      return answer![1].request.params;
+    };
+    expect(await request('observe')).toMatchObject({ ok: true, value: { state: { text: { value: draft } } } });
+    expect(await request('act', { type: 'apply-pattern', id: 'email' })).toMatchObject({
+      ok: true, value: { applied: true, state: { matchCount: 1, text: { value: draft } } },
+    });
+    expect(await request('act', { type: 'set-input', input: { replacement: '[email]' } })).toMatchObject({
+      ok: true, value: { state: { replacementPreview: { value: 'Unsaved: [email]' } } },
+    });
+    expect(rt.doc.getElementById('replace-output')?.textContent).toBe('Unsaved: [email]');
+    expect(input.value).toBe(draft);
+    expect(rt.storage.set).not.toHaveBeenCalled();
+    expect(document.querySelector('iframe')).toBe(frame);
+    expect(frame.contentDocument).toBe(rt.doc);
+    expect(frame.contentWindow).toBe(rt.win);
+    expect(frame.getAttribute('src')).toBe(initialSource);
+    expect(write).not.toHaveBeenCalled();
+    expect(call.mock.calls.filter(([, v]) => v.request.operation === 'bootstrap')).toHaveLength(beforeBoots);
+    expect(call.mock.calls.some(([, v]) => ['tab', 'close'].includes(v.request.operation))).toBe(false);
+  });
+
+  it('does not replay a completed Agent mutation after content reload', async () => {
+    let answerPoll!: (value: unknown) => void;
+    const claimed = new Set<string>();
+    const call = run({
+      poll: () => new Promise(resolve => { answerPoll = resolve; }),
+      agentClaim: request => {
+        const id = String(request.params?.requestId);
+        if (claimed.has(id)) return { accepted: false };
+        claimed.add(id); return { accepted: true };
+      },
+    });
+    await flush();
+    const frame = document.querySelector('iframe')!;
+    frame.dispatchEvent(new Event('load')); await flush();
+    const posts: any[] = [];
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(payload => { posts.push(payload); });
+    const batch = { events: [{ sequence: 1, event: 'agentRequest', payload: {
+      requestId: 'completed', method: 'act', action: { type: 'increment' }, expiresAt: Date.now() + 10000,
+    } }], cursor: 1 };
+    answerPoll(batch); await flush();
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
+      type: 'openbitfun:miniapp-agent-response', requestId: 'completed', ok: true, value: 1,
+    } })); await flush();
+    expect(call.mock.calls.filter(([, v]) => v.request.operation === 'agentResponse')).toHaveLength(1);
+    document.querySelector<HTMLButtonElement>('#retry')!.click(); await flush();
+    frame.dispatchEvent(new Event('load')); await flush();
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(payload => { posts.push(payload); });
+    answerPoll(batch); await flush();
+    expect(posts.filter(p => p.type === 'openbitfun:miniapp-agent-request')).toHaveLength(1);
+  });
+
+  it('consumes reload events and resets the cursor only for a different host/view', async () => {
+    let answerPoll!: (value: unknown) => void;
+    let epoch = 'host-1';
+    const call = run({
+      bootstrap: () => ({ ...bootstrap, hostEpoch: epoch, view: { viewId: 'view-1' } }),
+      poll: () => new Promise(resolve => { answerPoll = resolve; }),
+    });
+    await flush();
+    answerPoll({ events: [{ sequence: 7, event: 'reload', payload: {} }], cursor: 7 }); await flush();
+    const polls = () => call.mock.calls.filter(([, v]) => v.request.operation === 'poll');
+    expect(polls().at(-1)?.[1].request.params?.after).toBe(7);
+    document.querySelector<HTMLButtonElement>('#retry')!.click(); await flush();
+    expect(polls().at(-1)?.[1].request.params?.after).toBe(7);
+    epoch = 'host-2';
+    document.querySelector<HTMLButtonElement>('#retry')!.click(); await flush();
+    expect(polls().at(-1)?.[1].request.params?.after).toBe(0);
+  });
+
+  it('ends pending Agent requests before replacement content bootstraps', async () => {
+    let answerPoll!: (value: unknown) => void;
+    const call = run({
+      poll: () => new Promise(resolve => { answerPoll = resolve; }),
+      agentClaim: () => ({ accepted: true }),
+    });
+    await flush();
+    const frame = document.querySelector('iframe')!;
+    frame.dispatchEvent(new Event('load')); await flush();
+    answerPoll({ events: [{ sequence: 1, event: 'agentRequest', payload: { requestId: 'pending', method: 'act', expiresAt: Date.now() + 10000 } }], cursor: 1 }); await flush();
+    document.querySelector<HTMLButtonElement>('#retry')!.click(); await flush();
+    const replies = () => call.mock.calls.filter(([, v]) => v.request.operation === 'agentResponse');
+    expect(replies()).toHaveLength(1);
+    expect(replies()[0][1].request.params).toMatchObject({ requestId: 'pending', code: 'SURFACE_UNAVAILABLE' });
+    window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { type: 'openbitfun:miniapp-agent-response', requestId: 'pending', ok: true, value: 'late' } }));
+    await flush();
+    expect(replies()).toHaveLength(1);
+  });
+
+  it('does not deliver an expired request after awaiting its claim', async () => {
+    let answerPoll!: (value: unknown) => void;
+    let answerClaim!: (value: unknown) => void;
+    const call = run({
+      poll: () => new Promise(resolve => { answerPoll = resolve; }),
+      agentClaim: () => new Promise(resolve => { answerClaim = resolve; }),
+    });
+    await flush();
+    const frame = document.querySelector('iframe')!;
+    frame.dispatchEvent(new Event('load')); await flush();
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage');
+    answerPoll({ events: [{ sequence: 1, event: 'agentRequest', payload: {
+      requestId: 'expired', method: 'act', expiresAt: Date.now() + 100,
+    } }], cursor: 1 }); await flush();
+    vi.setSystemTime(Date.now() + 1000);
+    answerClaim({ accepted: true }); await flush();
+    expect(post).not.toHaveBeenCalled();
+    expect(call).toHaveBeenCalledWith('miniapp_shell_call', { request: { operation: 'agentResponse', params: expect.objectContaining({ requestId: 'expired', code: 'BRIDGE_TIMEOUT' }) } });
+  });
+
+  it('fences a claim that completes after the content document changes', async () => {
+    let answerPoll!: (value: unknown) => void;
+    let answerClaim!: (value: unknown) => void;
+    const call = run({
+      poll: () => new Promise(resolve => { answerPoll = resolve; }),
+      agentClaim: () => new Promise(resolve => { answerClaim = resolve; }),
+    });
+    await flush();
+    const frame = document.querySelector('iframe')!;
+    frame.dispatchEvent(new Event('load')); await flush();
+    answerPoll({ events: [{ sequence: 1, event: 'agentRequest', payload: { requestId: 'old', method: 'act' } }], cursor: 1 }); await flush();
+    document.querySelector<HTMLButtonElement>('#retry')!.click(); await flush();
+    frame.dispatchEvent(new Event('load')); await flush();
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage');
+    answerClaim({ accepted: true }); await flush();
+    expect(post).not.toHaveBeenCalled();
+    expect(call).toHaveBeenCalledWith('miniapp_shell_call', { request: { operation: 'agentResponse', params: expect.objectContaining({ requestId: 'old', code: 'SURFACE_UNAVAILABLE' }) } });
+  });
+
   it('gates the dedicated launcher on the existing authorized SDK claim', async () => {
     run({ local: () => Promise.reject(new Error('MiniApp lacks permission')) });
     await flush();

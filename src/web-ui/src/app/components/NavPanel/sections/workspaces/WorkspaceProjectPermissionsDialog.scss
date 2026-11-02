@@ -1,165 +1,44 @@
+@use '../../../../../shared/styles/resource-table';
+
 .workspace-project-permissions-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-  padding-block: 4px 16px;
+  min-inline-size: 0;
   color: var(--openbitfun-color-content-primary);
 
-  &__modal {
-    overflow-x: hidden;
+  &__heading {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: var(--openbitfun-space-3); margin-block-end: var(--openbitfun-space-5);
+    h2 { margin: 0; font-size: var(--openbitfun-type-heading-section-font-size); font-weight: var(--openbitfun-type-heading-section-font-weight); }
   }
-
-  &__intro {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 8px 10px;
-    border: 1px solid var(--openbitfun-color-border-subtle);
-    border-radius: 6px;
-    background: var(--openbitfun-color-surface-subtle);
+  &__section-action {
+    padding-inline: var(--openbitfun-space-3); border-color: transparent; border-radius: var(--openbitfun-radius-base);
     color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-
-    > :where(svg, [data-openbitfun-component='icon']) {
-      flex-shrink: 0;
-      margin-top: 1px;
-      color: var(--openbitfun-color-accent-default);
-    }
-
-    p {
-      margin: 0;
+    &:is(:hover, :active):not(:disabled) {
+      border-color: var(--openbitfun-color-border-default); color: var(--openbitfun-color-content-primary); text-decoration: none;
     }
   }
-
-  &__section {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    border: 1px solid var(--openbitfun-color-border-subtle);
-    border-radius: 8px;
-    overflow: hidden;
+  &__empty { margin: 0; padding: var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
+  &__error {
+    display: flex; align-items: center; flex-wrap: wrap; gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-4); color: var(--openbitfun-color-status-danger-content); font-size: var(--openbitfun-type-body-sm-font-size);
+    p { width: 100%; margin: 0; overflow-wrap: anywhere; }
   }
-
-  &__section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 44px;
-    padding: 8px 12px;
-    color: var(--openbitfun-color-content-primary);
-    font-size: var(--openbitfun-type-label-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    background: var(--openbitfun-color-surface-subtle);
+  &__modal { block-size: min(40rem, calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter))); }
+  &__toolbar {
+    display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; flex-wrap: wrap;
+    gap: var(--openbitfun-space-3); padding: 0 var(--openbitfun-overlay-dialog-content-padding-lg) var(--openbitfun-space-4);
   }
-
-  &__grants,
-  &__rules {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
+  &__body { flex: 1; min-block-size: 0; }
+  &__table-wrap { overflow-x: auto; flex-shrink: 0; }
+  &__table {
+    @include resource-table.table(minmax(0, 0.85fr) minmax(0, 1.5fr) minmax(0, 0.75fr) minmax(0, 1fr) minmax(9.5rem, max-content));
+    min-inline-size: 42rem;
   }
-
-  &__grant-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-    padding: 10px 12px;
-
-    + .workspace-project-permissions-dialog__grant-row {
-      border-top: 1px solid var(--openbitfun-color-border-subtle);
-    }
+  &__row-actions { display: flex; align-items: center; justify-content: center; gap: var(--openbitfun-space-1); }
+  &__add-form { display: flex; flex-direction: column; gap: var(--openbitfun-space-4); }
+  &__editor {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); gap: var(--openbitfun-space-4);
+    padding: var(--openbitfun-space-4); background: var(--openbitfun-color-surface-tertiary);
   }
-
-  &__grant-copy {
-    display: grid;
-    grid-template-columns: minmax(90px, 0.7fr) minmax(140px, 1.5fr) auto;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-
-    code {
-      min-width: 0;
-      overflow: hidden;
-      color: var(--openbitfun-color-content-primary);
-      font-size: var(--openbitfun-type-label-sm-font-size);
-      white-space: nowrap;
-    }
-
-    span {
-      color: var(--openbitfun-color-content-muted);
-      font-size: var(--openbitfun-type-label-sm-font-size);
-      white-space: nowrap;
-    }
-  }
-
-  &__rule-heading,
-  &__rule-row {
-    display: grid;
-    grid-template-columns: minmax(120px, 0.55fr) minmax(150px, 0.65fr) minmax(220px, 1fr) auto;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    padding-inline: 12px;
-  }
-
-  &__rule-heading {
-    min-height: 32px;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    background: var(--openbitfun-color-surface-subtle);
-    border-bottom: 1px solid var(--openbitfun-color-border-subtle);
-  }
-
-  &__rule-row {
-    padding-block: 10px;
-
-    + .workspace-project-permissions-dialog__rule-row {
-      border-top: 1px solid var(--openbitfun-color-border-subtle);
-    }
-  }
-
-  &__rule-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    justify-content: flex-end;
-  }
-
-  &__footer {
-    flex-wrap: wrap;
-  }
-
-  &__empty {
-    padding: 18px 12px;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-    text-align: center;
-  }
-}
-
-@media (max-width: 760px) {
-  .workspace-project-permissions-dialog {
-    &__grant-copy,
-    &__rule-row {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    &__grant-copy span {
-      white-space: normal;
-    }
-
-    &__rule-heading {
-      display: none;
-    }
-
-    &__rule-actions {
-      justify-content: flex-end;
-    }
-  }
+  &__pending { margin-inline-end: auto; color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
+  &__footer { min-block-size: var(--openbitfun-control-height-sm); flex-wrap: wrap; }
 }

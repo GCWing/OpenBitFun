@@ -26,6 +26,9 @@ Install flow:
 Language Select → Options → Progress → Model Setup → Theme Setup
 ```
 
+For an existing installation at the selected path, the flow ends after
+`Progress`; model and theme setup are retained from the existing installation.
+
 ## Commands
 
 These are command references, not the default precheck list. Use Verification

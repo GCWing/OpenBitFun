@@ -40,6 +40,21 @@ class ChatMessageBubbleTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun userAndAssistantTimesRenderBelowTheirMessages() {
+        var kind by mutableStateOf(ConversationRowKind.USER)
+        composeRule.setContent {
+            Bubble(row(kind, text = "Dated message").copy(timestampMs = 1700000000000L))
+        }
+        for (role in listOf(ConversationRowKind.USER, ConversationRowKind.ASSISTANT)) {
+            composeRule.runOnIdle { kind = role }
+            composeRule.onNodeWithTag("chat-message-timestamp").assertIsDisplayed()
+            val content = composeRule.onNodeWithText("Dated message").getUnclippedBoundsInRoot()
+            val time = composeRule.onNodeWithTag("chat-message-timestamp").getUnclippedBoundsInRoot()
+            assertTrue(time.top >= content.bottom)
+        }
+    }
+
+    @Test
     fun aTurnThatWorkedInStepsIsDrawnInSteps() {
         composeRule.setContent {
             Bubble(
@@ -278,6 +293,7 @@ class ChatMessageBubbleTest {
         showRetry = showRetry,
         error = null,
         live = false,
+        timestampMs = null,
     )
 
     private fun runningTool(): ToolCard = ToolCard(

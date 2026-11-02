@@ -8,6 +8,7 @@ import type { SessionUsageReport } from '@/infrastructure/api/service-api/Sessio
 import { copyTextToClipboard } from '@/shared/utils/textSelection';
 import {
   buildSessionUsageExportMarkdown,
+  isUnusedSession,
   formatHitRateSuffix,
   formatUsageDuration,
   formatUsageNumber,
@@ -30,7 +31,7 @@ import {
   setUsageExportRedactPathsPreference,
   subscribeUsageExportRedactPathsPreference,
 } from './usageReportUtils';
-import type { SessionUsagePanelTab } from './sessionUsagePanelTypes';
+import { SessionUsageEmptyState } from './SessionUsageEmptyState';
 import './SessionUsageReportCard.scss';
 
 const SUMMARY_LIST_LIMIT = 3;
@@ -41,7 +42,7 @@ interface SessionUsageReportCardProps {
   generatedAt?: number;
   isLoading?: boolean;
   compact?: boolean;
-  onOpenDetails?: (report: SessionUsageReport, initialTab?: SessionUsagePanelTab) => void;
+  onOpenDetails?: (report: SessionUsageReport) => void;
 }
 
 const UsageMiniListFilePathLabel = React.forwardRef<HTMLSpanElement, { pathLabel: string }>(
@@ -89,13 +90,6 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
     event.stopPropagation();
     if (report) {
       onOpenDetails?.(report);
-    }
-  }, [onOpenDetails, report]);
-
-  const handleOpenSectionDetails = useCallback((initialTab: SessionUsagePanelTab) => (event: React.MouseEvent) => {
-    event.stopPropagation();
-    if (report) {
-      onOpenDetails?.(report, initialTab);
     }
   }, [onOpenDetails, report]);
 
@@ -160,6 +154,10 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
     );
   }
 
+  if (isUnusedSession(report)) {
+    return <SessionUsageEmptyState />;
+  }
+
   const coverageTone = getCoverageTone(report.coverage.level);
   const tokenTotal = report.tokens.totalTokens;
   const cachedTokenText = report.tokens.cacheCoverage === 'unavailable'
@@ -219,13 +217,6 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
         help: t('usage.help.errors'),
       },
     ];
-    const showAllTools = buildShowAllAction({
-      totalCount: report.tools.length,
-      visibleCount: topTools.length,
-      sectionLabel: t('usage.sections.tools'),
-      t,
-      onClick: onOpenDetails ? handleOpenSectionDetails('tools') : undefined,
-    });
 
     return (
       <div
@@ -323,21 +314,6 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
         <section className="session-usage-report-card__compact-tools" data-openbitfun-component="session-usage-report-card" data-openbitfun-part="lists">
           <div className="session-usage-report-card__compact-tools-header">
             <h3>{t('usage.sections.tools')}</h3>
-            {showAllTools && (
-              <Tooltip content={showAllTools.ariaLabel}>
-                <Button
-                  type="button"
-                  variant="text"
-                  size="sm"
-                  trailingIcon={<Icon name="chevron-right" size="sm" aria-hidden />}
-                  onClick={showAllTools.onClick}
-                  data-testid="session-usage-tools-details"
-                  aria-label={showAllTools.ariaLabel}
-                >
-                  {showAllTools.label}
-                </Button>
-              </Tooltip>
-            )}
           </div>
           <div className="session-usage-report-card__compact-tool-list" data-openbitfun-component="session-usage-report-card" data-openbitfun-part="list">
             {topTools.length === 0 ? (
@@ -496,13 +472,6 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
       <div className="session-usage-report-card__lists" data-openbitfun-component="session-usage-report-card" data-openbitfun-part="lists">
         <UsageMiniList
           title={t('usage.sections.models')}
-          showAll={buildShowAllAction({
-            totalCount: report.models.length,
-            visibleCount: topModels.length,
-            sectionLabel: t('usage.sections.models'),
-            t,
-            onClick: onOpenDetails ? handleOpenSectionDetails('models') : undefined,
-          })}
           items={topModels.map(model => {
             const source = model.modelIdSource ?? (model.modelId === 'unknown_model' ? 'legacy_missing' : undefined);
             const help = getModelHelp(source, t, model.modelId);
@@ -521,13 +490,6 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
         />
         <UsageMiniList
           title={t('usage.sections.tools')}
-          showAll={buildShowAllAction({
-            totalCount: report.tools.length,
-            visibleCount: topTools.length,
-            sectionLabel: t('usage.sections.tools'),
-            t,
-            onClick: onOpenDetails ? handleOpenSectionDetails('tools') : undefined,
-          })}
           items={topTools.map(tool => ({
             label: tool.redacted ? getRedactedLabel(t) : tool.toolName,
             value: t('usage.card.calls', { count: tool.callCount }),
@@ -538,13 +500,6 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
         />
         <UsageMiniList
           title={t('usage.sections.files')}
-          showAll={buildShowAllAction({
-            totalCount: report.files.files.length,
-            visibleCount: topFiles.length,
-            sectionLabel: t('usage.sections.files'),
-            t,
-            onClick: onOpenDetails ? handleOpenSectionDetails('files') : undefined,
-          })}
           items={topFiles.map(file => {
             const pathLabel = getUsageDisplayPathLabel(file.pathLabel, t, {
               redactPaths: redactExportPaths,
@@ -640,15 +595,8 @@ type UsageMiniListLabel = string | {
   help?: string;
 };
 
-type UsageMiniListShowAll = {
-  label: string;
-  ariaLabel: string;
-  onClick: (event: React.MouseEvent) => void;
-};
-
 interface UsageMiniListProps {
   title: string;
-  showAll?: UsageMiniListShowAll;
   items: Array<{
     label: UsageMiniListLabel;
     value: string;
@@ -656,29 +604,6 @@ interface UsageMiniListProps {
   }>;
   emptyLabel: string;
   emptyDescription?: string;
-}
-
-function buildShowAllAction({
-  totalCount,
-  visibleCount,
-  sectionLabel,
-  t,
-  onClick,
-}: {
-  totalCount: number;
-  visibleCount: number;
-  sectionLabel: string;
-  t: (key: string, options?: Record<string, unknown>) => string;
-  onClick?: (event: React.MouseEvent) => void;
-}): UsageMiniListShowAll | undefined {
-  if (!onClick || totalCount <= visibleCount) {
-    return undefined;
-  }
-  return {
-    label: t('usage.actions.viewAllSection', { count: totalCount }),
-    ariaLabel: t('usage.actions.openSectionDetails', { section: sectionLabel }),
-    onClick,
-  };
 }
 
 function getMiniListLabelText(label: UsageMiniListLabel): string {
@@ -741,25 +666,11 @@ function formatSignedFileLineCount(
   return typeof value === 'number' && Number.isFinite(value) ? `${sign}${formatted}` : formatted;
 }
 
-function UsageMiniList({ title, showAll, items, emptyLabel, emptyDescription }: UsageMiniListProps) {
+function UsageMiniList({ title, items, emptyLabel, emptyDescription }: UsageMiniListProps) {
   return (
     <div data-openbitfun-component="session-usage-report-card" data-openbitfun-part="list" className="session-usage-report-card__mini-list">
       <div className="session-usage-report-card__mini-list-header">
         <div className="session-usage-report-card__mini-list-title">{title}</div>
-        {showAll && (
-          <Tooltip content={showAll.ariaLabel}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              trailingIcon={<Icon name="chevron-right" size="xs" aria-hidden />}
-              onClick={showAll.onClick}
-              aria-label={showAll.ariaLabel}
-            >
-              {showAll.label}
-            </Button>
-          </Tooltip>
-        )}
       </div>
       {items.length === 0 ? (
         <div className="session-usage-report-card__mini-list-empty">

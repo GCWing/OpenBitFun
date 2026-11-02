@@ -4,6 +4,7 @@ use crate::agentic::core::{Message, MessageContent};
 use openbitfun_agent_tools::{
     collect_loaded_deferred_tool_specs, GetToolSpecLoadObservation, LoadedDeferredToolSpec,
 };
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProductLoadedDeferredToolSpecs {
@@ -12,17 +13,60 @@ pub(crate) struct ProductLoadedDeferredToolSpecs {
 
 impl ProductLoadedDeferredToolSpecs {
     pub(crate) fn from_messages(messages: &[Message], deferred_tools: &[String]) -> Self {
-        let observations = messages
+        let deferred_names = deferred_tools
             .iter()
-            .filter_map(get_tool_spec_load_observation)
-            .collect::<Vec<_>>();
+            .map(String::as_str)
+            .collect::<std::collections::HashSet<_>>();
+        let mut loaded_by_name = BTreeMap::new();
+        for message in messages {
+            if let Some(observation) = get_tool_spec_load_observation(message) {
+                for spec in collect_loaded_deferred_tool_specs(
+                    &[observation],
+                    deferred_tools,
+                    crate::agentic::tools::registry::GET_TOOL_SPEC_TOOL_NAME,
+                ) {
+                    loaded_by_name.insert(spec.tool_name.clone(), spec);
+                }
+            }
+            let is_ptc_run_code = matches!(
+                &message.content,
+                MessageContent::ToolResult { tool_name, .. } if tool_name == "RunCode"
+            );
+            if is_ptc_run_code {
+                for spec in &message.metadata.ptc_loaded_deferred_tool_specs {
+                    if deferred_names.contains(spec.tool_name.as_str()) {
+                        loaded_by_name.insert(spec.tool_name.clone(), spec.clone());
+                    }
+                }
+            }
+            if let MessageContent::ToolResult {
+                tool_name,
+                result,
+                is_error: false,
+                ..
+            } = &message.content
+            {
+                if tool_name != "RunCode" {
+                    continue;
+                }
+                if let Some(specs) = result
+                    .get("__ptc_loaded_deferred_tool_specs")
+                    .cloned()
+                    .and_then(|value| {
+                        serde_json::from_value::<Vec<LoadedDeferredToolSpec>>(value).ok()
+                    })
+                {
+                    for spec in specs {
+                        if deferred_names.contains(spec.tool_name.as_str()) {
+                            loaded_by_name.insert(spec.tool_name.clone(), spec);
+                        }
+                    }
+                }
+            }
+        }
 
         Self {
-            loaded_specs: collect_loaded_deferred_tool_specs(
-                &observations,
-                deferred_tools,
-                crate::agentic::tools::registry::GET_TOOL_SPEC_TOOL_NAME,
-            ),
+            loaded_specs: loaded_by_name.into_values().collect(),
         }
     }
 
@@ -83,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn compaction_requires_reload_only_when_the_full_spec_leaves_the_context() {
+    fn compaction_drops_receipt_without_blocking_deferred_execution() {
         let deferred_tools = vec!["Cron".to_string()];
         let input = json!({ "tool_name": "Cron" });
         let spec_result = Message::tool_result(ToolResult {
@@ -159,16 +203,14 @@ mod tests {
                 ));
             } else {
                 assert!(loaded.is_empty());
-                assert!(admission
-                    .unwrap_err()
-                    .to_string()
-                    .contains("reload it even if the summary says it was loaded"));
+                admission.expect("a missing loaded-spec receipt must not block deferred execution");
                 assert!(matches!(
                     reload_plan,
                     GetToolSpecExecutionPlan::LoadDetail { tool_name: "Cron" }
                 ));
 
-                // Reading the definition again restores normal admission.
+                // Reading the definition again restores the receipt and avoids a
+                // redundant load, while execution was already allowed above.
                 compressed.push(spec_result.clone());
                 let reloaded =
                     collect_product_loaded_deferred_tool_specs(&compressed, &deferred_tools);
@@ -179,7 +221,7 @@ mod tests {
                     42,
                     GET_TOOL_SPEC_TOOL_NAME,
                 )
-                .expect("a fresh spec must unlock Cron after compaction");
+                .expect("a fresh spec should remain valid after compaction");
             }
         }
     }
@@ -368,5 +410,62 @@ mod tests {
         assert!(state.is_loaded("Worktree"));
         assert!(!state.is_loaded("WebFetch"));
         assert_eq!(state.into_loaded_specs(), vec![loaded_spec("Worktree")]);
+    }
+
+    #[test]
+    fn product_loaded_spec_state_collects_ptc_run_code_receipts() {
+        let run_code_result = Message::tool_result(ToolResult {
+            tool_id: "run-code-1".to_string(),
+            tool_name: "RunCode".to_string(),
+            effective_tool_name: None,
+            result: json!({
+                "value": {"ok": true},
+                "__ptc_loaded_deferred_tool_specs": [{
+                    "tool_name": "mcp__threejs__show_threejs_scene",
+                    "catalog_generation": 42,
+                }],
+            }),
+            result_for_assistant: Some("{\"ok\":true}".to_string()),
+            is_error: false,
+            duration_ms: None,
+            image_attachments: None,
+        });
+
+        let loaded = collect_product_loaded_deferred_tool_specs(
+            &[run_code_result.clone()],
+            &["mcp__threejs__show_threejs_scene".to_string()],
+        );
+
+        assert_eq!(
+            loaded,
+            vec![loaded_spec("mcp__threejs__show_threejs_scene")]
+        );
+
+        let native_result = Message::tool_result(ToolResult {
+            tool_id: "native-spec-1".to_string(),
+            tool_name: "GetToolSpec".to_string(),
+            effective_tool_name: None,
+            result: json!({
+                "tool_name": "mcp__threejs__show_threejs_scene",
+                "catalog_generation": 43,
+            }),
+            result_for_assistant: None,
+            is_error: false,
+            duration_ms: None,
+            image_attachments: None,
+        });
+        // Native and PTC receipts must retain message order when refreshing
+        // the same tool's catalog generation.
+        for (messages, expected_generation) in [
+            (vec![run_code_result.clone(), native_result.clone()], 43),
+            (vec![native_result, run_code_result], 42),
+        ] {
+            let loaded = collect_product_loaded_deferred_tool_specs(
+                &messages,
+                &["mcp__threejs__show_threejs_scene".to_string()],
+            );
+            assert_eq!(loaded.len(), 1);
+            assert_eq!(loaded[0].catalog_generation, expected_generation);
+        }
     }
 }

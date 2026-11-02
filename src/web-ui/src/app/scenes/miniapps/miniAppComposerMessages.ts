@@ -2,11 +2,14 @@ import {
   MINIAPP_COMPOSER_MESSAGE_EVENT,
   type MiniAppComposerMessageDetail,
 } from './miniAppStore';
+import { isImageContext } from '@/shared/types/context';
+import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 const MINIAPP_MESSAGE_TIMEOUT_MS = 30 * 60 * 1000;
 
 interface PendingMiniAppMessage {
   token: string;
+  resolveOnAgentRun: boolean;
   timeoutId: number;
   removeAbortListener: () => void;
   resolve: () => void;
@@ -48,9 +51,9 @@ function settlePendingMessage(
 }
 
 /**
- * Fire-and-forget route used by the shared text composer. Every dispatch still
- * gets an id so the injected MiniApp bridge can coalesce accidental replay
- * without conflating two intentional submissions that contain the same text.
+ * Legacy fire-and-forget text route. Image submissions use the awaited route
+ * below so preparation and admission failures can restore drafts.
+ * Every dispatch gets an id for the injected SDK's replay coalescing.
  */
 export function postMiniAppComposerMessage(
   detail: MiniAppComposerMessageDetail,
@@ -61,19 +64,47 @@ export function postMiniAppComposerMessage(
 }
 
 /**
- * Route used by realtime voice. It resolves only after all MiniApp
- * `app.chat.onUserMessage` callbacks settle. The caller separately observes
- * the bound Agent session, so both app-side post-processing and Agent work are
- * complete before Voice reports the result.
+ * Prepare attachments before delivery. Voice waits for the onUserMessage
+ * callbacks; typed image input resolves on Agent acceptance, allowing Stop
+ * while the MiniApp continues its post-processing. Plain typed input keeps
+ * the legacy route, including older peer SDKs without acceptance receipts.
  */
-export function requestMiniAppComposerMessage(
+export async function requestMiniAppComposerMessage(
   detail: MiniAppComposerMessageDetail,
   signal?: AbortSignal,
+  options: { resolveOnAgentRun?: boolean } = {},
 ): Promise<void> {
   if (signal?.aborted) {
     return Promise.reject(new Error('MiniApp message was cancelled before dispatch'));
   }
 
+  const scope = getActiveSurfaceScope();
+  const images = detail.contexts?.filter(isImageContext) ?? [];
+  if (options.resolveOnAgentRun && !images.length && !detail.imageContexts?.length) {
+    postMiniAppComposerMessage(detail);
+    return;
+  }
+  if ((images.length || detail.imageContexts?.length) && !isLocalSurface(scope.surfaceId)) {
+    const { peerConnectionManager } = await import('@/infrastructure/peer-device/PeerConnectionManager');
+    scope.assertCurrent('check MiniApp image support');
+    if (peerConnectionManager.get(scope.surfaceId)?.getState().capabilities.miniAppAgentImagesV1 !== true) {
+      throw new Error('miniapp_agent_images_v1_unsupported: The connected Peer host does not support MiniApp image attachments; update the executing Desktop host');
+    }
+  }
+  if (images.length) {
+    const { buildImagePayload, stripImageContextTags } = await import('@/flow_chat/utils/imagePayload');
+    scope.assertCurrent('prepare MiniApp image attachments');
+    const payload = await buildImagePayload(images, { requireInline: true });
+    scope.assertCurrent('prepare MiniApp image attachments');
+    if (signal?.aborted) throw new Error('MiniApp message was cancelled before dispatch');
+    detail = {
+      ...detail,
+      text: stripImageContextTags(detail.text) || 'Use the attached images as context.',
+      imageContexts: payload?.imageContexts,
+    };
+  }
+
+  if (signal?.aborted) throw new Error('MiniApp message was cancelled before dispatch');
   const requestId = nextRequestId();
   const completion = new Promise<void>((resolve, reject) => {
     const handleAbort = () => {
@@ -89,6 +120,7 @@ export function requestMiniAppComposerMessage(
     signal?.addEventListener('abort', handleAbort, { once: true });
     pendingMessages.set(requestId, {
       token: detail.token,
+      resolveOnAgentRun: options.resolveOnAgentRun === true,
       timeoutId,
       removeAbortListener: () => signal?.removeEventListener('abort', handleAbort),
       resolve,
@@ -98,6 +130,13 @@ export function requestMiniAppComposerMessage(
 
   dispatchMessage(detail, requestId);
   return completion;
+}
+
+/** Typed composers unlock Stop once the Runtime accepts the turn; voice waits for completion. */
+export function acceptMiniAppComposerMessage(token: string, requestId: string): boolean {
+  const pending = pendingMessages.get(requestId);
+  if (pending?.token !== token || !pending.resolveOnAgentRun) return false;
+  return settlePendingMessage(requestId, entry => entry.resolve());
 }
 
 /** Called only by the bridge instance that owns `token`. */

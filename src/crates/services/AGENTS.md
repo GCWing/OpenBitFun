@@ -11,6 +11,7 @@ OS/network capabilities.
 
 | Crate | Responsibility | Local doc |
 |---|---|---|
+| `computer-use` | Native screenshot, accessibility, input, permission and control-session providers shared by Desktop and CLI | [AGENTS.md](computer-use/AGENTS.md) |
 | `services-core` | Reusable local service primitives, process-wide TLS provider selection, managed process-tree lifecycle, filesystem helpers, session storage layout/indexing/deletion, metadata store CRUD/index rebuild, metadata construction/counter/index/field mutation/lineage rules, and JSON file IO without product assembly decisions | [AGENTS.md](services-core/AGENTS.md) |
 | `services-integrations` | Concrete MCP, git, remote, file-watch, MiniApp runtime, review-platform provider service, product-domain port implementations, and platform-neutral Remote Connect primitives | [AGENTS.md](services-integrations/AGENTS.md) |
 | `legacy-migration-adapters` | Offline legacy-data converters against shared configuration/storage owners, without Core | [AGENTS.md](legacy-migration-adapters/AGENTS.md) |

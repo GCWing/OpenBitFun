@@ -1,3 +1,4 @@
+import { formatDuration } from '@/shared/utils/format';
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 import { i18nService } from '@/infrastructure/i18n';
 import {
@@ -15,9 +16,19 @@ export const USAGE_EXPORT_REDACT_PATHS_STORAGE_KEY = 'openbitfun.sessionUsage.ex
 type UsageRedactPathsPreferenceListener = (redactPaths: boolean) => void;
 const usageRedactPathsPreferenceListeners = new Set<UsageRedactPathsPreferenceListener>();
 
+/** A missing telemetry field is not evidence that a session never ran. */
+export function isUnusedSession(report: SessionUsageReport): boolean {
+  return report.scope.kind === 'entire_session' && report.scope.turnCount === 0 &&
+    !report.models.some(model => model.callCount > 0) &&
+    !report.tools.some(tool => tool.callCount > 0) &&
+    !(report.tokens.totalTokens || report.tokens.inputTokens || report.tokens.outputTokens) &&
+    report.errors.totalErrors === 0 && report.compression.compactionCount === 0 &&
+    report.slowest.length === 0 && hasNoRecordedFileChanges(report);
+}
+
 export function hasNoRecordedFileChanges(report: SessionUsageReport): boolean {
   return report.files.files.length === 0 &&
-    (report.files.changedFiles === undefined || report.files.changedFiles === 0);
+    (report.files.changedFiles == null || report.files.changedFiles === 0);
 }
 
 export function isSessionUsageReport(value: unknown): value is SessionUsageReport {
@@ -64,36 +75,7 @@ export function formatUsageDuration(value: number | undefined, t: Translator): s
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return t('usage.unavailable');
   }
-  if (value < 1000) {
-    return t('usage.duration.ms', { value: Math.max(0, Math.round(value)) });
-  }
-
-  const seconds = Math.round(value / 1000);
-  if (seconds < 60) {
-    return t('usage.duration.seconds', { value: seconds });
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes < 60) {
-    return remainingSeconds === 0
-      ? t('usage.duration.minutes', { value: minutes })
-      : t('usage.duration.minutesSeconds', { minutes, seconds: remainingSeconds });
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (hours < 24) {
-    return remainingMinutes === 0
-      ? t('usage.duration.hours', { value: hours })
-      : t('usage.duration.hoursMinutes', { hours, minutes: remainingMinutes });
-  }
-
-  const days = Math.floor(hours / 24);
-  const remainingHours = hours % 24;
-  return remainingHours === 0
-    ? t('usage.duration.days', { value: days })
-    : t('usage.duration.daysHours', { days, hours: remainingHours });
+  return formatDuration(value);
 }
 
 export function formatUsageTimestamp(value: number | undefined, t: Translator): string {

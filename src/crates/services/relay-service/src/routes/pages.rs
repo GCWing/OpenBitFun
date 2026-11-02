@@ -618,6 +618,7 @@ pub struct CheckPageFilesResponse {
     pub existing_count: usize,
     pub total_count: usize,
     pub freeze_idempotency_supported: bool,
+    pub metadata_preconditions_supported: bool,
 }
 
 #[derive(Deserialize)]
@@ -649,6 +650,10 @@ pub struct FreezeVersionRequest {
     pub upload_id: Option<String>,
     #[serde(default)]
     pub expected_generation: Option<String>,
+    #[serde(default)]
+    pub expected_visibility: Option<String>,
+    #[serde(default)]
+    pub expected_title: Option<String>,
     #[serde(default)]
     pub create: bool,
     #[serde(default)]
@@ -1897,6 +1902,18 @@ async fn freeze_version(
     ) {
         return Err(StatusCode::CONFLICT);
     }
+    // Content-only updates must not restore stale metadata if another device
+    // renames the Page or restricts access during the upload. All metadata
+    // writers take this same lifecycle lease, so the check holds through save.
+    if body.expected_visibility.as_ref().is_some_and(|expected| {
+        current_page.as_ref().map(|page| &page.visibility) != Some(expected)
+    }) || body
+        .expected_title
+        .as_ref()
+        .is_some_and(|expected| current_page.as_ref().map(|page| &page.title) != Some(expected))
+    {
+        return Err(StatusCode::CONFLICT);
+    }
 
     let count = PageVersionRow::count_for_page(db, &auth.user_id, &slug)
         .await
@@ -2928,6 +2945,7 @@ fn process_check_page_files(
         existing_count,
         total_count,
         freeze_idempotency_supported: true,
+        metadata_preconditions_supported: true,
     })
 }
 
@@ -3256,6 +3274,131 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let version: serde_json::Value = serde_json::from_slice(&body).unwrap();
         version["version_id"].as_str().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn freeze_metadata_preconditions_preserve_concurrent_access_and_title_changes() {
+        for (new_visibility, new_title) in [("private", "guarded"), ("public", "Renamed elsewhere")]
+        {
+            let (app, alice, _, pool) = setup_app_with_pool().await;
+            let slug = "guarded";
+            let files = [("index.html", b"<h1>original</h1>".as_slice())];
+            let (upload_id, upload_files) = begin_test_upload(&app, &alice, slug, &files).await;
+            finish_test_upload(&app, &alice, slug, "public", &upload_id, upload_files).await;
+            let generation = test_page_generation(&app, &alice, slug).await.unwrap();
+            let files = [("index.html", b"<h1>updated</h1>".as_slice())];
+            let (upload_id, upload_files) = begin_test_upload(&app, &alice, slug, &files).await;
+            let upload = serde_json::json!({
+                "slug": slug, "upload_id": upload_id, "expected_generation": generation,
+                "visibility": "public", "title": slug, "files": upload_files, "finalize": true,
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/pages/upload-files")
+                        .header("Authorization", format!("Bearer {alice}"))
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(upload.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            // Another client changes metadata after the content upload has started.
+            let changes = serde_json::json!({
+                "expected_generation": generation, "visibility": new_visibility, "title": new_title,
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PATCH")
+                        .uri("/api/pages/guarded")
+                        .header("Authorization", format!("Bearer {alice}"))
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(changes.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let mut freeze = serde_json::json!({
+                "upload_id": upload_id, "expected_generation": generation, "title": slug,
+                "expected_visibility": "public", "expected_title": slug,
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/pages/guarded/versions")
+                        .header("Authorization", format!("Bearer {alice}"))
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(freeze.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            let current = PageRow::get(&pool, "101", slug).await.unwrap().unwrap();
+            assert_eq!(current.visibility, new_visibility);
+            assert_eq!(current.title, new_title);
+            assert_eq!(
+                PageVersionRow::count_for_page(&pool, "101", slug)
+                    .await
+                    .unwrap(),
+                1
+            );
+
+            // A fresh observation permits a retry; an explicit new title may replace the current one.
+            freeze["expected_visibility"] = serde_json::json!(new_visibility);
+            freeze["expected_title"] = serde_json::Value::Null;
+            freeze["title"] = serde_json::json!("Agent title");
+            // The upload's access setting must also match the fresh observation.
+            let mut upload = upload;
+            upload["visibility"] = serde_json::json!(new_visibility);
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/pages/upload-files")
+                        .header("Authorization", format!("Bearer {alice}"))
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(upload.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/pages/guarded/versions")
+                        .header("Authorization", format!("Bearer {alice}"))
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(freeze.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let current = PageRow::get(&pool, "101", slug).await.unwrap().unwrap();
+            assert_eq!(current.visibility, new_visibility);
+            assert_eq!(current.title, "Agent title");
+            assert_eq!(
+                PageVersionRow::count_for_page(&pool, "101", slug)
+                    .await
+                    .unwrap(),
+                2
+            );
+        }
     }
 
     #[tokio::test]

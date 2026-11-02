@@ -123,7 +123,7 @@ try {
     }));
     const nativeCode = await new Promise((resolveExit, reject) => {
       const nativeArgs = ['--ignored', '--exact', 'computer_use::screen_ocr::native_fixture_tests::native_vision_reads_rendered_fixture'];
-      const child = spawn(process.env.OPENBITFUN_TEST_BINARY || 'cargo', process.env.OPENBITFUN_TEST_BINARY ? nativeArgs : ['test', '-p', 'openbitfun-desktop', '--lib', 'native_vision_reads_rendered_fixture', '--', ...nativeArgs], {
+      const child = spawn(process.env.OPENBITFUN_TEST_BINARY || 'cargo', process.env.OPENBITFUN_TEST_BINARY ? nativeArgs : ['test', '-p', 'openbitfun-computer-use', '--lib', 'native_vision_reads_rendered_fixture', '--', ...nativeArgs], {
         cwd: root, stdio: 'inherit', windowsHide: true,
         env: { ...process.env, OPENBITFUN_OCR_FIXTURE: ocrFixture },
       });

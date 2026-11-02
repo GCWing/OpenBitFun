@@ -27,6 +27,15 @@ pub struct SessionUsageReport {
     pub coverage: UsageCoverage,
     pub time: UsageTimeBreakdown,
     pub tokens: UsageTokenBreakdown,
+    /// Estimated composition of the latest recorded model request, not cumulative usage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<UsageContextBreakdown>,
+    /// Latest cached system message, returned only for an explicit preview request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt_preview: Option<UsageSystemPromptPreview>,
+    /// One explicitly requested category from the latest host-owned request snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_preview: Option<UsageContextPreview>,
     #[serde(default)]
     pub models: Vec<UsageModelBreakdown>,
     #[serde(default)]
@@ -37,6 +46,52 @@ pub struct SessionUsageReport {
     #[serde(default)]
     pub slowest: Vec<UsageSlowSpan>,
     pub privacy: UsagePrivacy,
+}
+
+/// The current session cache, not a historical request snapshot or reconstructed template.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSystemPromptPreview {
+    pub content: String,
+    pub cached_at: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum UsageContextCategory {
+    SystemPrompt,
+    ToolDefinitions,
+    Rules,
+    Skills,
+    McpTools,
+    SubagentDefinitions,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageContextPreview {
+    pub category: UsageContextCategory,
+    pub content: String,
+    pub captured_at: u64,
+}
+
+/// Numeric-only prompt estimates captured by the executing runtime.
+/// Missing snapshots (including legacy hosts) stay absent.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageContextBreakdown {
+    pub system_prompt: u64,
+    pub tool_definitions: u64,
+    pub rules: u64,
+    pub skills: u64,
+    pub mcp_tools: u64,
+    pub subagent_definitions: u64,
+    pub summarized_conversation: u64,
+    pub conversation: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -418,6 +473,9 @@ impl SessionUsageReport {
                 cache_coverage: UsageCacheCoverage::Unavailable,
                 cache_hit_rate: None,
             },
+            context: None,
+            system_prompt_preview: None,
+            context_preview: None,
             models: vec![],
             tools: vec![],
             files: UsageFileBreakdown {

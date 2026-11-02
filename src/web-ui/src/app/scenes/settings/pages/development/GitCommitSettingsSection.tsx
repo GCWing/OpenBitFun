@@ -61,7 +61,6 @@ export default function GitCommitSettingsSection() {
   return (
     <ConfigPageSection id={sectionAnchor}
       title={t('commitAttribution.title')}
-      description={t('commitAttribution.scope')}
     >
       <ConfigPageRow
         label={t('commitAttribution.label')}

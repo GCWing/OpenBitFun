@@ -6,6 +6,7 @@ import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { getActiveSurfaceId, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { notificationService } from '@/shared/notification-system';
 import WorkspaceItem from './WorkspaceItem';
+import SessionViewTransition from './SessionViewTransition';
 import SessionsSection, { type WorkspaceSessionScope } from '../sessions/SessionsSection';
 import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
 import {
@@ -19,6 +20,7 @@ import './WorkspaceListSection.scss';
 
 interface WorkspaceListSectionProps {
   variant: SessionNavigationScope;
+  scrollRootRef?: React.RefObject<HTMLElement | null>;
 }
 
 type WorkspaceDragPosition = 'before' | 'after';
@@ -40,7 +42,7 @@ const WORKSPACE_DROP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
  * never joins the workspace order (see `pinnedGroups`).
  */
 
-const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) => {
+const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, scrollRootRef }) => {
   const { t } = useI18n('common');
   const {
     openedWorkspacesList,
@@ -60,6 +62,11 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
     activeTab?.contentId ? state.resources[activeTab.contentId]?.scope : undefined
   ));
   const surfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
+  const collapseAllRequestId = useWorkspaceSessionViewStore(state => state.collapseAllRequestId);
+  const [projectDisclosure, setProjectDisclosure] = useState<{
+    requestId: number;
+    values: Record<string, boolean>;
+  }>({ requestId: collapseAllRequestId, values: {} });
 
   // Refs for values that must be read inside event handlers without stale closures
   const draggedWorkspaceIdRef = useRef<string | null>(null);
@@ -277,6 +284,9 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
    */
   const renderGroupRow = (group: WorkspaceBackedSessionGroup, pinned: boolean) => {
     const workspace = group.workspace;
+    const disclosureKey = JSON.stringify([surfaceId, workspace.id]);
+    const sessionsCollapsed = (projectDisclosure.requestId === collapseAllRequestId
+      ? projectDisclosure.values[disclosureKey] : undefined) ?? (collapseAllRequestId > 0);
     const isActive = isWorkspaceBackedSessionGroupActive(workspace, activeWorkspace);
     const isSelected = isWorkspaceBackedSessionGroupSelected(workspace, {
       activeTab, contentScope, surfaceId, activeWorkspaceId,
@@ -317,6 +327,16 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
           isDragging={draggedWorkspaceId === workspace.id}
           onDragStart={draggable ? handleDragStart(workspace.id) : undefined}
           onDragEnd={draggable ? handleDragEnd : undefined}
+          sessionsCollapsed={group.kind === 'project' ? sessionsCollapsed : undefined}
+          onSessionsCollapsedChange={group.kind === 'project' ? collapsed => {
+            setProjectDisclosure(current => ({
+              requestId: collapseAllRequestId,
+              values: {
+                ...(current.requestId === collapseAllRequestId ? current.values : {}),
+                [disclosureKey]: collapsed,
+              },
+            }));
+          } : undefined}
         />
         {dropTarget?.workspaceId === workspace.id ? (
           <div data-openbitfun-component="workspace-list-section" data-openbitfun-part="dropLine" className="openbitfun-nav-panel__workspace-drop-line" aria-hidden="true" />
@@ -344,18 +364,22 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
       ) : (
         <>
           {pinnedGroups.map(group => renderGroupRow(group, true))}
-          {visibleReorderableGroups.map(group => renderGroupRow(group, false))}
+          {(reorderableGroups.length > 0 || workspaceScopes.length > 0) && (
+            <SessionViewTransition grouping={grouping} surfaceId={surfaceId} scrollRootRef={scrollRootRef}>
+              {visibleReorderableGroups.map(group => renderGroupRow(group, false))}
+              {grouping === 'all' && workspaceScopes.length > 0 && (
+                <div className="openbitfun-nav-panel__workspace-all-sessions" data-testid="nav-workspace-all-sessions">
+                  <SessionsSection
+                    workspaceScopes={workspaceScopes}
+                    isVisible
+                    layout="flat"
+                    useWorkspaceViewPreferences
+                  />
+                </div>
+              )}
+            </SessionViewTransition>
+          )}
         </>
-      )}
-      {grouping === 'all' && workspaceScopes.length > 0 && (
-        <div className="openbitfun-nav-panel__workspace-all-sessions" data-testid="nav-workspace-all-sessions">
-          <SessionsSection
-            workspaceScopes={workspaceScopes}
-            isVisible
-            layout="flat"
-            useWorkspaceViewPreferences
-          />
-        </div>
       )}
     </div>
   );

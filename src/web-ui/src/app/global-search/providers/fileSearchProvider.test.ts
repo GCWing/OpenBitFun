@@ -33,6 +33,7 @@ function request(workspaces: WorkspaceInfo[]): GlobalSearchRequest {
     currentWorkspace: workspaces[0] ?? null,
     limitPerGroup: 20,
     tCommon: (key, options) => `${key}:${String(options?.workspace ?? '')}`,
+    tCapabilities: key => key,
     tSettings: key => key,
   };
 }

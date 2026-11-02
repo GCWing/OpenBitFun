@@ -8,7 +8,7 @@ export function CapsulePreview({ state = "default" }: { state?: string }) {
   const disabled = state === "disabled";
   return <Stack direction="horizontal" align="center" gap="3">
     {(["xs", "sm"] as const).filter(size => !removed.includes(size)).map(size => (
-      <Capsule key={size} size={size} data-openbitfun-preview-state={state} action={(
+      <Capsule key={size} size={size} actionPlacement={size === "xs" ? "reserved" : "overlay"} data-openbitfun-preview-state={state} action={(
         <Tooltip content={t("components.preview.close")} trigger="hover-focus">
           <IconButton aria-label={t("components.preview.close")} icon={<Icon name="xmark" />}
             disabled={disabled} onClick={() => setRemoved(current => [...current, size])} />

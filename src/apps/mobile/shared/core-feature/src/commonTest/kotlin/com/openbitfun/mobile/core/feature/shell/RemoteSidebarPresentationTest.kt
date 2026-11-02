@@ -16,6 +16,17 @@ import kotlin.test.assertTrue
 
 class RemoteSidebarPresentationTest {
     @Test
+    fun assistantKindReachesNativeCreationControls() {
+        val ready = workspaceReady(selected("/repo", "Project"), listOf(
+            recent("/repo", "Project"), recent("/assistant", "Assistant").copy(kind = "assistant"),
+        ))
+        val rows = RemoteSidebarPresentation.workspacesForSessions(ready, emptyList())
+        assertEquals("/assistant", rows.first().path)
+        assertEquals("assistant", rows.first().kind)
+        assertEquals("git", rows.last().kind)
+    }
+
+    @Test
     fun selectionDoesNotReorderOrRenameHostCatalog() {
         val rows = RemoteSidebarPresentation.workspaces(
             workspaceState = workspaceReady(

@@ -64,6 +64,7 @@ and local implementation-process notes out of Git.
 ```bash
 # Desktop (recommended for daily development)
 pnpm run desktop:dev                # full hot-reload: Vite HMR + Rust auto-rebuild & restart
+pnpm run desktop:dev -- --isolated-data # opt into checkout-local test data
 pnpm run prepare:dsh-profile        # optional: compile the DeepSeek Harness bridge for local sessions
 
 # Desktop (lightweight preview, no Rust auto-rebuild)
@@ -77,6 +78,12 @@ pnpm run e2e:test
 ```
 
 > **`desktop:dev` vs `desktop:preview:debug`**: `desktop:dev` runs `tauri dev`, which provides **full hot-reload** — frontend changes apply instantly via Vite HMR, and Rust/backend changes trigger an incremental rebuild followed by an automatic app restart. This is the recommended workflow for active development. `desktop:preview:debug` launches a pre-built debug binary alongside a Vite dev server; frontend edits still get HMR, but **Rust-side changes are not auto-rebuilt** — you must stop and re-run the command (or use `--force-rebuild`). Use `desktop:preview:debug` when you only need to iterate on frontend code or want a faster cold-start without waiting for `tauri dev` initialization.
+
+Both launchers use the installed app's data by default, including existing model
+settings, workspaces, and sessions. Use `--isolated-data` for persistent test data
+under the current checkout's `.openbitfun/desktop-dev/` directory. Explicit
+storage environment overrides still take precedence; `--shared-data` remains a
+compatible way to request the default mode.
 
 > For the full script list, see [`package.json`](package.json). For agent-specific commands, verification, and architecture rules, see [`AGENTS.md`](AGENTS.md).
 

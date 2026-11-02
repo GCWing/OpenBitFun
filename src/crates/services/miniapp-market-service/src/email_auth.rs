@@ -327,7 +327,7 @@ impl AuthService {
             .await
             .map_err(MarketError::internal)?;
         // INSERT is the first statement: serialize competing requests before quota evaluation.
-        let inserted = sqlx::query("INSERT INTO email_challenges(id, ticket_hash, email, code_hash, created_at, expires_at) SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM email_challenges WHERE email = ? AND created_at > ?) AND (SELECT COUNT(*) FROM email_challenges WHERE email = ? AND created_at > ?) < 20 AND (SELECT COUNT(*) FROM email_challenges WHERE created_at > ?) < 300")
+        let inserted = sqlx::query("INSERT INTO email_challenges(id, ticket_hash, email, code_hash, created_at, expires_at) SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM email_challenges WHERE email = ? AND created_at > ?) < 2 AND (SELECT COUNT(*) FROM email_challenges WHERE email = ? AND created_at > ?) < 20 AND (SELECT COUNT(*) FROM email_challenges WHERE created_at > ?) < 300")
             .bind(&id).bind(token_hash(&request.ticket)).bind(&email).bind(code_digest(&self.config.session_secret, &id, &code)).bind(now).bind(now + 600)
             .bind(&email).bind(now - 60).bind(&email).bind(now - 86400).bind(now - 60).execute(&mut *tx).await.map_err(MarketError::internal)?;
         if inserted.rows_affected() != 1 {
@@ -433,9 +433,10 @@ impl AuthService {
                 return_to,
                 ..
             } => (session_token, return_to),
-            CompletedOAuth::Desktop { session_token, .. } => {
-                (session_token, "https://auth.openbitfun.com/complete".into())
-            }
+            CompletedOAuth::Desktop { session_token, .. } => (
+                session_token,
+                format!("{}/complete", self.config.auth_base_url()),
+            ),
         };
         let grant = random_token(32);
         let now = Utc::now().timestamp();
@@ -489,7 +490,9 @@ mod tests {
             database_path: dir.path().join("db"),
             artifact_dir: dir.path().join("artifacts"),
             web_dir: dir.path().into(),
-            github_callback_url: None,
+            github_callback_url: Some(
+                "https://auth.openbitfun.com/api/v1/auth/github/callback".into(),
+            ),
             github_client_id: Some("id".into()),
             github_client_secret: Some("secret".into()),
             session_secret: "test-only-session-secret-at-least-24".into(),
@@ -765,21 +768,24 @@ mod tests {
         let (_dir, service) = setup().await;
         let a = service.start_web_login("/miniapp/").await.unwrap();
         let b = service.start_web_login("/skin/").await.unwrap();
+        let c = service.start_web_login("/miniapp/").await.unwrap();
         let send = |ticket: &str| EmailSendRequest {
             ticket: ticket.into(),
             email: "ALICE@example.com".into(),
             locale: None,
         };
-        let (first, second) = tokio::join!(
+        let (first, second, third) = tokio::join!(
             service.prepare_email_code(send(&a)),
             service.prepare_email_code(send(&b)),
+            service.prepare_email_code(send(&c)),
         );
-        assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+        let results = [first, second, third];
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 2);
         assert_eq!(
-            first.err().or(second.err()).unwrap().code,
+            results.into_iter().find_map(Result::err).unwrap().code,
             "email_rate_limit"
         );
-        for _ in 1..20 {
+        for _ in 2..20 {
             sqlx::query("UPDATE email_challenges SET created_at = created_at - 61")
                 .execute(service.db.pool())
                 .await
@@ -805,6 +811,35 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(count, 20);
+    }
+
+    #[tokio::test]
+    async fn email_send_quota_reopens_one_slot_when_oldest_send_expires() {
+        let (_dir, service) = setup().await;
+        let a = service.start_web_login("/miniapp/").await.unwrap();
+        let b = service.start_web_login("/skin/").await.unwrap();
+        let (oldest, _) = code(&service, &a, "alice@example.com").await;
+        code(&service, &b, "ALICE@example.com").await;
+        sqlx::query("UPDATE email_challenges SET created_at = created_at - 61 WHERE id = ?")
+            .bind(oldest)
+            .execute(service.db.pool())
+            .await
+            .unwrap();
+        let c = service.start_web_login("/miniapp/").await.unwrap();
+        code(&service, &c, "alice@example.com").await;
+        let d = service.start_web_login("/miniapp/").await.unwrap();
+        assert_eq!(
+            service
+                .prepare_email_code(EmailSendRequest {
+                    ticket: d,
+                    email: "Alice@example.com".into(),
+                    locale: None,
+                })
+                .await
+                .unwrap_err()
+                .code,
+            "email_rate_limit"
+        );
     }
 
     #[tokio::test]
@@ -862,6 +897,8 @@ mod tests {
             Database::open(&dir.path().join("db")).await.unwrap(),
         )
         .unwrap();
+        let b = reopened.start_web_login("/skin/").await.unwrap();
+        self::code(&reopened, &b, "ALICE@example.com").await;
         assert_eq!(
             reopened
                 .prepare_email_code(EmailSendRequest {
@@ -894,10 +931,7 @@ mod tests {
             service.verify_email_code(verify(&ticket, &id, &code))
         );
         assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
-        sqlx::query("UPDATE email_challenges SET created_at = created_at - 61")
-            .execute(service.db.pool())
-            .await
-            .unwrap();
+        // A second device can sign in immediately after the first consumes its code.
         let ticket = service.start_web_login("/miniapp/").await.unwrap();
         let (id, code) = self::code(&service, &ticket, "Alice@example.com").await;
         service

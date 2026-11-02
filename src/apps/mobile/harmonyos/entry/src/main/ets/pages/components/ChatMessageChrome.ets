@@ -1,3 +1,4 @@
+import { TimeFormat } from '../../services/TimeFormat';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { MessageCopyScope } from '../actions/ConversationIntent';
@@ -155,6 +156,7 @@ export struct ChatUserMessageBubble {
           .borderRadius(MobileDesignGeometry.messageBubbleRadius)
           .alignItems(HorizontalAlign.Start)
         }
+        ChatMessageTimestamp({ timestamp: this.item.timestamp || '' })
         if (this.item.status === 'failed' && this.showRetryAction) {
           ChatMessageRetryAction({ retryText: this.item.text, onRetry: this.onRetryMessage })
         }
@@ -347,5 +349,19 @@ export struct AssistantMessageCopyAction {
 
   private payloadFor(scope: MessageCopyScope): string {
     return scope === MessageCopyScope.Plain ? MarkdownParser.formatInlineText(this.source) : this.source;
+  }
+}
+
+@ComponentV2
+export struct ChatMessageTimestamp {
+  @Param timestamp: string = '';
+
+  build() {
+    if (TimeFormat.message(this.timestamp).length > 0) {
+      Text(TimeFormat.message(this.timestamp))
+        .fontSize(MobileDesignTypography.labelSmall.size)
+        .fontColor(MUTED)
+        .id('chat-message-timestamp')
+    }
   }
 }

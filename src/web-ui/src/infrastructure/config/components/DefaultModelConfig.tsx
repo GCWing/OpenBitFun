@@ -16,15 +16,17 @@ import {
   isSelectableModelForCapability,
 } from '../services/modelCategory';
 import './DefaultModelConfig.scss';
+import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 
 const log = createLogger('DefaultModelConfig');
 
 const normalizeSelectValue = (value: string | number | (string | number)[]): string | number =>
   Array.isArray(value) ? (value[0] ?? '') : value;
 
-type DefaultModelSlot = 'primary' | 'fast' | 'image_understanding' | 'speech_recognition';
+type DefaultModelSlot = 'primary' | 'fast' | 'economy' | 'image_understanding' | 'speech_recognition';
 
 interface DefaultModelConfigProps {
+  imageGenerationSlot?: React.ReactNode;
   compact?: boolean;
   models: AIModelConfig[];
   defaultModels: DefaultModelsConfig;
@@ -35,6 +37,7 @@ interface DefaultModelConfigProps {
 
 export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
   compact = false,
+  imageGenerationSlot,
   models,
   defaultModels,
   loading,
@@ -80,6 +83,8 @@ export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
         return t('core.primary.label');
       case 'fast':
         return t('core.fast.label');
+      case 'economy':
+        return t('core.economy.label');
       case 'image_understanding':
         return t('optional.capabilities.image_understanding.label');
       case 'speech_recognition':
@@ -96,6 +101,11 @@ export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
     const scope = getActiveSurfaceScope();
     const modelIdStr = modelId ? String(modelId) : null;
     try {
+      if (slot === 'economy') {
+        const support = await agentAPI.getModelRoutingStatus();
+        if (!scope.isCurrent()) return;
+        if (support.apiVersion !== 1) throw new Error('Model routing is unsupported by this host');
+      }
       const updatedDefaults = await configManager.updateConfig<DefaultModelsConfig>(
         'ai.default_models',
         current => ({ ...current, [slot]: modelIdStr }),
@@ -180,6 +190,11 @@ export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
         />
       </ConfigPageRow>
 
+      <ConfigPageRow label={renderSlotLabel(t('core.economy.label'), t('core.economy.description'))} multiline={compact} align="center">
+        <Combobox size="sm" aria-label={t('core.economy.label')} value={defaultModels.economy || ''}
+          onValueChange={value => handleDefaultModelChange('economy', normalizeSelectValue(value))} disabled={controlsDisabled}
+          options={[{ label: t('core.economy.notSet'), value: '' }, ...enabledModels.map(buildModelOption)]} />
+      </ConfigPageRow>
       <ConfigPageRow
         label={renderSlotLabel(
           t('optional.capabilities.image_understanding.label'),
@@ -203,6 +218,8 @@ export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
           size="sm"
         />
       </ConfigPageRow>
+
+      {imageGenerationSlot}
 
       <ConfigPageRow
         label={renderSlotLabel(

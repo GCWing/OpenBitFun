@@ -36,10 +36,10 @@ use tauri::{AppHandle, Emitter, State};
 #[tauri::command]
 pub(crate) async fn miniapp_presentation(
     app: AppHandle,
-    window: tauri::WebviewWindow,
+    webview: tauri::Webview,
     request: crate::miniapp_desktop::PresentationRequest,
 ) -> Result<Value, String> {
-    crate::miniapp_desktop::miniapp_presentation(app, window, request).await
+    crate::miniapp_desktop::miniapp_presentation(app, webview, request).await
 }
 
 #[tauri::command]

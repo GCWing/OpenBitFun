@@ -363,15 +363,22 @@ pub(super) async fn refresh_reference(
     {
         Ok(document) => document,
         Err(error) => {
+            let unsupported = entry.ecosystem_id == "deepseek-harness"
+                && openbitfun_dsh_adapter::session::is_unsupported_error(&error);
+            let source_status = if unsupported {
+                "unsupported"
+            } else {
+                "unavailable"
+            };
             update_index(root, |index| {
                 if let Some(entry) = index.entries.get_mut(&id).filter(|entry| !entry.dismissed) {
                     let custom = entry
                         .metadata
                         .custom_metadata
                         .get_or_insert_with(|| json!({}));
-                    let changed = custom["externalSourceStatus"] != "unavailable"
+                    let changed = custom["externalSourceStatus"] != source_status
                         || custom["externalSourceError"] != error;
-                    custom["externalSourceStatus"] = json!("unavailable");
+                    custom["externalSourceStatus"] = json!(source_status);
                     custom["externalSourceError"] = json!(error);
                     ((), changed)
                 } else {
@@ -385,10 +392,17 @@ pub(super) async fn refresh_reference(
             if cache_unavailable_legacy_history(root, &entry).await? {
                 return Ok(None);
             }
-            return Err(index_error(format!(
-                "The original {} history is unavailable. Restore the source and retry. {error}",
-                entry.ecosystem_id
-            )));
+            return Err(index_error(if unsupported {
+                format!(
+                    "The original {} history uses an unsupported format. Update OpenBitFun and retry. {error}",
+                    entry.ecosystem_id
+                )
+            } else {
+                format!(
+                    "The original {} history is unavailable. Restore the source and retry. {error}",
+                    entry.ecosystem_id
+                )
+            }));
         }
     };
     if document.candidate.ecosystem_id != entry.ecosystem_id

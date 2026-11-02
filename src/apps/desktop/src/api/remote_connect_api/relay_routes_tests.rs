@@ -463,3 +463,223 @@ async fn dual_relay_rpc_persistence_and_teardown_are_independent() {
         .is_none());
     official.stop().await;
 }
+
+#[tokio::test]
+async fn html_preview_streams_assets_over_encrypted_peer_rpc() {
+    peer_preview_fixture(false).await;
+}
+
+#[tokio::test]
+#[ignore = "Performance experiment: encrypted loopback Relay with 40 ms per resource RPC"]
+async fn html_preview_encrypted_peer_loading_benchmark() {
+    peer_preview_fixture(true).await;
+}
+
+async fn peer_preview_fixture(benchmark: bool) {
+    use openbitfun_product_domains::html_preview::{
+        HtmlPreviewResourceReply, HtmlPreviewResourceRequest, PREVIEW_CHUNK_BYTES,
+    };
+    use openbitfun_services_integrations::remote_connect::{
+        file_projection::SessionFileTarget,
+        html_preview::HtmlPreviewSource,
+        relay_client::{RelayClient, RelayEvent},
+        RemoteCommand, RemoteResponse,
+    };
+    let _guard = sync_state_tests::ACCOUNT_CONTEXT_TEST_LOCK.lock().await;
+    let host = FixtureHost::new("/preview-test").await;
+    let controller = host.credential("preview-controller", [11; 32]).await;
+    let target = host.credential("preview-peer", [12; 32]).await;
+    host.start(host.port, None).await.unwrap();
+    let previous_context = get_account_context()
+        .write()
+        .await
+        .replace(AccountContextState {
+            session: controller,
+            relay_url: host.url(),
+        });
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    std::fs::create_dir_all(root.join("site/dist/assets")).unwrap();
+    std::fs::write(
+        root.join("site/dist/index.html"),
+        "<script src='/assets/large.js'></script>",
+    )
+    .unwrap();
+    let bytes = vec![
+        b'x';
+        if benchmark {
+            2 * 1024 * 1024
+        } else {
+            PREVIEW_CHUNK_BYTES * 2 + 19
+        }
+    ];
+    std::fs::write(root.join("site/dist/assets/large.js"), &bytes).unwrap();
+    let entry = root
+        .join("site/dist/index.html")
+        .to_string_lossy()
+        .into_owned();
+    let files = vec![
+        (
+            "site/dist/index.html".to_string(),
+            std::fs::read(root.join("site/dist/index.html")).unwrap(),
+        ),
+        (
+            "site/dist/assets/app.css".to_string(),
+            vec![b'c'; 96 * 1024],
+        ),
+        ("site/dist/assets/large.js".to_string(), bytes.clone()),
+        (
+            "site/dist/assets/image.png".to_string(),
+            vec![53; 512 * 1024],
+        ),
+        (
+            "site/dist/assets/font.woff2".to_string(),
+            vec![19; 128 * 1024],
+        ),
+    ];
+    for (path, content) in &files {
+        std::fs::write(root.join(path), content).unwrap();
+    }
+    let source = HtmlPreviewSource::new(
+        SessionFileTarget {
+            fs: Arc::new(openbitfun_services_core::workspace::LocalWorkspaceFs),
+            root: root.to_string_lossy().into_owned(),
+            path: entry.clone(),
+            remote: false,
+        },
+        "fixture-workspace",
+    )
+    .await
+    .unwrap();
+    let (client, mut events) = RelayClient::new();
+    let client = Arc::new(client);
+    client.connect(&host.url()).await.unwrap();
+    client
+        .connect_authenticated(&target.token, "preview-peer")
+        .await
+        .unwrap();
+    let serving_client = client.clone();
+    let relay_url = host.url();
+    let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let serving_requests = requests.clone();
+    let source = Arc::new(source);
+    let target = Arc::new(target);
+    let serving = tokio::spawn(async move {
+        let mut handlers = tokio::task::JoinSet::new();
+        while let Some(event) = events.recv().await {
+            let RelayEvent::DeviceMessageReceived {
+                source_device_id,
+                correlation_id,
+                encrypted_data,
+                nonce,
+            } = event
+            else {
+                continue;
+            };
+            if correlation_id.is_empty() {
+                continue;
+            }
+            while let Some(result) = handlers.try_join_next() {
+                result.unwrap();
+            }
+            let target = target.clone();
+            let source = source.clone();
+            let relay_url = relay_url.clone();
+            let serving_client = serving_client.clone();
+            let serving_requests = serving_requests.clone();
+            handlers.spawn(async move {
+                let plaintext = target
+                    .decrypt_from_peer(&relay_url, &source_device_id, &encrypted_data, &nonce)
+                    .await
+                    .unwrap();
+                let RemoteCommand::HostInvoke { command, args } =
+                    serde_json::from_str(&plaintext).unwrap()
+                else {
+                    panic!("unexpected command")
+                };
+                let value = match command.as_str() {
+                    "peer_mode_ping" => {
+                        serde_json::json!({"host_type":"cli", "capabilities":{"workspace_html_preview_v1":true}})
+                    }
+                    "html_preview_read_resource" => {
+                        let request: HtmlPreviewResourceRequest =
+                            serde_json::from_value(args["request"].clone()).unwrap();
+                        assert_eq!(request.workspace_id, "fixture-workspace");
+                        if benchmark { tokio::time::sleep(std::time::Duration::from_millis(40)).await; }
+                        serving_requests.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        serde_json::to_value(HtmlPreviewResourceReply::from(
+                            source.read(&request).await,
+                        ))
+                        .unwrap()
+                    }
+                    _ => panic!("unexpected host invoke {command}"),
+                };
+                let response = RemoteResponse::HostInvokeResult {
+                    ok: true,
+                    value: Some(value),
+                    error: None,
+                };
+                let (data, nonce) = target
+                    .encrypt_for_peer(
+                        &relay_url,
+                        &source_device_id,
+                        &serde_json::to_string(&response).unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                serving_client
+                    .send_device_message(&source_device_id, &correlation_id, &data, &nonce)
+                    .await
+                    .unwrap();
+            });
+        }
+    });
+    let request = HtmlPreviewResourceRequest {
+        workspace_id: "fixture-workspace".into(),
+        file_path: entry,
+        resource_path: None,
+        metadata_only: true,
+        offset: 0,
+        expected_source: None,
+        expected_revision: None,
+    };
+    if benchmark {
+        crate::api::html_preview_api::tests::benchmark_encrypted_peer_gateway(
+            "preview-peer",
+            request,
+            files,
+        )
+        .await;
+    } else {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            crate::api::html_preview_api::tests::verify_encrypted_peer_gateway(
+                "preview-peer",
+                request.clone(),
+                &bytes,
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            requests.load(std::sync::atomic::Ordering::Relaxed),
+            4,
+            "entry metadata and three encrypted chunks"
+        );
+        tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            crate::api::html_preview_api::tests::verify_encrypted_peer_site_routes(
+                "preview-peer",
+                request,
+                &files[0].1,
+                &files[3].1,
+            ),
+        )
+        .await
+        .unwrap();
+    }
+    client.disconnect().await;
+    serving.abort();
+    host.stop().await;
+    *get_account_context().write().await = previous_context;
+}

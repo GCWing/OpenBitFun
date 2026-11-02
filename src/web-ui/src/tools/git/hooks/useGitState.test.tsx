@@ -95,6 +95,17 @@ describe('useGitState visibility refresh', () => {
     expect(gitStateManagerMock.subscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('contains rejected automatic refreshes instead of creating unhandled rejections', async () => {
+    gitStateManagerMock.refresh.mockRejectedValueOnce(new Error('workspace is unavailable'));
+
+    await act(async () => {
+      root.render(<GitStateHarness isActive />);
+      await Promise.resolve();
+    });
+
+    expect(gitStateManagerMock.refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels and replays active automatic refreshes when mount refresh is temporarily suppressed', async () => {
     await act(async () => {
       root.render(<GitStateHarness isActive refreshOnMount />);

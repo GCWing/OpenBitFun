@@ -750,7 +750,7 @@
   "layout": {
     "$type": "dimension",
     "searchDialog": {
-      "width": { "$value": "{overlay.dialog.maxInlineSizeXlarge}" },
+      "width": { "$value": "744px" },
       "height": { "$value": "460px" },
       "padding": { "$value": "{space.5}" },
       "queryHeight": { "$value": "30px" },
@@ -995,6 +995,10 @@
         "$value": "blur(10px)"
       },
       "footerActionMinWidth": { "$value": "100px" },
+      "panelBlockSize": {
+        "$description": "Fixed Panel Dialog height before viewport clamping; width and content measure reuse the existing xlarge and large dialog scales.",
+        "$value": "640px"
+      },
       "maxInlineSizeSmall": { "$value": "420px" },
       "maxInlineSizeMedium": { "$value": "560px" },
       "maxInlineSizeLarge": { "$value": "600px" },

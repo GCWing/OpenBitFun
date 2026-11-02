@@ -1,4 +1,4 @@
-import { snapshotAPI } from '../../../infrastructure/api';
+import { snapshotAPI } from '../../../infrastructure/api/service-api/SnapshotAPI';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('SnapshotSystemService');

@@ -9,6 +9,11 @@ The selected Desktop or CLI owns execution, persisted records, workspaces, PTYs,
 and blocking interactions. A controller owns presentation and drafts. Its lifetime
 never determines whether an accepted turn continues running.
 
+An unmaterialized draft (`editing`/`creating`) has only a reserved ID the host has
+never seen, so it opens no subscription and reads no history; a host rejection
+there would falsely lock an empty session as a failed restore. The subscription
+starts when the host accepts the draft.
+
 `RelaySessionHistory` owns one subscription per visible surface/session.
 `SessionRecordReplica` applies both replayed pages and live canonical records
 using stable IDs, revisions and tombstones; every page comes from the online
@@ -18,6 +23,20 @@ open or explicit reader request can warm one adjacent page while the document is
 visible and the shared resource budget permits it. This never recursively drains
 the transcript. Hiding a view pauses optional prefetch only; live records,
 reconnect and interaction-mailbox delivery keep their subscriptions.
+
+The host sends each record of a page as its own event. Records reduce into the
+replica as they arrive; rendering the changed turns is coalesced to one store
+update per frame, and a page in flight renders as one batch before its ready
+event. Rendering per record is quadratic in the items of a long turn and freezes the UI thread. Live
+pages have no ready event, so the frame timer publishes them; it is a timer
+rather than an animation frame so hidden windows keep applying records. A running
+turn reaching a terminal status, a visibility change, and any direct turn, round
+or tool event flush first, so those facts never apply over a stale render. Any
+new path that presents a page as ready, including a synthetic one, must flush
+first and must not report `hasMore: false` without proof.
+
+A turn stays pending until it was converted: the replica will not report a held
+revision again.
 Receive cursors advance only after applying
 records, never from a send acknowledgement. Transport reconnect resumes that same
 subscription. Local Runtime projection machinery is not a second Relay content
@@ -159,6 +178,9 @@ listener alone recovers an interaction emitted before attachment.
     commands are high priority within each submission burst and use the shared
     transport admission policy. Both local and SSH-backed PTY cursors on B must
     notify A without placing raw output into an unbounded event queue.
+    A host that announces cursors instead of fanning out `terminal_event`
+    advertises `terminal_cursor_replay_v1`; a CLI host that predates the key is
+    treated as advertising it, and the choice is re-made once capabilities resolve.
     Remote `SIGINT` / `SIGTSTP` map to PTY control bytes instead of silently
     succeeding without affecting the process.
 
@@ -221,7 +243,12 @@ listener alone recovers an interaction emitted before attachment.
     to the controller. Definitions that need a native provider or a live UI
     additionally declare `product_control_native_v1` or
     `product_control_presentation_v1`; the CLI host advertises neither and
-    returns a typed unsupported result. `mark_openbitfun_control_surface_ready`,
+    returns a typed unsupported result. Remote Connect management instead uses the
+    narrow `remote_connect_control_v1` capability, advertised by both Desktop and
+    CLI; its operations execute on the selected host and fail before RPC on older
+    peers. Direct Peer RPC refuses Relay start/stop because it holds that route's
+    response lease; submit these operations through a Claw turn instead.
+    `mark_openbitfun_control_surface_ready`,
     `mark_openbitfun_control_surface_unready`, and `report_openbitfun_control_result`
     describe or acknowledge the controller window's live Web UI and therefore
     remain `LOCAL_ONLY` in the frontend, Desktop host, and CLI host lists. A
@@ -236,6 +263,13 @@ listener alone recovers an interaction emitted before attachment.
     `peer_mode_ping` advertises `miniapp_agent_context_files_v1`; otherwise the
     controller fails before RPC. Never omit the files, fall back to a local
     Agent, or run the prompt without its declared context.
+
+    Image messages additionally require `miniapp_agent_images_v1`. Check before
+    delivering Hi input to a peer-supplied MiniApp SDK, since an older SDK could
+    discard images before calling the Agent. The transport also gates non-empty
+    `imageContexts` on `miniapp_agent_run`. Resolve user-selected images to inline
+    pixels on their owning host; MiniApps cannot provide arbitrary image paths.
+    The receiving Runtime owns attachment persistence and transcript replay.
 
 18. **WSL belongs to the selected Windows host.** `wsl_workspaces_v1` gates
     `ssh_list_wsl_distributions` and SSH profile requests with a `wsl` target
@@ -252,3 +286,31 @@ listener alone recovers an interaction emitted before attachment.
     replaces the capability, including when a host restarts on an older build.
     Once a copy is acknowledged, a metadata-read failure reports the created
     copy and asks for a list refresh; it must not replay the copy mutation.
+
+20. **Chat PR/MR links require a supported peer review platform.**
+    `review_platform_v1` advertises the workspace-backed PR viewer. Older
+    Desktop hosts already implement it; CLI and unknown/unprobed hosts use
+    the controller's system URL opener. Consume that click so the ordinary
+    Markdown path cannot create an integrated browser or an unsupported PR
+    panel. This only opens the clicked URL: it never queries controller-local
+    repositories or credentials on behalf of a peer. Preserve URL fragments
+    and queries, and re-evaluate support after capability or surface changes.
+    The session overview and tool-card panel action use the same gate; a
+    restored unsupported panel keeps its URL available in the system browser
+    without querying the host. Overview requests and panel state belong to
+    the surface activation even when two devices share a workspace ID/path.
+
+### Workspace HTML resources
+
+The controller keeps HTML preview HTTP listeners and native browser views local.
+The selected peer supplies workspace resources over the existing encrypted
+HostInvoke channel, negotiated with `workspace_html_preview_v1` on Desktop and
+CLI. Requests carry the peer's workspace ID, entry path, source binding, revision
+and chunk offset; controller paths are never reused on the peer. Releasing a
+preview cancels in-flight HTTP reads. Device activation changes release old
+listeners and ignore late creates. Older peers must be upgraded to supply these
+resources; there is no local filesystem fallback.
+
+CLI file browsing handles both current `explorer_get_*` commands and the legacy
+`get_directory_children*` / `get_file_tree` names through the same workspace-aware
+filesystem service. Registry closure tests keep the advertised handlers in sync.

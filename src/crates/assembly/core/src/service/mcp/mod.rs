@@ -12,6 +12,7 @@
 pub mod adapter;
 pub mod auth;
 pub mod config;
+pub mod control;
 pub mod protocol;
 pub mod server;
 mod tool_info;
@@ -46,6 +47,7 @@ pub struct MCPService {
     server_manager: Arc<MCPServerManager>,
     config_service: Arc<MCPConfigService>,
     context_provider: Arc<MCPContextProvider>,
+    configuration_mutation: tokio::sync::Mutex<()>,
 }
 
 impl MCPService {
@@ -69,6 +71,7 @@ impl MCPService {
             server_manager,
             config_service: mcp_config_service,
             context_provider,
+            configuration_mutation: tokio::sync::Mutex::new(()),
         })
     }
 

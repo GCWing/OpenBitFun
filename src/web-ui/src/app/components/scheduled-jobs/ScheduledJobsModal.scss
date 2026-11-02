@@ -1,3 +1,7 @@
 .scheduled-jobs-modal__body {
   padding: var(--openbitfun-space-4);
 }
+
+.scheduled-jobs-modal__fixed {
+  block-size: min(40rem, calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
+}

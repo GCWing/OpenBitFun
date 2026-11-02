@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -87,6 +88,18 @@ internal fun ChatMessageBubble(
                 ),
             )
             MessageImageGallery(images = row.images, userStyle = false)
+        }
+
+        row.timestampMs?.let { timestamp ->
+            val locale = LocalConfiguration.current.locales[0]
+            Text(
+                java.text.DateFormat.getDateTimeInstance(
+                    java.text.DateFormat.SHORT, java.text.DateFormat.SHORT, locale,
+                ).format(java.util.Date(timestamp)),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("chat-message-timestamp"),
+            )
         }
 
         // Two mutually exclusive footnotes about delivery: nothing has arrived

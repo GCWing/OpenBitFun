@@ -21,7 +21,7 @@ const run = (command, args, env = process.env, onSpawn) => new Promise((resolve,
 });
 
 const nativeTestBinary = async () => process.env.OPENBITFUN_TEST_BINARY || new Promise((resolve, reject) => {
-  const build = spawn('cargo', ['test', '--locked', '-p', 'openbitfun-desktop', ...(orchestration ? ['--features', 'devtools', '--test', 'computer_use_native_roundtrip'] : ['--lib']), '--no-run', '--message-format=json'], {
+  const build = spawn('cargo', ['test', '--locked', '-p', orchestration ? 'openbitfun-desktop' : 'openbitfun-computer-use', ...(orchestration ? ['--features', 'devtools', '--test', 'computer_use_native_roundtrip'] : ['--lib']), '--no-run', '--message-format=json'], {
     cwd: root, stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true,
   });
   let pending = '';
@@ -32,7 +32,7 @@ const nativeTestBinary = async () => process.env.OPENBITFUN_TEST_BINARY || new P
     pending = lines.pop();
     for (const line of lines) {
       const message = JSON.parse(line);
-      if (message.reason === 'compiler-artifact' && message.target.name === (orchestration ? 'computer_use_native_roundtrip' : 'openbitfun_desktop_lib') && message.executable) executable = message.executable;
+      if (message.reason === 'compiler-artifact' && message.target.name === (orchestration ? 'computer_use_native_roundtrip' : 'openbitfun_computer_use') && message.executable) executable = message.executable;
       if (message.reason === 'compiler-message' && message.message.rendered) process.stderr.write(message.message.rendered);
     }
   });

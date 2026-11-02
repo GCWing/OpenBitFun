@@ -17,6 +17,8 @@ import {
 } from '@/tools/file-system';
 import { useExplorerSearch } from '@/tools/file-explorer';
 import { planFileTreeReveal } from '@/tools/file-system/utils/fileTreeReveal';
+import { useFileWatchStatus } from '@/tools/file-system/hooks/useFileWatchStatus';
+import { FileWatchStatusNotice } from '@/tools/file-system/components/FileWatchStatusNotice';
 
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { confirmWarning } from '@/infrastructure/confirm-dialog';
@@ -201,6 +203,14 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
 
   const notification = useNotification();
   const cancelledTransferIdsRef = useRef<Set<string>>(new Set());
+
+  // Watching is a host-side resource, so only a local workspace can report on
+  // it; a remote workspace does its own remote IO and must not show this state.
+  const {
+    status: fileWatchStatus,
+    retrying: fileWatchRetrying,
+    retry: retryFileWatch,
+  } = useFileWatchStatus(Boolean(workspacePath) && !isRemoteCurrentWorkspace);
 
   /**
    * Create a per-transfer onProgress callback that tracks a single transfer
@@ -1064,6 +1074,14 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
         />
       )}
       
+      {fileWatchStatus && !fileWatchStatus.healthy && (
+        <FileWatchStatusNotice
+          status={fileWatchStatus}
+          retrying={fileWatchRetrying}
+          onRetry={() => void retryFileWatch()}
+        />
+      )}
+
       <div className="openbitfun-files-panel__content" data-openbitfun-component="files-panel" data-openbitfun-part="content">
         {workspacePath && viewMode === 'search' && (
           <div className="openbitfun-files-panel__search" data-openbitfun-component="files-panel" data-openbitfun-part="search" data-openbitfun-search-mode={searchMode}>

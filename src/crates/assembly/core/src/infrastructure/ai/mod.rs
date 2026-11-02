@@ -2,6 +2,8 @@
 //!
 //! Provides AI clients and related services
 
+pub(crate) mod account_client_source;
+pub(crate) mod channel_client_source;
 pub mod client_factory;
 pub(crate) mod provider_catalog;
 pub(crate) mod reasoning_catalog;

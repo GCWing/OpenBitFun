@@ -25,7 +25,7 @@ use openbitfun_services_integrations::miniapp_market::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, Webview};
 use tokio::io::AsyncWriteExt;
 
 const MARKET_UPLOAD_PROGRESS_EVENT: &str = "miniapp-market-upload-progress";
@@ -464,8 +464,12 @@ pub async fn miniapp_market_inspect_package(
 #[tauri::command]
 pub async fn miniapp_market_capture_window(
     app: AppHandle,
-    window: WebviewWindow,
+    webview: Webview,
 ) -> Result<String, String> {
+    let window = webview.window();
+    if webview.label() != window.label() {
+        return Err("Window capture requires a top-level application WebView".into());
+    }
     let position = window
         .outer_position()
         .map_err(|error| format!("Could not read the OpenBitFun window position: {error}"))?;

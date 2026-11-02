@@ -7,7 +7,7 @@ const LEGACY_ECOSYSTEM_COMPATIBILITY_IDS = new Set([
   'tools.integrations',
 ]);
 
-/** Old Settings links now redirect to the owning product surface. */
+/** Old management links additionally focus the discovery control in External import. */
 export function isLegacyEcosystemCompatibilityDestination(value: unknown): boolean {
   if (typeof value === 'string') {
     return LEGACY_ECOSYSTEM_COMPATIBILITY_IDS.has(value);

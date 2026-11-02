@@ -77,6 +77,17 @@ Example usage:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "content": {"type": "string"}
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -199,10 +210,12 @@ Example usage:
                     RequestedFormat::Markdown => "markdown",
                     RequestedFormat::Json => "json",
                 },
-                "content_representation": content_representation,
-                "extractor": extractor,
                 "content": processed_content,
-                "content_length": processed_content.len()
+                "content_length": processed_content.len(),
+                "diagnostics": {
+                    "content_representation": content_representation,
+                    "extractor": extractor
+                }
             }),
             result_for_assistant: Some(processed_content),
             image_attachments: None,

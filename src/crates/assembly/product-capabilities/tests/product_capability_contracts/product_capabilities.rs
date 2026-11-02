@@ -495,6 +495,7 @@ fn product_assembly_plan_exposes_build_feature_groups_explicitly() {
         &[
             ProductFeatureGroup::Basic,
             ProductFeatureGroup::ImageAnalysis,
+            ProductFeatureGroup::ImageGeneration,
             ProductFeatureGroup::AgentControl,
             ProductFeatureGroup::Git,
             ProductFeatureGroup::BrowserWeb,
@@ -511,6 +512,7 @@ fn product_assembly_plan_exposes_build_feature_groups_explicitly() {
         vec![
             "basic",
             "image-analysis",
+            "image-generation",
             "agent-control",
             "git",
             "browser-web",

@@ -50,6 +50,36 @@ the resolved feature audit.
 The warning cleanup can be dropped when the vendored release contains the
 equivalent API and conditional-compilation fixes.
 
+## Unavailable WebKit URLs
+
+`url_from_webview` returns `Error::UrlUnavailable` when `WKWebView.URL` or its
+absolute string is absent. An uncommitted page can have no URL; reading it must
+return an error instead of panicking on the UI thread. Valid URLs retain their
+existing representation. This shared Apple adapter also serves page-load
+callbacks and browser automation URL reads.
+
+On macOS, run the native regression on the main thread:
+
+```sh
+cargo test --manifest-path third_party/wry/Cargo.toml --no-default-features --test wkwebview_url --target-dir "${TMPDIR:-/tmp}/openbitfun-wry-tests"
+```
+
+The test uses a hidden, nonpersistent WebView. It checks an unavailable URL,
+loads `about:blank`, then exercises a failed loopback connection, late state
+observation, intentional stop and explicit navigation recovery. It does not contact a website
+or exercise remote scenarios.
+Remove this URL patch when the vendored dependency returns an error for absent
+native URLs without panicking.
+
+`WryWebView::set_navigation_state_handler` exposes main-frame provisional start,
+completion and failure through the existing navigation delegate. The latest
+outcome is replayed to a late subscriber, and terminal events from a replaced
+navigation do not overwrite its replacement. Desktop uses this callback for its
+browser load state; ordinary page-load callbacks retain their commit/finish
+meaning. WebKit's cancellation error settles the pending navigation without a
+retained page failure; it cannot leave subsequent reads waiting for that request.
+This bridge does not retry or reload failed navigation.
+
 ---
 
 # WebKitGTK file-drop delivery

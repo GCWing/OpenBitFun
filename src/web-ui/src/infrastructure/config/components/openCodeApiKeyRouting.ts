@@ -1,7 +1,19 @@
 import type { RemoteModelInfo, SubscriptionApiOffering } from '@/infrastructure/api/service-api/AIApi';
 
+/** Zen accepts OpenCode's public key for anonymous free-model requests. */
+export function openCodeApiKey(config: { api_key?: string; base_url?: string; auth?: { type: string } }) {
+  return config.api_key?.trim() || (isOpenCodeZenApiKeyConfig(config) ? 'public' : '');
+}
+
+export function isOpenCodeZenApiKeyConfig(config: { base_url?: string; auth?: { type: string } }) {
+  return (!config.auth || config.auth.type === 'api_key')
+    && config.base_url?.replace(/\/+$/, '') === 'https://opencode.ai/zen/v1';
+}
+
 export function isOpenCodeZenOAuth(config: { auth?: { type: string; provider?: string; plan?: string }; base_url?: string }) {
-  return config.auth?.type === 'subscription' && config.auth.provider === 'opencode'
+  // Pools carry no plan; OpenCode Go uses an API key, so a pool is always Zen.
+  return (config.auth?.type === 'subscription' || config.auth?.type === 'subscription_pool')
+    && config.auth.provider === 'opencode'
     && config.auth.plan !== 'go' && config.base_url?.replace(/\/+$/, '') !== 'https://opencode.ai/zen/go/v1';
 }
 

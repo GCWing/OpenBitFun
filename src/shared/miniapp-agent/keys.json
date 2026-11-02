@@ -1,0 +1,13 @@
+{
+  "aliases": {
+    "space": " ", "spacebar": " ", "esc": "Escape", "return": "Enter",
+    "left": "ArrowLeft", "right": "ArrowRight", "up": "ArrowUp", "down": "ArrowDown"
+  },
+  "codes": {
+    " ": "Space", "enter": "Enter", "escape": "Escape", "tab": "Tab",
+    "backspace": "Backspace", "delete": "Delete",
+    "arrowleft": "ArrowLeft", "arrowright": "ArrowRight",
+    "arrowup": "ArrowUp", "arrowdown": "ArrowDown",
+    "shift": "ShiftLeft", "control": "ControlLeft", "alt": "AltLeft", "meta": "MetaLeft"
+  }
+}

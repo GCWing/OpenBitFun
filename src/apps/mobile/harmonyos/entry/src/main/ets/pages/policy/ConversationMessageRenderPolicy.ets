@@ -40,6 +40,24 @@ export class ConversationMessageRenderPolicy {
     return status === 'active' || status === 'failed';
   }
 
+  /**
+   * Copy is available only for a settled assistant answer. Streamed text may
+   * already be non-empty while the turn is still changing.
+   */
+  static canCopyAssistant(
+    item: ConversationUiMessage,
+    isStreaming: boolean,
+    isFinalizing: boolean,
+    sourceTextLength: number
+  ): boolean {
+    if ((item.role || '').toLowerCase() === 'user' || isStreaming || isFinalizing || sourceTextLength <= 0) {
+      return false;
+    }
+    const status = (item.status || '').toLowerCase();
+    return status === '' || status === 'done' || status === 'completed' ||
+      status === 'success' || status === 'sent';
+  }
+
   static hasRenderableItems(items: ConversationUiMessageItem[]): boolean {
     return items.some((entry: ConversationUiMessageItem) => {
       if ((entry.content || '').trim().length > 0 || !!entry.tool) {

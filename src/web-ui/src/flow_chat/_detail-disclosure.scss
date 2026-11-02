@@ -1,0 +1,12 @@
+// Shared disclosure treatment for tool definitions and recorded trajectory data.
+@mixin header-tone($color) {
+  background: color-mix(in srgb, #{$color} 10%, var(--openbitfun-color-surface-scene));
+
+  &:is(:hover, :focus-within) {
+    background: color-mix(in srgb, #{$color} 16%, var(--openbitfun-color-surface-scene));
+  }
+}
+
+@mixin content-inset {
+  padding-inline: var(--openbitfun-layout-disclosure-trigger-padding-inline);
+}

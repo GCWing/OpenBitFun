@@ -1,7 +1,8 @@
+import { formatDuration } from '@/shared/utils/format';
 import React, { useRef, useEffect } from 'react';
 import { subscribeOverlayInteraction, createOverlayPortal, Menu, MenuItem, Icon } from '@openbitfun/ui';
 import { Infinity as InfinityIcon } from 'lucide-react';
-import { ToolDuration, formatDurationPrecise } from '@openbitfun/ui/flow-chat';
+import { ToolDuration } from '@openbitfun/ui/flow-chat';
 import { useTranslation } from 'react-i18next';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
@@ -106,7 +107,7 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
 
   // Completed state: show precise duration when the card is expanded.
   if (!isRunning && completedDurationMs != null && showCompletedDuration) {
-    const durationLabel = formatDurationPrecise(completedDurationMs);
+    const durationLabel = formatDuration(completedDurationMs);
     const completionLabel = completedTooltip || (
       completedStatus === 'success'
         ? t('toolCards.timeout.completedDurationTooltip', {
@@ -130,7 +131,7 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
             })
     );
 
-    return <ToolDuration isRunning={false} showIcon={showIcon} completedDurationMs={completedDurationMs}
+    return <ToolDuration formatDuration={formatDuration} isRunning={false} showIcon={showIcon} completedDurationMs={completedDurationMs}
       completedStatus={completedStatus} completionLabel={completionLabel} />;
   }
 
@@ -140,7 +141,7 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
   const hasTimeout = Boolean(timeoutMs && timeoutMs > 0);
   const canControlTimeout = showControls && hasTimeout && Boolean(subagentSessionId);
   return (
-    <ToolDuration isRunning showIcon={showIcon} elapsedMs={elapsedMs} remainingMs={remainingMs} timeoutMs={timeoutMs}
+    <ToolDuration formatDuration={formatDuration} isRunning showIcon={showIcon} elapsedMs={elapsedMs} remainingMs={remainingMs} timeoutMs={timeoutMs}
       timeoutDisabled={isTimeoutDisabled} open={isPopoverOpen}>
       {canControlTimeout && (
         <div data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="controls" className="timeout-control-wrapper" ref={controlRef}>

@@ -139,6 +139,35 @@ Examples:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "workspace": {"type": "string"},
+                "transcript": {
+                    "type": "object",
+                    "properties": {
+                        "transcript_path": {"type": "string"},
+                        "index_range": {
+                            "type": "object",
+                            "properties": {
+                                "start_line": {"type": "integer"},
+                                "end_line": {"type": "integer"}
+                            },
+                            "required": ["start_line", "end_line"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "required": ["transcript_path", "index_range"],
+                    "additionalProperties": true
+                }
+            },
+            "required": ["success", "workspace", "transcript"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

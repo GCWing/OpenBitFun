@@ -157,7 +157,7 @@ describe('useFlowChatNavigation focus placement', () => {
     document.body.prepend(other);
     const owned = renderItem();
     await dispatchFocusRequest();
-    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element: owned, active: true });
+    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element: owned, active: true, id: expect.any(Symbol) });
     expect(owned.classList.contains('flowchat-flow-item--focused')).toBe(false);
     expect(other.classList.contains('flowchat-flow-item--focused')).toBe(false);
   });
@@ -184,7 +184,7 @@ describe('useFlowChatNavigation focus placement', () => {
     container.append(successor);
     await dispatchFocusRequest();
     expect(thought.classList.contains('flowchat-flow-item--focused')).toBe(false);
-    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element: successor, active: true });
+    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element: successor, active: true, id: expect.any(Symbol) });
     expect(successor.classList.contains('flowchat-flow-item--focused')).toBe(false);
     expect(thought.dataset.thinkingAttachment).toBe('side');
   });
@@ -192,8 +192,10 @@ describe('useFlowChatNavigation focus placement', () => {
   it('releases the passive search-line marker on reader interaction', async () => {
     const element = renderItem();
     await dispatchFocusRequest();
+    const id = focusLine.mock.lastCall?.[0].detail.id;
+    expect(typeof id).toBe('symbol');
     window.dispatchEvent(new Event('wheel'));
-    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element, active: false });
+    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element, active: false, id });
   });
 
   it('delegates exact excerpts to the text navigator and cancels on reader intent', async () => {

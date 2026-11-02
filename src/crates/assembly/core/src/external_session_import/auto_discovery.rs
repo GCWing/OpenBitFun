@@ -4,6 +4,9 @@
 use super::*;
 use crate::service::workspace::{WorkspaceInfo, WorkspaceKind};
 use openbitfun_product_domains::session_import::ExternalSessionCatalog;
+#[cfg(test)]
+use openbitfun_product_domains::session_import::ExternalSessionImportWarning;
+use openbitfun_services_core::session::SessionDiscoveryDiagnostic;
 
 #[derive(Default)]
 struct DiscoveryState {
@@ -18,6 +21,13 @@ struct DiscoveryState {
 pub struct DiscoverySnapshot {
     pub pending: bool,
     pub warnings: Vec<String>,
+    pub diagnostics: Vec<SessionDiscoveryDiagnostic>,
+}
+
+#[derive(Debug, Default)]
+struct DiscoveryResult {
+    warnings: Vec<String>,
+    diagnostics: Vec<SessionDiscoveryDiagnostic>,
 }
 
 type DiscoveryLocks = HashMap<String, Arc<tokio::sync::Mutex<DiscoveryState>>>;
@@ -57,6 +67,7 @@ pub async fn discover_workspace(workspace: &WorkspaceInfo, refresh: bool) -> Dis
             return DiscoverySnapshot {
                 pending: false,
                 warnings: vec!["External session discovery preferences could not be read".into()],
+                diagnostics: Vec::new(),
             };
         }
     };
@@ -69,6 +80,7 @@ pub async fn discover_workspace(workspace: &WorkspaceInfo, refresh: bool) -> Dis
                 warnings: vec![
                     "Automatic external session discovery is unavailable for SSH workspaces".into(),
                 ],
+                diagnostics: Vec::new(),
             }
         };
     }
@@ -98,7 +110,7 @@ async fn schedule_discovery<F, Fut>(
 ) -> DiscoverySnapshot
 where
     F: FnOnce(Arc<AtomicBool>) -> Fut + Send + 'static,
-    Fut: std::future::Future<Output = Vec<String>> + Send + 'static,
+    Fut: std::future::Future<Output = DiscoveryResult> + Send + 'static,
 {
     let lock = DISCOVERY
         .lock()
@@ -128,6 +140,7 @@ where
     state.snapshot = DiscoverySnapshot {
         pending: true,
         warnings: Vec::new(),
+        diagnostics: Vec::new(),
     };
     let worker = state.worker.clone();
     let completion_state = lock.clone();
@@ -138,12 +151,13 @@ where
         if cancelled.load(Ordering::Acquire) {
             return;
         }
-        let warnings = work(cancelled.clone()).await;
+        let result = work(cancelled.clone()).await;
         let mut state = completion_state.lock().await;
         if Arc::ptr_eq(&state.cancelled, &cancelled) && !cancelled.load(Ordering::Acquire) {
             state.snapshot = DiscoverySnapshot {
                 pending: false,
-                warnings,
+                warnings: result.warnings,
+                diagnostics: result.diagnostics,
             };
         }
     });
@@ -165,9 +179,18 @@ pub async fn discover_for_storage_path(storage_path: &Path) -> DiscoverySnapshot
         let discovery = discover_workspace(workspace, false).await;
         snapshot.pending |= discovery.pending;
         snapshot.warnings.extend(discovery.warnings);
+        snapshot.diagnostics.extend(discovery.diagnostics);
     }
     snapshot.warnings.sort();
     snapshot.warnings.dedup();
+    snapshot.diagnostics.sort_by(|left, right| {
+        left.ecosystem_id
+            .cmp(&right.ecosystem_id)
+            .then_with(|| left.code.cmp(&right.code))
+    });
+    snapshot
+        .diagnostics
+        .dedup_by(|left, right| left.ecosystem_id == right.ecosystem_id && left.code == right.code);
     snapshot
 }
 
@@ -205,27 +228,46 @@ async fn discover_enabled(
     enabled: &[String],
     cancelled: Arc<AtomicBool>,
     requested_at: Instant,
-) -> Vec<String> {
+) -> DiscoveryResult {
     let Some(coordinator) = crate::agentic::coordination::get_global_coordinator() else {
-        return vec!["Runtime ownership is unavailable for external session discovery".into()];
+        return DiscoveryResult {
+            warnings: vec![
+                "Runtime ownership is unavailable for external session discovery".into(),
+            ],
+            ..DiscoveryResult::default()
+        };
     };
     if let Err(error) =
         coordinator.ensure_workspace_runtime_ownership(&workspace.root_path, None, None)
     {
         log::warn!("External session discovery could not acquire workspace ownership: {error}");
-        return vec![
-            "Another runtime owns this workspace; automatic session import is unavailable".into(),
-        ];
+        return DiscoveryResult {
+            warnings: vec![
+                "Another runtime owns this workspace; automatic session import is unavailable"
+                    .into(),
+            ],
+            ..DiscoveryResult::default()
+        };
     }
     let Some(service) = crate::service::workspace::get_global_workspace_service() else {
-        return vec!["Workspace service is unavailable for external session discovery".into()];
+        return DiscoveryResult {
+            warnings: vec![
+                "Workspace service is unavailable for external session discovery".into(),
+            ],
+            ..DiscoveryResult::default()
+        };
     };
     let workspaces = service.list_workspace_infos().await;
     let (store, project) = match import_storage(workspace).await {
         Ok(storage) => storage,
-        Err(error) => return vec![error.detail],
+        Err(error) => {
+            return DiscoveryResult {
+                warnings: vec![error.detail],
+                ..DiscoveryResult::default()
+            }
+        }
     };
-    let mut warnings = Vec::new();
+    let mut result = DiscoveryResult::default();
     for ecosystem in enabled {
         if cancelled.load(Ordering::Acquire) {
             break;
@@ -240,28 +282,28 @@ async fn discover_enabled(
         .await;
         match catalog {
             Ok(catalog) => {
-                warnings.extend(
-                    register_catalog(
-                        &store,
-                        workspace,
-                        &project,
-                        &workspaces,
-                        &catalog,
-                        cancelled.as_ref(),
-                    )
-                    .await,
-                );
+                let registration = register_catalog(
+                    &store,
+                    workspace,
+                    &project,
+                    &workspaces,
+                    &catalog,
+                    cancelled.as_ref(),
+                )
+                .await;
+                result.warnings.extend(registration.warnings);
+                result.diagnostics.extend(registration.diagnostics);
             }
             error => {
                 log::warn!("External session discovery failed for {ecosystem}: {error:?}");
-                warnings.push(format!(
+                result.warnings.push(format!(
                     "{} session history could not be discovered",
                     source.name()
                 ));
             }
         }
     }
-    warnings
+    result
 }
 
 #[derive(Debug)]
@@ -395,25 +437,55 @@ async fn register_catalog(
     workspaces: &[WorkspaceInfo],
     catalog: &SourceCatalog,
     cancelled: &AtomicBool,
-) -> Vec<String> {
+) -> DiscoveryResult {
     if cancelled.load(Ordering::Acquire) {
-        return Vec::new();
+        return DiscoveryResult::default();
     }
-    let mut warnings = Vec::new();
-    if !catalog.catalog.diagnostics.is_empty() {
-        warnings.push(format!(
+    let mut result = DiscoveryResult::default();
+    let has_workspace_unresolved = catalog
+        .catalog
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "workspace_unresolved");
+    let has_read_failure = catalog
+        .catalog
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code != "workspace_unresolved");
+    if has_read_failure {
+        result.warnings.push(format!(
             "Some {} source records could not be read",
             catalog.catalog.ecosystem_id
         ));
     }
+    if has_workspace_unresolved {
+        result.warnings.push(format!(
+            "Some {} sessions could not be matched to a workspace",
+            catalog.catalog.ecosystem_id
+        ));
+    }
+    result
+        .diagnostics
+        .extend(
+            catalog
+                .catalog
+                .diagnostics
+                .iter()
+                .map(|diagnostic| SessionDiscoveryDiagnostic {
+                    ecosystem_id: catalog.catalog.ecosystem_id.clone(),
+                    code: diagnostic.code.clone(),
+                }),
+        );
     let candidates = catalog.workspace_candidates(workspace, workspaces, normalized_path);
     if let Err(error) =
         super::deferred::register(store.sessions_root(), workspace, project, candidates).await
     {
         log::warn!("External session index could not be updated: {error}");
-        warnings.push("External session discovery index could not be updated".into());
+        result
+            .warnings
+            .push("External session discovery index could not be updated".into());
     }
-    warnings
+    result
 }
 
 pub(super) fn belongs_to_workspace(
@@ -464,7 +536,10 @@ pub(super) mod tests {
             None,
             |_| async move {
                 wait.await.unwrap();
-                vec!["fixture warning".into()]
+                DiscoveryResult {
+                    warnings: vec!["fixture warning".into()],
+                    ..DiscoveryResult::default()
+                }
             },
         )
         .await;
@@ -510,7 +585,10 @@ pub(super) mod tests {
                     tokio::task::yield_now().await;
                 }
                 stopped.send(()).unwrap();
-                vec!["must not become visible".into()]
+                DiscoveryResult {
+                    warnings: vec!["must not become visible".into()],
+                    ..DiscoveryResult::default()
+                }
             },
         )
         .await;
@@ -574,6 +652,52 @@ pub(super) mod tests {
             diagnostics: vec![],
             next_cursor: None,
         }
+    }
+
+    #[tokio::test]
+    async fn catalog_diagnostics_keep_read_and_workspace_failures_separate() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = workspace("project", temp.path(), WorkspaceKind::Normal);
+        let mut source_catalog = catalog("cursor", vec![]);
+        source_catalog.diagnostics = vec![
+            ExternalSessionImportWarning {
+                code: "source_unreadable".into(),
+                detail: "fixture source could not be read".into(),
+            },
+            ExternalSessionImportWarning {
+                code: "workspace_unresolved".into(),
+                detail: "fixture source has no workspace".into(),
+            },
+        ];
+
+        let result = register_catalog(
+            &OfflineSessionImportStore::new(temp.path().join("native")),
+            &workspace,
+            &workspace,
+            std::slice::from_ref(&workspace),
+            &SourceCatalog::new(source_catalog),
+            &AtomicBool::new(false),
+        )
+        .await;
+
+        assert_eq!(
+            result.warnings,
+            vec![
+                "Some cursor source records could not be read",
+                "Some cursor sessions could not be matched to a workspace",
+            ]
+        );
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(|diagnostic| (diagnostic.ecosystem_id.as_str(), diagnostic.code.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("cursor", "source_unreadable"),
+                ("cursor", "workspace_unresolved"),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -646,7 +770,10 @@ pub(super) mod tests {
             &AtomicBool::new(false),
         )
         .await;
-        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(
+            warnings.warnings.is_empty() && warnings.diagnostics.is_empty(),
+            "{warnings:?}"
+        );
         let native = store.list_metadata_including_internal().await.unwrap();
         assert_eq!(
             native.len(),
@@ -710,7 +837,7 @@ pub(super) mod tests {
                     vec!["codex".into()],
                     false,
                     Some(activation),
-                    |_| async { Vec::new() }
+                    |_| async { DiscoveryResult::default() }
                 )
                 .await
                 .pending
@@ -772,7 +899,7 @@ pub(super) mod tests {
             &AtomicBool::new(true),
         )
         .await;
-        assert!(warnings.is_empty());
+        assert!(warnings.warnings.is_empty() && warnings.diagnostics.is_empty());
         assert!(!root.exists());
     }
 

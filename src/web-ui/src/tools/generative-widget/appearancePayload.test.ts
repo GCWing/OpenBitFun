@@ -86,6 +86,21 @@ const CODE_DIFF_THEME_VARIABLE_NAMES = [
   '--openbitfun-color-code-diff-syntax-string',
   '--openbitfun-color-code-diff-syntax-variable',
 ] as const;
+// Project identity is a user-selected palette, independent of status and accents.
+// Assert its exact owner contract while keeping the shared fingerprint unchanged.
+const PROJECT_IDENTITY_THEME_VARIABLE_NAMES = [
+  '--openbitfun-color-identity-project-blue',
+  '--openbitfun-color-identity-project-cyan',
+  '--openbitfun-color-identity-project-green',
+  '--openbitfun-color-identity-project-orange',
+  '--openbitfun-color-identity-project-pink',
+  '--openbitfun-color-identity-project-purple',
+  '--openbitfun-color-identity-project-red',
+  '--openbitfun-color-identity-project-yellow',
+] as const;
+// Translucent floating panels such as global search need a wider frost than the
+// shared blur scale; assert this addition without changing the shared baseline.
+const STRONG_BLUR_THEME_VARIABLE_NAME = '--openbitfun-effect-blur-strong';
 const RETIRED_WIDGET_VARIABLE_NAMES = [
   '--background-primary',
   '--bg-primary',
@@ -133,6 +148,7 @@ describe('generated widget appearance payload contract', () => {
     const indicatorNames = WIDGET_APPEARANCE_VAR_NAMES.filter(name => INDICATOR_THEME_VARIABLE_NAMES.some(indicatorName => indicatorName === name));
     const composerNames = WIDGET_APPEARANCE_VAR_NAMES.filter(name => COMPOSER_THEME_VARIABLE_NAMES.some(composerName => composerName === name));
     const codeDiffNames = WIDGET_APPEARANCE_VAR_NAMES.filter(name => name.startsWith('--openbitfun-color-code-diff-'));
+    const projectIdentityNames = WIDGET_APPEARANCE_VAR_NAMES.filter(name => name.startsWith('--openbitfun-color-identity-project-'));
     const sharedNames = WIDGET_APPEARANCE_VAR_NAMES.filter(name => (
       !name.startsWith('--openbitfun-component-button-')
       && !FIELD_STATE_THEME_VARIABLE_NAMES.some(fieldName => fieldName === name)
@@ -142,15 +158,19 @@ describe('generated widget appearance payload contract', () => {
       && !INDICATOR_THEME_VARIABLE_NAMES.some(indicatorName => indicatorName === name)
       && !COMPOSER_THEME_VARIABLE_NAMES.some(composerName => composerName === name)
       && !name.startsWith('--openbitfun-color-code-diff-')
+      && !name.startsWith('--openbitfun-color-identity-project-')
+      && name !== STRONG_BLUR_THEME_VARIABLE_NAME
     ));
     expect(buttonNames).toEqual(BUTTON_THEME_VARIABLE_NAMES);
     expect(fieldStateNames).toEqual(FIELD_STATE_THEME_VARIABLE_NAMES);
     expect(indicatorNames).toEqual(INDICATOR_THEME_VARIABLE_NAMES);
     expect(composerNames).toEqual(COMPOSER_THEME_VARIABLE_NAMES);
     expect(codeDiffNames.sort()).toEqual(CODE_DIFF_THEME_VARIABLE_NAMES);
+    expect(projectIdentityNames.sort()).toEqual(PROJECT_IDENTITY_THEME_VARIABLE_NAMES);
     expect(WIDGET_APPEARANCE_VAR_NAMES).toContain(FIELD_GROUP_THEME_VARIABLE_NAME);
     expect(WIDGET_APPEARANCE_VAR_NAMES).toContain(CAPTION_THEME_VARIABLE_NAME);
     expect(WIDGET_APPEARANCE_VAR_NAMES).toContain(ACTION_CARD_THEME_VARIABLE_NAME);
+    expect(WIDGET_APPEARANCE_VAR_NAMES).toContain(STRONG_BLUR_THEME_VARIABLE_NAME);
     expect({
       count: sharedNames.length,
       hash: hashNames(sharedNames),

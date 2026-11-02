@@ -342,7 +342,6 @@ const MemorySettingsSection: React.FC = () => {
       <ConfigPageSectionStack>
         <ConfigPageSection
           title={t('sections.basic.title')}
-          description={t('sections.basic.description')}
         >
           <ConfigPageRow
             label={t('fields.memoryEnabled.label')}
@@ -422,7 +421,6 @@ const MemorySettingsSection: React.FC = () => {
 
         <ConfigPageSection
           title={t('sections.models.title')}
-          description={t('sections.models.description')}
         >
           <ConfigPageRow
             label={t('fields.extractModel.label')}
@@ -454,7 +452,6 @@ const MemorySettingsSection: React.FC = () => {
 
         <ConfigPageSection
           title={t('sections.advanced.title')}
-          description={t('sections.advanced.description')}
           descriptionLayout={advancedOpen ? 'stacked' : 'inline'}
           extra={(
             <Tooltip

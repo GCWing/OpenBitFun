@@ -43,6 +43,10 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::RwLock;
 
+#[cfg(feature = "workspace-icons")]
+#[path = "icons.rs"]
+mod icons;
+
 const MAX_WORKSPACE_NAME_CHARS: usize = 80;
 
 fn remote_connection_owner_missing(owner: &str, saved_connection_ids: &[String]) -> bool {
@@ -1410,6 +1414,22 @@ impl WorkspaceService {
 
         {
             let mut manager = self.manager.write().await;
+            // A scan may await filesystem IO while another controller changes the icon.
+            // Preserve the latest opaque icon value, including future versions.
+            if let Some(value) = manager
+                .get_workspaces()
+                .get(workspace_id)
+                .and_then(|workspace| {
+                    workspace
+                        .metadata
+                        .get(openbitfun_core_types::workspace_icon::WORKSPACE_ICON_METADATA_KEY)
+                })
+            {
+                new_workspace.metadata.insert(
+                    openbitfun_core_types::workspace_icon::WORKSPACE_ICON_METADATA_KEY.into(),
+                    value.clone(),
+                );
+            }
             manager
                 .get_workspaces_mut()
                 .insert(workspace_id.to_string(), new_workspace.clone());

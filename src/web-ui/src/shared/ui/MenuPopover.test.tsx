@@ -20,7 +20,7 @@ describe('public MenuPopover', () => {
     document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
     await Promise.resolve();
   });
-  function Harness() {
+  function Harness({ overlapAnchor = false, exitDurationMs = 100 }: { overlapAnchor?: boolean; exitDurationMs?: number }) {
     const anchorRef = useRef<HTMLButtonElement>(null);
     const portalRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
@@ -28,13 +28,13 @@ describe('public MenuPopover', () => {
       <ThemeRoot>
         <div ref={portalRef}>
           <button ref={anchorRef} onClick={() => setOpen(!open)}>Commands</button>
-          <MenuPopover items={items} open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} aria-label="Commands" />
+          <MenuPopover items={items} open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} aria-label="Commands" overlapAnchor={overlapAnchor} exitDurationMs={exitDurationMs} />
         </div>
       </ThemeRoot>
     </DesignSystemProvider>;
   }
-  const open = () => {
-    act(() => root.render(<Harness />));
+  const open = (options: { overlapAnchor?: boolean; exitDurationMs?: number } = {}) => {
+    act(() => root.render(<Harness {...options} />));
     const trigger = host.querySelector<HTMLButtonElement>('button')!;
     act(() => { trigger.focus(); trigger.click(); });
     return trigger;
@@ -117,5 +117,28 @@ describe('public MenuPopover', () => {
     expect(document.activeElement?.getAttribute('role')).toBe('menu');
     key('Escape');
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('can replace an anchor surface while preserving viewport clamping', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('role') === 'menu'
+        ? new DOMRect(0, 0, 220, 200) : new DOMRect(100, 60, 80, 28);
+    });
+    open({ overlapAnchor: true });
+    const menu = host.querySelector<HTMLElement>('[role="menu"]')!;
+    expect(menu.style.left).toBe('100px');
+    expect(menu.style.top).toBe('60px');
+  });
+
+  it('retains a custom closing motion for its requested duration', () => {
+    vi.useFakeTimers();
+    try {
+      open({ exitDurationMs: 220 });
+      key('Escape');
+      act(() => vi.advanceTimersByTime(219));
+      expect(host.querySelector('[role="menu"]')?.getAttribute('aria-hidden')).toBe('true');
+      act(() => vi.advanceTimersByTime(1));
+      expect(host.querySelector('[role="menu"]')).toBeNull();
+    } finally { vi.useRealTimers(); }
   });
 });

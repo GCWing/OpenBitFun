@@ -26,6 +26,10 @@ facts. It is an interface crate, not a runtime implementation crate.
   load/invoke/cancel/dispose requests, execution context paths, and string
   results. Ecosystem source parsing, approval/conflict policy, product routing,
   process supervision, dependency installation, and UI do not belong here.
+- `PtcRuntime` owns only program execution, nested tool calls, definition
+  requests, availability, and cancellation contracts behind `ptc-runtime`.
+  Node process supervision belongs to Services Integrations; tool admission
+  and permission decisions stay in the Core tool pipeline.
 - `HookFunctionRuntime` owns only provider-neutral availability, single-worker
   start/transform-config/execute-tool/cancel/dispose requests, a complete
   plugin-generation registration **notification sink** (not a load response),
@@ -56,6 +60,7 @@ cargo check --locked -p openbitfun-runtime-ports --no-default-features
 cargo test --locked -p openbitfun-runtime-ports --no-default-features --features agent-api --lib
 cargo test --locked -p openbitfun-runtime-ports --no-default-features --features workspace-ports --test session_store_contracts
 cargo test --locked -p openbitfun-runtime-ports --no-default-features --features plugin-runtime --test plugin_runtime_contracts
+cargo test --locked -p openbitfun-runtime-ports --no-default-features --features ptc-runtime --test ptc_tool_port_contracts
 node scripts/check-core-boundaries.mjs
 ```
 

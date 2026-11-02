@@ -6,6 +6,7 @@ import { avatarMeta } from "./components/Avatar/Avatar.meta";
 import { buttonMeta } from "./components/Button/Button.meta";
 import { capsuleMeta } from "./components/Capsule/Capsule.meta";
 import { checkboxMeta } from "./components/Checkbox/Checkbox.meta";
+import { colorPickerMeta } from "./components/ColorPicker/ColorPicker.meta";
 import { cardMeta } from "./components/Card/Card.meta";
 import { composerMeta } from "./components/Composer/Composer.meta";
 import { comboboxMeta } from "./components/Combobox/Combobox.meta";
@@ -142,6 +143,7 @@ export const componentRegistry = [
   capsuleMeta,
   cardMeta,
   checkboxMeta,
+  colorPickerMeta,
   chatComposerMeta,
   thinkingBlockMeta,
   flowGroupMeta,

@@ -36,12 +36,12 @@ pub fn prompt_suggestion_instruction() -> &'static str {
     PROMPT_SUGGESTION_INSTRUCTION
 }
 
-/// Empty output and the literal null decline a suggestion. Preserve all other
-/// model text verbatim; shape and length are guided only by the prompt.
+/// Trim surrounding whitespace before publishing a suggestion. Empty output
+/// and the literal null decline it; preserve the message content otherwise.
 pub fn prompt_suggestion_text(raw: String) -> Option<String> {
     match raw.trim() {
         "" | "null" => None,
-        _ => Some(raw),
+        text => Some(text.to_owned()),
     }
 }
 
@@ -233,9 +233,9 @@ mod tests {
     }
 
     #[test]
-    fn plain_text_suggestion_preserves_the_model_text_verbatim() {
+    fn plain_text_suggestion_preserves_message_content() {
         for text in [
-            "  Suggestion: \"Run the tests. Then commit.\"  ".to_string(),
+            "Suggestion: \"Run the tests. Then commit.\"".to_string(),
             "我来运行测试。然后提交。\n不要裁剪这段文本。".to_string(),
             "a".repeat(300),
             "NONE".to_string(),
@@ -243,6 +243,30 @@ mod tests {
             "{\"suggestion\":\"Run the tests\"}".to_string(),
         ] {
             assert_eq!(prompt_suggestion_text(text.clone()), Some(text));
+        }
+    }
+
+    #[test]
+    fn plain_text_suggestion_trims_only_surrounding_whitespace() {
+        for (raw, expected) in [
+            (
+                "\n\nSave these preferences in USER.md",
+                "Save these preferences in USER.md",
+            ),
+            (" \r\n\tRun the tests.\t \r\n", "Run the tests."),
+            (
+                "\u{00a0}\u{3000}Run the tests.\u{3000}\u{00a0}",
+                "Run the tests.",
+            ),
+            (
+                "\nRun  the tests.\n\n  Then commit.\n",
+                "Run  the tests.\n\n  Then commit.",
+            ),
+        ] {
+            assert_eq!(
+                prompt_suggestion_text(raw.to_string()),
+                Some(expected.to_string())
+            );
         }
     }
 

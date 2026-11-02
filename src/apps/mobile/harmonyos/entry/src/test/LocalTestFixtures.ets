@@ -1,7 +1,7 @@
 import { WorkspaceCatalog, mergeLegacyWorkspaces } from '../main/ets/services/WorkspaceCatalog';
 import { HostSessionStream, HostSessionCallbacks, HostSessionEvent, HostSessionSource, HostStreamPage } from '../main/ets/services/HostSessionStream';
 import { SessionRecord } from '../main/ets/services/DurableSessionReducer';
-import { SavedRuntimeConnection } from '../main/ets/model/RemoteModels';
+import { SavedRuntimeConnection, SessionRolledBackResult } from '../main/ets/model/RemoteModels';
 import { describe, it, expect } from '@ohos/hypium';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
 import { ChatSessionController, ChatSessionSnapshot } from '../main/ets/services/ChatSessionController';
@@ -912,6 +912,10 @@ export class RemoteSessionProjectionRecord {
 }
 
 export class FakeRemoteChatCommandClient implements RemoteChatCommandClient {
+  async rollbackSessionToTurn(): Promise<SessionRolledBackResult> {
+    throw new Error('Unexpected rollback in chat command fixture');
+  }
+
   messageResults: SessionMessagesResult[] = [];
   messageRequests: string[] = [];
   messageResolvers: Array<(result: SessionMessagesResult) => void> = [];

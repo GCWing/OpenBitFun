@@ -13,4 +13,7 @@ export class SessionRecordReplica extends SharedReplica {
   override apply(record: SessionRecord): SessionRecordChange | null {
     return super.apply(record) as SessionRecordChange | null;
   }
+  override snapshot(turnId: string): SessionRecordChange {
+    return super.snapshot(turnId) as SessionRecordChange;
+  }
 }

@@ -9,6 +9,7 @@ pub use context::{MCPContextEnhancer, MCPContextEnhancerConfig};
 pub use prompt::PromptAdapter;
 pub use resource::ResourceAdapter;
 pub use tool::{
-    build_mcp_tool_descriptor, render_mcp_tool_result_for_assistant, MCPDynamicToolDefinition,
+    build_mcp_tool_descriptor, render_mcp_tool_result_for_assistant,
+    render_unparsed_mcp_tool_result_for_assistant, MCPDynamicToolDefinition,
     MCPDynamicToolProvider, MCPToolCatalogClient, McpDynamicToolDescriptor,
 };

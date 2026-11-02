@@ -1,0 +1,43 @@
+.openbitfun-image-settings__editor {
+  container-name: config-panel;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-5);
+  min-inline-size: 0;
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+}
+.openbitfun-image-settings__editor-fields .openbitfun-config-page-row {
+  padding-block: var(--openbitfun-layout-field-group-row-padding-block);
+  padding-inline: var(--openbitfun-layout-field-group-row-padding-inline);
+}
+.openbitfun-image-settings__hint {
+  margin: 0;
+  color: var(--openbitfun-color-content-secondary);
+}
+.openbitfun-image-settings__test-detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-code-meta-font-family);
+  font-size: var(--openbitfun-type-code-meta-font-size);
+  line-height: var(--openbitfun-type-code-meta-line-height);
+}
+.openbitfun-image-settings__test-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-2);
+}
+.openbitfun-image-settings__test-result p { margin: 0; }
+.openbitfun-image-settings__test-result[data-status='failure'] {
+  color: var(--openbitfun-color-status-danger-content);
+}
+.openbitfun-image-settings__test-image {
+  max-inline-size: 100%;
+  max-block-size: 320px;
+  object-fit: contain;
+  border-radius: var(--openbitfun-radius-sm);
+}

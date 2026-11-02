@@ -2,6 +2,15 @@
 
 @include capability.capability-group-layout('tool');
 
+.tool-group-picker--flat .tool-group-picker__token-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.tool-group-picker__pill {
+  border-radius: var(--openbitfun-radius-pill);
+}
+
 .tool-group-manager {
   display: flex;
   min-width: 0;

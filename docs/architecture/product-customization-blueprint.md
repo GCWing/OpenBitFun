@@ -227,6 +227,30 @@ GUI 主题由 Web/TS 主题模块定义，TUI 主题由 CLI/TUI 宿主定义，I
 界面宿主负责焦点、键盘导航、屏幕阅读器、窄终端、ANSI/truecolor、无鼠标和无 Unicode 等降级。无合法组合时
 构建失败；运行时插件贡献无法渲染时使用可退出的降级界面。
 
+### 7.1 用户侧导航偏好与入口贡献
+
+Web UI 的左侧导航定制属于控制端运行时展示偏好，不进入产品定义或远端配置。
+`src/web-ui/src/app/navigation/sidebarRegistry.ts` 定义可信前端模块的贡献接口：稳定的 owner 限定 ID、
+bootstrap 文案键、设计系统图标、当前页面匹配、不可用原因和按需打开动作。
+`sidebarContributions.ts` 注册现有页面并复用页面 owner / Product Action；设置与导航共同消费同一份注册表。
+注册返回注销函数，冲突 ID 拒绝注册，新入口只进入可选列表，由用户决定是否固定。
+
+`sidebarPreferences.ts` 只持久化版本和有序入口 ID，不保存回调、组件、工作区路径或权限。
+默认保留首页与任务板，首页固定存在；用户可添加、排序、移除其他入口并恢复默认。
+未知或暂时不可用的入口保留原位置、显式禁用，重新注册或能力恢复后自动复用偏好。
+未知附加字段随写入保留；无法读取的数据和更新版本的记录不自动覆盖；写入失败保留原布局并报错。
+单个 MiniApp 仍由已有的按设备固定机制管理，不能把主机资源 ID 当作跨设备页面 ID。
+
+导航贡献不会获得额外权限：页面 owner 继续承担 SSH、Peer 能力判断与数据访问，延迟准备后必须检查
+捕获的 surface scope；不支持的技能页面在非本机桌面显式禁用。Mobile / IM Remote Control 与 Detached
+Dispatch 不消费这份 GUI 布局，也不因固定入口获得新协议能力。此接口尚不是第三方插件 API：以后接入插件
+必须由受控适配层把已授权的声明投影为可信贡献，不得从偏好文件执行代码或任意地址。
+
+入口声明与用户布局分离、按需加载、可恢复布局参考
+[VS Code View Contributions](https://code.visualstudio.com/api/extension-guides/tree-view) 和
+[Custom Layout](https://code.visualstudio.com/docs/configure/custom-layout)；这里只采用适合现有 GUI owner 的部分，
+不引入通用组件协议或跨 GUI/TUI 布局 schema。
+
 ## 8. 产品内置扩展与用户插件
 
 产品内置扩展只表示“随产品交付”，不表示更高运行权限，也不表示同名用户插件必须被拒绝。三类来源的生命周期

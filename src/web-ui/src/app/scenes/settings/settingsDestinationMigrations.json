@@ -1,5 +1,11 @@
 {
   "pages": {
+    "external-sources": {
+      "pageId": "tools.external-import"
+    },
+    "tools.integrations": {
+      "pageId": "tools.external-import"
+    },
     "basics": {
       "pageId": "application.general"
     },

@@ -16,5 +16,13 @@
       "cancel": "取消",
       "save": "保存"
     }
+  },
+  "linkForward": {
+    "label": "终端链接",
+    "created": "已将远程端口 {{remotePort}} 映射到 {{localAddress}}。",
+    "failed": "无法映射远程端口 {{port}}：{{error}}",
+    "peerUnsupported": "控制其他设备时无法映射端口。该链接指向远程主机，而不是本机。",
+    "openAnyway": "仍然打开链接",
+    "noPort": "该链接指向远程主机而不是本机，且没有可映射的端口。"
   }
 }

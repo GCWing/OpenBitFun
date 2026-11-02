@@ -298,6 +298,7 @@ async function init() {
   await restore();
   bindPersistence();
   recompute();
+  exposeAgentControls();
   if (window.app && typeof window.app.onLocaleChange === 'function') {
     window.app.onLocaleChange(() => {
       applyStaticI18n();
@@ -335,10 +336,7 @@ function buildLibrary() {
       <div class="lib-item__pattern">/${escapeHtml(item.pattern)}/${escapeHtml(item.flags)}</div>
     `;
     el.addEventListener('click', () => {
-      dom.pattern.value = item.pattern;
-      state.flags = new Set(item.flags.split(''));
-      syncFlagsUi();
-      recompute();
+      applyPattern(item.id);
       dom.pattern.focus();
     });
     dom.library.appendChild(el);
@@ -358,9 +356,9 @@ function bindFlags() {
     const btn = e.target.closest('.flag');
     if (!btn) return;
     const f = btn.dataset.flag;
-    if (state.flags.has(f)) state.flags.delete(f); else state.flags.add(f);
-    syncFlagsUi();
-    recompute();
+    const flags = new Set(state.flags);
+    if (flags.has(f)) flags.delete(f); else flags.add(f);
+    updateInputs({ flags: Array.from(flags).join('') });
   });
 }
 
@@ -376,12 +374,11 @@ function bindEditorSync() {
     dom.highlight.scrollTop = dom.testText.scrollTop;
     dom.highlight.scrollLeft = dom.testText.scrollLeft;
   });
-  dom.testText.addEventListener('input', recompute);
-  dom.pattern.addEventListener('input', recompute);
-  dom.replaceInput.addEventListener('input', renderReplace);
+  dom.testText.addEventListener('input', () => updateInputs({ text: dom.testText.value }));
+  dom.pattern.addEventListener('input', () => updateInputs({ pattern: dom.pattern.value }));
+  dom.replaceInput.addEventListener('input', () => updateInputs({ replacement: dom.replaceInput.value }));
   dom.btnClear.addEventListener('click', () => {
-    dom.testText.value = '';
-    recompute();
+    updateInputs({ text: '' });
     dom.testText.focus();
   });
   dom.btnPrevMatch.addEventListener('click', () => stepActiveMatch(-1));
@@ -403,17 +400,19 @@ async function restore() {
     dom.pattern.value = typeof saved.pattern === 'string' ? saved.pattern : '';
     if (typeof saved.text === 'string') dom.testText.value = saved.text;
     if (typeof saved.replacement === 'string') dom.replaceInput.value = saved.replacement;
-    if (Array.isArray(saved.flags) && saved.flags.length) state.flags = new Set(saved.flags);
+    if (Array.isArray(saved.flags)) state.flags = new Set(saved.flags);
     syncFlagsUi();
   }
-  if (!dom.pattern.value) dom.pattern.value = "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}";
-  if (!dom.testText.value) {
+  if (typeof saved?.pattern !== 'string') dom.pattern.value = "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}";
+  if (typeof saved?.text !== 'string') {
     dom.testText.value = SAMPLE_TEXT;
   }
 }
 
+let saveInputs = () => {};
+
 function bindPersistence() {
-  const save = debounce(() => {
+  saveInputs = debounce(() => {
     app.storage.set('regex-state', {
       pattern: dom.pattern.value,
       text: dom.testText.value,
@@ -421,10 +420,90 @@ function bindPersistence() {
       flags: Array.from(state.flags),
     }).catch(() => {});
   }, 350);
-  for (const target of [dom.pattern, dom.testText, dom.replaceInput]) {
-    target.addEventListener('input', save);
+}
+
+// UI and Agent operations share the live fields and the same recompute/save
+// path. Omitted fields are untouched, including text not yet persisted.
+function updateInputs(patch) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    throw new Error('input must be an object');
   }
-  dom.flagsRow.addEventListener('click', save);
+  for (const key of Object.keys(patch)) {
+    if (!['pattern', 'text', 'replacement', 'flags'].includes(key) || typeof patch[key] !== 'string') {
+      throw new Error('input accepts only string pattern, text, replacement, and flags fields');
+    }
+  }
+  if (patch.flags !== undefined && (!/^[gimsuy]*$/.test(patch.flags) || new Set(patch.flags).size !== patch.flags.length)) {
+    throw new Error('flags must contain unique supported flags: g i m s u y');
+  }
+  // Validate the entire patch before making any changes. A malformed regex is
+  // an editable draft, so recompute reports its syntax error normally.
+  if (patch.pattern !== undefined) dom.pattern.value = patch.pattern;
+  if (patch.text !== undefined) dom.testText.value = patch.text;
+  if (patch.replacement !== undefined) dom.replaceInput.value = patch.replacement;
+  if (patch.flags !== undefined) {
+    state.flags = new Set(patch.flags);
+    syncFlagsUi();
+  }
+  if (Object.keys(patch).some((key) => key !== 'replacement')) recompute();
+  else renderReplace();
+  saveInputs();
+}
+
+function applyPattern(id) {
+  const item = PATTERN_KEYS.find((entry) => entry.id === id);
+  if (!item) throw new Error('Unknown pattern id');
+  updateInputs({ pattern: item.pattern, flags: item.flags });
+}
+
+// Bound every variable-length field, including escaped JSON and non-ASCII
+// input. Length/truncated facts make partial observations explicit.
+function observedText(value) {
+  return { value: value.slice(0, 512), length: value.length, truncated: value.length > 512 };
+}
+
+function observeBusinessState() {
+  return {
+    pattern: observedText(dom.pattern.value),
+    flags: Array.from(state.flags).join(''),
+    text: observedText(dom.testText.value),
+    replacement: observedText(dom.replaceInput.value),
+    error: dom.patternError.hidden ? null : observedText(dom.patternError.textContent),
+    matchCount: lastMatches.length,
+    activeMatchIndex: state.activeMatchIndex,
+    matches: lastMatches.slice(0, 10).map((match) => ({
+      index: match.index, end: match.end,
+      text: match.text.slice(0, 128), textTruncated: match.text.length > 128,
+    })),
+    matchesTruncated: lastMatches.length > 10,
+    replacementPreview: dom.replaceOutput.hidden ? null : observedText(dom.replaceOutput.textContent),
+    patternIds: PATTERN_KEYS.map((item) => item.id),
+  };
+}
+
+function exposeAgentControls() {
+  // Older hosts still run the UI; no new permission or persisted shape needed.
+  app.agent?.expose?.({
+    observe: observeBusinessState,
+    actions: ['set-input', 'apply-pattern', 'select-match'],
+    act: (action) => {
+      switch (action?.type) {
+        // { type: 'set-input', input: { pattern?, text?, replacement?, flags? } }
+        case 'set-input': updateInputs(action.input); break;
+        // { type: 'apply-pattern', id: 'email' } preserves text/replacement.
+        case 'apply-pattern': applyPattern(action.id); break;
+        // { type: 'select-match', index: 0 } uses the existing selection path.
+        case 'select-match':
+          if (!Number.isInteger(action.index) || action.index < 0 || action.index >= lastMatches.length) {
+            throw new Error('index must identify a current match');
+          }
+          selectMatch(action.index, true);
+          break;
+        default: throw new Error('Unsupported action');
+      }
+      return { applied: true, state: observeBusinessState() };
+    },
+  });
 }
 
 function debounce(fn, delay) {

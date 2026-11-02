@@ -230,6 +230,7 @@ class ModelConfigManager {
           isBuiltIn: false,
           contextWindow: model.context_window,
           maxTokens: model.max_tokens,
+          maxImagesPerRequest: model.max_images_per_request,
           category: resolveModelCategory(
             model.model_name || '',
             model.category,
@@ -273,6 +274,7 @@ class ModelConfigManager {
         description: config.description,
         context_window: config.contextWindow,
         max_tokens: config.maxTokens,
+        max_images_per_request: config.maxImagesPerRequest,
         category: resolveModelCategory(
           config.modelName,
           config.category,

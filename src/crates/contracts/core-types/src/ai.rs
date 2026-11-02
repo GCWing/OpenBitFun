@@ -637,6 +637,9 @@ pub struct AIConfig {
     pub format: String,
     pub context_window: u32,
     pub max_tokens: Option<u32>,
+    /// Optional host-side image input ceiling across the complete request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_images_per_request: Option<usize>,
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
     pub inline_think_in_text: bool,
@@ -664,8 +667,25 @@ pub struct ModelRequestContext {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelResponseReplay {
     pub protocol: String,
+    /// Concrete host-local channel that produced nonportable continuation state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_origin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_fingerprint: Option<String>,
+    /// Native subscription account that produced opaque continuation state.
+    /// Legacy replay without provenance cannot authorize an account switch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_origin: Option<ModelAccountOrigin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<ModelResponseReplayItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelAccountOrigin {
+    pub provider: String,
+    pub account_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -881,6 +901,61 @@ pub struct RemoteModelRouting {
     pub request_url: String,
 }
 
+/// Upper bound accepted for a single image generation request. Dialects with a
+/// tighter provider limit clamp further inside the adapter.
+pub const MAX_IMAGES_PER_GENERATION_REQUEST: u32 = 10;
+
+/// Wire protocol used by an image generation provider.
+///
+/// Endpoint path, request body shape, size syntax and response shape all vary
+/// per provider, so this is the single fact that drives request construction
+/// and response parsing. It is never inferred from a base URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ImageDialect {
+    /// OpenAI Images: `POST {base}/images/generations`, JSON body, `data[]` result.
+    #[default]
+    #[serde(rename = "openai_images")]
+    OpenAiImages,
+    /// Alibaba DashScope native Qwen-Image:
+    /// `POST {base}/services/aigc/multimodal-generation/generation`.
+    #[serde(rename = "dashscope_native")]
+    DashScopeNative,
+    /// ChatGPT subscription images, driven through Codex CLI's ChatGPT backend:
+    /// `POST {base}/responses` with an `image_generation` tool, streamed back as
+    /// SSE `response.output_item.done` items. This is a separate billing and
+    /// protocol path from [`Self::OpenAiImages`]: it takes the OAuth access token
+    /// from a Codex subscription login and never reaches the platform image API.
+    #[serde(rename = "chatgpt_codex")]
+    ChatgptCodex,
+}
+
+impl ImageDialect {
+    /// Endpoint path appended to the service base URL for this dialect.
+    pub fn endpoint_path(self) -> &'static str {
+        match self {
+            Self::OpenAiImages => "/images/generations",
+            Self::DashScopeNative => "/services/aigc/multimodal-generation/generation",
+            Self::ChatgptCodex => "/responses",
+        }
+    }
+
+    /// Provider-specific cap for one request.
+    pub fn max_images_per_request(self) -> u32 {
+        match self {
+            Self::OpenAiImages => MAX_IMAGES_PER_GENERATION_REQUEST,
+            Self::DashScopeNative => 6,
+            // The subscription route returns one image per tool call.
+            Self::ChatgptCodex => 1,
+        }
+    }
+
+    /// Whether this dialect authenticates with a subscription login rather than
+    /// a provider API key.
+    pub fn requires_subscription(self) -> bool {
+        matches!(self, Self::ChatgptCodex)
+    }
+}
+
 #[cfg(test)]
 mod remote_model_routing_compatibility {
     #[test]
@@ -900,6 +975,31 @@ mod remote_model_routing_compatibility {
             serde_json::from_value(serialized).unwrap();
         assert_eq!(restored, enriched);
         assert_eq!(restored.id, "medium");
+    }
+
+    #[test]
+    fn legacy_model_replay_round_trips_without_account_provenance() {
+        let old = serde_json::json!({"protocol":"openai_responses", "items":[{"kind":"opaque_reasoning", "opaque_state":"legacy-state"}]});
+        let replay: super::ModelResponseReplay = serde_json::from_value(old.clone()).unwrap();
+        assert!(replay.account_origin.is_none());
+        assert!(replay.channel_origin.is_none());
+        assert!(replay.channel_fingerprint.is_none());
+        assert_eq!(serde_json::to_value(&replay).unwrap(), old);
+        let mut attributed = replay;
+        attributed.channel_origin = Some("recorded-channel".into());
+        attributed.channel_fingerprint = Some("recorded-fingerprint".into());
+        attributed.account_origin = Some(super::ModelAccountOrigin {
+            provider: "codex".into(),
+            account_id: "slot-1".into(),
+            upstream_account_id: Some("seat-1".into()),
+        });
+        assert_eq!(
+            serde_json::from_value::<super::ModelResponseReplay>(
+                serde_json::to_value(&attributed).unwrap()
+            )
+            .unwrap(),
+            attributed
+        );
     }
 
     #[test]

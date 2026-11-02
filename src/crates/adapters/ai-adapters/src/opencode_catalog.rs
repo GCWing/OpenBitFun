@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum OpenCodePlan {
     Zen,
     Go,
@@ -99,6 +99,49 @@ struct RemoteModel {
     status: Option<String>,
     #[serde(default)]
     provider: Option<RemoteModelProvider>,
+    #[serde(default)]
+    cost: Option<RemoteCost>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct RemoteCost {
+    #[serde(default)]
+    input: Option<f64>,
+    #[serde(default)]
+    output: Option<f64>,
+}
+
+static FREE_MODELS: std::sync::RwLock<Option<HashSet<(OpenCodePlan, String)>>> =
+    std::sync::RwLock::new(None);
+
+fn free_model_ids(catalog: &RemoteConfig) -> HashSet<(OpenCodePlan, String)> {
+    catalog
+        .provider
+        .iter()
+        .flat_map(|(provider, entry)| {
+            let plan = plan_for_provider(provider);
+            entry.models.iter().filter_map(move |(id, model)| {
+                let cost = model.cost.as_ref()?;
+                if cost.input != Some(0.0)
+                    || cost.output != Some(0.0)
+                    || model.status.as_deref() == Some("deprecated")
+                {
+                    return None;
+                }
+                Some((plan?, model.id.as_deref().unwrap_or(id).to_string()))
+            })
+        })
+        .collect()
+}
+
+/// Public discovery remembers zero-cost IDs that have no `-free` suffix.
+/// This is non-secret catalog metadata, never another application's cache.
+pub(crate) fn cached_free_model(plan: OpenCodePlan, model: &str) -> bool {
+    FREE_MODELS.read().ok().is_some_and(|cache| {
+        cache
+            .as_ref()
+            .is_some_and(|models| models.contains(&(plan, model.to_string())))
+    })
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -311,6 +354,9 @@ async fn load_base_catalog(client: &reqwest::Client) -> Result<RemoteConfig> {
         .await
         .context("decode OpenCode base catalog")?;
     let catalog = parse_base_catalog(value)?;
+    if let Ok(mut models) = FREE_MODELS.write() {
+        *models = Some(free_model_ids(&catalog));
+    }
     *cache = Some((std::time::Instant::now(), catalog.clone()));
     Ok(catalog)
 }
@@ -366,6 +412,24 @@ fn offerings_from_remote_config(config: RemoteConfig) -> Vec<CatalogOffering> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn zero_cost_detection_is_plan_specific_and_requires_both_prices() {
+        let catalog = super::parse_base_catalog(serde_json::json!({
+            "opencode": {"models": {
+                "anonymous": {"cost":{"input":0,"output":0}},
+                "missing": {},
+                "partial": {"cost":{"input":0}},
+                "paid": {"cost":{"input":0,"output":1}},
+                "retired": {"cost":{"input":0,"output":0},"status":"deprecated"}
+            }},
+            "opencode-go": {"models":{"anonymous":{"cost":{"input":1,"output":1}}}}
+        }))
+        .unwrap();
+        let ids = super::free_model_ids(&catalog);
+        assert_eq!(ids.len(), 1);
+        assert!(ids.contains(&(super::OpenCodePlan::Zen, "anonymous".into())));
+    }
+
     #[test]
     fn api_key_catalog_returns_per_model_routes_and_rejects_lookalike_origins() {
         let catalog = super::parse_base_catalog(serde_json::json!({

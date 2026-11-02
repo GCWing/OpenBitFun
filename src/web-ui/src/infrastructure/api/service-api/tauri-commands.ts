@@ -414,3 +414,27 @@ export interface ExplorerChildrenPageDto {
   offset: number;
   limit: number;
 }
+
+/**
+ * Reason a native file watcher stopped. Mirrors the Rust
+ * `FileWatchFailureCode`; each platform reports only the codes its backend can
+ * produce, so `watch_limit_exceeded` currently arrives from Linux inotify only.
+ */
+export type FileWatchFailureCode = 'watch_limit_exceeded' | 'backend_unavailable';
+
+export interface FileWatchFailure {
+  code: FileWatchFailureCode;
+  /** English diagnostic for logs and support reports; not display copy. */
+  detail: string;
+  /** Platform remediation command to show verbatim, or null where none exists. */
+  hint: string | null;
+  /** Watched root the backend blamed, when it named one. */
+  path: string | null;
+}
+
+/** Payload of `get_file_watch_status` and the `file-watch-status-changed` event. */
+export interface FileWatchStatus {
+  healthy: boolean;
+  watchedPaths: string[];
+  failure: FileWatchFailure | null;
+}

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import MiniAppInstalledCard from './MiniAppInstalledCard';
+import { useMiniAppNavigationStore } from '../miniAppNavigationStore';
 
 vi.mock('@/infrastructure/i18n', () => ({
   useI18n: () => ({ t: (key: string) => key, currentLanguage: 'en-US' }),
@@ -30,6 +31,7 @@ const openMenu = () => act(async () => { more().click(); });
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
+  useMiniAppNavigationStore.setState({ pinnedAppIdsBySurface: {} });
   addToSystem.mockResolvedValue(undefined);
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -42,6 +44,23 @@ afterEach(() => {
 });
 
 describe('installed MiniApp card actions', () => {
+  it('adds and removes a navigation shortcut even without native system installation support', async () => {
+    await render(false);
+    await openMenu();
+    expect(item('navigation').disabled).toBe(false);
+    expect(item('navigation').textContent).toBe('navigation.add');
+    await act(async () => { item('navigation').click(); });
+    expect(menu()).toBeNull();
+    expect(useMiniAppNavigationStore.getState().pinnedAppIdsBySurface.local).toEqual(['notes']);
+    await openMenu();
+    expect(item('navigation').textContent).toBe('navigation.remove');
+    await act(async () => { item('navigation').click(); });
+    expect(useMiniAppNavigationStore.getState().pinnedAppIdsBySurface.local).toEqual([]);
+    expect(launch).not.toHaveBeenCalled();
+    expect(addToSystem).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('opens a menu without deleting the app or opening its details', async () => {
     await render();
     expect(container.querySelector('[aria-label="card.delete"]')).toBeNull();

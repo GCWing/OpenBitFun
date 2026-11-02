@@ -92,8 +92,9 @@ impl AgentExecutionTool {
         let mut out = String::from("<available_agents>\n");
         for agent in agents {
             out.push_str(&format!(
-                "<agent type=\"{}\">\n<description>\n{}\n</description>\n<tools>{}</tools>\n</agent>\n",
+                "<agent type=\"{}\">\n<name>{}</name>\n<description>\n{}\n</description>\n<tools>{}</tools>\n</agent>\n",
                 agent.id,
+                agent.name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"),
                 agent.description,
                 agent.default_tools.join(", ")
             ));
@@ -345,6 +346,20 @@ impl Tool for TaskTool {
 
     fn input_schema(&self) -> Value {
         AgentExecutionTool::regular_input_schema()
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "bg_task_id": {"type": "string"},
+                "result": {"type": "string"},
+                "error": {"type": "string"}
+            },
+            "additionalProperties": true
+        })
     }
 
     async fn input_schema_for_model_with_context(

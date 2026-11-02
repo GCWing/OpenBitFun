@@ -114,6 +114,11 @@ Language Select → Options → Progress → Model Setup → Theme Setup
     language      options    install      model config    launch/close
 ```
 
+When the selected installation path already contains the current OpenBitFun
+installation, the update flow ends after Progress. The existing model and theme
+configuration are preserved, and the installer launches the updated application
+when launch-after-install is enabled.
+
 ## Development
 
 ### Prerequisites

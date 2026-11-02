@@ -17,6 +17,17 @@ describe('ConfigAPI batch config reads', () => {
     invokeMock.mockReset();
   });
 
+  it('sends the exact model snapshot to the host for atomic conflict checking', async () => {
+    const expectedModels = [{ id: 'model', auth: { type: 'subscription_pool', provider: 'codex', accounts: ['a', 'b'], revision: 7 } }];
+    const models = [{ id: 'model', auth: { type: 'subscription', provider: 'codex', account_id: 'a' } }];
+    await configAPI.setConfig('ai.models', models, { expectedModels });
+    expect(invokeMock).toHaveBeenCalledWith('set_config', {
+      request: { path: 'ai.models', value: models, expectedModels },
+    });
+    await configAPI.setConfig('editor.theme', 'dark');
+    expect(invokeMock).toHaveBeenLastCalledWith('set_config', { request: { path: 'editor.theme', value: 'dark' } });
+  });
+
   it('reads multiple config paths through one batch command', async () => {
     const configs = {
       'ai.models': [],

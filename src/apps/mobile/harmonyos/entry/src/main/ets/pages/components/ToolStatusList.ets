@@ -225,8 +225,7 @@ export struct ToolStatusList {
         this.ToolStatusIcon(tool)
         Text(this.toolLineLabel(tool))
           .fontSize(MobileDesignTypography.bodySmall.size)
-          .fontColor(this.hasToolError(tool) ? STATUS_DANGER :
-            (this.toolFilePath(tool).length > 0 ? FILE_LINK : MUTED))
+          .fontColor(this.toolFilePath(tool).length > 0 ? FILE_LINK : MUTED)
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -502,7 +501,6 @@ export struct ToolStatusList {
 
   private isEmphasizedToolRow(tool: ConversationUiToolStatus, index: number): boolean {
     return this.expandedToolKey === this.toolKey(tool, index) ||
-      this.hasToolError(tool) ||
       this.isPendingConfirmation(tool) ||
       this.isQuestionTool(tool) ||
       this.isRunningTool(tool);
@@ -852,14 +850,10 @@ export struct ToolStatusList {
     if (this.isRunningTool(tool)) {
       return `${RemoteI18n.t('chat.toolRunning')} “${this.compactText(this.operationTarget(tool), 24)}”`;
     }
-    if (this.hasToolError(tool)) {
-      return `${RemoteI18n.f('chat.toolFailed', this.operationLabel(tool))} · ` +
-        `${this.compactText(this.operationTarget(tool), 24)}`;
-    }
     if (this.isPendingConfirmation(tool) || this.isQuestionTool(tool)) {
       return `${this.displayStatus(tool.status || 'pending')} · ${this.operationLabel(tool)}`;
     }
-    if (this.isCompletedTool(tool) || this.isCancelledTool(tool)) {
+    if (this.isCompletedTool(tool) || this.isCancelledTool(tool) || this.hasToolError(tool)) {
       return `${this.operationLabel(tool)} · ${this.compactText(this.operationTarget(tool), 28)}`;
     }
     return `${this.displayStatus(tool.status || 'pending')} · ${this.operationLabel(tool)}`;
@@ -915,16 +909,10 @@ export struct ToolStatusList {
   }
 
   private toolTypeBorderColor(tool: ConversationUiToolStatus): ResourceColor {
-    if (this.hasToolError(tool)) {
-      return STATUS_DANGER;
-    }
     return LINE;
   }
 
   private toolStatusIcon(tool: ConversationUiToolStatus): string {
-    if (this.hasToolError(tool)) {
-      return '!';
-    }
     const normalized = (tool.status || '').toLowerCase();
     if (normalized === 'running' || normalized === 'active') {
       return '•';
@@ -939,15 +927,11 @@ export struct ToolStatusList {
   }
 
   private toolStatusColor(tool: ConversationUiToolStatus): ResourceColor {
-    if (this.hasToolError(tool)) {
-      return STATUS_DANGER;
-    }
     return MUTED;
   }
 
   private shouldShowStatusBadge(tool: ConversationUiToolStatus): boolean {
-    return this.hasToolError(tool) ||
-      this.isPendingConfirmation(tool) ||
+    return this.isPendingConfirmation(tool) ||
       this.isQuestionTool(tool) ||
       this.isRunningTool(tool) ||
       this.isCancelledTool(tool);

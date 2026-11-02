@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnyFlowItem, DialogTurn, FlowToolItem, ModelRound, Session } from '../../types/flow-chat';
-import { processNormalTextChunkInternal, processThinkingChunkInternal } from './TextChunkModule';
+import { normalizeStreamContent, processNormalTextChunkInternal, processThinkingChunkInternal } from './TextChunkModule';
 
 function makeContext(session: Session): any {
   return {
@@ -138,6 +138,10 @@ describe('processNormalTextChunkInternal', () => {
       .filter(item => item.type === 'text');
     expect(textItems).toHaveLength(1);
     expect((textItems[0] as any).content).toBe('Restored partial plus live chunk');
+  });
+
+  it('normalizes recovered stream content before incremental appends use it', () => {
+    expect(normalizeStreamContent('Before\n\n\nAfter')).toBe('Before\n\nAfter');
   });
 
   it('continues a streaming thinking item restored by a mid-turn Peer snapshot', () => {

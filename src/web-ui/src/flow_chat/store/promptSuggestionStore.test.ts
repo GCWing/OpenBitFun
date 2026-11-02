@@ -20,6 +20,26 @@ afterEach(() => {
 });
 
 describe('prompt suggestion store', () => {
+  it.each([LOCAL_SURFACE_ID, 'legacy-peer'])('trims surrounding whitespace before displaying or accepting a suggestion from %s', surfaceId => {
+    const incoming = {
+      suggestion: '\r\n\n\t\u00a0\u3000Save  these preferences in USER.md\n\n  Keep the examples.\u3000\u00a0\t\r\n',
+      sourceTurnId: 't1',
+    };
+    usePromptSuggestionStore.getState().setSuggestion('session', incoming, surfaceId);
+
+    const stored = usePromptSuggestionStore.getState().suggestions[promptSuggestionKey('session', surfaceId)];
+    expect(stored).toEqual({
+      suggestion: 'Save  these preferences in USER.md\n\n  Keep the examples.', sourceTurnId: 't1',
+    });
+    expect(visiblePromptSuggestion(stored, idle)).toBe('Save  these preferences in USER.md\n\n  Keep the examples.');
+    expect(incoming.suggestion).toMatch(/^\r\n\n/);
+  });
+
+  it.each(['', ' \t\r\n', '\u00a0\u3000'])('ignores blank suggestions (%j)', suggestion => {
+    usePromptSuggestionStore.getState().setSuggestion('session', { suggestion, sourceTurnId: 't1' });
+    expect(usePromptSuggestionStore.getState().suggestions).toEqual({});
+  });
+
   it('clears disabled host hints, rejects late results, and keeps other hosts independent', () => {
     const store = usePromptSuggestionStore.getState();
     store.setSuggestion('a', candidate, LOCAL_SURFACE_ID);

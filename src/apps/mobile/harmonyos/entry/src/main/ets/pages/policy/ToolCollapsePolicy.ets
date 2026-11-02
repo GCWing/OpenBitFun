@@ -17,13 +17,14 @@ export class ToolCollapsePolicy {
   static readonly MIN_SUMMARY_COUNT: number = 2;
 
   static shouldFoldIntoSummary(tool: ConversationUiToolStatus): boolean {
-    if (PlanToolPolicy.isPlanTool(tool) || ToolCollapsePolicy.hasError(tool) ||
+    if (PlanToolPolicy.isPlanTool(tool) ||
       ToolCollapsePolicy.isPending(tool) ||
       ToolCollapsePolicy.isQuestion(tool) ||
       ToolCollapsePolicy.isRunning(tool)) {
       return false;
     }
-    return ToolCollapsePolicy.isCompleted(tool) || ToolCollapsePolicy.isCancelled(tool);
+    return ToolCollapsePolicy.isCompleted(tool) || ToolCollapsePolicy.isCancelled(tool) ||
+      ToolCollapsePolicy.hasError(tool);
   }
 
   static collapsedGroups(tools: ConversationUiToolStatus[]): ToolCollapseGroup[] {

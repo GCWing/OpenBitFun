@@ -289,6 +289,19 @@ Use this tool when you recognize a common task pattern — it saves planning tim
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "playbooks": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "playbook": {"type": "string"},
+                "description": {"type": "string"},
+                "steps": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+            },
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

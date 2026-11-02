@@ -1412,6 +1412,7 @@ mod tests {
             }],
             form_state: RemoteConnectFormStateRecord::default(),
             verbose_mode: false,
+            disabled_bots: Vec::new(),
         }
     }
 

@@ -64,6 +64,10 @@ pub struct AiErrorDetail {
     pub retryable: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub action_hints: Vec<String>,
+    /// Optional recovery boundary supplied by the runtime owner. Unknown values
+    /// survive round trips so older surfaces can retain future diagnostics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_constraint: Option<String>,
 }
 
 /// Provider failure normalized before it crosses adapter/runtime boundaries.
@@ -130,6 +134,7 @@ impl AiProviderError {
             http_status: self.http_status,
             retryable: Some(is_retryable_category(&self.category)),
             action_hints: action_hints_for_category(&self.category),
+            recovery_constraint: None,
         }
     }
 }
@@ -153,7 +158,7 @@ pub fn classify_ai_error_parts(
         Some(401) => return ErrorCategory::Auth,
         Some(402) => return ErrorCategory::ProviderQuota,
         Some(403) => return ErrorCategory::Permission,
-        Some(429) => return ErrorCategory::RateLimit,
+        Some(429) => return classify_too_many_requests(message, provider_code),
         Some(500..=599) => return ErrorCategory::ProviderUnavailable,
         _ => {}
     }
@@ -169,7 +174,10 @@ pub fn classify_ai_error_parts(
         return ErrorCategory::ContextOverflow;
     }
     match code.as_str() {
-        "insufficient_quota" | "quota_exceeded" => return ErrorCategory::ProviderQuota,
+        "insufficient_quota" | "quota_exceeded" | "usage_limit_reached" => {
+            return ErrorCategory::ProviderQuota;
+        }
+        "usage_not_included" => return ErrorCategory::ProviderBilling,
         "rate_limit_exceeded" | "throttling_error" => return ErrorCategory::RateLimit,
         "overloaded_error" | "server_is_overloaded" | "server_error" => {
             return ErrorCategory::ProviderUnavailable;
@@ -193,6 +201,45 @@ pub fn classify_ai_error_parts(
         ErrorCategory::InvalidRequest
     } else {
         category
+    }
+}
+
+/// HTTP 429 is shared by short request-rate limits and exhausted allowances.
+/// Only explicit allowance/balance facts promote it; generic "quota" wording
+/// stays a rate limit because per-minute limits often use the same words.
+fn classify_too_many_requests(message: &str, provider_code: Option<&str>) -> ErrorCategory {
+    let code = provider_code
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    match code.as_str() {
+        "insufficient_quota" | "usage_limit_reached" | "quota_exceeded" => {
+            return ErrorCategory::ProviderQuota;
+        }
+        "usage_not_included" => return ErrorCategory::ProviderBilling,
+        _ => {}
+    }
+    let m = message.to_lowercase();
+    if contains_any(
+        &m,
+        &[
+            "insufficient_quota",
+            "usage_limit_reached",
+            "insufficient balance",
+            "not_enough_balance",
+            "not enough balance",
+            "no available resource package",
+            "无可用资源包",
+            "余额不足",
+            "账户已欠费",
+            "额度已用完",
+            "额度不足",
+        ],
+    ) || contains_provider_code(&m, "1113")
+    {
+        ErrorCategory::ProviderQuota
+    } else {
+        ErrorCategory::RateLimit
     }
 }
 
@@ -343,6 +390,7 @@ pub fn ai_error_detail_from_message(message: &str, category: ErrorCategory) -> A
         http_status: extract_http_status(message),
         retryable: Some(is_retryable_category(&category)),
         action_hints: action_hints_for_category(&category),
+        recovery_constraint: None,
     }
 }
 
@@ -519,6 +567,22 @@ fn extract_http_status(message: &str) -> Option<u16> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recovery_constraint_is_optional_and_unknown_values_survive_legacy_round_trip() {
+        let legacy = serde_json::json!({"category":"provider_quota","providerCode":"insufficient_quota","httpStatus":429});
+        let mut detail: super::AiErrorDetail = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(detail.recovery_constraint, None);
+        assert_eq!(serde_json::to_value(&detail).unwrap(), legacy);
+        detail.recovery_constraint = Some("future_constraint".into());
+        let encoded = serde_json::to_value(&detail).unwrap();
+        assert_eq!(encoded["recoveryConstraint"], "future_constraint");
+        let decoded: super::AiErrorDetail = serde_json::from_value(encoded).unwrap();
+        assert_eq!(
+            decoded.recovery_constraint.as_deref(),
+            Some("future_constraint")
+        );
+    }
+
     use super::{
         ai_error_detail_from_message, classify_ai_error_message, classify_ai_error_parts,
         AiProviderError, ErrorCategory,
@@ -627,6 +691,44 @@ mod tests {
         );
         assert_eq!(
             classify_ai_error_parts("429 status code (no body)", None, Some(429)),
+            ErrorCategory::RateLimit
+        );
+        assert_eq!(
+            classify_ai_error_parts(
+                r#"{"error":{"type":"usage_limit_reached","resets_in_seconds":600}}"#,
+                Some("usage_limit_reached"),
+                Some(429)
+            ),
+            ErrorCategory::ProviderQuota
+        );
+        assert_eq!(
+            classify_ai_error_parts(
+                "You exceeded your current quota",
+                Some("insufficient_quota"),
+                Some(429)
+            ),
+            ErrorCategory::ProviderQuota
+        );
+        assert_eq!(
+            classify_ai_error_parts("渠道余额不足，请充值", None, Some(429)),
+            ErrorCategory::ProviderQuota
+        );
+        assert_eq!(
+            classify_ai_error_parts(
+                "plan does not include this model",
+                Some("usage_not_included"),
+                Some(429)
+            ),
+            ErrorCategory::ProviderBilling
+        );
+        // Per-minute limits often say "quota"; without an explicit allowance
+        // fact they keep the short rate-limit treatment.
+        assert_eq!(
+            classify_ai_error_parts(
+                "Quota exceeded for metric: requests per minute",
+                Some("RESOURCE_EXHAUSTED"),
+                Some(429)
+            ),
             ErrorCategory::RateLimit
         );
         assert_eq!(

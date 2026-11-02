@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react';
+import { inertProps } from '../../internal/inert';
 import './ConversationBlocks.css';
 export const FLOWCHAT_COLLAPSE_DURATION_MS = 300;
 export const FLOWCHAT_COLLAPSE_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -129,7 +130,7 @@ export const FlowChatCollapse = ({
         transitionTimingFunction: `${FLOWCHAT_COLLAPSE_EASING}, ${FLOWCHAT_COLLAPSE_EASING}, ${FLOWCHAT_COLLAPSE_EASING}`,
       }}
       aria-hidden={!isOpen}
-      {...{ inert: !isOpen ? '' : undefined }}
+      {...inertProps(!isOpen)}
     >
       {shouldRender && (
         <div ref={innerRef} className={`smooth-height-collapse__inner ${innerClassName}`.trim()}>

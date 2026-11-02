@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly MARKET_ROOT="/srv/openbitfun-skin-market"
+readonly MARKET_ROOT="${MARKET_ROOT:-/srv/openbitfun-skin-market}"
 readonly DATA_ROOT="${MARKET_ROOT}/data"
 readonly ARTIFACT_ROOT="${MARKET_ROOT}/artifacts"
 readonly BACKUP_ROOT="${MARKET_ROOT}/backups"
@@ -11,9 +11,10 @@ readonly TODAY="$(date -u +%F)"
 readonly WEEK="$(date -u +%G-W%V)"
 readonly DAILY_TARGET="${DAILY_ROOT}/${TODAY}"
 readonly DATABASE="${DATA_ROOT}/market.sqlite"
+readonly SKIN_MARKET_UID="${SKIN_MARKET_UID:-10002}"
 
-if [[ "${MARKET_ROOT}" != "/srv/openbitfun-skin-market" ]]; then
-  echo "Unexpected backup root" >&2
+if [[ "${MARKET_ROOT}" != /* || "${MARKET_ROOT}" == "/" ]]; then
+  echo "MARKET_ROOT must be an absolute path below /" >&2
   exit 1
 fi
 
@@ -22,8 +23,8 @@ if [[ ! -f "${DATABASE}" ]]; then
   echo "Skin market database does not exist; refusing to create an empty backup source" >&2
   exit 1
 fi
-if [[ "$(stat -c %u "${DATABASE}")" != "10002" ]]; then
-  echo "Skin market database must be owned by runtime UID 10002" >&2
+if [[ "$(stat -c %u "${DATABASE}")" != "${SKIN_MARKET_UID}" ]]; then
+  echo "Skin market database must be owned by runtime UID ${SKIN_MARKET_UID}" >&2
   exit 1
 fi
 if [[ "$(sqlite3 "${DATABASE}" "PRAGMA quick_check;")" != "ok" ]]; then

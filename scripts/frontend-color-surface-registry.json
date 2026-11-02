@@ -406,6 +406,41 @@
       }
     },
     {
+      "id": "miniapp-background-remover",
+      "label": "Background Remover MiniApp",
+      "kind": "miniapp",
+      "owner": "MiniApp public appearance contract",
+      "root": "MiniApp/Demo/background-remover",
+      "audit": {
+        "engine": "miniapp",
+        "generatedBundles": [
+          {
+            "output": "source/ui.js",
+            "inputs": ["source/ui/core.js", "source/ui/i18n.js", "source/ui/main.js"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "miniapp-icon-studio-v2",
+      "label": "Icon Studio V2.0.2 MiniApp",
+      "kind": "miniapp",
+      "owner": "MiniApp public appearance contract",
+      "root": "MiniApp/Demo/icon-studio-v2",
+      "audit": {
+        "engine": "miniapp",
+        "generatedBundles": [
+          {
+            "output": "source/ui.js",
+            "inputs": [
+              "source/ui/geometry.js", "source/ui/trace.js", "source/ui/i18n.js", "source/ui/state.js",
+              "source/ui/render.js", "source/ui/interactions.js", "source/ui/io.js", "source/ui/boot.js"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "miniapp-icon-design-system",
       "label": "Icon Design System MiniApp",
       "kind": "miniapp",

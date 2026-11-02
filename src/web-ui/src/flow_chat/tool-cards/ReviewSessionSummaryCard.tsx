@@ -8,7 +8,7 @@ import { useToolCardHeightContract } from './useToolCardHeightContract';
 import { flowChatStore } from '../store/FlowChatStore';
 import { openBtwSessionInAuxPane } from '../services/btwSessionPane';
 import { openMainSession } from '../services/sessionActivation';
-import { snapshotAPI } from '@/infrastructure/api';
+import { snapshotAPI } from '@/infrastructure/api/service-api/SnapshotAPI';
 import {
   collectReviewChangedFiles,
   findLatestCodeReviewResult,

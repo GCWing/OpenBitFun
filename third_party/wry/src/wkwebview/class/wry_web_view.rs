@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Mutex};
 
 #[cfg(target_os = "macos")]
 use objc2::runtime::ProtocolObject;
@@ -20,10 +20,27 @@ use crate::{
 };
 #[cfg(target_os = "ios")]
 use objc2_ui_kit::UIEvent as NSEvent;
+use objc2_web_kit::WKNavigation;
 #[cfg(target_os = "macos")]
 use objc2_web_kit::WKWebView;
 
+/// Main-frame navigation state, including failures before document commit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NavigationState {
+  Loading,
+  Finished,
+  Cancelled,
+  Failed {
+    domain: String,
+    code: isize,
+    message: String,
+  },
+}
+
 pub struct WryWebViewIvars {
+  pub(crate) navigation: RefCell<Option<Retained<WKNavigation>>>,
+  pub(crate) navigation_state: RefCell<Option<NavigationState>>,
+  pub(crate) navigation_state_handler: RefCell<Option<Rc<dyn Fn(NavigationState)>>>,
   pub(crate) is_child: bool,
   #[cfg(target_os = "macos")]
   pub(crate) drag_drop_handler: Box<dyn Fn(DragDropEvent) -> bool>,
@@ -120,6 +137,38 @@ define_class!(
     }
   }
 );
+
+impl WryWebView {
+  /// Observe native navigation without replacing WebKit's navigation delegate.
+  /// Replays the latest state so attachment after initial navigation is lossless.
+  pub fn set_navigation_state_handler(&self, handler: impl Fn(NavigationState) + 'static) {
+    let handler: Rc<dyn Fn(NavigationState)> = Rc::new(handler);
+    *self.ivars().navigation_state_handler.borrow_mut() = Some(handler.clone());
+    let state = self.ivars().navigation_state.borrow().clone();
+    if let Some(state) = state {
+      handler(state);
+    }
+  }
+
+  pub(crate) fn navigation_state_changed(
+    &self,
+    navigation: Option<&WKNavigation>,
+    state: NavigationState,
+  ) {
+    if state == NavigationState::Loading {
+      *self.ivars().navigation.borrow_mut() = navigation.map(Retained::from);
+    } else if self.ivars().navigation.borrow().as_deref() != navigation {
+      // Replacing a navigation cancels the old request. Its terminal callback
+      // must not fail or complete the replacement.
+      return;
+    }
+    *self.ivars().navigation_state.borrow_mut() = Some(state.clone());
+    let handler = self.ivars().navigation_state_handler.borrow().clone();
+    if let Some(handler) = handler {
+      handler(state);
+    }
+  }
+}
 
 // Custom Protocol Task Checker
 impl WryWebView {

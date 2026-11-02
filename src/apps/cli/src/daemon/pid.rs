@@ -52,6 +52,9 @@ pub(crate) fn remove_pid_file() {
 
 /// Whether a daemon process recorded in the pid file is alive right now.
 pub(crate) fn is_daemon_running() -> bool {
+    if super::control::owner_is_running() {
+        return true;
+    }
     default_pid_file_path()
         .ok()
         .and_then(|path| read_pid_file_from(&path))
@@ -62,6 +65,9 @@ pub(crate) fn is_daemon_running() -> bool {
 /// daemon was signalled.
 #[cfg(unix)]
 pub(crate) fn request_daemon_shutdown() -> bool {
+    if super::control::request_shutdown() {
+        return true;
+    }
     let Some(pid) = default_pid_file_path()
         .ok()
         .and_then(|path| read_pid_file_from(&path))
@@ -77,7 +83,7 @@ pub(crate) fn request_daemon_shutdown() -> bool {
 
 #[cfg(not(unix))]
 pub(crate) fn request_daemon_shutdown() -> bool {
-    false
+    super::control::request_shutdown()
 }
 
 /// Whether the given pid refers to a live process.

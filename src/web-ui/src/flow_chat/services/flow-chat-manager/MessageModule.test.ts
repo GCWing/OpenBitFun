@@ -249,6 +249,21 @@ describe('MessageModule session writer conflict', () => {
       .mockReturnValue('notification-3');
   });
 
+  it.each([false, true])('preserves the plan build turn ID while busy, host queue=%s', async hostQueue => {
+    const { context, session } = conflictContext('plan-build');
+    mockGetCurrentState.mockReturnValue('processing');
+    mockHostQueueSupported.mockReturnValue(hostQueue);
+    mockHostQueueSubmit.mockResolvedValue({ receipt: { turnId: 'plan-turn', status: 'queued' } });
+    await sendMessage(context, 'Implement the plan', session.sessionId, undefined, undefined, undefined,
+      { turnId: 'plan-turn' });
+    if (hostQueue) {
+      expect(mockHostQueueSubmit).toHaveBeenCalledWith(expect.objectContaining({ content: 'Implement the plan' }),
+        expect.any(Object), 'plan-turn');
+    } else {
+      expect(mockPendingEnqueue).toHaveBeenCalledWith(expect.objectContaining({ turnId: 'plan-turn' }));
+    }
+  });
+
   it.each([false, true])('rejects a fresh-only child before queue admission, host queue=%s', async hostQueue => {
     const { context, session } = conflictContext('fresh-only');
     Object.assign(session, { sessionKind: 'subagent', continuationPolicy: 'fresh_only' });
@@ -784,7 +799,7 @@ describe('MessageModule cancellation', () => {
     mockStartDialogTurn.mockResolvedValue({ sessionId: 'resume-session', turnId: 'next-turn', status: 'started' });
     const session: any = { sessionId: 'resume-session', sessionKind: 'normal', mode: 'Standard',
       titleStatus: 'generated', dialogTurns: [], config: { modelName: 'primary' }, maxContextTokens: 32000 };
-    const pending = { id: 'queued', sessionId: session.sessionId, content: 'next', status: 'queued', retryCount: 0 };
+    const pending = { id: 'queued', turnId: 'next-turn', sessionId: session.sessionId, content: 'next', status: 'queued', retryCount: 0 };
     mockPendingList.mockReturnValue([pending]);
     mockPendingSetStatus.mockImplementation((_session, _id, status) => { pending.status = status; });
     const context: any = {
@@ -819,6 +834,7 @@ describe('MessageModule cancellation', () => {
     // A held terminal delivery may report IDLE as well; coalesce the wakeups.
     onIdle(session.sessionId, { currentState: 'idle' });
     await vi.waitFor(() => expect(mockStartDialogTurn).toHaveBeenCalledTimes(1));
+    expect(mockStartDialogTurn).toHaveBeenCalledWith(expect.objectContaining({ turnId: 'next-turn' }));
     expect(mockPendingRemove).toHaveBeenCalledWith(session.sessionId, pending.id);
 
     pending.status = 'queued';

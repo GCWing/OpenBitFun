@@ -46,7 +46,8 @@ internal fun projectWorkspaceCatalog(
                 row.name.isBlank() -> row.copy(name = row.path.trimEnd('/').substringAfterLast('/'))
                 else -> row
             }
-        }.distinctBy { it.workspaceId ?: Triple(it.remoteConnectionId, it.remoteSshHost, it.path) },
+        }.distinctBy { it.workspaceId ?: Triple(it.remoteConnectionId, it.remoteSshHost, it.path) }
+            .sortedBy { it.kind != "assistant" },
         if (opened) WorkspaceCatalogSource.OPENED else WorkspaceCatalogSource.RECENT,
     )
 }

@@ -44,4 +44,9 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn unknown_api_formats_remain_rejected() {
+        assert!(ApiFormat::parse("unknown-gateway").is_err());
+    }
 }

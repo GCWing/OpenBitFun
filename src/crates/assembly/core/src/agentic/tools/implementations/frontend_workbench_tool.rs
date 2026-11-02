@@ -86,6 +86,27 @@ This tool is unavailable for remote workspaces, remote-control turns, and non-de
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "draftId": {"type": "string"},
+                "draftPath": {"type": "string"},
+                "activeRevision": {"type": "string"},
+                "confirmedRevision": {"type": "string"},
+                "reason": {"type": "string"},
+                "parts": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "slots": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "commands": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "state": {"type": "object", "additionalProperties": true},
+                "result": {"anyOf": [{"type": "null"}, {"type": "object", "additionalProperties": true}]}
+            },
+            "required": ["status"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

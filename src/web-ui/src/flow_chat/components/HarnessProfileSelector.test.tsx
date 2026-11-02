@@ -10,8 +10,10 @@ import { HarnessProfileSelector } from './HarnessProfileSelector';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      options?.defaultValue ?? key,
+    t: (key: string, options?: { defaultValue?: string; name?: string }) =>
+      key === 'chatInput.harness.modeLabel'
+        ? `${options?.name} mode`
+        : options?.defaultValue ?? key,
   }),
 }));
 
@@ -76,7 +78,7 @@ describe('HarnessProfileSelector', () => {
       '[data-testid="harness-profile-selector"]',
     );
     expect(trigger?.querySelector('.openbitfun-harness-selector__density-mark')).toBeNull();
-    expect(trigger?.textContent).toBe('chatInput.harness.profiles.Standard.name');
+    expect(trigger?.textContent).toBe('chatInput.harness.profiles.Standard.name mode');
     expect(trigger?.dataset.harnessPending).toBeUndefined();
     expect(
       container.querySelector('[data-testid="harness-profile-pending-dot"]'),
@@ -401,7 +403,7 @@ describe('HarnessProfileSelector', () => {
     expect(trigger?.dataset.harnessLocked).toBe('true');
     expect(trigger?.dataset.harnessFixed).toBe('true');
     expect(trigger?.disabled).toBe(false);
-    expect(trigger?.textContent).toBe('chatInput.harness.profiles.Standard.name');
+    expect(trigger?.textContent).toBe('chatInput.harness.profiles.Standard.name mode');
 
     await act(async () => {
       trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

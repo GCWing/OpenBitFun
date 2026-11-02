@@ -25,6 +25,10 @@ pub struct ModelResponseReplayCapture {
 /// Unified AI response format
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub struct UnifiedResponse {
+    /// Model identifier explicitly reported by the provider for this attempt.
+    /// Missing observations must not be filled from the request configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_model: Option<String>,
     pub text: Option<String>,
     pub reasoning_content: Option<String>,
     /// Distinguishes provider reasoning text from a user-displayable reasoning summary.
@@ -65,6 +69,7 @@ impl fmt::Debug for UnifiedResponse {
             }
         });
         f.debug_struct("UnifiedResponse")
+            .field("response_model", &self.response_model)
             .field("text", &self.text)
             .field("reasoning_content", &reasoning_summary)
             .field("reasoning_content_kind", &self.reasoning_content_kind)

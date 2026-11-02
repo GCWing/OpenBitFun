@@ -25,6 +25,8 @@ Work with AI in project context, create sessions, continue tasks, answer permiss
   - Choose the model, work mode, memory mode, and permission mode per session
 - **由专用智能体工具控制 / Delegated Agent tool** · `FrontendWorkbench` / `Read` / `Write` / `Edit` · 让创造模式扩展客户端界面与运行时能力
   - Extend client UI and runtime capabilities in Creative mode
+- **由专用智能体工具控制 / Delegated Agent tool** · `generate_image` · 通过已配置的默认图像模型生成图片
+  - Generate images with the configured default image model
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 开始、引导、打断、取消或恢复一次智能体运行
   - Start, steer, interrupt, cancel, or recover an agent turn
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看并逐个或批量回答等待中的权限请求

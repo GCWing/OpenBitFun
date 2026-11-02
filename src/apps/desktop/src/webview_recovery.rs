@@ -201,7 +201,7 @@ mod windows {
         match action {
             RecoveryAction::Reload => {
                 let reload_result = app
-                    .get_webview_window("main")
+                    .get_webview("main")
                     .ok_or_else(|| "main window not found".to_string())
                     .and_then(|window| window.reload().map_err(|error| error.to_string()));
                 if let Err(error) = reload_result {

@@ -790,12 +790,7 @@ describe('AppearanceCompiler', () => {
         },
         'session-usage-panel': {
           parts: {
-            tab: {
-              contexts: [{
-                when: { facets: { tab: 'models' }, states: ['active'] },
-                style: { color: accent },
-              }],
-            },
+            section: { base: { color: accent } },
           },
         },
         'acp-agents-config': {
@@ -1023,7 +1018,7 @@ describe('AppearanceCompiler', () => {
     expect(snapshot.cssText).toContain('[data-openbitfun-component="remote-connect-dialog"][data-openbitfun-part="sidebar"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="remote-connect-dialog"][data-openbitfun-part="overviewAction"][data-openbitfun-group="account"][data-openbitfun-state~="authenticated"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-scene="agents"][data-openbitfun-part="catalogGrid"]');
-    expect(snapshot.cssText).toContain('[data-openbitfun-product-component="session-usage-panel"][data-openbitfun-product-part="tab"][data-openbitfun-tab="models"][data-openbitfun-state~="active"]');
+    expect(snapshot.cssText).toContain('[data-openbitfun-product-component="session-usage-panel"][data-openbitfun-product-part="section"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="acp-agents-config"][data-openbitfun-part="root"][data-openbitfun-view="json"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="acp-agents-config"][data-openbitfun-part="remoteServer"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="tiptap-editor"][data-openbitfun-part="inlineAiPanel"]');

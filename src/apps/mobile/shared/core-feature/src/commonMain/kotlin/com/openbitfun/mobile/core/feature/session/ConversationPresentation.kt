@@ -94,7 +94,7 @@ public data class ToolCard public constructor(
     public val foldIntoSummary: Boolean
         get() {
             if (actions.isNotEmpty() || kind == ToolKind.QUESTION) return false
-            if (phase != ToolPhase.COMPLETED && phase != ToolPhase.CANCELLED) return false
+            if (phase !in setOf(ToolPhase.COMPLETED, ToolPhase.CANCELLED, ToolPhase.FAILED)) return false
             val normalizedName = name.filterNot { it == '_' || it == '-' || it.isWhitespace() }.lowercase()
             val planWrite = normalizedName in setOf("write", "writefile", "createfile") &&
                 filePath.lowercase().endsWith(".plan.md")
@@ -166,6 +166,7 @@ public data class ConversationRow public constructor(
     public val error: String?,
     /** This is the current turn, including its finalizing snapshot before persistence. */
     public val live: Boolean,
+    public val timestampMs: Long?,
 )
 
 /**
@@ -211,6 +212,7 @@ public fun ChatTimelineState.conversationRows(): List<ConversationRow> =
             typing = message?.let { isTyping(it, item.isStreaming) } == true,
             showRetry = item.showRetryAction,
             error = message?.error?.trim()?.takeIf(String::isNotEmpty),
+            timestampMs = message?.timestamp?.let(SessionTimePresentation::timestampMs),
         )
     }
 

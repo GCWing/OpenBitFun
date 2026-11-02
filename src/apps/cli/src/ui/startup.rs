@@ -1773,16 +1773,28 @@ impl StartupPage {
                     }
                     let config_service =
                         openbitfun_core::service::config::get_global_config_service().await?;
-                    let existing = config_service
-                        .get_ai_models()
-                        .await
-                        .map_err(anyhow::Error::msg)?
-                        .into_iter()
-                        .find(|model| model.id == model_id)
-                        .ok_or_else(|| anyhow!("AI model '{model_id}' was not found"))?;
-                    let model = model_from_mutation(mutation, Some(existing))?;
                     config_service
-                        .update_ai_model(&model_id, model)
+                        .update_config(
+                            "ai.models",
+                            |models: &mut Vec<openbitfun_core::service::config::AIModelConfig>| {
+                                let existing = models
+                                    .iter_mut()
+                                    .find(|model| model.id == model_id)
+                                    .ok_or_else(|| {
+                                        openbitfun_core::util::errors::OpenBitFunError::config(
+                                            format!("AI model '{model_id}' was not found"),
+                                        )
+                                    })?;
+                                let model = model_from_mutation(mutation, Some(existing.clone()))
+                                    .map_err(|error| {
+                                    openbitfun_core::util::errors::OpenBitFunError::validation(
+                                        error.to_string(),
+                                    )
+                                })?;
+                                *existing = model;
+                                Ok(())
+                            },
+                        )
                         .await
                         .map_err(anyhow::Error::msg)
                 })

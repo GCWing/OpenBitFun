@@ -64,6 +64,20 @@ impl Tool for GetToolSpecTool {
         with_runtime(|runtime| runtime.input_schema())
     }
 
+    fn output_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "tool_name": {"type": "string"},
+                "description": {"type": "string"},
+                "input_schema": {"type": "object", "additionalProperties": true},
+                "catalog_generation": {"type": "integer"}
+            },
+            "required": ["tool_name", "description", "input_schema", "catalog_generation"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         with_runtime(|runtime| runtime.is_readonly())
     }

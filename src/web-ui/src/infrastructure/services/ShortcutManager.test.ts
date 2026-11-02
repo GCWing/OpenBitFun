@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Portal } from '@openbitfun/ui';
-import { EDITOR_SHORTCUTS } from '@/shared/constants/shortcuts';
-import { parseStoredKeybindings, shortcutManager } from './ShortcutManager';
+import { CANVAS_OVERVIEW_SHORTCUT, EDITOR_SHORTCUTS } from '@/shared/constants/shortcuts';
+import { buildStoredKeybindings, getReservedShortcutReason, parseStoredKeybindings, shortcutManager } from './ShortcutManager';
 
 function setPlatform(platform: string): void {
   Object.defineProperty(window.navigator, 'platform', {
@@ -40,6 +40,32 @@ describe('ShortcutManager platform primary modifier', () => {
     shortcutManager.setEnabled(true);
     shortcutManager.loadUserOverrides({});
     document.body.innerHTML = '';
+  });
+
+  it('uses a reachable overview default on macOS and preserves legacy overrides', () => {
+    setPlatform('MacIntel');
+    const callback = vi.fn();
+    shortcutManager.register('canvas.missionControl', CANVAS_OVERVIEW_SHORTCUT, callback);
+    dispatchScopedKey('canvas', { key: 'E', metaKey: true, shiftKey: true });
+    expect(callback).toHaveBeenCalledOnce();
+    expect(getReservedShortcutReason(CANVAS_OVERVIEW_SHORTCUT)).toBeUndefined();
+    const legacy = { 'canvas.missionControl': { key: 'Tab', ctrl: true } };
+    const loaded = parseStoredKeybindings(legacy);
+    shortcutManager.loadUserOverrides(loaded);
+    expect(shortcutManager.getEffectiveConfig('canvas.missionControl', CANVAS_OVERVIEW_SHORTCUT).key).toBe('Tab');
+    expect(parseStoredKeybindings(buildStoredKeybindings(loaded))).toEqual(legacy);
+    expect(getReservedShortcutReason(loaded['canvas.missionControl'])).toBe('appSwitch');
+  });
+
+  it.each([
+    ['MacIntel', { key: 'Tab', meta: true }, 'appSwitch'],
+    ['MacIntel', { key: ' ', ctrl: true }, 'systemSearch'],
+    ['Win32', { key: 'Tab', alt: true }, 'appSwitch'],
+    ['Win32', { key: 'Delete', ctrl: true, alt: true }, 'secureAttention'],
+    ['Linux', { key: 'Tab', ctrl: true }, undefined],
+    ['Win32', CANVAS_OVERVIEW_SHORTCUT, undefined],
+  ])('recognizes OS interception for %s', (platform, config, reason) => {
+    expect(getReservedShortcutReason(config, platform)).toBe(reason);
   });
 
   it('keeps the same tab command independently registered in the main and side regions', () => {

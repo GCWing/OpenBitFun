@@ -442,6 +442,52 @@
     background: transparent;
   }
 
+  // ==================== File Watch Notice ====================
+  // Occupies its own row between the header and the tree: a stopped watcher
+  // leaves the tree rendered, so the notice must not replace or cover it.
+  .openbitfun-file-watch-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
+    border-bottom: 1px solid var(--openbitfun-color-border-subtle);
+    background: var(--openbitfun-color-status-warning-surface);
+    color: var(--openbitfun-color-status-warning-content);
+
+    &__body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    &__title {
+      font-size: var(--openbitfun-type-label-md-font-size);
+      font-weight: var(--openbitfun-type-heading-section-font-weight);
+    }
+
+    &__reason,
+    &__hint-label {
+      font-size: var(--openbitfun-type-meta-font-size);
+      line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+    }
+
+    &__hint {
+      display: block;
+      margin-top: 2px;
+      padding: var(--openbitfun-space-1) var(--openbitfun-space-2);
+      border-radius: var(--openbitfun-radius-sm);
+      background: var(--openbitfun-color-surface-canvas);
+      color: var(--openbitfun-color-content-primary);
+      font-family: var(--openbitfun-type-code-md-font-family);
+      font-size: var(--openbitfun-type-meta-font-size);
+      white-space: pre-wrap;
+      word-break: break-all;
+      user-select: text;
+    }
+  }
+
   // ==================== Loading State ====================
   &__loading {
     display: flex;

@@ -108,6 +108,17 @@ describe('PersistenceModule', () => {
     vi.clearAllMocks();
   });
 
+  it.each([{}, { firstChunkMs: 20, firstVisibleOutputMs: 200, streamDurationMs: 1_200, ttftMs: 350 }])(
+    'preserves optional host timing through JSON persistence: %j', timing => {
+      const turn = createDialogTurn('completed');
+      Object.assign(turn.modelRounds[0], timing);
+      const saved = JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(turn)));
+      for (const key of ['firstChunkMs', 'firstVisibleOutputMs', 'streamDurationMs', 'ttftMs'] as const) {
+        expect(saved.modelRounds[0][key]).toBe(turn.modelRounds[0][key]);
+      }
+    },
+  );
+
   it('saves a visible result receipt with its retained generation and no metadata read', async () => {
     const turn = createDialogTurn('completed');
     turn.recoveryEpoch = 2;
@@ -153,6 +164,15 @@ describe('PersistenceModule', () => {
     } finally {
       activateSurface(original);
     }
+  });
+
+  it('preserves actual routing facts in frontend checkpoints', () => {
+    const turn = createDialogTurn('completed');
+    turn.modelRounds = [{ id: 'r', index: 0, items: [], isStreaming: false, isComplete: true, startTime: 1,
+      modelConfigId: 'economy-id', effectiveModelName: 'economy-name', routing: { route: 'economy', latencyMs: 12 } }];
+    expect(convertDialogTurnToBackendFormat(turn, 0).modelRounds[0]).toMatchObject({
+      modelConfigId: 'economy-id', effectiveModelName: 'economy-name', routing: { route: 'economy', latencyMs: 12 },
+    });
   });
 
   it('persists dialog turn token usage metadata when available', () => {

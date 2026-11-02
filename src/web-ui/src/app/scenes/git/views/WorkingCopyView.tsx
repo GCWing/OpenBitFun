@@ -2,10 +2,8 @@
  * WorkingCopyView — Git working copy: commit bar + file list + diff area (ContentCanvas mode=git).
  */
 
-import { OverflowText, Button, Icon, IconButton, SearchField, Textarea, Tooltip } from '@openbitfun/ui';
+import { OverflowText, Button, Empty, Icon, IconButton, SearchField, Textarea, Tooltip } from '@openbitfun/ui';
 import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react';
-import { useShortcut } from '@/infrastructure/hooks/useShortcut';
-import { useTranslation } from 'react-i18next';
 import { Minus, RotateCcw, Square, FileCode2 } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { ContentCanvas } from '@/app/components/panels/content-canvas';
@@ -16,6 +14,7 @@ import { createGitDiffEditorTab, createGitCodeEditorTab } from '@/shared/utils/t
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import './WorkingCopyView.scss';
+import { useGitSceneStore } from '../gitSceneStore';
 
 const log = createLogger('WorkingCopyView');
 
@@ -44,14 +43,16 @@ interface WorkingCopyViewProps {
   workspacePath?: string;
   workspaceId?: string;
   isActive?: boolean;
+  hostLabel?: string;
 }
 
 const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
   workspacePath,
   workspaceId,
   isActive = true,
+  hostLabel,
 }) => {
-  const { t } = useTranslation('panels/git');
+  const { t, formatNumber } = useI18n('panels/git');
   const { t: tComponents } = useI18n('components');
   const notification = useNotification();
 
@@ -64,6 +65,9 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
   const mainRef = useRef<HTMLDivElement>(null);
 
   const {
+    state,
+    error: statusError,
+    conflicts,
     currentBranch,
     staged,
     unstaged,
@@ -86,7 +90,11 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
     [currentBranch, staged, unstaged, untracked, ahead, behind]
   );
 
-  const { isOperating, addFiles, commit, push, pull, resetFiles } = useGitOperations({
+  const hasChanges = Boolean(staged.length || unstaged.length || untracked.length || conflicts.length);
+  const statusReady = Boolean(state?.lastRefreshTime.status) && !statusError;
+  const clean = statusReady && !hasChanges;
+
+  const { isOperating, addFiles, commit, push, pull } = useGitOperations({
     repositoryPath: { workspaceId: workspaceId ?? '', repositoryPath: workspacePath },
     autoRefresh: false,
   });
@@ -306,83 +314,13 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
     document.addEventListener('mouseup', onMouseUp);
   }, [fileListWidth]);
 
-  const handleGitStageAll = useCallback(async () => {
-    const files = getAllUnstagedFiles();
-    if (files.length === 0) return;
-    const result = await addFiles({ files, all: false });
-    if (result.success) {
-      setSelectedFiles(new Set());
-      await handleRefresh();
-      notification.success(t('notifications.stageSuccess', { count: files.length }));
-    } else if (result.error) notification.error(t('notifications.stageFailed', { error: result.error }));
-  }, [getAllUnstagedFiles, addFiles, handleRefresh, notification, t]);
-
-  const handleGitUnstageAll = useCallback(async () => {
-    if (!status?.staged?.length) return;
-    const paths = status.staged.map((f: { path: string }) => f.path);
-    const result = await resetFiles(paths, true);
-    if (result.success) await handleRefresh();
-    else if (result.error) notification.error(result.error);
-  }, [status, resetFiles, handleRefresh, notification]);
-
-  const gitShortcutsEnabled = Boolean(workspacePath) && isActive;
-
-  useShortcut(
-    'git.refresh',
-    { key: 'F5', scope: 'git' },
-    () => {
-      void handleRefresh();
-    },
-    { enabled: gitShortcutsEnabled, description: 'keyboard.shortcuts.git.refresh' }
-  );
-  useShortcut(
-    'git.commit',
-    { key: 'Enter', ctrl: true, scope: 'git', allowInInput: true },
-    () => {
-      void handleQuickCommit();
-    },
-    { enabled: gitShortcutsEnabled, description: 'keyboard.shortcuts.git.commit' }
-  );
-  useShortcut(
-    'git.push',
-    { key: 'P', ctrl: true, shift: true, scope: 'git' },
-    () => {
-      void handlePush();
-    },
-    { enabled: gitShortcutsEnabled, description: 'keyboard.shortcuts.git.push' }
-  );
-  useShortcut(
-    'git.pull',
-    { key: 'L', ctrl: true, shift: true, scope: 'git' },
-    () => {
-      void handlePull();
-    },
-    { enabled: gitShortcutsEnabled, description: 'keyboard.shortcuts.git.pull' }
-  );
-  useShortcut(
-    'git.stageAll',
-    { key: 'A', ctrl: true, shift: true, scope: 'git' },
-    () => {
-      void handleGitStageAll();
-    },
-    { enabled: gitShortcutsEnabled, description: 'keyboard.shortcuts.git.stageAll' }
-  );
-  useShortcut(
-    'git.unstageAll',
-    { key: 'U', ctrl: true, shift: true, scope: 'git' },
-    () => {
-      void handleGitUnstageAll();
-    },
-    { enabled: gitShortcutsEnabled, description: 'keyboard.shortcuts.git.unstageAll' }
-  );
-
   if (!workspacePath) {
     return (
       <div data-openbitfun-component="working-copy-view" data-openbitfun-part="root" className="openbitfun-git-scene-working-copy">
         <div className="openbitfun-git-scene-working-copy__placeholder" data-openbitfun-component="working-copy-view" data-openbitfun-part="placeholder">
           <FileCode2 size={48} aria-hidden />
           <p>{t('tabs.changes')}</p>
-          <p className="openbitfun-git-scene-working-copy__hint">Open a workspace to see changes.</p>
+          <p className="openbitfun-git-scene-working-copy__hint">{t('workingCopy.openWorkspace')}</p>
         </div>
       </div>
     );
@@ -425,18 +363,13 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
             </Tooltip>
           </div>
         </div>
+        {!clean && <>
         <div className="openbitfun-git-scene-working-copy__commit-input-row" data-openbitfun-component="working-copy-view" data-openbitfun-part="commitInput">
           <Textarea
             className="openbitfun-git-scene-working-copy__message"
             placeholder={status?.staged?.length ? t('commit.inputPlaceholder') : t('commit.inputPlaceholderNoStaged')}
             value={quickCommitMessage}
             onChange={e => setQuickCommitMessage(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                handleQuickCommit();
-              }
-            }}
             disabled={isOperating || isGeneratingCommit}
           />
           {isGeneratingCommit ? (
@@ -470,9 +403,11 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
             {status?.staged?.length ? t('actions.commitWithCount', { count: status.staged.length }) : t('actions.commit')}
           </Button>
         </div>
+        </>}
       </div>
 
       <div className="openbitfun-git-scene-working-copy__main" ref={mainRef} data-openbitfun-component="working-copy-view" data-openbitfun-part="main">
+        {!clean && <>
         <div className="openbitfun-git-scene-working-copy__file-list" style={{ width: fileListWidth }} data-openbitfun-component="working-copy-view" data-openbitfun-part="fileList">
           <div className="openbitfun-git-scene-working-copy__search" data-openbitfun-component="working-copy-view" data-openbitfun-part="search">
             <SearchField
@@ -486,8 +421,9 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
               onClear={searchQuery ? () => setSearchQuery('') : undefined}
             />
           </div>
-          {status && (status.unstaged?.length || status.untracked?.length || status.staged?.length) ? (
+          {status && hasChanges ? (
             <>
+              {conflicts.length > 0 && <p role="status">{t('workingCopy.conflicts', { count: conflicts.length })}</p>}
               {filteredFiles.unstaged.length > 0 && (
                 <>
                   <div
@@ -670,7 +606,7 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
               )}
             </>
           ) : (
-            <div className="openbitfun-git-scene-working-copy__empty" data-openbitfun-component="working-copy-view" data-openbitfun-part="empty">{t('empty.noChanges')}</div>
+            <div className="openbitfun-git-scene-working-copy__empty" data-openbitfun-component="working-copy-view" data-openbitfun-part="empty">{t(statusError ? 'workingCopy.statusUnavailable' : !statusReady ? 'loading.text' : 'empty.noChanges')}</div>
           )}
         </div>
         <div
@@ -683,9 +619,28 @@ const WorkingCopyView: React.FC<WorkingCopyViewProps> = ({
           aria-valuenow={fileListWidth}
           title={t('tooltips.resizeFileList')}
         />
+        </>}
         <div className="openbitfun-git-scene-working-copy__diff-area" data-openbitfun-component="working-copy-view" data-openbitfun-part="diffArea">
           <CanvasStoreModeContext.Provider value="git">
-            <ContentCanvas workspacePath={workspacePath} mode="git" onInteraction={handleInteraction} onBeforeClose={handleBeforeClose} />
+            <ContentCanvas workspacePath={workspacePath} mode="git" emptyState={
+              <Empty className="openbitfun-git-scene-working-copy__overview" icon={<Icon name="git" size="lg" />}
+                title={t(statusError ? 'workingCopy.statusUnavailable' : !statusReady ? 'loading.text'
+                  : clean ? 'workingCopy.clean' : 'workingCopy.selectFile')}
+                description={<>
+                  <p className="openbitfun-git-scene-working-copy__repository-path">{hostLabel ? `${hostLabel} · ` : ''}{workspacePath}</p>
+                  {statusError ? <p role="alert">{statusError}</p> : clean && <>
+                    <p>{t('workingCopy.cleanDescription')}</p>
+                    {(ahead > 0 || behind > 0) && <p>{t('workingCopy.upstreamComparison', { ahead: formatNumber(ahead), behind: formatNumber(behind) })}</p>}
+                    <p>{t(ahead > 0 ? 'workingCopy.unpushed' : 'workingCopy.remoteSnapshot')}</p>
+                  </>}
+                </>}
+                actions={<>
+                  <Button size="sm" variant="outline" onClick={() => useGitSceneStore.getState().setActiveView('graph')}>{t('tabs.commits')}</Button>
+                  <Button size="sm" variant="outline" onClick={() => useGitSceneStore.getState().setActiveView('branches')}>{t('tabs.branches')}</Button>
+                  <Button size="sm" variant="quiet" onClick={() => void handleRefresh()}>{t('actions.refresh')}</Button>
+                </>}
+              />
+            } onInteraction={handleInteraction} onBeforeClose={handleBeforeClose} />
           </CanvasStoreModeContext.Provider>
         </div>
       </div>

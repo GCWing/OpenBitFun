@@ -49,6 +49,7 @@ import {
 } from '../scenes/registry';
 import { getSceneNav } from '../scenes/nav-registry';
 import { useNavSceneStore } from './navSceneStore';
+import { useSettingsStore } from '../scenes/settings/settingsStore';
 import {
   getInteractionMotion,
   type InteractionMotion,
@@ -85,6 +86,12 @@ function isClosableScene(id: SceneTabId): boolean {
 
 function buildSceneTab(id: SceneTabId, now: number): SceneTab {
   return { id, lastUsed: now };
+}
+
+function rememberSession(tab: SceneTab, session: SessionSceneTarget): SceneTab {
+  const previous = tab.sessionHistory ?? (tab.session ? [tab.session.sessionId] : []);
+  return { ...tab, session, sessionHistory: [session.sessionId,
+    ...previous.filter(id => id !== session.sessionId)].slice(0, 5) };
 }
 
 /** Shell adapter: the tab owner never loads history or changes runtime state. */
@@ -232,6 +239,12 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   },
 
   openScene: (requestedId) => {
+    // Keep scene destinations sent by older clients on the owning settings page.
+    if (requestedId === 'ecosystem-compatibility') {
+      useSettingsStore.getState().openPage('tools.external-import');
+      openSceneTarget('settings');
+      return;
+    }
     if (requestedId === 'file-viewer') {
       useNavSceneStore.getState().openNavScene('file-viewer');
       return;
@@ -273,7 +286,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     const id = getSessionSceneTabId(target);
     const state = get();
     if (!state.openTabs.some(tab => tab.id === id && tab.session?.sessionId !== target.sessionId)) return;
-    set({ openTabs: state.openTabs.map(tab => tab.id === id ? { ...tab, session: target } : tab) });
+    set({ openTabs: state.openTabs.map(tab => tab.id === id ? rememberSession(tab, target) : tab) });
   },
 
   reconcileSessionScenes: (targets) => {
@@ -289,12 +302,18 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const target = tab.session && targets.get(tab.session.sessionId);
       if (!target) continue;
       const id = getSessionSceneTabId(target);
+      const history = tab.sessionHistory?.filter(sessionId => {
+        const entry = targets.get(sessionId);
+        return entry?.surfaceId === target.surfaceId && entry.workspaceKey === target.workspaceKey;
+      });
+      const reconciled = id === tab.id && target.workspaceKey === tab.session?.workspaceKey
+        && history?.length === tab.sessionHistory?.length
+        ? tab : { ...tab, id, session: target, sessionHistory: history };
       remapped.set(tab.id, id);
       const existing = tabs.get(id);
       if (!existing || tab.id === state.activeTabId
         || (existing.session?.sessionId !== activeSessionId && tab.lastUsed > existing.lastUsed)) {
-        tabs.set(id, id === tab.id && target.workspaceKey === tab.session?.workspaceKey
-          ? tab : { ...tab, id, session: target });
+        tabs.set(id, reconciled);
       }
     }
     const nextTabs = [...tabs.values()];
@@ -528,7 +547,8 @@ function openSceneTarget(id: SceneTabId, session?: SessionSceneTarget, options?:
     const presentation = selectedSessionTab(state);
     const created = { ...buildSceneTab(id, Date.now()),
       ...(session && presentation ? { pane: tabPane(presentation) } : {}) };
-    const tab = { ...(existing ?? created), ...(session ? { session } : {}), lastUsed: Date.now() };
+    const source = existing ?? created;
+    const tab = { ...(session ? rememberSession(source, session) : source), lastUsed: Date.now() };
     const tabs = existing ? state.openTabs.map(candidate => candidate.id === id ? tab : candidate) : [...state.openTabs, tab];
     let panes = selectSceneInPane({ ...state, openTabs: orderPinnedTabsFirst(tabs) }, id);
     if (options?.revealCanvas) panes = selectCanvasInPane(panes, false);

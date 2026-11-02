@@ -243,7 +243,7 @@ internal class SessionRecordReplica(val sessionId: String) {
         val shownItems = rendered.map { item -> item.tool?.id?.let { id -> controlTools.firstOrNull { it.id == id } }?.let { item.copy(tool = it) } ?: item } +
             controlTools.filter { tool -> rendered.none { it.tool?.id == tool.id } }.map { ChatMessageItemResponse(type = "tool", tool = it) }
         return listOf(RemoteResponseMapper.chatMessage(ChatMessageResponse(id = user.string("id"), role = "user", content = user.string("content"), turnId = turnId, metadata = user["metadata"], images = userImages(user), timestamp = user.string("timestamp"))),
-            RemoteResponseMapper.chatMessage(ChatMessageResponse(id = "${turnId}_assistant", role = "assistant", turnId = turnId,
+            RemoteResponseMapper.chatMessage(ChatMessageResponse(id = "${turnId}_assistant", role = "assistant", turnId = turnId, timestamp = turn.string("timestamp"),
                 content = rendered.filter { it.type == "text" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
                 thinking = rendered.filter { it.type == "thinking" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
                 items = shownItems, status = when (turn.string("status")) { "inprogress" -> "streaming"; "error" -> "failed"; else -> turn.string("status") }, error = turn.string("error"), metadata = turn)))

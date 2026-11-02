@@ -39,7 +39,7 @@ internal fun ToolStatusIcon(tool: ToolCard, modifier: Modifier) {
             modifier = Modifier
                 .size(18.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(5.dp))
-                .border(1.dp, badgeBorder(tool), RoundedCornerShape(5.dp)),
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(5.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -54,7 +54,7 @@ internal fun ToolStatusIcon(tool: ToolCard, modifier: Modifier) {
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .size(10.dp)
-                    .background(statusTint(tool.phase), CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant, CircleShape)
                     .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
@@ -132,25 +132,9 @@ private fun kindTint(kind: ToolKind): Color = when (kind) {
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
-@Composable
-private fun badgeBorder(tool: ToolCard): Color = if (tool.phase == ToolPhase.FAILED) {
-    MaterialTheme.colorScheme.error
-} else {
-    MaterialTheme.colorScheme.outlineVariant
-}
-
 private fun statusMark(phase: ToolPhase): String? = when (phase) {
-    ToolPhase.FAILED -> "!"
     ToolPhase.PENDING_CONFIRMATION -> "?"
     ToolPhase.RUNNING -> "•"
     ToolPhase.CANCELLED -> "×"
-    // Done and queued are the states nobody is waiting on.
-    ToolPhase.COMPLETED, ToolPhase.WAITING -> null
-}
-
-@Composable
-private fun statusTint(phase: ToolPhase): Color = if (phase == ToolPhase.FAILED) {
-    MaterialTheme.colorScheme.error
-} else {
-    MaterialTheme.colorScheme.onSurfaceVariant
+    ToolPhase.COMPLETED, ToolPhase.FAILED, ToolPhase.WAITING -> null
 }

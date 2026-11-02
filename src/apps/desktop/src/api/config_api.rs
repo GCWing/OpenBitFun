@@ -30,9 +30,12 @@ pub struct GetConfigsRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SetConfigRequest {
     pub path: String,
     pub value: Value,
+    #[serde(default)]
+    pub expected_models: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,6 +168,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn set_config_keeps_legacy_requests_and_accepts_an_explicit_model_snapshot() {
+        let legacy: SetConfigRequest = serde_json::from_value(serde_json::json!({
+            "path": "ai.models", "value": []
+        }))
+        .unwrap();
+        assert!(legacy.expected_models.is_none());
+        let guarded: SetConfigRequest = serde_json::from_value(serde_json::json!({
+            "path": "ai.models", "value": [], "expectedModels": [{"id":"old"}]
+        }))
+        .unwrap();
+        assert_eq!(
+            guarded.expected_models,
+            Some(serde_json::json!([{"id":"old"}]))
+        );
+    }
+
+    #[test]
     fn recognizes_expected_config_path_not_found_errors() {
         let error = OpenBitFunError::NotFound(
             "Config path 'ai.review_team_rate_limit_status' not found".to_string(),
@@ -200,6 +220,7 @@ pub async fn set_config(
         &app,
         &request.path,
         request.value,
+        request.expected_models,
     )
     .await
     {

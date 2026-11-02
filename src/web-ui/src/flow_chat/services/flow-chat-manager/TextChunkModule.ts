@@ -20,6 +20,30 @@ function resolveAttemptStreamKey(roundId: string, attemptId?: string, attemptInd
   return roundId;
 }
 
+/**
+ * Coalesce runs of three or more newlines down to two.
+ *
+ * Both sides of an append are already clean, so a new run can only appear at
+ * the join boundary or inside the incoming chunk. Rescanning the whole
+ * accumulated response on every chunk made streaming cost quadratic in the
+ * response length; the overlap only has to cover the longest run a clean
+ * prefix can end with (two newlines).
+ */
+const NEWLINE_JOIN_OVERLAP_CHARS = 2;
+
+/** Normalize a recovered/seeded stream buffer before incremental appends. */
+export function normalizeStreamContent(content: string): string {
+  return content.replace(/\n{3,}/g, '\n\n');
+}
+
+function appendCoalescingNewlines(current: string, text: string): string {
+  if (!current) return normalizeStreamContent(text);
+  if (!text) return current;
+  const splitAt = Math.min(current.length, NEWLINE_JOIN_OVERLAP_CHARS);
+  return current.slice(0, current.length - splitAt)
+    + normalizeStreamContent(current.slice(current.length - splitAt) + text);
+}
+
 function activeTextHasLaterRoundItem(
   context: FlowChatContext,
   sessionId: string,
@@ -125,7 +149,7 @@ export function processNormalTextChunkInternal(
 
     if (reusableTextItem) {
       textItemId = reusableTextItem.id;
-      recoveredExistingContent = reusableTextItem.content || '';
+      recoveredExistingContent = normalizeStreamContent(reusableTextItem.content || '');
       sessionActiveTextItems.set(streamKey, textItemId);
       if (!sessionContentBuffer.has(streamKey) && recoveredExistingContent) {
         sessionContentBuffer.set(streamKey, recoveredExistingContent);
@@ -135,7 +159,7 @@ export function processNormalTextChunkInternal(
 
   // Coalesce excessive newlines while appending.
   const currentContent = sessionContentBuffer.get(streamKey) || recoveredExistingContent;
-  const cleanedContent = (currentContent + text).replace(/\n{3,}/g, '\n\n');
+  const cleanedContent = appendCoalescingNewlines(currentContent, text);
   sessionContentBuffer.set(streamKey, cleanedContent);
 
   if (!textItemId) {
@@ -213,7 +237,7 @@ export function processThinkingChunkInternal(
 
     if (reusableThinkingItem) {
       thinkingItemId = reusableThinkingItem.id;
-      recoveredExistingContent = reusableThinkingItem.content || '';
+      recoveredExistingContent = normalizeStreamContent(reusableThinkingItem.content || '');
       sessionActiveTextItems.set(thinkingKey, thinkingItemId);
       if (!sessionContentBuffer.has(thinkingKey) && recoveredExistingContent) {
         sessionContentBuffer.set(thinkingKey, recoveredExistingContent);
@@ -222,7 +246,7 @@ export function processThinkingChunkInternal(
   }
 
   const currentContent = sessionContentBuffer.get(thinkingKey) || recoveredExistingContent;
-  const cleanedContent = (currentContent + text).replace(/\n{3,}/g, '\n\n');
+  const cleanedContent = appendCoalescingNewlines(currentContent, text);
   sessionContentBuffer.set(thinkingKey, cleanedContent);
   
   if (!thinkingItemId) {

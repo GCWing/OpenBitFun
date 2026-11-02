@@ -20,9 +20,9 @@ use std::time::Duration;
 use tokio::sync::{Mutex, Notify, RwLock};
 
 use super::command_router::{
-    complete_im_bot_pairing, current_bot_language, execute_forwarded_turn, handle_command,
-    parse_command, welcome_message, BotChatState, BotInteractionHandler, BotInteractiveRequest,
-    BotMessageSender, HandleResult,
+    complete_im_bot_pairing, current_bot_language, execute_forwarded_turn_with_submission,
+    handle_command, parse_command, welcome_message, BotChatState, BotInteractionHandler,
+    BotInteractiveRequest, BotMessageSender, HandleResult,
 };
 use super::{
     load_bot_persistence, update_bot_persistence, BotConfig, BotRuntimeFence, SavedBotConnection,
@@ -33,6 +33,17 @@ use crate::service::remote_connect::remote_server::ImageAttachment;
 use openbitfun_agent_runtime::event_bus::EventSubscriberResult;
 
 const LONG_POLL_TIMEOUT_SECS: u64 = 36;
+
+fn inbound_file_rejection(
+    state: &BotChatState,
+    strings: &'static super::locale::BotStrings,
+) -> Option<&'static str> {
+    if state.pending_action.is_some() {
+        Some(strings.inbound_file_pending)
+    } else {
+        None
+    }
+}
 
 /// Maximum proactive messages held for one peer before they are merged into a
 /// single reply. Older entries are dropped so a peer that never comes back
@@ -699,6 +710,10 @@ impl WeixinBot {
         self.api.notify_start().await
     }
 
+    pub fn requires_login(&self) -> bool {
+        self.api.requires_login()
+    }
+
     pub async fn notify_stop(&self) -> Result<()> {
         self.api.notify_stop().await
     }
@@ -740,10 +755,10 @@ impl WeixinBot {
     async fn inbound_image_attachments_from_message(
         &self,
         msg: &Value,
-    ) -> (Vec<ImageAttachment>, usize) {
+    ) -> Result<(Vec<ImageAttachment>, usize)> {
         const MAX_BYTES: usize = 1024 * 1024;
 
-        let (raw_images, skipped) = self.api.download_inbound_images(msg).await;
+        let (raw_images, skipped) = self.api.download_inbound_images(msg).await?;
         let mut attachments = Vec::with_capacity(raw_images.len());
         for raw in raw_images {
             let data_url = if raw.bytes.len() <= MAX_BYTES {
@@ -772,7 +787,7 @@ impl WeixinBot {
                 data_url,
             });
         }
-        (attachments, skipped)
+        Ok((attachments, skipped))
     }
 
     async fn notify_files_ready(
@@ -959,6 +974,13 @@ impl WeixinBot {
                             "Please send the 6-digit pairing code from OpenBitFun Desktop Remote Connect."
                         };
                         self.try_send_text(&peer, err, "pairing-prompt").await;
+                    } else if weixin_provider::has_inbound_file_items(msg) {
+                        self.try_send_text(
+                            &peer,
+                            super::locale::strings_for(language).need_pairing,
+                            "pairing-file-hint",
+                        )
+                        .await;
                     } else if weixin_provider::has_inbound_image_items(msg) {
                         let err = if language.is_chinese() {
                             "\u{914d}\u{5bf9}\u{8bf7}\u{76f4}\u{63a5}\u{53d1}\u{9001} 6 \u{4f4d}\u{6570}\u{5b57}\u{914d}\u{5bf9}\u{7801}\u{ff1b}\u{5b8c}\u{6210}\u{914d}\u{5bf9}\u{540e}\u{518d}\u{53d1}\u{9001}\u{56fe}\u{7247}\u{4e0e}\u{52a9}\u{624b}\u{5bf9}\u{8bdd}\u{3002}"
@@ -977,6 +999,10 @@ impl WeixinBot {
         self.subscribe_session_output();
         self.spawn_outbound_worker(stop_rx.clone());
         let mut stop = stop_rx;
+        // Bounded ingress keeps media downloads and turn admission FIFO per peer.
+        // Workers release each message after submission, before waiting for output.
+        let mut inbound_senders: HashMap<String, tokio::sync::mpsc::Sender<(Value, u64)>> =
+            HashMap::new();
         let mut buf = weixin_provider::load_sync_buf(&self.api.config().bot_account_id);
         let mut long_poll_timeout = Duration::from_secs(LONG_POLL_TIMEOUT_SECS);
 
@@ -985,6 +1011,7 @@ impl WeixinBot {
                 break;
             }
 
+            let poll_identity_epoch = self.runtime_fence.identity_epoch();
             let poll = tokio::select! {
                 _ = stop.changed() => break,
                 result = self.api.get_updates_once(
@@ -1039,43 +1066,194 @@ impl WeixinBot {
                 if let Some(token) = weixin_provider::context_token(msg) {
                     self.remember_context_token(&peer, token).await;
                 }
-                let msg_value = msg.clone();
-                let bot = self.clone();
-                tokio::spawn(async move {
-                    let (images, skipped_images) =
-                        bot.inbound_image_attachments_from_message(&msg_value).await;
-                    let language = current_bot_language().await;
-                    if skipped_images > 0 {
-                        let note = if language.is_chinese() {
-                            format!(
-                                "\u{4ec5}\u{4f1a}\u{5904}\u{7406}\u{524d} {} \u{5f20}\u{56fe}\u{7247}\u{ff0c}\u{5176}\u{4f59} {} \u{5f20}\u{5df2}\u{4e22}\u{5f03}\u{3002}",
-                                MAX_INBOUND_IMAGES, skipped_images
-                            )
-                        } else {
-                            format!(
-                                "Only the first {} images will be processed; the remaining {} were discarded.",
-                                MAX_INBOUND_IMAGES, skipped_images
-                            )
-                        };
-                        bot.try_send_text(&peer, &note, "image-truncation-notice")
-                            .await;
+                inbound_senders.retain(|_, sender| !sender.is_closed());
+                let sender = inbound_senders
+                    .entry(peer.clone())
+                    .or_insert_with(|| self.spawn_inbound_peer(peer.clone(), stop.clone()));
+                tokio::select! {
+                    _ = stop.changed() => break,
+                    sent = sender.send((msg.clone(), poll_identity_epoch)) => {
+                        if sent.is_err() { warn!("Weixin inbound worker stopped before message admission"); }
                     }
-                    let body = weixin_provider::body_from_message(&msg_value);
-                    let text = if body.trim().is_empty() && !images.is_empty() {
-                        if language.is_chinese() {
-                            "[\u{7528}\u{6237}\u{53d1}\u{9001}\u{4e86}\u{4e00}\u{5f20}\u{56fe}\u{7247}]".to_string()
-                        } else {
-                            "[User sent an image]".to_string()
-                        }
-                    } else {
-                        body
-                    };
-                    bot.handle_incoming_message(peer, &text, images).await;
-                });
+                }
             }
         }
         self.unsubscribe_session_output();
         info!("Weixin message loop stopped");
+    }
+
+    fn spawn_inbound_peer(
+        self: &Arc<Self>,
+        peer: String,
+        mut stop: tokio::sync::watch::Receiver<bool>,
+    ) -> tokio::sync::mpsc::Sender<(Value, u64)> {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel::<(Value, u64)>(32);
+        let bot = self.clone();
+        tokio::spawn(async move {
+            loop {
+                let incoming = tokio::select! {
+                    _ = stop.changed() => break,
+                    incoming = receiver.recv() => incoming,
+                };
+                let Some((message, identity_epoch)) = incoming else {
+                    break;
+                };
+                if *stop.borrow() || !bot.runtime_fence.is_lifecycle_current() {
+                    break;
+                }
+                bot.process_provider_message(peer.clone(), message, identity_epoch)
+                    .await;
+            }
+        });
+        sender
+    }
+
+    async fn process_provider_message(
+        self: &Arc<Self>,
+        peer: String,
+        message: Value,
+        identity_epoch: u64,
+    ) {
+        if !self.runtime_fence.is_lifecycle_current()
+            || self.runtime_fence.identity_epoch() != identity_epoch
+        {
+            return;
+        }
+        let language = current_bot_language().await;
+        if weixin_provider::has_unsupported_media_items(&message) {
+            self.try_send_text(
+                &peer,
+                super::locale::strings_for(language).inbound_media_unsupported,
+                "media-unsupported",
+            )
+            .await;
+            return;
+        }
+        let downloaded = self.inbound_image_attachments_from_message(&message).await;
+        if !self.runtime_fence.is_lifecycle_current()
+            || self.runtime_fence.identity_epoch() != identity_epoch
+        {
+            return;
+        }
+        let (images, skipped_images) = match downloaded {
+            Ok(images) => images,
+            Err(error) => {
+                self.try_send_text(
+                    &peer,
+                    &format!(
+                        "{}{error}",
+                        super::locale::strings_for(language).inbound_image_failed_prefix
+                    ),
+                    "image-receive-failed",
+                )
+                .await;
+                return;
+            }
+        };
+        if skipped_images > 0 {
+            let note = if language.is_chinese() {
+                format!(
+                                "\u{4ec5}\u{4f1a}\u{5904}\u{7406}\u{524d} {} \u{5f20}\u{56fe}\u{7247}\u{ff0c}\u{5176}\u{4f59} {} \u{5f20}\u{5df2}\u{4e22}\u{5f03}\u{3002}",
+                                MAX_INBOUND_IMAGES, skipped_images
+                            )
+            } else {
+                format!(
+                    "Only the first {} images will be processed; the remaining {} were discarded.",
+                    MAX_INBOUND_IMAGES, skipped_images
+                )
+            };
+            self.try_send_text(&peer, &note, "image-truncation-notice")
+                .await;
+        }
+        let body = weixin_provider::body_from_message(&message);
+        let text = if body.trim().is_empty() && weixin_provider::has_inbound_file_items(&message) {
+            super::locale::strings_for(language)
+                .inbound_file_message
+                .to_string()
+        } else if body.trim().is_empty() && !images.is_empty() {
+            if language.is_chinese() {
+                "[\u{7528}\u{6237}\u{53d1}\u{9001}\u{4e86}\u{4e00}\u{5f20}\u{56fe}\u{7247}]"
+                    .to_string()
+            } else {
+                "[User sent an image]".to_string()
+            }
+        } else {
+            body
+        };
+        if text.trim().is_empty() {
+            self.try_send_text(
+                &peer,
+                super::locale::strings_for(language).inbound_media_unsupported,
+                "empty-message",
+            )
+            .await;
+            return;
+        }
+        if self.runtime_fence.is_lifecycle_current()
+            && self.runtime_fence.identity_epoch() == identity_epoch
+        {
+            self.handle_incoming_message(peer, &text, images, &message, identity_epoch)
+                .await;
+        }
+    }
+
+    async fn prepare_inbound_files(
+        &self,
+        forward: &mut super::command_router::ForwardRequest,
+        message: &Value,
+        identity_epoch: u64,
+    ) -> Result<()> {
+        use openbitfun_services_integrations::remote_connect::bot::inbound_files::{
+            attachment_prompt, save_inbound_file,
+        };
+        // Resolve against the immutable routed session, not current UI/workspace state.
+        let target = if let Some(remote) = &forward.remote_target {
+            remote
+                .require_session_attachments()
+                .await
+                .map_err(anyhow::Error::msg)?;
+            None
+        } else {
+            Some(
+                crate::service_agent_runtime::CoreServiceAgentRuntime::remote_file_target(
+                    ".",
+                    Some(&forward.session_id),
+                )
+                .await
+                .map_err(anyhow::Error::msg)?,
+            )
+        };
+        if !self.runtime_fence.is_lifecycle_current()
+            || self.runtime_fence.identity_epoch() != identity_epoch
+        {
+            return Err(anyhow!("Bot identity changed before file download"));
+        }
+        let files = self.api.download_inbound_files(message).await?;
+        let mut content = forward.content.clone();
+        for file in files {
+            if !self.runtime_fence.is_lifecycle_current()
+                || self.runtime_fence.identity_epoch() != identity_epoch
+            {
+                return Err(anyhow!("Bot identity changed during file download"));
+            }
+            let path = if let Some(remote) = &forward.remote_target {
+                remote
+                    .store_attachment(&file)
+                    .await
+                    .map_err(anyhow::Error::msg)?
+            } else {
+                save_inbound_file(
+                    target
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Attachment workspace is unavailable"))?,
+                    &file,
+                )
+                .await?
+            };
+            content.push_str(&attachment_prompt(&file.name, &path, file.bytes.len()));
+        }
+        forward.content = content;
+        Ok(())
     }
 
     async fn handle_incoming_message(
@@ -1083,12 +1261,15 @@ impl WeixinBot {
         peer_id: String,
         text: &str,
         images: Vec<ImageAttachment>,
+        message: &Value,
+        command_identity_epoch: u64,
     ) {
-        if !self.runtime_fence.is_lifecycle_current() {
+        if !self.runtime_fence.is_lifecycle_current()
+            || self.runtime_fence.identity_epoch() != command_identity_epoch
+        {
             return;
         }
         let mut states = self.chat_states.write().await;
-        let command_identity_epoch = self.runtime_fence.identity_epoch();
         self.runtime_fence.reconcile_states(&mut states);
         let state = states.entry(peer_id.clone()).or_insert_with(|| {
             let mut state = BotChatState::new(peer_id.clone());
@@ -1143,8 +1324,22 @@ impl WeixinBot {
         if self.runtime_fence.identity_epoch() != command_identity_epoch {
             return;
         }
+        let has_files = weixin_provider::has_inbound_file_items(message);
+        let strings = super::locale::strings_for(language);
+        if has_files {
+            if let Some(reason) = inbound_file_rejection(state, strings) {
+                drop(states);
+                self.try_send_text(&peer_id, reason, "file-rejected").await;
+                return;
+            }
+        }
         let was_remote = state.account_remote_context || state.active_remote_device.is_some();
-        let command = parse_command(text);
+        let command = if has_files {
+            // A caption is file input, never a menu selection or approval answer.
+            super::command_router::BotCommand::ChatMessage(text.to_owned())
+        } else {
+            parse_command(text)
+        };
         let mut result = handle_command(state, command, images).await;
         if !was_remote && (state.account_remote_context || state.active_remote_device.is_some()) {
             append_remote_push_notice(&mut result, language);
@@ -1161,6 +1356,28 @@ impl WeixinBot {
             return;
         }
 
+        if has_files {
+            if let Some(forward) = result.forward_to_session.as_mut() {
+                let prepared = self
+                    .prepare_inbound_files(forward, message, command_identity_epoch)
+                    .await;
+                if !self.runtime_fence.is_lifecycle_current()
+                    || self.runtime_fence.identity_epoch() != command_identity_epoch
+                {
+                    return;
+                }
+                if let Err(error) = prepared {
+                    warn!("Weixin inbound file preparation failed: {error}");
+                    self.try_send_text(
+                        &peer_id,
+                        &format!("{}{error}", strings.inbound_file_failed_prefix),
+                        "file-receive-failed",
+                    )
+                    .await;
+                    return;
+                }
+            }
+        }
         self.send_handle_result(&peer_id, &result).await;
 
         if let Some(forward) = result.forward_to_session {
@@ -1174,6 +1391,7 @@ impl WeixinBot {
             let peer = peer_id.clone();
             let typing_token = self.context_tokens.read().await.get(&peer_id).cloned();
             let typing_for_turn = self.api.start_typing(peer_id.clone(), typing_token);
+            let (submission_finished, admission) = tokio::sync::oneshot::channel();
             tokio::spawn(async move {
                 let interaction_bot = bot.clone();
                 let peer_c = peer.clone();
@@ -1206,13 +1424,14 @@ impl WeixinBot {
                     })
                 });
                 let verbose_mode = load_bot_persistence().verbose_mode;
-                let turn_result = execute_forwarded_turn(
+                let turn_result = execute_forwarded_turn_with_submission(
                     forward,
                     Some(handler),
                     Some(sender),
                     verbose_mode,
                     &bot.runtime_fence,
                     output_identity_epoch,
+                    Some(submission_finished),
                 )
                 .await;
                 if !bot.runtime_fence.is_lifecycle_current()
@@ -1248,6 +1467,7 @@ impl WeixinBot {
                 .await;
                 typing_for_turn.stop().await;
             });
+            let _ = admission.await;
         }
     }
 
@@ -1318,6 +1538,28 @@ impl EventSubscriber for WeixinSessionOutputSubscriber {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn inbound_files_preserve_pending_answers_on_local_and_remote_devices() {
+        use super::super::command_router::PendingAction;
+        use super::super::locale::{strings_for, BotLanguage};
+        for language in [BotLanguage::ZhCN, BotLanguage::ZhTW, BotLanguage::EnUS] {
+            let strings = strings_for(language);
+            let mut state = BotChatState::new("peer".into());
+            assert!(inbound_file_rejection(&state, strings).is_none());
+            state.set_pending(PendingAction::SelectDevice { options: vec![] });
+            assert_eq!(
+                inbound_file_rejection(&state, strings),
+                Some(strings.inbound_file_pending)
+            );
+            assert!(state.pending_action.is_some());
+            state.account_remote_context = true;
+            assert_eq!(
+                inbound_file_rejection(&state, strings),
+                Some(strings.inbound_file_pending)
+            );
+        }
+    }
 
     #[test]
     fn context_token_error_heuristic_uses_provider_contract() {
@@ -1630,6 +1872,92 @@ mod tests {
             }
         });
         (base, rx, task)
+    }
+
+    #[tokio::test]
+    async fn unsupported_media_and_empty_input_never_route_partial_or_empty_turns() {
+        let (base, mut requests, server) = mock_outbound(vec!["{}"; 3], None).await;
+        let bot = test_bot(base).await;
+        bot.chat_states.write().await.clear();
+        let epoch = bot.runtime_fence.identity_epoch();
+        for message in [
+            json!({"item_list":[{"type":3,"voice_item":{}},{"type":1,"text_item":{"text":"transcribe this voice"}}]}),
+            json!({"item_list":[{"type":3,"voice_item":{}}]}),
+            json!({"item_list":[{"type":1,"text_item":{"text":"   "}}]}),
+        ] {
+            bot.process_provider_message("peer".into(), message, epoch)
+                .await;
+            let reply = requests.recv().await.unwrap();
+            assert!(reply["msg"]["item_list"][0]["text_item"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("Agent"));
+            assert!(bot.chat_states.read().await.is_empty());
+        }
+        server.await.unwrap();
+        assert!(!weixin_provider::has_unsupported_media_items(
+            &json!({"item_list":[{"type":3,"voice_item":{"text":"transcribed voice"}}]})
+        ));
+    }
+
+    #[tokio::test]
+    async fn inbound_peer_waits_for_media_failure_before_routing_next_message() {
+        let (release, gate) = tokio::sync::oneshot::channel();
+        let (base, mut requests, server) = mock_outbound(vec!["{}", "{}"], Some(gate)).await;
+        let bot = test_bot(base).await;
+        bot.chat_states.write().await.clear();
+        let (stop, stopped) = tokio::sync::watch::channel(false);
+        let sender = bot.spawn_inbound_peer("peer".into(), stopped);
+        let epoch = bot.runtime_fence.identity_epoch();
+        sender
+            .send((json!({"item_list":[{"type":2}]}), epoch))
+            .await
+            .unwrap();
+        let first = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(first["msg"]["item_list"][0]["text_item"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Agent"));
+        sender
+            .send((
+                json!({"item_list":[{"type":1,"text_item":{"text":"hello"}}]}),
+                epoch,
+            ))
+            .await
+            .unwrap();
+        // The failed media reply is still in flight. The subsequent text must
+        // not route/create state until that first input finishes.
+        assert!(tokio::time::timeout(Duration::from_millis(30), async {
+            loop {
+                if bot.chat_states.read().await.contains_key("peer") {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .is_err());
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(bot.chat_states.read().await.contains_key("peer"));
+        bot.process_provider_message(
+            "stale-peer".into(),
+            json!({"item_list":[{"type":1,"text_item":{"text":"hello"}}]}),
+            epoch + 1,
+        )
+        .await;
+        assert!(!bot.chat_states.read().await.contains_key("stale-peer"));
+        stop.send(true).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), sender.closed())
+            .await
+            .unwrap();
+        server.await.unwrap();
     }
 
     #[tokio::test]

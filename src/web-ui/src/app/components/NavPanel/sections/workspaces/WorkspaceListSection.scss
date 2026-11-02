@@ -445,9 +445,14 @@
   &__workspace-item-name-line {
     display: flex;
     align-items: center;
+    gap: var(--openbitfun-space-2);
     min-width: 0;
     flex: 1 1 0;
     overflow: hidden;
+  }
+
+  &__workspace-item-name-line > &__workspace-item-label {
+    flex: 0 1 auto;
   }
 
   &__workspace-item[data-openbitfun-state~='remote'] &__workspace-item-label {
@@ -826,18 +831,7 @@
   }
 
   &__workspace-item-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     flex-shrink: 0;
-    padding: 1px 6px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--openbitfun-color-action-secondary-hover) 88%, transparent);
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-micro-font-size);
-    font-weight: var(--openbitfun-type-heading-page-font-weight);
-    line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
-    white-space: nowrap;
   }
 
   &__workspace-item-branch {
@@ -1274,7 +1268,8 @@
 
   // Workspace activity selects the group and its current session together. When
   // the nested row is visible as the selection owner, avoid a competing parent fill.
-  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-card {
+  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-card,
+  &__assistant-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__assistant-item-card {
     background: transparent;
   }
 
@@ -1325,7 +1320,8 @@
     @include shell-surfaces.navigation-selection-feedback;
   }
 
-  .openbitfun-nav-panel__workspace-item.is-active:has(.openbitfun-nav-panel__workspace-item-sessions .openbitfun-nav-panel__inline-item.is-active) .openbitfun-nav-panel__workspace-item-card:hover {
+  .openbitfun-nav-panel__workspace-item.is-active:has(.openbitfun-nav-panel__workspace-item-sessions .openbitfun-nav-panel__inline-item.is-active) .openbitfun-nav-panel__workspace-item-card:hover,
+  .openbitfun-nav-panel__assistant-item.is-active:has(.openbitfun-nav-panel__workspace-item-sessions .openbitfun-nav-panel__inline-item.is-active) .openbitfun-nav-panel__assistant-item-card:hover {
     background: transparent;
   }
 }
@@ -1379,16 +1375,17 @@
     @include nav-font.nav-panel-text-row-active;
   }
 
-  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-label {
+  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-label,
+  &__assistant-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__assistant-item-label {
     @include nav-font.nav-panel-text-row;
   }
 
-  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-icon {
+  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-icon,
+  &__assistant-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__assistant-item-avatar {
     color: var(--openbitfun-color-content-secondary);
   }
 
-  &__workspace-item-remote,
-  &__workspace-item-badge {
+  &__workspace-item-remote {
     @include nav-font.nav-panel-text-meta;
 
     font-size: var(--openbitfun-type-meta-font-size);

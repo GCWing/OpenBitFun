@@ -22,6 +22,12 @@ import {
   type PendingChatImage,
 } from '../services/chatImageAttachments';
 import { useMobileStore } from '../services/store';
+import {
+  isRemoteSessionWorkspace,
+  resolveChatHeaderContext,
+  sessionWorkspaceContext,
+  type SessionWorkspaceContext,
+} from '../services/workspaceIdentity';
 import { createRemoteCacheScope, remoteCache } from '../services/RemoteCache';
 import ChatHeader from '../components/ChatHeader';
 import ChatComposerBar from '../components/ChatComposerBar';
@@ -51,6 +57,7 @@ interface ChatPageProps {
   sessionId: string;
   sessionName?: string;
   agentType?: string;
+  workspace?: SessionWorkspaceContext;
   onBack: () => void;
   autoFocus?: boolean;
   wideLayout?: boolean;
@@ -74,6 +81,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   sessionId,
   sessionName,
   agentType: sessionAgentType = 'Standard',
+  workspace: sessionWorkspace,
   onBack,
   autoFocus,
   wideLayout = false,
@@ -88,6 +96,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
     error,
     setError,
     currentWorkspace,
+    currentAssistant,
+    knownWorkspaces,
+    sessions,
     authenticatedUserId,
     controlTarget,
     connectionHealth,
@@ -107,7 +118,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const sendInFlightRef = useRef<symbol | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [optimisticMsg, setOptimisticMsg] = useState<{
-    id: string; text: string; images: { name: string; data_url: string }[];
+    id: string; timestamp: string; text: string; images: { name: string; data_url: string }[];
   } | null>(null);
   const [inputExpanded, setInputExpanded] = useState(!!autoFocus);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1009,6 +1020,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
     if (hasImages) {
       setOptimisticMsg({
         id: `opt_${Date.now()}`,
+        timestamp: new Date().toISOString(),
         text: text || '',
         images: imgs.map(i => ({ name: i.name, data_url: i.dataUrl })),
       });
@@ -1151,12 +1163,18 @@ const ChatPage: React.FC<ChatPageProps> = ({
     }
   };
 
-  const workspaceName = currentWorkspace?.project_name || currentWorkspace?.path?.split('/').pop() || '';
-  const gitBranch = currentWorkspace?.git_branch;
+  // Restored navigation from an older build has no workspace; the loaded session row may.
+  const listedSession = sessionWorkspace ? undefined : sessions.find((session) => session.session_id === sessionId);
+  const sessionContext = sessionWorkspace ?? (listedSession && sessionWorkspaceContext(listedSession));
+  const { workspaceName, gitBranch } = resolveChatHeaderContext({
+    agentType: sessionAgentType,
+    session: sessionContext,
+    currentWorkspace,
+    currentAssistant,
+    assistantLabel: t('shared.agents.Claw'),
+  });
   const displayName = liveTitle || sessionName || t('chat.session');
-  const isRemoteWorkspace = currentWorkspace?.workspace_kind === 'remote'
-    || Boolean(currentWorkspace?.remote_connection_id)
-    || Boolean(currentWorkspace?.remote_ssh_host);
+  const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace, knownWorkspaces);
 
   return (
     <div className={`chat-page${wideLayout ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${composerHeight}px` } as React.CSSProperties}>

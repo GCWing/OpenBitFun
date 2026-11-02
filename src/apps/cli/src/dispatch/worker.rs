@@ -146,7 +146,7 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
     let runtime = crate::initialize_core_services(
         workspace,
         permissions::cli_policy(effective_policy),
-        BootstrapProfile::Execution,
+        BootstrapProfile::Detached,
     )
     .await?;
     let agent_runtime = runtime.agent_runtime().clone();
@@ -220,6 +220,7 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
                 selection: AgentSessionModelSelection {
                     model_id: model,
                     reasoning_preset,
+                    routing_mode: None,
                 },
             })
             .await

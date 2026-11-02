@@ -1,3 +1,4 @@
+import { formatDuration as formatLocalizedDuration, type DurationPrecision } from '../../../shared/i18n/formatDuration';
 import React, { createContext, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { DEFAULT_LANGUAGE, messages, type MobileLanguage } from './messages';
 import {
@@ -18,6 +19,7 @@ interface I18nContextValue {
   t: (key: string, params?: TranslateParams) => string;
   formatDate: (date: Date | number, options?: Intl.DateTimeFormatOptions) => string;
   formatRelativeTime: (date: Date | number) => string;
+  formatDuration: (milliseconds: number, precision?: DurationPrecision) => string;
 }
 
 const STORAGE_KEY = 'openbitfun-mobile-language';
@@ -101,6 +103,7 @@ export const I18nContext = createContext<I18nContextValue>({
   t: (key) => key,
   formatDate: (date, options) => new Intl.DateTimeFormat(DEFAULT_LANGUAGE, options).format(date),
   formatRelativeTime: (date) => formatRelativeTime(DEFAULT_LANGUAGE, date),
+  formatDuration: (ms, precision) => formatLocalizedDuration(ms, (value, options) => new Intl.NumberFormat(DEFAULT_LANGUAGE, options).format(value), precision),
 });
 
 function formatRelativeTime(language: MobileLanguage, date: Date | number): string {
@@ -143,6 +146,7 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     t: (key, params) => translate(language, key, params),
     formatDate: (date, options) => new Intl.DateTimeFormat(language, options).format(date),
     formatRelativeTime: (date) => formatRelativeTime(language, date),
+    formatDuration: (ms, precision) => formatLocalizedDuration(ms, (value, options) => new Intl.NumberFormat(language, options).format(value), precision),
   }), [language, setLanguage, toggleLanguage]);
 
   return (

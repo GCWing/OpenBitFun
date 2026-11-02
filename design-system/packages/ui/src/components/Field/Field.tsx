@@ -1,3 +1,4 @@
+import { FieldAccessibilityProvider } from "./FieldAccessibility";
 import {
   cloneElement,
   forwardRef,
@@ -112,7 +113,7 @@ export const Field = forwardRef<HTMLDivElement, FieldProps>(function Field({
             {controlLeading}
           </span>
         )}
-        {control}
+        <FieldAccessibilityProvider>{control}</FieldAccessibilityProvider>
         {controlTrailing !== undefined && controlTrailing !== null && (
           <span className={styles.controlAdornment} data-openbitfun-part="control-trailing">
             {controlTrailing}

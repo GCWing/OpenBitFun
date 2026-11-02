@@ -165,7 +165,8 @@ int main(int argc, const char **argv) { @autoreleasepool {
     events = [NSMutableArray array]; canvasText = [NSMutableString string];
     NSApplication *app = [OBFControlsApp sharedApplication];
     [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
-    targetWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,700,300) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    // Miniaturizable so the foreground fixture can exercise minimized-window restore.
+    targetWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,700,300) styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable backing:NSBackingStoreBuffered defer:NO];
     targetWindow.title = @"OpenBitFun Inactive Controls Fixture";
     targetWindow.releasedWhenClosed = NO;
     OBFControlsActions *actions = [[OBFControlsActions alloc] init];

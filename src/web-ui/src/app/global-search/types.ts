@@ -59,6 +59,10 @@ export interface GlobalSearchProviderDiagnostic {
   providerId: string;
   code: string;
   message: string;
+  workspaceName?: string;
+  workspacePath?: string;
+  hostLabel?: string;
+  retryable?: boolean;
 }
 
 export interface GlobalSearchProviderResult {
@@ -75,6 +79,7 @@ export interface GlobalSearchRequest {
   currentWorkspace: WorkspaceInfo | null;
   limitPerGroup: number;
   tCommon: (key: string, options?: Record<string, unknown>) => string;
+  tCapabilities: (key: string, options?: Record<string, unknown>) => string;
   tSettings: (key: string, options?: Record<string, unknown>) => string;
 }
 
@@ -97,11 +102,11 @@ export interface GlobalSearchSnapshot {
 
 export const GLOBAL_SEARCH_GROUP_ORDER: readonly GlobalSearchGroupId[] = [
   'actions',
+  'settings',
+  'capabilities',
   'messages',
   'sessions',
   'files',
   'workspaces',
   'assistants',
-  'capabilities',
-  'settings',
 ];

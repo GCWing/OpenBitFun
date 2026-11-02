@@ -175,7 +175,10 @@ fn macos_helper(writing: bool, board_name: Option<&str>) -> Helper {
     )
 }
 
-#[cfg(target_os = "windows")]
+// Windows has one global clipboard per session, so the write and read helpers
+// are built here for tests on every platform; only the native round trip needs
+// a real Windows desktop.
+#[cfg(any(target_os = "windows", test))]
 fn windows_helper(writing: bool) -> Helper {
     let operation = if writing {
         // ReadToEnd preserves empty strings, CRLF/LF, trailing newlines and
@@ -576,7 +579,7 @@ mod tests {
     #[tokio::test]
     #[cfg_attr(
         not(target_os = "macos"),
-        ignore = "Requires a disposable desktop clipboard; use the documented isolated native fixture"
+        ignore = "Requires a disposable desktop clipboard: Linux uses scripts/test-linux-clipboard.sh, and Windows has no isolated clipboard so its helper is covered by windows_helper_matches_the_windows_clipboard_contract"
     )]
     async fn native_clipboard_roundtrip() {
         #[cfg(target_os = "macos")]
@@ -615,5 +618,54 @@ mod tests {
                 );
             }
         }
+    }
+
+    // Windows has no disposable clipboard: unlike the macOS named pasteboard and
+    // the disposable X11/Wayland seats, every helper call takes the runner's
+    // global clipboard, so the native round trip is not a CI gate there. Assert
+    // the helper definition instead: the flags and the code path are what a real
+    // Windows desktop needs, and the text transport itself is covered by the
+    // fixture round trip above on the same runner.
+    #[test]
+    fn windows_helper_matches_the_windows_clipboard_contract() {
+        let writer = windows_helper(true);
+        assert_eq!(writer.program, "powershell.exe");
+        for flag in [
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-STA",
+            "-Command",
+        ] {
+            assert!(
+                writer.args.iter().any(|arg| arg == flag),
+                "window clipboard helper must run non-interactive and STA: missing {flag}"
+            );
+        }
+        let write_script = writer
+            .args
+            .last()
+            .filter(|arg| arg.contains("System.Windows.Forms"))
+            .expect("the write helper must load the Windows Forms clipboard assembly");
+        assert!(write_script.contains("SetText"));
+        assert!(write_script.contains("TextDataFormat]::UnicodeText"));
+        assert!(write_script.contains("OpenStandardInput"));
+        assert!(write_script.contains("$ErrorActionPreference='Stop'"));
+
+        let reader = windows_helper(false);
+        let read_script = reader
+            .args
+            .last()
+            .filter(|arg| arg.contains("System.Windows.Forms"))
+            .expect("the read helper must load the Windows Forms clipboard assembly");
+        assert!(read_script.contains("GetText"));
+        assert!(read_script.contains("OpenStandardOutput"));
+
+        // Clipboard text travels through the child process pipes. Nothing about
+        // the payload may reach argv, where it would show up in process listings.
+        assert!(
+            !write_script.contains("$args") && !read_script.contains("$args"),
+            "clipboard payloads must never be passed as command arguments"
+        );
     }
 }

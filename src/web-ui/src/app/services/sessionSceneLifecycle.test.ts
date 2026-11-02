@@ -104,6 +104,28 @@ describe('Session scene resource lifetime with real stores', () => {
     expect(useSceneStore.getState().openTabs.map(tab => tab.session?.sessionId)).toEqual(['a', 'b']);
   });
 
+  it.each(['local', 'peer:history'])('reconciles recent SSH workspace sessions on the %s surface', surfaceId => {
+    stop?.();
+    activateSurface(surfaceId);
+    select([], null);
+    useSceneStore.getState().resetForPeerSwitch();
+    stop = startSessionSceneLifecycle();
+    const sessions = ['one', 'two', 'three'].map(id => session(id, {
+      workspaceId: 'ssh-project', workspacePath: '/srv/project', remoteConnectionId: 'ssh-host',
+    }));
+    select(sessions, 'one');
+    useSceneStore.getState().openScene('session');
+    flowChatStore.switchSession('two');
+    flowChatStore.switchSession('three');
+    const tabId = useSceneStore.getState().activeTabId;
+    expect(useSceneStore.getState().openTabs[0].sessionHistory).toEqual(['three', 'two', 'one']);
+    expect(useSceneStore.getState().openTabs[0].session?.surfaceId).toBe(surfaceId);
+    flowChatStore.removeSession('two');
+    expect(useSceneStore.getState().openTabs[0].sessionHistory).toEqual(['three', 'one']);
+    expect(useSceneStore.getState().activeTabId).toBe(tabId);
+    expect(flowChatStore.getActiveSession()?.sessionId).toBe('three');
+  });
+
   it.each(['canvas', 'page'] as const)('keeps a moved conversation synchronized while the other pane has %s focus', async focus => {
     const first = session('a', { workspacePath: '/a' });
     const second = session('b', { workspacePath: '/b' });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
-import { configManager } from './ConfigManager';
+import { ConfigConflictError, configManager } from './ConfigManager';
 
 const configApiMocks = vi.hoisted(() => ({
   getConfig: vi.fn(),
@@ -120,7 +120,79 @@ describe('ConfigManager', () => {
     await Promise.all([first, second]);
 
     expect(persisted).toEqual([fixture('existing'), fixture('first'), fixture('second')]);
-    expect(configApiMocks.getConfig).toHaveBeenCalledTimes(2);
+    expect(configApiMocks.getConfig).toHaveBeenCalledTimes(4);
+  });
+
+  it('never reads committed models from another device after a surface switch', async () => {
+    const models = [{ id: 'model', name: 'Model', metadata: { provider_instance_id: 'provider' } }];
+    const write = createDeferred<void>();
+    configApiMocks.getConfig.mockResolvedValueOnce(models);
+    configApiMocks.setConfig.mockReturnValueOnce(write.promise);
+    const update = configManager.updateConfig('ai.models', current => current);
+    await vi.waitFor(() => expect(configApiMocks.setConfig).toHaveBeenCalledOnce());
+    activateSurface('peer');
+    const rejected = expect(update).rejects.toMatchObject({ isSurfaceChangedError: true });
+    write.resolve();
+    await rejected;
+    expect(configApiMocks.getConfig).toHaveBeenCalledOnce();
+    expect(configManager.hasCachedConfig('ai.models')).toBe(false);
+    activateSurface('local');
+  });
+
+  it('returns committed pool epochs so the next editor does not start with a stale baseline', async () => {
+    const raw = [{ id: 'model', name: 'Model', metadata: { provider_instance_id: 'provider' },
+      auth: { type: 'subscription_pool', provider: 'codex', accounts: ['a', 'b'], revision: 7 } }];
+    const committed = structuredClone(raw);
+    committed[0].auth.accounts.reverse();
+    committed[0].auth.revision = 8;
+    configApiMocks.getConfig.mockResolvedValueOnce(raw).mockResolvedValueOnce(committed);
+    configApiMocks.setConfig.mockResolvedValueOnce(undefined);
+    const saved = await configManager.updateConfig<typeof raw>('ai.models', models => {
+      models[0].auth.accounts.reverse();
+      return models;
+    });
+    expect(saved).toEqual(committed);
+    expect(configManager.getCachedConfig('ai.models')).toEqual(committed);
+  });
+
+  it('does not retry an acknowledged model write when reading its committed value fails', async () => {
+    const models = [{ id: 'model', name: 'Model', metadata: { provider_instance_id: 'provider' } }];
+    configApiMocks.getConfig.mockResolvedValueOnce(models).mockRejectedValueOnce(new Error('disconnected'));
+    configApiMocks.setConfig.mockResolvedValueOnce(undefined);
+    await expect(configManager.updateConfig('ai.models', current => current)).resolves.toEqual(models);
+    expect(configApiMocks.setConfig).toHaveBeenCalledOnce();
+    expect(configManager.hasCachedConfig('ai.models')).toBe(false);
+  });
+
+  it('rejects stale editor baselines before replacing a changed account pool with a fixed account', async () => {
+    const original = [{ id: 'model', name: 'Model', metadata: { provider_instance_id: 'provider' },
+      auth: { type: 'subscription_pool', provider: 'codex', accounts: ['a', 'b'], revision: 7 } }];
+    const current = structuredClone(original);
+    current[0].auth.accounts.reverse();
+    current[0].auth.revision = 8;
+    configApiMocks.getConfig.mockResolvedValueOnce(current);
+    const edit = vi.fn(models => [{ ...models[0], auth: { type: 'subscription', provider: 'codex', account_id: 'a' } }]);
+    await expect(configManager.updateConfig('ai.models', edit, { expectedValue: original }))
+      .rejects.toThrow('Configuration changed while it was being edited');
+    expect(edit).not.toHaveBeenCalled();
+    expect(configApiMocks.setConfig).not.toHaveBeenCalled();
+  });
+
+  it('uses the unprojected host snapshot and propagates a concurrent host conflict without caching the edit', async () => {
+    const raw = [{ id: 'model', name: 'Model', base_url: 'https://example.test/v1',
+      auth: { type: 'subscription_pool', provider: 'codex', accounts: ['a', 'b'], revision: 7 } }];
+    configApiMocks.getConfig.mockResolvedValueOnce(structuredClone(raw));
+    configApiMocks.setConfig.mockRejectedValueOnce(new Error('SUBSCRIPTION_ACCOUNT_POOL_CONFLICT'));
+    await expect(configManager.updateConfig<any[]>('ai.models', models => {
+      // In-place callers must not mutate the expected snapshot either.
+      models[0].auth = { type: 'subscription', provider: 'codex', account_id: 'a' };
+      return models;
+    })).rejects.toBeInstanceOf(ConfigConflictError);
+    expect(configApiMocks.setConfig).toHaveBeenCalledWith('ai.models', [expect.objectContaining({
+      metadata: expect.objectContaining({ provider_instance_id: expect.any(String) }),
+      auth: { type: 'subscription', provider: 'codex', account_id: 'a' },
+    })], { expectedModels: raw });
+    expect(configManager.hasCachedConfig('ai.models')).toBe(false);
   });
 
   it('refuses a model edit when the host read fails instead of saving an empty-list fallback', async () => {

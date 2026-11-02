@@ -101,6 +101,55 @@ describe('public Select product integration', () => {
     expect(document.querySelectorAll('button[role="combobox"]')).toHaveLength(1);
   });
 
+  it('hides group headings while preserving groups, native values and keyboard selection', () => {
+    render({ showGroupLabels: false, options: [
+      { label: 'Ask', value: 'ask', group: 'Basic' },
+      { label: 'Plan', value: 'plan', group: 'Basic' },
+      { label: 'Agent', value: 3, group: 'Advanced' },
+    ] });
+    key(trigger(), 'ArrowDown');
+
+    const groups = document.querySelectorAll('[role="listbox"] [role="group"]');
+    expect(groups).toHaveLength(2);
+    expect(groups[0].querySelector('[data-openbitfun-part="group-label"]')).toBeNull();
+    expect(groups[0].querySelectorAll('[role="option"]')).toHaveLength(2);
+    expect(groups[1].querySelector('[data-openbitfun-part="group-label"]')).toBeNull();
+    expect(host.querySelectorAll('optgroup')).toHaveLength(2);
+
+    key(document.activeElement!, 'ArrowDown');
+    key(document.activeElement!, 'ArrowDown');
+    key(document.activeElement!, 'Enter');
+    expect(change).toHaveBeenLastCalledWith(3);
+    expect(host.querySelector('select')?.value).toBe('3');
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('keeps a pill trigger compact while expanded and native options retain full labels', () => {
+    render({
+      variant: 'pill', size: 'sm', width: 'content', popupWidth: 'content',
+      defaultValue: 'global',
+      options: [
+        { value: 'global', label: 'International platform', selectedLabel: 'Global' },
+        { value: 'china', label: 'China platform', selectedLabel: 'China' },
+      ],
+    });
+    expect(trigger().textContent).toBe('Global');
+    expect(trigger().parentElement?.getAttribute('data-variant')).toBe('pill');
+    act(() => trigger().click());
+    const popup = document.querySelector('[data-openbitfun-component="select-popup"]')!;
+    expect(popup.querySelector('[data-openbitfun-part="header"]')?.textContent).toBe('International platform');
+    expect([...popup.querySelectorAll('[role="option"]')].map(option => option.textContent))
+      .toEqual(['International platform', 'China platform']);
+    key(document.activeElement!, 'End');
+    key(document.activeElement!, 'Enter');
+    expect(change).toHaveBeenCalledWith('china');
+    expect(trigger().textContent).toBe('China');
+    expect(document.activeElement).toBe(trigger());
+    const native = host.querySelector('select')!;
+    expect(native.value).toBe('china');
+    expect(native.selectedOptions[0].textContent).toBe('China platform');
+  });
+
   it('skips disabled options, commits typed values, closes, and restores focus', () => {
     render();
     const anchor = trigger();

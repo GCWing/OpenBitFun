@@ -20,6 +20,7 @@ import type { ImageContextData as ImageInputContextData } from '@/infrastructure
 import type { SessionDriverId } from './resolve';
 import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { LineRange } from '@/shared/editor/LineRange';
+import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 
 export type { SessionDriverId } from './resolve';
 
@@ -127,9 +128,12 @@ export interface TurnTracker {
  */
 export type StartTurnResult = 'completed' | 'detached' | 'queued';
 
-/** Localized strings the usage-report flow surfaces; supplied by the caller. */
+/** Presentation and localized strings supplied by the usage-report caller. */
 export interface UsageReportUiParams {
   isProcessing: boolean;
+  /** Present an inline overview without opening a side-panel tab. False discards a stale request. */
+  presentReport?: (report: SessionUsageReport) => boolean;
+  reportTitle?: string;
   busyMessage: string;
   noWorkspaceMessage: string;
   failedTitle: string;

@@ -93,6 +93,28 @@ function isMacPlatform(): boolean {
   return typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
 }
 
+/** OS interception happens before a WebView receives keydown. Keep stored overrides,
+ * but warn at the editing boundary instead of claiming these keys are available.
+ */
+export function getReservedShortcutReason(
+  config: ShortcutConfig,
+  platform = typeof navigator === 'undefined' ? '' : navigator.platform,
+): 'appSwitch' | 'systemSearch' | 'secureAttention' | 'systemKey' | undefined {
+  const key = config.key.toLowerCase();
+  if (platform.toUpperCase().includes('MAC')) {
+    const command = config.ctrl || config.meta;
+    if (command && key === 'tab') return 'appSwitch';
+    if (command && (key === ' ' || key === 'space')) return 'systemSearch';
+    return undefined;
+  }
+  if (config.alt && (key === 'tab' || key === 'escape')) return 'appSwitch';
+  if (platform.toUpperCase().includes('WIN')) {
+    if (config.ctrl && config.alt && key === 'delete') return 'secureAttention';
+    if (config.meta) return 'systemKey';
+  }
+  return undefined;
+}
+
 function normalizeShortcutConfig(config: ShortcutConfig): { primary: boolean; meta: boolean } {
   if (isMacPlatform()) {
     return {

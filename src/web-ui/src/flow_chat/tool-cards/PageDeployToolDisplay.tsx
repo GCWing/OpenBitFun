@@ -9,21 +9,11 @@ import { useTranslation } from 'react-i18next';
 import type { ToolCardProps } from '../types/flow-chat';
 import { PageDeployToolCard } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
-import { pageAPI } from '@/infrastructure/api/service-api/PageAPI';
-import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
-import { notificationService } from '@/shared/notification-system';
+import { usePageToolOpen } from './usePageToolOpen';
 
-async function openPage(slug: string, knownGeneration?: string) {
-  if (!slug) return;
-  const generation = knownGeneration || (await pageAPI.listPages())
-    .find((page) => page.slug === slug)?.generation;
-  if (generation == null) throw new Error('Page no longer exists');
-  const link = await pageAPI.createOpenLink(slug, generation);
-  await systemAPI.openExternal(link.open_url);
-}
-
-export const PageDeployDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
+export const PageDeployDisplay: React.FC<ToolCardProps> = ({ toolItem, sessionId }) => {
   const { t } = useTranslation('flow-chat');
+  const { canOpen, openPage, unavailableReason } = usePageToolOpen(sessionId);
   const { status, toolResult, partialParams, isParamsStreaming, toolCall } = toolItem;
   const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
 
@@ -118,11 +108,10 @@ export const PageDeployDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
             size="sm"
             icon={<Icon name="arrow-up-right" size="sm" />}
             aria-label={t('toolCards.pageDeploy.openProduction')}
-            title={t('toolCards.pageDeploy.openProduction')}
+            disabled={!canOpen}
+            title={!canOpen ? unavailableReason : t('toolCards.pageDeploy.openProduction')}
             data-testid="chat-page-deploy-open-btn"
-            onClick={() => void openPage(slug, generation).catch(() => {
-              notificationService.error(t('toolCards.pageDeploy.openFailed'));
-            })}
+            onClick={() => void openPage(slug, generation)}
           />
         ) : undefined}
       />

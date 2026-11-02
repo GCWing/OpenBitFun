@@ -119,6 +119,15 @@ describe('ExternalHistoryNotice', () => {
     expect(api.restore).not.toHaveBeenCalled();
   });
 
+  it('shows unsupported source format separately from unavailable source history', async () => {
+    const session = source();
+    session.externalHistory!.sourceStatus = 'unsupported';
+    await render(session);
+    expect(container.textContent).toContain('externalHistory.unsupported');
+    expect(container.textContent).not.toContain('externalHistory.unavailable');
+    expect(api.restore).not.toHaveBeenCalled();
+  });
+
   it.each(Object.keys(EXTERNAL_SESSION_NAMES) as ExternalSessionEcosystem[])('restores a removed %s source only after an explicit second click', async ecosystem => {
     api.ensure.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     api.listRemoved.mockResolvedValue([{ ecosystemId: ecosystem, sessionId: 'source', workspaceId: 'workspace' }]);

@@ -124,7 +124,19 @@ class BoundedFormatterCache<T> {
   }
 }
 
-const lazyLocaleModules = import.meta.glob('../../../locales/**/*.json', {
+// Bootstrap namespaces are already eager imports below. Exclude them from the
+// lazy graph so Rollup does not emit a second, ineffective dynamic import edge.
+const lazyLocaleModules = import.meta.glob([
+  '../../../locales/**/*.json',
+  '!../../../locales/*/common.json',
+  '!../../../locales/*/components.json',
+  '!../../../locales/*/errors.json',
+  '!../../../locales/*/flow-chat.json',
+  '!../../../locales/*/panels/files.json',
+  '!../../../locales/*/panels/git.json',
+  '!../../../locales/*/settings/models.json',
+  '!../../../locales/*/tools.json',
+], {
   import: 'default',
 }) as Record<string, () => Promise<Record<string, unknown>>>;
 
@@ -188,6 +200,9 @@ async function loadLocaleNamespace(locale: string, namespace: string): Promise<R
   if (namespace === 'shared') {
     return SHARED_TERMS_BY_LOCALE[locale as LocaleId] ?? {};
   }
+
+  const bootstrapResource = bootstrapLocaleModules[`../../../locales/${locale}/${namespace}.json`];
+  if (bootstrapResource) return bootstrapResource;
 
   const resourceModule = localeNamespaceLoaders[`../../../locales/${locale}/${namespace}.json`];
   if (!resourceModule) {

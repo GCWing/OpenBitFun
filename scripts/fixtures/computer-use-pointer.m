@@ -1,5 +1,5 @@
 // Black-box lifecycle checks against the production passive AppKit cursor.
-#import "../../src/apps/desktop/src/computer_use/macos_capture.m"
+#import "../../src/crates/services/computer-use/src/computer_use/macos_capture.m"
 #include <assert.h>
 
 void obf_control_native_stopped(uint64_t generation, uint64_t revision, int32_t pid, uint32_t windowID, const char *reason) {

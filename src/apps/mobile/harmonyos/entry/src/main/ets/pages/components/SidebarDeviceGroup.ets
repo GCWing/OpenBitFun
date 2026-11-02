@@ -184,7 +184,12 @@ struct SidebarWorkspaceGroup {
         }
       })
       .onClick(() => {
-        this.showCreateMenu = !this.showCreateMenu;
+        if (this.workspaceKind === 'assistant') {
+          this.showCreateMenu = false;
+          this.onCreateInWorkspace(this.path, 'claw', this.connectionId, this.sshHost, this.workspaceIdOrUndefined());
+        } else {
+          this.showCreateMenu = !this.showCreateMenu;
+        }
       })
     }
     .width('100%')

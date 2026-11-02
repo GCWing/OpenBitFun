@@ -438,6 +438,9 @@ export function convertDialogTurnToBackendFormat(dialogTurn: DialogTurn, turnInd
         roundGroupId: round.roundGroupId,
         timestamp: round.startTime,
         renderHints: round.renderHints,
+        modelConfigId: round.modelConfigId,
+        effectiveModelName: round.effectiveModelName,
+        routing: round.routing,
         textItems: round.items
           .map((item, index) => ({ item, index }))
           .filter(({ item }) => item.type === 'text')
@@ -510,6 +513,11 @@ export function convertDialogTurnToBackendFormat(dialogTurn: DialogTurn, turnInd
           }),
         startTime: round.startTime,
         endTime: round.endTime,
+        durationMs: round.durationMs,
+        firstChunkMs: round.firstChunkMs,
+        firstVisibleOutputMs: round.firstVisibleOutputMs,
+        streamDurationMs: round.streamDurationMs,
+        ttftMs: round.ttftMs,
         attemptCount: round.attemptCount,
         attemptDiagnostics: round.attemptDiagnostics,
         status: round.status || 'completed',

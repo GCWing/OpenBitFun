@@ -168,3 +168,29 @@ pub(crate) async fn ssh_list_saved_connections() -> Result<Value, String> {
         .ok_or("SSH manager is unavailable")?;
     serde_json::to_value(ssh.get_saved_connections().await).map_err(|e| e.to_string())
 }
+
+pub(crate) async fn get_workspace_icon(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    let request: openbitfun_core::service::workspace::WorkspaceIconRequest =
+        serde_json::from_value(args.get("request").cloned().unwrap_or(Value::Null))
+            .map_err(|e| e.to_string())?;
+    serde_json::to_value(
+        state
+            .workspace_service
+            .get_workspace_icon(&request.workspace_id)
+            .await?,
+    )
+    .map_err(|e| e.to_string())
+}
+
+pub(crate) async fn set_workspace_icon(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    let request = serde_json::from_value(args.get("request").cloned().unwrap_or(Value::Null))
+        .map_err(|e| e.to_string())?;
+    serde_json::to_value(state.workspace_service.set_workspace_icon(request).await?)
+        .map_err(|e| e.to_string())
+}

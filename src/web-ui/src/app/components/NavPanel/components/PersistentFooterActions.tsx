@@ -1,13 +1,11 @@
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import React, { Suspense, useState, useCallback, useEffect, useRef } from 'react';
-import { Cable } from 'lucide-react';
 
 import { createOverlayPortal,
   Icon,
   IconButton,
   Menu,
   MenuItem,
-  MenuSection,
   MenuSeparator,
   Tooltip,
   Dialog,
@@ -19,8 +17,6 @@ import { createOverlayPortal,
 import { RetainedMountBoundary } from '@/shared/presence';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { activateProductAction } from '@/app/global-search/productActionActivator';
-import { useSceneStore } from '@/app/stores/sceneStore';
-import { useExternalAppAwareness } from '@/infrastructure/config/components/external-sources/useExternalAppAwareness';
 import { useToolbarModeContext } from '@/flow_chat/components/toolbar-mode/ToolbarModeContext';
 import { remoteConnectAPI } from '@/infrastructure/api/service-api/RemoteConnectAPI';
 import NotificationButton from '../../TitleBar/NotificationButton';
@@ -31,29 +27,27 @@ import {
 } from '../../RemoteConnectDialog/remoteConnectDisclaimerStorage';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
-import { useSettingsStore } from '@/app/scenes/settings/settingsStore';
 import { PeerConnectionStatus } from '@/infrastructure/peer-device/PeerConnectionStatus';
 import DeviceStatusControl from './DeviceStatusControl';
-import AppearanceQuickSwitchMenuItem from './AppearanceQuickSwitchMenuItem';
 import { UpdateIndicator } from '@/infrastructure/update/UpdateIndicator';
 import { useHasAppUpdate } from '@/infrastructure/update/useHasAppUpdate';
 import { UpdateDownloadIndicator } from '@/infrastructure/update/UpdateDownloadIndicator';
 import { UpdateMenuItems } from '@/infrastructure/update/UpdateMenuItems';
 import { useUpdateInstallStore } from '@/infrastructure/update/updateInstallStore';
+import { useAccountIdentity } from '@/infrastructure/account-identity';
+import { buildPublicFeedbackFormUrl } from '@/infrastructure/feedback/publicFeedbackForm';
+import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
+import { notificationService } from '@/shared/notification-system';
+import { getVersionInfo } from '@/shared/utils/version';
 
 const RemoteConnectDialog = lazyWithRecovery(() => import('../../RemoteConnectDialog'));
 
 const PersistentFooterActions: React.FC = () => {
   const { t } = useI18n('common');
-  const isEcosystemCompatibilityActive = useSceneStore(state => state.activeTabId === 'ecosystem-compatibility');
-  const hasUnseenEcosystemCompatibility = useExternalAppAwareness(isEcosystemCompatibilityActive);
-  const ecosystemCompatibilityTooltip = hasUnseenEcosystemCompatibility
-    ? t('nav.tooltips.ecosystemCompatibilityUnseen')
-    : t('nav.tooltips.ecosystemCompatibility');
   const { enableToolbarMode } = useToolbarModeContext();
+  const accountIdentity = useAccountIdentity();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuClosing, setMenuClosing] = useState(false);
-  const [appearanceSubmenuOpen, setAppearanceSubmenuOpen] = useState(false);
   const [deviceOverviewOpen, setDeviceOverviewOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const menuPopoverRef = useRef<HTMLDivElement>(null);
@@ -90,7 +84,6 @@ const PersistentFooterActions: React.FC = () => {
   }, []);
 
   const closeMenu = useCallback(() => {
-    setAppearanceSubmenuOpen(false);
     setMenuClosing(true);
     setTimeout(() => {
       setMenuOpen(false);
@@ -103,7 +96,6 @@ const PersistentFooterActions: React.FC = () => {
       closeMenu();
     } else {
       setDeviceOverviewOpen(false);
-      setAppearanceSubmenuOpen(false);
       setMenuOpen(true);
     }
   };
@@ -120,21 +112,27 @@ const PersistentFooterActions: React.FC = () => {
     void activateProductAction('settings.open');
   }, [closeMenu]);
 
-  const handleOpenEcosystemCompatibility = useCallback(() => {
-    closeMenu();
-    void activateProductAction('surface.ecosystemCompatibility.open');
-  }, [closeMenu]);
-
-  const handleOpenAppearanceSettings = useCallback(() => {
-    closeMenu();
-    useSettingsStore.getState().openPage('application.appearance');
-    void activateProductAction('settings.open');
-  }, [closeMenu]);
-
   const handleShowAbout = () => {
     closeMenu();
     window.dispatchEvent(new Event('nav:show-about'));
   };
+
+  const handleOpenFeedback = useCallback(() => {
+    closeMenu();
+    const account = accountIdentity.status === 'signed-in' ? accountIdentity.me?.user : undefined;
+    const url = buildPublicFeedbackFormUrl(import.meta.env.VITE_OPENBITFUN_FEEDBACK_FORM_URL, {
+      uid: account?.accountId ?? account?.githubId,
+      version: getVersionInfo().version,
+      deviceInfo: typeof navigator === 'undefined' ? undefined : navigator.userAgent,
+    });
+    if (!url) {
+      notificationService.error(t('nav.settingsMenu.feedbackUnavailable'));
+      return;
+    }
+    void systemAPI.openExternal(url).catch(() => {
+      notificationService.error(t('nav.settingsMenu.feedbackOpenFailed'));
+    });
+  }, [accountIdentity.me, accountIdentity.status, closeMenu, t]);
 
   const handleFloatingMode = () => {
     closeMenu();
@@ -227,12 +225,8 @@ const PersistentFooterActions: React.FC = () => {
                   onKeyDown={(event) => {
                     if (event.key !== 'Escape') return;
                     event.preventDefault();
-                    if (appearanceSubmenuOpen) {
-                      setAppearanceSubmenuOpen(false);
-                    } else {
-                      closeMenu();
-                      menuTriggerRef.current?.focus();
-                    }
+                    closeMenu();
+                    menuTriggerRef.current?.focus();
                   }}
                   style={{
                     top: `${menuLayout?.top ?? 0}px`,
@@ -248,35 +242,16 @@ const PersistentFooterActions: React.FC = () => {
                     {t('nav.settingsMenu.floatingWindow')}
                   </MenuItem>
                   <NotificationButton menuItem onActivate={closeMenu} />
-                  <AppearanceQuickSwitchMenuItem
-                    open={appearanceSubmenuOpen}
-                    onOpenChange={setAppearanceSubmenuOpen}
-                    onCloseParentMenu={closeMenu}
-                    onOpenAppearanceSettings={handleOpenAppearanceSettings}
-                  />
-                  <MenuSeparator />
-                  <MenuSection aria-label={t('nav.items.ecosystemCompatibility')}>
-                    <Tooltip content={ecosystemCompatibilityTooltip} placement="right">
-                      <MenuItem
-                        leading={<Icon glyph={Cable} size="sm" aria-hidden="true" />}
-                        onClick={handleOpenEcosystemCompatibility}
-                        aria-current={isEcosystemCompatibilityActive ? 'page' : undefined}
-                        data-testid="ecosystem-compatibility-tab"
-                        metadata={hasUnseenEcosystemCompatibility ? (
-                          <span
-                            className="openbitfun-nav-panel__top-action-unseen"
-                            data-openbitfun-component="nav-panel"
-                            data-openbitfun-part="topActionUnseen"
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                      >
-                        {t('nav.items.ecosystemCompatibility')}
-                      </MenuItem>
-                    </Tooltip>
-                  </MenuSection>
                   <MenuSeparator />
                   <UpdateMenuItems onCloseMenu={closeMenu} />
+                  <MenuItem
+                    leading={<Icon name="messages-square" size="sm" aria-hidden="true" />}
+                    onClick={handleOpenFeedback}
+                    data-testid="nav-settings-feedback-item"
+                  >
+                    {t('nav.settingsMenu.feedback')}
+                  </MenuItem>
+                  <MenuSeparator />
                   <MenuItem
                     leading={<Icon name="gear" size="sm" aria-hidden="true" />}
                     onClick={handleOpenSettings}

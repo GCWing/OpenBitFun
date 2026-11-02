@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { matchingItems, searchCapabilities } from '../src/search.js';
+import { matchingItems, scoreTextMatch, searchCapabilities } from '../src/search.js';
 
 const execFileAsync = promisify(execFile);
 const websiteRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -93,6 +93,12 @@ test('catalog search accepts bilingual synonym bundles and exposes honest contro
   assert.match(appSource, /Direct Agent control/u);
   assert.match(appSource, /capability\.operations\.length \|\| capability\.agentControl/u);
   assert.match(stylesSource, /\.control-direct/u);
+});
+
+test('search accepts consecutive initials without assembling acronyms from scattered prose', () => {
+  assert.ok(scoreTextMatch('gs', ['Global Search']) > 0);
+  assert.equal(scoreTextMatch('pet', ['Publish the example after completing checks and tests']), 0);
+  assert.equal(scoreTextMatch('mascot', ['Move an app; select controls only when observed, then operate them']), 0);
 });
 
 test('Playbook search satisfies the shared cross-surface acceptance corpus', () => {

@@ -87,6 +87,10 @@ pub(super) const BUILTIN_SKILL_SPECS: &[BuiltinSkillSpec] = &[
         group: BuiltinSkillGroup::Creation,
     },
     BuiltinSkillSpec {
+        dir_name: "generate-image",
+        group: BuiltinSkillGroup::Creation,
+    },
+    BuiltinSkillSpec {
         dir_name: "ppt-design",
         group: BuiltinSkillGroup::Office,
     },

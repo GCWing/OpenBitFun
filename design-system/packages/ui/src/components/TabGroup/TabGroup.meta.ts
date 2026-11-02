@@ -2,7 +2,7 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const tabGroupMeta = {
   category: "navigation",
-  description: "A compact single-selection tab list with leading icons, glass end actions floating over intact labels, and automatic keyboard activation.",
+  description: "A compact single-selection tab list with leading icons, glass end actions, and automatic keyboard activation. Content stays centered at rest; hover grows the capsule at its inline end before revealing the action, while the content stays in place.",
   maturity: "stable",
   name: "TabGroup",
   props: [

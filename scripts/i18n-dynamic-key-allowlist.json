@@ -12,7 +12,9 @@
         "resolveSubagentNameKey",
         "subagentIdentity.names.bouncyBean"
       ],
-      "keyPrefixes": ["subagentIdentity.names."]
+      "keyPrefixes": [
+        "subagentIdentity.names."
+      ]
     },
     {
       "id": "installer-install-path-errors",
@@ -189,6 +191,24 @@
       "keyPrefixes": [
         "filters.",
         "categories."
+      ]
+    },
+    {
+      "id": "web-global-search-capability-labels",
+      "surface": "web-ui",
+      "namespace": "scenes/capabilities",
+      "owner": "src/web-ui/src/app/global-search/providers/interactiveCapabilitySearchProvider.ts",
+      "description": "Search display labels follow the UI locale. Catalog and item coverage is verified in interactiveCapabilitySearchProvider.test.ts; bilingual catalog text remains search aliases only.",
+      "sourceReferences": [
+        "search.capabilities.${capability.id}.title",
+        "search.capabilities.${capability.id}.items.${item.id}",
+        "search.categories.${capability.categoryId}",
+        "search.kinds.${capability.kind}"
+      ],
+      "keyPrefixes": [
+        "search.capabilities.",
+        "search.categories.",
+        "search.kinds."
       ]
     }
   ]

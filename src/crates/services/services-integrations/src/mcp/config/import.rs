@@ -423,7 +423,7 @@ fn import_summary(native_id: &str, value: &Value) -> Option<MCPImportedServerSum
     })
 }
 
-fn config_fingerprint(value: &Option<Value>) -> String {
+pub(super) fn config_fingerprint(value: &Option<Value>) -> String {
     let bytes = serde_json::to_vec(value).expect("JSON value serialization cannot fail");
     format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
 }

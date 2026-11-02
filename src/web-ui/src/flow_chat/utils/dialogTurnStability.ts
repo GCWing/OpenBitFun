@@ -285,11 +285,12 @@ export function settleDialogTurnToTerminalStatus(
     ? normalizedError || dialogTurn.error
     : dialogTurn.error;
   const stableContent = dialogTurn.modelRounds.every(round =>
+    !round.isStreaming && round.isComplete &&
     TERMINAL_ROUND_STATUSES.has(round.status) &&
-    round.items.every(item => STABLE_ITEM_STATUSES.has(item.status)) &&
+    round.items.every(isStableTerminalItem) &&
     (round.attempts ?? []).every(attempt =>
       attempt.status !== 'streaming' &&
-      attempt.items.every(item => STABLE_ITEM_STATUSES.has(item.status))
+      attempt.items.every(isStableTerminalItem)
     )
   );
 
@@ -342,4 +343,11 @@ export function settleDialogTurnToTerminalStatus(
     endTime: dialogTurn.endTime ?? settledAt,
     modelRounds,
   };
+}
+
+function isStableTerminalItem(item: AnyFlowItem): boolean {
+  if (!STABLE_ITEM_STATUSES.has(item.status)) return false;
+  if (item.type === 'text' || item.type === 'thinking') return !item.isStreaming;
+  if (item.type === 'tool') return !item.isParamsStreaming;
+  return true;
 }

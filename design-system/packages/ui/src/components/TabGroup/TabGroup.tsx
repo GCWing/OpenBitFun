@@ -27,7 +27,7 @@ export interface TabGroupItem {
   labelTransitionKey?: string | number;
   panelId?: string;
   /** Presentation and product data attributes on the native tab; selection stays owned by TabGroup. */
-  tabProps?: Pick<HTMLAttributes<HTMLButtonElement>, "className" | "style" | "title" | "aria-label" | "aria-describedby">
+  tabProps?: Pick<HTMLAttributes<HTMLButtonElement>, "className" | "style" | "title" | "aria-label" | "aria-describedby" | "aria-haspopup" | "aria-expanded">
     & Record<`data-${string}`, string | number | boolean | undefined>;
   value: string;
 }

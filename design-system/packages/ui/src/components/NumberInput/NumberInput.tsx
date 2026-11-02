@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   useCallback,
@@ -67,6 +68,11 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
   "aria-invalid": ariaInvalid,
 }, ref) {
   const fieldSurface = useFieldSurface();
+  const fieldAccessibility = useFieldAccessibility({
+    "aria-label": ariaLabel,
+    "aria-labelledby": ariaLabelledBy,
+    "aria-describedby": ariaDescribedBy,
+  }, Boolean(label));
   const format = useCallback((next: number) => precision > 0 ? next.toFixed(precision) : String(Math.round(next)), [precision]);
   const clamp = useCallback((next: number) => Math.min(max, Math.max(min, next)), [max, min]);
   const [draft, setDraft] = useState(() => format(value));
@@ -106,8 +112,8 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
         <input
           id={id}
           required={required}
-          aria-labelledby={ariaLabelledBy}
-          aria-describedby={ariaDescribedBy}
+          aria-labelledby={fieldAccessibility["aria-labelledby"]}
+          aria-describedby={fieldAccessibility["aria-describedby"]}
           aria-invalid={ariaInvalid}
           aria-label={ariaLabel ?? label}
           className={styles.input}

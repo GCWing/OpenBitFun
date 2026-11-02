@@ -949,14 +949,14 @@ impl FrontendWorkbenchManager {
         transaction_id: Option<&str>,
     ) -> Result<(), String> {
         let url = revision_frontend_url_value(revision_id, transaction_id)?;
-        let window = app
-            .get_webview_window("main")
+        let webview = app
+            .get_webview("main")
             .ok_or_else(|| "Main window is unavailable".to_string())?;
         {
             let mut navigation = self.main_navigation.lock().map_err(lock_error)?;
             navigation.armed_url = Some(url.clone());
         }
-        if let Err(error) = window.navigate(url.clone()) {
+        if let Err(error) = webview.navigate(url.clone()) {
             if let Ok(mut navigation) = self.main_navigation.lock() {
                 if navigation
                     .armed_url
@@ -1250,10 +1250,10 @@ pub struct FrontendUpdateDecisionRequest {
 #[tauri::command]
 pub async fn frontend_update_candidate_ready(
     state: tauri::State<'_, Arc<FrontendWorkbenchManager>>,
-    webview: tauri::WebviewWindow,
+    webview: tauri::Webview,
     request: FrontendUpdateDecisionRequest,
 ) -> Result<Value, String> {
-    require_main_window(&webview)?;
+    require_main_webview(&webview)?;
     let document_url = webview
         .url()
         .map_err(|error| format!("Failed to inspect the main frontend URL: {error}"))?;
@@ -1270,10 +1270,10 @@ pub struct FrontendUpdateFailureRequest {
 #[tauri::command]
 pub async fn frontend_update_candidate_failed(
     state: tauri::State<'_, Arc<FrontendWorkbenchManager>>,
-    webview: tauri::WebviewWindow,
+    webview: tauri::Webview,
     request: FrontendUpdateFailureRequest,
 ) -> Result<Value, String> {
-    require_main_window(&webview)?;
+    require_main_webview(&webview)?;
     let url = webview.url().map_err(|error| error.to_string())?;
     state.mark_candidate_failed(&request.transaction_id, &url, &request.message)
 }
@@ -1318,7 +1318,7 @@ fn require_confirmation_window(webview: &tauri::WebviewWindow) -> Result<(), Str
     Ok(())
 }
 
-fn require_main_window(webview: &tauri::WebviewWindow) -> Result<(), String> {
+fn require_main_webview(webview: &tauri::Webview) -> Result<(), String> {
     if webview.label() != "main" {
         return Err("Frontend readiness can only be reported by the main window".to_string());
     }

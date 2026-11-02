@@ -118,6 +118,16 @@ test("other components formerly using the fallback render their own state specim
   assert.match(render("Avatar").preview, /<img/);
 });
 
+test("ColorPicker opens its registered flower palette in the Design Lab", () => {
+  const { preview, html } = render("ColorPicker");
+  assert.match(preview, /data-openbitfun-component="color-picker"/);
+  assert.match(preview, /aria-expanded="true"/);
+  assert.equal((preview.match(/data-openbitfun-part="petal"/g) ?? []).length, 19);
+  assert.match(preview, /role="slider"[^>]*aria-label="明度"/);
+  assert.match(html, /import \{ ColorPicker \}/);
+  assert.doesNotMatch(preview, /type="color"/);
+});
+
 test("LauncherButton exposes its interaction states with the catalog mic", () => {
   const { html, preview } = render("LauncherButton");
 

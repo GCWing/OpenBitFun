@@ -244,3 +244,112 @@ mod windows_process_cleanup {
         }
     }
 }
+
+/// Linux children must resolve the same executables a login shell would.
+///
+/// A `.desktop` launch starts with the session PATH, which omits entries a
+/// login shell adds (`~/.local/bin`, version-manager bin dirs). The async
+/// command builder is the path used by MCP servers, hooks, plugin hosts and
+/// desktop cards, so it must carry the resolved entries to the child.
+#[cfg(target_os = "linux")]
+mod platform_path_environment {
+    use openbitfun_services_core::process_manager::create_tokio_command;
+    use openbitfun_services_core::system::platform_path_entries;
+    use std::path::PathBuf;
+    use std::process::Stdio;
+
+    /// Set only in the probe child, so the parent test can run the assertion
+    /// with a deliberately narrow `PATH`.
+    const PROBE_ENV: &str = "OPENBITFUN_PLATFORM_PATH_PROBE";
+    const NARROW_PATH: &str = "/openbitfun-probe-missing";
+
+    #[test]
+    fn platform_path_entries_are_deduplicated_existing_directories() {
+        let entries = platform_path_entries();
+        assert!(
+            !entries.is_empty(),
+            "Linux must contribute platform PATH entries"
+        );
+
+        for entry in &entries {
+            assert!(entry.is_absolute(), "{} is not absolute", entry.display());
+            assert!(entry.is_dir(), "{} is not a directory", entry.display());
+        }
+
+        let mut unique = entries.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            entries.len(),
+            "platform PATH entries must be deduplicated: {entries:?}"
+        );
+    }
+
+    /// A child whose `PATH` omits every platform entry proves the override is
+    /// real: with the developer's own shell `PATH` in place the assertion would
+    /// pass even if no `PATH` were ever handed to the child.
+    #[test]
+    fn async_children_receive_the_platform_path() {
+        if std::env::var_os(PROBE_ENV).is_some() {
+            assert_child_receives_platform_path();
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("test binary path");
+        let output = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "platform_path_environment::async_children_receive_the_platform_path",
+                "--nocapture",
+            ])
+            .env("PATH", NARROW_PATH)
+            .env(PROBE_ENV, "1")
+            .output()
+            .expect("spawn PATH probe");
+
+        assert!(
+            output.status.success(),
+            "PATH probe failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn assert_child_receives_platform_path() {
+        let platform_entries = platform_path_entries();
+        assert!(
+            !platform_entries.is_empty(),
+            "Linux must contribute platform PATH entries"
+        );
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build probe runtime");
+        let child_path = runtime.block_on(async {
+            let mut command = create_tokio_command("/bin/sh");
+            command
+                .args(["-c", "printf '%s' \"$PATH\""])
+                .stdout(Stdio::piped());
+            let output = command.output().await.expect("run PATH probe");
+            assert!(output.status.success(), "PATH probe command failed");
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        });
+        let child_entries: Vec<PathBuf> = std::env::split_paths(&child_path).collect();
+
+        for entry in &platform_entries {
+            assert!(
+                child_entries.contains(entry),
+                "child PATH is missing {}: {child_entries:?}",
+                entry.display()
+            );
+        }
+
+        assert!(
+            child_entries
+                .iter()
+                .any(|entry| entry == std::path::Path::new(NARROW_PATH)),
+            "child PATH dropped the inherited entry: {child_entries:?}"
+        );
+    }
+}

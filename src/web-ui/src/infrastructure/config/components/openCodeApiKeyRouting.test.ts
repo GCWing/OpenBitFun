@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveOpenCodeModelRoute, isOpenCodeZenOAuth, openCodeZenModels, resolveOpenCodeApiKeyRoute, savedOpenCodeApiKeyRoute } from './openCodeApiKeyRouting';
+import { openCodeApiKey, resolveOpenCodeModelRoute, isOpenCodeZenOAuth, openCodeZenModels, resolveOpenCodeApiKeyRoute, savedOpenCodeApiKeyRoute } from './openCodeApiKeyRouting';
 
 describe('OpenCode API-key model routes', () => {
   it('keeps Console OAuth and account offerings within Zen', () => {
@@ -62,5 +62,18 @@ describe('OpenCode API-key model routes', () => {
     expect(resolveOpenCodeApiKeyRoute(config, 'known', [{ id: 'known', routing }])).toBeUndefined();
     expect(resolveOpenCodeApiKeyRoute({ base_url: routing.base_url, auth: { type: 'subscription' } }, 'known', [{ id: 'known', routing }])).toBeUndefined();
     expect(resolveOpenCodeApiKeyRoute({ base_url: routing.base_url }, 'known', [{ id: 'known', routing: { ...routing, request_url: 'https://evil.invalid' } }])).toBeUndefined();
+  });
+});
+
+describe('OpenCode anonymous API key', () => {
+  it('allows anonymous Zen discovery and preserves explicit keys and auth modes', () => {
+    const zen = { base_url: 'https://opencode.ai/zen/v1/' };
+    expect(openCodeApiKey(zen)).toBe('public');
+    expect(openCodeApiKey({ ...zen, api_key: ' user-key ' })).toBe('user-key');
+    expect(openCodeApiKey({ ...zen, auth: { type: 'subscription' } })).toBe('');
+    expect(openCodeApiKey({ ...zen, auth: { type: 'subscription_pool' } })).toBe('');
+    for (const base_url of ['https://opencode.ai/zen/go/v1', 'https://opencode.ai.evil.test/zen/v1', 'http://opencode.ai/zen/v1', 'https://proxy.test/v1']) {
+      expect(openCodeApiKey({ base_url })).toBe('');
+    }
   });
 });

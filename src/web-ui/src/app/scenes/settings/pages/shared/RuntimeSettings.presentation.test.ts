@@ -30,8 +30,12 @@ describe('Runtime settings information architecture', () => {
     const control = readSource('../tools/DeviceControlSettingsPage.tsx');
     expect(execution).not.toContain('permissionPolicy.sectionTitle');
     expect(execution).toContain('toolExecution.sectionTitle');
+    expect(execution).toContain("title={t('toolPresentation.sectionTitle')}");
+    expect(execution).toContain('toolPresentation.mode');
+    expect(execution).toContain("tooltip: t('toolPresentation.ptcTooltip')");
     expect(permissions).toContain('permissionPolicy.sectionTitle');
     expect(permissions).not.toContain('toolExecution.sectionTitle');
+    expect(permissions).not.toContain('toolPresentation.mode');
     expect(control.indexOf("title={t('computerUse.sectionTitle')}")).toBeLessThan(control.indexOf("title={t('browserControl.sectionTitle')}"));
     for (const source of [execution, permissions, control]) {
       expect(source).not.toContain('SettingsViewPage');

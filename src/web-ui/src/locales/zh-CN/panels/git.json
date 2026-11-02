@@ -454,5 +454,17 @@
     "unavailable": "无法在此处为 \"{{path}}\" 授予 Git 所有权信任，请在持有该仓库的机器上授予。",
     "unavailableWithCommand": "无法在此处为 \"{{path}}\" 授予 Git 所有权信任。请在持有该仓库的机器上执行：\n\n{{command}}",
     "required": "在你信任其所有权之前，Git 不会读取 \"{{path}}\"。"
+  },
+  "workingCopy": {
+    "openWorkspace": "打开工作区后即可查看变更。",
+    "currentHost": "当前主机",
+    "clean": "工作区干净",
+    "cleanDescription": "此仓库没有尚未提交的变更。",
+    "upstreamComparison": "相对上游：领先 {{ahead}} 个提交 · 落后 {{behind}} 个提交",
+    "unpushed": "本地仍有尚未推送的提交。准备好后，可使用上方的推送按钮。",
+    "remoteSnapshot": "可在分支页面查看跟踪关系与远端同步状态。",
+    "statusUnavailable": "无法获取 Git 状态",
+    "selectFile": "选择文件以查看变更",
+    "conflicts": "{{count}} 个文件存在未解决的冲突。"
   }
 }

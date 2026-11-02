@@ -18,5 +18,638 @@
   "serverType": "类型",
   "clickToCopy": "点击复制路径",
   "pathCopied": "路径已复制",
-  "pathCopyFailed": "复制路径失败"
+  "pathCopyFailed": "复制路径失败",
+  "search": {
+    "categories": {
+      "assistant": "AI 与协作",
+      "workspace": "项目与开发",
+      "automation": "扩展与自动化",
+      "connect": "连接与发布",
+      "application": "应用设置",
+      "data": "数据与诊断"
+    },
+    "kinds": {
+      "feature": "功能",
+      "setting": "$t(shared:features.settings)"
+    },
+    "capabilities": {
+      "feature": {
+        "ai-assistant": {
+          "title": "AI 助手与会话",
+          "summary": "在项目上下文中与 AI 协作，创建会话、继续任务、处理权限请求，并保留完整的工作记录。",
+          "items": {
+            "create-session": "打开并新建一个 AI 会话",
+            "session-lifecycle": "重命名、归档、恢复、删除、复制、分叉与导出会话",
+            "model-mode-permissions": "为会话选择模型、工作模式、记忆模式与权限模式",
+            "creative-frontend-authoring": "让创造模式扩展客户端界面与运行时能力",
+            "image-generation": "通过已配置的默认图像模型生成图片",
+            "turn-control": "开始、引导、打断、取消或恢复一次智能体运行",
+            "permission-mailbox": "查看并逐个或批量回答等待中的权限请求",
+            "history-search": "分页加载、搜索和回填历史消息与会话内容",
+            "session-storage-directory": "从工作区或会话菜单打开会话存储目录，用于备份与手动排障",
+            "agent-session-coordination": "让智能体创建、列出、取消、删除会话或向另一会话发送消息",
+            "mcp-mentions": "在对话中通过 @ 选择当前模式可用的 MCP 服务",
+            "tool-activity": "查看工具调用与后台命令，读取输出并继续输入或停止",
+            "goals": "查看、创建并完成或阻塞当前会话目标",
+            "goal-maintenance": "编辑目标说明或清除当前会话目标",
+            "working-plan": "让智能体维护任务清单、生成实施计划并按需向用户提问",
+            "usage": "查看单个会话的请求、Token 与成本用量报告",
+            "context-memory": "重新加载会话上下文、运行 AGENTS.md 初始化并管理长期记忆",
+            "btw-editor-ai": "使用 BTW 轻量问答与编辑器内联 AI，并可随时取消"
+          }
+        },
+        "agents": {
+          "title": "智能体管理",
+          "summary": "管理内置、自定义和子智能体，让不同角色分工处理研究、编码、评审等任务。",
+          "items": {
+            "browse-agents": "查看内置、用户、项目与当前环境可见的智能体",
+            "custom-agent-create": "创建自定义智能体并设置名称、说明和角色",
+            "custom-agent-manage": "读取、编辑、重新加载或删除自定义智能体",
+            "subagent-manage": "创建、配置、查看和删除可委派的子智能体",
+            "capability-summary": "查看每个智能体的工具、Skills、只读状态和能力摘要",
+            "tools-skills": "按智能体选择工具组、单个工具、Skill 组与 Skills",
+            "delegation": "让主智能体委派并行研究、编码和评审任务并协调生命周期"
+          }
+        },
+        "personal-assistants": {
+          "title": "个人助理",
+          "summary": "在助理空间中创建和管理自己的长期 AI 助理，定义身份与人设，并从同一处开始会话或安排定时任务。",
+          "items": {
+            "assistant-gallery": "浏览已有助理、创建新助理并查看每个助理的身份与能力概览",
+            "assistant-open-close": "关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开",
+            "primary-delete-reset": "设为主助理、删除非主助理，或将助理工作区重置为默认状态",
+            "identity-avatar": "编辑助理名称、角色类型和气质，并选择官方头像、Emoji 或自定义头像字符",
+            "persona-documents": "读取和编辑 IDENTITY.md、SOUL.md 与 USER.md，并自动保存 Markdown 正文和 Frontmatter",
+            "assistant-sessions": "在助理详情中选择模型、输入消息并查看该助理的历史会话",
+            "assistant-schedules": "查看和管理仅属于当前助理工作区的定时会话与自动任务"
+          }
+        },
+        "projects": {
+          "title": "项目与工作区",
+          "summary": "打开本地目录或创建项目，让文件、会话、终端和智能体围绕同一工作区协作。",
+          "items": {
+            "open-create": "打开现有项目或进入新建项目流程",
+            "close-switch-reorder": "关闭、切换并重新排序多个已打开工作区",
+            "recent-workspaces": "查看、清理和重新打开最近使用的项目",
+            "workspace-metadata": "扫描并维护工作区名称、信息、关联目录和 Persona 文件",
+            "workspace-icon": "选择项目图案和颜色，或使用自定义图片",
+            "file-watch": "监听项目文件变化、检查监听状态并在失败后恢复",
+            "workspace-search": "按文件名、路径或文件内容搜索本地工作区",
+            "remote-open": "从项目流程打开 SSH 或其他远程工作区",
+            "project-health": "查看当前工作区、应用状态、健康状态与统计信息"
+          }
+        },
+        "files-editor": {
+          "title": "文件与代码编辑",
+          "summary": "浏览、搜索和编辑项目文件，查看差异、按语言可用的编辑操作与智能体产生的改动。",
+          "items": {
+            "file-tree": "浏览、创建、读取、编辑、重命名和删除文件与目录",
+            "reveal-in-system": "在系统文件管理器中显示文件或目录",
+            "indexed-search": "按文件名模式和全文内容搜索当前工作区",
+            "search-index-management": "建立或重建界面搜索索引",
+            "edit-save": "读取、编辑、保存文件并同步编辑器状态",
+            "diffs": "查看修改文件、会话、轮次和单次操作的差异与统计",
+            "accept-reject": "按文件、操作或整个会话接受或拒绝智能体改动",
+            "snapshots-rollback": "查看文件变更历史和快照，并回滚整个会话或指定轮次",
+            "language-actions": "仅在当前语言提供器实际支持时显示格式化、定义与类型跳转、引用、重命名、快速修复和符号导航",
+            "attachments": "在 Desktop 本地会话中粘贴或拖入本机文件、文件夹与图片",
+            "image-analysis": "查看并分析工作区或会话中的图片"
+          }
+        },
+        "terminal": {
+          "title": "终端",
+          "summary": "在当前项目中运行 Shell、查看输出、保留命令历史，并让智能体与同一终端环境协作。",
+          "items": {
+            "create-terminal": "打开终端面板并新建一个终端会话",
+            "terminal-session-management": "列出、切换和关闭多个终端会话",
+            "shells": "检测可用 Shell，并为终端选择默认或指定 Shell",
+            "working-directory": "在当前项目目录或指定起始目录创建终端",
+            "command-control": "执行命令、写入输入并发送中断或其他信号",
+            "resize": "随终端面板大小变化同步行列尺寸",
+            "history-integration": "查看命令历史并检测 Shell Integration 支持",
+            "shutdown": "确认输出接收并安全关闭单个或全部终端"
+          }
+        },
+        "git": {
+          "title": "Git 版本控制",
+          "summary": "查看改动、分支和提交，完成暂存、提交、合并、Cherry-pick 与 Worktree 工作流。",
+          "items": {
+            "status-diff": "查看仓库状态、修改文件和逐文件 Diff",
+            "stage-reset": "暂存文件、取消暂存并重置到指定提交",
+            "commit": "预览或生成提交信息并创建提交",
+            "sync": "从远端 Pull 并向远端 Push",
+            "branches": "查看、创建、切换和删除本地分支",
+            "graph-history": "浏览提交图谱与仓库历史并保存最近访问记录",
+            "revision-content": "解析 Revision 并查看任意提交中的文件内容",
+            "cherry-pick": "执行、继续或中止 Cherry-pick",
+            "trust-worktrees": "管理仓库信任与 Worktree 的创建、绑定、提升、重建和删除"
+          }
+        },
+        "code-review": {
+          "title": "代码评审与 Pull Request",
+          "summary": "阅读改动与 PR 上下文，查看 CI 日志，生成提交信息，并组织深度代码评审。",
+          "items": {
+            "workspace-context": "读取仓库、分支、工作区快照和评审目标",
+            "pull-request": "查看 Pull Request 详情、分页内容与关联改动",
+            "ci-logs": "读取 Pull Request 的 CI 运行日志",
+            "issues": "读取关联 Issue 的标题、描述与上下文",
+            "authentication": "保存或清除评审平台访问令牌",
+            "commit-message": "预览、生成或快速采用提交信息",
+            "deep-review": "针对工作区、提交或 PR 发起 Deep Review 并汇总结构化评审"
+          }
+        },
+        "browser": {
+          "title": "内置浏览器",
+          "summary": "在 OpenBitFun 内打开网页和本地服务；智能体可直接读取页面、选择元素并点击、填写、滚动或截图。",
+          "items": {
+            "open-urls": "输入完整网址、本地域名或开发服务端口并在 OpenBitFun 内打开",
+            "agent-web-research": "让智能体搜索网页并按需读取指定页面正文",
+            "history-navigation": "使用后退、前进和地址栏浏览页面历史",
+            "reload-status": "刷新页面，并同步当前 URL、加载状态与错误提示",
+            "scene-and-panel": "既可作为独立浏览器场景，也可在会话旁的辅助面板中打开",
+            "element-picker": "启动元素选择器，悬停时高亮页面元素并显示标签、ID 和 Class",
+            "element-context": "点击元素后捕获 CSS 路径、属性、文本和 HTML，并加入当前会话上下文",
+            "element-picker-cancel": "再次点击选择按钮或按 Esc 取消元素选择并清理高亮",
+            "agent-page-automation": "让智能体对内置网页执行快照、读取、点击、悬停、填写、按键、滚动、等待、脚本求值和截图",
+            "shared-browser-action-contract": "内置 WebView 与外部 CDP 浏览器共用同一套 BrowserActions 参数、元素引用、结果与错误契约",
+            "browser-target-selection": "通过 target 选择内置或外部浏览器，并用 session_id、URL 或标题精确定位页面",
+            "embedded-webview": "桌面端使用原生 WebView，Web 端回退到受限 iframe，并在当前页打开新窗口链接"
+          }
+        },
+        "computer-use": {
+          "title": "浏览器与桌面控制",
+          "summary": "授权智能体操作浏览器或本机界面，并明确管理辅助功能、屏幕录制与浏览器连接。",
+          "items": {
+            "status": "检查 Computer Use 可用性、辅助功能和屏幕录制授权状态",
+            "request-permissions": "请求桌面控制所需的系统权限",
+            "system-settings": "直接打开对应的系统隐私与安全设置",
+            "browser-discovery": "发现受支持的浏览器并查看当前 CDP 连接状态",
+            "launch-connect": "启动浏览器控制，以及连接或断开已经配置 CDP 的浏览器",
+            "default-cdp": "启用默认 CDP 配置并按需要重启浏览器",
+            "agent-actions": "授权后让智能体截图、点击、输入、滚动并读取可见界面",
+            "control-session-preview": "在控制状态卡片查看当前目标、模式与授权画面预览",
+            "stop-control-session": "停止当前桌面控制会话并释放捕获与输入资源",
+            "app-sharing": "选择 App 窗口并单独授权或撤销控制",
+            "preview-input": "在共享预览中点击、拖动、滚动及输入",
+            "remembered-control": "按应用执行文件和控制模式记住或忘记授权"
+          }
+        },
+        "skills": {
+          "title": "Skills 技能",
+          "summary": "为智能体安装和管理可复用的专业工作流，并控制哪些模式可以使用它们。",
+          "items": {
+            "installed-catalog": "统一查看用户级、项目级、本地和远程来源的已安装 Skills",
+            "market": "浏览、搜索和刷新 Skill 市场",
+            "market-install": "把市场 Skill 下载到用户级或当前项目",
+            "local-add": "校验本地 Skill 路径并添加到用户级或项目级",
+            "remove": "删除已安装的用户级或项目级 Skill",
+            "global-enable": "在全局范围启用或停用单个 Skill",
+            "mode-selection": "按智能体模式选择 Skill 与 Skill 组，并可恢复默认选择",
+            "shadowing": "识别同名 Skill 的用户级与项目级遮蔽优先级",
+            "invoke": "按需加载并执行当前智能体可见的 Skill"
+          }
+        },
+        "miniapps": {
+          "title": "Mini Apps 小应用",
+          "summary": "在 OpenBitFun 内安装、创建和运行轻量应用，让界面、数据与智能体工作流组合在一起。",
+          "items": {
+            "gallery-lifecycle": "查看、创建、编辑和删除已安装 Mini App",
+            "market": "浏览市场、查看详情并安装或更新发布版本",
+            "market-account": "登录市场账户并收藏、评分和查看已安装来源",
+            "permissions": "按路径或工作区授予权限，并在定制前审查权限差异",
+            "runtime": "运行 Mini App Host 与 Worker，查看状态并停止后台 Worker",
+            "storage": "为正式应用和定制草稿分别读取与保存持久状态",
+            "agent-ai": "在 Mini App 中调用模型补全、聊天和专属智能体会话",
+            "customization": "创建定制草稿、实时预览，并应用、同步或丢弃修改",
+            "versions": "查看版本历史并回滚到旧版本",
+            "agent-authoring": "让智能体初始化、编写并校验一个 Mini App",
+            "agent-operate-app": "由智能体结合源码控制 Mini App",
+            "agent-market-submit": "在用户明确要求时由智能体提交已完成的 Mini App 到市场审核",
+            "publishing": "撤回和审查市场发布，并可渲染幻灯片页面"
+          }
+        },
+        "canvas": {
+          "title": "Canvas 与交互产物",
+          "summary": "在会话旁展示和保存智能体生成的可视化、交互页面与结构化产物。",
+          "items": {
+            "artifact-open": "从会话工具结果加载并打开持久化 Canvas 产物",
+            "html-react": "渲染并持续编辑 HTML 或 React 交互界面、图表和可视化",
+            "inline-generative-ui": "在会话中生成紧凑的 HTML/SVG 图表、说明器或交互组件",
+            "state": "在重新打开或刷新 Canvas 时加载和保存交互状态",
+            "source-inspection": "查看 Canvas 源码、编译版本和最后可用版本",
+            "element-context": "选择 Canvas 内的元素并把元素引用加入会话上下文",
+            "runtime-errors": "捕获运行错误、上报诊断并请求智能体自动修复",
+            "export-html": "把当前 Canvas 导出为可独立打开的 HTML 文件"
+          }
+        },
+        "tasks-automation": {
+          "title": "任务板与定时任务",
+          "summary": "集中查看待办事项，并让任务在指定时间或目标主机上持续运行。",
+          "items": {
+            "board-views": "按待处理、日历和已停用视图浏览任务",
+            "create-edit": "创建、编辑、启用、停用和删除定时任务",
+            "schedule-types": "设置一次性、每日、每周或自定义 Cron 时间表",
+            "calendar-occurrences": "在日历中预览任务的下一次与后续运行时间",
+            "agent-workspace": "为任务选择智能体、模型、工作模式和工作区",
+            "local-remote-target": "把任务安排在当前主机或已连接的远程目标上运行",
+            "host-readiness": "查看任务列表并等待桌面 Host 就绪后可靠执行"
+          }
+        },
+        "insights": {
+          "title": "Insights 工作洞察",
+          "summary": "把会话和项目活动汇总成可读的洞察，帮助回顾工作方式、用量和进展。",
+          "items": {
+            "availability": "检查当前账户与会话是否已有可分析的洞察数据",
+            "generate": "按所选日期范围和模型生成工作洞察报告",
+            "cancel": "取消正在运行的洞察生成任务",
+            "latest-report": "查看最新报告或加载指定的历史报告",
+            "usage-statistics": "把工作活动与模型、Token 和缓存用量统计关联起来",
+            "patterns": "回顾项目分布、工作时段、任务类型和协作习惯"
+          }
+        },
+        "ecosystem-compatibility": {
+          "title": "外部导入",
+          "summary": "查看外部 AI 生态的内容与状态，导入受支持的 Skill、MCP、Hook，以及 Codex、Zcode 会话，并在 OpenBitFun 中继续对话。",
+          "items": {
+            "source-discovery": "发现 OpenCode、Claude Code、Codex 等外部 AI 来源与可用内容",
+            "source-policy": "按来源启用或停用集成，并选择管理、预览或只读策略",
+            "codex-session-import": "发现、移除和重新添加 Codex 来源会话，并在 OpenBitFun 分支中续聊",
+            "zcode-session-import": "发现、移除和重新添加 Zcode 来源会话，并在 OpenBitFun 分支中续聊",
+            "prompts-commands": "展开外部 Prompt/Command 内容并处理与原生命令的冲突",
+            "subagents": "启用外部智能体，处理同名冲突并绑定模型",
+            "mcp-import": "预览 MCP 导入计划，逐个处理服务器冲突并应用",
+            "tool-targets": "选择外部工具目标、解决冲突并控制是否启用",
+            "hooks": "查看外部 Hooks 目录、规划导入、修改选择并应用",
+            "security-review": "在迁移前查看冲突、安全影响和来源控制快照",
+            "reveal-source": "在文件管理器或远程环境中定位外部配置来源"
+          }
+        },
+        "remote-workspaces": {
+          "title": "远程工作区",
+          "summary": "通过 SSH 或容器在远程主机上打开项目，让文件、搜索、终端和智能体都在目标环境执行。",
+          "items": {
+            "ssh-profiles": "保存、列出、测试和删除 SSH 连接配置",
+            "ssh-auth": "使用密码、私钥、证书、SSH Config Host 与跳板机连接",
+            "docker": "发现远程 Docker 容器并把容器作为工作环境",
+            "wsl": "选择 Windows 主机上的 WSL 发行版作为工作区",
+            "remote-open": "打开、关闭和移除远程工作区，并读取服务器信息",
+            "remote-files": "浏览、读取、写入、创建、重命名和删除远程文件与目录",
+            "transfer": "上传本地文件、下载远程文件并取消进行中的传输",
+            "remote-execution": "在目标主机执行命令，让终端、搜索和智能体使用远程数据面",
+            "port-forwarding": "发现远程监听端口并启动、查看或停止端口转发",
+            "connection-lifecycle": "查看连接状态并断开单个或全部 SSH 会话"
+          }
+        },
+        "remote-connect": {
+          "title": "Remote Connect 与多设备",
+          "summary": "从手机、Bot 或另一台 OpenBitFun 设备连接当前主机，远程查看会话、回答权限并继续工作。",
+          "items": {
+            "connection-methods": "选择局域网或官方 Relay",
+            "start-stop-status": "启动、停止 Remote Connect 并查看实时连接状态和设备信息",
+            "network": "查看局域网 IP、网络信息与可分享的连接配置",
+            "bots": "配置飞书、Telegram、微信等 Bot 并单独停止 Bot",
+            "account": "使用 GitHub 登录、退出并查看身份状态",
+            "devices": "列出、连接、查看设备型号与系统、设置别名和删除同账户设备",
+            "peer-device": "进入 Peer Device Mode，把另一台 OpenBitFun 设备作为命令与事件数据面"
+          }
+        },
+        "detached-dispatch": {
+          "title": "Detached Dispatch 远程派发",
+          "summary": "把可持续运行的任务派发到另一台 OpenBitFun 主机；控制端可以断开，目标主机继续执行并保留记录。",
+          "items": {
+            "targets": "列出同账户设备与已保存的 SSH 目标",
+            "provision": "为目标主机配置运行环境并安装或更新 OpenBitFun CLI",
+            "model-sync": "在提交任务前同步目标所需的模型配置",
+            "submit": "从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标",
+            "status-list": "列出派发任务并查询运行状态、结果和错误",
+            "transcript": "保存、追加和重新加载可断线恢复的执行记录",
+            "permission-continuation": "远程回答权限请求并继续目标端任务",
+            "cancel": "取消本机派发的任务",
+            "result-sync": "将目标端结果同步回控制端，而不把控制端当作远程文件系统代理"
+          }
+        },
+        "pages": {
+          "title": "Pages 发布",
+          "summary": "保存页面版本并发布到公开或私有地址，管理标题、可见性、历史版本和分享链接。",
+          "items": {
+            "pages-list": "查看账户下的 Pages 与每个页面的当前发布状态",
+            "immutable-versions": "保存不可变页面版本并浏览版本历史",
+            "publish": "发布或重新部署选中的页面版本",
+            "visibility": "更新标题、公开/私有可见性和访问设置",
+            "share-open": "创建可打开和分享的页面链接",
+            "unpublish": "取消发布页面，同时保留可再次发布的版本",
+            "delete": "删除单个版本或整个 Page"
+          }
+        },
+        "voice-input": {
+          "title": "语音输入与实时通话",
+          "summary": "将录音转成文字，或在客户端持续进行实时语音通话，让助手进入项目执行任务并播报简要进展。",
+          "items": {
+            "composer-recording": "从聊天输入框开始、结束或取消一次录音",
+            "stream-audio": "录音过程中分块传输音频并显示识别进度",
+            "realtime-assistant-call": "在客户端启动或结束实时语音通话，听取回复，并让助手执行或停止项目任务",
+            "realtime-assistant-config": "读取或保存实时语音服务配置",
+            "local-models": "查看本地语音模型及安装、下载、验证、修复和删除状态",
+            "cancel-download": "取消正在进行的语音模型下载",
+            "language-microphone": "选择自动检测或指定识别语言，并选择系统麦克风",
+            "diagnostic-test": "在设置页进行麦克风与语音识别测试并查看耗时和错误",
+            "edit-transcript": "把转写结果放回输入框，在发送前继续编辑"
+          }
+        },
+        "desktop-pet": {
+          "title": "智能体桌面伙伴",
+          "summary": "在桌面上显示智能体伙伴，并选择、导入或管理 Petdex 角色包。",
+          "items": {
+            "enable": "整体启用或停用智能体桌面伙伴",
+            "presets": "查看并切换内置或已导入的 Petdex 角色",
+            "petdex-import": "从本地 Petdex 包导入并使用新的角色与动画",
+            "petdex-delete": "删除已导入的 Petdex 包并回退到可用角色",
+            "desktop-window": "显示、隐藏和调整独立桌面伙伴窗口大小，并可回到主窗口"
+          }
+        },
+        "desktop-cards": {
+          "title": "桌面小卡片",
+          "summary": "让智能体在主窗口之外放置可拖动的小卡片，显示倒计时、清单、PR 状态、天气、股价等需要偶尔看一眼的信息，并在重新打开应用后恢复。",
+          "items": {
+            "agent-cards": "按需求或在任务过程中创建倒计时、清单、便签、进度、指标、图表、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据",
+            "home-management": "在首页“小卡片”区查看全部卡片，并显示、隐藏或删除单张卡片",
+            "card-actions": "在卡片上刷新数据、勾选清单项、切换置顶、打开链接或回到来源会话",
+            "drag-restore": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复"
+          }
+        }
+      },
+      "setting": {
+        "application": {
+          "general": {
+            "title": "常规设置",
+            "summary": "管理启动、更新、关闭行为、通知与睡眠保持等应用级偏好。",
+            "items": {
+              "automatic-updates": "启用或停用自动检查更新",
+              "manual-update": "手动检查并后台下载更新，确认后安装并重启，或稍后从关于页面安装",
+              "launch-at-login": "控制 OpenBitFun 是否在登录系统后自动启动",
+              "prevent-sleep": "控制 OpenBitFun 运行期间是否阻止电脑自动睡眠",
+              "close-behavior": "选择关闭主窗口时退出、最小化到托盘或每次询问",
+              "notifications": "分别控制任务完成和权限请求通知"
+            }
+          },
+          "appearance": {
+            "title": "外观与语言",
+            "summary": "切换主题与语言，调整字体，并安装或导入外观包。",
+            "items": {
+              "built-in-appearance": "选择跟随系统、浅色、深色、单色、Midnight、中国风、Cyber、Slate 或 Tokyo Night 等内置外观",
+              "language": "切换简体中文、繁体中文、英文等受支持界面语言",
+              "ui-font-size": "调整全局界面字号，并支持自定义像素值",
+              "local-packages": "导入、预览、应用、导出和删除本地外观包",
+              "appearance-market": "浏览、搜索、筛选并安装或更新 Skin 市场外观",
+              "agent-market-submit": "在用户明确要求时由智能体提交本地外观包到 Skin 市场审核",
+              "market-submissions": "查看和撤回自己的外观市场投稿",
+              "market-review": "在具备权限时查看并批准或拒绝外观投稿"
+            }
+          },
+          "pet": {
+            "title": "桌面伙伴设置",
+            "summary": "启用桌面智能体伙伴并管理当前角色，以及开启或关闭桌面小卡片。",
+            "items": {
+              "enabled": "整体启用或停用智能体伙伴",
+              "desktop-cards-enabled": "开启或关闭桌面小卡片；关闭后隐藏所有卡片，智能体也不再看到小卡片工具",
+              "preset-selection": "从内置与已导入角色中选择当前伙伴",
+              "import": "导入本地 Petdex 角色包",
+              "delete-refresh": "刷新角色列表并删除不再需要的导入包"
+            }
+          },
+          "input": {
+            "title": "输入与交互",
+            "summary": "配置对话文本选择操作、语音输入、麦克风、识别语言与本地模型。",
+            "items": {
+              "auto-show-selection-toolbar": "开启或关闭选中对话文本后的自动操作栏",
+              "voice-enabled": "在聊天输入框启用或停用语音输入",
+              "language": "选择自动检测或中文、粤语、英文、日文等识别语言",
+              "microphone-test": "选择麦克风并执行语音识别测试",
+              "local-models": "下载、选择、验证、修复或删除本地语音模型",
+              "recording-limit": "设置单次语音输入的最长录音时间"
+            }
+          },
+          "shortcuts": {
+            "title": "快捷键",
+            "summary": "搜索、查看、自定义与重置应用、场景、编辑器和终端快捷键。",
+            "items": {
+              "shortcut-browser": "搜索和查看全部应用、场景、编辑器与终端快捷键",
+              "shortcut-remap": "录制新快捷键、检测冲突、恢复单项或重置全部自定义键位"
+            }
+          },
+          "development": {
+            "title": "编辑器",
+            "summary": "调整代码编辑器的字体、缩进、换行、格式化与 Minimap。",
+            "items": {
+              "editor-appearance": "设置编辑器字体、字重、字号、行高与光标样式",
+              "indent-wrap": "设置 Tab 宽度、空格缩进、自动换行、行号与平滑滚动",
+              "editor-display": "控制 Minimap、空白字符、当前行高亮和滚动边界",
+              "editor-advanced": "控制自动保存、语义高亮、括号配色、格式化和空白清理"
+            }
+          },
+          "terminal": {
+            "title": "终端",
+            "summary": "选择默认终端 Shell，并设置新终端面板在会话中的打开位置。",
+            "items": {
+              "default-shell": "自动检测或指定默认终端 Shell",
+              "terminal-position": "把终端面板放在右侧或底部"
+            }
+          }
+        },
+        "ai": {
+          "models": {
+            "title": "模型与供应商",
+            "summary": "添加 AI 供应商和模型，选择默认模型，配置网络代理、订阅与流式超时。",
+            "items": {
+              "providers": "添加、编辑和删除内置或自定义 AI 供应商",
+              "credentials-endpoint": "配置 API Key、Base URL、请求格式和模型列表",
+              "subscription-auth": "登录、刷新和退出 Codex、Antigravity、OpenCode Console（Zen）、Grok、Hermes 等账户",
+              "default-models": "选择主模型、快速模型以及图像理解、图像生成和语音识别模型",
+              "reasoning": "为模型选择推理预设或自定义推理强度",
+              "proxy": "配置 AI 请求使用的网络代理与绕过规则",
+              "stream-timeouts": "设置或取消首 Token 等待和流式空闲超时",
+              "available-models": "让智能体查看当前配置下可用的模型",
+              "model-catalog": "查看 models.dev 目录状态、手动刷新并定位本地缓存",
+              "advanced-request": "为供应商添加自定义 Header、请求体字段与 SSL 行为",
+              "smart-routing": "查看智能模式可用状态（暂未开放）",
+              "connection-test": "测试模型连接或图像生成，并刷新运行时客户端",
+              "model-pools": "管理模型池、路由策略与会话模型选择",
+              "smart-routing": "查看智能模式可用状态（暂未开放）"
+            }
+          },
+          "memory": {
+            "title": "记忆设置",
+            "summary": "控制 OpenBitFun 是否从会话中提取和使用长期记忆，以及保留、整理和模型策略。",
+            "items": {
+              "generation-recall": "一键同时启用或停用长期记忆生成与会话召回",
+              "btw": "决定 BTW 轻量会话是否参与记忆生成",
+              "external-context": "存在外部工具上下文时选择清除工具结果、允许或跳过会话",
+              "rollout-policy": "设置空闲时长、最大年龄、启动处理上限和扫描上限",
+              "extraction": "设置记忆提取并发数和单次原始候选上限",
+              "extraction-model": "从当前可用模型中选择记忆提取模型或跟随主模型",
+              "retention": "设置未使用记忆的最长保留天数",
+              "consolidation": "选择记忆整理模型并让它跟随主模型或提取模型",
+              "maintenance": "打开记忆目录、恢复默认设置或显式清空全部记忆"
+            }
+          }
+        },
+        "workspace": {
+          "session": {
+            "title": "会话与工作区设置",
+            "summary": "控制默认智能体执行框架、会话标题生成、工作区加速搜索和与项目上下文相关的行为。",
+            "items": {
+              "default-agent-harness": "让普通新会话跟随 ChatInput 上次选择，或固定使用指定执行框架",
+              "automatic-titles": "启用或停用根据会话内容自动生成标题",
+              "title-model": "让标题模型继承主模型、快速模型或使用指定模型",
+              "next-input-suggestion": "启用或停用 Agent 答复后在输入框中显示的一句话候选输入",
+              "accelerated-search": "为本地工作区启用 Flashgrep 加速搜索",
+              "search-index": "查看索引状态并在需要时重建工作区索引",
+              "remote-behavior": "远程工作区明确降级搜索实现，不把远程路径回退到本机"
+            }
+          },
+          "worktrees": {
+            "title": "Worktree 设置",
+            "summary": "配置 Git Worktree 的根目录、分支前缀和自动清理规则，并查看现有隔离工作区。",
+            "items": {
+              "isolation": "了解隔离 Worktree，并配置其创建与清理默认值",
+              "root-path": "设置受管 Worktree 的统一根目录",
+              "branch-prefix": "设置自动创建分支使用的名称前缀",
+              "copy-changes": "创建隔离工作区时选择是否复制当前未提交改动",
+              "auto-cleanup": "启用自动清理并设置最多保留的受管 Worktree 数量",
+              "management": "查看 Worktree 生命周期、脏状态、未发布提交与关联会话",
+              "open-restore-delete": "打开或恢复关联会话，并在保护检查后删除或强制删除 Worktree"
+            }
+          }
+        },
+        "tools": {
+          "execution": {
+            "title": "执行与权限控制",
+            "summary": "管理智能体工具权限、呈现模式、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
+            "items": {
+              "permission-mode": "选择询问、自动批准或完全访问权限模式，并确认高风险警告",
+              "permission-selector": "控制权限模式选择器是否显示在聊天输入框下方",
+              "global-project-rules": "创建、排序和保存全局或项目级 Allow、Ask、Deny 规则",
+              "remembered-grants": "查看、撤销或清空项目中记住的权限授权与审计记录",
+              "deferred-tools": "按需延迟加载工具定义以减少智能体初始上下文",
+              "tool-presentation": "选择模型使用原生模式还是 PTC TypeScript 模式",
+              "parallelism": "设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略",
+              "timeouts": "设置或取消单次工具调用超时",
+              "review-capacity": "设置 Deep Review 最大并行评审者和队列等待时间",
+              "computer-use": "启用或停用已获系统授权的 Computer Use",
+              "computer-use-permissions": "查看并请求辅助功能与屏幕录制权限",
+              "browser-auto-connect": "控制 OpenBitFun 启动时是否自动连接浏览器",
+              "browser-setup": "发现并选择浏览器、配置默认 CDP 或按需重启",
+              "json-repair": "控制是否在安全边界内修复模型生成的非法工具参数 JSON"
+            }
+          },
+          "desktop-control": {
+            "title": "桌面控制",
+            "summary": "管理 Computer Use 开关，并检查辅助功能与屏幕录制授权。",
+            "items": {
+              "permissions": "查看 Computer Use、辅助功能与屏幕录制状态并完成系统授权"
+            }
+          },
+          "browser-control": {
+            "title": "浏览器控制",
+            "summary": "选择浏览器，检查连接状态，并配置 CDP 与启动连接行为。",
+            "items": {
+              "connection": "选择浏览器并查看、建立或断开 CDP 连接"
+            }
+          },
+          "automation": {
+            "title": "快捷操作与 Hooks",
+            "summary": "自定义编码后的快捷操作，并配置在智能体生命周期事件上运行的 Hooks。",
+            "items": {
+              "built-in-actions": "启用和调整内置的提交与创建 Pull Request 快捷操作",
+              "custom-actions": "添加、编辑和删除自定义编码后快捷操作及 Prompt",
+              "hooks-enabled": "整体启用或停用智能体生命周期 Hooks",
+              "project-hooks": "对可信仓库单独启用项目级 .openbitfun/config/hooks.json",
+              "hook-files": "定位用户级和项目级 Hooks 配置文件并在修改后即时生效",
+              "hook-events": "在会话、智能体、工具、权限和用户输入等 Codex Hook 事件上运行处理器",
+              "external-hooks": "查看外部 AI 应用的只读 Hook 目录并选择导入项",
+              "hook-import": "预览、修改和应用 Hook 导入计划，并保留冲突诊断"
+            }
+          },
+          "web-search": {
+            "title": "网页搜索",
+            "summary": "选择 WebSearch 工具运行时使用的搜索服务，并配置自建 HTTP 端点与当前执行主机的设备凭据。",
+            "items": {
+              "provider": "在免费 Exa MCP、Exa Search API、Tavily、DeepSeek 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务",
+              "http-endpoint": "为 OpenBitFun Search HTTP Protocol 配置端点、认证方式和受限凭据 Header",
+              "device-credential": "查看当前执行主机的凭据状态，并保存、替换或清除 API Key/Secret",
+              "http-protocol": "查看并复制 OpenBitFun Search HTTP Protocol v1 的请求、响应和传输限制"
+            }
+          },
+          "mcp": {
+            "title": "MCP 服务器",
+            "summary": "添加和管理 Model Context Protocol 服务器，查看工具、资源、提示词与远程授权状态。",
+            "items": {
+              "json-config": "用表单或 JSON 查看和保存全部 MCP 服务器配置",
+              "server-types": "添加本地进程、远程 HTTP/SSE 或容器 MCP 服务器",
+              "lifecycle": "启动、停止、重启和删除单个 MCP 服务器",
+              "status": "查看初始化、连接、健康、重连、鉴权和失败状态",
+              "remote-auth": "配置远程 Header/环境变量认证或清除已有凭据",
+              "oauth": "发起、轮询、取消或重新连接远程 MCP OAuth",
+              "tools-prompts": "列出 MCP Prompt 并读取带参数的指定 Prompt",
+              "mcp-tool-ui": "查看 MCP 工具清单并打开工具提供的 App/UI",
+              "resources": "列出并读取 MCP Resources",
+              "mcp-apps": "打开 MCP App/UI、双向发送消息并回答交互请求"
+            }
+          },
+          "acp": {
+            "title": "ACP 外部智能体",
+            "summary": "配置通过 Agent Client Protocol 接入的外部智能体，并检查适配器、命令与会话选项。",
+            "items": {
+              "presets": "使用 OpenCode、dsh、OMP、Claude Code 和 Codex 等预设",
+              "json-config": "通过 JSON 查看、添加和保存 ACP 智能体配置",
+              "probe": "探测 CLI、适配器、路径、版本、连接与权限要求",
+              "install": "安装外部智能体 CLI 并预下载 ACP 客户端适配器",
+              "remote-detection": "在 SSH 远程工作区探测可用外部智能体并显示不支持原因",
+              "session-model-options": "为 ACP 会话选择模型并修改客户端声明的配置选项",
+              "session-commands": "查看并执行外部智能体暴露的会话命令",
+              "dialog-permissions": "开始或取消 ACP 对话，并远程回答外部智能体权限请求"
+            }
+          }
+        },
+        "data": {
+          "usage": {
+            "title": "Token 用量",
+            "summary": "查看请求、输入输出 Token、缓存命中和估算成本等使用统计。",
+            "items": {
+              "time-range": "按最近 24 小时、今天、本周、本月或全部时间查看用量",
+              "granularity": "按小时或天切换趋势粒度",
+              "filter": "按供应商、模型或搜索关键词筛选用量",
+              "summary": "查看请求数、总 Token、缓存 Token 与缓存命中率",
+              "distribution": "按模型、供应商组和请求端点比较分布",
+              "trend": "分别查看输入、输出、缓存创建、缓存读取和命中率趋势"
+            }
+          },
+          "archived": {
+            "title": "已归档会话",
+            "summary": "查找、恢复或永久删除已归档的会话，管理长期会话历史。",
+            "items": {
+              "browse": "按工作区浏览分页归档会话及其元数据",
+              "search": "按标题、内容和工作区搜索已归档会话",
+              "restore": "恢复会话、轮次和原工作区视图并取消归档",
+              "delete-selected": "明确确认后永久删除选中的归档会话",
+              "delete-all": "明确确认后永久删除全部归档会话"
+            }
+          },
+          "diagnostics": {
+            "title": "日志与诊断",
+            "summary": "调整日志级别，查看运行日志路径，并导出用于排查问题的诊断包。",
+            "items": {
+              "log-level": "设置 Trace、Debug、Info、Warn、Error 或关闭后端日志",
+              "sensitive-diagnostics": "选择诊断中是否允许包含敏感上下文，并在导出前明确提示",
+              "log-path": "查看日志路径并打开日志文件夹",
+              "export-bundle": "导出包含系统、配置健康和日志信息的诊断包",
+              "crash-recovery": "查看上次崩溃、非正常退出、启动恢复和配置恢复信息",
+              "devtools": "在开发构建中检查 DevTools 是否可用并打开或关闭",
+              "element-inspector": "在开发构建中启用主窗口元素检查并回传选中的元素"
+            }
+          }
+        }
+      }
+    }
+  }
 }

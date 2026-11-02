@@ -7,6 +7,7 @@ import { useFlowChatVirtualizer, type FlowChatVirtualizer } from './useFlowChatV
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const windows: number[][] = [];
+const viewportWrites: Array<{ topPx: number; behavior?: ScrollBehavior }> = [];
 let latestApi: FlowChatVirtualizer;
 let reconcileEnabled = false;
 let shortOverscan = false;
@@ -37,7 +38,8 @@ function Harness({ count, tail }: { count: number; tail: boolean }) {
       return true;
     },
     scrollPaddingStartPx: 0,
-    writeViewport: ({ topPx }) => {
+    writeViewport: ({ topPx, behavior }) => {
+      viewportWrites.push({ topPx, behavior });
       const element = scrollerRef.current;
       if (!element) return false;
       // Model a browser clamping a write while no rows have mounted yet.
@@ -60,6 +62,7 @@ describe('initial virtual window with the real virtualizer', () => {
   let root: Root;
   beforeEach(() => {
     windows.length = 0;
+    viewportWrites.length = 0;
     reconcileEnabled = false;
     shortOverscan = false;
     viewportSuspended = false;
@@ -120,6 +123,84 @@ describe('initial virtual window with the real virtualizer', () => {
     const first = windows.find(window => window.length)!;
     expect(first[0]).toBeGreaterThan(0);
     expect(first.at(-1)).toBe(33);
+  });
+
+  it('measures newly mounted rows during a gesture before ResizeObserver delivers', () => {
+    render(100, false);
+    const firstWindow = new Set(windows.at(-1));
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      scroller.scrollTop = 4000;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    const arrived = windows.at(-1)!.filter(index => !firstWindow.has(index));
+    expect(arrived.length).toBeGreaterThan(0);
+    // No observer delivery or animation frame: the first scrolling commit
+    // must already agree with the rows' actual heights, not their estimates.
+    for (const index of arrived) {
+      const bounds = latestApi.getItemBounds(index)!;
+      expect(bounds.endPx - bounds.startPx).toBe(80);
+    }
+  });
+
+  it('keeps a smooth aim stable and resumes immediate measurement on reader takeover', () => {
+    // A short Turn header precedes an answer taller than the viewport. While
+    // returning to that mounted header, earlier overscan rows enter the window.
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      if (this.hasAttribute('data-scroller')) return 500;
+      if (!this.hasAttribute('data-virtual-index')) return 0;
+      return Number(this.getAttribute('data-virtual-index')) === 40 ? 3000 : 80;
+    });
+    render(100, false);
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      scroller.scrollTop = 4000;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    act(() => latestApi.measureRenderedItems());
+    act(() => {
+      scroller.scrollTop = 5200;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    const target = 39;
+    expect(host.querySelector(`[data-virtual-index="${target}"]`)).not.toBeNull();
+    const targetStart = latestApi.getItemBounds(target)!.startPx;
+    const beforeAim = new Set(windows.at(-1));
+    const pendingFrames: FrameRequestCallback[] = [];
+    vi.mocked(requestAnimationFrame).mockImplementation(callback => {
+      pendingFrames.push(callback);
+      return pendingFrames.length + 100;
+    });
+    viewportWrites.length = 0;
+    act(() => latestApi.scrollItemIntoView(target, {
+      align: 'start', behavior: 'smooth', owner: 'one-shot-navigation',
+    }));
+    // Deliver an in-flight native animation offset, without a reader gesture
+    // or ResizeObserver delivery. The adapter must preserve the library's
+    // smooth-scroll measurement policy for newly mounted overscan rows.
+    act(() => {
+      scroller.scrollTop = targetStart + 20;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(windows.at(-1)!.some(index => index < target && !beforeAim.has(index))).toBe(true);
+    for (const callback of pendingFrames.splice(0)) act(() => callback(16));
+    expect(latestApi.getItemBounds(target)!.startPx).toBe(targetStart);
+    expect(viewportWrites).toEqual([{ topPx: targetStart, behavior: 'smooth' }]);
+
+    // The ordinary intent handler cancels the aim before reader scrolling.
+    // New rows must still be measured synchronously in that first commit.
+    const beforeTakeover = new Set(windows.at(-1));
+    act(() => {
+      latestApi.cancelAim();
+      scroller.scrollTop = 8000;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    const arrived = windows.at(-1)!.filter(index => !beforeTakeover.has(index));
+    expect(arrived.length).toBeGreaterThan(0);
+    for (const index of arrived) {
+      const bounds = latestApi.getItemBounds(index)!;
+      expect(bounds.endPx - bounds.startPx).toBe(80);
+    }
   });
 
   it('preserves the default head window for history and reading restoration', () => {

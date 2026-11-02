@@ -187,10 +187,11 @@ final class MobileConversationRow: Identifiable, Equatable {
     let showRetry: Bool
     let error: String?
     let live: Bool
+    let timestamp: Date?
 
     init(id: String, kind: String, text: String, thinking: String?, images: [MobileTimelineImage],
          tools: [MobileTimelineTool], blocks: [MobileTimelineBlock], streaming: Bool, typing: Bool,
-         showRetry: Bool, error: String?, live: Bool = false) {
+         showRetry: Bool, error: String?, live: Bool = false, timestamp: Date? = nil) {
         self.id = nativeTimelineString(id)
         self.kind = nativeTimelineString(kind)
         self.text = nativeTimelineString(text)
@@ -203,6 +204,7 @@ final class MobileConversationRow: Identifiable, Equatable {
         self.showRetry = showRetry
         self.error = error.map(nativeTimelineString)
         self.live = live
+        self.timestamp = timestamp
     }
 
     static func == (lhs: MobileConversationRow, rhs: MobileConversationRow) -> Bool { lhs === rhs }
@@ -212,7 +214,7 @@ final class MobileConversationRow: Identifiable, Equatable {
         return id == other.id && kind == other.kind && text == other.text && thinking == other.thinking &&
         images == other.images && tools == other.tools && blocks == other.blocks &&
         streaming == other.streaming && typing == other.typing &&
-        showRetry == other.showRetry && error == other.error && live == other.live
+        showRetry == other.showRetry && error == other.error && live == other.live && timestamp == other.timestamp
     }
 
     static func reconcile(_ incoming: [MobileConversationRow], with current: [MobileConversationRow]) -> [MobileConversationRow] {
@@ -455,6 +457,7 @@ struct MobileWorkspaceGroup: Identifiable, Equatable {
     var directoryStatus = "IDLE"
     var remoteConnectionId: String? = nil
     var remoteSshHost: String? = nil
+    var kind: String = "normal"
 
     var scope: MobileWorkspaceScope {
         MobileWorkspaceScope(path: path, remoteConnectionId: remoteConnectionId, remoteSshHost: remoteSshHost, workspaceId: workspaceId)
