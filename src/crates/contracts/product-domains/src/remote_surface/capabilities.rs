@@ -212,6 +212,8 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ControlConversationResetV1,
     PeerHostCapability::IdempotentDialogSubmit,
     PeerHostCapability::InlineImageAttachmentsV1,
+    PeerHostCapability::BtwInitialModelSelectionV1,
+    PeerHostCapability::BtwModelPoolSelectionV1,
     PeerHostCapability::TargetedSessionRollback,
     PeerHostCapability::TokenUsageStatistics,
     PeerHostCapability::ModelChannelRoutingV1,
@@ -287,11 +289,11 @@ mod tests {
             PeerHostKind::Desktop,
             PeerHostCapability::BtwInitialModelSelectionV1
         ));
-        assert!(!advertises(
+        assert!(advertises(
             PeerHostKind::Cli,
             PeerHostCapability::BtwInitialModelSelectionV1
         ));
-        assert!(!advertises(
+        assert!(advertises(
             PeerHostKind::Cli,
             PeerHostCapability::BtwModelPoolSelectionV1
         ));

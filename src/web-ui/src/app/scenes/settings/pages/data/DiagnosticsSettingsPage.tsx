@@ -8,6 +8,7 @@ import type {
   BackendLogLevel,
   RuntimeLoggingInfo
 } from '@/infrastructure/config/types';
+import { peerHostRefusalReason } from '@/infrastructure/peer-device/peerHostRefusal';
 import { createLogger } from '@/shared/utils/logger';
 import { Alert, Button, ConfirmDialog, IconButton, Input, Select, Switch, Tooltip } from '@openbitfun/ui';
 import { Archive, FolderOpen } from 'lucide-react';
@@ -17,6 +18,12 @@ import { SettingsPage } from '../shared/SettingsPage';
 const loggingRuntime = createSettingsReadCache<RuntimeLoggingInfo>();
 
 const log = createLogger('DiagnosticsSettingsPage');
+
+/** A peer host's explicit refusal says more than the generic failure copy. */
+function withHostReason(failure: string, error: unknown): string {
+  const reason = peerHostRefusalReason(error);
+  return reason ? `${failure}: ${reason}` : failure;
+}
 
 function LoggingSection() {
   const { t } = useTranslation('settings/application');
@@ -141,7 +148,7 @@ function LoggingSection() {
       await workspaceAPI.revealInExplorer(folder);
     } catch (error) {
       log.error('Failed to open log folder', { folder, error });
-      showMessage('error', t('logging.messages.openFailed'));
+      showMessage('error', withHostReason(t('logging.messages.openFailed'), error));
     } finally {
       setOpeningFolder(false);
     }
@@ -156,7 +163,7 @@ function LoggingSection() {
       await workspaceAPI.revealInExplorer(result.bundlePath);
     } catch (error) {
       log.error('Failed to export diagnostics bundle', { error });
-      showMessage('error', t('logging.messages.diagnosticsExportFailed'));
+      showMessage('error', withHostReason(t('logging.messages.diagnosticsExportFailed'), error));
     } finally {
       setExportingDiagnostics(false);
     }
