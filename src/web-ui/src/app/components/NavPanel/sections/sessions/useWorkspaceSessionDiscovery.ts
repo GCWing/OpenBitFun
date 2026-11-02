@@ -11,9 +11,17 @@ interface DiscoveryState {
   pending: boolean;
   warnings: string[];
   diagnostics: SessionDiscoveryDiagnostic[];
+  progressKey?: string;
 }
 
 const DISCOVERY_CONFIG_PATH = 'app.external_session_discovery';
+const DISCOVERY_REFRESH_DELAYS_MS = [1500, 3000, 5000, 10000] as const;
+
+/** Keep the first retry responsive, then back off while a host scan is slow. */
+export function getWorkspaceSessionDiscoveryRefreshDelayMs(attempt: number): number {
+  const index = Math.max(0, Math.min(Math.floor(attempt), DISCOVERY_REFRESH_DELAYS_MS.length - 1));
+  return DISCOVERY_REFRESH_DELAYS_MS[index];
+}
 
 function parseEnabledSources(value: unknown): ReadonlySet<string> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -31,6 +39,7 @@ export function useWorkspaceSessionDiscovery(
   const [states, setStates] = useState<Record<string, DiscoveryState>>({});
   const statesRef = useRef(states);
   const [failed, setFailed] = useState(false);
+  const [discoveryRevision, setDiscoveryRevision] = useState(0);
   const [retryVersion, setRetryVersion] = useState(0);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [enabledSources, setEnabledSources] = useState<ReadonlySet<string>>();
@@ -61,13 +70,18 @@ export function useWorkspaceSessionDiscovery(
       pending: page.discoveryPending === true,
       warnings: page.discoveryWarnings ?? [],
       diagnostics: page.discoveryDiagnostics ?? [],
+      progressKey: page.discoveryPending === true
+        ? JSON.stringify([page.totalTopLevelCount, page.loadedTopLevelCount, page.nextCursor ?? null])
+        : undefined,
     };
     const previous = statesRef.current[key];
     if (previous?.pending !== next.pending
       || JSON.stringify(previous.warnings) !== JSON.stringify(next.warnings)
-      || JSON.stringify(previous.diagnostics) !== JSON.stringify(next.diagnostics)) {
+      || JSON.stringify(previous.diagnostics) !== JSON.stringify(next.diagnostics)
+      || previous.progressKey !== next.progressKey) {
       statesRef.current = { ...statesRef.current, [key]: next };
       setStates(statesRef.current);
+      setDiscoveryRevision(value => value + 1);
     }
     // Any metadata read may observe completion before the polling request does.
     // Reload from the first cursor so imports inserted ahead of a running page
@@ -119,7 +133,13 @@ export function useWorkspaceSessionDiscovery(
     // Saving the switch must wake already-mounted workspace rows. A completed
     // page from before the save cannot satisfy this read through the store cache.
     void Promise.allSettled(scopedWorkspaceIds.map(async workspaceId => {
-      const page = await flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'sessions_nav_discovery_settings', { fresh: true });
+      const page = await flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'sessions_nav_discovery_settings', {
+        fresh: true,
+        // A settings update can race the initial navigation page. Reuse that
+        // in-flight read and let the observer apply the fresh projection once;
+        // completed pages still bypass the recent-result dedupe window.
+        dedupeInFlight: true,
+      });
       if (current()) observe(workspaceId, page, true);
     })).then(results => {
       if (current() && results.some(result => result.status === 'rejected')) setFailed(true);
@@ -134,8 +154,14 @@ export function useWorkspaceSessionDiscovery(
     const scope = getActiveSurfaceScope();
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let attempt = 0;
     const current = () => !cancelled && scope.isCurrent();
-    const refresh = async () => {
+    const scheduleRefresh = () => {
+      const delay = getWorkspaceSessionDiscoveryRefreshDelayMs(attempt);
+      attempt += 1;
+      timer = setTimeout(() => void refresh(), delay);
+    };
+    async function refresh() {
       if (!current()) return;
       const results = await Promise.allSettled(pendingIds.map(async workspaceId => {
         const page = await flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'sessions_nav_discovery');
@@ -149,11 +175,11 @@ export function useWorkspaceSessionDiscovery(
         setFailed(true);
         return;
       }
-      timer = setTimeout(() => void refresh(), 1500);
-    };
-    timer = setTimeout(() => void refresh(), 1500);
+      scheduleRefresh();
+    }
+    scheduleRefresh();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [observe, pendingKey, retryVersion, visible]);
+  }, [discoveryRevision, observe, pendingKey, retryVersion, visible]);
 
   return {
     observe,

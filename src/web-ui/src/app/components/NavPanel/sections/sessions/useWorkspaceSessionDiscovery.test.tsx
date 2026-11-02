@@ -25,7 +25,7 @@ vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({
   getActiveSurfaceScope: () => { const epoch = mocks.epoch; return { isCurrent: () => epoch === mocks.epoch }; },
 }));
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
-import { useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
+import { getWorkspaceSessionDiscoveryRefreshDelayMs, useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
 
 const page = (pending?: boolean): SessionMetadataPage => ({
   sessions: [], totalTopLevelCount: 107, loadedTopLevelCount: 5, hasMore: true, nextCursor: '5', discoveryPending: pending,
@@ -57,7 +57,14 @@ describe('workspace discovery observation', () => {
     vi.unstubAllGlobals();
   });
   const render = async (visible = true) => { await act(async () => root.render(<Harness visible={visible} />)); };
-  const tick = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(1500); }); };
+  const tick = async (delay = 1500) => { await act(async () => { await vi.advanceTimersByTimeAsync(delay); }); };
+
+  it('backs off repeated discovery refreshes while keeping the first retry responsive', () => {
+    expect(getWorkspaceSessionDiscoveryRefreshDelayMs(0)).toBe(1500);
+    expect(getWorkspaceSessionDiscoveryRefreshDelayMs(1)).toBe(3000);
+    expect(getWorkspaceSessionDiscoveryRefreshDelayMs(2)).toBe(5000);
+    expect(getWorkspaceSessionDiscoveryRefreshDelayMs(99)).toBe(10000);
+  });
 
   it('does not poll legacy or idle hosts', async () => {
     await render();
@@ -73,7 +80,7 @@ describe('workspace discovery observation', () => {
     await act(async () => {
       mocks.configListeners.forEach(callback => callback('app.external_session_discovery.codex'));
     });
-    expect(mocks.loadPage).toHaveBeenCalledWith('workspace', 5, undefined, 'sessions_nav_discovery_settings', { fresh: true });
+    expect(mocks.loadPage).toHaveBeenCalledWith('workspace', 5, undefined, 'sessions_nav_discovery_settings', { fresh: true, dedupeInFlight: true });
     expect(current.pending).toBe(true);
     await tick();
     expect(current.pending).toBe(false);
@@ -119,7 +126,7 @@ describe('workspace discovery observation', () => {
     await tick();
     expect(current.pending).toBe(true);
     expect(mocks.completed).not.toHaveBeenCalled();
-    await tick();
+    await tick(3000);
     expect(current.pending).toBe(false);
     expect(mocks.completed).toHaveBeenCalledWith('workspace', expect.objectContaining({ totalTopLevelCount: 107, hasMore: true }));
     await tick();

@@ -221,6 +221,7 @@ const resetStore = () => {
     }
   });
   metadataPageRequests?.clear();
+  ((flowChatStore as any).sessionMetadataModelConfigRequests as Map<string, unknown> | undefined)?.clear();
   const fullHistoryHydrationRequests = (flowChatStore as any).fullHistoryHydrationRequests as
     | Map<string, { cancel?: () => void }>
     | undefined;
@@ -4032,6 +4033,8 @@ describe('FlowChatStore historical session hydration state', () => {
   });
 
   it('loads a paged metadata slice without requesting the full session list', async () => {
+    const metadataListener = vi.fn();
+    const unsubscribe = flowChatStore.subscribe(metadataListener);
     apiMocks.listSessionsPage.mockResolvedValueOnce({
       sessions: [
         {
@@ -4043,6 +4046,13 @@ describe('FlowChatStore historical session hydration state', () => {
           lastActiveAt: 20,
           workspaceHostname: 'localhost',
         },
+        {
+          sessionId: 'history-2',
+          title: 'Another saved session',
+          agentType: 'Standard',
+          createdAt: 11,
+          lastActiveAt: 21,
+        },
       ],
       totalTopLevelCount: 12,
       loadedTopLevelCount: 5,
@@ -4051,6 +4061,7 @@ describe('FlowChatStore historical session hydration state', () => {
     });
 
     const page = await flowChatStore.loadSessionMetadataPage(fixtureWorkspaceId('D:/workspace/OpenBitFun', undefined, undefined), 5, undefined, 'nav_initial');
+    unsubscribe();
 
     expect(apiMocks.listSessions).not.toHaveBeenCalled();
     expect(apiMocks.listSessionsPage).toHaveBeenCalledWith({
@@ -4069,6 +4080,7 @@ describe('FlowChatStore historical session hydration state', () => {
       workspaceHostname: 'localhost',
     });
     expect(flowChatStore.getState().sessions.get('history-1')?.remoteSshHost).toBeUndefined();
+    expect(metadataListener).toHaveBeenCalledTimes(1);
   });
 
   it('deduplicates catalog pages only within the same query and leaves the legacy request separate', async () => {

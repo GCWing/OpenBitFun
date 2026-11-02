@@ -38,6 +38,22 @@ export function workspaceSessionCatalogQuery(
   return { workspaceId, ordering, source };
 }
 
+/**
+ * When every known external source is disabled, the navigation projection is
+ * the native OpenBitFun view. Keep that source on the host query so it can
+ * page native rows directly instead of traversing imported records just to
+ * discard them in the client.
+ *
+ * An unresolved setting stays on the caller's requested source. The caller
+ * preserves the legacy projection until the host setting is known.
+ */
+export function resolveWorkspaceSessionCatalogSource(
+  sourceAgent: WorkspaceSessionSourceAgent,
+  enabledExternalSources: ReadonlySet<string> | undefined,
+): string {
+  return enabledExternalSources?.size === 0 ? 'openbitfun' : sourceAgent;
+}
+
 /** Bind every observed timestamp before reading a new host catalog. Matching
  * local metadata is not evidence that another host still has that timestamp. */
 export function captureWorkspaceSessionCatalogQuery(

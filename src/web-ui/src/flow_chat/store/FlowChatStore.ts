@@ -60,6 +60,7 @@ import {
   onSurfaceActivated,
   surfaceScopedKey,
   type DeviceSurfaceId,
+  type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
 import {
   isRuntimeSessionAttachmentInFlight,
@@ -1555,6 +1556,11 @@ interface MetadataPageRequest {
   cleanupTimer?: ReturnType<typeof setTimeout>;
 }
 
+interface SessionMetadataModelConfig {
+  models: any[];
+  defaultModels: Record<string, string>;
+}
+
 interface FullHistoryHydrationRequest {
   surfaceId: DeviceSurfaceId;
   sessionId: string;
@@ -2141,6 +2147,9 @@ export class FlowChatStore {
   private listeners: Set<(state: FlowChatState) => void> = new Set();
   private selectorListeners: Set<SelectorListener> = new Set();
   private silentMode = false;
+  private stateBatchDepth = 0;
+  private stateBatchInitialState?: FlowChatState;
+  private stateBatchRestoreSilentMode = false;
   /**
    * Request dedup and negotiated capabilities outlive the switch that stranded
    * them, so their keys carry the surface instead of the container: an entry
@@ -2149,6 +2158,9 @@ export class FlowChatStore {
    */
   private metadataListRequests = new Map<string, MetadataListRequest>();
   private metadataPageRequests = new Map<string, MetadataPageRequest>();
+  /** Model context windows are shared by every metadata page on one surface. */
+  private sessionMetadataModelConfigRequests = new Map<string, Promise<SessionMetadataModelConfig>>();
+  private sessionMetadataModelConfigUnsubscribe?: () => void;
   /** Announced switches, for the window before a surface activation lands. */
   private detachedSurfaceGeneration = 0;
   private fullHistoryHydrationRequests = new Map<string, FullHistoryHydrationRequest>();
@@ -2173,6 +2185,7 @@ export class FlowChatStore {
         for (const subscription of container.relaySessionHistory.values()) subscription.close();
         container.relaySessionHistory.clear();
       }
+      this.sessionMetadataModelConfigRequests.clear();
       this.notifyListeners();
     });
   }
@@ -4365,6 +4378,28 @@ export class FlowChatStore {
         }
       });
     }
+  }
+
+  private beginStateBatch(): void {
+    if (this.stateBatchDepth === 0) {
+      this.stateBatchInitialState = this.state;
+      this.stateBatchRestoreSilentMode = this.silentMode;
+      this.silentMode = true;
+    }
+    this.stateBatchDepth += 1;
+  }
+
+  private endStateBatch(scope: SurfaceScope): void {
+    this.stateBatchDepth = Math.max(0, this.stateBatchDepth - 1);
+    if (this.stateBatchDepth !== 0) return;
+
+    const shouldNotify = !this.stateBatchRestoreSilentMode
+      && scope.isCurrent()
+      && this.state !== this.stateBatchInitialState;
+    this.silentMode = this.stateBatchRestoreSilentMode;
+    this.stateBatchInitialState = undefined;
+    this.stateBatchRestoreSilentMode = false;
+    if (shouldNotify) this.notifyListeners();
   }
   
   /**
@@ -7642,33 +7677,50 @@ export class FlowChatStore {
     return loadPromise;
   }
 
-  private async loadSessionMetadataModelConfig(): Promise<{
-    models: any[];
-    defaultModels: Record<string, string>;
-  }> {
-    let models: any[] = [];
-    let defaultModels: Record<string, string> = {};
-    try {
-      const { configManager } = await import('@/infrastructure/config/services/ConfigManager');
-      const configData = await configManager.getConfigs([
-        'ai.models',
-        'ai.default_models',
-      ]);
+  private async loadSessionMetadataModelConfig(): Promise<SessionMetadataModelConfig> {
+    const scope = getActiveSurfaceScope();
+    const requestKey = scope.key('session-metadata-model-config');
+    const existingRequest = this.sessionMetadataModelConfigRequests.get(requestKey);
+    if (existingRequest) return existingRequest;
 
-      if (Array.isArray(configData['ai.models'])) {
-        models = configData['ai.models'];
-      }
-      if (
-        configData['ai.default_models'] &&
-        typeof configData['ai.default_models'] === 'object'
-      ) {
-        defaultModels = configData['ai.default_models'] as Record<string, string>;
-      }
-    } catch (error) {
-      log.warn('Failed to load model config for session metadata, using defaults', { error });
-    }
+    const request = (async (): Promise<SessionMetadataModelConfig> => {
+      let models: any[] = [];
+      let defaultModels: Record<string, string> = {};
+      try {
+        const { configManager } = await import('@/infrastructure/config/services/ConfigManager');
+        // ConfigManager already caches individual paths. This second-level
+        // cache keeps page processing from repeatedly entering the config
+        // service when a catalog traverses several pages in one turn.
+        if (!this.sessionMetadataModelConfigUnsubscribe && typeof configManager.onConfigChange === 'function') {
+          this.sessionMetadataModelConfigUnsubscribe = configManager.onConfigChange(path => {
+            if (path === 'ai' || path === 'ai.models' || path === 'ai.default_models'
+              || path.startsWith('ai.models.') || path.startsWith('ai.default_models.')) {
+              this.sessionMetadataModelConfigRequests.clear();
+            }
+          });
+        }
+        const configData = await configManager.getConfigs([
+          'ai.models',
+          'ai.default_models',
+        ]);
 
-    return { models, defaultModels };
+        if (Array.isArray(configData['ai.models'])) {
+          models = configData['ai.models'];
+        }
+        if (
+          configData['ai.default_models'] &&
+          typeof configData['ai.default_models'] === 'object'
+        ) {
+          defaultModels = configData['ai.default_models'] as Record<string, string>;
+        }
+      } catch (error) {
+        log.warn('Failed to load model config for session metadata, using defaults', { error });
+      }
+
+      return { models, defaultModels };
+    })();
+    this.sessionMetadataModelConfigRequests.set(requestKey, request);
+    return request;
   }
 
   private async processPersistedSessionMetadataList(
@@ -7863,7 +7915,15 @@ export class FlowChatStore {
       }
     };
 
-    await Promise.all(sessions.map(processSession));
+    // A page commonly contains several rows. Keep the existing state update
+    // semantics, but publish the resulting page as one store notification so
+    // navigation selectors do not rerender once per row.
+    this.beginStateBatch();
+    try {
+      await Promise.all(sessions.map(processSession));
+    } finally {
+      this.endStateBatch(scope);
+    }
   }
 
   /**
@@ -7927,7 +7987,7 @@ export class FlowChatStore {
     limit: number,
     cursor?: string,
     traceSource = 'unknown',
-    options?: { fresh?: boolean; query?: SessionCatalogQuery },
+    options?: { fresh?: boolean; query?: SessionCatalogQuery; dedupeInFlight?: boolean },
   ): Promise<SessionMetadataPage> {
     const { remoteConnectionId, remoteSshHost } = this.workspaceForId(workspaceId);
     const requestKey = this.getMetadataPageRequestKey(
@@ -7935,6 +7995,9 @@ export class FlowChatStore {
     ) + JSON.stringify(options?.query ?? null);
     const existingRequest = this.metadataPageRequests.get(requestKey);
     const remote = isRemoteTraceContext(remoteConnectionId, remoteSshHost);
+    if (existingRequest && (options?.dedupeInFlight && existingRequest.completedAtMs === undefined)) {
+      return existingRequest.promise;
+    }
     if (existingRequest && !options?.fresh) {
       const completedAtMs = existingRequest.completedAtMs;
       const isRecentCompletedRequest =
@@ -8158,27 +8221,7 @@ export class FlowChatStore {
 
       const { stateMachineManager } = await import('../state-machine');
 
-      let models: any[] = [];
-      let defaultModels: Record<string, string> = {};
-      try {
-        const { configManager } = await import('@/infrastructure/config/services/ConfigManager');
-        const configData = await configManager.getConfigs([
-          'ai.models',
-          'ai.default_models',
-        ]);
-
-        if (Array.isArray(configData['ai.models'])) {
-          models = configData['ai.models'];
-        }
-        if (
-          configData['ai.default_models'] &&
-          typeof configData['ai.default_models'] === 'object'
-        ) {
-          defaultModels = configData['ai.default_models'] as Record<string, string>;
-        }
-      } catch (error) {
-        log.warn('Failed to load model config for session metadata, using defaults', { error });
-      }
+      const { models, defaultModels } = await this.loadSessionMetadataModelConfig();
 
       const processSession = async (metadata: any) => {
         try {
@@ -8318,7 +8361,12 @@ export class FlowChatStore {
         }
       };
 
-      await Promise.all(sessions.map(processSession));
+      this.beginStateBatch();
+      try {
+        await Promise.all(sessions.map(processSession));
+      } finally {
+        this.endStateBatch(scope);
+      }
       startupTrace.markPhase('session_metadata_list_end', {
         remote,
         source: traceSource,
