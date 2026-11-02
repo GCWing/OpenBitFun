@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createHash } from 'node:crypto';
 import {
   cssVariables as systemCssVariables,
@@ -10,7 +11,7 @@ import { widgetAppearanceAdapter } from '@/infrastructure/appearance/adapters/Wi
 import {
   WIDGET_APPEARANCE_FALLBACK_VARS,
   WIDGET_APPEARANCE_VAR_NAMES,
-  WIDGET_TYPOGRAPHY_VARIABLE_NAMES,
+  WIDGET_SYSTEM_VARIABLE_NAMES,
   createWidgetAppearanceFallbackCss,
   readWidgetAppearancePayload,
 } from './appearancePayload';
@@ -191,9 +192,29 @@ describe('generated widget appearance payload contract', () => {
     expect(Object.keys(WIDGET_APPEARANCE_FALLBACK_VARS)).toEqual(WIDGET_APPEARANCE_VAR_NAMES);
     expect(Object.keys(payload?.vars ?? {}).sort()).toEqual([
       ...WIDGET_APPEARANCE_VAR_NAMES,
-      ...WIDGET_TYPOGRAPHY_VARIABLE_NAMES,
+      ...WIDGET_SYSTEM_VARIABLE_NAMES,
     ].sort());
     expect(WIDGET_APPEARANCE_FALLBACK_VARS['--openbitfun-color-surface-canvas']).toBe('transparent');
+  });
+
+  it('projects host system tokens over the static fallbacks', () => {
+    const computedStyle = new Map<string, string>([
+      ['--openbitfun-radius-base', '6px'],
+      ['--openbitfun-space-4', '12px'],
+      ['--openbitfun-type-body-sm-font-size', '15px'],
+    ]);
+    vi.stubGlobal('getComputedStyle', () => ({
+      getPropertyValue: (name: string) => computedStyle.get(name) ?? '',
+    }));
+
+    const payload = readWidgetAppearancePayload();
+
+    expect(payload?.vars['--openbitfun-radius-base']).toBe('6px');
+    expect(payload?.vars['--openbitfun-space-4']).toBe('12px');
+    expect(payload?.vars['--openbitfun-type-body-sm-font-size']).toBe('15px');
+    expect(payload?.vars['--openbitfun-radius-lg']).toBe(
+      String(systemTokens['radius.lg']),
+    );
   });
 
   it('exports canonical state and status semantics without legacy aliases', () => {
