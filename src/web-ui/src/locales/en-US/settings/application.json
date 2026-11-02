@@ -207,6 +207,7 @@
       "loadFailed": "Failed to load logging configuration",
       "saveFailed": "Failed to save logging level",
       "levelUpdated": "Logging level updated",
+      "levelSavedNotApplied": "Logging level saved, but that device is still logging at {{level}}.",
       "sensitiveDiagnosticsUpdated": "Sensitive diagnostic logging preference updated",
       "refreshed": "Runtime status refreshed",
       "openedFolder": "Log folder opened",

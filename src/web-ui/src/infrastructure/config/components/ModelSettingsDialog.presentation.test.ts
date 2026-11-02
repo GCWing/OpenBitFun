@@ -13,7 +13,7 @@ const styles = readFileSync(
 );
 
 describe('ModelSettingsPage dialog presentation', () => {
-  it('uses a content-sized editor and panel dialogs for model browsing workflows', () => {
+  it('uses the shared panel preset throughout model management workflows', () => {
     const owners = [
       '../../../app/scenes/settings/pages/ai/ModelSettingsPage.tsx',
       '../../../app/scenes/settings/pages/ai/ModelDiscoveryPicker.tsx',
@@ -29,10 +29,7 @@ describe('ModelSettingsPage dialog presentation', () => {
       const visit = (node: ts.Node) => {
         if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(tree) === 'Dialog') {
           const preset = node.attributes.properties.find(property => ts.isJsxAttribute(property) && property.name.getText(tree) === 'preset');
-          const editor = node.attributes.properties.some(property => ts.isJsxAttribute(property)
-            && property.name.getText(tree) === 'className'
-            && property.initializer?.getText(tree) === '"openbitfun-model-settings__editor-dialog"');
-          expect(preset?.getText(tree), owner).toBe(editor ? 'preset="default"' : 'preset="panel"');
+          expect(preset?.getText(tree), owner).toBe('preset="panel"');
           dialogs += 1;
         }
         ts.forEachChild(node, visit);
@@ -42,7 +39,7 @@ describe('ModelSettingsPage dialog presentation', () => {
     }
   });
 
-  it('keeps model configuration editors at a moderate responsive size', () => {
+  it('keeps model editors on the shared centered panel spacing and floating actions', () => {
     const editorDialogStart = source.indexOf('open={isEditing && !!editingConfig}');
     const editorDialog = source.slice(editorDialogStart, source.indexOf('<ConfirmDialog', editorDialogStart));
     const editingFormStart = source.indexOf('const renderEditingForm = () => {');
@@ -54,15 +51,15 @@ describe('ModelSettingsPage dialog presentation', () => {
     expect(editorDialogStart).toBeGreaterThan(-1);
     expect(editingFormStart).toBeGreaterThan(-1);
     expect(editorDialog).toContain('className="openbitfun-model-settings__editor-dialog"');
-    expect(editorDialog).toContain('preset="default"');
-    expect(editorDialog).toContain('size="lg"');
+    expect(editorDialog).toContain('preset="panel"');
+    expect(editorDialog).not.toContain('size="lg"');
     expect(editorDialog).toContain('<DialogHeaderLeading>');
     expect(editorDialog).toContain('<DialogHeaderActions>');
     expect(editorDialog).not.toContain('size="2xl"');
     expect(editorDialog).toMatch(
-      /\{!reasoningPanelDraft && \(\s*<DialogFooter>/,
+      /\{!reasoningPanelDraft && \(\s*<DialogFooter appearance="floating">/,
     );
-    expect(editorDialog).not.toContain('appearance="floating"');
+    expect(editorDialog).toContain('appearance="floating"');
     expect(editorDialog).toContain(
       '<Button variant="fill" size="sm" onClick={modelPanelDraft ? cancelModelPanel : requestCloseEditingModal} disabled={isEditorSaving}>',
     );

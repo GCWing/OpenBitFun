@@ -1443,6 +1443,15 @@ impl SessionManager {
             .map(|session| session.replay_history.cursor())
     }
 
+    /// Lifecycle polling must not clone the retained PTY history either.
+    pub async fn session_status(&self, session_id: &str) -> Option<SessionStatus> {
+        self.sessions
+            .read()
+            .await
+            .get(session_id)
+            .map(|session| session.status.clone())
+    }
+
     pub async fn replay_page(
         &self,
         session_id: &str,

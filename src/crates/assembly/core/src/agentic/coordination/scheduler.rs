@@ -15,9 +15,9 @@ mod host_message_queue;
 use host_message_queue::HostQueueState;
 
 use super::coordinator::{
-    ensure_session_accepts_conversation, session_storage_workspace_locator,
-    ConversationCoordinator, DialogTriggerSource, DialogTurnStopDisposition,
-    HiddenSubagentExecutionRequest, SubagentResult,
+    ensure_session_accepts_conversation, resolve_loaded_session_storage_by_id,
+    session_storage_workspace_locator, ConversationCoordinator, DialogTriggerSource,
+    DialogTurnStopDisposition, HiddenSubagentExecutionRequest, SubagentResult,
 };
 use super::turn_outcome::TurnOutcome;
 use super::turn_settlement::TurnSettlementRegistration;
@@ -1323,7 +1323,8 @@ impl DialogScheduler {
                 "queue_scope_expired: session maintenance retired this submission".into(),
             ));
         }
-        if let Some(session) = self.session_manager.get_session(&session_id) {
+        let loaded_session = self.session_manager.get_session(&session_id);
+        if let Some(session) = loaded_session.as_ref() {
             queued_turn.workspace_path = session_storage_workspace_locator(
                 queued_turn.workspace_path.as_deref(),
                 session.config.workspace_path.as_deref(),
@@ -1341,6 +1342,28 @@ impl DialogScheduler {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .contains(&session_id, &resolved_turn_id);
+        // Pre-ID senders (older mobile/IM clients, Remote Connect peers, legacy
+        // app-server callers) only carry a path. When that path re-states the
+        // loaded session's own root, its workspace ID is authoritative; a bare
+        // path could be ambiguous with a same-root SSH record (#3275).
+        let loaded_session_storage = match (
+            host_owned || requested_workspace_id.is_some(),
+            loaded_session.as_ref(),
+            queued_turn.workspace_path.as_deref(),
+        ) {
+            (false, Some(session), Some(workspace_path)) => {
+                resolve_loaded_session_storage_by_id(
+                    &CoreSessionStorePort::with_path_manager(self.session_manager.path_manager()),
+                    &session.config,
+                    workspace_path,
+                    queued_turn.remote_connection_id.as_deref(),
+                    queued_turn.remote_ssh_host.as_deref(),
+                )
+                .await
+            }
+            _ => None,
+        };
+        let resolved_by_loaded_session_id = loaded_session_storage.is_some();
         let requested_storage_path = if host_owned {
             // Queue commands carry no controller filesystem locator. Preserve
             // the loaded session's authoritative local/remote storage binding.
@@ -1357,6 +1380,12 @@ impl DialogScheduler {
                 CoreSessionStorePort::with_path_manager(self.session_manager.path_manager())
                     .resolve_workspace_storage(workspace_id)
                     .await
+                    .map(|resolution| resolution.effective_storage_path)
+                    .map_err(SchedulerSubmitError::Port)?,
+            )
+        } else if let Some(resolution) = loaded_session_storage {
+            Some(
+                resolution
                     .map(|resolution| resolution.effective_storage_path)
                     .map_err(SchedulerSubmitError::Port)?,
             )
@@ -1386,7 +1415,7 @@ impl DialogScheduler {
             self.session_manager
                 .validate_session_storage_path_binding(&session_id, &requested_storage_path)
                 .map_err(SchedulerSubmitError::Core)?;
-            if host_owned || requested_workspace_id.is_some() {
+            if host_owned || requested_workspace_id.is_some() || resolved_by_loaded_session_id {
                 // The session is loaded and bound by ID; an omitted locator makes
                 // the coordinator reuse that binding instead of re-resolving a path.
                 queued_turn.workspace_path = None;
@@ -4358,6 +4387,105 @@ mod tests {
             remove_queued_turn_by_id(&scheduler.queues, &session.session_id, "next-turn").unwrap();
         assert_eq!(queued.workspace_id, session.config.workspace_id);
         assert_eq!(queued.workspace_path, None);
+    }
+
+    #[tokio::test]
+    async fn pre_id_submission_for_loaded_session_resolves_by_id_when_a_remote_root_collides() {
+        // Issue #3275: an older mobile/IM/Remote Connect sender only carries a
+        // path. An inactive SSH record with the same root must not make the
+        // loaded local session ambiguous.
+        let (scheduler, manager, _, root) = test_scheduler();
+        let workspace = fixture_workspace_dir(root.path().join("pre-id-collision"));
+        let session = manager
+            .create_session(
+                "Owner".into(),
+                "Standard".into(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let local_storage = manager
+            .require_session_storage_path(&session.session_id)
+            .await
+            .unwrap();
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &workspace.to_string_lossy(),
+            "inactive-remote-connection",
+            "remote.example",
+        )
+        .await;
+        assert!(scheduler
+            .resolve_session_restore_path(&workspace.to_string_lossy(), None, Some("localhost"))
+            .await
+            .is_err());
+        manager
+            .update_session_state(
+                &session.session_id,
+                SessionState::Processing {
+                    current_turn_id: "running".into(),
+                    phase: ProcessingPhase::Thinking,
+                },
+            )
+            .await
+            .unwrap();
+        for (source, turn_id) in [
+            (DialogTriggerSource::RemoteRelay, "relay-turn"),
+            (DialogTriggerSource::Bot, "bot-turn"),
+        ] {
+            let outcome = scheduler
+                .submit(
+                    session.session_id.clone(),
+                    "hello".into(),
+                    None,
+                    Some(turn_id.into()),
+                    "Standard".into(),
+                    Some(workspace.to_string_lossy().into_owned()),
+                    None,
+                    Some("localhost".into()),
+                    DialogSubmissionPolicy::for_source(source),
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .expect("pre-ID submission must resolve the loaded session by its workspace ID");
+            assert!(matches!(outcome, DialogSubmitOutcome::Queued { .. }));
+            let queued =
+                remove_queued_turn_by_id(&scheduler.queues, &session.session_id, turn_id).unwrap();
+            // The coordinator reuses the ID-bound storage instead of the path.
+            assert_eq!(queued.workspace_path, None);
+        }
+        assert_eq!(
+            manager
+                .require_session_storage_path(&session.session_id)
+                .await
+                .unwrap(),
+            local_storage
+        );
+
+        // A sender that explicitly selects the SSH connection is not adopted.
+        let error = scheduler
+            .submit(
+                session.session_id.clone(),
+                "hello".into(),
+                None,
+                Some("remote-turn".into()),
+                "Standard".into(),
+                Some(workspace.to_string_lossy().into_owned()),
+                Some("inactive-remote-connection".into()),
+                Some("remote.example".into()),
+                DialogSubmissionPolicy::for_source(DialogTriggerSource::RemoteRelay),
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect_err("an explicit SSH selector must not adopt the local binding");
+        assert!(!error.is_empty());
     }
 
     #[tokio::test]

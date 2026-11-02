@@ -27,6 +27,15 @@ export class ConversationViewOptions {
    */
   fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  /**
+   * Placement for the composer's command palette sheets. Same contract as the
+   * full-text panel: the page owns the geometry, so the conversation consumes it
+   * instead of re-deriving sheets from a width of its own.
+   */
+  skillPickerSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SkillPicker);
+  usageReportSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UsageReport);
 }
 
 export class ConversationViewContract {

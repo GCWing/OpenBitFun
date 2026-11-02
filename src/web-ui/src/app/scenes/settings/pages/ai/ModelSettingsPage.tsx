@@ -5449,8 +5449,7 @@ const ModelSettingsPage: React.FC = () => {
           }
         }}
         className="openbitfun-model-settings__editor-dialog"
-        preset="default"
-        size="lg"
+        preset="panel"
       >
         <DialogHeader>
           {(modelPanelDraft || managingSubscriptionProvider) && !reasoningPanelDraft && (
@@ -5539,7 +5538,7 @@ const ModelSettingsPage: React.FC = () => {
           ) : renderEditingForm()}
         </DialogBody>
         {!reasoningPanelDraft && (
-          <DialogFooter>
+          <DialogFooter appearance="floating">
             {managingSubscriptionProvider ? (
               <Button variant="primary" size="sm" onClick={finishSubscriptionManagement} disabled={!!loggingInProvider}>
                 {t('actions.done')}

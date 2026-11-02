@@ -259,15 +259,8 @@ const ArchivedSessionsSettingsPage: React.FC = () => {
       const key = workspaceIdentityKey(entry.workspaceId);
       let group = map.get(key);
       if (!group) {
-        const scopeLabel = workspaceScopeLabel(
-          entry.workspaceName,
-          entry.remoteConnectionId,
-          entry.remoteSshHost,
-        );
         group = {
-          label: scopeLabel === entry.workspacePath
-            ? entry.workspacePath
-            : `${scopeLabel} · ${entry.workspacePath}`,
+          label: entry.workspaceName,
           entries: [],
         };
         map.set(key, group);
@@ -471,7 +464,7 @@ const ArchivedSessionsSettingsPage: React.FC = () => {
         <Button
           size="sm"
           variant="outline"
-          leadingIcon={<Icon name="delete" size="lg" style={{ width: 13, height: 13 }} />}
+          leadingIcon={<Icon name="delete" size="lg" tone="danger" style={{ width: 13, height: 13 }} />}
           onClick={() => { void handleDeleteAll(); }}
           disabled={pendingAction !== null || bulkDeleting}
           loading={bulkDeleting}

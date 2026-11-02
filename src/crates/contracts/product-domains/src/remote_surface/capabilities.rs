@@ -69,6 +69,9 @@ pub enum PeerHostCapability {
     MiniappAgentImagesV1,
     /// WSL profiles and discovery are understood; availability is probed on the host.
     WslWorkspacesV1,
+    /// Saved SSH profiles may carry `proxyCommand`; the host runs it as the
+    /// SSH transport. Older hosts drop the field and dial directly.
+    SshProxyCommandV1,
     /// User-selected native window sharing and explicit permission receipts.
     ComputerUseSharingV1,
     /// `product_control_invoke` is implemented (shared config contract).
@@ -102,6 +105,10 @@ pub enum PeerHostCapability {
     UserQuestionResponse,
     /// First human interaction disables the unattended question timeout.
     UserQuestionInteractionV1,
+    /// Terminal output is read as bounded `terminal_get_history` pages announced
+    /// on the `terminal-<id>` host stream instead of `terminal_event` fan-out.
+    /// This selects a delivery path, so only a host using that path advertises it.
+    TerminalCursorReplayV1,
 }
 
 impl PeerHostCapability {
@@ -131,6 +138,7 @@ impl PeerHostCapability {
         Self::MiniappAgentContextFilesV1,
         Self::MiniappAgentImagesV1,
         Self::WslWorkspacesV1,
+        Self::SshProxyCommandV1,
         Self::ComputerUseSharingV1,
         Self::ProductControlV1,
         Self::RemoteConnectControlV1,
@@ -148,6 +156,8 @@ impl PeerHostCapability {
         Self::SessionTrajectoryV1,
         Self::UserQuestionResponse,
         Self::UserQuestionInteractionV1,
+        // Keep last: Desktop publishes every capability before it.
+        Self::TerminalCursorReplayV1,
     ];
 
     /// The key used in the `peer_mode_ping` `capabilities` object.
@@ -177,6 +187,7 @@ impl PeerHostCapability {
             Self::MiniappAgentContextFilesV1 => "miniapp_agent_context_files_v1",
             Self::MiniappAgentImagesV1 => "miniapp_agent_images_v1",
             Self::WslWorkspacesV1 => "wsl_workspaces_v1",
+            Self::SshProxyCommandV1 => "ssh_proxy_command_v1",
             Self::ComputerUseSharingV1 => "computer_use_sharing_v1",
             Self::ProductControlV1 => "product_control_v1",
             Self::RemoteConnectControlV1 => "remote_connect_control_v1",
@@ -194,6 +205,7 @@ impl PeerHostCapability {
             Self::LocalContextTruncationV1 => "local_context_truncation_v1",
             Self::UserQuestionResponse => "user_question_response",
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
+            Self::TerminalCursorReplayV1 => "terminal_cursor_replay_v1",
         }
     }
 
@@ -203,9 +215,13 @@ impl PeerHostCapability {
     }
 }
 
-const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL;
+/// Desktop fans out `terminal_event`, so it has everything except the cursor
+/// replay path, which `ALL` keeps last.
+const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL
+    .split_at(PeerHostCapability::ALL.len() - 1)
+    .0;
 
-/// The CLI peer host has no MiniApp runtime, WSL connection setup, host-native
+/// The CLI peer host has no MiniApp runtime, WSL or SSH connection setup, host-native
 /// ProductControl providers, or presentation surface.
 const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ModelRoutingV1,
@@ -216,6 +232,8 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ControlConversationResetV1,
     PeerHostCapability::IdempotentDialogSubmit,
     PeerHostCapability::InlineImageAttachmentsV1,
+    PeerHostCapability::BtwInitialModelSelectionV1,
+    PeerHostCapability::BtwModelPoolSelectionV1,
     PeerHostCapability::TargetedSessionRollback,
     PeerHostCapability::TokenUsageStatistics,
     PeerHostCapability::ModelChannelRoutingV1,
@@ -230,6 +248,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::WorkspaceHtmlPreviewV1,
     PeerHostCapability::UserQuestionResponse,
     PeerHostCapability::UserQuestionInteractionV1,
+    PeerHostCapability::TerminalCursorReplayV1,
 ];
 
 /// The capabilities a peer host of the given kind publishes.
@@ -275,8 +294,11 @@ mod tests {
     }
 
     #[test]
-    fn desktop_advertises_a_superset_of_cli() {
+    fn desktop_advertises_a_superset_of_cli_except_its_delivery_path() {
         for capability in advertised_by(PeerHostKind::Cli) {
+            if *capability == PeerHostCapability::TerminalCursorReplayV1 {
+                continue;
+            }
             assert!(
                 advertises(PeerHostKind::Desktop, *capability),
                 "desktop must advertise every CLI capability: {}",
@@ -285,17 +307,25 @@ mod tests {
         }
         assert_eq!(
             advertised_by(PeerHostKind::Desktop).len(),
-            PeerHostCapability::ALL.len()
+            PeerHostCapability::ALL.len() - 1
         );
+        assert!(!advertises(
+            PeerHostKind::Desktop,
+            PeerHostCapability::TerminalCursorReplayV1
+        ));
+        assert!(advertises(
+            PeerHostKind::Cli,
+            PeerHostCapability::TerminalCursorReplayV1
+        ));
         assert!(advertises(
             PeerHostKind::Desktop,
             PeerHostCapability::BtwInitialModelSelectionV1
         ));
-        assert!(!advertises(
+        assert!(advertises(
             PeerHostKind::Cli,
             PeerHostCapability::BtwInitialModelSelectionV1
         ));
-        assert!(!advertises(
+        assert!(advertises(
             PeerHostKind::Cli,
             PeerHostCapability::BtwModelPoolSelectionV1
         ));

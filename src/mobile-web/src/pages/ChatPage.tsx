@@ -22,6 +22,12 @@ import {
   type PendingChatImage,
 } from '../services/chatImageAttachments';
 import { useMobileStore } from '../services/store';
+import {
+  isRemoteSessionWorkspace,
+  resolveChatHeaderContext,
+  sessionWorkspaceContext,
+  type SessionWorkspaceContext,
+} from '../services/workspaceIdentity';
 import { createRemoteCacheScope, remoteCache } from '../services/RemoteCache';
 import ChatHeader from '../components/ChatHeader';
 import ChatComposerBar from '../components/ChatComposerBar';
@@ -51,6 +57,7 @@ interface ChatPageProps {
   sessionId: string;
   sessionName?: string;
   agentType?: string;
+  workspace?: SessionWorkspaceContext;
   onBack: () => void;
   autoFocus?: boolean;
   wideLayout?: boolean;
@@ -74,6 +81,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   sessionId,
   sessionName,
   agentType: sessionAgentType = 'Standard',
+  workspace: sessionWorkspace,
   onBack,
   autoFocus,
   wideLayout = false,
@@ -88,6 +96,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
     error,
     setError,
     currentWorkspace,
+    currentAssistant,
+    knownWorkspaces,
+    sessions,
     authenticatedUserId,
     controlTarget,
     connectionHealth,
@@ -980,10 +991,15 @@ const ChatPage: React.FC<ChatPageProps> = ({
     return () => clearInterval(tid);
   }, [isStreaming]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async (overrideText?: string) => {
     if (useMobileStore.getState().connectionHealth === 'unreachable') return;
-    const text = input.trim();
-    const imgs = pendingImages;
+    // `onClick` passes the click event here; only a string means "submit this
+    // text instead of the current draft", which is how a suggested prompt is
+    // sent in one tap.
+    const explicitText = typeof overrideText === 'string' ? overrideText : null;
+    const text = (explicitText ?? input).trim();
+    // Attachments belong to the draft, which a suggestion leaves untouched.
+    const imgs = explicitText === null ? pendingImages : [];
     if ((!text && imgs.length === 0) || imageAnalyzing || sendInFlightRef.current) return;
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;
@@ -1026,11 +1042,15 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (!isChatTargetCurrent(targetEpoch)) return;
       // Keep the draft until the host acknowledges it. A failed request must
       // remain retryable, and an acknowledgement must not erase newer typing.
-      const draftUnchanged = inputRef.current?.value === input;
-      setInput(current => current === input ? '' : current);
+      // A suggestion sent in one tap never touched the draft, so it must leave
+      // whatever the user had typed alone.
       setPromptSuggestion(null);
+      if (explicitText === null) {
+        const draftUnchanged = inputRef.current?.value === input;
+        setInput(current => current === input ? '' : current);
+        if (!wasStreaming && draftUnchanged) setInputExpanded(false);
+      }
       setPendingImages(current => current.filter(image => !imgs.includes(image)));
-      if (!wasStreaming && draftUnchanged) setInputExpanded(false);
       streamRef.current?.nudge();
       if (hostQueue?.getSnapshot().snapshot?.receipt?.status === 'queued') {
         setInfoToast(t('chat.messageQueued'));
@@ -1152,12 +1172,18 @@ const ChatPage: React.FC<ChatPageProps> = ({
     }
   };
 
-  const workspaceName = currentWorkspace?.project_name || currentWorkspace?.path?.split('/').pop() || '';
-  const gitBranch = currentWorkspace?.git_branch;
+  // Restored navigation from an older build has no workspace; the loaded session row may.
+  const listedSession = sessionWorkspace ? undefined : sessions.find((session) => session.session_id === sessionId);
+  const sessionContext = sessionWorkspace ?? (listedSession && sessionWorkspaceContext(listedSession));
+  const { workspaceName, gitBranch } = resolveChatHeaderContext({
+    agentType: sessionAgentType,
+    session: sessionContext,
+    currentWorkspace,
+    currentAssistant,
+    assistantLabel: t('shared.agents.Claw'),
+  });
   const displayName = liveTitle || sessionName || t('chat.session');
-  const isRemoteWorkspace = currentWorkspace?.workspace_kind === 'remote'
-    || Boolean(currentWorkspace?.remote_connection_id)
-    || Boolean(currentWorkspace?.remote_ssh_host);
+  const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace, knownWorkspaces);
 
   return (
     <div className={`chat-page${wideLayout ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${composerHeight}px` } as React.CSSProperties}>
@@ -1321,10 +1347,11 @@ const ChatPage: React.FC<ChatPageProps> = ({
         onCompositionStart={handleCompositionStart}
         onKeyDown={handleKeyDown}
         onRemoveImage={removeImage}
-        onSend={handleSend}
+        onSend={() => void handleSend()}
         pendingImages={pendingImages}
         promptSuggestion={promptSuggestion}
         onAcceptPromptSuggestion={acceptPromptSuggestion}
+        onSendPromptSuggestion={suggestion => void handleSend(suggestion)}
         streaming={isStreaming}
       />
 

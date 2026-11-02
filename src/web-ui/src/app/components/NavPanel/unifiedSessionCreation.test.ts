@@ -78,7 +78,8 @@ describe('unified project session creation', () => {
     );
     expect(mainNav).not.toContain('nav-new-code-session-btn');
     expect(mainNav).not.toContain('nav-new-cowork-session-btn');
-    expect(workspaceItem).toContain('data-testid="nav-workspace-menu-create-session"');
+    expect(workspaceItem).not.toContain('data-testid="nav-workspace-menu-create-session"');
+    expect(workspaceItem.match(/onClick=\{handleOpenFiles\}\s+data-testid="nav-workspace-menu-open-directory"/g)).toHaveLength(2);
   });
 
   it('projects projects and assistants through one grouped session region', () => {
@@ -225,6 +226,7 @@ describe('unified project session creation', () => {
     const workspaceList = source('./sections/workspaces/WorkspaceListSection.tsx');
     const projection = source('./sessionNavigationProjection.ts');
     const sessionsSection = source('./sections/sessions/SessionsSection.tsx');
+    const archivedMetadata = source('./sections/sessions/useArchivedSessionMetadata.ts');
 
     expect(workspaceList).toContain("grouping === 'all'");
     expect(workspaceList).toContain('data-session-group-kind={group.kind}');
@@ -234,7 +236,8 @@ describe('unified project session creation', () => {
     expect(sessionsSection).toContain("'sessions_nav_all_grouping'");
     expect(sessionsSection).toContain('Promise.allSettled(workspaceScopes.map');
     expect(sessionsSection).toContain('matchesWorkspaceSessionView(');
-    expect(sessionsSection).toContain('loadArchivedSessionMetadata(');
+    expect(sessionsSection).toContain('const archivedCatalog = useArchivedSessionMetadata({');
+    expect(archivedMetadata).toContain('flowChatStore.loadArchivedSessionMetadata(');
     expect(sessionsSection).toContain("layout === 'flat' ? ' is-flat-workspace-view'");
     expect(sessionsSection).toContain("const showAllWithoutLimit = layout === 'flat'");
     expect(sessionsSection).toContain('!showAllWithoutLimit && expandLevel === 2');
@@ -246,7 +249,7 @@ describe('unified project session creation', () => {
     const workspaceItem = source('./sections/workspaces/WorkspaceItem.tsx');
     const sessionMenu = source('../../../flow_chat/components/session-menu/SessionMenu.tsx');
 
-    expect(workspaceItem).toContain('data-testid="nav-workspace-menu-create-session"');
+    expect(workspaceItem.match(/data-testid="nav-workspace-new-session-btn"/g)).toHaveLength(2);
     expect(workspaceItem).not.toContain('nav-workspace-menu-create-code-session');
     expect(workspaceItem).not.toContain('nav-workspace-menu-create-cowork-session');
     expect(workspaceItem).not.toContain('WorkspaceSessionSourceFilter');
