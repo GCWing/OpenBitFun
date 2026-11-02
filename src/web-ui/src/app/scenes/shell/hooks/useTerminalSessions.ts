@@ -39,6 +39,7 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
     return () => { currentActivation.current = null; };
   }, [activation]);
   const requestVersion = useRef(0);
+  const trackingOwner = useRef({}).current;
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(() => ({
     key, sessions: snapshots.get(key) ?? [], loading: true, error: null,
   }));
@@ -80,6 +81,7 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
         || terminalBelongsToWorkspace(session, target),
       );
       snapshots.set(key, filtered);
+      service.setTrackedSessions(trackingOwner, filtered.map(session => session.id));
       setSnapshot({ key, sessions: filtered, loading: false, error: null });
     } catch (error) {
       if (!scope.isCurrent() || currentActivation.current !== activation || version !== requestVersion.current) return;
@@ -88,7 +90,7 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
         loading: false, error: error instanceof Error ? error.message : String(error),
       }));
     }
-  }, [activation, assertCurrent, key, savedSessionIds, scope, target, workspaceId]);
+  }, [activation, assertCurrent, key, savedSessionIds, scope, target, trackingOwner, workspaceId]);
 
   useEffect(() => {
     const service = getTerminalService();
@@ -112,9 +114,10 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
     return () => {
       requestVersion.current += 1;
       unsubscribe();
+      service.clearTrackedSessions(trackingOwner);
       window.removeEventListener('focus', refreshSessions);
     };
-  }, [activation, key, refreshSessions, scope]);
+  }, [activation, key, refreshSessions, scope, trackingOwner]);
 
   const closeSessionIfPresent = useCallback(async (sessionId: string) => {
     assertCurrent();

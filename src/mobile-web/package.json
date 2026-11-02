@@ -24,6 +24,7 @@
     "test:prompt-suggestion-browser": "node --test tests/prompt-suggestion-browser.test.mjs",
     "test:chat-transcript-browser": "node --test tests/mobile-chat-regressions-browser.test.mjs tests/background-delivery-browser.test.mjs",
     "test:rollback-browser": "node --test tests/rollback-browser.test.mjs",
+    "test:session-model-browser": "node --test tests/session-model-browser.test.mjs",
     "test:session-stream-browser": "node --test tests/session-stream-browser.test.mjs",
     "test:runtime-files": "node --test tests/runtime-file-upload.test.mjs tests/runtime-file-download.test.mjs",
     "test:interaction-mailbox": "node --test tests/interaction-mailbox-browser.test.mjs",

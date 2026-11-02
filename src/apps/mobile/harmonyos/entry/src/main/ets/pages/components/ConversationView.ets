@@ -561,6 +561,7 @@ export struct ConversationView {
       activeFilePreviewPath: this.activeFilePreviewPath,
       activeFilePreviewLoading: this.activeFilePreviewLoading,
       maxContentWidth: this.composerPresentation === ComposerPresentation.Floating ? 760 : 0,
+      subagentBranches: this.state.subagentBranches,
       topInset: this.hoverOperateMode ? 0 : this.topInset,
       bottomInset: this.hoverOperateMode ? 0 : this.bottomInset,
       ghostRowKeys: this.ghostRowKeys(),
@@ -603,6 +604,9 @@ export struct ConversationView {
       },
       onDownloadFile: (path: string) => {
         this.onDownloadFile(path);
+      },
+      onBranchExpanded: (branchId: string) => {
+        this.onIntent(ConversationIntents.branchExpanded(branchId));
       }
     })
   }
