@@ -8358,12 +8358,55 @@ export class FlowChatStore {
         return prev;
       }
       const persistMergeSafe = session === initialSession;
+      // A live event racing this read can only have written the Turn the Host
+      // is executing. Turns the Host reports settled are unaffected by that
+      // race, and skipping them left a Turn truncated when a remote controller
+      // started the next Turn while this window rendered another device.
+      const adoptSettledTurns = (turns: DialogTurn[]): DialogTurn[] => {
+        let adopted = turns;
+        for (const snapshotTurn of snapshotTurns) {
+          if (snapshotTurn.id === activeTurnId || !isSettledTurnStatus(snapshotTurn.status)) {
+            continue;
+          }
+          const index = adopted.findIndex(turn => turn.id === snapshotTurn.id);
+          if (
+            index === -1 ||
+            adopted[index] === snapshotTurn ||
+            !persistedReadMayReplaceTurn(
+              sessionId,
+              adopted[index],
+              snapshotTurn,
+              activeTurnId,
+              Boolean(runtimeEventSnapshot),
+              true,
+            )
+          ) {
+            continue;
+          }
+          if (adopted === turns) {
+            adopted = [...turns];
+          }
+          adopted[index] = snapshotTurn;
+        }
+        return adopted;
+      };
+
       // A live event or hydrate won the race while HostInvoke was in flight.
-      // Persisted-turn merge is then unsafe, but a required Runtime replay
-      // still needs an empty current-Turn shell — hiding the journal used to
-      // leave in-progress tool cards frozen.
+      // Persisted-turn merge is then unsafe for the executing Turn, but a
+      // required Runtime replay still needs an empty current-Turn shell —
+      // hiding the journal used to leave in-progress tool cards frozen.
       if (!persistMergeSafe && !runtimeReplaySnapshot) {
-        return prev;
+        const adoptedTurns = adoptSettledTurns(session.dialogTurns);
+        if (adoptedTurns === session.dialogTurns) {
+          return prev;
+        }
+        return {
+          ...prev,
+          sessions: new Map(prev.sessions).set(sessionId, {
+            ...session,
+            dialogTurns: adoptedTurns,
+          }),
+        };
       }
 
       if (!persistMergeSafe && runtimeReplaySnapshot) {
@@ -8371,7 +8414,7 @@ export class FlowChatStore {
         if (!replayTurnId) {
           return prev;
         }
-        const mergedTurns = [...session.dialogTurns];
+        const mergedTurns = adoptSettledTurns(session.dialogTurns).slice();
         const existingIndex = mergedTurns.findIndex(turn => turn.id === replayTurnId);
         if (existingIndex === -1) {
           const shell = snapshotTurns.find(turn => turn.id === replayTurnId);

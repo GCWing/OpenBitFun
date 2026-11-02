@@ -8095,6 +8095,33 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
       expect(sessionStream('local', 'history-1').persistedMayWrite('turn-0')).toBe(false);
     });
 
+    it('adopts the settled Turn even when a live event for the next Turn races the read', async () => {
+      await hydrateSessionWithContent();
+      paintInterruptedLiveTurn();
+
+      const nextTurn = { ...createPersistedTurn(1), status: 'inprogress', modelRounds: [] };
+      apiMocks.restoreSessionView.mockImplementationOnce(async () => {
+        // A remote controller started the next Turn; its live start lands
+        // while this read is in flight.
+        flowChatStore.setState(previous => {
+          const session = previous.sessions.get('history-1')!;
+          return {
+            sessions: new Map(previous.sessions).set('history-1', { ...session }),
+          };
+        });
+        return {
+          session: hostSession('Processing'),
+          turns: [settledRecord(), nextTurn],
+          contextRestoreState: 'ready',
+        };
+      });
+      await flowChatStore.refreshPeerSessionSnapshot('history-1', { requireActiveSession: false });
+
+      const turn = flowChatStore.getState().sessions.get('history-1')!.dialogTurns[0];
+      expect(turn.status).toBe('completed');
+      expect(turn.modelRounds).toHaveLength(2);
+    });
+
     it('refuses a settled record that lacks text the projection painted', async () => {
       await hydrateSessionWithContent();
       paintInterruptedLiveTurn();
