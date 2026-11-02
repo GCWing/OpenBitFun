@@ -234,6 +234,26 @@ pub struct AccountClient {
     http: reqwest::Client,
 }
 
+/// Older Desktop builds persisted the temporary embedded LAN credential into
+/// the shared account slot. Re-establish the official route from shared identity
+/// instead of dialing a stale DHCP address on startup. Other custom endpoints
+/// retain their legacy behavior.
+pub fn persisted_relay_requires_migration(relay_url: &str) -> bool {
+    if is_retired_official_relay(relay_url) {
+        return true;
+    }
+    let Ok(url) = validate_relay_base_url(relay_url) else {
+        return false;
+    };
+    url.scheme() == "http"
+        && url.port() == Some(9700)
+        && url.path() == "/"
+        && url
+            .host_str()
+            .and_then(|host| host.parse::<std::net::Ipv4Addr>().ok())
+            .is_some_and(|ip| ip.is_private() || ip.is_loopback() || ip.is_link_local())
+}
+
 /// Check whether an account/relay error message indicates an invalid or
 /// expired account token (relay auth failure). Shared by Desktop, CLI, and
 /// account surfaces so they all react to the same relay wording.
@@ -882,6 +902,28 @@ fn project_device_list_entry(entry: DeviceListEntry) -> DeviceInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_embedded_session_migrates_without_capturing_other_private_relays() {
+        for url in [
+            "http://192.168.1.2:9700",
+            "http://10.1.2.3:9700/",
+            "http://127.0.0.1:9700",
+        ] {
+            assert!(persisted_relay_requires_migration(url), "{url}");
+        }
+        for url in [
+            "https://remote.openbitfun.com/v/1.0.2",
+            "http://192.168.1.2:8080",
+            "http://192.168.1.2:9700/custom",
+            "http://relay.example:9700",
+            "http://8.8.8.8:9700",
+            "http://user:secret@192.168.1.2:9700",
+            "http://192.168.1.2:9700?other=1",
+        ] {
+            assert!(!persisted_relay_requires_migration(url), "{url}");
+        }
+    }
 
     #[test]
     fn device_directory_accepts_legacy_nullable_and_extended_payloads() {

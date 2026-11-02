@@ -1,5 +1,5 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import '@/app/scenes/settings/pages/shared/ApplicationSettings.scss';
-import { configAPI } from '@/infrastructure/api';
 import type { CloseBehavior } from '@/infrastructure/api/service-api/SystemAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { ConfigLoadingState, ConfigMessage, ConfigPageRow, ConfigPageSection, ConfigRetryState } from '@/infrastructure/config/components/common';
@@ -300,8 +300,9 @@ function PreventSleepSetting() {
 function WindowBehaviorSetting() {
   const { t } = useTranslation('settings/application');
   const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
-  const [behavior, setBehavior] = useState<CloseBehavior>('quit');
-  const [loading, setLoading] = useState(true);
+  const seed = useConfigSeed(['app.close_button_behavior']);
+  const [behavior, setBehavior] = useState<CloseBehavior>(seed.get<CloseBehavior | null>('app.close_button_behavior', null) ?? 'minimize_to_tray');
+  const [loading, setLoading] = useState(!seed.loaded);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -322,7 +323,7 @@ function WindowBehaviorSetting() {
 
   const loadData = useCallback(async () => {
     if (!isTauri) return;
-    setLoading(true);
+    setLoading(!seed.loaded);
     setLoadFailed(false);
     try {
       const value = await configManager.getOptionalConfig<CloseBehavior>('app.close_button_behavior');
@@ -333,15 +334,15 @@ function WindowBehaviorSetting() {
     } finally {
       setLoading(false);
     }
-  }, [isTauri]);
+  }, [isTauri, seed.loaded]);
 
   useEffect(() => {
     if (!isTauri) {
       setLoading(false);
       return;
     }
-    void loadData();
-  }, [isTauri, loadData]);
+    if (!seed.loaded) void loadData();
+  }, [isTauri, loadData, seed.loaded]);
 
   const handleChange = useCallback(
     async (value: string) => {
@@ -367,7 +368,7 @@ function WindowBehaviorSetting() {
   if (!isTauri) return null;
 
   if (loading) {
-    return <ConfigLoadingState label={t('windowBehavior.messages.loading')} />;
+    return <ConfigLoadingState label={t('windowBehavior.messages.loading')} rows={1} />;
   }
 
   if (loadFailed) {
@@ -404,42 +405,40 @@ function WindowBehaviorSetting() {
 
 function NotificationSettings() {
   const { t } = useTranslation('settings/application');
-  const [dialogNotify, setDialogNotify] = useState(true);
-  const [permissionRequestNotify, setPermissionRequestNotify] = useState(true);
-  const [startupTips, setStartupTips] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const seed = useConfigSeed(['app.notifications.dialog_completion_notify', 'app.notifications.permission_request_notify']);
+  const [dialogNotify, setDialogNotify] = useState(seed.get<boolean | null>('app.notifications.dialog_completion_notify', true) !== false);
+  const [permissionRequestNotify, setPermissionRequestNotify] = useState(seed.get<boolean | null>('app.notifications.permission_request_notify', true) !== false);
+  const [loading, setLoading] = useState(!seed.loaded);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
+    setLoading(!seed.loaded);
     setLoadFailed(false);
     try {
-      const [notify, permissionNotify, tips] = await Promise.all([
+      const [notify, permissionNotify] = await Promise.all([
         configManager.getOptionalConfig<boolean>('app.notifications.dialog_completion_notify'),
         configManager.getOptionalConfig<boolean>('app.notifications.permission_request_notify'),
-        configManager.getOptionalConfig<boolean>('app.notifications.enable_startup_tips'),
       ]);
       setDialogNotify(notify !== false);
       setPermissionRequestNotify(permissionNotify !== false);
-      setStartupTips(tips !== false);
     } catch (error) {
       log.error('Failed to load notification preferences', error);
       setLoadFailed(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [seed.loaded]);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    if (!seed.loaded) void loadData();
+  }, [loadData, seed.loaded]);
 
   const handleDialogNotifyToggle = async (checked: boolean) => {
     setSaving(true);
     try {
-      await configAPI.setConfig('app.notifications.dialog_completion_notify', checked);
+      await configManager.setConfig('app.notifications.dialog_completion_notify', checked);
       setDialogNotify(checked);
       setMessage({ type: 'success', text: t('notifications.messages.saveSuccess') });
     } catch {
@@ -454,19 +453,6 @@ function NotificationSettings() {
     try {
       await configManager.setConfig('app.notifications.permission_request_notify', checked);
       setPermissionRequestNotify(checked);
-      setMessage({ type: 'success', text: t('notifications.messages.saveSuccess') });
-    } catch {
-      setMessage({ type: 'error', text: t('notifications.messages.saveFailed') });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleStartupTipsToggle = async (checked: boolean) => {
-    setSaving(true);
-    try {
-      await configAPI.setConfig('app.notifications.enable_startup_tips', checked);
-      setStartupTips(checked);
       setMessage({ type: 'success', text: t('notifications.messages.saveSuccess') });
     } catch {
       setMessage({ type: 'error', text: t('notifications.messages.saveFailed') });
@@ -516,17 +502,6 @@ function NotificationSettings() {
           disabled={saving}
         />
       </ConfigPageRow>
-      <ConfigPageRow
-        label={t('notifications.startupTips.label')}
-        description={t('notifications.startupTips.description')}
-        align="center"
-      >
-        <Switch
-          checked={startupTips}
-          onChange={(e) => { void handleStartupTipsToggle(e.target.checked); }}
-          disabled={saving}
-        />
-      </ConfigPageRow>
     </>
   );
 }
@@ -537,13 +512,13 @@ const GeneralSettingsPage: React.FC = () => {
     <SettingsPage pageId="application.general" data-openbitfun-component="application-settings" data-openbitfun-part="root">
       <LanguageSettingsSection />
       {isTauri && (
-        <ConfigPageSection title={t('applicationGroups.startupAndUpdates.title')} description={t('applicationGroups.startupAndUpdates.description')}>
+        <ConfigPageSection title={t('applicationGroups.startupAndUpdates.title')}>
           <LaunchAtLoginSetting />
           <PreventSleepSetting />
           <AutoUpdateSetting />
         </ConfigPageSection>
       )}
-      <ConfigPageSection title={t('applicationGroups.windowAndNotifications.title')} description={t('applicationGroups.windowAndNotifications.description')}>
+      <ConfigPageSection title={t('applicationGroups.windowAndNotifications.title')}>
         <WindowBehaviorSetting />
         <NotificationSettings />
       </ConfigPageSection>

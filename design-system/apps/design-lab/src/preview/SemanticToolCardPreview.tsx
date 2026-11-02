@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Target, Users, History, ScanEye, Clock, FolderSearch, GitBranch, Route, GitPullRequest, PanelsTopLeft, RefreshCw, Upload, Workflow } from 'lucide-react';
+import { Target, Users, History, ScanEye, Clock, FolderSearch, GitBranch, Route, GitPullRequest, PanelsTopLeft, RefreshCw, Upload, Workflow, AppWindow } from 'lucide-react';
 import {
   GoalToolCard, AgentRosterToolCard, SessionHistoryToolCard, ImageAnalysisToolCard, TimeToolCard,
   McpResourceToolCard, WorktreeToolCard, PortForwardToolCard, ReviewPlatformToolCard,
   FrontendWorkbenchToolCard, MiniAppFinalizeToolCard, MarketplacePublishToolCard, PlaybookToolCard,
+  DesktopCardToolCard,
   type SemanticToolCardProps,
 } from '@openbitfun/ui/flow-chat';
 import { toolsForComponent } from '@openbitfun/flow-chat-presentation/registry';
@@ -12,12 +13,13 @@ import type { FlowChatPreviewDefinition } from './FlowChatPreviewRegistry';
 
 const views = { GoalToolCard, AgentRosterToolCard, SessionHistoryToolCard, ImageAnalysisToolCard, TimeToolCard,
   McpResourceToolCard, WorktreeToolCard, PortForwardToolCard, ReviewPlatformToolCard,
-  FrontendWorkbenchToolCard, MiniAppFinalizeToolCard, MarketplacePublishToolCard, PlaybookToolCard };
+  FrontendWorkbenchToolCard, MiniAppFinalizeToolCard, MarketplacePublishToolCard, PlaybookToolCard, DesktopCardToolCard };
 type Name = keyof typeof views;
 const icons = { GoalToolCard: Target, AgentRosterToolCard: Users, SessionHistoryToolCard: History,
   ImageAnalysisToolCard: ScanEye, TimeToolCard: Clock, McpResourceToolCard: FolderSearch, WorktreeToolCard: GitBranch,
   PortForwardToolCard: Route, ReviewPlatformToolCard: GitPullRequest, FrontendWorkbenchToolCard: PanelsTopLeft,
-  MiniAppFinalizeToolCard: RefreshCw, MarketplacePublishToolCard: Upload, PlaybookToolCard: Workflow };
+  MiniAppFinalizeToolCard: RefreshCw, MarketplacePublishToolCard: Upload, PlaybookToolCard: Workflow,
+  DesktopCardToolCard: AppWindow };
 
 function SemanticPreview({ component, interactive, specimen, state }: Parameters<FlowChatPreviewDefinition['render']>[0] & { component: Name }) {
   const { t } = useI18n();
@@ -25,7 +27,7 @@ function SemanticPreview({ component, interactive, specimen, state }: Parameters
   const text = (key: string) => t(`flowChat.builtin.${key}` as MessageKey);
   const tool = specimen?.tool ?? toolsForComponent(component)[0] ?? component;
   const prominent = ['create_goal', 'update_goal', 'AgentDelete', 'Worktree', 'PortForward', 'ReviewPlatform',
-    'FrontendWorkbench', 'FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance'].includes(tool);
+    'FrontendWorkbench', 'FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance', 'DesktopCard'].includes(tool);
   const props: SemanticToolCardProps = {
     action: text(`tools.${tool}`), status: state === 'loading' ? 'running' : state === 'error' ? 'error' : 'completed',
     attention: prominent ? 'prominent' : 'ambient', isExpanded: expanded,
@@ -75,6 +77,11 @@ function SemanticPreview({ component, interactive, specimen, state }: Parameters
     case 'PlaybookToolCard':
       props.summary = 'Review'; props.ordered = true; props.recordsLabel = text('fields.steps'); props.notice = text('playbookInstructions');
       props.records = [{ key: '1', title: 'browser.snapshot' }, { key: '2', title: 'browser.read_article' }]; break;
+    case 'DesktopCardToolCard':
+      props.summary = 'PR #42 · checks';
+      props.fields = [field('card', 'pr-42-checks'), field('template', 'metrics'),
+        field('dataSource', 'https://api.github.com/repos/openbitfun/app/pulls/42'), field('visibility', text('desktopCard.visible'))];
+      props.outcome = { label: text('states.cardCreated'), tone: 'success' }; break;
   }
   if (props.status !== 'completed') props.outcome = undefined;
   if (component === 'AgentRosterToolCard') return <AgentRosterToolCard {...props} deleting={tool === 'AgentDelete'} />;
@@ -99,5 +106,5 @@ export const semanticToolCardPreviews = {
   WorktreeToolCard: definition('WorktreeToolCard'), PortForwardToolCard: definition('PortForwardToolCard'),
   ReviewPlatformToolCard: definition('ReviewPlatformToolCard'), FrontendWorkbenchToolCard: definition('FrontendWorkbenchToolCard'),
   MiniAppFinalizeToolCard: definition('MiniAppFinalizeToolCard'), MarketplacePublishToolCard: definition('MarketplacePublishToolCard'),
-  PlaybookToolCard: definition('PlaybookToolCard'),
+  PlaybookToolCard: definition('PlaybookToolCard'), DesktopCardToolCard: definition('DesktopCardToolCard'),
 } satisfies Record<Name, FlowChatPreviewDefinition>;

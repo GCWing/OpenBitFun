@@ -25,6 +25,7 @@ import { confirmWarning } from '@/infrastructure/confirm-dialog';
 import { useI18n } from '@/infrastructure/i18n';
 import {
   buildStoredKeybindings,
+  getReservedShortcutReason,
   parseStoredKeybindings,
   shortcutManager,
   type KeybindingOverrides,
@@ -331,7 +332,12 @@ const KeyboardShortcutsSection: React.FC = () => {
     () => buildFinalConflictMap(displayRegistrations, pendingChanges),
     [displayRegistrations, pendingChanges],
   );
-  const hasBlockingConflicts = finalConflicts.size > 0;
+  const reservedBindings = useMemo(() => new Map(displayRegistrations.flatMap(reg => {
+    const reason = getReservedShortcutReason(getEffectiveConfig(reg, pendingChanges[reg.id]));
+    return reason ? [[reg.id, reason] as const] : [];
+  })), [displayRegistrations, pendingChanges]);
+  const hasBlockingConflicts = finalConflicts.size > 0
+    || [...reservedBindings.keys()].some(id => pendingChanges[id] !== undefined);
 
   // Key capture during recording mode
   useEffect(() => {
@@ -606,7 +612,7 @@ const KeyboardShortcutsSection: React.FC = () => {
 
   return (
     <div id={sectionAnchor} data-openbitfun-component="keyboard-shortcuts" data-openbitfun-part="root">
-      <ConfigPageSection title={t('keyboard.title')} description={t('keyboard.description')} bodySurface={false}>
+      <ConfigPageSection title={t('keyboard.title')} bodySurface={false}>
         {/* Search + actions bar */}
         <div className="kb-shortcuts__toolbar" data-openbitfun-component="keyboard-shortcuts" data-openbitfun-part="toolbar">
           <SearchField
@@ -800,6 +806,7 @@ const KeyboardShortcutsSection: React.FC = () => {
               const pending = pendingChanges[reg.id];
               const isRecording = recordingId === reg.id;
               const conflict = finalConflicts.get(reg.id) ?? null;
+              const reserved = reservedBindings.get(reg.id);
               const displayName = shortcutDisplayName(reg, t);
               const formattedKey = formatKey(reg, pending);
 
@@ -825,7 +832,11 @@ const KeyboardShortcutsSection: React.FC = () => {
                       {displayName}
                     </OverflowText>
                   )}
-                  description={conflict ? (
+                  description={reserved ? (
+                    <span className="kb-shortcuts__item-conflict-hint">
+                      {t(`keyboard.reserved.${reserved}`)}
+                    </span>
+                  ) : conflict ? (
                     <span className="kb-shortcuts__item-conflict-hint">
                       {t('keyboard.conflict')}: {shortcutDisplayName(conflict, t)}
                     </span>

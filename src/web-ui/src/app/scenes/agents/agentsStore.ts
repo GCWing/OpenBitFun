@@ -4,7 +4,7 @@
 import { create } from 'zustand';
 import type { SubagentInfo } from '@/infrastructure/api/service-api/SubagentAPI';
 import type { ModeInfo } from '@/infrastructure/api/service-api/AgentAPI';
-import type { SubagentModelSelection } from '@/infrastructure/config/types';
+import type { AgentModelTargetSelection } from '@/infrastructure/config/types';
 import {
   CAPABILITY_ACCENT,
   CAPABILITY_CATEGORIES,
@@ -36,7 +36,7 @@ export type AgentWithCapabilities = (PrimaryAgentEntry | (SubagentInfo & { agent
   iconKey?: string;
   visibleSubagentCount?: number;
   /** Explicit model selection for this Subagent, if it overrides the shared default. */
-  subagentModelOverride?: SubagentModelSelection;
+  subagentModelOverride?: AgentModelTargetSelection;
   /** Display name for an explicitly configured Subagent model override. */
   subagentModelDisplayName?: string;
 };

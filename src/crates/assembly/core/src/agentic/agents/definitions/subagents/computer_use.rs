@@ -50,7 +50,7 @@ impl Agent for ComputerUseMode {
     }
 
     fn description(&self) -> &str {
-        "Dedicated desktop automation agent for observing and operating apps in the background. Supply the original user request and relevant approvals separately from your proposed plan; do not add foreground takeover or clipboard scripts. Ordinary app tasks and message approvals do not authorize taking over the visible desktop."
+        "Dedicated desktop automation agent. Prefer background control; for the user's GUI task, switch to foreground when background delivery is unsupported or verified ineffective unless the user required background-only/no-disruption. Preserve the original user request, constraints and approvals separately from your plan. Verify target/focus after activation and never replay uncertain input or bypass Stop/OS denial."
     }
 
     fn prompt_template_name(&self, _model_name: Option<&str>) -> &str {
@@ -62,9 +62,7 @@ impl Agent for ComputerUseMode {
     }
 
     fn user_context_policy(&self) -> UserContextPolicy {
-        UserContextPolicy::empty()
-            .with_workspace_instructions()
-            .with_project_layout()
+        UserContextPolicy::empty().with_workspace_instructions()
     }
 
     fn is_readonly(&self) -> bool {
@@ -87,6 +85,12 @@ mod tests {
         assert!(agent.default_tools().contains(&"ComputerUse".to_string()));
         assert!(!agent.default_tools().contains(&"Write".to_string()));
         assert!(!agent.is_readonly());
+        assert!(agent
+            .description()
+            .contains("background-only/no-disruption"));
+        assert!(!agent
+            .description()
+            .contains("Ordinary app tasks and message approvals do not authorize"));
     }
 
     #[tokio::test]
@@ -97,6 +101,9 @@ mod tests {
             .expect("ComputerUse prompt");
 
         assert!(prompt.contains("When `ControlHub` appears in your current tool list"));
-        assert!(prompt.contains("If `ControlHub` is unavailable"));
+        assert!(prompt.contains("If `ControlHub` lacks the required technical capability"));
+        assert!(prompt.contains(
+            "Permission denial or user Disconnect is not a technical limitation to work around"
+        ));
     }
 }

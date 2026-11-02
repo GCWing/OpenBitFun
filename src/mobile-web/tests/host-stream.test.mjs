@@ -273,3 +273,35 @@ test('formal steering turns render once with stable message ownership after hist
   assert.equal(live[3].content,'New answer');
   assert.deepEqual(render([...records].reverse().concat(records)),live,'newest-first reconnect and duplicate replay retain the same transcript');
 });
+
+
+test('streamed user turns project attachment pixels for transcript and draft restore', async () => {
+  async function load(path) {
+    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    const compiled = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+    return import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  }
+  const {presentSessionTurn} = await load('../src/services/SessionRecordPresentation.ts');
+  const metadata = {images: [
+    {id: 'img-1', name: 'screen.png', mime_type: 'image/png', data_url: ' data:image/png;base64,YQ== '},
+    {id: 'img-2', name: 'path-only.png', mime_type: 'image/png'},
+    null,
+    {data_url: 'data:image/jpeg;base64,YWI='},
+  ]};
+  const [user] = presentSessionTurn({
+    turnId: 'turn-a', turnIndex: 3, status: 'completed', timestamp: 1,
+    userMessage: {id: 'user-a', content: '', timestamp: 1, metadata},
+    modelRounds: [],
+  });
+  assert.deepEqual(user.images, [
+    {name: 'screen.png', data_url: 'data:image/png;base64,YQ=='},
+    {name: 'image', data_url: 'data:image/jpeg;base64,YWI='},
+  ], 'only attachments whose pixels arrived reach the composer');
+  assert.equal(user.metadata, metadata, 'protocol metadata stays intact for other projections');
+  const [withoutImages] = presentSessionTurn({
+    turnId: 'turn-b', turnIndex: 4, status: 'completed', timestamp: 2,
+    userMessage: {id: 'user-b', content: 'hello', timestamp: 2},
+    modelRounds: [],
+  });
+  assert.equal(withoutImages.images, undefined);
+});

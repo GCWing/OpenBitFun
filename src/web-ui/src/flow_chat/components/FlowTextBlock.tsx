@@ -166,6 +166,7 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
     <MarkdownRenderer
       key={key}
       content={markdownContent}
+      imageThumbnails
       workspaceId={markdownWorkspaceId}
       basePath={markdownBasePath}
       remoteConnectionId={markdownRemoteConnectionId}

@@ -4,7 +4,7 @@ export const assistantConfigPageAppearanceDescriptor: AppearanceSurfaceDescripto
   id: 'assistant-config-page',
   parts: [
     { id: 'root' }, { id: 'toolbar' }, { id: 'back' }, { id: 'layout' },
-    { id: 'identity' }, { id: 'sessions' }, { id: 'details' }, { id: 'personaList' },
+    { id: 'identity' }, { id: 'sessions' }, { id: 'personaList' },
     { id: 'persona' }, { id: 'editor' }, { id: 'editorHeader' }, { id: 'editorBody' },
     { id: 'frontmatter' }, { id: 'bodyEditor' }, { id: 'loading' }, { id: 'error' },
   ],

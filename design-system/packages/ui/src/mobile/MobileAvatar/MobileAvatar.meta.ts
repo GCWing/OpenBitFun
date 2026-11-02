@@ -1,0 +1,36 @@
+import type { ComponentMeta } from "../../registry.types";
+
+export const mobileAvatarMeta = {
+  category: "mobile",
+  description: "A touch-scale identity mark that carries character artwork, an image, initials, or a status dot.",
+  maturity: "stable",
+  name: "MobileAvatar",
+  props: [
+    { name: "src", type: "string" },
+    { name: "alt", type: "string" },
+    { name: "name", type: "string" },
+    { name: "children", type: "ReactNode" },
+    { defaultValue: "md", name: "size", type: '"xs" | "sm" | "md" | "lg"' },
+    { defaultValue: "circle", name: "shape", type: '"circle" | "rounded"' },
+    { name: "status", type: '"online" | "away" | "busy" | "offline"' },
+    { name: "statusLabel", type: "string" },
+  ],
+  states: ["image", "artwork", "initials", "online", "away", "busy", "offline"],
+  tokens: [
+    "color.action.neutral.surface",
+    "color.content.disabled",
+    "color.content.muted",
+    "color.content.secondary",
+    "color.status.danger.emphasis",
+    "color.status.success.emphasis",
+    "color.status.warning.emphasis",
+    "color.surface.canvas",
+    "control.height.lg",
+    "control.height.sm",
+    "radius.base",
+    "radius.pill",
+    "space.6",
+    "type.label.selected.fontSize",
+    "type.label.selected.fontWeight",
+  ],
+} as const satisfies ComponentMeta;

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { sceneSelection, type PaneSelections } from '../workbench/scenePaneModel';
 
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -20,7 +21,7 @@ const sceneHarness = vi.hoisted(() => {
       activeTabId: 'session' as string | null,
       navigationMotion: 'instant',
       navigationSequence: 0,
-    },
+    } as { openTabs: { id: string; lastUsed: number; pane?: 'primary' | 'secondary' }[]; activeTabId: string | null; navigationMotion: string; navigationSequence: number; paneSelections?: PaneSelections },
     agentsReady,
     agentsAreReady: () => agentsAreReady,
     resolveAgents: () => resolveAgents?.(),
@@ -39,7 +40,8 @@ vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@openbitfun/ui', () => ({
+vi.mock('@openbitfun/ui', async importOriginal => ({
+  ...await importOriginal<typeof import('@openbitfun/ui')>(),
   Spinner: () => <div data-testid="scene-loader" />,
 }));
 
@@ -80,12 +82,14 @@ vi.mock('./miniapps/MiniAppScene', () => ({
 }));
 
 import SceneViewport from './SceneViewport';
+import { sessionPaneLayoutStore } from './session/sessionPaneLayoutStore';
 
 describe('SceneViewport transitions', () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
+    sessionPaneLayoutStore.setState(sessionPaneLayoutStore.getInitialState());
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => (
       window.setTimeout(() => callback(performance.now()), 16)
@@ -142,6 +146,34 @@ describe('SceneViewport transitions', () => {
     sceneHarness.state.navigationSequence++;
     act(() => root.render(<SceneViewport />));
     expect(container.querySelector('[data-testid="session-scene-content"]')).toBe(host);
+  });
+
+  it('keeps both selected pages mounted while moving a scene between panes', () => {
+    sessionPaneLayoutStore.getState().showContent();
+    sceneHarness.state = {
+      openTabs: [{ id: 'session', lastUsed: 1 }, { id: 'settings', lastUsed: 2, pane: 'secondary' }],
+      activeTabId: 'settings', navigationMotion: 'instant', navigationSequence: 1,
+      paneSelections: { primary: sceneSelection('session'), secondary: sceneSelection('settings') },
+    };
+    act(() => root.render(<SceneViewport paned />));
+    const settings = container.querySelector('[data-testid="settings-scene-content"]');
+    const session = container.querySelector('[data-testid="session-scene-content"]');
+    expect(visibleScenes()).toHaveLength(2);
+    expect(settings?.closest('[data-split-surface]')?.getAttribute('data-split-surface')).toBe('secondary');
+    sceneHarness.state.openTabs[1].pane = 'primary';
+    sceneHarness.state.paneSelections = { primary: sceneSelection('settings'), secondary: { kind: 'canvas' } };
+    act(() => root.render(<SceneViewport paned />));
+    expect(container.querySelector('[data-testid="settings-scene-content"]')).toBe(settings);
+    expect(settings?.closest('[data-split-surface]')?.getAttribute('data-split-surface')).toBe('primary');
+    sceneHarness.state.openTabs[0].pane = 'secondary';
+    sceneHarness.state.paneSelections.secondary = sceneSelection('session');
+    act(() => root.render(<SceneViewport paned />));
+    expect(container.querySelector('[data-testid="session-scene-content"]')).toBe(session);
+    expect(container.querySelectorAll('[data-testid="session-scene-content"]')).toHaveLength(1);
+    expect(session?.closest('[data-split-surface]')?.getAttribute('data-split-surface')).toBe('secondary');
+    expect(visibleScenes()).toHaveLength(2);
+    act(() => sessionPaneLayoutStore.getState().hideContent());
+    expect(visibleScenes().map(scene => scene.getAttribute('data-scene-id'))).toEqual(['settings']);
   });
 
   it('keeps one scene visible while a lazy pointer target becomes ready', async () => {

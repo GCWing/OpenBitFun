@@ -15,7 +15,7 @@ async-trait = { workspace = true }
 openbitfun-events = { path = "../../contracts/events" }
 openbitfun-core-types = { path = "../../contracts/core-types" }
 futures = { workspace = true }
-openbitfun-tool-call-jsonrepair = { path = "../tool-call-jsonrepair" }
+jsonrepair-rs = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

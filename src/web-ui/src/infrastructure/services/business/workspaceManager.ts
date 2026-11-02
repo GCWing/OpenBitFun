@@ -25,6 +25,8 @@ import {
   type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
 import { routeSurfaceEvent } from '@/infrastructure/peer-device/deviceSurfaceRouting';
+import { isRemoteWorkspaceConnectionConflictError } from '@/infrastructure/api/errors/TauriCommandError';
+import type { OpenRemoteWorkspaceOptions } from '@/infrastructure/api/service-api/GlobalAPI';
 
 const log = createLogger('WorkspaceManager');
 
@@ -64,6 +66,7 @@ interface WorkspaceIdentityChangedEvent {
   name: string;
   identity: WorkspaceInfo['identity'];
   changedFields: string[];
+  defaultNameNumber?: number | null;
 }
 
 export type WorkspaceEvent =
@@ -618,6 +621,7 @@ class WorkspaceManager {
       return {
         ...workspace,
         name: update.name,
+        defaultNameNumber: update.defaultNameNumber ?? null,
         identity: update.identity ?? null,
       };
     };
@@ -1068,7 +1072,7 @@ class WorkspaceManager {
     connectionName: string;
     remotePath: string;
     sshHost?: string;
-  }): Promise<WorkspaceInfo> {
+  }, options: OpenRemoteWorkspaceOptions = {}): Promise<WorkspaceInfo> {
     const surface = this.captureSurface();
     try {
       this.setLoading(true);
@@ -1083,6 +1087,7 @@ class WorkspaceManager {
         remoteWorkspace.connectionId,
         remoteWorkspace.connectionName,
         remoteWorkspace.sshHost,
+        options,
       );
 
       const [recentWorkspaces, openedWorkspaces] = await Promise.all([
@@ -1103,6 +1108,12 @@ class WorkspaceManager {
       return workspace;
     } catch (error) {
       if (!this.isSurfaceUnchanged(surface)) {
+        throw error;
+      }
+      if (isRemoteWorkspaceConnectionConflictError(error)) {
+        // The caller owns the decision; the record is unchanged on the host.
+        log.warn('Remote workspace is bound to another SSH connection', { remoteWorkspace });
+        this.setLoading(false);
         throw error;
       }
       log.error('Failed to open remote workspace', { remoteWorkspace, error });
@@ -1612,53 +1623,35 @@ class WorkspaceManager {
     await this.refreshRecentWorkspaces();
   }
 
-  public async updateWorkspaceRelatedPaths(
+  public async updateWorkspaceInfo(
     workspaceId: string,
-    relatedPaths: WorkspaceInfo['relatedPaths']
+    updates: { name?: string; relatedPaths?: WorkspaceInfo['relatedPaths'] }
   ): Promise<WorkspaceInfo> {
     const surface = this.captureSurface();
     try {
       this.setError(null);
-
-      const updatedWorkspace = await globalStateAPI.updateWorkspaceInfo(workspaceId, {
-        relatedPaths,
-      });
-      this.assertSurfaceUnchanged(surface, 'update workspace related paths');
-
+      const updatedWorkspace = await globalStateAPI.updateWorkspaceInfo(workspaceId, updates);
+      this.assertSurfaceUnchanged(surface, 'update workspace info');
       this.applyWorkspaceRecordUpdate(updatedWorkspace);
       return updatedWorkspace;
     } catch (error) {
-      if (!this.isSurfaceUnchanged(surface)) {
-        throw error;
-      }
-      log.error('Failed to update workspace related paths', { workspaceId, error });
+      if (!this.isSurfaceUnchanged(surface)) throw error;
+      log.error('Failed to update workspace info', { workspaceId, error });
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.updateState({ error: errorMessage }, { type: 'workspace:error', error: errorMessage });
       throw error;
     }
   }
 
+  public async updateWorkspaceRelatedPaths(
+    workspaceId: string,
+    relatedPaths: WorkspaceInfo['relatedPaths']
+  ): Promise<WorkspaceInfo> {
+    return this.updateWorkspaceInfo(workspaceId, { relatedPaths });
+  }
+
   public async renameWorkspace(workspaceId: string, name: string): Promise<WorkspaceInfo> {
-    const surface = this.captureSurface();
-    try {
-      this.setError(null);
-
-      const updatedWorkspace = await globalStateAPI.updateWorkspaceInfo(workspaceId, {
-        name: name.trim(),
-      });
-      this.assertSurfaceUnchanged(surface, 'rename workspace');
-
-      this.applyWorkspaceRecordUpdate(updatedWorkspace);
-      return updatedWorkspace;
-    } catch (error) {
-      if (!this.isSurfaceUnchanged(surface)) {
-        throw error;
-      }
-      log.error('Failed to rename workspace', { workspaceId, error });
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.updateState({ error: errorMessage }, { type: 'workspace:error', error: errorMessage });
-      throw error;
-    }
+    return this.updateWorkspaceInfo(workspaceId, { name: name.trim() });
   }
 
   public async cleanupInvalidWorkspaces(): Promise<number> {

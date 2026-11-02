@@ -59,7 +59,6 @@ impl Agent for MemoryPhase2Agent {
         UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 
     fn tool_exposure_overrides(&self) -> &AgentToolPolicyOverrides {
@@ -86,7 +85,6 @@ mod tests {
             UserContextPolicy::empty()
                 .with_workspace_context()
                 .with_workspace_instructions()
-                .with_project_layout()
         );
         assert!(agent.default_tools().contains(&"Read".to_string()));
         assert!(agent.default_tools().contains(&"Write".to_string()));

@@ -65,14 +65,17 @@ describe('ReasoningIntensityControl', () => {
     container.remove();
   });
 
-  it('leaves the entire background non-interactive and expands only advertised choices in place', async () => {
+  it('omits the decorative background and expands only advertised choices in place', async () => {
     await render([preset('medium'), preset('xhigh')]);
     expect(container.querySelector('input[type="range"]')).toBeNull();
-    const sky = container.querySelector<HTMLElement>('[data-openbitfun-part="reasoningSliderSky"]')!;
+    expect(container.querySelector('.openbitfun-reasoning-control__backdrop')).toBeNull();
+    for (const part of ['reasoningSliderSky', 'reasoningSliderNebula', 'reasoningSliderAurora']) {
+      expect(container.querySelector(`[data-openbitfun-part="${part}"]`)?.closest('[hidden]')).not.toBeNull();
+    }
     await act(async () => {
-      sky.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-      sky.dispatchEvent(new Event('pointerup', { bubbles: true }));
-      sky.click();
+      control().dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      control().dispatchEvent(new Event('pointerup', { bubbles: true }));
+      control().click();
     });
     expect(onSelect).not.toHaveBeenCalled();
     await expand();
@@ -117,48 +120,40 @@ describe('ReasoningIntensityControl', () => {
     expect(document.activeElement).toBe(trigger());
   });
 
-  it('previews the hovered level without selecting it and restores the saved sky on leave', async () => {
+  it('keeps the saved selection while hovering other choices', async () => {
     await render();
     await expand();
     await hover('preset:xhigh');
-    expect(control().dataset.intensity).toBe('4');
     expect(option('preset:medium').getAttribute('aria-pressed')).toBe('true');
     expect(option('preset:xhigh').getAttribute('aria-pressed')).toBe('false');
     await hover('preset:off');
-    expect(control().dataset.reasoningState).toBe('off');
-    expect(control().querySelector('.openbitfun-reasoning-control__nebula')).not.toBeNull();
-    expect(control().querySelector('.openbitfun-reasoning-control__stars')).toBeNull();
+    expect(option('preset:off').getAttribute('aria-pressed')).toBe('false');
     await hover('auto');
-    expect(control().dataset.reasoningState).toBe('auto');
-    expect(control().querySelector('.openbitfun-reasoning-control__stars')).not.toBeNull();
+    expect(option('auto').getAttribute('aria-pressed')).toBe('false');
     await act(async () => option('auto').dispatchEvent(new MouseEvent('pointerout', {
       bubbles: true, relatedTarget: container,
     })));
-    expect(control().dataset.reasoningState).toBe('manual');
-    expect(control().dataset.intensity).toBe('2');
+    expect(option('preset:medium').getAttribute('aria-pressed')).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('retains nebula without stars for a saved Off choice, including provider toggle aliases', async () => {
+  it('shows a saved Off choice, including provider toggle aliases', async () => {
     const off = { ...preset('off'), id: 'effort-off' };
     await render([off, preset('on')], 'effort-off');
-    expect(control().dataset.reasoningState).toBe('off');
-    expect(control().querySelector('.openbitfun-reasoning-control__field')).not.toBeNull();
-    expect(control().querySelector('.openbitfun-reasoning-control__nebula')).not.toBeNull();
-    expect(control().querySelector('.openbitfun-reasoning-control__stars')).toBeNull();
+    expect(trigger().textContent).toBe('reasoningSelector.thinking · reasoningSelector.levels.off');
+    await expand();
+    expect(option('preset:effort-off').getAttribute('aria-pressed')).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('omits unsupported levels and reserves the peak for the highest available choice', async () => {
+  it('omits unsupported levels and focuses the last available choice with End', async () => {
     await render([preset('medium'), preset('high')]);
     await expand();
     expect(option('unavailable:xhigh')).toBeUndefined();
     expect(option('preset:xhigh')).toBeUndefined();
     expect(option('preset:off')).toBeUndefined();
-    expect(control().dataset.intensity).toBe('1');
     await key('End');
     expect(document.activeElement).toBe(option('preset:high'));
-    expect(control().dataset.intensity).toBe('4');
     expect(onSelect).not.toHaveBeenCalled();
     expect(choices()).not.toBeNull();
   });
@@ -169,8 +164,7 @@ describe('ReasoningIntensityControl', () => {
     await expand();
     expect(option('unavailable:xhigh')).toBeUndefined();
     expect(option('preset:effort-xhigh').disabled).toBe(false);
-    await hover('preset:max');
-    expect(control().dataset.intensity).toBe('4');
+    expect(option('preset:max').disabled).toBe(false);
     await choose('preset:effort-xhigh');
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('effort-xhigh');
     await render([preset('medium'), preset('max')]);
@@ -201,15 +195,14 @@ describe('ReasoningIntensityControl', () => {
     await expand();
     await key('ArrowRight');
     expect(document.activeElement).toBe(option('preset:xhigh'));
-    expect(control().dataset.intensity).toBe('4');
     await key('Home');
     expect(document.activeElement).toBe(option('auto'));
-    expect(control().dataset.reasoningState).toBe('auto');
+    expect(option('preset:medium').getAttribute('aria-pressed')).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
     await key('Escape');
     expect(choices()).toBeNull();
     expect(document.activeElement).toBe(trigger());
-    expect(control().dataset.intensity).toBe('1');
+    expect(trigger().textContent).toBe('reasoningSelector.thinking · reasoningSelector.levels.medium');
   });
 
   it('folds enable into Auto for toggle-only models and preserves the enable request', async () => {
@@ -251,7 +244,7 @@ describe('ReasoningIntensityControl', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('keeps five real effort choices and reserves the fourth material for Maximum', async () => {
+  it('keeps five real effort choices and selects Extra High independently of Maximum', async () => {
     await render(['low', 'medium', 'high', 'xhigh', 'max'].map(preset), 'medium');
     await expand();
     expect(Array.from(choices()!.querySelectorAll('button')).map(button => button.dataset.openbitfunValue))
@@ -259,12 +252,6 @@ describe('ReasoningIntensityControl', () => {
     expect(choices()!.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1);
     expect(option('preset:medium').getAttribute('aria-pressed')).toBe('true');
     expect(option('auto').getAttribute('aria-pressed')).toBe('false');
-    await hover('preset:high');
-    expect(control().dataset.intensity).toBe('3');
-    await hover('preset:xhigh');
-    expect(control().dataset.intensity).toBe('3');
-    await hover('preset:max');
-    expect(control().dataset.intensity).toBe('4');
     await choose('preset:xhigh');
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('xhigh');
   });

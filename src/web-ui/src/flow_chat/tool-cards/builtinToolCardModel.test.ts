@@ -141,6 +141,50 @@ describe('built-in historical result presentation', () => {
     expect(getToolItemCardConfig(call).attention).toBe('ambient');
     expect(buildBuiltinToolCardModel(call, 'Worktree', t, String).emptyContent).toBe('empty');
   });
+
+  it('presents desktop card actions with their recorded card facts and hides header credentials', () => {
+    const record = { id: 'pr-42', title: 'PR #42', visible: true, link: 'https://example.com/pr/42',
+      template: { kind: 'metrics', items: [] },
+      dataSource: { kind: 'http', url: 'https://api.example.com/pr/42', intervalSeconds: 300, headers: { Authorization: 'Bearer private' } },
+      lastData: { error: 'HTTP 502' } };
+    const created = model('DesktopCard', { action: 'create', card: { title: 'PR #42' } }, { card: record });
+    expect(created.family).toBe('desktop-card');
+    expect(created.action).toBe('desktopCard.actions.create');
+    expect(created.summary).toBe('PR #42');
+    expect(created.outcome).toEqual({ label: 'states.cardCreated', tone: 'success' });
+    expect(created.fields).toContainEqual({ label: 'fields.card', value: 'pr-42' });
+    expect(created.fields).toContainEqual({ label: 'fields.template', value: 'desktopCard.templates.metrics' });
+    expect(created.fields).toContainEqual({ label: 'fields.visibility', value: 'desktopCard.visible' });
+    expect(created.fields.find(field => field.label === 'fields.dataSource')?.value).toContain('desktopCard.sources.http');
+    expect(created.sections.map(section => section.content)).toContain('HTTP 502');
+    expect(created.links).toContainEqual({ kind: 'url', value: 'https://example.com/pr/42', label: 'links.openSource' });
+    expect(JSON.stringify(created.rawResult)).not.toContain('Bearer private');
+    expect(getToolItemCardConfig(item('DesktopCard', { action: 'create' })).attention).toBe('prominent');
+
+    const charted = model('DesktopCard', {
+      action: 'create',
+      card: { title: 'Disk', template: { kind: 'chart', chart: 'stacked', items: [{ label: 'Apps', value: 3 }] } },
+    }, {});
+    expect(charted.fields).toContainEqual({ label: 'fields.template', value: 'desktopCard.templates.chart' });
+
+    const listed = model('DesktopCard', { action: 'list' }, { enabled: false, cards: [{ ...record, visible: false }] });
+    expect(listed.action).toBe('desktopCard.actions.list');
+    expect(listed.notice).toBe('desktopCard.disabledNotice');
+    expect(listed.records[0]).toMatchObject({ key: 'pr-42:0', title: 'PR #42' });
+    expect(listed.records[0].fields).toContainEqual({ label: 'fields.visibility', value: 'desktopCard.hidden' });
+    expect(getToolItemCardConfig(item('DesktopCard', { action: 'list' })).attention).toBe('ambient');
+
+    const deleted = model('DesktopCard', { action: 'delete', cardId: 'pr-42' }, { card: { id: 'pr-42' }, deleted: true });
+    expect(deleted.summary).toBe('pr-42');
+    expect(deleted.outcome).toEqual({ label: 'states.deleted', tone: 'neutral' });
+    expect(model('DesktopCard', { action: 'future_action' }, {}).action).toBe('tools.DesktopCard · future_action');
+
+    const partial = model('DesktopCard', { action: 'create', card: { title: 'Repo' } }, {
+      card: { ...record, lastData: { fetchedAtMs: 1, value: { stars: null }, warning: 'gh: rate limited' } },
+    });
+    expect(partial.sections).toContainEqual(expect.objectContaining({ label: 'fields.commandStderr', content: 'gh: rate limited' }));
+    expect(created.sections.map(section => section.label)).not.toContain('fields.commandStderr');
+  });
 });
 
 it('agent alias links stop at the recorded roster and require a real earlier session link', () => {

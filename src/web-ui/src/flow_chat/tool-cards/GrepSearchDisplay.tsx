@@ -65,7 +65,8 @@ export const GrepSearchDisplay: React.FC<ToolCardProps> = ({
 
   const pattern = getSearchPattern();
   const searchPath = getSearchPath();
-  const hasDetails = status === 'completed' && stats.matches > 0;
+  const hasDetails = (status === 'completed' || Boolean(toolItem.importedSource))
+    && (stats.matches > 0 || typeof toolResult?.result?.result === 'string' && toolResult.result.result.length > 0);
   const hasResultData = typeof toolResult?.result?.total_matches === 'number'
     && Number.isFinite(toolResult.result.total_matches) && toolResult.result.total_matches >= 0;
 
@@ -103,10 +104,10 @@ export const GrepSearchDisplay: React.FC<ToolCardProps> = ({
         details={hasDetails ? [
           { label: `${t('toolCards.grepSearch.labelPattern')}:`, value: pattern },
           { label: `${t('toolCards.grepSearch.labelPath')}:`, value: searchPath },
-          {
+          ...(hasResultData ? [{
             label: `${t('toolCards.grepSearch.labelStats')}:`,
             value: t('toolCards.grepSearch.matchesAndFiles', { matches: stats.matches, files: stats.files }),
-          },
+          }] : []),
         ] : undefined}
         resultBlocks={resultBlocks}
       />

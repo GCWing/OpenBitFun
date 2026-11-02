@@ -264,10 +264,11 @@ const QuickActionsSettingsSection: React.FC = () => {
   const { t } = useTranslation('settings/quick-actions');
   const notification = useNotification();
 
-  const [loading, setLoading] = useState(true);
+  const [cachedSettings] = useState(() => aiExperienceConfigService.getCachedSettings());
+  const [loading, setLoading] = useState(!cachedSettings);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [actions, setActions] = useState<QuickAction[]>([]);
+  const [actions, setActions] = useState<QuickAction[]>(cachedSettings?.quick_actions ?? []);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSaveCountRef = useRef(0);
 
@@ -277,7 +278,7 @@ const QuickActionsSettingsSection: React.FC = () => {
   const isModalOpen = modalTarget !== undefined;
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(!cachedSettings);
     setLoadFailed(false);
     try {
       const settings = await aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true });
@@ -289,9 +290,9 @@ const QuickActionsSettingsSection: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cachedSettings]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (!cachedSettings) void load(); }, [load, cachedSettings]);
 
   const persistSettings = useCallback((patch: AIExperienceSettingsPatch, onSaved: () => void): Promise<boolean> => {
     if (pendingSaveCountRef.current > 0) {
@@ -388,7 +389,7 @@ const QuickActionsSettingsSection: React.FC = () => {
       <ConfigPageSectionStack data-openbitfun-component="quick-actions-config" data-openbitfun-part="content" className="quick-actions-config__content">
 
         {/* ── Built-in actions ──────────────────────────────────────────── */}
-        <ConfigPageSection title={t('sections.builtin.title')} description={t('sections.builtin.description')}>
+        <ConfigPageSection title={t('sections.builtin.title')}>
           <div data-openbitfun-component="quick-actions-config" data-openbitfun-part="list" className="quick-actions-config__list">
             {builtinActions.map(action => (
               <ActionRow
@@ -408,7 +409,6 @@ const QuickActionsSettingsSection: React.FC = () => {
         {/* ── Custom actions ────────────────────────────────────────────── */}
         <ConfigPageSection
           title={t('sections.custom.title')}
-          description={t('sections.custom.description')}
           extra={
             <Button
               size="sm"

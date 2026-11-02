@@ -16,5 +16,13 @@
       "cancel": "取消",
       "save": "儲存"
     }
+  },
+  "linkForward": {
+    "label": "終端機連結",
+    "created": "已將遠端連接埠 {{remotePort}} 對應到 {{localAddress}}。",
+    "failed": "無法對應遠端連接埠 {{port}}：{{error}}",
+    "peerUnsupported": "控制其他裝置時無法對應連接埠。此連結指向遠端主機，而非本機。",
+    "openAnyway": "仍要開啟連結",
+    "noPort": "此連結指向遠端主機而非本機，且沒有可對應的連接埠。"
   }
 }

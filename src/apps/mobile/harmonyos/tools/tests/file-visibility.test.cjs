@@ -493,6 +493,9 @@ function appChain() {
     downloadFile: () => {},
     buildPlan: async () => {},
     branchExpanded: () => {},
+    rollback: async () => {},
+    rollbackResync: async () => {},
+    rollbackNotice: () => {},
     send: async () => {},
     voiceInput: async () => {},
     inputChanged: () => {}

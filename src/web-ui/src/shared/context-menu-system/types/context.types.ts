@@ -24,6 +24,9 @@ export enum ContextType {
   FLOWCHAT_TOOL_CARD = 'flowchat_tool_card',
    
   FLOWCHAT_TEXT_BLOCK = 'flowchat_text_block',
+
+  /** Editable text field: `<input>`, `<textarea>`, or a `contenteditable` host. */
+  TEXT_INPUT = 'text_input',
    
   EMPTY_SPACE = 'empty_space',
    
@@ -148,6 +151,32 @@ export interface FlowChatContext extends BaseContext {
 }
 
  
+/**
+ * Text field context for the chat composer, search fields, settings inputs and
+ * any other `contenteditable` surface. The editable host can be an ancestor of
+ * the right-clicked node, so it is carried explicitly.
+ */
+export interface TextInputContext extends BaseContext {
+  type: ContextType.TEXT_INPUT;
+
+  element: HTMLElement;
+
+  kind: 'input' | 'textarea' | 'contenteditable';
+
+  isReadOnly: boolean;
+
+  hasSelection: boolean;
+
+  selectedText: string;
+
+  /** Selection captured when the menu opened, before menu focus moves away. */
+  selectionStart?: number;
+
+  selectionEnd?: number;
+
+  savedSelectionRange?: Range;
+}
+
 export interface TabContext extends BaseContext {
   type: ContextType.TAB;
    
@@ -202,6 +231,7 @@ export type MenuContext =
   | EditorContext
   | TerminalContext
   | FlowChatContext
+  | TextInputContext
   | TabContext
   | PanelHeaderContext
   | EmptySpaceContext

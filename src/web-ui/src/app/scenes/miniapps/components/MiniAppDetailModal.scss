@@ -233,19 +233,15 @@
       letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
       white-space: nowrap;
     }
+  }
 
-    span {
-      display: -webkit-box;
-      overflow: hidden;
-      color: var(--openbitfun-color-content-muted);
-      font-family: var(--openbitfun-type-support-font-family);
-      font-size: var(--openbitfun-type-support-font-size);
-      font-weight: var(--openbitfun-type-support-font-weight);
-      line-height: var(--openbitfun-type-support-line-height);
-      letter-spacing: var(--openbitfun-type-support-letter-spacing);
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
-    }
+  &__highlight-description {
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-support-font-family);
+    font-size: var(--openbitfun-type-support-font-size);
+    font-weight: var(--openbitfun-type-support-font-weight);
+    line-height: var(--openbitfun-type-support-line-height);
+    letter-spacing: var(--openbitfun-type-support-letter-spacing);
   }
 
   &__footer {

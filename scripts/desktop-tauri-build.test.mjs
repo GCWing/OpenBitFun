@@ -8,6 +8,7 @@ import {
   configureWindowsSigning,
   prepareMacOSFlashgrepForSigning,
   prepareTauriConfig,
+  requestsMacosBundle,
   shouldRetryMacDmgBuild,
 } from './desktop-tauri-build.mjs';
 import { resolveProductDefinition } from './product-customization/resolver.mjs';
@@ -20,6 +21,17 @@ import {
 const FAILED_BUILD = { status: 1 };
 const DMG_ARGS = ['--target', 'x86_64-apple-darwin', '--bundles', 'app,dmg'];
 const ROOT = join(import.meta.dirname, '..');
+
+test('modern icon tooling is required only for macOS bundles, including bundle-only builds', () => {
+  assert.equal(requestsMacosBundle([], 'darwin'), true);
+  assert.equal(requestsMacosBundle(['--bundle-only', '--target=aarch64-apple-darwin'], 'darwin'), true);
+  assert.equal(requestsMacosBundle(['--target', 'universal-apple-darwin'], 'darwin'), true);
+  assert.equal(requestsMacosBundle(['--no-bundle'], 'darwin'), false);
+  assert.equal(requestsMacosBundle(['--target', 'x86_64-pc-windows-msvc'], 'darwin'), false);
+  assert.equal(requestsMacosBundle(['--target=x86_64-unknown-linux-gnu'], 'darwin'), false);
+  assert.equal(requestsMacosBundle([], 'win32'), false);
+  assert.equal(requestsMacosBundle([], 'linux'), false);
+});
 
 test('Windows desktop manifest opts into layered child windows and preserves common controls', () => {
   const desktop = join(ROOT, 'src', 'apps', 'desktop');

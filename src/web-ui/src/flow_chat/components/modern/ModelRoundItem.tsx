@@ -371,6 +371,8 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     turnStartedAt,
     turnEndedAt,
     turnDurationMs,
+    turnOutputDurationMs,
+    turnTtftMs,
     turnTokenUsage,
     canvasArtifactItems = [],
     expandedThinkingItemIds = [],
@@ -392,7 +394,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
       open: isCopyMenuOpen,
       anchorRef: copyButtonRef,
       popoverRef: copyMenuRef,
-      preferredPlacement: 'top',
+      preferredPlacement: 'bottom',
       alignment: 'end',
       gap: 4,
     });
@@ -551,9 +553,6 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     );
 
     const completedAt = turnEndedAt ?? round.endTime;
-    const usageDurationMs = turnDurationMs ??
-      (typeof turnStartedAt === 'number' && typeof completedAt === 'number'
-        ? Math.max(0, completedAt - turnStartedAt) : undefined);
     const effectiveDurationMs = turnDurationMs ??
       (typeof turnStartedAt === 'number' && typeof completedAt === 'number'
         ? Math.max(0, completedAt - turnStartedAt)
@@ -602,6 +601,12 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         data-effective-model-name={round.effectiveModelName || ''}
         data-streaming={isVisuallyStreaming ? 'true' : 'false'}
       >
+        {(!blockPart || blockPart === 'header') && round.routing && <div className="model-round-item__meta" data-testid="model-round-routing">
+          <Tooltip content={t('modelSelector.routing.latency', { ms: round.routing.latencyMs })}>
+            <span>{t(round.routing.fallbackReason ? 'modelSelector.routing.fallback' : round.routing.route === 'economy'
+              ? 'modelSelector.economyModel' : 'modelSelector.primaryModel')} · {round.effectiveModelName}</span>
+          </Tooltip>
+        </div>}
         {(!blockPart || blockPart === 'header') && round.renderHints?.continuedAfterInterruption && (
           <div className="model-round-item__continuation">{t('modelRound.continued')}</div>
         )}
@@ -753,7 +758,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         {shouldReserveFooter && (
           <TurnFooter turnId={turnId} isLatestTurn={isLatestTurn} ready={shouldRevealFooter}>
             <div className="model-round-item__usage">
-              <TurnUsageMetrics usage={turnTokenUsage} durationMs={usageDurationMs} focusable={shouldRevealFooter} />
+              <TurnUsageMetrics usage={turnTokenUsage} durationMs={turnOutputDurationMs} ttftMs={turnTtftMs} focusable={shouldRevealFooter} />
             </div>
             <div className="model-round-item__completion">
               {durationMetaItem && (
@@ -782,55 +787,69 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
               <div className="model-round-item__actions">
                 <ForkSessionButton sessionId={sessionId} turnId={turnId} />
 
-                {allowTranscriptExport && <div className="model-round-item__copy-menu-anchor">
-                  <Tooltip content={copied ? t('modelRound.copiedDialog') : t('modelRound.copyDialog')} placement="top">
-                    <IconButton
-                      ref={copyButtonRef}
-                      className={`model-round-item__action-btn model-round-item__copy-btn ${copied ? 'copied' : ''}`}
-                      onClick={() => setIsCopyMenuOpen(current => !current)}
-                      tabIndex={shouldRevealFooter ? 0 : -1}
-                      disabled={!shouldRevealFooter}
-                      aria-haspopup="menu"
-                      aria-expanded={isCopyMenuOpen}
-                      aria-label={copied ? t('modelRound.copiedDialog') : t('modelRound.copyDialog')}
-                      data-testid="model-round-copy-btn"
-                      data-openbitfun-product-component="model-round-item" data-openbitfun-product-part="action" data-openbitfun-state={copied ? 'copied' : undefined}
-                      icon={<Icon name={copied ? 'check-line' : 'duplicate'} size="sm" />}
-                    />
-                  </Tooltip>
+                {allowTranscriptExport && <ExportImageButton turnId={turnId} triggerRef={copyButtonRef} renderTrigger={({ isExporting, onOpenDialog }) => (
+                  <div className="model-round-item__copy-menu-anchor">
+                    <Tooltip content={isExporting ? t('exportImage.exporting') : copied ? t('modelRound.copiedDialog') : t('modelRound.copyDialog')} placement="top">
+                      <IconButton
+                        ref={copyButtonRef}
+                        className={`model-round-item__action-btn model-round-item__copy-btn ${copied ? 'copied' : ''}`}
+                        onClick={() => setIsCopyMenuOpen(current => !current)}
+                        tabIndex={shouldRevealFooter ? 0 : -1}
+                        disabled={!shouldRevealFooter}
+                        loading={isExporting}
+                        aria-haspopup="menu"
+                        aria-expanded={isCopyMenuOpen}
+                        aria-label={isExporting ? t('exportImage.exporting') : copied ? t('modelRound.copiedDialog') : t('modelRound.copyDialog')}
+                        data-testid="model-round-copy-btn"
+                        data-openbitfun-product-component="model-round-item" data-openbitfun-product-part="action" data-openbitfun-state={copied ? 'copied' : undefined}
+                        icon={<Icon name={copied ? 'check-line' : 'duplicate'} size="sm" />}
+                      />
+                    </Tooltip>
 
-                  {isCopyMenuOpen && createOverlayPortal(
-                    <Menu
-                      ref={copyMenuRef}
-                      className="model-round-item__copy-menu"
-                      data-testid="model-round-copy-menu"
-                      data-openbitfun-placement={copyMenuLayout?.placement ?? 'top'}
-                      style={{
-                        top: `${copyMenuLayout?.top ?? 0}px`,
-                        left: `${copyMenuLayout?.left ?? 0}px`,
-                        visibility: copyMenuLayout ? 'visible' : 'hidden',
-                      }}
-                    >
-                      <MenuItem
-                        type="button"
-                        onClick={() => void handleCopyScope('full')}
-                        data-testid="model-round-copy-full"
+                    {isCopyMenuOpen && createOverlayPortal(
+                      <Menu
+                        ref={copyMenuRef}
+                        className="model-round-item__copy-menu"
+                        data-testid="model-round-copy-menu"
+                        data-openbitfun-placement={copyMenuLayout?.placement ?? 'bottom'}
+                        style={{
+                          top: `${copyMenuLayout?.top ?? 0}px`,
+                          left: `${copyMenuLayout?.left ?? 0}px`,
+                          visibility: copyMenuLayout ? 'visible' : 'hidden',
+                        }}
                       >
-                        {t('transcriptExport.copyFull')}
-                      </MenuItem>
-                      <MenuItem
-                        type="button"
-                        onClick={() => void handleCopyScope('result')}
-                        data-testid="model-round-copy-result"
-                      >
-                        {t('transcriptExport.copyResult')}
-                      </MenuItem>
-                    </Menu>,
-                    getAppearanceOverlayHost(),
-                  )}
-                </div>}
-
-                {allowTranscriptExport && <ExportImageButton turnId={turnId} />}
+                        <MenuItem
+                          type="button"
+                          onClick={() => void handleCopyScope('full')}
+                          data-testid="model-round-copy-full"
+                        >
+                          {t('transcriptExport.copyFull')}
+                        </MenuItem>
+                        <MenuItem
+                          type="button"
+                          onClick={() => void handleCopyScope('result')}
+                          data-testid="model-round-copy-result"
+                        >
+                          {t('transcriptExport.copyResult')}
+                        </MenuItem>
+                        <MenuItem
+                          type="button"
+                          onClick={() => {
+                            setIsCopyMenuOpen(false);
+                            onOpenDialog();
+                          }}
+                          aria-haspopup="dialog"
+                          data-testid="model-round-export-image"
+                        >
+                          {t('exportImage.exportToImage')}
+                        </MenuItem>
+                      </Menu>,
+                      getAppearanceOverlayHost(),
+                      undefined,
+                      { ownerRef: copyButtonRef, open: isCopyMenuOpen },
+                    )}
+                  </div>
+                )} />}
               </div>
             </div>
           </TurnFooter>

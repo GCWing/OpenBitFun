@@ -140,6 +140,29 @@ describe('MCPToolDisplay', () => {
     vi.unstubAllGlobals();
   });
 
+  it('reuses parsed results across disclosure changes and refreshes when the raw result changes', () => {
+    const raw = JSON.stringify({ content: [{ type: 'text', text: 'result '.repeat(1000) }] });
+    const updated = JSON.stringify({ content: [{ type: 'text', text: 'Updated result' }] });
+    const parse = vi.spyOn(JSON, 'parse');
+    try {
+      const item = toolItem({ toolResult: { success: true, result: raw } });
+      act(() => root.render(<MCPToolDisplay toolItem={item} config={config} />));
+      act(() => {
+        container.querySelector('[data-testid="mcp-tool-card-toggle"]')?.dispatchEvent(
+          new dom.window.MouseEvent('click', { bubbles: true }),
+        );
+      });
+      expect(container.querySelector('.content-item-text')?.textContent).toContain('result');
+      act(() => root.render(<MCPToolDisplay toolItem={{ ...item }} config={config} />));
+      expect(parse.mock.calls.filter(([value]) => value === raw)).toHaveLength(1);
+      act(() => root.render(<MCPToolDisplay toolItem={{ ...item, toolResult: { success: true, result: updated } }} config={config} />));
+      expect(container.querySelector('.content-item-text')?.textContent).toContain('Updated result');
+      expect(parse.mock.calls.filter(([value]) => value === updated)).toHaveLength(1);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
   it('keeps invocation parameters collapsed until their nested toggle is used', () => {
     act(() => {
       root.render(<MCPToolDisplay toolItem={toolItem()} config={config} />);

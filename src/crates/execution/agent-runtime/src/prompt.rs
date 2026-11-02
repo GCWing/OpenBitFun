@@ -8,7 +8,7 @@ const SKILL_LISTING_GUIDANCE: &str = r#"A skill is a set of instructions provide
 If the user names a skill (with `[$SkillName]` or plain text) OR the task clearly matches a skill's description shown below, you must use that skill for that turn. Multiple mentions mean use them all. Do not carry skills across turns unless re-mentioned.
 Below is the list of skills that can be used with the Skill tool. Each entry includes a name and description"#;
 const AGENT_LISTING_TITLE: &str = "# Agent Listing";
-const AGENT_LISTING_GUIDANCE: &str = "Available subagent types for the Task tool:";
+const AGENT_LISTING_GUIDANCE: &str = "Available agent types for the AgentSpawn tool:";
 const TOOL_CALLING_GUIDANCE_TITLE: &str = "# Tool Calling Guide";
 const TOOL_CALLING_GUIDANCE: &str = "You can access two types of tools.";
 const DIRECT_TOOL_LISTING_TITLE: &str = "## Direct tools";
@@ -488,18 +488,12 @@ fn exec_control_runtime_guidance(
 fn computer_use_text_only_model_guidance() -> Vec<String> {
     vec![
         "- The configured primary model does not accept image inputs.".to_string(),
-        "- When using `ComputerUse` or `ControlHub` with `domain: \"browser\"`, do not use `screenshot` and avoid `domain:\"browser\" action:\"screenshot\"`; image bytes will be unreadable.".to_string(),
-        // Banning `screenshot` without naming the replacement is what pushes a
-        // text-only agent into improvising `screencapture` + `analyze_image` as
-        // a substitute for eyes — a loop that costs an extra model call per
-        // look, returns prose instead of coordinates, and misreads the screen
-        // often enough to send the run down false paths.
-        "- `describe_screen` is your eyes: it returns the frontmost app, the AX tree (`ax_tree_text`, with `node_idx`s you can click by), `ui_tree_text` and the pointer, as text with no image. Call it when UI state is unknown, and again after an action to confirm `ax_state_digest` changed.".to_string(),
-        "- Do NOT shell out to `screencapture` and feed the file to an image-analysis tool as a substitute for looking. It costs an extra model round-trip per glance and returns descriptions, not clickable coordinates. Use `describe_screen`, `get_app_state`, `locate` and `move_to_text` — they return exact targets.".to_string(),
-        "- If `ax_tree_text` is empty, read `ax_tree_status` / `ax_tree_note` in the same result: they say why (no frontmost app, an app with no window, a WebView that exposes no tree, or a permission failure) and which tactic to switch to. The result is never truncated — re-calling returns the same thing.".to_string(),
-        "- Action priority: 1) Terminal/CLI/system commands (`ExecCommand`, or `ComputerUse` `run_script`; use `WriteStdin`/`ExecControl` for running ExecCommand sessions) 2) Keyboard shortcuts (`key_chord`, `type_text`) 3) UI control: `click_element` (AX) -> `locate` -> `move_to_text` (use `move_to_text_match_index` when multiple OCR hits are listed) -> `mouse_move` (`use_screen_coordinates: true` with coordinates from tool JSON) -> `click`. For browser work, prefer `snapshot` then click by `@e*` ref over screenshots.".to_string(),
-        "- To type and send in one step use `paste` with `submit: true` (and `submit_keys` when the app sends on a chord, e.g. `[\"command\",\"return\"]`). `paste` is also the reliable path for CJK and emoji.".to_string(),
-        "- Never guess coordinates. Always use precise methods: AX, OCR, system coordinates from tool results, or browser snapshot refs.".to_string(),
+        "- For desktop work, do not use `screenshot` or infer coordinates from unseen images. Use `get_app_state` for the selected or bound app, or `describe_screen` for its AX/OCR text. Set `include_image: false` on `get_app_state` and app input calls when AX text is sufficient. Use `list_apps` only when the target is unknown; begin each new user GUI task with `start_control` once, normally in background mode.".to_string(),
+        "- Use `app_batch` for already-decided app-scoped inputs to observed `node_idx` or `ocr_text` targets. `app_type_text` with `focus` combines focusing and exact Unicode input, including CJK and emoji. Batch a known search query and its submit key, or several observed form fields; end the batch when new information is needed.".to_string(),
+        "- Reuse the returned final observation; do not add a second read or routine delay. Verify the intended result from content, not whether an AX digest changed. Keep the latest `observation_id` with node/index input and never replay completed steps after partial failure.".to_string(),
+        "- Sparse AX does not mean the target is unreadable: inspect `ax_tree_status`, `ax_tree_note`, `ocr_text`, `ocr_status`, `ocr_error` and truncation notes. If neither AX nor OCR exposes the needed evidence, report that limitation. Do not replace GUI observation or input with shell capture, analysis, clipboard or keystroke scripts.".to_string(),
+        "- Prefer background control and the bound application. For the user's GUI task, use `start_control` with foreground mode when background delivery is unsupported or verified ineffective, unless the user required background-only/no-disruption. Use `activate_app` on a capable native host and its fresh observation before global input; Linux uses the consented portal surface, separately from AT-SPI. Never replay uncertain input. Respect Stop, cancellation and permission denial. Verify recipient and composer content before an authorized send, then check delivery before retrying.".to_string(),
+        "- If `ControlHub` is available for browser work, prefer `snapshot` then click by `@e*` ref; do not use its `screenshot` action with this model.".to_string(),
     ]
 }
 
@@ -516,19 +510,19 @@ fn control_hub_browser_text_only_guidance() -> Vec<String> {
 
 fn runtime_computer_use_key_chord_guidance(host_os: &str) -> &'static str {
     match host_os {
-        "macos" => "- Computer use / `key_chord`: the local OpenBitFun desktop is macOS. Use `command`, `option`, `control`, and `shift` modifier names.",
-        "windows" => "- Computer use / `key_chord`: the local OpenBitFun desktop is Windows. Use `meta`/`super` for the Windows key, plus `alt`, `control`, and `shift`.",
-        "linux" => "- Computer use / `key_chord`: the local OpenBitFun desktop is Linux. Use `control`, `alt`, `shift`, and `meta`/`super` as appropriate for the desktop environment.",
-        _ => "- Computer use / `key_chord`: match modifier names to the local OpenBitFun desktop OS.",
+        "macos" => "- Computer use / keyboard: macOS app-scoped shortcuts use `app_key_chord` with `command`, `option`, `control`, and `shift` modifier names.",
+        "windows" => "- Computer use / keyboard: Windows app-scoped keyboard chords are unavailable. Use supported semantic actions in background mode. Global `key_chord` requires authorized foreground control and uses `meta`/`super`, `alt`, `control`, and `shift`.",
+        "linux" => "- Computer use / keyboard: Linux background input uses AT-SPI semantic actions; `app_key_chord` is unavailable. Portal keyboard input requires authorized foreground control and uses `control`, `alt`, `shift`, and `meta`/`super`.",
+        _ => "- Computer use / keyboard: match modifier names and app-scoped input capabilities to the execution host OS.",
     }
 }
 
 fn computer_use_key_chord_guidance(host_os: &str) -> &'static str {
     match host_os {
-        "macos" => "Computer use / `key_chord`: the **local OpenBitFun desktop** is **macOS** — use `command`, `option`, `control`, `shift` (not Win/Linux modifier names). **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use ExecCommand for `osascript`, AppleScript, shell scripts) 2) Keyboard shortcuts: command+a/c/x/v (clipboard), command+space (Spotlight), command+tab (switch app) 3) UI control (AX/OCR/mouse) only when above fail.",
-        "windows" => "Computer use / `key_chord`: the **local OpenBitFun desktop** is **Windows** — use `meta`/`super` for Windows key, `alt`, `control`, `shift`. **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use ExecCommand for PowerShell, cmd, scripts) 2) Keyboard shortcuts: control+a/c/x/v (clipboard), meta (Start menu), Alt+Tab (switch) 3) UI control only when above fail.",
-        "linux" => "Computer use / `key_chord`: the **local OpenBitFun desktop** is **Linux** — typically `control`, `alt`, `shift`, and sometimes `meta`/`super`. **ACTION PRIORITY:** 1) Terminal/CLI/system commands (use ExecCommand for shell scripts and system commands) 2) Keyboard shortcuts: control+a/c/x/v (clipboard) 3) UI control (AX/OCR/mouse) only when above fail.",
-        _ => "Computer use / `key_chord`: match modifier names to the **local OpenBitFun desktop** OS below. **ACTION PRIORITY:** 1) Terminal/CLI/system commands first 2) Keyboard shortcuts second 3) UI control (mouse/OCR) last resort.",
+        "macos" => "Computer use / keyboard: macOS app-scoped shortcuts use `app_key_chord` with `command`, `option`, `control`, `shift`. Prefer background app-scoped ComputerUse actions; batch already-decided inputs and reuse their final observation.",
+        "windows" => "Computer use / keyboard: Windows app-scoped keyboard chords are unavailable. Prefer background semantic ComputerUse actions; batch already-decided inputs and reuse their final observation. Global `key_chord` requires authorized foreground control and uses `meta`/`super`, `alt`, `control`, `shift`.",
+        "linux" => "Computer use / keyboard: Linux background input uses AT-SPI semantic actions; `app_key_chord` is unavailable. Batch already-decided supported inputs and reuse their final observation. Portal keyboard input requires authorized foreground control and uses `control`, `alt`, `shift`, `meta`/`super`.",
+        _ => "Computer use / keyboard: match modifier names and input capabilities to the execution host OS. Prefer background app-scoped ComputerUse actions; batch already-decided inputs and reuse their final observation.",
     }
 }
 
@@ -621,6 +615,8 @@ pub struct ToolListingSections {
     pub agent_listing: Option<String>,
     pub direct_tool_listing: Option<String>,
     pub deferred_tool_listing: Option<String>,
+    /// PTC's generated TypeScript SDK, rendered as a conversation-start guide.
+    pub ptc_tool_calling_guide: Option<String>,
 }
 
 impl ToolListingSections {
@@ -629,6 +625,7 @@ impl ToolListingSections {
             && self.agent_listing.is_none()
             && self.direct_tool_listing.is_none()
             && self.deferred_tool_listing.is_none()
+            && self.ptc_tool_calling_guide.is_none()
     }
 
     pub fn render_skill_listing_reminder(&self) -> Option<String> {
@@ -681,6 +678,7 @@ impl ToolListingSections {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PrependedPromptReminders {
     pub deferred_tool_listing: Option<String>,
+    pub ptc_tool_calling_guide: Option<String>,
     pub skill_listing: Option<String>,
     pub agent_listing: Option<String>,
     pub runtime_context: Option<String>,
@@ -692,6 +690,9 @@ impl PrependedPromptReminders {
         let mut reminders = Vec::new();
         if let Some(deferred_tool_listing) = self.deferred_tool_listing.as_deref() {
             reminders.push(deferred_tool_listing);
+        }
+        if let Some(ptc_tool_calling_guide) = self.ptc_tool_calling_guide.as_deref() {
+            reminders.push(ptc_tool_calling_guide);
         }
         if let Some(skill_listing) = self.skill_listing.as_deref() {
             reminders.push(skill_listing);

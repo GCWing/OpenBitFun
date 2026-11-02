@@ -10,6 +10,7 @@
 
 pub mod account_runtime;
 pub mod bot;
+pub mod control;
 pub mod embedded_relay_host;
 pub mod lan;
 mod permission_publication;
@@ -130,11 +131,29 @@ pub struct ConnectionResult {
 /// Handle to a running bot (Telegram, Feishu, or Weixin).
 struct BotHandle {
     stop_tx: tokio::sync::watch::Sender<bool>,
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl BotHandle {
-    fn stop(&self) {
+    fn is_running(&self) -> bool {
+        self.task.as_ref().is_some_and(|task| !task.is_finished())
+    }
+
+    async fn stop(mut self) {
         let _ = self.stop_tx.send(true);
+        if let Some(task) = self.task.take() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+}
+
+impl Drop for BotHandle {
+    fn drop(&mut self) {
+        let _ = self.stop_tx.send(true);
+        if let Some(task) = &self.task {
+            task.abort();
+        }
     }
 }
 
@@ -230,6 +249,15 @@ impl RemoteConnectService {
         self.set_bot_account(None).await;
         openbitfun_services_integrations::remote_connect::bot::clear_persisted_bot_account_contexts(
         );
+    }
+
+    /// Used to reject QR completions from a retired account without exposing credentials.
+    pub async fn bot_account_scope(&self) -> Option<(String, u64)> {
+        let account = self.bot_account_user_id.read().await.clone()?;
+        Some((
+            account,
+            self.bot_account_identity_epoch.load(Ordering::Acquire),
+        ))
     }
 
     pub fn device_identity(&self) -> &DeviceIdentity {
@@ -363,8 +391,9 @@ impl RemoteConnectService {
                         // Stop any existing Telegram bot
                         let generation = self.bot_telegram_slot.advance();
                         if let Some(handle) = self.bot_telegram_handle.write().await.take() {
-                            handle.stop();
+                            handle.stop().await;
                         }
+                        let lease = bot::BotListenerLease::acquire("telegram")?;
 
                         let tg_bot = Arc::new(bot::telegram::TelegramBot::new_fenced(
                             bot::telegram::TelegramConfig {
@@ -390,7 +419,8 @@ impl RemoteConnectService {
 
                         *tg_bot_ref.write().await = Some(tg_bot.clone());
 
-                        tokio::spawn(async move {
+                        let task = tokio::spawn(async move {
+                            let _listener_lease = lease;
                             let mut stop_rx = stop_rx;
                             match bot_for_pair.wait_for_pairing(&mut stop_rx).await {
                                 Ok(chat_id) => {
@@ -414,7 +444,10 @@ impl RemoteConnectService {
                             }
                         });
 
-                        *self.bot_telegram_handle.write().await = Some(BotHandle { stop_tx });
+                        *self.bot_telegram_handle.write().await = Some(BotHandle {
+                            stop_tx,
+                            task: Some(task),
+                        });
 
                         "https://t.me/BotFather".to_string()
                     }
@@ -432,8 +465,9 @@ impl RemoteConnectService {
                     {
                         let generation = self.bot_feishu_slot.advance();
                         if let Some(handle) = self.bot_feishu_handle.write().await.take() {
-                            handle.stop();
+                            handle.stop().await;
                         }
+                        let lease = bot::BotListenerLease::acquire("feishu")?;
 
                         let fs_bot = Arc::new(bot::feishu::FeishuBot::new_fenced(
                             bot::feishu::FeishuConfig {
@@ -460,7 +494,8 @@ impl RemoteConnectService {
 
                         *fs_bot_ref.write().await = Some(fs_bot.clone());
 
-                        tokio::spawn(async move {
+                        let task = tokio::spawn(async move {
+                            let _listener_lease = lease;
                             let mut stop_rx = stop_rx;
                             match bot_for_pair.wait_for_pairing(&mut stop_rx).await {
                                 Ok(chat_id) => {
@@ -484,7 +519,10 @@ impl RemoteConnectService {
                             }
                         });
 
-                        *self.bot_feishu_handle.write().await = Some(BotHandle { stop_tx });
+                        *self.bot_feishu_handle.write().await = Some(BotHandle {
+                            stop_tx,
+                            task: Some(task),
+                        });
 
                         "https://open.feishu.cn/app".to_string()
                     }
@@ -505,8 +543,9 @@ impl RemoteConnectService {
                     }) if !ilink_token.is_empty() && !bot_account_id.is_empty() => {
                         let generation = self.bot_weixin_slot.advance();
                         if let Some(handle) = self.bot_weixin_handle.write().await.take() {
-                            handle.stop();
+                            handle.stop().await;
                         }
+                        let lease = bot::BotListenerLease::acquire("weixin")?;
                         if let Some(previous_bot) = self.weixin_bot.write().await.take() {
                             if let Err(err) = previous_bot.notify_stop().await {
                                 warn!("Weixin notify-stop failed during replacement: {err}");
@@ -545,7 +584,8 @@ impl RemoteConnectService {
 
                         *wx_bot_ref.write().await = Some(wx_bot.clone());
 
-                        tokio::spawn(async move {
+                        let task = tokio::spawn(async move {
+                            let _listener_lease = lease;
                             if let Err(err) = bot_for_pair.notify_start().await {
                                 warn!("Weixin notify-start failed; continuing: {err}");
                             }
@@ -574,7 +614,10 @@ impl RemoteConnectService {
                             }
                         });
 
-                        *self.bot_weixin_handle.write().await = Some(BotHandle { stop_tx });
+                        *self.bot_weixin_handle.write().await = Some(BotHandle {
+                            stop_tx,
+                            task: Some(task),
+                        });
 
                         "https://www.wechat.com".to_string()
                     }
@@ -620,8 +663,9 @@ impl RemoteConnectService {
             bot::BotConfig::Telegram { ref bot_token } => {
                 let generation = self.bot_telegram_slot.advance();
                 if let Some(handle) = self.bot_telegram_handle.write().await.take() {
-                    handle.stop();
+                    handle.stop().await;
                 }
+                let lease = bot::BotListenerLease::acquire("telegram")?;
 
                 let tg_bot = Arc::new(bot::telegram::TelegramBot::new_fenced(
                     bot::telegram::TelegramConfig {
@@ -647,12 +691,16 @@ impl RemoteConnectService {
                 *self.bot_connected_info.write().await = Some(format!("Telegram({chat_id})"));
 
                 let bot_for_loop = tg_bot.clone();
-                tokio::spawn(async move {
+                let task = tokio::spawn(async move {
+                    let _listener_lease = lease;
                     info!("Telegram bot restored from persistence, starting message loop");
                     bot_for_loop.run_message_loop(stop_rx).await;
                 });
 
-                *self.bot_telegram_handle.write().await = Some(BotHandle { stop_tx });
+                *self.bot_telegram_handle.write().await = Some(BotHandle {
+                    stop_tx,
+                    task: Some(task),
+                });
                 info!("Telegram bot restored for chat_id={chat_id}");
             }
             bot::BotConfig::Feishu {
@@ -661,8 +709,9 @@ impl RemoteConnectService {
             } => {
                 let generation = self.bot_feishu_slot.advance();
                 if let Some(handle) = self.bot_feishu_handle.write().await.take() {
-                    handle.stop();
+                    handle.stop().await;
                 }
+                let lease = bot::BotListenerLease::acquire("feishu")?;
 
                 let fs_bot = Arc::new(bot::feishu::FeishuBot::new_fenced(
                     bot::feishu::FeishuConfig {
@@ -688,12 +737,16 @@ impl RemoteConnectService {
                 *self.bot_connected_info.write().await = Some(format!("Feishu({cid})"));
 
                 let bot_for_loop = fs_bot.clone();
-                tokio::spawn(async move {
+                let task = tokio::spawn(async move {
+                    let _listener_lease = lease;
                     info!("Feishu bot restored from persistence, starting message loop");
                     bot_for_loop.run_message_loop(stop_rx).await;
                 });
 
-                *self.bot_feishu_handle.write().await = Some(BotHandle { stop_tx });
+                *self.bot_feishu_handle.write().await = Some(BotHandle {
+                    stop_tx,
+                    task: Some(task),
+                });
                 info!("Feishu bot restored for chat_id={}", saved.chat_id);
             }
             bot::BotConfig::Weixin {
@@ -703,8 +756,9 @@ impl RemoteConnectService {
             } => {
                 let generation = self.bot_weixin_slot.advance();
                 if let Some(handle) = self.bot_weixin_handle.write().await.take() {
-                    handle.stop();
+                    handle.stop().await;
                 }
+                let lease = bot::BotListenerLease::acquire("weixin")?;
                 if let Some(previous_bot) = self.weixin_bot.write().await.take() {
                     if let Err(err) = previous_bot.notify_stop().await {
                         warn!("Weixin notify-stop failed during restore replacement: {err}");
@@ -743,7 +797,8 @@ impl RemoteConnectService {
                 let bot_for_loop = wx_bot.clone();
                 let bot_for_notify = wx_bot.clone();
                 let bot_slot = self.bot_weixin_slot.clone();
-                tokio::spawn(async move {
+                let task = tokio::spawn(async move {
+                    let _listener_lease = lease;
                     if let Err(err) = bot_for_notify.notify_start().await {
                         warn!("Weixin notify-start failed during restore; continuing: {err}");
                     }
@@ -756,7 +811,10 @@ impl RemoteConnectService {
                     }
                 });
 
-                *self.bot_weixin_handle.write().await = Some(BotHandle { stop_tx });
+                *self.bot_weixin_handle.write().await = Some(BotHandle {
+                    stop_tx,
+                    task: Some(task),
+                });
                 info!("Weixin bot restored for chat_id={}", saved.chat_id);
             }
         }
@@ -790,22 +848,63 @@ impl RemoteConnectService {
         self.stop_bots_inner().await;
     }
 
+    /// Stop only this provider; other bots and Relay routes keep running.
+    pub async fn stop_bot(&self, bot_type: &str) -> Result<()> {
+        let _lifecycle = self.bot_lifecycle.lock().await;
+        match bot_type {
+            "telegram" => {
+                self.bot_telegram_slot.advance();
+                if let Some(handle) = self.bot_telegram_handle.write().await.take() {
+                    handle.stop().await;
+                }
+                *self.telegram_bot.write().await = None;
+            }
+            "feishu" => {
+                self.bot_feishu_slot.advance();
+                if let Some(handle) = self.bot_feishu_handle.write().await.take() {
+                    handle.stop().await;
+                }
+                *self.feishu_bot.write().await = None;
+            }
+            "weixin" => {
+                self.bot_weixin_slot.advance();
+                if let Some(handle) = self.bot_weixin_handle.write().await.take() {
+                    handle.stop().await;
+                }
+                if let Some(bot) = self.weixin_bot.write().await.take() {
+                    if let Err(error) = bot.notify_stop().await {
+                        warn!("Weixin notify-stop failed: {error}");
+                    }
+                }
+            }
+            _ => anyhow::bail!("Unknown bot type"),
+        }
+        let mut info = self.bot_connected_info.write().await;
+        if info
+            .as_deref()
+            .is_some_and(|info| info.to_ascii_lowercase().starts_with(bot_type))
+        {
+            *info = None;
+        }
+        Ok(())
+    }
+
     async fn stop_bots_inner(&self) {
         self.bot_telegram_slot.advance();
         if let Some(handle) = self.bot_telegram_handle.write().await.take() {
-            handle.stop();
+            handle.stop().await;
         }
         *self.telegram_bot.write().await = None;
 
         self.bot_feishu_slot.advance();
         if let Some(handle) = self.bot_feishu_handle.write().await.take() {
-            handle.stop();
+            handle.stop().await;
         }
         *self.feishu_bot.write().await = None;
 
         self.bot_weixin_slot.advance();
         if let Some(handle) = self.bot_weixin_handle.write().await.take() {
-            handle.stop();
+            handle.stop().await;
         }
         if let Some(weixin_bot) = self.weixin_bot.write().await.take() {
             if let Err(err) = weixin_bot.notify_stop().await {
@@ -840,9 +939,36 @@ impl RemoteConnectService {
     /// Check whether a specific bot type is currently running.
     pub async fn is_bot_running(&self, bot_type: &str) -> bool {
         match bot_type {
-            "telegram" => self.bot_telegram_handle.read().await.is_some(),
-            "feishu" => self.bot_feishu_handle.read().await.is_some(),
-            "weixin" => self.bot_weixin_handle.read().await.is_some(),
+            "telegram" => self
+                .bot_telegram_handle
+                .read()
+                .await
+                .as_ref()
+                .is_some_and(BotHandle::is_running),
+            "feishu" => self
+                .bot_feishu_handle
+                .read()
+                .await
+                .as_ref()
+                .is_some_and(BotHandle::is_running),
+            "weixin" => self
+                .bot_weixin_handle
+                .read()
+                .await
+                .as_ref()
+                .is_some_and(BotHandle::is_running),
+            _ => false,
+        }
+    }
+
+    pub async fn bot_requires_login(&self, bot_type: &str) -> bool {
+        match bot_type {
+            "weixin" => self
+                .weixin_bot
+                .read()
+                .await
+                .as_ref()
+                .is_some_and(|bot| bot.requires_login()),
             _ => false,
         }
     }
@@ -1289,5 +1415,54 @@ pub fn notify_session_catalog_event(event: &openbitfun_events::AgenticEvent) {
             | AgenticEvent::DialogTurnCancelled { .. }
     ) {
         crate::service::session::SessionMetadataStore::notify_catalog_changed();
+    }
+}
+
+#[cfg(test)]
+mod listener_lifecycle_tests {
+    use super::BotHandle;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    struct Released(Arc<AtomicBool>);
+    impl Drop for Released {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_waits_for_listener_release_before_restart() {
+        let released = Arc::new(AtomicBool::new(false));
+        let guard = Released(released.clone());
+        let (stop_tx, _stop_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+        let handle = BotHandle {
+            stop_tx,
+            task: Some(task),
+        };
+        assert!(handle.is_running());
+        handle.stop().await;
+        assert!(released.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn completed_listener_is_reported_stopped() {
+        let (stop_tx, _stop_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async {});
+        while !task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        let handle = BotHandle {
+            stop_tx,
+            task: Some(task),
+        };
+        assert!(!handle.is_running());
+        handle.stop().await;
     }
 }

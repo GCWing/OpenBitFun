@@ -15,6 +15,7 @@ mod local_source_paths;
 mod mcp_source;
 mod plugin_config_projection;
 mod reference_source;
+pub mod session;
 mod skill_source;
 mod source_adapter;
 mod tool_source;

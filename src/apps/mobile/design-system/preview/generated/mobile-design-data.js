@@ -667,7 +667,8 @@ export const mobileComponents = {
       "anatomy": [
         "message_text",
         "role_surface",
-        "hairline_border"
+        "hairline_border",
+        "message_timestamp"
       ],
       "states": [
         "user",
@@ -682,7 +683,7 @@ export const mobileComponents = {
         "message_spacing",
         "timeline_top_padding"
       ],
-      "platformNotes": "The maximum width is the 276-unit compact HarmonyOS baseline; wide layouts may use a separate responsive policy."
+      "platformNotes": "The maximum width is the 276-unit compact HarmonyOS baseline; wide layouts may use a separate responsive policy. Show each available host message time below its content in localized short date/time with muted label-small text, right aligned for users and left aligned for assistants. Omit unavailable or invalid legacy timestamps. Ordinary failed tool calls share the neutral collapsed activity presentation; their actual failure details remain expandable. Questions, approvals and failed replies retain their attention states."
     },
     "conversation_overlay": {
       "purpose": "Lets the transcript own the whole pane while the header and composer stay reachable above it.",
@@ -729,6 +730,27 @@ export const mobileComponents = {
         "composer_expanded_radius"
       ],
       "platformNotes": "Keyboard, dictation, and attachment pickers remain native adapters. The focused two-row form stays compact and exists to expose message context controls; multiline content and attachments may grow it further. The trailing action is the single filled action for Send, Dictate, or Stop."
+    },
+    "prompt_suggestion": {
+      "purpose": "Offer the host's next-input suggestion above the remote conversation composer.",
+      "anatomy": [
+        "suggestion_text",
+        "full_width_touch_target"
+      ],
+      "states": [
+        "available",
+        "draft_hidden",
+        "busy_hidden",
+        "disconnected_hidden",
+        "retired"
+      ],
+      "tokens": [
+        "body_medium",
+        "muted",
+        "control_touch_size",
+        "conversation_overlay_side_inset"
+      ],
+      "platformNotes": "Compact and wide layouts use a quiet, leading-aligned button with wrapping text and a minimum 48-unit touch target. Show only for the latest completed turn when the draft is empty and the session is idle and connected. Tapping copies the exact text into the native editor and focuses it without sending. New turns, session changes and host stream gaps retire the hint. Suggestions stay outside persisted transcripts; older hosts need no fallback request."
     },
     "composer_model_selector": {
       "purpose": "Changes the model for the message being composed without leaving the conversation or creation flow.",

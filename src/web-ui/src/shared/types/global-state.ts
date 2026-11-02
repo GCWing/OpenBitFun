@@ -6,6 +6,7 @@ import { workspaceAPI } from '@/infrastructure/api';
 import type {
   ApplicationState as APIApplicationState,
   AppStatus as APIAppStatus,
+  OpenRemoteWorkspaceOptions,
   RemoteWorkspaceSnapshot as APIRemoteWorkspaceSnapshot,
   WorkspaceStartupStateSnapshot as APIWorkspaceStartupStateSnapshot,
   WorkspaceInfo as APIWorkspaceInfo,
@@ -103,6 +104,7 @@ export interface WorkspaceInfo {
   workspaceType: WorkspaceType;
   workspaceKind: WorkspaceKind;
   assistantId?: string | null;
+  defaultNameNumber?: number | null;
   languages: string[];
   openedAt: string;
   lastAccessed: string;
@@ -240,7 +242,8 @@ export interface GlobalStateAPI {
     remotePath: string,
     connectionId: string,
     connectionName: string,
-    sshHost?: string
+    sshHost?: string,
+    options?: OpenRemoteWorkspaceOptions
   ): Promise<WorkspaceInfo>;
   createAssistantWorkspace(): Promise<WorkspaceInfo>;
   getPrimaryAssistantWorkspace(): Promise<WorkspaceInfo | null>;
@@ -550,10 +553,17 @@ export function createGlobalStateAPI(): GlobalStateAPI {
       remotePath: string,
       connectionId: string,
       connectionName: string,
-      sshHost?: string
+      sshHost?: string,
+      options?: OpenRemoteWorkspaceOptions
     ): Promise<WorkspaceInfo> {
       return mapWorkspaceInfo(
-        await globalAPI.openRemoteWorkspace(remotePath, connectionId, connectionName, sshHost)
+        await globalAPI.openRemoteWorkspace(
+          remotePath,
+          connectionId,
+          connectionName,
+          sshHost,
+          options,
+        )
       );
     },
 

@@ -14,6 +14,7 @@ import type {
 import type { AiErrorDetail } from '@/shared/ai-errors/aiErrorPresenter';
 import type { ReviewTargetEvidence, ReviewTeamRunManifest } from '@/shared/services/reviewTeamService';
 import type { ContextItem } from '@/shared/types/context';
+import type { ExternalSessionEcosystem } from '@/shared/types/external-session';
 
 export type ModelRoundAttemptDiagnostic = import('@/shared/types/session-history').ModelRoundAttemptDiagnostic;
 
@@ -52,6 +53,8 @@ export interface FlowToolItem extends FlowItem {
   type: 'tool';
   /** Provider-facing identity. Deferred calls remain `CallDeferredTool`. */
   toolName: string;
+  /** Read-time provenance from the owning Turn, never a native runtime tool. */
+  importedSource?: ExternalSessionEcosystem;
   terminalSessionId?: string;
   interruptionReason?: 'app_restart' | 'retry_superseded';
   toolCall: {
@@ -218,9 +221,12 @@ export interface ModelRound {
   providerId?: string;
   modelConfigId?: string;
   effectiveModelName?: string;
+  routing?: import('@/shared/types/session-history').ModelRoutingDecision;
   firstChunkMs?: number;
   firstVisibleOutputMs?: number;
   streamDurationMs?: number;
+  /** Request start to first effective output for the accepted model attempt. */
+  ttftMs?: number;
   attemptCount?: number;
   attemptDiagnostics?: ModelRoundAttemptDiagnostic[];
   failureCategory?: string;
@@ -390,6 +396,19 @@ export type SessionContextRestoreState =
 
 // Session state.
 export interface Session {
+  /** Original history source; continuation mode is an independent fact. */
+  importedSource?: string;
+  /** Local composer selection, applied only after a source view is forked. */
+  externalContinuationPermissionMode?: import('@/infrastructure/api/service-api/AgentAPI').SessionPermissionMode | null;
+  externalHistory?: {
+    mode: 'follow';
+    contentVersion?: string;
+    sourceStatus?: 'available' | 'unavailable' | 'unsupported';
+    incomplete?: boolean;
+    observedFingerprint?: string;
+    materializedObservation?: string;
+  };
+  externalBranchOf?: import('@/shared/types/session-history').SessionCustomMetadata['externalBranchOf'];
   sessionId: string;
   title?: string;
   /**
@@ -445,6 +464,8 @@ export interface Session {
    * - 'failed': hydrate failed and the UI should offer retry instead of showing a new session.
    */
   historyState?: SessionHistoryState;
+  /** Last authoritative metadata count; absent on legacy projections. */
+  persistedTurnCount?: number;
 
   /**
    * Backend runtime-context lifecycle for sessions restored through the fast
@@ -615,6 +636,10 @@ export interface Session {
 
 export interface SessionConfig {
   modelName?: string;
+  modelPoolId?: string;
+  /** Draft-only intent, committed after the runtime session is created. */
+  modelPoolSelectionPending?: boolean;
+  modelPoolBinding?: import('@/infrastructure/api/service-api/ModelPoolAPI').ModelPoolBinding;
   /** Explicit reasoning preset for the next turn; omitted means model default. */
   reasoningPreset?: string;
   agentType?: string;
@@ -684,6 +709,8 @@ export interface QueuedComposerDraft {
 }
 
 export interface QueuedMessage {
+  /** Reserved execution identity; absent in older persisted queues. */
+  turnId?: string;
   id: string;
   sessionId: string;
   /** Rendered content sent to the model (may equal `displayMessage`). */

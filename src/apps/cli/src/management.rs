@@ -188,7 +188,10 @@ pub(crate) async fn set_default_model(model_id: &str) -> Result<()> {
         .set_config("ai.default_models.primary", model_id)
         .await?;
     config_service
-        .set_config("ai.agent_model_defaults.mode", model_id)
+        .set_config(
+            "ai.agent_model_selections.mode",
+            serde_json::json!({"kind":"model", "model_ref": model_id}),
+        )
         .await?;
 
     println!("Default model set to: {}", model_id);
@@ -567,6 +570,8 @@ pub(crate) async fn print_usage_report(session_id: Option<&str>) -> Result<()> {
             workspace_path: Some(workspace_path.to_string_lossy().to_string()),
             remote_connection_id: None,
             remote_ssh_host: None,
+            include_system_prompt_preview: false,
+            context_preview_category: None,
             include_hidden_subagents: true,
         })
         .await

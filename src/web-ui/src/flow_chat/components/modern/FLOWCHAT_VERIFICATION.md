@@ -16,9 +16,15 @@ each missing what the other had.
 
 | Test | Contract it holds |
 |---|---|
+| `../../trajectory` | bounded long-session rail, stable range identities, keyboard preview vs selection, searchable summary pagination, legacy-peer gating, stale device/query rejection, canonical peer body navigation, shared detail components and bounded output; local DOM/transport fixtures, not native rendering or live remote evidence |
+| `../FlowChatWidthBoundary.test.tsx`, `../../../infrastructure/appearance/preferences/flowChatWidthStore.test.ts`, `../../../app/scenes/settings/pages/application/FlowChatWidthSettingsSection.test.tsx` | symmetric pointer/keyboard column resizing, token-derived bounds, cancellation/cleanup, narrow-pane restoration, persisted preference compatibility and settings/reset synchronization; supplied DOM geometry, not visual or live remote evidence |
+| `../../timeline/hostQueueProjection.test.ts`, `../../timeline/useHostQueueTimeline.test.tsx`, `../HostPendingQueuePanel.test.tsx` | host-accepted preview, canonical handoff/event ordering, stable keys, blocked recovery, old-host fallback, history-window visibility and device lease cleanup; fixtures only, no live remote transport evidence |
 | `TurnFooter.test.tsx`, `modelRoundItemMemo.test.ts` | latest-turn identity, hover/focus across virtual rows, lease cleanup, no projection churn and the existing completion reveal gate; behavior only, not visual proof |
+| `MessageExportControls.test.tsx` | flat copy/export menu, illustrated checkbox-card selection by pointer and keyboard, complete user text/reference rendering, omission or expansion of thinking, minimal branding, confirmation, pending/error feedback, cancel/Escape/outside dismissal and resident-trigger focus restoration; local DOM behavior, not image fidelity or remote-host validation |
+| `exportImageLayout.test.ts` | initiating reading-column width and font settings across wide/narrow panes, hidden sibling sessions, and unmounted source rows; measured DOM fixtures, not native visual or remote-host validation |
+| `../../utils/exportImageCapture.test.ts`, `../../utils/captureElementToDownloadsPng.test.tsx` | resolved-style selection without duplicated theme variables, opaque/transparent blank-raster rejection before logo compositing, bounded pixel reads, reduced-scale recovery, font readiness/embedding, timeout cleanup, and widget export save/error handling; rasterizer fixtures, not native WebView or remote-host validation |
 | `../../../shared/ui/Tooltip.test.tsx` | shared metric click opening, immediate scroll dismissal, delayed-open cancellation, viewport-exit observer cleanup and no automatic reopening; DOM/observer behavior only, not native scrolling or visual proof |
-| `../../utils/turnUsageMetrics.test.ts` | cache denominator, whole-turn output rate, speed boundaries, invalid and unavailable telemetry |
+| `../../utils/turnUsageMetrics.test.ts`, `TurnUsageMetrics.test.tsx`, `../../store/modernFlowChatStore.test.ts`, `../../../features/dispatch/DispatchJobObserver.test.ts` | separate request TTFT, effective-output rate excluding waiting and tools, complete multi-round timing, controller setup-row exclusion, legacy/missing/zero telemetry, speed boundaries and projection |
 | `../../services/flow-chat-manager/EventHandlerModule.test.ts`, `../../services/flow-chat-manager/PersistenceModule.test.ts`, `../../store/FlowChatStore.test.ts` | live cache aggregation, optional-field persistence and legacy/current hydration; no remote-host claim |
 | `../../hooks/useSessionReadOnOpen.test.tsx` | opening and foreground results mark read; inactive scenes, background windows, unmounts, and device switches cannot acknowledge from stale views |
 | `../../selection/conversationExcerptInventory.test.ts` | source session/device isolation, consumed draft/queue marks, sent-number retention without source marks, stable unrelated snapshots |
@@ -27,7 +33,7 @@ each missing what the other had.
 | `../../selection/conversationExcerptEditing.test.ts` | draft/visible/queue edit and delete ownership, preserved prompt context and attachments, legacy payload handling, sending guards and sent snapshots with no mutation capability |
 | `../../services/flow-chat-manager/PendingQueueModule.test.ts` | persisted payload edits preserve queue order/identity, images and device isolation; sending entries reject edits |
 | `../../../infrastructure/markdown/useStreamingTextReveal.test.tsx` | appended-glyph-only fading, independent batch clocks and renderers, history/remount stability, stream completion and reduced motion |
-| `UserMessageItem.test.tsx` | sent and reloaded MCP references, mixed reference capsules, failed-message presentation, and message actions |
+| `UserMessageItem.test.tsx`, `userMessagePreview.test.ts` | preview-only layout with complete text/line endings/reference capsules preserved, expansion/collapse and full-message copy, sent and reloaded MCP references, failed-message presentation, shared edit/rollback menu, Escape focus return, disabled reasons, and existing message action flows; local DOM/CSS fixtures, not native width or remote transport evidence |
 | `UserMessageItemActions.test.ts` | metadata visibility, bubble outsets from the shared reading column, and normal-flow action layout |
 | `../../services/submittedMessagePresentation.test.ts` | explicit-send receipts, one-shot claims, expiry, device activation isolation, and initial status paint delay |
 | `useSubmittedMessageMotion.test.tsx` | submission clock, remount stability, StrictMode, reduced motion, focus, and surface-change cancellation; lifecycle only, not visual acceptance |
@@ -43,14 +49,16 @@ each missing what the other had.
 | `flowChatLiveTailWindow.test.ts` | "does the transcript still reach the newest Turn" |
 | `flowChatViewportAnchor.test.ts` | anchor geometry and the DOM contract |
 | `useFlowChatViewportAnchor.test.tsx` | capture, restore, carry, the settle window |
-| `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, and search placement only outside the readable viewport |
+| `useFlowChatLeadingExtent.test.tsx` | shared event geometry without repeated rectangle reads; fresh layout reads after resize and collection |
+| `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, search placement only outside the readable viewport, and real viewport-register acknowledgement before trajectory details/highlights commit for user/search/model/folded-tool/history targets |
+| `flowChatScrollbarMask.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | idle gutter masking with symmetric, one-sided and overlay scrollbars; overflow restoration and content/viewport resizing without scroll writes; supplied DOM geometry, not native rendering or live remote evidence |
 | `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
 | `ModernFlowChatContainer.history-state.test.tsx` | history presentation and the submission event |
 | `flowChatViewportOwnership.test.ts` | the priority order, preemption, expiry |
-| `../../../infrastructure/diagnostics/flowChatViewportDiagnostics.test.ts` | coalescing, placement sampling, the switch |
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
 | `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer |
-| `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed, user-scroll takeover, opening readbacks before native events, suspended viewport, measured-window reconciliation with delayed scroll/scroll-end delivery; supplied DOM geometry, not performance validation |
+| `useFlowChatVirtualizer.cascade.test.tsx` | bounded synchronous measurement notifications, cross-frame convergence, ordinary synchronous opening, reader takeover and StrictMode/session cleanup; real hooks with supplied geometry, not native paint evidence |
+| `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed, user-scroll takeover, newly attached rows measured during gestures before observer delivery, smooth-aim target stability and immediate measurement on reader takeover, opening readbacks before native events, suspended viewport, measured-window reconciliation with delayed scroll/scroll-end delivery; supplied DOM geometry, not performance validation |
 | `useFlowChatVirtualizer.aim.test.tsx` | the re-aim, and giving it up on takeover |
 | `VirtualMessageList.layout.test.ts` | the item-height estimate and the spacer |
 | `FlowChatTurnRail.test.tsx` | single-marker emphasis, neighboring hover fan, independent keyboard focus, reduced motion, and rail navigation |
@@ -63,11 +71,46 @@ each missing what the other had.
 | `../../selection/useExcerptComposerActions.test.tsx` | main/side draft routing, focus after activation, ordinary child ownership, and stale surface rejection |
 | `../../../shared/utils/conversationExcerpt.test.ts` | quote deduplication, source-data framing, and legacy/additive presentation metadata |
 | `flowChatSearchPresentation.test.ts` | visible source highlighting and single-line marker geometry, wrapping, scrolling, and clipping |
-| `FlowChatHeader.test.tsx` | shared SearchField composition, result controls, input identity while expanding, native-view occlusion declaration for session overview, and the default active-only Agent tree toggle |
+| `FlowChatHeader.test.tsx` | shared SearchField composition, result controls, input identity while expanding, native-view occlusion declaration for session overview, overview positioning during pane resize/collapse, and the default active-only Agent tree toggle |
 | `SessionTreePopover.test.tsx` | Agent selection/cancellation/deletion menus, type-only metadata, active branch filtering with ancestor retention, restoring all agents, and the active empty state |
 | `../../services/deleteSessionTreeBranch.test.ts` | Unloaded descendant deletion in child-first order, remote location forwarding, failure retention, and device surface guards |
 
+## Native history-scroll fixture
+
+When UI verification is authorized, build Desktop and current frontend assets,
+then run the focused command documented in `tests/e2e/AGENTS.md`:
+
+```bash
+pnpm --dir tests/e2e exec wdio run ./config/wdio.flowchat-scroll-native.ts
+```
+
+The isolated packaged-app fixture opens an 80-Turn transcript, drives slow and
+fast wheel actions in both directions, and records per-frame continuity,
+rectangle reads, DOM scans and mounted rows. Reversals over 4px, empty frames,
+post-gesture drift, lost session reading position, lost draft text and failed
+search navigation are assertions. Frame intervals are diagnostic measurements,
+not hard timing gates on shared machines. JSON evidence and a screenshot remain
+in the printed temporary directory. `OPENBITFUN_SCROLL_DIAGNOSTICS=1` additionally
+captures per-frame row geometry and scroll-write stacks; use it for attribution,
+not timing comparisons.
+
+The embedded driver dispatches wheel input and updates the native WebView's
+scroll offset. It does not reproduce OS trackpad inertia. This fixture does not
+establish physical input comfort, live streaming/model transport, remote
+workspace, remote control, Peer Device, or detached-dispatch behavior. Existing
+follow-output, navigation, owner and session-boundary unit tests cover those
+local state-machine contracts separately. The session-boundary suite also
+covers measurement-shift credit and restoration when a saved key is unmounted
+and its former absolute pixel position is obsolete.
+
 ## Manual
+
+For content-width resizing, check both edge hit areas, subtle hover/focus paint,
+composer/transcript alignment, rail and scrollbar gaps, minimum/maximum widths,
+light/dark and reduced motion, long virtualized history, and restart persistence.
+Local, remote-workspace and peer transcripts share controller-local appearance;
+live SSH/Peer, mobile Remote Control and Detached Dispatch were not exercised by
+the DOM fixtures and need separate scenario acceptance where applicable.
 
 For text selection, check the floating toolbar and right-click actions in the
 native WebView; keyboard selection, Tab, Escape, and Ctrl/Cmd+Alt+B; both main
@@ -88,8 +131,22 @@ only that pending annotation from the composer or queue and close the dialog.
 The first ordinary side question forks the parent on send. Model and reasoning
 choices stay in its draft until that request; its Agent mode is inherited.
 Its permission control reads the parent and becomes editable after submission.
-Peers advertise `btw_initial_model_selection_v1` before showing those draft
-settings as editable. Older hosts retain inherited settings and readable quotes.
+Peers advertise `btw_initial_model_selection_v1` for legacy fixed-model draft
+settings, and `btw_model_pool_selection_v1` for typed model/pool choices. Inherited
+pools send no scalar override and retain the parent's current binding under both
+routing strategies. Older hosts retain inherited settings and readable quotes.
+
+For completed-turn image export, check both option cards in light/dark and
+high-contrast themes: hover, press, and keyboard focus change the neutral fill
+without changing size or selection; only the checkbox indicates the selected
+output. Check reduced motion and touch input separately. Check the captured image's
+user bubble against the live message, full long text/reference labels, minimal
+brand/date header and attribution footer, and absence of all thinking items/icons
+in compact output. Verify that many model rounds retain their inter-item gaps
+without accumulating empty space above the footer, and that long tool summaries
+respect the horizontal inset. Exercise both system and bundled font profiles on
+macOS, Windows, and Linux. The same presentation
+on remote-workspace and peer-host sessions remains a real-host check.
 
 **Agents must not perform UI interaction verification.** Report these as pending
 unless a human confirms them. They are grouped so that adding a check to one
@@ -115,6 +172,15 @@ group does not renumber the others.
    not enter host suspension or move to the tail.
 
 ### Submitting and revealing
+
+For user-message disclosure, compare a short message with a long message whose
+first lines are short and later lines are wide. The collapsed preview stays
+compact; expanding grows leftward only as needed and downward, keeping its right
+edge aligned. Collapse restores the compact width. Repeat with images, reference
+capsules, failed messages, editing and a narrow main/side pane. Verify long
+expanded text still scrolls within its height limit. Local, remote-workspace,
+Peer Device and detached-dispatch observer views require separate real-host
+checks; mobile Remote Control uses its own message renderer.
 
 1. A newly submitted Turn performs one physical-bottom placement, exposing the
    full resident spacer while leaving at least one quarter of the transcript
@@ -295,6 +361,13 @@ group does not renumber the others.
 
 ### Turn navigation
 
+For trajectory navigation, check user, model, folded-tool and historical-round
+targets in light/dark themes. The target receives a temporary full-item accent
+fill; the short tool marker sits left of its icon. Rail selection and right-panel
+content change only after successful positioning. These native visual checks
+remain manual; DOM geometry and transport fixtures do not establish native or
+live-remote rendering behavior.
+
 At rest the rail's dark emphasis belongs only to its current step
 (`aria-current`), not to every Turn visible in the transcript. Hover temporarily
 emphasizes just the pointed marker, with a symmetric fan of muted neighbors;
@@ -344,6 +417,21 @@ Keyboard focus has its own outline and does not navigate until activation.
     neither retains the old navigation selection.
 11. With reduced motion enabled, the hover fan changes without animation. Touch
     navigation must not leave a hover fan behind.
+
+### Accepted steering
+
+1. Send immediately during a long tool/model round in the main transcript and
+   BTW pane. After host acceptance, verify the message uses the ordinary user-message
+   appearance without a pending label and leaves the composer queue. Confirm long text and attachment count.
+2. Let the formal Turn start. Verify one message remains and
+   attachments appear normally. Send multiple messages and check ordering.
+3. Exercise blocked handoff, history navigation, transcript closure, disconnect,
+   reconnect, host restart and device switching; recovery controls must remain
+   available and another device's preview must never appear.
+4. Repeat on a remote workspace and Peer Device host with two controllers, one
+   sending from mobile. Mobile retains its existing queue UI. Check an older
+   host without display receipts retains the existing desktop queue UI. Detached
+   dispatch and ACP use their existing paths and have no preview requirement.
 
 ### History paging demand
 

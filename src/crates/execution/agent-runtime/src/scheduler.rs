@@ -1,5 +1,9 @@
 //! Scheduler owner decisions.
 
+/// Portable result delivery decisions share the background scheduler owner.
+#[path = "background_delivery.rs"]
+pub mod result_delivery;
+
 use crate::events::turn_outcome_kind;
 use crate::thread_goal::{build_objective_updated_plan, build_thread_goal_continuation_plan};
 use openbitfun_runtime_ports::{

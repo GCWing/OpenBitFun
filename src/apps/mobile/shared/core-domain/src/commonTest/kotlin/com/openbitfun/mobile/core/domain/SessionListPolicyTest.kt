@@ -68,11 +68,11 @@ class SessionListPolicyTest {
     )
 
     @Test
-    fun untitledSessionsGetTheAgentSpecificWireName() {
-        assertEquals("Remote Code Session", SessionNaming.wireSessionName("code", "   "))
-        assertEquals("Remote Cowork Session", SessionNaming.wireSessionName("cowork", ""))
-        assertEquals("Remote Assistant Session", SessionNaming.wireSessionName("claw", ""))
-        assertEquals("Remote Assistant Session", SessionNaming.wireSessionName("chat", ""))
+    fun untitledSessionsDelegateNamingToTheHost() {
+        assertEquals("", SessionNaming.wireSessionName("code", "   "))
+        assertEquals("", SessionNaming.wireSessionName("cowork", ""))
+        assertEquals("", SessionNaming.wireSessionName("claw", ""))
+        assertEquals("", SessionNaming.wireSessionName("chat", ""))
     }
 
     @Test
@@ -81,9 +81,9 @@ class SessionListPolicyTest {
     }
 
     @Test
-    fun fallbackTitleDropsTheRemotePrefixTheWireNameCarries() {
-        assertEquals("Code Session", SessionNaming.fallbackTitle("code"))
-        assertEquals("Cowork Session", SessionNaming.fallbackTitle("cowork"))
-        assertEquals("Assistant Session", SessionNaming.fallbackTitle("assistant"))
+    fun fallbackTitleIsIndependentOfMode() {
+        assertEquals("New Session", SessionNaming.fallbackTitle("code"))
+        assertEquals("New Session", SessionNaming.fallbackTitle("cowork"))
+        assertEquals("New Session", SessionNaming.fallbackTitle("assistant"))
     }
 }

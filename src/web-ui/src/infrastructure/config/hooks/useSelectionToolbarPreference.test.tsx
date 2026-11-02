@@ -7,6 +7,8 @@ import { useSelectionToolbarPreference } from './useSelectionToolbarPreference';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), listeners: new Set<() => void>() }));
 vi.mock('../services/ConfigManager', () => ({ configManager: {
+  hasCachedConfig: () => false,
+  getCachedConfig: () => undefined,
   getOptionalConfig: mocks.get,
   watch: (_path: string, listener: () => void) => {
     mocks.listeners.add(listener);

@@ -18,15 +18,15 @@ services:
     ports:
       - "127.0.0.1:9720:9720"
     env_file:
-      - /etc/openbitfun-skin-market/market.env
+      - ${SKIN_MARKET_ENV_FILE:-/etc/openbitfun-skin-market/market.env}
     environment:
       SKIN_MARKET_BIND: 0.0.0.0:9720
       SKIN_MARKET_DATABASE_PATH: /app/data/market.sqlite
       SKIN_MARKET_ARTIFACT_DIR: /app/artifacts
       SKIN_MARKET_WEB_DIR: /app/web
     volumes:
-      - /srv/openbitfun-skin-market/data:/app/data
-      - /srv/openbitfun-skin-market/artifacts:/app/artifacts
+      - ${SKIN_MARKET_ROOT:-/srv/openbitfun-skin-market}/data:/app/data
+      - ${SKIN_MARKET_ROOT:-/srv/openbitfun-skin-market}/artifacts:/app/artifacts
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
     mem_limit: 1g

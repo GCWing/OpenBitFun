@@ -81,13 +81,10 @@ export class RemoteCommandFactory {
   }
 
   static createSession(options: CreateSessionOptions, workspacePath: string): RemoteCommand {
-    const normalizedAgentType = (options.agentType || '').toLowerCase();
-    const defaultTitle = normalizedAgentType === 'claw' || normalizedAgentType === 'assistant' || normalizedAgentType === 'chat' ?
-      'Remote Assistant Session' : normalizedAgentType === 'cowork' ? 'Remote Cowork Session' : 'Remote Code Session';
     const command: RemoteCommand = {
       cmd: 'create_session',
       agent_type: options.agentType,
-      session_name: options.title.trim() || defaultTitle
+      session_name: options.title.trim()
     };
     if (options.workspaceId) {
       command.workspace_id = options.workspaceId;
@@ -220,6 +217,30 @@ export class RemoteCommandFactory {
       cmd: 'delete_session',
       session_id: sessionId
     };
+  }
+
+  /**
+   * Withdraw `targetTurnId` and every turn after it, then restore the files
+   * those turns touched. The target turn is withdrawn too, and its prompt comes
+   * back in the reply's `composer_text`.
+   *
+   * `expectedStorageTurnIndex` is the stale-view guard: the host refuses the
+   * rollback when the turn it would address is no longer the one the caller
+   * saw. Omitting it — which is what the phone does today, because no projected
+   * message carries a storage index — only widens the race window and never
+   * changes which turn is addressed, so it is omitted rather than sent as an
+   * empty value.
+   */
+  static rollbackSessionToTurn(sessionId: string, targetTurnId: string, expectedStorageTurnIndex?: number): RemoteCommand {
+    const command: RemoteCommand = {
+      cmd: 'rollback_session_to_turn',
+      session_id: sessionId,
+      target_turn_id: targetTurnId
+    };
+    if (expectedStorageTurnIndex !== undefined) {
+      command.expected_storage_turn_index = expectedStorageTurnIndex;
+    }
+    return command;
   }
 
   static confirmTool(toolId: string, updatedInput?: Object): RemoteCommand {

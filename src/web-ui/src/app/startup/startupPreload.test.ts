@@ -245,4 +245,21 @@ describe('startup preload shell', () => {
     expect(spriteCss).not.toContain('box-shadow:');
     dom.window.close();
   });
+
+  it('keeps desktop card windows transparent without the main startup overlay', () => {
+    const dom = new JSDOM(readIndexHtml(), {
+      url: 'http://localhost:1422/?openbitfunWindow=desktop-card&cardId=card-1',
+      runScripts: 'dangerously',
+      beforeParse(window) {
+        Object.assign(window, {
+          __OPENBITFUN_BOOTSTRAP_LOCALE__: 'en-US',
+        });
+      },
+    });
+
+    expect(dom.window.document.body.classList.contains('openbitfun-desktop-card-preload-body')).toBe(true);
+    expect(dom.window.document.getElementById('openbitfun-startup-overlay')).toBeNull();
+    expect(dom.window.document.querySelector('.openbitfun-pet-preload')).toBeNull();
+    dom.window.close();
+  });
 });

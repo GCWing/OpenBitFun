@@ -443,3 +443,24 @@ test('a dropped connection mid-sign-in is retried instead of ending the attempt'
   assert.equal(offline.error.message, 'Could not reach the account service.');
   assert.equal(offline.polls.length, 60);
 });
+
+test('restored session workspace is additive: old records stay readable and bad values are dropped', () => {
+  const scope = { accountId: 'a', controllerDeviceId: 'c', relayUrl: 'r', routeKey: 'k' };
+  const stored = (session) => ({
+    getItem: () => JSON.stringify({ version: 1, ...scope, deviceId: 'device', session }),
+    setItem() {}, removeItem() {},
+  });
+  const old = { id: 's', name: 'Session', agentType: 'Claw' };
+  assert.deepEqual(loadMobileNavigation(scope, stored(old)).session, old);
+  assert.deepEqual(loadMobileNavigation(scope, stored({ ...old, workspace: 'bad' })).session, old);
+  assert.deepEqual(loadMobileNavigation(scope, stored({ ...old, workspace: { path: 42, name: null } })).session, old);
+  assert.deepEqual(
+    loadMobileNavigation(scope, stored({
+      ...old, workspace: { workspace_id: 'ws', name: 'Nova', workspace_kind: 'future-kind' },
+    })).session.workspace,
+    {
+      workspace_id: 'ws', path: undefined, remote_connection_id: undefined,
+      remote_ssh_host: undefined, name: 'Nova', workspace_kind: undefined,
+    },
+  );
+});

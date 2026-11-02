@@ -673,7 +673,7 @@ fn replace_command_tokens(language: BotLanguage, line: &str) -> String {
             if language.is_chinese() {
                 "新建助理会话"
             } else {
-                "New Claw Session"
+                "New Assistant Session"
             },
         ),
         (

@@ -18,16 +18,6 @@
     }
   }
 
-  &__icon {
-    display: inline-flex;
-    flex: 0 0 auto;
-    align-items: center;
-
-    > span {
-      display: inline-flex;
-    }
-  }
-
   &__title {
     width: 100%;
     min-width: 0;
@@ -41,10 +31,9 @@
 
   &__identity {
     display: inline-flex;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     align-items: center;
-    gap: var(--openbitfun-space-1);
-    min-width: 0;
+    white-space: nowrap;
     color: var(--openbitfun-color-content-muted);
     font-family: var(--openbitfun-type-meta-font-family);
     font-size: var(--openbitfun-type-meta-font-size);

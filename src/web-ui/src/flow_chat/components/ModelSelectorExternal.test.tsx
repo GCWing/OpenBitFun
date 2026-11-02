@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -83,7 +84,6 @@ vi.mock('react-i18next', () => ({
 vi.mock('@openbitfun/ui', async importOriginal => ({
   ...await importOriginal<typeof import('@openbitfun/ui')>(),
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  Switch: () => null,
 }));
 
 vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
@@ -101,7 +101,7 @@ vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
           capabilities: ['text_chat'],
         },
       ],
-      'ai.agent_model_defaults': { mode: 'model-a' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-a' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     })),
     onConfigChange: vi.fn(() => () => undefined),
     setConfig: vi.fn(async () => undefined),
@@ -143,6 +143,7 @@ describe('ModelSelector external transport reuse', () => {
   let catalogUpdated: (() => void) | undefined;
 
   beforeEach(() => {
+    activateSurface('local');
     catalogUpdated = undefined;
     flowChatStoreMocks.sessions.clear();
     flowChatStoreMocks.subscribers.clear();
@@ -249,7 +250,7 @@ describe('ModelSelector external transport reuse', () => {
         },
       ],
       'ai.default_models': { primary: 'model-a' },
-      'ai.agent_model_defaults': { mode: 'model-a' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-a' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
     aiApiMocks.getModelCatalog.mockResolvedValueOnce({
       version: 1,
@@ -312,9 +313,7 @@ describe('ModelSelector external transport reuse', () => {
       )?.click();
     });
     await act(async () => {
-      document.body.querySelector<HTMLButtonElement>(
-        '[data-testid="chat-model-selector-provider"][data-provider-key="provider-shared"]',
-      )?.click();
+      document.body.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-provider"]')?.click();
     });
     await act(async () => {
       document.body.querySelector<HTMLButtonElement>(
@@ -431,6 +430,8 @@ describe('ModelSelector external transport reuse', () => {
     await act(async () => trigger.click());
     expect(document.body.querySelector('[data-testid="chat-model-selector-loading"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="chat-model-selector-option"][data-model-id="remote-model"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="chat-model-selector-option"][data-model-id="primary"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="chat-model-selector-option"][data-model-id="fast"]')).toBeNull();
     await act(async () => resolveConfig({ 'ai.models': [] }));
   });
 
@@ -739,19 +740,56 @@ describe('ModelSelector external transport reuse', () => {
     await act(async () => { control?.click(); });
   };
 
-  it('opens only the current target provider and applies choices through its transport', async () => {
+  it.each(['model', 'provider'])('selects target models through the %s entry and its transport', async entry => {
     const selection = targetSelection({ models: ['model-a', 'remote-model', 'remote-plain'] });
     await renderTarget(selection);
     await clickControl('chat-model-selector-btn');
-    await clickControl('chat-model-selector-settings-provider');
+    await clickControl('chat-model-selector-settings-model');
+    if (entry === 'provider') {
+      await clickControl('chat-model-selector-search-toggle');
+      await clickControl('chat-model-selector-provider-filter');
+      const provider = document.body.querySelector<HTMLButtonElement>(
+        '[data-testid="chat-model-selector-provider-filter-menu"] [data-menu-id="external:a100"]',
+      )!;
+      await act(async () => provider.click());
+    }
 
     expect(document.body.querySelector('[data-testid="chat-model-selector-provider"]')).toBeNull();
-    expect(document.body.querySelector('[data-model-id="model-a"]')).toBeNull();
+    if (entry === 'provider') expect(document.body.querySelector('[data-model-id="model-a"]')).toBeNull();
+    else expect(document.body.querySelector('[data-model-id="model-a"]')).not.toBeNull();
     expect(document.body.querySelector('[data-model-id="remote-model"]')?.getAttribute('aria-checked')).toBe('true');
     const model = document.body.querySelector<HTMLButtonElement>('[data-model-id="remote-plain"]');
     expect(model).not.toBeNull();
     await act(async () => { model!.click(); });
 
+    expect(selection.onSelect).toHaveBeenCalledExactlyOnceWith('remote-plain');
+    expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
+    expect(configManager.setConfig).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('searches only target-owned models and uses the target callback (reasoning settings: %s)', async withReasoning => {
+    const selection = targetSelection(withReasoning ? {} : { onSelectReasoningPreset: undefined });
+    await renderTarget(selection);
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-btn"]')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })));
+    if (withReasoning) {
+      expect(document.body.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-settings-context"]')?.disabled).toBe(true);
+      expect(document.body.querySelector('[data-testid="chat-model-selector-settings-fast"]')).toBeNull();
+      await clickControl('chat-model-selector-settings-model');
+    }
+    expect(document.body.querySelector('[data-testid="chat-model-selector-pool-action"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="chat-model-selector-smart-action"]')).toBeNull();
+    expect(document.activeElement).toBe(document.body.querySelector('[data-model-id="remote-model"]'));
+    await clickControl('chat-model-selector-search-toggle');
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="chat-model-selector-search-input"]')!;
+    expect(document.activeElement).toBe(input);
+    expect(document.body.querySelector('[data-model-id="model-a"]')).toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'REMOTE-PLAIN');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(document.body.querySelectorAll('[data-testid="chat-model-selector-option"]')).toHaveLength(1);
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-model-id="remote-plain"]')!.click());
     expect(selection.onSelect).toHaveBeenCalledExactlyOnceWith('remote-plain');
     expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
     expect(configManager.setConfig).not.toHaveBeenCalled();
@@ -774,7 +812,8 @@ describe('ModelSelector external transport reuse', () => {
     expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
     expect(configManager.setConfig).not.toHaveBeenCalled();
     await renderTarget({ ...selection, selectedReasoningPreset: 'medium' });
-    expect(document.body.querySelector('[data-testid="chat-model-selector-intensity-control"]')?.getAttribute('data-intensity')).toBe('1');
+    expect(document.body.querySelector('[data-testid="chat-model-selector-settings-reasoning"]')?.textContent)
+      .toContain('reasoningSelector.levels.medium');
     expect(container.querySelector('[data-testid="chat-model-selector-btn"]')?.getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -811,7 +850,7 @@ describe('ModelSelector external transport reuse', () => {
     expect(document.body.querySelector('[data-testid="chat-model-selector-settings-reasoning"]')).toBeNull();
     expect(document.body.querySelector('[data-model-id="remote-plain"]')?.getAttribute('aria-checked')).toBe('true');
     await act(async () => {
-      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
     });
     expect(container.querySelector('[data-testid="chat-model-selector-btn"]')?.getAttribute('aria-expanded')).toBe('false');
   });

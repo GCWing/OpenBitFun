@@ -1,5 +1,6 @@
 import '@/app/scenes/settings/pages/shared/RuntimeSettings.scss';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
+import { computerUseControlAPI, type ComputerUsePermissions } from '@/infrastructure/api/service-api/ComputerUseControlAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import {
   ConfigLoadingState,
@@ -13,6 +14,7 @@ import { useComputerUseEnabled } from '@/infrastructure/config/hooks/useComputer
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { i18nService } from '@/infrastructure/i18n';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import {
@@ -47,6 +49,7 @@ type ComputerUseStatusPayload = {
   accessibilityGranted: boolean;
   screenCaptureGranted: boolean;
   platformNote: string | null;
+  permissions?: ComputerUsePermissions;
 };
 
 type BrowserControlLaunchResponse = {
@@ -101,6 +104,8 @@ const DeviceControlSettingsPage: React.FC = () => {
 
   const [computerUseScreen, setComputerUseScreen] = useState(false);
 
+  const [computerUsePermissions, setComputerUsePermissions] = useState<ComputerUsePermissions>();
+
   const [computerUseBusy, setComputerUseBusy] = useState(false);
 
   const [computerUseStatusLoading, setComputerUseStatusLoading] = useState(false);
@@ -145,12 +150,14 @@ const DeviceControlSettingsPage: React.FC = () => {
     if (!IS_TAURI_DESKTOP) return false;
     setComputerUseStatusLoading(true);
     setComputerUseStatusError(false);
+    setComputerUsePermissions(undefined);
     try {
       const s = await api.invoke<ComputerUseStatusPayload>('computer_use_get_status');
       setPeerBrowserControlUnsupported(false);
       setComputerUseEnabled(s.computerUseEnabled);
       setComputerUseAccess(s.accessibilityGranted);
       setComputerUseScreen(s.screenCaptureGranted);
+      setComputerUsePermissions(s.permissions);
       setComputerUsePlatformNote(s.platformNote);
       return true;
     } catch (error) {
@@ -224,16 +231,6 @@ const DeviceControlSettingsPage: React.FC = () => {
         checked ? t('messages.saveSuccess') : t('messages.saveSuccess'),
         { duration: 2000 }
       );
-      if (checked) {
-        // Proactively surface the OS permission prompt (macOS Accessibility /
-        // Screen Recording) the moment the user opts in, instead of waiting
-        // for the first agent tool call to fail with a permission error.
-        try {
-          await api.invoke('computer_use_request_permissions');
-        } catch (permError) {
-          log.warn('computer_use_request_permissions failed', permError);
-        }
-      }
       await refreshComputerUseStatus();
     } catch (error) {
       log.error('Failed to save computer_use_enabled', error);
@@ -245,20 +242,41 @@ const DeviceControlSettingsPage: React.FC = () => {
   };
 
   const handleComputerUseOpenSettings = async (pane: 'accessibility' | 'screen_capture') => {
+    const scope = getActiveSurfaceScope();
+    setComputerUseBusy(true);
     try {
+      const kind = pane === 'screen_capture' ? 'screen_recording' : 'accessibility';
+      if (computerUsePermissions?.permissions.some(permission => permission.kind === kind && permission.requestable)) {
+        const receipt = await computerUseControlAPI.requestPermission(kind);
+        if (!scope.isCurrent()) return;
+        if (receipt.current_granted) {
+          await refreshComputerUseStatus();
+          return;
+        }
+      }
       await api.invoke('computer_use_open_system_settings', { request: { pane } });
     } catch (error) {
+      if (!scope.isCurrent()) return;
       log.error('computer_use_open_system_settings failed', error);
       notificationService.error(t('messages.saveFailed'));
+    } finally {
+      if (scope.isCurrent()) setComputerUseBusy(false);
     }
   };
 
   const handleBrowserControlBrowserChange = async (value: string | number) => {
     const nextValue = String(value || DEFAULT_BROWSER_CONTROL_BROWSER);
     const previousValue = preferredBrowser;
+    if (nextValue === previousValue) return;
     setPreferredBrowser(nextValue);
     setBrowserControlBusy(true);
     try {
+      // A browser choice must revoke the previous profile before it changes
+      // what Settings displays, including when the new browser cannot connect.
+      await api.invoke<BrowserControlDisconnectResponse>(
+        'browser_control_disconnect',
+        { request: { port: 9222 } },
+      );
       await configManager.setConfig(
         'ai.browser_control_preferred_browser',
         nextValue === DEFAULT_BROWSER_CONTROL_BROWSER ? '' : nextValue,
@@ -426,10 +444,8 @@ const DeviceControlSettingsPage: React.FC = () => {
     : computerUseStatusError ? t('computerUse.statusUnavailable')
       : computerUseScreen ? t('computerUse.granted') : t('computerUse.notGranted');
 
-  const computerUsePlatformMessage = computerUsePlatformNote
-    ? platform === 'macos'
-      ? t('computerUse.platformNotes.macos')
-      : platform === 'windows'
+  const computerUsePlatformMessage = computerUsePlatformNote && platform !== 'macos'
+    ? platform === 'windows'
         ? t('computerUse.platformNotes.windows')
         : platform === 'linux'
           ? t('computerUse.platformNotes.linux')
@@ -515,9 +531,6 @@ const DeviceControlSettingsPage: React.FC = () => {
           {/* ── Computer use (desktop) ─────────────────────────────── */}
           <ConfigPageSection
             title={t('computerUse.sectionTitle')}
-            description={
-              IS_TAURI_DESKTOP ? t('computerUse.sectionDescription') : t('computerUse.desktopOnly')
-            }
             extra={IS_TAURI_DESKTOP && !peerBrowserControlUnsupported ? (
               <ConfigRefreshButton
                 tooltip={t('computerUse.refreshStatus')}
@@ -543,6 +556,7 @@ const DeviceControlSettingsPage: React.FC = () => {
                     />
                   </div>
                 </ConfigPageRow>
+                {platform === 'macos' && <>
                 <ConfigPageRow
                   label={t('computerUse.accessibility')}
                   description={t('computerUse.accessibilityDesc')}
@@ -560,7 +574,7 @@ const DeviceControlSettingsPage: React.FC = () => {
                     >
                       {computerUseAccessLabel}
                     </StatusPill>
-                    {platform === 'macos' && (
+                    {!computerUseAccess && (
                       <Button
                         className="openbitfun-runtime-settings__row-action-btn"
                         size="sm"
@@ -590,7 +604,7 @@ const DeviceControlSettingsPage: React.FC = () => {
                     >
                       {computerUseScreenLabel}
                     </StatusPill>
-                    {platform === 'macos' && (
+                    {!computerUseScreen && (
                       <Button
                         className="openbitfun-runtime-settings__row-action-btn"
                         size="sm"
@@ -603,6 +617,7 @@ const DeviceControlSettingsPage: React.FC = () => {
                     )}
                   </div>
                 </ConfigPageRow>
+                </>}
                 {computerUsePlatformMessage && (
                   <div
                     className="openbitfun-runtime-settings__platform-note"
@@ -631,7 +646,11 @@ const DeviceControlSettingsPage: React.FC = () => {
               >
                 <span />
               </ConfigPageRow>
-            ) : null}
+            ) : (
+              <ConfigPageRow label={t('computerUse.desktopOnly')}>
+                {null}
+              </ConfigPageRow>
+            )}
           </ConfigPageSection>
 
           {/* ── Browser control (CDP) ──────────────────────────────── */}
@@ -645,9 +664,6 @@ const DeviceControlSettingsPage: React.FC = () => {
                 onClick={() => void refreshBrowserControlStatus()}
               />
             ) : undefined}
-            description={
-              IS_TAURI_DESKTOP ? t('browserControl.sectionDescription') : t('browserControl.desktopOnly')
-            }
           >
             {IS_TAURI_DESKTOP && !peerBrowserControlUnsupported ? (
               <>
@@ -763,7 +779,11 @@ const DeviceControlSettingsPage: React.FC = () => {
               >
                 <span />
               </ConfigPageRow>
-            ) : null}
+            ) : (
+              <ConfigPageRow label={t('browserControl.desktopOnly')}>
+                {null}
+              </ConfigPageRow>
+            )}
           </ConfigPageSection>
 
           <Dialog

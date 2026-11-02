@@ -1,0 +1,52 @@
+.overview-miniapp-logos {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--openbitfun-space-2);
+  overflow: hidden;
+  padding: var(--openbitfun-focus-width);
+  margin: calc(-1 * var(--openbitfun-focus-width));
+
+  &__probe { position: absolute; display: inline-flex; visibility: hidden; pointer-events: none; }
+  &__item {
+    flex: 0 0 auto;
+    inline-size: var(--openbitfun-control-height-lg);
+    block-size: var(--openbitfun-control-height-lg);
+    min-block-size: var(--openbitfun-control-height-lg);
+    border-radius: var(--openbitfun-radius-pill);
+    outline-color: transparent;
+    background: transparent;
+  }
+  [data-openbitfun-component='avatar'] { border: 0; }
+  &__trigger { justify-content: center; padding: 0; }
+  &__item > [data-openbitfun-part='actions'] {
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    transform: none;
+    pointer-events: none;
+
+    > [data-openbitfun-component='icon-button'] {
+      flex-basis: 100%;
+      inline-size: 100%;
+      block-size: 100%;
+      pointer-events: none;
+
+      // Fill the logo with glass while retaining the center launch target and clickable detail edges.
+      &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        inline-size: var(--openbitfun-control-icon-button-standard-size);
+        block-size: var(--openbitfun-control-icon-button-standard-size);
+        margin: auto;
+        border-radius: var(--openbitfun-radius-pill);
+        pointer-events: auto;
+      }
+    }
+  }
+  &__item > [data-openbitfun-part='actions'] [data-openbitfun-component='icon-button']:is(:hover, :focus-visible):not(:disabled) {
+    color: var(--openbitfun-color-status-success-content);
+  }
+}

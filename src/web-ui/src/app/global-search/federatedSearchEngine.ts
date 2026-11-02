@@ -64,25 +64,37 @@ export async function runFederatedSearch(
   request: GlobalSearchRequest,
   signal: AbortSignal,
   onUpdate: (snapshot: GlobalSearchSnapshot) => void,
+  retry?: { previous: GlobalSearchSnapshot; providerIds: readonly string[] },
 ): Promise<GlobalSearchSnapshot> {
   const providerItems = new Map<string, GlobalSearchItem[]>();
   const providerDiagnostics = new Map<string, GlobalSearchProviderDiagnostic[]>();
   const providerTruncated = new Map<string, boolean>();
+  const searchingProviders = retry
+    ? providers.filter(provider => retry.providerIds.includes(provider.id))
+    : providers;
   const providerStatus: Record<string, GlobalSearchProviderStatus> = Object.fromEntries(
-    providers.map((provider) => [provider.id, 'loading' as const]),
+    providers.map(provider => [provider.id, retry?.previous.providerStatus[provider.id] ?? 'ready']),
   );
+  if (retry) {
+    for (const provider of providers) {
+      providerItems.set(provider.id, retry.previous.items.filter(item => item.providerId === provider.id));
+      providerDiagnostics.set(provider.id, retry.previous.diagnostics.filter(item => item.providerId === provider.id));
+    }
+  }
+  for (const provider of searchingProviders) providerStatus[provider.id] = 'loading';
 
   const snapshot = (): GlobalSearchSnapshot => ({
     items: buildItems(providers, providerItems, request.limitPerGroup),
     providerStatus: { ...providerStatus },
     diagnostics: [...providerDiagnostics.values()].flat(),
     isSearching: Object.values(providerStatus).some((status) => status === 'loading'),
-    truncated: [...providerTruncated.values()].some(Boolean),
+    truncated: Boolean(retry?.previous.truncated) || [...providerTruncated.values()].some(Boolean),
   });
 
+  if (signal.aborted) return snapshot();
   onUpdate(snapshot());
 
-  await Promise.all(providers.map(async (provider) => {
+  await Promise.all(searchingProviders.map(async (provider) => {
     try {
       const result = await provider.search(request, signal);
       if (signal.aborted) return;

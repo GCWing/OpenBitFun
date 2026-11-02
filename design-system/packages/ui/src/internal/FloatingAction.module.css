@@ -1,0 +1,61 @@
+@layer openbitfun.components {
+  .host {
+    --_floating-action-size: var(--openbitfun-control-icon-button-xs-size);
+    position: relative;
+  }
+
+  .action {
+    pointer-events: auto;
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: calc((var(--_floating-action-host-height) - var(--_floating-action-size)) / 2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--_floating-action-size);
+    block-size: var(--_floating-action-size);
+    transform: translateY(-50%);
+  }
+
+  .action > button {
+    inline-size: 100%;
+    block-size: 100%;
+    border-radius: var(--openbitfun-radius-pill);
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .action[data-floating-action-group] {
+    inline-size: max-content;
+  }
+
+  .action[data-floating-action-group] > button {
+    flex: 0 0 var(--_floating-action-size);
+    inline-size: var(--_floating-action-size);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .action {
+      pointer-events: none;
+    }
+
+    .action > button {
+      opacity: 0;
+    }
+
+    /* Dialogs restore focus to their trigger. Pointer focus should not keep
+       actions exposed after hover ends; keyboard focus must still reveal them. */
+    .host:is(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) > .action {
+      pointer-events: auto;
+    }
+
+    .host:is(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) > .action > button {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .action > button {
+      transition: none;
+    }
+  }
+}

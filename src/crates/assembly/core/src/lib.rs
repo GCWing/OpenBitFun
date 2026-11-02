@@ -20,6 +20,8 @@ pub mod external_mcp_import;
 #[cfg(all(test, feature = "external-sources"))]
 mod external_mcp_tests;
 #[cfg(feature = "external-sources")]
+pub mod external_session_import;
+#[cfg(feature = "external-sources")]
 pub mod external_sources;
 #[cfg(feature = "external-sources")]
 mod external_subagents;

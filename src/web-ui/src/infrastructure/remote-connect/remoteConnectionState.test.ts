@@ -13,7 +13,7 @@ const invitation = (url: string): ConnectionResult => ({
   bot_pairing_code: null, bot_link: null, pairing_state: 'waiting_for_scan',
 });
 
-describe('one account device connection contract', () => {
+describe('account device connection routes', () => {
   it.each([official, lan])('uses the same authenticated invitation and status at %s', url => {
     expect(selectRemoteNetworkConnection(status(url), invitation(url))).toMatchObject({
       connected: true, relayUrl: url, invitationConnected: false,
@@ -25,6 +25,26 @@ describe('one account device connection contract', () => {
   it('does not reuse an invitation after switching endpoints', () => {
     expect(selectRemoteNetworkConnection(status(lan), invitation(official)).invitationConnected).toBe(false);
     expect(selectRemoteNetworkConnection(status(official), invitation(lan)).invitationConnected).toBe(false);
+  });
+  it('selects independent clients and connection state when both routes are online', () => {
+    const both: RemoteConnectStatus = { ...status(official), connections: [
+      { method: 'openbitfun_server', relay_connected: true, relay_url: official, clients: [{ id: 'public-phone', name: 'Public phone' }] },
+      { method: 'lan', relay_connected: true, relay_url: lan, clients: [{ id: 'lan-phone', name: 'LAN phone' }] },
+    ] };
+    expect(selectRemoteNetworkConnection(both, invitation(lan), 'lan')).toMatchObject({
+      connected: true, relayUrl: lan, clients: [{ id: 'lan-phone' }], invitationConnected: true,
+    });
+    expect(selectRemoteNetworkConnection(both, invitation(official), 'openbitfun_server')).toMatchObject({
+      connected: true, relayUrl: official, clients: [{ id: 'public-phone' }], invitationConnected: true,
+    });
+    const publicOffline = { ...both, connections: both.connections!.map(route => ({ ...route, relay_connected: route.method === 'lan' })) };
+    expect(selectRemoteNetworkConnection(publicOffline, null, 'openbitfun_server').connected).toBe(false);
+    expect(selectRemoteNetworkConnection(publicOffline).method).toBe('lan');
+    expect(selectRemoteNetworkConnection({ ...both, connections: [] }).connected).toBe(false);
+  });
+  it('does not show an older host connection under the other route', () => {
+    expect(selectRemoteNetworkConnection(status(official), null, 'lan').connected).toBe(false);
+    expect(selectRemoteNetworkConnection(status(lan), null, 'openbitfun_server').connected).toBe(false);
   });
   it('accepts only canonical typed methods', () => {
     expect(remoteNetworkMethod({ lan: { ip: '192.168.1.2' } })).toBe('lan');

@@ -1,4 +1,5 @@
 export const ZH_CN_MESSAGES: [string, string][] = [
+  ['session.newTitle', '新会话'],
   ['workspaceTools.browse', '浏览受控设备文件夹'],
   ['workspaceTools.selectFolder', '选择此文件夹'],
   ['workspaceTools.back', '返回文件列表'],
@@ -101,6 +102,7 @@ export const ZH_CN_MESSAGES: [string, string][] = [
   ['notification.taskCompletedBody', 'OpenBitFun 任务已经完成，点击打开 OpenBitFun 查看结果。'],
 
   ['chatHome.prompt', '今天想做什么？'],
+  ['chat.promptSuggestionAccept', '填入输入框'],
   ['chatHome.placeholder', '问问 OpenBitFun'],
   ['chatHome.localHint', '这是手机上的对话。要读写电脑上的项目，请切换到远程。'],
   ['chatHome.research', '查找资料'],

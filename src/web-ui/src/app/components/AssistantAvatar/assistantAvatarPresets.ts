@@ -1,13 +1,10 @@
+import inkMintAvatar from '@/flow_chat/assets/subagent-avatars/robot-04.svg';
+
 export const ASSISTANT_AVATAR_PRESETS = [
   {
-    id: 'claw',
-    family: 'claw',
-    imageSrc: '/assets/assistant/claw-avatar.webp',
-  },
-  {
-    id: 'claw-orbit',
-    family: 'clawOrbit',
-    imageSrc: '/assets/assistant/claw-avatar-alt.webp',
+    id: 'joystick-ink-mint',
+    family: 'joystick',
+    imageSrc: inkMintAvatar,
   },
 ] as const;
 
@@ -19,27 +16,19 @@ const PRESETS_BY_ID = new Map<string, AssistantAvatarPreset>(
   ASSISTANT_AVATAR_PRESETS.map((preset) => [preset.id, preset]),
 );
 
-// Persisted identity documents may still contain one of the retired SVG preset
-// ids. Keep reading them, but resolve every legacy id to the new Claw artwork.
+// Keep persisted Claw and earlier preset IDs readable after retiring their artwork.
 const LEGACY_PRESET_ALIASES = new Map<string, AssistantAvatarPresetId>([
-  ['signal-pulse', 'claw'],
-  ['signal-wave', 'claw-orbit'],
-  ['orbit-nova', 'claw-orbit'],
-  ['orbit-loop', 'claw'],
-  ['mosaic-grid', 'claw'],
-  ['mosaic-stack', 'claw-orbit'],
-  ['companion-spark', 'claw-orbit'],
-  ['companion-calm', 'claw'],
+  ['claw', 'joystick-ink-mint'],
+  ['claw-orbit', 'joystick-ink-mint'],
+  ['signal-pulse', 'joystick-ink-mint'],
+  ['signal-wave', 'joystick-ink-mint'],
+  ['orbit-nova', 'joystick-ink-mint'],
+  ['orbit-loop', 'joystick-ink-mint'],
+  ['mosaic-grid', 'joystick-ink-mint'],
+  ['mosaic-stack', 'joystick-ink-mint'],
+  ['companion-spark', 'joystick-ink-mint'],
+  ['companion-calm', 'joystick-ink-mint'],
 ]);
-
-function stableHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
 
 export function getAssistantAvatarPreset(value?: string | null): AssistantAvatarPreset | null {
   const normalized = value?.trim();
@@ -51,13 +40,7 @@ export function getAssistantAvatarPreset(value?: string | null): AssistantAvatar
 
 export function resolveAssistantAvatarPreset(
   value?: string | null,
-  stableKey?: string | null,
+  _stableKey?: string | null,
 ): AssistantAvatarPreset {
-  const explicitPreset = getAssistantAvatarPreset(value);
-  if (explicitPreset) return explicitPreset;
-
-  const normalizedKey = stableKey?.trim();
-  if (!normalizedKey) return ASSISTANT_AVATAR_PRESETS[0];
-
-  return ASSISTANT_AVATAR_PRESETS[stableHash(normalizedKey) % ASSISTANT_AVATAR_PRESETS.length];
+  return getAssistantAvatarPreset(value) ?? ASSISTANT_AVATAR_PRESETS[0];
 }

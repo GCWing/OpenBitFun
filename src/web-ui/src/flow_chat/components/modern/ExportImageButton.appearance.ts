@@ -8,7 +8,8 @@ export const exportImageAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'root' }, { id: 'header' }, { id: 'logo' }, { id: 'title' },
     { id: 'timestamp' }, { id: 'user' }, { id: 'assistant' }, { id: 'round' },
     { id: 'text' }, { id: 'thinking' }, { id: 'tool' }, { id: 'footer' },
-    { id: 'trigger' },
+    { id: 'trigger' }, { id: 'options' }, { id: 'optionCard' }, { id: 'optionContent' },
+    { id: 'optionLabel' }, { id: 'optionPreview' },
   ],
   states: [{ id: 'exporting', selector: { kind: 'self', suffix: '[data-openbitfun-state~="exporting"]' } }],
 };

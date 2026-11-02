@@ -42,23 +42,6 @@
     }
   }
 
-  &--incomplete {
-    .mermaid-block__hint {
-      display: flex;
-      align-items: center;
-      gap: var(--openbitfun-control-flow-chat-inline-gap);
-      padding: var(--openbitfun-control-flow-chat-card-padding-block) var(--openbitfun-control-flow-chat-card-padding-inline);
-      background: var(--openbitfun-color-status-warning-surface);
-      border-top: 1px solid var(--openbitfun-color-status-warning-border);
-      color: var(--openbitfun-color-status-warning-content);
-      font-size: var(--openbitfun-type-flow-support-font-size);
-
-      svg {
-        flex-shrink: 0;
-      }
-    }
-  }
-
   &--waiting,
   &--rendering {
     .mermaid-block__loading {

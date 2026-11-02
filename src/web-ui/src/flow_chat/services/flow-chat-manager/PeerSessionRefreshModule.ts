@@ -33,10 +33,12 @@ import {
   SessionExecutionState,
 } from '../../state-machine/types';
 import type { AnyFlowItem, DialogTurn, FlowToolItem, Session } from '../../types/flow-chat';
+import { isUnmaterializedSessionDraft } from '../../utils/sessionDraft';
 import { installLiveSessionInteractionMailbox } from '../liveSessionInteractionStore';
 import { agenticEventListener } from '../AgenticEventListener';
 import { pendingQueueManager } from './PendingQueueModule';
 import type { FlowChatContext } from './types';
+import { normalizeStreamContent } from './TextChunkModule';
 
 const log = createLogger('PeerSessionRefresh');
 
@@ -119,7 +121,7 @@ function seedActiveTurnBuffers(
       }
       const baseKey = streamKey(round.id, item);
       const key = item.type === 'thinking' ? `thinking_${baseKey}` : baseKey;
-      contentBuffers.set(key, item.content || '');
+      contentBuffers.set(key, normalizeStreamContent(item.content || ''));
       activeTextItems.set(key, item.id);
     }
   }
@@ -413,6 +415,9 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
     const surface = getActiveSurfaceScope();
     const sessionId = context.flowChatStore.getState().activeSessionId;
     if (surface.surfaceId === 'local' || !sessionId) return;
+    // A draft's reserved ID is unknown to the host until creation is accepted.
+    // The active-session selector below re-enters here after materialization.
+    if (isUnmaterializedSessionDraft(context.flowChatStore.getState().sessions.get(sessionId))) return;
     void context.flowChatStore.loadRelaySessionHistory(sessionId).then(() => {
       retryDelay = 1000;
     }).catch(error => {
@@ -780,6 +785,7 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
         session?.workspaceId ?? '',
         session?.isTransient === true,
         session?.isHistorical === true,
+        isUnmaterializedSessionDraft(session),
       ]);
     },
     () => scheduleRefresh(),

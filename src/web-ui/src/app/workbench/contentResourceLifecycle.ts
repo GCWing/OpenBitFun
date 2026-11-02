@@ -1,3 +1,4 @@
+import { hasRetainedCanvasDocument } from '../components/panels/content-canvas/stores/canvasStore';
 import { useContentResourceStore } from './contentResourceStore';
 import { getActiveSurfaceScope, getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
@@ -42,7 +43,7 @@ const stopDocumentCleanup = useContentResourceStore.subscribe((state, previous) 
   const removed = Object.values(previous.resources).filter(resource => !state.resources[resource.id]);
   if (removed.length) void import('@/tools/editor/services/EditorDocument').then(({ releaseEditorDocument }) => {
     for (const resource of removed) {
-      if (!Object.values(useContentResourceStore.getState().resources).some(current => current.documentId === resource.documentId)) releaseEditorDocument(resource.documentId);
+      if (!hasRetainedCanvasDocument(resource.documentId) && !Object.values(useContentResourceStore.getState().resources).some(current => current.documentId === resource.documentId)) releaseEditorDocument(resource.documentId);
     }
   });
 });

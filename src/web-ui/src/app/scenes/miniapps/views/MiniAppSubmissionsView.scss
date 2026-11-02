@@ -1,8 +1,19 @@
+@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
+
 .miniapp-submissions {
-  &__header-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-2);
+  &__dialog {
+    container: miniapp-submission-dialog / inline-size;
+  }
+
+  &__body {
+    block-size: min(760px, 70vh);
+    scrollbar-gutter: stable both-edges;
+    background: var(--openbitfun-color-surface-scene);
+  }
+
+  &__form-content {
+    @include configLayout.content-frame;
+    padding-block: var(--openbitfun-space-5) var(--openbitfun-space-10);
   }
 
   &__workspace,
@@ -50,144 +61,54 @@
   }
 
   &__form,
+  &__section,
   &__history {
     align-content: start;
     display: grid;
     gap: var(--openbitfun-space-4);
   }
 
-  &__history {
-    padding-top: var(--openbitfun-space-5);
-    border-top: 1px solid var(--openbitfun-color-border-subtle);
+  &__form {
+    gap: var(--openbitfun-space-12);
   }
 
-  &__section-heading {
-    display: grid;
-    gap: 3px;
-
-    h3,
-    p {
-      margin: 0;
-    }
-
-    h3 {
-      display: flex;
-      align-items: center;
-      gap: var(--openbitfun-space-2);
-      color: var(--openbitfun-color-content-primary);
-      font-family: var(--openbitfun-type-heading-card-font-family);
-      font-size: var(--openbitfun-type-heading-card-font-size);
-      font-weight: var(--openbitfun-type-heading-card-font-weight);
-      line-height: var(--openbitfun-type-heading-card-line-height);
-      letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
-
-      svg {
-        flex: 0 0 auto;
-        color: var(--openbitfun-color-content-muted);
-      }
-    }
-
-    p {
-      color: var(--openbitfun-color-content-muted);
-      font-family: var(--openbitfun-type-support-font-family);
-      font-size: var(--openbitfun-type-support-font-size);
-      font-weight: var(--openbitfun-type-support-font-weight);
-      line-height: var(--openbitfun-type-support-line-height);
-      letter-spacing: var(--openbitfun-type-support-letter-spacing);
-    }
+  &__section {
+    min-width: 0;
+    gap: var(--openbitfun-space-5);
   }
 
   &__form-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--openbitfun-space-3);
   }
 
-  &__field {
-    display: grid;
-    gap: var(--openbitfun-layout-field-root-gap);
+  &__form [data-openbitfun-component='field'] {
+    gap: 6px;
 
-    > span {
+    > [data-openbitfun-part='content'] > [data-openbitfun-part='label-row'] > label {
       color: var(--openbitfun-color-content-secondary);
-      font-family: var(--openbitfun-type-label-md-font-family);
-      font-size: var(--openbitfun-type-label-md-font-size);
-      font-weight: var(--openbitfun-type-label-md-font-weight);
-      line-height: var(--openbitfun-type-label-md-line-height);
-      letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
-    }
-
-    textarea {
-      width: 100%;
-      min-height: 92px;
-      // Same box as the shared Input so the caret lines up with the
-      // single-line fields above it.
-      padding: 8px 12px;
-      border: 1px solid var(--openbitfun-color-border-default);
-      border-radius: var(--openbitfun-radius-sm);
-      outline: none;
-      background: transparent;
-      color: var(--openbitfun-color-content-primary);
-      font-family: var(--openbitfun-type-body-sm-font-family);
-      font-size: var(--openbitfun-type-body-sm-font-size);
-      font-weight: var(--openbitfun-type-body-sm-font-weight);
-      line-height: var(--openbitfun-type-body-sm-line-height);
-      letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
-      resize: vertical;
-      transition:
-        border-color var(--openbitfun-motion-duration-fast) ease,
-        box-shadow var(--openbitfun-motion-duration-fast) ease;
-
-      &::placeholder {
-        color: color-mix(in srgb, var(--openbitfun-color-content-muted) 40%, var(--openbitfun-color-surface-canvas));
-      }
-
-      &:hover:not(:disabled) {
-        border-color: var(--openbitfun-color-border-strong);
-      }
-
-      &:focus {
-        border-color: var(--openbitfun-color-accent-default);
-        box-shadow: 0 0 0 3px color-mix(in srgb, var(--openbitfun-color-accent-default) 14%, transparent);
-      }
-
-      &:disabled {
-        cursor: default;
-        opacity: var(--openbitfun-opacity-disabled);
-      }
+      font-family: var(--openbitfun-type-label-sm-font-family);
+      font-size: var(--openbitfun-type-label-sm-font-size);
+      font-weight: var(--openbitfun-type-label-sm-font-weight);
+      line-height: var(--openbitfun-type-label-sm-line-height);
+      letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
     }
   }
 
   &__screenshots {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
+    align-items: baseline;
     gap: var(--openbitfun-space-3);
-    padding-top: var(--openbitfun-space-3);
-    border-top: 1px solid var(--openbitfun-color-border-subtle);
   }
 
-  &__screenshots-copy {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-
-    span {
-      color: var(--openbitfun-color-content-secondary);
-      font-family: var(--openbitfun-type-label-md-font-family);
-      font-size: var(--openbitfun-type-label-md-font-size);
-      font-weight: var(--openbitfun-type-label-md-font-weight);
-      line-height: var(--openbitfun-type-label-md-line-height);
-      letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
-    }
-
-    small {
-      color: var(--openbitfun-color-content-muted);
-      font-family: var(--openbitfun-type-support-font-family);
-      font-size: var(--openbitfun-type-support-font-size);
-      font-weight: var(--openbitfun-type-support-font-weight);
-      line-height: var(--openbitfun-type-support-line-height);
-      letter-spacing: var(--openbitfun-type-support-letter-spacing);
-    }
+  &__hint {
+    margin: 0;
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-support-font-family);
+    font-size: var(--openbitfun-type-support-font-size);
+    font-weight: var(--openbitfun-type-support-font-weight);
+    line-height: var(--openbitfun-type-support-line-height);
+    letter-spacing: var(--openbitfun-type-support-letter-spacing);
   }
 
   &__screenshots-actions {
@@ -234,13 +155,44 @@
 
   &__advanced-disclosure {
     max-width: 100%;
+
+    > [data-openbitfun-part='header'] {
+      margin-inline: calc(-1 * var(--openbitfun-layout-disclosure-trigger-padding-inline));
+    }
+
+    [data-openbitfun-part='summary'] {
+      color: var(--openbitfun-color-content-primary);
+      font-family: var(--openbitfun-type-heading-section-font-family);
+      font-size: var(--openbitfun-type-heading-section-font-size);
+      font-weight: var(--openbitfun-type-heading-section-font-weight);
+      line-height: var(--openbitfun-type-heading-section-line-height);
+      letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+    }
+  }
+
+  &__advanced-content {
+    padding-block: 0;
+    padding-inline: 0;
+  }
+
+  &__advanced-disclosure[data-open='true'] &__advanced-content {
+    padding-block: var(--openbitfun-space-5) 0;
   }
 
   &__advanced {
     display: grid;
-    gap: var(--openbitfun-space-3);
-    padding-left: var(--openbitfun-space-4);
-    border-left: 1px solid var(--openbitfun-color-border-subtle);
+    gap: var(--openbitfun-space-5);
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--openbitfun-space-2);
+
+    > [data-openbitfun-component='button'] {
+      min-width: 72px;
+    }
   }
 
   &__progress {
@@ -351,8 +303,13 @@
   }
 
   &__history-empty {
-    padding: 32px 0;
+    display: grid;
+    place-items: center;
+    min-block-size: clamp(180px, 32vh, 300px);
+    box-sizing: border-box;
+    padding: var(--openbitfun-space-8) var(--openbitfun-space-6);
     border-top: 1px solid var(--openbitfun-color-border-subtle);
+    background: transparent;
     color: var(--openbitfun-color-content-muted);
     font-family: var(--openbitfun-type-body-sm-font-family);
     font-size: var(--openbitfun-type-body-sm-font-size);
@@ -361,17 +318,35 @@
     letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
     text-align: center;
   }
+
+  &__empty-content {
+    display: grid;
+    justify-items: center;
+    gap: var(--openbitfun-space-4);
+  }
+
+  &__empty-message {
+    margin: 0;
+  }
 }
 
-@container miniapp-gallery-scene (max-width: 620px) {
+@container miniapp-submission-dialog (max-width: 620px) {
   .miniapp-submissions {
     &__form-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     &__screenshots {
       align-items: flex-start;
       flex-direction: column;
+    }
+
+    &__actions {
+      width: 100%;
+
+      > [data-openbitfun-component='button'] {
+        flex: 1;
+      }
     }
   }
 }

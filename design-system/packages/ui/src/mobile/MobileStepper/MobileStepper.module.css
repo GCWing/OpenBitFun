@@ -1,0 +1,35 @@
+@layer openbitfun.components {
+  /* A control row, like the switch: the label explains the value, the value carries the buttons. */
+  .root { display: flex; box-sizing: border-box; inline-size: 100%; min-inline-size: 0; min-block-size: 52px; align-items: center; gap: var(--openbitfun-space-3); padding-block: var(--openbitfun-space-2); }
+  .root[data-disabled="true"] { color: var(--openbitfun-color-content-disabled); }
+
+  .copy { display: flex; box-sizing: border-box; min-inline-size: 0; flex: 1 1 auto; flex-direction: column; gap: var(--openbitfun-space-1); }
+  .label { color: var(--openbitfun-color-content-primary); font-size: var(--openbitfun-type-body-md-font-size); font-weight: var(--openbitfun-type-label-lg-font-weight); }
+  .description { color: var(--openbitfun-color-content-muted); font-size: var(--openbitfun-type-body-xs-font-size); }
+  .root[data-disabled="true"] .label, .root[data-disabled="true"] .description { color: inherit; }
+
+  .control { display: inline-flex; min-inline-size: 0; flex: 0 0 auto; align-items: center; gap: var(--openbitfun-space-1); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border); border-radius: var(--openbitfun-radius-md); background: var(--openbitfun-color-field-background); }
+  .root[data-invalid="true"] .control { border-color: var(--openbitfun-color-status-danger-border); }
+  .root:not([data-disabled="true"]) .control:focus-within,
+  .root[data-openbitfun-preview-state="focus-within"] .control { border-color: var(--openbitfun-color-field-border-focus); box-shadow: 0 0 0 var(--openbitfun-focus-width) var(--openbitfun-color-focus-ring); }
+
+  .button { display: grid; inline-size: 44px; block-size: 44px; flex: 0 0 44px; margin: 0; padding: 0; border: 0; border-radius: var(--openbitfun-radius-md); place-items: center; color: var(--openbitfun-color-content-secondary); background: transparent; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard); }
+  .button > svg { inline-size: 18px; block-size: 18px; }
+  @media (hover: hover) and (pointer: fine) {
+    .button:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled),
+    .root[data-openbitfun-preview-state="hover"] .button:not(:disabled) { background: var(--openbitfun-color-action-neutral-surface-hover); }
+  }
+  .button:is(:active, [data-openbitfun-preview-state="active"]):not(:disabled),
+  .root[data-openbitfun-preview-state="active"] .button:not(:disabled) { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+  .button:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: calc(var(--openbitfun-focus-offset) * -1); }
+  .button:disabled { color: var(--openbitfun-color-content-disabled); cursor: not-allowed; }
+
+  .value { display: inline-flex; min-inline-size: 0; align-items: baseline; gap: var(--openbitfun-space-1); }
+  .input { box-sizing: border-box; inline-size: 4ch; min-block-size: 44px; margin: 0; padding: 0; border: 0; outline: 0; color: inherit; background: transparent; font: inherit; font-size: var(--openbitfun-type-body-md-font-size); font-variant-numeric: tabular-nums; text-align: center; }
+  .input:disabled { color: var(--openbitfun-color-content-disabled); }
+  .unit { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
+  .root[data-invalid="true"] .input { color: var(--openbitfun-color-status-danger-content); }
+
+  @media (prefers-reduced-motion: reduce) { .button { transition: none; } }
+  @media (forced-colors: active) { .control { border-color: ButtonText; } .button:focus-visible { outline-color: Highlight; } }
+}

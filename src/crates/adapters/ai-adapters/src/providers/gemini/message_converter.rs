@@ -516,6 +516,11 @@ impl GeminiMessageConverter {
                 }
 
                 if let Some(schema_type) = normalized_type {
+                    if schema_type == "array" && !sanitized.contains_key("items") {
+                        // Gemini rejects array schemas without an item schema. An empty
+                        // schema preserves the caller's unconstrained element type.
+                        sanitized.insert("items".to_string(), json!({}));
+                    }
                     sanitized.insert("type".to_string(), Value::String(schema_type));
                 }
                 if nullable {
@@ -876,6 +881,26 @@ mod tests {
         assert_eq!(
             schema["properties"]["items"]["required"],
             json!(["name", "count"])
+        );
+    }
+
+    #[test]
+    fn adds_items_to_array_schemas_without_restricting_elements() {
+        let schema = GeminiMessageConverter::sanitize_schema(json!({
+            "type": "object",
+            "properties": {
+                "value_array": { "type": "array" },
+                "typed_array": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            }
+        }));
+
+        assert_eq!(schema["properties"]["value_array"]["items"], json!({}));
+        assert_eq!(
+            schema["properties"]["typed_array"]["items"]["type"],
+            json!("string")
         );
     }
 

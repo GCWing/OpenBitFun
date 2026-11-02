@@ -21,13 +21,13 @@ vi.mock('../services/EditorDocument', () => ({
 }));
 
 vi.mock('../meditor', () => ({
-  MEditor: forwardRef((props: { value?: string; mode?: string }, ref) => {
+  MEditor: forwardRef((props: { value?: string; mode?: string; emptyDocumentPlaceholder?: string }, ref) => {
     useImperativeHandle(ref, () => ({
       destroy: vi.fn(),
       markSaved: vi.fn(),
       setInitialContent: vi.fn(),
     }));
-    return <div data-testid="markdown-body" data-mode={props.mode} />;
+    return <div data-testid="markdown-body" data-mode={props.mode} data-empty-placeholder={props.emptyDocumentPlaceholder} />;
   }),
 }));
 
@@ -83,6 +83,11 @@ vi.mock('@/infrastructure/confirm-dialog', () => ({
 }));
 
 describe('MarkdownEditor', () => {
+  it('forwards task-specific empty-document guidance to the shared editor', () => {
+    const html = renderToStaticMarkup(<MarkdownEditor emptyDocumentPlaceholder="Write the system prompt" />);
+    expect(html).toContain('data-empty-placeholder="Write the system prompt"');
+  });
+
   it('renders a compact copy action in the toolbar', () => {
     const html = renderToStaticMarkup(
       <MarkdownEditor initialContent="# Deep Review\n\nReady." />,

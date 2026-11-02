@@ -13,9 +13,7 @@ use openbitfun_core::service::remote_ssh::{
     global_port_forward_manager, init_remote_workspace_manager, PortForwardManager,
     RemoteFileService, RemoteTerminalManager, SSHConnectionManager,
 };
-use openbitfun_core::service::{
-    announcement, config, filesystem, mcp, search, token_usage, workspace,
-};
+use openbitfun_core::service::{config, filesystem, mcp, search, token_usage, workspace};
 use openbitfun_core::util::errors::*;
 use openbitfun_services_integrations::speech::{SpeechService, SpeechStoragePaths};
 
@@ -97,7 +95,6 @@ pub struct AppState {
     pub active_searches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     /// Cancellation flags for active file transfers (download/upload), keyed by transfer_id.
     pub active_transfers: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
-    pub announcement_scheduler: Arc<announcement::AnnouncementScheduler>,
 }
 
 impl AppState {
@@ -151,17 +148,6 @@ impl AppState {
                 .map_err(|e| {
                     OpenBitFunError::service(format!(
                         "Failed to initialize ACP client service: {}",
-                        e
-                    ))
-                })?,
-        );
-
-        let announcement_scheduler = Arc::new(
-            announcement::AnnouncementScheduler::new(&path_manager)
-                .await
-                .map_err(|e| {
-                    OpenBitFunError::service(format!(
-                        "Failed to initialize announcement scheduler: {}",
                         e
                     ))
                 })?,
@@ -362,7 +348,6 @@ impl AppState {
             remote_workspace,
             active_searches: Arc::new(Mutex::new(HashMap::new())),
             active_transfers: Arc::new(Mutex::new(HashMap::new())),
-            announcement_scheduler,
         };
 
         if let Some(workspace_info) = initial_workspace {

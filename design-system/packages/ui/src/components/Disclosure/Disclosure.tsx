@@ -11,6 +11,7 @@ import {
 import { classNames } from "../../internal/classNames";
 import { OverflowText } from "../../primitives/OverflowText";
 import { Icon } from "../Icon";
+import { inertProps, type InertProps } from "../../internal/inert";
 import styles from "./Disclosure.module.css";
 
 type DisclosureTriggerProps = Pick<ButtonHTMLAttributes<HTMLButtonElement>,
@@ -22,6 +23,9 @@ interface CustomDisclosureProps
   actions?: ReactNode;
   /** Compose a header with independent controls using the supplied toggle attributes. */
   renderHeader?: (triggerProps: DisclosureTriggerProps) => ReactNode;
+  /** Style the default header surface without replacing its trigger or actions. */
+  headerClassName?: string;
+  triggerClassName?: string;
   contentClassName?: string;
   contentInnerClassName?: string;
   unmountOnClose?: boolean;
@@ -46,12 +50,14 @@ interface NativeDisclosureProps
 
 export type DisclosureProps = CustomDisclosureProps | NativeDisclosureProps;
 
-type InertContentAttributes = HTMLAttributes<HTMLDivElement> & { inert?: "" };
+type InertContentAttributes = HTMLAttributes<HTMLDivElement> & InertProps;
 
 const CustomDisclosure = forwardRef<HTMLElement, CustomDisclosureProps>(
   function Disclosure({
     actions,
     renderHeader,
+    headerClassName,
+    triggerClassName,
     contentClassName,
     contentInnerClassName,
     unmountOnClose = false,
@@ -73,7 +79,7 @@ const CustomDisclosure = forwardRef<HTMLElement, CustomDisclosureProps>(
     const contentId = `openbitfun-disclosure-${generatedId}-content`;
     const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
     const resolvedOpen = open ?? uncontrolledOpen;
-    const inertContentAttributes: InertContentAttributes = resolvedOpen ? {} : { inert: "" };
+    const inertContentAttributes: InertContentAttributes = inertProps(!resolvedOpen);
 
     const [retained, setRetained] = useState(resolvedOpen);
     useEffect(() => {
@@ -106,11 +112,11 @@ const CustomDisclosure = forwardRef<HTMLElement, CustomDisclosureProps>(
           id: triggerId,
           onClick: toggle,
           type: 'button',
-        }) : <div className={styles.header} data-openbitfun-part="header">
+        }) : <div className={classNames(styles.header, headerClassName)} data-openbitfun-part="header">
           <button data-overflow-trigger
             aria-controls={contentId}
             aria-expanded={resolvedOpen}
-            className={styles.trigger}
+            className={classNames(styles.trigger, triggerClassName)}
             disabled={disabled}
             id={triggerId}
             onClick={toggle}

@@ -14,6 +14,8 @@ export interface QueueItem {
   turnId: string; displayContent: string; previewTruncated: boolean; attachmentCount: number;
   agentType: string; createdAtMs: number; status: QueueStatus; reason: string | null;
   targetTurnId: string | null; steeringId: string | null;
+  /** Optional host-authoritative display receipt; absent on older hosts. */
+  steeringDisplay?: { targetTurnId: string; content: string; composerPresentation?: unknown };
 }
 export interface QueueSnapshot {
   sessionId: string; queueEpoch: string; revision: number; activeTurnId: string | null;

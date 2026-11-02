@@ -86,7 +86,7 @@ export function ModelDiscoveryPicker({
       </Button>
       <Dialog
         id={id}
-        size="sm"
+        preset="panel"
         open={open}
         onOpenChange={onOpenChange}
         initialFocusRef={searchRef}
@@ -137,7 +137,7 @@ export function ModelDiscoveryPicker({
                 return (
                   <Button
                     key={modelName}
-                    variant="outline"
+                    variant={isSelected ? 'fill' : 'outline'}
                     size="xs"
                     aria-pressed={isSelected}
                     title={option.description}
@@ -145,7 +145,7 @@ export function ModelDiscoveryPicker({
                     data-model-id={modelName}
                     data-model-name={modelName}
                     data-model-source={option.source}
-                    leadingIcon={<Icon name={isSelected ? 'selected' : 'plus'} size="xs" />}
+                    leadingIcon={<Icon name={isSelected ? 'check-line' : 'plus'} size="xs" tone={isSelected ? 'success' : undefined} />}
                     onClick={() => onValueChange(isSelected
                       ? value.filter(name => name.trim().toLowerCase() !== lookupKey)
                       : [...value, modelName])}

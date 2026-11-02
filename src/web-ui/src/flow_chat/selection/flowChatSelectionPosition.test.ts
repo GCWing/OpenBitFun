@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureFlowChatSelection } from './flowChatSelection';
-import { computeSelectionBarPosition, measureSelectionBarGeometry, sameFlowChatSelection, type SelectionBarGeometry } from './flowChatSelectionPosition';
+import { computeSelectionBarPosition, measureExcerptEditorGeometry, measureSelectionBarGeometry, sameFlowChatSelection, type SelectionBarGeometry } from './flowChatSelectionPosition';
 
 const rect = (left: number, top: number, width: number, height: number) => new DOMRect(left, top, width, height);
 const size = { width: 160, height: 30 };
@@ -131,6 +131,44 @@ describe('native selection endpoint geometry', () => {
     paragraph.style.overflowY = '';
     scroller.dataset.openbitfunViewportInsetBottom = '280';
     expect(measureSelectionBarGeometry(root, snapshot)).toBeNull();
+  });
+
+  it.each(['outside', 'inside'])('ignores boxless clipping ancestors %s the transcript root', (placement) => {
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'contents';
+    wrapper.style.overflowX = 'hidden';
+    wrapper.style.overflowY = 'hidden';
+    elementGeometry.set(wrapper, rect(0, 0, 0, 0));
+    const child = placement === 'outside' ? root : last.parentElement!;
+    child.before(wrapper);
+    wrapper.append(child);
+    try {
+      const measured = measureSelectionBarGeometry(root, capture())!;
+      expect(measured?.bounds).toEqual({ left: 100, right: 700, top: 100, bottom: 400 });
+      expect(measured && computeSelectionBarPosition(measured, size))
+        .toEqual({ left: 140, top: 248, placement: 'bottom' });
+    } finally {
+      wrapper.replaceWith(child);
+    }
+  });
+
+  it('still rejects zero-sized clipping ancestors that generate a box', () => {
+    const snapshot = capture();
+    const paragraph = last.parentElement!;
+    paragraph.style.overflowX = 'hidden';
+    paragraph.style.overflowY = 'hidden';
+    elementGeometry.set(paragraph, rect(0, 0, 0, 0));
+    expect(measureSelectionBarGeometry(root, snapshot)).toBeNull();
+  });
+
+  it('retains the editor anchor when the toolbar input-occlusion policy rejects it', () => {
+    const native = window.getSelection()!;
+    native.setBaseAndExtent(last, 0, last, 4);
+    const snapshot = captureFlowChatSelection(root, native, { sessionId: 'session', surfaceId: 'local', sessionName: 'Session' })!;
+    scroller.dataset.openbitfunViewportInsetBottom = '280';
+    expect(measureSelectionBarGeometry(root, snapshot)).toBeNull();
+    expect(measureExcerptEditorGeometry(root, snapshot)?.anchor)
+      .toEqual({ x: 220, top: 220, bottom: 240, preferredPlacement: 'bottom' });
   });
 
   it('anchors to the visible part of a selected line when the focus extends beyond its left edge', () => {

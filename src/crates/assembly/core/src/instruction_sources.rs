@@ -1,5 +1,6 @@
-//! External-source composition for local user instruction adapters.
+//! Composition of native and ecosystem-specific local user instructions.
 
+use crate::infrastructure::app_paths::PathManager;
 use openbitfun_claude_code_adapter::{
     load_claude_code_user_instructions, ClaudeCodeInstructionSourceOptions,
 };
@@ -7,7 +8,9 @@ use openbitfun_codex_adapter::{load_codex_user_instructions, CodexInstructionSou
 use openbitfun_opencode_adapter::{
     load_opencode_user_instructions, OpenCodeInstructionSourceOptions,
 };
-use openbitfun_services_core::local_instructions::{LocalInstructionFile, LocalInstructionFiles};
+use openbitfun_services_core::local_instructions::{
+    read_local_instruction_file, LocalInstructionFile, LocalInstructionFiles,
+};
 use std::path::Path;
 
 pub(crate) struct LocalUserInstructionFiles {
@@ -47,9 +50,50 @@ pub struct InstructionSourceCatalog {
     pub failed_ecosystems: Vec<String>,
 }
 
+fn load_openbitfun_or_codex_user_instructions(
+) -> (&'static str, Result<Vec<LocalInstructionFile>, String>) {
+    let native = PathManager::new()
+        .map_err(|error| error.to_string())
+        .and_then(|paths| {
+            let root = paths.product_home_dir();
+            read_local_instruction_file(
+                &root.join("AGENTS.md"),
+                &root,
+                "$OPENBITFUN_HOME/AGENTS.md",
+            )
+        });
+    match native {
+        Ok(Some(file)) => ("openbitfun", Ok(vec![file])),
+        Ok(None) => (
+            "codex",
+            load_codex_user_instructions(&CodexInstructionSourceOptions::from_environment()),
+        ),
+        // A broken native source must remain visible as a retryable failure,
+        // rather than silently substituting another ecosystem's instructions.
+        Err(error) => ("openbitfun", Err(error)),
+    }
+}
+
 async fn load_user_sources(
     workspace_root: Option<&Path>,
 ) -> (LocalUserInstructionFiles, InstructionSourceCatalog) {
+    // The OpenCode user reader also discovers project configuration. Apply the
+    // workspace owner's family selection before allowing that discovery path.
+    let include_opencode_project_config = if let Some(root) = workspace_root {
+        openbitfun_services_core::workspace_instructions::read_workspace_instruction_source_catalog(
+            root,
+        )
+        .await
+        .map(|report| {
+            report
+                .sources
+                .iter()
+                .all(|source| source.ecosystem_id == "opencode")
+        })
+        .unwrap_or(false)
+    } else {
+        true
+    };
     let workspace_root = workspace_root.map(Path::to_path_buf);
     let result = tokio::task::spawn_blocking(move || {
         let mut files = Vec::new();
@@ -57,10 +101,11 @@ async fn load_user_sources(
         let mut failed_ecosystems = Vec::new();
         let mut opencode_options = OpenCodeInstructionSourceOptions::from_environment();
         opencode_options.workspace_root = workspace_root.clone();
+        opencode_options.include_project_config = include_opencode_project_config;
         let canonical_workspace = workspace_root.as_deref().and_then(|root| std::fs::canonicalize(root).ok());
         for (ecosystem, result) in [
             ("opencode", load_opencode_user_instructions(&opencode_options)),
-            ("codex", load_codex_user_instructions(&CodexInstructionSourceOptions::from_environment())),
+            load_openbitfun_or_codex_user_instructions(),
             ("claude-code", load_claude_code_user_instructions(&ClaudeCodeInstructionSourceOptions::from_environment())),
         ] {
             match result {
@@ -70,9 +115,9 @@ async fn load_user_sources(
                     }
                     files.extend(source_files);
                 }
-                Err(_) => {
+                Err(error) => {
                     failed_ecosystems.push(ecosystem.to_string());
-                    log::warn!("Failed to load {ecosystem} user instructions; retrying on the next message");
+                    log::warn!("Failed to load {ecosystem} user instructions; retrying on the next message: {error}");
                 }
             }
         }
@@ -97,7 +142,12 @@ async fn load_user_sources(
             InstructionSourceCatalog {
                 schema_version: 1,
                 entries: Vec::new(),
-                failed_ecosystems: vec!["opencode".into(), "codex".into(), "claude-code".into()],
+                failed_ecosystems: vec![
+                    "opencode".into(),
+                    "openbitfun".into(),
+                    "codex".into(),
+                    "claude-code".into(),
+                ],
             },
         )
     })
@@ -256,7 +306,13 @@ mod tests {
             .find(|entry| entry.ecosystem_id == "shared")
             .unwrap();
         assert_eq!(shared.name, "AGENTS.md");
-        let conditional = catalog
+        assert!(!catalog
+            .entries
+            .iter()
+            .any(|entry| { entry.scope == "project" && entry.ecosystem_id != "shared" }));
+        std::fs::write(workspace.join("AGENTS.md"), " \n\t").unwrap();
+        let claude_catalog = super::instruction_source_catalog(Some(&workspace)).await;
+        let conditional = claude_catalog
             .entries
             .iter()
             .find(|entry| !entry.path_patterns.is_empty())
@@ -264,24 +320,35 @@ mod tests {
         assert_eq!(conditional.ecosystem_id, "claude-code");
         assert_eq!(conditional.scope, "project");
         assert_eq!(conditional.path_patterns, ["src/**/*.rs"]);
-        assert!(catalog
+        assert!(claude_catalog
             .entries
             .iter()
             .any(|entry| entry.name == "project-guide.md" && entry.ecosystem_id == "claude-code"));
-        assert!(catalog
+        assert!(!claude_catalog
+            .entries
+            .iter()
+            .any(|entry| { entry.scope == "project" && entry.ecosystem_id == "opencode" }));
+        std::fs::write(workspace.join("CLAUDE.md"), "").unwrap();
+        std::fs::write(workspace.join(".claude/rules/conditional.md"), "").unwrap();
+        let opencode_catalog = super::instruction_source_catalog(Some(&workspace)).await;
+        assert!(opencode_catalog
             .entries
             .iter()
             .any(|entry| entry.path.ends_with("guide.md")
                 && entry.ecosystem_id == "opencode"
                 && entry.scope == "project"));
-        let serialized = serde_json::to_string(&catalog).unwrap();
+        let serialized =
+            serde_json::to_string(&(&catalog, &claude_catalog, &opencode_catalog)).unwrap();
         assert!(!serialized.contains("private override body"));
         assert!(!serialized.contains("Private rule body"));
         assert!(!serialized.contains("obsolete body"));
         std::fs::write(workspace.join("opencode.json"), "invalid").unwrap();
         let partial = super::instruction_source_catalog(Some(&workspace)).await;
         assert!(partial.failed_ecosystems.iter().any(|id| id == "opencode"));
-        assert!(partial
+        std::fs::write(workspace.join("AGENTS.md"), "shared instructions").unwrap();
+        let preferred = super::instruction_source_catalog(Some(&workspace)).await;
+        assert!(preferred.failed_ecosystems.is_empty());
+        assert!(preferred
             .entries
             .iter()
             .any(|entry| entry.ecosystem_id == "shared"));
@@ -327,11 +394,12 @@ pub(crate) mod test_support {
 
     pub(crate) struct EnvironmentGuard {
         values: Vec<(&'static str, Option<OsString>)>,
+        _openbitfun_home: Option<tempfile::TempDir>,
     }
 
     impl EnvironmentGuard {
         pub(crate) fn set(values: &[(&'static str, &Path)]) -> Self {
-            let previous = values
+            let mut previous: Vec<_> = values
                 .iter()
                 .map(|(name, value)| {
                     let previous = std::env::var_os(name);
@@ -339,7 +407,20 @@ pub(crate) mod test_support {
                     (*name, previous)
                 })
                 .collect();
-            Self { values: previous }
+            // Existing ecosystem fixtures must not discover native instructions
+            // from the developer's real home directory.
+            let openbitfun_home = if values.iter().any(|(name, _)| *name == "OPENBITFUN_HOME") {
+                None
+            } else {
+                let home = tempfile::tempdir().expect("isolated OpenBitFun home");
+                previous.push(("OPENBITFUN_HOME", std::env::var_os("OPENBITFUN_HOME")));
+                std::env::set_var("OPENBITFUN_HOME", home.path());
+                Some(home)
+            };
+            Self {
+                values: previous,
+                _openbitfun_home: openbitfun_home,
+            }
         }
     }
 

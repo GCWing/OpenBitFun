@@ -161,6 +161,20 @@ impl Tool for AgentControlTool {
         Self::input_schema()
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "action": {"type": "string"},
+                "agent_ids": {"type": "array", "items": {"type": "string"}},
+                "interrupted_background_tasks": {"type": "integer"},
+                "deleted_agents": {"type": "integer"}
+            },
+            "required": ["action"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -248,7 +262,7 @@ impl Tool for AgentControlTool {
                         "interrupted_background_tasks": interrupted_background_tasks,
                     }),
                     result_for_assistant: Some(format!(
-                        "Interrupted {interrupted_background_tasks} active background run(s) for agent subtrees: {}.",
+                        "Interrupted active work in agent subtrees: {} ({interrupted_background_tasks} background run(s)).",
                         agent_ids.join(", ")
                     )),
                     image_attachments: None,

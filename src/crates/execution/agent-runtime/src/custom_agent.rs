@@ -332,8 +332,7 @@ pub fn custom_agent_tools_are_default(kind: CustomAgentKind, tools: &[String]) -
 pub fn default_custom_agent_user_context_policy(kind: CustomAgentKind) -> UserContextPolicy {
     let base = UserContextPolicy::empty()
         .with_workspace_context()
-        .with_workspace_instructions()
-        .with_project_layout();
+        .with_workspace_instructions();
     match kind {
         CustomAgentKind::Mode | CustomAgentKind::Subagent => base,
     }

@@ -3,7 +3,6 @@ import { useContentResourceStore, contentResourceIdentity, mergeContentOpenInten
 import { switchAgentCanvasScope, useAgentCanvasStore, useGitCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import type { EditorGroupId } from '@/app/components/panels/content-canvas/types';
 import type { SessionSceneTarget } from '@/app/components/SceneBar/types';
-import { expandSessionAuxPane } from '@/app/scenes/session/sessionPanelLayout';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
@@ -120,13 +119,13 @@ export function openContentInBestTarget(content: PanelContent, options: ContentO
   };
   useSceneStore.getState().activateSessionScene(target, {
     isCurrent,
+    revealCanvas: true,
     onActivated: () => {
       if (!isCurrent()) return;
       // Scope selection must precede the write, including before AuxPane's first
       // mount: the canvas is owned by the session that shows the content.
       switchAgentCanvasScope(target.sessionId);
       openCanvasContent('agent', content, { ...options, scope });
-      expandSessionAuxPane();
     },
   });
 }

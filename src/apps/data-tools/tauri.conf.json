@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenBitFun Data Tools",
+  "version": "0.2.0",
+  "mainBinaryName": "openbitfun-data-tools",
+  "identifier": "com.openbitfun.data-tools",
+  "build": {
+    "frontendDist": "ui"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "OpenBitFun Team",
+    "icon": [
+      "icons/openbitfun-app-icon.icns",
+      "icons/openbitfun-app-icon.ico",
+      "icons/openbitfun-app-icon.png"
+    ],
+    "resources": {
+      "../../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "data-tools",
+        "title": "OpenBitFun Data Tools",
+        "width": 860,
+        "height": 680,
+        "minWidth": 680,
+        "minHeight": 540,
+        "resizable": true,
+        "maximizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    },
+    "withGlobalTauri": true
+  }
+}

@@ -291,6 +291,65 @@ selection, or cache ownership. UI events retain workspace IDs through every
 adapter; session operations recover their workspace from the session's stored ID.
 Across devices, IDs are interpreted only by the selected owning host.
 
+Request ownership also includes the device activation epoch. In the Web UI,
+`invokePrepared` captures `SurfaceScope` before asynchronous parameter preparation
+(including legacy capability negotiation), checks it before dispatch, and preserves
+`SurfaceChangedError` through service error translation. `ApiClient` retains the
+same activation through middleware, transport, retries and response handling.
+Pending reads belong to one epoch through scoped keys or activation-owned caches;
+returning to the same device does not revive an earlier activation's pending work.
+Settled caches are keyed by the rendered device as well as the workspace ID,
+because same-path local workspaces hash to the same ID on every device.
+Multi-step preparation must
+check the captured scope before starting another host request. Stream listeners
+are detached on activation change and must never send cancellation to the newly
+selected host for a search started elsewhere. Controller-local commands keep
+their authority across activation in `invokePrepared` exactly as in `ApiClient`.
+The Web UI lint configuration rejects `await` inside `api.invoke(...)`
+arguments, because the activation would be captured after they resolve.
+
+`CoreSessionStorePort` owns session storage resolution. The temporary path adapter
+converts a legacy selector to a catalog ID once, then uses the same ID resolver as
+current requests. It must not reconstruct identity from local filesystem
+existence, choose a worktree's parent when its execution record is missing, or
+return an execution path when resolution fails. A registered but unavailable
+folder can still own readable persisted history.
+
+After session admission, `SessionManager` retains the committed storage binding.
+History restore, persistence, autosave, idle eviction and internal continuations
+reuse that binding. The binding survives in-memory session eviction; a process
+restart re-admits the session from its persisted ID and storage owner. Internal
+queued turns retain the session's workspace ID, while external legacy submissions
+still validate their locator at the compatibility boundary. All resolution uses
+the persistence owner's `PathManager`. Readers never commit a binding: before
+admission they resolve from the session's workspace configuration, and a pending
+claim for a different location makes them fail instead of following an
+uncommitted index entry.
+
+The supported SSH history layout remains host plus remote root for upgrade
+compatibility, so two saved connections to one host and root share a workspace
+record and session mirror. Activation never rejects such records: imported or
+persisted records for each connection stay listed and activatable, and session
+identity verification, not workspace activation, keeps their histories apart.
+
+Reopening an existing remote record with a different connection rebinds the
+record only for an allowed reason:
+
+- the two connection IDs are equivalent (the legacy `ssh-user@host:port` form and
+  the current `ssh-user@host` form);
+- the previous owner is no longer a saved SSH connection;
+- the user confirmed the rebind, sent as `rebindConnection` on
+  `open_remote_workspace` by Desktop and the CLI peer host.
+
+Otherwise the open fails with the stable code
+`remote_workspace_connection_conflict` as the whole error message, so remote
+controllers can match it. The interactive Web UI asks the user and retries with
+`rebindConnection`; startup restore defers with a localized notification instead
+of rebinding silently. Older hosts ignore the field and keep their previous
+behavior. Supporting multiple simultaneous endpoints for one host and root
+requires a versioned storage-identity migration covering sessions and mirrors;
+changing the directory hash alone is not a safe migration.
+
 Persisted IDs are opaque. Catalog validation checks record/map-key agreement and
 reference integrity; it must not recompute IDs from paths or require a working
 SSH profile. Keep unavailable records in the catalog. Activation validates the

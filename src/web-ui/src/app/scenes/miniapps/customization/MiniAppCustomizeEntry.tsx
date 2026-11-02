@@ -1,31 +1,34 @@
 import React from 'react';
-import { Icon, IconButton, Tooltip } from '@openbitfun/ui';
+import { Icon, IconButton } from '@openbitfun/ui';
 
 import { useI18n } from '@/infrastructure/i18n';
+import { MiniAppActionTooltip } from '../components/MiniAppActionTooltip';
 
 interface MiniAppCustomizeEntryProps {
   disabled?: boolean;
   onOpen: () => void;
+  size?: 'xs' | 'sm';
 }
 
 export const MiniAppCustomizeEntry: React.FC<MiniAppCustomizeEntryProps> = ({
   disabled,
   onOpen,
+  size = 'sm',
 }) => {
   const { t } = useI18n('scenes/miniapp');
   const label = t('customize.trigger');
 
   return (
-    <Tooltip content={label} disabled={disabled}>
+    <MiniAppActionTooltip content={label} disabled={disabled}>
       <IconButton
-        size="sm"
+        size={size}
         shape="square"
         onClick={onOpen}
         disabled={disabled}
         aria-label={label}
-        icon={<Icon name="spark" size="md" />}
+        icon={<Icon name="creative" size="md" />}
       />
-    </Tooltip>
+    </MiniAppActionTooltip>
   );
 };
 

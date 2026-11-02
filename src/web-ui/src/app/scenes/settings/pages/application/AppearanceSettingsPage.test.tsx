@@ -68,6 +68,7 @@ describe('AppearanceSettingsPage', () => {
     document.body.innerHTML = renderToStaticMarkup(<AppearanceSettingsPage />);
     expect(document.querySelector('[data-testid="appearance-package-config"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="appearance-font-section"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="sessionPanel.displayMode"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="appearance-language-select"]')).toBeNull();
     expect(document.querySelector('[data-testid="appearance-palette-select"]')).toBeNull();
     expect(document.querySelector('[data-testid="appearance-package-select"]')).toBeNull();

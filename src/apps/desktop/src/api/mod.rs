@@ -3,7 +3,6 @@
 pub mod account_identity_api;
 pub mod acp_client_api;
 pub mod agentic_api;
-pub mod announcement_api;
 pub mod app_state;
 pub mod appearance_market_api;
 pub mod browser_api;
@@ -26,6 +25,7 @@ pub mod dto;
 pub mod editor_ai_api;
 pub mod event_coalescer;
 pub mod external_hooks_api;
+pub mod external_session_import_api;
 pub mod external_sources_api;
 pub mod file_drop_preview_api;
 pub mod git_agent_api;
@@ -65,3 +65,5 @@ pub mod workspace_activation;
 pub mod worktree_api;
 
 pub use app_state::{AppState, AppStatistics, HealthStatus, RemoteWorkspace};
+
+pub mod model_pool_api;

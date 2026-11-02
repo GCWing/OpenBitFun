@@ -1,0 +1,9 @@
+.disabledTrigger {
+  display: inline-flex;
+  border-radius: var(--openbitfun-radius-sm);
+}
+
+.disabledTrigger:focus-visible {
+  outline: 2px solid var(--openbitfun-color-accent-default);
+  outline-offset: 2px;
+}

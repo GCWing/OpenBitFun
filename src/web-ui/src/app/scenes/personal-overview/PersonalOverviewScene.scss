@@ -1,0 +1,224 @@
+@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
+
+.personal-overview {
+  &[hidden] { display: none; }
+
+  container: personal-overview / inline-size;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-surface-scene);
+  font-size: var(--openbitfun-type-body-md-font-size);
+  line-height: var(--openbitfun-type-body-md-line-height);
+
+  &__content {
+    @include configLayout.content-frame;
+    padding-block: 12px 64px;
+  }
+
+  &__account-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-shrink: 0;
+    padding: 16px configLayout.$config-page-content-inline-padding 0;
+  }
+
+  &__section-action {
+    padding-inline: var(--openbitfun-space-3);
+    border-color: transparent;
+    border-radius: var(--openbitfun-radius-base);
+    color: var(--openbitfun-color-content-secondary);
+
+    &:is(:hover, :active):not(:disabled) {
+      border-color: var(--openbitfun-color-border-default);
+      color: var(--openbitfun-color-content-primary);
+      text-decoration: none;
+    }
+  }
+
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+    scrollbar-gutter: stable both-edges;
+  }
+
+  &__identity {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+    padding-block: 8px 60px;
+  }
+
+  &__avatar {
+    display: block;
+    inline-size: 136px;
+    block-size: 136px;
+    flex-shrink: 0;
+  }
+
+  &__avatar-art,
+  &__avatar-art > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  &__name {
+    margin: 8px 0 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-family: var(--openbitfun-type-heading-compact-page-font-family);
+    font-size: var(--openbitfun-type-heading-compact-page-font-size);
+    font-weight: var(--openbitfun-type-heading-compact-page-font-weight);
+    line-height: var(--openbitfun-type-heading-compact-page-line-height);
+    letter-spacing: var(--openbitfun-type-heading-compact-page-letter-spacing);
+  }
+
+  &__handle { margin: 0; color: var(--openbitfun-color-content-secondary); }
+
+  &__metrics {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin: 0;
+    padding: 20px 0;
+    border: 1px solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-3xl);
+  }
+
+  &__metric {
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    padding-inline: 12px;
+  }
+
+  &__metric + &__metric { border-inline-start: 1px solid var(--openbitfun-color-border-subtle); }
+  &__metric-label { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
+  &__metric-value { margin: 0; font-size: var(--openbitfun-type-heading-section-font-size); font-variant-numeric: tabular-nums; }
+  &__message { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; color: var(--openbitfun-color-status-warning-content); }
+
+  &__section { margin-top: 48px; }
+  &__section-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  &__section-actions { display: flex; align-items: center; gap: var(--openbitfun-space-2); }
+  &__action-divider { block-size: var(--openbitfun-space-3); border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default); }
+  &__section-title { display: flex; align-items: center; gap: var(--openbitfun-space-3); margin: 0; font-size: var(--openbitfun-type-heading-section-font-size); font-weight: var(--openbitfun-type-heading-section-font-weight); }
+  &__placeholder { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px; min-height: 250px; padding: 28px; border-radius: 22px; background: var(--openbitfun-color-surface-subtle); color: var(--openbitfun-color-content-secondary); text-align: center; }
+
+  &__catalog { display: flex; flex-direction: column; gap: var(--openbitfun-space-6); }
+  &__catalog-item-name {
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-heading-card-font-family);
+    font-size: var(--openbitfun-type-heading-card-font-size);
+    font-weight: var(--openbitfun-type-heading-card-font-weight);
+    line-height: var(--openbitfun-type-heading-card-line-height);
+    letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
+  }
+  &__catalog-item-description,
+  &__catalog-empty { margin: 0; color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); line-height: var(--openbitfun-type-body-sm-line-height); }
+  &__catalog-cell { display: flex; min-width: 0; }
+  &__catalog-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    gap: var(--openbitfun-space-2);
+  }
+  &__catalog-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
+
+  &__device-carousel { position: relative; min-inline-size: 0; }
+  &__device-track {
+    display: flex;
+    gap: var(--openbitfun-space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar { display: none; }
+
+    > .personal-overview__catalog-cell {
+      // Two complete cards, two gaps and 30% of the next card fill the strip.
+      flex: 0 0 max(220px, calc((100% - var(--openbitfun-space-4) - var(--openbitfun-space-4)) / 2.3));
+      max-inline-size: 100%;
+      scroll-snap-align: start;
+    }
+  }
+  &__device-scroll-control {
+    position: absolute;
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &--previous { inset-inline-start: var(--openbitfun-space-2); }
+    &--next { inset-inline-end: var(--openbitfun-space-2); }
+  }
+  &__device-carousel:is(:hover, :focus-within) &__device-scroll-control {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  &__device {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--openbitfun-space-4);
+    width: 100%;
+    min-width: 0;
+    min-block-size: 136px;
+    padding: var(--openbitfun-space-5);
+  }
+  &__device-icon { display: flex; flex-shrink: 0; padding-block: var(--openbitfun-space-1); color: var(--openbitfun-color-content-secondary); }
+  &__device-status { display: flex; flex-wrap: wrap; gap: var(--openbitfun-space-2); }
+  &__device-sign-in {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 0;
+  }
+
+  &__heatmap {
+    padding-block: 20px;
+    // Keep the smaller calendar text optically inside the heading's edge.
+    padding-inline: calc(var(--openbitfun-space-1) / 2);
+    border-radius: 22px;
+  }
+
+}
+
+@container personal-overview (max-width: 600px) {
+  .personal-overview {
+    &__content { padding-block: 12px 48px; }
+    &__identity { padding-bottom: 36px; }
+    &__avatar { inline-size: 112px; block-size: 112px; }
+    &__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 0; }
+    &__metric + &__metric { border-inline-start: 0; }
+    &__metric:nth-child(even) { border-inline-start: 1px solid var(--openbitfun-color-border-subtle); }
+    &__metric:last-child { grid-column: 1 / -1; }
+  }
+}
+
+@media (hover: none) {
+  .personal-overview__device-scroll-control { opacity: 1; pointer-events: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .personal-overview__device-scroll-control { transition: none; }
+}
+
+@container personal-overview (max-width: 440px) {
+  .personal-overview {
+    &__heatmap { padding-block: 16px; }
+  }
+}

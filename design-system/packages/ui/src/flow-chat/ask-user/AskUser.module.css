@@ -163,6 +163,26 @@
     display: none;
   }
 
+  .waitTiming {
+    display: inline-flex;
+    min-inline-size: 0;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+  }
+
+  .waitSettled {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-flow-meta-font-family);
+    font-size: var(--openbitfun-type-flow-meta-font-size);
+    font-weight: var(--openbitfun-type-flow-meta-font-weight);
+    line-height: var(--openbitfun-type-flow-meta-line-height);
+    white-space: nowrap;
+  }
+
   .navigation {
     position: relative;
   }
@@ -314,20 +334,28 @@
   .details {
     display: grid;
     grid-template-rows: 1fr;
-    transition: grid-template-rows var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
   }
 
   .details[hidden] {
     display: none;
   }
 
-  .root[data-openbitfun-has-summary="true"][data-openbitfun-expanded="false"] .details {
-    grid-template-rows: 0fr;
+  .detailsInner {
+    overflow: hidden;
   }
 
-  .detailsInner {
+  /*
+   * Only the collapsing summary transitions its row. Keeping the resting row
+   * free of a transition, and keeping the shrinking min-size collapsed-only,
+   * stops the 1fr row from inflating past its content while the card is open.
+   */
+  .root[data-openbitfun-has-summary="true"][data-openbitfun-expanded="false"] .details {
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
+  }
+
+  .root[data-openbitfun-has-summary="true"][data-openbitfun-expanded="false"] .detailsInner {
     min-block-size: 0;
-    overflow: hidden;
   }
 
   .body {
@@ -409,10 +437,10 @@
     display: flex;
     flex: 1 1 auto;
     min-inline-size: 0;
-    min-block-size: var(--openbitfun-control-height-lg);
+    min-block-size: var(--openbitfun-control-height-sm);
     align-items: flex-start;
     gap: var(--openbitfun-space-2);
-    padding-block: max(var(--openbitfun-control-ask-user-option-padding-block), calc((var(--openbitfun-control-height-lg) - 1lh) / 2));
+    padding-block: var(--openbitfun-control-ask-user-option-padding-block);
     padding-inline: var(--openbitfun-control-ask-user-option-padding-inline);
     font: inherit;
   }
@@ -429,9 +457,9 @@
   .optionCopy {
     display: flex;
     min-inline-size: 0;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--openbitfun-space-3);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--openbitfun-control-ask-user-option-content-gap);
   }
 
   .optionLabel,
@@ -441,7 +469,6 @@
 
   .optionLabel {
     display: block;
-    flex: 0 1 auto;
     min-inline-size: 0;
     color: var(--openbitfun-color-content-primary);
     font-weight: var(--openbitfun-type-body-sm-font-weight);
@@ -451,14 +478,11 @@
 
   .optionDescription {
     display: block;
-    overflow: hidden;
-    flex: 1 1 auto;
     min-inline-size: 0;
-    max-inline-size: var(--openbitfun-control-ask-user-description-max-width);
     color: var(--openbitfun-color-content-muted);
     font-weight: var(--openbitfun-type-body-sm-font-weight);
     line-height: var(--openbitfun-type-body-sm-line-height);
-    text-align: end;
+    text-align: start;
     white-space: normal;
     overflow-wrap: anywhere;
   }
@@ -567,19 +591,6 @@
     min-block-size: var(--openbitfun-control-hit-target);
   }
 
-  @container ask-user (max-width: 36rem) {
-    .optionCopy {
-      flex-direction: column;
-      align-items: stretch;
-      gap: var(--openbitfun-space-1);
-    }
-
-    .optionDescription {
-      max-inline-size: none;
-      text-align: start;
-    }
-  }
-
   @container ask-user (max-width: 24rem) {
     .footer .status {
       flex-basis: 100%;
@@ -589,6 +600,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .details,
+    .root[data-openbitfun-has-summary="true"][data-openbitfun-expanded="false"] .details,
     .option {
       transition: none;
     }

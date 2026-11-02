@@ -1,36 +1,91 @@
 /* Export image styling aligned with FlowChat theme variables. */
+@use '../../transcript-layout' as transcriptLayout;
 
 // Export wrapper
 .export-image-wrapper {
   overflow: visible;
+  // Also bound captures whose source row has been virtualized away.
+  width: 100vw;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
 }
 
-.export-image-menu {
-  position: fixed;
-  z-index: var(--openbitfun-layer-popover);
+.export-image-options {
+  display: grid;
+  inline-size: calc(448px + var(--openbitfun-space-3));
+  max-inline-size: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 168px;
+  gap: var(--openbitfun-space-3);
+  margin-inline: auto;
+}
+
+.export-image-option-content {
+  justify-content: center;
+  gap: var(--openbitfun-space-1);
+}
+
+.export-image-option-card {
+  min-block-size: 0;
+  cursor: pointer;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+  @media (hover: hover) {
+    &:hover {
+      background: var(--openbitfun-color-action-neutral-surface-hover);
+    }
+  }
+
+  &:has(:focus-visible) {
+    background: var(--openbitfun-color-action-neutral-surface-hover);
+  }
+
+  &:active {
+    background: var(--openbitfun-color-action-neutral-surface-pressed);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
+.export-image-preview {
+  display: block;
+  inline-size: 100%;
+  block-size: 104px;
+  flex-shrink: 0;
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.export-image-option-label {
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  line-height: var(--openbitfun-type-label-md-line-height);
+  letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+  text-align: center;
 }
 
 // Export content container
 .export-content {
-  /* Width is set dynamically in JS to match the live chat pane width.
-     Padding matches ModelRoundItem (3rem ≈ 48px each side) so the
-     effective content width is identical to the live chat. */
-  padding: 24px 48px;
+  @include transcriptLayout.reading-column;
+
+  // Keep the live column and typography, with room for a standalone image frame.
+  padding-inline: clamp(var(--openbitfun-space-4), 4%, var(--openbitfun-space-8));
+  padding-block: var(--openbitfun-space-6);
   background: var(--openbitfun-color-surface-scene);
   box-sizing: border-box;
-  font-family:var(--openbitfun-type-body-sm-font-family);
-  /* Use a fixed 800px layout context so text wraps at exactly the same
-     width regardless of the wrapper's position or viewport. */
+  font-family: var(--openbitfun-type-flow-body-font-family);
+  font-size: var(--openbitfun-type-flow-body-font-size);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  // The capture wrapper sets the live reading-column width.
   container-type: inline-size;
 
   /* Prevent unwanted wrapping of short inline text */
   .thinking-label,
   .thinking-collapsed-header,
   [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='action'],
-  [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='content'],
-  [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='extra'],
   .export-content__title,
-  .export-content__subtitle,
   .export-content__timestamp,
   .export-content__footer span,
   .export-content__footer-brand {
@@ -38,43 +93,17 @@
     flex-shrink: 0 !important;
   }
 
-  /* modern-screenshot does not have the last-character wrapping bug that
-     html-to-image had, so links can stay display:inline for natural line
-     breaking. We keep padding-right to give inline elements a tiny buffer. */
-  a, code, strong, em, u, .file-mention {
-    padding-right: 2px;
-  }
-  
-  /* Keep font rendering as close to the live chat as possible so text
-     wrapping is identical. Do NOT override letter-spacing or ligatures
-     globally — those can change word widths and cause line-break deltas. */
-  * {
-    -webkit-font-smoothing: antialiased;
-    text-rendering: geometricPrecision;
-  }
-
-  /* Prevent links from being broken across lines inside the exported image.
-     FileLink is a <button> (inline-block) whose default white-space:normal
-     can wrap its text in SVG foreignObject contexts. */
-  a, .file-link, .tab-link, .visualization-link {
-    white-space: nowrap !important;
-  }
-
   // ===== Header =====
   &__header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--openbitfun-color-border-default);
+    gap: var(--openbitfun-space-2);
+    margin-block-end: var(--openbitfun-space-8);
   }
 
   &__logo {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    object-fit: contain;
+    inline-size: var(--openbitfun-space-6);
+    block-size: var(--openbitfun-space-6);
     flex-shrink: 0;
   }
 
@@ -87,29 +116,24 @@
     display: block;
   }
 
-  &__title-group {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    flex-shrink: 0;
-  }
-
   &__title {
-    font-size: var(--openbitfun-type-flow-title-font-size);
+    font-family: var(--openbitfun-type-label-md-font-family);
+    font-size: var(--openbitfun-type-label-md-font-size);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: var(--openbitfun-type-label-md-line-height);
+    letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
     color: var(--openbitfun-color-content-primary);
     display: inline-block;
   }
 
-  &__subtitle {
-    font-size: var(--openbitfun-type-flow-support-font-size);
-    color: var(--openbitfun-color-content-muted);
-    display: inline-block;
-  }
-
   &__timestamp {
-    margin-left: auto;
-    font-size: var(--openbitfun-type-flow-support-font-size);
+    margin-inline-start: auto;
+    font-family: var(--openbitfun-type-flow-meta-font-family);
+    font-size: var(--openbitfun-type-flow-meta-font-size);
+    font-weight: var(--openbitfun-type-flow-meta-font-weight);
+    line-height: var(--openbitfun-type-flow-meta-line-height);
+    letter-spacing: var(--openbitfun-type-flow-meta-letter-spacing);
+    font-variant-numeric: tabular-nums;
     color: var(--openbitfun-color-content-muted);
     display: inline-block;
     flex-shrink: 0;
@@ -117,29 +141,39 @@
 
   // ===== User message =====
   &__user-section {
-    margin-bottom: 16px;
+    margin-block-end: var(--openbitfun-space-6);
   }
 
   &__user-bubble {
-    background: var(--openbitfun-color-action-neutral-surface-hover);
-    border: 1px solid var(--openbitfun-color-border-default);
-    border-radius: 12px;
-    padding: 14px 16px;
-    font-size: var(--openbitfun-type-body-md-font-size);
+    inline-size: fit-content;
+    max-inline-size: var(--openbitfun-control-flow-chat-user-message-max-width);
+    margin-inline: auto 0;
+    padding: var(--openbitfun-control-flow-chat-user-message-padding-block) var(--openbitfun-control-flow-chat-user-message-radius);
+    border: none;
+    border-radius: var(--openbitfun-control-flow-chat-user-message-radius);
+    background: var(--openbitfun-color-action-quiet-hover);
+    font-family: var(--openbitfun-type-flow-control-font-family);
+    font-size: var(--openbitfun-type-flow-control-font-size);
+    font-weight: var(--openbitfun-type-flow-control-font-weight);
     line-height: var(--openbitfun-type-flow-body-line-height);
+    letter-spacing: var(--openbitfun-type-flow-control-letter-spacing);
     color: var(--openbitfun-color-content-primary);
     white-space: pre-wrap !important;
     word-break: break-word;
-    word-wrap: break-word;
     overflow-wrap: break-word;
+    box-sizing: border-box;
   }
 
   // ===== AI response =====
   &__ai-section {
-    margin-bottom: 16px;
+    min-inline-size: 0;
   }
 
   &__model-round {
+    // The rasterizer freezes computed heights. Contain child margins before
+    // measurement so cloning cannot move inter-round gaps inside fixed boxes
+    // and accumulate that missing space below the final response.
+    display: flow-root;
   }
 
   &__text-item {
@@ -178,6 +212,8 @@
 
   &__tool-item {
     margin-bottom: var(--openbitfun-control-flow-chat-flow-item-gap);
+    // Long command summaries must respect the image's trailing inset.
+    overflow: hidden;
     
     // Hide tool card action buttons and expanded content.
     .tool-card__actions,
@@ -189,14 +225,18 @@
 
   // ===== Footer =====
   &__footer {
-    margin-top: 20px;
-    padding-top: 14px;
-    border-top: 1px solid var(--openbitfun-color-border-default);
+    margin-block-start: var(--openbitfun-space-4);
+    padding-block-start: var(--openbitfun-space-3);
+    border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    font-size: var(--openbitfun-type-flow-support-font-size);
+    gap: var(--openbitfun-space-1);
+    font-family: var(--openbitfun-type-flow-meta-font-family);
+    font-size: var(--openbitfun-type-flow-meta-font-size);
+    font-weight: var(--openbitfun-type-flow-meta-font-weight);
+    line-height: var(--openbitfun-type-flow-meta-line-height);
+    letter-spacing: var(--openbitfun-type-flow-meta-letter-spacing);
     color: var(--openbitfun-color-content-muted);
     white-space: nowrap;
     
@@ -208,8 +248,7 @@
   }
 
   &__footer-brand {
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    color: var(--openbitfun-color-content-secondary);
+    color: inherit;
     white-space: nowrap;
   }
 }

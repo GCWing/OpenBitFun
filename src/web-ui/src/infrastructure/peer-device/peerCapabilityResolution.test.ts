@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canCopySessionsOnSurface,
+  canViewPullRequestsOnSurface,
   canQueryToolCatalogOnSurface,
   canSubmitUserQuestionsOnSurface,
+  canQuerySubscriptionQuotaOnSurface,
+  usesTerminalCursorReplay,
 } from './peerCapabilityResolution';
 import type { PeerHostCapabilities } from './PeerConnectionManager';
 
@@ -12,6 +16,7 @@ function caps(overrides: Partial<PeerHostCapabilities>): PeerHostCapabilities {
     targetedSessionRollback: false,
     tokenUsageStatistics: false,
     miniAppAgentContextFilesV1: false,
+    miniAppAgentImagesV1: false,
     cancelTool: null,
     toolCatalog: null,
     userQuestionResponse: null,
@@ -19,6 +24,42 @@ function caps(overrides: Partial<PeerHostCapabilities>): PeerHostCapabilities {
     ...overrides,
   };
 }
+
+describe('canViewPullRequestsOnSurface', () => {
+  it('keeps local and legacy Desktop PR viewers available', () => {
+    expect(canViewPullRequestsOnSurface(false, null)).toBe(true);
+    expect(canViewPullRequestsOnSurface(true, caps({ hostKind: 'desktop' }))).toBe(true);
+  });
+
+  it('uses the external URL for CLI, unknown and unprobed peers', () => {
+    expect(canViewPullRequestsOnSurface(true, null)).toBe(false);
+    expect(canViewPullRequestsOnSurface(true, caps({ hostKind: null }))).toBe(false);
+    expect(canViewPullRequestsOnSurface(true, caps({ hostKind: 'cli' }))).toBe(false);
+  });
+
+  it('prefers negotiated support over host kind', () => {
+    expect(canViewPullRequestsOnSurface(true, caps({ hostKind: 'cli', reviewPlatformV1: true }))).toBe(true);
+    expect(canViewPullRequestsOnSurface(true, caps({ hostKind: 'desktop', reviewPlatformV1: false }))).toBe(false);
+  });
+});
+
+it('requires explicit host allowance-query capability and never falls back to controller credentials', () => {
+  expect(canQuerySubscriptionQuotaOnSurface(false, null)).toBe(true);
+  expect(canQuerySubscriptionQuotaOnSurface(true, null)).toBe(false);
+  expect(canQuerySubscriptionQuotaOnSurface(true, caps({ hostKind: 'desktop' }))).toBe(false);
+  expect(canQuerySubscriptionQuotaOnSurface(true, caps({ hostKind: 'cli' }))).toBe(false);
+  expect(canQuerySubscriptionQuotaOnSurface(true, caps({ subscriptionQuotaV1: true }))).toBe(true);
+});
+
+describe('canCopySessionsOnSurface', () => {
+  it('requires explicit peer support even for older Desktop hosts', () => {
+    expect(canCopySessionsOnSurface(false, null)).toBe(true);
+    expect(canCopySessionsOnSurface(true, null)).toBe(false);
+    expect(canCopySessionsOnSurface(true, caps({ hostKind: 'desktop' }))).toBe(false);
+    expect(canCopySessionsOnSurface(true, caps({ hostKind: 'cli' }))).toBe(false);
+    expect(canCopySessionsOnSurface(true, caps({ wholeSessionCopyV1: true }))).toBe(true);
+  });
+});
 
 describe('canQueryToolCatalogOnSurface', () => {
   it('is always queryable on the local (controller) surface', () => {
@@ -72,5 +113,39 @@ describe('canSubmitUserQuestionsOnSurface', () => {
       true,
       caps({ hostKind: 'cli', userQuestionResponse: true }),
     )).toBe(true);
+  });
+});
+
+import { canQueryModelQuotaOnSurface } from './peerCapabilityResolution';
+it('requires the model-scoped quota capability instead of inferring it from account quota support', () => {
+  expect(canQueryModelQuotaOnSurface(false, null)).toBe(true);
+  expect(canQueryModelQuotaOnSurface(true, null)).toBe(false);
+  expect(canQueryModelQuotaOnSurface(true, { subscriptionQuotaV1: true } as PeerHostCapabilities)).toBe(false);
+  expect(canQueryModelQuotaOnSurface(true, { subscriptionModelQuotaV1: true } as PeerHostCapabilities)).toBe(true);
+});
+
+import { canQueryGrokQuotaOnSurface } from './peerCapabilityResolution';
+it('requires advertised Grok quota support from a peer', () => {
+  expect(canQueryGrokQuotaOnSurface(false, null)).toBe(true);
+  expect(canQueryGrokQuotaOnSurface(true, null)).toBe(false);
+  expect(canQueryGrokQuotaOnSurface(true, { subscriptionQuotaV1: true } as PeerHostCapabilities)).toBe(false);
+  expect(canQueryGrokQuotaOnSurface(true, { grokQuotaV1: true } as PeerHostCapabilities)).toBe(true);
+});
+
+describe('usesTerminalCursorReplay', () => {
+  const capabilities = (fields: Record<string, unknown>) => fields as unknown as PeerHostCapabilities;
+
+  it('follows the typed capability', () => {
+    expect(usesTerminalCursorReplay(capabilities({ terminalCursorReplayV1: true, hostKind: 'cli' }))).toBe(true);
+  });
+
+  it('resolves an older host through its kind', () => {
+    expect(usesTerminalCursorReplay(capabilities({ terminalCursorReplayV1: false, hostKind: 'cli' }))).toBe(true);
+    expect(usesTerminalCursorReplay(capabilities({ terminalCursorReplayV1: false, hostKind: 'desktop' }))).toBe(false);
+  });
+
+  it('stays on terminal_event while the host is unknown or local', () => {
+    expect(usesTerminalCursorReplay(capabilities({ hostKind: null }))).toBe(false);
+    expect(usesTerminalCursorReplay(undefined)).toBe(false);
   });
 });

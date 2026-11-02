@@ -50,6 +50,7 @@ fn tool_listing_sections_render_only_present_sections() {
                 .to_string(),
         ),
         deferred_tool_listing: Some("Search: summary".to_string()),
+        ptc_tool_calling_guide: None,
     };
 
     assert!(!sections.is_empty());
@@ -92,6 +93,7 @@ fn tool_listing_sections_render_only_present_sections() {
 fn prepended_prompt_reminders_keep_runtime_injection_order() {
     let reminders = PrependedPromptReminders {
         deferred_tool_listing: Some("deferred-tools".to_string()),
+        ptc_tool_calling_guide: None,
         skill_listing: Some("skills".to_string()),
         agent_listing: Some("agents".to_string()),
         runtime_context: Some("runtime-context".to_string()),
@@ -114,6 +116,23 @@ fn prepended_prompt_reminders_keep_runtime_injection_order() {
 }
 
 #[test]
+fn ptc_sdk_is_injected_as_a_separate_tool_calling_reminder() {
+    let reminders = PrependedPromptReminders {
+        ptc_tool_calling_guide: Some(
+            "# Tool Calling Guide\nGenerated SDK:\n```ts\nexport type ToolArgsMap = {};\n```"
+                .to_string(),
+        ),
+        ..Default::default()
+    };
+    assert_eq!(
+        reminders.ptc_tool_calling_guide.as_deref(),
+        Some("# Tool Calling Guide\nGenerated SDK:\n```ts\nexport type ToolArgsMap = {};\n```")
+    );
+    assert_eq!(reminders.ordered_reminders().len(), 1);
+    assert!(reminders.ordered_reminders()[0].contains("ToolArgsMap"));
+}
+
+#[test]
 fn prompt_environment_info_preserves_local_and_remote_guidance() {
     let local = render_prompt_environment_info(PromptEnvironmentFacts {
         host_os: "windows",
@@ -122,8 +141,10 @@ fn prompt_environment_info_preserves_local_and_remote_guidance() {
         remote_execution_active: false,
     });
     assert!(local.contains("- Operating System: windows (windows)"));
-    assert!(local.contains("Computer use / `key_chord`"));
-    assert!(local.contains("PowerShell"));
+    assert!(local.contains("Computer use / keyboard"));
+    assert!(local.contains("Windows app-scoped keyboard chords are unavailable"));
+    assert!(local.contains("requires authorized foreground control"));
+    assert!(!local.contains("PowerShell"));
 
     let remote = render_prompt_environment_info(PromptEnvironmentFacts {
         host_os: "linux",
@@ -217,6 +238,25 @@ fn runtime_context_renderer_adds_text_only_computer_use_guidance_for_non_visual_
     assert!(reminder.contains("primary model does not accept image inputs"));
     assert!(reminder.contains("do not use `screenshot`"));
     assert!(reminder.contains("prefer `snapshot` then click by `@e*` ref"));
+    assert!(reminder.contains("selected or bound app"));
+    assert!(reminder.contains("`include_image: false`"));
+    assert!(reminder.contains("`app_batch`"));
+    assert!(reminder.contains("never replay completed steps after partial failure"));
+    assert!(reminder.contains("background-only/no-disruption"));
+    assert!(reminder.contains("`activate_app`"));
+    assert!(reminder.contains("Never replay uncertain input"));
+    assert!(reminder.contains("Respect Stop, cancellation and permission denial"));
+    for obsolete in [
+        "frontmost app",
+        "again after an action to confirm `ax_state_digest` changed",
+        "Action priority:",
+        "`paste` with `submit: true`",
+    ] {
+        assert!(
+            !reminder.contains(obsolete),
+            "legacy desktop guidance: {obsolete}"
+        );
+    }
 }
 
 #[test]

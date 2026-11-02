@@ -1,2 +1,2 @@
-export { SplitView } from './SplitView';
-export type { SplitViewProps, SplitViewMode } from './SplitView';
+export { SplitView, SplitViewPrimaryDock, SplitViewSurface } from './SplitView';
+export type { SplitViewProps, SplitViewMode, SplitViewHeaderGeometry } from './SplitView';

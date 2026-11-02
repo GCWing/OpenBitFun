@@ -2,7 +2,7 @@ use crate::session_state::SessionState;
 pub use openbitfun_core_types::SessionKind;
 pub use openbitfun_core_types::{
     SessionAgentRouteOwner, SessionContinuationPolicy, SessionExecutionTarget,
-    SessionModelBindingPolicy,
+    SessionModelBindingPolicy, ToolPresentationMode,
 };
 pub use openbitfun_runtime_ports::PermissionMode;
 use serde::{Deserialize, Serialize};
@@ -222,6 +222,20 @@ pub struct SessionConfig {
     /// Model config ID used by this session (for token usage tracking)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
+    /// Main conversation strategy. None preserves legacy environment-driven routing.
+    /// Keep unknown values on disk so newer sessions remain readable by older hosts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_routing: Option<String>,
+    /// Legacy delegation hint retained for session compatibility; ignored by subagent model selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation_model_routing: Option<String>,
+    /// Authoritative pool selection; model_id is not a pool identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_pool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub model_pool_selection_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_pool_binding: Option<openbitfun_core_types::model_pool::ModelPoolBinding>,
     /// Explicit reasoning preset selected for this session. `None` means the
     /// model's default preset (Auto).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -238,6 +252,10 @@ pub struct SessionConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub permission_mode: Option<PermissionMode>,
+    /// Frozen tool presentation for this session. Legacy sessions default to
+    /// native tool calls when this field is absent on disk.
+    #[serde(default, skip_serializing_if = "ToolPresentationMode::is_native")]
+    pub tool_presentation_mode: ToolPresentationMode,
     /// Whether this child session accepts another delegated turn.
     #[serde(default, skip_serializing_if = "is_reusable_continuation_policy")]
     pub continuation_policy: SessionContinuationPolicy,
@@ -287,6 +305,10 @@ fn is_local_agent_route_owner(owner: &SessionAgentRouteOwner) -> bool {
     *owner == SessionAgentRouteOwner::Local
 }
 
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
@@ -306,8 +328,14 @@ impl Default for SessionConfig {
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id: None,
+            model_routing: None,
+            delegation_model_routing: None,
+            model_pool_id: None,
+            model_pool_selection_revision: 0,
+            model_pool_binding: None,
             reasoning_preset: None,
             permission_mode: None,
+            tool_presentation_mode: ToolPresentationMode::default(),
             continuation_policy: SessionContinuationPolicy::default(),
             model_binding_policy: SessionModelBindingPolicy::default(),
             model_binding_fingerprint: None,
@@ -397,10 +425,24 @@ pub fn sanitize_persisted_session_state(state: &SessionState) -> SessionState {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn model_routing_is_additive_and_preserves_unknown_strategy() {
+        let mut old = serde_json::to_value(super::SessionConfig::default()).unwrap();
+        old.as_object_mut().unwrap().remove("model_routing");
+        let config: super::SessionConfig = serde_json::from_value(old.clone()).unwrap();
+        assert!(config.model_routing.is_none());
+        assert!(config.delegation_model_routing.is_none());
+        assert_eq!(serde_json::to_value(config).unwrap(), old);
+        old["model_routing"] = serde_json::json!("future-mode");
+        old["delegation_model_routing"] = serde_json::json!("future-delegation-mode");
+        let config: super::SessionConfig = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(serde_json::to_value(config).unwrap(), old);
+    }
+
     use super::{
         sanitize_persisted_session_state, CompressionState, PermissionMode,
         PersistedSessionStateFile, Session, SessionAgentRouteOwner, SessionConfig,
-        SessionContinuationPolicy, SessionModelBindingPolicy,
+        SessionContinuationPolicy, SessionModelBindingPolicy, ToolPresentationMode,
     };
     use crate::session_state::{ProcessingPhase, SessionState};
 
@@ -501,6 +543,7 @@ mod tests {
         assert!(config.remote_ssh_host.is_none());
         assert!(config.model_id.is_none());
         assert!(config.reasoning_preset.is_none());
+        assert_eq!(config.tool_presentation_mode, ToolPresentationMode::Native);
         assert_eq!(
             config.continuation_policy,
             SessionContinuationPolicy::Reusable
@@ -514,8 +557,28 @@ mod tests {
     }
 
     #[test]
+    fn session_tool_presentation_mode_is_frozen_and_legacy_data_defaults_native() {
+        let config = SessionConfig {
+            tool_presentation_mode: ToolPresentationMode::Ptc,
+            ..SessionConfig::default()
+        };
+        let mut serialized = serde_json::to_value(&config).expect("serialize session config");
+        assert_eq!(serialized["tool_presentation_mode"], "ptc");
+        let restored: SessionConfig = serde_json::from_value(serialized.clone()).unwrap();
+        assert_eq!(restored.tool_presentation_mode, ToolPresentationMode::Ptc);
+
+        serialized
+            .as_object_mut()
+            .expect("session config object")
+            .remove("tool_presentation_mode");
+        let legacy: SessionConfig = serde_json::from_value(serialized).unwrap();
+        assert_eq!(legacy.tool_presentation_mode, ToolPresentationMode::Native);
+    }
+
+    #[test]
     fn external_agent_route_owner_persists_and_legacy_sessions_default_local() {
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             agent_route_owner: SessionAgentRouteOwner::External,
             agent_route_key: Some("opencode:plugin:build".to_string()),
             ..SessionConfig::default()
@@ -541,6 +604,7 @@ mod tests {
     #[test]
     fn non_default_subagent_session_policies_are_persisted_and_legacy_defaults_remain_compatible() {
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             continuation_policy: SessionContinuationPolicy::FreshOnly,
             model_binding_policy: SessionModelBindingPolicy::ApprovedImmutable,
             ..SessionConfig::default()
@@ -605,6 +669,7 @@ mod tests {
             "Main".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 model_id: Some("provider/model".to_string()),
                 workspace_path: Some("/worktrees/session_1".to_string()),
                 workspace_id: Some("workspace_1".to_string()),
@@ -657,6 +722,7 @@ mod tests {
         let file = PersistedSessionStateFile {
             schema_version: 1,
             config: SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some("/workspace".to_string()),
                 model_id: Some("model-a".to_string()),
                 ..SessionConfig::default()
@@ -717,5 +783,51 @@ mod tests {
 impl SessionConfig {
     pub fn is_remote_workspace(&self) -> bool {
         self.workspace_kind == Some(openbitfun_core_types::WorkspaceKind::Remote)
+    }
+}
+
+#[cfg(test)]
+mod model_pool_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn model_pool_legacy_session_defaults_and_downgrade_guard() {
+        let mut legacy = serde_json::to_value(SessionConfig::default()).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        object.remove("model_pool_id");
+        object.remove("model_pool_binding");
+        object.remove("model_pool_selection_revision");
+        let mut config: SessionConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(config.model_pool_id.is_none());
+        assert_eq!(config.model_pool_selection_revision, 0);
+        assert_eq!(serde_json::to_value(&config).unwrap(), legacy);
+        // Also accept the explicit zero written before default omission was added.
+        legacy["model_pool_selection_revision"] = serde_json::json!(0);
+        config = serde_json::from_value(legacy).unwrap();
+        assert_eq!(config.model_pool_selection_revision, 0);
+        config.model_pool_id = Some("p".into());
+        config.model_pool_selection_revision = 7;
+        config.model_id = None;
+        config.model_binding_policy = SessionModelBindingPolicy::Pool;
+        let encoded = serde_json::to_value(&config).unwrap();
+        assert_eq!(encoded["model_pool_selection_revision"], 7);
+        let restored: SessionConfig = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(restored.model_pool_id.as_deref(), Some("p"));
+        assert_eq!(restored.model_pool_selection_revision, 7);
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum LegacyPolicy {
+            Mutable,
+            ApprovedImmutable,
+        }
+        #[derive(serde::Deserialize)]
+        struct LegacyReader {
+            #[allow(dead_code)]
+            model_binding_policy: LegacyPolicy,
+        }
+        assert!(
+            serde_json::from_value::<LegacyReader>(encoded).is_err(),
+            "old runtimes must not run a pool as primary"
+        );
     }
 }

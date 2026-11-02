@@ -34,6 +34,7 @@ export class ConversationCoreState {
   @Trace selectedModelId: string = '';
   @Trace statusText: string = '';
   @Trace chatInput: string = '';
+  @Trace promptSuggestion: string = '';
   @Trace selectedImages: SelectedImageAttachment[] = [];
   @Trace isVoiceListening: boolean = false;
   /**
@@ -57,7 +58,10 @@ export class ConversationCoreState {
   }
 
   setActiveSession(session: SessionSummary): void {
-    if (this.activeSession.sessionId !== session.sessionId) this.composerRevision++;
+    if (this.activeSession.sessionId !== session.sessionId) {
+      this.composerRevision++;
+      this.promptSuggestion = '';
+    }
     this.activeSession = {
       sessionId: session.sessionId,
       title: session.title,
@@ -96,6 +100,7 @@ export class ConversationCoreState {
   }
 
   clearTimeline(): void {
+    this.promptSuggestion = '';
     this.persistedMessages = [];
     this.optimisticMessages = [];
     this.activeTurnMessage = RemoteUiState.emptyActiveTurn();
@@ -159,6 +164,7 @@ export class ConversationCoreState {
       commit: (): void => {
         if (finished || committed || this.composerRevision !== capturedRevision ||
           this.activeSession.sessionId !== sessionId) return;
+        this.promptSuggestion = '';
         if (this.chatInput.trim() === text.trim()) this.setChatInput('');
         this.setSelectedImages(this.selectedImages.filter((image: SelectedImageAttachment): boolean =>
           !images.some((sent: SelectedImageAttachment): boolean => sent.id === image.id)));

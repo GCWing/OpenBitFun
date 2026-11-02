@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct OpenBitFunApp: App {
     @State private var showStartupBrand = !MobileLaunchConfiguration.streamingRegressionPreview
+        && !MobileLaunchConfiguration.promptSuggestionPreview
         && MobileLaunchConfiguration.designPreviewScenario() == nil
         && StartupRevealPreference.claim()
     @State private var showColdStart = false
@@ -40,7 +41,7 @@ struct OpenBitFunApp: App {
                     .onAppear { resolveColdStart() }
                     .onChange(of: model.launchAccountRestored) { _ in resolveColdStart() }
                     .task(id: showStartupBrand || showColdStart || !coldStartConsumed) {
-                        if !showStartupBrand && !showColdStart && coldStartConsumed {
+                        if !showStartupBrand && !showColdStart && coldStartConsumed && !MobileLaunchConfiguration.promptSuggestionPreview {
                             notificationOnboardingOpen = await TaskCompletionNotifier.shouldOfferOnboarding()
                         }
                     }

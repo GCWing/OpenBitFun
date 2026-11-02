@@ -5,12 +5,14 @@
     "exaMcpFree": "Exa MCP（免費）",
     "exaSearchApi": "Exa Search API",
     "tavily": "Tavily Search API",
+    "deepseek": "DeepSeek Search API",
     "openbitfunSearchHttp": "自訂 HTTP 服務"
   },
   "providerDescriptions": {
     "exaMcpFree": "無需 API Key 或額外設定",
     "exaSearchApi": "需要 Exa API Key，在下方填寫並儲存",
     "tavily": "需要 Tavily API Key，在下方填寫並儲存",
+    "deepseek": "需要 DeepSeek API Key，在下方填寫並儲存",
     "openbitfunSearchHttp": "接入自建或企業內部搜尋服務，需填寫服務位址並按需設定驗證"
   },
   "auth": {

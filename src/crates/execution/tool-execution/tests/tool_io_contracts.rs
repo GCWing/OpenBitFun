@@ -211,7 +211,7 @@ fn execute_local_glob_returns_matches_relative_to_derived_walk_root() {
 }
 
 #[test]
-fn execute_local_glob_treats_rg_no_match_as_empty_result() {
+fn execute_local_glob_returns_empty_result_when_no_files_match() {
     let root = make_temp_dir("glob-empty");
     fs::create_dir_all(root.join("empty-dir")).expect("empty dir should be created");
 

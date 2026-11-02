@@ -196,7 +196,7 @@ impl RuntimeIpcClient {
         let release_gate_after_write = operation.is_interruptible_lineage_read();
         let request_id = self
             .next_request_id
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 value.checked_add(1)
             })
             .map_err(|_| RuntimeIpcClientError::RequestIdExhausted)?;

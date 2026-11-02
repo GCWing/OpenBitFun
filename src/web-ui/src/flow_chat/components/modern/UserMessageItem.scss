@@ -40,6 +40,12 @@
   position: relative;
 }
 
+.user-message-item:not(.user-message-item--expanded):not(.user-message-item--editing) {
+  // Wrapped previews stay compact; explicit lines beyond the preview leave
+  // layout below, so shorter visible lines determine the content-fit width.
+  max-width: min(28rem, var(--openbitfun-control-flow-chat-user-message-max-width));
+}
+
 .user-message-item__surface {
   position: absolute;
   inset: 0;
@@ -169,6 +175,7 @@
 }
 
 .user-message-item-shell:hover .user-message-item__actions,
+.user-message-item__actions[data-menu-open],
 .user-message-item-shell:focus-within .user-message-item__actions {
   opacity: 1;
   pointer-events: auto;
@@ -198,6 +205,24 @@
   max-height: 4.75em; /* Collapsed: up to 3 compact lines. */
   user-select: text;
   transition: none;
+}
+
+// Keep the full text in DOM order for selection offsets and source references,
+// but remove hidden lines from intrinsic sizing. The ellipsis is paint only.
+.user-message-item__content-preview::after {
+  content: '\2026';
+}
+
+.user-message-item__content-overflow {
+  display: none;
+}
+
+.user-message-item--expanded .user-message-item__content-preview::after {
+  content: none;
+}
+
+.user-message-item--expanded .user-message-item__content-overflow {
+  display: contents;
 }
 
 // Expanded state (outer scroll area).
@@ -274,8 +299,7 @@
 }
 
 .user-message-item__copy-btn,
-.user-message-item__edit-btn,
-.user-message-item__rollback-btn {
+.user-message-item__edit-rollback-btn {
   @include transcriptLayout.metadata-action;
   // Keep the message action feedback and original pending indicator.
   background: transparent;
@@ -457,8 +481,7 @@
   .user-message-item__timestamp,
   .user-message-item__actions,
   .user-message-item__copy-btn,
-  .user-message-item__edit-btn,
-  .user-message-item__rollback-btn,
+  .user-message-item__edit-rollback-btn,
     .user-message-item__image-thumb,
   .user-message-item__lightbox-close {
     transition-duration: 0ms;

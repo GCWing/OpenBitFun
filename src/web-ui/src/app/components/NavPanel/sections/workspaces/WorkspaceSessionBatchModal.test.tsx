@@ -84,4 +84,27 @@ describe('Claw session batch management', () => {
     expect(mocks.confirmDanger).toHaveBeenCalledTimes(1);
     expect(mocks.deleteChatSession.mock.calls).toEqual([['claw-2'], ['claw-1']]);
   });
+
+  it.each(['remove', 'archive'])('%s affects the selected source without selecting its independent branch', async operation => {
+    const rows = await mocks.listSessions();
+    mocks.listSessions.mockResolvedValue([
+      { ...rows[0], customMetadata: { externalHistoryMode: 'follow', externalHistoryPending: true, importedFrom: 'codex' } },
+      { ...rows[1], customMetadata: { externalBranchOf: { sessionId: 'claw-1', ecosystemId: 'codex' } } },
+    ]);
+    await act(async () => root.render(
+      <WorkspaceSessionBatchModal workspaceId="assistant-one" isOpen onClose={() => {}} workspaceLabel="Claw" />,
+    ));
+    const sourceLabel = [...container.querySelectorAll('label')].find(label => label.textContent?.includes('First assistant chat'))!;
+    await act(async () => sourceLabel.querySelector<HTMLInputElement>('input')!.click());
+    if (operation === 'remove') {
+      await clickAction('nav.sessions.removeSelected');
+      expect(mocks.confirmDanger).toHaveBeenCalledWith('nav.sessions.bulkRemoveSourceConfirmTitle',
+        'nav.sessions.bulkRemoveSourceConfirmMessage', { confirmText: 'nav.sessions.removeSelected' });
+      expect(mocks.deleteChatSession.mock.calls).toEqual([['claw-1']]);
+    } else {
+      await clickAction('nav.sessions.archiveSelected');
+      expect(mocks.archiveChatSession.mock.calls).toEqual([['claw-1']]);
+      expect(mocks.confirmDanger).not.toHaveBeenCalled();
+    }
+  });
 });

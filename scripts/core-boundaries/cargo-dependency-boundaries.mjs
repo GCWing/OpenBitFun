@@ -48,11 +48,16 @@ function repositoryPath(root, path) {
   return result;
 }
 
-// This crates.io source is patched only to select the product TLS provider.
-// It is an external dependency, not an OpenBitFun runtime owner. Resolved
-// feature checks below still include it and its full dependency closure.
+// Reviewed crates.io copies remain external dependencies, not product owners.
+// Resolved feature checks still include them and their full dependency closure.
+const VENDORED_EXTERNAL_PACKAGES = new Map([
+  ['third_party/eioc/Cargo.toml', { name: 'eioc', version: '0.5.0' }],
+  ['third_party/tao/Cargo.toml', { name: 'tao', version: '0.36.0' }],
+  ['third_party/wry/Cargo.toml', { name: 'wry', version: '0.56.0' }],
+]);
+
 function isVendoredExternalManifest(root, manifestPath) {
-  return repositoryPath(root, manifestPath) === 'third_party/eioc/Cargo.toml';
+  return VENDORED_EXTERNAL_PACKAGES.has(repositoryPath(root, manifestPath));
 }
 
 function layerForManifest(manifestPath, { root, crateLayoutRules }) {
@@ -140,8 +145,8 @@ function isProcMacroPackage(pkg) {
 
 const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['account-identity', ['rt', 'sync']],
-  ['announcement', ['fs', 'sync']],
-  ['models-dev', ['fs', 'sync', 'time']],
+  // Large catalog validation/hash work uses spawn_blocking, outside async IO workers.
+  ['models-dev', ['fs', 'rt', 'sync', 'time']],
   ['browser-control', ['time']],
   ['canvas-runtime', ['fs']],
   ['deep-research', []],
@@ -163,6 +168,7 @@ const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['speech-realtime', ['fs', 'io-util', 'macros', 'net', 'rt', 'sync', 'time']],
   ['workspace-search', ['io-util', 'rt', 'sync', 'time']],
   ['script-tool-runtime', ['io-util', 'process', 'rt', 'sync', 'time']],
+  ['ptc-runtime', ['io-util', 'process', 'rt', 'sync', 'time']],
 ]);
 
 const SERVICES_CORE_TOKIO_FEATURES = new Map([
@@ -170,7 +176,11 @@ const SERVICES_CORE_TOKIO_FEATURES = new Map([
   ['diff', ['rt', 'time']],
   ['filesystem', ['fs', 'rt', 'sync']],
   ['json-io', ['fs', 'rt', 'sync', 'time']],
+  ['routing-state', ['fs', 'rt', 'sync', 'time']],
+  ['resource-capacity', ['fs', 'rt', 'sync', 'time']],
   ['local-storage', ['fs', 'rt', 'sync', 'time']],
+  // Offline repair uses strict atomic storage writes; no processes or network.
+  ['session-recovery', ['fs', 'rt', 'sync', 'time']],
   ['permission', ['rt']],
   ['process-runtime', ['io-util', 'process', 'rt', 'time']],
   ['session-search', ['rt']],
@@ -189,6 +199,8 @@ const CORE_TOKIO_FEATURES = new Map([
   ['browser-control', ['net', 'rt', 'time']],
 ]);
 const CORE_TOKIO_AGGREGATES = new Set([
+  // PTC composes the Agent Runtime baseline and the service-owned Node runtime.
+  'ptc-runtime',
   'external-sources',
   'plugin-runtime',
   'product-search',
@@ -540,11 +552,13 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
   ['image', {
     label: 'Image',
     packages: new Map([
+      ['openbitfun-computer-use', dependencyProfile(['jpeg', 'png'], { useDefaultFeatures: false })],
       ['openbitfun-services-core', dependencyProfile([], {
         optional: true,
         useDefaultFeatures: false,
         ownerFeatureCapabilities: new Map([
           ['pet-packages', ['gif', 'jpeg', 'png', 'webp']],
+          ['workspace-icons', ['jpeg', 'png', 'webp']],
         ]),
       })],
       ['openbitfun-cli', dependencyProfile(['gif', 'jpeg', 'png', 'webp'], {
@@ -556,6 +570,8 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
       })],
       // Desktop owns bounded controller-local drag thumbnail decoding.
       // Keep only its raster input formats and PNG/JPEG output codecs.
+      // Independent MiniApp windows decode only their host-generated PNG icon.
+      ['openbitfun-miniapp-shell', dependencyProfile(['png'], { useDefaultFeatures: false })],
       ['openbitfun-desktop', dependencyProfile(['bmp', 'gif', 'jpeg', 'png', 'webp'], {
         useDefaultFeatures: false,
       })],
@@ -1059,7 +1075,6 @@ export function findServicesIntegrationsReqwestFeatureViolations(pkg) {
   const ownerFeatures = new Set(servicesReqwestOwnerFeatures);
   const ownerFeatureReferences = new Map([
     ['account-identity', ['reqwest/json']],
-    ['announcement', ['reqwest/json']],
     ['browser-control', ['reqwest/json']],
     ['mcp', ['reqwest/json', 'reqwest/stream']],
     ['miniapp-market', ['reqwest/json', 'reqwest/query', 'reqwest/stream']],
@@ -1442,11 +1457,13 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-browser-web',
     'tools-computer-use',
     'tools-image-analysis',
+    'tools-image-generation',
     'tools-agent-control',
   ];
   const CORE_TEST_SUPPORT_FEATURE = 'test-support';
   const reviewedCoreFeatureClosures = new Map([
     ['openbitfun-cli', [
+      'workspace-icons',
       'tools-pages',
       ...coreCompatibilityReviewedFeatures,
       'product-search',
@@ -1454,6 +1471,8 @@ export function findProductEntrypointCoreFeatureViolations(
       'plugin-runtime',
       'opencode-plugin-host',
       'ssh-remote',
+      // Outbound controller for `openbitfun dispatch outbound`.
+      'dispatch-store',
     ]],
     ['openbitfun-acp', [...new Set([...acpClientCoreFeatures, ...acpServerCoreFeatures])]],
     ['openbitfun-app-server', [
@@ -1499,6 +1518,7 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-creation',
     'tools-git',
     'tools-image-analysis',
+    'tools-image-generation',
     'tools-mcp',
     'tools-miniapp',
     'web-tools',
@@ -1513,6 +1533,7 @@ export function findProductEntrypointCoreFeatureViolations(
   ];
   const reviewedActiveCoreFeatureClosures = new Map([
     ['openbitfun-cli', [
+      'workspace-icons',
       'tools-pages',
       ...acpActiveCoreFeatures,
       'i18n-runtime',
@@ -1520,6 +1541,7 @@ export function findProductEntrypointCoreFeatureViolations(
       'product-search',
       'opencode-plugin-host',
       'remote-connect',
+      'dispatch-store',
     ]],
     ['openbitfun-acp', acpActiveCoreFeatures],
     ['openbitfun-sdk-host-app', coreCompatibilityActiveFeatures],
@@ -1555,7 +1577,6 @@ export function findProductEntrypointCoreFeatureViolations(
   const reviewedForbiddenDependencyOwnerFeatures = new Map([
     ['openbitfun-sdk-host-app', new Map([
       ['openbitfun-services-integrations', [
-        'announcement',
         'function-agents',
         'product-full',
         'remote-connect',
@@ -1772,10 +1793,10 @@ export function findProductEntrypointCoreFeatureViolations(
 
   const corePackage = packages.find((pkg) => pkg.name === 'openbitfun-core');
   if (corePackage) {
-    const forbiddenCoreFeatures = [
+    const forbiddenCoreFeaturesFor = (rootName) => [
       'product-full',
-      'announcement',
-      'dispatch-store',
+      // The CLI is a reviewed dispatch controller; other closures are not.
+      ...(rootName === 'openbitfun-cli' ? [] : ['dispatch-store']),
     ];
     const reportedUnexpectedFeatures = new Set();
 
@@ -1916,7 +1937,7 @@ export function findProductEntrypointCoreFeatureViolations(
 
           if (targetPackage.name === 'openbitfun-core') {
             const activeCoreFeatures = targetState.featureState.active;
-            const unexpected = forbiddenCoreFeatures.find((feature) =>
+            const unexpected = forbiddenCoreFeaturesFor(rootName).find((feature) =>
               activeCoreFeatures.has(feature))
               ?? [...activeCoreFeatures]
                 .filter((feature) => !allowedCoreFeatures.has(feature))
@@ -2667,8 +2688,9 @@ export function collectCargoMetadataGraph({
         continue;
       }
       const packageManifestKey = normalizedPath(pkg.manifest_path);
-      if (isVendoredExternalManifest(root, pkg.manifest_path)
-        && pkg.name === 'eioc' && pkg.version === '0.5.0' && !workspaceMemberIds.has(pkg.id)) {
+      const vendor = VENDORED_EXTERNAL_PACKAGES.get(repositoryPath(root, pkg.manifest_path));
+      if (vendor && pkg.name === vendor.name && pkg.version === vendor.version
+        && !workspaceMemberIds.has(pkg.id)) {
         continue;
       }
       if (workspaceMemberIds.has(pkg.id)) {

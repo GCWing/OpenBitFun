@@ -697,7 +697,7 @@ function responseFor(command) {
       }
       createdSession = {
         id: 'session-created-preview',
-        title: command.session_name || (command.agent_type === 'cowork' ? 'Remote Cowork Session' : 'Remote Code Session'),
+        title: command.session_name || 'New Session',
         agent_type: command.agent_type || 'code',
       };
       activeTurn = false;

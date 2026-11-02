@@ -41,7 +41,7 @@ the product tool runtime.
 cargo test --locked -p openbitfun-agent-tools --no-default-features
 cargo test --locked -p openbitfun-agent-tools --no-default-features --features acp-bridge --test tool_contracts acp_external_agent_bridge_preserves_tool_contract
 cargo test --locked -p openbitfun-agent-tools --no-default-features --features mcp-bridge --test tool_contracts mcp_tool_bridge
-cargo test --locked -p openbitfun-agent-tools --no-default-features --features computer-use-contract --lib computer_use::
+cargo test --locked -p openbitfun-agent-tools --no-default-features --features computer-use-contract --lib computer_use
 cargo test --locked -p openbitfun-agent-tools --no-default-features --features element-token --lib element_token::
 node scripts/check-core-boundaries.mjs
 ```

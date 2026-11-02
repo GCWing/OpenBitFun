@@ -1,7 +1,7 @@
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { RemoteQuestionAnswerPayload, RemoteSession } from '../../model/RemoteModels';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
-import { ConversationIntent, ConversationIntentType, MessageCopyScope } from './ConversationIntent';
+import { ConversationIntent, ConversationIntentType, MessageCopyScope, SessionRollbackRequest } from './ConversationIntent';
 import { toRemoteQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
@@ -27,6 +27,17 @@ export interface ConversationIntentDispatcherHooks {
   readonly downloadFile: (path: string) => void;
   readonly buildPlan: (path: string, name: string) => Promise<void>;
   readonly branchExpanded: (branchId: string) => void;
+  /**
+   * Run one staged rollback against the host.
+   *
+   * It resolves only when the host has answered, because a send-while-staging
+   * exit has to append its message after the turn the rollback retired.
+   */
+  readonly rollback: (request: SessionRollbackRequest) => Promise<void>;
+  /** Refetch the transcript when a host outcome left this client unsure. */
+  readonly rollbackResync: () => Promise<void>;
+  /** Show one rollback refusal, keyed by i18n key. */
+  readonly rollbackNotice: (key: string) => void;
   readonly send: () => Promise<void>;
   readonly voiceInput: () => Promise<void>;
   readonly inputChanged: (route: AppRoute, value: string) => void;
@@ -72,6 +83,10 @@ export class ConversationIntentDispatcher {
         }
         return;
       case ConversationIntentType.BranchExpanded: this.hooks.branchExpanded(intent.toolId); return;
+      case ConversationIntentType.RollbackSession:
+        if (intent.rollbackRequest) void this.hooks.rollback(intent.rollbackRequest); return;
+      case ConversationIntentType.RollbackResync: void this.hooks.rollbackResync(); return;
+      case ConversationIntentType.RollbackNotice: this.hooks.rollbackNotice(intent.value); return;
       case ConversationIntentType.Send: void this.hooks.send(); return;
       case ConversationIntentType.VoiceInput: void this.hooks.voiceInput(); return;
       case ConversationIntentType.ChatInputChanged: this.hooks.inputChanged(route, intent.value); return;

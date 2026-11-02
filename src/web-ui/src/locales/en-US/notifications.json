@@ -49,23 +49,6 @@
     "syncing": "Syncing...",
     "assistantBootstrapWaitingForModelConfiguration": "Assistant bootstrap is waiting for AI model configuration."
   },
-  "announcements": {
-    "release_letter": {
-      "skip": "Read letter",
-      "replay": "Replay the release letter animation",
-      "replay_mascot": "Replay the OpenBitFun character jump"
-    },
-    "common": {
-      "learn_more": "Learn more",
-      "got_it": "Got it",
-      "close": "Close",
-      "prev": "Prev",
-      "next": "Next page",
-      "done": "Done",
-      "never_show_again": "Don't show again",
-      "page": "Page"
-    }
-  },
   "confirm": {
     "deleteFile": "Are you sure you want to delete this file?",
     "deleteFolder": "Are you sure you want to delete this folder and all its contents?",

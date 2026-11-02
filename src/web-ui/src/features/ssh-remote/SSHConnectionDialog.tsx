@@ -4,7 +4,7 @@
  */
 
 import { OverflowText,
-  Alert,
+  Capsule,
   Button,
   Field,
   FieldGroup,
@@ -13,8 +13,13 @@ import { OverflowText,
   Icon,
   IconButton,
   Input as DesignInput,
+  Combobox,
+  Disclosure,
+  NumberInput,
+  SearchField,
   ScrollArea,
   Select,
+  TabGroup,
   Tooltip,
   Dialog,
   DialogBody,
@@ -24,11 +29,13 @@ import { OverflowText,
   DialogHeading,
   DialogTitle,
 } from '@openbitfun/ui';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useId, useSyncExternalStore } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
+import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { useSSHRemoteContext } from './SSHRemoteContext';
 import { SSHAuthPromptDialog, type SSHAuthPromptSubmitPayload } from './SSHAuthPromptDialog';
-import { EyeOff, FolderOpen, Key, Loader2, Lock, Play, Server } from 'lucide-react';
+import { EyeOff, FolderOpen, Key, Loader2, Lock, Server } from 'lucide-react';
 import type {
   ConnectionTestReport,
   ConnectionTestStage,
@@ -38,8 +45,15 @@ import type {
   SSHAuthMethod,
   SavedConnection,
   SSHConfigEntry,
+  WorkspaceConnectionTarget,
 } from './types';
 import { sshApi } from './sshApi';
+import { WorkspaceSourceSelector } from './WorkspaceSourceSelector';
+import { WorkspaceChoiceCapsules } from './WorkspaceChoiceCapsules';
+import { workspaceSourceErrorKey, isSshAuthenticationError } from './workspaceSourceError';
+import { savedConnectionConfig } from './savedConnectionConfig';
+import type { WorkspaceConnectionPreset } from './useWorkspaceSourceOptions';
+import { sameWorkspaceSource, savedConnectionTarget } from './workspaceSource';
 import {
   pickSshCertificatePath,
   pickSshPrivateKeyPath,
@@ -50,13 +64,37 @@ import './SSHConnectionDialog.scss';
 interface SSHConnectionDialogProps {
   open: boolean;
   onClose: () => void;
+  initialTargetType?: WorkspaceConnectionTarget;
+  /** Project creation has already chosen location and environment. */
+  fixedSource?: boolean;
+  confirmLabel?: string;
+  initialPreset?: WorkspaceConnectionPreset;
+  browseAfterConnect?: boolean;
+  onConnected?: (config: SSHConnectionConfig, connectionId: string) => void;
 }
+
+const emptySshEndpoint = () => ({
+  host: '', port: '22', username: '',
+  authType: 'password' as 'password' | 'privateKey' | 'agent' | 'keyboardInteractive',
+  password: '', keyPath: '~/.ssh/id_rsa', passphrase: '', certificatePath: '',
+  keyFingerprint: '', fallbackKeyPath: '~/.ssh/id_rsa', verificationCode: '', proxyJump: '',
+});
+const sshEndpointOwner = (target: WorkspaceConnectionTarget) => target === 'wsl' || target === 'localDocker'
+  ? null : target === 'containerSshd' ? 'container' : 'host';
 
 export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
   open,
   onClose,
+  initialTargetType = 'ssh',
+  fixedSource = false,
+  confirmLabel,
+  initialPreset,
+  browseAfterConnect = true,
+  onConnected,
 }) => {
   const { t } = useI18n('common');
+  const peer = usePeerDeviceModeOptional();
+  const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const { connect, status, connectionError, clearError } = useSSHRemoteContext();
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [sshConfigHosts, setSSHConfigHosts] = useState<SSHConfigEntry[]>([]);
@@ -65,34 +103,33 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
   const [credentialsPrompt, setCredentialsPrompt] = useState<SavedConnection | null>(null);
   const [savedSearch, setSavedSearch] = useState('');
   const [configSearch, setConfigSearch] = useState('');
+  const [connectionView, setConnectionView] = useState<'saved' | 'new'>('saved');
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>();
+  const [editingPreset, setEditingPreset] = useState<WorkspaceConnectionPreset>();
+  const [editingProfile, setEditingProfile] = useState<SavedConnection>();
+  const savedRequestId = useRef(0);
+  const appliedPreset = useRef<WorkspaceConnectionPreset>();
+  const editOnly = initialPreset?.edit === true;
+  const [containerHost, setContainerHost] = useState<SavedConnection>();
+  const connectionViewId = useId();
   const [isTesting, setIsTesting] = useState(false);
   const [isListingContainers, setIsListingContainers] = useState(false);
   const [connectionTest, setConnectionTest] = useState<ConnectionTestReport | null>(null);
   const [dockerContainers, setDockerContainers] = useState<DockerContainerInfo[]>([]);
+  const containerRequestId = useRef(0);
 
   const [wslDistributions, setWslDistributions] = useState<WslDistributions | null>(null);
   const [wslError, setWslError] = useState<string | null>(null);
   const [isListingWsl, setIsListingWsl] = useState(false);
   const [wslRefresh, setWslRefresh] = useState(0);
 
-  const error = localError || connectionError;
+
 
   // Form state
   const [formData, setFormData] = useState({
-    targetType: 'ssh' as 'ssh' | 'remoteDocker' | 'localDocker' | 'containerSshd' | 'wsl',
+    ...emptySshEndpoint(),
+    targetType: initialTargetType,
     name: '',
-    host: '',
-    port: '22',
-    username: '',
-    authType: 'password' as 'password' | 'privateKey' | 'agent' | 'keyboardInteractive',
-    password: '',
-    keyPath: '~/.ssh/id_rsa',
-    passphrase: '',
-    certificatePath: '',
-    keyFingerprint: '',
-    fallbackKeyPath: '~/.ssh/id_rsa',
-    verificationCode: '',
-    proxyJump: '',
     wslDistribution: '',
     wslUser: '',
     containerName: '',
@@ -105,73 +142,98 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     authAttempts: '3',
     connectAttempts: '1',
   });
+  const inheritedHost = formData.targetType === 'remoteDocker';
+  const parentHost = initialPreset?.kind === 'new' ? initialPreset.host : undefined;
+  const hostIsFixed = inheritedHost && (Boolean(parentHost) || editOnly);
+  const error = localError || (connectionError ? t('workspaceSource.connectionFailed') : null);
+  const connectAndFinish = useCallback(async (config: SSHConnectionConfig) => {
+    const result = await connect(config.id, config, { browseAfterConnect });
+    scope.assertCurrent('finish connecting workspace source');
+    onConnected?.(config, result?.connectionId || config.id);
+    onClose();
+  }, [connect, browseAfterConnect, scope, onConnected, onClose]);
+  // Host and container SSH endpoints have separate addresses and credentials.
+  const endpointDrafts = useRef<Partial<Record<'host' | 'container', ReturnType<typeof emptySshEndpoint>>>>({});
+  const usesSshEndpoint = sshEndpointOwner(formData.targetType) !== null;
+  const currentHost = peer?.peerMode.active
+    ? t('workspaceSource.namedHost', { name: peer.peerMode.deviceName })
+    : t('workspaceSource.currentHost');
+  const connectionTitle = editOnly ? t('workspaceSource.editConnectionTitle', { name: formData.name })
+    : !fixedSource ? t('workspaceSource.connectionTitle')
+    : formData.targetType === 'ssh' ? t('workspaceSource.connectRemoteHostTitle')
+    : formData.targetType === 'wsl' ? t('workspaceSource.connectWslTitle', { host: currentHost })
+    : formData.targetType === 'localDocker' ? t('workspaceSource.connectContainerTitle', { host: currentHost })
+    : inheritedHost && parentHost ? t('workspaceSource.connectContainerTitle', { host: parentHost.name })
+    : t('workspaceSource.connectRemoteContainerTitle');
 
   const [showPassword, setShowPassword] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
-  const formHighlightTimerRef = useRef<number | null>(null);
-  const [formHighlighted, setFormHighlighted] = useState(false);
 
-  const revealConnectionForm = useCallback(() => {
+  const scrollToConnectionForm = useCallback(() => {
     const el = formRef.current;
     if (!el) return;
     el.scrollIntoView({
       behavior: getMotionAwareScrollBehavior('smooth'),
       block: 'start',
     });
-    setFormHighlighted(true);
-    if (formHighlightTimerRef.current != null) {
-      window.clearTimeout(formHighlightTimerRef.current);
-    }
-    formHighlightTimerRef.current = window.setTimeout(() => {
-      setFormHighlighted(false);
-      formHighlightTimerRef.current = null;
-    }, 1200);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (formHighlightTimerRef.current != null) {
-        window.clearTimeout(formHighlightTimerRef.current);
-      }
-    };
-  }, []);
-
-  async function loadSavedConnections() {
+  const loadSavedConnections = useCallback(async () => {
+    const requestId = ++savedRequestId.current;
     setLocalError(null);
     try {
       const connections = await sshApi.listSavedConnections();
-      setSavedConnections(connections);
+      if (requestId === savedRequestId.current && scope.isCurrent()) setSavedConnections(connections);
     } catch (_error) {
-      setSavedConnections([]);
+      if (requestId === savedRequestId.current && scope.isCurrent()) setLocalError(t('workspaceSource.hostDiscoveryFailed'));
     }
-  }
-
-  async function loadSSHConfigHosts() {
-    try {
-      const hosts = await sshApi.listSSHConfigHosts();
-      setSSHConfigHosts(hosts);
-    } catch (error) {
-      console.error('Failed to load SSH config hosts:', error);
-      setSSHConfigHosts([]);
-    }
-  }
+  }, [scope, t]);
 
   // Clear errors when dialog opens
   useEffect(() => {
+    containerRequestId.current += 1;
+    setIsListingContainers(false);
+    setCredentialsPrompt(null);
     if (open) {
       clearError();
       setLocalError(null);
       setShowAdvancedSettings(false);
       setSavedSearch('');
       setConfigSearch('');
+      setConnectionView('saved');
+      setSelectedConnectionId(undefined);
+      setEditingProfile(undefined);
+      setContainerHost(undefined);
+      setEditingPreset(undefined);
       setConnectionTest(null);
       setDockerContainers([]);
+      endpointDrafts.current = {};
+      setFormData(prev => ({
+        ...prev,
+        ...(sshEndpointOwner(prev.targetType) !== sshEndpointOwner(initialTargetType) ? emptySshEndpoint() : {}),
+        targetType: initialTargetType,
+      }));
       void loadSavedConnections();
-      void loadSSHConfigHosts();
     }
-  }, [open, clearError]);
+  }, [open, clearError, initialTargetType, loadSavedConnections]);
+
+  useEffect(() => {
+    if (!open || !usesSshEndpoint || inheritedHost) {
+      setSSHConfigHosts([]);
+      return;
+    }
+    let cancelled = false;
+    sshApi.listSSHConfigHosts().then(hosts => {
+      if (!cancelled && scope.isCurrent()) setSSHConfigHosts(hosts);
+    }).catch(error => {
+      if (cancelled || !scope.isCurrent()) return;
+      console.error('Failed to load SSH config hosts:', error);
+      setSSHConfigHosts([]);
+    });
+    return () => { cancelled = true; };
+  }, [open, usesSshEndpoint, inheritedHost, scope]);
 
   useEffect(() => {
     if (!open || formData.targetType !== 'wsl') return;
@@ -180,30 +242,48 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     setWslDistributions(null);
     setWslError(null);
     sshApi.listWslDistributions().then((result) => {
-      if (cancelled) return;
+      if (cancelled || !scope.isCurrent()) return;
       setWslDistributions(result);
       setFormData((prev) => ({
         ...prev,
         wslDistribution: prev.wslDistribution || result.distributions[0] || '',
       }));
-    }).catch((error: unknown) => {
-      if (!cancelled) setWslError(error instanceof Error ? error.message : t('ssh.remote.wslDiscoveryFailed'));
+    }).catch(() => {
+      if (!cancelled && scope.isCurrent()) setWslError(t('ssh.remote.wslDiscoveryFailed'));
     }).finally(() => {
-      if (!cancelled) setIsListingWsl(false);
+      if (!cancelled && scope.isCurrent()) setIsListingWsl(false);
     });
     return () => { cancelled = true; };
-  }, [open, formData.targetType, wslRefresh, t]);
+  }, [open, formData.targetType, wslRefresh, t, scope]);
+
+  useEffect(() => {
+    if (!open || formData.targetType !== 'localDocker') return;
+    let cancelled = false;
+    setIsListingContainers(true);
+    void sshApi.listDockerContainers({
+      id: 'docker-local-discovery', name: 'Docker', host: 'localhost', port: 22,
+      username: 'docker', auth: { type: 'PrivateKey', keyPath: '' },
+      container: { name: 'discovery', local: true, access: 'auto', dockerPath: 'docker', shell: '/bin/sh', interactive: true },
+    }).then(containers => {
+      if (!cancelled && scope.isCurrent()) setDockerContainers(containers);
+    }).catch(error => {
+      if (!cancelled && scope.isCurrent()) setLocalError(t(workspaceSourceErrorKey(formData.targetType, error)));
+    }).finally(() => { if (!cancelled && scope.isCurrent()) setIsListingContainers(false); });
+    return () => { cancelled = true; };
+  }, [open, formData.targetType, t, scope]);
 
   // Load SSH config from ~/.ssh/config when host changes
   useEffect(() => {
-    if (!formData.host.trim() || formData.targetType === 'wsl' || formData.targetType === 'localDocker') return;
+    if (!open || inheritedHost || !formData.host.trim() || formData.targetType === 'wsl' || formData.targetType === 'localDocker') return;
+    let cancelled = false;
 
     const loadSSHConfig = async () => {
       try {
         const result = await sshApi.getSSHConfig(formData.host.trim());
+        if (cancelled) return;
         if (result.found && result.config) {
           const config = result.config;
-          if (config.proxyJump) {
+          if (config.proxyJump || config.certificateFile) {
             setShowAdvancedSettings(true);
           }
           // Auto-fill fields from SSH config if they're not already set
@@ -229,8 +309,8 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
 
     // Debounce the SSH config lookup
     const timeout = setTimeout(loadSSHConfig, 300);
-    return () => clearTimeout(timeout);
-  }, [formData.host, formData.targetType]);
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [open, formData.host, formData.targetType, inheritedHost]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -238,6 +318,32 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     if (field === 'targetType' || field === 'host' || field === 'dockerPath') {
       setDockerContainers([]);
     }
+  };
+
+  const handleTargetChange = (targetType: WorkspaceConnectionTarget) => {
+    containerRequestId.current += 1;
+    setIsListingContainers(false);
+    const previousOwner = sshEndpointOwner(formData.targetType);
+    const nextOwner = sshEndpointOwner(targetType);
+    let endpoint = {};
+    if (previousOwner !== nextOwner) {
+      const { host, port, username, authType, password, keyPath, passphrase, certificatePath,
+        keyFingerprint, fallbackKeyPath, verificationCode, proxyJump } = formData;
+      if (previousOwner) {
+        endpointDrafts.current[previousOwner] = {
+          host, port, username, authType, password, keyPath, passphrase, certificatePath,
+          keyFingerprint, fallbackKeyPath, verificationCode, proxyJump,
+        };
+      }
+      endpoint = (nextOwner && endpointDrafts.current[nextOwner]) || emptySshEndpoint();
+    }
+    setFormData(prev => ({ ...prev, ...endpoint, targetType }));
+    setCredentialsPrompt(null);
+    if (!sameWorkspaceSource(formData.targetType, targetType)) setConnectionView('saved');
+    setConnectionTest(null);
+    setDockerContainers([]);
+    setLocalError(null);
+    clearError();
   };
 
   const handleBrowsePrivateKey = useCallback(async () => {
@@ -291,18 +397,18 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     requireContainer: boolean,
   ): Promise<SSHConnectionConfig | null> => {
     if (formData.targetType === 'wsl') {
-      if (!wslDistributions?.supported) {
+      if (!editOnly && !wslDistributions?.supported) {
         setLocalError(wslError || t('ssh.remote.wslUnsupported'));
         return null;
       }
       const distribution = formData.wslDistribution.trim();
-      if (!distribution || !wslDistributions.distributions.includes(distribution)) {
+      if (!distribution || (!editOnly && !wslDistributions?.distributions.includes(distribution))) {
         setLocalError(t('ssh.remote.wslDistributionRequired'));
         return null;
       }
       const user = formData.wslUser.trim();
       return {
-        id: `wsl-${encodeURIComponent(distribution)}@${encodeURIComponent(user)}`,
+        id: editingProfile?.id ?? `wsl-${encodeURIComponent(distribution)}@${encodeURIComponent(user)}`,
         name: formData.name.trim() || `WSL · ${distribution}${user ? ` · ${user}` : ''}`,
         // Reserved, non-routable legacy SSH fields prevent older installs from
         // treating this additive profile as a usable SSH endpoint.
@@ -311,6 +417,20 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         username: user,
         auth: { type: 'PrivateKey', keyPath: '' },
         wsl: { distribution, user: user || undefined },
+        defaultWorkspace: editingProfile?.defaultWorkspace,
+        options: editingProfile?.options,
+      };
+    }
+    if (inheritedHost) {
+      if (!containerHost) { setLocalError(t('workspaceSource.existingHostRequired')); return null; }
+      if (requireContainer && !formData.containerName.trim()) { setLocalError(t('ssh.remote.containerRequired')); return null; }
+      const containerName = formData.containerName.trim() || 'discovery';
+      return { ...savedConnectionConfig(containerHost),
+        id: !requireContainer ? initialPreset?.credentialConnectionId || containerHost.id : editingProfile?.id || `${containerHost.id}-container-${containerName}`,
+        name: formData.name.trim() || containerName,
+        defaultWorkspace: editingProfile?.defaultWorkspace,
+        container: { name: containerName, local: false, access: formData.containerAccess, dockerPath: formData.dockerPath.trim() || 'docker',
+          shell: formData.containerShell.trim() || '/bin/sh', user: formData.containerUser.trim() || undefined, interactive: true },
       };
     }
     const isLocalDocker = formData.targetType === 'localDocker';
@@ -323,12 +443,13 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
       setLocalError(t('ssh.remote.usernameRequired'));
       return null;
     }
-    const port = parseInt(formData.port, 10);
-    if (isNaN(port) || port < 1 || port > 65535) {
+    const portText = isLocalDocker ? '22' : formData.port.trim();
+    const port = Number(portText);
+    if (!/^\d+$/.test(portText) || !Number.isInteger(port) || port < 1 || port > 65535) {
       setLocalError(t('ssh.remote.portInvalid'));
       return null;
     }
-    if (!isLocalDocker && formData.authType === 'password' && !formData.password) {
+    if (!isLocalDocker && formData.authType === 'password' && !formData.password && !editingProfile) {
       setLocalError(t('ssh.remote.passwordRequired'));
       return null;
     }
@@ -338,6 +459,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     }
     if (
       !isLocalDocker
+      && !editOnly
       && formData.authType === 'keyboardInteractive'
       && !formData.password
       && !formData.verificationCode
@@ -345,7 +467,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
       setLocalError(t('ssh.remote.challengeResponseRequired'));
       return null;
     }
-    if (usesContainer && requireContainer && !formData.containerName.trim()) {
+    if (usesContainer && formData.targetType !== 'containerSshd' && requireContainer && !formData.containerName.trim()) {
       setLocalError(t('ssh.remote.containerRequired'));
       return null;
     }
@@ -391,12 +513,14 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     const username = isLocalDocker
       ? (formData.username.trim() || 'docker')
       : formData.username.trim();
-    const containerName = formData.containerName.trim() || 'discovery';
+    // Direct SSH already identifies the container. Keep legacy metadata when editing;
+    // new profiles derive it from the endpoint instead of asking for a Docker ID.
+    const containerName = formData.containerName.trim() || (formData.targetType === 'containerSshd' ? connectHost : 'discovery');
     const id = isLocalDocker
       ? `docker-local-${containerName}`
       : `${generateConnectionId(connectHost, port, username)}${usesContainer ? `-container-${containerName}` : ''}`;
     return {
-      id,
+      id: editingProfile?.id ?? id,
       name: formData.name || (isLocalDocker ? containerName : `${username}@${hostInput}`),
       host: connectHost,
       port,
@@ -404,6 +528,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
       auth: isLocalDocker
         ? { type: 'PrivateKey', keyPath: '' }
         : buildAuthMethod(),
+      defaultWorkspace: editingProfile?.defaultWorkspace,
       proxyJump: !isLocalDocker ? resolvedProxyJump || undefined : undefined,
       container: usesContainer ? {
         name: containerName,
@@ -425,137 +550,120 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     };
   };
 
-  const handleConnect = async () => {
-    const config = await buildConnectionConfig(true);
-    if (!config) return;
+  const isWslTarget = formData.targetType === 'wsl';
+  const isLocalProcessTarget = formData.targetType === 'localDocker' || isWslTarget;
 
+  const handleConnect = async () => {
     setIsConnecting(true);
     setLocalError(null);
     try {
-      await connect(config.id, config, { browseAfterConnect: true });
-      onClose();
+      const config = await buildConnectionConfig(true);
+      if (!config) return;
+      try { await connectAndFinish(config); } catch (cause) {
+        if (inheritedHost && isSshAuthenticationError(cause)) {
+          const { auth, ...profile } = config;
+          setCredentialsPrompt({ ...profile, authType: auth.type === 'Password' ? { type: 'Password' }
+            : auth.type === 'KeyboardInteractive' ? { type: 'KeyboardInteractive' } : auth });
+        } else throw cause;
+      }
     } catch (e) {
-      setLocalError(e instanceof Error ? e.message : 'Connection failed');
+      setLocalError(t(isLocalProcessTarget || inheritedHost ? workspaceSourceErrorKey(formData.targetType, e) : 'workspaceSource.connectionFailed'));
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const handleTestConnection = async () => {
-    const config = await buildConnectionConfig(true);
-    if (!config) return;
+  const handleSave = async () => {
+    setIsConnecting(true);
+    setLocalError(null);
+    try {
+      const config = await buildConnectionConfig(true);
+      if (!config) return;
+      scope.assertCurrent('save workspace connection');
+      await sshApi.saveConnection(config);
+      scope.assertCurrent('finish saving workspace connection');
+      onClose();
+    } catch (cause) {
+      setLocalError(cause instanceof Error ? cause.message : t('workspaceSource.connectionFailed'));
+    } finally { setIsConnecting(false); }
+  };
 
+  const handleTestConnection = async () => {
     setIsTesting(true);
     setConnectionTest(null);
     setLocalError(null);
     try {
+      const config = await buildConnectionConfig(true);
+      if (!config) return;
       setConnectionTest(await sshApi.testConnection(config));
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t('ssh.remote.testFailed'));
+    } catch (_error) {
+      setLocalError(t('ssh.remote.testFailed'));
     } finally {
       setIsTesting(false);
     }
   };
 
   const handleListContainers = async () => {
-    const config = await buildConnectionConfig(false);
-    if (!config) return;
-
+    const requestId = ++containerRequestId.current;
     setIsListingContainers(true);
     setLocalError(null);
     try {
+      const config = await buildConnectionConfig(false);
+      if (!config || requestId !== containerRequestId.current || !scope.isCurrent()) return;
       const containers = await sshApi.listDockerContainers(config);
+      if (requestId !== containerRequestId.current || !scope.isCurrent()) return;
       setDockerContainers(containers);
       if (containers.length === 0) {
         setLocalError(t('ssh.remote.noContainersFound'));
       }
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t('ssh.remote.containerListFailed'));
+      if (requestId === containerRequestId.current && scope.isCurrent()) setLocalError(t(workspaceSourceErrorKey(formData.targetType, error)));
     } finally {
-      setIsListingContainers(false);
+      if (requestId === containerRequestId.current && scope.isCurrent()) setIsListingContainers(false);
     }
   };
 
-  const handleQuickConnect = async (conn: SavedConnection) => {
+  useEffect(() => {
+    if (!open || !inheritedHost || !containerHost) return;
+    let cancelled = false;
+    setDockerContainers([]); setLocalError(null); setIsListingContainers(true);
+    void sshApi.listDockerContainers({ ...savedConnectionConfig(containerHost), id: initialPreset?.credentialConnectionId || containerHost.id, container: {
+      name: 'discovery', local: false, access: 'auto', dockerPath: 'docker', shell: '/bin/sh', interactive: true,
+    } }).then(containers => {
+      if (!cancelled && scope.isCurrent()) setDockerContainers(containers);
+    }).catch(cause => {
+      if (!cancelled && scope.isCurrent()) setLocalError(t(workspaceSourceErrorKey('remoteDocker', cause)));
+    }).finally(() => { if (!cancelled && scope.isCurrent()) setIsListingContainers(false); });
+    return () => { cancelled = true; };
+  }, [open, inheritedHost, containerHost, scope, t, initialPreset?.credentialConnectionId]);
+
+  const handleSavedConnectionFailure = useCallback((conn: SavedConnection, error: unknown) => {
+    // Native targets have no SSH authentication to repair. Show an
+    // environment-specific status instead of asking for SSH credentials.
+    if (conn.wsl || conn.container?.local) {
+      setLocalError(t(workspaceSourceErrorKey(savedConnectionTarget(conn), error)));
+    } else if (isSshAuthenticationError(error)) setCredentialsPrompt(conn);
+    else setLocalError(t('workspaceSource.connectionFailed'));
+  }, [t]);
+
+  const handleQuickConnect = useCallback(async (conn: SavedConnection) => {
     setLocalError(null);
-
-    if (conn.authType.type === 'Password') {
-      setIsConnecting(true);
-      setLocalError(null);
-      try {
-        await connect(
-          conn.id,
-          {
-            id: conn.id,
-            name: conn.name,
-            host: conn.host,
-            port: conn.port,
-            username: conn.username,
-            auth: { type: 'Password', password: '' },
-            defaultWorkspace: conn.defaultWorkspace,
-            proxyJump: conn.proxyJump,
-            container: conn.container,
-            wsl: conn.wsl,
-            options: conn.options,
-          },
-          { browseAfterConnect: true }
-        );
-        onClose();
-      } catch {
-        setCredentialsPrompt(conn);
-      } finally {
-        setIsConnecting(false);
-      }
-    } else if (conn.authType.type === 'PrivateKey' || conn.authType.type === 'Agent') {
-      const auth: SSHAuthMethod = conn.authType.type === 'PrivateKey'
-        ? {
-            type: 'PrivateKey',
-            keyPath: conn.authType.keyPath,
-            certificatePath: conn.authType.certificatePath,
-          }
-        : {
-            type: 'Agent',
-            keyFingerprint: conn.authType.keyFingerprint,
-            fallbackKeyPath: conn.authType.fallbackKeyPath,
-          };
-      setIsConnecting(true);
-      try {
-        await connect(
-          conn.id,
-          {
-            id: conn.id,
-            name: conn.name,
-            host: conn.host,
-            port: conn.port,
-            username: conn.username,
-            auth,
-            defaultWorkspace: conn.defaultWorkspace,
-            proxyJump: conn.proxyJump,
-            container: conn.container,
-            wsl: conn.wsl,
-            options: conn.options,
-          },
-          { browseAfterConnect: true }
-        );
-        onClose();
-      } catch {
-        setCredentialsPrompt(conn);
-      } finally {
-        setIsConnecting(false);
-      }
-    } else {
-      setCredentialsPrompt(conn);
-    }
-  };
+    if (conn.authType.type === 'KeyboardInteractive') { setCredentialsPrompt(conn); return; }
+    setIsConnecting(true);
+    try { await connectAndFinish(savedConnectionConfig(conn)); }
+    catch (cause) { handleSavedConnectionFailure(conn, cause); }
+    finally { setIsConnecting(false); }
+  }, [connectAndFinish, handleSavedConnectionFailure]);
 
   // Fill the manual connection form from an ~/.ssh/config host entry
-  const handleFillFromConfig = (configHost: SSHConfigEntry) => {
+  const handleFillFromConfig = useCallback((configHost: SSHConfigEntry) => {
     const port = configHost.port ? String(configHost.port) : '22';
     const username = configHost.user || '';
     const keyPath = configHost.identityFile?.trim() || '~/.ssh/id_rsa';
     const hasKey = !!configHost.identityFile?.trim();
 
-    setFormData({
+    setFormData(prev => ({
+      ...prev,
       name: configHost.host,
       host: configHost.host,
       port,
@@ -569,23 +677,15 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
       fallbackKeyPath: '~/.ssh/id_rsa',
       verificationCode: '',
       proxyJump: configHost.proxyJump || '',
-      targetType: 'ssh',
-      wslDistribution: '',
-      wslUser: '',
-      containerName: '',
-      containerAccess: 'auto',
-      dockerPath: 'docker',
-      containerShell: '/bin/sh',
-      containerUser: '',
       connectTimeoutSecs: '30',
       authTimeoutSecs: '60',
       authAttempts: '3',
       connectAttempts: '1',
-    });
-    setShowAdvancedSettings(Boolean(configHost.proxyJump));
+    }));
+    setShowAdvancedSettings(Boolean(configHost.proxyJump || configHost.certificateFile));
     // Config list sits above the form; scroll so the filled fields are visible.
-    requestAnimationFrame(() => revealConnectionForm());
-  };
+    requestAnimationFrame(() => scrollToConnectionForm());
+  }, [scrollToConnectionForm]);
 
   const handleCredentialsPromptSubmit = async (payload: SSHAuthPromptSubmitPayload) => {
     if (!credentialsPrompt) return;
@@ -608,9 +708,8 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         wsl: conn.wsl,
         options: conn.options,
       };
-      await connect(conn.id, full, { browseAfterConnect: true });
+      await connectAndFinish(full);
       setCredentialsPrompt(null);
-      onClose();
     } catch (e) {
       setLocalError(e instanceof Error ? e.message : 'Connection failed');
     } finally {
@@ -621,10 +720,15 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
   const handleCredentialsPromptCancel = () => {
     setCredentialsPrompt(null);
     setLocalError(null);
+    if (initialPreset?.kind === 'saved' && !editOnly) onClose();
   };
 
-  const handleEditConnection = (e: React.MouseEvent, conn: SavedConnection) => {
-    e.stopPropagation();
+  const handleEditConnection = useCallback((e: React.MouseEvent | null, conn: SavedConnection) => {
+    e?.stopPropagation();
+    setEditingProfile(conn);
+    if (savedConnectionTarget(conn) === 'remoteDocker') setContainerHost({ ...conn, container: undefined });
+    setConnectionView('new');
+    endpointDrafts.current = {};
     const keyPath = conn.authType.type === 'PrivateKey' ? conn.authType.keyPath : '~/.ssh/id_rsa';
     const defaultConnectionName = conn.wsl
       ? `WSL · ${conn.wsl.distribution}${conn.wsl.user ? ` · ${conn.wsl.user}` : ''}`
@@ -638,15 +742,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         : conn.authType.type === 'Agent'
           ? 'agent'
           : 'keyboardInteractive';
-    const targetType = conn.wsl
-      ? 'wsl'
-      : conn.container?.local
-        ? 'localDocker'
-        : conn.container?.access === 'docker-exec' || conn.container?.access === 'auto'
-          ? 'remoteDocker'
-          : conn.container?.access === 'sshd'
-            ? 'containerSshd'
-            : 'ssh';
+    const targetType = savedConnectionTarget(conn);
     setFormData({
       targetType,
       name: conn.name,
@@ -681,23 +777,31 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
       connectAttempts: String(conn.options?.connectAttempts ?? 1),
     });
     setShowAdvancedSettings(
-      Boolean(conn.proxyJump)
+      Boolean(conn.proxyJump || conn.wsl?.user)
+      || (conn.authType.type === 'PrivateKey' && Boolean(conn.authType.certificatePath))
+      || (conn.authType.type === 'Agent' && Boolean(conn.authType.keyFingerprint || conn.authType.fallbackKeyPath))
+      || Boolean(conn.container && conn.container.access !== 'sshd' && (
+        conn.container.access === 'docker-exec' || conn.container.dockerPath !== 'docker'
+        || conn.container.shell !== '/bin/sh' || conn.container.user
+      ))
       || conn.name !== defaultConnectionName
       || (conn.options?.connectTimeoutSecs ?? 30) !== 30
       || (conn.options?.authTimeoutSecs ?? 60) !== 60
       || (conn.options?.authAttempts ?? 3) !== 3
       || (conn.options?.connectAttempts ?? 1) !== 1
     );
-    requestAnimationFrame(() => revealConnectionForm());
-  };
+    requestAnimationFrame(() => scrollToConnectionForm());
+  }, [scrollToConnectionForm]);
 
   const handleDeleteConnection = async (e: React.MouseEvent, connectionId: string) => {
     e.stopPropagation();
     try {
       await sshApi.deleteConnection(connectionId);
       await loadSavedConnections();
+      return true;
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Failed to delete');
+      return false;
     }
   };
 
@@ -731,21 +835,48 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     }
     return `${t('ssh.remote.testStageConfiguration')} · ${stage.label}`;
   };
-  const targetOptions = [
-    { label: t('ssh.remote.targetSsh'), value: 'ssh' },
-    { label: t('ssh.remote.targetRemoteDocker'), value: 'remoteDocker' },
-    { label: t('ssh.remote.targetLocalDocker'), value: 'localDocker' },
-    { label: t('ssh.remote.targetContainerSshd'), value: 'containerSshd' },
-    { label: t('ssh.remote.targetWsl'), value: 'wsl' },
-  ];
-  const isWslTarget = formData.targetType === 'wsl';
-  const isLocalProcessTarget = formData.targetType === 'localDocker' || isWslTarget;
-  const usesContainerTarget = formData.targetType !== 'ssh' && !isWslTarget;
+  const usesDockerTarget = formData.targetType === 'localDocker' || formData.targetType === 'remoteDocker';
+  const isRemoteContainer = formData.targetType === 'remoteDocker' || formData.targetType === 'containerSshd';
+  const sourceBusy = isConnecting || status === 'connecting' || isTesting;
   const wslUnavailable = isListingWsl
     || !wslDistributions?.supported
     || !wslDistributions.distributions.includes(formData.wslDistribution);
 
-  const filteredSavedConnections = savedConnections.filter((conn) => {
+  const availableSavedConnections = savedConnections.filter(conn =>
+    sameWorkspaceSource(savedConnectionTarget(conn), fixedSource ? initialTargetType : formData.targetType));
+  const selectedConnection = availableSavedConnections.find(connection => connection.id === selectedConnectionId);
+  useEffect(() => {
+    setSelectedConnectionId(current => savedConnections.some(connection => connection.id === current
+      && sameWorkspaceSource(savedConnectionTarget(connection), fixedSource ? initialTargetType : formData.targetType)) ? current : undefined);
+  }, [savedConnections, fixedSource, initialTargetType, formData.targetType]);
+  useEffect(() => {
+    if (!open) { appliedPreset.current = undefined; return; }
+    if (!initialPreset || appliedPreset.current === initialPreset) return;
+    appliedPreset.current = initialPreset;
+    if (initialPreset.kind === 'saved') {
+      if (sameWorkspaceSource(savedConnectionTarget(initialPreset.connection), initialTargetType)) {
+        if (editOnly) handleEditConnection(null, initialPreset.connection);
+        else if (initialPreset.authenticate) setCredentialsPrompt(initialPreset.connection);
+        else void handleQuickConnect(initialPreset.connection);
+      }
+    } else if (initialPreset.kind === 'sshConfig') {
+      setConnectionView('new');
+      handleFillFromConfig(initialPreset.entry);
+    } else {
+      setConnectionView('new');
+      if (initialPreset.host && initialTargetType === 'remoteDocker') {
+        handleEditConnection(null, { ...initialPreset.host, name: '', container: {
+          name: '', local: false, access: 'auto', dockerPath: 'docker', shell: '/bin/sh', interactive: true,
+        } });
+        setEditingProfile(undefined);
+        setContainerHost(initialPreset.host);
+        setShowAdvancedSettings(false);
+      }
+    }
+  }, [open, initialPreset, initialTargetType, editOnly, handleEditConnection, handleFillFromConfig, handleQuickConnect]);
+  const showNewConnection = editOnly || initialPreset?.kind === 'new' || initialPreset?.kind === 'sshConfig' || availableSavedConnections.length === 0 || connectionView === 'new';
+  const showSshConfig = !isLocalProcessTarget && !inheritedHost && !initialPreset;
+  const filteredSavedConnections = availableSavedConnections.filter((conn) => {
     if (!savedSearch.trim()) return true;
     const q = savedSearch.toLowerCase();
     return (
@@ -760,7 +891,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     const hostname = configHost.hostname || configHost.host;
     const port = configHost.port || 22;
     const user = configHost.user || '';
-    if (savedConnections.some((c) => c.host === hostname && c.port === port && c.username === user)) {
+    if (availableSavedConnections.some((c) => !c.container && !c.wsl && c.host === hostname && c.port === port && c.username === user)) {
       return false;
     }
     if (!configSearch.trim()) return true;
@@ -780,14 +911,15 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
   return (
     <>
       <Dialog
-        open={open}
+        open={open && !(initialPreset?.kind === 'saved' && !editOnly && credentialsPrompt)}
         onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}
-        size="md"
+        size="lg"
+        className="ssh-connection-dialog__surface"
         closeOnPointerOutside={false}
       >
         <DialogHeader>
           <DialogHeading>
-            <DialogTitle>{t('ssh.remote.title') || 'SSH Remote'}</DialogTitle>
+            <DialogTitle>{connectionTitle}</DialogTitle>
           </DialogHeading>
           <DialogClose />
         </DialogHeader>
@@ -795,19 +927,32 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         <div className="ssh-connection-dialog" data-openbitfun-component="ssh-remote" data-openbitfun-part="connection">
           {error && (
             <div className="ssh-connection-dialog__error-banner" data-openbitfun-component="ssh-remote" data-openbitfun-part="connectionError">
-              <Alert
-                tone="error"
-                message={error}
-                closable
-                onClose={dismissError}
-                className="ssh-connection-dialog__error-alert"
-              />
+              <div className="ssh-connection-dialog__source-status" role="alert">{error}</div>
+              <IconButton size="xs" variant="quiet" icon={<Icon name="xmark" size="xs" />} aria-label={t('actions.close')} onClick={dismissError} />
             </div>
           )}
 
           <ScrollArea scrollbarVisibility="hidden" className="ssh-connection-dialog__scroll" data-openbitfun-component="ssh-remote" data-openbitfun-part="connectionContent">
+          {!fixedSource && <div className="ssh-connection-dialog__source">
+            <WorkspaceSourceSelector value={formData.targetType}
+              allowHostDirectory={false} disabled={sourceBusy}
+              onValueChange={source => { if (source !== 'host') handleTargetChange(source); }} />
+          </div>}
+          {availableSavedConnections.length > 0 && !initialPreset && (
+            <div className="ssh-connection-dialog__source">
+              <TabGroup aria-label={t('workspaceSource.connectionChoice')} value={connectionView}
+                onValueChange={value => setConnectionView(value as 'saved' | 'new')}
+                items={[
+                  { value: 'saved', label: t('workspaceSource.useSavedConnection'), disabled: sourceBusy,
+                    id: `${connectionViewId}-saved-tab`, panelId: `${connectionViewId}-saved-panel` },
+                  { value: 'new', label: t('ssh.remote.newConnection'), disabled: sourceBusy,
+                    id: `${connectionViewId}-new-tab`, panelId: `${connectionViewId}-new-panel` },
+                ]} />
+            </div>
+          )}
           {/* Saved connections section */}
-          {savedConnections.length > 0 && (
+          {!showNewConnection && (
+            <div role="tabpanel" id={`${connectionViewId}-saved-panel`} aria-labelledby={`${connectionViewId}-saved-tab`}>
             <FormSection
               className="ssh-connection-dialog__section"
               data-openbitfun-component="ssh-remote"
@@ -815,133 +960,78 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
               headingAs="h3"
               title={<span className="ssh-connection-dialog__section-title">{t('ssh.remote.savedConnections')}</span>}
               actions={(
-                <DesignInput
+                <div className="ssh-connection-dialog__section-actions">
+                <SearchField
                   className="ssh-connection-dialog__search"
                   value={savedSearch}
-                  onChange={(e) => setSavedSearch(e.target.value)}
+                  onValueChange={setSavedSearch}
                   placeholder={t('actions.search')}
-                  leading={<Icon name="search" size="sm" />}
+                  aria-label={`${t('actions.search')} · ${t('ssh.remote.savedConnections')}`}
+                  leadingIcon={<Icon name="search" size="sm" />}
+                  clearLabel={t('actions.clear')}
+                  onClear={savedSearch ? () => setSavedSearch('') : undefined}
                   size="sm"
                 />
+                </div>
               )}
             >
               <ScrollArea scrollbarVisibility="hidden" className="ssh-connection-dialog__saved-list" data-openbitfun-component="ssh-remote" data-openbitfun-part="connectionList">
-                {filteredSavedConnections.map((conn) => (
-                  <div data-overflow-trigger
-                    key={conn.id}
-                    className="ssh-connection-dialog__saved-item"
-                    onClick={() => !isConnecting && handleQuickConnect(conn)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && !isConnecting && handleQuickConnect(conn)}
-                  >
-                    <div className="ssh-connection-dialog__saved-icon">
-                      <Server size={16} />
-                    </div>
-                    <div className="ssh-connection-dialog__saved-info">
-                      <OverflowText className="ssh-connection-dialog__saved-name">{conn.name}</OverflowText>
-                      <OverflowText className="ssh-connection-dialog__saved-detail">
-                        {conn.wsl
-                          ? `WSL · ${conn.wsl.distribution}${conn.wsl.user ? ` · ${conn.wsl.user}` : ''}`
-                          : conn.container?.local
-                          ? `Docker · ${conn.container.name}`
-                          : `${conn.username}@${conn.host}:${conn.port}${conn.container ? ` · ${conn.container.name}` : ''}${conn.proxyJump ? ` · ${t('ssh.remote.via')} ${conn.proxyJump}` : ''}`}
-                      </OverflowText>
-                    </div>
-                    <div className="ssh-connection-dialog__saved-actions">
-                      <IconButton
-                        type="button"
-                        size="sm"
-                        onClick={(e) => handleEditConnection(e, conn)}
-                        disabled={isConnecting}
-                        title={t('actions.edit') || 'Edit'}
-                        aria-label={t('actions.edit') || 'Edit'}
-                        icon={<Icon name="edit" size="xs" />}
-                      />
-                      <IconButton
-                        type="button"
-                        size="sm"
-                        tone="danger"
-                        onClick={(e) => handleDeleteConnection(e, conn.id)}
-                        disabled={isConnecting}
-                        title={t('actions.delete') || 'Delete'}
-                        aria-label={t('actions.delete') || 'Delete'}
-                        icon={<Icon name="delete" size="lg" style={{ width: 13, height: 13 }} />}
-                      />
-                      <IconButton
-                        type="button"
-                        size="sm"
-                        variant="primary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickConnect(conn);
-                        }}
-                        disabled={isConnecting || status === 'connecting'}
-                        title={t('ssh.remote.connect')}
-                        aria-label={t('ssh.remote.connect')}
-                        icon={<Play size={12} />}
-                      />
-                    </div>
-                  </div>
-                ))}
+                <WorkspaceChoiceCapsules label={t('ssh.remote.savedConnections')} value={selectedConnectionId}
+                  disabled={sourceBusy} onValueChange={setSelectedConnectionId}
+                  onEdit={id => {
+                    const connection = availableSavedConnections.find(item => item.id === id);
+                    if (connection) setEditingPreset({ kind: 'saved', connection, edit: true });
+                  }}
+                  choices={filteredSavedConnections.map(conn => ({
+                    id: conn.id, label: conn.name,
+                    description: conn.wsl
+                      ? `WSL · ${conn.wsl.distribution}${conn.wsl.user ? ` · ${conn.wsl.user}` : ''}`
+                      : conn.container?.local
+                        ? `Docker · ${conn.container.name}`
+                        : `${conn.username}@${conn.host}:${conn.port}${conn.container ? ` · ${conn.container.name}` : ''}${conn.proxyJump ? ` · ${t('ssh.remote.via')} ${conn.proxyJump}` : ''}`,
+                  }))} />
               </ScrollArea>
             </FormSection>
+            </div>
           )}
 
+          {showNewConnection && (
+          <div role={availableSavedConnections.length > 0 && !initialPreset ? 'tabpanel' : undefined}
+            id={`${connectionViewId}-new-panel`}
+            aria-labelledby={availableSavedConnections.length > 0 && !initialPreset ? `${connectionViewId}-new-tab` : undefined}>
           {/* SSH Config hosts section */}
-          {sshConfigHosts.length > 0 && (
+          {showSshConfig && sshConfigHosts.length > 0 && (
             <FormSection
               className="ssh-connection-dialog__section"
               headingAs="h3"
               title={<span className="ssh-connection-dialog__section-title">{t('ssh.remote.sshConfigHosts') || 'SSH Config'}</span>}
               actions={(
-                <DesignInput
+                <SearchField
                   className="ssh-connection-dialog__search"
                   value={configSearch}
-                  onChange={(e) => setConfigSearch(e.target.value)}
+                  onValueChange={setConfigSearch}
                   placeholder={t('actions.search')}
-                  leading={<Icon name="search" size="sm" />}
+                  aria-label={`${t('actions.search')} · ${t('ssh.remote.sshConfigHosts')}`}
+                  leadingIcon={<Icon name="search" size="sm" />}
+                  clearLabel={t('actions.clear')}
+                  onClear={configSearch ? () => setConfigSearch('') : undefined}
                   size="sm"
                 />
               )}
             >
               <ScrollArea scrollbarVisibility="hidden" className="ssh-connection-dialog__saved-list">
                 {filteredSSHConfigHosts.map((configHost) => (
-                  <div data-overflow-trigger
+                  <div
                     key={configHost.host}
-                    className="ssh-connection-dialog__saved-item ssh-connection-dialog__saved-item--config"
                     data-openbitfun-component="ssh-remote"
                     data-openbitfun-part="connectionItem"
-                    onClick={() => !isConnecting && handleFillFromConfig(configHost)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && !isConnecting && handleFillFromConfig(configHost)}
                   >
-                    <div className="ssh-connection-dialog__saved-icon">
-                      <Server size={16} />
-                    </div>
-                    <div className="ssh-connection-dialog__saved-info">
-                      <OverflowText className="ssh-connection-dialog__saved-name">{configHost.host}</OverflowText>
-                      <OverflowText className="ssh-connection-dialog__saved-detail">
-                        {configHost.user || ''}@{configHost.hostname || configHost.host}:{configHost.port || 22}
-                      </OverflowText>
-                    </div>
-                    <div className="ssh-connection-dialog__saved-actions">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleFillFromConfig(configHost);
-                        }}
-                        disabled={isConnecting || status === 'connecting'}
-                        title={t('ssh.remote.fillForm')}
-                        leadingIcon={<Icon name="arrow-down" size="xs" />}
-                      >
-
-                        {t('ssh.remote.fillForm')}
-                      </Button>
-                    </div>
+                    <Capsule size="xs"><Button variant="fill" size="xs"
+                      onClick={() => handleFillFromConfig(configHost)}
+                      disabled={isConnecting || status === 'connecting'}
+                      title={`${configHost.user || ''}@${configHost.hostname || configHost.host}:${configHost.port || 22}`}
+                      aria-label={t('ssh.remote.fillForm')}
+                    >{configHost.host}</Button></Capsule>
                   </div>
                 ))}
               </ScrollArea>
@@ -949,7 +1039,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
           )}
 
           {/* Divider */}
-          {(savedConnections.length > 0 || sshConfigHosts.length > 0) && (
+          {showSshConfig && sshConfigHosts.length > 0 && (
             <div className="ssh-connection-dialog__divider">
               <span>{t('ssh.remote.newConnection')}</span>
             </div>
@@ -960,67 +1050,70 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
             ref={formRef}
             appearance="plain"
             dividers={false}
-            className={[
-              'ssh-connection-dialog__form',
-              formHighlighted ? 'ssh-connection-dialog__form--highlighted' : '',
-            ].filter(Boolean).join(' ')}
+            className="ssh-connection-dialog__form"
             data-openbitfun-component="ssh-remote"
             data-openbitfun-part="connectionForm"
           >
-            <FieldRow padding="none" className="ssh-connection-dialog__field">
-              <label className="ssh-connection-dialog__label">
-                {t('ssh.remote.targetType')}
-              </label>
-              <Select
-                options={targetOptions}
-                value={formData.targetType}
-                onValueChange={(value) => handleInputChange('targetType', String(value))}
-                size="md"
-              />
-            </FieldRow>
+            {isRemoteContainer && !fixedSource && !editOnly && (
+              <Field label={t('workspaceSource.containerConnection')} controlWidth="fill">
+                <Select size="md" value={formData.targetType} disabled={sourceBusy}
+                  options={[
+                    { value: 'remoteDocker', label: t('workspaceSource.viaHost') },
+                    { value: 'containerSshd', label: t('workspaceSource.directContainer') },
+                  ]}
+                  onValueChange={value => handleTargetChange(value as WorkspaceConnectionTarget)} />
+              </Field>
+            )}
 
             {isWslTarget && (
               <>
-                <Field label={t('ssh.remote.wslDistribution')} controlWidth="fill">
-                  <Select
-                    options={[
-                      { label: t('ssh.remote.wslSelectDistribution'), value: '' },
-                      ...(wslDistributions?.distributions ?? []).map((distribution) => ({ label: distribution, value: distribution })),
-                    ]}
+                <FormSection title={t('ssh.remote.wslDistribution')} headingAs="h3"
+                  actions={(
+                    <Tooltip content={t('ssh.remote.wslRefresh')}><IconButton variant="quiet" size="xs"
+                      icon={<Icon name="refresh" size="xs" />} aria-label={t('ssh.remote.wslRefresh')}
+                      loading={isListingWsl} onClick={() => setWslRefresh((value) => value + 1)} disabled={sourceBusy} /></Tooltip>
+                  )}>
+                  <WorkspaceChoiceCapsules label={t('ssh.remote.wslDistribution')}
+                    choices={(wslDistributions?.distributions ?? []).map(distribution => ({ id: distribution, label: distribution }))}
                     value={formData.wslDistribution}
-                    onValueChange={(value) => handleInputChange('wslDistribution', String(value))}
+                    onValueChange={value => handleInputChange('wslDistribution', value || '')}
                     disabled={isListingWsl || !wslDistributions?.supported}
-                    size="md"
                   />
-                </Field>
-                <Button variant="outline" size="sm" onClick={() => setWslRefresh((value) => value + 1)} disabled={isListingWsl}>
-                  {isListingWsl && <Loader2 size={14} className="ssh-connection-dialog__spinner" />}
-                  {t('ssh.remote.wslRefresh')}
-                </Button>
-                <Field label={t('ssh.remote.wslUser')} controlWidth="fill">
-                  <DesignInput
-                    value={formData.wslUser}
-                    onChange={(event) => handleInputChange('wslUser', event.target.value)}
-                    placeholder={t('ssh.remote.wslDefaultUser')}
-                  />
-                </Field>
-                <div className="ssh-connection-dialog__hint" role={wslError ? 'alert' : 'status'}>
+                </FormSection>
+
+                {(wslError || wslDistributions?.supported === false || wslDistributions?.distributions.length === 0) && <div className="ssh-connection-dialog__hint" role={wslError ? 'alert' : 'status'}>
                   {wslError || (wslDistributions?.supported === false
                     ? t('ssh.remote.wslUnsupported')
                     : wslDistributions?.distributions.length === 0
                       ? t('ssh.remote.wslNoDistributions')
-                      : t('ssh.remote.wslHint'))}
-                </div>
+                      : '')}
+                </div>}
               </>
             )}
 
-            {!isLocalProcessTarget && (
+            {inheritedHost && !hostIsFixed && (
+              <FormSection title={t('workspaceSource.sshHost')} headingAs="h3">
+                <WorkspaceChoiceCapsules label={t('workspaceSource.sshHost')} value={containerHost?.id}
+                  choices={(containerHost && !savedConnections.some(conn => conn.id === containerHost.id)
+                    ? [containerHost, ...savedConnections.filter(conn => !conn.container && !conn.wsl)]
+                    : savedConnections.filter(conn => !conn.container && !conn.wsl)).map(conn => ({ id: conn.id, label: conn.name, description: `${conn.username}@${conn.host}:${conn.port}` }))}
+                  disabled={sourceBusy} onValueChange={id => {
+                    const host = id === containerHost?.id ? containerHost : savedConnections.find(conn => conn.id === id);
+                    setContainerHost(host); setFormData(prev => ({ ...prev, containerName: '' })); setDockerContainers([]); setLocalError(null); setConnectionTest(null);
+                  }} />
+                {!containerHost && <div className="ssh-connection-dialog__source-status" role="status">{t('workspaceSource.existingHostRequired')}</div>}
+              </FormSection>
+            )}
+            {!isLocalProcessTarget && !inheritedHost && (
               <>
             {/* Host and Port */}
             <FieldRow padding="none" className="ssh-connection-dialog__row ssh-connection-dialog__row--host">
               <div className="ssh-connection-dialog__field ssh-connection-dialog__field--flex">
-                <Field label={t('ssh.remote.host')} controlWidth="fill">
+                <Field label={t(isRemoteContainer
+                  ? formData.targetType === 'containerSshd' ? 'workspaceSource.containerAddress' : 'workspaceSource.dockerHostAddress'
+                  : 'ssh.remote.host')} controlWidth="fill">
                   <DesignInput
+                    size="md"
                     value={formData.host}
                     onChange={(e) => handleInputChange('host', e.target.value)}
                     placeholder=""
@@ -1031,7 +1124,11 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
               <div className="ssh-connection-dialog__field ssh-connection-dialog__field--port">
                 <Field label={t('ssh.remote.port')} controlWidth="fill">
                   <DesignInput
+                    size="md"
                     value={formData.port}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(e) => handleInputChange('port', e.target.value)}
                     placeholder="22"
                   />
@@ -1043,6 +1140,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
             <FieldRow padding="none" className="ssh-connection-dialog__field">
               <Field label={t('ssh.remote.username')} controlWidth="fill">
                 <DesignInput
+                  size="md"
                   value={formData.username}
                   onChange={(e) => handleInputChange('username', e.target.value)}
                   placeholder=""
@@ -1053,116 +1151,18 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
               </>
             )}
 
-            {usesContainerTarget && (
-              <div className="ssh-connection-dialog__container-fields">
-                <div className="ssh-connection-dialog__field">
-                  <div className="ssh-connection-dialog__field-header">
-                    <label className="ssh-connection-dialog__label">
-                      {t('ssh.remote.containerName')}
-                    </label>
-                    {formData.targetType !== 'containerSshd' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleListContainers()}
-                        disabled={isListingContainers || isConnecting || status === 'connecting'}
-                      >
-                        {isListingContainers
-                          ? <Loader2 size={13} className="ssh-connection-dialog__spinner" />
-                          : <Icon name="refresh" size="lg" style={{ width: 13, height: 13 }} />}
-                        {t('ssh.remote.discoverContainers')}
-                      </Button>
-                    )}
-                  </div>
-                  {dockerContainers.length > 0 ? (
-                    <Select
-                      options={dockerContainers.map((container) => ({
-                        label: `${container.name} · ${container.image} · ${container.state}`,
-                        value: container.name,
-                      }))}
-                      value={formData.containerName}
-                      onValueChange={(value) => handleInputChange('containerName', String(value))}
-                      size="md"
-                    />
-                  ) : (
-                    <DesignInput
-                      value={formData.containerName}
-                      onChange={(e) => handleInputChange('containerName', e.target.value)}
-                      placeholder={t('ssh.remote.containerNamePlaceholder')}
-                      size="md"
-                    />
-                  )}
-                </div>
-                {formData.targetType !== 'containerSshd' && (
-                  <>
-                    <div className="ssh-connection-dialog__field">
-                      <label className="ssh-connection-dialog__label">
-                        {t('ssh.remote.containerAccess')}
-                      </label>
-                      <Select
-                        options={containerAccessOptions}
-                        value={formData.containerAccess}
-                        onValueChange={(value) => handleInputChange('containerAccess', String(value))}
-                        size="md"
-                      />
-                      <div className="ssh-connection-dialog__hint">
-                        {t('ssh.remote.containerAccessHint')}
-                      </div>
-                    </div>
-                    <div className="ssh-connection-dialog__field">
-                      <Field label={t('ssh.remote.dockerPath')} controlWidth="fill">
-                        <DesignInput
-                          value={formData.dockerPath}
-                          onChange={(e) => handleInputChange('dockerPath', e.target.value)}
-                          placeholder="docker"
-                        />
-                      </Field>
-                    </div>
-                    <div className="ssh-connection-dialog__row">
-                      <div className="ssh-connection-dialog__field ssh-connection-dialog__field--flex">
-                        <Field label={t('ssh.remote.containerShell')} controlWidth="fill">
-                          <DesignInput
-                            value={formData.containerShell}
-                            onChange={(e) => handleInputChange('containerShell', e.target.value)}
-                            placeholder="/bin/sh"
-                          />
-                        </Field>
-                      </div>
-                      <div className="ssh-connection-dialog__field ssh-connection-dialog__field--flex">
-                        <Field label={t('ssh.remote.containerUser')} controlWidth="fill">
-                          <DesignInput
-                            value={formData.containerUser}
-                            onChange={(e) => handleInputChange('containerUser', e.target.value)}
-                            placeholder={t('ssh.remote.optional')}
-                          />
-                        </Field>
-                      </div>
-                    </div>
-                  </>
-                )}
-                <div className="ssh-connection-dialog__hint">
-                  {formData.targetType === 'remoteDocker'
-                    ? t('ssh.remote.remoteDockerHint')
-                    : formData.targetType === 'localDocker'
-                      ? t('ssh.remote.localDockerHint')
-                      : t('ssh.remote.containerSshdHint')}
-                </div>
-              </div>
-            )}
-
-            {!isLocalProcessTarget && (
+            {!isLocalProcessTarget && !inheritedHost && (
               <>
             {/* Authentication Method */}
             <FieldRow padding="none" className="ssh-connection-dialog__field">
-              <label className="ssh-connection-dialog__label">
-                {t('ssh.remote.authMethod')}
-              </label>
-              <Select
-                options={authOptions}
-                value={formData.authType}
-                onValueChange={(value) => handleInputChange('authType', String(value))}
-                size="md"
-              />
+              <Field label={t('ssh.remote.authMethod')} controlWidth="fill">
+                <Select
+                  options={authOptions}
+                  value={formData.authType}
+                  onValueChange={(value) => handleInputChange('authType', String(value))}
+                  size="md"
+                />
+              </Field>
             </FieldRow>
 
             {/* Password */}
@@ -1170,6 +1170,8 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
               <FieldRow padding="none" className="ssh-connection-dialog__field">
                 <Field label={t('ssh.remote.password')} controlWidth="fill">
                   <DesignInput
+                    size="md"
+                    hideNativePasswordReveal
                     type={showPassword ? 'text' : 'password'}
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
@@ -1182,7 +1184,6 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                         variant="quiet"
                         aria-label={showPassword ? t('ssh.remote.hidePassword') : t('ssh.remote.showPassword')}
                         onClick={() => setShowPassword(s => !s)}
-                        tabIndex={-1}
                         icon={showPassword ? <EyeOff size={16} /> : <Icon name="eye" size="md" />}
                       />
                     }
@@ -1197,6 +1198,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                 <FieldRow padding="none" className="ssh-connection-dialog__field">
                   <Field label={t('ssh.remote.privateKeyPath')} controlWidth="fill">
                     <DesignInput
+                      size="md"
                       value={formData.keyPath}
                       onChange={(e) => handleInputChange('keyPath', e.target.value)}
                       placeholder="~/.ssh/id_rsa"
@@ -1220,6 +1222,8 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                 <FieldRow padding="none" className="ssh-connection-dialog__field">
                   <Field label={t('ssh.remote.passphrase')} controlWidth="fill">
                     <DesignInput
+                      size="md"
+                      hideNativePasswordReveal
                       type={showPassphrase ? 'text' : 'password'}
                       value={formData.passphrase}
                       onChange={(e) => handleInputChange('passphrase', e.target.value)}
@@ -1231,58 +1235,13 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                           variant="quiet"
                           aria-label={showPassphrase ? t('ssh.remote.hidePassword') : t('ssh.remote.showPassword')}
                           onClick={() => setShowPassphrase(s => !s)}
-                          tabIndex={-1}
                           icon={showPassphrase ? <EyeOff size={16} /> : <Icon name="eye" size="md" />}
                         />
                       }
                     />
                   </Field>
                 </FieldRow>
-                <FieldRow padding="none" className="ssh-connection-dialog__field">
-                  <Field label={t('ssh.remote.certificatePath')} controlWidth="fill">
-                    <DesignInput
-                      value={formData.certificatePath}
-                      onChange={(e) => handleInputChange('certificatePath', e.target.value)}
-                      placeholder={t('ssh.remote.certificatePathOptional')}
-                      trailing={
-                        <Tooltip content={t('ssh.remote.browseCertificate')}>
-                          <IconButton
-                            type="button"
-                            size="sm"
-                            className="ssh-connection-dialog__browse-key"
-                            aria-label={t('ssh.remote.browseCertificate')}
-                            disabled={isConnecting || status === 'connecting'}
-                            onClick={() => void handleBrowseCertificate()}
-                            icon={<FolderOpen size={16} />}
-                          />
-                        </Tooltip>
-                      }
-                    />
-                  </Field>
-                </FieldRow>
-              </>
-            )}
 
-            {formData.authType === 'agent' && (
-              <>
-                <FieldRow padding="none" className="ssh-connection-dialog__field">
-                  <Field label={t('ssh.remote.agentFingerprint')} controlWidth="fill">
-                    <DesignInput
-                      value={formData.keyFingerprint}
-                      onChange={(e) => handleInputChange('keyFingerprint', e.target.value)}
-                      placeholder={t('ssh.remote.optional')}
-                    />
-                  </Field>
-                </FieldRow>
-                <FieldRow padding="none" className="ssh-connection-dialog__field">
-                  <Field label={t('ssh.remote.agentFallbackKey')} controlWidth="fill">
-                    <DesignInput
-                      value={formData.fallbackKeyPath}
-                      onChange={(e) => handleInputChange('fallbackKeyPath', e.target.value)}
-                      placeholder={t('ssh.remote.optional')}
-                    />
-                  </Field>
-                </FieldRow>
               </>
             )}
 
@@ -1291,6 +1250,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                 <div className="ssh-connection-dialog__field ssh-connection-dialog__field--flex">
                   <Field label={t('ssh.remote.challengePassword')} controlWidth="fill">
                     <DesignInput
+                      size="md"
                       type="password"
                       value={formData.password}
                       onChange={(e) => handleInputChange('password', e.target.value)}
@@ -1300,6 +1260,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                 <div className="ssh-connection-dialog__field ssh-connection-dialog__field--flex">
                   <Field label={t('ssh.remote.verificationCode')} controlWidth="fill">
                     <DesignInput
+                      size="md"
                       type="password"
                       value={formData.verificationCode}
                       onChange={(e) => handleInputChange('verificationCode', e.target.value)}
@@ -1313,27 +1274,37 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
               </>
             )}
 
-            <div className="ssh-connection-dialog__advanced">
-              <button
-                type="button"
-                className="ssh-connection-dialog__advanced-toggle"
-                aria-expanded={showAdvancedSettings}
-                onClick={() => setShowAdvancedSettings((visible) => !visible)}
-              >
-                <span>{t('ssh.remote.advancedSettings')}</span>
-                <Icon name="chevron-down" size="md" aria-hidden="true" className={[
-                    'ssh-connection-dialog__advanced-chevron',
-                    showAdvancedSettings
-                      ? 'ssh-connection-dialog__advanced-chevron--expanded'
-                      : '',
-                  ].filter(Boolean).join(' ')} />
-              </button>
+            {usesDockerTarget && (
+              <div className="ssh-connection-dialog__container-fields">
+                <Field label={t('ssh.remote.containerName')} controlWidth="fill"
+                  className="ssh-connection-dialog__field"
+                  labelAction={(
+                    <Tooltip content={t('ssh.remote.discoverContainers')}><IconButton variant="quiet" size="xs" onClick={() => void handleListContainers()}
+                      icon={<Icon name="refresh" size="xs" />} aria-label={t('ssh.remote.discoverContainers')} loading={isListingContainers}
+                      disabled={isListingContainers || isConnecting || status === 'connecting'} /></Tooltip>
+                  )}>
+                  <Combobox
+                    options={dockerContainers.map(container => ({
+                      label: container.name, description: `${container.image} · ${container.state}`, value: container.name,
+                    }))}
+                    value={formData.containerName}
+                    onValueChange={value => handleInputChange('containerName', String(value))}
+                    onCreateValue={value => value.trim()}
+                    placeholder={t('ssh.remote.containerNamePlaceholder')}
+                    loading={isListingContainers} clearable size="md" />
+                </Field>
+              </div>
+            )}
 
-              {showAdvancedSettings && (
-                <FieldGroup appearance="subtle" className="ssh-connection-dialog__advanced-panel">
+            <Disclosure className="ssh-connection-dialog__advanced"
+              contentInnerClassName="ssh-connection-dialog__advanced-content"
+              summary={t('ssh.remote.advancedSettings')} open={showAdvancedSettings}
+              onOpenChange={setShowAdvancedSettings} disabled={sourceBusy} unmountOnClose>
+                <div className="ssh-connection-dialog__advanced-fields">
                   <div className="ssh-connection-dialog__field">
                     <Field label={t('ssh.remote.connectionName')} controlWidth="fill">
                       <DesignInput
+                        size="md"
                         value={formData.name}
                         onChange={(e) => handleInputChange('name', e.target.value)}
                         placeholder={t('ssh.remote.connectionNamePlaceholder')}
@@ -1341,11 +1312,118 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                     </Field>
                   </div>
 
-                  {!isLocalProcessTarget && (
+                  {isWslTarget && (
+                    <Field label={t('ssh.remote.wslUser')} controlWidth="fill">
+                      <DesignInput
+                        size="md"
+                        value={formData.wslUser}
+                        onChange={(event) => handleInputChange('wslUser', event.target.value)}
+                        placeholder={t('ssh.remote.wslDefaultUser')}
+                      />
+                    </Field>
+                  )}
+                  {usesDockerTarget && (
+                    <FormSection title={t('workspaceSource.containerOptions')} headingAs="h3">
+                      <div className="ssh-connection-dialog__field">
+                        <Field label={t('ssh.remote.containerAccess')} controlWidth="fill">
+                          <Select
+                            options={containerAccessOptions}
+                            value={formData.containerAccess}
+                            onValueChange={(value) => handleInputChange('containerAccess', String(value))}
+                            size="md"
+                          />
+                        </Field>
+                      </div>
+                      <div className="ssh-connection-dialog__field">
+                        <Field label={t('ssh.remote.dockerPath')} controlWidth="fill">
+                          <DesignInput
+                            size="md"
+                            value={formData.dockerPath}
+                            onChange={(e) => handleInputChange('dockerPath', e.target.value)}
+                            placeholder="docker"
+                          />
+                        </Field>
+                      </div>
+                      <div className="ssh-connection-dialog__row">
+                        <div className="ssh-connection-dialog__field ssh-connection-dialog__field--flex">
+                          <Field label={t('ssh.remote.containerShell')} controlWidth="fill">
+                            <DesignInput
+                              size="md"
+                              value={formData.containerShell}
+                              onChange={(e) => handleInputChange('containerShell', e.target.value)}
+                              placeholder="/bin/sh"
+                            />
+                          </Field>
+                        </div>
+                        <div className="ssh-connection-dialog__field ssh-connection-dialog__field--flex">
+                          <Field label={t('ssh.remote.containerUser')} controlWidth="fill">
+                            <DesignInput
+                              size="md"
+                              value={formData.containerUser}
+                              onChange={(e) => handleInputChange('containerUser', e.target.value)}
+                              placeholder={t('ssh.remote.optional')}
+                            />
+                          </Field>
+                        </div>
+                      </div>
+                    </FormSection>
+                  )}
+                  {!isLocalProcessTarget && !inheritedHost && formData.authType === 'privateKey' && (
+                    <FieldRow padding="none" className="ssh-connection-dialog__field">
+                      <Field label={t('ssh.remote.certificatePath')} controlWidth="fill">
+                        <DesignInput
+                          size="md"
+                          value={formData.certificatePath}
+                          onChange={(e) => handleInputChange('certificatePath', e.target.value)}
+                          placeholder={t('ssh.remote.certificatePathOptional')}
+                          trailing={
+                            <Tooltip content={t('ssh.remote.browseCertificate')}>
+                              <IconButton
+                                type="button"
+                                size="sm"
+                                className="ssh-connection-dialog__browse-key"
+                                aria-label={t('ssh.remote.browseCertificate')}
+                                disabled={isConnecting || status === 'connecting'}
+                                onClick={() => void handleBrowseCertificate()}
+                                icon={<FolderOpen size={16} />}
+                              />
+                            </Tooltip>
+                          }
+                        />
+                      </Field>
+                    </FieldRow>
+                  )}
+                  {!isLocalProcessTarget && !inheritedHost && formData.authType === 'agent' && (
+                    <>
+                      <FieldRow padding="none" className="ssh-connection-dialog__field">
+                        <Field label={t('ssh.remote.agentFingerprint')} controlWidth="fill">
+                          <DesignInput
+                            size="md"
+                            value={formData.keyFingerprint}
+                            onChange={(e) => handleInputChange('keyFingerprint', e.target.value)}
+                            placeholder={t('ssh.remote.optional')}
+                          />
+                        </Field>
+                      </FieldRow>
+                      <FieldRow padding="none" className="ssh-connection-dialog__field">
+                        <Field label={t('ssh.remote.agentFallbackKey')} controlWidth="fill">
+                          <DesignInput
+                            size="md"
+                            value={formData.fallbackKeyPath}
+                            onChange={(e) => handleInputChange('fallbackKeyPath', e.target.value)}
+                            placeholder={t('ssh.remote.optional')}
+                          />
+                        </Field>
+                      </FieldRow>
+                    </>
+                  )}
+
+                  {!isLocalProcessTarget && !inheritedHost && (
                     <>
                       <div className="ssh-connection-dialog__field">
                         <Field label={t('ssh.remote.proxyJump')} controlWidth="fill">
                           <DesignInput
+                            size="md"
                             value={formData.proxyJump}
                             onChange={(e) => handleInputChange('proxyJump', e.target.value)}
                             placeholder={t('ssh.remote.proxyJumpPlaceholder')}
@@ -1367,50 +1445,54 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                         )}
                       </div>
 
-                      <div className="ssh-connection-dialog__connection-options">
-                        <div className="ssh-connection-dialog__label">
-                          {t('ssh.remote.connectionOptions')}
-                        </div>
+                      <FormSection title={t('ssh.remote.connectionOptions')} headingAs="h3">
                         <div className="ssh-connection-dialog__options-grid">
                           <div className="ssh-connection-dialog__field">
                             <Field label={t('ssh.remote.connectTimeout')} controlWidth="fill">
-                              <DesignInput
-                                value={formData.connectTimeoutSecs}
-                                onChange={(e) => handleInputChange('connectTimeoutSecs', e.target.value)}
+                              <NumberInput
+                                size="md"
+                                min={1} precision={0} disableWheel showButtons={false}
+                                value={Number(formData.connectTimeoutSecs)}
+                                onValueChange={value => handleInputChange('connectTimeoutSecs', String(value))}
                               />
                             </Field>
                           </div>
                           <div className="ssh-connection-dialog__field">
                             <Field label={t('ssh.remote.authTimeout')} controlWidth="fill">
-                              <DesignInput
-                                value={formData.authTimeoutSecs}
-                                onChange={(e) => handleInputChange('authTimeoutSecs', e.target.value)}
+                              <NumberInput
+                                size="md"
+                                min={1} precision={0} disableWheel showButtons={false}
+                                value={Number(formData.authTimeoutSecs)}
+                                onValueChange={value => handleInputChange('authTimeoutSecs', String(value))}
                               />
                             </Field>
                           </div>
                           <div className="ssh-connection-dialog__field">
                             <Field label={t('ssh.remote.authAttempts')} controlWidth="fill">
-                              <DesignInput
-                                value={formData.authAttempts}
-                                onChange={(e) => handleInputChange('authAttempts', e.target.value)}
+                              <NumberInput
+                                size="md"
+                                min={1} max={10} precision={0} disableWheel showButtons={false}
+                                value={Number(formData.authAttempts)}
+                                onValueChange={value => handleInputChange('authAttempts', String(value))}
                               />
                             </Field>
                           </div>
                           <div className="ssh-connection-dialog__field">
                             <Field label={t('ssh.remote.connectAttempts')} controlWidth="fill">
-                              <DesignInput
-                                value={formData.connectAttempts}
-                                onChange={(e) => handleInputChange('connectAttempts', e.target.value)}
+                              <NumberInput
+                                size="md"
+                                min={1} max={5} precision={0} disableWheel showButtons={false}
+                                value={Number(formData.connectAttempts)}
+                                onValueChange={value => handleInputChange('connectAttempts', String(value))}
                               />
                             </Field>
                           </div>
                         </div>
-                      </div>
+                      </FormSection>
                     </>
                   )}
-                </FieldGroup>
-              )}
-            </div>
+                </div>
+            </Disclosure>
 
             {connectionTest && (
               <div
@@ -1443,6 +1525,8 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
               </div>
             )}
           </FieldGroup>
+          </div>
+          )}
           </ScrollArea>
 
         </div>
@@ -1454,7 +1538,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
           data-openbitfun-component="ssh-remote"
           data-openbitfun-part="connectionActions"
         >
-            <Button
+            {showNewConnection && <Button
               variant="outline"
               size="sm"
               onClick={() => void handleTestConnection()}
@@ -1462,16 +1546,26 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
             >
               {isTesting && <Loader2 size={14} className="ssh-connection-dialog__spinner" />}
               {t('ssh.remote.testConnection')}
-            </Button>
+            </Button>}
             <Button
               variant="fill"
               size="sm"
               onClick={onClose}
               disabled={isConnecting || status === 'connecting'}
             >
-              {t('actions.cancel')}
+              {t(fixedSource && !editOnly ? 'workspaceSource.backToProject' : 'actions.cancel')}
             </Button>
-            <Button
+            {editOnly && editingProfile && <IconButton variant="quiet" size="sm" icon={<Icon name="delete" size="sm" />}
+              aria-label={t('actions.delete')} disabled={sourceBusy} onClick={async event => {
+                if (await handleDeleteConnection(event, editingProfile.id)) onClose();
+              }} />}
+            {editOnly && <Button variant="primary" size="sm" onClick={() => void handleSave()} loading={isConnecting}
+              disabled={sourceBusy}>{t('actions.save')}</Button>}
+            {!showNewConnection && <Button variant="primary" size="sm" disabled={sourceBusy || !selectedConnection}
+              loading={isConnecting || status === 'connecting'} onClick={() => { if (selectedConnection) void handleQuickConnect(selectedConnection); }}>
+              {confirmLabel ?? t('ssh.remote.connect')}
+            </Button>}
+            {showNewConnection && !editOnly && <Button
               variant="primary"
               size="sm"
               onClick={handleConnect}
@@ -1480,7 +1574,9 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
                 || status === 'connecting'
                 || (isWslTarget
                   ? wslUnavailable
-                  : isLocalProcessTarget
+                  : inheritedHost
+                    ? !containerHost || !formData.containerName.trim()
+                    : isLocalProcessTarget
                     ? !formData.containerName.trim()
                     : !formData.host.trim() || !formData.username.trim())
               }
@@ -1493,12 +1589,16 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
               ) : (
                 <>
                   <Icon name="plus" size="sm" />
-                  {t('ssh.remote.connect')}
+                  {confirmLabel ?? t('ssh.remote.connect')}
                 </>
               )}
-            </Button>
+            </Button>}
         </DialogFooter>
       </Dialog>
+
+      {editingPreset?.kind === 'saved' && <SSHConnectionDialog open={open}
+        initialTargetType={savedConnectionTarget(editingPreset.connection)} fixedSource initialPreset={editingPreset}
+        onClose={() => { setEditingPreset(undefined); void loadSavedConnections(); }} />}
 
       <SSHAuthPromptDialog
         open={open && credentialsPrompt !== null}
@@ -1524,6 +1624,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         }
         initialUsername={credentialsPrompt?.username ?? ''}
         lockUsername
+        credentialsOnly
         onSubmit={handleCredentialsPromptSubmit}
         onCancel={handleCredentialsPromptCancel}
         isConnecting={isConnecting}

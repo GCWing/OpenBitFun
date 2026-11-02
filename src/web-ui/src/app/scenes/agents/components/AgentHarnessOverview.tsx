@@ -67,8 +67,8 @@ function HarnessStrategyRoute({ profile }: { profile: HarnessStrategyId }) {
 
 const AgentHarnessOverview: React.FC<{
   agents: AgentWithCapabilities[];
-  onOpenDetails: (agent: AgentWithCapabilities) => void;
-}> = ({ agents, onOpenDetails }) => {
+  onPreview: (agent: AgentWithCapabilities) => void;
+}> = ({ agents, onPreview }) => {
   const { t } = useI18n('scenes/agents');
 
   return (
@@ -78,7 +78,6 @@ const AgentHarnessOverview: React.FC<{
         className="openbitfun-agents-scene__harness-zone"
         data-testid="agents-harness-zone"
         title={t('harnessZone.title')}
-        subtitle={t('harnessZone.subtitle')}
       >
         <ul
           className="openbitfun-agents-scene__harness-presentation"
@@ -98,7 +97,9 @@ const AgentHarnessOverview: React.FC<{
                 <button
                   type="button"
                   disabled={!agent}
-                  onClick={() => { if (agent) onOpenDetails(agent); }}
+                  onClick={() => {
+                    if (agent) onPreview(agent);
+                  }}
                   className="openbitfun-agents-scene__harness-profile"
                   data-openbitfun-component="harness-profile-step"
                   data-openbitfun-part="root"
@@ -111,7 +112,7 @@ const AgentHarnessOverview: React.FC<{
                     {t(`harnessZone.profiles.${id}.name`)}
                   </strong>
                   <span className="openbitfun-agents-scene__harness-profile-purpose">
-                    {t(`harnessZone.profiles.${id}.purpose`)}
+                    {t(`harnessZone.profiles.${id}.description`)}
                   </span>
                   <HarnessStrategyRoute profile={id} />
                 </button>

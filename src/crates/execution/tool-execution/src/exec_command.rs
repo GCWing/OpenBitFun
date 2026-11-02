@@ -779,12 +779,10 @@ fn exec_command_result_fields_value(
     include_completion: bool,
 ) -> Value {
     let mut data = json!({
-        "chunk_id": fields.chunk_id,
         "wall_time_seconds": fields.wall_time_seconds,
         "output": fields.output,
         "session_id": fields.session_id,
         "exit_code": fields.exit_code,
-        "original_output_chars": fields.original_output_chars,
     });
     if include_completion {
         data["completion"] = fields
@@ -900,7 +898,6 @@ pub fn write_stdin_session_not_found_result(
         "session_id": null,
         "exit_code": null,
         "output": "",
-        "original_output_chars": 0,
     });
     if remote {
         data["remote"] = json!(true);
@@ -928,7 +925,6 @@ pub fn exec_control_session_not_found_result(
         "session_id": null,
         "exit_code": null,
         "output": "",
-        "original_output_chars": 0,
         "action": action_name,
     });
     if remote {
@@ -1492,7 +1488,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_command_result_builder_preserves_existing_wire_shape() {
+    fn exec_command_result_builder_exposes_only_model_result_fields() {
         let data = exec_command_result_value(ExecCommandResultData {
             fields: ExecCommandResultFields {
                 chunk_id: "chunk-1".to_string(),
@@ -1522,12 +1518,10 @@ mod tests {
         assert_eq!(
             data,
             json!({
-                "chunk_id": "chunk-1",
                 "wall_time_seconds": 1.25,
                 "output": "done",
                 "session_id": 42,
                 "exit_code": null,
-                "original_output_chars": 4,
                 "completion": {
                     "status": "interrupted",
                     "source": "out_of_band_control"
@@ -1569,6 +1563,10 @@ mod tests {
             control_data.get("action").and_then(Value::as_str),
             Some("kill")
         );
+        assert!(stdin_data.get("chunk_id").is_none());
+        assert!(stdin_data.get("original_output_chars").is_none());
+        assert!(control_data.get("chunk_id").is_none());
+        assert!(control_data.get("original_output_chars").is_none());
         assert!(control_data.get("completion").is_none());
     }
 

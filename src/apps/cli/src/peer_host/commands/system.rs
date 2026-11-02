@@ -16,6 +16,10 @@ pub(crate) async fn get_system_info() -> Result<Value, String> {
     }))
 }
 
+pub(crate) async fn get_runtime_logging_info() -> Result<Value, String> {
+    Ok(crate::logging::runtime_logging_info())
+}
+
 pub(crate) async fn get_token_usage_statistics(
     state: &PeerHostState,
     args: &Value,

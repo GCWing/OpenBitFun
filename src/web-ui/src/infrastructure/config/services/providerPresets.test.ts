@@ -47,7 +47,7 @@ describe('provider presets', () => {
     }
   });
 
-  it('resolves every base URL option note in all locales, with distinct labels', async () => {
+  it('resolves every base URL option note in all locales, with distinct labels per request format', async () => {
     const { PROVIDER_TEMPLATES } = await loadPresets();
 
     for (const template of Object.values(PROVIDER_TEMPLATES)) {
@@ -65,8 +65,17 @@ describe('provider presets', () => {
           labels.filter(label => !label),
           `${tag} is missing providers.${template.id}.urlOptions entries`,
         ).toEqual([]);
-        // Two endpoints sharing a label leaves the user unable to tell them apart.
-        expect(new Set(labels).size, `${tag} renders duplicate labels for ${template.id}`).toBe(labels.length);
+        // The endpoint picker lists one request format at a time, so labels name the
+        // region or plan and must differ only among endpoints of the same format.
+        for (const format of new Set(options.map(option => option.format))) {
+          const formatLabels = options
+            .filter(option => option.format === format)
+            .map(option => urlOptions[option.note]);
+          expect(
+            new Set(formatLabels).size,
+            `${tag} renders duplicate ${format} labels for ${template.id}`,
+          ).toBe(formatLabels.length);
+        }
         expect(Object.keys(urlOptions).filter(key => !notes.includes(key))).toEqual([]);
       }
     }

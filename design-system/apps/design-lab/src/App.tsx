@@ -1,5 +1,6 @@
 import { FoundationsPage } from "./pages/FoundationsPage";
-import { LabNavigation, LabSectionNavigation } from "./components/LabNavigation";
+import { LabNavigation, LabSectionNavigation, hasSectionNavigation } from "./components/LabNavigation";
+import { defaultComponent, libraryCategory } from "./componentNavigation";
 import {
   useEffect,
   useLayoutEffect,
@@ -18,7 +19,7 @@ import { Button, Dialog, DialogBody, DialogClose, DialogDescription, DialogHeade
   type DensityMode,
   type IconName,
 } from "@openbitfun/ui";
-import { OpenBitFunMark } from "@openbitfun/ui/brand";
+import { OpenBitFunSolidMark } from "@openbitfun/ui/brand";
 import { BrandPage } from "./pages/BrandPage";
 import { componentRegistry } from "@openbitfun/ui/registry";
 import {
@@ -174,7 +175,6 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchResultsRef = useRef<HTMLDivElement>(null);
-  const searchShortcut = /Mac|iPhone|iPad/i.test(navigator.userAgent) ? "⌘ K" : "Ctrl K";
 
   const themeName = getThemeDataName(colorScheme, contrast);
   // Document-level portals live outside the page ThemeRoot. Give them the same
@@ -413,13 +413,16 @@ export function App() {
   const activeComponent = route.page === "component"
     ? componentRegistry.find((component) => component.name === route.componentName)
     : undefined;
+  const librarySelection = route.page === "components" || route.page === "mobile" || route.page === "flow-chat"
+    ? defaultComponent(libraryCategory(route.page))
+    : activeComponent;
 
   return (
     <DesignSystemProvider colorScheme={colorScheme} contrast={contrast} density={density} locale={locale} nativeTooltipPolicy="application">
     <ThemeRoot
       className="lab-shell"
       data-page={route.page}
-      data-component-library={["components", "component", "mobile", "flow-chat"].includes(route.page) || undefined}
+      data-section-navigation={hasSectionNavigation(route.page) || undefined}
       data-sidebar-open={sidebarOpen || undefined}
       colorScheme={colorScheme}
       contrast={contrast}
@@ -433,23 +436,23 @@ export function App() {
             icon={<CatalogIcon glyph={Menu} />}
             onClick={() => setSidebarOpen(true)}
           />
-          <a className="design-wordmark-link" href="#overview" onClick={event => {
+          <a className="design-wordmark-link" href="#overview" aria-label="OpenBitFun Design" onClick={event => {
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault();
             navigate({ page: "overview" });
           }}>
-            <OpenBitFunMark size={28} /><span>OpenBitFun<span className="design-wordmark-suffix"> Design</span></span>
+            {/* The product site's header lockup: the app mark next to the wordmark. The name is
+                visible now, and the link's accessible label still says which site it leads to. */}
+            <OpenBitFunSolidMark className="design-app-mark" size={28} />
+            <span className="design-wordmark-name">OpenBitFun</span>
           </a>
           <LabNavigation page={route.page} componentName={activeComponent?.name}
             onNavigate={page => page === "tokens" ? openTokenPage() : navigate({ page })} />
           <div className="lab-topbar-actions">
-            <Button className="lab-search-trigger" size="sm" variant="fill"
-              aria-label={t("search.label")} aria-haspopup="dialog"
-              leadingIcon={<CatalogIcon name="search" />}
-              onClick={() => setSearchOpen(true)}>
-              <span className="lab-search-trigger-label">{t("search.placeholder")}</span>
-              <KeyHint className="lab-search-shortcut">{searchShortcut}</KeyHint>
-            </Button>
+            {/* Icon only, like the two controls beside it: the accessible name still says what it
+                opens, and the shortcut hint moved into the dialog it opens. */}
+            <IconButton className="lab-search-trigger" aria-label={t("search.label")} aria-haspopup="dialog"
+              icon={<CatalogIcon name="search" />} onClick={() => setSearchOpen(true)} />
             <IconButton
               aria-label={colorScheme === "light" ? t("theme.switchToDark") : t("theme.switchToLight")}
               icon={<CatalogIcon glyph={colorScheme === "light" ? Sun : Moon} />}
@@ -469,6 +472,7 @@ export function App() {
             <SearchField aria-label={t("search.label")} placeholder={t("search.placeholder")}
               ref={searchInputRef} value={searchQuery} onChange={event => setSearchQuery(event.target.value)}
               leadingIcon={<CatalogIcon name="search" />} clearLabel={t("design.clear")} onClear={() => setSearchQuery("")}
+              shortcut={<KeyHint icon={<CatalogIcon name="command-mac" />}>K</KeyHint>}
               onKeyDown={event => {
                 if (event.nativeEvent.isComposing) return;
                 if (event.key === "ArrowDown") {
@@ -542,14 +546,20 @@ export function App() {
           </DialogHeader>
           <DialogBody className="lab-mobile-navigation">
             <LabNavigation page={route.page} onNavigate={page => page === "tokens" ? openTokenPage() : navigate({ page })} />
-            <LabSectionNavigation page={route.page} onNavigate={page => page === "tokens" ? openTokenPage() : navigate({ page })} />
+            <LabSectionNavigation componentName={librarySelection?.name} page={route.page} onNavigate={page => page === "tokens" ? openTokenPage() : navigate({ page })} />
           </DialogBody>
         </Sheet>
 
-        <LabSectionNavigation page={route.page} onNavigate={page => page === "tokens" ? openTokenPage() : navigate({ page })} />
+        <LabSectionNavigation componentName={librarySelection?.name} page={route.page} onNavigate={page => page === "tokens" ? openTokenPage() : navigate({ page })} />
         <div className="lab-content">
           {route.page === "overview" && (
-            <OverviewPage onNavigate={(target) => navigate({ page: target })} />
+            <OverviewPage
+              colorScheme={colorScheme}
+              contrast={contrast}
+              density={density}
+              onNavigate={(target) => navigate({ page: target })}
+              tokenOverrides={tokenOverrides}
+            />
           )}
 
           {route.page === "foundations" && <FoundationsPage
@@ -568,7 +578,7 @@ export function App() {
 
           {(["components", "component", "mobile", "flow-chat"].includes(route.page)) && (
             <ComponentsPage
-              category={route.page === "mobile" ? "mobile" : route.page === "flow-chat" ? "flow-chat" : undefined}
+              category={libraryCategory(route.page)}
               colorScheme={colorScheme}
               component={activeComponent}
               contrast={contrast}

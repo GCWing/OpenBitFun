@@ -82,6 +82,10 @@ Plugin Source 和完整 domain feature 集合一起带回 Agent Runtime。产品
 编译”的 owner 返回类型化错误。`agent-runtime` 基线计划只选择 `Basic` 与 `AgentControl`；
 它不是隐式 Delivery Profile，也不得从当前二进制已编译的 feature union 反推产品能力。
 
+图像查看与分析由 `tools-image-analysis` 独立选择；`tools-image-generation` 承载生成工具、
+配置驱动的 AI client 和生图协议适配。检查图片的窄消费者不应因此启用生成请求。完整产品和
+需要生图的 CLI、ACP、SDK Host 显式选择这两个 owner，工具 provider 与注册顺序保持稳定。
+
 ### 3.3 Workspace dependency 只提供共同底座
 
 - workspace 声明负责版本和真正跨产品共享的最小 feature；
@@ -250,7 +254,7 @@ cargo check -p <product> --timings
 
 ## 独立数据迁移工具的依赖边界
 
-Data Migrator 是独立发布的本地离线工具，不依赖 Core、Product Assembly、Desktop 或 Web UI。
+Data Tools 是独立发布的本地离线工具，不依赖 Core、Product Assembly、Desktop 或 Web UI。
 主应用不检测、启动或捆绑迁移器。两者在同一源码工作区复用稳定的数据格式与存储实现：
 
 - contracts/config-contracts：配置 DTO、默认值、版本校验及到共享模型 DTO 的纯转换；Core 原路径保留转发，ConfigProvider 仍在 Core。
@@ -262,4 +266,4 @@ Data Migrator 是独立发布的本地离线工具，不依赖 Core、Product As
 WorkspaceInfo/WorkspaceIdentity 的运行操作由 Core 的 runtime extension traits 保留，稳定记录无需导入这些能力。
 原 Core 存储入口保留错误映射；可选 legacy-migration facade 保留旧导入路径，但不再由 product-full 启用。
 远程四种场景不提供迁移工具的执行入口；仅转换本机保存的连接记录，不连接远端。
-使用与发行契约以 [独立迁移器说明](../../src/apps/data-migrator/README.zh-CN.md) 为准。
+使用与发行契约以 [独立数据工具说明](../../src/apps/data-tools/README.zh-CN.md) 为准。

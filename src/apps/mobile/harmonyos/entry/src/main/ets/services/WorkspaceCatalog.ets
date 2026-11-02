@@ -35,6 +35,8 @@ export function projectWorkspaceCatalog(
       remoteConnectionId: row.remoteConnectionId, remoteSshHost: row.remoteSshHost
     });
   });
+  workspaces.sort((left: RecentWorkspaceEntry, right: RecentWorkspaceEntry): number =>
+    Number(right.workspaceKind === 'assistant') - Number(left.workspaceKind === 'assistant'));
   return { workspaces, recentWorkspaces: recent, source: opened ? 'opened' : 'recent' };
 }
 

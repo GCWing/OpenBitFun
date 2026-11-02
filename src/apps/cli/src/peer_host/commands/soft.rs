@@ -2,8 +2,12 @@
 
 use serde_json::{json, Value};
 
-/// Desktop cron host readiness signal — CLI has no cron host; acknowledge as ready.
+/// The embedded CLI starts scheduling during bootstrap; repeated readiness
+/// signals from peer controllers are idempotent.
 pub(crate) async fn notify_cron_host_ready() -> Result<Value, String> {
+    let service = openbitfun_core::service::cron::get_global_cron_service()
+        .ok_or_else(|| "Scheduled jobs are unavailable in this execution host".to_string())?;
+    service.start();
     Ok(Value::Null)
 }
 

@@ -251,6 +251,41 @@ impl Tool for ListWorkspacesTool {
             "cursor":{"type":"string", "description":"Opaque next_cursor from the preceding page; keep query and kind unchanged."}
         }, "additionalProperties":false})
     }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "scope": {"type": "string"},
+                "current_workspace_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "count": {"type": "integer"},
+                "total": {"type": "integer"},
+                "workspaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "kind": {"type": "string"},
+                            "is_current": {"type": "boolean"},
+                            "workspace_id": {"type": "string"},
+                            "project_workspace_id": {"type": "string"},
+                            "root_path": {"type": "string"},
+                            "last_accessed_at_ms": {"type": "integer"},
+                            "remote": {"type": "object", "additionalProperties": true},
+                            "binding_error": {"type": "string"}
+                        },
+                        "required": ["name", "kind", "workspace_id", "root_path"],
+                        "additionalProperties": false
+                    }
+                },
+                "next_cursor": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+            },
+            "required": ["success", "scope", "current_workspace_id", "count", "total", "workspaces", "next_cursor"],
+            "additionalProperties": false
+        })
+    }
     fn is_readonly(&self) -> bool {
         true
     }
@@ -580,6 +615,18 @@ mod tests {
             )
             .await
             .unwrap();
+        // Creation and activity tracking can touch the record at different
+        // instants. Seed the stored timestamp so this tests read-only discovery,
+        // independently of whether setup crosses a millisecond boundary.
+        let last_accessed = chrono::DateTime::from_timestamp_millis(1_000).unwrap();
+        service
+            .get_manager()
+            .write()
+            .await
+            .get_workspaces_mut()
+            .get_mut(&remote.id)
+            .unwrap()
+            .last_accessed = last_accessed;
         let before = service.get_opened_workspaces().await;
         let rows = CoreWorkspaceCatalogPort::list_from_service(&service).await;
         assert!(rows
@@ -590,9 +637,15 @@ mod tests {
             .find(|row| row.workspace_id == remote.id)
             .unwrap();
         assert_eq!(row.root_path, "/offline/project");
+        assert_eq!(row.last_accessed_at_ms, last_accessed.timestamp_millis());
         assert_eq!(
-            row.last_accessed_at_ms,
-            remote.last_accessed.timestamp_millis()
+            service
+                .get_workspace(&remote.id)
+                .await
+                .unwrap()
+                .last_accessed,
+            last_accessed,
+            "catalog discovery must not touch the stored workspace"
         );
         assert_eq!(
             row.remote.as_ref().unwrap().connection_id.as_deref(),

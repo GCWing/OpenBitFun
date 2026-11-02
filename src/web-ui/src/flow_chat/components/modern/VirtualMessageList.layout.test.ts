@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   estimateTextHeightFromLength,
-  describeVirtualItemEstimate,
   estimateVirtualMessageItemHeightWithContext,
   estimateVirtualMessageItemHeight,
   getVirtualMessageDefaultItemHeight,
@@ -214,7 +213,6 @@ describe('estimateVirtualMessageItemHeight', () => {
     const expanded = estimateVirtualMessageItemHeightWithContext(exploreItem, {
       exploreGroupStates: new Map([['group-1', true]]),
     });
-    expect(describeVirtualItemEstimate(exploreItem)).toMatchObject({ defaultExpanded: false });
     expect(defaultHeight).toBe(collapsed);
     expect(expanded).toBeGreaterThan(collapsed);
   });

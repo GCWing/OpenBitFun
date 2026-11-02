@@ -231,6 +231,7 @@ export function compareStates(
 
   const statusFields: (keyof GitState)[] = ['staged', 'unstaged', 'untracked', 'conflicts'];
   for (const field of statusFields) {
+    if (prevState[field] === newState[field]) continue;
     const prevVal = JSON.stringify(prevState[field]);
     const newVal = JSON.stringify(newState[field]);
     if (prevVal !== newVal) {
@@ -244,6 +245,7 @@ export function compareStates(
 
   const detailedFields: (keyof GitState)[] = ['branches', 'commits'];
   for (const field of detailedFields) {
+    if (prevState[field] === newState[field]) continue;
     const prevVal = JSON.stringify(prevState[field]);
     const newVal = JSON.stringify(newState[field]);
     if (prevVal !== newVal) {

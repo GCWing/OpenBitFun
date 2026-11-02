@@ -678,6 +678,10 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
         visible = shell.showSettings,
         placement = settingsPlacement,
         onDismissRequest = shell::dismissSettings,
+        // The settings body is one long scroll, so a pull-down has to scroll it
+        // rather than drag the page away. The page closes through its own close
+        // button, the back action, and a tap on the scrim.
+        draggable = false,
         content = settingsContent,
     )
     AdaptiveModalSurface(

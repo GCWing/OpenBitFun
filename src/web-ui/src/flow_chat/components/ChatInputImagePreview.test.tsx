@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatInputImagePreview } from './ChatInputImagePreview';
 import type { ImageContext } from '@/types/context';
-vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({ getActiveSurfaceScope: () => ({ epoch: 1 }) }));
+const scope = vi.hoisted(() => ({ epoch: 1 }));
+vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({ getActiveSurfaceScope: () => scope }));
 
 const { readFileContent } = vi.hoisted(() => ({ readFileContent: vi.fn() }));
 vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({ workspaceAPI: { readFileContent } }));
@@ -21,6 +22,7 @@ describe('ChatInputImagePreview', () => {
   let root: Root;
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    scope.epoch = 1;
     readFileContent.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -63,7 +65,7 @@ describe('ChatInputImagePreview', () => {
     expect(container.querySelector('img')!.getAttribute('src')).toBe('data:image/png;base64,NEW');
   });
 
-  it('previews the resolved thumbnail and closes the overlay on demand', async () => {
+  it('previews the resolved image and closes the overlay on demand', async () => {
     await render(<ChatInputImagePreview image={{ ...image, dataUrl: 'data:image/png;base64,AA==' }} surfaceEpoch={1} />);
     const trigger = container.querySelector<HTMLButtonElement>('.openbitfun-chat-input__image-chip-preview')!;
     expect(trigger.getAttribute('aria-label')).toBe('components:imageLightbox.label');
@@ -78,5 +80,68 @@ describe('ChatInputImagePreview', () => {
     act(() => { document.querySelector<HTMLButtonElement>('.image-lightbox-close')!.click(); });
 
     expect(document.querySelector('.image-lightbox')).toBeNull();
+  });
+
+  it('keeps the chip thumbnail but opens the original clipboard image', async () => {
+    const original = 'data:image/png;base64,ORIGINAL';
+    const thumbnail = 'data:image/jpeg;base64,THUMBNAIL';
+    await render(<ChatInputImagePreview image={{ ...image, dataUrl: original, thumbnailUrl: thumbnail }} surfaceEpoch={1} />);
+    expect(container.querySelector('img')!.getAttribute('src')).toBe(thumbnail);
+
+    act(() => { container.querySelector<HTMLButtonElement>('button')!.click(); });
+
+    expect(document.querySelector('.image-lightbox img')!.getAttribute('src')).toBe(original);
+    expect(readFileContent).not.toHaveBeenCalled();
+  });
+
+  it('loads a host original on demand when the attachment already has a thumbnail', async () => {
+    const thumbnail = 'data:image/jpeg;base64,THUMBNAIL';
+    readFileContent.mockResolvedValue('ORIGINAL');
+    await render(<ChatInputImagePreview image={{ ...image, thumbnailUrl: thumbnail }} surfaceEpoch={1} />);
+    expect(readFileContent).not.toHaveBeenCalled();
+    expect(container.querySelector('img')!.getAttribute('src')).toBe(thumbnail);
+
+    await act(async () => { container.querySelector<HTMLButtonElement>('button')!.click(); });
+
+    expect(readFileContent).toHaveBeenCalledWith(image.imagePath, 'base64');
+    expect(document.querySelector('.image-lightbox img')!.getAttribute('src')).toBe('data:image/png;base64,ORIGINAL');
+    expect(container.querySelector('img')!.getAttribute('src')).toBe(thumbnail);
+
+    act(() => { document.querySelector<HTMLButtonElement>('.image-lightbox-close')!.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('button')!.click(); });
+    expect(readFileContent).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.image-lightbox img')!.getAttribute('src')).toBe('data:image/png;base64,ORIGINAL');
+  });
+
+  it('ignores a pending preview read after the attachment changes', async () => {
+    let finishOld!: (content: string) => void;
+    readFileContent.mockImplementationOnce(() => new Promise<string>(resolve => { finishOld = resolve; }));
+    await render(<ChatInputImagePreview image={{ ...image, thumbnailUrl: 'data:image/jpeg;base64,THUMBNAIL' }} surfaceEpoch={1} />);
+    await act(async () => { container.querySelector<HTMLButtonElement>('button')!.click(); });
+    expect(document.querySelector('.image-lightbox')).toBeNull();
+
+    await render(<ChatInputImagePreview image={{ ...image, id: 'new-image', dataUrl: 'data:image/png;base64,NEW' }} surfaceEpoch={1} />);
+    await act(async () => { finishOld('OLD'); });
+    expect(document.querySelector('.image-lightbox')).toBeNull();
+    act(() => { container.querySelector<HTMLButtonElement>('button')!.click(); });
+    expect(document.querySelector('.image-lightbox img')!.getAttribute('src')).toBe('data:image/png;base64,NEW');
+  });
+
+  it('closes an open original preview when the device surface changes', async () => {
+    const clipboard = { ...image, dataUrl: 'data:image/png;base64,ORIGINAL' };
+    await render(<ChatInputImagePreview image={clipboard} surfaceEpoch={1} />);
+    act(() => { container.querySelector<HTMLButtonElement>('button')!.click(); });
+    expect(document.querySelector('.image-lightbox')).not.toBeNull();
+    scope.epoch = 2;
+    await render(<ChatInputImagePreview image={clipboard} surfaceEpoch={2} />);
+    expect(document.querySelector('.image-lightbox')).toBeNull();
+  });
+
+  it('reports a failed original read instead of presenting a thumbnail as the original', async () => {
+    readFileContent.mockRejectedValue(new Error('Host offline'));
+    await render(<ChatInputImagePreview image={{ ...image, thumbnailUrl: 'data:image/jpeg;base64,THUMBNAIL' }} surfaceEpoch={1} />);
+    await act(async () => { container.querySelector<HTMLButtonElement>('button')!.click(); });
+    expect(document.querySelector('.image-lightbox')).toBeNull();
+    expect(container.querySelector('[role=img]')!.getAttribute('aria-label')).toContain('Host offline');
   });
 });

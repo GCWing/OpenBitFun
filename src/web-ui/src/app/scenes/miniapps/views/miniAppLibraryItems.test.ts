@@ -5,7 +5,7 @@ import type {
   InstalledMarketOrigin,
   MarketListingSummary,
 } from '@/infrastructure/api/service-api/MiniAppMarketAPI';
-import { buildMiniAppLibraryItems } from './miniAppLibraryItems';
+import { buildMiniAppLibraryItems, selectMiniAppLibraryItems } from './miniAppLibraryItems';
 
 function app(id: string, name = id, createdAt = 1): MiniAppMeta {
   return {
@@ -57,6 +57,30 @@ function origin(listingId: string, releaseNumber: number): InstalledMarketOrigin
 }
 
 describe('buildMiniAppLibraryItems', () => {
+  it('keeps local apps and off-page market installs in the installed catalog', () => {
+    const items = buildMiniAppLibraryItems(
+      [listing('available', 1), listing('installed-market', 2)],
+      [app('local'), app('installed'), app('off-page')],
+      { installed: origin('installed-market', 1), 'off-page': origin('unlisted', 1) },
+    );
+    const installed = selectMiniAppLibraryItems(items, 'installed');
+    expect(installed.map(item => item.app?.id).sort()).toEqual(['installed', 'local', 'off-page']);
+    expect(installed.find(item => item.app?.id === 'installed')?.action).toBe('update');
+    expect(installed.some(item => item.action === 'get')).toBe(false);
+  });
+
+  it('shows published listings in the market while preserving install actions', () => {
+    const items = buildMiniAppLibraryItems(
+      [listing('available', 1), listing('installed-market', 2)],
+      [app('local'), app('installed')],
+      { installed: origin('installed-market', 1) },
+    );
+    const market = selectMiniAppLibraryItems(items, 'market');
+    expect(market.map(item => item.listing?.listingId)).toEqual(['installed-market', 'available']);
+    expect(market.map(item => item.action)).toEqual(['update', 'get']);
+    expect(market.some(item => item.app?.id === 'local')).toBe(false);
+  });
+
   it('preserves install identity when metadata arrives without colliding with another copy', () => {
     const apps = [app('first'), app('second')];
     const origins = { first: origin('shared', 1), second: origin('shared', 1) };

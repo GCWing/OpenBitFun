@@ -1,23 +1,116 @@
-// Product composition only. Dialog, tabs, sections and actions own their surfaces.
+// Product composition only. Dialog, cards, sections and actions own their surfaces.
 .agent-detail-dialog {
   container: agent-detail-dialog / inline-size;
   block-size: 540px;
 
+  // The overview title and content share one centered stack.
+  &:not(.harness-preview):not(.agent-detail-dialog--configuration) {
+    > .agent-detail-dialog__header { margin-block-start: auto; }
+    > .agent-detail-dialog__body {
+      flex: 0 1 auto;
+      margin-block-end: auto;
+    }
+  }
+
   &__header {
+    flex-direction: column;
     align-items: center;
+    gap: var(--openbitfun-space-2);
+
+    > [data-openbitfun-part='heading'] {
+      flex: none;
+      inline-size: 100%;
+      text-align: center;
+    }
+  }
+
+  &__window-actions {
+    position: absolute;
+    inset-block-start: var(--openbitfun-overlay-dialog-header-padding-block-start);
+    inset-inline-end: var(--openbitfun-overlay-dialog-header-padding-inline);
+    z-index: var(--openbitfun-layer-content);
   }
 
   &__toolbar {
     flex: 0 0 auto;
-    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
+    padding-block: var(--openbitfun-overlay-dialog-header-padding-block-start) var(--openbitfun-overlay-dialog-header-padding-block-end);
+    padding-inline-start: var(--openbitfun-overlay-dialog-content-padding-lg);
+    padding-inline-end: calc(var(--openbitfun-overlay-dialog-content-padding-lg) + var(--openbitfun-control-height-sm) + var(--openbitfun-space-2));
   }
 
   &__body {
-    gap: var(--openbitfun-space-5);
+    animation: openbitfun-agent-detail-page-enter var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-enter) both;
 
     > * {
       flex-shrink: 0;
     }
+  }
+
+  &__content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-5);
+    inline-size: 100%;
+    max-inline-size: var(--openbitfun-overlay-dialog-max-inline-size-large);
+    min-inline-size: 0;
+    margin-inline: auto;
+  }
+
+  &__navigation {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
+    min-inline-size: 0;
+  }
+
+  &__back {
+    // The chevron tip is at 3/8 of its viewport; align it while the button surface extends left.
+    margin-inline-start: calc(var(--openbitfun-control-icon-size-sm) / 8 - var(--openbitfun-control-height-sm) / 2);
+  }
+
+  &__section-title {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--openbitfun-control-height-sm);
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-label-md-font-family);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    line-height: var(--openbitfun-type-label-md-line-height);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+  }
+
+  &__capability-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--openbitfun-space-3);
+    min-inline-size: 0;
+  }
+
+  &__capability-card {
+    min-block-size: 112px;
+    cursor: pointer;
+    transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    &:hover { background-color: var(--openbitfun-color-surface-subtle); }
+    &:focus-visible {
+      outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+      outline-offset: var(--openbitfun-focus-offset);
+    }
+  }
+
+  &__card-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    color: var(--openbitfun-color-content-muted);
+  }
+
+  &__card-count {
+    font-size: var(--openbitfun-type-meta-font-size);
+    line-height: var(--openbitfun-type-meta-line-height);
+    font-variant-numeric: tabular-nums;
   }
 
   &__overview {
@@ -29,6 +122,8 @@
 
   &__description {
     margin: 0;
+    text-align: center;
+    text-wrap: balance;
     color: var(--openbitfun-color-content-primary);
     font-family: var(--openbitfun-type-body-md-font-family);
     font-size: var(--openbitfun-type-body-md-font-size);
@@ -40,43 +135,15 @@
 
   &__facts {
     display: flex;
-    flex-direction: column;
-    gap: var(--openbitfun-space-3);
-    margin: 0;
-    font-family: var(--openbitfun-type-body-sm-font-family);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    font-weight: var(--openbitfun-type-body-sm-font-weight);
-    line-height: var(--openbitfun-type-body-sm-line-height);
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
 
-    > div {
-      display: grid;
-      grid-template-columns: 112px minmax(0, 1fr);
-      align-items: start;
-      gap: var(--openbitfun-space-4);
-      min-width: 0;
-    }
-
-    dt {
-      color: var(--openbitfun-color-content-secondary);
-      overflow-wrap: anywhere;
-    }
-
-    dd {
-      min-width: 0;
-      margin: 0;
-      color: var(--openbitfun-color-content-primary);
-      overflow-wrap: anywhere;
-    }
+    > [data-openbitfun-component='status-pill'] { max-inline-size: 100%; }
   }
 
-  &__field-note {
-    display: block;
-    margin-top: var(--openbitfun-space-1);
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  &__count,
-  &__cap-level {
+  &__count {
     font-size: var(--openbitfun-type-meta-font-size);
     line-height: var(--openbitfun-type-meta-line-height);
     color: var(--openbitfun-color-content-muted);
@@ -85,44 +152,6 @@
 
   &__count {
     margin-inline-start: var(--openbitfun-space-2);
-  }
-
-  &__cap-grid {
-    display: flex;
-    flex-direction: column;
-    gap: var(--openbitfun-space-3);
-  }
-
-  &__cap-row {
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-3);
-  }
-
-  &__cap-label {
-    flex: 0 0 72px;
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    line-height: var(--openbitfun-type-label-sm-line-height);
-  }
-
-  &__cap-bar {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-1);
-  }
-
-  &__cap-pip {
-    width: 100%;
-    height: var(--openbitfun-space-1);
-    border-radius: var(--openbitfun-radius-pill);
-    background: var(--openbitfun-color-action-neutral-surface-hover);
-  }
-
-  &__cap-level {
-    flex: 0 0 28px;
-    text-align: end;
   }
 
   &__note,
@@ -149,14 +178,22 @@
   }
 
   &__model-select {
-    width: min(280px, 100%);
-    max-width: 100%;
+    width: 100%;
   }
 }
 
 @container agent-detail-dialog (max-width: 460px) {
-  .agent-detail-dialog__facts > div {
+  .agent-detail-dialog__capability-cards {
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--openbitfun-space-1);
   }
+}
+
+@keyframes openbitfun-agent-detail-page-enter {
+  from { opacity: 0; transform: translateY(var(--openbitfun-motion-distance-sm)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .agent-detail-dialog__body { animation: none; }
+  .agent-detail-dialog__capability-card { transition: none; }
 }

@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJob } from '@/infrastructure/api';
 import TodoItemRow from './TodoItemRow';
+import { formatJobTargetLabel } from '../todoPresentation';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -88,4 +89,10 @@ describe('TodoItemRow actions', () => {
     expect(onDelete).toHaveBeenCalledTimes(1);
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
+});
+
+it('localizes built-in target labels without changing persisted agent IDs', () => {
+  const translate = (key: string, params?: Record<string, unknown>) => key === 'shared:agents.Standard' ? '标准' : `${params?.agentType}`;
+  expect(formatJobTargetLabel(job, translate)).toBe('标准');
+  expect(job.target.kind === 'workspace' && job.target.launch.agentType).toBe('Standard');
 });

@@ -15,6 +15,7 @@ import { isShellToolName } from '../grouping/activityClassification';
 import { getControlHubInput, isControlHubObservation } from './runtimeToolCardModel';
 import { SEMANTIC_BUILTIN_TOOL_NAMES, getBuiltinToolInput, getBuiltinToolAttention, isSemanticBuiltinTool } from './builtinToolCardPolicy';
 import { readInteractionInput, readToolRecord } from './toolInteractionModel';
+import { importedToolCardName } from '../utils/importedToolPresentation';
 
 type ToolCardDefinition = Omit<ToolCardConfig, 'attention' | 'presentation'>;
 
@@ -57,6 +58,7 @@ const PROMINENT_TOOL_CARD_NAMES = new Set([
   'Git',
   'GetFileDiff',
   'InitMiniApp',
+  'PageManage',
   'PageDeploy',
   'PagePublish',
   'GenerativeUI',
@@ -408,6 +410,16 @@ const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
     displayMode: 'compact',
     primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction
   },
+  'DesktopCard': {
+    toolName: 'DesktopCard',
+    displayName: 'Desktop Card',
+    icon: 'UI',
+    requiresConfirmation: false,
+    resultDisplayType: 'summary',
+    description: 'Create, update, show, hide, or delete desktop cards',
+    displayMode: 'standard',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction
+  },
 
   // Code-mode agents (e.g. DeepSeek Harness's PTC preset) answer a step by
   // writing one program instead of calling one tool per action.
@@ -495,6 +507,16 @@ const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
     description: 'Submit an Appearance package to the Skin market for review',
     displayMode: 'standard',
     primaryColor: 'var(--openbitfun-color-accent-hover)'
+  },
+  'PageManage': {
+    toolName: 'PageManage',
+    displayName: 'Manage Pages',
+    icon: 'WEB',
+    requiresConfirmation: false,
+    resultDisplayType: 'detailed',
+    description: 'List, publish, update, delete, and manage access to OpenBitFun Pages',
+    displayMode: 'standard',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.terminal
   },
   'PageDeploy': {
     toolName: 'PageDeploy',
@@ -635,7 +657,11 @@ export function getToolCardConfig(toolName: string, input?: unknown): ToolCardCo
   }
 
   // Match by name or fall back to defaults.
-  return TOOL_CARD_CONFIGS[toolName] || {
+  return TOOL_CARD_CONFIGS[toolName] || getDefaultToolCardConfig(toolName);
+}
+
+function getDefaultToolCardConfig(toolName: string): ToolCardConfig {
+  return {
     ...getToolCardClassification(toolName),
     toolName,
     displayName: `Tool: ${toolName}`,
@@ -652,6 +678,9 @@ export function getToolCardConfig(toolName: string, input?: unknown): ToolCardCo
 export function getToolItemCardConfig(
   toolItem: FlowToolItem,
 ): ToolCardConfig {
+  if (toolItem.importedSource && !importedToolCardName(toolItem)) {
+    return { ...getDefaultToolCardConfig(toolItem.toolName), attention: 'ambient', presentation: 'standard' };
+  }
   const effective = projectEffectiveToolItem(toolItem);
   const config = getToolCardConfig(effective.toolName, effective.toolName === 'OpenBitFunControl'
     ? getOpenBitFunControlInput(effective)
@@ -709,7 +738,7 @@ export function isToolCapsule(toolName: string): boolean {
   return CAPSULE_TOOL_NAMES.has(toolName);
 }
 
-/** Read-only exploration candidates; Shell joins through its own activity policy. */
+/** Low-attention exploration and execution candidates; Shell joins through its own activity policy. */
 export const COLLAPSIBLE_TOOL_NAMES = new Set([
   'Read',
   'LS',
@@ -718,6 +747,7 @@ export const COLLAPSIBLE_TOOL_NAMES = new Set([
   'WebSearch',
   'WebFetch',
   'view_image',
+  'RunCode',
 ]);
 
 /** Read tools (counted in readCount). */
@@ -752,17 +782,17 @@ export function isCollapsibleTool(toolName: string): boolean {
 /**
  * Check whether a FlowItem is collapsible (no context).
  * - Text needs context (use isCollapsibleItemWithContext).
- * - Thinking can be collapsed with explorer tools.
- * - Only explorer tools are collapsible.
+ * - Thinking can be collapsed with low-attention exploration and execution tools.
+ * - Only low-attention exploration and execution tools are collapsible.
  */
 export function isCollapsibleItem(item: FlowItem): boolean {
   // Text: default not collapsed (needs isCollapsibleItemWithContext).
   if (item.type === 'text') return false;
 
-  // Thinking can be collapsed with explorer tools.
+  // Thinking can be collapsed with low-attention exploration and execution tools.
   if (item.type === 'thinking') return true;
 
-  // Tools: only explorer tools are collapsible.
+  // Tools: only low-attention exploration and execution tools are collapsible.
   if (item.type === 'tool') {
     return item.status === 'completed' && (item as FlowToolItem).toolResult?.success !== false && isCollapsibleTool(getEffectiveToolName(item as FlowToolItem));
   }
@@ -787,7 +817,7 @@ export function isCollapsibleItemWithContext(
     // Last item should stay visible.
     if (isLast || !nextItem) return false;
 
-    // If followed by an explorer tool, collapse together.
+    // If followed by a low-attention exploration or execution tool, collapse together.
     if (nextItem.type === 'tool') {
       return isCollapsibleItem(nextItem);
     }
@@ -801,7 +831,7 @@ export function isCollapsibleItemWithContext(
     return false;
   }
 
-  // Tools: only explorer tools are collapsible.
+  // Tools: only low-attention exploration and execution tools are collapsible.
   if (item.type === 'tool') {
     return isCollapsibleItem(item);
   }

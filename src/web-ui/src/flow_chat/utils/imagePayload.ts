@@ -27,7 +27,10 @@ export interface ImagePayload {
   imageDisplayData: ImageDisplayData[];
 }
 
-export async function buildImagePayload(imageContexts: ImageContext[]): Promise<ImagePayload | undefined> {
+export async function buildImagePayload(
+  imageContexts: ImageContext[],
+  options: { requireInline?: boolean } = {},
+): Promise<ImagePayload | undefined> {
   if (imageContexts.length === 0) {
     return undefined;
   }
@@ -38,7 +41,7 @@ export async function buildImagePayload(imageContexts: ImageContext[]): Promise<
   const clipboardImages = imageContexts.filter(ctx => !ctx.isLocal && ctx.dataUrl);
   const uploadedImagePaths = new Map<string, string>();
 
-  if (!acceptsInline && clipboardImages.length > 0) {
+  if (!options.requireInline && !acceptsInline && clipboardImages.length > 0) {
     const uploadResults = await api.invoke<Array<{ id: string; image_path?: string | null }>>(
       'upload_image_contexts',
       {
@@ -70,17 +73,24 @@ export async function buildImagePayload(imageContexts: ImageContext[]): Promise<
   // this host's filesystem (mobile) would receive an attachment with nothing to
   // draw. Read the pixels here, where the path is still resolvable, exactly the
   // way the desktop renderer resolves them for display.
-  const inlinedLocalPixels = await inlineLocalImagePixels(imageContexts);
+  const inlinedLocalPixels = await inlineLocalImagePixels(imageContexts, options.requireInline);
   if (inlinedLocalPixels.size > 0) {
     scope.assertCurrent('inline local image attachments');
   }
   const pixelsFor = (ctx: ImageContext): string | undefined =>
     ctx.dataUrl || inlinedLocalPixels.get(ctx.id);
 
+  // MiniApp code cannot grant itself filesystem access by naming an image
+  // path. Resolve user-selected attachments on their host before crossing the
+  // MiniApp boundary, and fail rather than sending an incomplete prompt.
+  if (options.requireInline && imageContexts.some(ctx => !pixelsFor(ctx))) {
+    throw new Error('Image attachment could not be read. Re-attach the image and retry.');
+  }
+
   return {
     imageContexts: imageContexts.map(ctx => ({
       id: ctx.id,
-      image_path: ctx.isLocal ? ctx.imagePath : uploadedImagePaths.get(ctx.id),
+      image_path: options.requireInline ? undefined : ctx.isLocal ? ctx.imagePath : uploadedImagePaths.get(ctx.id),
       // Retain pixels for durable host storage and Detached Dispatch. Older
       // peer hosts still receive their upload path through the legacy branch.
       data_url: pixelsFor(ctx),
@@ -103,13 +113,13 @@ export async function buildImagePayload(imageContexts: ImageContext[]): Promise<
   };
 }
 
-async function inlineLocalImagePixels(imageContexts: ImageContext[]): Promise<Map<string, string>> {
+async function inlineLocalImagePixels(imageContexts: ImageContext[], required = false): Promise<Map<string, string>> {
   const inlined = new Map<string, string>();
   const pending = imageContexts.filter(ctx =>
     ctx.isLocal
     && ctx.imagePath
     && !ctx.dataUrl
-    && !(typeof ctx.fileSize === 'number' && ctx.fileSize > MAX_INLINE_LOCAL_IMAGE_BYTES)
+    && (required || !(typeof ctx.fileSize === 'number' && ctx.fileSize > MAX_INLINE_LOCAL_IMAGE_BYTES))
   );
 
   await Promise.all(pending.map(async ctx => {
@@ -122,6 +132,7 @@ async function inlineLocalImagePixels(imageContexts: ImageContext[]): Promise<Ma
         inlined.set(ctx.id, `data:${ctx.mimeType || getMimeTypeFromFilename(imagePath)};base64,${base64}`);
       }
     } catch (cause) {
+      if (required) throw cause;
       // The path still travels with the attachment, so hosts that can read it
       // keep working. Only pixel-only clients lose the preview.
       log.warn('Failed to inline local image pixels', { imagePath, error: cause });
@@ -129,4 +140,10 @@ async function inlineLocalImagePixels(imageContexts: ImageContext[]): Promise<Ma
   }));
 
   return inlined;
+}
+
+/** Image pills are presentation markers; pixels travel in imageContexts. */
+export function stripImageContextTags(text: string): string {
+  return text.replace(/#img:[^\s\n]+\s?/g, '')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }

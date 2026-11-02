@@ -51,9 +51,7 @@ describe('appearance overlay host', () => {
     expect(systemTokens.layer.overlayHost.$value).toBeGreaterThan(systemTokens.layer.overlay.$value);
     expect(readSource('src/shared/notification-system/components/NotificationContainer.tsx')).toContain('<OverlayRegion>');
     expect(readSource('src/shared/notification-system/components/NotificationContainer.tsx')).toContain('<OverlayLayer');
-    expect(readSource('src/shared/announcement-system/components/AnnouncementToastStack.tsx')).toContain('<Portal passive');
     expect(readSource('src/shared/notification-system/components/NotificationContainer.scss')).not.toMatch(/z-index:/);
-    expect(readSource('src/shared/announcement-system/styles/AnnouncementToast.scss')).not.toMatch(/--openbitfun-layer-notification/);
   });
 
   it.each([

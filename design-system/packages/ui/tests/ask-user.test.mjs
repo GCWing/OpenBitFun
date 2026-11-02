@@ -121,6 +121,41 @@ test("AskUser disclosure hides editable controls until expanded and retains the 
   assert.match(expanded, /data-openbitfun-part="footer"/);
 });
 
+test("AskUser keeps a wait affordance in the header for running and unbounded waits", () => {
+  const base = {
+    navigation: {
+      backLabel: "Back",
+      nextLabel: "Next",
+      progressLabel: (current, total) => `Question ${current} of ${total}`,
+      selectionLabel: (selected, total) => `${selected} of ${total} selected`,
+    },
+    questions,
+    state: "asking",
+    submitLabel: "Submit",
+  };
+
+  const counting = renderToStaticMarkup(createElement(AskUser, {
+    ...base,
+    waitTiming: {
+      cancelLabel: "Cancel countdown",
+      onCancel: () => undefined,
+      remainingLabel: "2:31",
+    },
+  }));
+  assert.match(counting, /data-counting="true"[^>]*data-openbitfun-part="wait-timing"/);
+  assert.match(counting, /<button[^>]*aria-label="Cancel countdown"[\s\S]*role="timer">2:31/);
+  assert.match(counting, /aria-label="Cancel countdown"[\s\S]*data-openbitfun-name="xmark"/);
+  assert.doesNotMatch(counting, /data-openbitfun-part="wait-settled"/);
+
+  const settled = renderToStaticMarkup(createElement(AskUser, {
+    ...base,
+    waitTiming: { settledLabel: "No time limit" },
+  }));
+  assert.match(settled, /data-counting="false"[^>]*data-openbitfun-part="wait-timing"/);
+  assert.match(settled, /data-openbitfun-part="wait-settled"[^>]*>No time limit/);
+  assert.doesNotMatch(settled, /role="timer"|aria-label="Cancel countdown"/);
+});
+
 test("AskUser styles use public semantic and component geometry tokens", async () => {
   const styles = await readFile(new URL("../dist/styles.css", import.meta.url), "utf8");
 

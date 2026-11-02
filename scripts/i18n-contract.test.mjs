@@ -217,7 +217,7 @@ test('web-ui runtime keeps locale namespaces lazy outside its bootstrap set', ()
   const webI18nSource = readText('src/web-ui/src/infrastructure/i18n/core/I18nService.ts');
 
   assert.match(webI18nSource, /WEB_UI_BOOTSTRAP_NAMESPACES/, 'Web UI should declare the small eager namespace set');
-  assert.match(webI18nSource, /import\.meta\.glob\('\.\.\/\.\.\/\.\.\/locales\/\*\*\/\*\.json'/, 'Web UI should keep a lazy namespace glob for non-bootstrap resources');
+  assert.match(webI18nSource, /import\.meta\.glob\(\[\s*'\.\.\/\.\.\/\.\.\/locales\/\*\*\/\*\.json'/, 'Web UI should keep a lazy namespace glob for non-bootstrap resources');
   const lazyGlobBlock = webI18nSource.match(/const lazyLocaleModules = import\.meta\.glob\([\s\S]*?\) as/)?.[0] ?? '';
   assert.doesNotMatch(
     lazyGlobBlock,

@@ -16,6 +16,7 @@ import { Checkbox } from "../../components/Checkbox";
 import { Icon } from "../../components/Icon";
 import { Input } from "../../components/Input";
 import { Radio } from "../../components/Radio";
+import { Tooltip } from "../../components/Tooltip";
 import { classNames } from "../../internal/classNames";
 import styles from "./AskUser.module.css";
 
@@ -65,6 +66,20 @@ export interface AskUserNavigation {
   selectionLabel: (selected: number, total: number) => ReactNode;
 }
 
+/**
+ * Header-right wait timing. A running host deadline renders a dismissible
+ * countdown; an unbounded wait renders the settled label instead so the header
+ * never loses its timing affordance.
+ */
+export interface AskUserWaitTiming {
+  cancelLabel?: string;
+  cancelDisabled?: boolean;
+  hint?: ReactNode;
+  onCancel?: () => void;
+  remainingLabel?: ReactNode;
+  settledLabel?: ReactNode;
+}
+
 export interface AskUserProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "children" | "onChange"> {
   answers?: AskUserAnswers;
@@ -95,6 +110,7 @@ export interface AskUserProps
   submittingLabel?: ReactNode;
   summaryDetail?: ReactNode;
   summaryLabel?: ReactNode;
+  waitTiming?: AskUserWaitTiming;
 }
 
 function hasAnswer(
@@ -146,6 +162,7 @@ export const AskUser = forwardRef<HTMLDivElement, AskUserProps>(function AskUser
   submittingLabel,
   summaryDetail,
   summaryLabel,
+  waitTiming,
   ...props
 }, ref) {
   const instanceId = useId();
@@ -281,6 +298,38 @@ export const AskUser = forwardRef<HTMLDivElement, AskUserProps>(function AskUser
       size="md"
     />
   );
+  const hasWaitCountdown = waitTiming?.onCancel !== undefined
+    && waitTiming.remainingLabel !== undefined
+    && waitTiming.remainingLabel !== null;
+  const hasSettledWait = waitTiming?.settledLabel !== undefined
+    && waitTiming.settledLabel !== null;
+  const waitNode = hasWaitCountdown && waitTiming
+    ? (
+      <span className={styles.waitTiming} data-counting="true" data-openbitfun-part="wait-timing">
+        <Tooltip content={waitTiming.hint} disabled={!waitTiming.hint} placement="top">
+          <Button
+            aria-label={waitTiming.cancelLabel}
+            disabled={waitTiming.cancelDisabled}
+            labelBehavior="static"
+            onClick={waitTiming.onCancel}
+            size="xs"
+            trailingIcon={<Icon name="xmark" size="xs" />}
+            variant="text"
+          >
+            <span role="timer">{waitTiming.remainingLabel}</span>
+          </Button>
+        </Tooltip>
+      </span>
+    )
+    : hasSettledWait && waitTiming
+      ? (
+        <span className={styles.waitTiming} data-counting="false" data-openbitfun-part="wait-timing">
+          <span className={styles.waitSettled} data-openbitfun-part="wait-settled">
+            {waitTiming.settledLabel}
+          </span>
+        </span>
+      )
+      : null;
 
   return (
     <div
@@ -371,6 +420,7 @@ export const AskUser = forwardRef<HTMLDivElement, AskUserProps>(function AskUser
               )}
             </span>
             <span className={styles.headerTrailing}>
+              {waitNode}
               {headerTrailing}
               {activeQuestionIndex > 0 && (
                 <span data-openbitfun-part="back">
@@ -417,7 +467,9 @@ export const AskUser = forwardRef<HTMLDivElement, AskUserProps>(function AskUser
             {headerIcon}
             <OverflowText>{header ?? disclosure?.label}</OverflowText>
           </span>
-          {headerTrailing !== undefined && <span className={styles.headerTrailing}>{headerTrailing}</span>}
+          {(waitNode || (headerTrailing !== undefined && headerTrailing !== null)) && (
+            <span className={styles.headerTrailing}>{waitNode}{headerTrailing}</span>
+          )}
           {disclosure && (
             <span className={styles.summaryAction} data-openbitfun-icon-slot="true">
               <Icon name="chevron-up" size="md" />

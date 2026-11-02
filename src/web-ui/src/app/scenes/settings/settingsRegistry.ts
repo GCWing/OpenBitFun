@@ -1,4 +1,5 @@
 import type { I18nNamespace } from '@/infrastructure/i18n/types';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { lazyWithRecovery, type RecoverableLazyComponent } from '@/shared/utils/lazyWithRecovery';
 import type { ComponentType } from 'react';
 import type {
@@ -42,6 +43,8 @@ export interface SettingsPageManifest {
   sections?: readonly SettingsSectionManifest[];
   load: () => Promise<SettingsPageModule>;
   component: RecoverableLazyComponent<ComponentType<SettingsPageProps>>;
+  /** Filled by preload so a warm destination does not suspend on React.lazy's first render. */
+  resolvedComponent?: ComponentType<SettingsPageProps>;
 }
 
 type SettingsPageDefinition = Omit<SettingsPageManifest, 'component'>;
@@ -84,6 +87,9 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     keywords: [
       'theme', 'font', 'size', 'motion', 'animation',
       'appearance pack', 'skin', 'import',
+      'session', 'panel', 'layout', 'overlay',
+      'chat', 'content', 'width', 'resize',
+      'sidebar', 'navigation', 'pin', 'order',
     ],
     namespaces: ['settings/appearance', 'settings/application'],
     searchPhrases: [
@@ -92,7 +98,21 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       phrase('settings/appearance', 'package.title'),
       phrase('settings/appearance', 'package.description'),
       phrase('settings/application', 'appearance.fontSize.title'),
+      phrase('settings/appearance', 'sessionPanel.title'),
+      phrase('settings/appearance', 'sessionPanel.displayMode'),
+      phrase('settings/appearance', 'sessionPanel.split'),
+      phrase('settings/appearance', 'sessionPanel.overlay'),
+      phrase('settings/appearance', 'contentWidth.title'),
+      phrase('settings/appearance', 'contentWidth.label'),
+      phrase('settings/appearance', 'sidebar.title'),
+      phrase('settings/appearance', 'sidebar.available'),
     ],
+    sections: [{
+      id: 'sidebar-navigation',
+      labelKey: 'navigation.sections.sidebar-navigation',
+      keywords: ['sidebar', 'navigation', 'pin', 'order'],
+      searchPhrases: [phrase('settings/appearance', 'sidebar.title'), phrase('settings/appearance', 'sidebar.available')],
+    }],
     load: () => import('./pages/application/AppearanceSettingsPage'),
   }),
   definePage({
@@ -100,15 +120,17 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     categoryId: 'application',
     labelKey: 'navigation.pages.pet.label',
     descriptionKey: 'navigation.pages.pet.description',
-    keywords: ['pet', 'companion', 'desktop', 'input', 'sprite'],
+    keywords: ['pet', 'companion', 'desktop', 'input', 'sprite', 'desktop cards', 'widget'],
     namespaces: ['settings', 'settings/runtime', 'settings/agentic-tools', 'settings/voice-input'],
     searchPhrases: [
       phrase('settings/runtime', 'features.pet.title'),
       phrase('settings/runtime', 'features.pet.petDescription'),
+      phrase('settings/runtime', 'features.desktopCards.title'),
     ],
     sections: [
       { id: 'voice-call', labelKey: 'navigation.sections.voice-call', keywords: ['realtime', 'voice call', 'assistant', 'volcengine'], searchPhrases: [phrase('settings/voice-input', 'voiceCall.title'), phrase('settings/voice-input', 'voiceCall.description')] },
       { id: 'pet', labelKey: 'navigation.sections.pet', keywords: ['pet', 'companion'], searchPhrases: [phrase('settings/runtime', 'features.pet.title')] },
+      { id: 'desktop-cards', labelKey: 'navigation.sections.desktop-cards', keywords: ['desktop cards', 'widget', 'reminder', 'countdown'], searchPhrases: [phrase('settings/runtime', 'features.desktopCards.title'), phrase('settings/runtime', 'features.desktopCards.subtitle')] },
     ],
     load: () => import('./pages/application/PetAssistantSettingsPage'),
   }),
@@ -122,16 +144,22 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     searchPhrases: [],
     sections: [
       {
-        id: 'text-selection',
-        labelKey: 'navigation.sections.text-selection',
-        keywords: ['selection', 'annotation', 'excerpt', 'toolbar', 'popup', 'flowchat'],
-        searchPhrases: [phrase('settings/application', 'textSelection.title'), phrase('settings/application', 'textSelection.autoShowToolbar'), phrase('settings/application', 'textSelection.autoShowToolbarDescription')],
-      },
-      {
         id: 'voice',
         labelKey: 'navigation.sections.voice',
         keywords: ['voice', 'speech', 'microphone', 'dictation', 'transcription'],
         searchPhrases: [phrase('settings/voice-input', 'title'), phrase('settings/voice-input', 'subtitle')],
+      },
+      {
+        id: 'message-sending',
+        labelKey: 'navigation.sections.message-sending',
+        keywords: ['message', 'send', 'queue', 'immediate', 'steering', 'flowchat'],
+        searchPhrases: [phrase('settings/application', 'messageSending.title'), phrase('settings/application', 'messageSending.duringTurn'), phrase('settings/application', 'messageSending.description')],
+      },
+      {
+        id: 'text-selection',
+        labelKey: 'navigation.sections.text-selection',
+        keywords: ['selection', 'annotation', 'excerpt', 'toolbar', 'popup', 'flowchat'],
+        searchPhrases: [phrase('settings/application', 'textSelection.title'), phrase('settings/application', 'textSelection.autoShowToolbar'), phrase('settings/application', 'textSelection.autoShowToolbarDescription')],
       },
       {
         id: 'shortcuts',
@@ -147,15 +175,15 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     categoryId: 'ai',
     labelKey: 'navigation.pages.models.label',
     descriptionKey: 'navigation.pages.models.description',
-    keywords: ['model', 'provider', 'api key', 'base url', 'proxy', 'network', 'subscription', 'pool', 'tag', 'smart', 'battery'],
-    namespaces: ['settings/models', 'settings/default-model', 'components'],
+    keywords: ['model', 'provider', 'api key', 'base url', 'proxy', 'network', 'subscription', 'pool', 'tag', 'smart', 'battery', 'image', 'generation', 'picture', 'illustration', 'dashscope', 'dall-e', 'media', 'art'],
+    namespaces: ['settings/models', 'settings/default-model', 'settings/media', 'components'],
     searchPhrases: [
       phrase('settings/models', 'title'),
       phrase('settings/models', 'sections.acquisition'),
       phrase('settings/models', 'sections.selectionModes'),
       phrase('settings/models', 'sections.pool'),
       phrase('settings/models', 'selectionModes.smart'),
-      phrase('settings/models', 'selectionModes.battery'),
+      phrase('settings/models', 'pools.title'),
       phrase('settings/models', 'pool.tagsLabel'),
       phrase('settings/default-model', 'sections.defaults'),
       phrase('settings/default-model', 'sections.providers'),
@@ -163,6 +191,11 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       phrase('settings/models', 'subscriptionAuth.sectionTitle'),
       phrase('settings/models', 'modelsDevCatalog.title'),
       phrase('settings/models', 'streamIdleTimeout.title'),
+      phrase('settings/media', 'title'),
+      phrase('settings/media', 'subtitle'),
+      phrase('settings/media', 'default.label'),
+      phrase('settings/media', 'dialect.openaiImages.name'),
+      phrase('settings/media', 'dialect.dashscopeNative.name'),
     ],
     load: () => import('./pages/ai/ModelSettingsPage'),
   }),
@@ -209,11 +242,12 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     categoryId: 'ai',
     labelKey: 'navigation.pages.execution.label',
     descriptionKey: 'navigation.pages.execution.description',
-    keywords: ['tool', 'timeout', 'parallel', 'review', 'json repair'],
+    keywords: ['tool', 'presentation', 'ptc', 'timeout', 'parallel', 'review', 'json repair'],
     namespaces: ['settings', 'settings/runtime', 'settings/agentic-tools', 'settings/review-capacity', 'settings/models'],
     searchPhrases: [
       phrase('settings/runtime', 'toolExecution.sectionTitle'),
       phrase('settings/runtime', 'deferredToolLoading.sectionTitle'),
+      phrase('settings/runtime', 'toolPresentation.mode'),
       phrase('settings/review-capacity', 'capacity.title'),
       phrase('settings/models', 'toolArgumentJsonRepair.title'),
     ],
@@ -294,11 +328,24 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     load: () => import('./pages/development/WorkspaceGitSettingsPage'),
   }),
   definePage({
+    id: 'tools.external-import',
+    categoryId: 'tools',
+    labelKey: 'navigation.pages.externalImport.label',
+    descriptionKey: 'navigation.pages.externalImport.description',
+    keywords: ['external import', 'integrations', 'ecosystem', 'opencode', 'claude code', 'codex', 'zcode'],
+    namespaces: ['scenes/ecosystem-compatibility', 'settings/external-apps', 'settings/acp-agents'],
+    searchPhrases: [
+      phrase('scenes/ecosystem-compatibility', 'title'),
+      phrase('scenes/ecosystem-compatibility', 'applications.title'),
+    ],
+    load: () => import('./pages/tools/ExternalImportSettingsPage'),
+  }),
+  definePage({
     id: 'tools.web-search',
     categoryId: 'tools',
     labelKey: 'navigation.pages.webSearch.label',
     descriptionKey: 'navigation.pages.webSearch.description',
-    keywords: ['web search', 'exa', 'tavily', 'http', 'provider', 'api key'],
+    keywords: ['web search', 'exa', 'tavily', 'deepseek', 'http', 'provider', 'api key'],
     namespaces: ['settings/web-search'],
     searchPhrases: [
       phrase('settings/web-search', 'title'),
@@ -459,6 +506,7 @@ export const DEFAULT_SETTINGS_PAGE_ID: SettingsPageId = 'application.general';
 
 const PAGE_BY_ID = new Map(SETTINGS_PAGE_MANIFESTS.map((page) => [page.id, page]));
 const readyPages = new Set<SettingsPageId>();
+const pendingPages = new Map<SettingsPageId, Promise<void>>();
 
 export function getSettingsPageManifest(pageId: SettingsPageId): SettingsPageManifest {
   return PAGE_BY_ID.get(pageId) ?? PAGE_BY_ID.get(DEFAULT_SETTINGS_PAGE_ID)!;
@@ -474,16 +522,36 @@ export function isSettingsPageReady(pageId: SettingsPageId): boolean {
 
 async function preloadNamespaces(namespaces: readonly I18nNamespace[]): Promise<void> {
   const { i18nService } = await import('@/infrastructure/i18n/core/I18nService');
-  await Promise.all(namespaces.map((namespace) => i18nService.loadNamespace(namespace).catch(() => undefined)));
+  await Promise.all(namespaces.map((namespace) => i18nService.loadNamespace(namespace)));
 }
 
 export function preloadSettingsShell(): Promise<void> {
   return preloadNamespaces(['settings']);
 }
 
-export async function preloadSettingsPage(pageId: SettingsPageId): Promise<void> {
-  if (readyPages.has(pageId)) return;
+export function preloadSettingsPage(pageId: SettingsPageId): Promise<void> {
+  const scope = getActiveSurfaceScope();
+  const prefetchData = () => {
+    void import('./settingsDataPreload').then(({ preloadSettingsData }) => {
+      if (scope.isCurrent()) return preloadSettingsData(pageId);
+    }).catch(() => undefined);
+  };
+  if (readyPages.has(pageId)) {
+    prefetchData();
+    return Promise.resolve();
+  }
+  const pending = pendingPages.get(pageId);
+  if (pending) return pending;
   const page = getSettingsPageManifest(pageId);
-  await Promise.all([page.load(), preloadNamespaces(page.namespaces)]);
-  readyPages.add(pageId);
+  const namespaces = preloadNamespaces(['settings', ...page.namespaces]);
+  // Legacy configuration projections can use translated labels while normalizing.
+  void namespaces.then(prefetchData).catch(() => undefined);
+  const request = Promise.all([page.load(), namespaces])
+    .then(([module]) => {
+      page.resolvedComponent = module.default;
+      readyPages.add(pageId);
+    })
+    .finally(() => { pendingPages.delete(pageId); });
+  pendingPages.set(pageId, request);
+  return request;
 }

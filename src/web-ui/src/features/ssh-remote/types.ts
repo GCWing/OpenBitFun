@@ -2,6 +2,8 @@
  * SSH Remote Feature - Types
  */
 
+export type WorkspaceConnectionTarget = 'ssh' | 'remoteDocker' | 'localDocker' | 'containerSshd' | 'wsl';
+
 export interface SSHConnectionConfig {
   id: string;
   name: string;

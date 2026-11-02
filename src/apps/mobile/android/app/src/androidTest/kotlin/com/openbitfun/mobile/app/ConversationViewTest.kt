@@ -607,6 +607,7 @@ class ConversationViewTest {
         showRetry = false,
         error = null,
         live = false,
+        timestampMs = null,
     )
 
     private fun string(resource: Int): String =

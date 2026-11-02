@@ -1,4 +1,4 @@
-import { LayersPlusIcon } from "@openbitfun/ui";
+import { Icon, LayersPlusIcon } from "@openbitfun/ui";
 import { toolsForComponent } from '@openbitfun/flow-chat-presentation/registry';
 import { semanticToolCardPreviews } from './SemanticToolCardPreview';
 import { createScenarioClock, execScenarios, execSnapshot, type ExecToolName } from '@openbitfun/flow-chat-presentation/scenarios';
@@ -35,7 +35,6 @@ import {
   Monitor,
   MousePointer,
   Plus,
-  Pencil,
   Rocket,
   Search,
   SearchCheck,
@@ -257,7 +256,7 @@ function ChatComposerPreview({ interactive, state }: PreviewProps) {
                   />
                   <IconButton
                     aria-label="Edit"
-                    icon={<Pencil />}
+                    icon={<Icon name="edit" />}
                     size="xs"
                   />
                 </ChatComposerQueueItemActions>

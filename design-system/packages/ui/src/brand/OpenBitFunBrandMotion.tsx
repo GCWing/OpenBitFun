@@ -5,7 +5,9 @@ import markSource from "./assets/openbitfun-mark.svg?raw";
 import styles from "./brand.module.css";
 
 const CONTOUR_COUNT = 15;
-const FLOW_CYCLE_MS = 18000;
+const FLOW_CYCLE_MS = 10000;
+const FLOW_STRAND_CYCLE_MS = 7600;
+const FLOW_STRAND_STAGGER_MS = 380;
 const COUNTER_ROTATE_CYCLE_MS = 1000;
 const COUNTER_ROTATE_TURN_MS = 420;
 const CONSTRUCTION_TIMING = {
@@ -19,11 +21,31 @@ const CONSTRUCTION_TIMING = {
   strokeFade: 80,
 };
 const CONSTRUCTION_EASING = "cubic-bezier(0.35, 0, 0.65, 1)";
+// A comet rather than a dashes trail: six nested arcs whose opacities ramp from a barely-there
+// tail to a brighter head, so the highlight fades in and out along the strand instead of
+// chopping a hole in it. Two constraints come from the geometry: the tail stays long because
+// the strands are barely more than a pixel wide, and the head stops short of opaque because a
+// fully blown-out hairline reads as a break in the ribbon rather than as light on metal.
 const FLOW_LAYERS = [
-  { length: 34, opacity: 0.12 },
-  { length: 26, opacity: 0.14 },
-  { length: 18, opacity: 0.36 },
+  { length: 34, opacity: 0.05 },
+  { length: 28, opacity: 0.09 },
+  { length: 22, opacity: 0.15 },
+  { length: 16, opacity: 0.24 },
+  { length: 11, opacity: 0.38 },
+  { length: 6, opacity: 0.6 },
 ];
+
+/** The edge contours stay darker than the middle of the ribbon. */
+function strandOpacity(index: number): number {
+  return index === 0 || index === CONTOUR_COUNT - 1 ? 0.58 : 0.34;
+}
+
+/** Light travels across the ribbon: the middle of the form lifts well above its resting
+ * weight and swells slightly, which is what makes the sweep read as gloss on a body rather
+ * than as a row of lines fading in and out. */
+const STRAND_LIGHT_PEAK = 2.6;
+const STRAND_REST_WIDTH = 1.15;
+const STRAND_LIT_WIDTH = 1.75;
 
 type Point = [number, number];
 
@@ -166,13 +188,30 @@ export function OpenBitFunBrandMotion({ active = true, size = 192, label, varian
           ], { duration: COUNTER_ROTATE_CYCLE_MS, iterations: Infinity, easing: "linear" });
         });
       }
-      return Array.from(svg.querySelectorAll('[data-brand-flow]')).map((strand, index) => {
+      // Two motions, deliberately out of step: a bright wave travels across the ribbon
+      // (strand to strand) while the highlights travel along it (contour to contour).
+      const waves = Array.from(svg.querySelectorAll('[data-brand-strand]')).map((strand, index) => {
+        const base = strandOpacity(index);
+        return strand.animate([
+          { opacity: base, strokeWidth: `${STRAND_REST_WIDTH}` },
+          { opacity: Math.min(1, base * STRAND_LIGHT_PEAK), strokeWidth: `${STRAND_LIT_WIDTH}` },
+          { opacity: base, strokeWidth: `${STRAND_REST_WIDTH}` },
+        ], {
+          duration: FLOW_STRAND_CYCLE_MS,
+          iterations: Infinity,
+          easing: 'ease-in-out',
+          // Offset each contour's beat so the ribbon brightens inward to outward.
+          delay: -index * FLOW_STRAND_STAGGER_MS,
+        });
+      });
+      const sweeps = Array.from(svg.querySelectorAll('[data-brand-flow]')).map((strand, index) => {
         const start = -index * 3;
         return strand.animate([
           { strokeDashoffset: String(start) },
           { strokeDashoffset: String(start - 100) },
         ], { duration: FLOW_CYCLE_MS, iterations: Infinity, easing: 'linear' });
       });
+      return [...waves, ...sweeps];
     });
   }, [active, variant]);
 
@@ -212,11 +251,12 @@ export function OpenBitFunBrandMotion({ active = true, size = 192, label, varian
         </g>
       )) : contours.map((path, index) => (
         <g key={index}>
-          <path d={path} opacity={index === 0 || index === CONTOUR_COUNT - 1 ? 0.58 : 0.34} />
+          <path d={path} data-brand-strand="true" opacity={strandOpacity(index)} />
           <g data-brand-flow="true" strokeDashoffset={-index * 3}>
             {FLOW_LAYERS.map(layer => (
               <path
                 key={layer.length}
+                className={styles.flowSheen}
                 d={path}
                 pathLength={100}
                 strokeDasharray={`${layer.length / 2} ${100 - layer.length} ${layer.length / 2} 0`}

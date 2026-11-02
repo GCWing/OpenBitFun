@@ -194,6 +194,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::ZhCN,
+        key: "sessions.new",
+        value: "新会话",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
         key: "statuses.cancelled",
         value: "已取消",
     },
@@ -251,6 +256,26 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         locale: LocaleId::ZhCN,
         key: "tools.write",
         value: "写入",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.close",
+        value: "关闭应用窗口",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.maximize",
+        value: "最大化应用窗口",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.minimize",
+        value: "最小化应用窗口",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.restore",
+        value: "还原应用窗口",
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::ZhTW,
@@ -379,6 +404,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::ZhTW,
+        key: "sessions.new",
+        value: "新會話",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
         key: "statuses.cancelled",
         value: "已取消",
     },
@@ -436,6 +466,26 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         locale: LocaleId::ZhTW,
         key: "tools.write",
         value: "寫入",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.close",
+        value: "關閉應用視窗",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.maximize",
+        value: "最大化應用視窗",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.minimize",
+        value: "最小化應用視窗",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.restore",
+        value: "還原應用視窗",
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::EnUS,
@@ -564,6 +614,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::EnUS,
+        key: "sessions.new",
+        value: "New Session",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
         key: "statuses.cancelled",
         value: "Cancelled",
     },
@@ -621,6 +676,26 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         locale: LocaleId::EnUS,
         key: "tools.write",
         value: "Write",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.close",
+        value: "Close app window",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.maximize",
+        value: "Maximize app window",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.minimize",
+        value: "Minimize app window",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.restore",
+        value: "Restore app window",
     },
 ];
 

@@ -5,6 +5,8 @@ import { create } from 'zustand';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import type { InstalledMarketOrigin } from '@/infrastructure/api/service-api/MiniAppMarketAPI';
+import type { ImageContextData } from '@/infrastructure/api/service-api/ImageContextTypes';
+import type { ContextItem } from '@/shared/types/context';
 
 /**
  * Window event dispatched after the shared ChatInput routes a submission to a
@@ -22,7 +24,9 @@ export interface MiniAppComposerMessageDetail {
   source?: 'composer' | 'realtime_voice';
   text: string;
   displayText?: string;
-  contexts?: unknown[];
+  contexts?: ContextItem[];
+  /** Host-prepared inline pixels, forwarded to app.agent.run without filesystem authority. */
+  imageContexts?: ImageContextData[];
   composerPresentation?: unknown;
   sessionId?: string;
   workspacePath?: string;
@@ -161,6 +165,7 @@ export interface MiniAppComposerClaim {
 
 interface MiniAppState {
   apps: MiniAppMeta[];
+  catalogSurfaceId: string | null;
   loading: boolean;
   /** App IDs whose JS workers are currently running. */
   runningWorkerIds: string[];
@@ -198,6 +203,7 @@ interface MiniAppState {
 
 export const useMiniAppStore = create<MiniAppState>((set) => ({
   apps: [],
+  catalogSurfaceId: null,
   loading: false,
   runningWorkerIds: [],
   customizingAppIds: [],
@@ -209,6 +215,7 @@ export const useMiniAppStore = create<MiniAppState>((set) => ({
       const validIds = new Set(apps.map((app) => app.id));
       return {
         apps,
+        catalogSurfaceId: getActiveSurfaceId(),
         runningWorkerIds: state.runningWorkerIds.filter((id) => validIds.has(id)),
         customizingAppIds: state.customizingAppIds.filter((id) => validIds.has(id)),
         composerClaims: Object.fromEntries(

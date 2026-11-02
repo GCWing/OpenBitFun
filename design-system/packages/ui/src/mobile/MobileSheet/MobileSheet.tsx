@@ -14,6 +14,7 @@ import { useDismissibleLayer } from "../../overlay/useDismissibleLayer";
 import { useFocusScope } from "../../overlay/useFocusScope";
 import { usePresence } from "../../overlay/usePresence";
 import type { OverlayDismissReason } from "../../overlay/types";
+import { inertProps } from "../../internal/inert";
 import styles from "./MobileSheet.module.css";
 
 const EXIT_DURATION_MS = 180;
@@ -109,7 +110,7 @@ export const MobileSheet = forwardRef<HTMLDivElement, MobileSheetProps>(
         >
           <div
             {...surfaceProps}
-            {...(!open ? { inert: "" } : {})}
+            {...inertProps(!open)}
             aria-describedby={ariaDescribedBy ?? (description ? descriptionId : undefined)}
             aria-hidden={exiting || undefined}
             aria-label={ariaLabel}

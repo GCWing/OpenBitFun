@@ -33,6 +33,13 @@ The same entry publishes `ChatComposer`, the shared context-band and
 compact/expanded input anatomy used by product composers without importing
 their stores, localized menus, editor, model, voice, or host actions.
 
+`SetupWizard` publishes the guided configuration pattern used by agent creation:
+a split header, tinted explanatory pane, one current-step indicator, form/editor
+viewport and footer actions. It supports any consumer-controlled sequence and
+stacks by available container width. Design Lab includes a working three-stage
+example; the [UI package guide](packages/ui/README.md#guided-configuration)
+documents validation, localized guidance, dialog labelling and scroll ownership.
+
 FlowChat tool-card frameworks are published from `@openbitfun/ui/flow-chat` as
 `AmbientToolCard` and `ProminentToolCard`. The names describe whether a tool
 result should stay in the conversational background or receive deliberate user

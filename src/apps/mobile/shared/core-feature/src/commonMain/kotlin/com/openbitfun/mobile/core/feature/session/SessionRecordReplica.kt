@@ -5,12 +5,40 @@ import com.openbitfun.mobile.core.protocol.*
 import kotlinx.serialization.json.*
 
 /** Revisioned canonical records retain the complete host DTO; rendering is a mobile adapter. */
-internal class SessionRecordReplica(private val sessionId: String) {
+internal class SessionRecordReplica(val sessionId: String) {
     private data class Versioned(val revision: Long, val value: JsonObject, val authoritative: Boolean = false)
     private val turns = linkedMapOf<String, Versioned>()
     private val rounds = linkedMapOf<String, Versioned>()
     private val items = linkedMapOf<String, Versioned>()
     private val controls = mutableMapOf<String, Pair<String, RemoteToolStatusResponse>>()
+    private var suggestion: Pair<String, String>? = null
+
+    /** Optional host hints are ephemeral and never become transcript records. */
+    fun applyPromptSuggestion(payload: JsonObject) {
+        val source = (payload["sourceTurnId"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val text = (payload["suggestion"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        val owner = payload["sessionId"]
+        if (owner != null && (owner as? JsonPrimitive)?.contentOrNull != sessionId) return
+        val latest = latestTurn()
+        if (latest != null && latest.key != source) return
+        if (!source.isNullOrEmpty() && !text.isNullOrEmpty()) suggestion = source to text
+    }
+
+    fun clearPromptSuggestion() { suggestion = null }
+
+    /** Replayed older pages cannot revive a hint superseded by a newer turn. */
+    fun promptSuggestion(): String? {
+        val hint = suggestion ?: return null
+        val latest = latestTurn()
+        if (latest == null || latest.key != hint.first || latest.value.value.string("status") != "completed") {
+            suggestion = null
+            return null
+        }
+        return hint.second
+    }
+
+    private fun latestTurn() = turns.filter { (id, record) -> record.revision > (tombstones["turn/$id"] ?: -1) }
+        .maxByOrNull { it.value.value.number("turnIndex") }
 
     /**
      * True until the stream has delivered a record of its own.
@@ -215,7 +243,7 @@ internal class SessionRecordReplica(private val sessionId: String) {
         val shownItems = rendered.map { item -> item.tool?.id?.let { id -> controlTools.firstOrNull { it.id == id } }?.let { item.copy(tool = it) } ?: item } +
             controlTools.filter { tool -> rendered.none { it.tool?.id == tool.id } }.map { ChatMessageItemResponse(type = "tool", tool = it) }
         return listOf(RemoteResponseMapper.chatMessage(ChatMessageResponse(id = user.string("id"), role = "user", content = user.string("content"), turnId = turnId, metadata = user["metadata"], images = userImages(user), timestamp = user.string("timestamp"))),
-            RemoteResponseMapper.chatMessage(ChatMessageResponse(id = "${turnId}_assistant", role = "assistant", turnId = turnId,
+            RemoteResponseMapper.chatMessage(ChatMessageResponse(id = "${turnId}_assistant", role = "assistant", turnId = turnId, timestamp = turn.string("timestamp"),
                 content = rendered.filter { it.type == "text" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
                 thinking = rendered.filter { it.type == "thinking" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
                 items = shownItems, status = when (turn.string("status")) { "inprogress" -> "streaming"; "error" -> "failed"; else -> turn.string("status") }, error = turn.string("error"), metadata = turn)))

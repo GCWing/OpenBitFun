@@ -83,11 +83,11 @@ impl ForwardRuntime {
         // Saturate rather than wrap. The counter should never reach zero with a
         // connection still open, but underflowing it would report four billion
         // active connections in the UI and there is no failure worth that.
-        let _ =
-            self.active_connections
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |active| {
-                    Some(active.saturating_sub(1))
-                });
+        let _ = self
+            .active_connections
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |active| {
+                Some(active.saturating_sub(1))
+            });
     }
 
     fn record_error(&self, message: String) {

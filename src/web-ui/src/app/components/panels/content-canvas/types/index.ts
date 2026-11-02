@@ -13,7 +13,7 @@ export type {
   ClosedTabRecord,
 } from './tab';
 
-export { generateTabId, createTab } from './tab';
+export { generateTabId, createTab, canvasTabDocumentId } from './tab';
 
 // Layout-related types
 export type {

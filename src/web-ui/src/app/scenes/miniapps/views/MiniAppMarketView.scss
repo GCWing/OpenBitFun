@@ -245,8 +245,8 @@
       color: var(--openbitfun-color-status-warning-content);
     }
 
-    span {
-      margin-left: var(--openbitfun-space-2);
+    &-summary {
+      margin-inline-start: var(--openbitfun-space-2);
       color: var(--openbitfun-color-content-muted);
       font-family: var(--openbitfun-type-meta-font-family);
       font-size: var(--openbitfun-type-meta-font-size);

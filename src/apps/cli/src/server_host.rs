@@ -294,6 +294,8 @@ pub(crate) async fn serve() -> Result<()> {
     let agentic_system = crate::agent::agentic_system::init_agentic_system(
         openbitfun_core::product_assembly::DeliveryProfile::Cli,
         std::sync::Arc::new(runtime_ownership),
+        // This protocol host has no negotiated native GUI provider.
+        None,
     )
     .await
     .context("Failed to initialize agentic system")?;

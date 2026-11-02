@@ -25,6 +25,7 @@ and re-exports this crate where convenient.
 
 - `client`: shared HTTP transport, retries, aggregation, health checks
 - `providers`: OpenAI / Anthropic / Gemini request and discovery adapters
+- `round_router`: bounded classifier HTTP calls and protocol parsing; the caller owns routing policy and context
 - `stream`: provider SSE parsing into unified streaming events from `openbitfun-agent-stream`
 - `tool_call_accumulator`: compatibility re-export; canonical implementation lives in `openbitfun-agent-stream`
 - `types`: portable request/response/config/message types

@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   type ChangeEventHandler,
@@ -17,6 +18,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
   onCheckedChange,
   ...props
 }, ref) {
+  const fieldAccessibility = useFieldAccessibility(props);
   const handleChange: ChangeEventHandler<HTMLInputElement> = (event) => {
     onChange?.(event);
     onCheckedChange?.(event.currentTarget.checked);
@@ -29,6 +31,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
     >
       <input
         {...props}
+        {...fieldAccessibility}
         className={styles.input}
         onChange={handleChange}
         ref={ref}

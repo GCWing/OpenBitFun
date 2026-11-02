@@ -1,6 +1,32 @@
 import type { PeerHostCapabilities } from './PeerConnectionManager';
 
 /**
+ * Whether terminal output must be read from replay pages. A missing key means
+ * an older host, and every CLI host already publishes cursor hints while no
+ * Desktop host does, so older hosts of both kinds stay on their working path.
+ */
+export function usesTerminalCursorReplay(capabilities: PeerHostCapabilities | null | undefined): boolean {
+  return capabilities?.terminalCursorReplayV1 === true || capabilities?.hostKind === 'cli';
+}
+
+/** Unknown peers use the URL; older Desktop hosts already support PR details. */
+export function canViewPullRequestsOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  if (!peerActive) return true;
+  return capabilities?.reviewPlatformV1 ?? (capabilities?.hostKind === 'desktop');
+}
+
+/** Older Desktop and CLI peer hosts do not implement the dedicated copy command. */
+export function canCopySessionsOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.wholeSessionCopyV1 === true;
+}
+
+/**
  * Resolve whether the currently rendered surface can be queried for the
  * read-only tool catalog (`get_all_tools_info`), so the UI skips the invoke
  * when the host can't answer it instead of masking the unsupported error as an
@@ -61,4 +87,39 @@ export function canSubmitUserQuestionsOnSurface(
     return false;
   }
   return capabilities.hostKind !== 'cli';
+}
+
+/**
+ * Older peer hosts reject or ignore pool auth and channel routes, so the
+ * model editor only offers them when the rendered host advertised support.
+ */
+export function canEditAccountPoolsOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.subscriptionAccountPoolsV1 === true;
+}
+
+export function canQuerySubscriptionQuotaOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.subscriptionQuotaV1 === true;
+}
+
+export function canEditChannelRoutingOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.modelChannelRoutingV1 === true;
+}
+
+/** A model-scoped request must never be sent to an older account-only quota host. */
+export function canQueryModelQuotaOnSurface(peerActive: boolean, capabilities: PeerHostCapabilities | null): boolean {
+  return !peerActive || capabilities?.subscriptionModelQuotaV1 === true;
+}
+
+/** Account quota support on older hosts does not imply Grok billing support. */
+export function canQueryGrokQuotaOnSurface(peerActive: boolean, capabilities: PeerHostCapabilities | null): boolean {
+  return !peerActive || capabilities?.grokQuotaV1 === true;
 }

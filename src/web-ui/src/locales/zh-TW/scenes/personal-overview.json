@@ -1,0 +1,101 @@
+{
+  "loadingValue": "…",
+  "unavailableValue": "—",
+  "retry": "重新整理",
+  "greetings": {
+    "spotted": "嘿，被我發現你啦！",
+    "mystery": "唷，神祕訪客！",
+    "ideas": "嗨，靈感正在冒泡～",
+    "create": "都來了，搞點新花樣？",
+    "energy": "你一來，我就有精神了！",
+    "ready": "夥伴就位，等你開場！"
+  },
+  "metrics": {
+    "title": "使用概覽",
+    "totalTokens": "累計 Token 數",
+    "peakTokens": "單日 Token 峰值",
+    "longestTask": "最長任務用時",
+    "longestStreak": "最長連續天數",
+    "currentStreak": "目前連續天數",
+    "days": "{{count}} 天",
+    "partial": "峰值與連續天數僅涵蓋保留的活動歷史。"
+  },
+  "agents": {
+    "title": "智能體",
+    "loading": "正在載入智能體…",
+    "failed": "無法載入目前主機的智能體，請檢查連線後重試。",
+    "assistants": {
+      "description": "與你長期協作，擁有獨立記憶。"
+    },
+    "description": "內建與自訂智能體，處理各類任務。",
+    "create": "建立智能體",
+    "createAssistant": "建立助理",
+    "createAssistantConfirmMessage": "確定建立一個新助理嗎？建立後可設定它的身分、工具和個性。",
+    "createAssistantFailed": "無法建立助理，請稍後重試。"
+  },
+  "devices": {
+    "title": "裝置",
+    "manage": "管理裝置",
+    "scrollPrevious": "向左捲動裝置",
+    "scrollNext": "向右捲動裝置",
+    "online": "在線",
+    "offline": "離線",
+    "current": "目前裝置",
+    "thisDevice": "此裝置",
+    "incompatible": "需更新後互控",
+    "loading": "正在載入裝置…",
+    "signInHint": "登入帳號，連接更多裝置",
+    "failed": "無法重新整理裝置，已顯示的資訊可能不是最新狀態。請重試或在裝置管理中檢查連線。",
+    "empty": "暫無已關聯的裝置。在其他裝置上登入同一帳號即可關聯。",
+    "viewAll": "查看全部 {{count}} 台裝置"
+  },
+  "usage": {
+    "loading": "正在載入 Token 活動…",
+    "failed": "無法載入目前主機的用量，請檢查連線後重試。",
+    "unsupported": "目前主機不支援用量統計，請更新主機後查看 Token 活動。"
+  },
+  "activity": {
+    "title": "Token 活動"
+  },
+  "miniApps": {
+    "start": "啟動",
+    "backToOverview": "返回首頁",
+    "create": "建立小應用",
+    "manage": "管理小應用",
+    "installed": "已安裝",
+    "runningCount": "執行中 {{count}} 個",
+    "moreInstalled": "查看其餘 {{count}} 個小應用",
+    "loading": "正在載入小應用…",
+    "failed": "無法載入目前主機的小應用，請檢查連線與主機支援後重試。",
+    "empty": "暫無小應用"
+  },
+  "desktopCards": {
+    "title": "小卡片",
+    "settings": "卡片設定",
+    "listTitle": "我的卡片",
+    "visibleCount": "桌面顯示 {{count}} 張",
+    "disabled": "已在設定中關閉。卡片會保留，重新開啟後恢復顯示。",
+    "loading": "正在載入小卡片…",
+    "failed": "無法載入小卡片，請重試。",
+    "empty": "還沒有卡片。試試對智慧體說「20 分鐘後提醒我」或「幫我盯著這個 PR」。",
+    "shown": "桌面顯示中",
+    "hidden": "已隱藏",
+    "show": "在桌面顯示",
+    "hide": "從桌面隱藏",
+    "delete": "刪除卡片",
+    "deleteConfirmTitle": "刪除卡片",
+    "deleteConfirmMessage": "刪除「{{title}}」？此操作無法復原。",
+    "actionFailed": "無法更新卡片，請重試。"
+  },
+  "skills": {
+    "add": "新增技能",
+    "loading": "正在載入技能…",
+    "failed": "無法載入目前工作區的技能，請檢查連線與主機支援後重試。",
+    "incomplete": "部分技能來源未能完整讀取，請進入技能管理查看詳情。",
+    "diagnosticsUnavailable": "目前主機未提供掃描診斷，以上為主機傳回的技能數量。",
+    "installed": "已安裝技能",
+    "installedDescription": "在任務中重複使用已安裝的技能。",
+    "discover": "搜尋更多技能",
+    "discoverDescription": "探索更多可重複使用的技能。"
+  }
+}

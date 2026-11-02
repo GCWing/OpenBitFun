@@ -412,7 +412,7 @@ export const MiniAppCustomizePanel: React.FC<MiniAppCustomizePanelProps> = ({
       <div className="miniapp-customize-panel__header" data-openbitfun-component="miniapp-customize-panel" data-openbitfun-part="header">
         <div>
           <h3>{t('customize.title')}</h3>
-          <OverflowText>{appName}</OverflowText>
+          <OverflowText className="miniapp-customize-panel__app-name">{appName}</OverflowText>
         </div>
         <Tooltip content={t('customize.close')} disabled={busy}>
           <IconButton

@@ -30,8 +30,12 @@ describe('Runtime settings information architecture', () => {
     const control = readSource('../tools/DeviceControlSettingsPage.tsx');
     expect(execution).not.toContain('permissionPolicy.sectionTitle');
     expect(execution).toContain('toolExecution.sectionTitle');
+    expect(execution).toContain("title={t('toolPresentation.sectionTitle')}");
+    expect(execution).toContain('toolPresentation.mode');
+    expect(execution).toContain("tooltip: t('toolPresentation.ptcTooltip')");
     expect(permissions).toContain('permissionPolicy.sectionTitle');
     expect(permissions).not.toContain('toolExecution.sectionTitle');
+    expect(permissions).not.toContain('toolPresentation.mode');
     expect(control.indexOf("title={t('computerUse.sectionTitle')}")).toBeLessThan(control.indexOf("title={t('browserControl.sectionTitle')}"));
     for (const source of [execution, permissions, control]) {
       expect(source).not.toContain('SettingsViewPage');
@@ -49,7 +53,7 @@ describe('Runtime settings information architecture', () => {
     expect(source).toContain('<Disclosure');
     expect(source).toContain('open={isActive && companionPetListExpanded}');
     expect(source).toContain('className="openbitfun-runtime-settings__pet-summary"');
-    expect(source).toContain('const hasLoadedPageDataRef = useRef(false);');
+    expect(source).toContain('const hasLoadedPageDataRef = useRef(Boolean(cachedSettings && cachedPets));');
     expect(source).toContain('const reloadCompanionPets = useCallback(async () => {');
     expect(source).toContain("if (!isActive) return;");
     expect(source.match(/await reloadCompanionPets\(\);/g)).toHaveLength(2);

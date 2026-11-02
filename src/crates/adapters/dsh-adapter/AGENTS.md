@@ -42,6 +42,14 @@ requires its own consumer evidence before that path is shared.
 
 ## Boundary Rules
 
+`session` reads default `$DSH_HOME/sessions` v0 raw JSONL and concatenated Zstandard
+logs with bounded decompression. It projects append-origin human history,
+assembled assistant messages, reasoning and correlated tool results into the
+existing session-import contract. Model-only replacements and stream chunks must
+not duplicate transcript entries. Keep discovery, parsing and format diagnostics
+here; native persistence, follow/fork and presentation remain with existing owners.
+Never execute Cordis patches to discover custom persistence roots.
+
 - Depend on stable contracts (`openbitfun-runtime-ports`, `openbitfun-product-domains`)
   and the `PluginRuntimeAdapter` boundary trait. Do not depend on `openbitfun-core`,
   app crates, Tauri APIs, product UI, or concrete service managers.
@@ -58,6 +66,10 @@ requires its own consumer evidence before that path is shared.
   (`openbitfun-core/plugin_runtime`), not modes of this adapter.
 
 ## Verification
+
+- `cargo test --locked -p openbitfun-dsh-adapter --lib session::tests`
+- Real installed-history check: set `DSH_HOME` and `OPENBITFUN_TEST_DSH_SESSION`, then
+  `cargo test --locked -p openbitfun-dsh-adapter --lib inspect_installed_dsh_session_read_only -- --ignored --nocapture`.
 
 - `cargo test --locked -p openbitfun-dsh-adapter --lib mcp_source::tests`
 - `cargo test --locked -p openbitfun-dsh-adapter --lib hook_source::tests`

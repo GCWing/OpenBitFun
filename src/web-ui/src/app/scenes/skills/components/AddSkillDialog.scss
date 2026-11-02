@@ -1,0 +1,52 @@
+.openbitfun-skills-scene {
+  &__path-input {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--openbitfun-space-2);
+
+    > :first-child {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  &__path-hint,
+  &__form-hint,
+  &__validating {
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    color: var(--openbitfun-color-content-muted);
+  }
+
+  &__validation {
+    padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
+    border-radius: var(--openbitfun-radius-base);
+    font-size: var(--openbitfun-type-label-md-font-size);
+
+    &.is-valid {
+      background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--openbitfun-color-status-success-content) 30%, transparent);
+      color: var(--openbitfun-color-status-success-content);
+    }
+
+    &.is-invalid {
+      background: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--openbitfun-color-status-danger-content) 30%, transparent);
+      color: var(--openbitfun-color-status-danger-content);
+    }
+  }
+
+  &__validation-name  { font-weight: var(--openbitfun-type-label-sm-font-weight); }
+  &__validation-desc  { margin-top: 2px; font-size: var(--openbitfun-type-label-sm-font-size); opacity: 0.85; }
+  &__validation-error { font-weight: var(--openbitfun-type-label-sm-font-weight); }
+
+  &__modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-4);
+    padding-block-start: var(--openbitfun-space-5);
+  }
+
+  &__modal-form-actions {
+    flex-wrap: wrap;
+  }
+}

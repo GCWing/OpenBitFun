@@ -67,6 +67,9 @@ export const sessionContentSearchProvider: GlobalSearchProvider = {
         diagnostics.push({
           providerId: 'session-content',
           code: 'workspace_unavailable',
+          workspaceName: workspace?.name,
+          workspacePath: workspace?.rootPath,
+          hostLabel: workspace?.sshHost,
           message: `${workspace?.name ?? 'Workspace'}: ${
             result.reason instanceof Error ? result.reason.message : String(result.reason)
           }`,
@@ -80,6 +83,9 @@ export const sessionContentSearchProvider: GlobalSearchProvider = {
       diagnostics.push(...(result.value.response.diagnostics ?? []).map((diagnostic) => ({
         providerId: 'session-content',
         code: diagnostic.code,
+        workspaceName: workspace?.name,
+        workspacePath: workspace?.rootPath,
+        hostLabel: workspace?.sshHost,
         message: diagnostic.message,
       })));
     });

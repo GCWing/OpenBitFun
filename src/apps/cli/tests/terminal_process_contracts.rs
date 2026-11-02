@@ -36,6 +36,109 @@ const MULTILINE_TAIL_SENTINEL: &str = "Z9R2";
 const RECOVERY_INPUT: &[u8] = b"READY_AFTER_CANCEL K4W8";
 const RECOVERY_INPUT_SENTINEL: &str = "K4W8";
 
+#[test]
+fn scheduled_jobs_survive_cli_restart_and_run_without_a_controller_turn() {
+    use serde_json::json;
+    let environment = CliTestEnvironment::new();
+    let cron_spec = || ("GetToolSpec".to_string(), json!({"tool_name":"Cron"}));
+    let cron_call = |args| {
+        (
+            "CallDeferredTool".to_string(),
+            json!({"tool_name":"Cron", "args":args}),
+        )
+    };
+    let payload = "CLI_SCHEDULED_WAKEUP_7Q9";
+    let creator = MockOpenAiServer::tool_sequence(vec![
+        cron_spec(),
+        cron_call(json!({"action":"add", "job":{
+            "name":"CLI scheduled restart check", "schedule":{"kind":"at","at":"2099-01-01T00:00:00Z"},
+            "payload":payload, "enabled":true
+        }})),
+        cron_call(json!({"action":"list"})),
+    ]);
+    environment.configure_tool_loop_mock_model(creator.base_url());
+    let run_exec = || {
+        let mut command = environment.std_command();
+        command.args([
+            "exec",
+            "Manage the scheduled restart check",
+            "--auto",
+            "--no-verify-final-changes",
+            "--output-format",
+            "json",
+        ]);
+        let output = support::command_output_with_timeout(&mut command, Duration::from_secs(60));
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
+        );
+    };
+    run_exec();
+    creator.assert_chat_completion_requests(4);
+    let mut jobs = environment.cron_jobs();
+    assert_eq!(jobs["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(jobs["jobs"][0]["payload"]["text"], payload);
+    let job_id = jobs["jobs"][0]["id"].as_str().unwrap().to_string();
+    assert!(creator.chat_completion_request_bodies()[3]["messages"]
+        .to_string()
+        .contains(&job_id));
+
+    let reader =
+        MockOpenAiServer::tool_sequence(vec![cron_spec(), cron_call(json!({"action":"list"}))]);
+    environment.configure_tool_loop_mock_model(reader.base_url());
+    run_exec();
+    reader.assert_chat_completion_requests(3);
+    assert!(reader.chat_completion_request_bodies()[2]["messages"]
+        .to_string()
+        .contains(&job_id));
+
+    // Advance the persisted deadline while no host is running. The restarted
+    // interactive host must restore the session and execute without UI input.
+    let due = chrono::Utc::now() - chrono::Duration::seconds(1);
+    jobs["jobs"][0]["schedule"]["at"] = json!(due.to_rfc3339());
+    jobs["jobs"][0]["state"]["nextRunAtMs"] = json!(due.timestamp_millis());
+    std::fs::write(
+        environment.cron_jobs_path(),
+        serde_json::to_vec_pretty(&jobs).unwrap(),
+    )
+    .unwrap();
+    let runner = MockOpenAiServer::immediate();
+    environment.configure_mock_model(runner.base_url());
+    let mut process = PtyProcess::spawn(environment.pty_command(), INITIAL_SIZE);
+    process.expect_output(
+        "\x1b[?2004h",
+        Duration::from_secs(60),
+        "scheduled host did not start",
+    );
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let persisted = environment.cron_jobs();
+        let job = &persisted["jobs"][0];
+        if job["state"]["lastRunStatus"] == "ok" {
+            assert_eq!(job["enabled"], false, "one-shot job must finish once");
+            assert!(job["state"]["activeTurnId"].is_null());
+            assert!(job["state"]["lastRunStartedAtMs"].is_number());
+            assert!(job["state"]["lastRunFinishedAtMs"].is_number());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "scheduled job did not settle: {persisted}; terminal: {}",
+            process.output()
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+    runner.assert_chat_completion_requests(1);
+    assert!(runner.chat_completion_request_bodies()[0]["messages"]
+        .to_string()
+        .contains(payload));
+    process.write(&[0x03]);
+    let (status, output) = process.finish(Duration::from_secs(15));
+    assert!(status.success(), "{output}");
+}
+
 #[cfg(unix)]
 #[test]
 fn startup_bracketed_paste_attaches_an_image_path_without_rendering_the_path() {

@@ -11,6 +11,7 @@ import { resolveSessionSceneTarget } from './sessionSceneTarget';
 import { workspaceManager, type WorkspaceEventListener } from '@/infrastructure/services/business/workspaceManager';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import { startSessionSceneLifecycle } from './sessionSceneLifecycle';
+import { sceneSelection, selectedSessionTab } from '../workbench/scenePaneModel';
 
 function session(sessionId: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -101,6 +102,48 @@ describe('Session scene resource lifetime with real stores', () => {
     expect(useSceneStore.getState().openTabs.map(tab => tab.session?.sessionId)).toEqual(['a']);
     select([first, second], 'b');
     expect(useSceneStore.getState().openTabs.map(tab => tab.session?.sessionId)).toEqual(['a', 'b']);
+  });
+
+  it.each(['local', 'peer:history'])('reconciles recent SSH workspace sessions on the %s surface', surfaceId => {
+    stop?.();
+    activateSurface(surfaceId);
+    select([], null);
+    useSceneStore.getState().resetForPeerSwitch();
+    stop = startSessionSceneLifecycle();
+    const sessions = ['one', 'two', 'three'].map(id => session(id, {
+      workspaceId: 'ssh-project', workspacePath: '/srv/project', remoteConnectionId: 'ssh-host',
+    }));
+    select(sessions, 'one');
+    useSceneStore.getState().openScene('session');
+    flowChatStore.switchSession('two');
+    flowChatStore.switchSession('three');
+    const tabId = useSceneStore.getState().activeTabId;
+    expect(useSceneStore.getState().openTabs[0].sessionHistory).toEqual(['three', 'two', 'one']);
+    expect(useSceneStore.getState().openTabs[0].session?.surfaceId).toBe(surfaceId);
+    flowChatStore.removeSession('two');
+    expect(useSceneStore.getState().openTabs[0].sessionHistory).toEqual(['three', 'one']);
+    expect(useSceneStore.getState().activeTabId).toBe(tabId);
+    expect(flowChatStore.getActiveSession()?.sessionId).toBe('three');
+  });
+
+  it.each(['canvas', 'page'] as const)('keeps a moved conversation synchronized while the other pane has %s focus', async focus => {
+    const first = session('a', { workspacePath: '/a' });
+    const second = session('b', { workspacePath: '/b' });
+    select([first, second], 'a');
+    const scenes = useSceneStore.getState();
+    scenes.openScene('session');
+    await scenes.moveScene(useSceneStore.getState().activeTabId!, 'secondary');
+    if (focus === 'canvas') scenes.selectCanvas();
+    else scenes.openScene('git');
+    const before = useSceneStore.getState();
+    flowChatStore.switchSession('b');
+    const after = useSceneStore.getState();
+    expect(selectedSessionTab(after)?.session?.sessionId).toBe('b');
+    expect(selectedSessionTab(after)?.pane).toBe('secondary');
+    expect(after.focusedPane).toBe('primary');
+    expect(after.activeTabId).toBe(before.activeTabId);
+    expect(after.paneSelections.primary).toEqual(focus === 'canvas' ? { kind: 'canvas' } : sceneSelection('git'));
+    expect(after.openTabs.filter(tab => tab.session)).toHaveLength(2);
   });
 
   it('defers legacy identity changes until pending navigation commits', () => {

@@ -40,7 +40,7 @@
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     pointer-events: none;
     user-select: none;
     -webkit-user-drag: none;
@@ -60,7 +60,14 @@
   }
 
   &.is-image {
-    border-color: color-mix(in srgb, var(--openbitfun-color-content-on-light) 12%, transparent);
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  &.is-image &__art {
+    overflow: visible;
+    border-radius: 0;
   }
 
   &.is-active {

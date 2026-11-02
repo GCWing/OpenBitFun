@@ -40,6 +40,7 @@ const mockDispatchProgress = vi.fn();
 const mockDispatchRefresh = vi.fn();
 const mockBindSession = vi.fn();
 const mockEnsureBackendSession = vi.fn();
+const mockForkChatSession = vi.fn();
 const mockNotificationError = vi.fn();
 const mockNotificationDismiss = vi.fn();
 const mockPendingList = vi.fn((): unknown[] => []);
@@ -131,6 +132,7 @@ vi.mock('../../../shared/notification-system', () => ({
 }));
 
 vi.mock('./SessionModule', () => ({
+  forkChatSession: (...args: unknown[]) => mockForkChatSession(...args),
   ensureBackendSession: (...args: unknown[]) => mockEnsureBackendSession(...args),
   getModelMaxTokens: vi.fn(async (modelId: string) => modelId === 'primary' ? 32000 : 64000),
   retryCreateBackendSession: vi.fn(),
@@ -247,6 +249,21 @@ describe('MessageModule session writer conflict', () => {
       .mockReturnValue('notification-3');
   });
 
+  it.each([false, true])('preserves the plan build turn ID while busy, host queue=%s', async hostQueue => {
+    const { context, session } = conflictContext('plan-build');
+    mockGetCurrentState.mockReturnValue('processing');
+    mockHostQueueSupported.mockReturnValue(hostQueue);
+    mockHostQueueSubmit.mockResolvedValue({ receipt: { turnId: 'plan-turn', status: 'queued' } });
+    await sendMessage(context, 'Implement the plan', session.sessionId, undefined, undefined, undefined,
+      { turnId: 'plan-turn' });
+    if (hostQueue) {
+      expect(mockHostQueueSubmit).toHaveBeenCalledWith(expect.objectContaining({ content: 'Implement the plan' }),
+        expect.any(Object), 'plan-turn');
+    } else {
+      expect(mockPendingEnqueue).toHaveBeenCalledWith(expect.objectContaining({ turnId: 'plan-turn' }));
+    }
+  });
+
   it.each([false, true])('rejects a fresh-only child before queue admission, host queue=%s', async hostQueue => {
     const { context, session } = conflictContext('fresh-only');
     Object.assign(session, { sessionKind: 'subagent', continuationPolicy: 'fresh_only' });
@@ -257,6 +274,99 @@ describe('MessageModule session writer conflict', () => {
     expect(mockHostQueueSubmit).not.toHaveBeenCalled();
     expect(mockStartDialogTurn).not.toHaveBeenCalled();
     expect(session.dialogTurns).toEqual([]);
+  });
+
+  it('forks the viewed source before submitting and leaves source history untouched', async () => {
+    const { context, session } = conflictContext('external-source');
+    Object.assign(session, {
+      historyState: 'ready', externalHistory: { mode: 'follow', contentVersion: 'newer-source' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    const branch = { ...session, sessionId: 'native-branch', externalHistory: undefined, dialogTurns: [...session.dialogTurns] };
+    const sessions = new Map([[session.sessionId, session], [branch.sessionId, branch]]);
+    context.flowChatStore.getState = () => ({ sessions, activeSessionId: branch.sessionId });
+    context.flowChatStore.addDialogTurn.mockImplementation((id: string, turn: any) => sessions.get(id)!.dialogTurns.push(turn));
+    mockForkChatSession.mockResolvedValue('native-branch');
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockGetConfigs.mockResolvedValue({});
+    const onSessionForked = vi.fn();
+    await sendMessage(context, 'Continue here', session.sessionId, undefined, undefined, undefined, { onSessionForked });
+    expect(mockForkChatSession).toHaveBeenCalledWith(context, 'external-source', 'viewed-turn');
+    expect(onSessionForked).toHaveBeenCalledExactlyOnceWith('external-source', 'native-branch');
+    expect(mockStartDialogTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'native-branch', userInput: 'Continue here' }));
+    expect(session.dialogTurns).toHaveLength(1);
+  });
+
+  it('keeps the draft and source untouched when a fork fails', async () => {
+    const { context, session } = conflictContext('external-source');
+    Object.assign(session, {
+      historyState: 'ready', externalHistory: { mode: 'follow' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    mockForkChatSession.mockRejectedValue(new Error('Source version unavailable'));
+    await expect(sendMessage(context, 'Keep my draft', session.sessionId)).rejects.toThrow('Source version unavailable');
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
+    expect(context.flowChatStore.addDialogTurn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['primary', 'primary', 'Standard'],
+    ['primary', undefined, 'Standard'],
+    ['primary', 'Creative', 'Creative'],
+    ['Creative', 'Creative', 'Creative'],
+  ])('submits the native fork mode instead of an inherited source placeholder (%s, %s)', async (sourceMode, requestedMode, expectedMode) => {
+    const { context, session } = conflictContext('legacy-external-source');
+    Object.assign(session, {
+      mode: sourceMode,
+      historyState: 'ready', externalHistory: { mode: 'follow' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    const branch = { ...session, sessionId: 'native-branch', mode: 'Standard', externalHistory: undefined, dialogTurns: [...session.dialogTurns] };
+    const sessions = new Map([[session.sessionId, session], [branch.sessionId, branch]]);
+    context.flowChatStore.getState = () => ({ sessions, activeSessionId: branch.sessionId });
+    context.flowChatStore.addDialogTurn.mockImplementation((id: string, turn: any) => sessions.get(id)!.dialogTurns.push(turn));
+    mockForkChatSession.mockResolvedValue(branch.sessionId);
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockGetConfigs.mockResolvedValue({});
+    mockStartDialogTurn.mockImplementation(async ({ agentType }: { agentType: string }) => {
+      if (agentType === 'primary') throw new Error('Unknown session mode: primary');
+    });
+
+    await sendMessage(context, 'Continue here', session.sessionId, undefined, requestedMode);
+
+    expect(mockStartDialogTurn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      sessionId: branch.sessionId, agentType: expectedMode, userInput: 'Continue here',
+    }));
+    expect(session.mode).toBe(sourceMode);
+    expect(session.dialogTurns).toHaveLength(1);
+  });
+
+  it.each(['codex', 'zcode', undefined])('retries an old queued mode using the repaired native branch (%s)', async ecosystemId => {
+    const { context, session } = conflictContext('existing-branch');
+    if (ecosystemId) Object.assign(session, {
+      externalBranchOf: { sessionId: 'source', ecosystemId, sourceSessionId: 'original', contentVersion: 'pinned' },
+    });
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockGetConfigs.mockResolvedValue({});
+
+    // Failed queue entries retain the mode from before the metadata migration.
+    await sendMessage(context, 'Retry retained draft', session.sessionId, undefined, 'primary', undefined, { bypassPendingQueue: true });
+
+    expect(mockStartDialogTurn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      sessionId: session.sessionId, agentType: ecosystemId ? 'Standard' : 'primary', userInput: 'Retry retained draft',
+    }));
+    expect(mockForkChatSession).not.toHaveBeenCalled();
+  });
+
+  it('does not fork an archived source before rejecting submission', async () => {
+    const { context, session } = conflictContext('archived-source');
+    Object.assign(session, {
+      historyState: 'ready', persistedStatus: 'archived', externalHistory: { mode: 'follow' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    await expect(sendMessage(context, 'Keep this draft', session.sessionId)).rejects.toMatchObject({ reason: 'archived' });
+    expect(mockForkChatSession).not.toHaveBeenCalled();
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
   });
 
   it('rechecks capability after backend readiness without creating an optimistic turn', async () => {
@@ -689,7 +799,7 @@ describe('MessageModule cancellation', () => {
     mockStartDialogTurn.mockResolvedValue({ sessionId: 'resume-session', turnId: 'next-turn', status: 'started' });
     const session: any = { sessionId: 'resume-session', sessionKind: 'normal', mode: 'Standard',
       titleStatus: 'generated', dialogTurns: [], config: { modelName: 'primary' }, maxContextTokens: 32000 };
-    const pending = { id: 'queued', sessionId: session.sessionId, content: 'next', status: 'queued', retryCount: 0 };
+    const pending = { id: 'queued', turnId: 'next-turn', sessionId: session.sessionId, content: 'next', status: 'queued', retryCount: 0 };
     mockPendingList.mockReturnValue([pending]);
     mockPendingSetStatus.mockImplementation((_session, _id, status) => { pending.status = status; });
     const context: any = {
@@ -724,6 +834,7 @@ describe('MessageModule cancellation', () => {
     // A held terminal delivery may report IDLE as well; coalesce the wakeups.
     onIdle(session.sessionId, { currentState: 'idle' });
     await vi.waitFor(() => expect(mockStartDialogTurn).toHaveBeenCalledTimes(1));
+    expect(mockStartDialogTurn).toHaveBeenCalledWith(expect.objectContaining({ turnId: 'next-turn' }));
     expect(mockPendingRemove).toHaveBeenCalledWith(session.sessionId, pending.id);
 
     pending.status = 'queued';
@@ -1125,6 +1236,11 @@ describe('MessageModule immediate follow-ups', () => {
     vi.resetAllMocks();
     activateSurface(LOCAL_SURFACE_ID);
     mockHostQueueSupported.mockReturnValue(false);
+    mockGetConfigs.mockResolvedValue({
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
+      'ai.models': [{ id: 'model-a', name: 'Model A', model_name: 'model-a', provider: 'openai', enabled: true, category: 'general_chat' }],
+      'ai.default_models': { primary: 'model-a' },
+    });
     mockGetCurrentState.mockReturnValue('processing');
     mockTransition.mockResolvedValue(true);
     mockPendingList.mockReturnValue([]);
@@ -1225,7 +1341,7 @@ describe('MessageModule model synchronization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetConfigs.mockResolvedValue({
-      'ai.agent_model_defaults': { mode: 'model-b' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-b' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
       'ai.models': [
         { id: 'primary-model', enabled: true, context_window: 32000 },
         { id: 'model-b', enabled: true, context_window: 64000 },
@@ -1241,6 +1357,8 @@ describe('MessageModule model synchronization', () => {
     });
     const { context, session } = modelSyncContext('asdf');
     await syncSessionModelSelection(context, session.sessionId, 'Standard');
+    expect(mockGetConfigs).toHaveBeenCalledTimes(1);
+    expect(mockGetConfigs).toHaveBeenCalledWith(['ai.models', 'ai.default_models']);
     expect(context.flowChatStore.updateSessionModelName).not.toHaveBeenCalled();
     expect(context.flowChatStore.updateSessionMaxContextTokens).toHaveBeenCalledWith(session.sessionId, 64000);
     expect(mockUpdateSessionModel).toHaveBeenCalledWith(expect.objectContaining({

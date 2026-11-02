@@ -19,6 +19,7 @@ interface StoredTurn { revision: number; data?: TurnRecord; authoritative?: bool
 interface StoredRound { revision: number; data?: RoundRecord; }
 interface StoredItem { revision: number; turnId: string; roundId: string; data: ItemRecord; }
 interface RenderedTurn { generation: number; messages: ChatMessage[]; }
+interface PromptSuggestion { sourceTurnId: string; suggestion: string; sessionId?: string; }
 
 /** Lossless record storage follows Happy's stable-id message reduction. Mobile
  * presentation adapts the existing persisted turn schema; it does not define a
@@ -36,6 +37,29 @@ export class DurableSessionReducer {
   private turnGenerations: Map<string, number> = new Map();
   private renderedTurns: Map<string, RenderedTurn> = new Map();
   private generationSeq: number = 0;
+  private suggestion?: PromptSuggestion;
+
+  /** Optional host hints stay outside durable transcript records. */
+  promptSuggestion(): string {
+    const hint = this.suggestion;
+    if (!hint) return '';
+    const latest = this.latestTurn();
+    if (!latest || latest.turnId !== hint.sourceTurnId || latest.status !== 'completed') {
+      this.suggestion = undefined;
+      return '';
+    }
+    return hint.suggestion;
+  }
+
+  private latestTurn(): TurnRecord | undefined {
+    let latest: TurnRecord | undefined = undefined;
+    for (const stored of this.turns.values()) {
+      const turn = stored.data;
+      if (turn && stored.revision > (this.tombstones.get(`turn/${turn.turnId}`) ?? 0) &&
+        (!latest || turn.turnIndex > latest.turnIndex)) latest = turn;
+    }
+    return latest;
+  }
   private touchTurn(turnId: string): void {
     this.generationSeq++;
     this.turnGenerations.set(turnId, this.generationSeq);
@@ -46,6 +70,16 @@ export class DurableSessionReducer {
     if (turnId) this.touchTurn(turnId); else this.renderedTurns.clear();
   }
   apply(event: HostSessionEvent): boolean {
+    if (event.event === 'agentic://prompt-suggestion') {
+      const hint = event.payload as PromptSuggestion;
+      if (!hint || typeof hint.sourceTurnId !== 'string' || !hint.sourceTurnId ||
+        typeof hint.suggestion !== 'string' || !hint.suggestion ||
+        (hint.sessionId !== undefined && hint.sessionId !== event.session_id)) return false;
+      const latest = this.latestTurn();
+      if (latest && latest.turnId !== hint.sourceTurnId) return false;
+      this.suggestion = hint;
+      return true;
+    }
     if (event.event !== 'session-record') return false;
     const record = event.payload as SessionRecord;
     if (record.sessionId !== event.session_id || !record.id || !Number.isSafeInteger(record.revision) || record.revision < 1) throw new Error('Invalid session record identity');
@@ -134,7 +168,7 @@ export class DurableSessionReducer {
     const metadata = turn.userMessage.metadata as UserMetadata | undefined;
     const userText = metadata?.original_text || turn.userMessage.content;
     if (userText.length > 0 || (metadata?.images?.length || 0) > 0) result.push({ id: turn.userMessage.id, turnId: turn.turnId,
-      role: 'user', text: userText, images: metadata?.images, status: 'sent', timestamp: new Date(turn.userMessage.timestamp).toISOString() });
+      role: 'user', text: userText, images: metadata?.images, status: 'sent', timestamp: String(turn.userMessage.timestamp) });
     const turnFence = this.tombstones.get(`turn/${turn.turnId}`) ?? 0;
     const visible = entries.filter((item: StoredItem) => {
       const round = this.rounds.get(item.roundId);
@@ -171,7 +205,7 @@ export class DurableSessionReducer {
     result.push({ id: `assistant-${turn.turnId}`, turnId: turn.turnId, role: 'assistant', status: status,
       text: items.filter((item: ChatMessageItemResponse) => item.type === 'text' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
       thinking: items.filter((item: ChatMessageItemResponse) => item.type === 'thinking' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
-      tools: tools, items: items, timestamp: new Date(turn.timestamp).toISOString(), error: turn.error, renderVersion: stored.revision });
+      tools: tools, items: items, timestamp: String(turn.timestamp), error: turn.error, renderVersion: stored.revision });
     return result;
   }
 }

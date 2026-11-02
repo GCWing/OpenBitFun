@@ -4,6 +4,7 @@ import type { FlowChatVirtualizer } from './useFlowChatVirtualizer';
 import { getVirtualItemStableKey } from './virtualItemIdentity';
 import { leadingExtentFloor } from './flowChatLeadingExtent';
 import { FLOWCHAT_TURN_TOP_GAP_PX } from './flowChatTailFollow';
+import { readFlowChatViewportGeometry, type FlowChatViewportGeometry } from './flowChatViewportGeometry';
 
 type Virtualizer = Pick<FlowChatVirtualizer, 'getItemBounds'>;
 type Bounds = { startPx: number; endPx: number };
@@ -53,21 +54,21 @@ export function useFlowChatLeadingExtent(options: {
     const value = floor === null ? '' : `${floor + scroller.clientHeight}px`;
     if (extent.style.minHeight !== value) extent.style.minHeight = value;
   }, [extentRef, scrollerRef]);
-  const measureLayout = useCallback(() => {
+  const measureLayout = useCallback((sample?: FlowChatViewportGeometry) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const measured = new Map<string, Measurement>();
-    const origin = scroller.scrollTop - scroller.getBoundingClientRect().top;
-    for (const row of scroller.querySelectorAll<HTMLElement>('.virtual-item-wrapper[data-virtual-item-key]')) {
+    const geometry = sample ?? readFlowChatViewportGeometry(scroller);
+    const origin = geometry.scrollTop - geometry.top;
+    for (const { element: row, key, top, bottom } of geometry.rows) {
+      if (!key) continue;
       const viewport = row.closest('[data-flowchat-virtual-viewport], [data-flowchat-scroller]');
       if (viewport && viewport !== scroller) continue;
-      const key = row.dataset.virtualItemKey!;
       const index = indexes.get(key);
       const cached = index === undefined ? null : virtualizer.getItemBounds(index);
       if (!cached) continue;
-      const rect = row.getBoundingClientRect();
-      const startPx = origin + rect.top;
-      measured.set(key, { cached, mounted: { startPx, endPx: startPx + rect.height } });
+      const startPx = origin + top;
+      measured.set(key, { cached, mounted: { startPx, endPx: origin + bottom } });
     }
     // Bounded by mounted rows; keep only scalars, never DOM/content instances.
     current().measured = measured;
@@ -86,11 +87,11 @@ export function useFlowChatLeadingExtent(options: {
       ? { key: getVirtualItemStableKey(items[groupIndex]), measurement } : undefined;
   }, [groupHeaders, items, measurementAt]);
 
-  const capture = useCallback((offset: number, exact = false) => {
+  const capture = useCallback((offset: number, exact = false, sample?: FlowChatViewportGeometry) => {
     const scroller = scrollerRef.current;
     if (!scroller?.clientHeight || !items.length) return;
     const s = current();
-    if (exact) measureLayout();
+    if (exact) measureLayout(sample);
     // Frames reuse the layout snapshot: no DOM traversal or row remeasure.
     let low = 0, high = items.length;
     while (low < high) {

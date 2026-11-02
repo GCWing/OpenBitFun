@@ -49,12 +49,11 @@
     "avatarPickerHint": "选择一个标识，或输入自定义符号",
     "avatarPickerClose": "关闭头像选择",
     "avatarPresets": "头像选项",
-    "avatarOfficialPresets": "Claw 头像",
+    "avatarOfficialPresets": "IP 头像",
     "avatarEmojiPresets": "表情符号",
     "avatarUseOfficialPreset": "使用{{name}}头像",
     "avatarFamilies": {
-      "claw": "标准造型",
-      "clawOrbit": "星轨造型"
+      "joystick": "黑色摇杆伙伴"
     },
     "avatarUsePreset": "使用 {{emoji}} 作为头像",
     "avatarCustom": "自定义头像符号",
@@ -142,159 +141,18 @@
     "sessionTitleDesc": "新会话自动生成标题"
   },
   "nursery": {
-    "backToGallery": "$t(shared:agents.Claw)",
+    "backToGallery": "$t(shared:agents.Claw)首页",
     "gallery": {
       "title": "$t(shared:agents.Claw)",
-      "subtitle": "创建、配置助理，或随时开始新会话",
+      "subtitle": "你的个人 AI 伙伴，结合你的偏好与上下文，长期协助工作与日常事务。",
       "newAssistant": "创建助理",
+      "createConfirmMessage": "确定创建一个新助理吗？创建后可设置它的身份、工具和个性。",
       "creating": "正在创建...",
       "createFailed": "无法创建助理，请稍后重试",
       "loadFailed": "无法加载助理",
       "emptyTitle": "还没有助理",
       "emptySubtitle": "创建一个助理，为它设置身份、工具和个性",
-      "assistantsTitle": "你的助理",
-      "assistantsSubtitle": "配置助理，或直接开始新会话"
-    },
-    "template": {
-      "title": "助理默认配置",
-      "subtitle": "新建助理将继承这里启用的工具和技能",
-      "pageDescription": "设置助理默认可使用的技能和工具。更改会自动保存，并从下一次执行开始应用。",
-      "scopeLabel": "当前设备 · 用户级配置",
-      "defaultBadge": "默认",
-      "configure": "配置默认能力",
-      "restoreProductDefaults": "恢复产品默认值",
-      "saveState": {
-        "saved": "已保存",
-        "saving": "正在保存",
-        "error": "未保存"
-      },
-      "summaryLabel": "助理默认配置概览",
-      "summary": {
-        "enabled": "已启用",
-        "changed": "与默认不同",
-        "unavailable": "当前不可用"
-      },
-      "categoryLabel": "能力类型",
-      "filterLabel": "能力筛选",
-      "filters": {
-        "all": "全部",
-        "enabled": "已启用",
-        "disabled": "未启用",
-        "changed": "与默认不同",
-        "unavailable": "当前不可用"
-      },
-      "searchPlaceholder": "搜索名称、说明或 ID",
-      "clearSearch": "清除搜索",
-      "clearFilters": "清除筛选",
-      "columns": {
-        "name": "名称与说明",
-        "source": "来源",
-        "availability": "可用性",
-        "state": "状态",
-        "changed": "与默认不同",
-        "access": "访问方式",
-        "actions": "操作"
-      },
-      "availability": {
-        "available": "可用",
-        "unavailable": "不可用"
-      },
-      "state": {
-        "enabled": "已启用",
-        "disabled": "未启用"
-      },
-      "valueYes": "是",
-      "valueNo": "否",
-      "officialSource": "OpenBitFun 官方",
-      "executableTool": "可执行",
-      "readonlyToolHint": "此工具只读取信息，不会修改项目或系统状态。",
-      "executableToolHint": "此工具可以执行操作，实际是否需要批准由当前权限规则决定。",
-      "permissionInherited": "由工具决定",
-      "permissionInheritedHint": "技能实际能做什么，取决于它调用的工具及对应的审批规则。",
-      "noDescription": "暂未提供说明",
-      "openCapabilityDetail": "查看 {{name}} 的详情",
-      "toggleCapability": "切换 {{name}}",
-      "toggleServerGroup": "展开或收起 {{name}}",
-      "toggleServerTools": "切换 {{name}} 的全部工具",
-      "enabledCount": "已启用 {{enabled}} / {{total}}",
-      "noFilterResults": "没有符合当前搜索和筛选条件的能力。",
-      "resultCount": "共 {{count}} 项",
-      "loading": "正在加载助理默认配置",
-      "configurationUnavailable": "未能加载默认配置，相关开关暂时不可用。",
-      "retry": "重试",
-      "statsUnavailable": "暂时无法获取详情",
-      "tokenTitle": "上下文占用估算",
-      "tokenSystemPrompt": "系统提示词",
-      "tokenToolInjection": "工具描述注入",
-      "tokenRules": "行为守则",
-      "tokenMemories": "记忆",
-      "tokenTotal": "默认总占用",
-      "stats": {
-        "tools": "{{count}} 个工具",
-        "skills": "{{count}} 个技能"
-      },
-      "groupCountEmpty": "空",
-      "builtinToolsSection": "内置工具",
-      "colEnabled": "已启用",
-      "colDisabled": "未启用",
-      "colEmpty": "暂无",
-      "mcpToolsSection": "MCP 工具",
-      "mcpEmptyTitle": "未连接 MCP 服务器",
-      "mcpEmptyHint": "在设置中添加 MCP 服务器后，其工具将显示于此",
-      "mcpServerNoTools": "该服务器暂无可用工具",
-      "closeDetail": "关闭详情",
-      "detailPanel": "详情面板",
-      "detailEmptyTitle": "选择一项能力",
-      "detailEmptyHint": "这里会显示详情、运行状态和默认配置开关。",
-      "openServerDetail": "查看 MCP 服务详情",
-      "toolTypeBuiltin": "内置工具",
-      "toolTypeMcp": "MCP 工具",
-      "readonlyTool": "只读",
-      "mcpStatus": {
-        "uninitialized": "未初始化",
-        "starting": "正在启动",
-        "connected": "已连接",
-        "healthy": "运行正常",
-        "needsAuth": "需要认证",
-        "reconnecting": "正在重连",
-        "failed": "连接失败",
-        "stopping": "正在停止",
-        "stopped": "已停止",
-        "unknown": "状态未知"
-      },
-      "detailSections": {
-        "basic": "基础信息",
-        "status": "状态",
-        "permissions": "权限与运行方式",
-        "management": "管理"
-      },
-      "detailFields": {
-        "fullName": "完整名称",
-        "originalId": "原始 ID",
-        "source": "来源",
-        "scope": "配置范围",
-        "productDefault": "产品默认状态",
-        "currentState": "当前状态",
-        "changed": "与默认不同",
-        "availability": "可用性",
-        "runtimeState": "运行时采用",
-        "transport": "连接方式",
-        "autoStart": "自动启动",
-        "toolCount": "工具数量"
-      },
-      "enableAllServerTools": "默认使用此服务的全部工具",
-      "enableAllServerToolsHint": "只调整助理默认配置，不会改变 MCP 服务本身的连接设置。",
-      "useByDefault": "默认使用",
-      "useByDefaultHint": "从下一次执行开始，应用于使用此默认配置的助理。",
-      "serverToolsHeading": "该服务下的工具",
-      "skillEnabledCandidates": "已启用候选项",
-      "unknownSkillSource": "其他来源",
-      "skillScopeUser": "用户",
-      "skillScopeProject": "项目",
-      "skillRuntimeSelected": "运行时采用",
-      "skillRuntimeCovered": "已启用，被 {{source}} 覆盖",
-      "skillRuntimeEnabled": "已启用，当前未采用",
-      "skillOrigin": "来源与范围：{{origin}}"
+      "assistantsTitle": "你的助理"
     },
     "tabs": {
       "identity": "身份",
@@ -306,13 +164,10 @@
       "unnamed": "未命名助理",
       "noVibe": "一个等待定义的助理",
       "configure": "配置助理",
-      "newSession": "新建会话",
       "open": "打开助理",
       "openFailed": "打开助理失败",
       "close": "关闭助理",
       "closeFailed": "关闭助理失败",
-      "startingSession": "正在启动...",
-      "newSessionFailed": "无法新建会话，请稍后重试",
       "tokenTitle": "上下文占用估算",
       "primaryBadge": "主助理",
       "setPrimary": "设为主助理",
@@ -330,6 +185,7 @@
       "inheritPrimary": "继承模板（主力）",
       "inheritFast": "继承模板（快速）",
       "personaDocsTitle": "关键文档",
+      "newSessionTitle": "发起会话",
       "sessionsSectionTitle": "会话",
       "scheduledSessionsTitle": "定时会话",
       "scheduledSessionsNoWorkspace": "请先选择助理工作区后再管理定时会话。",
@@ -339,7 +195,8 @@
         "USER": "用户画像"
       },
       "personaDocSaveFailed": "保存文档失败",
-      "personaDocLoadFailed": "读取文档失败"
+      "personaDocLoadFailed": "读取文档失败",
+      "closeDetail": "关闭详情"
     }
   }
 }

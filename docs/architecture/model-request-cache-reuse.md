@@ -176,6 +176,16 @@ and DeepReview retry fields.
 That restriction is not just validation polish; it protects cache reuse by
 keeping the forked child aligned with the parent session shape.
 
+### Prompt suggestion
+
+The background next-input suggestion
+(`src/crates/assembly/core/src/agentic/execution/prompt_suggestion.rs`) sends
+the final round's send-time messages plus one instruction, with the turn's own
+client. It deliberately keeps the turn's reasoning settings: DeepSeek renders
+reasoning effort and thinking mode at the very start of the prompt, so a
+"cheaper" low-reasoning suggestion measured 0% cache hits on a prefix the main
+loop had at 99%. Only the output schema is cleared.
+
 ## 3. Coding Workflows Keep The Agentic Cache Identity Stable
 
 `agentic` owns the stable coding prompt base. Planning and parallel task
@@ -246,7 +256,11 @@ What gets updated dynamically:
 
 - skills
 - visible subagents / agents
-- collapsed tool listing sections
+- the deferred tool catalog behind `GetToolSpec` (including MCP tools); its
+  head rendering follows the baseline snapshot, and changes arrive as
+  `# Deferred Tool Listing Update` diff reminders because deferred tools are
+  called through the stable `CallDeferredTool` gateway rather than the request
+  tool definitions
 
 Why this is effectively "hot update":
 
@@ -332,7 +346,13 @@ One plausible future direction would be to expose only a single stable
 In that design, the provider-visible tool schema could stay nearly constant
 even when the product's actual tool catalog changes underneath it.
 
-However, OpenBitFun does not currently plan to implement this.
+Deferred tools already work this way: `GetToolSpec` and `CallDeferredTool` are
+the only request-attached entries, and the deferred catalog is a snapshot +
+diff listing (see above). The remaining gap is limited to direct tools, plus
+the moment a session gains or loses its first deferred tool, which adds or
+removes the two gateway definitions.
+
+However, OpenBitFun does not currently plan to extend this to direct tools.
 
 Reasons:
 
@@ -415,7 +435,40 @@ However, the next request can rebuild cache entries against a much shorter and
 more stable post-compression prefix. In practice, compression is a "reset once,
 reuse many times after" mechanism, not a permanent loss.
 
-## 6. Cache Observability Is First-Class
+## 6. Provider Cache Activation
+
+Most providers cache prefixes automatically (DeepSeek, OpenAI, Gemini implicit
+caching). OpenAI additionally routes requests by `prompt_cache_key`; OpenBitFun
+sends the session's prompt-cache lineage as that key on Responses/Codex
+requests and on Chat Completions requests to `https://api.openai.com/v1`
+only, because other Chat Completions servers may reject unknown fields.
+
+Anthropic Messages caches only content marked with `cache_control`
+and writes cache entries only at those breakpoints, checking at most 20 blocks
+back from each one.
+
+The Anthropic adapter
+(`src/crates/adapters/ai-adapters/src/providers/anthropic/request.rs`) therefore
+adds three `{"type": "ephemeral"}` breakpoints to every request:
+
+- the last `system` block (or the last tool when there is no system prompt),
+  so tools + system are reusable across sessions
+- the last cacheable block of the last message, so each request writes the
+  entry the next request extends
+- the last cacheable block of the penultimate message, which lines up with the
+  previous request's write and keeps a lookback anchor when a request appends
+  many blocks
+
+Thinking and blank text blocks are skipped. The system prompt is sent as one
+text block so it can carry the marker; on prefix-caching gateways this does not
+change the cached prefix (verified on DeepSeek's `/anthropic` endpoint).
+Compatible gateways accept the same block-level markers that Claude Code
+sends. A top-level `cache_control` in the model's custom request body replaces
+this policy: an object enables Anthropic automatic caching with the user's TTL,
+and `null` removes all markers. Requests that already contain block-level
+markers are left unchanged.
+
+## 7. Cache Observability Is First-Class
 
 OpenBitFun also normalizes provider-specific cache telemetry so cache reuse can be
 measured instead of guessed.

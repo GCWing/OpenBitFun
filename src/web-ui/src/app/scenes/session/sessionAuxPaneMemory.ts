@@ -3,5 +3,5 @@ export { startSessionPaneLayoutSync as startSessionAuxPaneMemory } from './sessi
 import { sessionPaneLayoutStore } from './sessionPaneLayoutStore';
 
 export function clearSessionAuxPaneMemory(): void {
-  sessionPaneLayoutStore.getState().clearSessionMemory();
+  sessionPaneLayoutStore.getState().resetSessionMemory();
 }

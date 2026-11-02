@@ -46,6 +46,28 @@ fn swarm_agent_type_contract_is_closed() {
 }
 
 #[test]
+fn ultimate_defaults_to_swarm_roles_but_explicit_override_can_enable_other_agents() {
+    let explore = builtin_agent_definition_specs()
+        .into_iter()
+        .find(|spec| spec.id == "Explore")
+        .expect("Explore spec should exist");
+    assert!(!resolve_subagent_default_enabled(
+        SubagentSourceKind::Builtin,
+        &explore.visibility_policy,
+        Some("Ultimate")
+    ));
+    let enabled = resolve_subagent_availability(
+        SubagentSourceKind::Builtin,
+        false,
+        SubagentOverrideLayers {
+            project_override: None,
+            user_override: Some(SubagentOverrideState::Enabled),
+        },
+    );
+    assert!(enabled.effective_enabled);
+}
+
+#[test]
 fn availability_preserves_builtin_project_and_user_override_layering() {
     let builtin = resolve_subagent_availability(
         SubagentSourceKind::Builtin,
@@ -186,7 +208,7 @@ fn mode_presentation_and_shared_context_policy_match_existing_mode_contract() {
 
     assert_eq!(
         standard_harness_user_context_policy().cache_scope_key(),
-        "workspace_context|workspace_instructions|project_layout|memory_summary"
+        "workspace_context|workspace_instructions|memory_summary"
     );
 }
 
@@ -244,11 +266,28 @@ fn builtin_agent_definition_catalog_preserves_order_categories_models_and_visibi
         .can_access_from_parent(Some("Standard")));
     assert!(!code_review.visibility_policy.show_in_global_registry);
     assert_eq!(default_model_id_for_builtin_agent("Standard"), "primary");
-    assert_eq!(default_model_id_for_builtin_agent("Explore"), "primary");
-    assert_eq!(
-        default_model_id_for_builtin_agent("GeneralPurpose"),
-        "primary"
-    );
+    for id in [
+        "Explore",
+        "GeneralPurpose",
+        "SwarmPlanner",
+        "SwarmWorker",
+        "CodeReview",
+    ] {
+        let spec = specs
+            .iter()
+            .find(|spec| spec.id == id)
+            .expect("Delegated subagent spec should exist");
+        assert_eq!(
+            spec.default_model_id, "fast",
+            "{id} uses the shared default"
+        );
+        assert_eq!(default_model_id_for_builtin_agent(id), "fast");
+    }
+    let memory_phase2 = specs
+        .iter()
+        .find(|spec| spec.id == "MemoryPhase2")
+        .expect("MemoryPhase2 spec should exist");
+    assert_eq!(memory_phase2.default_model_id, "primary");
     assert_eq!(
         default_model_id_for_builtin_agent("MemoryPhase2"),
         "primary"
@@ -264,11 +303,6 @@ fn builtin_agent_definition_catalog_preserves_order_categories_models_and_visibi
     assert_eq!(default_model_id_for_builtin_agent("ReviewGeneral"), "fast");
     assert_eq!(default_model_id_for_builtin_agent("ReviewWorker"), "fast");
     assert_eq!(default_model_id_for_builtin_agent("Ultimate"), "primary");
-    assert_eq!(
-        default_model_id_for_builtin_agent("SwarmPlanner"),
-        "primary"
-    );
-    assert_eq!(default_model_id_for_builtin_agent("SwarmWorker"), "primary");
     assert_eq!(default_model_id_for_builtin_agent("SwarmReviewer"), "fast");
 
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
@@ -282,10 +316,24 @@ fn builtin_agent_definition_catalog_preserves_order_categories_models_and_visibi
         assert!(swarm
             .visibility_policy
             .can_access_from_parent(Some("SwarmPlanner")));
-        assert!(!swarm.visibility_policy.show_in_global_registry);
-        assert!(!swarm
-            .visibility_policy
-            .can_access_from_parent(Some("Standard")));
+        assert!(swarm.visibility_policy.show_in_global_registry);
+        assert_eq!(
+            swarm.visibility_policy.summary().exposure,
+            BuiltinSubagentExposure::Hidden
+        );
+        for parent in [
+            None,
+            Some("Minimal"),
+            Some("Standard"),
+            Some("Cowork"),
+            Some("Creative"),
+            Some("Claw"),
+            Some("DeepResearch"),
+            Some("SwarmWorker"),
+            Some("SwarmReviewer"),
+        ] {
+            assert!(!swarm.visibility_policy.can_access_from_parent(parent));
+        }
     }
 
     let computer_use = specs

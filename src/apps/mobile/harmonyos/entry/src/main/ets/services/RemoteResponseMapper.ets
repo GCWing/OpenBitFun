@@ -9,6 +9,8 @@ import {
   RemoteSession,
   RemoteToolStatusResponse,
   SessionItemResponse,
+  SessionRolledBackResponse,
+  SessionRolledBackResult,
   WorkspaceInfo,
   WorkspaceInfoResponse
 } from '../model/RemoteModels';
@@ -199,6 +201,28 @@ export class RemoteResponseMapper {
       images: item.images || []
     };
     return message;
+  }
+
+  /**
+   * Decode the answer to `rollback_session_to_turn` (`resp:
+   * "session_rolled_back"`).
+   *
+   * The variant is checked rather than assumed: the relay forwards whatever the
+   * addressed host replies, and a payload that is not this answer must not be
+   * read as a rollback that retired nothing. Absent host fields stay absent here
+   * so a caller can tell "no prompt offered" from "an empty prompt".
+   */
+  static sessionRolledBack(response: SessionRolledBackResponse): SessionRolledBackResult {
+    if (response.resp !== 'session_rolled_back') {
+      throw new Error(`Unexpected rollback response: ${response.resp || 'none'}`);
+    }
+    return {
+      sessionId: response.session_id || '',
+      retiredTurnIds: response.retired_turn_ids || [],
+      restoredFiles: response.restored_files || [],
+      composerText: response.composer_text,
+      changed: response.changed === true
+    };
   }
 
   static activeTurnToMessage(turn: ActiveTurnSnapshotResponse, renderVersion: number = 0): ChatMessage {

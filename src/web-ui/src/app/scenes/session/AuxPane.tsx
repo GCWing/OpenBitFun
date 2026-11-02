@@ -6,12 +6,12 @@
  */
 
 import { forwardRef, useEffect, useRef, useImperativeHandle, useCallback, useSyncExternalStore } from 'react';
-import { Maximize2, Minimize2, SquareDashed } from 'lucide-react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import { ContentCanvas, useCanvasStore } from '../../components/panels/content-canvas';
 import { usePanelTabCoordinator } from '../../components/panels/content-canvas/hooks/usePanelTabCoordinator';
 import { TAB_EVENTS } from '../../components/panels/content-canvas/types';
-import { collapseSessionAuxPane, expandSessionAuxPane, hideSessionAuxPane } from './sessionPanelLayout';
+import { collapseSessionAuxPane, expandSessionAuxPane } from './sessionPanelLayout';
 import { switchAgentCanvasScope } from '../../components/panels/content-canvas/stores';
 import { useI18n } from '@/infrastructure/i18n';
 import type { PanelContent as OldPanelContent } from '../../components/panels/base/types';
@@ -21,6 +21,7 @@ import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { isCanvasTabVisibleForSession } from '../../components/panels/content-canvas/types';
 
 import './AuxPane.scss';
+import { AuxPaneEmptyState } from './AuxPaneEmptyState';
 
 const log = createLogger('AuxPane');
 
@@ -34,14 +35,17 @@ export interface AuxPaneRef {
 
 interface AuxPaneProps {
   workspacePath?: string;
+  externalToolbar?: boolean;
   isSceneActive?: boolean;
   terminalResizeSuspended?: boolean;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
 }
 
 const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
-  ({ workspacePath, isSceneActive = true, terminalResizeSuspended = false, isFullscreen = false, onToggleFullscreen }, ref) => {
+  ({ workspacePath, externalToolbar = false, isSceneActive = true, terminalResizeSuspended = false, resizeSuspended = false, isFullscreen = false, onToggleFullscreen }, ref) => {
     const { t } = useI18n('components');
     const activeSessionId = useSyncExternalStore(
       flowChatStore.subscribe.bind(flowChatStore),
@@ -154,53 +158,31 @@ const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
     return (
       <div data-openbitfun-component="aux-pane" data-openbitfun-part="root" className="openbitfun-aux-pane">
         <ContentCanvas
+          externalToolbar={externalToolbar}
           workspacePath={workspacePath}
           mode="agent"
           isSceneActive={isSceneActive}
           onReveal={expandPanel}
-          onCollapsePanel={hideSessionAuxPane}
-          toolbarActions={(
-            <>
-              {onToggleFullscreen && (
-                <Tooltip content={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')} placement="bottom">
-                  <IconButton
-                    size="sm"
-                    aria-label={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')}
-                    aria-pressed={isFullscreen}
-                    icon={<Icon glyph={isFullscreen ? Minimize2 : Maximize2} size="sm" />}
-                    onClick={event => {
-                      event.stopPropagation();
-                      onToggleFullscreen();
-                    }}
-                  />
-                </Tooltip>
-              )}
-              <Tooltip content={t('canvas.hidePanel')} placement="bottom">
-                <IconButton
-                  size="sm"
-                  aria-label={t('canvas.hidePanel')}
-                  icon={<Icon glyph={SquareDashed} size="sm" />}
-                  onClick={event => {
-                    event.stopPropagation();
-                    hideSessionAuxPane();
-                  }}
-                />
-              </Tooltip>
-            </>
-          )}
+          toolbarActions={onToggleFullscreen ? (
+            <Tooltip content={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')} placement="bottom">
+              <IconButton
+                size="sm"
+                aria-label={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')}
+                aria-pressed={isFullscreen}
+                icon={<Icon glyph={isFullscreen ? Minimize2 : Maximize2} size="sm" />}
+                onClick={event => {
+                  event.stopPropagation();
+                  onToggleFullscreen();
+                }}
+              />
+            </Tooltip>
+          ) : null}
           onInteraction={handleInteraction}
           onBeforeClose={handleBeforeClose}
           terminalResizeSuspended={terminalResizeSuspended}
+          resizeSuspended={resizeSuspended}
           missionControlEnabled={false}
-          emptyState={
-            <div
-              className="openbitfun-aux-pane__empty-state"
-              data-openbitfun-component="aux-pane"
-              data-openbitfun-part="emptyState"
-            >
-              {t('canvas.noContentOpen')}
-            </div>
-          }
+          emptyState={<AuxPaneEmptyState workspacePath={workspacePath} sessionId={activeSessionId} />}
         />
       </div>
     );

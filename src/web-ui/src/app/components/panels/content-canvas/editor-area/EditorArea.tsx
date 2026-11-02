@@ -19,7 +19,10 @@ export interface EditorAreaProps {
   onTabCloseAllWithDirtyCheck?: (groupId: EditorGroupId) => Promise<boolean>;
   disablePopOut?: boolean;
   toolbarActions?: React.ReactNode;
+  externalToolbar?: boolean;
   terminalResizeSuspended?: boolean;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
 }
 
 export const EditorArea: React.FC<EditorAreaProps> = ({
@@ -32,7 +35,9 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   onTabCloseAllWithDirtyCheck,
   disablePopOut = false,
   toolbarActions,
+  externalToolbar = false,
   terminalResizeSuspended = false,
+  resizeSuspended = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const topRowRef = useRef<HTMLDivElement>(null);
@@ -129,6 +134,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   );
 
   // Keep host layout controls in the upper-right corner of every split layout.
+  // Only top-row groups share the host header; lower groups keep their tab bars.
   const toolbarGroupId = layout.splitMode === 'horizontal' || layout.splitMode === 'grid'
     ? 'secondary' : 'primary';
 
@@ -158,9 +164,11 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
       onOpenMissionControl={groupId === 'primary' ? onOpenMissionControl : undefined}
       onCloseAllTabs={handleCloseAllTabs(groupId)}
       onInteraction={onInteraction}
+      externalToolbar={externalToolbar && (groupId === 'primary' || groupId === toolbarGroupId)}
       disablePopOut={disablePopOut}
       toolbarActions={toolbarActions === undefined || groupId === toolbarGroupId ? toolbarActions : null}
       terminalResizeSuspended={terminalResizeSuspended}
+      resizeSuspended={resizeSuspended}
     />
   );
 

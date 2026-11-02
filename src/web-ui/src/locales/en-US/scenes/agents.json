@@ -9,37 +9,41 @@
   "loading": "Loading…",
   "page": {
     "title": "Agents",
-    "subtitle": "Configure four Agent Harnesses, task-focused Agents, and delegated SubAgents",
+    "subtitle": "Execution modes reflect how default agents work, while specialized agents complete tasks independently or together.",
     "searchPlaceholder": "Search agents by name or description…",
     "newAgent": "New Agent"
   },
   "nav": {
-    "harness": "Agent Harness",
+    "harness": "Execution modes",
     "coreAgents": "Connected Agents",
     "agents": "Agents"
   },
   "harnessZone": {
-    "title": "Agent Harness",
-    "subtitle": "Choose how a session executes work; each Harness owns its tool and collaboration policy",
+    "title": "Execution modes",
     "flowCaption": "One task · Four strategies · One result",
     "task": "Task",
     "result": "Result",
+    "replay": "Replay animation",
     "profiles": {
       "Minimal": {
         "name": "$t(shared:agents.Minimal)",
-        "purpose": "Lean flow, fast progress"
+        "purpose": "Less intervention, more autonomy",
+        "description": "Emphasizes autonomy, with less prescribed process so the model can decide how to complete coding and other tasks."
       },
       "Standard": {
         "name": "$t(shared:agents.Standard)",
-        "purpose": "Balance speed and quality"
+        "purpose": "A complete toolkit for coding and everyday work",
+        "description": "Covers coding and everyday work, using clear task guidance and a complete toolkit for development, organizing information, and writing."
       },
       "Ultimate": {
         "name": "$t(shared:agents.Ultimate)",
-        "purpose": "Deep planning and collaboration"
+        "purpose": "Work together on complex projects",
+        "description": "Emphasizes teamwork, with agents working in parallel and independent review supporting complex projects and large-scale changes."
       },
       "Creative": {
         "name": "$t(shared:agents.Creative)",
-        "purpose": "Customize and build on OpenBitFun"
+        "purpose": "Create content and apps, shape your experience",
+        "description": "Turns ideas into finished work in natural language: motion videos, slide decks, prototypes, and web pages crafted with creative skills loaded on demand, plus MiniApps and a customized OpenBitFun."
       }
     }
   },
@@ -63,7 +67,7 @@
     "computerUseDisabledBadge": "Disabled in Settings"
   },
   "agentsZone": {
-    "title": "Agents",
+    "title": "Specialized agents",
     "subtitle": "Browse built-in, user, project, and external Agents in one place, then open a card to review or configure it.",
     "empty": {
       "noAgents": "No agents are available right now",
@@ -123,6 +127,14 @@
     "filterProject": "Project",
     "backToOverview": "Back to Overview",
     "detail": {
+      "overview": "Overview",
+      "backToOverview": "Back to overview",
+      "cards": {
+        "tools": "View and manage the tools this agent can use",
+        "skills": "Choose the Skills available to this agent",
+        "subagents": "Configure delegation and collaborating agents",
+        "model": "Choose the model used by this subagent"
+      },
       "configuration": "Configuration",
       "basicInfo": "Basic information",
       "basicInfoHint": "Identity, purpose, and runtime properties",
@@ -161,8 +173,6 @@
     "selectAll": "Select all",
     "selectionSaveHint": "Takes effect after saving",
     "capabilityEnabled": "Enabled",
-    "subagentsSelectedCount": "{{count}} SubAgents selected",
-    "subagentsEnabledCount": "{{count}} SubAgents enabled",
     "noEnabledSubagents": "No SubAgents enabled",
     "reset": "Reset",
     "cancel": "Cancel",
@@ -191,7 +201,6 @@
       "sourceLevel": "Source / level",
       "status": "Status",
       "savedStatus": "Saved configuration status",
-      "subagentId": "ID",
       "source": "Source",
       "toolCount": "Tool count",
       "externalManaged": "Managed by the external provider"
@@ -211,9 +220,6 @@
       "builtin": "Built-in groups",
       "myGroups": "My groups",
       "otherSkills": "Other skills",
-      "selectedCount": "{{count}} skills selected",
-      "enabledCount": "{{count}} skills enabled",
-      "runtimeCount": "{{count}} used at runtime",
       "unavailableCount": "{{count}} unavailable",
       "enableGroupSkills": "Select all skills in {{name}}",
       "clearGroupSkills": "Deselect skills in {{name}}",
@@ -236,7 +242,6 @@
       "extension": "Extension · {{provider}}",
       "other": "Other",
       "selectedCount": "{{count}} tools selected",
-      "enabledCount": "{{count}} tools enabled",
       "manageGroups": "Manage groups",
       "manageTitle": "Manage my tool groups",
       "manageSubtitle": "Organize reusable personal tool selections.",
@@ -271,13 +276,29 @@
     "editAgent": "Edit",
     "deleteAgent": "Delete",
     "externalActions": "External agent",
-    "manageExternalAgent": "Manage in Ecosystem Compatibility",
+    "manageExternalAgent": "Manage in External Import",
     "deleteConfirm": "Delete custom agent \"{{name}}\"? This cannot be undone.",
     "deleteSuccess": "Deleted \"{{name}}\"",
     "deleteFailed": "Delete failed: ",
     "form": {
+      "wizard": {
+        "navigation": "Creation steps",
+        "progress": "{{current}} / {{total}}",
+        "next": "Next",
+        "back": "Back",
+        "basicsTitle": "Define how it collaborates",
+        "basicsDescription": "You assign work directly to agents; other agents delegate tasks to subagents. User-level agents work across projects, while project-level agents apply only to the current project.",
+        "promptTitle": "Set consistent working rules",
+        "promptDescription": "These instructions guide every task. Clear decision criteria and completion conditions help keep its approach and results consistent.",
+        "toolsTitle": "Set its action boundaries",
+        "toolsDescription": "Tools determine the actions it can perform. Enable only the capabilities needed for its tasks; tool calls remain subject to the current permission policy.",
+        "loadingTools": "Loading available tools…",
+        "toolsLoadFailed": "Could not load tools from the current device. Please retry.",
+        "retry": "Retry",
+        "noTools": "No selectable tools are available. The default tool configuration will be used."
+      },
       "createThroughChatHint": "You can also describe what you need in a conversation and ask an Agent to create a custom Agent for you.",
-      "title": "Create Custom Agent",
+      "title": "Create agent",
       "subtitle": "Create an Agent or SubAgent with its own prompt, tools, and runtime context policy.",
       "titleEdit": "Edit Custom Agent",
       "subtitleEdit": "Change display name, description, system prompt, tools, and runtime context policy.",
@@ -291,19 +312,15 @@
       "kind": "Kind",
       "kindAgentTooltip": "Select this Agent in the conversation input to assign tasks directly.",
       "kindSubagentTooltip": "Receives delegated tasks from a primary Agent and returns the results.",
-      "id": "Agent ID",
-      "idPlaceholder": "Used by the model, config, and routing; cannot be changed after creation",
-      "idRequired": "ID is required",
-      "idFormat": "Must start with a letter and contain only letters, numbers, underscores, or hyphens",
-      "name": "Name (optional)",
-      "namePlaceholder": "Used for display only; defaults to the Agent ID",
+      "name": "Name",
+      "namePlaceholder": "e.g. Research assistant",
       "level": "Level",
       "modeUserOnly": "Custom Agents that accept tasks directly are user-level in the current release.",
-      "description": "Description",
+      "description": "Task goal",
       "descPlaceholder": "Briefly describe what this agent does",
       "descRequired": "Description is required",
       "prompt": "System Prompt",
-      "promptPlaceholder": "Enter the system prompt that defines this agent's behavior...\n\nSupported placeholders\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: Language preference\n{FILE_REFERENCES}: File and image reference guidance",
+      "promptPlaceholder": "Enter the agent's system prompt",
       "promptRequired": "System prompt is required",
       "readonly": "Readonly mode",
       "model": "Model",
@@ -328,7 +345,16 @@
       "createSuccess": "Created agent \"{{name}}\"",
       "createFailed": "Create failed: ",
       "review": "Review",
-      "reviewToolsHint": "Additional checks use only read-only tools."
+      "reviewToolsHint": "Additional checks use only read-only tools.",
+      "readonlyToolsRequired": "Select at least one read-only tool in read-only mode.",
+      "nameRequired": "Give your agent a name.",
+      "promptGuide": "Describe how to work, what to avoid, and what a useful result looks like. You can start with an outline based on your task goal.",
+      "usePromptTemplate": "Start from task outline",
+      "promptTemplate": "## Goal\n{{goal}}\n\n## Approach\nRead the available context, identify missing information, and work through the task. Ask when a missing decision would change the result.\n\n## Constraints\nRespect the project instructions and granted permissions. Distinguish evidence from assumptions.\n\n## Deliverable\nProvide the result, supporting evidence, and any unresolved questions.",
+      "permissionsReadonly": "Read-only access · adjust permissions",
+      "permissionsStandard": "Standard permissions · adjust access",
+      "customizeTools": "Customize selected tools",
+      "createNamePlaceholder": "For example, Research helper"
     }
   },
   "reviewTeams": {
@@ -368,15 +394,17 @@
     "Cowork": "Office collaboration Agent: help with office and research tasks, confirming key steps with you.",
     "ComputerUse": "Computer use SubAgent: perform delegated work in browsers, desktop apps, and file systems.",
     "DeepResearch": "Deep research agent: conduct systematic investigation and analysis on complex topics",
+    "ResearchSpecialist": "Finds and evaluates web sources to deliver focused research with clear supporting evidence.",
+    "GeneralPurpose": "Combines search, analysis, and coding to complete multi-step tasks independently.",
     "Explore": "Explore SubAgent: quickly browse the codebase to understand project structure and key files",
     "CodeReview": "Code review SubAgent: perform quality checks and provide improvement suggestions",
     "DeepReview": "Strict Review compatibility SubAgent: supports review workflows in historical sessions and commands.",
     "Init": "Init agent: help set up project structure and initial configuration",
     "ReviewFixer": "Review fixer SubAgent: automatically fix code issues based on review results",
     "Claw": "Personal assistant: help with daily tasks using your preferences and context.",
-    "Standard": "General task execution with planning, tools, and delegated work.",
-    "Ultimate": "Decompose complex tasks, coordinate parallel SubAgents, and review their results.",
-    "Minimal": "A compact execution loop with a fixed, small tool set.",
-    "Creative": "Create and customize OpenBitFun experiences and capabilities."
+    "Standard": "Clear guidance and a complete toolkit support coding as well as everyday work such as handling information and creating content.",
+    "Ultimate": "Multiple agents work in parallel, with independent review for complex projects and large-scale changes.",
+    "Minimal": "Minimal prompting and a focused tool set give next-generation flagship models room to excel at coding and other tasks.",
+    "Creative": "Create videos, decks, prototypes, and web pages with creative skills, or build MiniApps and customize the interface in natural language."
   }
 }

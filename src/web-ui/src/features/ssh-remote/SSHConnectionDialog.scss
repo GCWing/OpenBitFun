@@ -1,6 +1,7 @@
 /**
  * SSH Connection Dialog Styles
  */
+@use '@/shared/styles/overlay-layout' as overlay-layout;
 
 .ssh-connection-dialog {
   display: flex;
@@ -12,12 +13,21 @@
   overflow: hidden;
   font-family:var(--openbitfun-type-body-sm-font-family);
 
+  &__surface {
+    @include overlay-layout.workspace-dialog-size;
+  }
+
   &__error-banner {
     flex-shrink: 0;
-    padding: 8px 16px 10px;
-    border-bottom: 1px solid var(--openbitfun-color-border-subtle);
-    background: var(--openbitfun-color-surface-canvas);
+    padding-block: 8px 10px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    > [role='alert'] { flex: 1; }
   }
+
+  &__source-status { text-align: center; color: var(--openbitfun-color-content-muted); padding-block: var(--openbitfun-space-3); }
 
   &__error-alert {
     padding: 8px 10px;
@@ -28,12 +38,16 @@
     flex: 1;
     min-height: 0;
     overflow-x: hidden;
-    padding: 10px 0 6px;
+    padding-block: 10px 6px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
   }
 
   &__section {
     margin-bottom: 12px;
-    padding: 0 16px;
+  }
+
+  &__source {
+    padding-block: var(--openbitfun-space-2) var(--openbitfun-space-3);
   }
 
   &__section-header {
@@ -62,118 +76,26 @@
 
   &__saved-list {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
     max-height: 132px;
   }
 
+  &__section-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
   &__saved-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 10px;
-    border-radius: 6px;
-    background: var(--openbitfun-color-surface-subtle);
-    transition:
-      transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-      background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-    cursor: pointer;
-    position: relative;
-
-    &:hover {
-      background: var(--openbitfun-color-action-quiet-hover);
-    }
-
-    &--config {
-      .ssh-connection-dialog__saved-icon {
-        background: var(--openbitfun-color-status-success-surface);
-        color: var(--openbitfun-color-status-success-content);
-      }
-
-      .ssh-connection-dialog__saved-actions {
-        opacity: 1;
-      }
-    }
-  }
-
-  &__saved-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: var(--openbitfun-color-action-secondary-background);
-    border-radius: 6px;
-    color: var(--openbitfun-color-accent-default);
-    flex-shrink: 0;
-  }
-
-  &__saved-info {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
     min-width: 0;
-    flex: 1;
-  }
-
-  &__saved-name {
-    font-size: var(--openbitfun-type-label-md-font-size);
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
-    font-family:var(--openbitfun-type-body-sm-font-family);
-    color: var(--openbitfun-color-content-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    line-height: var(--openbitfun-type-modifier-leading-snug-line-height);
-  }
-
-  &__saved-detail {
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    font-weight: var(--openbitfun-type-body-sm-font-weight);
-    font-family:var(--openbitfun-type-body-sm-font-family);
-    color: var(--openbitfun-color-content-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    line-height: var(--openbitfun-type-modifier-leading-snug-line-height);
-    font-variant-numeric: tabular-nums;
-  }
-
-  &__saved-meta {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  &__saved-auth {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    background: var(--openbitfun-color-surface-subtle);
-    border: 1px solid var(--openbitfun-color-border-subtle);
-    border-radius: 4px;
-    font-size: var(--openbitfun-type-meta-font-size);
-    color: var(--openbitfun-color-content-muted);
-    white-space: nowrap;
-  }
-
-  &__saved-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    .ssh-connection-dialog__saved-item:hover & {
-      opacity: 1;
-    }
   }
 
   &__divider {
     display: flex;
     align-items: center;
     gap: 16px;
-    margin: 12px 16px;
+    margin-block: 12px;
     padding-top: 4px;
 
     &::before,
@@ -200,14 +122,9 @@
     flex-direction: column;
     gap: 12px;
     min-width: 0;
-    padding: 8px 16px;
+    padding-block: 8px;
     border-radius: 8px;
     scroll-margin-top: 8px;
-    transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &--highlighted {
-      animation: ssh-connection-form-reveal 1.2s ease-out;
-    }
   }
 
   &__row {
@@ -233,32 +150,10 @@
     }
   }
 
-  &__field-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 6px;
-
-    .ssh-connection-dialog__label {
-      margin-bottom: 0;
-    }
-  }
-
   &__container-fields {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 12px;
-    border: 1px solid var(--openbitfun-color-border-subtle);
-    border-radius: 8px;
-    background: var(--openbitfun-color-surface-subtle);
-  }
-
-  &__connection-options {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    gap: var(--openbitfun-space-3);
   }
 
   &__options-grid {
@@ -269,61 +164,20 @@
   }
 
   &__advanced {
-    min-width: 0;
-    border: 1px solid var(--openbitfun-color-border-subtle);
-    border-radius: 8px;
-    background: var(--openbitfun-color-surface-subtle);
-    overflow: hidden;
+    min-inline-size: 0;
+    border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    padding-block-start: var(--openbitfun-space-2);
   }
 
-  &__advanced-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    width: 100%;
-    min-height: 38px;
-    padding: 8px 12px;
-    border: 0;
-    background: transparent;
-    color: var(--openbitfun-color-content-secondary);
-    font: inherit;
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
-    text-align: start;
-    cursor: pointer;
-    transition:
-      background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-      color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &:hover {
-      background: var(--openbitfun-color-action-quiet-hover);
-      color: var(--openbitfun-color-content-primary);
-    }
-
-    &:focus-visible {
-      outline: 1px solid var(--openbitfun-color-accent-default);
-      outline-offset: -1px;
-    }
+  &__advanced-content {
+    padding-inline: 0;
   }
 
-  &__advanced-chevron {
-    flex-shrink: 0;
-    transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &--expanded {
-      transform: rotate(180deg);
-    }
-  }
-
-  &__advanced-panel {
+  &__advanced-fields {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    min-width: 0;
-    padding: 12px;
-    border-top: 1px solid var(--openbitfun-color-border-subtle);
-    background: var(--openbitfun-color-surface-canvas);
+    gap: var(--openbitfun-space-4);
+    min-inline-size: 0;
   }
 
   &__test-report {
@@ -376,15 +230,6 @@
     margin-right: -6px;
   }
 
-  &__label {
-    display: block;
-    font-size: var(--openbitfun-type-label-sm-font-size);
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
-    font-family:var(--openbitfun-type-body-sm-font-family);
-    color: var(--openbitfun-color-content-muted);
-    margin-bottom: 6px;
-  }
-
   &__actions {
     flex-wrap: wrap;
     min-width: 0;
@@ -398,15 +243,6 @@
 
 @media (max-width: 480px) {
   .ssh-connection-dialog {
-    &__section,
-    &__form {
-      padding-inline: 12px;
-    }
-
-    &__divider {
-      margin-inline: 12px;
-    }
-
     &__row,
     &__row--host,
     &__options-grid {
@@ -434,18 +270,6 @@
   }
 }
 
-@keyframes ssh-connection-form-reveal {
-  0% {
-    background: color-mix(in srgb, var(--openbitfun-color-accent-default) 14%, transparent);
-  }
-  40% {
-    background: color-mix(in srgb, var(--openbitfun-color-accent-default) 8%, transparent);
-  }
-  100% {
-    background: transparent;
-  }
-}
-
 @keyframes ssh-connection-spin {
   from {
     transform: rotate(0deg);
@@ -460,13 +284,7 @@
     transition: none;
   }
 
-  .ssh-connection-dialog__form--highlighted,
   .ssh-connection-dialog__spinner {
     animation: none;
   }
-}
-
-/** SSH remote workspace dialog only: above nav fixed popovers (~10k) so the dimmed backdrop captures clicks. */
-.ssh-connection-dialog__modal-overlay {
-  z-index: 20000;
 }

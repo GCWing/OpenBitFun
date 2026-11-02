@@ -49,12 +49,11 @@
     "avatarPickerHint": "Pick a marker or enter your own symbol",
     "avatarPickerClose": "Close avatar picker",
     "avatarPresets": "Avatar choices",
-    "avatarOfficialPresets": "Claw avatars",
+    "avatarOfficialPresets": "IP avatars",
     "avatarEmojiPresets": "Emoji",
     "avatarUseOfficialPreset": "Use {{name}} avatar",
     "avatarFamilies": {
-      "claw": "primary portrait",
-      "clawOrbit": "orbit portrait"
+      "joystick": "black joystick companion"
     },
     "avatarUsePreset": "Use {{emoji}} as avatar",
     "avatarCustom": "Custom avatar symbol",
@@ -142,159 +141,18 @@
     "sessionTitleDesc": "Auto-generate titles for new sessions"
   },
   "nursery": {
-    "backToGallery": "$t(shared:agents.Claw)",
+    "backToGallery": "$t(shared:agents.Claw) home",
     "gallery": {
       "title": "$t(shared:agents.Claw)",
-      "subtitle": "Create, configure, and start conversations with your assistants",
+      "subtitle": "Your personal AI companion, using your preferences and context to support your work and everyday tasks over time.",
       "newAssistant": "Create assistant",
+      "createConfirmMessage": "Create a new assistant? After creation, you can configure its identity, tools, and personality.",
       "creating": "Creating...",
       "createFailed": "Assistant could not be created.",
       "loadFailed": "Assistants could not be loaded.",
       "emptyTitle": "No assistants yet",
       "emptySubtitle": "Create an assistant to give it a role, tools, and personality.",
-      "assistantsTitle": "Your assistants",
-      "assistantsSubtitle": "Configure an assistant or start a new conversation"
-    },
-    "template": {
-      "title": "Assistant Defaults",
-      "subtitle": "New assistants inherit these tools and skills",
-      "pageDescription": "Choose the skills and tools assistants use by default. Changes save automatically and apply from the next turn.",
-      "scopeLabel": "Current device · User-level configuration",
-      "defaultBadge": "Default",
-      "configure": "Configure defaults",
-      "restoreProductDefaults": "Restore product defaults",
-      "saveState": {
-        "saved": "Saved",
-        "saving": "Saving",
-        "error": "Not saved"
-      },
-      "summaryLabel": "Assistant default summary",
-      "summary": {
-        "enabled": "Enabled",
-        "changed": "Different from default",
-        "unavailable": "Currently unavailable"
-      },
-      "categoryLabel": "Capability type",
-      "filterLabel": "Capability filters",
-      "filters": {
-        "all": "All",
-        "enabled": "Enabled",
-        "disabled": "Disabled",
-        "changed": "Different from default",
-        "unavailable": "Unavailable"
-      },
-      "searchPlaceholder": "Search name, description, or ID",
-      "clearSearch": "Clear search",
-      "clearFilters": "Clear filters",
-      "columns": {
-        "name": "Name and description",
-        "source": "Source",
-        "availability": "Availability",
-        "state": "State",
-        "changed": "Different from default",
-        "access": "Access",
-        "actions": "Actions"
-      },
-      "availability": {
-        "available": "Available",
-        "unavailable": "Unavailable"
-      },
-      "state": {
-        "enabled": "Enabled",
-        "disabled": "Disabled"
-      },
-      "valueYes": "Yes",
-      "valueNo": "No",
-      "officialSource": "OpenBitFun official",
-      "executableTool": "Can execute",
-      "readonlyToolHint": "This tool reads information without changing project or system state.",
-      "executableToolHint": "This tool can perform actions. Actual approval requirements follow the current permission rules.",
-      "permissionInherited": "Tool-dependent",
-      "permissionInheritedHint": "A skill's actual access is determined by the tools it invokes and their approval rules.",
-      "noDescription": "No description provided",
-      "openCapabilityDetail": "Open details for {{name}}",
-      "toggleCapability": "Toggle {{name}}",
-      "toggleServerGroup": "Expand or collapse {{name}}",
-      "toggleServerTools": "Toggle all tools from {{name}}",
-      "enabledCount": "{{enabled}} / {{total}} enabled",
-      "noFilterResults": "No capabilities match the current search and filters.",
-      "resultCount": "{{count}} items",
-      "loading": "Loading assistant defaults",
-      "configurationUnavailable": "The default configuration could not be loaded. Controls are temporarily unavailable.",
-      "retry": "Retry",
-      "statsUnavailable": "Details unavailable",
-      "tokenTitle": "Context Usage Estimate",
-      "tokenSystemPrompt": "System Prompt",
-      "tokenToolInjection": "Tool Injection",
-      "tokenRules": "Rules",
-      "tokenMemories": "Memories",
-      "tokenTotal": "Default Total",
-      "stats": {
-        "tools": "{{count}} tools",
-        "skills": "{{count}} skills"
-      },
-      "groupCountEmpty": "None",
-      "builtinToolsSection": "Built-in tools",
-      "colEnabled": "Enabled",
-      "colDisabled": "Disabled",
-      "colEmpty": "None",
-      "mcpToolsSection": "MCP tools",
-      "mcpEmptyTitle": "No MCP servers connected",
-      "mcpEmptyHint": "Add MCP servers in Settings to see their tools here.",
-      "mcpServerNoTools": "No tools available from this server",
-      "closeDetail": "Close detail",
-      "detailPanel": "Detail panel",
-      "detailEmptyTitle": "Select a capability",
-      "detailEmptyHint": "Details, runtime state, and default controls will appear here.",
-      "openServerDetail": "MCP server details",
-      "toolTypeBuiltin": "Built-in tool",
-      "toolTypeMcp": "MCP tool",
-      "readonlyTool": "Read-only",
-      "mcpStatus": {
-        "uninitialized": "Not initialized",
-        "starting": "Starting",
-        "connected": "Connected",
-        "healthy": "Healthy",
-        "needsAuth": "Authentication required",
-        "reconnecting": "Reconnecting",
-        "failed": "Connection failed",
-        "stopping": "Stopping",
-        "stopped": "Stopped",
-        "unknown": "Status unknown"
-      },
-      "detailSections": {
-        "basic": "Basic information",
-        "status": "Status",
-        "permissions": "Permissions and operation",
-        "management": "Management"
-      },
-      "detailFields": {
-        "fullName": "Full name",
-        "originalId": "Original ID",
-        "source": "Source",
-        "scope": "Configuration scope",
-        "productDefault": "Product default",
-        "currentState": "Current state",
-        "changed": "Different from default",
-        "availability": "Availability",
-        "runtimeState": "Used at runtime",
-        "transport": "Transport",
-        "autoStart": "Start automatically",
-        "toolCount": "Tool count"
-      },
-      "enableAllServerTools": "Use all tools from this server",
-      "enableAllServerToolsHint": "Controls this server's discovered tools for assistant defaults only.",
-      "useByDefault": "Use by default",
-      "useByDefaultHint": "Applies to assistants using this default configuration from the next turn.",
-      "serverToolsHeading": "Tools on this server",
-      "skillEnabledCandidates": "Enabled candidates",
-      "unknownSkillSource": "Other source",
-      "skillScopeUser": "User",
-      "skillScopeProject": "Project",
-      "skillRuntimeSelected": "Used at runtime",
-      "skillRuntimeCovered": "Enabled, covered by {{source}}",
-      "skillRuntimeEnabled": "Enabled, not currently selected",
-      "skillOrigin": "Source and scope: {{origin}}"
+      "assistantsTitle": "Your assistants"
     },
     "tabs": {
       "identity": "Identity",
@@ -306,13 +164,10 @@
       "unnamed": "Unnamed Assistant",
       "noVibe": "An assistant waiting to be defined",
       "configure": "Configure assistant",
-      "newSession": "New session",
       "open": "Open assistant",
       "openFailed": "Failed to open assistant",
       "close": "Close assistant",
       "closeFailed": "Failed to close assistant",
-      "startingSession": "Starting...",
-      "newSessionFailed": "Could not start a new session.",
       "tokenTitle": "Context usage estimate",
       "primaryBadge": "Primary",
       "setPrimary": "Set as primary",
@@ -330,6 +185,7 @@
       "inheritPrimary": "Inherit from template (primary)",
       "inheritFast": "Inherit from template (fast)",
       "personaDocsTitle": "Key documents",
+      "newSessionTitle": "Start a conversation",
       "sessionsSectionTitle": "Sessions",
       "scheduledSessionsTitle": "Scheduled sessions",
       "scheduledSessionsNoWorkspace": "Select an assistant workspace to manage scheduled sessions.",
@@ -339,7 +195,8 @@
         "USER": "User profile"
       },
       "personaDocSaveFailed": "Failed to save document",
-      "personaDocLoadFailed": "Failed to load document"
+      "personaDocLoadFailed": "Failed to load document",
+      "closeDetail": "Close detail"
     }
   }
 }

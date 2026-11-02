@@ -9,6 +9,10 @@ pub mod acp_tool_bridge;
 pub mod computer_use;
 #[cfg(feature = "computer-use-contract")]
 pub mod computer_use_control;
+#[cfg(feature = "computer-use-contract")]
+pub mod computer_use_geometry;
+#[cfg(feature = "computer-use-contract")]
+pub mod computer_use_permissions;
 pub mod deferred_tool;
 #[cfg(feature = "element-token")]
 pub mod element_token;
@@ -19,6 +23,7 @@ pub mod input_validator;
 #[cfg(feature = "mcp-bridge")]
 pub mod mcp_tool_bridge;
 pub mod permission_intent;
+pub mod ptc;
 pub mod tool_execution_presentation;
 pub mod tool_result_storage;
 pub mod tool_snapshot;
@@ -64,32 +69,33 @@ pub use framework::{
     normalize_absolute_posix_path, normalize_host_path, normalize_runtime_relative_path,
     parse_openbitfun_current_session_uri, parse_openbitfun_runtime_uri,
     posix_resolve_path_with_workspace, posix_style_path_is_absolute,
-    render_get_tool_spec_tool_use_message, resolve_contextual_tool_manifest,
-    resolve_contextual_tool_manifest_from_provider, resolve_contextual_visible_tools,
-    resolve_contextual_visible_tools_from_provider, resolve_get_tool_spec_detail,
-    resolve_get_tool_spec_detail_from_provider, resolve_get_tool_spec_execution_plan,
-    resolve_get_tool_spec_execution_result_from_provider, resolve_host_path,
-    resolve_host_path_with_workspace, resolve_readonly_enabled_tools, resolve_tool_manifest_policy,
-    resolve_tool_path_with_context, resolve_tool_path_with_context_roots,
-    resolve_workspace_tool_path, sort_tool_manifest_definitions,
-    strip_invalid_windows_drive_path_prefix, summarize_get_tool_spec_deferred_tools,
-    tool_manifest_sort_rank, tool_path_is_effectively_absolute,
-    tool_restrictions_for_delegation_policy, validate_deferred_tool_usage,
-    validate_get_tool_spec_input, validate_tool_allowed_by_list, ContextualToolManifest,
-    ContextualToolManifestItem, ContextualVisibleTools, DeferredToolUsageError, DynamicMcpToolInfo,
-    DynamicToolInfo, GetToolSpecCatalogProvider, GetToolSpecDeferredToolSummary, GetToolSpecDetail,
-    GetToolSpecExecutionError, GetToolSpecExecutionPlan, GetToolSpecLoadObservation,
-    GetToolSpecRuntime, LoadedDeferredToolSpec, ParsedOpenBitFunCurrentSessionUri,
-    ParsedOpenBitFunRuntimeUri, PortableToolContextProvider, PromptVisibleToolManifestItem,
-    SnapshotToolDecorator, SnapshotToolWrapper, SnapshotToolWrapperRef,
-    StaticToolMaterializationError, StaticToolProvider, StaticToolProviderFactory,
-    StaticToolProviderGroup, StaticToolProviderPlan, ToolCatalogRuntime,
-    ToolCatalogSnapshotProvider, ToolContextFacts, ToolDecoratorRef, ToolExecutionAccessError,
-    ToolExposure, ToolManifestDefinition, ToolManifestPolicyResolution, ToolManifestPolicyTool,
-    ToolPathBackend, ToolPathContractError, ToolPathOperation, ToolPathPolicy, ToolPathResolution,
-    ToolRef, ToolRegistry, ToolRegistryItem, ToolRenderOptions, ToolRestrictionError, ToolResult,
-    ToolRuntimeAssembly, ToolRuntimeRestrictions, ToolWorkspaceKind, ValidationResult,
-    GET_TOOL_SPEC_TOOL_NAME, OPENBITFUN_CURRENT_SESSION_URI_PREFIX, OPENBITFUN_RUNTIME_URI_PREFIX,
+    render_get_tool_spec_deferred_tool_entry, render_get_tool_spec_tool_use_message,
+    resolve_contextual_tool_manifest, resolve_contextual_tool_manifest_from_provider,
+    resolve_contextual_visible_tools, resolve_contextual_visible_tools_from_provider,
+    resolve_get_tool_spec_detail, resolve_get_tool_spec_detail_from_provider,
+    resolve_get_tool_spec_execution_plan, resolve_get_tool_spec_execution_result_from_provider,
+    resolve_host_path, resolve_host_path_with_workspace, resolve_readonly_enabled_tools,
+    resolve_tool_manifest_policy, resolve_tool_path_with_context,
+    resolve_tool_path_with_context_roots, resolve_workspace_tool_path,
+    sort_tool_manifest_definitions, strip_invalid_windows_drive_path_prefix,
+    summarize_get_tool_spec_deferred_tools, tool_manifest_sort_rank,
+    tool_path_is_effectively_absolute, tool_restrictions_for_delegation_policy,
+    validate_deferred_tool_usage, validate_get_tool_spec_input, validate_tool_allowed_by_list,
+    ContextualToolManifest, ContextualToolManifestItem, ContextualVisibleTools,
+    DeferredToolUsageError, DynamicMcpToolInfo, DynamicToolInfo, GetToolSpecCatalogProvider,
+    GetToolSpecDeferredToolSummary, GetToolSpecDetail, GetToolSpecExecutionError,
+    GetToolSpecExecutionPlan, GetToolSpecLoadObservation, GetToolSpecRuntime,
+    LoadedDeferredToolSpec, ParsedOpenBitFunCurrentSessionUri, ParsedOpenBitFunRuntimeUri,
+    PortableToolContextProvider, PromptVisibleToolManifestItem, SnapshotToolDecorator,
+    SnapshotToolWrapper, SnapshotToolWrapperRef, StaticToolMaterializationError,
+    StaticToolProvider, StaticToolProviderFactory, StaticToolProviderGroup, StaticToolProviderPlan,
+    ToolCatalogRuntime, ToolCatalogSnapshotProvider, ToolContextFacts, ToolDecoratorRef,
+    ToolExecutionAccessError, ToolExposure, ToolManifestDefinition, ToolManifestPolicyResolution,
+    ToolManifestPolicyTool, ToolPathBackend, ToolPathContractError, ToolPathOperation,
+    ToolPathPolicy, ToolPathResolution, ToolRef, ToolRegistry, ToolRegistryItem, ToolRenderOptions,
+    ToolRestrictionError, ToolResult, ToolRuntimeAssembly, ToolRuntimeRestrictions,
+    ToolWorkspaceKind, ValidationResult, GET_TOOL_SPEC_TOOL_NAME,
+    OPENBITFUN_CURRENT_SESSION_URI_PREFIX, OPENBITFUN_RUNTIME_URI_PREFIX,
 };
 pub use input_validator::InputValidator;
 #[cfg(feature = "mcp-bridge")]
@@ -106,6 +112,16 @@ pub use openbitfun_runtime_ports::{
     DynamicToolDescriptor, DynamicToolProvider, PortError, PortErrorKind, PortResult, ToolDecorator,
 };
 pub use permission_intent::PermissionIntent;
+pub use ptc::{
+    json_schema_to_typescript, ptc_run_code_description, ptc_run_code_description_for_language,
+    ptc_run_code_input_schema, ptc_run_code_input_schema_for_language, render_ptc_loaded_tool_sdk,
+    render_ptc_loaded_tool_typescript_sdk, render_ptc_sdk, render_ptc_sdk_with_options,
+    render_ptc_tool_calling_guide, render_ptc_tool_calling_guide_for_language,
+    render_ptc_tool_calling_guide_with_options, render_ptc_typescript_sdk,
+    render_ptc_typescript_sdk_with_options, PtcToolCallError, PtcToolContract,
+    PTC_LANGUAGE_CONTEXT_KEY, PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY, PTC_RUN_CODE_TOOL_NAME,
+    PTC_TOOL_PRESENTATION_CONTEXT_KEY, PTC_TOOL_PRESENTATION_MODE,
+};
 pub use tool_execution_presentation::{
     build_invalid_tool_call_error_message, build_normal_tool_json_repair_notice,
     build_permission_denied_tool_presentation, build_tool_call_truncation_recovery_notice,
@@ -129,3 +145,6 @@ pub use tool_snapshot::{
     ToolCancellationContract, ToolEffectFacts, ToolEffectFactsSource, ToolEffectFilter,
     ToolProviderIdentity, ToolSnapshotCallError, ToolSnapshotItem,
 };
+
+#[cfg(feature = "computer-use-contract")]
+pub mod computer_use_host;

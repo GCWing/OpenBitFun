@@ -1,4 +1,5 @@
 import type React from 'react';
+import { ensureCangjiePrismLanguage } from '@/infrastructure/markdown/cangjiePrismLanguage';
 import { createModuleLoader } from './moduleLoader';
 
 type SyntaxHighlighterComponent = React.ComponentType<any>;
@@ -21,6 +22,9 @@ export const loadPrismSyntaxHighlighter = createModuleLoader(() =>
         preload: () => Promise<void>;
       };
       await component.preload();
+      // All consumers, including CodePreview and cached Markdown renders, must
+      // receive the custom grammar before the component becomes available.
+      ensureCangjiePrismLanguage(component);
       prismSyntaxHighlighterComponent = component;
       return prismSyntaxHighlighterComponent;
     },

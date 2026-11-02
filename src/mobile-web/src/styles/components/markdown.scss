@@ -482,6 +482,39 @@
   }
 }
 
+// ─── Math (KaTeX) ─────────────────────────────────────────────────────────────
+
+// Assistant markdown, thinking previews, and background-receipt prompts can all
+// render formulas, so the mobile containment rules are shared by the page.
+.chat-page {
+  .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+    margin: 0.5rem 0;
+    padding: var(--openbitfun-space-1) 0;
+
+    > .katex {
+      display: inline-block;
+      min-width: 0;
+      text-align: initial;
+    }
+  }
+
+  .katex {
+    font-size: var(--openbitfun-type-body-lg-font-size);
+    line-height: var(--openbitfun-type-modifier-leading-dense-line-height);
+    text-indent: 0;
+  }
+
+  // KaTeX hard-codes #cc0000 for parse errors; keep it readable on the dark
+  // mobile theme.
+  .katex-error {
+    color: var(--openbitfun-color-status-danger-content);
+  }
+}
+
 // Output bytes can be larger than the viewport. Keep their aspect ratio in
 // compact, foldable and wide transcript hosts.
 .markdown-output-image {

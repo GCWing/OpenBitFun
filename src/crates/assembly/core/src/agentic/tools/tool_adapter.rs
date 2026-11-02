@@ -40,6 +40,10 @@ impl ToolRegistryItem for dyn Tool {
         Tool::input_schema(self)
     }
 
+    fn output_schema(&self) -> Value {
+        Tool::output_schema(self)
+    }
+
     fn short_description(&self) -> String {
         Tool::short_description(self)
     }

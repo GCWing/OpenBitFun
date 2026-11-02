@@ -233,6 +233,27 @@ The tool cannot remove or rebind the worktree in which it is running. Use Sessio
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "operation": {"type": "string", "enum": ["list", "create_session", "create_branch", "remove"]},
+                "project_workspace_path": {"type": "string"},
+                "count": {"type": "integer"},
+                "worktrees": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "worktree_id": {"type": "string"},
+                "path": {"type": "string"},
+                "session_id": {"type": "string"},
+                "session_name": {"type": "string"},
+                "worktree": {"type": "object", "additionalProperties": true},
+                "idempotent_replay": {"type": "boolean"},
+                "next": {"type": "string"}
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

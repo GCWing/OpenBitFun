@@ -29,6 +29,7 @@ describe('MiniAppAPI agent bridge', () => {
         displayText: '随便做几页测试页',
         appDataWorkspace: 'chat',
         contextFiles: [{ name: 'stocks.ndjson', content: '{"code":"688256"}\n' }],
+        imageContexts: [{ id: 'image-1', data_url: 'data:image/png;base64,YQ==', mime_type: 'image/png' }],
       },
     );
 
@@ -41,6 +42,7 @@ describe('MiniAppAPI agent bridge', () => {
         workspacePath: '/tmp/workspace',
         appDataWorkspace: 'chat',
         contextFiles: [{ name: 'stocks.ndjson', content: '{"code":"688256"}\n' }],
+        imageContexts: [{ id: 'image-1', data_url: 'data:image/png;base64,YQ==', mime_type: 'image/png' }],
       }),
     });
   });

@@ -32,6 +32,7 @@ pub(crate) struct CliLogPaths {
 }
 
 static ACTIVE_LOG_PATHS: OnceLock<CliLogPaths> = OnceLock::new();
+static ACTIVE_LOG_LEVEL: OnceLock<tracing::Level> = OnceLock::new();
 
 struct RotatingFile {
     dir: PathBuf,
@@ -254,6 +255,32 @@ pub(crate) fn active_plugin_host_log_path() -> Option<PathBuf> {
         .map(|paths| paths.plugin_host_log_path.clone())
 }
 
+/// The `get_runtime_logging_info` wire shape shared with Desktop hosts. Logs a
+/// CLI does not write (webview, Flow Chat, native startup) report empty paths.
+pub(crate) fn runtime_logging_info() -> serde_json::Value {
+    let paths = ACTIVE_LOG_PATHS
+        .get()
+        .cloned()
+        .unwrap_or_else(|| build_log_paths(&resolve_logs_root()));
+    let level = ACTIVE_LOG_LEVEL.get().copied().unwrap_or(DEFAULT_LOG_LEVEL);
+    logging_info_value(&paths, level)
+}
+
+fn logging_info_value(paths: &CliLogPaths, level: tracing::Level) -> serde_json::Value {
+    serde_json::json!({
+        "effectiveLevel": level.as_str().to_ascii_lowercase(),
+        "sessionLogDir": paths.session_log_dir.to_string_lossy(),
+        "earlyStartupLogPath": "",
+        "nativeStartupTracePath": "",
+        "appLogPath": paths.app_log_path.to_string_lossy(),
+        "aiLogPath": paths.ai_log_path.to_string_lossy(),
+        "flashgrepLogPath": paths.flashgrep_log_path.to_string_lossy(),
+        "webviewLogPath": "",
+        "flowChatLogPath": "",
+        "previousUnexpectedExit": serde_json::Value::Null,
+    })
+}
+
 fn create_rotating_writer(
     session_log_dir: &Path,
     file_name: &str,
@@ -274,7 +301,10 @@ fn is_app_target(target: &str) -> bool {
 }
 
 fn matches_target_rule(target: &str, rule: &str) -> bool {
-    target == rule || target.starts_with(&format!("{rule}::"))
+    target == rule
+        || target
+            .strip_prefix(rule)
+            .is_some_and(|suffix| suffix.starts_with("::"))
 }
 
 fn level_rank(level: tracing::Level) -> u8 {
@@ -336,6 +366,10 @@ fn allowed_level_rank_for_target(target: &str, default_level: tracing::Level) ->
 }
 
 fn is_enabled_for_target(metadata: &tracing::Metadata<'_>, default_level: tracing::Level) -> bool {
+    // Overrides only reduce verbosity. Reject disabled levels before scanning targets.
+    if level_rank(*metadata.level()) > level_rank(default_level) {
+        return false;
+    }
     let allowed_rank = allowed_level_rank_for_target(metadata.target(), default_level);
 
     allowed_rank != 0 && level_rank(*metadata.level()) <= allowed_rank
@@ -355,9 +389,14 @@ where
         .with_ansi(false)
         .with_target(true)
         .with_thread_ids(true)
-        .with_filter(filter_fn(move |metadata| {
-            target_filter(metadata.target()) && is_enabled_for_target(metadata, default_level)
-        }))
+        .with_filter(
+            filter_fn(move |metadata| {
+                target_filter(metadata.target()) && is_enabled_for_target(metadata, default_level)
+            })
+            // Let the log facade skip disabled TRACE records at their source, including
+            // the tokenizer normalizer's per-character logging on the routing hot path.
+            .with_max_level_hint(default_level),
+        )
 }
 
 pub(crate) fn init_file_logging_at(
@@ -367,6 +406,7 @@ pub(crate) fn init_file_logging_at(
     fs::create_dir_all(session_log_dir).ok();
     let paths = build_log_paths(session_log_dir);
     let _ = ACTIVE_LOG_PATHS.set(paths.clone());
+    let _ = ACTIVE_LOG_LEVEL.set(log_level);
 
     let app_writer = create_rotating_writer(session_log_dir, "app");
     let ai_writer = create_rotating_writer(session_log_dir, "ai");
@@ -405,6 +445,111 @@ pub(crate) fn init_file_logging(log_level: tracing::Level) -> CliLogPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing::Subscriber;
+
+    #[test]
+    fn logging_info_matches_the_controller_wire_shape() {
+        let info = logging_info_value(
+            &build_log_paths(Path::new("/logs/session")),
+            tracing::Level::DEBUG,
+        );
+        assert_eq!(info["effectiveLevel"], "debug");
+        assert_eq!(info["sessionLogDir"], "/logs/session");
+        assert!(info["appLogPath"].as_str().unwrap().ends_with("app.log"));
+        assert!(info["aiLogPath"].as_str().unwrap().ends_with("ai.log"));
+        assert_eq!(info["webviewLogPath"], "");
+        assert!(info["previousUnexpectedExit"].is_null());
+    }
+
+    fn file_subscriber(
+        dir: &Path,
+        level: tracing::Level,
+    ) -> impl tracing::Subscriber + Send + Sync {
+        tracing_subscriber::registry()
+            .with(build_file_layer(
+                create_rotating_writer(dir, "app").expect("app writer"),
+                is_app_target,
+                level,
+            ))
+            .with(build_file_layer(
+                create_rotating_writer(dir, "ai").expect("ai writer"),
+                is_ai_target,
+                level,
+            ))
+            .with(build_file_layer(
+                create_rotating_writer(dir, "flashgrep").expect("flashgrep writer"),
+                is_flashgrep_target,
+                level,
+            ))
+    }
+
+    #[test]
+    fn file_filters_advertise_effective_max_level() {
+        // The log facade uses this hint to skip disabled per-character tokenizer
+        // TRACE records before entering the subscriber's target filters.
+        for level in [
+            tracing::Level::ERROR,
+            tracing::Level::WARN,
+            tracing::Level::INFO,
+            default_log_level(false),
+            default_log_level(true),
+        ] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let subscriber = file_subscriber(temp.path(), level);
+            assert_eq!(subscriber.max_level_hint(), Some(level.into()));
+        }
+    }
+
+    #[test]
+    fn file_filters_preserve_verbose_levels_and_split_targets() {
+        for verbose in [false, true] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let subscriber = file_subscriber(temp.path(), default_log_level(verbose));
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::debug!(target: "tokenizers::normalizer", "app-debug");
+                tracing::trace!(target: "tokenizers::normalizer", "app-trace");
+                tracing::debug!(target: "ai::client", "ai-debug");
+                tracing::trace!(target: "ai::client", "ai-trace");
+                tracing::debug!(target: "flashgrep::search", "search-debug");
+                tracing::trace!(target: "flashgrep::search", "search-trace");
+                tracing::debug!(target: "h2::codec", "hidden-h2-debug");
+                tracing::info!(target: "h2::codec", "h2-info");
+                tracing::error!(target: "ignore::walk", "hidden-ignore-error");
+            });
+
+            for (file, prefix) in [("app", "app"), ("ai", "ai"), ("flashgrep", "search")] {
+                let content =
+                    fs::read_to_string(temp.path().join(format!("{file}.log"))).expect("read log");
+                assert!(content.contains(&format!("{prefix}-debug")));
+                assert_eq!(content.contains(&format!("{prefix}-trace")), verbose);
+                assert!(!content.contains("hidden-"));
+                for other in ["app", "ai", "search"] {
+                    if other != prefix {
+                        assert!(!content.contains(&format!("{other}-debug")));
+                    }
+                }
+                assert_eq!(content.contains("h2-info"), file == "app");
+            }
+        }
+    }
+
+    #[test]
+    fn target_rules_require_exact_names_or_module_boundaries() {
+        for (target, rule, expected) in [
+            ("h2", "h2", true),
+            ("h2::codec", "h2", true),
+            ("h2_codec", "h2", false),
+            ("h2:codec", "h2", false),
+            ("h2x::codec", "h2", false),
+            ("h", "h2", false),
+            ("", "h2", false),
+            ("", "", true),
+            ("::child", "", true),
+            ("child", "", false),
+        ] {
+            assert_eq!(matches_target_rule(target, rule), expected, "{target:?}");
+        }
+    }
 
     #[test]
     fn create_session_log_dir_creates_timestamped_subdirectory() {

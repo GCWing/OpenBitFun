@@ -126,6 +126,22 @@ Publishing is an outward-facing action: only call this when the user explicitly 
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["sign_in_required", "pending_review", "submitted"]},
+                "authorization_url": {"type": "string"},
+                "slug": {"type": "string"},
+                "submission_id": {"type": "string"},
+                "release_number": {"type": "integer"},
+                "name": {"type": "string"}
+            },
+            "required": ["status"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -612,6 +628,7 @@ mod tests {
         use openbitfun_product_domains::miniapp::types::{MiniAppI18n, MiniAppLocaleStrings};
         use std::collections::HashMap;
         MiniAppMeta {
+            chrome: None,
             id: id.to_string(),
             name: name.to_string(),
             description: String::new(),

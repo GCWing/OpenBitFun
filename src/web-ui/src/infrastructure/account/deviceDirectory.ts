@@ -4,7 +4,11 @@ import { remoteConnectAPI, deviceDisplayName, type AccountDeviceInfo } from '@/i
 import { InvalidationSync } from '../../../../shared/relay-transport/InvalidationSync';
 
 /** Presentation only: presence and saved peer/dispatch names never overwrite GET metadata. */
-export const useDeviceDirectory = create<{ devices: AccountDeviceInfo[]; localId: string | null }>(() => ({ devices: [], localId: null }));
+export const useDeviceDirectory = create<{
+  devices: AccountDeviceInfo[];
+  localId: string | null;
+  status: 'idle' | 'loading' | 'ready' | 'failed';
+}>(() => ({ devices: [], localId: null, status: 'idle' }));
 let invalidate: (() => Promise<void>) | undefined;
 let generation = 0;
 
@@ -55,13 +59,17 @@ export function refreshDeviceDirectory(): Promise<void> {
 /** Mounted by the shell provider, fenced on account replacement and teardown. */
 export function startDeviceDirectory(): () => void {
   const epoch = ++generation;
-  useDeviceDirectory.setState({ devices: [], localId: null });
+  useDeviceDirectory.setState({ devices: [], localId: null, status: 'loading' });
   const sync = new InvalidationSync(async () => {
+    if (epoch === generation && useDeviceDirectory.getState().localId === null) {
+      useDeviceDirectory.setState({ status: 'loading' });
+    }
     try {
       const [devices, local] = await Promise.all([remoteConnectAPI.accountListDevices(), remoteConnectAPI.getDeviceInfo()]);
-      if (epoch === generation) useDeviceDirectory.setState({ devices, localId: local.device_id });
+      if (epoch === generation) useDeviceDirectory.setState({ devices, localId: local.device_id, status: 'ready' });
     } catch {
       // An unavailable directory is not evidence that a device or alias was removed.
+      if (epoch === generation) useDeviceDirectory.setState({ status: 'failed' });
     }
   });
   const refresh = () => sync.invalidate();
@@ -78,7 +86,7 @@ export function startDeviceDirectory(): () => void {
     if (epoch === generation) {
       generation += 1;
       invalidate = undefined;
-      useDeviceDirectory.setState({ devices: [], localId: null });
+      useDeviceDirectory.setState({ devices: [], localId: null, status: 'idle' });
     }
   };
 }

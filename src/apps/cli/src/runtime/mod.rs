@@ -26,6 +26,30 @@ use approval::CliApprovalPolicy;
 
 const RUNTIME_EVENT_BUFFER: usize = 256;
 
+/// Wire the existing scheduled-job owner before the CLI starts accepting turns.
+/// The host starts its runner after account and transport initialization.
+pub(crate) async fn initialize_scheduled_jobs(
+    agentic_system: &AgenticSystem,
+) -> Result<Arc<openbitfun_core::service::cron::CronService>> {
+    use openbitfun_core::service::cron::{
+        set_global_cron_service, CronEventSubscriber, CronService,
+    };
+
+    let cron = CronService::new(
+        openbitfun_core::infrastructure::try_get_path_manager_arc()?,
+        agentic_system.coordinator.clone(),
+        ensure_product_dialog_scheduler(agentic_system),
+    )
+    .await
+    .context("Failed to initialize CLI scheduled jobs")?;
+    agentic_system.coordinator.subscribe_internal(
+        "cron_jobs".to_string(),
+        CronEventSubscriber::new(cron.clone()),
+    );
+    set_global_cron_service(cron.clone());
+    Ok(cron)
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CliProductRuntimeState {
     plan: ProductAssemblyPlan,

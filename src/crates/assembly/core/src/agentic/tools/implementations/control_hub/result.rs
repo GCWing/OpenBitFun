@@ -123,7 +123,7 @@ pub fn ok_response_full(
 /// Build the failure envelope as a *successful* tool call (so the model
 /// receives the structured error JSON instead of a plain OpenBitFunError text).
 pub fn err_response(domain: &str, action: &str, err: ControlHubError) -> Vec<ToolResult> {
-    let summary = format!("{}: {}", err.code.as_str(), err.message);
+    let summary = error_summary(&err.to_value());
     let body = json!({
         "ok": false,
         "domain": domain,
@@ -131,6 +131,22 @@ pub fn err_response(domain: &str, action: &str, err: ControlHubError) -> Vec<Too
         "error": err.to_value(),
     });
     vec![ToolResult::ok(body, Some(summary))]
+}
+
+/// Keep recovery evidence in the model-visible projection as well as UI JSON.
+pub fn error_summary(error: &Value) -> String {
+    let mut text = format!(
+        "{}: {}",
+        error["code"].as_str().unwrap_or("ERROR"),
+        error["message"].as_str().unwrap_or("")
+    );
+    if let Some(hints) = error["hints"].as_array() {
+        for hint in hints.iter().filter_map(Value::as_str) {
+            text.push_str("\n- ");
+            text.push_str(hint);
+        }
+    }
+    text
 }
 
 /// Builds a `OpenBitFunError` whose message is prefixed with `[CODE]` using the

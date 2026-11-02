@@ -16,7 +16,18 @@ import {
   type ChatMessage,
   type RemoteModelCatalog,
 } from '../services/RemoteSessionManager';
+import {
+  extractValidImageContexts,
+  extractValidPendingImages,
+  type PendingChatImage,
+} from '../services/chatImageAttachments';
 import { useMobileStore } from '../services/store';
+import {
+  isRemoteSessionWorkspace,
+  resolveChatHeaderContext,
+  sessionWorkspaceContext,
+  type SessionWorkspaceContext,
+} from '../services/workspaceIdentity';
 import { createRemoteCacheScope, remoteCache } from '../services/RemoteCache';
 import ChatHeader from '../components/ChatHeader';
 import ChatComposerBar from '../components/ChatComposerBar';
@@ -46,6 +57,7 @@ interface ChatPageProps {
   sessionId: string;
   sessionName?: string;
   agentType?: string;
+  workspace?: SessionWorkspaceContext;
   onBack: () => void;
   autoFocus?: boolean;
   wideLayout?: boolean;
@@ -60,10 +72,7 @@ function sanitizeMessageText(content: string): string {
     .trim();
 }
 
-
 // ─── Thinking (ModelThinkingDisplay-style) ───────────────────────────────────
-
-
 
 // ─── ChatPage ───────────────────────────────────────────────────────────────
 
@@ -72,6 +81,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   sessionId,
   sessionName,
   agentType: sessionAgentType = 'Standard',
+  workspace: sessionWorkspace,
   onBack,
   autoFocus,
   wideLayout = false,
@@ -86,6 +96,9 @@ const ChatPage: React.FC<ChatPageProps> = ({
     error,
     setError,
     currentWorkspace,
+    currentAssistant,
+    knownWorkspaces,
+    sessions,
     authenticatedUserId,
     controlTarget,
     connectionHealth,
@@ -94,17 +107,18 @@ const ChatPage: React.FC<ChatPageProps> = ({
 
   const messages = getMessages(sessionId);
   const [input, setInput] = useState('');
+  const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null);
   const [liveTitle, setLiveTitle] = useState(sessionName);
   const [modelCatalog, setModelCatalog] = useState<RemoteModelCatalog | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string>('auto');
   const [modelUpdating, setModelUpdating] = useState(false);
-  const [pendingImages, setPendingImages] = useState<{ name: string; dataUrl: string }[]>([]);
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [imageAnalyzing, setImageAnalyzing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const sendInFlightRef = useRef<symbol | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [optimisticMsg, setOptimisticMsg] = useState<{
-    id: string; text: string; images: { name: string; data_url: string }[];
+    id: string; timestamp: string; text: string; images: { name: string; data_url: string }[];
   } | null>(null);
   const [inputExpanded, setInputExpanded] = useState(!!autoFocus);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -209,6 +223,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   } | null>(null);
   const [rollbackDraft, setRollbackDraft] = useState('');
   const [rollbackBusy, setRollbackBusy] = useState(false);
+  const rollbackInFlightRef = useRef<symbol | null>(null);
   const msgLongPressTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const msgLongPressPosRef = useRef({ x: 0, y: 0 });
   const msgToastTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -247,6 +262,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       setRollbackTarget(null);
       setRollbackDraft('');
       setRollbackBusy(false);
+      rollbackInFlightRef.current = null;
       setActionToast(null);
       setInfoToast(null);
       setExpandedMsgIds(new Set());
@@ -602,23 +618,13 @@ const ChatPage: React.FC<ChatPageProps> = ({
     const text = sanitizeMessageText(menuMessage.content);
     if (!text) return;
     setMenuMessage(null);
-    const imageContexts = menuMessage.images?.length
-      ? menuMessage.images.map((img, idx) => {
-          const mimeType = img.data_url.split(';')[0]?.replace('data:', '') || 'image/png';
-          return {
-            id: `mobile_resend_${Date.now()}_${idx}`,
-            data_url: img.data_url,
-            mime_type: mimeType,
-            metadata: { name: img.name, source: 'remote' },
-          };
-        })
-      : undefined;
     try {
+      const imageContexts = extractValidImageContexts(menuMessage.images, 'mobile_resend');
       await sessionMgr.sendMessage(sessionId, text, sessionAgentType, imageContexts);
       if (!isChatTargetCurrent(targetEpoch)) return;
       streamRef.current?.nudge();
     } catch (e: any) {
-      reportRemoteSessionError(e, setError);
+      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(e, setError);
     }
   }, [captureChatTargetEpoch, isChatTargetCurrent, menuMessage, sessionAgentType, sessionId, sessionMgr, setError]);
 
@@ -657,10 +663,10 @@ const ChatPage: React.FC<ChatPageProps> = ({
   // the files they wrote. Editing is that same rollback followed by a normal
   // send, which is how the desktop reruns an edited user message.
   const handleConfirmRollback = useCallback(async () => {
-    if (!rollbackTarget || rollbackBusy) return;
+    if (!rollbackTarget || rollbackBusy || rollbackInFlightRef.current) return;
     // The host independently checks idle under its scheduling lock; this
     // presentation guard only avoids a request while this view is already busy.
-    if (isStreaming) return;
+    if (isStreaming || isSending || sendInFlightRef.current) return;
     const { message, mode } = rollbackTarget;
     const turnId = message.turn_id;
     if (!turnId) return;
@@ -669,10 +675,13 @@ const ChatPage: React.FC<ChatPageProps> = ({
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;
 
+    const attempt = Symbol('rollback');
+    rollbackInFlightRef.current = attempt;
     setRollbackBusy(true);
+    const isCurrentAttempt = () => isChatTargetCurrent(targetEpoch) && rollbackInFlightRef.current === attempt;
     try {
       const result = await sessionMgr.rollbackSessionToTurn(sessionId, turnId, message.turn_index);
-      if (!isChatTargetCurrent(targetEpoch)) return;
+      if (!isCurrentAttempt()) return;
       setRollbackTarget(null);
       setRollbackDraft('');
       // History changed on the host. Pull the authoritative snapshot now, before
@@ -681,31 +690,34 @@ const ChatPage: React.FC<ChatPageProps> = ({
       streamRef.current?.nudge();
 
       if (mode === 'edit') {
-        const imageContexts = message.images?.length
-          ? message.images.map((img, idx) => ({
-              id: `mobile_edit_${Date.now()}_${idx}`,
-              data_url: img.data_url,
-              mime_type: img.data_url.split(';')[0]?.replace('data:', '') || 'image/png',
-              metadata: { name: img.name, source: 'remote' },
-            }))
-          : undefined;
+        const imageContexts = extractValidImageContexts(message.images, 'mobile_edit');
+        const fallbackPendingImages = extractValidPendingImages(message.images);
         try {
           await sessionMgr.sendMessage(sessionId, editedText, sessionAgentType, imageContexts);
         } catch (sendError) {
           // The rollback already retired the turn this text came from, so the
           // draft has nowhere to fall back to. Hand it to the composer instead
           // of dropping it when the send is what failed.
-          if (isChatTargetCurrent(targetEpoch)) {
+          if (isCurrentAttempt()) {
             setInput(editedText);
-            setPendingImages((message.images ?? []).map(img => ({ name: img.name, dataUrl: img.data_url })));
+            setPendingImages(fallbackPendingImages);
             setInputExpanded(true);
           }
           throw sendError;
         }
-        if (!isChatTargetCurrent(targetEpoch)) return;
-      } else if (result.composer_text) {
-        setInput(result.composer_text);
-        setInputExpanded(true);
+        if (!isCurrentAttempt()) return;
+      } else {
+        const restoredText = result.composer_text ?? '';
+        const restoredImages = extractValidPendingImages(message.images);
+        // Replace the composer only when the rollback actually restored
+        // something. Replacing it with an empty draft would silently discard
+        // text the user started after opening the sheet, while keeping the old
+        // attachment set would attach unrelated images to the restored prompt.
+        if (restoredText.trim() || restoredImages.length > 0) {
+          setInput(restoredText);
+          setPendingImages(restoredImages);
+          setInputExpanded(true);
+        }
       }
 
       showMsgToast(
@@ -722,18 +734,22 @@ const ChatPage: React.FC<ChatPageProps> = ({
       // conflict), so pull the authoritative snapshot instead of leaving the
       // transcript stale until the next idle poll. The stream ref belongs to
       // the current chat, so guard against a session switch mid-flight.
-      if (isChatTargetCurrent(targetEpoch)) {
+      if (isCurrentAttempt()) {
         streamRef.current?.nudge();
       }
-      if (isChatTargetCurrent(targetEpoch)) reportRemoteSessionError(e, setError);
+      if (isCurrentAttempt()) reportRemoteSessionError(e, setError);
     } finally {
-      if (isChatTargetCurrent(targetEpoch)) {
-        setRollbackBusy(false);
+      if (rollbackInFlightRef.current === attempt) {
+        rollbackInFlightRef.current = null;
+        if (isChatTargetCurrent(targetEpoch)) {
+          setRollbackBusy(false);
+        }
       }
     }
   }, [
     captureChatTargetEpoch,
     isChatTargetCurrent,
+    isSending,
     isStreaming,
     rollbackBusy,
     rollbackDraft,
@@ -878,6 +894,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
               resp.model_catalog,
             ));
           }
+          if (resp.prompt_suggestion !== undefined) setPromptSuggestion(resp.prompt_suggestion);
           setActiveTurn(resp.active_turn ?? null);
         }, initialCatalog?.version || 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
         // Stream failures are stated, not hidden: an older host or a lost
@@ -901,6 +918,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       streamRef.current?.stop();
       streamRef.current = null;
       setActiveTurn(null);
+      setPromptSuggestion(null);
     };
   }, [
     appendNewMessages,
@@ -1002,6 +1020,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
     if (hasImages) {
       setOptimisticMsg({
         id: `opt_${Date.now()}`,
+        timestamp: new Date().toISOString(),
         text: text || '',
         images: imgs.map(i => ({ name: i.name, data_url: i.dataUrl })),
       });
@@ -1020,6 +1039,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       // remain retryable, and an acknowledgement must not erase newer typing.
       const draftUnchanged = inputRef.current?.value === input;
       setInput(current => current === input ? '' : current);
+      setPromptSuggestion(null);
       setPendingImages(current => current.filter(image => !imgs.includes(image)));
       if (!wasStreaming && draftUnchanged) setInputExpanded(false);
       streamRef.current?.nudge();
@@ -1072,6 +1092,17 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const expandInput = useCallback(() => {
     setInputExpanded(true);
     requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
+  const acceptPromptSuggestion = useCallback((suggestion: string) => {
+    setInput(suggestion);
+    setInputExpanded(true);
+    requestAnimationFrame(() => {
+      const editor = inputRef.current;
+      if (!editor) return;
+      editor.focus();
+      editor.setSelectionRange(editor.value.length, editor.value.length);
+    });
   }, []);
 
   useEffect(() => {
@@ -1132,9 +1163,18 @@ const ChatPage: React.FC<ChatPageProps> = ({
     }
   };
 
-  const workspaceName = currentWorkspace?.project_name || currentWorkspace?.path?.split('/').pop() || '';
-  const gitBranch = currentWorkspace?.git_branch;
+  // Restored navigation from an older build has no workspace; the loaded session row may.
+  const listedSession = sessionWorkspace ? undefined : sessions.find((session) => session.session_id === sessionId);
+  const sessionContext = sessionWorkspace ?? (listedSession && sessionWorkspaceContext(listedSession));
+  const { workspaceName, gitBranch } = resolveChatHeaderContext({
+    agentType: sessionAgentType,
+    session: sessionContext,
+    currentWorkspace,
+    currentAssistant,
+    assistantLabel: t('shared.agents.Claw'),
+  });
   const displayName = liveTitle || sessionName || t('chat.session');
+  const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace, knownWorkspaces);
 
   return (
     <div className={`chat-page${wideLayout ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${composerHeight}px` } as React.CSSProperties}>
@@ -1217,8 +1257,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
       <ChatMessageActions
         deleting={deletingMsg}
         message={menuMessage}
-        streaming={isStreaming}
-        rollbackSupported={sessionMgr.supportsHostCapability('session_rollback_v1')}
+        streaming={isStreaming || isSending}
+        rollbackSupported={sessionMgr.supportsHostCapability('session_rollback_v1') && !isRemoteWorkspace}
         onClose={() => setMenuMessage(null)}
         onCopy={() => void handleCopyMessage()}
         onDelete={() => void handleDeleteMessage()}
@@ -1300,6 +1340,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
         onRemoveImage={removeImage}
         onSend={handleSend}
         pendingImages={pendingImages}
+        promptSuggestion={promptSuggestion}
+        onAcceptPromptSuggestion={acceptPromptSuggestion}
         streaming={isStreaming}
       />
 

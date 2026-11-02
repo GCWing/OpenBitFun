@@ -405,7 +405,13 @@ mod tests {
         assert!(skill
             .content
             .contains(".openbitfun/plans/<short-kebab-name>.plan.md"));
-        assert!(skill.content.contains("status: pending"));
+        assert!(skill
+            .content
+            .contains("overview: One or two sentence overview"));
+        assert!(!skill.content.contains("status: pending"));
+        assert!(skill
+            .content
+            .contains("system prompt's `Language Preference`"));
     }
 
     #[test]

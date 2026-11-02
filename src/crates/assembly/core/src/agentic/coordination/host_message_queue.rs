@@ -451,6 +451,7 @@ impl DialogScheduler {
                 reason: None,
                 target_turn_id: None,
                 steering_id: None,
+                steering_display: None,
             };
             s.entries.insert(
                 message.turn_id.clone(),
@@ -666,6 +667,19 @@ impl DialogScheduler {
                         e.view.reason = None;
                         e.view.target_turn_id = Some(target.clone());
                         e.view.steering_id = Some(steering_id);
+                        e.view.steering_display =
+                            Some(openbitfun_runtime_ports::DialogQueueSteeringDisplay {
+                                target_turn_id: target.clone(),
+                                content: turn
+                                    .original_user_input
+                                    .clone()
+                                    .unwrap_or_else(|| turn.user_input.clone()),
+                                composer_presentation: turn
+                                    .user_message_metadata
+                                    .as_ref()
+                                    .and_then(|metadata| metadata.get("composerPresentation"))
+                                    .cloned(),
+                            });
                         e.held = Some(turn);
                     }
                     self.round_injection_buffer.push(session, injection);

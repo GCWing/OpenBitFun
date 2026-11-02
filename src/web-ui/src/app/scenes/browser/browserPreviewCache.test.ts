@@ -28,7 +28,7 @@ describe('browser preview cache', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(onFrame).toHaveBeenLastCalledWith('first');
     expect(prepare).toHaveBeenCalledWith('first');
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(capture).toHaveBeenCalledTimes(2);
     cache.setVisible(false);
     await vi.advanceTimersByTimeAsync(5000);
@@ -93,12 +93,41 @@ describe('browser preview cache', () => {
     cache.setVisible(true);
     await vi.advanceTimersByTimeAsync(0);
     capture.mockRejectedValue(new Error('Capture timed out'));
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(9000);
     expect(capture).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(6000);
-    expect(capture).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(capture).toHaveBeenCalledTimes(3);
     expect(onError).toHaveBeenCalledOnce();
     expect(onFrame).toHaveBeenLastCalledWith('first');
+  });
+
+  it('backs off static frames to 30 seconds and decodes only changed images', async () => {
+    cache.setVisible(true);
+    await vi.advanceTimersByTimeAsync(65_000);
+    // Captures at 0, 5, 15, 35 and 65 seconds; only the first needs decoding.
+    expect(capture).toHaveBeenCalledTimes(5);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(onFrame).toHaveBeenCalledTimes(1);
+    capture.mockResolvedValue(frame('changed'));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(onFrame).toHaveBeenLastCalledWith('changed');
+    expect(prepare).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(capture).toHaveBeenCalledTimes(7);
+    expect(prepare).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not turn rapid visibility toggles into a burst of captures', async () => {
+    cache.setVisible(true);
+    await vi.advanceTimersByTimeAsync(0);
+    for (let toggle = 0; toggle < 10; toggle++) {
+      cache.setVisible(false);
+      cache.setVisible(true);
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    expect(capture).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(capture).toHaveBeenCalledTimes(2);
   });
 });

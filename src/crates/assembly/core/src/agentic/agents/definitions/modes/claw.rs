@@ -25,6 +25,7 @@ impl ClawMode {
                 "Read".to_string(),
                 "view_image".to_string(),
                 "analyze_image".to_string(),
+                "generate_image".to_string(),
                 "Write".to_string(),
                 "Edit".to_string(),
                 "Delete".to_string(),
@@ -42,20 +43,21 @@ impl ClawMode {
                 "get_goal".to_string(),
                 "create_goal".to_string(),
                 "update_goal".to_string(),
+                "GenerativeUI".to_string(),
                 "Skill".to_string(),
                 "ListWorkspaces".to_string(),
                 "SessionControl".to_string(),
                 "SessionMessage".to_string(),
                 "SessionHistory".to_string(),
                 "Cron".to_string(),
+                "DesktopCard".to_string(),
                 // Browser, terminal, and routing metadata live under ControlHub.
                 // Desktop control runs directly through its own native tool.
                 "ControlHub".to_string(),
                 "ComputerUse".to_string(),
                 "OpenBitFunControl".to_string(),
                 "PublishAppearance".to_string(),
-                "PageDeploy".to_string(),
-                "PagePublish".to_string(),
+                "PageManage".to_string(),
             ],
         }
     }
@@ -114,6 +116,7 @@ mod tests {
         assert!(!tools.contains(&"FrontendWorkbench".to_string()));
         assert!(tools.contains(&"ListModels".to_string()));
         assert!(tools.contains(&"ListWorkspaces".to_string()));
+        assert!(tools.contains(&"DesktopCard".to_string()));
     }
 
     #[test]
@@ -130,7 +133,8 @@ mod tests {
             .await
             .expect("Claw prompt");
 
-        assert!(prompt.contains("only when it appears in your current tool list"));
+        assert!(prompt.contains("Use only tools in the current tool list"));
+        assert!(prompt.contains("only when ControlHub reports an authorized connection"));
         assert!(prompt.contains("only when both tools appear in your current tool list"));
     }
 }

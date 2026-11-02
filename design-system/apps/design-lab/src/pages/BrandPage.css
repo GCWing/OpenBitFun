@@ -78,6 +78,14 @@
   background: var(--openbitfun-color-surface-panel);
 }
 
+/* A dark-scheme tile has to paint its own surface. The dark `surface-subtle` is a translucent white
+   that assumes a dark app background, so on the light Lab page the tile stayed white while its text
+   flipped to the dark-scheme foreground: the title was white-on-white. Same solid stage the voice
+   motion preview uses. */
+.brand-gallery-tile[data-color-scheme="dark"] {
+  background: var(--openbitfun-color-content-on-light);
+}
+
 .brand-gallery-tile-options {
   position: absolute;
   top: var(--openbitfun-space-4);
@@ -103,9 +111,10 @@
   cursor: pointer;
 }
 
+/* Selection is a filled block, never a ring: the swatch keeps its own colour, the button
+   behind it carries the selection surface. */
 .brand-gallery-backgrounds button[aria-pressed="true"] {
-  border-width: var(--openbitfun-border-width-strong);
-  border-color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-selection-surface);
 }
 
 .brand-gallery-backgrounds button:hover {
@@ -160,16 +169,16 @@
   padding: var(--openbitfun-space-3) var(--openbitfun-space-5) var(--openbitfun-space-5);
 }
 
-.brand-gallery-tile h2,
-.brand-gallery-wordmark h2 {
+/* One level-2 heading spec for the whole page. The asset titles, the wordmark band and the section
+   headings (标识 / 动效 / 角色) all take the panel heading, so no title on this page drifts by a
+   size tier or a weight, and the ramp stays monotonic: h1 24 / h2 18 / h3 13. */
+.brand-gallery :is(.brand-gallery-tile h2, .brand-gallery-wordmark h2, .brand-gallery-section-heading h2) {
+  color: var(--openbitfun-color-content-primary);
   font-family: var(--openbitfun-type-heading-panel-font-family);
   font-size: var(--openbitfun-type-heading-panel-font-size);
   font-weight: var(--openbitfun-type-heading-panel-font-weight);
   line-height: var(--openbitfun-type-heading-panel-line-height);
-}
-
-.brand-gallery-tile--silver h2 {
-  font-size: var(--openbitfun-type-heading-section-font-size);
+  letter-spacing: var(--openbitfun-type-heading-panel-letter-spacing);
 }
 
 .brand-gallery-actions {
@@ -232,29 +241,30 @@
   margin-bottom: var(--openbitfun-space-5);
 }
 
-.brand-gallery-section-heading h2 {
-  font-family: var(--openbitfun-type-heading-section-font-family);
-  font-size: var(--openbitfun-type-heading-section-font-size);
-  font-weight: var(--openbitfun-type-heading-section-font-weight);
-  line-height: var(--openbitfun-type-heading-section-line-height);
-}
-
+/* The banner is a plate the mark is drawn on: the frame crops the texture layer, and the live
+   graphic plus the controls stay above it. */
 .brand-gallery-motion {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: var(--openbitfun-space-3);
   min-height: 400px;
   padding: var(--openbitfun-space-5);
+  overflow: hidden;
   border-radius: var(--openbitfun-radius-xl);
   color: var(--openbitfun-color-content-primary);
   background: var(--openbitfun-color-surface-subtle);
 }
 
-.brand-gallery-motion[data-voice] {
+/* The dark option has to paint its own plate — the solid surface the voice stage already uses. The
+   dark `surface-subtle` is a translucent white that assumes a dark app background, so on the light
+   Lab page the "dark" banner stayed white and the white silk mark vanished into it. */
+.brand-gallery-motion[data-color-scheme="dark"] {
   background: var(--openbitfun-color-content-on-light);
 }
 
 .brand-gallery-motion-art {
+  position: relative;
   display: grid;
   place-items: center;
   min-width: 0;
@@ -262,6 +272,35 @@
 }
 
 .brand-gallery-motion-art > * { max-width: 100%; }
+
+/* The live graphic and the controls sit above the texture layer, which is out of flow. */
+.brand-gallery-motion-art > :not(.brand-gallery-motion-texture),
+.brand-gallery-motion-controls {
+  position: relative;
+  z-index: 1;
+}
+
+/* The banner's own texture: the mark again, wider than the frame and left unlit, so the silk
+   reaches both edges and gets cropped by them instead of stopping inside the banner. The texture
+   takes its size from the frame rather than the component's `size` prop, because that prop writes
+   an inline size which would win over the frame. */
+.brand-gallery-motion .brand-gallery-motion-texture {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 132%;
+  max-width: none;
+  translate: -50% -50%;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.brand-gallery-motion-texture > * {
+  width: 100%;
+  height: auto;
+  max-width: none;
+  aspect-ratio: 1;
+}
 
 .brand-gallery-voice {
   width: min(280px, 100%);

@@ -1,0 +1,106 @@
+@use '../../../web-ui/src/flow_chat/transcript-layout' as transcriptLayout;
+
+// Only native-Shell anatomy adapters live here. Hi and FlowChat own their visuals.
+.miniapp-chat.openbitfun-fmc {
+  // Native resize edges and the existing permission mailbox stay above chat.
+  z-index: 10;
+}
+
+.miniapp-chat__panel.openbitfun-fmc__panel {
+  max-height: calc(100dvh - var(--openbitfun-layout-toolbar-md-height) - var(--openbitfun-space-8));
+}
+
+.miniapp-chat__body {
+  position: relative;
+}
+
+.miniapp-chat__messages {
+  @include transcriptLayout.viewport;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  padding-block-end: calc(var(--openbitfun-control-chat-composer-compact-height) + var(--openbitfun-space-6) + var(--openbitfun-space-6));
+}
+
+.miniapp-chat__transcript {
+  @include transcriptLayout.reading-column;
+  flex-shrink: 0;
+  padding-block: var(--openbitfun-space-4);
+}
+
+.miniapp-chat__transcript:has(> .miniapp-chat__welcome:only-child) {
+  flex: 1;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+}
+
+.miniapp-chat__welcome .openbitfun-fmc__miniapp-welcome-icon svg {
+  width: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+  height: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+}
+
+.miniapp-chat__suggestions .miniapp-chat__glyph { display: inline-flex; }
+.miniapp-chat__suggestions svg {
+  width: var(--openbitfun-control-icon-size-xs);
+  height: var(--openbitfun-control-icon-size-xs);
+}
+
+.miniapp-chat__message p { margin: 0; }
+
+.miniapp-chat__message[data-role='assistant'] {
+  margin-block-end: var(--openbitfun-control-flow-chat-paragraph-gap);
+}
+
+.miniapp-chat__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-height: 160px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--openbitfun-type-flow-control-font-family);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-flow-control-font-weight);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  resize: none;
+  outline: none;
+}
+
+.miniapp-chat__input::placeholder { color: var(--openbitfun-color-content-muted); }
+.miniapp-chat__title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.miniapp-chat__note {
+  flex-shrink: 0;
+  padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-flow-support-font-family);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-flow-support-font-weight);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  overflow-wrap: anywhere;
+}
+
+.miniapp-chat__note[data-error='true'] { color: var(--openbitfun-color-status-danger-content); }
+.miniapp-chat__launcher[data-attention='true']::after {
+  content: '';
+  position: absolute;
+  inset-block-start: var(--openbitfun-space-1);
+  inset-inline-end: var(--openbitfun-space-1);
+  inline-size: var(--openbitfun-space-1);
+  block-size: var(--openbitfun-space-1);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-accent-default);
+}
+
+.miniapp-chat [hidden] { display: none !important; }

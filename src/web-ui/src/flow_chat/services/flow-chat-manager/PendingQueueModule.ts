@@ -61,6 +61,7 @@ export function queuedItemDuplicatesLiveTurn(
 
 export interface EnqueueInput {
   sessionId: string;
+  turnId?: string;
   content: string;
   displayMessage?: string;
   agentType?: string;
@@ -219,6 +220,7 @@ class PendingQueueManager {
     const item: QueuedMessage = {
       id: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       sessionId: input.sessionId,
+      turnId: input.turnId,
       content: input.content,
       displayMessage: input.displayMessage,
       timestamp: Date.now(),

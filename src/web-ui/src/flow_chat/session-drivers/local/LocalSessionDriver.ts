@@ -1,3 +1,6 @@
+import { readModelSelections } from '@/infrastructure/config/services/modelSelections';
+import { supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
+import { acpClientIdFromAgentType } from '../../utils/acpSession';
 import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../../services/hostDialogQueue';
 import { promoteAcceptedHostMessage } from '../../services/hostQueueSubmission';
 import { requireSessionOwningWorkspaceId, sessionOwningWorkspaceId } from '../../utils/sessionOrdering';
@@ -57,7 +60,7 @@ export const localSessionDriver: SessionDriver = {
   async createSession(context: FlowChatContext, seed: SessionCreationSeed): Promise<string> {
     const {
       surfaceScope,
-      config,
+      config: seedConfig,
       agentType,
       sessionName,
       titleDescriptor,
@@ -68,9 +71,23 @@ export const localSessionDriver: SessionDriver = {
       remoteSshHost,
     } = seed;
     surfaceScope.assertCurrent('start local session creation');
+    let config = seedConfig;
+    if (!config.modelName && !config.modelPoolId && !acpClientIdFromAgentType(agentType)) {
+      const { mode: selection } = await readModelSelections();
+      surfaceScope.assertCurrent('resolve default model target');
+      if (selection.kind === 'pool') {
+        if (!supportsModelPools()) throw new Error('This host does not support model_pool_selection_v1');
+        config = { ...config, modelPoolId: selection.pool_id, modelPoolSelectionPending: true, reasoningPreset: undefined };
+      } else if (selection.kind === 'model') {
+        config = { ...config, modelName: selection.model_ref };
+      } else {
+        throw new Error('Unsupported default model target');
+      }
+    }
+
 
     const explicitModelName = config.modelName?.trim() || undefined;
-    const reasoningPreset = config.reasoningPreset
+    const reasoningPreset = config.modelPoolId ? undefined : config.reasoningPreset
       ?? await resolveReasoningPresetForSessionCreation(explicitModelName);
     surfaceScope.assertCurrent('resolve session creation reasoning preset');
 
@@ -158,6 +175,7 @@ export const localSessionDriver: SessionDriver = {
     sessionId: string,
     removal: SessionCascadeRemoval,
   ): Promise<void> {
+    const scope = getActiveSurfaceScope();
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     log.info('Dispatch diagnostic: delete routed to persisted backend session', {
       sessionId,
@@ -167,6 +185,7 @@ export const localSessionDriver: SessionDriver = {
       sessionId,
       removal.removedActiveSession ? { nextActiveSessionId: null } : undefined,
     );
+    scope.assertCurrent('clean up deleted session');
 
     removal.removedSessionIds.forEach(id => {
       context.processingManager.clearSessionStatus(id);
@@ -179,6 +198,7 @@ export const localSessionDriver: SessionDriver = {
     sessionId: string,
     removal: SessionCascadeRemoval,
   ): Promise<void> {
+    const scope = getActiveSurfaceScope();
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session does not exist: ${sessionId}`);
@@ -186,6 +206,7 @@ export const localSessionDriver: SessionDriver = {
 
     if (session.draft?.phase !== 'editing') {
       await sessionAPI.archiveSession(sessionId, requireSessionOwningWorkspaceId(session));
+      scope.assertCurrent('complete session archive');
     }
 
     context.flowChatStore.removeSession(

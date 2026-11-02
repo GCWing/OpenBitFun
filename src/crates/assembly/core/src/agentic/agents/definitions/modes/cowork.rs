@@ -21,7 +21,6 @@ impl CoworkMode {
             default_tools: vec![
                 // Clarification + planning helpers
                 "AskUserQuestion".to_string(),
-                "TodoWrite".to_string(),
                 "get_goal".to_string(),
                 "create_goal".to_string(),
                 "update_goal".to_string(),
@@ -37,6 +36,7 @@ impl CoworkMode {
                 "Read".to_string(),
                 "view_image".to_string(),
                 "analyze_image".to_string(),
+                "generate_image".to_string(),
                 "Grep".to_string(),
                 "Glob".to_string(),
                 "Write".to_string(),
@@ -53,6 +53,7 @@ impl CoworkMode {
                 "PortForward".to_string(),
                 "WebSearch".to_string(),
                 "WebFetch".to_string(),
+                "GenerativeUI".to_string(),
                 "ControlHub".to_string(),
                 "ComputerUse".to_string(),
                 // Recurring office work ("check these channels every 30
@@ -96,7 +97,6 @@ impl Agent for CoworkMode {
         UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 
     fn is_readonly(&self) -> bool {

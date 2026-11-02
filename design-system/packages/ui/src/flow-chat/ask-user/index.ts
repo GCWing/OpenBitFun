@@ -8,4 +8,5 @@ export {
   type AskUserProps,
   type AskUserQuestion,
   type AskUserState,
+  type AskUserWaitTiming,
 } from "./AskUser";

@@ -80,4 +80,9 @@ export const semanticToolCardMetas = [
     description: "Resolved operation guides and ordered steps, independent of execution.",
     props, states, tokens,
   },
+  {
+    category: "flow-chat", name: "DesktopCardToolCard", maturity: "stable",
+    description: "Desktop card creation, visibility, refresh and preset results.",
+    props, states, tokens,
+  },
 ] as const satisfies readonly ComponentMeta[];

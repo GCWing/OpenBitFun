@@ -1,16 +1,16 @@
 {
   "defaultHarness": {
-    "title": "默认智能体执行框架",
+    "title": "默认智能体执行模式",
     "description": "用于普通新会话；助理、ACP 和已指定模式的会话不受影响",
     "strategy": "默认方式",
     "followLast": "跟随上一次选择",
     "fixed": "固定默认模式",
-    "followLastDescription": "新会话沿用你最近在输入框中选择的执行框架：{{name}}",
-    "followLastEmptyDescription": "尚未记录选择；在输入框中选择执行框架前，新会话使用 {{name}}",
-    "fixedDescription": "新会话始终使用指定执行框架；当前会话不会改变。",
-    "fixedMode": "默认执行框架",
+    "followLastDescription": "新会话沿用你最近在输入框中选择的执行模式：{{name}}",
+    "followLastEmptyDescription": "尚未记录选择；在输入框中选择执行模式前，新会话使用 {{name}}",
+    "fixedDescription": "新会话始终使用指定执行模式；当前会话不会改变。",
+    "fixedMode": "默认执行模式",
     "compatibilityMode": "{{id}}（兼容配置）",
-    "loadFailed": "无法读取默认执行框架设置。为避免覆盖现有配置，此设置已锁定。"
+    "loadFailed": "无法读取默认执行模式设置。为避免覆盖现有配置，此设置已锁定。"
   },
   "features": {
     "pet": {
@@ -40,6 +40,13 @@
         }
       },
       "subtitle": "关闭显示会隐藏宠物，已选择和导入的形象仍会保留"
+    },
+    "desktopCards": {
+      "title": "桌面小卡片",
+      "subtitle": "在主窗口之外显示提醒、PR 状态、进度、天气等值得随时看一眼的小卡片",
+      "enable": "启用小卡片",
+      "description": "关闭后卡片会隐藏，智能体也无法再创建或更新卡片，已有卡片会保留。",
+      "unsupported": "请更新当前主机后再管理小卡片。"
     },
     "workspaceSearch": {
       "title": "加速工作区搜索",
@@ -87,7 +94,30 @@
     "globalRulesEffects": { "allow": "允许", "ask": "询问", "deny": "拒绝" },
     "modeDescription": "作为新会话的默认设置，可在输入框中临时切换。"
   },
+  "toolPresentation": {
+    "sectionTitle": "工具呈现",
+    "sectionDescription": "选择模型访问工具的方式。",
+    "mode": "工具呈现模式",
+    "description": "选择模型看到工具的方式，只对切换设置后新建的会话生效。",
+    "native": "原生工具",
+    "ptc": "PTC（TypeScript）",
+    "ptcTooltip": "PTC 通过 RunCode 执行 TypeScript。",
+    "ptcPython": "PTC（Python）",
+    "ptcPythonTooltip": "PTC 通过 RunCode 执行 Python。"
+  },
   "projectPermissions": {
+    "title": "工具与命令权限",
+    "entryCount": "权限条目",
+    "summary": "允许 {{allow}} · 询问 {{ask}} · 拒绝 {{deny}}",
+    "incomplete": "部分权限暂未加载完成",
+    "listTitle": "授权列表",
+    "empty": "暂无授权",
+    "unsaved": "有未保存的修改",
+    "addAuthorization": "添加授权",
+    "editAuthorization": "编辑授权",
+    "clearRemembered": "清除记忆授权",
+    "source": "来源",
+    "actions": "操作",
     "description": "“始终允许”会保存为当前项目的记忆授权；静态项目规则会在工具执行前直接应用",
     "grantsTitle": "记忆授权",
     "grantsEmpty": "当前项目没有记忆授权。",
@@ -119,7 +149,7 @@
     "saveRules": "保存规则",
     "rulesSaveSuccess": "已保存静态项目规则",
     "rulesSaveFailed": "保存静态项目规则失败",
-    "rulesConflict": "规则文件已在外部变更，请重新打开项目权限后再保存。",
+    "rulesConflict": "规则文件已在外部变更，请取消本地修改并刷新后重试。",
     "cancel": "取消",
     "effects": { "allow": "允许", "ask": "询问", "deny": "拒绝" }
   },

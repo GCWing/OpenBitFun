@@ -319,7 +319,11 @@ async fn poll_once(
     classify_device_poll_error(status, &error)
 }
 
-async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result<()> {
+async fn persist_tokens_for_account(
+    slot: &str,
+    tokens: TokenResponse,
+    expected_revision: u64,
+) -> Result<()> {
     if tokens.access_token.trim().is_empty() {
         return Err(anyhow!("Nous Portal token response missing access_token"));
     }
@@ -332,8 +336,9 @@ async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result
     validate_access_token(&tokens.access_token, tokens.scope.as_deref(), expires)?;
     let account_id = jwt::subject(&tokens.access_token);
     let metadata = Some(metadata_from(&tokens, None));
-    let outcome = store::upsert_if_revision(
-        STORE_KEY,
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Hermes,
+        slot,
         expected_revision,
         StoredCredential::Oauth {
             refresh,
@@ -388,7 +393,8 @@ async fn refresh(refresh_token: &str, options: &SubscriptionHttpOptions) -> Resu
 
 /// Starts the Nous Portal device-code flow. It works when the browser and the
 /// OpenBitFun execution host are on different machines.
-pub(crate) async fn begin_login(
+pub(crate) async fn begin_login_for_account(
+    slot: String,
     cancel: CancellationToken,
     expected_revision: u64,
     options: SubscriptionHttpOptions,
@@ -417,7 +423,9 @@ pub(crate) async fn begin_login(
                 .await
                 .context("complete Nous Portal device authorization")
             },
-            move |tokens| persist_tokens(tokens, expected_revision),
+            move |tokens| async move {
+                persist_tokens_for_account(&slot, tokens, expected_revision).await
+            },
         )
         .await
     };
@@ -441,11 +449,31 @@ fn stored_credential_is_usable(
     validate_access_token(access, metadata_scope(metadata), expires).is_ok()
 }
 
-async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64, String)> {
+async fn ensure_fresh_for_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<(String, i64, String)> {
+    let (slot, rejected_access, options) = (
+        slot.to_owned(),
+        rejected_access.map(str::to_owned),
+        options.clone(),
+    );
+    super::complete_credential_refresh(async move {
+        ensure_fresh_in_account(&slot, rejected_access.as_deref(), &options).await
+    })
+    .await
+}
+
+async fn ensure_fresh_in_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<(String, i64, String)> {
     // Nous refresh tokens rotate after one use. Collapse concurrent refreshes
     // across OpenBitFun processes before reading the latest durable revision.
-    let _refresh_lease = store::acquire_provider_refresh_lease(STORE_KEY).await?;
-    let snapshot = store::load_entry_with_revision(STORE_KEY).await?;
+    let _refresh_lease = store::acquire_provider_refresh_lease(slot).await?;
+    let snapshot = store::load_entry_with_revision(slot).await?;
     let entry = snapshot
         .credential
         .ok_or_else(|| anyhow!("Hermes is not connected; sign in first"))?;
@@ -460,7 +488,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64,
         return Err(anyhow!("Hermes credential is not an OAuth login"));
     };
 
-    if stored_credential_is_usable(&access, expires, metadata.as_ref()) {
+    if rejected_access != Some(access.as_str())
+        && stored_credential_is_usable(&access, expires, metadata.as_ref())
+    {
         return Ok((
             access,
             expires,
@@ -473,7 +503,7 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64,
         Err(error) => {
             // A different OpenBitFun process may have rotated and committed first.
             // Prefer its newer usable credential over a stale refresh error.
-            if let Ok(current) = store::load_entry_with_revision(STORE_KEY).await {
+            if let Ok(current) = store::load_entry_with_revision(slot).await {
                 if current.revision != snapshot.revision {
                     if let Some(StoredCredential::Oauth {
                         access,
@@ -513,8 +543,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64,
 
     // Commit the rotated refresh token before validating the new access JWT.
     // The previous refresh token is already consumed once the server replies.
-    let outcome = store::upsert_if_revision(
-        STORE_KEY,
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Hermes,
+        slot,
         snapshot.revision,
         StoredCredential::Oauth {
             refresh: new_refresh,
@@ -536,8 +567,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<(String, i64,
             Ok((new_access, new_expires, inference_base_url))
         }
         store::ConditionalCommitOutcome::Conflict { current_revision } => {
-            let current = super::load_current_store_after_conflict(
+            let current = super::load_account_store_after_conflict(
                 super::SubscriptionProvider::Hermes,
+                slot,
                 current_revision,
             )
             .await?;
@@ -576,11 +608,12 @@ fn request_url(base_url: &str, route: HermesRoute) -> String {
 
 /// Resolves the runtime credential and pins it to the model-derived Nous API
 /// route. The selected catalog model remains unchanged in the request body.
-pub(crate) async fn resolve_for(
+pub(crate) async fn resolve_for_account(
+    slot: &str,
     model: &str,
     options: &SubscriptionHttpOptions,
 ) -> Result<ResolvedCredential> {
-    let (access, expires, base_url) = ensure_fresh(options).await?;
+    let (access, expires, base_url) = ensure_fresh_for_account(slot, None, options).await?;
     let route = route_for(model);
     Ok(ResolvedCredential {
         api_key: access,
@@ -603,6 +636,21 @@ pub(crate) fn suggested() -> (&'static str, &'static str, &'static str) {
     ("openai", INFERENCE_BASE_URL, DEFAULT_MODEL)
 }
 
+pub(crate) async fn resolve_for(
+    model: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<ResolvedCredential> {
+    resolve_for_account(STORE_KEY, model, options).await
+}
+
+pub(crate) async fn recover_rejected_account(
+    slot: &str,
+    rejected_access: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<()> {
+    ensure_fresh_for_account(slot, Some(rejected_access), options).await?;
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;

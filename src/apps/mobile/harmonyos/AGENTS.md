@@ -100,6 +100,19 @@ fake RPC: send must clear the input before pressing **Acknowledge**, and a
 **Next draft** entered while pending must survive acknowledgment. Exercise both
 compact and wide layouts and return to normal `EntryAbility` afterward.
 
+For rollback reply ownership and session switching, run
+`node --test tools/tests/rollback-session-isolation.test.cjs`.
+In the `copy-rollback` native preview, stage a rollback, use **Resize**, and verify
+the preview remains for the same session. Use **Switch session** and verify the
+staging bar and full-text panel close while `SESSION-B-DRAFT` remains untouched.
+Exercise compact and wide widths in light and dark modes, then restore normal
+`EntryAbility`. Deferred-response unit tests cover switching while rollback,
+send acknowledgment, and voice shutdown are pending; the preview uses a mock
+host and is not evidence of live relay or physical fold behavior.
+After installing the debug HAP on a wide device/emulator, run
+`python3 tools/check-rollback-session-isolation.py --hdc "$HDC" --device <target>`
+for compact/wide, light/dark and live resize checks with layout/screenshot evidence.
+
 For history loading and explicit jump-to-bottom navigation, install the debug
 HAP and run `python3 tools/check-history-scroll.py --hdc "$HDC"`. The
 `history-scroll` preview holds a mock history response while the production

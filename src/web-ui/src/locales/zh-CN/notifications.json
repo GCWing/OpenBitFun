@@ -49,23 +49,6 @@
     "syncing": "正在同步...",
     "assistantBootstrapWaitingForModelConfiguration": "Assistant 引导正在等待 AI 模型配置。"
   },
-  "announcements": {
-    "release_letter": {
-      "skip": "直接阅读",
-      "replay": "重播发布信动画",
-      "replay_mascot": "重播 OpenBitFun 角色跳动动画"
-    },
-    "common": {
-      "learn_more": "查看详情",
-      "got_it": "知道了",
-      "close": "关闭",
-      "prev": "上一页",
-      "next": "下一页",
-      "done": "完成",
-      "never_show_again": "不再显示",
-      "page": "第"
-    }
-  },
   "confirm": {
     "deleteFile": "确定要删除此文件吗？",
     "deleteFolder": "确定要删除此文件夹及其所有内容吗？",

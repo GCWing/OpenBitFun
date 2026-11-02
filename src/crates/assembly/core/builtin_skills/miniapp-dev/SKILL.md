@@ -1,13 +1,14 @@
 ---
 name: miniapp-dev
-description: 'Generate and refine OpenBitFun MiniApps. Use when the user wants a new MiniApp, wants an existing MiniApp redesigned or extended, or asks for a OpenBitFun in-app tool. Typical triggers: "做一个小应用", "生成 MiniApp", "写个 OpenBitFun 小工具", "创建 mini app".'
+description: 'Generate, operate, and refine OpenBitFun MiniApps. Use when the user wants a new MiniApp, asks the Agent to inspect or operate a running MiniApp, or wants an existing MiniApp redesigned or extended. Typical triggers: "做一个小应用", "操作这个 MiniApp", "查看小应用当前状态", "改造 mini app".'
 ---
 
-# OpenBitFun MiniApp 生成指南
+# OpenBitFun MiniApp 生成与操作指南
 
-本技能用于**为用户生成、改造、完善一个 MiniApp**：
+本技能用于**为用户生成、操作、改造和完善 MiniApp**：
 
 - 做一个新的 OpenBitFun 小应用
+- 结合源码理解并操作用户正在使用的 MiniApp，保留当前草稿与状态
 - 修改某个 MiniApp 的交互、界面、能力、数据流
 - 把一个想法变成可运行的 MiniApp
 
@@ -24,6 +25,9 @@ description: 'Generate and refine OpenBitFun MiniApps. Use when the user wants a
 - 只申请必要权限
 - 不假设不存在的宿主 API
 - 在 light/dark、zh/en 下都可用
+- 新建应用默认提供有界业务状态和核心语义动作，Agent 与 UI 操作同一实例、共用业务函数
+
+操作已有应用时直接进入第 4 节的源码与业务操作流程；下面的设计准备适用于新建或改造应用。
 
 ## 先做什么
 
@@ -100,6 +104,17 @@ description: 'Generate and refine OpenBitFun MiniApps. Use when the user wants a
 
 ### 4. 选择正确的编辑流程
 
+操作已有 MiniApp 的主路径是：`inspect-app` 读源码理解业务函数和参数 →
+`MiniAppBrowser.open` 连接当前实例 → `observe_bridge` 读取当前业务状态 →
+`act_bridge` 调用语义动作 → 用动作返回的状态确认结果，必要时再次观察。
+源码说明实现，不能代替当前状态；观察必须包含用户尚未保存的输入和选择。
+
+日常操作不要通过修改源码、`update-app`、`FinalizeMiniApp`、重载或切换呈现来获得控制能力。
+这些动作可能重建文档并丢失内存状态。旧应用缺少接口时，先读源码确认已有能力，使用可用的
+DOM/输入作为兼容路径；不可用就说明具体限制，不猜动作名称。
+补接口属于应用改造：先明确当前状态如何保存与恢复；无法保留时说明中断并征得用户同意。
+改造完成后重新观察业务状态、获取 targetId，不能假设旧草稿或选中项仍存在。
+
 先判断当前任务属于哪一种，不要混用：
 
 #### 已打包客户端的直接管理（优先）
@@ -161,6 +176,32 @@ Node.js 或本地目录。更新前先读取应用，使用它的 `appId` 和 `e
 - `style.css` 先声明设计系统
 - `ui.js` 负责状态、渲染、事件、i18n
 - `worker.js` 只承载真正需要后台执行的逻辑
+
+#### 默认生成业务状态与语义动作
+
+`InitMiniApp` 骨架包含一个最小 `set-text` 示例。实现应用时替换为真实业务接口，
+不要保留无意义示例，也不要为 Agent 复制一套业务逻辑：
+
+- 恢复持久化状态后注册 `app.agent?.expose?.({ observe, actions, act })`，兼容没有此 API 的旧宿主。
+- `observe` 返回当前业务状态，包括相关草稿、选择、处理进度、结果或错误；只读，无保存/重载副作用。
+- 返回值有界；长文本或列表提供长度与截断标记，不让 Agent 把摘要当完整数据。
+- `actions` 声明核心用户意图，如应用筛选、选择记录、更新草稿。参数及返回值在源码中说明。
+- UI 事件和 `act` 调用相同业务函数，沿用原有校验、权限、持久化和渲染逻辑。
+- 修改前验证全部参数；拒绝未知动作；省略字段保持原值。动作完成后返回真实结果或当前状态。
+- 异步动作等待业务完成后返回；长任务返回明确的运行状态并可观察进度，不把“收到请求”当“完成”。
+- 纯展示应用至少提供只读状态和空动作列表，不伪造可执行动作。
+
+参考 `references/examples/builtin-regex-playground/ui.js`：
+`set-input` 局部更新、`apply-pattern` 保留用户文本、`select-match` 复用 UI 选择函数。
+协议兼容允许旧应用没有接口；新应用的交付默认包含这些能力。
+
+窗口控制栏也属于 MiniApp 定制点：在 `meta.json` 的 `chrome.titlebar`
+中声明外观、布局和应用动作；在 `source/ui.js` 通过 `app.chrome?.onAction`
+处理动作。草稿预览包含独立窗口栏；应用内动作由主顶部栏承载。
+系统控件遵循宿主平台：macOS 保留原生红绿灯，Windows 复用主应用右侧窗口按钮。
+只定制标题、应用按钮和语义配色，不移动或重绘系统控件。
+配置字段与图标列表见 `api-reference.md` 的 MiniApp window chrome。
+不要在应用内容中再复制原生窗口按钮，也不要直接调用 Tauri。
 
 ### 6. 只使用真实存在的宿主能力
 
@@ -300,6 +341,10 @@ await app.fs.readFile(...)
 - 普通新建/更新流程已成功调用 `FinalizeMiniApp`
 - 预期有改动时 `FinalizeMiniApp` 返回 `changed: true`
 - 没有手动修改生命周期字段或 `compiled.html`
+- 在同一已打开实例中，先由用户输入未保存内容，再经 `observe_bridge` / `act_bridge` 完成业务任务
+- 验证没有源码更新、文档重载或实例替换；未修改的输入、草稿和相关选择保持原样
+- 动作结果与可见 UI 一致；非法参数/未知动作失败且不部分修改状态
+- 验证可读取标签页与不依赖 DOM 的桥接路径；明确区分测试夹具、原生窗口和远程实测证据
 
 ## 发布到市场
 

@@ -281,6 +281,22 @@ Input rules:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "widget_id": {"type": "string"},
+                "title": {"type": "string"},
+                "width": {"type": "integer"},
+                "height": {"type": "integer"},
+                "modules": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["success", "widget_id", "title", "width", "height", "modules"],
+            "additionalProperties": false
+        })
+    }
+
     async fn input_schema_for_model_with_context(
         &self,
         _context: Option<&ToolUseContext>,

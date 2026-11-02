@@ -13,6 +13,8 @@ export interface ModelRoundItemProps {
   turnStartedAt?: number;
   turnEndedAt?: number;
   turnDurationMs?: number;
+  turnOutputDurationMs?: number;
+  turnTtftMs?: number;
   turnTokenUsage?: TokenUsage;
   canvasArtifactItems?: FlowToolItem[];
   expandedThinkingItemIds?: string[];
@@ -45,6 +47,11 @@ export function areModelRoundItemPropsEqual(prev: ModelRoundItemProps, next: Mod
   return (
     prev.blockPart === next.blockPart &&
     prev.round.id === next.round.id &&
+    prev.round.modelConfigId === next.round.modelConfigId &&
+    prev.round.effectiveModelName === next.round.effectiveModelName &&
+    prev.round.routing?.route === next.round.routing?.route &&
+    prev.round.routing?.latencyMs === next.round.routing?.latencyMs &&
+    prev.round.routing?.fallbackReason === next.round.routing?.fallbackReason &&
     prev.round.renderHints?.continuedAfterInterruption === next.round.renderHints?.continuedAfterInterruption &&
     isModelRoundGroupingDisabled(prev.round) === isModelRoundGroupingDisabled(next.round) &&
     prev.round.items === next.round.items &&
@@ -59,6 +66,8 @@ export function areModelRoundItemPropsEqual(prev: ModelRoundItemProps, next: Mod
     prev.turnStartedAt === next.turnStartedAt &&
     prev.turnEndedAt === next.turnEndedAt &&
     prev.turnDurationMs === next.turnDurationMs &&
+    prev.turnOutputDurationMs === next.turnOutputDurationMs &&
+    prev.turnTtftMs === next.turnTtftMs &&
     prev.turnTokenUsage === next.turnTokenUsage &&
     prev.canvasArtifactItems === next.canvasArtifactItems
   );

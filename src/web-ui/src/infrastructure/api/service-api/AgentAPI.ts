@@ -1,4 +1,4 @@
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { invokePrepared } from './invokePrepared';
 import { workspaceHistoryRequest, workspaceIdRequest } from './legacyWorkspaceCompatibility';
 import { translateAgentIdentityFields } from '../../../../../shared/agent-harness/wire';
  
@@ -31,6 +31,14 @@ export interface SessionTitleGeneratedEvent {
   title: string;
   method: 'ai' | 'fallback';
   timestamp: number;
+}
+
+/** One-sentence next-input suggestion offered after a completed turn. */
+export interface PromptSuggestionEvent {
+  sessionId: string;
+  /** Not `turnId`: the hint must not be treated as a write to the settled turn. */
+  sourceTurnId: string;
+  suggestion: string;
 }
 
 export interface SessionModelFallbackAppliedEvent {
@@ -448,6 +456,26 @@ export interface EnsureAssistantBootstrapResponse {
   detail?: string;
 }
 
+export interface ModelRoutingStatus {
+  apiVersion: number;
+  /** Product availability must be explicitly advertised; absent on older hosts. */
+  available?: boolean;
+  mode: string;
+  defaultMode: string;
+  ready: boolean;
+  connected: boolean | null;
+  /** Router-only probe failure; older hosts may only provide the general issue. */
+  connectionIssue?: string | null;
+  issue: string | null;
+  summaryEnabled: boolean;
+  /** Explicit execution-host capability for Router budgeting without a tokenizer file. */
+  estimatedTokenBudgetSupported?: boolean;
+  /** Legacy response field; current hosts omit this retired control. */
+  subagentModel?: string;
+}
+export type ModelRoutingStatusRequest = Partial<Pick<UpdateSessionModelRequest,
+  'sessionId' | 'workspaceId' | 'workspacePath' | 'remoteConnectionId' | 'remoteSshHost'>> & { probe?: boolean };
+
 export interface UpdateSessionModelRequest {
   sessionId: string;
   modelName: string;
@@ -458,6 +486,7 @@ export interface UpdateSessionModelRequest {
   remoteConnectionId?: string;
   remoteSshHost?: string;
   includeInternal?: boolean;
+  routingMode?: 'manual' | 'smart';
 }
 
 /** `ask` | `auto_approve` | `full_access`; `null` clears the session override. */
@@ -638,6 +667,10 @@ export type DialogTurnStartedEvent = AgenticEvent;
 
 export interface OpenBuiltInBrowserEvent {
   requestId?: string;
+  /** Owning Agent conversation, independent of the currently displayed one. */
+  sessionId?: string;
+  /** Host-owned native page; mounting its panel only attaches presentation. */
+  targetId?: string;
   url: string;
   title?: string;
   replaceExisting?: boolean;
@@ -745,6 +778,8 @@ export interface ModelRoundCompletedEvent extends AgenticEvent {
   firstChunkMs?: number;
   firstVisibleOutputMs?: number;
   streamDurationMs?: number;
+  /** Request start to first effective output for the accepted model attempt. */
+  ttftMs?: number;
   attemptCount?: number;
   failureCategory?: string;
   tokenDetails?: unknown;
@@ -765,6 +800,7 @@ export interface ModelRoundStartedEvent extends AgenticEvent {
   modelConfigId?: string;
   /** Provider model name sent on the request. */
   effectiveModelName?: string;
+  routing?: import('@/shared/types/session-history').ModelRoutingDecision;
 }
 
 export interface AcpContextUsageUpdatedEvent extends AgenticEvent {
@@ -1050,9 +1086,9 @@ export class AgentAPI {
     workspaceId: string
   ): Promise<void> {
     try {
-      await api.invoke<void>('delete_session', { 
+      await invokePrepared<void>('delete_session', async () => ({
         request: { sessionId, ...await workspaceIdRequest(workspaceId, 'workspacePath') }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('delete_session', error, { sessionId, workspaceId });
     }
@@ -1065,18 +1101,15 @@ export class AgentAPI {
     traceId?: string,
     includeInternal?: boolean,
   ): Promise<SessionInfo> {
-    const scope = getActiveSurfaceScope();
     try {
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<SessionInfo>('restore_session', {
+      return await invokePrepared<SessionInfo>('restore_session', async () => ({
         request: {
           sessionId,
-          ...workspace,
+          ...await workspaceIdRequest(workspaceId, 'workspacePath'),
           traceId,
           includeInternal,
         },
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('restore_session', error, { sessionId, workspaceId });
     }
@@ -1088,18 +1121,15 @@ export class AgentAPI {
     traceId?: string,
     includeInternal?: boolean,
   ): Promise<RestoreSessionWithTurnsResponse> {
-    const scope = getActiveSurfaceScope();
     try {
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<RestoreSessionWithTurnsResponse>('restore_session_with_turns', {
+      return await invokePrepared<RestoreSessionWithTurnsResponse>('restore_session_with_turns', async () => ({
         request: {
           sessionId,
-          ...workspace,
+          ...await workspaceIdRequest(workspaceId, 'workspacePath'),
           traceId,
           includeInternal,
         },
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('restore_session_with_turns', error, { sessionId, workspaceId });
     }
@@ -1116,19 +1146,16 @@ export class AgentAPI {
     includeInternal?: boolean,
     tailTurnCount?: number,
   ): Promise<RestoreSessionViewResponse> {
-    const scope = getActiveSurfaceScope();
     try {
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<RestoreSessionViewResponse>('restore_session_view', {
+      return await invokePrepared<RestoreSessionViewResponse>('restore_session_view', async () => ({
         request: {
           sessionId,
-          ...workspace,
+          ...await workspaceIdRequest(workspaceId, 'workspacePath'),
           traceId,
           includeInternal,
           ...(tailTurnCount !== undefined ? { tailTurnCount } : {}),
         },
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('restore_session_view', error, { sessionId, workspaceId });
     }
@@ -1173,9 +1200,9 @@ export class AgentAPI {
   ): Promise<RollbackSessionToTurnOutcome> {
     try {
       const { workspaceId, ...mutation } = request;
-      const outcome = await api.invoke<RollbackSessionToTurnWireOutcome>('rollback_session_to_turn', {
+      const outcome = await invokePrepared<RollbackSessionToTurnWireOutcome>('rollback_session_to_turn', async () => ({
         request: { ...mutation, ...await workspaceHistoryRequest(workspaceId) },
-      });
+      }));
       if (outcome.status === 'completed') {
         return {
           ...outcome,
@@ -1232,15 +1259,18 @@ export class AgentAPI {
     workspaceId: string;
     includeInternal?: boolean;
   }): Promise<void> {
-    const scope = getActiveSurfaceScope();
     try {
       const { workspaceId, ...session } = request;
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      await api.invoke<void>('ensure_coordinator_session', { request: { ...session, ...workspace } });
+      await invokePrepared<void>('ensure_coordinator_session', async () => ({
+        request: { ...session, ...await workspaceIdRequest(workspaceId, 'workspacePath') },
+      }));
     } catch (error) {
       throw createTauriCommandError('ensure_coordinator_session', error, request);
     }
+  }
+
+  async getModelRoutingStatus(request: ModelRoutingStatusRequest = {}): Promise<ModelRoutingStatus> {
+    return api.invoke<ModelRoutingStatus>('get_model_routing_status', { request }, { retries: 0 });
   }
 
   async updateSessionModel(request: UpdateSessionModelRequest): Promise<void> {
@@ -1326,11 +1356,10 @@ export class AgentAPI {
 
    
   async listSessions(workspaceId: string): Promise<SessionInfo[]> {
-    const scope = getActiveSurfaceScope();
     try {
-      const request = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<SessionInfo[]>('list_sessions', { request });
+      return await invokePrepared<SessionInfo[]>('list_sessions', async () => ({
+        request: await workspaceIdRequest(workspaceId, 'workspacePath'),
+      }));
     } catch (error) {
       throw createTauriCommandError('list_sessions', error, { workspaceId });
     }
@@ -1474,6 +1503,10 @@ export class AgentAPI {
    
   onDialogTurnCompleted(callback: (event: AgenticEvent) => void): () => void {
     return api.listen<AgenticEvent>('agentic://dialog-turn-completed', callback);
+  }
+
+  onPromptSuggestion(callback: (event: PromptSuggestionEvent) => void): () => void {
+    return api.listen<PromptSuggestionEvent>('agentic://prompt-suggestion', callback);
   }
 
   onUserSteeringInjected(
@@ -1713,8 +1746,9 @@ export class AgentAPI {
   async getAvailableModes(request: { workspaceId?: string } = {}): Promise<ModeInfo[]> {
     try {
       if (request.workspaceId !== undefined && !request.workspaceId.trim()) throw new Error('Workspace identity is unresolved');
-      const wire = request.workspaceId !== undefined ? await workspaceIdRequest(request.workspaceId, 'workspacePath') : {};
-      return translateAgentIdentityFields(await api.invoke<ModeInfo[]>('get_available_modes', { request: wire }), 'canonical');
+      return translateAgentIdentityFields(await invokePrepared<ModeInfo[]>('get_available_modes', async () => ({
+        request: request.workspaceId !== undefined ? await workspaceIdRequest(request.workspaceId, 'workspacePath') : {},
+      })), 'canonical');
     } catch (error) {
       throw createTauriCommandError('get_available_modes', error);
     }

@@ -25,26 +25,92 @@
  * scroll has been corrected but the items have not moved yet.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import {
   observeElementOffset as observeTanStackElementOffset,
   observeElementRect as observeTanStackElementRect,
   measureElement as measureTanStackElement,
-  useVirtualizer,
+  Virtualizer,
   type Rect,
-  type Virtualizer,
+  type VirtualizerOptions,
 } from '@tanstack/react-virtual';
-import {
-  roundViewportPx,
-  traceViewport,
-  traceViewportRepeating,
-  isViewportDiagnosticsEnabled,
-} from '@/infrastructure/diagnostics/flowChatViewportDiagnostics';
 import type { FlowChatViewportOwner } from './flowChatViewportOwnership';
-import {
-  describeVirtualItemEstimate,
-  type VirtualItemHeightEstimateContext,
-} from './virtualMessageListLayout';
+import type { VirtualItemHeightEstimateContext } from './virtualMessageListLayout';
+
+// Leave room for descendant refs and follow effects within React's nested
+// update limit. Ordinary opening settles synchronously; a long measurement
+// cascade must yield even when every individual correction is making progress.
+const MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS = 16;
+
+/**
+ * Core adapter: geometry stays synchronous, but React notification is bounded.
+ * The upstream React adapter dispatches before its onChange callback, so that
+ * callback cannot gate rendering. Keep its core mount/update lifecycle here.
+ */
+function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLElement>) {
+  const [, rerender] = useReducer((revision: number) => revision + 1, 0);
+  const [instance] = useState(() => new Virtualizer(options));
+  const mounted = useRef(false);
+  const frame = useRef<number | null>(null);
+  const commits = useRef(0);
+  const requested = useRef(false);
+  const pending = useRef(false);
+  // Descendant layout effects can publish measurements before our own layout
+  // effect runs. A request from the previous render cannot cover those writes.
+  requested.current = false;
+
+  const requestRender = useCallback((sync: boolean) => {
+    if (!mounted.current || (!sync && requested.current)) return;
+    pending.current = true;
+    if (frame.current === null) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        commits.current = 0;
+        if (!mounted.current || !pending.current) return;
+        pending.current = false;
+        // The frame starts a new React update chain. Subsequent notifications
+        // arm the next frame and share its budget instead of replaying offsets.
+        requested.current = true;
+        commits.current = 1;
+        rerender();
+      });
+    }
+    if (commits.current >= MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS) return;
+    pending.current = false;
+    requested.current = true;
+    commits.current += 1;
+    if (sync) flushSync(rerender);
+    else rerender();
+  }, []);
+
+  instance.setOptions({
+    ...options,
+    onChange: (virtualizer, sync) => {
+      // Reconcile against the updated cache before asking React to select a
+      // window. Deferring this callback would replay stale scroll ownership.
+      options.onChange?.(virtualizer, sync);
+      requestRender(sync);
+    },
+  });
+  useLayoutEffect(() => {
+    mounted.current = true;
+    const cleanup = instance._didMount();
+    return () => {
+      mounted.current = false;
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      frame.current = null;
+      pending.current = false;
+      requested.current = false;
+      commits.current = 0;
+      cleanup();
+    };
+  }, [instance]);
+  useLayoutEffect(() => {
+    instance._willUpdate();
+  });
+  return instance;
+}
 
 /** A nearby pixel window, bounded in leaves so dense groups mount incrementally. */
 export function timelineOverscanRange(start: number, end: number, count: number, viewportPx: number,
@@ -131,14 +197,6 @@ export function isItemFullyAboveViewport(itemEndPx: number, scrollTopPx: number)
   return itemEndPx <= scrollTopPx;
 }
 
-function resizeDeltaBand(deltaPx: number): string {
-  const magnitudePx = Math.abs(deltaPx);
-  if (magnitudePx < 1) return 'subpixel';
-  if (magnitudePx < 16) return 'small';
-  if (magnitudePx < 128) return 'medium';
-  return 'large';
-}
-
 /**
  * The measurement pass, which the published types keep to themselves.
  *
@@ -181,6 +239,15 @@ export interface UseFlowChatVirtualizerOptions<T> {
   reconcileOpeningMeasurement?: () => boolean;
   /** The host has temporarily withdrawn the scroller, such as window minimization. */
   isViewportSuspended?: () => boolean;
+  /**
+   * A pane resize is changing the available width on every frame.
+   *
+   * Both the estimates and every measured row are derived from that width, so
+   * there is no settled layout to measure against until the gesture ends. The
+   * layout-signature pass below holds for the duration and runs exactly once
+   * when this goes back to false.
+   */
+  measurementSuspended?: boolean;
   /**
    * Gap kept above a Turn that has been scrolled to the top of the viewport.
    * Applied by the virtualizer itself so that its re-aim, which runs while
@@ -350,6 +417,7 @@ export function useFlowChatVirtualizer<T>({
   startAtTailOnMount = false,
   reconcileOpeningMeasurement,
   isViewportSuspended = () => false,
+  measurementSuspended = false,
   scrollPaddingStartPx,
   writeViewport,
   shiftViewport = () => false,
@@ -407,12 +475,59 @@ export function useFlowChatVirtualizer<T>({
   const aimStartedAtMsRef = useRef<number | null>(null);
   const getItemKeyRef = useRef(getItemKey);
   getItemKeyRef.current = getItemKey;
+  const itemKeyCacheOwnerRef = useRef(getItemKey);
+  const itemKeyCacheRef = useRef(new WeakMap<object, string>());
+  /**
+   * Keys are derived strings, so a fresh enumeration allocates one string per
+   * row. A quiet stream reuses every row object but the live tail, so one
+   * string per row object lets the sequence be compared by reference instead of
+   * re-joined on every flush.
+   */
+  const itemKeyOf = useCallback((item: T): string => {
+    // Items are rows in production but the hook stays generic, and a primitive
+    // cannot be a weak map key.
+    if (item === null || typeof item !== 'object') return getItemKeyRef.current(item);
+    const cache = itemKeyCacheRef.current;
+    const asObject = item as unknown as object;
+    const cached = cache.get(asObject);
+    if (cached !== undefined) return cached;
+    const key = getItemKeyRef.current(item);
+    cache.set(asObject, key);
+    return key;
+  }, []);
+  const itemKeySequenceRef = useRef<{ keys: string[]; revision: string }>({ keys: [], revision: '' });
+  const itemKeysRef = useRef<string[]>([]);
+  const itemKeyState = useMemo(() => {
+    // A new key function invalidates every cached key.
+    if (itemKeyCacheOwnerRef.current !== getItemKey) {
+      itemKeyCacheOwnerRef.current = getItemKey;
+      itemKeyCacheRef.current = new WeakMap();
+    }
+    const previous = itemKeySequenceRef.current;
+    if (previous.keys.length === items.length) {
+      let same = true;
+      for (let index = 0; index < items.length; index += 1) {
+        if (previous.keys[index] !== itemKeyOf(items[index])) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return previous;
+    }
+    const keys = items.map(itemKeyOf);
+    const next = { keys, revision: keys.join('\u0000') };
+    itemKeySequenceRef.current = next;
+    return next;
+  }, [items, itemKeyOf, getItemKey]);
+  itemKeysRef.current = itemKeyState.keys;
   const estimateItemHeightRef = useRef(estimateItemHeightPx);
   estimateItemHeightRef.current = estimateItemHeightPx;
   const estimateContextRef = useRef(estimateContext);
   estimateContextRef.current = estimateContext;
   const isViewportSuspendedRef = useRef(isViewportSuspended);
   isViewportSuspendedRef.current = isViewportSuspended;
+  const measurementSuspendedRef = useRef(measurementSuspended);
+  measurementSuspendedRef.current = measurementSuspended;
 
   const [contentStartPx, setContentStartPx] = useState(0);
   useEffect(() => {
@@ -438,7 +553,7 @@ export function useFlowChatVirtualizer<T>({
     return item === undefined ? 0 : estimateItemHeightRef.current(item, estimateContextRef.current);
   }, []);
 
-  const itemKeyRevision = useMemo(() => items.map(getItemKey).join('\u0000'), [items, getItemKey]);
+  const itemKeyRevision = itemKeyState.revision;
   const resolveItemKey = useCallback((index: number) => {
     // Recreate the callback when estimate inputs change. TanStack uses the
     // callback identity to invalidate its derived measurement positions while
@@ -452,7 +567,7 @@ export function useFlowChatVirtualizer<T>({
   const attachingRowsRef = useRef(new Set<HTMLElement>());
   const measurementBatchRef = useRef<Map<Element, number> | null>(null);
 
-  const virtualizer = useVirtualizer({
+  const virtualizer = useMeasuredVirtualizer({
     // A live-tail open previously mounted rows 0..13 before moving to 22..33;
     // the first head measurement flushed 372.3ms of pending layout in a trace.
     // Seed the last item's estimated start without reading DOM geometry. This
@@ -559,7 +674,6 @@ export function useFlowChatVirtualizer<T>({
     if (!scroller) return false;
     if (isViewportSuspendedRef.current()) return false;
     const beforeScrollTopPx = scroller.scrollTop;
-    const beforeScrollHeightPx = scroller.scrollHeight;
     // A row that merely starts above the viewport may still be visible. Its
     // resize changes content inside the reader rather than moving content that
     // is wholly above it, so compensating its full delta would pull the reader
@@ -569,45 +683,6 @@ export function useFlowChatVirtualizer<T>({
     const fullyAboveViewport = isItemFullyAboveViewport(item.end, beforeScrollTopPx);
     const applied = fullyAboveViewport ? shiftViewport(delta) : false;
     if (applied) pendingMeasurementShiftRef.current = true;
-    const virtualItem = itemsRef.current[item.index];
-    if (isViewportDiagnosticsEnabled()) {
-      const diagnosticItem = virtualItem as {
-        type?: unknown;
-        turnId?: unknown;
-      } | undefined;
-      const itemKey = virtualItem === undefined ? null : getItemKeyRef.current(virtualItem);
-      traceViewportRepeating(
-        `itemResize|${itemKey ?? 'unknown'}|${fullyAboveViewport}|${applied}|${resizeDeltaBand(delta)}`,
-        {
-          location: 'virtualizer.itemResize',
-          message: 'an item changed size during virtualizer measurement',
-          travelPx: delta,
-          data: () => ({
-            index: item.index,
-            itemKey,
-            itemType: typeof diagnosticItem?.type === 'string' ? diagnosticItem.type : null,
-            turnId: typeof diagnosticItem?.turnId === 'string' ? diagnosticItem.turnId : null,
-            estimatedSizePx: virtualItem === undefined
-              ? null
-              : roundViewportPx(estimateItemHeightRef.current(virtualItem)),
-            previousItemSizePx: roundViewportPx(item.size),
-            nextItemSizePx: roundViewportPx(item.size + delta),
-            itemStartPx: roundViewportPx(item.start),
-            itemEndPx: roundViewportPx(item.end),
-            deltaPx: roundViewportPx(delta),
-            fullyAboveViewport,
-            beforeScrollTopPx: roundViewportPx(beforeScrollTopPx),
-            beforeScrollHeightPx: roundViewportPx(beforeScrollHeightPx),
-            applied,
-            afterScrollTopPx: roundViewportPx(scroller.scrollTop),
-            afterScrollHeightPx: roundViewportPx(scroller.scrollHeight),
-            estimateBreakdown: virtualItem && typeof virtualItem === 'object' && 'type' in virtualItem
-              ? describeVirtualItemEstimate(virtualItem as unknown as Parameters<typeof describeVirtualItemEstimate>[0])
-              : null,
-          }),
-        },
-      );
-    }
     /*
      * TanStack's default adjustment is based on its cached scroll offset. This
      * list writes the real scroller through the viewport register, so that copy
@@ -627,9 +702,10 @@ export function useFlowChatVirtualizer<T>({
     }
     const previous = previousKnownHeightsRef.current;
     const next = new Map<string, number>();
+    const keys = itemKeysRef.current;
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
-      const key = getItemKeyRef.current(item);
+      const key = keys[index] ?? getItemKeyRef.current(item);
       const knownHeight = getKnownItemHeightPx(item);
       if (knownHeight !== undefined) next.set(key, knownHeight);
       if (knownHeight === undefined && !previous.has(key)) continue;
@@ -676,7 +752,24 @@ export function useFlowChatVirtualizer<T>({
     if (!attached.length || isViewportSuspendedRef.current()) return;
     // Read before any viewport shift or size-cache notification can write.
     measurementBatchRef.current = new Map(attached.map(element => [element, element.offsetHeight]));
-    try { for (const element of attached) virtualizer.measureElement(element); }
+    try {
+      for (const element of attached) {
+        virtualizer.measureElement(element);
+        // Explicit aims keep the library's measurement policy. During smooth
+        // navigation it skips rows far from the target; forcing their sizes
+        // changes that target and makes the re-aim jump with 'auto' behavior.
+        // Reader takeover clears the aim before the next scrolling commit.
+        if (aimStartedAtMsRef.current !== null) continue;
+        // The library observes newly attached rows but skips their inline
+        // measurement during scrolling. In our flow layout their real heights
+        // already displace the following rows in this commit. Reconcile before
+        // paint, rather than showing the displacement until ResizeObserver.
+        const index = Number(element.getAttribute('data-virtual-index'));
+        if (Number.isInteger(index) && index >= 0 && index < itemsRef.current.length) {
+          virtualizer.resizeItem(index, measurementBatchRef.current.get(element)!);
+        }
+      }
+    }
     finally { measurementBatchRef.current = null; }
   });
 
@@ -743,11 +836,26 @@ export function useFlowChatVirtualizer<T>({
   const measuredLayoutRef = useRef(layoutSignature);
   const previousKeysRef = useRef(new Set<string>());
   const retiredMeasurementsRef = useRef(0);
+  /** A pass owed to a layout that a pane drag had not finished moving. */
+  const pendingLayoutMeasureRef = useRef(false);
   useLayoutEffect(() => {
-    const keys = new Set(items.map(getItemKeyRef.current));
+    const keys = new Set(itemKeysRef.current);
     for (const key of previousKeysRef.current) if (!keys.has(key)) retiredMeasurementsRef.current++;
     previousKeysRef.current = keys;
-    if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048) return;
+    if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048
+      && !pendingLayoutMeasureRef.current) return;
+    /*
+     * A divider drag changes the available width every frame, and everything
+     * this pass reads — the estimates and the rendered rows' heights — is
+     * derived from that width. Measuring each intermediate width is what the
+     * drag would spend its frame on, so the invalidation is remembered rather
+     * than acted on: `measuredLayoutRef` keeps the settled signature, and the
+     * release runs exactly one pass against the layout that stopped moving.
+     */
+    if (measurementSuspendedRef.current) {
+      pendingLayoutMeasureRef.current = true;
+      return;
+    }
     if (isViewportSuspendedRef.current()) return;
     const scroller = scrollerRef.current;
     const before = (virtualizer as unknown as MeasuringVirtualizer).getMeasurements();
@@ -763,7 +871,9 @@ export function useFlowChatVirtualizer<T>({
     }
     measuredLayoutRef.current = layoutSignature;
     retiredMeasurementsRef.current = 0;
-  }, [itemKeyRevision, layoutSignature, items, measureRenderedItems, scrollerRef, shiftViewport, virtualizer]);
+    pendingLayoutMeasureRef.current = false;
+  }, [itemKeyRevision, layoutSignature, items, measureRenderedItems, scrollerRef, shiftViewport, virtualizer,
+    measurementSuspended]);
 
   const getItemBounds = useCallback((index: number): FlowChatItemBounds | null => {
     const measurement = (virtualizer as unknown as MeasuringVirtualizer)
@@ -829,14 +939,6 @@ export function useFlowChatVirtualizer<T>({
     aimHoldForMsRef.current = undefined;
     const givenUpAtPx = scroller.scrollTop;
     virtualizer.scrollToOffset(givenUpAtPx, { align: 'start', behavior: 'auto' });
-    traceViewport({
-      location: 'virtualizer.aimCancelled',
-      message: 'an aim was given up because the reader took the viewport',
-      data: () => ({
-        givenUpAtPx: roundViewportPx(givenUpAtPx),
-        aimAgeMs: Math.round(performance.now() - startedAtMs),
-      }),
-    });
   }, [scrollerRef, virtualizer]);
 
   return {

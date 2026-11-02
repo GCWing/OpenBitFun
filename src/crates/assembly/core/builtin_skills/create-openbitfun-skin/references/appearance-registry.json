@@ -4979,58 +4979,6 @@
       ]
     },
     {
-      "id": "announcement",
-      "parts": [
-        {
-          "id": "stack",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "deck",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "ghost",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "modalBackdrop",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "modal",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "modalClose",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "modalPages",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "modalFooter",
-          "propertyProfile": "container"
-        },
-        {
-          "id": "modalNavigation",
-          "propertyProfile": "container"
-        }
-      ],
-      "facets": [
-        {
-          "id": "depth",
-          "attribute": "data-openbitfun-depth",
-          "values": [
-            "1",
-            "2"
-          ]
-        }
-      ],
-      "states": []
-    },
-    {
       "id": "context-menu",
       "parts": [
         {

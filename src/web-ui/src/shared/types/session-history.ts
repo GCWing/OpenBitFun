@@ -26,6 +26,20 @@ export interface SessionRelationship {
 }
 
 export interface SessionCustomMetadata extends Record<string, unknown> {
+  importedFrom?: string;
+  externalHistoryMode?: 'follow';
+  externalHistoryPending?: boolean;
+  externalContentVersion?: string;
+  externalSourceStatus?: 'available' | 'unavailable' | 'unsupported';
+  externalSourceIncomplete?: boolean;
+  externalObservedFingerprint?: string;
+  externalMaterializedObservation?: string;
+  externalBranchOf?: {
+    sessionId: string;
+    ecosystemId: string;
+    sourceSessionId: string;
+    contentVersion: string;
+  };
   kind?: SessionKind;
   parentSessionId?: string | null;
   parentRequestId?: string | null;
@@ -42,6 +56,7 @@ export interface SessionCustomMetadata extends Record<string, unknown> {
   } | null;
   lastFinishedAt?: number | null;
   titleSource?: SessionTitleSource | null;
+  titleUserEdited?: boolean;
   titleKey?: string | null;
   titleParams?: Record<string, unknown> | null;
   workspaceSessionNumber?: number;
@@ -148,6 +163,8 @@ export interface SessionActivitySummary {
   pendingQuestions: number;
   lastTurn?: SessionLastTurn;
   unreadCompletion?: 'completed' | 'error' | 'interrupted';
+  /** A quiet run can be newer than the unread user-facing result. */
+  unreadTurn?: SessionLastTurn;
 }
 
 export interface ReviewActionPersistedState {
@@ -284,9 +301,12 @@ export interface ModelRoundData {
   providerId?: string;
   modelConfigId?: string;
   effectiveModelName?: string;
+  routing?: ModelRoutingDecision;
   firstChunkMs?: number;
   firstVisibleOutputMs?: number;
   streamDurationMs?: number;
+  /** Request start to first effective output for the accepted model attempt. */
+  ttftMs?: number;
   attemptCount?: number;
   attemptDiagnostics?: ModelRoundAttemptDiagnostic[];
   failureCategory?: string;
@@ -382,3 +402,9 @@ export interface ToolResultData {
 }
 
 export type TurnStatus = 'inprogress' | 'completed' | 'error' | 'cancelled';
+
+export interface ModelRoutingDecision {
+  route: string;
+  latencyMs: number;
+  fallbackReason?: string;
+}

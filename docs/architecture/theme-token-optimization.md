@@ -104,6 +104,15 @@ accent，由 Web UI Appearance 提供默认值并接受皮肤覆盖。暗色全�
 青蓝两种材质色；其他组件的青色 Token 也不属于更新材质。该差异因此由更新组件的最小契约承载，
 不新增基础色。旧皮肤通过现有组合逻辑补齐默认值。
 
+Session Usage 的输入、输出数据系列使用 `--openbitfun-component-session-usage-input` 和
+`--openbitfun-component-session-usage-output`，分别引用对应明暗设计系统主题的蓝色信息强调色与紫色次强调色。
+产品主题的主、次强调色可能同时为黑灰色，不能保证数据系列的彩色区分。
+这两个最小组件令牌由 Appearance 统一提供，环形图、分段图和图例共用，不新增基础色。旧皮肤自动补齐，显式覆盖继续保留。
+Token 分段图将缓存命中与未命中归入输入分组：命中复用输入蓝色，未命中以同色与场景底色混合区分，输出保留紫色。
+上下文的其他分类复用 success、warning、danger 强调色，并使用 `color-mix()` 与输入/输出系列色组合区分，
+不增加基础色或图表组件令牌；图例文字与数值始终保留，颜色不作为唯一的信息来源。
+工具定义预览的折叠标题复用这组颜色，与场景底色混合成柔和背景；展开与收起均保留底色，正文维持场景底色。
+
 普通应用组件和页面必须满足：
 
 - 颜色、阴影和 blur 只从 canonical Token 取得；允许用 `color-mix()`、gradient 等 CSS 运算组合 Token。
@@ -211,9 +220,9 @@ Mobile Web 直接消费 `@openbitfun/theme-openbitfun`。`ThemeProvider` 与首�
 
 ### Desktop bootstrap 与 Native Mobile 预览
 
-Data Migrator 的独立静态界面直接消费设计系统公开的字体、间距、控件和语义颜色 Token。
-`generate-data-migrator-theme.mjs` 构建设计系统的 Token/主题包，并将公开 CSS 入口及其依赖打包为
-`src/apps/data-migrator/ui/generated/design-system.css`，随迁移程序离线交付。原生控件只使用 canonical
+Data Tools 的独立静态界面直接消费设计系统公开的字体、间距、控件和语义颜色 Token。
+`generate-data-tools-theme.mjs` 构建设计系统的 Token/主题包，并将公开 CSS 入口及其依赖打包为
+`src/apps/data-tools/ui/generated/design-system.css`，随迁移程序离线交付。原生控件只使用 canonical
 Token；`theme.js` 在首屏绘制前选择系统浅色/深色和高对比模式，并监听系统设置变化。
 仅独立迁移器打包刷新该资源，开发者也可显式运行生成命令；Desktop 开发和打包不依赖迁移器。
 统一颜色审计同时检查源码和生成物漂移。
@@ -359,3 +368,10 @@ pnpm run check:web
 
 完成目标不是“色值数量最少”，而是每个颜色只有一个权威 owner、每个消费方只依赖稳定语义、每次回退都能
 被自动门禁准确阻断。
+
+### 项目图标识别色
+
+`color.identity.project.*` 定义用户选择的八种项目识别色，复用主题 reference 色阶并分别映射浅色和深色模式。
+状态、全局强调色和助手身份色各有独立含义，不能用它们隐式定义项目色板。Web UI 与 mobile-web 只消费这组
+canonical 变量。自定义 HEX 是经校验的用户内容，只作用于图标绘制区域；选中态、展开箭头和焦点标识继续使用
+系统 Token。自定义图片保持原色。不得通过放宽颜色审计 baseline 允许组件自建色板。

@@ -9,7 +9,161 @@ import { LAN, OFFICIAL, RelayFixture, connected, disconnect, invitation, launchB
 let browser;
 let source;
 before(async () => { source = await startSourceServer(); browser = await launchBrowser(); });
-after(async () => { await browser?.close(); await source?.close(); });
+after(async () => {
+  // Bound cleanup so a stuck browser or dev server cannot hang the runner,
+  // but never force the process exit: the test runner still owns the exit
+  // code and a forced zero would mask failed assertions.
+  try {
+    await Promise.race([
+      browser?.close(),
+      new Promise(resolve => setTimeout(resolve, 3000)),
+    ]);
+  } catch {}
+  try {
+    await Promise.race([
+      source?.close(),
+      new Promise(resolve => setTimeout(resolve, 3000)),
+    ]);
+  } catch {}
+});
+
+test('assistant workspace plus creates a session whose first message reaches the host queue', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  for(const [width,legacyWorkspace,queueSupported] of [[390,false,true],[768,true,true],[1280,true,false]]) {
+   const context=await browser.createIncognitoBrowserContext();
+   try {
+    const page=await context.newPage();await page.setViewport({width,height:844});await page.goto(server.origin);
+    await page.evaluate(async options=>{
+     const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+     window.assistantFixture=await mountAssistantSessionFixture(options);
+    },{legacyWorkspace,queueSupported});
+    await page.waitForSelector('button[aria-label="Assistant · New Session"]');
+    await page.click('button[aria-label="Assistant · New Session"]');
+    await page.waitForSelector('.chat-page__input');
+    await page.type('.chat-page__input','Who are you?');
+    await page.click('.chat-page__send-btn:not(.is-stop)');
+    await page.waitForFunction(()=>window.assistantFixture.calls.some(call=>call.cmd==='send_message'||call.request?.action==='submit'));
+    const result=await page.evaluate(()=>({
+     create:window.assistantFixture.calls.find(call=>call.cmd==='create_session'),
+     send:window.assistantFixture.calls.find(call=>call.cmd==='send_message'||call.request?.action==='submit'),
+    }));
+    assert.equal(result.create.agent_type,'claw');
+    assert.equal(legacyWorkspace?result.create.workspace_path:result.create.workspace_id,legacyWorkspace?'/fixtures/assistant':'assistant-workspace');
+    assert.equal(result.send.device,'assistant-mode-host');
+    assert.equal(queueSupported?result.send.request.message.agentType:result.send.agent_type,queueSupported?'Claw':'claw');
+    await page.waitForFunction(()=>!document.querySelector('.chat-page__input')?.value);
+    assert.equal(await page.evaluate(async()=>(await import('/src/services/store.ts')).useMobileStore.getState().error),null);
+   } finally {await context.close();}
+  }
+ } finally {await browser.close();await server.close();}
+});
+
+test('chat header follows the session workspace, not the selected project and branch', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  for(const width of [390,1280]) {
+   const context=await browser.createIncognitoBrowserContext();
+   try {
+    const page=await context.newPage();await page.setViewport({width,height:844});await page.goto(server.origin);
+    await page.evaluate(async()=>{
+     const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+     window.assistantFixture=await mountAssistantSessionFixture({selectedProject:true});
+    });
+    const headerText=async()=>{
+     await page.waitForSelector('.chat-page__input');
+     await page.waitForFunction(()=>Boolean(document.querySelector('.chat-page__workspace-name')?.textContent));
+     return page.evaluate(()=>({
+      workspace:document.querySelector('.chat-page__workspace-name').textContent,
+      branch:document.querySelector('.chat-page__workspace-branch')?.textContent??null,
+     }));
+    };
+    const backToList=async()=>{
+     await page.evaluate(()=>document.querySelector('.chat-page__back').click());
+     await page.waitForSelector('.harmony-sidebar__workspace-group');
+    };
+    const openSession=async(workspace,sessionName)=>{
+     await page.waitForFunction(workspace=>[...document.querySelectorAll('.harmony-sidebar__workspace-main')]
+      .some(node=>node.textContent.includes(workspace)),{},workspace);
+     await page.evaluate((workspace,sessionName)=>{
+      const group=[...document.querySelectorAll('.harmony-sidebar__workspace-group')]
+       .find(node=>node.querySelector('.harmony-sidebar__workspace-main').textContent.includes(workspace));
+      const open=[...group.querySelectorAll('.harmony-sidebar__session-main')].some(node=>node.textContent.includes(sessionName));
+      if(!open)group.querySelector('.harmony-sidebar__workspace-main').click();
+     },workspace,sessionName);
+     await page.waitForFunction(sessionName=>[...document.querySelectorAll('.harmony-sidebar__session-main')]
+      .some(node=>node.textContent.includes(sessionName)),{},sessionName);
+     await page.evaluate(sessionName=>[...document.querySelectorAll('.harmony-sidebar__session-main')]
+      .find(node=>node.textContent.includes(sessionName)).click(),sessionName);
+    };
+    // New assistant session while the host has `home / master` selected.
+    await page.waitForSelector('button[aria-label="Assistant · New Session"]');
+    await page.click('button[aria-label="Assistant · New Session"]');
+    assert.deepEqual(await headerText(),{workspace:'Assistant',branch:null});
+    await backToList();
+    // Existing assistant session opened from its catalog row.
+    await openSession('Assistant','New Session');
+    assert.deepEqual(await headerText(),{workspace:'Assistant',branch:null});
+    await backToList();
+    // The selected project keeps its branch.
+    await openSession('home','home session');
+    assert.deepEqual(await headerText(),{workspace:'home',branch:'master'});
+    await backToList();
+    // Another project shows its own name and no unknown branch.
+    await openSession('api','api session');
+    assert.deepEqual(await headerText(),{workspace:'api',branch:null});
+   } finally {await context.close();}
+  }
+ } finally {await browser.close();await server.close();}
+});
+
+test('pre-fix assistant outbox retries with its original ID, content and attachments after reopening', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  const context=await browser.createIncognitoBrowserContext();let page=await context.newPage();await page.goto(server.origin);
+  await page.evaluate(async()=>{
+   const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+   window.assistantFixture=await mountAssistantSessionFixture({legacyPending:true});
+  });
+  await page.waitForSelector('.host-message-queue__preview');
+  await page.close();page=await context.newPage();await page.goto(server.origin);
+  const result=await page.evaluate(async()=>{
+   const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+   const fixture=await mountAssistantSessionFixture();
+   const queue=fixture.manager.dialogQueue(fixture.sessionId);
+   await queue.refresh();
+   const record=queue.getSnapshot().pending[0];
+   await queue.retry(record);
+   // A second retry discovers the existing receipt and cannot dispatch twice.
+   await queue.retry(record);
+   return {original:record.request,saved:(await queue.savedDraft('before-upgrade-turn')).request,
+    calls:fixture.calls.filter(call=>call.cmd==='dialog_queue').map(call=>call.request),pending:queue.getSnapshot().pending.length};
+  });
+  const submits=result.calls.filter(call=>call.action==='submit');
+  assert.equal(submits.length,1);
+  assert.deepEqual(submits[0],{...result.original,message:{...result.original.message,agentType:'Claw'}});
+  assert.deepEqual(result.saved,result.original,'the stored draft remains intact');
+  assert.equal(result.pending,0);
+  assert.ok(result.calls.findIndex(call=>call.action==='get')<result.calls.findIndex(call=>call.action==='submit'));
+  await context.close();
+ } finally {await browser.close();await server.close();}
+});
+
+test('queue translation covers mobile built-in aliases and preserves source-qualified modes', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  const page=await browser.newPage();await page.goto(server.origin);
+  const result=await page.evaluate(async()=>{
+   const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+   const fixture=await mountAssistantSessionFixture();
+   for(const mode of ['claw','Claw','assistant','chat','code','cowork','Cowork','Standard','Ultimate','Creative','plugin::claw']) {
+    await fixture.manager.sendMessage(fixture.sessionId,`Message for ${mode}`,mode);
+   }
+   return fixture.calls.filter(call=>call.request?.action==='submit').map(call=>call.request.message.agentType);
+  });
+  assert.deepEqual(result,['Claw','Claw','Claw','Claw','agentic','Cowork','Cowork','agentic','Ultra','Creative','plugin::claw']);
+ } finally {await browser.close();await server.close();}
+});
 
 for (const endpoint of [LAN, OFFICIAL]) {
   test(`one login serves fresh tabs and reloads with one connected browser: ${endpoint}`, { timeout: 40_000 }, async () => {
@@ -185,7 +339,10 @@ test('a closed and reopened browser profile retains its login and controller key
     assert.equal(relay.logins.length, 1);
     assert.equal(relay.clients.size, 1);
     assert.deepEqual(relay.errors, []);
-  } finally { await persistent?.close(); await rm(profile, { recursive: true, force: true }); }
+  } finally {
+    await persistent?.close();
+    try { await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {}
+  }
 });
 
 test('legacy tab credentials migrate with their keys and navigation without reviving a signed-out account', { timeout: 40_000 }, async () => {

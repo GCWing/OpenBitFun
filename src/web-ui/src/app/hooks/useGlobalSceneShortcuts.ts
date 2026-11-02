@@ -6,7 +6,6 @@
  *
  * Scene quick-open (allowInInput: true — fires from anywhere):
  *   Mod+Shift+A — open Agent/Session scene
- *   Mod+Shift+G — open Git scene
  *   Mod+,       — open Settings scene
  *   Mod+Shift+` — open Terminal scene
  */
@@ -49,13 +48,6 @@ export function useGlobalSceneShortcuts(): void {
     { key: 'A', ctrl: true, shift: true, scope: 'app', allowInInput: true },
     () => openSceneById('session'),
     { priority: 10, description: 'keyboard.shortcuts.scene.openSession' }
-  );
-
-  useShortcut(
-    'scene.openGit',
-    { key: 'G', ctrl: true, shift: true, scope: 'app', allowInInput: true },
-    () => openSceneById('git'),
-    { priority: 10, description: 'keyboard.shortcuts.scene.openGit' }
   );
 
   useShortcut(

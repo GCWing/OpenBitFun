@@ -1,0 +1,55 @@
+.openbitfun-workbench-layout__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.openbitfun-workbench-layout__auxiliary {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.openbitfun-workbench-layout__pane-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  gap: var(--openbitfun-control-tab-group-gap);
+
+  // Scene and contextual tabs share one continuous row. A group consumes its
+  // content width before the following group, rather than reserving half a pane.
+  > .openbitfun-scene-bar { flex: 0 1 auto; }
+  > .openbitfun-scene-bar:only-child { flex-grow: 1; }
+}
+
+.openbitfun-workbench-layout__tab-group {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
+
+  &:last-child { flex-grow: 1; }
+
+  // The shell paints the shared material; embedded toolbars only lay out tabs
+  // and their actions, including an empty canvas contribution.
+  > [data-openbitfun-component='toolbar'] {
+    flex: 1;
+    border-block-end: 0;
+    padding-inline: 0;
+    column-gap: var(--openbitfun-layout-toolbar-group-gap-sm);
+    background: transparent;
+  }
+}
+
+.openbitfun-workbench-layout__canvas-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}

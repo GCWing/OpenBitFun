@@ -1,16 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerSettingsDraft, resetSettingsDraftRegistryForTests, getSettingsDraftSnapshot } from '@/infrastructure/config/settingsDraftRegistry';
 import { isLegacyEcosystemCompatibilityDestination, resolveSettingsDestination } from './settingsDestination';
-import { SETTINGS_CATEGORIES, SETTINGS_PAGE_MANIFESTS, getSettingsPageManifest, isSettingsPageId } from './settingsRegistry';
+import { SETTINGS_CATEGORIES, SETTINGS_PAGE_MANIFESTS, getSettingsPageManifest, isSettingsPageId, preloadSettingsPage, isSettingsPageReady } from './settingsRegistry';
 import { useSettingsStore } from './settingsStore';
+import { i18nService } from '@/infrastructure/i18n/core/I18nService';
 import migrations from './settingsDestinationMigrations.json';
 import type { SettingsDestinationInput } from './settingsDestination';
+
+vi.mock('./settingsDataPreload', () => ({ preloadSettingsData: vi.fn(async () => undefined) }));
 
 vi.mock('@/infrastructure/i18n/core/I18nService', () => ({
   i18nService: { loadNamespace: vi.fn(async () => undefined) },
 }));
 
 afterEach(() => {
+  vi.restoreAllMocks();
   resetSettingsDraftRegistryForTests();
   useSettingsStore.setState(useSettingsStore.getInitialState());
 });
@@ -21,14 +25,16 @@ describe('settings information architecture', () => {
       application: ['application.general', 'application.appearance', 'application.pet', 'application.input'],
       ai: ['ai.models', 'ai.session-memory', 'ai.execution', 'ai.permissions'],
       development: ['development.editor', 'development.terminal', 'development.workspace'],
-      tools: ['tools.web-search', 'tools.desktop-control', 'tools.mcp', 'tools.external-agents', 'tools.automation'],
+      tools: ['tools.external-import', 'tools.web-search', 'tools.desktop-control', 'tools.mcp', 'tools.external-agents', 'tools.automation'],
       data: ['data.usage', 'data.archived', 'data.diagnostics'],
     });
-    expect(new Set(SETTINGS_PAGE_MANIFESTS.map(page => page.id)).size).toBe(19);
+    expect(new Set(SETTINGS_PAGE_MANIFESTS.map(page => page.id)).size).toBe(20);
     expect(SETTINGS_PAGE_MANIFESTS.filter(page => page.views?.length).map(page => page.id)).toEqual(['tools.external-agents']);
     expect(getSettingsPageManifest('tools.external-agents').views?.map(view => view.id)).toEqual(['local', 'ssh', 'json']);
-    expect(getSettingsPageManifest('application.input').sections?.map(section => section.id)).toEqual(['text-selection', 'voice', 'shortcuts']);
-    expect(getSettingsPageManifest('application.pet').sections?.map(section => section.id)).toEqual(['voice-call', 'pet']);
+    expect(getSettingsPageManifest('application.input').sections?.map(section => section.id)).toEqual(['voice', 'message-sending', 'text-selection', 'shortcuts']);
+    expect(getSettingsPageManifest('application.pet').sections?.map(section => section.id)).toEqual(['voice-call', 'pet', 'desktop-cards']);
+    expect(resolveSettingsDestination({ pageId: 'application.appearance', sectionId: 'sidebar-navigation' }))
+      .toEqual({ pageId: 'application.appearance', sectionId: 'sidebar-navigation' });
     expect(getSettingsPageManifest('tools.automation').sections?.map(section => section.id)).toEqual(['quick-actions', 'hooks']);
   });
 
@@ -42,17 +48,20 @@ describe('settings information architecture', () => {
     ]));
   });
 
-  it('keeps models with network settings and external-source governance outside Settings', () => {
+  it('keeps models with network settings and external import under tools', () => {
     expect(getSettingsPageManifest('ai.models').searchPhrases).toEqual(expect.arrayContaining([
       { namespace: 'settings/default-model', key: 'sections.defaults' },
       { namespace: 'settings/default-model', key: 'sections.proxy' },
     ]));
     expect(SETTINGS_PAGE_MANIFESTS.some(page => /assistant|integrations|review/.test(page.id))).toBe(false);
+    expect(getSettingsPageManifest('tools.external-import').categoryId).toBe('tools');
     expect(isLegacyEcosystemCompatibilityDestination('external-sources')).toBe(true);
     expect(isLegacyEcosystemCompatibilityDestination({ pageId: 'tools.integrations' })).toBe(true);
   });
 
   it.each([
+    ['external-sources', { pageId: 'tools.external-import' }],
+    ['tools.integrations', { pageId: 'tools.external-import' }],
     ['application.voice', { pageId: 'application.input', sectionId: 'voice' }],
     ['shortcuts', { pageId: 'application.input', sectionId: 'shortcuts' }],
     ['application.shortcuts', { pageId: 'application.input', sectionId: 'shortcuts' }],
@@ -120,5 +129,31 @@ describe('settings information architecture', () => {
     expect(getSettingsDraftSnapshot().pendingNavigation).not.toBeNull();
     expect(save).not.toHaveBeenCalled();
     expect(discard).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('settings page preparation', () => {
+  it('shares preparation and resolves warm pages without suspending through React.lazy', async () => {
+    const page = getSettingsPageManifest('application.appearance');
+    const component = () => null;
+    const load = vi.spyOn(page, 'load').mockResolvedValue({ default: component });
+    const first = preloadSettingsPage(page.id);
+    expect(preloadSettingsPage(page.id)).toBe(first);
+    await first;
+    expect(isSettingsPageReady(page.id)).toBe(true);
+    expect(page.resolvedComponent).toBe(component);
+    await preloadSettingsPage(page.id);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps namespace failures retryable instead of marking the destination ready', async () => {
+    const page = getSettingsPageManifest('application.general');
+    vi.spyOn(page, 'load').mockResolvedValue({ default: () => null });
+    vi.mocked(i18nService.loadNamespace).mockRejectedValueOnce(new Error('offline'));
+    await expect(preloadSettingsPage(page.id)).rejects.toThrow('offline');
+    expect(isSettingsPageReady(page.id)).toBe(false);
+    await preloadSettingsPage(page.id);
+    expect(isSettingsPageReady(page.id)).toBe(true);
   });
 });

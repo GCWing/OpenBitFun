@@ -121,9 +121,4 @@ export const facadeOnlyFiles = [
     importPrefix: 'openbitfun_services_integrations::mcp',
     reason: 'core MCP prompt adapter facade must only re-export the integrations owner crate',
   },
-  {
-    path: 'src/crates/assembly/core/src/service/announcement/types.rs',
-    importPrefix: 'openbitfun_services_integrations::announcement',
-    reason: 'core announcement types facade must only re-export the integrations owner crate',
-  },
 ];

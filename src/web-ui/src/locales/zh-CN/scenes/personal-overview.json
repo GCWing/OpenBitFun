@@ -1,0 +1,101 @@
+{
+  "loadingValue": "…",
+  "unavailableValue": "—",
+  "retry": "刷新",
+  "greetings": {
+    "spotted": "嘿，你被我发现啦！",
+    "mystery": "哟，神秘来客！",
+    "ideas": "嗨，灵感正在冒泡～",
+    "create": "来都来了，整点活？",
+    "energy": "你一来，我就精神了！",
+    "ready": "搭子就位，等你开场！"
+  },
+  "metrics": {
+    "title": "使用概览",
+    "totalTokens": "累计 Token 数",
+    "peakTokens": "单日 Token 峰值",
+    "longestTask": "最长任务用时",
+    "longestStreak": "最长连续天数",
+    "currentStreak": "当前连续天数",
+    "days": "{{count}} 天",
+    "partial": "峰值与连续天数仅覆盖保留的活动历史。"
+  },
+  "agents": {
+    "title": "智能体",
+    "loading": "正在加载智能体…",
+    "failed": "无法加载当前主机的智能体，请检查连接后重试。",
+    "assistants": {
+      "description": "与你长期协作，拥有独立记忆。"
+    },
+    "description": "内置与自定义智能体，处理各类任务。",
+    "create": "创建智能体",
+    "createAssistant": "创建助理",
+    "createAssistantConfirmMessage": "确定创建一个新助理吗？创建后可设置它的身份、工具和个性。",
+    "createAssistantFailed": "无法创建助理，请稍后重试。"
+  },
+  "devices": {
+    "title": "设备",
+    "manage": "管理设备",
+    "scrollPrevious": "向左滚动设备",
+    "scrollNext": "向右滚动设备",
+    "online": "在线",
+    "offline": "离线",
+    "current": "当前设备",
+    "thisDevice": "此设备",
+    "incompatible": "需更新后互控",
+    "loading": "正在加载设备…",
+    "signInHint": "登录账号，连接更多设备",
+    "failed": "无法刷新设备，已显示的信息可能不是最新状态。请重试或在设备管理中检查连接。",
+    "empty": "暂无已关联的设备。在其他设备上登录同一账号即可关联。",
+    "viewAll": "查看全部 {{count}} 台设备"
+  },
+  "usage": {
+    "loading": "正在加载 Token 活动…",
+    "failed": "无法加载当前主机的用量，请检查连接后重试。",
+    "unsupported": "当前主机不支持用量统计，请更新主机后查看 Token 活动。"
+  },
+  "activity": {
+    "title": "Token 活动"
+  },
+  "miniApps": {
+    "start": "启动",
+    "backToOverview": "返回首页",
+    "create": "创建小应用",
+    "manage": "管理小应用",
+    "installed": "已安装",
+    "runningCount": "运行中 {{count}} 个",
+    "moreInstalled": "查看其余 {{count}} 个小应用",
+    "loading": "正在加载小应用…",
+    "failed": "无法加载当前主机的小应用，请检查连接与主机支持后重试。",
+    "empty": "暂无小应用"
+  },
+  "desktopCards": {
+    "title": "小卡片",
+    "settings": "卡片设置",
+    "listTitle": "我的卡片",
+    "visibleCount": "桌面显示 {{count}} 张",
+    "disabled": "已在设置中关闭。卡片会保留，重新开启后恢复显示。",
+    "loading": "正在加载小卡片…",
+    "failed": "无法加载小卡片，请重试。",
+    "empty": "还没有卡片。试试对智能体说“20 分钟后提醒我”或“帮我盯着这个 PR”。",
+    "shown": "桌面显示中",
+    "hidden": "已隐藏",
+    "show": "在桌面显示",
+    "hide": "从桌面隐藏",
+    "delete": "删除卡片",
+    "deleteConfirmTitle": "删除卡片",
+    "deleteConfirmMessage": "删除“{{title}}”？此操作无法撤销。",
+    "actionFailed": "无法更新卡片，请重试。"
+  },
+  "skills": {
+    "add": "添加技能",
+    "loading": "正在加载技能…",
+    "failed": "无法加载当前工作区的技能，请检查连接与主机支持后重试。",
+    "incomplete": "部分技能来源未能完整读取，请进入技能管理查看详情。",
+    "diagnosticsUnavailable": "当前主机未提供扫描诊断，以上为主机返回的技能数量。",
+    "installed": "已安装技能",
+    "installedDescription": "在任务中复用已安装的技能。",
+    "discover": "搜索更多技能",
+    "discoverDescription": "发现更多可复用的技能。"
+  }
+}
