@@ -113,6 +113,17 @@ canonical text or thinking, remove a round or tool result, or turn a settled
 record back into an executing one. Externally projected sessions such as ACP
 remain owned by their external projection.
 
+A client can miss the terminal event entirely, for example while the window
+renders another device surface. Its stream then still believes the Turn is
+executing. A host read that reports the Host's own state resolves this: the
+Runtime commits the terminal record before leaving the processing state, so a
+terminal record for a Turn the Host is not executing is the settled Turn. The
+client hands that Turn to the persisted record (`adoptHostSettledTurn`) instead
+of letting its stale ownership veto the read. The remaining content guard is
+shape-neutral: it refuses a read that misses a painted round, tool, tool result
+or text, but not one that differs only in attempt metadata, newline coalescing
+or segment boundaries.
+
 After the terminal record is committed, `SessionHistoryChanged` is the durable
 fence. Local and Peer Device surfaces re-read the affected tail Turn. Remote
 Connect polling sends an optional authoritative `message_snapshot`, because an

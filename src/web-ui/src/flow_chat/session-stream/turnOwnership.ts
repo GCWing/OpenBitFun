@@ -95,6 +95,15 @@ export class TurnOwnership {
     return !this.executing.has(turnId);
   }
 
+  /**
+   * The Host reported this Turn settled by other means than an event this
+   * stream applied — its terminal event was never delivered here.
+   */
+  settle(turnId: string): void {
+    this.executing.delete(turnId);
+    this.settled.add(turnId);
+  }
+
   /** Whether a live event may still write this Turn. */
   runtimeMayWrite(turnId: string): boolean {
     return !this.settled.has(turnId);

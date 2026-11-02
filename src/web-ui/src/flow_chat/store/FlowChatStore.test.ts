@@ -16,6 +16,7 @@ import type { FlowChatState, ModelRound, Session } from '../types/flow-chat';
 import { startupTrace } from '@/shared/utils/startupTrace';
 import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import { SessionRecordReplica } from '../session-stream/SessionRecordReplica';
+import { resetSessionStreamsForTest, sessionStream } from '../session-stream/SessionStream';
 import { isSessionBindingLocked } from '../utils/sessionLifecycle';
 import { isHostIssuedTurnCatalogRevision } from '../utils/flowChatTurnIdentity';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
@@ -7968,6 +7969,178 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
     expect(
       flowChatStore.getState().sessions.get('history-1')?.dialogTurns[0].modelRounds[0].items,
     ).toHaveLength(2);
+  });
+
+  describe('a Turn whose terminal event this window missed', () => {
+    // Regression 2026-11-02: a Turn kept running locally while the window
+    // rendered a Peer device. Its later chunks and terminal event were dropped
+    // by surface routing, so on return the stream still owned the Turn and the
+    // complete persisted record was refused for differing only in shape.
+    const LIVE_ROUND_ID = 'round-0';
+
+    function paintInterruptedLiveTurn(): void {
+      flowChatStore.setState(previous => {
+        const session = previous.sessions.get('history-1')!;
+        const turn = session.dialogTurns[0];
+        const liveRound = {
+          ...turn.modelRounds[0],
+          isStreaming: true,
+          isComplete: false,
+          status: 'streaming',
+          items: [
+            {
+              id: 'live-thinking',
+              type: 'thinking',
+              content: 'Check the relay.\n\nThen mobile-web',
+              isStreaming: true,
+              timestamp: 2,
+              status: 'streaming',
+              attemptId: `${LIVE_ROUND_ID}:attempt:1`,
+              attemptIndex: 1,
+            },
+            {
+              id: 'live-text',
+              type: 'text',
+              content: 'mobile-web: changed by #3544 → those are shipped as',
+              isStreaming: true,
+              timestamp: 3,
+              status: 'streaming',
+              attemptId: `${LIVE_ROUND_ID}:attempt:1`,
+              attemptIndex: 1,
+            },
+          ],
+        } as unknown as ModelRound;
+        const liveTurn = { ...turn, status: 'inprogress', modelRounds: [liveRound] } as typeof turn;
+        return {
+          sessions: new Map(previous.sessions).set('history-1', {
+            ...session,
+            dialogTurns: [liveTurn],
+          }),
+        };
+      });
+      sessionStream('local', 'history-1').offer(
+        'agentic://dialog-turn-started',
+        { sessionId: 'history-1', turnId: 'turn-0' },
+        null,
+        () => {},
+      );
+    }
+
+    const settledRecord = () => ({
+      ...createPersistedTurn(0),
+      modelRounds: [
+        {
+          ...HYDRATED_ROUND,
+          id: LIVE_ROUND_ID,
+          thinkingItems: [{
+            id: 'persisted-thinking',
+            content: 'Check the relay.\n\n\n\nThen mobile-web, then the deploy script.',
+            timestamp: 2,
+            status: 'completed',
+          }],
+          textItems: [{
+            id: 'persisted-text',
+            content: 'mobile-web: changed by #3544 → those are shipped as static assets.',
+            timestamp: 3,
+            status: 'completed',
+          }],
+        },
+        { ...HYDRATED_ROUND, id: 'round-1', roundIndex: 1, textItems: [{ id: 'final', content: 'Done.', timestamp: 4 }] },
+      ],
+      endTime: 5,
+    });
+
+    beforeEach(() => {
+      resetSessionStreamsForTest();
+    });
+
+    it('adopts the settled host record and hands the Turn to it', async () => {
+      await hydrateSessionWithContent();
+      paintInterruptedLiveTurn();
+      expect(sessionStream('local', 'history-1').persistedMayWrite('turn-0')).toBe(false);
+
+      apiMocks.restoreSessionView.mockResolvedValueOnce({
+        session: hostSession('Idle'),
+        turns: [settledRecord()],
+        contextRestoreState: 'ready',
+      });
+      const result = await flowChatStore.refreshPeerSessionSnapshot('history-1', {
+        requireActiveSession: false,
+      });
+
+      expect(result.applied).toBe(true);
+      const turn = flowChatStore.getState().sessions.get('history-1')!.dialogTurns[0];
+      expect(turn.status).toBe('completed');
+      expect(turn.modelRounds).toHaveLength(2);
+      expect(turn.modelRounds[0].items).toContainEqual(expect.objectContaining({
+        type: 'text',
+        content: 'mobile-web: changed by #3544 → those are shipped as static assets.',
+      }));
+      expect(sessionStream('local', 'history-1').persistedMayWrite('turn-0')).toBe(true);
+    });
+
+    it('keeps the live projection while the host is still executing that Turn', async () => {
+      await hydrateSessionWithContent();
+      paintInterruptedLiveTurn();
+
+      apiMocks.restoreSessionView.mockResolvedValueOnce({
+        session: hostSession('Processing'),
+        turns: [settledRecord()],
+        contextRestoreState: 'ready',
+      });
+      await flowChatStore.refreshPeerSessionSnapshot('history-1', { requireActiveSession: false });
+
+      const turn = flowChatStore.getState().sessions.get('history-1')!.dialogTurns[0];
+      expect(turn.modelRounds).toHaveLength(1);
+      expect(sessionStream('local', 'history-1').persistedMayWrite('turn-0')).toBe(false);
+    });
+
+    it('adopts the settled Turn even when a live event for the next Turn races the read', async () => {
+      await hydrateSessionWithContent();
+      paintInterruptedLiveTurn();
+
+      const nextTurn = { ...createPersistedTurn(1), status: 'inprogress', modelRounds: [] };
+      apiMocks.restoreSessionView.mockImplementationOnce(async () => {
+        // A remote controller started the next Turn; its live start lands
+        // while this read is in flight.
+        flowChatStore.setState(previous => {
+          const session = previous.sessions.get('history-1')!;
+          return {
+            sessions: new Map(previous.sessions).set('history-1', { ...session }),
+          };
+        });
+        return {
+          session: hostSession('Processing'),
+          turns: [settledRecord(), nextTurn],
+          contextRestoreState: 'ready',
+        };
+      });
+      await flowChatStore.refreshPeerSessionSnapshot('history-1', { requireActiveSession: false });
+
+      const turn = flowChatStore.getState().sessions.get('history-1')!.dialogTurns[0];
+      expect(turn.status).toBe('completed');
+      expect(turn.modelRounds).toHaveLength(2);
+    });
+
+    it('refuses a settled record that lacks text the projection painted', async () => {
+      await hydrateSessionWithContent();
+      paintInterruptedLiveTurn();
+
+      const truncated = settledRecord();
+      truncated.modelRounds[0] = {
+        ...truncated.modelRounds[0],
+        textItems: [{ id: 'persisted-text', content: 'mobile-web: changed', timestamp: 3, status: 'completed' }],
+      };
+      apiMocks.restoreSessionView.mockResolvedValueOnce({
+        session: hostSession('Idle'),
+        turns: [truncated],
+        contextRestoreState: 'ready',
+      });
+      await flowChatStore.refreshPeerSessionSnapshot('history-1', { requireActiveSession: false });
+
+      const turn = flowChatStore.getState().sessions.get('history-1')!.dialogTurns[0];
+      expect(turn.modelRounds[0].items).toContainEqual(expect.objectContaining({ id: 'live-text' }));
+    });
   });
 });
 
