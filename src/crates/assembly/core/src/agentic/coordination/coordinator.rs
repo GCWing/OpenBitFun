@@ -19627,6 +19627,84 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn load_relay_session_turns_keep_owner_restart_reclamation_without_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, _turn_id) =
+            relay_observer_fixture("restart-reclamation").await;
+        session_manager
+            .unload_session_from_memory(&session_id)
+            .await
+            .expect("unload the previous owner");
+        let mut live = crate::service::session::DialogTurnData::new(
+            "turn-left-running".to_string(),
+            1,
+            session_id.clone(),
+            crate::service::session::UserMessageData {
+                id: "user-left-running".to_string(),
+                content: "left running".to_string(),
+                timestamp: 0,
+                metadata: None,
+            },
+        );
+        live.status = TurnStatus::InProgress;
+        session_manager
+            .persistence_manager()
+            .save_dialog_turn(&storage, &live)
+            .await
+            .expect("persist a turn left running by a stopped owner");
+
+        async fn read(
+            coordinator: &ConversationCoordinator,
+            storage: &Path,
+            session_id: &str,
+        ) -> crate::service::session::DialogTurnData {
+            coordinator
+                .load_relay_session_turns(storage, session_id, None)
+                .await
+                .expect("observer read")
+                .into_iter()
+                .find(|turn| turn.turn_id == "turn-left-running")
+                .expect("running turn is visible")
+        }
+
+        // No owner holds the writer: both read paths project the interruption.
+        let leased = read(&coordinator, &storage, &session_id).await;
+        let mutation = session_manager
+            .acquire_session_mutation(&session_id)
+            .await
+            .expect("in-process mutation lease");
+        let lease_free = read(&coordinator, &storage, &session_id).await;
+        for turn in [&leased, &lease_free] {
+            assert_eq!(turn.status, TurnStatus::Cancelled);
+            assert_eq!(turn.finish_reason.as_deref(), Some("interrupted"));
+        }
+
+        // Another owner holds the writer: absence from memory is not proof of
+        // interruption on either path.
+        let writer = session_manager
+            .persistence_manager()
+            .lock_session_writes(&storage, &session_id)
+            .expect("simulated live owner");
+        let lease_free = read(&coordinator, &storage, &session_id).await;
+        drop(mutation);
+        let leased = read(&coordinator, &storage, &session_id).await;
+        for turn in [&leased, &lease_free] {
+            assert_eq!(turn.status, TurnStatus::InProgress);
+            assert_eq!(turn.finish_reason, None);
+        }
+        drop(writer);
+
+        // Observer projection never rewrites the persisted record.
+        let persisted = session_manager
+            .persistence_manager()
+            .load_visible_session_turns(&storage, &session_id)
+            .await
+            .expect("persisted turns");
+        assert!(persisted.iter().any(
+            |turn| turn.turn_id == "turn-left-running" && turn.status == TurnStatus::InProgress
+        ));
+    }
+
+    #[tokio::test]
     async fn load_relay_session_turns_refuses_unfinished_undo_without_the_mutation_lease() {
         let (_workspace, coordinator, session_manager, session_id, storage, _turn_id) =
             relay_observer_fixture("lease-held-undo").await;
