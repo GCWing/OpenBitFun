@@ -218,7 +218,7 @@
       "files": "檔案",
       "terminals": "終端機",
       "local": "本機",
-      "remote": "遠端工作區",
+      "remote": "連線環境",
       "peer": "對端裝置",
       "switchWorkspace": "切換工作區",
       "chooseShell": "選擇 Shell",
@@ -333,7 +333,8 @@
           "label": "顯示",
           "all": "全部會話",
           "unread": "未讀會話",
-          "attention": "需要處理"
+          "attention": "需要處理",
+          "archived": "已封存會話"
         },
         "filters": {
           "label": "篩選",
@@ -355,7 +356,7 @@
         "environment": {
           "label": "環境",
           "local": "本機",
-          "remote": "遠端工作區",
+          "remote": "連線環境",
           "detached": "分離執行"
         },
         "source": {
@@ -370,10 +371,7 @@
       },
       "rename": "重新命名",
       "renameOutcomeUnknown": "重新命名結果尚不確定。請重新整理或重新開啟工作階段清單，確認目前名稱後再重試。",
-      "copySessionId": "複製 ID",
-      "copySessionIdSuccess": "已複製會話 ID",
-      "copySessionIdFailed": "複製會話 ID 失敗",
-      "duplicate": "複製會話",
+      "duplicate": "建立副本",
       "duplicateSuccess": "已複製為「{{name}}」",
       "duplicateFailed": "複製會話失敗",
       "duplicateCreatedRefreshFailed": "已複製為「{{name}}」。請重新整理會話清單查看，再次複製會建立另一個副本。",
@@ -388,9 +386,6 @@
       "exportMarkdown": "匯出為 Markdown",
       "exportMarkdownFull": "匯出完整過程",
       "exportMarkdownResult": "匯出結果",
-      "delete": "刪除",
-      "deleteConfirmTitle": "刪除會話",
-      "deleteConfirmMessage": "會話及其子會話將被永久刪除，無法復原。",
       "confirmEdit": "確認",
       "cancelEdit": "取消",
       "loading": "載入中...",
@@ -456,6 +451,7 @@
       "batchChildSession": "子會話",
       "batchTurnsLabel": "{{count}} 輪",
       "archive": "歸檔",
+      "archivedBadge": "已歸檔",
       "assistantBootstrapDraft": "請按照 BOOTSTRAP.md 的說明，和我一起完成助理初始化。",
       "archiveAll": "歸檔所有會話",
       "archiveSelected": "歸檔所選",
@@ -483,7 +479,7 @@
       "restore": "恢復",
       "restoreSucceeded": "已恢復「{{name}}」（{{workspace}}）。",
       "restoreRefreshFailed": "會話已恢復，但會話列表重新整理失敗；請手動重新整理工作區。",
-      "archivedAll": "已歸檔 {{count}} 個會話，可在設定 → 已歸檔會話中檢視。",
+      "archivedAll": "已歸檔 {{count}} 個會話，可在設定 → 已歸檔會話中檢視或刪除。",
       "restoreFailed": "恢復會話失敗",
       "deleteArchivedFailed": "刪除會話失敗",
       "deleteAllArchivedFailed": "刪除全部已歸檔會話失敗",
@@ -1937,7 +1933,7 @@
   "ssh": {
     "remote": {
       "title": "遠程 SSH",
-      "connect": "連接遠程項目",
+      "connect": "連線",
       "connecting": "連接中...",
       "connected": "已連接",
       "disconnect": "斷開連接",
@@ -2067,7 +2063,7 @@
     "portForward": {
       "menuEntry": "連接埠對應",
       "title": "連接埠對應",
-      "intro": "把遠端主機上正在監聽的連接埠對應到本機存取。對應不會自動建立，只有你在這裡新增的才會生效。",
+      "intro": "把遠端主機上正在監聽的連接埠對應到本機存取。只有你在這裡新增，或在遠端終端機中開啟 localhost 連結時，才會建立對應。",
       "detectedTitle": "遠端正在監聽",
       "detecting": "正在偵測遠端連接埠…",
       "detect": "重新偵測",

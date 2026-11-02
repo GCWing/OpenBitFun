@@ -127,4 +127,18 @@ describe('workspace session view model', () => {
       hiddenStatuses: ['completed'],
     }, false)).toBe(false);
   });
+
+  it('shows only archived records while retaining the other filter facets', () => {
+    const archived = session({ persistedStatus: 'archived', remoteConnectionId: 'ssh-one' });
+    expect(matchesWorkspaceSessionView(archived, 'archived', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(true);
+    expect(matchesWorkspaceSessionView(session({}), 'archived', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(session({ persistedStatus: 'completed' }), 'archived', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(archived, 'archived', {
+      ...DEFAULT_WORKSPACE_SESSION_FILTERS, hiddenEnvironments: ['remote'],
+    }, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(archived, 'all', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(archived, 'all', {
+      ...DEFAULT_WORKSPACE_SESSION_FILTERS, hideArchived: false,
+    }, false)).toBe(true);
+  });
 });

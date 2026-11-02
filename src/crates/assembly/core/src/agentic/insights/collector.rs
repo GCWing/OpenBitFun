@@ -1175,6 +1175,7 @@ mod tests {
         first.token_usage = Some(DialogTurnTokenUsageData {
             input_tokens: 1_200,
             output_tokens: Some(300),
+            cached_tokens: None,
             total_tokens: 1_500,
             timestamp: 2_000,
         });
@@ -1182,6 +1183,7 @@ mod tests {
         second.token_usage = Some(DialogTurnTokenUsageData {
             input_tokens: 800,
             output_tokens: None,
+            cached_tokens: None,
             total_tokens: 900,
             timestamp: 4_000,
         });

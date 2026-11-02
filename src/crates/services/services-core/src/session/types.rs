@@ -639,6 +639,17 @@ pub struct DialogTurnTokenUsageData {
     )]
     pub output_tokens: Option<u64>,
 
+    /// Provider-reported cache-hit input tokens, when available.
+    ///
+    /// This is optional because providers may omit cache telemetry and older
+    /// persisted turns predate this field.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "cached_tokens"
+    )]
+    pub cached_tokens: Option<u64>,
+
     /// Total tokens reported by the provider for this request.
     #[serde(alias = "total_tokens")]
     pub total_tokens: u64,
@@ -1528,6 +1539,7 @@ mod tests {
             "tokenUsage": {
                 "inputTokens": 1200,
                 "outputTokens": 320,
+                "cachedTokens": 900,
                 "totalTokens": 1520,
                 "timestamp": 2
             },
@@ -1543,10 +1555,45 @@ mod tests {
             .expect("token usage should be preserved");
         assert_eq!(token_usage.input_tokens, 1200);
         assert_eq!(token_usage.output_tokens, Some(320));
+        assert_eq!(token_usage.cached_tokens, Some(900));
         assert_eq!(token_usage.total_tokens, 1520);
 
         let serialized = serde_json::to_value(&turn).expect("turn should serialize");
+        assert_eq!(serialized["tokenUsage"]["cachedTokens"], 900);
         assert_eq!(serialized["tokenUsage"]["totalTokens"], 1520);
+    }
+
+    #[test]
+    fn dialog_turn_token_usage_defaults_missing_cache_tokens_for_legacy_payloads() {
+        let payload = serde_json::json!({
+            "inputTokens": 1200,
+            "outputTokens": 320,
+            "totalTokens": 1520,
+            "timestamp": 2
+        });
+
+        let usage: super::DialogTurnTokenUsageData =
+            serde_json::from_value(payload).expect("legacy token usage should deserialize");
+
+        assert_eq!(usage.cached_tokens, None);
+        let serialized = serde_json::to_value(&usage).expect("legacy usage should serialize");
+        assert!(!serialized.as_object().unwrap().contains_key("cachedTokens"));
+    }
+
+    #[test]
+    fn dialog_turn_token_usage_accepts_legacy_snake_case_cache_tokens() {
+        let payload = serde_json::json!({
+            "input_tokens": 1200,
+            "output_tokens": 320,
+            "cached_tokens": 900,
+            "total_tokens": 1520,
+            "timestamp": 2
+        });
+
+        let usage: super::DialogTurnTokenUsageData =
+            serde_json::from_value(payload).expect("legacy cache telemetry should deserialize");
+
+        assert_eq!(usage.cached_tokens, Some(900));
     }
 
     #[test]

@@ -938,11 +938,11 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 data-workspace-id={workspace.id}
               >
                 <MenuItem
-                  leading={<Icon glyph={MessageCirclePlus} size="sm" />}
-                  onClick={() => { void handleCreateSession(); }}
-                  data-testid="nav-workspace-menu-create-session"
+                  leading={<Icon name="folder" size="sm" />}
+                  onClick={handleOpenFiles}
+                  data-testid="nav-workspace-menu-open-directory"
                 >
-                  {t('nav.workspaces.actions.newSession')}
+                  {t('nav.workspaces.actions.openDirectory')}
                 </MenuItem>
                 <MenuItem leading={<Icon name="clock" size="sm" />} onClick={handleOpenScheduledJobs}>
                   {t('nav.scheduledJobs.open')}

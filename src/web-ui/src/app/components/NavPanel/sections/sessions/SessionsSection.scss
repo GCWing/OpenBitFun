@@ -315,6 +315,11 @@
     flex: 0 0 auto;
   }
 
+  &__inline-item-archived-badge {
+    flex: 0 0 auto;
+    margin-inline-start: var(--openbitfun-space-1);
+  }
+
   &__inline-item-dispatch-badge {
     flex: 0 1 auto;
     display: inline-flex;

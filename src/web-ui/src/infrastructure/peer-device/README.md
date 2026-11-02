@@ -9,6 +9,11 @@ The selected Desktop or CLI owns execution, persisted records, workspaces, PTYs,
 and blocking interactions. A controller owns presentation and drafts. Its lifetime
 never determines whether an accepted turn continues running.
 
+An unmaterialized draft (`editing`/`creating`) has only a reserved ID the host has
+never seen, so it opens no subscription and reads no history; a host rejection
+there would falsely lock an empty session as a failed restore. The subscription
+starts when the host accepts the draft.
+
 `RelaySessionHistory` owns one subscription per visible surface/session.
 `SessionRecordReplica` applies both replayed pages and live canonical records
 using stable IDs, revisions and tombstones; every page comes from the online
@@ -18,6 +23,20 @@ open or explicit reader request can warm one adjacent page while the document is
 visible and the shared resource budget permits it. This never recursively drains
 the transcript. Hiding a view pauses optional prefetch only; live records,
 reconnect and interaction-mailbox delivery keep their subscriptions.
+
+The host sends each record of a page as its own event. Records reduce into the
+replica as they arrive; rendering the changed turns is coalesced to one store
+update per frame, and a page in flight renders as one batch before its ready
+event. Rendering per record is quadratic in the items of a long turn and freezes the UI thread. Live
+pages have no ready event, so the frame timer publishes them; it is a timer
+rather than an animation frame so hidden windows keep applying records. A running
+turn reaching a terminal status, a visibility change, and any direct turn, round
+or tool event flush first, so those facts never apply over a stale render. Any
+new path that presents a page as ready, including a synthetic one, must flush
+first and must not report `hasMore: false` without proof.
+
+A turn stays pending until it was converted: the replica will not report a held
+revision again.
 Receive cursors advance only after applying
 records, never from a send acknowledgement. Transport reconnect resumes that same
 subscription. Local Runtime projection machinery is not a second Relay content

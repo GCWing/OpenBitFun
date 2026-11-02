@@ -218,7 +218,7 @@
       "files": "Files",
       "terminals": "Terminals",
       "local": "Local",
-      "remote": "Remote workspace",
+      "remote": "Connected environment",
       "peer": "Peer device",
       "switchWorkspace": "Switch workspace",
       "chooseShell": "Choose a shell",
@@ -333,7 +333,8 @@
           "label": "Show",
           "all": "All sessions",
           "unread": "Unread sessions",
-          "attention": "Needs attention"
+          "attention": "Needs attention",
+          "archived": "Archived sessions"
         },
         "filters": {
           "label": "Filters",
@@ -355,7 +356,7 @@
         "environment": {
           "label": "Environment",
           "local": "Local",
-          "remote": "Remote workspace",
+          "remote": "Connected environment",
           "detached": "Detached execution"
         },
         "source": {
@@ -370,10 +371,7 @@
       },
       "rename": "Rename",
       "renameOutcomeUnknown": "The rename result is uncertain. Refresh or reopen the session list, then check the current title before retrying.",
-      "copySessionId": "Copy ID",
-      "copySessionIdSuccess": "Session ID copied",
-      "copySessionIdFailed": "Failed to copy session ID",
-      "duplicate": "Copy session",
+      "duplicate": "Create copy",
       "duplicateSuccess": "Copied to “{{name}}”",
       "duplicateFailed": "Failed to copy session",
       "duplicateCreatedRefreshFailed": "Copied to “{{name}}”. Refresh the session list to see it; copying again creates another copy.",
@@ -388,9 +386,6 @@
       "exportMarkdown": "Export as Markdown",
       "exportMarkdownFull": "Export full process",
       "exportMarkdownResult": "Export result",
-      "delete": "Delete",
-      "deleteConfirmTitle": "Delete session",
-      "deleteConfirmMessage": "This session and its child sessions will be permanently deleted and cannot be restored.",
       "confirmEdit": "Confirm",
       "cancelEdit": "Cancel",
       "loading": "Loading...",
@@ -456,6 +451,7 @@
       "batchChildSession": "Child session",
       "batchTurnsLabel": "{{count}} turns",
       "archive": "Archive",
+      "archivedBadge": "Archived",
       "assistantBootstrapDraft": "Please follow BOOTSTRAP.md and help me set up this assistant.",
       "archiveAll": "Archive All Sessions",
       "archiveSelected": "Archive Selected",
@@ -483,7 +479,7 @@
       "restore": "Restore",
       "restoreSucceeded": "Restored “{{name}}” in {{workspace}}.",
       "restoreRefreshFailed": "The session was restored, but the session list could not refresh. Refresh the workspace manually.",
-      "archivedAll": "Archived {{count}} sessions. View them in Settings → Archived Sessions.",
+      "archivedAll": "Archived {{count}} sessions. View or delete them in Settings → Archived Sessions.",
       "restoreFailed": "Failed to restore session",
       "deleteArchivedFailed": "Failed to delete session",
       "deleteAllArchivedFailed": "Failed to delete all archived sessions",
@@ -1937,7 +1933,7 @@
   "ssh": {
     "remote": {
       "title": "Remote SSH",
-      "connect": "Connect Remote Project",
+      "connect": "Connect",
       "connecting": "Connecting...",
       "connected": "Connected",
       "disconnect": "Disconnect",
@@ -2067,7 +2063,7 @@
     "portForward": {
       "menuEntry": "Forward a Port",
       "title": "Port Forwarding",
-      "intro": "Reach a port listening on the remote host from this machine. Nothing is forwarded automatically — only the mappings you add here.",
+      "intro": "Reach a port listening on the remote host from this machine. Forwards are created only when you add one here or open a localhost link from a remote terminal.",
       "detectedTitle": "Listening on the remote",
       "detecting": "Detecting remote ports…",
       "detect": "Detect again",
