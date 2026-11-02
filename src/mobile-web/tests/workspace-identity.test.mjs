@@ -392,3 +392,43 @@ test('rollback completion cannot cross a control target switch', async () => {
   await assert.rejects(pending, RemoteControlTargetChangedError);
   await assert.rejects(manager.rollbackSessionToTurn('session-a', 'turn-a', 7), /does not support/);
 });
+
+test('workspace icons negotiate support and send only the authoritative host workspace ID', async () => {
+  const calls = [];
+  const snapshot = { workspaceId: 'project', icon: { version: 1, revision: 2, mode: 'default', color: 'blue', glyph: 'learning' }, imageUnavailable: false, supportedGlyphs: ['default', 'learning'], darkImageData: 'data:image/png;base64,dark', supportsThemedImages: true };
+  const client = catalogClient(async (device, command) => {
+    calls.push([device, command]);
+    return { resp: 'workspace_icon', snapshot };
+  });
+  assert.equal(await new RemoteSessionManager(client, []).getWorkspaceIcon('project'), null);
+  assert.deepEqual(calls, []);
+  const manager = new RemoteSessionManager(client, ['workspace_icon_read_v1']);
+  assert.deepEqual(await manager.getWorkspaceIcon('project'), snapshot);
+  assert.equal(calls.length, 1);
+  const { _request_id, ...command } = calls[0][1];
+  assert.ok(_request_id);
+  assert.deepEqual([calls[0][0], command], ['desktop-a', { cmd: 'get_workspace_icon', workspace_id: 'project' }]);
+});
+
+test('workspace icon responses cannot cross a device A -> B -> A switch', async () => {
+  let complete;
+  const client = catalogClient(() => new Promise(resolve => { complete = resolve; }));
+  const manager = new RemoteSessionManager(client, ['workspace_icon_read_v1']);
+  const pending = manager.getWorkspaceIcon('same-id');
+  while (!complete) await new Promise(resolve => setImmediate(resolve));
+  client.controlTargetEpoch += 2;
+  complete({ resp: 'workspace_icon', snapshot: { workspaceId: 'same-id', icon: { version: 1, revision: 0, mode: 'default', color: 'red' } } });
+  await assert.rejects(pending, RemoteControlTargetChangedError);
+});
+
+test('workspace icons reject future formats and external image URLs without local fallback', async () => {
+  for (const patch of [{ icon: { version: 2 } }, { imageData: 'file:///controller/private.png' }, { darkImageData: 'file:///controller/private-dark.png' }, { darkImageData: 123 }]) {
+    let calls = 0;
+    const manager = new RemoteSessionManager(catalogClient(async () => {
+      calls++;
+      return { resp: 'workspace_icon', snapshot: { workspaceId: 'project', icon: { version: 1, revision: 0, mode: 'image', color: 'default' }, ...patch } };
+    }), ['workspace_icon_read_v1']);
+    await assert.rejects(manager.getWorkspaceIcon('project'), /Unsupported workspace icon/);
+    assert.equal(calls, 1);
+  }
+});

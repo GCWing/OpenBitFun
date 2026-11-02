@@ -3,7 +3,7 @@ export const mermaidBlockAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'mermaid-block',
   parts: [
     { id: 'root' }, { id: 'streaming' }, { id: 'codePreview' }, { id: 'code' },
-    { id: 'hint' }, { id: 'loading' }, { id: 'rendered' }, { id: 'diagram' },
+    { id: 'loading' }, { id: 'rendered' }, { id: 'diagram' },
     { id: 'actions' }, { id: 'action' }, { id: 'source' }, { id: 'error' },
   ],
   states: [

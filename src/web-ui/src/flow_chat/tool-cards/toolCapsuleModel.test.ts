@@ -14,7 +14,7 @@ const tool = (toolName: string, input: unknown = {}): FlowToolItem => ({
 });
 
 describe('capsule and exploration policy', () => {
-  it.each(['Write', 'Edit', 'Delete', 'GetFileDiff', 'ExecCommand', 'ExecControl', 'Bash', 'RunCode', 'Task', 'AgentSpawn', 'AgentSendInput', 'TodoWrite', 'AskUserQuestion', 'CreatePlan', 'ReviewSessionSummary', 'ReadCanvas', 'SessionControl', 'Cron', 'unknown', 'mcp__files__delete'])('%s preserves its card outside read-only exploration eligibility', name => {
+  it.each(['Write', 'Edit', 'Delete', 'GetFileDiff', 'ExecCommand', 'ExecControl', 'Bash', 'Task', 'AgentSpawn', 'AgentSendInput', 'TodoWrite', 'AskUserQuestion', 'CreatePlan', 'ReviewSessionSummary', 'ReadCanvas', 'SessionControl', 'Cron', 'unknown', 'mcp__files__delete'])('%s preserves its card outside low-attention exploration eligibility', name => {
     expect(isToolCapsule(name)).toBe(false);
     expect(isCollapsibleTool(name)).toBe(false);
   });
@@ -33,6 +33,14 @@ describe('capsule and exploration policy', () => {
       expect(isCollapsibleItem({ ...tool(name), status })).toBe(false);
     }
     expect(isCollapsibleItem({ ...tool(name), toolResult: { success: false, result: null } })).toBe(false);
+  });
+
+  it('folds successful RunCode cards with the surrounding tool run', () => {
+    expect(isToolCapsule('RunCode')).toBe(false);
+    expect(isCollapsibleTool('RunCode')).toBe(true);
+    expect(isCollapsibleItem(tool('RunCode'))).toBe(true);
+    expect(isCollapsibleItem({ ...tool('RunCode'), status: 'running' })).toBe(false);
+    expect(isCollapsibleItem({ ...tool('RunCode'), toolResult: { success: false, result: null } })).toBe(false);
   });
 });
 

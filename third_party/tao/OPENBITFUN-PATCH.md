@@ -48,3 +48,46 @@ restoration and native titlebar relayout, independently of the content view.
 Verify normal and maximized windows through repeated native fullscreen
 round trips, with expanded and collapsed navigation. After exit, leave the
 window untouched to ensure alignment does not depend on a subsequent resize.
+
+# Wayland client-side decoration height
+
+tao claims a client-side decoration on Wayland for windows created with
+`decorations(false)`, because otherwise the compositor paints server-side
+decorations. The claim is installed by setting an empty `EventBox` as the
+titlebar. GTK still gives that strip its themed height, so such a window shows a
+header bar carrying the window title and the GTK window buttons directly above
+the application's own window chrome.
+
+The Linux window path keeps the CSD claim and collapses the strip instead: an
+empty `Box` replaces the `EventBox` titlebar and a per-window style provider
+zeroes its minimum height, padding, margin, border, shadow and background.
+A `HeaderBar` would keep one themed border row even at zero height, which a
+transparent window shows as a stripe above the webview; a plain box has no themed
+chrome of its own. OpenBitFun keeps rendering its own window controls and drag
+regions in every case.
+
+Collapsing the strip removes the only square frame GTK still drew, so the shell
+owns the frame radius: the desktop window is created transparent and the Web UI
+paints a rounded `#root` over a transparent `html`/`body`. The window therefore
+shows the desktop through its four corners instead of a square GTK edge, and it
+drops that radius again when the window is maximized so the frame fills the
+screen. This only works while nothing repaints the page background, so the
+desktop bootstrap advertises `data-openbitfun-native-frame="client"` and the
+bootstrap script, the startup overlay and the appearance adapter all leave
+`html`/`body` transparent under that attribute.
+
+GTK clips the webview to the decoration node's shape, so that node — not the
+page — decides the visible outline. It paints its own background and the theme
+rounds only the top, leaving the bottom corners square; a transparent corner in
+the page therefore still showed a square block behind it. The frame provider
+clears the node's background and rounds it to the shell's radius while the window
+floats, and drops that class when the window is maximized so the theme's square,
+shadowless decoration still fills the screen. The shadow stays GTK's, which is
+what makes the arc look native.
+
+Verify on a Wayland session that a `decorations(false)` window shows neither a
+GTK strip nor a compositor header, that all four corners are rounded with no
+square edge behind them, that a maximized window is square and covers the work
+area, and that dragging, edge resizing, maximizing and restoring still work.
+Remove this override once tao collapses the placeholder titlebar itself, or once
+it exposes an undecorated Wayland window that the client can own completely.

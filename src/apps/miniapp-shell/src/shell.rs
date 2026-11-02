@@ -20,7 +20,7 @@ struct Connection {
 }
 
 async fn endpoint(record: &launcher::LaunchRecord) -> Result<ipc::Endpoint, String> {
-    let path = ipc::endpoint_path(&record.data_dir);
+    let path = record.host_channel.endpoint_path(&record.data_dir);
     async fn read(path: &std::path::Path) -> Result<ipc::Endpoint, String> {
         let bytes = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
         let endpoint: ipc::Endpoint = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
@@ -35,11 +35,9 @@ async fn endpoint(record: &launcher::LaunchRecord) -> Result<ipc::Endpoint, Stri
     if let Ok(endpoint) = read(&path).await {
         return Ok(endpoint);
     }
-    let mut child =
-        openbitfun_services_core::process_manager::create_command(&record.host_executable);
+    let mut child = host_command(record);
     child
         .arg("--miniapp-background")
-        .env("OPENBITFUN_USER_ROOT", &record.user_root)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -64,6 +62,62 @@ async fn endpoint(record: &launcher::LaunchRecord) -> Result<ipc::Endpoint, Stri
             );
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    }
+}
+
+fn host_command(record: &launcher::LaunchRecord) -> std::process::Command {
+    let mut command =
+        openbitfun_services_core::process_manager::create_command(&record.host_executable);
+    command.env("OPENBITFUN_USER_ROOT", &record.user_root);
+    match record.host_channel {
+        ipc::HostChannel::Default => {
+            command.env_remove("OPENBITFUN_DESKTOP_HOST_CHANNEL");
+        }
+        ipc::HostChannel::Development => {
+            command.env("OPENBITFUN_DESKTOP_HOST_CHANNEL", "development");
+        }
+    }
+    if let Some(home) = &record.product_home {
+        command.env("OPENBITFUN_HOME", home);
+    }
+    command
+}
+
+#[cfg(test)]
+mod host_tests {
+    use super::*;
+
+    #[test]
+    fn background_host_uses_the_launch_records_channel_and_storage() {
+        let record: launcher::LaunchRecord = serde_json::from_value(json!({
+            "protocolVersion":2, "launchId":"00000000-0000-0000-0000-000000000001",
+            "appId":"notes", "dataDir":"data", "userRoot":"user",
+            "hostExecutable":"OpenBitFun", "name":"Notes",
+            "hostChannel":"development", "productHome":"home"
+        }))
+        .unwrap();
+        let command = host_command(&record);
+        let env: std::collections::HashMap<_, _> = command.get_envs().collect();
+        assert_eq!(
+            env[std::ffi::OsStr::new("OPENBITFUN_USER_ROOT")],
+            Some(std::ffi::OsStr::new("user"))
+        );
+        assert_eq!(
+            env[std::ffi::OsStr::new("OPENBITFUN_HOME")],
+            Some(std::ffi::OsStr::new("home"))
+        );
+        assert_eq!(
+            env[std::ffi::OsStr::new("OPENBITFUN_DESKTOP_HOST_CHANNEL")],
+            Some(std::ffi::OsStr::new("development"))
+        );
+        let mut stable = record;
+        stable.host_channel = ipc::HostChannel::Default;
+        let command = host_command(&stable);
+        let env: std::collections::HashMap<_, _> = command.get_envs().collect();
+        assert_eq!(
+            env[std::ffi::OsStr::new("OPENBITFUN_DESKTOP_HOST_CHANNEL")],
+            None
+        );
     }
 }
 
@@ -108,7 +162,7 @@ pub(crate) async fn miniapp_shell_call(
             let value = ipc::call(
                 &endpoint,
                 "open",
-                json!({"launchId":state.record.launch_id,"nonce":state.nonce,"shellCapabilities":[ipc::MINIAPP_CUSTOM_CHROME_CAPABILITY,ipc::MINIAPP_CHAT_SNAPSHOT_CAPABILITY]}),
+                json!({"launchId":state.record.launch_id,"nonce":state.nonce,"shellCapabilities":[ipc::MINIAPP_CUSTOM_CHROME_CAPABILITY,ipc::MINIAPP_CHAT_SNAPSHOT_CAPABILITY,ipc::MINIAPP_AGENT_BRIDGE_CAPABILITY]}),
             )
             .await?;
             if value["reused"] == true {
@@ -135,9 +189,8 @@ pub(crate) async fn miniapp_shell_call(
             window.show().map_err(|e| e.to_string())?;
             Ok(value)
         }
-        "ready" | "tab" | "poll" | "permissions" | "chatSnapshot" => {
-            host_call(&state, &request.operation, params).await
-        }
+        "ready" | "tab" | "poll" | "permissions" | "chatSnapshot" | "agentResponse"
+        | "agentClaim" => host_call(&state, &request.operation, params).await,
         "close" => {
             let _ = tokio::time::timeout(
                 std::time::Duration::from_secs(1),

@@ -121,6 +121,10 @@ Returns a stable `openbitfun-canvas://...` artifact reference for subsequent Can
         })
     }
 
+    fn output_schema(&self) -> Value {
+        canvas_output_schema()
+    }
+
     async fn call_impl(
         &self,
         input: &Value,
@@ -227,6 +231,10 @@ Provide either `artifact_reference` returned by CreateCanvas/PatchCanvas/UpdateC
         })
     }
 
+    fn output_schema(&self) -> Value {
+        canvas_output_schema()
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -313,6 +321,10 @@ Provide either `artifact_reference` or `canvas_id`, plus one complete replacemen
                 }
             }
         })
+    }
+
+    fn output_schema(&self) -> Value {
+        canvas_output_schema()
     }
 
     async fn call_impl(
@@ -407,6 +419,10 @@ Use this for small, targeted edits such as changing a label, number, style prop,
                 }
             }
         })
+    }
+
+    fn output_schema(&self) -> Value {
+        canvas_output_schema()
     }
 
     async fn call_impl(
@@ -515,6 +531,24 @@ fn canvas_tool_result(action: &str, snapshot: &CanvasSnapshot, compiled: bool) -
         result_for_assistant: Some(assistant_text),
         image_attachments: None,
     }
+}
+
+fn canvas_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean"},
+            "action": {"type": "string", "enum": ["created", "read", "updated", "patched"]},
+            "artifactReference": {"type": "string"},
+            "compiled": {"type": "boolean"},
+            "renderValidated": {"type": "boolean"},
+            "diagnosticCount": {"type": "integer"},
+            "status": {"type": "string"},
+            "diagnostics": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+            "source": {"type": "object", "additionalProperties": true}
+        },
+        "additionalProperties": true
+    })
 }
 
 fn canvas_result_for_assistant(

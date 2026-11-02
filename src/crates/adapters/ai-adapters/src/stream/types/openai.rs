@@ -138,7 +138,6 @@ pub struct OpenAISSEData {
     #[serde(default)]
     #[allow(dead_code)]
     created: Option<u64>,
-    #[allow(dead_code)]
     model: String,
     choices: Vec<Choice>,
     usage: Option<OpenAIUsage>,
@@ -158,6 +157,20 @@ impl OpenAISSEData {
     }
 
     pub fn into_unified_responses(self) -> Vec<UnifiedResponse> {
+        let response_model = (!self.model.trim().is_empty()).then(|| self.model.clone());
+        let mut responses = self.into_unified_response_parts();
+        if let Some(first) = responses.first_mut() {
+            first.response_model = response_model;
+        } else if response_model.is_some() {
+            responses.push(UnifiedResponse {
+                response_model,
+                ..Default::default()
+            });
+        }
+        responses
+    }
+
+    fn into_unified_response_parts(self) -> Vec<UnifiedResponse> {
         let mut usage = self.usage.map(|usage| usage.into());
 
         let Some(first_choice) = self.choices.into_iter().next() else {
@@ -222,6 +235,7 @@ impl OpenAISSEData {
                 tool_call_completion: None,
                 finish_reason: None,
                 provider_metadata: None,
+                response_model: None,
                 model_response_replay: None,
             });
         }
@@ -239,6 +253,7 @@ impl OpenAISSEData {
                     tool_call_completion: None,
                     finish_reason: None,
                     provider_metadata: None,
+                    response_model: None,
                     model_response_replay: None,
                 });
             }
@@ -261,6 +276,7 @@ impl OpenAISSEData {
                 tool_call_completion: Some(map_openai_finish_reason(&finish_reason)),
                 finish_reason: Some(finish_reason),
                 provider_metadata: None,
+                response_model: None,
                 model_response_replay: None,
             });
             return responses;
@@ -277,6 +293,7 @@ impl OpenAISSEData {
                 tool_call_completion: None,
                 finish_reason,
                 provider_metadata: None,
+                response_model: None,
                 model_response_replay: None,
             });
         }
@@ -571,7 +588,11 @@ mod tests {
         let sse_data: OpenAISSEData = serde_json::from_str(raw).expect("valid openai sse data");
         let responses = sse_data.into_unified_responses();
 
-        assert!(responses.is_empty());
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].response_model.as_deref(), Some("gpt-test"));
+        assert!(responses[0].text.is_none());
+        assert!(responses[0].usage.is_none());
+        assert!(responses[0].tool_call.is_none());
     }
 
     #[test]

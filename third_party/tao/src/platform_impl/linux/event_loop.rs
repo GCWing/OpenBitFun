@@ -404,9 +404,14 @@ impl<T: 'static> EventLoop<T> {
             style_context.remove_provider(&css_provider);
 
             if let Some(color) = color {
+              // The theme paints the window background through the `.background`
+              // class, whose specificity beats a bare `window` selector. Both
+              // selectors are declared so a transparent background color really
+              // reaches the window instead of being overpainted by the theme.
               let theme = format!(
                 r#"
-                  window {{
+                  window,
+                  window.background {{
                     background-color:  rgba({},{},{},{});
                     }}
                     "#,

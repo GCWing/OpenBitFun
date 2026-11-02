@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { SSHConnectionConfig, RemoteWorkspace } from './types';
+import type { SSHConnectionConfig, SSHConnectionResult, RemoteWorkspace } from './types';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -20,7 +20,7 @@ export interface SSHContextValue {
     connectionId: string,
     config: SSHConnectionConfig,
     options?: { browseAfterConnect?: boolean }
-  ) => Promise<void>;
+  ) => Promise<SSHConnectionResult | void>;
   disconnect: () => Promise<void>;
   /** Resolves `false` when the user keeps an existing connection binding. */
   openWorkspace: (path: string) => Promise<boolean>;

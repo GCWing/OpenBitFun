@@ -61,7 +61,7 @@ export const requiredContentRules = [
         message: 'missing local diff capability source gate',
       },
       {
-        regex: /#\[cfg\(any\(feature = "local-storage", feature = "runtime-ownership"\)\)\]\s*mod file_lock;/,
+        regex: /#\[cfg\(any\(\s*feature = "local-storage",\s*feature = "runtime-ownership",\s*feature = "resource-capacity",?\s*\)\)\]\s*mod file_lock;/,
         message: 'missing shared file lock owner source gate',
       },
       {
@@ -71,6 +71,14 @@ export const requiredContentRules = [
       {
         regex: /#\[cfg\(any\(feature = "json-io", feature = "local-storage"\)\)\]\s*pub mod json_store;/,
         message: 'missing json-io/local-storage JSON owner source gate',
+      },
+      {
+        regex: /#\[cfg\(feature = "routing-state"\)\]\s*pub mod routing_state;/,
+        message: 'missing durable routing-state owner source gate',
+      },
+      {
+        regex: /#\[cfg\(feature = "resource-capacity"\)\]\s*pub mod resource_capacity;/,
+        message: 'missing cooperative resource capacity owner source gate',
       },
       {
         regex: /#\[cfg\(feature = "local-storage"\)\]\s*pub mod persistence;/,
@@ -4191,7 +4199,7 @@ export const requiredContentRules = [
         message: 'missing ExecControl input/default wait regression',
       },
       {
-        regex: /\bexec_command_result_builder_preserves_existing_wire_shape\b/,
+        regex: /\bexec_command_result_builder_exposes_only_model_result_fields\b/,
         message: 'missing ExecCommand result shape regression',
       },
       {
@@ -5166,11 +5174,15 @@ export const requiredContentRules = [
         .filter((moduleName) => moduleName !== 'native_hooks')
         .map((moduleName) => ({
           regex: new RegExp(
-            agentRuntimeDefinitionContractModules.has(moduleName)
+            ['account_routing', 'channel_routing'].includes(moduleName)
+              ? `#\\[cfg\\(feature = "account-routing"\\)\\]\\r?\\npub mod ${moduleName};`
+              : agentRuntimeDefinitionContractModules.has(moduleName)
               ? `#\\[cfg\\(any\\(feature = "agent-runtime", feature = "definition-contracts"\\)\\)\\]\\r?\\npub mod ${moduleName};`
               : `#\\[cfg\\(feature = "agent-runtime"\\)\\]\\r?\\npub mod ${moduleName};`,
           ),
-          message: agentRuntimeDefinitionContractModules.has(moduleName)
+          message: ['account_routing', 'channel_routing'].includes(moduleName)
+            ? `${moduleName} must stay behind its pure account-routing owner`
+            : agentRuntimeDefinitionContractModules.has(moduleName)
             ? `${moduleName} must stay behind the full runtime or definition-contracts owner`
             : `${moduleName} must stay behind the full agent-runtime owner`,
         })),

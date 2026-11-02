@@ -23,16 +23,6 @@ export function parseGlobalSearchQuery(
   return { query: trimmed, scope: selectedScope, scopeForcedByPrefix: false };
 }
 
-function isSubsequence(query: string, candidate: string): boolean {
-  let queryIndex = 0;
-  for (let index = 0; index < candidate.length && queryIndex < query.length; index += 1) {
-    if (candidate[index] === query[queryIndex]) {
-      queryIndex += 1;
-    }
-  }
-  return queryIndex === query.length;
-}
-
 function queryTokens(query: string): string[] {
   return query
     .split(WORD_BOUNDARY)
@@ -49,7 +39,9 @@ function scoreSingleTerm(query: string, field: string): number {
   if (field.includes(query)) return 80;
 
   const acronym = words.map(word => word[0]).join('');
-  if (query.length > 1 && isSubsequence(query, acronym)) return 66;
+  // Require consecutive initials so long workflow prose does not gain
+  // unrelated capability-name matches from arbitrary skipped words.
+  if (query.length > 1 && acronym.includes(query)) return 66;
   return 0;
 }
 

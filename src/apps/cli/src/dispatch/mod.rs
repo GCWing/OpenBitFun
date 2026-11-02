@@ -1,3 +1,4 @@
+pub(crate) mod outbound;
 mod permissions;
 pub(crate) mod protocol;
 mod query_file;
@@ -148,6 +149,17 @@ async fn probe(request: DispatchProbeRequest) -> Result<DispatchProbeResponse> {
             .iter()
             .map(|capability| capability.to_string())
             .collect();
+    // This CLI assembles native Agent Runtime and subscription-auth. These
+    // runtime facts do not advertise unsupported account-management handlers.
+    capabilities.extend(
+        openbitfun_services_core::dispatch_contract::DISPATCH_SUBSCRIPTION_ACCOUNT_CAPABILITIES
+            .iter()
+            .map(|capability| capability.to_string()),
+    );
+    capabilities.push(
+        openbitfun_services_core::dispatch_contract::DISPATCH_MODEL_CHANNEL_ROUTING_CAPABILITY
+            .into(),
+    );
     // Accepting the controller's model-sync audit row is a request-validation
     // fact, not a runtime one, so it is advertised regardless of whether this
     // platform can host detached workers.
@@ -417,6 +429,8 @@ async fn query_in_store(
                     workspace_path: Some(job.request.workspace_path.clone()),
                     remote_connection_id: None,
                     remote_ssh_host: None,
+                    include_system_prompt_preview: false,
+                    context_preview_category: None,
                     include_hidden_subagents: false,
                 },
             )

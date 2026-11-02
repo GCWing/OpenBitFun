@@ -346,6 +346,35 @@ pub async fn dispatch(command: &str, args: Value) -> HostInvokeBridgeResult {
         PeerHostVerdict::Execute => {}
     }
 
+    if command == "product_control_invoke" {
+        use openbitfun_product_domains::{
+            product_control::{ProductControlAction, ProductControlRequest},
+            remote_control::RemoteControlRequest,
+        };
+        let payload = args.get("request").unwrap_or(&args);
+        let validation = serde_json::from_value::<ProductControlRequest>(payload.clone())
+            .map_err(|error| error.to_string())
+            .and_then(|request| {
+                if request.capability_id.as_deref() == Some("feature.remote-connect")
+                    && request.action == ProductControlAction::Execute
+                {
+                    RemoteControlRequest::from_operation(
+                        request.operation_id.as_deref().unwrap_or_default(),
+                        request.arguments.as_ref(),
+                    )?
+                    .ensure_direct_peer_safe()?;
+                }
+                Ok(())
+            });
+        if let Err(error) = validation {
+            return HostInvokeBridgeResult {
+                ok: false,
+                value: None,
+                error: Some(error),
+            };
+        }
+    }
+
     let app = match account_app_handle() {
         Some(app) => app.clone(),
         None => {

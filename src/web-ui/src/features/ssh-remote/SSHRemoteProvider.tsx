@@ -838,6 +838,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     config: SSHConnectionConfig,
     options?: { browseAfterConnect?: boolean }
   ) => {
+    const connectionScope = getActiveSurfaceScope();
     log.debug('SSH connect called', { host: config.host });
     setStatus('connecting');
     setIsConnecting(true);
@@ -846,6 +847,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
     try {
       const result = await sshApi.connect(config);
+      connectionScope.assertCurrent('finish connecting remote source');
       log.debug('SSH connect result', { success: result.success, connectionId: result.connectionId, error: result.error });
 
       if (result.success && result.connectionId) {
@@ -860,11 +862,15 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
             /* non-desktop or probe skipped */
           }
         }
+        connectionScope.assertCurrent('apply connected remote source');
         const activeRemoteWorkspace = getActiveRemoteWorkspaceForConnection(result.connectionId);
         const homePath =
           home && home.length > 0 ? normalizeRemoteWorkspacePath(home) : '/tmp';
 
-        if (options?.browseAfterConnect) {
+        if (options?.browseAfterConnect === false) {
+          setRemoteFileBrowserInitialPath(homePath);
+          setShowFileBrowser(false);
+        } else if (options?.browseAfterConnect) {
           if (activeRemoteWorkspace) {
             setRemoteWorkspace(activeRemoteWorkspace);
             setWorkspaceStatus(result.connectionId, 'connected');
@@ -901,6 +907,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         setConnectionConfig(config);
         setShowConnectionDialog(false);
         startHeartbeat(result.connectionId);
+        return result;
       } else {
         log.warn('SSH connection failed', { error: result.error });
         setStatus('error');
@@ -909,6 +916,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         throw new Error(errorMsg);
       }
     } catch (e) {
+      connectionScope.assertCurrent('report remote connection error');
       log.error('SSH connection exception', e);
       if (e instanceof Error) {
         setStatus('error');
@@ -920,7 +928,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       setConnectionError(errorMsg);
       throw new Error(errorMsg);
     } finally {
-      setIsConnecting(false);
+      if (connectionScope.isCurrent()) setIsConnecting(false);
     }
   }, [setWorkspaceStatus, startHeartbeat]);
 

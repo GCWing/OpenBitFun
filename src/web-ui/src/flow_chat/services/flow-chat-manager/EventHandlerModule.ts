@@ -65,6 +65,8 @@ import { useBackgroundCommandActivityStore } from '../../store/backgroundCommand
 import { useBackgroundSubagentActivityStore } from '../../store/backgroundSubagentActivityStore';
 import { clearPromptSuggestion, usePromptSuggestionStore } from '../../store/promptSuggestionStore';
 import { createTab } from '@/shared/utils/tabUtils';
+import { openAgentCanvasTabForSession } from '@/app/components/panels/content-canvas/stores/canvasStore';
+import { workbenchPaneLayoutStore } from '@/app/workbench/workbenchPaneLayoutStore';
 import type { TabCreationOptions } from '@/shared/utils/tabUtils';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
 import {
@@ -213,12 +215,14 @@ export const __test_only__ = {
   handleDialogTurnFailed,
   handleSubagentSessionLinked,
   handleModelRoundStart,
+  handleModelRoundComplete,
   handleTokenUsageUpdate,
   handleCompressionCompleted,
   handleDialogTurnInterrupted,
   handleDialogTurnRecovered,
   handleDialogTurnCancelled,
   buildBuiltInBrowserTabOptions,
+  handleOpenBuiltInBrowser,
 };
 
 function eventOwnsLatestSessionTurn(
@@ -2352,6 +2356,7 @@ function handleModelRoundStart(context: FlowChatContext, event: ModelRoundStarte
     // Model identity is optional: external ACP agents carry none.
     ...(event.modelConfigId ? { modelConfigId: event.modelConfigId.trim() } : {}),
     ...(event.effectiveModelName ? { effectiveModelName: event.effectiveModelName.trim() } : {}),
+    ...(event.routing ? { routing: event.routing } : {}),
     ...(disableExploreGrouping
       ? { renderHints: { disableExploreGrouping: true, disableExploreGroupingSource: 'host' } }
       : {}),
@@ -2486,6 +2491,7 @@ function handleModelRoundComplete(context: FlowChatContext, event: ModelRoundCom
     firstChunkMs: optionalNumber(event.firstChunkMs ?? (event as any).first_chunk_ms),
     firstVisibleOutputMs: optionalNumber(event.firstVisibleOutputMs ?? (event as any).first_visible_output_ms),
     streamDurationMs: optionalNumber(event.streamDurationMs ?? (event as any).stream_duration_ms),
+    ttftMs: optionalNumber(event.ttftMs ?? (event as any).ttft_ms),
     attemptCount: optionalNumber(event.attemptCount ?? (event as any).attempt_count),
     failureCategory: event.failureCategory ?? (event as any).failure_category,
     tokenDetails: event.tokenDetails ?? (event as any).token_details,
@@ -2766,14 +2772,14 @@ function buildBuiltInBrowserTabOptions(
   const replaceExisting = event?.replaceExisting !== false;
   // Replacing uses one stable product surface. A true new-tab request gets a
   // request-scoped key so identical URLs can still open as distinct targets.
-  const duplicateCheckKey = replaceExisting
+  const duplicateCheckKey = event.targetId ? `browser-panel:${event.targetId}` : replaceExisting
     ? 'browser-panel'
     : `browser-panel:${requestId ?? url}`;
 
   return {
     type: 'browser',
     title,
-    data: { url, openRequestId: requestId },
+    data: { url, openRequestId: requestId, targetId: event.targetId, conversationId: event.sessionId },
     metadata: { duplicateCheckKey },
     checkDuplicate: true,
     duplicateCheckKey,
@@ -2783,12 +2789,22 @@ function buildBuiltInBrowserTabOptions(
 }
 
 function handleOpenBuiltInBrowser(event: OpenBuiltInBrowserEvent): void {
+  // These are native pages on the executing Desktop. A peer's target id must
+  // never be treated as a controller-local WebView (even if labels collide).
+  if (getActiveSurfaceScope().surfaceId !== 'local') return;
   const options = buildBuiltInBrowserTabOptions(event);
   if (!options) {
     log.warn('OpenBuiltInBrowser missing url', { event });
     return;
   }
-  createTab(options);
+  if (event.sessionId) {
+    openAgentCanvasTabForSession(event.sessionId, {
+      type: 'browser', title: options.title, data: options.data, metadata: options.metadata,
+    });
+    workbenchPaneLayoutStore.getState().showContentForSession('local', event.sessionId);
+  } else {
+    createTab(options);
+  }
 }
 
 export function handleDialogTurnComplete(

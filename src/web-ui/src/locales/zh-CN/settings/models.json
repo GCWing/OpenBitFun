@@ -14,7 +14,7 @@
     "subtitle": "新对话时 AI 自动生成简洁标题",
     "enable": "启用",
     "loadFailed": "加载会话标题配置失败",
-    "loadFailedLocked": "无法读取会话标题设置。当前开关和模型选择已锁定。",
+    "loadFailedLocked": "无法读取会话标题设置，当前开关和模型选择已锁定",
     "retry": "重新加载",
     "model": {
       "label": "会话标题生成模型",
@@ -37,10 +37,10 @@
     "title": "候选输入建议",
     "subtitle": "Agent 答复完成后，在输入框中给出一句话的下一步输入建议",
     "label": "启用",
-    "description": "输入框为空时按 Tab 或 → 采纳。建议复用本轮对话的提示缓存生成。",
-    "unsupported": "当前连接的主机不支持候选输入建议。",
+    "description": "输入框为空时按 Tab 或 → 采纳；建议复用本轮对话的提示缓存生成",
+    "unsupported": "当前连接的主机不支持候选输入建议",
     "loading": "正在加载设置...",
-    "loadFailedLocked": "无法读取候选输入建议设置，开关已锁定。",
+    "loadFailedLocked": "无法读取候选输入建议设置，开关已锁定",
     "retry": "重新加载",
     "messages": {
       "saveSuccess": "设置已保存",
@@ -49,37 +49,76 @@
   },
   "subscriptionAuth": {
     "sectionTitle": "订阅账号",
-    "sectionDescription": "连接 Codex、Antigravity、OpenCode Console（Zen）、xAI 或 Hermes 账号",
+    "sectionDescription": "连接 Codex、Antigravity、OpenCode、xAI、Hermes 或 ZCode 订阅",
     "rescan": "刷新状态",
     "import": "导入使用",
     "login": "登录",
+    "loginTitle": "{{provider}} 登录",
+    "backToProviders": "返回服务商列表",
+    "cancelAndBack": "取消登录并返回",
     "browserLogin": "浏览器登录",
     "deviceLogin": "设备码登录",
     "cancel": "取消",
     "loginCancelled": "已取消登录",
     "logout": "退出登录",
-    "refresh": "刷新 Token",
-    "refreshSuccess": "Token 已刷新",
+    "refresh": "刷新状态",
+    "refreshSuccess": "状态已更新",
     "refreshFailed": "刷新失败：{{error}}",
     "loginSuccess": "登录成功",
     "loginFailed": "登录失败：{{error}}",
-    "peerLoginRequiresLocalDevice": "Antigravity 登录必须在运行 OpenBitFun 的设备上完成，请切换到该设备后再登录。",
+    "peerLoginRequiresLocalDevice": "Antigravity 登录必须在运行 OpenBitFun 的设备上完成，请切换到该设备后再登录",
     "logoutSuccess": "已退出登录",
-    "logoutCleanupPending": "已退出登录，凭据清理仍在等待中，稍后会自动重试。",
+    "logoutCleanupPending": "已退出登录，凭据清理仍在等待中，稍后会自动重试",
     "logoutFailed": "退出登录失败：{{error}}",
     "userCodeHint": "请在浏览器中输入验证码：{{code}}",
     "openUrlManually": "无法自动打开浏览器，请手动访问：{{url}}",
-    "expiresAt": "Token 有效期至 {{time}}",
-    "tokenValid": "Token 已就绪",
+    "expiresAt": "授权有效期至 {{time}}",
+    "expiresIn": "授权有效期：{{time}}",
+    "authorizationExpired": "授权已过期",
+    "tokenValid": "已连接",
     "notSignedIn": "未登录",
     "label": "认证方式",
+    "chooseRegion": "选择订阅平台",
+    "chooseRegionHint": "选择你购买 Coding Plan 订阅的平台。",
+    "products": {
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "opencode": "OpenCode",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy（已下线）",
+      "workbuddy_ai": "WorkBuddy AI（已下线）",
+      "zcode": "ZCode"
+    },
+    "details": {
+      "codex": "ChatGPT",
+      "antigravity": "Google",
+      "opencode": "Zen",
+      "grok": "SuperGrok",
+      "hermes": "Nous Portal",
+      "workbuddy": "已下线 · 厂商不再支持订阅授权",
+      "workbuddy_ai": "已下线 · 国际版",
+      "zcode": "GLM Coding"
+    },
+    "regions": {
+      "zai": "Z.ai（国际版）",
+      "bigmodel": "智谱 BigModel（国内版）"
+    },
+    "regionsShort": {
+      "zai": "国际",
+      "bigmodel": "国内"
+    },
     "options": {
-      "opencode": "OpenCode Console（Zen）",
+      "opencode": "OpenCode",
       "apiKey": "API Key",
-      "codex": "Codex（ChatGPT 订阅）",
-      "antigravity": "Antigravity（Google 订阅）",
-      "grok": "xAI（SuperGrok 订阅）",
-      "hermes": "Hermes（Nous Portal 订阅）"
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy（已下线）",
+      "workbuddy_ai": "WorkBuddy AI（已下线）",
+      "zcode": "ZCode",
+      "zcode_cn": "ZCode · 智谱"
     },
     "useFormat": "使用 {{format}}",
     "useFormatWithCount": "使用 {{format}}（{{modelCount}} 个模型）",
@@ -90,8 +129,8 @@
     "vaultUnavailable": "凭据存储暂时不可用，请重试；你的登录信息并未被移除",
     "retryVault": "重试凭据库",
     "loginPending": "正在进行登录授权",
-    "browserInstructions": "请在 OpenBitFun 打开的浏览器页面中完成登录，并保持此页面开启；授权后会自动完成。",
-    "deviceInstructions": "请在任意设备打开授权页面，输入下方验证码，然后返回此处。",
+    "browserInstructions": "请在 OpenBitFun 打开的浏览器页面中完成登录，并保持此页面开启；授权后会自动完成",
+    "deviceInstructions": "请在任意设备打开授权页面，输入下方验证码，然后返回此处",
     "loginCancelling": "正在取消登录并关闭授权会话",
     "loginCompletedBeforeCancel": "授权已在取消前完成，因此该账号仍保持登录状态",
     "timeRemaining": "剩余时间 {{time}}",
@@ -105,10 +144,11 @@
     "loginFailedInline": "{{error}}",
     "logoutConfirmTitle": "确认退出订阅账号",
     "logoutAffectedModels": "退出后，当前使用该账号的 {{count}} 个模型配置将无法请求模型：",
-    "logoutNoAffectedModels": "当前没有模型配置使用此订阅账号。",
-    "logoutConsequence": "模型配置不会被删除；重新登录同一订阅账号后可以继续使用。",
+    "logoutNoAffectedModels": "当前没有模型配置使用此订阅账号",
+    "logoutConsequence": "模型配置不会被删除；重新登录同一订阅账号后可以继续使用",
     "confirmLogout": "确认退出",
     "openCodeRemoved": "OpenCode Console OAuth 仅支持 Zen。Go 模型请选择 API key 并填写密钥，已有模型配置保留。",
+    "retiredProvider": "WorkBuddy 订阅已下线：厂商不再支持订阅授权。现有模型配置与凭据均保留，如需继续使用这些模型请新建 API Key 服务。",
     "editorDescription": "此服务的模型共用当前登录的订阅账号",
     "accountLabel": "账号",
     "accountAuthentication": "订阅账号授权",
@@ -116,11 +156,11 @@
     "loadingAccount": "正在读取账号…",
     "accountIdentityUnavailable": "服务未提供账号标识",
     "accountUnavailable": "暂无账号信息",
-    "serviceUnavailable": "当前主机未提供此订阅服务，请刷新状态或检查主机版本。",
-    "signInToUse": "登录此服务的订阅账号后即可使用，已有模型配置会保留。",
-    "sharedAccountHint": "此服务的模型共用当前登录账号。",
+    "serviceUnavailable": "当前主机未提供此订阅服务，请刷新状态或检查主机版本",
+    "signInToUse": "登录此服务的订阅账号后即可使用，已有模型配置会保留",
+    "sharedAccountHint": "此服务的模型共用当前登录账号",
     "credentialExpiresAt": "凭据有效期至 {{time}}",
-    "credentialExpired": "当前授权凭据已过期，请在管理账号中刷新凭据后重试。",
+    "credentialExpired": "当前授权凭据已过期，请在管理账号中刷新凭据后重试",
     "openCodeLegacyConnection": "此旧版连接使用 OpenCode Go，已有模型配置会保留。如需继续使用 Go，请新建 API Key 服务；订阅授权请重新导入 Zen。",
     "accountState": {
       "loading": "正在读取状态",
@@ -130,11 +170,25 @@
       "reauthenticationRequired": "需重新登录",
       "refreshRequired": "凭据待刷新",
       "connected": "已登录"
-    }
+    },
+    "pool": {
+      "label": "使用账号",
+      "defaultAccount": "默认账号",
+      "disabled": "已停用",
+      "missing": "账号已移除",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "addAccount": "添加账号",
+      "rotationHint": "按顺序使用；当前账号额度用完或出错时自动换下一个。",
+      "singleHint": "勾选多个账号后，额度用完或出错时会按顺序自动切换。"
+    },
+    "accountMarker": "账号 · {{marker}}",
+    "accountsCount": "{{count}} 个账号",
+    "newAccount": "新账号"
   },
   "providerSelection": {
-    "modelRoutingPending": "刷新模型列表后显示协议和端点；目录外模型可手动配置。",
-    "modelRoutingUnavailable": "主机未返回此模型的有效接口信息，请更新主机后刷新模型列表。",
+    "modelRoutingPending": "刷新模型列表后显示协议和端点；目录外模型可手动配置",
+    "modelRoutingUnavailable": "主机未返回此模型的有效接口信息，请更新主机后刷新模型列表",
     "title": "选择模型提供商",
     "subtitle": "预设会填入常用连接参数；私有部署或未列出的服务可选择自定义",
     "or": "或者",
@@ -157,8 +211,8 @@
     "fetchFailedFallback": "拉取模型列表失败，已回退到常用预设模型",
     "fetchEmptyFallback": "供应商未返回可用模型，已回退到常用预设模型",
     "refreshModels": "刷新模型列表",
-    "subscriptionFetchFailed": "未能获取订阅账号的模型。请刷新重试，或手动填写该账号支持的模型 ID。",
-    "subscriptionFetchEmpty": "该账号未返回适用于当前接口的模型。请刷新重试，或手动填写支持的模型 ID。",
+    "subscriptionFetchFailed": "未能获取订阅账号的模型，请刷新重试，或手动填写该账号支持的模型 ID",
+    "subscriptionFetchEmpty": "该账号未返回适用于当前接口的模型，请刷新重试，或手动填写支持的模型 ID",
     "fillApiKeyBeforeFetch": "请先填写 API Key 再获取模型列表",
     "usingPresetModels": "当前显示的是常用预设模型",
     "noPresetModels": "暂无可用模型，请获取模型列表或手动输入模型名",
@@ -184,16 +238,28 @@
     "formatHint": "已根据提供商自动选择，通常无需修改"
   },
   "providers": {
+    "opencode-zen": {
+      "name": "OpenCode Zen",
+      "description": "OpenCode 模型服务，支持免费模型和按量付费 API Key。"
+    },
     "opencode-go": {
       "name": "OpenCode Go",
-      "description": "OpenCode 推出的模型订阅套餐。"
+      "description": "OpenCode 推出的模型订阅套餐"
     },
     "openbitfun": {
       "name": "OpenBitFun 服务",
       "description": "OpenBitFun 大模型平台",
       "urlOptions": {
-        "default": "Anthropic格式-默认",
-        "openai": "OpenAI兼容格式"
+        "default": "官方接口",
+        "openai": "官方接口"
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "description": "OpenAI GPT 与推理模型",
+      "urlOptions": {
+        "default": "官方接口",
+        "chatCompletions": "官方接口"
       }
     },
     "gemini": {
@@ -208,51 +274,52 @@
       "name": "MiniMax",
       "description": "MiniMax 系列模型",
       "urlOptions": {
-        "default": "国内-Anthropic格式-默认",
-        "openai": "国内-OpenAI兼容格式",
-        "intl": "海外-Anthropic格式",
-        "intlOpenai": "海外-OpenAI兼容格式"
+        "default": "国内-默认",
+        "openai": "国内",
+        "intl": "海外",
+        "intlOpenai": "海外"
       }
     },
     "xiaomi": {
       "name": "Xiaomi MiMo",
-      "description": "小米 MiMo 系列模型，API 与 Token Plan 密钥不可混用。",
+      "description": "小米 MiMo 系列模型，API 与 Token Plan 密钥不可混用",
       "urlOptions": {
-        "default": "API - OpenAI Chat Completions（默认）",
-        "responses": "API - OpenAI Responses",
-        "anthropic": "API - Anthropic Messages",
-        "tokenPlan": "国内 - Token Plan - OpenAI",
-        "tokenPlanAnthropic": "国内 - Token Plan - Anthropic"
+        "default": "API-默认",
+        "responses": "API",
+        "anthropic": "API",
+        "tokenPlan": "国内 - Token Plan",
+        "tokenPlanAnthropic": "国内 - Token Plan"
       }
     },
     "moonshot": {
       "name": "月之暗面",
       "description": "月之暗面 Kimi 系列模型",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "anthropic": "国内-Anthropic格式",
-        "intl": "海外-OpenAI格式",
-        "intlAnthropic": "海外-Anthropic格式",
-        "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）"
+        "default": "国内-默认",
+        "anthropic": "国内",
+        "intl": "海外",
+        "intlAnthropic": "海外",
+        "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）",
+        "kimiForCodingAnthropic": "Kimi For Coding 套餐"
       }
     },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek 系列模型",
       "urlOptions": {
-        "default": "OpenAI格式-默认",
-        "anthropic": "Anthropic格式"
+        "default": "官方接口-默认",
+        "anthropic": "官方接口"
       }
     },
     "zhipu": {
       "name": "智谱AI",
       "description": "智谱AI GLM 系列模型",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "anthropic": "国内-Anthropic格式",
+        "default": "国内-默认",
+        "anthropic": "国内",
         "codingPlan": "国内-Coding Plan",
-        "intl": "海外(Z.AI)-OpenAI格式",
-        "intlAnthropic": "海外(Z.AI)-Anthropic格式",
+        "intl": "海外(Z.AI)",
+        "intlAnthropic": "海外(Z.AI)",
         "intlCodingPlan": "海外(Z.AI)-Coding Plan"
       }
     },
@@ -260,10 +327,10 @@
       "name": "通义千问",
       "description": "阿里云百炼大模型平台",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "intl": "海外(国际站)-OpenAI格式",
+        "default": "国内-默认",
+        "intl": "海外(国际站)",
         "codingPlan": "国内-Coding Plan",
-        "codingPlanAnthropic": "国内-Coding Plan-Anthropic格式",
+        "codingPlanAnthropic": "国内-Coding Plan",
         "intlCodingPlan": "海外-Coding Plan"
       }
     },
@@ -280,9 +347,9 @@
       "name": "硅基流动",
       "description": "硅基流动大模型平台",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "anthropic": "国内-Anthropic格式",
-        "intl": "海外-OpenAI格式"
+        "default": "国内-默认",
+        "anthropic": "国内",
+        "intl": "海外"
       }
     },
     "nvidia": {
@@ -335,15 +402,19 @@
     "modelSelection": "选择模型",
     "modelNameHint": "智谱 GLM-ASR 使用 glm-asr，其他语音模型填写对应的模型名称",
     "baseUrl": "API地址",
+    "baseUrlPlaceholder": "https://api.example.com/v1",
     "resolvedUrlLabel": "实际请求地址：",
     "forceUrlHint": "以 # 结尾可强制使用输入地址",
     "apiKey": "API密钥",
+    "openCodeZenApiKeyPlaceholder": "免费模型可留空；付费模型请填写 Zen API Key",
     "apiKeyPlaceholder": "输入您的 API Key",
     "provider": "请求格式",
     "providerPlaceholder": "选择请求格式",
     "contextWindow": "上下文窗口大小",
+    "maxImagesPerRequest": "每次请求图片上限",
+    "maxImagesPerRequestHint": "可选：限制单次请求中发送的图片数量，包括对话历史和工具结果；留空表示不设置额外上限。",
     "contextWindowHint": "用于判断何时压缩上下文，可小于模型实际支持的上限",
-    "contextWindowLongWarning": "上下文超过 400K，可能影响效果，建议约 300K。",
+    "contextWindowLongWarning": "上下文超过 400K，可能影响效果，建议约 300K",
     "maxTokens": "最大输出Tokens",
     "maxTokensHint": "限制单次响应的最大 Token 数，影响输出长度",
     "description": "描述",
@@ -374,14 +445,14 @@
     "configTitle": "思考配置",
     "dialogTitle": "思考配置 · {{provider}} · {{model}}",
     "catalogSource": "思考预设来源",
-    "catalogAuto": "自动检测",
+    "catalogAuto": "自动匹配预设",
     "catalogModelsDev": "指定 models.dev 模型",
     "catalogDisabled": "仅使用自定义预设",
-    "catalogAutoTooltip": "优先使用已识别模型的精确思考预设；未命中时提供可手动选择的通用开启、关闭和低/中/高强度，同时保留自定义预设。",
+    "catalogAutoTooltip": "按配置的服务商和模型匹配预设，不会探测服务端。未识别服务的通用选项仅供手动选择、尚未验证，不代表服务端支持；同时保留自定义预设",
     "catalogModelsDevTooltip": "使用指定 models.dev 供应商和模型的思考预设。模型名称是别名，或兼容网关需要显式绑定时使用。",
-    "catalogDisabledTooltip": "不生成 models.dev 和适配器预设，仅保留你配置的自定义预设。",
+    "catalogDisabledTooltip": "不自动生成预设；自定义预设和自定义请求体仍生效。选择“跟随服务端默认”不会清除请求体中的显式参数",
     "catalogSummary": {
-      "auto": "自动检测",
+      "auto": "自动匹配预设",
       "modelsDev": "指定 models.dev",
       "disabled": "仅自定义"
     },
@@ -398,8 +469,8 @@
     "catalogModelCustomValueHint": "使用自定义模型 ID",
     "defaultBehavior": "默认思考",
     "defaultPreset": "默认预设",
-    "auto": "自动（模型默认值）",
-    "autoShort": "自动",
+    "auto": "跟随服务端默认",
+    "autoShort": "服务端默认",
     "generatedTitle": "自动生成的预设",
     "unavailableTitle": "部分 models.dev 预设不可用",
     "unavailableDescription": "当前 API 格式“{{format}}”无法可靠应用以下预设：{{presets}}。请参考服务提供商的官方文档，并在自定义预设中使用“请求体补丁”配置所需字段。",
@@ -429,11 +500,11 @@
     "actionSummaryBudget": "Token 预算：{{value}}",
     "actionSummaryPatches": "{{count}} 个请求体补丁",
     "noActions": "未配置操作",
-    "invalidJson": "请求体补丁需要 JSON 对象。",
+    "invalidJson": "请求体补丁需要 JSON 对象",
     "summary": "{{source}} · 默认：{{default}}",
     "summaryWithCustom": "{{source}} · 默认：{{default}} · {{count}} 个自定义预设",
     "apply": "应用",
-    "validationError": "请先修正预设来源、默认项、操作或 JSON。"
+    "validationError": "请先修正预设来源、默认项、操作或 JSON"
   },
   "details": {
     "basicInfo": "基本信息",
@@ -448,7 +519,7 @@
   },
   "proxy": {
     "enable": "启用代理",
-    "enableHint": "启用后所有 AI 请求将通过代理发送（需重启 OpenBitFun 生效）",
+    "enableHint": "留空代理地址时，请求会跟随操作系统代理（例如本地代理软件设置的系统代理）。填写地址并启用后，所有 AI 请求都通过该代理发送；填写地址但关闭开关表示强制直连。",
     "url": "代理地址",
     "urlPlaceholder": "http://127.0.0.1:7890 或 socks5://127.0.0.1:1080",
     "urlHint": "支持 HTTP/HTTPS/SOCKS5 代理，格式：协议://地址:端口",
@@ -465,7 +536,7 @@
     "label": "响应间隔超时（秒）",
     "hint": "响应开始后，等待下一段数据的最长时间；留空表示不限时",
     "placeholder": "留空表示不设超时",
-    "invalid": "请输入正整数秒数，或留空。",
+    "invalid": "请输入正整数秒数，或留空",
     "save": "保存响应超时",
     "saveSuccess": "流式超时已保存"
   },
@@ -474,7 +545,7 @@
     "label": "首次响应超时（秒）",
     "hint": "发出请求后，等待首段有效响应的最长时间；留空表示不限时",
     "placeholder": "留空表示不设超时",
-    "invalid": "请输入正整数秒数，或留空。",
+    "invalid": "请输入正整数秒数，或留空",
     "save": "保存首次响应超时",
     "saveSuccess": "首 Token 超时已保存"
   },
@@ -526,7 +597,7 @@
   "draftClose": {
     "title": "保留这次编辑草稿？",
     "message": "这些修改尚未写入模型配置。保留草稿不会触发连接测试，再次打开此编辑器时可以继续。",
-    "keepAndClose": "保留草稿并关闭",
+    "keepAndClose": "保留草稿",
     "discard": "放弃修改",
     "continueEditing": "继续编辑",
     "discardDraft": "放弃草稿",
@@ -534,7 +605,7 @@
   },
   "draftConflict": {
     "title": "先处理未完成的模型草稿",
-    "message": "打开另一个模型或服务商前，请继续处理当前草稿，或放弃草稿后打开所选配置。",
+    "message": "打开另一个模型或服务商前，请继续处理当前草稿，或放弃草稿后打开所选配置",
     "continueDraft": "继续当前草稿",
     "discardAndContinue": "放弃草稿并继续",
     "cancel": "取消"
@@ -548,18 +619,18 @@
   },
   "messages": {
     "loading": "正在加载模型设置…",
-    "loadFailedLocked": "无法读取此处的设置。为避免覆盖现有配置，相关操作已锁定，请重新加载。",
+    "loadFailedLocked": "无法读取此处的设置，为避免覆盖现有配置，相关操作已锁定，请重新加载",
     "retry": "重新加载",
     "unsaved": "未保存",
     "fillRequired": "请填写必要字段",
-    "missingFields": "请补全以下信息：{{fields}}。",
+    "missingFields": "请补全以下信息：{{fields}}",
     "fieldSeparator": "、",
     "lastFieldSeparator": "和",
     "fillModelName": "请填写模型名称",
     "duplicateModelNameUnderProvider": "该服务商下已有同名模型，请改用其他名称或编辑已有条目",
     "invalidBaseUrlScheme": "API地址必须以 http:// 或 https:// 开头",
     "contextWindowTooSmall": "上下文窗口大小不能小于 32K Tokens",
-    "invalidReasoningPresets": "请先修正思考预设的 ID、设置、默认项或 JSON。",
+    "invalidReasoningPresets": "请先修正思考预设的 ID、设置、默认项或 JSON",
     "saveFailed": "保存失败",
     "deleteFailed": "删除配置失败",
     "deleteSuccess": "模型配置已删除",
@@ -574,8 +645,11 @@
     "testUnsupportedOnHost": "配置已保存，当前 CLI 设备不支持模型连接测试",
     "errorDetails": "详细错误",
     "connectionTestMessages": {
-      "toolCallsNotDetected": "本次测试未检测到工具调用，因此暂时无法验证工具调用能力。",
-      "imageInputCheckFailed": "连接已成功，但图片输入测试未通过。",
+      "toolCallsNotDetected": "本次测试未检测到工具调用，因此暂时无法验证工具调用能力",
+      "imageInputCheckFailed": "连接已成功，但图片输入测试未通过",
+      "reasoningEffortRejected": "服务商拒绝了推理强度参数；请在模型“思考配置”或自定义请求体中改用支持值，或移除显式推理参数后跟随服务端默认",
+      "reasoningEffortValueRejected": "服务商不支持 reasoning_effort={{value}}；请在模型“思考配置”或自定义请求体中改用支持值，或移除显式推理参数后跟随服务端默认",
+      "reasoningEffortValueRejectedWithSupported": "服务商不支持 reasoning_effort={{value}}，返回的支持值为 {{supported}}；请在模型“思考配置”或自定义请求体中改用支持值，或移除显式推理参数后跟随服务端默认",
       "tlsOrCertificateIssue": "连接失败可能与 SSL/TLS 证书校验有关。请检查公司代理、自签证书、系统根证书或网络拦截设置；如果确认网络环境可信，可在该模型的高级设置中开启“跳过SSL证书验证”，但这会降低 HTTPS 安全性。",
       "proxyIssue": "连接失败可能与代理或隧道配置有关。请检查全局代理设置、代理认证、代理是否支持 HTTPS CONNECT，以及当前网络是否允许访问该模型 API 地址。",
       "networkIssue": "连接失败发生在发送请求阶段，尚未收到服务端 HTTP 响应。请检查网络连通性、DNS、代理、防火墙和证书环境；如果处在公司代理或自签证书环境，也可能需要检查高级设置中的“跳过SSL证书验证”。"
@@ -585,6 +659,7 @@
     "cloneName": "{{name}} - 副本",
     "templateName": "{{provider}} - {{modelName}}",
     "templateDescription": "{{description}} - {{modelName}}",
+    "configChanged": "模型配置已在其他地方更改，当前草稿已保留。请刷新模型设置并重新打开编辑器后再保存。",
     "providerRemoved": "此服务已被移除，请关闭编辑器后重新打开模型设置。"
   },
   "modelsDevCatalog": {
@@ -621,6 +696,10 @@
   },
   "advancedSettings": {
     "title": "高级设置",
+    "maxImagesPerRequest": {
+      "label": "每次请求图片上限",
+      "hint": "可选：限制单次请求中发送的图片数量，包括对话历史和工具结果；留空表示不设置额外上限。"
+    },
     "inlineThinkInText": {
       "label": "解析文本中的 <think> 标签",
       "hint": "将响应中的 <think>...</think> 内容显示为思考过程"
@@ -647,10 +726,10 @@
       "modeMerge": "合并",
       "modeTrim": "精简",
       "modeMergeHint": "在默认请求体基础上合并自定义字段，可覆盖已有字段",
-      "trimHintOpenAI": "发送前仅保留 model、messages、max_tokens，以及 stream / tools 等运行必需字段，再应用自定义请求体。",
-      "trimHintResponses": "发送前仅保留 model、input、instructions、max_output_tokens，以及 stream / tools 等运行必需字段，再应用自定义请求体。",
-      "trimHintAnthropic": "发送前仅保留 model、messages、system、max_tokens，以及 stream / tools 等运行必需字段，再应用自定义请求体。",
-      "trimHintGemini": "发送前仅保留 contents、systemInstruction、generationConfig.maxOutputTokens，以及 tools / toolConfig；Gemini 的 model 由请求 URL 决定。",
+      "trimHintOpenAI": "发送前仅保留 model、messages、max_tokens，以及 stream / tools 等运行必需字段，再应用自定义请求体",
+      "trimHintResponses": "发送前仅保留 model、input、instructions、max_output_tokens，以及 stream / tools 等运行必需字段，再应用自定义请求体",
+      "trimHintAnthropic": "发送前仅保留 model、messages、system、max_tokens，以及 stream / tools 等运行必需字段，再应用自定义请求体",
+      "trimHintGemini": "发送前仅保留 contents、systemInstruction、generationConfig.maxOutputTokens，以及 tools / toolConfig；Gemini 的 model 由请求 URL 决定",
       "placeholder": "例如：\n{\n  \"temperature\": 0.8,\n  \"top_p\": 0.9\n}",
       "invalidJson": "JSON格式错误，请检查语法",
       "validJson": "JSON格式有效",
@@ -663,7 +742,7 @@
   "editProviderSettingsTitle": "服务连接",
   "sections": {
     "acquisition": "添加或导入模型",
-    "selectionModes": "模型选用模式",
+    "selectionModes": "智能模式",
     "pool": "全部模型",
     "more": "更多设置"
   },
@@ -676,36 +755,39 @@
     "subscriptions": "订阅服务",
     "importedSummary": "已导入 {{providers}} 个服务，共 {{models}} 个模型",
     "noneImported": "尚未导入订阅服务",
-    "import": "导入",
+    "addSubscription": "添加订阅",
     "importTitle": "导入订阅服务",
-    "loadFailed": "无法读取订阅服务，请重试。已有模型配置仍会保留。",
-    "noServices": "当前主机没有可导入的订阅服务"
+    "loadFailed": "无法读取订阅服务，请重试；已有模型配置仍会保留",
+    "noServices": "当前主机没有可导入的订阅服务",
+    "more": "更多",
+    "noSignedInAccounts": "暂无已登录账号"
   },
   "selectionModes": {
+    "unavailable": "暂未开放",
     "smart": "智能模式",
-    "smartHint": "基于 OpenBitFun 自适应路由与多模型协同推理技术，提升经济效益和任务表现。",
+    "smartHint": "基于 OpenBitFun 自适应路由与多模型协同推理技术，提升经济效益和任务表现",
     "battery": "电池模式",
-    "batteryHint": "基于多源模型池化与故障转移技术，额度耗尽或连接失效时自动接力。",
-    "unavailable": "尚未开放"
+    "batteryHint": "基于多源模型池化与故障转移技术，额度耗尽或连接失效时自动接力",
+    "configure": "配置智能模式"
   },
   "pool": {
     "manageConnections": "管理连接",
     "search": "搜索模型、来源或标签",
     "capabilityFilter": "筛选模型能力",
     "allCapabilities": "全部能力",
-    "recommendationsUnavailable": "推荐标签服务暂未上线，当前尚未接入同步。你可以先手动给模型添加标签。",
+    "recommendationsUnavailable": "推荐标签服务暂未上线，当前尚未接入同步，你可以先手动给模型添加标签",
     "syncTags": "同步推荐标签",
     "clearFilter": "清除筛选",
     "noMatches": "没有符合条件的模型",
-    "empty": "先添加 API 模型或导入订阅服务，模型会汇集在这里。",
+    "empty": "先添加 API 模型或导入订阅服务，模型会汇集在这里",
     "editTags": "为 {{model}} 添加标签",
     "tagsLabel": "自定义标签",
-    "tagsHint": "输入标签后按 Enter 添加，最多 {{max}} 个。主力、快速等槽位标签不占名额。",
+    "tagsHint": "输入标签后按 Enter 添加，最多 {{max}} 个；主力、快速等槽位标签不占名额",
     "tagsPlaceholder": "添加标签",
     "tagsCount": "{{count}} / {{max}}",
-    "tagsLimitReached": "最多添加 {{max}} 个自定义标签，移除一个后可继续添加。",
+    "tagsLimitReached": "最多添加 {{max}} 个自定义标签，移除一个后可继续添加",
     "recommendedTags": "已有推荐标签",
-    "tagsSaveFailed": "标签保存失败，修改已保留，请重试。",
+    "tagsSaveFailed": "标签保存失败，修改已保留，请重试",
     "addTags": "添加标签",
     "editTag": "编辑标签“{{tag}}”",
     "removeTag": "移除标签“{{tag}}”",
@@ -718,6 +800,89 @@
     "acknowledge": "知道了"
   },
   "editConfiguredProviderSubtitle": "更新此服务的 API 地址、密钥与模型",
+  "billing": {
+    "title": "计费提示",
+    "details": "费用详情",
+    "unknown": "未知",
+    "api": "API · 按量计费",
+    "subscription": "订阅 / Coding Plan",
+    "method": "计费方式",
+    "account": "账号或套餐备注",
+    "accountPlaceholder": "仅作辨认，请勿填写密钥",
+    "currency": "币种",
+    "rateUnit": "每百万 token 的价格；未知请留空，填 0 表示免费",
+    "input": "未命中缓存的输入",
+    "output": "输出",
+    "cacheRead": "缓存命中的输入",
+    "source": "价格来源 / 套餐说明",
+    "sourcePlaceholder": "供应商报价页、账单或套餐说明",
+    "quoteHint": "以下为你填写的该供应商配置的报价，并非已核实的账单；不能仅凭模型名称确定你的实际价格",
+    "routingScopeHint": "报价和比较仅适用于此配置的基准通道；备用通道和账户池中的其他账户可能采用不同价格，其实际费用仍未知",
+    "subscriptionAuthHint": "此配置使用账号登录；登录方式本身不能确定套餐、剩余额度或超额收费规则",
+    "apiAuthHint": "此配置使用 API Key；API Key 也可能对应 Coding Plan，请以供应商的实际计费方式为准",
+    "quotaUnknown": "剩余额度、重置时间和超额收费未知；套餐月费不会换算成 token 单价",
+    "stale": "供应商、模型或凭据已变更，请核对后重新确认价格",
+    "reviewRequired": "待核对",
+    "updated": "手动更新于：{{date}}",
+    "saveFailed": "保存失败，连接、模型或计费信息可能已变更，请关闭后重新打开，读取最新配置",
+    "save": "保存计费信息",
+    "cancel": "取消",
+    "edit": "编辑价格",
+    "fastHigher": "按此示例用量，快速模型比主力模型更贵，仍可用于提速，但不一定节省费用",
+    "currencyMismatch": "两者币种不同；没有确认汇率时不比较价格",
+    "comparable": "按相同示例用量比较价格，实际费用以请求用量和账号账单为准",
+    "incomplete": "实际价格信息尚不完整；主力、快速表示用途，不代表价格高低",
+    "estimate": "主力 {{primary}} · 快速 {{fast}}",
+    "noPolicy": "此处仅提供计费提示，不执行预算限制，也不授权额外付费回退",
+    "unsupported": "此计费信息格式暂不支持，原始记录已保留，请升级应用后再编辑",
+    "compactHigher": "快速模型更贵 · 估算",
+    "compactCurrency": "币种不同",
+    "compactComparable": "查看费用估算",
+    "compactUnknown": "价格待确认",
+    "economyHigher": "按此示例用量，经济模型比主力模型更贵，建议核对渠道价格或更换经济模型",
+    "economyIncomplete": "实际价格尚未确认；“经济”表示节省费用的目标，是否更便宜需以渠道价格与账号账单为准",
+    "economyEstimate": "主力 {{primary}} · 经济 {{fast}}",
+    "compactEconomyHigher": "经济模型更贵 · 估算"
+  },
+  "router": {
+    "notOpen": "暂未开放",
+    "title": "智能模式配置",
+    "service": "Router 服务模型",
+    "serviceHint": "先在模型设置中添加支持分类协议的 API 服务，再在这里选择；普通聊天模型和 Coding Plan 不一定支持",
+    "summary": "辅助摘要",
+    "summaryHint": "开启后使用经济模型整理路由历史，会产生额外模型调用",
+    "on": "开启",
+    "off": "关闭",
+    "unconfigured": "尚未配置",
+    "status": "状态",
+    "connected": "路由服务连接正常",
+    "connectionChecks": {
+      "router": "路由服务",
+      "checking": "检查中…",
+      "connected": "连接正常",
+      "failed": "连接失败",
+      "unconfigured": "未配置可用模型"
+    },
+    "connectionFailures": {
+      "protocol": "请选择支持 OpenAI Chat Completions 且返回 token IDs 和 logprobs 的分类服务",
+      "authentication": "Router 认证失败，请检查 API Key 和服务访问权限",
+      "addressOrModel": "请检查 Router 服务地址和模型名称，接口或模型可能不存在",
+      "rateLimited": "Router 请求受到限流，请稍后重试",
+      "serviceUnavailable": "Router 服务暂时不可用，请稍后重试",
+      "http": "Router 返回非成功的 HTTP 响应，请检查服务设置后重试",
+      "network": "无法连接 Router 或请求超时，请检查服务、网络和超时设置"
+    },
+    "notReady": "路由未就绪",
+    "unsupported": "当前执行端不支持智能路由",
+    "tokenBudgetUnsupported": "当前执行主机仍需要分词表文件，请升级后再配置智能路由",
+    "checkFailed": "智能模式配置检查失败，请检查路由服务后重试",
+    "loadFailed": "读取智能模式配置失败，请关闭后重试",
+    "saveFailed": "保存智能模式配置失败，请重试",
+    "configurationChanged": "模型选择已在其他地方更新，请重新打开此窗口核对后再保存或检查",
+    "manageModels": "管理服务与模型",
+    "test": "保存并检查连接",
+    "save": "保存"
+  },
   "pools": {
     "empty": "暂无模型池",
     "title": "模型池",
@@ -755,6 +920,62 @@
     },
     "retry": "允许重试",
     "invalidRecords": "当前版本无法读取部分模型池记录，这些记录已原样保留。"
+  },
+  "quota": {
+    "title": "订阅额度",
+    "hostUnsupported": "当前主机尚不支持额度查询。",
+    "unsupported": "此渠道暂未提供额度查询。",
+    "refreshFailedRetained": "刷新失败，以下保留上次查询的数据。",
+    "queryFailed": "暂时无法读取额度，请检查账号授权与网络后重试。",
+    "loading": "正在读取额度…",
+    "unknown": "服务方暂未返回额度信息。",
+    "stale": "上次数据",
+    "refresh": "刷新额度",
+    "mcp": "MCP 调用",
+    "weekly": "每周额度",
+    "monthly": "每月额度",
+    "hours": "{{count}} 小时周期",
+    "days": "{{count}} 天周期",
+    "credits": "积分额度",
+    "allowance": "可用额度",
+    "remaining": "剩余",
+    "unlimited": "不限量",
+    "noValue": "—",
+    "creditsUnit": "积分",
+    "requestsUnit": "次",
+    "remainingFor": "{{name}}剩余额度",
+    "usedOf": "已用 {{used}} / {{total}}",
+    "usedPercent": "已用 {{value}}",
+    "resetsAt": "{{time}} 重置",
+    "expiresAt": "{{time}} 积分到期",
+    "unlimitedCredits": "额外积分不限量。",
+    "updatedAt": "更新于 {{time}}",
+    "planUntil": "套餐于 {{time}} 续费或到期",
+    "minutes": "{{count}} 分钟额度",
+    "opencodePublic": "免费模型入口。OpenCode 尚未开放免费用量剩余值和重置时间查询。",
+    "opencodeBalanceUnavailable": "OpenCode 尚未提供公开余额接口，请前往控制台查看工作区余额。",
+    "opencodeGoKeyRequired": "请使用 Go 订阅对应的 API Key 查询额度。",
+    "opencodeKeyRejected": "OpenCode 拒绝了此 API Key，请检查已保存的密钥和工作区。",
+    "opencodeGoRequired": "此密钥未关联 Go 订阅，请使用订阅成员在对应工作区创建的密钥。",
+    "opencodeCustomAuth": "额度查询暂不支持自定义认证请求头，请前往控制台查看用量。",
+    "openConsole": "打开控制台",
+    "saveBeforeQuery": "保存此连接后，可查询 OpenCode Go 额度。",
+    "onDemand": "按量用量",
+    "usageUnreported": "Grok 已返回计费周期，但暂未提供用量百分比。仍可查看重置时间。"
+  },
+  "channelRouting": {
+    "label": "备用渠道",
+    "hint": "当前渠道额度用完或出错时，按顺序改用这些模型。只列出上下文和能力不低于本模型的配置。",
+    "isBackupOf": "已作为 {{names}} 的备用渠道，不能再设置自己的备用渠道。",
+    "missing": "模型已删除",
+    "auto": "自动切换",
+    "fixedSelf": "固定使用：本渠道",
+    "fixed": "固定使用：{{name}}",
+    "remove": "移除",
+    "add": "添加备用渠道",
+    "noCandidates": "暂无可用的备用模型",
+    "mode": "使用方式",
+    "modeHint": "自动切换会在失败时依次尝试备用渠道；固定使用只走所选渠道，失败时不切换。"
   },
   "localContextTruncation": {
     "title": "上下文压缩",

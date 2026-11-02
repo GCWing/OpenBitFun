@@ -1,13 +1,15 @@
 //! DesktopCard tool: small always-available cards outside the main window.
 
 use crate::agentic::tools::desktop_card_host::{
-    desktop_card_host_available, invoke_desktop_card_host, validate_data, validate_data_source,
-    validate_icon, validate_size, validate_subtitle, validate_template, validate_title,
-    validate_tone, validate_web_url, DesktopCardDataSourceKind, DesktopCardDraft,
-    DesktopCardHostRequest, DesktopCardOrigin, DesktopCardPatch, DesktopCardSize,
-    DesktopCardTemplateKind, DESKTOP_CARD_ICONS,
+    desktop_card_command_shell_label, desktop_card_host_available, desktop_card_template_paths,
+    invoke_desktop_card_host, validate_data, validate_data_source, validate_icon, validate_size,
+    validate_subtitle, validate_template, validate_title, validate_tone, validate_web_url,
+    DesktopCardDataSourceKind, DesktopCardDraft, DesktopCardHostRequest, DesktopCardOrigin,
+    DesktopCardPatch, DesktopCardSize, DesktopCardTemplateKind, DESKTOP_CARD_CHART_STYLES,
+    DESKTOP_CARD_ICONS,
 };
 use crate::agentic::tools::framework::{PermissionIntent, Tool, ToolResult, ToolUseContext};
+use crate::agentic::tools::implementations::ExecCommandTool;
 use crate::service::config::global::GlobalConfigManager;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
@@ -17,6 +19,187 @@ use serde_json::{json, Map, Value};
 
 pub const DESKTOP_CARDS_CONFIG_PATH: &str = "app.ai_experience.enable_desktop_cards";
 const MAX_COUNTDOWN_SECONDS: i64 = 366 * 24 * 60 * 60;
+const MAX_VALUE_PREVIEW_CHARS: usize = 400;
+
+const TEMPLATE_SHAPES: &[(&str, &str)] = &[
+    (
+        "countdown",
+        r#"{"kind":"countdown","durationSeconds":900,"message":"Join the stand-up"} (or targetAt as ISO-8601 with offset)"#,
+    ),
+    (
+        "checklist",
+        r#"{"kind":"checklist","items":[{"id":"tag","text":"Push the tag","done":false}]}"#,
+    ),
+    ("note", r#"{"kind":"note","text":"Port 5173"}"#),
+    (
+        "progress",
+        r#"{"kind":"progress","valuePath":"/done","maxPath":"/total","statusPath":"/status"}"#,
+    ),
+    (
+        "metrics",
+        r#"{"kind":"metrics","layout":"grid","items":[{"label":"Stars","path":"/stars","format":"number"}]}"#,
+    ),
+    (
+        "chart",
+        r#"{"kind":"chart","chart":"bar","suffix":" GB","items":[{"label":"npm cache","value":4.12,"hint":"npm cache clean --force"}]} (chart: bar|column|line|donut|stacked; or itemsPath into the card data instead of items)"#,
+    ),
+    (
+        "cronJob",
+        r#"{"kind":"cronJob","jobId":"<id returned by Cron>"}"#,
+    ),
+    (
+        "custom",
+        r#"{"kind":"custom","html":"<div id=\"v\"></div><script>...</script>"}"#,
+    ),
+];
+
+const DATA_SOURCE_SHAPES: &str = r#"{"kind":"http","url":"https://...","intervalSeconds":300,"parse":"json"} or {"kind":"command","command":"...","intervalSeconds":300,"timeoutSeconds":30,"parse":"json"}"#;
+
+/// Template-only fields that models sometimes put on the card or in data.
+const MISPLACEABLE_TEMPLATE_FIELDS: &[&str] = &[
+    "items",
+    "layout",
+    "durationSeconds",
+    "targetAt",
+    "targetAtMs",
+    "valuePath",
+    "maxPath",
+    "statusPath",
+    "chart",
+    "itemsPath",
+    "labelsPath",
+    "totalPath",
+    "remainderLabel",
+    "caption",
+    "jobId",
+    "html",
+];
+
+const PULL_REQUEST_STATUS_COMMAND_SH: &str = r#"gh pr view 123 --repo owner/repo --json state,reviewDecision,mergeable,statusCheckRollup --jq '{state, review: (.reviewDecision // "PENDING"), mergeable, failing: ([.statusCheckRollup[]? | select(.conclusion == "FAILURE")] | length), pending: ([.statusCheckRollup[]? | select(.status != "COMPLETED")] | length)}'"#;
+
+/// Windows PowerShell 5.1 strips double quotes inside arguments passed to
+/// native programs, so the jq form above breaks there; shape JSON in PowerShell.
+const PULL_REQUEST_STATUS_COMMAND_POWERSHELL: &str = r#"gh pr view 123 --repo owner/repo --json state,reviewDecision,mergeable,statusCheckRollup | ConvertFrom-Json | ForEach-Object { [pscustomobject]@{ state = $_.state; review = $(if ($_.reviewDecision) { $_.reviewDecision } else { 'PENDING' }); mergeable = $_.mergeable; failing = @($_.statusCheckRollup | Where-Object { $_.conclusion -eq 'FAILURE' }).Count; pending = @($_.statusCheckRollup | Where-Object { $_.status -ne 'COMPLETED' }).Count } } | ConvertTo-Json -Compress"#;
+
+/// GraphQL variables keep string literals out of the query, so the same
+/// command works in /bin/sh and Windows PowerShell.
+const REPOSITORY_STATS_COMMAND: &str = r#"gh api graphql -f owner=owner -f name=repo -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { stargazerCount forkCount issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } }' --jq '.data.repository | {stars: .stargazerCount, forks: .forkCount, openIssues: .issues.totalCount, openPRs: .pullRequests.totalCount}'"#;
+
+/// No double quotes, so the same command works in /bin/sh and Windows PowerShell.
+const PULL_REQUEST_LIST_COMMAND: &str =
+    "gh pr list --repo owner/repo --state open --limit 10 --json number,title,author,url";
+
+/// Builds rows with textContent so fetched titles are never parsed as HTML.
+const PULL_REQUEST_LIST_HTML: &str = r##"<ul class="openbitfun-card-list" id="list"></ul><div class="openbitfun-card-muted" id="empty" hidden>No open pull requests</div><script>openbitfunCard.onData(function (payload) { var list = document.getElementById('list'); var prs = Array.isArray(payload.data) ? payload.data : []; list.replaceChildren(); prs.forEach(function (pr) { var row = document.createElement('li'); row.className = 'openbitfun-card-item'; row.setAttribute('role', 'link'); row.title = pr.title; row.onclick = function () { openbitfunCard.openLink(pr.url); }; var number = document.createElement('span'); number.className = 'openbitfun-card-muted'; number.textContent = '#' + pr.number; var title = document.createElement('span'); title.className = 'openbitfun-card-truncate'; title.textContent = pr.title; var author = document.createElement('span'); author.className = 'openbitfun-card-muted'; author.textContent = pr.author ? pr.author.login : ''; row.append(number, title, author); list.append(row); }); document.getElementById('empty').hidden = prs.length > 0; });</script>"##;
+
+/// Every class and variable named here must exist in the card widget frame;
+/// `DesktopCardCustomFrame.test.ts` checks this against the frame's CSS.
+const CUSTOM_WIDGET_STYLE_GUIDANCE: &str = "Styling: the widget is transparent over the themed card, which already draws the surface, border, title, refresh time, and fetch errors, so do not set a page or body background, do not repeat the title or update time, and never hard-code colors (they break light, dark, and custom themes). Compose these classes first: openbitfun-card-stack, openbitfun-card-row, openbitfun-card-list with openbitfun-card-item rows (give clickable rows role=\"link\"), openbitfun-card-value, openbitfun-card-muted, openbitfun-card-truncate, openbitfun-card-good, openbitfun-card-warn, openbitfun-card-bad. Extra CSS may use only theme variables: var(--openbitfun-color-content-primary), var(--openbitfun-color-content-secondary), var(--openbitfun-color-content-muted), var(--openbitfun-color-accent-default), var(--openbitfun-color-border-subtle), var(--openbitfun-color-surface-subtle) for inset blocks, var(--openbitfun-color-action-quiet-hover), var(--openbitfun-color-status-success-content), var(--openbitfun-color-status-warning-content), var(--openbitfun-color-status-danger-content), var(--openbitfun-color-status-info-content), var(--openbitfun-space-1) to var(--openbitfun-space-4), var(--openbitfun-radius-sm), var(--openbitfun-radius-md), var(--openbitfun-font-family-mono). Insert fetched text with textContent, not innerHTML. Keep the layout compact for a small window and write visible text in the user's language.";
+
+const WINDOWS_COMMAND_GUIDANCE: &str = "On this Windows computer: `curl` is an alias of Invoke-WebRequest (use curl.exe -sS or Invoke-RestMethod); Windows PowerShell 5.1 strips double quotes inside arguments passed to native programs such as gh, jq, or git, so keep double quotes out of those arguments (use GraphQL variables, or pipe to ConvertFrom-Json and build the result with [pscustomobject]@{...} | ConvertTo-Json -Compress); only the last statement decides the exit code, so a failed earlier call shows up as null values plus a stderr warning instead of an error.";
+
+const POSIX_COMMAND_GUIDANCE: &str = "The command runs without your login profile; prefer absolute paths or CLIs on the system PATH, and use curl -sS so the progress meter stays off stderr.";
+
+async fn command_test_guidance() -> String {
+    let shell = ExecCommandTool::local_shell_prompt_info().await;
+    command_test_guidance_for(&shell.shell_type, &shell.display_name)
+}
+
+/// ExecCommand follows the configured terminal shell, which can differ from
+/// the fixed shell of command sources; PowerShell 7 and Git Bash, for example,
+/// keep the double quotes that Windows PowerShell 5.1 strips.
+fn command_test_guidance_for(exec_shell_type: &str, exec_shell_name: &str) -> String {
+    let card_shell_type = if cfg!(windows) { "powershell" } else { "sh" };
+    if exec_shell_type == card_shell_type {
+        "ExecCommand uses the same shell as card commands.".to_string()
+    } else if cfg!(windows) && exec_shell_type == "pwsh" {
+        format!(
+            "ExecCommand uses {exec_shell_name}, not Windows PowerShell 5.1, so a command can pass there and still fail on the card. Test it through the card's shell instead: run powershell.exe -NoProfile -NonInteractive -Command {{ <command> }} with ExecCommand."
+        )
+    } else if cfg!(windows) {
+        format!(
+            "ExecCommand uses {exec_shell_name}, not Windows PowerShell 5.1, so a command can pass there and still fail on the card. Test it through the card's shell instead: write it to a temporary .ps1 file and run powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <file> with ExecCommand."
+        )
+    } else {
+        format!(
+            "ExecCommand uses {exec_shell_name}, not /bin/sh, so avoid shell-specific syntax such as arrays, [[ ]], or brace expansion, and test with ExecCommand as /bin/sh -c '<command>'."
+        )
+    }
+}
+
+fn pull_request_status_command() -> &'static str {
+    if cfg!(windows) {
+        PULL_REQUEST_STATUS_COMMAND_POWERSHELL
+    } else {
+        PULL_REQUEST_STATUS_COMMAND_SH
+    }
+}
+
+/// For example `bar up to 12 items | line up to 120 points`.
+fn chart_style_summary() -> String {
+    DESKTOP_CARD_CHART_STYLES
+        .iter()
+        .map(|(style, max)| {
+            let unit = if *style == "line" { "points" } else { "items" };
+            format!("{style} up to {max} {unit}")
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+fn template_shape(kind: &str) -> Option<&'static str> {
+    TEMPLATE_SHAPES
+        .iter()
+        .find(|(candidate, _)| *candidate == kind)
+        .map(|(_, shape)| *shape)
+}
+
+/// Points at template fields placed on the card/patch or in data, which the
+/// schema cannot express as an error by itself.
+fn with_misplaced_field_hint(error: String, container: &Map<String, Value>, label: &str) -> String {
+    let mut misplaced = MISPLACEABLE_TEMPLATE_FIELDS
+        .iter()
+        .filter(|field| container.contains_key(**field))
+        .map(|field| format!("{label}.{field}"))
+        .collect::<Vec<_>>();
+    for key in ["data", "dataMerge"] {
+        if let Some(Value::Object(data)) = container.get(key) {
+            for field in ["items", "layout"] {
+                if data.contains_key(field) {
+                    misplaced.push(format!("{label}.{key}.{field}"));
+                }
+            }
+        }
+    }
+    if misplaced.is_empty() {
+        error
+    } else {
+        format!(
+            "{error}. Found {} outside the template: template fields such as items and layout belong inside {label}.template.",
+            misplaced.join(", ")
+        )
+    }
+}
+
+/// Template fields on the card/patch itself would otherwise be dropped silently.
+fn reject_misplaced_template_fields(
+    container: &Map<String, Value>,
+    label: &str,
+) -> Result<(), String> {
+    let misplaced = MISPLACEABLE_TEMPLATE_FIELDS
+        .iter()
+        .filter(|field| container.contains_key(**field))
+        .map(|field| format!("{label}.{field}"))
+        .collect::<Vec<_>>();
+    if misplaced.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} would be ignored: template fields such as items and layout belong inside {label}.template.",
+            misplaced.join(", ")
+        ))
+    }
+}
 
 pub struct DesktopCardTool;
 
@@ -101,14 +284,32 @@ fn normalize_template_input(raw: &Value, now: i64) -> Result<DesktopCardTemplate
             object.insert("startedAtMs".to_string(), json!(now));
         }
     }
-    let template: DesktopCardTemplateKind = serde_json::from_value(Value::Object(object))
-        .map_err(|error| format!("invalid template: {error}"))?;
+    let kind = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let template: DesktopCardTemplateKind =
+        serde_json::from_value(Value::Object(object)).map_err(|error| {
+            match kind.as_deref().and_then(template_shape) {
+                Some(shape) => format!("invalid template: {error}. Expected shape: {shape}"),
+                None => format!(
+                    "invalid template: {error}. template.kind must be one of: {}",
+                    TEMPLATE_SHAPES
+                        .iter()
+                        .map(|(kind, _)| *kind)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            }
+        })?;
     validate_template(template)
 }
 
 fn parse_data_source(raw: &Value) -> Result<DesktopCardDataSourceKind, String> {
-    let source: DesktopCardDataSourceKind = serde_json::from_value(raw.clone())
-        .map_err(|error| format!("invalid dataSource: {error}"))?;
+    let source: DesktopCardDataSourceKind =
+        serde_json::from_value(raw.clone()).map_err(|error| {
+            format!("invalid dataSource: {error}. Expected shape: {DATA_SOURCE_SHAPES}")
+        })?;
     validate_data_source(source)
 }
 
@@ -136,10 +337,11 @@ fn parse_draft(raw: &Value, now: i64) -> Result<DesktopCardDraft, String> {
         return Err("card is required for create and must be an object".to_string());
     };
     let title = validate_title(optional_str(card, "title")?.unwrap_or_default())?;
-    let template = normalize_template_input(
-        object_field(card, "template").ok_or("card.template is required")?,
-        now,
-    )?;
+    let template = object_field(card, "template")
+        .ok_or_else(|| "card.template is required".to_string())
+        .and_then(|template| normalize_template_input(template, now))
+        .map_err(|error| with_misplaced_field_hint(error, card, "card"))?;
+    reject_misplaced_template_fields(card, "card")?;
     let data = card.get("data").cloned().unwrap_or(Value::Null);
     validate_data(&data)?;
     let data_source = match card.get("dataSource") {
@@ -218,8 +420,12 @@ fn parse_patch(raw: &Value, now: i64) -> Result<DesktopCardPatch, String> {
         ..Default::default()
     };
     if let Some(template) = patch.get("template").filter(|value| !value.is_null()) {
-        result.template = Some(normalize_template_input(template, now)?);
+        result.template = Some(
+            normalize_template_input(template, now)
+                .map_err(|error| with_misplaced_field_hint(error, patch, "patch"))?,
+        );
     }
+    reject_misplaced_template_fields(patch, "patch")?;
     if let Some(data) = patch.get("data") {
         validate_data(data)?;
         result.data = Some(data.clone());
@@ -249,7 +455,11 @@ fn parse_patch(raw: &Value, now: i64) -> Result<DesktopCardPatch, String> {
         Some(_) => return Err("alwaysOnTop must be a boolean".to_string()),
     }
     if result.is_empty() {
-        return Err("patch does not change any supported field".to_string());
+        return Err(with_misplaced_field_hint(
+            "patch does not change any supported field".to_string(),
+            patch,
+            "patch",
+        ));
     }
     Ok(result)
 }
@@ -299,6 +509,76 @@ fn presets() -> Value {
             "notes": "When it reaches zero the card highlights and a system notification is sent. Use targetAt with an ISO-8601 offset for wall-clock times."
         },
         {
+            "id": "usage-breakdown",
+            "useWhen": "You measured how a whole splits into parts and the user benefits from seeing the proportions: disk or quota usage after a scan, a budget, time spent per activity.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "C: drive usage",
+                    "icon": "hard-drive",
+                    "template": {
+                        "kind": "chart",
+                        "chart": "stacked",
+                        "suffix": " GB",
+                        "total": 906,
+                        "remainderLabel": "Free",
+                        "items": [
+                            { "label": "WeChat data", "value": 62.7, "tone": "warning", "hint": "Clean up inside WeChat; do not delete the folder" },
+                            { "label": "BlueStacks", "value": 20.5, "hint": "Remove unused instances in its multi-instance manager" },
+                            { "label": "Caches and temp files", "value": 10.25, "hint": "Temp 4.44 + npm 4.12 + uv/pip 1.69" },
+                            { "label": "Other used", "value": 218.55 }
+                        ],
+                        "caption": "Nothing was deleted. Review the highlighted items first."
+                    }
+                }
+            },
+            "notes": "Set total to the capacity and list only the used parts: the uncovered rest is drawn as remainderLabel and the header shows used of total. At most 6 items, so merge small parts into one item and keep their detail in its hint. Write labels, hints, and the caption in the user's language."
+        },
+        {
+            "id": "ranked-breakdown",
+            "useWhen": "Several comparable amounts the user will compare or act on: largest folders or caches, cleanup candidates, slowest tests, cost per service, errors per endpoint.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "Cleanup candidates",
+                    "icon": "chart",
+                    "template": {
+                        "kind": "chart",
+                        "chart": "bar",
+                        "suffix": " GB",
+                        "items": [
+                            { "label": "Temp files", "value": 4.44, "hint": "Safe to clear with Disk Cleanup" },
+                            { "label": "npm cache", "value": 4.12, "hint": "npm cache clean --force" },
+                            { "label": "uv / pip cache", "value": 1.69, "hint": "uv cache clean; pip cache purge" }
+                        ],
+                        "caption": "Review each item before deleting anything."
+                    }
+                }
+            },
+            "notes": "Order items from largest to smallest. Put one short action per item in hint and one sentence that applies to all in caption; this replaces a note full of numbers. Set total to draw each bar as a share of a whole, such as the disk capacity."
+        },
+        {
+            "id": "result-split",
+            "useWhen": "A count splits into a few outcomes or categories: test results, issue states, traffic by source, votes.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "Test run",
+                    "icon": "pie-chart",
+                    "template": {
+                        "kind": "chart",
+                        "chart": "donut",
+                        "items": [
+                            { "label": "Passed", "value": 182, "tone": "success" },
+                            { "label": "Failed", "value": 3, "tone": "danger" },
+                            { "label": "Skipped", "value": 12, "tone": "neutral" }
+                        ]
+                    }
+                }
+            },
+            "notes": "Donut and stacked charts take at most 6 items. Use tone only where it carries meaning (success, warning, danger); without tone the parts use shades of the card accent."
+        },
+        {
             "id": "scheduled-job",
             "useWhen": "You created a Cron job and the user benefits from seeing the next run and last result at a glance.",
             "call": {
@@ -322,7 +602,7 @@ fn presets() -> Value {
                     "link": "https://github.com/owner/repo/pull/123",
                     "dataSource": {
                         "kind": "command",
-                        "command": "gh pr view 123 --repo owner/repo --json state,reviewDecision,mergeable,statusCheckRollup --jq '{state, review: (.reviewDecision // \"PENDING\"), mergeable, failing: ([.statusCheckRollup[]? | select(.conclusion == \"FAILURE\")] | length), pending: ([.statusCheckRollup[]? | select(.status != \"COMPLETED\")] | length)}'",
+                        "command": pull_request_status_command(),
                         "intervalSeconds": 300,
                         "parse": "json"
                     },
@@ -337,7 +617,36 @@ fn presets() -> Value {
                     }
                 }
             },
-            "notes": "Command sources run locally through the user's shell with existing CLI auth (gh). They require user approval."
+            "notes": "Command sources run locally with existing CLI auth (gh) and require user approval only in Ask mode. This command is already written for the shell on this computer; keep its quoting style when you change the PR number or repository."
+        },
+        {
+            "id": "repository-stats",
+            "useWhen": "The user watches a repository's stars, forks, open issues, or open pull requests.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "owner/repo",
+                    "icon": "star",
+                    "link": "https://github.com/owner/repo",
+                    "dataSource": {
+                        "kind": "command",
+                        "command": REPOSITORY_STATS_COMMAND,
+                        "intervalSeconds": 1800,
+                        "parse": "json"
+                    },
+                    "template": {
+                        "kind": "metrics",
+                        "layout": "grid",
+                        "items": [
+                            { "label": "Stars", "path": "/stars", "format": "number", "emphasis": true },
+                            { "label": "Forks", "path": "/forks", "format": "number" },
+                            { "label": "Open issues", "path": "/openIssues", "format": "number" },
+                            { "label": "Open PRs", "path": "/openPRs", "format": "number" }
+                        ]
+                    }
+                }
+            },
+            "notes": "GraphQL variables (-f owner=... -f name=...) keep double quotes out of the query, so the same command works in /bin/sh and Windows PowerShell. Fetch several numbers in one call like this instead of chaining commands."
         },
         {
             "id": "weather",
@@ -365,7 +674,35 @@ fn presets() -> Value {
                         ]
                     }
                 }
-            }
+            },
+            "notes": "For the coming days or hours, use the weather-week chart preset instead of listing each value."
+        },
+        {
+            "id": "weather-week",
+            "useWhen": "The user plans around the weather over the next days, or another value per day or period should be compared side by side.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "Shanghai highs this week",
+                    "icon": "sun",
+                    "dataSource": {
+                        "kind": "http",
+                        "url": "https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47&daily=temperature_2m_max&timezone=auto&forecast_days=7",
+                        "intervalSeconds": 3600
+                    },
+                    "template": {
+                        "kind": "chart",
+                        "chart": "column",
+                        "itemsPath": "/daily/temperature_2m_max",
+                        "labelsPath": "/daily/time",
+                        "labelFormat": "weekday",
+                        "format": "number",
+                        "digits": 0,
+                        "suffix": "°"
+                    }
+                }
+            },
+            "notes": "itemsPath may point at an array of numbers (with labelsPath at a parallel array of labels), an array of [label, value] pairs, or an array of objects read with labelKey, valueKey, and hintKey (default label, value, hint)."
         },
         {
             "id": "stock-quote",
@@ -393,7 +730,35 @@ fn presets() -> Value {
                     }
                 }
             },
-            "notes": "For derived values such as percent change, use a command source that prints the computed JSON, then bind with signTone: true."
+            "notes": "For derived values such as percent change, use a command source that prints the computed JSON, then bind with signTone: true. For the price history, use the stock-trend chart preset."
+        },
+        {
+            "id": "stock-trend",
+            "useWhen": "The user follows how a value moves over time: a price history, response times, build durations, daily signups.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "AAPL · 1 month",
+                    "icon": "trending-up",
+                    "link": "https://finance.yahoo.com/quote/AAPL",
+                    "dataSource": {
+                        "kind": "http",
+                        "url": "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1mo",
+                        "headers": { "User-Agent": "Mozilla/5.0" },
+                        "intervalSeconds": 900
+                    },
+                    "template": {
+                        "kind": "chart",
+                        "chart": "line",
+                        "itemsPath": "/chart/result/0/indicators/quote/0/close",
+                        "labelsPath": "/chart/result/0/timestamp",
+                        "labelFormat": "date",
+                        "format": "currency",
+                        "currency": "USD"
+                    }
+                }
+            },
+            "notes": "A line chart shows the latest value, the change since the first point, and the range. Points whose value is null are skipped; Unix timestamps and ISO-8601 strings both work with labelFormat."
         },
         {
             "id": "task-progress",
@@ -428,11 +793,33 @@ fn presets() -> Value {
         },
         {
             "id": "note",
-            "useWhen": "Short reference info the user will need again soon (credentials location, port, command to run).",
+            "useWhen": "Short non-numeric reference info the user will need again soon (credentials location, URL, command to run).",
             "call": {
                 "action": "create",
                 "card": { "title": "Local dev URLs", "icon": "note", "template": { "kind": "note", "text": "Web: http://localhost:5173\nAPI: http://localhost:8080" } }
-            }
+            },
+            "notes": "Not for summaries of measured amounts: when the text would list sizes, counts, shares, or prices, use a chart (breakdowns, proportions, trends) or metrics (a few separate values) instead."
+        },
+        {
+            "id": "pull-request-list",
+            "useWhen": "The user wants a short list of open pull requests (or issues, deployments) that opens each item on click.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "Open PRs",
+                    "subtitle": "owner/repo",
+                    "icon": "git-pull-request",
+                    "link": "https://github.com/owner/repo/pulls",
+                    "dataSource": {
+                        "kind": "command",
+                        "command": PULL_REQUEST_LIST_COMMAND,
+                        "intervalSeconds": 300,
+                        "parse": "json"
+                    },
+                    "template": { "kind": "custom", "html": PULL_REQUEST_LIST_HTML }
+                }
+            },
+            "notes": "A custom list that follows the app theme: it only composes openbitfun-card-* classes and sets no colors or background. gh prints a JSON array, so payload.data is the array itself. Translate the empty-state text into the user's language."
         },
         {
             "id": "custom-html",
@@ -446,7 +833,7 @@ fn presets() -> Value {
                     "template": { "kind": "custom", "html": "<div class=\"openbitfun-card-stack\"><div class=\"openbitfun-card-value\" id=\"count\">-</div><div class=\"openbitfun-card-muted\">jobs waiting</div></div><script>openbitfunCard.onData(function (payload) { document.getElementById('count').textContent = payload.data && payload.data.waiting != null ? payload.data.waiting : '-'; });</script>" }
                 }
             },
-            "notes": "Runs in an isolated sandbox without access to OpenBitFun. openbitfunCard.onData(cb) receives {data, card, error}; openbitfunCard.openLink(url) opens an http(s) link. Theme classes: openbitfun-card-stack, openbitfun-card-value, openbitfun-card-muted, openbitfun-card-row, openbitfun-card-good, openbitfun-card-bad; CSS variables follow the app theme."
+            "notes": format!("Runs in an isolated sandbox without access to OpenBitFun. openbitfunCard.onData(cb) receives {{data, card, error}}; openbitfunCard.openLink(url) opens an http(s) link. {CUSTOM_WIDGET_STYLE_GUIDANCE}")
         }
     ])
 }
@@ -461,65 +848,153 @@ impl Tool for DesktopCardTool {
         Ok(format!(
             r#"Show small persistent cards on the user's desktop, outside the OpenBitFun window (like OS widgets). Cards survive app restarts, keep their position, and can be dragged, hidden, or deleted by the user.
 
-Use a card whenever the user would otherwise have to come back and check on something: a reminder after some time, a scheduled job, a pull request's review/CI state, a deployment or long task's progress, weather, a stock price, a checklist of manual steps, or reference info needed again soon. Create one when the user asks, and also proactively when a task naturally produces something worth glancing at later. Prefer updating an existing card (list first) over creating near-duplicates, and delete cards that are no longer useful.
+Use a card whenever the user would otherwise have to come back and check on something: a reminder after some time, a scheduled job, a pull request's review/CI state, a deployment or long task's progress, weather, a stock price, a checklist of manual steps, the result of a scan or analysis (disk usage, cleanup candidates, test results, costs), or reference info needed again soon. Create one when the user asks, and also proactively when a task naturally produces something worth glancing at later. Prefer updating an existing card (list first) over creating near-duplicates, and delete cards that are no longer useful.
+
+Choosing a template. A card is read in a second, so let the shape of the information pick the template and show numbers visually instead of as prose:
+- Several amounts that compare or add up (sizes, counts, durations, costs, shares, scores): chart. bar ranks a breakdown; stacked or donut shows parts of a whole (set total to the capacity to show used against free); column compares a few periods or categories; line shows a trend over time.
+- A few separate values read individually (state, price, temperature, counts of different things): metrics. One value moving toward a goal: progress.
+- note only for text without measured amounts (a URL, a command, where something is). Never write a summary of numbers into a note. Put the numbers in a chart or metrics, and keep advice to one short hint per item or one caption sentence.
+- When a result has both a whole and its parts (for example disk usage and the largest folders), one stacked chart with total usually covers both.
 
 Actions:
-- presets: return ready-to-use recipes (countdown, scheduled job, PR status, weather, stock, progress, checklist, note, custom HTML). Call it when unsure how to build a card.
-- create: requires card. Returns the new cardId and shows the card.
-- update: requires cardId and patch. Only provided fields change; null clears optional fields. patch.dataMerge shallow-merges into data (null removes a key).
+- presets: return ready-to-use recipes (countdown, usage breakdown, ranked breakdown, result split, scheduled job, PR status, PR list, repository stats, weather, weekly forecast chart, stock, price trend, progress, checklist, note, custom HTML). Call it when unsure how to build a card; preset commands are already written for the shell on this computer.
+- create: requires card. Shows the card and returns its cardId. With a dataSource, the result already contains the first fetch: the value, any fetch error, stderr output, and template paths that resolved to nothing. Read it instead of calling get or refresh again.
+- update: requires cardId and patch. Only provided fields change; null clears optional fields. patch.dataMerge shallow-merges into data (null removes a key). A changed dataSource is fetched before the result returns.
 - list / get: inspect cards, including the latest fetched data or fetch error and checklist state.
 - show / hide: hiding keeps the card for later. delete: remove permanently.
-- refresh: fetch the data source now.
+- refresh: fetch the data source now and return the result.
+Data sources are fetched on their interval only while the card is shown.
 
 Card fields: title (required), subtitle, icon ({icons}), accent (neutral|accent|info|success|warning|danger), template (required), data, dataSource, link (http/https opened from the card), width/height (logical px), alwaysOnTop (default true).
 
-Templates (template.kind):
+Templates (template.kind). Every template field, including items and layout, goes inside the template object; data and dataSource only supply the values that paths read:
 - countdown: durationSeconds | targetAt (ISO-8601 with offset) | targetAtMs, optional message, notify (default true: system notification when due).
 - checklist: items [{{id, text, done}}]. The user can tick items.
-- note: text (plain text, newlines kept).
+- note: text (plain text, newlines kept). Not for measured amounts; see Choosing a template.
 - progress: value/max or valuePath/maxPath, optional status/statusPath.
-- metrics: items [{{label, value | path, format (text|number|percent|currency|datetime|relativeTime), digits, currency, prefix, suffix, tone, toneMap {{"VALUE": tone}}, signTone, hint | hintPath, emphasis}}], layout list|grid.
+- metrics: items (1-12) [{{label, value | path, format (text|number|percent|currency|datetime|relativeTime), digits, currency, prefix, suffix, tone, toneMap {{"VALUE": tone}}, signTone, hint | hintPath, emphasis}}], layout list|grid.
+- chart: chart ({chart_styles}), then either items [{{label, value, tone, hint}}] or itemsPath (JSON Pointer to an array in the card data: numbers with labelsPath at a parallel label array, [label, value] pairs, or objects read with labelKey/valueKey/hintKey, default label/value/hint). Optional total | totalPath (the whole the items belong to; the uncovered rest is drawn as remainderLabel), format (number|percent|currency), digits, currency, prefix, suffix (units such as " GB"), labelFormat (text|date|time|weekday|datetime) and caption (one short sentence under the chart). Values are non-negative except on line charts. Order bar items largest first. Longer bound arrays keep their first items, except that line charts keep the latest points and donut or stacked charts merge the rest into one Other part.
 - cronJob: jobId of a Cron job; shows next run and last result live.
-- custom: html for a sandboxed widget; openbitfunCard.onData(cb) receives {{data, card, error}}.
+- custom: html (body markup with inline <style> and <script>) for a sandboxed widget; openbitfunCard.onData(cb) receives {{data, card, error}} and openbitfunCard.openLink(url) opens an http(s) link. Use it only when no template above fits (lists of links, small tables): the other templates follow the app theme by themselves, and chart already draws bar, column, line, donut, and stacked charts. {custom_widget_guidance}
 Paths are JSON Pointers (e.g. /current/temperature_2m) into the card data. With a dataSource, data is the latest fetched value.
 
 Data sources (dataSource.kind):
 - http: url, optional headers, intervalSeconds (30-86400), parse json|text. Fetched from this computer.
-- command: shell command run locally on this computer (sh -c on macOS/Linux, PowerShell on Windows), intervalSeconds (30-86400), optional cwd (defaults to the local workspace) and timeoutSeconds (max 120), parse json|text. Requires user approval; not allowed for remote workspaces. Prefer CLIs that already hold credentials (gh, kubectl) over putting secrets in http headers.
+- command: shell command run locally on this computer with {shell}, intervalSeconds (30-86400), optional cwd (defaults to the local workspace) and timeoutSeconds (default 20, max 120), parse json|text. The permission system requests approval only in Ask mode; Auto Approve and Full Access need no additional confirmation. Not allowed for remote workspaces. Prefer CLIs that already hold credentials (gh, kubectl) over putting secrets in http headers. {command_guidance}
+
+Workflow for command sources:
+1. Run the exact command once with ExecCommand and confirm it prints the JSON you plan to bind (card commands additionally skip shell profiles). {command_test_guidance}
+2. Prefer one call that prints one JSON object (for example gh api graphql --jq, or ConvertTo-Json -Compress) over several chained commands.
+3. Bind template paths to the keys you saw in that output, then create the card.
+4. If the result reports a fetch error or unresolved paths, fix the command or the paths with update instead of creating another card. Reported stderr output alone is often harmless progress text; use it to explain missing values.
 
 Cards are shown only on this desktop. They are unavailable for remote mobile or bot control turns because that user cannot see them."#,
-            icons = DESKTOP_CARD_ICONS.join(", ")
+            icons = DESKTOP_CARD_ICONS.join(", "),
+            chart_styles = chart_style_summary(),
+            shell = desktop_card_command_shell_label(),
+            command_test_guidance = command_test_guidance().await,
+            custom_widget_guidance = CUSTOM_WIDGET_STYLE_GUIDANCE,
+            command_guidance = if cfg!(windows) {
+                WINDOWS_COMMAND_GUIDANCE
+            } else {
+                POSIX_COMMAND_GUIDANCE
+            },
         ))
     }
 
     fn short_description(&self) -> String {
-        "Show persistent desktop cards (reminders, PR/CI status, progress, weather, prices, checklists) the user can glance at."
+        "Show persistent desktop cards (reminders, PR/CI status, progress, charts of usage or results, weather, prices, checklists) the user can glance at."
             .to_string()
     }
 
     fn input_schema(&self) -> Value {
+        let tones = json!(["neutral", "accent", "info", "success", "warning", "danger"]);
+        let template_item = json!({
+            "type": "object",
+            "description": "checklist item {id, text, done}, metrics item {label, value | path, ...}, or chart item {label, value, tone, hint}.",
+            "properties": {
+                "id": { "type": "string", "description": "checklist: stable item id." },
+                "text": { "type": "string", "description": "checklist: item text." },
+                "done": { "type": "boolean", "description": "checklist: ticked state." },
+                "label": { "type": "string", "description": "metrics: row label. chart: bar, segment, or point label." },
+                "value": { "description": "metrics: static value; use path for fetched data. chart: the number to plot (non-negative except on line charts)." },
+                "path": { "type": "string", "description": "metrics: JSON Pointer into the card data, such as /stars." },
+                "format": { "type": "string", "enum": ["text", "number", "percent", "currency", "datetime", "relativeTime"] },
+                "digits": { "type": "integer", "minimum": 0, "maximum": 8 },
+                "currency": { "type": "string", "description": "ISO 4217 code for format currency, such as USD." },
+                "prefix": { "type": "string" },
+                "suffix": { "type": "string" },
+                "tone": { "type": "string", "enum": tones, "description": "metrics: value color. chart: bar or segment color; omit for neutral categories." },
+                "toneMap": { "type": "object", "description": "Tone by displayed raw value, such as {\"OPEN\": \"info\", \"0\": \"success\"}.", "additionalProperties": { "type": "string", "enum": tones } },
+                "signTone": { "type": "boolean", "description": "Positive numbers success, negative danger." },
+                "hint": { "type": "string", "description": "metrics: tooltip. chart: one short line under the bar or legend row, such as the action to take." },
+                "hintPath": { "type": "string", "description": "JSON Pointer for a secondary line." },
+                "emphasis": { "type": "boolean" }
+            }
+        });
+        let template = json!({
+            "type": "object",
+            "description": "Template object. All template fields, including items and layout, go here (not in data).",
+            "properties": {
+                "kind": { "type": "string", "enum": ["countdown", "checklist", "note", "progress", "metrics", "chart", "cronJob", "custom"], "description": "Pick by the shape of the information: chart for amounts that compare, add up, or change over time; metrics for a few separate values; note only for text without measured amounts." },
+                "chart": { "type": "string", "enum": DESKTOP_CARD_CHART_STYLES.iter().map(|(style, _)| *style).collect::<Vec<_>>(), "description": format!("chart: bar ranks a breakdown, stacked or donut shows parts of a whole, column compares periods or categories, line shows a trend. Limits: {}.", chart_style_summary()) },
+                "itemsPath": { "type": "string", "description": "chart: JSON Pointer to an array in the card data (numbers, [label, value] pairs, or objects); use instead of items for fetched data." },
+                "labelsPath": { "type": "string", "description": "chart: JSON Pointer to labels parallel to a numeric itemsPath array." },
+                "labelKey": { "type": "string", "description": "chart: label property of each itemsPath object (default label)." },
+                "valueKey": { "type": "string", "description": "chart: value property of each itemsPath object (default value)." },
+                "hintKey": { "type": "string", "description": "chart: hint property of each itemsPath object (default hint)." },
+                "total": { "type": "number", "description": "chart (not line): the whole the items are part of, such as disk capacity; the uncovered rest is drawn as the remainder." },
+                "totalPath": { "type": "string", "description": "chart (not line): JSON Pointer to the total." },
+                "remainderLabel": { "type": "string", "description": "chart: label of the uncovered rest when total is set, such as Free." },
+                "format": { "type": "string", "enum": ["number", "percent", "currency"], "description": "chart: value format; percent expects 0-100." },
+                "digits": { "type": "integer", "minimum": 0, "maximum": 8, "description": "chart: fraction digits." },
+                "currency": { "type": "string", "description": "chart: ISO 4217 code for format currency." },
+                "prefix": { "type": "string", "description": "chart: text before each value." },
+                "suffix": { "type": "string", "description": "chart: unit after each value, such as \" GB\" or \" ms\"." },
+                "labelFormat": { "type": "string", "enum": ["text", "date", "time", "weekday", "datetime"], "description": "chart: show timestamp labels (ISO-8601 or Unix time) as a date, time, or weekday." },
+                "caption": { "type": "string", "description": "chart: one short sentence under the chart, such as the advice that applies to every item." },
+                "durationSeconds": { "type": "number", "description": "countdown: seconds from now." },
+                "targetAt": { "type": "string", "description": "countdown: ISO-8601 time with offset, such as 2026-03-17T15:30:00+08:00." },
+                "targetAtMs": { "type": "integer", "description": "countdown: epoch milliseconds." },
+                "message": { "type": "string", "description": "countdown: shown when due." },
+                "notify": { "type": "boolean", "description": "countdown: system notification when due (default true)." },
+                "items": { "type": "array", "description": "checklist, metrics (1-12), or static chart items.", "items": template_item },
+                "layout": { "type": "string", "enum": ["list", "grid"], "description": "metrics layout." },
+                "text": { "type": "string", "description": "note: plain text without measured amounts; put sizes, counts, shares, or prices in a chart or metrics instead." },
+                "value": { "type": "number", "description": "progress: static value." },
+                "max": { "type": "number", "description": "progress: static maximum." },
+                "valuePath": { "type": "string", "description": "progress: JSON Pointer to the value." },
+                "maxPath": { "type": "string", "description": "progress: JSON Pointer to the maximum." },
+                "status": { "type": "string", "description": "progress: static status line." },
+                "statusPath": { "type": "string", "description": "progress: JSON Pointer to the status line." },
+                "jobId": { "type": "string", "description": "cronJob: id returned by Cron." },
+                "html": { "type": "string", "description": "custom: widget body markup with inline <style>/<script>. It sits transparently on the themed card: set no page background or hard-coded colors; use the openbitfun-card-* classes and var(--openbitfun-*) theme variables listed in the tool description." }
+            },
+            "required": ["kind"]
+        });
+        let data_source = json!({
+            "type": ["object", "null"],
+            "description": "Periodic data source; the latest value becomes the card data.",
+            "properties": {
+                "kind": { "type": "string", "enum": ["http", "command"] },
+                "url": { "type": "string", "description": "http: https URL." },
+                "headers": { "type": "object", "description": "http: request headers.", "additionalProperties": { "type": "string" } },
+                "command": { "type": "string", "description": format!("command: run with {} on this computer; should print one JSON object.", desktop_card_command_shell_label()) },
+                "cwd": { "type": "string", "description": "command: working directory (defaults to the local workspace)." },
+                "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 120, "description": "command: default 20." },
+                "intervalSeconds": { "type": "integer", "minimum": 30, "maximum": 86400 },
+                "parse": { "type": "string", "enum": ["json", "text"], "description": "Default json." }
+            },
+            "required": ["kind"]
+        });
         let card_properties = json!({
             "title": { "type": "string" },
             "subtitle": { "type": ["string", "null"] },
             "icon": { "type": ["string", "null"], "enum": DESKTOP_CARD_ICONS.iter().map(|icon| Value::String((*icon).to_string())).chain(std::iter::once(Value::Null)).collect::<Vec<_>>() },
             "accent": { "type": ["string", "null"], "enum": ["neutral", "accent", "info", "success", "warning", "danger", null] },
-            "template": {
-                "type": "object",
-                "description": "Template object with kind: countdown, checklist, note, progress, metrics, cronJob, or custom. See the tool description for fields.",
-                "properties": {
-                    "kind": { "type": "string", "enum": ["countdown", "checklist", "note", "progress", "metrics", "cronJob", "custom"] }
-                },
-                "required": ["kind"]
-            },
-            "data": { "description": "Static data for template paths when there is no dataSource." },
-            "dataSource": {
-                "type": ["object", "null"],
-                "description": "Periodic data source: {kind: http, url, headers?, intervalSeconds, parse?} or {kind: command, command, cwd?, intervalSeconds, timeoutSeconds?, parse?}.",
-                "properties": {
-                    "kind": { "type": "string", "enum": ["http", "command"] }
-                },
-                "required": ["kind"]
-            },
+            "template": template,
+            "data": { "description": "Static values read by template paths when there is no dataSource, such as {\"done\": 3, \"total\": 10}." },
+            "dataSource": data_source,
             "link": { "type": ["string", "null"], "description": "http(s) URL opened from the card." },
             "width": { "type": "number" },
             "height": { "type": "number" },
@@ -557,6 +1032,23 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["create", "update", "list", "get", "show", "hide", "delete", "refresh", "presets"]},
+                "card": {"type": "object", "additionalProperties": true},
+                "cards": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "presets": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "card_id": {"type": "string"},
+                "visible": {"type": "boolean"},
+                "data": {"type": "object", "additionalProperties": true}
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -591,7 +1083,7 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
     fn permission_intents(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<PermissionIntent>> {
         let Some(command) = command_source(input) else {
             return Ok(Vec::new());
@@ -601,9 +1093,10 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
             vec![format!("desktop-card:command:{command}")],
         );
         intent.save_resources.clear();
-        intent
-            .display_metadata
-            .insert("requiresFreshApproval".to_string(), Value::Bool(true));
+        intent.display_metadata.insert(
+            "requiresFreshApproval".to_string(),
+            Value::Bool(context.requires_fresh_approval()),
+        );
         intent.display_metadata.insert(
             "description".to_string(),
             Value::String(
@@ -745,8 +1238,120 @@ fn card_line(card: &Value) -> String {
     );
     if let Some(error) = card.pointer("/lastData/error").and_then(Value::as_str) {
         line.push_str(&format!(", last fetch failed: {error}"));
+    } else if card
+        .pointer("/lastData/warning")
+        .is_some_and(Value::is_string)
+    {
+        line.push_str(", last fetch also wrote to stderr (see get)");
+    }
+    let unresolved = unresolved_template_paths(card).len();
+    if unresolved > 0 {
+        line.push_str(&format!(", {unresolved} template path(s) unresolved"));
     }
     line
+}
+
+fn truncate_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut truncated = text.chars().take(max).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+/// Template paths with no value in the data the card renders. Empty while the
+/// first fetch is pending or when the last fetch failed, since the error
+/// already explains the placeholders.
+fn unresolved_template_paths(card: &Value) -> Vec<String> {
+    let Some(template) = card.get("template").and_then(|template| {
+        serde_json::from_value::<DesktopCardTemplateKind>(template.clone()).ok()
+    }) else {
+        return Vec::new();
+    };
+    let has_source = card
+        .get("dataSource")
+        .is_some_and(|source| !source.is_null());
+    let data = if has_source {
+        let Some(snapshot) = card.get("lastData").filter(|snapshot| !snapshot.is_null()) else {
+            return Vec::new();
+        };
+        if snapshot.get("error").is_some_and(Value::is_string) {
+            return Vec::new();
+        }
+        snapshot.get("value").unwrap_or(&Value::Null)
+    } else {
+        card.get("data").unwrap_or(&Value::Null)
+    };
+    desktop_card_template_paths(&template)
+        .into_iter()
+        .filter(|(_, path)| data.pointer(path).is_none_or(Value::is_null))
+        .map(|(field, path)| format!("{path} ({field})"))
+        .collect()
+}
+
+fn data_status(card: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    let has_source = card
+        .get("dataSource")
+        .is_some_and(|source| !source.is_null());
+    if has_source {
+        let visible = card
+            .get("visible")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        match card.get("lastData").filter(|snapshot| !snapshot.is_null()) {
+            None if !visible => lines.push(
+                "Data: the card is hidden, so its source is not fetched until it is shown."
+                    .to_string(),
+            ),
+            None => lines.push(
+                "Data: the first fetch has not finished yet; call get in a few seconds to see its result."
+                    .to_string(),
+            ),
+            Some(snapshot) => {
+                if let Some(error) = snapshot.get("error").and_then(Value::as_str) {
+                    lines.push(format!("Data: the last fetch failed: {error}"));
+                }
+                if let Some(warning) = snapshot.get("warning").and_then(Value::as_str) {
+                    lines.push(format!(
+                        "Data: the command exited successfully and wrote to stderr (often progress output or notices; if values are missing, it may explain why): {warning}"
+                    ));
+                }
+                if let Some(value) = snapshot.get("value").filter(|value| !value.is_null()) {
+                    lines.push(format!(
+                        "Data: latest value {}",
+                        truncate_chars(
+                            &serde_json::to_string(value).unwrap_or_default(),
+                            MAX_VALUE_PREVIEW_CHARS
+                        )
+                    ));
+                }
+            }
+        }
+    }
+    let unresolved = unresolved_template_paths(card);
+    if !unresolved.is_empty() {
+        let fix = if has_source {
+            "Run the source once with ExecCommand (or open the URL) to see its real output, then fix the command or the paths with update."
+        } else {
+            "The card has no dataSource, so set these values with update + patch.dataMerge (or card.data on create), or fix the paths."
+        };
+        lines.push(format!(
+            "Data: these template paths are missing or null, so the card shows placeholders: {}. {fix}",
+            unresolved.join(", ")
+        ));
+    }
+    lines
+}
+
+fn with_data_status(summary: String, card: Option<&Value>) -> String {
+    let lines = card.map(data_status).unwrap_or_default();
+    if lines.is_empty() {
+        summary
+    } else {
+        format!("{summary}\n{}", lines.join("\n"))
+    }
 }
 
 fn render_result_for_assistant(action: &str, result: &Value) -> String {
@@ -756,16 +1361,26 @@ fn render_result_for_assistant(action: &str, result: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or("?");
     match action {
-        "create" => format!(
-            "Created desktop card {card_id} and showed it on the user's desktop. Use this cardId for later update, hide, or delete."
+        "create" => with_data_status(
+            format!(
+                "Created desktop card {card_id} and showed it on the user's desktop. Use this cardId for later update, hide, or delete."
+            ),
+            card,
         ),
-        "update" => format!("Updated desktop card {card_id}."),
+        "update" => with_data_status(format!("Updated desktop card {card_id}."), card),
         "show" => format!("Desktop card {card_id} is now shown."),
         "hide" => format!("Desktop card {card_id} is hidden; it is kept and can be shown again."),
         "delete" => format!("Deleted desktop card {card_id}."),
-        "refresh" => format!(
-            "Refreshed desktop card {card_id}.\n{}",
-            card.map(card_line).unwrap_or_default()
+        "refresh" => with_data_status(
+            format!(
+                "Refreshed desktop card {card_id}.\n{}",
+                card.map(card_line).unwrap_or_default()
+            ),
+            card,
+        ),
+        "get" => with_data_status(
+            serde_json::to_string_pretty(result).unwrap_or_default(),
+            card,
         ),
         "list" => {
             let cards = result
@@ -879,6 +1494,422 @@ mod tests {
     }
 
     #[test]
+    fn misplaced_template_fields_get_an_actionable_hint() {
+        let error = parse_draft(
+            &json!({
+                "title": "Repo",
+                "template": {"kind": "metrics"},
+                "data": {"items": [{"label": "Stars", "path": "/stars"}]}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("template.items"), "{error}");
+        assert!(error.contains("card.data.items"), "{error}");
+        assert!(error.contains("inside card.template"), "{error}");
+
+        let error = parse_draft(
+            &json!({"title": "Repo", "items": [], "template": {"kind": "metrics"}}),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.items"), "{error}");
+
+        let error = parse_patch(&json!({"items": []}), 0).unwrap_err();
+        assert!(error.contains("patch.items"), "{error}");
+
+        let error = parse_draft(
+            &json!({"title": "N", "layout": "grid", "template": {"kind": "note", "text": "x"}}),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.layout would be ignored"), "{error}");
+        let error = parse_patch(&json!({"title": "N", "valuePath": "/done"}), 0).unwrap_err();
+        assert!(
+            error.contains("patch.valuePath would be ignored"),
+            "{error}"
+        );
+        assert!(parse_patch(&json!({"dataMerge": {"items": 3}}), 0).is_ok());
+    }
+
+    #[test]
+    fn invalid_shapes_include_an_example() {
+        let error =
+            parse_draft(&json!({"title": "N", "template": {"kind": "note"}}), 0).unwrap_err();
+        assert!(error.contains(r#"{"kind":"note","text""#), "{error}");
+        let error =
+            parse_draft(&json!({"title": "N", "template": {"kind": "hologram"}}), 0).unwrap_err();
+        assert!(error.contains("must be one of: countdown"), "{error}");
+        assert!(error.contains("chart"), "{error}");
+        let error =
+            parse_draft(&json!({"title": "N", "template": {"kind": "chart"}}), 0).unwrap_err();
+        assert!(
+            error.contains(r#"{"kind":"chart","chart":"bar""#),
+            "{error}"
+        );
+        let error = parse_draft(
+            &json!({"title": "N", "template": {"kind": "chart", "chart": "pie", "items": [{"label": "a", "value": 1}]}}),
+            0,
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("bar, column, line, donut, stacked"),
+            "{error}"
+        );
+        let error = parse_draft(
+            &json!({
+                "title": "N",
+                "template": {"kind": "note", "text": "x"},
+                "dataSource": {"kind": "command"}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains(r#""kind":"command","command""#), "{error}");
+    }
+
+    #[test]
+    fn schema_describes_template_and_data_source_fields() {
+        let schema = DesktopCardTool::new().input_schema();
+        let card = &schema["properties"]["card"]["properties"];
+        for field in [
+            "items",
+            "layout",
+            "valuePath",
+            "durationSeconds",
+            "jobId",
+            "html",
+        ] {
+            assert!(
+                card["template"]["properties"].get(field).is_some(),
+                "{field}"
+            );
+        }
+        assert!(
+            card["template"]["properties"]["items"]["items"]["properties"]
+                .get("toneMap")
+                .is_some()
+        );
+        for field in [
+            "url",
+            "headers",
+            "command",
+            "cwd",
+            "timeoutSeconds",
+            "intervalSeconds",
+            "parse",
+        ] {
+            assert!(
+                card["dataSource"]["properties"].get(field).is_some(),
+                "{field}"
+            );
+        }
+        let patch = &schema["properties"]["patch"]["properties"];
+        assert!(patch["template"]["properties"].get("items").is_some());
+        assert!(patch.get("dataMerge").is_some());
+    }
+
+    #[test]
+    fn schema_describes_chart_templates() {
+        let schema = DesktopCardTool::new().input_schema();
+        let template = &schema["properties"]["card"]["properties"]["template"]["properties"];
+        assert!(template["kind"]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("chart")));
+        assert_eq!(
+            template["chart"]["enum"],
+            json!(["bar", "column", "line", "donut", "stacked"])
+        );
+        for field in [
+            "itemsPath",
+            "labelsPath",
+            "labelKey",
+            "valueKey",
+            "hintKey",
+            "total",
+            "totalPath",
+            "remainderLabel",
+            "format",
+            "digits",
+            "suffix",
+            "labelFormat",
+            "caption",
+        ] {
+            assert!(template.get(field).is_some(), "{field}");
+        }
+        let note = template["text"]["description"].as_str().unwrap();
+        assert!(note.contains("chart or metrics"), "{note}");
+        let kind = template["kind"]["description"].as_str().unwrap();
+        assert!(kind.contains("note only for text"), "{kind}");
+    }
+
+    #[tokio::test]
+    async fn description_steers_measured_amounts_into_charts() {
+        let description = DesktopCardTool::new().description().await.unwrap();
+        assert!(description.contains("Choosing a template"), "{description}");
+        assert!(
+            description.contains("Never write a summary of numbers into a note"),
+            "{description}"
+        );
+        assert!(
+            description.contains("chart: chart (bar up to 12 items"),
+            "{description}"
+        );
+        assert!(
+            description.contains("line up to 120 points"),
+            "{description}"
+        );
+        assert!(description.contains("usage breakdown"), "{description}");
+        assert!(DesktopCardTool::new()
+            .short_description()
+            .contains("charts"));
+    }
+
+    #[test]
+    fn chart_presets_cover_every_style() {
+        let presets = presets();
+        let styles = presets
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|preset| preset.pointer("/call/card/template/chart"))
+            .filter_map(Value::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            styles.into_iter().collect::<Vec<_>>(),
+            ["bar", "column", "donut", "line", "stacked"]
+        );
+        let note = presets
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|preset| preset["id"] == "note")
+            .unwrap();
+        assert!(note["notes"].as_str().unwrap().contains("use a chart"));
+    }
+
+    #[test]
+    fn misplaced_chart_fields_get_an_actionable_hint() {
+        let error = parse_draft(
+            &json!({
+                "title": "Disk",
+                "itemsPath": "/rows",
+                "template": {"kind": "chart", "chart": "bar", "items": [{"label": "a", "value": 1}]}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.itemsPath would be ignored"), "{error}");
+        let error = parse_draft(
+            &json!({
+                "title": "Disk",
+                "template": {"kind": "chart", "chart": "bar"},
+                "data": {"items": [{"label": "a", "value": 1}]}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.data.items"), "{error}");
+    }
+
+    #[test]
+    fn chart_cards_report_unresolved_data_paths() {
+        let result = json!({
+            "card": {
+                "id": "card-3",
+                "title": "Highs",
+                "visible": true,
+                "template": {"kind": "chart", "chart": "column", "itemsPath": "/daily/max", "labelsPath": "/daily/time"},
+                "dataSource": {"kind": "http", "url": "https://example.com", "intervalSeconds": 600},
+                "lastData": {"fetchedAtMs": 1, "value": {"daily": {"max": [1, 2]}}}
+            }
+        });
+        let text = render_result_for_assistant("create", &result);
+        assert!(text.contains("/daily/time (labelsPath)"), "{text}");
+        assert!(!text.contains("/daily/max ("), "{text}");
+    }
+
+    #[test]
+    fn command_test_guidance_flags_a_different_exec_shell() {
+        let same = if cfg!(windows) { "powershell" } else { "sh" };
+        assert_eq!(
+            command_test_guidance_for(same, "Shell"),
+            "ExecCommand uses the same shell as card commands."
+        );
+        let guidance = command_test_guidance_for("pwsh", "My Shell");
+        assert!(guidance.contains("ExecCommand uses My Shell"), "{guidance}");
+        let bash = command_test_guidance_for("bash", "Git Bash");
+        assert!(bash.contains("ExecCommand uses Git Bash"), "{bash}");
+        if cfg!(windows) {
+            assert!(
+                guidance
+                    .contains("powershell.exe -NoProfile -NonInteractive -Command { <command> }"),
+                "{guidance}"
+            );
+            assert!(
+                bash.contains("-ExecutionPolicy Bypass -File <file>"),
+                "{bash}"
+            );
+        } else {
+            assert!(guidance.contains("/bin/sh -c"), "{guidance}");
+            assert!(bash.contains("/bin/sh -c"), "{bash}");
+        }
+    }
+
+    #[test]
+    fn custom_widget_presets_follow_the_app_theme() {
+        let presets = presets();
+        let mut custom = 0;
+        for preset in presets.as_array().unwrap() {
+            let Some(html) = preset
+                .pointer("/call/card/template/html")
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            custom += 1;
+            for forbidden in ["color:", "background", "innerHTML", "<style"] {
+                assert!(
+                    !html.contains(forbidden),
+                    "{} uses {forbidden}",
+                    preset["id"]
+                );
+            }
+            assert!(html.contains("openbitfun-card-"), "{}", preset["id"]);
+            let notes = preset["notes"].as_str().unwrap_or_default();
+            assert!(
+                preset["id"] != "custom-html" || notes.contains(CUSTOM_WIDGET_STYLE_GUIDANCE),
+                "{notes}"
+            );
+        }
+        assert_eq!(custom, 2);
+        let schema = DesktopCardTool::new().input_schema();
+        let html = schema["properties"]["card"]["properties"]["template"]["properties"]["html"]
+            ["description"]
+            .as_str()
+            .unwrap();
+        assert!(
+            html.contains("no page background or hard-coded colors"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn cross_shell_commands_avoid_double_quotes() {
+        assert!(!PULL_REQUEST_LIST_COMMAND.contains('"'));
+        assert!(!REPOSITORY_STATS_COMMAND.contains('"'));
+        assert!(!PULL_REQUEST_STATUS_COMMAND_POWERSHELL.contains('"'));
+        let preset = presets()
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|preset| preset["id"] == "pull-request-status")
+            .unwrap()
+            .clone();
+        let command = preset
+            .pointer("/call/card/dataSource/command")
+            .and_then(Value::as_str)
+            .unwrap();
+        if cfg!(windows) {
+            assert!(command.contains("ConvertTo-Json -Compress"));
+        } else {
+            assert!(command.contains("--jq"));
+        }
+    }
+
+    fn metrics_card(last_data: Value) -> Value {
+        json!({
+            "card": {
+                "id": "card-1",
+                "title": "Repo",
+                "visible": true,
+                "template": {
+                    "kind": "metrics",
+                    "items": [
+                        {"label": "Stars", "path": "/stars"},
+                        {"label": "Forks", "path": "/forks"}
+                    ]
+                },
+                "dataSource": {"kind": "command", "command": "gh api", "intervalSeconds": 300},
+                "lastData": last_data
+            }
+        })
+    }
+
+    #[test]
+    fn create_results_report_the_first_fetch() {
+        let pending = render_result_for_assistant("create", &metrics_card(Value::Null));
+        assert!(
+            pending.contains("first fetch has not finished"),
+            "{pending}"
+        );
+        assert!(!pending.contains("template paths are missing"), "{pending}");
+
+        let partial = render_result_for_assistant(
+            "create",
+            &metrics_card(json!({
+                "fetchedAtMs": 1,
+                "value": {"stars": 12, "forks": null},
+                "warning": "gh: rate limited"
+            })),
+        );
+        assert!(partial.contains("wrote to stderr"), "{partial}");
+        assert!(partial.contains("gh: rate limited"), "{partial}");
+        assert!(partial.contains("latest value {"), "{partial}");
+        assert!(partial.contains("\"stars\":12"), "{partial}");
+        assert!(
+            partial.contains("/forks (metric `Forks` path)"),
+            "{partial}"
+        );
+        assert!(!partial.contains("/stars ("), "{partial}");
+
+        let failed = render_result_for_assistant(
+            "update",
+            &metrics_card(json!({"fetchedAtMs": 1, "error": "Command exited with 1: boom"})),
+        );
+        assert!(
+            failed.contains("last fetch failed: Command exited with 1: boom"),
+            "{failed}"
+        );
+        assert!(!failed.contains("template paths are missing"), "{failed}");
+
+        let healthy = render_result_for_assistant(
+            "create",
+            &metrics_card(json!({"fetchedAtMs": 1, "value": {"stars": 1, "forks": 2}})),
+        );
+        assert!(!healthy.contains("missing or null"), "{healthy}");
+
+        let mut hidden = metrics_card(Value::Null);
+        hidden["card"]["visible"] = json!(false);
+        let hidden = render_result_for_assistant("create", &hidden);
+        assert!(hidden.contains("not fetched until it is shown"), "{hidden}");
+        assert!(!hidden.contains("first fetch has not finished"), "{hidden}");
+    }
+
+    #[test]
+    fn static_cards_report_paths_missing_from_data() {
+        let result = json!({
+            "card": {
+                "id": "card-2",
+                "title": "Migration",
+                "template": {"kind": "progress", "valuePath": "/done", "maxPath": "/total"},
+                "data": {"done": 3}
+            }
+        });
+        let text = render_result_for_assistant("create", &result);
+        assert!(text.contains("/total (maxPath)"), "{text}");
+        assert!(text.contains("patch.dataMerge"), "{text}");
+        assert!(!text.contains("ExecCommand"), "{text}");
+        assert!(!text.contains("first fetch"), "{text}");
+        let list = render_result_for_assistant(
+            "list",
+            &json!({"enabled": true, "cards": [result["card"].clone()]}),
+        );
+        assert!(list.contains("1 template path(s) unresolved"), "{list}");
+    }
+
+    #[test]
     fn patch_requires_a_change_and_supports_clearing() {
         assert!(parse_patch(&json!({}), 0).is_err());
         let patch = parse_patch(&json!({"subtitle": null, "dataSource": null}), 0).unwrap();
@@ -888,7 +1919,7 @@ mod tests {
     }
 
     #[test]
-    fn command_sources_always_require_fresh_approval() {
+    fn command_sources_require_fresh_approval_in_ask_mode() {
         let input = json!({
             "action": "create",
             "card": {

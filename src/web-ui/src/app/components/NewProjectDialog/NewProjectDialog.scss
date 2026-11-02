@@ -1,4 +1,27 @@
 .new-project-dialog {
+  &__paths--disabled {
+    opacity: var(--openbitfun-opacity-disabled);
+  }
+
+  &__source-status {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-block-size: var(--openbitfun-control-button-xs-height);
+    text-align: center;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+
+  &__source-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-2);
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-control-button-xs-height);
+  }
+
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -91,15 +114,6 @@
     gap: var(--openbitfun-space-2);
   }
 
-  &__source-heading {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--openbitfun-space-3);
-    min-inline-size: 0;
-    max-inline-size: 100%;
-  }
-
   &__source-label {
     flex-shrink: 0;
     margin: 0;
@@ -123,12 +137,6 @@
     gap: var(--openbitfun-space-3);
     min-inline-size: 0;
     text-align: center;
-  }
-
-  &__source-control {
-    flex: 0 0 auto;
-    inline-size: max-content;
-    max-inline-size: 100%;
   }
 
   &__folder[data-filled='true'] {

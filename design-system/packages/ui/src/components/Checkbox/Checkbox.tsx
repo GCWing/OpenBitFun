@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import { Check as LucideCheck, Minus as LucideMinus } from 'lucide-react';
 import {
   forwardRef,
@@ -44,6 +45,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
   size = "md",
   ...props
 }, forwardedRef) {
+  const fieldAccessibility = useFieldAccessibility(props, label !== undefined || children !== undefined);
   const inputRef = useRef<HTMLInputElement>(null);
   useImperativeHandle(forwardedRef, () => inputRef.current as HTMLInputElement);
 
@@ -67,6 +69,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
       <span className={styles.control} data-openbitfun-part="control">
         <input
           {...props}
+          {...fieldAccessibility}
           aria-invalid={invalid || undefined}
           checked={checked}
           className={styles.input}

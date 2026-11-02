@@ -87,7 +87,8 @@
       "terminal": "Shell",
       "git": "Git",
       "miniApps": "Mini App",
-      "insights": "Insights"
+      "insights": "Insights",
+      "discoverSkills": "Discover skills"
     },
     "tooltips": {
       "persona": "Smart Members — expand role- and memory-based member sessions",
@@ -192,7 +193,9 @@
         "activationFailed": "Could not open that result",
         "remoteFileSearchUnavailable": "File search is unavailable for remote project {{workspace}}",
         "sessionUnavailable": "This session is no longer available"
-      }
+      },
+      "diagnosticTarget": "Search device: {{host}}",
+      "retrySource": "Retry this source"
     },
     "displayModes": {
       "pro": "Expert Mode",
@@ -215,7 +218,7 @@
       "files": "Files",
       "terminals": "Terminals",
       "local": "Local",
-      "remote": "Remote workspace",
+      "remote": "Connected environment",
       "peer": "Peer device",
       "switchWorkspace": "Switch workspace",
       "chooseShell": "Choose a shell",
@@ -352,7 +355,7 @@
         "environment": {
           "label": "Environment",
           "local": "Local",
-          "remote": "Remote workspace",
+          "remote": "Connected environment",
           "detached": "Detached execution"
         },
         "source": {
@@ -386,8 +389,8 @@
       "exportMarkdownFull": "Export full process",
       "exportMarkdownResult": "Export result",
       "delete": "Delete",
-      "deleteConfirmTitle": "Delete session permanently?",
-      "deleteConfirmMessage": "“{{name}}” and its child sessions will be permanently deleted. This action cannot be undone.",
+      "deleteConfirmTitle": "Delete session",
+      "deleteConfirmMessage": "This session and its child sessions will be permanently deleted and cannot be restored.",
       "confirmEdit": "Confirm",
       "cancelEdit": "Cancel",
       "loading": "Loading...",
@@ -491,6 +494,9 @@
       "allSourceAgents": "All agents",
       "sourceAgentLabel": "Imported from {{name}}",
       "discoveryPartial": "Some external sessions could not be discovered. Existing sessions remain available.",
+      "discoveryWarningTitle": "External session discovery",
+      "discoveryReadFailed": "Some {{source}} session records could not be read. Existing sessions remain available.",
+      "discoveryWorkspaceUnresolved": "Some {{source}} sessions could not be matched to a workspace. Existing sessions remain available.",
       "discoveringExternal": "Discovering external sessions…"
     },
     "scheduledJobs": {
@@ -607,6 +613,10 @@
         "minute": "Minutes",
         "hour": "Hours",
         "day": "Days"
+      },
+      "columns": {
+        "status": "Status",
+        "actions": "Actions"
       }
     },
     "workspaces": {
@@ -657,8 +667,8 @@
         "manageAssistant": "Manage assistant",
         "closeAssistant": "Hide assistant",
         "resetWorkspace": "Reset workspace",
-        "manageRelatedPaths": "Related directories",
-        "manageProjectPermissions": "Project permissions",
+        "projectResources": "Project resources",
+        "openDirectory": "Open directory",
         "rename": "Rename project",
         "copyPath": "Copy path",
         "reveal": "Reveal in explorer",
@@ -688,7 +698,12 @@
           "add": "Add directory",
           "selectDirectoryTitle": "Select related directory",
           "pathPlaceholder": "Directory path",
-          "descriptionLabel": "Description (optional)"
+          "descriptionLabel": "Description (optional)",
+          "columns": {
+            "directory": "Directory",
+            "description": "Description",
+            "actions": "Actions"
+          }
         },
         "messages": {
           "externalLoadFailed": "Could not load OpenCode references.",
@@ -708,6 +723,56 @@
         "title": "Reset {{name}}?",
         "message": "This will clear everything inside the workspace directory and restore the default persona files without deleting the workspace directory itself.",
         "pathLabel": "Workspace path"
+      },
+      "icon": {
+        "title": "Change icon",
+        "description": "Customize the icon for {{name}}. Changes are saved on the workspace host.",
+        "default": "Built-in icons",
+        "chooseIcon": "Choose icon",
+        "builtinIcons": "Icon",
+        "glyphsUnsupported": "This host does not yet support choosing built-in icons.",
+        "workIcons": "Work & study",
+        "lifeIcons": "Life & hobbies",
+        "chooseLightImage": "Choose light image",
+        "chooseDarkImage": "Choose dark image",
+        "themedImagesUnsupported": "This host supports a single image for both themes. Upgrade the host to set a separate dark image.",
+        "glyphs": {
+          "default": "Default", "code": "Code", "learning": "Learning", "design": "Design",
+          "documents": "Documents", "research": "Research", "web": "Website", "mobile": "Mobile app",
+          "games": "Games", "data": "Data", "business": "Business", "tools": "Tools",
+          "travel": "Travel", "food": "Food", "fitness": "Fitness", "music": "Music", "reading": "Reading", "home": "Home", "finance": "Finance", "photography": "Photography", "pets": "Pets", "nature": "Nature", "shopping": "Shopping", "movies": "Movies"
+        },
+        "image": "Custom image",
+        "preview": "Icon preview",
+        "colors": "Icon colors",
+        "customColor": "Custom color",
+        "colorValue": "Color value",
+        "lightness": "Lightness",
+        "presetColors": "Preset colors",
+        "chooseImage": "Choose image",
+        "imageHint": "PNG, JPEG or WebP, up to 5 MB. Images are stored with the workspace; the original file is no longer needed.",
+        "crop": "Fill square crop",
+        "zoom": "Zoom",
+        "reset": "Restore default",
+        "retry": "Retry",
+        "loading": "Loading icon…",
+        "unsupported": "This host does not support workspace icon customization. Update the host or use a supported Desktop or CLI host.",
+        "loadFailed": "The custom icon could not be loaded. The default icon is shown; your settings are preserved.",
+        "invalidImage": "Choose a PNG, JPEG or WebP image under 5 MB and 20 megapixels.",
+        "saveFailed": "Could not save the icon: {{reason}}",
+        "palette": {
+          "default": "Default",
+          "blue": "Blue",
+          "cyan": "Cyan",
+          "green": "Green",
+          "yellow": "Yellow",
+          "orange": "Orange",
+          "red": "Red",
+          "purple": "Purple",
+          "pink": "Pink"
+        },
+        "light": "Light preview",
+        "dark": "Dark preview"
       }
     },
     "agents": {
@@ -732,11 +797,16 @@
     "notifications": "Notifications",
     "settingsMenu": {
       "floatingWindow": "Floating Window",
-      "theme": "Theme",
-      "themeConfiguration": "Theme Settings",
-      "appearanceSwitchFailed": "Could not switch the theme. Try again.",
+      "feedback": "Feedback",
+      "feedbackUnavailable": "User feedback is not configured.",
+      "feedbackOpenFailed": "Could not open user feedback.",
       "openSettings": "$t(shared:features.settings)",
       "about": "About OpenBitFun"
+    },
+    "customization": {
+      "localDesktopOnly": "Available on the local desktop only. Your pin is kept when switching devices.",
+      "unavailableEntry": "Unavailable entry ({{id}})",
+      "openFailed": "Could not open {{name}}. Try again."
     }
   },
   "window": {
@@ -750,6 +820,56 @@
     "startElementSelection": "Select element",
     "stopElementSelection": "Exit element selection",
     "stopLoading": "Stop loading"
+  },
+  "workspaceSource": {
+    "location": "Work location",
+    "environment": "Work environment",
+    "currentHost": "This computer",
+    "deviceNameUnavailable": "Device name unavailable",
+    "namedHost": "This computer · {{name}}",
+    "otherHost": "Remote host",
+    "system": "Host system",
+    "container": "Container",
+    "wsl": "WSL",
+    "currentHostHint": "Files and commands stay on the current work host.",
+    "otherHostHint": "Connect to a remote host or container over SSH. Native WSL is only available on the current Windows work host.",
+    "wslHint": "Next, select a Linux distribution on the current Windows work host.",
+    "foldersLockedHint": "Remove folders to switch.",
+    "connectionChoice": "Connection setup",
+    "availableOptions": "Available connections and environments",
+    "refreshOptions": "Refresh available options",
+    "noAvailableOptions": "No options available",
+    "selectHostHint": "Select a host to discover containers",
+    "useSavedConnection": "Use saved connection",
+    "containerOptions": "Container options",
+    "agentHint": "Use an identity from the work host’s SSH Agent. Advanced settings let you specify an identity or fallback key.",
+    "authenticationSettings": "Change authentication settings",
+    "connectionFailed": "Could not connect to the work environment.",
+    "connectionTitle": "Connect work environment",
+    "editConnectionTitle": "Edit connection · {{name}}",
+    "connectRemoteHostTitle": "Connect remote host",
+    "connectWslTitle": "Connect WSL · {{host}}",
+    "connectContainerTitle": "Connect container · {{host}}",
+    "connectRemoteContainerTitle": "Connect remote container",
+    "backToProject": "Back to project setup",
+    "connectAndCreate": "Connect and create project",
+    "connectAndBrowse": "Connect and select folder",
+    "containerConnection": "Connection method",
+    "viaHost": "Through the Docker host",
+    "directContainer": "SSH directly to the container",
+    "viaHostHint": "Use the Docker host’s address and credentials below, then enter the container.",
+    "directContainerHint": "Use the address and credentials of the SSH service inside the container below.",
+    "dockerHostAddress": "Docker host address",
+    "containerAddress": "Container SSH address",
+    "dockerUnavailable": "Docker was not found. Install Docker or check its path.",
+    "dockerNotRunning": "Start Docker and try again.",
+    "dockerPermissionDenied": "Check access to Docker.",
+    "containerDiscoveryFailed": "Could not load containers. Check the host and Docker, then retry.",
+    "hostDiscoveryFailed": "Could not load hosts. Try again.",
+    "existingHostRequired": "Choose an existing SSH host.",
+    "sshHost": "SSH host",
+    "sourceUnsupported": "This host does not support this environment.",
+    "checkingWsl": "Checking WSL availability on this host…"
   },
   "newProject": {
     "title": "Create project",
@@ -779,6 +899,7 @@
     "emptyProjectHint": "Save on the current device:",
     "invalidDirectoryName": "Use a single folder name without slashes, . or ..",
     "sameHostRequired": "Project folders must be on the same host.",
+    "assistantFolderUnavailable": "This folder belongs to an assistant workspace and cannot be added as a project. Select a different folder, or remove it and enter a name to create a new project.",
     "remoteUnavailable": "Remote folder selection is unavailable here.",
     "remoteConnectionChanged": "The remote connection changed. Select the project folders again.",
     "defaultDirectoryUnavailable": "The target device did not provide its home directory. Update or reconnect to the device and try again.",
@@ -1245,7 +1366,7 @@
     "latestVersion": "Latest",
     "releaseNotes": "Release notes",
     "later": "Later",
-    "skipVersion": "Skip this version",
+    "skipVersion": "Skip",
     "cancel": "Cancel",
     "install": "Download and install",
     "backgroundInstall": "Download in background",
@@ -1279,7 +1400,7 @@
       "installMetadata": "The downloaded package is saved. Connect to the internet and retry installation."
     },
     "availableVersion": "Version {{version}} is available",
-    "downloadUpdate": "Download update",
+    "downloadUpdate": "Update",
     "releaseTitle": "{{name}} v{{version}}",
     "openReleaseNotes": "{{title}} — release notes",
     "noticeReady": "Update downloaded",
@@ -1631,6 +1752,7 @@
     "panelView": "Panel View"
   },
   "sceneBar": {
+    "recentSessions": "Recently opened sessions",
     "tabsLabel": "Scene tabs",
     "scrollPrevious": "Scroll tabs left",
     "scrollNext": "Scroll tabs right",
@@ -1815,7 +1937,7 @@
   "ssh": {
     "remote": {
       "title": "Remote SSH",
-      "connect": "Connect Remote Project",
+      "connect": "Connect",
       "connecting": "Connecting...",
       "connected": "Connected",
       "disconnect": "Disconnect",
@@ -1835,8 +1957,8 @@
       "wslUser": "Linux user (optional)",
       "wslDefaultUser": "Distribution default user",
       "wslHint": "Connect to an installed WSL distribution on the Windows host. No SSH server is needed.",
-      "wslUnsupported": "WSL requires a Windows OpenBitFun host. This host does not support native WSL connections.",
-      "wslNoDistributions": "No WSL distributions found. Install a Linux distribution on the Windows host, then refresh.",
+      "wslUnsupported": "This host does not support WSL.",
+      "wslNoDistributions": "No WSL distributions detected.",
       "wslDistributionRequired": "Select an installed WSL distribution.",
       "wslDiscoveryFailed": "Could not load WSL distributions.",
       "proxyJump": "Jump hosts (ProxyJump)",
@@ -1860,7 +1982,7 @@
       "containerUser": "Container user",
       "optional": "Optional",
       "remoteDockerHint": "SSH reaches the Docker host; terminal, Agent commands, and workspace file operations then run inside this container.",
-      "localDockerHint": "Uses the local Docker CLI. Terminal, Agent commands, and workspace file operations run inside this container.",
+      "localDockerHint": "Uses the Docker CLI on the current work host. Terminal, Agent commands, and workspace file operations run inside this container.",
       "containerSshdHint": "Host, port, user, and authentication above must point directly to sshd inside the container.",
       "host": "Host",
       "port": "Port",
@@ -1945,7 +2067,7 @@
     "portForward": {
       "menuEntry": "Forward a Port",
       "title": "Port Forwarding",
-      "intro": "Reach a port listening on the remote host from this machine. Nothing is forwarded automatically — only the mappings you add here.",
+      "intro": "Reach a port listening on the remote host from this machine. Forwards are created only when you add one here or open a localhost link from a remote terminal.",
       "detectedTitle": "Listening on the remote",
       "detecting": "Detecting remote ports…",
       "detect": "Detect again",
@@ -2014,6 +2136,7 @@
       "targetIsPullRequest": "This item is a pull request. Open it as a pull request instead of an issue."
     },
     "messages": {
+      "hostUnsupported": "The pull request viewer is unavailable on this device. Open pull request links in the system browser.",
       "noWorkspace": "No active workspace is available.",
       "unsupportedLink": "This link is not a supported pull request URL.",
       "detailsFailed": "Failed to load pull request details.",

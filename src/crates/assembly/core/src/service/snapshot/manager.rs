@@ -892,6 +892,10 @@ impl Tool for WrappedTool {
         self.original_tool.input_schema()
     }
 
+    fn output_schema(&self) -> Value {
+        self.original_tool.output_schema()
+    }
+
     async fn input_schema_for_model(&self) -> Value {
         self.original_tool.input_schema_for_model().await
     }

@@ -19,7 +19,7 @@ export function SettingsPage({ pageId, children, ...props }: SettingsPageProps) 
   const page = getSettingsPageManifest(pageId);
   return (
     <ConfigPageLayout {...props}>
-      <ConfigPageHeader title={t(page.labelKey)} subtitle={t(page.descriptionKey)} />
+      <ConfigPageHeader title={t(page.labelKey)} />
       <ConfigPageContent>{children}</ConfigPageContent>
     </ConfigPageLayout>
   );

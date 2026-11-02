@@ -120,32 +120,33 @@ describe('ReasoningIntensityControl', () => {
     expect(document.activeElement).toBe(trigger());
   });
 
-  it('keeps the saved selection while hovering other levels', async () => {
+  it('keeps the saved selection while hovering other choices', async () => {
     await render();
     await expand();
     await hover('preset:xhigh');
     expect(option('preset:medium').getAttribute('aria-pressed')).toBe('true');
     expect(option('preset:xhigh').getAttribute('aria-pressed')).toBe('false');
     await hover('preset:off');
+    expect(option('preset:off').getAttribute('aria-pressed')).toBe('false');
     await hover('auto');
+    expect(option('auto').getAttribute('aria-pressed')).toBe('false');
     await act(async () => option('auto').dispatchEvent(new MouseEvent('pointerout', {
       bubbles: true, relatedTarget: container,
     })));
     expect(option('preset:medium').getAttribute('aria-pressed')).toBe('true');
-    expect(container.querySelector('.openbitfun-reasoning-control__backdrop')).toBeNull();
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('shows a saved Off choice through provider toggle aliases', async () => {
+  it('shows a saved Off choice, including provider toggle aliases', async () => {
     const off = { ...preset('off'), id: 'effort-off' };
     await render([off, preset('on')], 'effort-off');
-    expect(trigger().textContent).toContain('reasoningSelector.levels.off');
+    expect(trigger().textContent).toBe('reasoningSelector.thinking · reasoningSelector.levels.off');
     await expand();
     expect(option('preset:effort-off').getAttribute('aria-pressed')).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('omits unsupported levels and focuses the highest available choice with End', async () => {
+  it('omits unsupported levels and focuses the last available choice with End', async () => {
     await render([preset('medium'), preset('high')]);
     await expand();
     expect(option('unavailable:xhigh')).toBeUndefined();
@@ -196,10 +197,12 @@ describe('ReasoningIntensityControl', () => {
     expect(document.activeElement).toBe(option('preset:xhigh'));
     await key('Home');
     expect(document.activeElement).toBe(option('auto'));
+    expect(option('preset:medium').getAttribute('aria-pressed')).toBe('true');
     expect(onSelect).not.toHaveBeenCalled();
     await key('Escape');
     expect(choices()).toBeNull();
     expect(document.activeElement).toBe(trigger());
+    expect(trigger().textContent).toBe('reasoningSelector.thinking · reasoningSelector.levels.medium');
   });
 
   it('folds enable into Auto for toggle-only models and preserves the enable request', async () => {
@@ -241,7 +244,7 @@ describe('ReasoningIntensityControl', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('keeps all five real effort choices distinct', async () => {
+  it('keeps five real effort choices and selects Extra High independently of Maximum', async () => {
     await render(['low', 'medium', 'high', 'xhigh', 'max'].map(preset), 'medium');
     await expand();
     expect(Array.from(choices()!.querySelectorAll('button')).map(button => button.dataset.openbitfunValue))

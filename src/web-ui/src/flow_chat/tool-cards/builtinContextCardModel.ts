@@ -87,6 +87,23 @@ export function buildBuiltinContextCard(context: BuiltinCardContext): boolean {
       link('file', model.sourcePath, 'openImage');
       return true;
     }
+    case 'generate_image': {
+      // Shares the image-analysis family so the existing preview channel renders
+      // the saved file; the service is chosen in settings, not in the session.
+      model.family = 'image-analysis';
+      model.sourcePath = builtinText(data.path);
+      model.summary = builtinText(input.prompt);
+      section('prompt', input.prompt);
+      field('service', data.service ?? data.service_id);
+      field('model', data.model);
+      field('path', model.sourcePath);
+      const generated = typeof data.count === 'number' ? data.count : undefined;
+      if (done && generated !== undefined) {
+        model.resultSummary = t('toolCards.builtin.generatedImages', { value: number(generated) });
+      }
+      link('file', model.sourcePath, 'openImage');
+      return true;
+    }
     case 'GetTime': {
       model.family = 'time';
       model.summary = builtinText(data.local_time);

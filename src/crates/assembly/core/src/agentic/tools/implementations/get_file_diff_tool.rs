@@ -1307,6 +1307,24 @@ Usage:
         schema
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "diff_content": {"type": "string"},
+                "has_more": {"type": "boolean"},
+                "next_cursor": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "diff_budget_truncated": {"type": "boolean"},
+                "omitted_diff_chars": {"type": "integer"},
+                "evidence_limited": {"type": "boolean"},
+                "review_budget_repeated_page": {"type": "boolean"},
+                "message": {"type": "string"}
+            },
+            "required": ["diff_content"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

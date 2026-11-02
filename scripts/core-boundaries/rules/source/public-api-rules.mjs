@@ -19,6 +19,10 @@ export const publicApiContractSlices = [
 ];
 
 export const agentRuntimeRootPublicModules = [
+  // Portable account eligibility/switch decisions; no credential or provider IO.
+  // Owner contract: docs/architecture/subscription-account-routing-design.md.
+  'account_routing',
+  'channel_routing',
   'agents',
   'checkpoint',
   'compression_prefetch',
@@ -43,6 +47,10 @@ export const agentRuntimeRootPublicModules = [
   'prompt_markup',
   'prompt_suggestion',
   'remote_file_delivery',
+  // Pure Router observation state/budgets consumed by Core, no concrete AI or IO.
+  'router_context',
+  // Pure Router summary admission and coalescing; Core supplies AI and IO.
+  'router_summary_queue',
   'runtime',
   'scheduled_job',
   'scheduler',

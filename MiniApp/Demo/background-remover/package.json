@@ -1,0 +1,8 @@
+{
+  "name": "miniapp-background-remover",
+  "private": true,
+  "scripts": {
+    "build": "node source/build.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

@@ -275,6 +275,13 @@ fn computer_use_prompt_preserves_background_observation_and_input_contract() {
         "The steps go in a top-level `steps` array",
         "they return `FOREGROUND_REQUIRED` without acting",
         "lists them in `auxiliary_windows`",
+        "pass `query` instead of the `app` filter",
+        "App input results report `opened_windows`",
+        "`activate_app` first restores it and reports `restored_window: true`",
+        "background control never restores or activates windows",
+        "returns that window's observation after waiting",
+        "On hosts advertising `app-zoom-v1`",
+        "It does not refresh the AX tree",
     ] {
         assert!(
             prompt.contains(required),
@@ -296,6 +303,8 @@ fn computer_use_prompt_preserves_background_observation_and_input_contract() {
         "Stop this attempt until the user completes that choice",
         "A system stop requires a new user-selected share",
         "ask the user to click **Enable default CDP**",
+        "Omit the `app` filter on discovery",
+        "An off-screen visibility fact does not identify",
     ] {
         assert!(
             !prompt.contains(obsolete),

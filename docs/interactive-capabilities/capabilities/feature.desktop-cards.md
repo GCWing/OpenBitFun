@@ -17,14 +17,14 @@ Let agents place draggable cards outside the main window for glanceable informat
 
 ## 完整功能清单 / Everything included
 
-- **由专用智能体工具控制 / Delegated Agent tool** · `DesktopCard` · 按需求或在任务过程中创建倒计时、清单、便签、进度、指标、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据
-  - Create countdown, checklist, note, progress, metrics, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command
+- **由专用智能体工具控制 / Delegated Agent tool** · `DesktopCard` · 按需求或在任务过程中创建倒计时、清单、便签、进度、指标、图表、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据
+  - Create countdown, checklist, note, progress, metrics, chart, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command
 - **由专用智能体工具控制 / Delegated Agent tool** · `DesktopCard` · 在首页“小卡片”区查看全部卡片，并显示、隐藏或删除单张卡片
   - See every card in the Home Desktop cards section, and show, hide, or delete individual cards
 - **由专用智能体工具控制 / Delegated Agent tool** · `DesktopCard` · 在卡片上刷新数据、勾选清单项、切换置顶、打开链接或回到来源会话
   - Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 拖动卡片到桌面任意位置；关闭 OpenBitFun 时卡片消失，重新打开后按原位置恢复
-  - Drag cards anywhere on the desktop; they disappear when OpenBitFun closes and return to the same positions when it reopens
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复
+  - Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens
 
 ## 怎么用 / How to use it
 

@@ -9,3 +9,27 @@
 
   inline-size: min(#{$inline-size}, calc(100vw - 16px));
 }
+
+// Secondary connection, authentication and directory selection share one frame.
+// The initial creation pages keep their own content-sized layout.
+// Public Dialog anatomy (or the picker) owns internal scrolling.
+@mixin workspace-dialog-size {
+  $inline-size: min(var(--openbitfun-overlay-dialog-max-inline-size-large), calc(100vw - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
+  $block-size: min(640px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
+
+  box-sizing: border-box;
+  inline-size: $inline-size;
+  min-inline-size: $inline-size;
+  max-inline-size: $inline-size;
+  block-size: $block-size;
+  min-block-size: $block-size;
+  max-block-size: $block-size;
+
+  @supports (block-size: 100dvh) {
+    $block-size: min(640px, calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
+
+    block-size: $block-size;
+    min-block-size: $block-size;
+    max-block-size: $block-size;
+  }
+}

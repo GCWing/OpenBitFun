@@ -100,6 +100,8 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
+          # Select GStreamer's libunwind headers explicitly so apt can replace
+          # the conflicting LLVM libunwind-dev package preinstalled on Jammy.
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             clang \
@@ -109,6 +111,11 @@ jobs:
             libxcb-render0-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
+            libunwind-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libtesseract-dev \
+            libleptonica-dev \
             pkg-config \
             python3
 

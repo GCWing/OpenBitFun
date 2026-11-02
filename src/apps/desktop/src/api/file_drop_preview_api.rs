@@ -42,16 +42,17 @@ impl SetFileDropPreviewTargetRequest {
 
 #[tauri::command]
 pub async fn set_file_drop_preview_target(
-    window: tauri::WebviewWindow,
+    webview: tauri::Webview,
     request: SetFileDropPreviewTargetRequest,
 ) -> Result<(), String> {
     request.validate()?;
-    if window.label() != "main" {
+    if webview.label() != "main" {
         return Err("File drag previews require the main desktop window".into());
     }
     #[cfg(target_os = "windows")]
     {
         let (sender, receiver) = tokio::sync::oneshot::channel();
+        let window = webview.window();
         let owner = window.clone();
         window
             .run_on_main_thread(move || {
@@ -244,7 +245,7 @@ mod native {
     }
 
     pub(super) fn set_target(
-        window: tauri::WebviewWindow,
+        window: tauri::Window,
         request: SetFileDropPreviewTargetRequest,
     ) -> Result<(), String> {
         let parent = window
@@ -358,7 +359,7 @@ mod native {
     struct FileTarget {
         hwnd: HWND,
         parent: HWND,
-        owner: tauri::WebviewWindow,
+        owner: tauri::Window,
         target_id: Arc<std::sync::Mutex<String>>,
         helper: IDropTargetHelper,
         generation: Arc<AtomicU64>,

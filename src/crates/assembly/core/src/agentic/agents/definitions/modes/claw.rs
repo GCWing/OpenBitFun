@@ -25,6 +25,7 @@ impl ClawMode {
                 "Read".to_string(),
                 "view_image".to_string(),
                 "analyze_image".to_string(),
+                "generate_image".to_string(),
                 "Write".to_string(),
                 "Edit".to_string(),
                 "Delete".to_string(),
@@ -42,6 +43,7 @@ impl ClawMode {
                 "get_goal".to_string(),
                 "create_goal".to_string(),
                 "update_goal".to_string(),
+                "GenerativeUI".to_string(),
                 "Skill".to_string(),
                 "ListWorkspaces".to_string(),
                 "SessionControl".to_string(),
@@ -55,8 +57,7 @@ impl ClawMode {
                 "ComputerUse".to_string(),
                 "OpenBitFunControl".to_string(),
                 "PublishAppearance".to_string(),
-                "PageDeploy".to_string(),
-                "PagePublish".to_string(),
+                "PageManage".to_string(),
             ],
         }
     }

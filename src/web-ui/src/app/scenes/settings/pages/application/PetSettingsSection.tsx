@@ -220,7 +220,6 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
         ) : (
           <ConfigPageSection
             title={t('features.pet.title')}
-            description={t('features.pet.subtitle')}
           >
             <ConfigPageRow label={t('features.pet.enable')} align="center">
               <div className="openbitfun-runtime-settings__row-control" data-openbitfun-component="runtime-settings" data-openbitfun-part="control">

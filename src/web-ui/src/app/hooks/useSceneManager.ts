@@ -13,6 +13,9 @@ import { useMiniAppStore } from '../scenes/miniapps/miniAppStore';
 import { pickLocalizedString } from '../scenes/miniapps/utils/pickLocalizedString';
 import { useI18n } from '@/infrastructure/i18n';
 import { useContentResourceStore } from '../workbench/contentResourceStore';
+import { useOptionalWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
+import { parseProjectResourceTarget } from '../scenes/project-resources/projectResourceTarget';
+import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 
 export interface UseSceneManagerReturn {
   openTabs: ReturnType<typeof useSceneStore.getState>['openTabs'];
@@ -42,6 +45,15 @@ export function useSceneManager(pane?: WorkbenchPane): UseSceneManagerReturn {
   const apps = useMiniAppStore((s) => s.apps);
   const { currentLanguage } = useI18n();
   const resources = useContentResourceStore(state => state.resources);
+  const workspaceContext = useOptionalWorkspaceContext();
+  const projectDefs: SceneTabDef[] = openTabs.flatMap(tab => {
+    const target = parseProjectResourceTarget(tab.id);
+    const def = target && getSceneDef(tab.id);
+    if (!target || !def) return [];
+    const workspace = target.surfaceId === getActiveSurfaceId()
+      ? workspaceContext?.openedWorkspaces.get(target.workspaceId) : undefined;
+    return [{ ...def, ...(workspace ? { label: workspace.name, labelKey: undefined } : {}) }];
+  });
   const contentDefs: SceneTabDef[] = openTabs.flatMap(tab => {
     const resource = tab.contentId ? resources[tab.contentId] : undefined;
     return resource ? [{ id: tab.id, label: resource.content.title, pinned: false,
@@ -68,7 +80,7 @@ export function useSceneManager(pane?: WorkbenchPane): UseSceneManagerReturn {
     paneSelections,
     navigationMotion,
     navigationSequence,
-    tabDefs: [...SCENE_TAB_REGISTRY, ...sessionDefs, ...miniAppDefs, ...contentDefs],
+    tabDefs: [...SCENE_TAB_REGISTRY, ...sessionDefs, ...miniAppDefs, ...contentDefs, ...projectDefs],
     activateScene,
     openScene,
     closeScene,

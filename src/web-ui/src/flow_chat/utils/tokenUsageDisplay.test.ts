@@ -1,3 +1,4 @@
+import { formatDuration } from '@/shared/utils/format';
 import { describe, expect, it } from 'vitest';
 import type { DialogTurn, Session, TokenUsage } from '../types/flow-chat';
 import {
@@ -187,7 +188,7 @@ describe('tokenUsageDisplay', () => {
       t,
     })).toEqual([
       { key: 'completed', label: 'Completed', value: '12:00:00 PM' },
-      { key: 'duration', label: 'Duration', value: '5m23s' },
+      { key: 'duration', label: 'Duration', value: formatDuration(323000) },
     ]);
   });
 
@@ -200,7 +201,7 @@ describe('tokenUsageDisplay', () => {
       t,
     })).toEqual([
       { key: 'completed', label: 'Stopped', value: '12:00:00' },
-      { key: 'duration', label: 'Duration', value: '12.3s' },
+      { key: 'duration', label: 'Duration', value: formatDuration(12345) },
     ]);
   });
 
@@ -210,7 +211,7 @@ describe('tokenUsageDisplay', () => {
     expect(buildModelRoundCompletionMeta({ completedAt: NaN, durationMs: Infinity, formatTime, t })).toEqual([]);
     expect(buildModelRoundCompletionMeta({ durationMs: -1, formatTime, t })).toEqual([]);
     expect(buildModelRoundCompletionMeta({ durationMs: 0, formatTime, t })).toEqual([
-      { key: 'duration', label: 'Duration', value: '0ms' },
+      { key: 'duration', label: 'Duration', value: formatDuration(0) },
     ]);
   });
 

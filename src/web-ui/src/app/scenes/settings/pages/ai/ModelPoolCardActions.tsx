@@ -4,6 +4,8 @@ import { Icon, IconButton, MenuPopover, Switch, Tooltip, type MenuEntry } from '
 import { useI18n } from '@/infrastructure/i18n';
 
 interface ModelPoolCardActionsProps {
+  disabled?: boolean;
+  testLabel?: string;
   modelLabel: string;
   enabled: boolean;
   isTesting: boolean;
@@ -15,6 +17,8 @@ interface ModelPoolCardActionsProps {
 }
 
 export function ModelPoolCardActions({
+  disabled = false,
+  testLabel: explicitTestLabel,
   modelLabel,
   enabled,
   isTesting,
@@ -31,7 +35,7 @@ export function ModelPoolCardActions({
   const moreLabel = t('pool.moreActions', { model: modelLabel });
   const testLabel = !connectionTestSupported
     ? t('messages.testUnsupportedOnHost')
-    : isTesting ? t('messages.testing') : t('actions.test');
+    : isTesting ? t('messages.testing') : explicitTestLabel ?? t('actions.test');
   const menuItems: MenuEntry[] = [
     { id: 'delete', label: t('actions.delete'), icon: <Icon name="delete" size="sm" />, tone: 'danger', onSelect: onDelete },
   ];
@@ -51,7 +55,7 @@ export function ModelPoolCardActions({
           variant="quiet"
           aria-label={testLabel}
           loading={isTesting}
-          disabled={!connectionTestSupported}
+          disabled={disabled || !connectionTestSupported}
           onClick={onTest}
           icon={<Icon glyph={Wifi} size="sm" />}
         />
@@ -61,6 +65,7 @@ export function ModelPoolCardActions({
           size="sm"
           variant="quiet"
           aria-label={t('actions.edit')}
+          disabled={disabled}
           onClick={onEdit}
           icon={<Icon name="edit" size="sm" />}
         />
@@ -71,6 +76,7 @@ export function ModelPoolCardActions({
           size="sm"
           variant="quiet"
           aria-label={moreLabel}
+          disabled={disabled}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-controls={menuOpen ? menuId : undefined}
@@ -88,6 +94,7 @@ export function ModelPoolCardActions({
         placement="bottom"
       />
       <Switch
+        disabled={disabled}
         aria-label={t('pool.enableModel', { model: modelLabel })}
         checked={enabled}
         onChange={event => onEnabledChange(event.target.checked)}

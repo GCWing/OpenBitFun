@@ -27,6 +27,15 @@ pub enum SessionCatalogOrdering {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SessionDiscoveryDiagnostic {
+    /// Ecosystem adapter that produced the diagnostic (for example, `cursor`).
+    pub ecosystem_id: String,
+    /// Stable adapter-owned code. Presentation layers localize this code.
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionMetadataPage {
     pub sessions: Vec<SessionMetadata>,
     pub total_top_level_count: usize,
@@ -41,6 +50,11 @@ pub struct SessionMetadataPage {
     /// Non-fatal host discovery issues. Native history remains available.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub discovery_warnings: Vec<String>,
+    /// Structured discovery issues for clients that can localize and present
+    /// each category separately. Older clients continue to use
+    /// `discovery_warnings`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub discovery_diagnostics: Vec<SessionDiscoveryDiagnostic>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub discovery_pending: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,6 +100,7 @@ pub fn empty_session_metadata_page() -> SessionMetadataPage {
         has_more: false,
         activities: None,
         discovery_warnings: Vec::new(),
+        discovery_diagnostics: Vec::new(),
         discovery_pending: false,
         catalog_query: None,
         catalog_revision: None,
@@ -271,6 +286,7 @@ impl PreparedSessionCatalog {
             has_more,
             activities: None,
             discovery_warnings: Vec::new(),
+            discovery_diagnostics: Vec::new(),
             discovery_pending: false,
             catalog_query: query.cloned(),
             catalog_revision: self.revision.clone(),
@@ -457,7 +473,28 @@ mod tests {
         let legacy = serde_json::json!({"sessions": [], "totalTopLevelCount": 0, "loadedTopLevelCount": 0, "hasMore": false});
         let page: SessionMetadataPage = serde_json::from_value(legacy.clone()).unwrap();
         assert!(page.discovery_warnings.is_empty());
+        assert!(page.discovery_diagnostics.is_empty());
         assert_eq!(serde_json::to_value(page).unwrap(), legacy);
+    }
+
+    #[test]
+    fn structured_discovery_diagnostics_round_trip_with_legacy_warnings() {
+        let mut page = empty_session_metadata_page();
+        page.discovery_warnings.push("legacy warning".into());
+        page.discovery_diagnostics.push(SessionDiscoveryDiagnostic {
+            ecosystem_id: "cursor".into(),
+            code: "workspace_unresolved".into(),
+        });
+
+        let wire = serde_json::to_value(&page).unwrap();
+        assert_eq!(
+            wire["discoveryDiagnostics"][0],
+            serde_json::json!({"ecosystemId": "cursor", "code": "workspace_unresolved"})
+        );
+        let restored: SessionMetadataPage = serde_json::from_value(wire).unwrap();
+        assert_eq!(restored.discovery_warnings, vec!["legacy warning"]);
+        assert_eq!(restored.discovery_diagnostics.len(), 1);
+        assert_eq!(restored.discovery_diagnostics[0].ecosystem_id, "cursor");
     }
 
     fn entry(id: &str, workspace: &str, created: u64) -> SessionMetadata {

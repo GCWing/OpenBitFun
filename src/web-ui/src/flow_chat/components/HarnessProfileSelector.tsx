@@ -266,7 +266,12 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
       : knownSelectedProfile
         ? t(`chatInput.harness.profiles.${knownSelectedProfile}.name`)
         : t('chatInput.harness.unsupportedProfile', { id: selectedProfile });
-  const triggerLabel = primaryLabel;
+  const triggerLabel = presentation === 'standalone'
+    && !legacySession
+    && knownSelectedProfile
+    && isSelectableProfile(knownSelectedProfile)
+    ? t('chatInput.harness.modeLabel', { name: primaryLabel })
+    : primaryLabel;
   const triggerTooltip = legacySession
     ? t('chatInput.harness.legacySessionNotice')
     : !selectedProfileAvailable

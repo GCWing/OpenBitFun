@@ -1,5 +1,5 @@
 import { emit } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, type Window as TauriWindow } from '@tauri-apps/api/window';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 
 export function readDesktopCardIdFromLocation(search: string = window.location.search): string | null {
@@ -10,6 +10,24 @@ export function readDesktopCardIdFromLocation(search: string = window.location.s
 /** Moves the borderless card window with the OS drag loop. */
 export async function startDesktopCardWindowDrag(): Promise<void> {
   await getCurrentWindow().startDragging();
+}
+
+export type DesktopCardResizeDirection = Parameters<TauriWindow['startResizeDragging']>[0];
+
+export const DESKTOP_CARD_RESIZE_DIRECTIONS: readonly DesktopCardResizeDirection[] = [
+  'North',
+  'South',
+  'East',
+  'West',
+  'NorthEast',
+  'NorthWest',
+  'SouthEast',
+  'SouthWest',
+];
+
+/** Resizes the borderless card window with the OS resize loop from one of its edges. */
+export async function startDesktopCardWindowResize(direction: DesktopCardResizeDirection): Promise<void> {
+  await getCurrentWindow().startResizeDragging(direction);
 }
 
 /** Opens the session that created a card in the main window. */

@@ -153,7 +153,7 @@ impl ContextCompressor {
             .iter()
             .map(|message| message.estimate_tokens_with_reasoning(true))
             .sum();
-        if messages.len() >= conversation.len() || retained_tokens >= original_tokens {
+        if retained_tokens >= original_tokens {
             return Err(crate::OpenBitFunError::AIClient(
                 "Local context truncation has no removable context that reduces token usage; context was not changed".into(),
             ));
@@ -799,32 +799,6 @@ mod tests {
         assert!(ContextCompressor::new()
             .truncate_locally(&[Message::user("Only request".into())], 32_000, 0)
             .is_err());
-    }
-
-    #[test]
-    fn local_truncation_attaches_transcript_without_a_model_summary() {
-        let compressor = ContextCompressor::new();
-        let messages = vec![
-            Message::user("Task".into()),
-            Message::assistant("Old evidence".repeat(1_000)),
-            Message::user("Continue".into()),
-        ];
-        let mut result = compressor.truncate_locally(&messages, 32_000, 0).unwrap();
-        assert!(compressor.append_transcript_reference(
-            &mut result,
-            "transcript://session/history",
-            &TranscriptLineRange {
-                start_line: 1,
-                end_line: 20
-            }
-        ));
-        assert!(result
-            .messages
-            .iter()
-            .all(|m| m.metadata.semantic_kind != Some(MessageSemanticKind::CompressionSummary)));
-        assert!(
-            matches!(&result.messages.last().unwrap().content, MessageContent::Text(text) if text.contains("transcript://session/history"))
-        );
     }
 
     #[test]

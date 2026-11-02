@@ -1,4 +1,88 @@
 // Appearance settings page presentation.
+.sidebar-settings__pinned {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: var(--openbitfun-space-2) 0;
+  list-style: none;
+}
+
+.sidebar-settings__pinned-item {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-width: 0;
+  min-height: var(--openbitfun-control-height-sm);
+  padding-inline: var(--openbitfun-space-5);
+  font-size: var(--openbitfun-type-label-sm-font-size);
+  line-height: var(--openbitfun-type-label-sm-line-height);
+
+  &:focus-within {
+    background: var(--openbitfun-component-config-page-row-hover-background);
+  }
+}
+
+.sidebar-settings__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-settings__fixed {
+  color: var(--openbitfun-color-content-muted);
+}
+
+.sidebar-settings__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-settings__pinned-item:hover {
+    background: var(--openbitfun-component-config-page-row-hover-background);
+  }
+
+  .sidebar-settings__actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .sidebar-settings__pinned-item:is(:hover, :focus-within) .sidebar-settings__actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.sidebar-settings__add {
+  border-top: 1px solid var(--openbitfun-component-config-page-divider);
+}
+
+.sidebar-settings__add > .sidebar-settings__available-heading:hover {
+  background: transparent;
+}
+
+.sidebar-settings__available-page:hover:not(:active):not(:disabled) {
+  border-color: var(--openbitfun-component-button-outline-border);
+
+  &::before {
+    background: transparent;
+  }
+}
+
+.sidebar-settings__available {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--openbitfun-space-2);
+  padding: 0 var(--openbitfun-space-5) var(--openbitfun-space-4);
+  min-width: 0;
+
+  > [data-openbitfun-component='button'] {
+    max-inline-size: 100%;
+  }
+}
+
 .openbitfun-appearance-settings__content {
   display: flex;
   flex-direction: column;

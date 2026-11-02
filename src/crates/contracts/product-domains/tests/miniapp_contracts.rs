@@ -597,6 +597,52 @@ fn miniapp_bridge_exposes_topic_session_lifecycle() {
 }
 
 #[test]
+fn miniapp_bridge_exposes_agent_state_bridge() {
+    let bridge = build_bridge_script("app-1", "/tmp/app", "/tmp/workspace", "dark", "win32");
+
+    // The MiniApp declares what the Agent may see; the host never inspects
+    // internals, so a canvas or game becomes observable only through this.
+    assert!(bridge.contains("expose: (handlers)"));
+    assert!(bridge.contains("_agentBridge"));
+    assert!(bridge.contains("openbitfun:miniapp-agent-ready"));
+    assert!(bridge.contains("openbitfun:miniapp-agent-request"));
+    assert!(bridge.contains("openbitfun:miniapp-agent-response"));
+    assert!(bridge.contains("data.method === 'input'"));
+    assert!(bridge.contains("new KeyboardEvent('keydown', init)"));
+    assert!(bridge.contains("new KeyboardEvent('keyup', init)"));
+    // The announcement must echo the real app id so the host can pair the frame.
+    assert!(bridge.contains("appId: \"app-1\""));
+}
+
+#[test]
+fn miniapp_bridge_observes_an_unchanged_app() {
+    let bridge = build_bridge_script("app-1", "/tmp/app", "/tmp/workspace", "dark", "win32");
+
+    // Existing MiniApps must be observable without editing their source, so the
+    // injected runtime collects a bounded picture of what the app already does.
+    assert!(bridge.contains("auto-observe"));
+    assert!(bridge.contains("_autoSnapshot"));
+    assert!(!bridge.contains("CanvasRenderingContext2D.prototype"));
+    assert!(bridge.contains("canvasTextUnavailable: true"));
+    assert!(bridge.contains("requestAnimationFrame"));
+    assert!(bridge.contains("frameAgeMs"));
+    assert!(!bridge.contains("_autoTextAt"));
+    // One envelope for every app: declared state plus automatic observation.
+    assert!(bridge.contains("{ state: null, auto: _autoSnapshot() }"));
+    assert!(bridge.contains("_announceAgentBridge();"));
+}
+
+#[test]
+fn miniapp_bridge_never_requires_a_declaration_to_answer_observe() {
+    let bridge = build_bridge_script("app-1", "/tmp/app", "/tmp/workspace", "dark", "win32");
+
+    // The old runtime refused every request until the app called expose(); that
+    // made an untouched game unobservable, which is the bug this contract locks.
+    assert!(!bridge.contains("This MiniApp does not expose an agent bridge."));
+    assert!(bridge.contains("'auto-observe'"));
+}
+
+#[test]
 fn miniapp_permission_policy_preserves_scope_resolution() {
     let permissions = MiniAppPermissions {
         fs: Some(FsPermissions {

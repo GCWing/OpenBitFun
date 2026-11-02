@@ -56,6 +56,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
       measureRef?.(element);
     }, [measureRef]);
     const searchLine = useFlowChatSearchPresentation(wrapper, searchQuery, matches, currentMatch);
+    const itemFocus = searchLine && 'markerTop' in searchLine ? searchLine : null;
 
     const content = (() => {
       switch (item.type) {
@@ -101,6 +102,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
               turnEndedAt={item.turnEndedAt}
               turnDurationMs={item.turnDurationMs}
               turnOutputDurationMs={item.turnOutputDurationMs}
+              turnTtftMs={item.turnTtftMs}
               turnTokenUsage={item.turnTokenUsage}
               canvasArtifactItems={item.canvasArtifactItems}
               expandedThinkingItemIds={item.layoutHints?.expandedThinkingItemIds ?? []}
@@ -172,7 +174,15 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
           className="flowchat-search-line"
           data-openbitfun-component="virtual-item"
           data-openbitfun-part="searchLine"
-          style={searchLine ?? undefined}
+          data-openbitfun-state={itemFocus ? 'itemFocus' : undefined}
+          style={searchLine ? {
+            top: searchLine.top, left: searchLine.left, width: searchLine.width, height: searchLine.height,
+            ...(itemFocus ? {
+              '--_flowchat-focus-marker-top': `${itemFocus.markerTop}px`,
+              '--_flowchat-focus-marker-left': `${itemFocus.markerLeft}px`,
+              '--_flowchat-focus-marker-height': `${itemFocus.markerHeight}px`,
+            } : {}),
+          } as React.CSSProperties : undefined}
         />
       </div>
     );

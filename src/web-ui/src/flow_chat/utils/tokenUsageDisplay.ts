@@ -1,3 +1,4 @@
+import { formatDuration } from '@/shared/utils/format';
 import type { DialogTurn, Session, TokenUsage } from '../types/flow-chat';
 import { LONG_CONTEXT_WARNING_THRESHOLD_TOKENS } from '@/shared/constants/modelContext';
 import { i18nService } from '@/infrastructure/i18n';
@@ -148,10 +149,6 @@ export function buildModelSelectorTooltipDetails(params: {
   };
 }
 
-function formatCompactNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
-}
-
 /**
  * Derive the latest terminal turn-with-usage's token usage as a
  * context-usage approximation when it represents exactly one model round.
@@ -241,26 +238,7 @@ export function buildContextUsageTooltip(params: {
 }
 
 export function formatElapsedDuration(durationMs: number): string {
-  const safeMs = Math.max(0, Math.round(durationMs));
-  if (safeMs < 1000) {
-    return `${safeMs}ms`;
-  }
-
-  const seconds = safeMs / 1000;
-  if (seconds < 60) {
-    return `${formatCompactNumber(Math.round(seconds * 10) / 10)}s`;
-  }
-
-  const wholeSeconds = Math.round(seconds);
-  const minutes = Math.floor(wholeSeconds / 60);
-  const remainingSeconds = wholeSeconds % 60;
-  if (minutes < 60) {
-    return remainingSeconds === 0 ? `${minutes}m` : `${minutes}m${remainingSeconds}s`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes === 0 ? `${hours}h` : `${hours}h${remainingMinutes}m`;
+  return formatDuration(durationMs);
 }
 
 export function buildModelRoundCompletionMeta(params: {

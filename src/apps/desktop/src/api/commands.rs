@@ -475,6 +475,14 @@ pub struct ListAIModelsByConfigRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TestImageGenerationServiceRequest {
+    /// Draft service, not necessarily saved yet.
+    pub service: openbitfun_core::service::config::types::ImageServiceConfig,
+    /// Optional subject override for the check prompt.
+    pub prompt: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateAppStatusRequest {
     pub status: String,
     pub message: Option<String>,
@@ -1108,6 +1116,7 @@ async fn create_transient_ai_client_for_config(
     );
 
     let mut ai_config: openbitfun_core::util::types::AIConfig = model_config
+        .clone()
         .try_into()
         .map_err(|e| format!("Failed to convert configuration: {}", e))?;
     let skip_ssl_verify = ai_config.skip_ssl_verify;
@@ -1131,7 +1140,7 @@ async fn create_transient_ai_client_for_config(
     .await
     .map_err(|e| format!("Failed to resolve subscription auth: {}", e))?;
 
-    Ok(
+    let client =
         openbitfun_core::infrastructure::ai::client_factory::apply_subscription_request_profile(
             &auth,
             openbitfun_core::infrastructure::ai::AIClient::new_with_runtime_options(
@@ -1139,7 +1148,13 @@ async fn create_transient_ai_client_for_config(
                 proxy_config,
                 stream_options,
             ),
-        ),
+        );
+    Ok(
+        openbitfun_core::infrastructure::ai::client_factory::apply_model_default_reasoning(
+            client,
+            &model_config,
+        )
+        .await,
     )
 }
 
@@ -1236,6 +1251,35 @@ pub async fn test_ai_config_connection(
             Err(format!("Connection test failed: {}", e))
         }
     }
+}
+
+/// Runs one real generation against an image service draft so the settings page
+/// can confirm the dialect, credentials and endpoint actually work together.
+#[tauri::command]
+pub async fn test_image_generation_service(
+    request: TestImageGenerationServiceRequest,
+) -> Result<openbitfun_core::agentic::image_generation::ImageServiceTestOutcome, String> {
+    const DEFAULT_PROMPT: &str =
+        "A cute minimalist mascot icon with a rounded-rectangle body, two small friendly oval eyes, and a short top antenna ending in a round joystick knob. Use a playful, harmonious color palette selected randomly for each generation, with no fixed colors. Centered composition, clean uncluttered background, polished product illustration.";
+
+    let prompt = request
+        .prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
+        .unwrap_or(DEFAULT_PROMPT);
+    let dialect = request.service.dialect;
+    let service_id = request.service.id.clone();
+
+    let outcome =
+        openbitfun_core::agentic::image_generation::test_service(&request.service, prompt).await;
+
+    info!(
+        "Image generation service test completed: service={}, dialect={:?}, success={}, elapsed={}ms",
+        service_id, dialect, outcome.success, outcome.elapsed_ms
+    );
+
+    Ok(outcome)
 }
 
 #[tauri::command]
@@ -5672,6 +5716,21 @@ pub async fn get_watched_paths() -> Result<Vec<String>, String> {
     file_watch::get_watched_paths().await
 }
 
+/// Whether filesystem changes still reach product surfaces, and why not.
+/// `LocalOnly`: the watcher is a host-side resource and is not used for remote
+/// workspaces, which do their own remote IO.
+#[tauri::command]
+pub async fn get_file_watch_status() -> Result<file_watch::FileWatchStatus, String> {
+    Ok(file_watch::get_file_watch_status())
+}
+
+/// Re-registers every watched root on a fresh native watcher so a surface can
+/// recover from a backend failure after the user fixes its cause.
+#[tauri::command]
+pub async fn retry_file_watch() -> Result<(), String> {
+    file_watch::retry_file_watch().await
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionProviderRequest {
@@ -5685,6 +5744,43 @@ pub struct SubscriptionLoginRequest {
     pub session_id: String,
     #[serde(default)]
     pub method: Option<openbitfun_core::infrastructure::subscription_auth::SubscriptionLoginMethod>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionAccountInstanceRequest {
+    pub provider: openbitfun_core::infrastructure::subscription_auth::SubscriptionProvider,
+    pub account_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionAccountEnabledRequest {
+    pub provider: openbitfun_core::infrastructure::subscription_auth::SubscriptionProvider,
+    pub account_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionAccountLoginRequest {
+    pub provider: openbitfun_core::infrastructure::subscription_auth::SubscriptionProvider,
+    pub account_id: String,
+    pub session_id: String,
+    #[serde(default)]
+    pub method: Option<openbitfun_core::infrastructure::subscription_auth::SubscriptionLoginMethod>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionAccountQuotaRequest {
+    pub provider: openbitfun_core::infrastructure::subscription_auth::SubscriptionProvider,
+    pub account_id: String,
+    /// Saved API-key configuration on this host; absent retains account-slot lookup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default)]
+    pub force_refresh: bool,
 }
 
 async fn configured_ai_proxy(
@@ -5707,6 +5803,160 @@ async fn configured_ai_proxy(
 pub async fn list_subscription_accounts(
 ) -> Result<Vec<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccount>, String> {
     Ok(openbitfun_core::infrastructure::subscription_auth::list_accounts().await)
+}
+
+#[tauri::command]
+pub async fn list_subscription_account_instances() -> Result<
+    Vec<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccountInstance>,
+    String,
+> {
+    openbitfun_core::infrastructure::subscription_auth::list_account_instances()
+        .await
+        .map_err(|error| format!("Failed to list subscription account instances: {error:#}"))
+}
+
+#[tauri::command]
+pub async fn start_subscription_account_login(
+    state: State<'_, AppState>,
+    request: SubscriptionAccountLoginRequest,
+) -> Result<openbitfun_core::infrastructure::subscription_auth::LoginStartResult, String> {
+    let options = openbitfun_core::infrastructure::subscription_auth::SubscriptionHttpOptions::new(
+        configured_ai_proxy(&state).await?,
+        false,
+    );
+    openbitfun_core::infrastructure::subscription_auth::start_account_login_with_options(
+        request.provider,
+        request.account_id,
+        request.session_id,
+        request.method,
+        options,
+    )
+    .await
+    .map_err(|error| format!("Failed to start subscription account login: {error:#}"))
+}
+
+#[tauri::command]
+pub async fn get_subscription_account_quota(
+    state: State<'_, AppState>,
+    request: SubscriptionAccountQuotaRequest,
+) -> Result<openbitfun_core_types::subscription::SubscriptionQuotaSnapshot, String> {
+    let options = openbitfun_core::infrastructure::subscription_auth::SubscriptionHttpOptions::new(
+        configured_ai_proxy(&state).await?,
+        false,
+    );
+    if let Some(model_id) = request.model_id.as_ref() {
+        use openbitfun_core::infrastructure::subscription_auth::{
+            opencode_quota, SubscriptionProvider,
+        };
+        use openbitfun_core::service::config::types::AuthConfig;
+        if request.provider != SubscriptionProvider::Opencode
+            || request.account_id != format!("model:{model_id}")
+        {
+            return Err("Invalid model quota binding".into());
+        }
+        let model = state
+            .config_service
+            .get_ai_models()
+            .await
+            .map_err(|_| "Could not read model configuration")?
+            .into_iter()
+            .find(|model| model.id == *model_id)
+            .ok_or("Model configuration is unavailable")?;
+        if !matches!(model.auth, AuthConfig::ApiKey) {
+            return Err("OpenCode Go allowance requires API-key authentication".into());
+        }
+        if model.custom_headers.as_ref().is_some_and(|headers| {
+            (!headers.is_empty() && model.custom_headers_mode.as_deref() == Some("replace"))
+                || headers.keys().any(|name| {
+                    name.eq_ignore_ascii_case("authorization")
+                        || name.eq_ignore_ascii_case("x-api-key")
+                })
+        }) {
+            return Ok(opencode_quota::unavailable(
+                &request.account_id,
+                "opencode_custom_auth",
+            ));
+        }
+        let observation = opencode_quota::read_api_key_quota(
+            &model.base_url,
+            &model.api_key,
+            &request.account_id,
+            &options,
+        )
+        .await
+        .map_err(|_| "Could not read OpenCode allowance")?;
+        let current = state
+            .config_service
+            .get_ai_models()
+            .await
+            .map_err(|_| "Could not revalidate model configuration")?;
+        if !current.iter().any(|entry| {
+            entry.id == model.id
+                && entry.api_key == model.api_key
+                && entry.base_url == model.base_url
+                && entry.auth == model.auth
+                && entry.custom_headers == model.custom_headers
+                && entry.custom_headers_mode == model.custom_headers_mode
+        }) {
+            return Err(
+                "Model authorization changed while querying allowance; refresh again".into(),
+            );
+        }
+        return Ok(observation);
+    }
+    openbitfun_core::infrastructure::subscription_auth::read_account_quota_with_options(
+        request.provider,
+        &request.account_id,
+        request.force_refresh,
+        &options,
+    )
+    .await
+    .map_err(|error| format!("Failed to read subscription account quota: {error:#}"))
+}
+
+#[tauri::command]
+pub async fn logout_subscription_account_instance(
+    request: SubscriptionAccountInstanceRequest,
+) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionLogoutResult, String> {
+    openbitfun_core::infrastructure::subscription_auth::logout_account(
+        request.provider,
+        &request.account_id,
+    )
+    .await
+    .map_err(|error| format!("Failed to logout subscription account instance: {error:#}"))
+}
+
+#[tauri::command]
+pub async fn set_subscription_account_enabled(
+    request: SubscriptionAccountEnabledRequest,
+) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccountInstance, String>
+{
+    openbitfun_core::infrastructure::subscription_auth::set_account_instance_enabled(
+        request.provider,
+        &request.account_id,
+        request.enabled,
+    )
+    .await
+    .map_err(|error| format!("Failed to set subscription account eligibility: {error:#}"))
+}
+
+#[tauri::command]
+pub async fn refresh_subscription_account_instance(
+    state: State<'_, AppState>,
+    request: SubscriptionAccountInstanceRequest,
+) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccountInstance, String>
+{
+    let options = openbitfun_core::infrastructure::subscription_auth::SubscriptionHttpOptions::new(
+        configured_ai_proxy(&state).await?,
+        false,
+    );
+    openbitfun_core::infrastructure::subscription_auth::refresh_account_instance_with_options(
+        request.provider,
+        &request.account_id,
+        &options,
+    )
+    .await
+    .map_err(|error| format!("Failed to refresh subscription account instance: {error:#}"))
 }
 
 #[tauri::command]
@@ -5980,4 +6230,50 @@ mod file_workspace_id_contract_tests {
         assert_eq!(legacy.workspace_path, "/legacy/project");
         assert_eq!(legacy.remote_connection_id.as_deref(), Some("ssh-old"));
     }
+}
+
+#[cfg(test)]
+mod quota_request_compatibility_tests {
+    use super::SubscriptionAccountQuotaRequest;
+    #[test]
+    fn legacy_account_request_round_trips_without_a_model_binding() {
+        let old = serde_json::json!({"provider":"codex","accountId":"codex","forceRefresh":false});
+        let request: SubscriptionAccountQuotaRequest = serde_json::from_value(old.clone()).unwrap();
+        assert!(request.model_id.is_none());
+        assert_eq!(serde_json::to_value(request).unwrap(), old);
+        let minimal: SubscriptionAccountQuotaRequest = serde_json::from_value(
+            serde_json::json!({"provider":"opencode","accountId":"opencode"}),
+        )
+        .unwrap();
+        assert!(!minimal.force_refresh);
+        assert!(minimal.model_id.is_none());
+    }
+    #[test]
+    fn model_binding_is_explicit_and_does_not_repurpose_the_legacy_account_id() {
+        let request: SubscriptionAccountQuotaRequest = serde_json::from_value(serde_json::json!({
+            "provider":"opencode","accountId":"model:fixture","modelId":"fixture"
+        }))
+        .unwrap();
+        assert_eq!(request.model_id.as_deref(), Some("fixture"));
+        assert_eq!(request.account_id, "model:fixture");
+    }
+}
+
+#[tauri::command]
+pub async fn get_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::WorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state
+        .workspace_service
+        .get_workspace_icon(&request.workspace_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn set_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::SetWorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state.workspace_service.set_workspace_icon(request).await
 }

@@ -374,7 +374,7 @@ pub fn show_main_window(app: &tauri::AppHandle) {
         crate::cancel_main_window_close_request_on_macos(app);
         crate::mark_main_window_hidden_on_macos(false);
     }
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         // Restore before showing: Win+D can leave a visible window minimized.
         if let Err(error) = window.unminimize() {
             log::warn!("Failed to unminimize main window via tray: {}", error);
@@ -398,7 +398,7 @@ pub fn show_main_window(app: &tauri::AppHandle) {
 
 #[cfg(not(target_os = "macos"))]
 fn toggle_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         // Minimized windows may still be visible according to the OS. Never
         // hide them here: restore them while their normal placement is intact.
         match window.is_minimized() {

@@ -20,7 +20,7 @@ describe('Memory settings presentation', () => {
     expect(advancedEnd).toBeGreaterThan(advancedStart);
     expect(source).not.toContain("import '@/infrastructure/config/components/MemoriesConfig.scss';");
     expect(source).not.toContain('<details');
-    expect(advancedSection).toContain("description={t('sections.advanced.description')}");
+    expect(advancedSection).not.toContain("description={t('sections.advanced.description')}");
     expect(advancedSection).toContain('aria-expanded={advancedOpen}');
     expect(advancedSection).toContain('{advancedOpen && (');
   });

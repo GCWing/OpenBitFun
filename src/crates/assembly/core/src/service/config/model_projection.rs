@@ -42,6 +42,7 @@ pub fn model_summary(model: &AIModelConfig) -> ModelSummary {
         enabled: model.enabled,
         context_window: model.context_window,
         max_tokens: model.max_tokens,
+        max_images_per_request: model.max_images_per_request,
         api_key_configured: !model.api_key.is_empty(),
         custom_header_names,
         custom_request_body_configured: model.custom_request_body.is_some(),
@@ -49,6 +50,9 @@ pub fn model_summary(model: &AIModelConfig) -> ModelSummary {
             AuthConfig::ApiKey => "api_key".to_string(),
             AuthConfig::Subscription { provider, .. } => {
                 format!("subscription:{provider:?}").to_ascii_lowercase()
+            }
+            AuthConfig::SubscriptionPool { provider, .. } => {
+                format!("subscription_pool:{provider:?}").to_ascii_lowercase()
             }
         }),
     }

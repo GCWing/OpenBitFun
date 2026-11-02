@@ -46,6 +46,18 @@ pub enum OpenBitFunError {
     #[error("AI provider error: {0}")]
     AIProvider(AiProviderError),
 
+    /// Runtime recovery constraint; the provider failure remains unchanged.
+    #[error("{source} Automatic account switching is unavailable for this history: account-bound reasoning requires the original account. Existing reasoning and tool history were preserved.")]
+    AccountReplayBound {
+        #[source]
+        source: Box<OpenBitFunError>,
+    },
+    #[error("{source} This history requires its original channel; restore that channel or start a new conversation. Existing history was preserved.")]
+    ChannelReplayBound {
+        #[source]
+        source: Box<OpenBitFunError>,
+    },
+
     /// A provider rejected the request before any effective model output because
     /// the input exceeded its context window. The execution engine may compact
     /// the session and retry the same logical model round.
@@ -207,6 +219,8 @@ impl OpenBitFunError {
         match self {
             OpenBitFunError::AIClient(msg) => classify_ai_error_message(msg),
             OpenBitFunError::AIProvider(error) => error.category.clone(),
+            OpenBitFunError::AccountReplayBound { source } => source.error_category(),
+            OpenBitFunError::ChannelReplayBound { source } => source.error_category(),
             OpenBitFunError::RecoverableContextOverflow(_) => ErrorCategory::ContextOverflow,
             OpenBitFunError::Timeout(_) => ErrorCategory::Timeout,
             OpenBitFunError::Cancelled(_) => ErrorCategory::Unknown,
@@ -216,6 +230,32 @@ impl OpenBitFunError {
 
     /// Build a structured, provider-agnostic AI error detail for UI recovery.
     pub fn error_detail(&self) -> AiErrorDetail {
+        if let Self::ChannelReplayBound { source } = self {
+            let mut detail = source.error_detail();
+            detail.recovery_constraint = Some("channel_bound_replay".into());
+            detail.action_hints.retain(|hint| hint != "switch_model");
+            if !detail
+                .action_hints
+                .iter()
+                .any(|hint| hint == "start_new_chat")
+            {
+                detail.action_hints.push("start_new_chat".into());
+            }
+            return detail;
+        }
+        if let Self::AccountReplayBound { source } = self {
+            let mut detail = source.error_detail();
+            detail.recovery_constraint = Some("account_bound_replay".into());
+            detail.action_hints.retain(|hint| hint != "switch_model");
+            if !detail
+                .action_hints
+                .iter()
+                .any(|hint| hint == "start_new_chat")
+            {
+                detail.action_hints.push("start_new_chat".into());
+            }
+            return detail;
+        }
         if let OpenBitFunError::AIProvider(error)
         | OpenBitFunError::RecoverableContextOverflow(error) = self
         {
@@ -224,6 +264,25 @@ impl OpenBitFunError {
         let category = self.error_category();
         let message = self.to_string();
         ai_error_detail_from_message(&message, category)
+    }
+
+    pub(crate) fn with_account_bound_replay(self) -> Self {
+        if matches!(self, Self::AccountReplayBound { .. }) {
+            self
+        } else {
+            Self::AccountReplayBound {
+                source: Box::new(self),
+            }
+        }
+    }
+    pub(crate) fn with_channel_bound_replay(self) -> Self {
+        if matches!(self, Self::ChannelReplayBound { .. }) {
+            self
+        } else {
+            Self::ChannelReplayBound {
+                source: Box::new(self),
+            }
+        }
     }
 
     pub fn is_recoverable_context_overflow(&self) -> bool {
@@ -295,5 +354,67 @@ impl From<String> for OpenBitFunError {
 impl From<&str> for OpenBitFunError {
     fn from(error: &str) -> Self {
         OpenBitFunError::Service(error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn account_replay_constraint_preserves_provider_failure_and_safe_recovery_hints() {
+        let provider = AiProviderError::from_parts(
+            "Quota exhausted; request_id=original-request".into(),
+            Some("codex".into()),
+            Some("insufficient_quota".into()),
+            Some(402),
+        );
+        let original = provider.detail();
+        let error = OpenBitFunError::AIProvider(provider)
+            .with_account_bound_replay()
+            .with_account_bound_replay();
+        let detail = error.error_detail();
+        assert_eq!(error.error_category(), original.category);
+        assert_eq!(detail.category, original.category);
+        assert_eq!(detail.provider, original.provider);
+        assert_eq!(detail.provider_code, original.provider_code);
+        assert_eq!(detail.provider_message, original.provider_message);
+        assert_eq!(detail.http_status, original.http_status);
+        assert_eq!(detail.request_id, original.request_id);
+        assert_eq!(detail.retryable, original.retryable);
+        assert_eq!(
+            detail.recovery_constraint.as_deref(),
+            Some("account_bound_replay")
+        );
+        assert!(!detail
+            .action_hints
+            .iter()
+            .any(|hint| hint == "switch_model"));
+        assert_eq!(
+            detail
+                .action_hints
+                .iter()
+                .filter(|hint| *hint == "start_new_chat")
+                .count(),
+            1
+        );
+        assert_eq!(
+            error
+                .to_string()
+                .matches("Automatic account switching")
+                .count(),
+            1
+        );
+    }
+}
+
+#[cfg(feature = "agent-runtime")]
+impl From<openbitfun_agent_tools::computer_use_host::error::ComputerUseError> for OpenBitFunError {
+    fn from(error: openbitfun_agent_tools::computer_use_host::error::ComputerUseError) -> Self {
+        use openbitfun_agent_tools::computer_use_host::error::ComputerUseError;
+        match error {
+            ComputerUseError::Tool(message) => Self::Tool(message),
+            ComputerUseError::Service(message) => Self::Service(message),
+        }
     }
 }

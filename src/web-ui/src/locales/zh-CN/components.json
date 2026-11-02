@@ -584,7 +584,15 @@
     "dropRight": "右",
     "dropTop": "上",
     "dropBottom": "下",
-    "dropCenter": "放置"
+    "dropCenter": "放置",
+    "empty": {
+      "title": "暂无打开的内容",
+      "workspaceUnavailable": "工作区已断开，请重新连接。",
+      "selectWorkspace": "请先选择工作区。",
+      "browseFiles": "浏览文件",
+      "newTerminal": "新建终端",
+      "reopen": "重新打开 {{title}}"
+    }
   },
   "flexiblePanel": {
     "empty": {
@@ -660,6 +668,7 @@
     "loadFailed": "无法加载此卡片。",
     "unsupportedTemplate": "此卡片需要更新版本的 OpenBitFun。",
     "updated": "更新于{{time}}",
+    "updatedWithWarning": "更新于{{time}}，部分数据可能缺失",
     "refreshFailed": "刷新失败：{{error}}",
     "menu": {
       "more": "更多操作",
@@ -683,6 +692,14 @@
     },
     "checklist": {
       "empty": "暂无事项"
+    },
+    "chart": {
+      "empty": "暂无可绘制的数据",
+      "other": "其他",
+      "remaining": "剩余",
+      "ofTotal": "共 {{total}}",
+      "changeSince": "较 {{label}} {{change}}",
+      "range": "{{min}} – {{max}}"
     },
     "cron": {
       "failed": "无法加载定时任务。",

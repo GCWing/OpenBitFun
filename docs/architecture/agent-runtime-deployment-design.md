@@ -96,6 +96,14 @@ flowchart LR
 具体 `EventQueue` 仍由 Core 产品装配；当前 Shared IPC 只把 TUI 必需的强类型操作和事件映射到同一个 Runtime owner，
 没有公开协议承诺。是否以 App Server Shared transport 替换并删除它，由行为等价、性能、安全和回滚证据决定。
 
+Desktop 开发启动器默认使用日常产品数据目录，安装版与一个开发版 Embedded host 可共用已有配置与会话。
+`--shared-data` 保留为默认模式的显式写法；`--isolated-data` 才选择当前仓库的独立测试目录，已有隔离数据保持原位。
+开发版通过仅在 debug/devtools 构建生效的 `development` MiniApp host channel 分离宿主锁、
+私有 IPC discovery 和 native launcher 记录；默认安装版路径与 v1 记录不变，开发版使用 v2
+启动记录让旧 Shell 明确拒绝，而不是忽略 channel 后连错宿主。配置、模型、MiniApp 内容与
+workspace/session 存储仍由原 owner 读写；不增加跨进程内存状态同步，也不放宽 Session 单写
+或 scheduler 独占 lease。这不是 Shared GUI Runtime transport，远程四种场景不由本机 channel 获得新能力。
+
 ## 2. 最少名词
 
 | 名词 | 唯一含义 | 不等于 |

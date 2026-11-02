@@ -169,3 +169,25 @@ test('shared runtime refresh preserves workspace identity and refreshes download
     assert.equal(state.workspaceName, 'Not connected');
   }
 });
+
+
+test('message times preserve legacy scales, omit invalid values, and follow the active locale', () => {
+  const { remote } = load();
+  const source = fs.readFileSync(path.join(root, 'ets/services/TimeFormat.ets'), 'utf8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }
+  }).outputText;
+  const exports = {};
+  new Function('require', 'exports', compiled)(() => ({ RemoteI18n: remote }), exports);
+  const { TimeFormat } = exports;
+  for (const locale of ['zh-CN', 'en-US']) {
+    remote.setLanguage(locale);
+    const expected = new Intl.DateTimeFormat(locale, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+    }).format(new Date(1700000000000));
+    for (const timestamp of ['1700000000', '1700000000000', '1700000000000000', '1700000000000000000', '2023-11-14T22:13:20.000Z']) {
+      assert.equal(TimeFormat.message(timestamp), expected);
+    }
+    for (const timestamp of ['', 'invalid', '9'.repeat(30)]) assert.equal(TimeFormat.message(timestamp), '');
+  }
+});

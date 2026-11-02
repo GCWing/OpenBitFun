@@ -4,7 +4,7 @@ import type { DialogTurn } from '../../types/flow-chat';
 import { UserMessageItem } from './UserMessageItem';
 import { ModelRoundItem } from './ModelRoundItem';
 import { backgroundDeliveryFromMetadata } from '../../utils/backgroundDelivery';
-import { getTurnOutputDurationMs } from '../../utils/turnUsageMetrics';
+import { getTurnOutputDurationMs, getTurnTtftMs } from '../../utils/turnUsageMetrics';
 import './BackgroundRunItem.scss';
 
 /** A delivery receipt is presentation only; expanding it reads the original execution. */
@@ -17,6 +17,7 @@ export function BackgroundRunItem({ turn, absoluteTurnIndex, forceOpen = false, 
   useEffect(() => { if (forceOpen) setOpen(true); }, [forceOpen]);
   const completed = ['completed', 'finishing'].includes(turn.status);
   const turnOutputDurationMs = getTurnOutputDurationMs(turn.modelRounds);
+  const turnTtftMs = getTurnTtftMs(turn.modelRounds);
   return (
     <details className="background-run" open={open}
       data-openbitfun-component="background-run" data-openbitfun-part="root"
@@ -32,7 +33,7 @@ export function BackgroundRunItem({ turn, absoluteTurnIndex, forceOpen = false, 
           {turn.modelRounds.map((round, index) => <ModelRoundItem key={round.id} round={round} turnId={turn.id}
             expandedThinkingItemIds={expandedThinkingItemIds} isLastRound={index === turn.modelRounds.length - 1} isTurnComplete={completed}
             turnStartedAt={turn.startTime} turnEndedAt={turn.endTime}
-            turnOutputDurationMs={turnOutputDurationMs} turnTokenUsage={turn.tokenUsage} />)}
+            turnOutputDurationMs={turnOutputDurationMs} turnTtftMs={turnTtftMs} turnTokenUsage={turn.tokenUsage} />)}
         </div>
       ) : null}
     </details>

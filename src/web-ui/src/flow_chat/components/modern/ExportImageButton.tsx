@@ -23,15 +23,11 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { ModelThinkingDisplay } from '../../tool-cards/ModelThinkingDisplay';
 import { hasComposerPresentationReferences, parseComposerPresentation } from '../../utils/composerPresentation';
 import { UserMessagePresentationContent, UserMessageTextContent } from './UserMessagePresentationContent';
+import { captureExportCanvas } from '../../utils/exportImageCapture';
+import { readExportImageLayout } from './exportImageLayout';
 import './ExportImageButton.scss';
 
 const log = createLogger('ExportImageButton');
-
-// Lazy-load modern-screenshot.
-const loadModernScreenshot = () => import('modern-screenshot');
-
-/** Maximum time to wait for capture before aborting (ms). */
-const CAPTURE_TIMEOUT_MS = 15_000;
 
 /** Minimum time to wait for React render before capture (ms). */
 const MIN_RENDER_WAIT_MS = 300;
@@ -41,33 +37,6 @@ const PER_ROUND_WAIT_MS = 80;
 
 /** Maximum total render wait time (ms). */
 const MAX_RENDER_WAIT_MS = 2_000;
-
-/** Collect ALL CSS custom properties from document :root so the offscreen
- *  render inherits the full appearance (fonts, radii, shadows, spacing, etc.).
- *  modern-screenshot resolves var() by cloning computed styles, but
- *  variables used inside the captured subtree must still be available on
- *  the wrapper element for correct initial layout. */
-function collectAllCssVariables(): Record<string, string> {
-  const vars: Record<string, string> = {};
-  const computedStyle = getComputedStyle(document.documentElement);
-  for (let i = 0; i < computedStyle.length; i++) {
-    const prop = computedStyle[i];
-    if (prop.startsWith('--')) {
-      const value = computedStyle.getPropertyValue(prop).trim();
-      if (value) {
-        vars[prop] = value;
-      }
-    }
-  }
-  return vars;
-}
-
-/** Validate that a data-URL is not blank/corrupt. */
-function validateDataUrl(dataUrl: string): void {
-  if (!dataUrl || dataUrl === 'data:,' || dataUrl.length < 100) {
-    throw new Error('Capture returned empty or corrupt image data');
-  }
-}
 
 interface ExportImageButtonProps {
   turnId: string;
@@ -297,6 +266,7 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
       }
       
       const { turn: dialogTurn, sessionTitle } = result;
+      const layout = readExportImageLayout(turnId, (triggerRef ?? buttonRef).current);
       
       // Read the resolved appearance background color.
       const computedStyle = getComputedStyle(document.documentElement);
@@ -330,32 +300,26 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
       }
       
       // Create hidden wrapper for rendering.
-      // Use left: -9999px (not z-index: -9999) so elements remain visible to capture.
+      // Keep the staging tree laid out without covering the conversation.
       wrapper = document.createElement('div');
       wrapper.id = 'export-image-wrapper';
       wrapper.className = 'export-image-wrapper';
-
-      // Measure the actual chat pane width so the exported image uses the
-      // exact same text-wrap width as the live chat. Fallback to 1200px.
-      const chatPane = document.querySelector('.openbitfun-chat-pane__content');
-      const chatWidth = chatPane?.getBoundingClientRect().width || 1200;
 
       wrapper.style.cssText = `
         position: absolute;
         left: -9999px;
         top: 0;
-        z-index: -9999;
         pointer-events: none;
         background: ${bgColor};
         visibility: visible;
         opacity: 1;
         overflow: visible;
-        width: ${chatWidth}px;
       `;
+      if (layout.width) wrapper.style.width = `${layout.width}px`;
       
-      // Copy ALL CSS variables for consistent styling.
-      const allVars = collectAllCssVariables();
-      for (const [varName, value] of Object.entries(allVars)) {
+      // Preserve the column's appearance for layout. Capture serializes only
+      // resolved properties, so inherited variables do not bloat the SVG.
+      for (const [varName, value] of Object.entries(layout.variables)) {
         wrapper.style.setProperty(varName, value);
       }
       
@@ -374,46 +338,15 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
       await new Promise(resolve => setTimeout(resolve, renderWait));
       
       // Find rendered container.
-      const container = wrapper.querySelector('.export-content') as HTMLElement;
+      const container = wrapper.querySelector<HTMLElement>('.export-content');
 
-      // Match the export width exactly to the live chat pane so text wrapping
-      // is identical. SCSS sets a fixed width; override it here dynamically.
-      container.style.width = `${chatWidth}px`;
-      container.style.maxWidth = 'none';
-      
       if (!container) {
         throw new Error(i18nService.t('flow-chat:exportImage.containerNotFound'));
       }
-      
+
       // Yield to the main thread so the browser can finish layout/paint.
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      // Capture the logo placeholder position (relative to the container)
-      // BEFORE the DOM is torn down, so we can composite the logo precisely
-      // onto the final image.
-      const containerRect = container.getBoundingClientRect();
-      const placeholderEl = container.querySelector(`.${LOGO_PLACEHOLDER_CLASS}`) as HTMLElement | null;
-      let logoBox: { x: number; y: number; w: number; h: number; radius: number } | null = null;
-      if (placeholderEl) {
-        const r = placeholderEl.getBoundingClientRect();
-        const radiusStr = getComputedStyle(placeholderEl).getPropertyValue('border-radius');
-        const radius = parseFloat(radiusStr) || 0;
-        logoBox = {
-          x: r.left - containerRect.left,
-          y: r.top - containerRect.top,
-          w: r.width,
-          h: r.height,
-          radius,
-        };
-      }
-
-      // Generate image via modern-screenshot with timeout guard.
-      const modernScreenshot = await loadModernScreenshot();
-      
-      // Yield again before capture.
-      await new Promise(resolve => setTimeout(resolve, 0));
-      
-      const pixelRatio = 2;
       const captureFilter = (node: Node) => {
         // Filter out action buttons and other non-export elements.
         if (node instanceof HTMLElement) {
@@ -430,131 +363,61 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
         return true;
       };
 
-      const captureOptions = {
-        quality: 1,
-        scale: pixelRatio,
-        backgroundColor: bgColor,
-        fetch: {
-          bypassingCache: true,
-        } as const,
-        filter: captureFilter,
-        // Disable font embedding to avoid cross-origin stylesheet issues;
-        // the offscreen DOM already has system fonts available.
-        font: false as const,
-        features: {
-          removeControlCharacter: true,
-          fixSvgXmlDecode: true,
-        } as const,
-      };
+      const canvas = await captureExportCanvas(container, bgColor, captureFilter);
 
-      let baseDataUrl: string;
-
-      // Strategy 1: domToPng (primary)
-      try {
-        baseDataUrl = await withTimeout(
-          modernScreenshot.domToPng(container, captureOptions),
-          CAPTURE_TIMEOUT_MS,
-          'domToPng capture',
-          cleanupDom,
-        );
-        validateDataUrl(baseDataUrl);
-      } catch (e1) {
-        log.warn('domToPng failed, trying domToBlob fallback', e1);
-        // Ensure DOM is still alive for fallback.
-        if (!wrapper || !wrapper.parentNode) {
-          throw new Error('DOM was cleaned up before fallback could run');
-        }
-
-        // Strategy 2: domToBlob (fallback)
-        try {
-          const fallbackBlob = await withTimeout(
-            modernScreenshot.domToBlob(container, { ...captureOptions, type: 'image/png' }),
-            CAPTURE_TIMEOUT_MS,
-            'domToBlob capture',
-            cleanupDom,
-          );
-          if (!fallbackBlob) throw new Error(i18nService.t('flow-chat:exportImage.generateFailed'));
-          baseDataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(fallbackBlob);
-          });
-          validateDataUrl(baseDataUrl);
-        } catch (e2) {
-          log.warn('domToBlob fallback also failed, trying reduced scale', e2);
-          // Ensure DOM is still alive for second fallback.
-          if (!wrapper || !wrapper.parentNode) {
-            throw new Error('DOM was cleaned up before reduced-scale fallback could run');
-          }
-
-          // Strategy 3: domToPng with scale=1 (reduced memory for large DOMs)
-          const reducedOptions = { ...captureOptions, scale: 1 };
-          baseDataUrl = await withTimeout(
-            modernScreenshot.domToPng(container, reducedOptions),
-            CAPTURE_TIMEOUT_MS,
-            'domToPng reduced-scale capture',
-            cleanupDom,
-          );
-          validateDataUrl(baseDataUrl);
-        }
+      // Capture has settled fonts. Measure the logo against that same layout
+      // before removing the staging DOM.
+      const containerRect = container.getBoundingClientRect();
+      const placeholderEl = container.querySelector(`.${LOGO_PLACEHOLDER_CLASS}`) as HTMLElement | null;
+      let logoBox: { x: number; y: number; w: number; h: number; radius: number } | null = null;
+      if (placeholderEl) {
+        const r = placeholderEl.getBoundingClientRect();
+        const radiusStr = getComputedStyle(placeholderEl).getPropertyValue('border-radius');
+        const radius = parseFloat(radiusStr) || 0;
+        logoBox = {
+          x: r.left - containerRect.left,
+          y: r.top - containerRect.top,
+          w: r.width,
+          h: r.height,
+          radius,
+        };
       }
 
-      // Cleanup the offscreen DOM as soon as we have the base capture.
       cleanupDom();
 
-      // Composite the logo onto the captured image so it always appears,
-      // regardless of capture library behavior with <img> elements.
-      const blob: Blob | null = await new Promise<Blob | null>((resolve, reject) => {
-        const baseImg = new window.Image();
-        baseImg.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = baseImg.naturalWidth;
-            canvas.height = baseImg.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) { reject(new Error('no canvas ctx for compositing')); return; }
-            ctx.drawImage(baseImg, 0, 0);
-
-            if (logoImage && logoBox) {
-              const dx = logoBox.x * pixelRatio;
-              const dy = logoBox.y * pixelRatio;
-              const dw = logoBox.w * pixelRatio;
-              const dh = logoBox.h * pixelRatio;
-              const dr = logoBox.radius * pixelRatio;
-
-              ctx.save();
-              if (dr > 0) {
-                const path = new Path2D();
-                const r = Math.min(dr, dw / 2, dh / 2);
-                path.moveTo(dx + r, dy);
-                path.lineTo(dx + dw - r, dy);
-                path.quadraticCurveTo(dx + dw, dy, dx + dw, dy + r);
-                path.lineTo(dx + dw, dy + dh - r);
-                path.quadraticCurveTo(dx + dw, dy + dh, dx + dw - r, dy + dh);
-                path.lineTo(dx + r, dy + dh);
-                path.quadraticCurveTo(dx, dy + dh, dx, dy + dh - r);
-                path.lineTo(dx, dy + r);
-                path.quadraticCurveTo(dx, dy, dx + r, dy);
-                path.closePath();
-                ctx.clip(path);
-              }
-              ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'high';
-              ctx.drawImage(logoImage, dx, dy, dw, dh);
-              ctx.restore();
-            } else {
-              log.warn('Logo overlay skipped', { hasLogo: !!logoImage, hasBox: !!logoBox });
-            }
-
-            canvas.toBlob((b) => resolve(b), 'image/png');
-          } catch (err) {
-            reject(err);
-          }
-        };
-        baseImg.onerror = reject;
-        baseImg.src = baseDataUrl;
-      });
+      // Reuse the verified raster instead of PNG -> Image -> second canvas.
+      // The actual dimensions also keep the logo aligned after a scale fallback.
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('No canvas context for compositing');
+      if (logoImage && logoBox) {
+        const scaleX = canvas.width / containerRect.width;
+        const scaleY = canvas.height / containerRect.height;
+        ctx.save();
+        ctx.scale(scaleX, scaleY);
+        const { x, y, w, h, radius } = logoBox;
+        if (radius > 0) {
+          const path = new Path2D();
+          const r = Math.min(radius, w / 2, h / 2);
+          path.moveTo(x + r, y);
+          path.lineTo(x + w - r, y);
+          path.quadraticCurveTo(x + w, y, x + w, y + r);
+          path.lineTo(x + w, y + h - r);
+          path.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+          path.lineTo(x + r, y + h);
+          path.quadraticCurveTo(x, y + h, x, y + h - r);
+          path.lineTo(x, y + r);
+          path.quadraticCurveTo(x, y, x + r, y);
+          path.closePath();
+          ctx.clip(path);
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(logoImage, x, y, w, h);
+        ctx.restore();
+      } else {
+        log.warn('Logo overlay skipped', { hasLogo: !!logoImage, hasBox: !!logoBox });
+      }
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
 
       if (!blob) {
         throw new Error(i18nService.t('flow-chat:exportImage.generateFailed'));
@@ -622,7 +485,7 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
       isExportingRef.current = false;
       setIsExporting(false);
     }
-  }, [getDialogTurn]);
+  }, [getDialogTurn, triggerRef, turnId]);
 
   return (
     <>

@@ -17,7 +17,10 @@ export interface LegacySessionPaneLayout {
 }
 
 interface WorkbenchPaneLayoutState {
+  /** Surface whose per-session pane modes are live. */
+  surfaceId: string;
   activeKey: string;
+  /** Pane mode per (surface, session); a session never seen before stays collapsed. */
   modes: ReadonlyMap<string, SessionPaneMode>;
   contentSide: ContentPaneSide;
   displayMode: SessionPaneDisplayMode;
@@ -28,6 +31,7 @@ interface WorkbenchPaneLayoutState {
   preferredRightPaneWidth: number;
   activate: (surfaceId: string, sessionId: string | null) => void;
   showContent: () => void;
+  showContentForSession: (surfaceId: string, sessionId: string) => void;
   hideContent: () => void;
   collapseEmptyContent: () => void;
   maximizeContent: () => void;
@@ -38,7 +42,12 @@ interface WorkbenchPaneLayoutState {
   swapPanes: () => void;
   resizeRightPane: (width: number) => void;
   applyLegacyLayout: (layout: Partial<LegacySessionPaneLayout>) => void;
-  clearSessionMemory: () => void;
+  /**
+   * Drop every per-session pane memory on every surface. Geometry preferences
+   * stay; used when the device surface changes and nothing may be restored from
+   * the device being left.
+   */
+  resetSessionMemory: () => void;
 }
 
 const CONTENT_SIDE_KEY = 'openbitfun:sessionContentSide';
@@ -65,7 +74,11 @@ function localPreferenceStorage(): PreferenceStorage | undefined {
   catch { return undefined; }
 }
 
-/** Workbench geometry is device-local, independent of session content snapshots. */
+/**
+ * Pane geometry is device-local preferences, while the open state is remembered
+ * per session: switching sessions restores the pane state that session was left
+ * with instead of inheriting the state of the session that was active before.
+ */
 export function createWorkbenchPaneLayoutStore(storage = localPreferenceStorage()) {
   const read = (key: string) => {
     try { return storage?.getItem(key); } catch { return null; }
@@ -91,6 +104,7 @@ export function createWorkbenchPaneLayoutStore(storage = localPreferenceStorage(
     );
     return {
       activeKey: scopeKey('local', null),
+      surfaceId: 'local',
       modes: new Map(),
       contentSide: read(CONTENT_SIDE_KEY) === 'left' ? 'left' : 'right',
       displayMode: read(DISPLAY_MODE_KEY) === 'overlay' ? 'overlay' : 'split',
@@ -111,19 +125,20 @@ export function createWorkbenchPaneLayoutStore(storage = localPreferenceStorage(
       preferredRightPaneWidth: Number.isFinite(savedWidth) && savedWidth > 0
         ? normalizeWidth(savedWidth) : defaultWidth,
       activate: (surfaceId, sessionId) => {
-        const activeKey = scopeKey(surfaceId, null);
+        const activeKey = scopeKey(surfaceId, sessionId);
         if (get().activeKey === activeKey) return;
-        // Read a legacy in-memory session entry once; subsequent session changes
-        // cannot hide another page occupying the workbench's secondary pane.
-        const state = get();
-        const legacy = state.modes.get(scopeKey(surfaceId, sessionId));
-        const modes = !state.modes.has(activeKey) && legacy
-          ? new Map(state.modes).set(activeKey, legacy) : state.modes;
-        set({ activeKey, modes });
+        set({ surfaceId, activeKey });
       },
       showContent: () => {
         if (selectWorkbenchPaneMode(get()) === 'chat-only') setMode('split');
       },
+      showContentForSession: (surfaceId, sessionId) => set(state => {
+        const key = scopeKey(surfaceId, sessionId);
+        if ((state.modes.get(key) ?? 'chat-only') !== 'chat-only') return state;
+        const modes = new Map(state.modes);
+        modes.set(key, 'split');
+        return { modes };
+      }),
       hideContent: () => setMode('chat-only'),
       collapseEmptyContent: () => {
         if (selectWorkbenchPaneMode(get()) === 'split') setMode('chat-only');
@@ -170,7 +185,7 @@ export function createWorkbenchPaneLayoutStore(storage = localPreferenceStorage(
         }
         set({ modes, preferredRightPaneWidth });
       },
-      clearSessionMemory: () => set({ activeKey: scopeKey('local', null), modes: new Map() }),
+      resetSessionMemory: () => set(state => ({ activeKey: scopeKey(state.surfaceId, null), modes: new Map() })),
     };
   });
 }

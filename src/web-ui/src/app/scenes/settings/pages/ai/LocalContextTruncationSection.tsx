@@ -20,7 +20,6 @@ export default function LocalContextTruncationSection() {
     || peerDevice.currentPeerCapabilities?.localContextTruncationV1 === true;
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [policy, setPolicy] = useState<LocalContextTruncation>();
-  const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const requestId = useRef(0);
@@ -36,8 +35,6 @@ export default function LocalContextTruncationSection() {
       if (!scope.isCurrent() || request !== requestId.current) return;
       log.error('Failed to load local context truncation setting', error);
       setLoadFailed(true);
-    } finally {
-      if (scope.isCurrent() && request === requestId.current) setLoading(false);
     }
   }, [scope]);
 
@@ -46,18 +43,16 @@ export default function LocalContextTruncationSection() {
     setLoadFailed(false);
     if (!supported) {
       setPolicy(undefined);
-      setLoading(false);
       return;
     }
     if (configManager.hasCachedConfig(configPath)) {
       setPolicy(configManager.getCachedConfig<LocalContextTruncation>(configPath) ?? 'explicit_only');
-      setLoading(false);
     } else {
       setPolicy(undefined);
-      setLoading(true);
       void load();
     }
-    return configManager.watch(configPath, () => { void load(); });
+    const unsubscribe = configManager.watch(configPath, () => { void load(); });
+    return () => { requestId.current += 1; unsubscribe(); };
   }, [load, scope, supported]);
 
   const save = async (value: string) => {
@@ -80,7 +75,7 @@ export default function LocalContextTruncationSection() {
 
   return (
     <ConfigPageSection title={t('localContextTruncation.title')} description={t('localContextTruncation.description')}>
-      {!supported ? <p>{t('localContextTruncation.unsupported')}</p> : loading ? <ConfigLoadingState label={t('messages.loading')} /> : loadFailed ? (
+      {!supported ? <p>{t('localContextTruncation.unsupported')}</p> : policy === undefined && !loadFailed ? <ConfigLoadingState label={t('messages.loading')} /> : loadFailed ? (
         <ConfigRetryState message={t('messages.loadFailedLocked')} retryLabel={t('messages.retry')} onRetry={() => void load()} />
       ) : (
         <ConfigPageRow label={t('localContextTruncation.label')} description={t('localContextTruncation.hint')} align="center">

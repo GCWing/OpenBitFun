@@ -216,7 +216,6 @@ export function DefaultHarnessSection(): React.ReactElement {
   return (
     <ConfigPageSection
       title={t('defaultHarness.title')}
-      description={t('defaultHarness.description')}
     >
       {content}
     </ConfigPageSection>

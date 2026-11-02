@@ -18,6 +18,7 @@ import {
   type DispatchStatusResponse,
 } from './types';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { getTurnOutputDurationMs, getTurnTtftMs } from '@/flow_chat/utils/turnUsageMetrics';
 import { stateMachineManager } from '@/flow_chat/state-machine';
 import {
   SessionExecutionEvent,
@@ -709,6 +710,35 @@ describe('DispatchJobObserver', () => {
     });
   });
 
+  it.each([undefined, 0, 1_500])('preserves optional request TTFT from target replay (%s)', ttftMs => {
+    const timing = ttftMs === undefined ? {} : { ttft_ms: ttftMs };
+    const projected = projectDispatchAgentEvent({
+      type: 'agentEvent',
+      timestamp: '2026-07-28T00:00:00Z',
+      event: {
+        id: 'event-completed',
+        event: {
+          type: 'ModelRoundCompleted',
+          session_id: 'session-1',
+          turn_id: 'turn-1',
+          round_id: 'round-1',
+          first_visible_output_ms: 1_000,
+          stream_duration_ms: 5_000,
+          ...timing,
+        },
+      },
+    });
+    expect(projected).toMatchObject({
+      eventName: 'agentic://model-round-completed',
+      payload: { firstVisibleOutputMs: 1_000, streamDurationMs: 5_000 },
+    });
+    if (ttftMs === undefined) {
+      expect(projected?.payload).not.toHaveProperty('ttftMs');
+    } else {
+      expect(projected?.payload).toHaveProperty('ttftMs', ttftMs);
+    }
+  });
+
   it('canonicalizes legacy model migration events from older targets', () => {
     expect(projectDispatchAgentEvent({
       type: 'agentEvent',
@@ -863,6 +893,14 @@ describe('DispatchJobObserver', () => {
         content: expect.stringContaining('1.2.3'),
       }),
     ]);
+    // Replayed setup rows precede model output without contributing tokens or timing.
+    const rounds = [...turn!.modelRounds, {
+      id: 'model-round-0', index: 0, items: [], isStreaming: false, isComplete: true,
+      status: 'completed' as const, startTime: 0,
+      ttftMs: 1_500, firstVisibleOutputMs: 1_000, streamDurationMs: 5_000,
+    }];
+    expect(getTurnTtftMs(rounds)).toBe(1_500);
+    expect(getTurnOutputDurationMs(rounds)).toBe(4_000);
     expect(mocks.dispatchExternal).not.toHaveBeenCalled();
     cleanup();
   });

@@ -87,7 +87,8 @@
       "terminal": "Shell",
       "git": "Git",
       "miniApps": "小應用",
-      "insights": "洞察"
+      "insights": "洞察",
+      "discoverSkills": "探索技能"
     },
     "tooltips": {
       "persona": "智能成員 — 展開查看基於角色和記憶的成員會話",
@@ -192,7 +193,9 @@
         "activationFailed": "無法開啟該結果",
         "remoteFileSearchUnavailable": "遠端項目 {{workspace}} 暫不支援檔案搜尋",
         "sessionUnavailable": "該會話已不可用"
-      }
+      },
+      "diagnosticTarget": "搜尋裝置：{{host}}",
+      "retrySource": "重試此來源"
     },
     "displayModes": {
       "pro": "專業模式",
@@ -215,7 +218,7 @@
       "files": "檔案",
       "terminals": "終端機",
       "local": "本機",
-      "remote": "遠端工作區",
+      "remote": "連線環境",
       "peer": "對端裝置",
       "switchWorkspace": "切換工作區",
       "chooseShell": "選擇 Shell",
@@ -352,7 +355,7 @@
         "environment": {
           "label": "環境",
           "local": "本機",
-          "remote": "遠端工作區",
+          "remote": "連線環境",
           "detached": "分離執行"
         },
         "source": {
@@ -386,8 +389,8 @@
       "exportMarkdownFull": "匯出完整過程",
       "exportMarkdownResult": "匯出結果",
       "delete": "刪除",
-      "deleteConfirmTitle": "永久刪除會話？",
-      "deleteConfirmMessage": "「{{name}}」及其子會話將被永久刪除。此操作無法復原。",
+      "deleteConfirmTitle": "刪除會話",
+      "deleteConfirmMessage": "會話及其子會話將被永久刪除，無法復原。",
       "confirmEdit": "確認",
       "cancelEdit": "取消",
       "loading": "載入中...",
@@ -491,6 +494,9 @@
       "allSourceAgents": "全部 Agent",
       "sourceAgentLabel": "來自 {{name}} 的工作階段",
       "discoveryPartial": "部分外部工作階段無法探索，既有工作階段仍可使用。",
+      "discoveryWarningTitle": "外部工作階段探索",
+      "discoveryReadFailed": "部分 {{source}} 工作階段記錄無法讀取，既有工作階段仍可使用。",
+      "discoveryWorkspaceUnresolved": "部分 {{source}} 工作階段無法對應到工作區，既有工作階段仍可使用。",
       "discoveringExternal": "正在探索外部工作階段…"
     },
     "scheduledJobs": {
@@ -523,7 +529,7 @@
         "workspacePath": "請輸入工作區路徑",
         "session": "請選擇或輸入會話 ID",
         "optionalSession": "留空則建立新會話後執行",
-        "agentType": "例如：Standard、Cowork 或 Claw",
+        "agentType": "例如：$t(shared:agents.Standard)、$t(shared:agents.Cowork) 或 $t(shared:agents.Claw)",
         "name": "例如：每日全球新聞簡報",
         "anchorMs": "留空則使用建立時刻",
         "timezone": "例如：Asia/Shanghai",
@@ -607,6 +613,10 @@
         "minute": "分鐘",
         "hour": "小時",
         "day": "天"
+      },
+      "columns": {
+        "status": "狀態",
+        "actions": "操作"
       }
     },
     "workspaces": {
@@ -657,8 +667,8 @@
         "manageAssistant": "管理助理",
         "closeAssistant": "隱藏助理",
         "resetWorkspace": "重設工作區",
-        "manageRelatedPaths": "關聯目錄",
-        "manageProjectPermissions": "專案權限",
+        "projectResources": "專案資源",
+        "openDirectory": "開啟目錄",
         "rename": "重新命名專案",
         "copyPath": "複製路徑",
         "reveal": "在資源管理器中開啟",
@@ -688,7 +698,12 @@
           "add": "新增目錄",
           "selectDirectoryTitle": "選擇關聯目錄",
           "pathPlaceholder": "目錄路徑",
-          "descriptionLabel": "說明（選填）"
+          "descriptionLabel": "說明（選填）",
+          "columns": {
+            "directory": "目錄",
+            "description": "說明",
+            "actions": "操作"
+          }
         },
         "messages": {
           "externalLoadFailed": "無法載入 OpenCode 引用",
@@ -708,6 +723,56 @@
         "title": "重設 {{name}}？",
         "message": "此操作會清空該工作區目錄下的所有內容，並恢復默認 persona 檔案；不會刪除工作區目錄本身。",
         "pathLabel": "工作區路徑"
+      },
+      "icon": {
+        "title": "變更圖示",
+        "description": "自訂 {{name}} 的圖示，設定儲存在工作區所屬主機上。",
+        "default": "內建圖示",
+        "chooseIcon": "選擇圖示",
+        "builtinIcons": "圖示",
+        "glyphsUnsupported": "目前主機暫不支援切換內建圖示。",
+        "workIcons": "工作與學習",
+        "lifeIcons": "生活與興趣",
+        "chooseLightImage": "選擇淺色圖片",
+        "chooseDarkImage": "選擇深色圖片",
+        "themedImagesUnsupported": "目前主機僅支援兩種主題共用一張圖片，升級主機後可單獨設定深色圖片。",
+        "glyphs": {
+          "default": "預設", "code": "程式碼", "learning": "學習", "design": "設計",
+          "documents": "文件", "research": "研究", "web": "網站", "mobile": "行動應用程式",
+          "games": "遊戲", "data": "資料", "business": "業務", "tools": "工具",
+          "travel": "旅行", "food": "美食", "fitness": "運動", "music": "音樂", "reading": "閱讀", "home": "家庭", "finance": "理財", "photography": "攝影", "pets": "寵物", "nature": "自然", "shopping": "購物", "movies": "電影"
+        },
+        "image": "自訂圖片",
+        "preview": "圖示預覽",
+        "colors": "圖示顏色",
+        "customColor": "自訂顏色",
+        "colorValue": "色彩值",
+        "lightness": "明度",
+        "presetColors": "預設顏色",
+        "chooseImage": "選擇圖片",
+        "imageHint": "支援 PNG、JPEG、WebP，最大 5 MB。圖片隨工作區儲存，無需保留原始檔案。",
+        "crop": "裁切填滿正方形",
+        "zoom": "縮放",
+        "reset": "恢復預設",
+        "retry": "重試",
+        "loading": "正在載入圖示…",
+        "unsupported": "目前主機不支援工作區圖示自訂，請升級主機或使用支援此功能的桌面端、CLI 主機。",
+        "loadFailed": "自訂圖示暫時無法載入，已顯示預設圖示，原設定仍然保留。",
+        "invalidImage": "請選擇不超過 5 MB、2000 萬像素的 PNG、JPEG 或 WebP 圖片。",
+        "saveFailed": "無法儲存圖示：{{reason}}",
+        "palette": {
+          "default": "預設",
+          "blue": "藍色",
+          "cyan": "青色",
+          "green": "綠色",
+          "yellow": "黃色",
+          "orange": "橙色",
+          "red": "紅色",
+          "purple": "紫色",
+          "pink": "粉色"
+        },
+        "light": "淺色預覽",
+        "dark": "深色預覽"
       }
     },
     "agents": {
@@ -732,11 +797,16 @@
     "notifications": "通知",
     "settingsMenu": {
       "floatingWindow": "懸浮窗",
-      "theme": "主題",
-      "themeConfiguration": "主題配置",
-      "appearanceSwitchFailed": "主題切換失敗，請重試。",
+      "feedback": "使用者回饋",
+      "feedbackUnavailable": "使用者回饋尚未設定。",
+      "feedbackOpenFailed": "無法開啟使用者回饋。",
       "openSettings": "開啟設定",
       "about": "關於"
+    },
+    "customization": {
+      "localDesktopOnly": "僅支援本機桌面。切換裝置時會保留固定設定。",
+      "unavailableEntry": "暫不可用的入口（{{id}}）",
+      "openFailed": "無法開啟{{name}}，請重試。"
     }
   },
   "window": {
@@ -750,6 +820,56 @@
     "startElementSelection": "選取元素",
     "stopElementSelection": "結束元素選取",
     "stopLoading": "停止載入"
+  },
+  "workspaceSource": {
+    "location": "工作位置",
+    "environment": "工作環境",
+    "currentHost": "此電腦",
+    "deviceNameUnavailable": "裝置名稱不可用",
+    "namedHost": "此電腦 · {{name}}",
+    "otherHost": "遠端主機",
+    "system": "主機系統",
+    "container": "容器",
+    "wsl": "WSL",
+    "currentHostHint": "檔案和命令均位於目前工作主機。",
+    "otherHostHint": "透過 SSH 連線遠端主機或容器。原生 WSL 僅支援目前 Windows 工作主機。",
+    "wslHint": "下一步選擇目前 Windows 工作主機上的 Linux 發行版。",
+    "foldersLockedHint": "移除資料夾後可切換。",
+    "connectionChoice": "連線設定",
+    "availableOptions": "可用連線與環境",
+    "refreshOptions": "重新整理可用選項",
+    "noAvailableOptions": "暫無可用項目",
+    "selectHostHint": "選擇主機以偵測容器",
+    "useSavedConnection": "使用已有連線",
+    "containerOptions": "容器選項",
+    "agentHint": "使用工作主機 SSH Agent 中的身分。可在進階設定中指定身分或備用金鑰。",
+    "authenticationSettings": "變更驗證設定",
+    "connectionFailed": "無法連線工作環境。",
+    "connectionTitle": "連線工作環境",
+    "editConnectionTitle": "編輯連線 · {{name}}",
+    "connectRemoteHostTitle": "連線遠端主機",
+    "connectWslTitle": "連線 WSL · {{host}}",
+    "connectContainerTitle": "連線容器 · {{host}}",
+    "connectRemoteContainerTitle": "連線遠端容器",
+    "backToProject": "返回項目設定",
+    "connectAndCreate": "連線並建立項目",
+    "connectAndBrowse": "連線並選擇資料夾",
+    "containerConnection": "連線方式",
+    "viaHost": "透過 Docker 宿主機",
+    "directContainer": "直接 SSH 連線容器",
+    "viaHostHint": "下方的位址和驗證資訊用於 Docker 宿主機，連線後再進入容器。",
+    "directContainerHint": "下方的位址和驗證資訊用於容器自身的 SSH 服務。",
+    "dockerHostAddress": "Docker 宿主機位址",
+    "containerAddress": "容器 SSH 位址",
+    "dockerUnavailable": "找不到 Docker，請安裝或檢查路徑。",
+    "dockerNotRunning": "請啟動 Docker 後重試。",
+    "dockerPermissionDenied": "請檢查 Docker 存取權限。",
+    "containerDiscoveryFailed": "無法載入容器，請檢查主機和 Docker 後重試。",
+    "hostDiscoveryFailed": "無法載入主機，請重試。",
+    "existingHostRequired": "請選擇現有的 SSH 主機。",
+    "sshHost": "SSH 主機",
+    "sourceUnsupported": "目前主機不支援此環境。",
+    "checkingWsl": "正在檢查目前主機的 WSL 支援…"
   },
   "newProject": {
     "title": "建立專案",
@@ -779,6 +899,7 @@
     "emptyProjectHint": "儲存至目前裝置：",
     "invalidDirectoryName": "請輸入單一資料夾名稱，不可包含斜線，也不可為 . 或 ..",
     "sameHostRequired": "同一專案的資料夾必須位於同一台主機。",
+    "assistantFolderUnavailable": "此資料夾屬於助理工作區，無法新增為專案。請選擇其他資料夾，或移除此資料夾並輸入名稱以建立新專案。",
     "remoteUnavailable": "目前介面不支援選擇遠端資料夾。",
     "remoteConnectionChanged": "遠端連線已變更，請重新選擇專案資料夾。",
     "defaultDirectoryUnavailable": "目標裝置未提供使用者目錄，請更新或重新連線至該裝置後重試。",
@@ -1631,6 +1752,7 @@
     "panelView": "面板視圖"
   },
   "sceneBar": {
+    "recentSessions": "最近開啟的工作階段",
     "tabsLabel": "場景標籤頁",
     "scrollPrevious": "向左捲動標籤頁",
     "scrollNext": "向右捲動標籤頁",
@@ -1815,7 +1937,7 @@
   "ssh": {
     "remote": {
       "title": "遠程 SSH",
-      "connect": "連接遠程項目",
+      "connect": "連線",
       "connecting": "連接中...",
       "connected": "已連接",
       "disconnect": "斷開連接",
@@ -1835,8 +1957,8 @@
       "wslUser": "Linux 使用者（選填）",
       "wslDefaultUser": "使用發行版預設使用者",
       "wslHint": "直接連線至 Windows 主機上已安裝的 WSL 發行版，無需設定 SSH 服務。",
-      "wslUnsupported": "WSL 需要執行於 Windows 的 OpenBitFun 主機，目前主機不支援直接連線至 WSL。",
-      "wslNoDistributions": "找不到 WSL 發行版，請在 Windows 主機上安裝 Linux 發行版後重新整理。",
+      "wslUnsupported": "目前主機不支援 WSL。",
+      "wslNoDistributions": "未偵測到 WSL 發行版。",
       "wslDistributionRequired": "請選擇已安裝的 WSL 發行版。",
       "wslDiscoveryFailed": "無法載入 WSL 發行版。",
       "proxyJump": "跳板鏈（ProxyJump）",
@@ -1860,7 +1982,7 @@
       "containerUser": "容器使用者",
       "optional": "選填",
       "remoteDockerHint": "先透過 SSH 到達 Docker 主機；終端、智能體指令與工作區檔案操作接著都在此容器內執行。",
-      "localDockerHint": "使用本機 Docker CLI；終端、智能體指令與工作區檔案操作都在此容器內執行。",
+      "localDockerHint": "使用目前工作主機上的 Docker CLI；終端、智能體指令與工作區檔案操作都在此容器內執行。",
       "containerSshdHint": "上方主機、連接埠、使用者與驗證資訊必須直接指向容器內的 sshd。",
       "host": "主機地址",
       "port": "端口",
@@ -1945,7 +2067,7 @@
     "portForward": {
       "menuEntry": "連接埠對應",
       "title": "連接埠對應",
-      "intro": "把遠端主機上正在監聽的連接埠對應到本機存取。對應不會自動建立，只有你在這裡新增的才會生效。",
+      "intro": "把遠端主機上正在監聽的連接埠對應到本機存取。只有你在這裡新增，或在遠端終端機中開啟 localhost 連結時，才會建立對應。",
       "detectedTitle": "遠端正在監聽",
       "detecting": "正在偵測遠端連接埠…",
       "detect": "重新偵測",
@@ -2014,6 +2136,7 @@
       "targetIsPullRequest": "此項目是提取請求，請以提取請求開啟，而非以問題開啟。"
     },
     "messages": {
+      "hostUnsupported": "目前裝置不支援內建 PR 檢視，請使用系統瀏覽器開啟 PR 連結。",
       "noWorkspace": "沒有可用的作用中工作區。",
       "unsupportedLink": "此連結不是支援的提取請求連結。",
       "detailsFailed": "載入提取請求詳細資料失敗。",

@@ -1,3 +1,4 @@
+import { useFieldAccessibility } from "../Field/FieldAccessibility";
 import {
   forwardRef,
   useCallback,
@@ -41,6 +42,8 @@ export interface SelectOption {
   disabled?: boolean;
   group?: string;
   label: string;
+  /** Optional compact label for the closed trigger; options keep the full label. */
+  selectedLabel?: string;
   /** Optional help shown on hover for the option and selected value. */
   tooltip?: string;
   testAttributes?: Record<`data-${string}`, string | number | boolean | undefined>;
@@ -65,8 +68,14 @@ export interface SelectProps
   placeholder?: string;
   /** Size the expanded surface to its trigger or the full option labels. */
   popupWidth?: "trigger" | "content";
+  /** Draw a divider before each subsequent option group. */
+  showGroupDividers?: boolean;
+  /** Hide group headings while retaining the standard section spacing. */
+  showGroupLabels?: boolean;
   size?: SelectSize;
   value?: SelectValue;
+  /** A compact visual treatment using the system's badge typography and radius. */
+  variant?: "field" | "pill";
   /** Fill the available field width or fit the currently selected label. */
   width?: "full" | "content";
 }
@@ -149,16 +158,24 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   placeholder,
   popupWidth = "trigger",
   required = false,
+  showGroupDividers = false,
+  showGroupLabels = true,
   size = "md",
   style,
   tabIndex,
   title,
   value,
+  variant = "field",
   width = "full",
   ...nativeProps
 }, forwardedRef) {
   const designSystem = useDesignSystem();
   const fieldSurface = useFieldSurface();
+  const fieldAccessibility = useFieldAccessibility({
+    "aria-label": ariaLabel,
+    "aria-labelledby": ariaLabelledBy,
+    "aria-describedby": ariaDescribedBy,
+  });
   const generatedId = useId();
   const id = providedId ?? `openbitfun-select-${generatedId}`;
   const listboxId = `${id}-listbox`;
@@ -354,7 +371,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     ) : row;
   };
 
-  const renderTriggerContent = () => (
+  const renderTriggerContent = (expanded = false) => (
     <>
       {leading !== undefined && leading !== null && (
         <span aria-hidden="true" className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">
@@ -366,7 +383,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         data-openbitfun-part="value"
         title={selectedOption?.tooltip}
       >
-        {selectedOption?.label ?? placeholder}
+        {selectedOption ? (expanded ? selectedOption.label : selectedOption.selectedLabel ?? selectedOption.label) : placeholder}
       </OverflowText>
       <span aria-hidden="true" className={styles.indicator} data-openbitfun-icon-slot="true" data-openbitfun-part="indicator">
         <Icon name="chevron-down" size="sm" />
@@ -390,12 +407,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       <button
         data-overflow-trigger
         aria-controls={listboxId}
-        aria-describedby={ariaDescribedBy}
+        aria-describedby={fieldAccessibility["aria-describedby"]}
         aria-expanded="true"
         aria-haspopup="listbox"
         aria-invalid={invalid ? true : ariaInvalid}
         aria-label={ariaLabel}
-        aria-labelledby={ariaLabelledBy}
+        aria-labelledby={fieldAccessibility["aria-labelledby"]}
         aria-required={required || ariaRequired || undefined}
         className={classNames(styles.trigger, styles.popoverHeader)}
         data-openbitfun-part="header"
@@ -407,13 +424,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         title={title}
         type="button"
       >
-        {renderTriggerContent()}
+        {renderTriggerContent(true)}
       </button>
       <div aria-hidden="true" className={styles.divider} data-openbitfun-part="divider" />
       <div className={styles.options} data-openbitfun-part="options">
         <Listbox
           aria-label={ariaLabel}
-          aria-labelledby={ariaLabel ? undefined : ariaLabelledBy ?? id}
+          aria-labelledby={ariaLabel ? undefined : fieldAccessibility["aria-labelledby"] ?? id}
           autoFocusOption
           className={styles.listbox}
           id={listboxId}
@@ -424,8 +441,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           ) : (
             <>
               {ungrouped.map(renderListboxOption)}
-              {[...groups].map(([label, groupedOptions]) => (
-                <ListboxGroup key={label} label={label}>
+              {[...groups].map(([label, groupedOptions], index) => (
+                <ListboxGroup
+                  className={showGroupDividers && (index > 0 || ungrouped.length > 0) ? styles.dividedGroup : undefined}
+                  key={label}
+                  label={showGroupLabels ? label : undefined}
+                >
                   {groupedOptions.map(renderListboxOption)}
                 </ListboxGroup>
               ))}
@@ -447,16 +468,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       data-open={resolvedOpen ? "true" : "false"}
       data-placement={layout?.placement ?? placement}
       data-size={size}
+      data-variant={variant}
       data-width={width}
       ref={rootRef}
     >
       <select
         {...nativeProps}
-        aria-describedby={ariaDescribedBy}
+        aria-describedby={fieldAccessibility["aria-describedby"]}
         aria-hidden="true"
         aria-invalid={invalid ? true : ariaInvalid}
         aria-label={ariaLabel}
-        aria-labelledby={ariaLabelledBy}
+        aria-labelledby={fieldAccessibility["aria-labelledby"]}
         aria-required={required || ariaRequired || undefined}
         className={styles.native}
         disabled={disabled}
@@ -474,18 +496,18 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         )}
         {ungrouped.map(renderNativeOption)}
         {[...groups].map(([label, groupedOptions]) => (
-          <optgroup key={label} label={label}>{groupedOptions.map(renderNativeOption)}</optgroup>
+          <optgroup key={label} label={showGroupLabels ? label : ""}>{groupedOptions.map(renderNativeOption)}</optgroup>
         ))}
       </select>
       <button data-overflow-trigger
         aria-controls={resolvedOpen ? undefined : listboxId}
-        aria-describedby={ariaDescribedBy}
+        aria-describedby={fieldAccessibility["aria-describedby"]}
         aria-expanded={resolvedOpen ? undefined : false}
         aria-hidden={resolvedOpen || undefined}
         aria-haspopup="listbox"
         aria-invalid={invalid ? true : ariaInvalid}
         aria-label={ariaLabel}
-        aria-labelledby={ariaLabelledBy}
+        aria-labelledby={fieldAccessibility["aria-labelledby"]}
         aria-required={required || ariaRequired || undefined}
         autoFocus={!resolvedOpen && autoFocus}
         className={styles.trigger}

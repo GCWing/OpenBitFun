@@ -11,7 +11,15 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-pub const SOURCE_REVISION: &str = "dsh-session-v0";
+pub const SOURCE_REVISION: &str = "dsh-session-v1";
+/// Prefix used by the host importer to distinguish unsupported source versions
+/// from sources that cannot currently be read.
+pub const UNSUPPORTED_ERROR_PREFIX: &str = "unsupported:";
+
+pub fn is_unsupported_error(error: &str) -> bool {
+    error.starts_with(UNSUPPORTED_ERROR_PREFIX)
+}
+
 const ECOSYSTEM: &str = "deepseek-harness";
 const MAX_BYTES: usize = 256 * 1024 * 1024;
 const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
@@ -132,7 +140,9 @@ impl DshSessionReader {
         mode: ExternalSessionImportMode,
     ) -> Result<ExternalSessionDocument, String> {
         if mode != ExternalSessionImportMode::Full {
-            return Err("DeepSeek Harness import supports full transcript history only".into());
+            return Err(format!(
+                "{UNSUPPORTED_ERROR_PREFIX}DeepSeek Harness import supports full transcript history only"
+            ));
         }
         let id = candidate_id
             .strip_prefix("deepseek-harness:")
@@ -164,7 +174,7 @@ impl DshSessionReader {
         candidate.status = turns
             .last()
             .map(|turn| turn.status)
-            .unwrap_or(ExternalSessionStatus::Interrupted);
+            .unwrap_or(ExternalSessionStatus::Complete);
         Ok(ExternalSessionDocument {
             candidate,
             turns,
@@ -222,7 +232,9 @@ fn header(text: &str) -> Result<Value, String> {
     )
     .map_err(|_| "Malformed DeepSeek Harness header")?;
     if value["type"] != "session" || value["version"].as_u64() != Some(0) {
-        return Err("Unsupported DeepSeek Harness session version; only v0 is supported".into());
+        return Err(format!(
+            "{UNSUPPORTED_ERROR_PREFIX}Unsupported DeepSeek Harness session version; only v0 is supported"
+        ));
     }
     if value["id"].as_str().is_none_or(str::is_empty)
         || value["delegationDepth"].as_u64().is_none()
@@ -537,14 +549,10 @@ fn translate(
             | "compaction/summary"
             | "compaction/end"
             | "compaction/prune" => {}
-            _ if row["ignorable"] == true => {
-                warnings.insert("extension_events_omitted");
+            _ => {
+                warnings.insert("unknown_events_omitted");
             }
-            _ => return Err(format!("Unsupported DeepSeek Harness event type: {kind}")),
         }
-    }
-    if turns.is_empty() {
-        return Err("DeepSeek Harness session has no usable human conversation".into());
     }
     for turn in &mut turns {
         if turn
@@ -566,6 +574,7 @@ fn translate(
         "compaction_retained" => "The full import retains append-origin conversation; model-only replacement copies are omitted.",
         "runtime_context_omitted" => "Injected runtime and plugin context is omitted; human messages are preserved.",
         "attachments_not_imported" => "Attachment payloads remain in DeepSeek Harness and are not copied or opened.",
+        "unknown_events_omitted" => "Events not understood by this adapter are omitted from the imported transcript.",
         _ => "Ignorable extension events are omitted from the imported transcript.",
     })).collect()))
 }

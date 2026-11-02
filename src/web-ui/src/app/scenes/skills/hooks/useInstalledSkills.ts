@@ -7,11 +7,14 @@ import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer
 import type { SkillInfo, SkillLevel, SkillValidationResult, SkillScanDiagnostic } from '@/infrastructure/config/types';
 import { canDeleteSkill, isOpenBitFunManagedSkill, getSkillOriginSourceId, getSkillSourceLabel } from '@/infrastructure/config/skillSourcePresentation';
 import { useWorkspaceManagerSync } from '@/infrastructure/hooks/useWorkspaceManagerSync';
+import { isRemoteWorkspace as workspaceIsRemote, type WorkspaceInfo } from '@/shared/types';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import type { InstalledFilter } from '../skillsSceneStore';
 
 const log = createLogger('SkillsScene:useInstalledSkills');
+const EMPTY_SKILLS: SkillInfo[] = [];
+const EMPTY_DIAGNOSTICS: SkillScanDiagnostic[] = [];
 
 function installedSkillGroup(skill: SkillInfo): InstalledFilter {
   if (skill.isBuiltin) return 'builtin';
@@ -20,6 +23,8 @@ function installedSkillGroup(skill: SkillInfo): InstalledFilter {
 }
 
 interface UseInstalledSkillsOptions {
+  workspace?: WorkspaceInfo;
+  initialLevel?: SkillLevel;
   searchQuery: string;
   activeFilter: InstalledFilter;
   enabled?: boolean;
@@ -29,24 +34,30 @@ export function useInstalledSkills({
   searchQuery,
   activeFilter,
   enabled = true,
+  workspace: targetWorkspace,
+  initialLevel = 'user',
 }: UseInstalledSkillsOptions) {
   const { t } = useTranslation('scenes/skills');
   const notification = useNotification();
   const { warning: notifyScanWarning, info: notifyScanInfo } = notification;
-  const { workspace, workspacePath, hasWorkspace, isRemoteWorkspace } = useWorkspaceManagerSync();
+  const current = useWorkspaceManagerSync();
+  const workspace = targetWorkspace ?? current.workspace;
+  const workspacePath = targetWorkspace ? targetWorkspace.rootPath : current.workspacePath;
+  const hasWorkspace = targetWorkspace ? true : current.hasWorkspace;
+  const isRemoteWorkspace = targetWorkspace ? workspaceIsRemote(targetWorkspace) : current.isRemoteWorkspace;
 
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [loadedContextKey, setLoadedContextKey] = useState<string | null>(null);
-  const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [diagnostics, setDiagnostics] = useState<SkillScanDiagnostic[]>([]);
-  const [diagnosticsAvailable, setDiagnosticsAvailable] = useState(true);
+  const [loadedSkills, setSkills] = useState<SkillInfo[]>([]);
+  const [loadedDiagnostics, setDiagnostics] = useState<SkillScanDiagnostic[]>([]);
+  const [loadedDiagnosticsAvailable, setDiagnosticsAvailable] = useState(true);
   const [globallyDisabledSkillKeys, setGloballyDisabledSkillKeys] = useState<Set<string>>(new Set());
   const [directManagementSupported, setDirectManagementSupported] = useState(false);
   const [savingGlobalSkillKey, setSavingGlobalSkillKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [formLevel, setFormLevel] = useState<SkillLevel>('user');
+  const [formLevel, setFormLevel] = useState<SkillLevel>(initialLevel);
   const [formPath, setFormPath] = useState('');
   const [validationResult, setValidationResult] = useState<SkillValidationResult | null>(null);
   const [isValidating, setIsValidating] = useState(false);
@@ -263,9 +274,9 @@ export function useInstalledSkills({
 
   const resetForm = useCallback(() => {
     setFormPath('');
-    setFormLevel('user');
+    setFormLevel(initialLevel);
     setValidationResult(null);
-  }, []);
+  }, [initialLevel]);
 
   const handleAdd = useCallback(async () => {
     const capabilityEpoch = currentCapabilityEpoch();
@@ -418,6 +429,11 @@ export function useInstalledSkills({
     t,
     workspace?.id,
   ]);
+
+  const catalogCurrent = enabled && loadedContextKey === capabilityKey;
+  const skills = catalogCurrent ? loadedSkills : EMPTY_SKILLS;
+  const diagnostics = catalogCurrent ? loadedDiagnostics : EMPTY_DIAGNOSTICS;
+  const diagnosticsAvailable = !catalogCurrent || loadedDiagnosticsAvailable;
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 

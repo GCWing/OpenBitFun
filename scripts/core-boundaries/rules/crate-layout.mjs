@@ -21,6 +21,7 @@ export const crateLayoutRules = [
   { crateName: 'product-capabilities', layer: 'assembly', path: 'src/crates/assembly/product-capabilities' },
   { crateName: 'external-sources', layer: 'assembly', path: 'src/crates/assembly/external-sources' },
 
+  { crateName: 'computer-use', layer: 'services', path: 'src/crates/services/computer-use' },
   { crateName: 'services-core', layer: 'services', path: 'src/crates/services/services-core' },
   { crateName: 'services-integrations', layer: 'services', path: 'src/crates/services/services-integrations' },
   { crateName: 'legacy-migration-adapters', layer: 'services', path: 'src/crates/services/legacy-migration-adapters' },

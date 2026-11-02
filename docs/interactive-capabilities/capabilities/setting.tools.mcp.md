@@ -17,13 +17,13 @@ Add and manage Model Context Protocol servers, including tools, resources, promp
 
 ## 完整功能清单 / Everything included
 
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 用表单或 JSON 查看和保存全部 MCP 服务器配置
-  - View and save all MCP server configuration through forms or JSON
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 添加本地进程、远程 HTTP/SSE 或容器 MCP 服务器
+- **智能体可直接控制 / Direct Agent control** · 查看服务器状态并按服务器保存非秘密配置
+  - Inspect server state and save non-secret configuration per server
+- **智能体可直接控制 / Direct Agent control** · 添加本地进程、远程 HTTP/SSE 或容器 MCP 服务器
   - Add local-process, remote HTTP/SSE, or container MCP servers
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 启动、停止、重启和删除单个 MCP 服务器
+- **智能体可直接控制 / Direct Agent control** · 启动、停止、重启和删除单个 MCP 服务器
   - Start, stop, restart, and delete individual MCP servers
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看初始化、连接、健康、重连、鉴权和失败状态
+- **智能体可直接控制 / Direct Agent control** · 查看初始化、连接、健康、重连、鉴权和失败状态
   - Inspect initialization, connection, health, reconnecting, authentication, and failure states
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 配置远程 Header/环境变量认证或清除已有凭据
   - Configure remote header/environment authentication or clear stored credentials
@@ -53,7 +53,12 @@ Add and manage Model Context Protocol servers, including tools, resources, promp
 
 | 操作 / Action | 中文说明 | English description |
 | --- | --- | --- |
-| 打开对应界面 / Open the UI | 进入 OpenBitFun 中对应的功能界面。 | Open the matching feature in OpenBitFun. |
+| 列出服务器与状态 / List servers and state | 返回当前产品宿主用户级服务器 ID、连接状态和配置版本，不返回已有凭据、命令参数或 URL。 | Return user server IDs, connection state, and the configuration fingerprint on the executing product host without exposing stored credentials, command arguments, or URLs. |
+| 添加或修改服务器 / Add or update a server | 先列出服务器取得 expectedFingerprint，再按 serverId 增量保存非秘密配置；保留其他服务器、未提供字段和已有凭据。保存后检查 runtimeReconciled 和连接状态，不能把写入成功当作连接成功。 | List servers for expectedFingerprint, then patch non-secret configuration by serverId. Preserve other servers, omitted fields, and stored credentials. Check runtimeReconciled and connection state after saving; persistence is not proof of connectivity. |
+| 启动服务器 / Start a server | 按返回的用户服务器 ID 启动服务并回读状态；需要 OAuth 时保留用户授权流程。 | Start a returned user server ID and read back state; preserve the user authorization flow when OAuth is required. |
+| 停止服务器 / Stop a server | 停止指定用户服务器并保留配置。 | Stop the selected user server while preserving its configuration. |
+| 重启服务器 / Restart a server | 重启指定用户服务器并回读状态，不重新写入配置。 | Restart the selected user server and read back state without rewriting configuration. |
+| 删除服务器 / Delete a server | 仅在用户要求时，使用最新 expectedFingerprint 删除指定用户服务器并清理对应运行时。 | Only when requested, use the latest expectedFingerprint to remove the selected user server and reconcile its runtime. |
 
 ## 可配置选项 / Configurable options
 
@@ -67,6 +72,10 @@ Add and manage Model Context Protocol servers, including tools, resources, promp
   - “Open MCP settings”
 - “带我管理 MCP 服务器”
   - “Take me to MCP server management”
+- “帮我配置 MCP 服务器”
+  - “Configure an MCP server for me”
+- “重启指定 MCP 服务器”
+  - “Restart a specific MCP server”
 
 智能体会先查找相关功能或设置，确认目标后再替你打开、执行或修改。完整能力目录不会预先塞进对话上下文。
 

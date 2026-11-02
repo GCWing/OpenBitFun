@@ -113,7 +113,6 @@ export default function RealtimeVoiceSettingsSection() {
   return (
     <ConfigPageSection id={sectionAnchor}
       title={t('voiceCall.title')}
-      description={t('voiceCall.description')}
     >
       {!speechRuntimeSupported ? <ConfigMessage message={{ type: 'info', text: t('voiceCall.messages.unsupported') }} /> : voiceCallLoading ? (
         <ConfigLoadingState label={t('voiceCall.loading')} />

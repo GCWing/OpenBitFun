@@ -2,6 +2,7 @@ import type { AIModelConfig } from '../types';
 
 export type ModelEditorRequestSettings = Pick<AIModelConfig,
   | 'inline_think_in_text'
+  | 'max_images_per_request'
   | 'custom_headers'
   | 'custom_headers_mode'
   | 'skip_ssl_verify'
@@ -12,6 +13,7 @@ export type ModelEditorRequestSettings = Pick<AIModelConfig,
 export function getModelEditorRequestSettings(config: Partial<AIModelConfig> = {}): ModelEditorRequestSettings {
   return {
     inline_think_in_text: config.inline_think_in_text ?? true,
+    max_images_per_request: config.max_images_per_request,
     custom_headers: config.custom_headers ? { ...config.custom_headers } : undefined,
     custom_headers_mode: config.custom_headers_mode,
     skip_ssl_verify: config.skip_ssl_verify ?? false,

@@ -1,9 +1,20 @@
-# OpenBitFun Skin market deployment
+# OpenBitFun Skin market self-hosted deployment
 
 This directory deploys the Appearance package catalog exposed to users as the
-**Skin market** at `https://market.openbitfun.com/skin/`.
+**Skin market** at `https://market.example.com/skin/`.
 
-It is intentionally isolated from the production MiniApp market:
+This is a community self-deployment template. `$DEPLOY_HOST`,
+`market.example.com`, and the `/srv/openbitfun-*` and `/etc/openbitfun-*` paths
+are examples; replace them with your own SSH host, domains, and directories.
+Set `DEPLOY_HOST` in the current shell before running the commands:
+
+```bash
+DEPLOY_HOST=root@your-server
+```
+
+Official hosted-service configuration is not published in this repository.
+
+It is intentionally isolated from the MiniApp market deployment:
 
 | Resource | Skin market |
 | --- | --- |
@@ -36,7 +47,7 @@ checkouts; do not recreate MiniApp from the Skin Compose project.
 2. Do not read, copy or print `/etc/openbitfun-skin-market/market.env`.
 3. Record the previous commit and verify a current SQLite backup before a
    backend or schema deployment.
-4. Do not recreate or modify the MiniApp, Relay, API or website containers.
+4. Do not recreate or modify other services running on the host.
 5. Use `--force-with-lease` for the dedicated deploy ref; never unconditional
    force.
 6. Run `nginx -t` before reload. Install only the market vhost changed by this
@@ -72,7 +83,7 @@ git show --stat --oneline "$DEPLOY_COMMIT"
 Create only the dedicated roots; UID/GID `10002` owns live data, never secrets:
 
 ```bash
-ssh lwb 'set -eu
+ssh "$DEPLOY_HOST" 'set -eu
 install -d -m 0755 /srv/openbitfun-skin-market
 install -d -o 10002 -g 10002 -m 0750 \
   /srv/openbitfun-skin-market/data /srv/openbitfun-skin-market/artifacts
@@ -89,13 +100,13 @@ Create the environment with a controlled editor, using
 server; do not pass it as a command argument or paste it into logs:
 
 ```bash
-ssh -t lwb 'umask 077; vi /etc/openbitfun-skin-market/market.env'
-ssh lwb 'chmod 600 /etc/openbitfun-skin-market/market.env; \
+ssh -t "$DEPLOY_HOST" 'umask 077; vi /etc/openbitfun-skin-market/market.env'
+ssh "$DEPLOY_HOST" 'chmod 600 /etc/openbitfun-skin-market/market.env; \
   stat -c "%U:%G %a %n" /etc/openbitfun-skin-market/market.env'
 ```
 
 Production identity verification should use
-`https://market.openbitfun.com/miniapp/api/v1/me`. Public HTTPS avoids coupling
+`https://market.example.com/miniapp/api/v1/me`. Public HTTPS avoids coupling
 the two independent Compose networks. Skin forwards either the Bearer
 Authorization header or the exact Skin session and CSRF aliases required for
 the request; it never proxies the browser's full Cookie header.
@@ -105,7 +116,7 @@ start the timer until the Skin container has created a healthy UID-10002-owned
 database:
 
 ```bash
-ssh lwb 'set -eu
+ssh "$DEPLOY_HOST" 'set -eu
 install -m 0750 /srv/openbitfun-skin-market/app/deploy/skin-market/backup.sh \
   /usr/local/sbin/openbitfun-skin-market-backup
 install -m 0750 /srv/openbitfun-skin-market/app/deploy/skin-market/restore-drill.sh \
@@ -123,7 +134,7 @@ Inspect the target and existing deployment first. On an initial install, the
 container inspect/health commands are expected not to find a container:
 
 ```bash
-ssh lwb 'set -eu
+ssh "$DEPLOY_HOST" 'set -eu
 git -C /srv/openbitfun-skin-market/app status --short
 git -C /srv/openbitfun-skin-market/app rev-parse HEAD
 docker inspect --format "{{.Config.Image}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}" openbitfun-skin-market 2>/dev/null || true
@@ -135,8 +146,8 @@ For an existing deployment, save the rollback target and confirm or create
 today's backup before changing the checkout:
 
 ```bash
-PREVIOUS_COMMIT="$(ssh lwb 'git -C /srv/openbitfun-skin-market/app rev-parse HEAD')"
-ssh lwb 'set -eu
+PREVIOUS_COMMIT="$(ssh "$DEPLOY_HOST" 'git -C /srv/openbitfun-skin-market/app rev-parse HEAD')"
+ssh "$DEPLOY_HOST" 'set -eu
 if test -f /srv/openbitfun-skin-market/data/market.sqlite; then
   today="$(date -u +%F)"
   target="/srv/openbitfun-skin-market/backups/daily/${today}"
@@ -152,7 +163,7 @@ fi'
 Send only the explicit commit to the dedicated ref:
 
 ```bash
-if REMOTE_REF_COMMIT="$(ssh lwb 'git -C /srv/openbitfun-skin-market/app \
+if REMOTE_REF_COMMIT="$(ssh "$DEPLOY_HOST" 'git -C /srv/openbitfun-skin-market/app \
   rev-parse refs/heads/skin-market-deploy 2>/dev/null')"; then
   DEPLOY_LEASE="refs/heads/skin-market-deploy:${REMOTE_REF_COMMIT}"
 else
@@ -162,9 +173,9 @@ else
 fi
 git push \
   --force-with-lease="${DEPLOY_LEASE}" \
-  ssh://lwb/srv/openbitfun-skin-market/app \
+  ssh://$DEPLOY_HOST/srv/openbitfun-skin-market/app \
   "${DEPLOY_COMMIT}:refs/heads/skin-market-deploy"
-ssh lwb "set -eu
+ssh "$DEPLOY_HOST" "set -eu
 test -z \"\$(git -C /srv/openbitfun-skin-market/app status --porcelain)\"
 git -C /srv/openbitfun-skin-market/app checkout --detach '$DEPLOY_COMMIT'
 test \"\$(git -C /srv/openbitfun-skin-market/app rev-parse HEAD)\" = '$DEPLOY_COMMIT'"
@@ -173,7 +184,7 @@ test \"\$(git -C /srv/openbitfun-skin-market/app rev-parse HEAD)\" = '$DEPLOY_CO
 Build while any existing container continues serving, then recreate only Skin:
 
 ```bash
-ssh lwb "set -eu
+ssh "$DEPLOY_HOST" "set -eu
 cd /srv/openbitfun-skin-market/app
 test \"\$(git rev-parse HEAD)\" = '$DEPLOY_COMMIT'
 export MARKET_GIT_COMMIT='$DEPLOY_COMMIT'
@@ -185,7 +196,7 @@ docker compose -f deploy/skin-market/docker-compose.yml \
 Wait for health and verify revision plus both network paths:
 
 ```bash
-ssh lwb 'set -eu
+ssh "$DEPLOY_HOST" 'set -eu
 for attempt in $(seq 1 45); do
   status="$(docker inspect --format \
     "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}" \
@@ -196,18 +207,18 @@ done
 docker inspect --format "{{json .State}}" openbitfun-skin-market
 exit 1'
 
-DEPLOYED_COMMIT="$(ssh lwb 'docker inspect --format \
+DEPLOYED_COMMIT="$(ssh "$DEPLOY_HOST" 'docker inspect --format \
   "{{index .Config.Labels \"org.opencontainers.image.revision\"}}" \
   openbitfun-skin-market')"
 test "$DEPLOYED_COMMIT" = "$DEPLOY_COMMIT"
-ssh lwb 'curl -fsS http://127.0.0.1:9720/skin/api/v1/health'
+ssh "$DEPLOY_HOST" 'curl -fsS http://127.0.0.1:9720/skin/api/v1/health'
 ```
 
 Create and drill the first backup only after the container is healthy, then
 enable the timer:
 
 ```bash
-ssh lwb 'set -eu
+ssh "$DEPLOY_HOST" 'set -eu
 /usr/local/sbin/openbitfun-skin-market-backup
 today="$(date -u +%F)"
 /usr/local/sbin/openbitfun-skin-market-restore-drill \
@@ -218,33 +229,33 @@ systemctl enable --now openbitfun-skin-market-backup.timer'
 ## Nginx route
 
 The shared market vhost is owned in
-`deploy/miniapp-market/nginx-market.openbitfun.com.conf`. It keeps MiniApp at
-25 MiB and grants only `/skin/` the 100 MiB transport ceiling. Skin application
-validation remains 96 MiB. Install this file only when its diff is part of the
-target commit:
+`deploy/miniapp-market/nginx-market.conf` (template file name).
+It keeps MiniApp at 25 MiB and grants only `/skin/` the 100 MiB transport
+ceiling. Skin application validation remains 96 MiB. Install this file only
+when its diff is part of the target commit:
 
-The trusted WAF CIDRs in `nginx-skin-market-http.conf` are an explicit trust
+The trusted proxy ranges in `nginx-skin-market-http.conf` are an explicit trust
 boundary, not a generic proxy list. Before each deployment, compare them with
-Huawei WAF's current `ShowSourceIp` response (or the console's copied source-IP
-list) and the origin firewall allowlist. Stop if any of the three sets differ.
+your reverse proxy or WAF provider's current egress source-IP list and the
+origin firewall allowlist. Stop if any of the sets differ.
 
 ```bash
-ssh lwb 'set -eu
+ssh "$DEPLOY_HOST" 'set -eu
 install -m 0644 \
   /srv/openbitfun-skin-market/app/deploy/skin-market/nginx-skin-market-http.conf \
   /etc/nginx/conf.d/skin-market.conf
 install -m 0644 \
-  /srv/openbitfun-skin-market/app/deploy/miniapp-market/nginx-market.openbitfun.com.conf \
-  /etc/nginx/sites-available/market.openbitfun.com.conf
+  /srv/openbitfun-skin-market/app/deploy/miniapp-market/nginx-market.conf \
+  /etc/nginx/sites-available/market.example.com.conf
 nginx -t
 systemctl reload nginx
 curl -fsS http://127.0.0.1:9720/skin/api/v1/health'
-curl -fsS https://market.openbitfun.com/skin/api/v1/health
-curl -fsS https://market.openbitfun.com/skin/ >/dev/null
+curl -fsS https://market.example.com/skin/api/v1/health
+curl -fsS https://market.example.com/skin/ >/dev/null
 ```
 
-The domain and wildcard TLS certificate already cover this path; no new DNS
-record is needed. Verify any upstream WAF body-size policy before publishing a
+Point your domain's DNS and TLS certificate at this host. If a WAF or load
+balancer terminates TLS, verify its body-size policy before publishing a
 package near the 96 MiB application limit.
 
 ## Rollback

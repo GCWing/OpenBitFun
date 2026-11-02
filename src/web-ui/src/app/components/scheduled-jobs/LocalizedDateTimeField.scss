@@ -41,7 +41,7 @@
   }
 
   &__weekdays,
-  &__grid {
+  &__week {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 2px;
@@ -55,7 +55,14 @@
     color: var(--openbitfun-color-content-muted);
   }
 
+  &__grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
   &__day {
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;

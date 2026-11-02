@@ -98,28 +98,3 @@ export function reasoningSelectionLabel(
 ): string {
   return selected ? presetDisplayLabel(selected, t) : t('reasoningSelector.auto');
 }
-
-/** Four materials, with the peak reserved for the highest comparable level. */
-export function reasoningVisualTier(
-  preset: ReasoningPresetDescriptor | undefined,
-  presets: ReasoningPresetDescriptor[],
-): 1 | 2 | 3 | 4 {
-  if (!preset) return 1;
-  const kind = reasoningPresetKind(preset);
-  if (kind !== 'level' && kind !== 'budget') return 1;
-  const candidates = reasoningPresetChoices(presets).filter(candidate => reasoningPresetKind(candidate) === kind);
-  const rank = (candidate: ReasoningPresetDescriptor): number => {
-    if (kind === 'budget') {
-      const budget = candidate.actions.find(action => action.type === 'budget_tokens');
-      return budget?.type === 'budget_tokens' ? budget.value : candidate.order;
-    }
-    const index = effortLevels.findIndex(level => level === presetSemanticKey(candidate));
-    return index >= 0 ? index : candidate.order;
-  };
-  const ranks = [...new Set(candidates.map(rank))].sort((left, right) => left - right);
-  const index = ranks.indexOf(rank(preset));
-  if (index < 0) return 1;
-  if (index === ranks.length - 1) return 4;
-  // Long catalogs may share materials, but only their highest rank gets tier 4.
-  return Math.min(3, 1 + Math.round(index * 3 / (ranks.length - 1))) as 1 | 2 | 3;
-}

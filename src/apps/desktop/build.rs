@@ -1,25 +1,8 @@
 fn main() {
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        println!("cargo:rerun-if-changed=src/computer_use/pointer_motion.h");
-        println!("cargo:rerun-if-changed=src/computer_use/pointer_motion.c");
-        cc::Build::new()
-            .file("src/computer_use/pointer_motion.c")
-            .std("c11")
-            .compile("computer_use_pointer_motion");
-    }
+    // Cargo does not propagate a dependency's link-arg to the final executable.
+    // Keep the shared provider optional on macOS older than ScreenCaptureKit.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
-        println!("cargo:rerun-if-changed=src/computer_use/macos_capture.m");
-        println!("cargo:rerun-if-changed=src/computer_use/pointer_motion.h");
-        cc::Build::new()
-            .file("src/computer_use/macos_capture.m")
-            .flag("-fobjc-arc")
-            .flag("-fblocks")
-            .compile("computer_use_capture");
-        // Older macOS installs must reach the runtime unsupported-version guard.
         println!("cargo:rustc-link-arg=-Wl,-weak_framework,ScreenCaptureKit");
-        for framework in ["CoreMedia", "CoreVideo", "CoreImage", "AppKit"] {
-            println!("cargo:rustc-link-lib=framework={framework}");
-        }
     }
     println!("cargo:rerun-if-env-changed=OPENBITFUN_RELEASE_CHANNEL");
     println!("cargo:rerun-if-env-changed=OPENBITFUN_DESKTOP_BINARY_NAME");

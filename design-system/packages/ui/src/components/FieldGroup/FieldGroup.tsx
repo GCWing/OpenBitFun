@@ -29,7 +29,7 @@ export interface FormSectionProps
 export interface FieldGroupProps extends HTMLAttributes<HTMLDivElement> {
   appearance?: FieldGroupAppearance;
   dividers?: boolean;
-  /** Lets text and picker field shells reuse the surrounding grouped surface. */
+  /** Ambient reuses the group surface; filled keeps standard borders over a grouped-field background. */
   fieldSurface?: FieldGroupFieldSurface;
 }
 

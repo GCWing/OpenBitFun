@@ -9,6 +9,7 @@ import {
   deriveWorkspaceSessionWorktree,
   getNextWorkspaceSessionGrouping,
   matchesWorkspaceSessionView,
+  matchesWorkspaceExternalDiscovery,
   matchesWorkspaceSourceAgent,
   normalizeWorkspaceSessionGrouping,
 } from './workspaceSessionView';
@@ -44,6 +45,18 @@ describe('workspace session view model', () => {
     const imported = session({ importedSource: source, config: { agentType: 'Standard' } });
     expect(matchesWorkspaceSourceAgent(imported, source)).toBe(true);
     expect(matchesWorkspaceSourceAgent(imported, 'openbitfun')).toBe(false);
+  });
+  it('hides disabled source-following views while retaining native forks and unknown settings', () => {
+    const followed = session({
+      importedSource: 'codex',
+      externalHistory: { mode: 'follow' },
+    });
+    const fork = session({ importedSource: 'codex' });
+    const enabled = new Set(['zcode']);
+
+    expect(matchesWorkspaceExternalDiscovery(followed, enabled)).toBe(false);
+    expect(matchesWorkspaceExternalDiscovery(fork, enabled)).toBe(true);
+    expect(matchesWorkspaceExternalDiscovery(followed, undefined)).toBe(true);
   });
   it('toggles between unified groups and the flat all-session view', () => {
     expect(getNextWorkspaceSessionGrouping('grouped')).toBe('all');

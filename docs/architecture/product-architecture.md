@@ -8,6 +8,7 @@
 | 扩展体系 | [Plugin Runtime](extensions/plugin-runtime-design.md)、[能力集成](extensions/capability-runtime-integration-design.md)、[外部来源](extensions/external-ai-work-sources-design.md)、[OpenCode 兼容](extensions/opencode-extension-compatibility.md) |
 | 产品交付 | [产品定制](product-customization-blueprint.md)、[CLI 产品线](cli-product-line-design.md)、[Agent SDK](agent-sdk-product-architecture.md)、[平台可移植性](platform-portability-design.md) |
 | 产品控制面 | [Product Control](product-control-plane.md) |
+| 模型与订阅 | [订阅多账号与额度路由集成设计](subscription-account-routing-design.md)（提案） |
 | 架构演进 | [Core 拆分](../plans/core-decomposition-plan.md)、[演进计划](../plans/product-architecture-evolution-plan.md)、[Rust 依赖边界](rust-build-dependency-boundaries.md) |
 
 Embedded interactive TUI direct-runtime 已交付。当前 loopback Web Server 已承载 Embedded Runtime 和 WebSocket App Server；Shared App Server 的跨进程共享形态仍需按生产调用路径逐项验收。当前调用路径和稳定 owner 边界以本文及已接线代码为准。

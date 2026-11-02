@@ -6,7 +6,44 @@ use qrcode::QrCode;
 
 pub struct QrGenerator;
 
+pub struct QrPresentation {
+    pub image_url: String,
+    pub terminal: Option<String>,
+}
+
 impl QrGenerator {
+    /// Provider QR content may be an existing image or the text to encode.
+    /// A login/deep-link URL is not an image URL.
+    pub fn present_content(content: &str) -> Result<QrPresentation> {
+        let content = content.trim();
+        let image_url = content.to_ascii_lowercase().starts_with("data:image/")
+            || reqwest::Url::parse(content).ok().is_some_and(|url| {
+                matches!(url.scheme(), "http" | "https")
+                    && [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]
+                        .iter()
+                        .any(|extension| url.path().to_ascii_lowercase().ends_with(extension))
+            });
+        if image_url {
+            return Ok(QrPresentation {
+                image_url: content.into(),
+                terminal: None,
+            });
+        }
+        let code = QrCode::new(content.as_bytes())
+            .map_err(|error| anyhow!("QR code generation failed: {error}"))?;
+        Ok(QrPresentation {
+            image_url: format!(
+                "data:image/png;base64,{}",
+                Self::generate_png_base64_from_url(content)?
+            ),
+            terminal: Some(
+                code.render::<qrcode::render::unicode::Dense1x2>()
+                    .quiet_zone(true)
+                    .build(),
+            ),
+        })
+    }
+
     /// Account-device invitations carry only a target id. Identity and public
     /// keys are resolved through the authenticated same-account directory.
     pub fn build_device_url(web_app_url: &str, device_id: &str) -> Result<String> {
@@ -57,6 +94,33 @@ impl QrGenerator {
 #[cfg(test)]
 mod account_device_tests {
     use super::QrGenerator;
+    use base64::Engine;
+
+    #[test]
+    fn provider_login_link_is_encoded_instead_of_treated_as_an_image() {
+        let presentation =
+            QrGenerator::present_content("https://liteapp.weixin.qq.com/login?code=example")
+                .unwrap();
+        let png = super::BASE64
+            .decode(
+                presentation
+                    .image_url
+                    .strip_prefix("data:image/png;base64,")
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(presentation.terminal.unwrap().contains('\u{2588}'));
+        for image in [
+            "https://example.test/qr.png?code=1",
+            "data:image/png;base64,aGVsbG8=",
+        ] {
+            let presentation = QrGenerator::present_content(image).unwrap();
+            assert_eq!(presentation.image_url, image);
+            assert!(presentation.terminal.is_none());
+        }
+    }
+
     #[test]
     fn invitation_uses_only_the_authenticated_device_target() {
         assert_eq!(

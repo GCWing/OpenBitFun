@@ -163,19 +163,9 @@ impl ExecutionEngine {
             let compression_contract = self
                 .session_manager
                 .compression_contract_for_session(session_id, compression_contract_limit);
-            if use_local_truncation {
-                let boundary_turn_index = self.session_manager.get_turn_count(session_id).saturating_sub(1);
-                let transcript = match self.session_manager.create_compression_transcript_reference(
-                    session_id, boundary_turn_index, &compression_id, trigger,
-                ).await {
-                    Ok(reference) => reference,
-                    Err(error) => {
-                        warn!("Failed to create automatic compression transcript: session_id={}, error={}", session_id, error);
-                        None
-                    }
-                };
-                return Ok((None, false, compression_contract, None, transcript, true));
-            }
+            let (candidate, is_prefetched, trace_config) = if use_local_truncation {
+                (None, false, None)
+            } else {
             let model_exchange_trace_dir = self
                 .session_manager
                 .persistent_model_exchange_trace_dir(session_id)
@@ -214,7 +204,11 @@ impl ExecutionEngine {
                         trace_config: trace_config.clone(),
                     }).with_local_truncation_policy(local_truncation).run().await?,
             };
-            let use_local_truncation = matches!(&candidate.summary, CompressionSummary::LocalTruncation(_));
+                (Some(candidate), is_prefetched, trace_config)
+            };
+            let use_local_truncation = use_local_truncation || candidate.as_ref().is_some_and(|candidate| {
+                matches!(&candidate.summary, CompressionSummary::LocalTruncation(_))
+            });
             let boundary_turn_index = self.session_manager.get_turn_count(session_id).saturating_sub(1);
             let transcript = match self.session_manager.create_compression_transcript_reference(
                 session_id, boundary_turn_index, &compression_id, trigger,
@@ -225,7 +219,7 @@ impl ExecutionEngine {
                     None
                 }
             };
-            Ok((Some(candidate), is_prefetched, compression_contract, trace_config, transcript, use_local_truncation))
+            Ok((candidate, is_prefetched, compression_contract, trace_config, transcript, use_local_truncation))
         })
         .await;
         // Only the owner commits. Rebase against the latest canonical suffix

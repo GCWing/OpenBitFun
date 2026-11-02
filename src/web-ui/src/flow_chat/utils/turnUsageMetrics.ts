@@ -11,16 +11,19 @@ function isPositiveMs(value: unknown): value is number {
 /**
  * Round-level milliseconds spent actually receiving model output.
  *
- * `streamDurationMs` already excludes request handshake and provider queueing,
- * but it still starts before the first token arrives. Subtract the time to the
- * first upstream item so prompt prefill and reasoning warm-up are not charged
- * to generation.
+ * Both marks use the host's stream-processing clock. The first upstream chunk
+ * can contain only metadata, so generation starts at the first effective output
+ * (text, thinking or a tool event), not `firstChunkMs`. Request-level TTFT also
+ * includes time before streaming starts and must not be subtracted here again.
  */
 function roundOutputDurationMs(round: ModelRound): number | undefined {
   if (!isPositiveMs(round.streamDurationMs)) return undefined;
-  const firstOutputMs = isPositiveMs(round.firstChunkMs) ? round.firstChunkMs
-    : isPositiveMs(round.firstVisibleOutputMs) ? round.firstVisibleOutputMs : 0;
-  return Math.max(0, round.streamDurationMs - Math.min(firstOutputMs, round.streamDurationMs));
+  if (!isCount(round.firstVisibleOutputMs) || round.firstVisibleOutputMs >= round.streamDurationMs) {
+    return undefined;
+  }
+  // Turn usage includes all attempts, but timing only covers the accepted one.
+  if ((round.attemptCount ?? 1) > 1) return undefined;
+  return round.streamDurationMs - round.firstVisibleOutputMs;
 }
 
 /**
@@ -28,16 +31,26 @@ function roundOutputDurationMs(round: ModelRound): number | undefined {
  *
  * Turn wall time also covers tool execution, permission waits and retries, so
  * dividing output tokens by it understates throughput by a wide margin. Returns
- * undefined when no round reports stream timing (older sessions), letting the
- * caller fall back instead of inventing a rate.
+ * undefined if any round lacks usable timing. Using partial timing with the
+ * whole turn's token count would overstate throughput; wall time is no fallback.
  */
 export function getTurnOutputDurationMs(rounds?: readonly ModelRound[]): number | undefined {
   if (!rounds?.length) return undefined;
   let totalMs = 0;
   for (const round of rounds) {
-    totalMs += roundOutputDurationMs(round) ?? 0;
+    // Negative indexes are controller setup/audit rows, not model calls.
+    if (round.index < 0) continue;
+    const durationMs = roundOutputDurationMs(round);
+    if (durationMs === undefined) return undefined;
+    totalMs += durationMs;
   }
-  return totalMs > 0 ? totalMs : undefined;
+  return isPositiveMs(totalMs) ? totalMs : undefined;
+}
+
+/** TTFT of the turn's first model call; later tool-driven calls are not added. */
+export function getTurnTtftMs(rounds?: readonly ModelRound[]): number | undefined {
+  const ttftMs = rounds?.find(round => !(round.index < 0))?.ttftMs;
+  return isCount(ttftMs) ? ttftMs : undefined;
 }
 
 export function getTurnUsageMetrics(usage?: TokenUsage, outputDurationMs?: number) {

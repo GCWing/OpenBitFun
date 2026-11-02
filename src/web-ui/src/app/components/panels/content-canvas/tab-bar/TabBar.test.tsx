@@ -42,10 +42,15 @@ describe('canvas TabGroup integration', () => {
   let container: HTMLDivElement;
   let root: Root;
   let props: TabBarProps;
+  let observedElements: Element[];
 
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    observedElements = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observe(element: Element) { observedElements.push(element); }
+      disconnect() {}
+    });
     contextMenu.showMenu.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -187,5 +192,13 @@ describe('canvas TabGroup integration', () => {
     width = 320;
     act(() => list.dispatchEvent(new Event('scroll')));
     expect(container.querySelector('[data-openbitfun-product-component="canvas-tab-overflow"]')).toBeNull();
+  });
+
+  it('does not observe the overflow capsule that is sized from overflow state', () => {
+    render();
+    const list = container.querySelector<HTMLElement>('[role="tablist"]')!;
+    const overflow = container.querySelector<HTMLElement>('.canvas-tab-bar__overflow')!;
+    expect(observedElements).toContain(list);
+    expect(observedElements).not.toContain(overflow);
   });
 });

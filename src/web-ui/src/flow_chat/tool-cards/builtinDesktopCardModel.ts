@@ -26,6 +26,7 @@ function templateLabel(kind: string | undefined, t: BuiltinTranslate): string | 
     case 'note': return t('toolCards.builtin.desktopCard.templates.note');
     case 'progress': return t('toolCards.builtin.desktopCard.templates.progress');
     case 'metrics': return t('toolCards.builtin.desktopCard.templates.metrics');
+    case 'chart': return t('toolCards.builtin.desktopCard.templates.chart');
     case 'cronJob': return t('toolCards.builtin.desktopCard.templates.cronJob');
     case 'custom': return t('toolCards.builtin.desktopCard.templates.custom');
     default: return kind;
@@ -67,6 +68,7 @@ export function buildDesktopCardToolCard(context: BuiltinCardContext): void {
   field('dataSource', source.kind ? sourceLabel(source, t) : undefined);
   field('visibility', visibilityLabel(card.visible, t));
   section('refreshError', lastData.error);
+  section('commandStderr', lastData.error ? undefined : lastData.warning, 'code');
   link('url', card.link ?? draft.link, 'openSource');
 
   if (action === 'presets') {

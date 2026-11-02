@@ -20,6 +20,7 @@ import { isReducedMotionPreferred } from '@/shared/utils/motionPreference';
 import { getPetLookDirection } from '@/infrastructure/config/services/agentCompanionPetSprite';
 import { startAgentCompanionDrag } from '@/infrastructure/config/services/AgentCompanionDragService';
 import { prepareAgentCompanionPointerDrag, type CompanionPointerDrag } from '@/infrastructure/config/services/AgentCompanionPointerDragService';
+import { createCompanionWindowResizer, isCompanionViewportShort } from './agentCompanionWindowResize';
 import './AgentCompanionDesktopPet.scss';
 
 const log = createLogger('AgentCompanionDesktopPet');
@@ -40,6 +41,15 @@ const WINDOW_EDGE_BUFFER = 4;
  * border gets clipped.
  */
 const WINDOW_VERTICAL_BUFFER = 3;
+/**
+ * Largest pet that still fits beside a bubble inside the host window. The dock
+ * is anchored bottom-right, so anything wider than the window is clipped on the
+ * left; oversized custom spritesheets are scaled down to this box instead.
+ */
+const PET_MAX_DISPLAY_SIZE = {
+  width: WINDOW_MAX_WIDTH - BUBBLE_WIDTH - WINDOW_HORIZONTAL_GAP - WINDOW_EDGE_BUFFER,
+  height: WINDOW_MAX_HEIGHT - WINDOW_VERTICAL_BUFFER * 2,
+};
 const POINTER_HOVER_POLL_INTERVAL_MS = 120;
 const PET_LOOK_HOLD_MS = 960;
 /** Clicks shorter/smaller than this use `show_main_window`; beyond it we start dragging. */
@@ -181,6 +191,10 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   const [isSendingComposer, setIsSendingComposer] = useState(false);
   const [hoveredBubbleSessionId, setHoveredBubbleSessionId] = useState<string | null>(null);
   const dockRef = useRef<HTMLDivElement>(null);
+  const windowResizer = useMemo(() => createCompanionWindowResizer(
+    size => api.invoke('resize_agent_companion_desktop_pet', { width: size.width, height: size.height }),
+    error => log.warn('Failed to resize Agent companion window', error),
+  ), []);
   const bubblesRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLInputElement>(null);
@@ -465,23 +479,43 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       activePetSize.width,
       Math.min(WINDOW_MAX_WIDTH, Math.ceil(measuredDockWidth)),
     );
+    // Rounded up so converting to physical pixels cannot shave a row or column.
+    const nextWindowHeight = Math.ceil(nextHeight);
 
-    if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) {
+    if (!Number.isFinite(nextWidth) || !Number.isFinite(nextWindowHeight)) {
       log.warn('Skipped invalid Agent companion window resize', {
         width: nextWidth,
-        height: nextHeight,
+        height: nextWindowHeight,
       });
       return;
     }
 
-    void api.invoke('resize_agent_companion_desktop_pet', {
-        width: nextWidth,
-        height: nextHeight,
-      })
-      .catch(error => {
-        log.warn('Failed to resize Agent companion window', error);
-      });
-  }, [activePetSize.height, activePetSize.width, composingSessionId, visibleTasks]);
+    windowResizer.request({ width: nextWidth, height: nextWindowHeight });
+  }, [activePetSize.height, activePetSize.width, composingSessionId, visibleTasks, windowResizer]);
+
+  useEffect(() => {
+    // The host can change the window behind the dock's back (display or DPI
+    // changes, a request the platform did not apply). Ask again whenever the
+    // viewport comes out smaller than the dock needs; the host ignores requests
+    // that already match, so this cannot loop.
+    const reassertWindowSize = () => {
+      const target = windowResizer.target();
+      if (target && isCompanionViewportShort(
+        { width: window.innerWidth, height: window.innerHeight },
+        target,
+      )) {
+        log.debug('Re-requesting Agent companion window size', {
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          width: target.width,
+          height: target.height,
+        });
+        windowResizer.request(target);
+      }
+    };
+    window.addEventListener('resize', reassertWindowSize);
+    return () => window.removeEventListener('resize', reassertWindowSize);
+  }, [windowResizer]);
 
   useEffect(() => {
     if (IS_WINDOWS_WEBVIEW && !trackPetLook) {
@@ -1180,6 +1214,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
               lookDirection={trackPetLook && !isDraggingPet ? lookDirection : null}
               nativePetdexSize
               petdexScale={PETDEX_DESKTOP_SCALE}
+              petdexMaxSize={PET_MAX_DISPLAY_SIZE}
               onPetFrameSizeChange={handlePetFrameSizeChange}
               className="openbitfun-agent-companion-window__pet"
              data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="pet"/>

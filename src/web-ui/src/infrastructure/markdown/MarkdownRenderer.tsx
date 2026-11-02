@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm';
 import { remarkCachedParse } from './markdownParseCache';
 import { remarkAutolinkBoundaries } from './remarkAutolinkBoundaries';
 import { remarkStreamingTableLinks } from './remarkStreamingTableLinks';
+import { rehypeImageThumbnails } from './rehypeImageThumbnails';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { visit } from 'unist-util-visit';
@@ -572,6 +573,7 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
   onClick,
   onLoad,
   onError,
+  onKeyDown,
   ...imgProps
 }) => {
   const fileAccess = useResourceFileAccess();
@@ -671,6 +673,7 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
   const previewable = Boolean(onPreview)
     && resolvedSrc !== LOCAL_IMAGE_PLACEHOLDER
     && isPreviewableImageSource(resolvedSrc);
+  const keyboardPreview = previewable && className?.split(' ').includes('markdown-image-thumbnail');
 
   if (loadState === 'error') {
     return (
@@ -696,6 +699,15 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
       ].filter(Boolean).join(' ')}
       loading="lazy"
       src={resolvedSrc}
+      role={keyboardPreview ? 'button' : undefined}
+      tabIndex={keyboardPreview ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (previewable && !event.currentTarget.closest('a, button') && ['Enter', ' '].includes(event.key)) {
+          event.preventDefault();
+          event.stopPropagation();
+          onPreview?.(resolvedSrc, typeof alt === 'string' && alt ? alt : undefined);
+        } else onKeyDown?.(event);
+      }}
       onClick={(event) => {
         // An image owned by a link or a file link keeps that owner's behavior.
         if (!previewable || event.currentTarget.closest('a, button')) {
@@ -878,6 +890,8 @@ const CopyButton: React.FC<{ code: string }> = ({ code }) => {
 
 export interface MarkdownRendererProps {
   content: string;
+  /** Compact conversation images; document renderers retain their original layout. */
+  imageThumbnails?: boolean;
   /** Display a region while resolving Markdown references against all content. */
   sourceRange?: MarkdownSourceRange;
   /** Owning workspace ID; content opened from links is routed by it. `basePath` is only the IO root. */
@@ -909,6 +923,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   thinking = false,
   singleLinePreview = false,
   content, 
+  imageThumbnails = false,
   sourceRange,
   workspaceId,
   basePath,
@@ -1627,7 +1642,8 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     img({ node: _node, ...props }: any) {
       if (onImageReadRef.current && isLocalAssetPath(props.src || '')) {
         return <SessionMarkdownImage path={normalizeFileLikeHref(props.src)} alt={props.alt} title={props.title}
-          read={onImageReadRef.current} download={onFileDownloadRef.current} onPreview={onImagePreviewRef.current} />;
+          read={onImageReadRef.current} download={onFileDownloadRef.current} onPreview={onImagePreviewRef.current}
+          thumbnail={props.className?.split(' ').includes('markdown-image-thumbnail')} />;
       }
       // Dispatch observers have no local filesystem ownership. Do not mount
       // MarkdownImage here: even its initial state can reuse controller bytes
@@ -1725,7 +1741,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   // completed/remounted thinking; typewriter text advancement is independent.
   useStreamingTextReveal(textRevealRef, sourceRange ? contentStr.slice(sourceRange.start, sourceRange.end) : contentStr, isStreaming, !thinking);
 
-  const wrapperClassName = `markdown-renderer ${className}`.trim();
+  const wrapperClassName = `markdown-renderer ${imageThumbnails ? 'markdown-renderer--thumbnails' : ''} ${className}`.trim();
   const thinkingEnvironment = useMemo(() => ({
     fileAccess, surfaceScope, currentWorkspacePath, workspaceId, basePath,
     remoteConnectionId, remoteSshHost, onImageRead, onFileDownload,
@@ -1762,7 +1778,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   const basicMarkdownRenderer = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, ...(!isStreaming ? [remarkCachedParse] : []), [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
-      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange]]}
+      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
       urlTransform={markdownUrlTransform}
       components={components}
     >
@@ -1806,6 +1822,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
               remarkAutolinkComputerFileLinks={remarkAutolinkInternalLinks}
               urlTransform={markdownUrlTransform}
               sourceRange={sourceRange}
+              imageThumbnails={imageThumbnails}
             />
           </React.Suspense>
         ) : basicMarkdownRenderer}

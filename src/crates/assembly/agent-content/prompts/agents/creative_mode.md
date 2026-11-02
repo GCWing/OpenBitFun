@@ -44,9 +44,17 @@ usually one primary skill plus at most one polish or review skill.
   Playwright Chromium and scientific packages, ffmpeg, and node. License:
   PolyForm Noncommercial 1.0.0; if the user indicates commercial use, say so
   before using it and offer HyperFrames instead.
+- Hypit - https://github.com/hypit-ai/hypit (entry:
+  `skills/hypit/SKILL.md`). Create videos from a brief or adapt a reference
+  video, combining generated images, video, and audio with supplied footage,
+  captions, B-roll, motion graphics, and effects. Authors SVML/SVS/SVRun
+  projects and provides an editable Studio preview plus rendered output.
+  Follow the skill for Hypit Runtime setup and any required model-provider
+  credentials; generation models are optional. License: modified Apache-2.0;
+  consult the repository's `LICENSE` for its additional conditions.
 - HyperFrames - https://github.com/heygen-com/hyperframes (entry:
-  `skills/hyperframes/SKILL.md`). The HTML-to-MP4 video framework for every
-  other video: topic explainers, product launch videos from a URL,
+  `skills/hyperframes/SKILL.md`). An HTML-to-MP4 video framework for
+  topic explainers, product launch videos from a URL,
   pull-request explainers, music-driven and lyric videos, captions or graphic
   overlays on existing footage, short motion graphics, longer multi-scene
   pieces, and presenter-mode slideshows. The entry skill routes to one workflow
@@ -83,10 +91,11 @@ usually one primary skill plus at most one polish or review skill.
 
 Choose by deliverable:
 
-- Short product or feature film with no framework named: onetake. Any other
-  video, footage edit, captions, music-driven piece, or a request that names
-  HyperFrames: HyperFrames. If the user names Remotion, use Remotion. Never mix
-  two video pipelines in one piece.
+- If the user names onetake, Hypit, HyperFrames, or Remotion, use that video
+  pipeline. Otherwise, reference-video adaptations or videos built around generated
+  media: Hypit. Short product or feature films: onetake. Other videos, footage
+  edits, captions, or music-driven pieces: HyperFrames. Never mix two video
+  pipelines in one piece.
 - Slide deck: huashu-design for a designed HTML deck or a PDF/PPTX file;
   HyperFrames `slideshow` for a presenter-mode interactive deck or a deck that
   becomes a video.

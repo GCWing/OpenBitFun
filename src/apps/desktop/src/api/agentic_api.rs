@@ -254,6 +254,8 @@ pub struct UpdateSessionModelRequest {
     pub remote_ssh_host: Option<String>,
     #[serde(default)]
     pub include_internal: bool,
+    #[serde(default)]
+    pub routing_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1946,6 +1948,7 @@ pub async fn create_session(
     let config = request
         .config
         .map(|c| SessionConfig {
+            tool_presentation_mode: Default::default(),
             max_context_tokens: c.max_context_tokens.unwrap_or(128128),
             auto_compact: c.auto_compact.unwrap_or(true),
             enable_tools: c.enable_tools.unwrap_or(true),
@@ -1963,6 +1966,7 @@ pub async fn create_session(
             ..Default::default()
         })
         .unwrap_or(SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some(request.workspace_path.clone()),
             project_workspace_path: Some(project_workspace_path.clone()),
             execution_target: Some(resolved_execution_target),
@@ -2120,13 +2124,19 @@ pub async fn update_session_model(
                 .as_ref()
                 .and_then(|value| value.as_deref()),
             request.include_internal,
+            request.routing_mode.as_deref(),
         )
         .await
         .map_err(|error| error.to_string())?
     {
         return Ok(());
     }
-    let update_result = match request.reasoning_preset {
+    let reasoning_update = if request.routing_mode.is_some() {
+        Some(request.reasoning_preset.flatten())
+    } else {
+        request.reasoning_preset
+    };
+    let update_result = match reasoning_update {
         Some(reasoning_preset) => {
             let reasoning_preset = reasoning_preset
                 .as_deref()
@@ -2140,6 +2150,7 @@ pub async fn update_session_model(
                     selection: AgentSessionModelSelection {
                         model_id: request.model_name,
                         reasoning_preset,
+                        routing_mode: request.routing_mode,
                     },
                 })
                 .await
@@ -2156,6 +2167,57 @@ pub async fn update_session_model(
     };
     update_result
         .map_err(|error| format!("Failed to update session model: {}", error.into_message()))
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRoutingStatusRequest {
+    pub session_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub workspace_path: Option<String>,
+    pub remote_connection_id: Option<String>,
+    pub remote_ssh_host: Option<String>,
+    #[serde(default)]
+    pub include_internal: bool,
+    #[serde(default)]
+    pub probe: bool,
+}
+
+#[tauri::command]
+pub async fn get_model_routing_status(
+    runtime: State<'_, DesktopRuntimeContext>,
+    coordinator: State<'_, Arc<ConversationCoordinator>>,
+    request: ModelRoutingStatusRequest,
+) -> Result<
+    openbitfun_core::agentic::execution::round_model_routing::configuration::ModelRoutingStatus,
+    String,
+> {
+    let session = if let Some(id) = request.session_id.as_deref() {
+        ensure_session_loaded_for_selector_update(
+            runtime.inner(),
+            id,
+            request.workspace_id,
+            request.workspace_path,
+            request.remote_connection_id,
+            request.remote_ssh_host,
+            request.include_internal,
+        )
+        .await?;
+        Some(
+            coordinator
+                .get_session_manager()
+                .get_session(id)
+                .ok_or("Session not found")?,
+        )
+    } else {
+        None
+    };
+    openbitfun_core::agentic::execution::round_model_routing::configuration::session_status(
+        session.as_ref(),
+        request.probe,
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// Sets the tool permission mode this session runs with.
@@ -3827,6 +3889,72 @@ pub async fn load_session_event_backfill(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadSessionTrajectoryRequest {
+    #[serde(default)]
+    pub catalog_only: bool,
+    #[serde(flatten)]
+    pub window: LoadSessionTurnWindowRequest,
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub node_offset: usize,
+}
+
+#[tauri::command]
+pub async fn load_session_trajectory(
+    runtime: State<'_, DesktopRuntimeContext>,
+    request: LoadSessionTrajectoryRequest,
+) -> Result<openbitfun_services_core::session::trajectory::SessionTrajectoryPage, String> {
+    let window = request.window;
+    let response = runtime
+        .session_application()
+        .load_session_turn_window(
+            desktop_session_scope(
+                window.workspace_id,
+                window.workspace_path.clone(),
+                window.remote_connection_id,
+                window.remote_ssh_host,
+            ),
+            SessionTurnWindowRequest {
+                workspace_path: PathBuf::from(window.workspace_path),
+                session_id: window.session_id,
+                include_internal: window.include_internal,
+                target_storage_turn_index: if request.catalog_only {
+                    usize::MAX
+                } else {
+                    window.target_storage_turn_index
+                },
+                expected_turn_id: window.expected_turn_id,
+                expected_catalog_revision: window.expected_catalog_revision,
+                before: 0,
+                after: window.after.unwrap_or(8).clamp(1, 8),
+            },
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    if request.catalog_only {
+        if let SessionTurnWindowResponse::NotFound { catalog }
+        | SessionTurnWindowResponse::Stale { catalog } = response
+        {
+            return Ok(
+                openbitfun_services_core::session::trajectory::SessionTrajectoryPage::Catalog {
+                    catalog,
+                },
+            );
+        }
+        return Err("Unexpected trajectory catalog response".into());
+    }
+    Ok(
+        openbitfun_services_core::session::trajectory::project_session_trajectory(
+            response,
+            &request.query,
+            request.node_offset,
+        ),
+    )
+}
+
 #[tauri::command]
 pub async fn load_session_turn_window(
     runtime: State<'_, DesktopRuntimeContext>,
@@ -4354,6 +4482,25 @@ mod tests {
     }
 
     #[test]
+    fn model_routing_status_preserves_legacy_requests_and_internal_session_opt_in() {
+        let legacy: ModelRoutingStatusRequest = serde_json::from_value(json!({
+            "sessionId": "session-1"
+        }))
+        .unwrap();
+        assert!(!legacy.include_internal);
+        assert!(!legacy.probe);
+        let child: ModelRoutingStatusRequest = serde_json::from_value(json!({
+            "sessionId": "child-1",
+            "includeInternal": true,
+            "probe": false,
+            "futureOption": true
+        }))
+        .unwrap();
+        assert!(child.include_internal);
+        assert_eq!(child.session_id.as_deref(), Some("child-1"));
+    }
+
+    #[test]
     fn desktop_steering_uses_the_same_agent_runtime_port_as_other_surfaces() {
         let source = include_str!("agentic_api.rs").replace("\r\n", "\n");
         let steering = source
@@ -4781,9 +4928,11 @@ mod tests {
                 provider_id: None,
                 model_config_id: None,
                 effective_model_name: None,
+                routing: None,
                 first_chunk_ms: None,
                 first_visible_output_ms: None,
                 stream_duration_ms: None,
+                ttft_ms: None,
                 attempt_count: None,
                 attempt_diagnostics: vec![],
                 failure_category: None,
@@ -4867,9 +5016,11 @@ mod tests {
                 provider_id: None,
                 model_config_id: None,
                 effective_model_name: None,
+                routing: None,
                 first_chunk_ms: None,
                 first_visible_output_ms: None,
                 stream_duration_ms: None,
+                ttft_ms: None,
                 attempt_count: None,
                 attempt_diagnostics: vec![],
                 failure_category: None,
@@ -4934,9 +5085,11 @@ mod tests {
                 provider_id: None,
                 model_config_id: None,
                 effective_model_name: None,
+                routing: None,
                 first_chunk_ms: None,
                 first_visible_output_ms: None,
                 stream_duration_ms: None,
+                ttft_ms: None,
                 attempt_count: None,
                 attempt_diagnostics: vec![],
                 failure_category: None,

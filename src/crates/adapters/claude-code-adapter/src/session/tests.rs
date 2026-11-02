@@ -91,6 +91,90 @@ fn imports_ordered_messages_thinking_tools_errors_and_attachments_without_writes
 }
 
 #[test]
+fn omits_claude_local_command_records_from_title_and_history() {
+    let root = tempfile::tempdir().unwrap();
+    let mut caveat = entry(
+        "user",
+        "caveat",
+        None,
+        json!("<local-command-caveat>Caveat: local command output follows</local-command-caveat>"),
+    );
+    caveat["isMeta"] = true.into();
+    let rows = vec![
+        caveat,
+        entry(
+            "user",
+            "command",
+            Some("caveat"),
+            json!("<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args></command-args>"),
+        ),
+        entry(
+            "user",
+            "stdout",
+            Some("command"),
+            json!("<local-command-stdout>Set model to Opus</local-command-stdout>"),
+        ),
+        entry(
+            "user",
+            "prompt",
+            Some("stdout"),
+            json!("Please inspect the imported Claude session."),
+        ),
+        entry(
+            "assistant",
+            "answer",
+            Some("prompt"),
+            json!([{"type":"text","text":"I inspected the session."}]),
+        ),
+        entry(
+            "user",
+            "task-notification",
+            Some("answer"),
+            json!("<task-notification>\n<task-id>task123</task-id>\n<status>completed</status>\n<summary>Background command completed</summary>\n</task-notification>"),
+        ),
+        entry(
+            "user",
+            "interrupted",
+            Some("task-notification"),
+            json!("[Request interrupted by user for tool use]"),
+        ),
+    ];
+    let path = write(root.path(), "one", &rows);
+    let before = std::fs::read(&path).unwrap();
+    let reader = ClaudeCodeSessionReader::new(root.path().into());
+
+    let catalog = reader.discover_all().unwrap();
+    assert_eq!(
+        catalog.candidates[0].title.as_deref(),
+        Some("Please inspect the imported Claude session.")
+    );
+
+    let document = reader
+        .read_candidate("claude-code:one", ExternalSessionImportMode::Full)
+        .unwrap();
+    assert_eq!(document.turns.len(), 1);
+    assert_eq!(
+        document.turns[0].user_text,
+        "Please inspect the imported Claude session."
+    );
+    assert_eq!(document.turns[0].status, ExternalSessionStatus::Interrupted);
+    assert!(document
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "internal_commands_omitted"));
+    assert!(document
+        .warnings
+        .iter()
+        .any(|warning| warning.code == "source_turn_interrupted"));
+    let serialized = serde_json::to_string(&document.turns).unwrap();
+    assert!(!serialized.contains("command-name"));
+    assert!(!serialized.contains("local-command-stdout"));
+    assert!(!serialized.contains("task-notification"));
+    assert!(!serialized.contains("Request interrupted"));
+    assert_eq!(std::fs::read(path).unwrap(), before);
+}
+
+#[test]
 fn omits_tool_attachment_payloads_and_rejects_missing_message_ids() {
     let rows = [
         entry("user", "u", None, json!("Read image")),

@@ -12,7 +12,9 @@ import { useI18n } from '@/infrastructure/i18n';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { fileSystemService } from '@/tools/file-system/services/FileSystemService';
-import { planBuildStateService } from '@/shared/services/PlanBuildStateService';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { planBuildStateService, type PlanBuildStatus } from '@/shared/services/PlanBuildStateService';
+import { planBuildPrompt } from '@/shared/plan/planBuildPrompt';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { basenamePath, dirnameAbsolutePath } from '@/shared/utils/pathUtils';
 import { useOptionalCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
@@ -88,8 +90,8 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
   const [planData, setPlanData] = useState<PlanData | null>(null);
   const [planContent, setPlanContent] = useState<string>('');
   // Initialize build state from the shared service to survive unmounts.
-  const [isBuildStarted, setIsBuildStarted] = useState(() => {
-    return filePath ? planBuildStateService.isBuildActive(planFileRef) : false;
+  const [buildStatus, setBuildStatus] = useState<PlanBuildStatus>(() => {
+    return filePath ? planBuildStateService.getBuildStatus(planFileRef) : 'build';
   });
   const [isContentDirty, setIsContentDirty] = useState(false);
   // Edit mode: display raw yaml frontmatter
@@ -147,21 +149,17 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
       return;
     }
 
-    if (planBuildStateService.isFileWriting(planFileRef)) {
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
     try {
       const content = await readPlanContent();
 
-      const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
       if (frontmatterMatch) {
         const rawYaml = frontmatterMatch[1];
         const parsed = yaml.parse(rawYaml);
-        const markdownContent = content.replace(/^---\n[\s\S]*?\n---\n*/, '').trim();
+        const markdownContent = content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)*/, '').trim();
 
         if (!isUnmountedRef.current) {
           setPlanData({
@@ -199,7 +197,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
         setLoading(false);
       }
     }
-  }, [filePath, planFileRef, readPlanContent, t]);
+  }, [filePath, readPlanContent, t]);
 
   useEffect(() => {
     loadFileContent();
@@ -242,23 +240,8 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
   useEffect(() => {
     if (!filePath) return;
 
-    // Sync initial state (in case filePath just became available).
-    setIsBuildStarted(planBuildStateService.isBuildActive(planFileRef));
-
-    const unsubscribe = planBuildStateService.subscribe(planFileRef, (event) => {
-      setIsBuildStarted(event.isBuilding);
-
-      if (event.updatedTodos) {
-        // Update plan data with latest todos.
-        setPlanData(prev => prev ? { ...prev, todos: event.updatedTodos! } : null);
-
-        // Update yaml content for edit mode consistency.
-        if (event.updatedFrontmatter) {
-          setYamlContent(event.updatedFrontmatter);
-          setOriginalYamlContent(event.updatedFrontmatter);
-        }
-      }
-    });
+    setBuildStatus(planBuildStateService.getBuildStatus(planFileRef));
+    const unsubscribe = planBuildStateService.subscribe(planFileRef, setBuildStatus);
 
     return unsubscribe;
   }, [filePath, planFileRef]);
@@ -267,25 +250,6 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
     if (!planData?.todos) return 0;
     return planData.todos.filter(t => t.status !== 'completed').length;
   }, [planData]);
-
-  const buildStatus = useMemo((): 'build' | 'building' | 'built' => {
-    if (planData?.todos?.length) {
-      const statuses = planData.todos.map(t => t.status);
-      if (statuses.every(s => s === 'completed')) {
-        return 'built';
-      }
-    }
-    if (isBuildStarted) {
-      return 'building';
-    }
-    return 'build';
-  }, [planData, isBuildStarted]);
-
-  useEffect(() => {
-    if (buildStatus === 'built' && isBuildStarted) {
-      setIsBuildStarted(false);
-    }
-  }, [buildStatus, isBuildStarted]);
 
   const hasUnsavedChanges = useMemo(() => {
     const yamlChanged = yamlContent !== originalYamlContent;
@@ -720,26 +684,25 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
   const handleBuild = useCallback(async () => {
     if (!filePath || buildStatus !== 'build' || !planData || hasUnsavedChanges) return;
 
+    const scope = getActiveSurfaceScope();
     try {
-      const sessionId = flowChatManager.getCurrentSession()?.sessionId;
+      const session = flowChatManager.getCurrentSession();
+      const sessionId = session?.sessionId;
       if (!sessionId) {
         throw new Error('No active session');
       }
       // Register build in shared service (notifies all PlanDisplay and PlanViewer subscribers).
-      const todoIds = planData.todos.map(t => t.id);
       const turnId = planBuildStateService.startBuild({
         sessionId,
         planFilePath: filePath,
-        todoIds,
+        turnId: session?.draft?.turnId,
         workspaceId: effectiveWorkspaceId,
         workspacePath: effectiveWorkspacePath,
         remoteConnectionId: effectiveRemoteConnectionId,
       });
       if (!turnId) return;
 
-      const message = `Implement the plan at \`${filePath}\`.
-
-Read the plan file before making changes and treat it as the source of truth. Do not edit the plan file directly. Track progress with TodoWrite using the existing todo IDs from the plan frontmatter; do not rename or invent IDs. Start with the first pending todo and continue until all todos are completed.`;
+      const message = planBuildPrompt(filePath);
 
       const displayMessage = t('editor.planViewer.buildPlanTitle', { name: planData.name });
       await flowChatManager.sendMessage(
@@ -751,6 +714,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
         { turnId },
       );
     } catch (err) {
+      if (!scope.isCurrent()) return;
       log.error('Build failed', err);
       planBuildStateService.cancelBuild(planFileRef);
     }
@@ -825,9 +789,9 @@ Read the plan file before making changes and treat it as the source of truth. Do
           {hasUnsavedChanges && <span className="unsaved-indicator">{t('editor.planViewer.unsaved')}</span>}
         </div>
         <div className="header-right" onClick={(e) => e.stopPropagation()} data-openbitfun-component="plan-viewer" data-openbitfun-part="headerActions">
-          {hasTodos && (
+          {planData && (
             <>
-              <span className="todos-count">{t('editor.planViewer.remainingTodos', { count: remainingTodos })}</span>
+              {hasTodos && <span className="todos-count">{t('editor.planViewer.remainingTodos', { count: remainingTodos })}</span>}
 
               <Button
                 type="button"

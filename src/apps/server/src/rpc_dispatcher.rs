@@ -391,6 +391,7 @@ pub async fn dispatch(
                 .map(|s| s.to_string());
 
             let config = SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace_path.clone()),
                 ..Default::default()
             };

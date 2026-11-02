@@ -562,17 +562,16 @@
       height: var(--openbitfun-control-chat-composer-control-height);
       align-items: center;
       align-self: center;
+      gap: var(--openbitfun-space-1);
       padding: 0;
     }
 
     .openbitfun-chat-input__actions-left {
       justify-content: flex-start;
-      gap: var(--openbitfun-space-2);
     }
 
     .openbitfun-chat-input__actions-right {
       justify-content: flex-end;
-      gap: var(--openbitfun-space-1);
     }
 
     .openbitfun-chat-input__model-usage-group,
@@ -671,6 +670,9 @@
     &[data-openbitfun-layout='expanded'] {
       .openbitfun-harness-selector__trigger {
         height: var(--openbitfun-control-chat-composer-control-height);
+        // The idle label's inset adds to the action gap and the add icon's
+        // own inset. Keep that visible spacing compact in every interaction state.
+        padding-inline: var(--openbitfun-space-1);
         border-radius: var(--openbitfun-radius-pill);
       }
     }

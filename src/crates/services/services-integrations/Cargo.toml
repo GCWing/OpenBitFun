@@ -467,6 +467,18 @@ script-tool-runtime = [
     "tokio/time",
     "which",
 ]
+ptc-runtime = [
+    "async-trait",
+    "dep:openbitfun-core-types",
+    "openbitfun-runtime-ports/ptc-runtime",
+    "process-tree",
+    "tokio/io-util",
+    "tokio/process",
+    "tokio/rt",
+    "tokio/sync",
+    "tokio/time",
+    "which",
+]
 web-tools = [
     "async-trait",
     "openbitfun-runtime-ports/web-search-port",
@@ -504,6 +516,10 @@ ssh_config = ["dep:ssh_config"]
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "test-util"] }
+# Used by contract tests that implement the `EventEmitter` port to observe
+# emitted product events.
+anyhow = { workspace = true }
+async-trait = { workspace = true }
 
 [[test]]
 name = "script_tool_runtime"

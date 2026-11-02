@@ -28,7 +28,7 @@ import { isBtwSessionDraft } from '../utils/modelSelectionTarget';
 import { sendMessageToBtwSession } from '../services/BtwThreadService';
 import { supportsBtwModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import type { BtwInitialModelTarget } from '@/infrastructure/api/service-api/BtwAPI';
-import { buildImagePayload } from '../utils/imagePayload';
+import { buildImagePayload, stripImageContextTags } from '../utils/imagePayload';
 import {
   FLOWCHAT_MESSAGE_SUBMITTED_EVENT,
   type FlowChatMessageSubmittedRequest,
@@ -150,13 +150,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
     // below. Leaving the placeholder in the prompt misleads the model into
     // looking up a non-existent file. The display message keeps the tag so
     // the UI can still render the inline pill.
-    const stripImageTags = (text: string): string =>
-      text
-        .replace(/#img:[^\s\n]+\s?/g, '')
-        .replace(/[ \t]+\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-    const aiTrimmedMessage = stripImageTags(trimmedMessage);
+    const aiTrimmedMessage = stripImageContextTags(trimmedMessage);
     let sessionId = currentSessionId;
     log.debug('Send message initiated', {
       textLength: trimmedMessage.length,

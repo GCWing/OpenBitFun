@@ -38,6 +38,7 @@ const SURFACE_SCOPED_EVENTS = new Set<string>([
   'session-record',
   'session-state',
   'file-system-changed',
+  'file-watch-status-changed',
   'permission://event',
   'account://settings-applied',
   'ai://model-catalog-updated',

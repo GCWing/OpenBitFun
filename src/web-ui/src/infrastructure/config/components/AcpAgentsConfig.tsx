@@ -1349,7 +1349,7 @@ const AcpAgentsConfig = forwardRef<AcpAgentsConfigHandle, AcpAgentsConfigProps>(
         data-openbitfun-component="acp-agents-config"
         data-openbitfun-part="root"
       >
-        {presentation === 'page' ? <ConfigPageHeader title={t('title')} subtitle={t('subtitle')} /> : null}
+        {presentation === 'page' ? <ConfigPageHeader title={t('title')} /> : null}
         <Content className={contentClassName}>
           {loading ? (
             <ConfigLoadingState label={t('clients.loading')} />
@@ -1374,7 +1374,6 @@ const AcpAgentsConfig = forwardRef<AcpAgentsConfigHandle, AcpAgentsConfigProps>(
     >
       {presentation === 'page' ? <ConfigPageHeader
         title={t('title')}
-        subtitle={t('subtitle')}
         extra={documentationAction}
       /> : null}
 
@@ -1438,7 +1437,6 @@ const AcpAgentsConfig = forwardRef<AcpAgentsConfigHandle, AcpAgentsConfigProps>(
           {activeView === 'json' && (
             <ConfigPageSection
               title={t('json.title')}
-              description={t('json.description')}
             >
               <Textarea
                 ref={jsonEditorRef}
@@ -1497,7 +1495,6 @@ const AcpAgentsConfig = forwardRef<AcpAgentsConfigHandle, AcpAgentsConfigProps>(
           <FormSection
             headingAs="h3"
             title={t('registry.title')}
-            description={t('registry.description')}
             actions={(
               <ConfigRefreshButton
                 tooltip={t('actions.refresh')}
@@ -1810,7 +1807,6 @@ const AcpAgentsConfig = forwardRef<AcpAgentsConfigHandle, AcpAgentsConfigProps>(
           {activeView === 'ssh' && (
           <ConfigPageSection
             title={t('remote.title')}
-            description={t('remote.description')}
             extra={hiddenRemoteConnectionRows.length > 0 ? (
               <Button
                 variant="outline"

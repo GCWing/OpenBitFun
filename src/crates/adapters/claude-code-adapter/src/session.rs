@@ -13,7 +13,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-pub const SOURCE_REVISION: &str = "claude-code-transcript-v1";
+pub const SOURCE_REVISION: &str = "claude-code-transcript-v2";
 const MAX_FILE_BYTES: usize = 256 * 1024 * 1024;
 const MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DOCUMENT_BYTES: usize = 128 * 1024 * 1024;
@@ -252,9 +252,7 @@ fn inspect(path: &Path) -> Result<Option<ExternalSessionCandidate>, String> {
     let source_title = named("customTitle").or_else(|| named("aiTitle"));
     let prompt = rows
         .iter()
-        .filter(|row| {
-            row["type"] == "user" && row["isMeta"] != true && row["isCompactSummary"] != true
-        })
+        .filter(|row| is_title_user_entry(row))
         .find_map(|row| text_content(&row["message"]["content"]).filter(|text| !text.is_empty()));
     let title = source_title
         .clone()
@@ -329,12 +327,9 @@ fn translate(
             }
         }
     }
-    let leaf = entries.iter().rposition(|entry| {
-        matches!(entry["type"].as_str(), Some("user" | "assistant"))
-            && entry["isSidechain"] != true
-            && entry["isMeta"] != true
-            && !entry["teamName"].is_string()
-    });
+    let leaf = entries
+        .iter()
+        .rposition(|entry| is_history_leaf_entry(entry));
     let Some(mut current) = leaf else {
         return Err("Claude Code session has no visible conversation".into());
     };
@@ -373,6 +368,23 @@ fn translate(
     for index in chain {
         let entry = &entries[index];
         if entry["isSidechain"] == true || entry["teamName"].is_string() {
+            continue;
+        }
+        if is_internal_user_entry(entry) {
+            if is_interruption_entry(entry) {
+                if let Some(turn) = turns.last_mut() {
+                    turn.status = ExternalSessionStatus::Interrupted;
+                }
+                warnings.insert(
+                    "source_turn_interrupted",
+                    "The source conversation includes a user interruption.",
+                );
+            } else {
+                warnings.insert(
+                    "internal_commands_omitted",
+                    "Claude Code local command and background task records are omitted from imported user history.",
+                );
+            }
             continue;
         }
         if entry["subtype"] == "compact_boundary" || entry["isCompactSummary"] == true {
@@ -566,6 +578,50 @@ fn text_content(content: &Value) -> Option<String> {
                 .join("\n")
         })
     })
+}
+
+fn is_title_user_entry(entry: &Value) -> bool {
+    entry["type"] == "user"
+        && entry["isMeta"] != true
+        && entry["isCompactSummary"] != true
+        && !is_internal_user_entry(entry)
+}
+
+fn is_history_leaf_entry(entry: &Value) -> bool {
+    if entry["isSidechain"] == true || entry["teamName"].is_string() {
+        return false;
+    }
+    match entry["type"].as_str() {
+        Some("assistant") => entry["isMeta"] != true,
+        Some("user") => {
+            entry["isMeta"] != true
+                && (!is_internal_user_entry(entry) || is_interruption_entry(entry))
+        }
+        _ => false,
+    }
+}
+
+fn is_internal_user_entry(entry: &Value) -> bool {
+    entry["type"] == "user"
+        && text_content(&entry["message"]["content"])
+            .is_some_and(|text| is_internal_user_text(&text))
+}
+
+fn is_interruption_entry(entry: &Value) -> bool {
+    text_content(&entry["message"]["content"])
+        .is_some_and(|text| text.trim() == "[Request interrupted by user for tool use]")
+}
+
+fn is_internal_user_text(text: &str) -> bool {
+    let text = text.trim_start();
+    text.starts_with("<command-name>")
+        || text.starts_with("<command-message>")
+        || text.starts_with("<command-args>")
+        || text.starts_with("<local-command-caveat>")
+        || text.starts_with("<local-command-stdout>")
+        || text.starts_with("<local-command-stderr>")
+        || text.starts_with("<task-notification>")
+        || text.starts_with("[Request interrupted by user for tool use]")
 }
 
 fn timestamp(value: &Value) -> Option<u64> {

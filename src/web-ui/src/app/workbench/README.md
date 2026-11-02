@@ -21,7 +21,7 @@ panel remains available beside conversations and editors.
 | FileTabManager / workbenchContentService | Normalize open requests and commit state before a view mounts |
 | sceneTabTransfer | Uniform live-identity moves between panes for every scene and resource kind |
 | canvasTabTransfer | Promote contextual canvas tabs into stable workbench resources with document handoff |
-| WorkbenchLayout / workbenchPaneLayoutStore | Device-local pane geometry, visibility, shared header and panel controls |
+| WorkbenchLayout / workbenchPaneLayoutStore | Device-local pane geometry, per-session pane visibility, shared header and panel controls |
 | CanvasToolbarProvider | Host-directed toolbar placement; groups retain their tab callbacks and store mode |
 | ContentCanvas and its hosts | Contextual content and editor groups; the workbench, Git and bottom-terminal hosts choose toolbar placement |
 
@@ -72,9 +72,11 @@ close fallback. Its keyed SplitViewSurface changes grid placement without
 reparenting the editor; the toolbar follows its pane. Selecting a page there hides
 that host. Explicit canvas reveal selects its content again; closing its last tab
 cannot collapse a pane containing page tabs or the conversation. Existing per-session canvas snapshots remain
-readable. Layout mode belongs to the device workbench, so changing sessions cannot
-hide a moved page. The legacy sessionPaneLayoutStore path re-exports the shell owner,
-retains old preference keys/legacy layout projection, and reads old in-memory modes.
+readable. Pane geometry belongs to the device workbench, while the open state is
+remembered per session on that device: entering a session restores the pane state
+it was left with, and a session that never opened the pane stays collapsed, so
+changing sessions cannot inherit a neighbour's pane or hide a moved page. The legacy sessionPaneLayoutStore path re-exports the shell owner and
+retains old preference keys/legacy layout projection.
 The `session.auxiliary` Appearance address stays on the shell wrapper for skins.
 
 SceneTopBar owns both tab regions and the short separator. SplitView supplies the

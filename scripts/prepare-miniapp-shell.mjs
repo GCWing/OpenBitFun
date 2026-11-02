@@ -2,12 +2,17 @@
 // Build the window-only executable in its own Cargo invocation so Desktop's
 // feature union and debug profile cannot inflate every exported MiniApp.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, statSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const SHELL_NAME = 'openbitfun-miniapp-shell';
+// Built design-system entries the native-window projections import.
+const DESIGN_SYSTEM_CONSUMER_ENTRIES = [
+  'design-system/packages/design-tokens/dist/index.js',
+  'design-system/packages/theme-openbitfun/dist/index.js',
+];
 
 export function prepareMiniAppShell({
   root = ROOT, target, profile = 'debug', env = process.env, run = spawnSync,
@@ -30,6 +35,13 @@ export function prepareMiniAppShell({
   if (!host) throw new Error('rustc did not report the host target triple');
   // Derive native-window visuals from the same Hi/FlowChat style owners.
   execute('node', ['scripts/generate-miniapp-chat-styles.mjs']);
+  // The chrome-theme projection reads the built design-system token packages,
+  // while Tauri's frontend build (whose prebuild owns that dist) runs after
+  // this step. Build them here so a fresh checkout, including every package
+  // build, can project the shell without a pre-warmed workspace.
+  if (DESIGN_SYSTEM_CONSUMER_ENTRIES.some((entry) => !existsSync(join(root, entry)))) {
+    execute('pnpm', ['--dir', 'design-system', 'run', 'prepare:consumer-dev'], { shell: true });
+  }
   execute('node', ['scripts/generate-miniapp-chrome-theme.mjs']);
   const triple = target || host;
   const targetDir = env.CARGO_TARGET_DIR ? resolve(root, env.CARGO_TARGET_DIR) : join(root, 'target');

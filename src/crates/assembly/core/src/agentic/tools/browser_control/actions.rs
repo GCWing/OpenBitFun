@@ -28,6 +28,8 @@ enum LifecycleOutcome {
     Timeout,
     /// Subscription closed (typically: page navigated away or browser quit).
     Closed,
+    /// The host reported a terminal navigation error.
+    Failed(String),
 }
 
 /// Block until a `Page.lifecycleEvent` whose `name` ∈ `wanted` arrives for the
@@ -62,9 +64,6 @@ async fn wait_for_lifecycle(
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        if !wanted.contains(&name) {
-            continue;
-        }
         if let Some(want_frame) = frame_id {
             let evt_frame = evt
                 .params
@@ -74,6 +73,18 @@ async fn wait_for_lifecycle(
             if evt_frame != want_frame {
                 continue;
             }
+        }
+        if name == "error" {
+            return LifecycleOutcome::Failed(
+                evt.params
+                    .get("errorText")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Navigation failed")
+                    .to_string(),
+            );
+        }
+        if !wanted.contains(&name) {
+            continue;
         }
         return LifecycleOutcome::Reached(name.to_string());
     }
@@ -344,6 +355,9 @@ impl<'a> BrowserActions<'a> {
                 return Err(OpenBitFunError::tool(
                     "Browser target closed before the page finished loading.".to_string(),
                 ));
+            }
+            LifecycleOutcome::Failed(error) => {
+                return Err(structured_error(ErrorCode::NotAvailable, error, &[]));
             }
         }
         Ok(body)
@@ -994,6 +1008,9 @@ impl<'a> BrowserActions<'a> {
                         LifecycleOutcome::Reached(n) => (true, Some(n), false),
                         LifecycleOutcome::Timeout => (false, None, true),
                         LifecycleOutcome::Closed => (false, None, false),
+                        LifecycleOutcome::Failed(error) => {
+                            return Err(structured_error(ErrorCode::NotAvailable, error, &[]));
+                        }
                     };
                     return Ok(json!({
                         "success": success,
@@ -1642,6 +1659,52 @@ mod shared_target_tests {
                 .count(),
             1
         );
+
+        let client = navigation_client(json!({"frameId":"main", "loaderId":"new"}));
+        let actions = BrowserActions::new(&client);
+        let navigation = actions.navigate("https://invalid.example");
+        let publish_failure = async {
+            tokio::task::yield_now().await;
+            client.events.send(BrowserAutomationEvent {
+                method: "Page.lifecycleEvent".into(),
+                params: json!({"frameId":"main", "name":"error", "errorText":"Could not connect"}),
+            }).unwrap();
+        };
+        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(navigation, publish_failure)
+        })
+        .await
+        .unwrap();
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Could not connect"));
+        assert!(!client
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|method| method == "Page.reload"));
+    }
+
+    #[tokio::test]
+    async fn lifecycle_wait_returns_navigation_failure_without_timing_out() {
+        let client = navigation_client(json!({}));
+        let actions = BrowserActions::new(&client);
+        let wait = actions.wait(None, Some("networkidle"), Some(15_000));
+        let publish_failure = async {
+            tokio::task::yield_now().await;
+            client.events.send(BrowserAutomationEvent {
+                method: "Page.lifecycleEvent".into(),
+                params: json!({"frameId":"main", "name":"error", "errorText":"Connection lost"}),
+            }).unwrap();
+        };
+        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(wait, publish_failure)
+        })
+        .await
+        .unwrap();
+        assert!(result.unwrap_err().to_string().contains("Connection lost"));
     }
 
     #[tokio::test]

@@ -1,5 +1,6 @@
 //! Lightweight App Server client used by Rich Client surfaces.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -72,7 +73,7 @@ pub struct AppServerClient {
     connection: Arc<ConnectionTo<AppServer>>,
     event_tx: broadcast::Sender<AppServerEvent>,
     shutdown_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    local_context_truncation: Arc<Mutex<bool>>,
+    local_context_truncation: Arc<AtomicBool>,
 }
 
 impl AppServerClient {
@@ -134,10 +135,8 @@ impl AppServerClient {
                     openbitfun_app_server_protocol::app::CapabilityAvailability::Available
                 )
         });
-        *self
-            .local_context_truncation
-            .lock()
-            .expect("capability lock") = supported;
+        self.local_context_truncation
+            .store(supported, Ordering::Relaxed);
         Ok(response)
     }
 
@@ -400,12 +399,7 @@ impl AppServerClient {
         &self,
         request: CompactSessionRequest,
     ) -> Result<CompactSessionResponse, ClientError> {
-        if request.0.force
-            && !*self
-                .local_context_truncation
-                .lock()
-                .expect("capability lock")
-        {
+        if request.0.force && !self.local_context_truncation.load(Ordering::Relaxed) {
             return Err(ClientError::Protocol(agent_client_protocol::Error::new(
                 AppServerErrorKind::Unsupported.json_rpc_code() as i32,
                 "The App Server does not support local context truncation",
@@ -795,6 +789,6 @@ pub async fn connect(
         connection: Arc::new(connection),
         event_tx,
         shutdown_tx: Arc::new(Mutex::new(Some(shutdown_tx))),
-        local_context_truncation: Arc::new(Mutex::new(false)),
+        local_context_truncation: Arc::new(AtomicBool::new(false)),
     })
 }

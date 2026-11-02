@@ -9,8 +9,42 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const MINIAPP_CUSTOM_CHROME_CAPABILITY: &str = "miniapp_custom_chrome_v1";
 pub const MINIAPP_CHAT_SNAPSHOT_CAPABILITY: &str = "miniapp_chat_snapshot_v1";
+/// The Shell can relay the Agent's bridge requests into the MiniApp frame it is
+/// presenting. Advertised at `open` so an older Shell never receives a request it
+/// cannot answer, and so the host only routes to windows that can take them.
+pub const MINIAPP_AGENT_BRIDGE_CAPABILITY: &str = "miniapp_agent_bridge_v1";
+/// One relayed request or answer, bounded like every other host frame.
+pub const MINIAPP_AGENT_MESSAGE_MAX_BYTES: usize = 32 * 1024;
 
 const MAX_FRAME: usize = 16 * 1024 * 1024;
+
+/// Local host discovery is separate from the shared product data directory.
+/// The default channel retains the existing installed-app paths.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HostChannel {
+    #[default]
+    Default,
+    Development,
+}
+
+impl HostChannel {
+    pub fn is_default(&self) -> bool {
+        *self == Self::Default
+    }
+
+    pub fn directory(self, data_dir: &Path) -> PathBuf {
+        let root = data_dir.join("miniapp-desktop");
+        match self {
+            Self::Default => root,
+            Self::Development => root.join("development"),
+        }
+    }
+
+    pub fn endpoint_path(self, data_dir: &Path) -> PathBuf {
+        self.directory(data_dir).join("host.json")
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +103,7 @@ pub async fn write<T: Serialize, S: AsyncWrite + Unpin>(
 }
 
 pub fn endpoint_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("miniapp-desktop/host.json")
+    HostChannel::Default.endpoint_path(data_dir)
 }
 
 pub async fn call(endpoint: &Endpoint, method: &str, params: Value) -> Result<Value, String> {
@@ -120,6 +154,53 @@ pub fn private_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn development_and_installed_discovery_reach_their_own_hosts() {
+        let data = tempfile::tempdir().unwrap();
+        let sockets = tempfile::tempdir_in("/tmp").unwrap();
+        let mut servers = Vec::new();
+        for (channel, name) in [
+            (HostChannel::Default, "installed"),
+            (HostChannel::Development, "development"),
+        ] {
+            let address = sockets.path().join(name);
+            let listener = tokio::net::UnixListener::bind(&address).unwrap();
+            let endpoint = Endpoint {
+                protocol_version: MINIAPP_PRESENTATION_PROTOCOL,
+                address: address.to_string_lossy().into_owned(),
+                token: name.into(),
+                host_epoch: name.into(),
+            };
+            private_json(&channel.endpoint_path(data.path()), &endpoint).unwrap();
+            servers.push(tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let request: Request = read(&mut socket).await.unwrap();
+                assert!(request.authorized(&endpoint));
+                assert_eq!(request.method, "ping");
+                write(
+                    &mut socket,
+                    &Ok::<_, String>(serde_json::json!({"host": name})),
+                )
+                .await
+                .unwrap();
+            }));
+        }
+        for (channel, name) in [
+            (HostChannel::Default, "installed"),
+            (HostChannel::Development, "development"),
+        ] {
+            let endpoint: Endpoint =
+                serde_json::from_slice(&std::fs::read(channel.endpoint_path(data.path())).unwrap())
+                    .unwrap();
+            let response = call(&endpoint, "ping", Value::Null).await.unwrap();
+            assert_eq!(response["host"], name);
+        }
+        for server in servers {
+            server.await.unwrap();
+        }
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn existing_v1_client_connects_and_receives_host_response() {

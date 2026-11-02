@@ -266,6 +266,9 @@ pub struct AgentSessionModelSelection {
     pub model_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_preset: Option<String>,
+    /// Explicit manual/smart strategy; omitted callers preserve the current strategy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing_mode: Option<String>,
 }
 
 /// Explicit model or pool choice applied when creating a child session.
@@ -484,6 +487,11 @@ pub struct AgentSessionUsageRequest {
     pub remote_ssh_host: Option<String>,
     #[serde(default)]
     pub include_hidden_subagents: bool,
+    /// Explicit viewer request only; ordinary reports never include prompt text.
+    #[serde(default)]
+    pub include_system_prompt_preview: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_preview_category: Option<openbitfun_core_types::UsageContextCategory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1754,6 +1762,7 @@ pub trait AgentSessionModelPort: Send + Sync {
             selection: AgentSessionModelSelection {
                 model_id: request.model_id,
                 reasoning_preset: None,
+                routing_mode: None,
             },
         })
         .await
@@ -2208,6 +2217,19 @@ pub trait SessionTranscriptReader: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn model_routing_selection_reads_old_payload_without_enabling_routing() {
+        let legacy = serde_json::json!({"modelId": "primary"});
+        let selection: super::AgentSessionModelSelection =
+            serde_json::from_value(legacy.clone()).unwrap();
+        assert!(selection.routing_mode.is_none());
+        assert_eq!(serde_json::to_value(selection).unwrap(), legacy);
+        let smart = serde_json::json!({"modelId": "primary", "routingMode":"smart"});
+        let selection: super::AgentSessionModelSelection =
+            serde_json::from_value(smart.clone()).unwrap();
+        assert_eq!(serde_json::to_value(selection).unwrap(), smart);
+    }
+
     use std::sync::Mutex;
 
     use super::*;
@@ -3604,6 +3626,35 @@ mod tests {
         assert!(legacy_cancellation.expected_active_turn_id.is_none());
         assert_eq!(inspection_json["transcript"]["sessionId"], "child_1");
         assert_eq!(inspection_json["activeTurnId"], "turn-live");
+    }
+
+    #[test]
+    fn session_usage_preview_is_opt_in_for_legacy_and_current_requests() {
+        let legacy = serde_json::json!({"sessionId": "session-1", "workspacePath": "/workspace"});
+        let mut request: AgentSessionUsageRequest = serde_json::from_value(legacy).unwrap();
+        assert!(!request.include_system_prompt_preview);
+        assert!(request.context_preview_category.is_none());
+        let encoded = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            serde_json::from_value::<AgentSessionUsageRequest>(encoded).unwrap(),
+            request
+        );
+        request.include_system_prompt_preview = true;
+        request.context_preview_category =
+            Some(openbitfun_core_types::UsageContextCategory::McpTools);
+        let encoded = serde_json::to_value(&request).unwrap();
+        assert_eq!(encoded["includeSystemPromptPreview"], true);
+        assert_eq!(encoded["contextPreviewCategory"], "mcpTools");
+        assert_eq!(
+            serde_json::from_value::<AgentSessionUsageRequest>(encoded).unwrap(),
+            request
+        );
+        request.context_preview_category =
+            Some(serde_json::from_value(serde_json::json!("futureCategory")).unwrap());
+        assert_eq!(
+            request.context_preview_category,
+            Some(openbitfun_core_types::UsageContextCategory::Unknown)
+        );
     }
 
     #[test]

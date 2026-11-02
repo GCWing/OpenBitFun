@@ -98,6 +98,13 @@ describe('SessionsSection layout styles', () => {
     expect(sessionTooltip).not.toContain('followCursor');
   });
 
+  it('presents discovery failures as transient notifications instead of a persistent list alert', () => {
+    const source = readSessionsSectionSource();
+    expect(source).toContain('notificationService.warning');
+    expect(source).not.toContain('<Alert');
+    expect(source).not.toContain('discoveryNotice');
+  });
+
   it('centers empty session placeholder content', () => {
     const stylesheet = readSessionsSectionStylesheet();
     const emptyBlock = extractBlock(stylesheet, '&__inline-empty');

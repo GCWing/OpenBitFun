@@ -24,7 +24,6 @@ import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurfac
 import WorkspaceBody from './WorkspaceBody';
 import { useToolbarModeContext } from '../../flow_chat/components/toolbar-mode/ToolbarModeContext';
 import { MCPInteractionDialog } from '../components/MCPInteractionDialog/MCPInteractionDialog';
-import { createProject } from '../services/createProject';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import type { CloseBehavior } from '@/infrastructure/api/service-api/SystemAPI';
 import { RetainedMountBoundary } from '@/shared/presence';
@@ -48,9 +47,6 @@ import './AppLayout.scss';
 type TransitionDirection = 'entering' | 'returning' | null;
 
 const log = createLogger('AppLayout');
-const NewProjectDialog = lazyWithRecovery(() =>
-  import('../components/NewProjectDialog').then(module => ({ default: module.NewProjectDialog }))
-);
 const ToolbarMode = lazyWithRecovery(() =>
   import('../../flow_chat/components/toolbar-mode/ToolbarMode').then(module => ({
     default: module.ToolbarMode,
@@ -217,7 +213,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   }, [hasWorkspace, loading, recentWorkspaces, switchWorkspace]);
 
   // Dialog state (previously in TitleBar)
-  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const closeAboutDialog = useCallback(() => setShowAboutDialog(false), []);
   const [showWorkspaceStatus, setShowWorkspaceStatus] = useState(false);
@@ -237,22 +232,19 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
       log.error('Failed to open project', error);
     }
   }, [openWorkspace, t]);
-  const handleNewProject = useCallback(() => setShowNewProjectDialog(true), []);
+  const handleNewProject = useCallback(() => window.dispatchEvent(new Event('nav:new-project')), []);
   const handleShowAbout = useCallback(() => setShowAboutDialog(true), []);
 
   // Listen for nav-panel events dispatched by the workspace area
   useEffect(() => {
     const onOpenProject = () => { void handleOpenProject(); };
-    const onNewProject = () => handleNewProject();
     window.addEventListener('nav:open-project', onOpenProject);
-    window.addEventListener('nav:new-project', onNewProject);
     window.addEventListener('nav:show-about', handleShowAbout);
     return () => {
       window.removeEventListener('nav:open-project', onOpenProject);
-      window.removeEventListener('nav:new-project', onNewProject);
       window.removeEventListener('nav:show-about', handleShowAbout);
     };
-  }, [handleNewProject, handleOpenProject, handleShowAbout]);
+  }, [handleOpenProject, handleShowAbout]);
 
   // macOS native menubar events (previously in TitleBar)
   useEffect(() => {
@@ -753,16 +745,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
       </div>
 
       {/* Dialogs (previously owned by TitleBar) */}
-      <RetainedMountBoundary present={showNewProjectDialog}>
-        <Suspense fallback={null}>
-          <NewProjectDialog
-            isOpen={showNewProjectDialog}
-            onClose={() => setShowNewProjectDialog(false)}
-            onConfirm={createProject}
-            defaultParentPath={hasWorkspace && currentWorkspace?.workspaceKind !== WorkspaceKind.Remote ? currentWorkspace?.rootPath : undefined}
-          />
-        </Suspense>
-      </RetainedMountBoundary>
       {aboutDialog}
       <RetainedMountBoundary present={showWorkspaceStatus}>
         <Suspense fallback={null}>

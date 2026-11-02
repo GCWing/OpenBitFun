@@ -48,6 +48,7 @@ test("tab presentation props reach the button without replacing its owned semant
       className: "product-tab", "data-openbitfun-product-component": "product",
       "data-openbitfun-product-part": "tab", title: "Full title",
       "aria-describedby": "help", style: { opacity: 0.8 },
+      "aria-haspopup": "menu", "aria-expanded": true,
       // Untyped callers must not override component-owned interaction/identity.
       role: "button", type: "submit", tabIndex: 8, id: "wrong-id",
       "aria-selected": false, "aria-controls": "wrong-panel", "data-openbitfun-part": "wrong-part",
@@ -58,6 +59,8 @@ test("tab presentation props reach the button without replacing its owned semant
   assert.match(button, /data-openbitfun-product-component="product"/);
   assert.match(button, /data-openbitfun-product-part="tab"/);
   assert.match(button, /aria-describedby="help"/);
+  assert.match(button, /aria-haspopup="menu"/);
+  assert.match(button, /aria-expanded="true"/);
   assert.match(button, /style="opacity:0.8"/);
   assert.match(button, /title="Full title"/);
   assert.match(button, /id="product-tab"/);
@@ -167,10 +170,16 @@ test("end actions are rendered beside tabs instead of nesting interactive contro
   assert.equal((markup.match(/type="button"/g) ?? []).length, 3);
 });
 
-test("end actions float over the label without reserving or clipping text", async () => {
+test("end actions grow the capsule outside the centered content before appearing", async () => {
   const styles = await readFile(new URL("../src/components/TabGroup/TabGroup.module.css", import.meta.url), "utf8");
-  assert.doesNotMatch(styles, /action-reserve|clip-path|mask-image/);
-  assert.doesNotMatch(styles, /data-has-end-action[^}]*padding-inline/s);
+  assert.match(styles, /\.item\s*\{[^}]*box-sizing:\s*content-box;/s);
+  assert.match(styles, /\.tab\s*\{[^}]*padding-inline:\s*var\(--_tab-group-item-padding-inline\);/s);
+  assert.match(styles, /\.tab::before\s*\{[^}]*inset:\s*0;/s);
+  assert.match(styles, /\.item\[data-has-end-action="true"\]\s*\{\s*padding-inline-end:\s*0;/);
+  assert.match(styles, /transition:\s*padding-inline-end\s+var\(--openbitfun-motion-duration-fast\)/);
+  assert.match(styles, /\.item:hover > \.endAction,[^{]*\{[^}]*visibility:\s*visible;[^}]*transition-delay:\s*var\(--openbitfun-motion-duration-fast\);/s);
+  assert.doesNotMatch(styles, /clip-path|mask-image/);
+  assert.doesNotMatch(styles, /translateX/);
 });
 
 test("TabGroup styling uses its geometry contract and Button semantic colors", async () => {

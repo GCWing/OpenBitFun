@@ -327,6 +327,7 @@ private struct ConversationRowView: View, Equatable {
                 .background(OpenBitFunTheme.soft)
                 .clipShape(RoundedRectangle(cornerRadius: MobileDesignGeometry.messageBubbleRadius))
             }
+            messageTimestamp
             if row.showRetry {
                 Button { model.retryMessage(row.text, images: row.images) } label: {
                     Label(model.localized("重新发送"), systemImage: "arrow.clockwise")
@@ -364,8 +365,19 @@ private struct ConversationRowView: View, Equatable {
                 }
                 .buttonStyle(.plain)
             }
+            messageTimestamp
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var messageTimestamp: some View {
+        if let timestamp = row.timestamp {
+            Text(MobileLocalization.messageTime(timestamp, language: model.appLanguage))
+                .font(MobileDesignTypography.labelSmall.font)
+                .foregroundStyle(OpenBitFunTheme.muted)
+                .accessibilityIdentifier("chat.messageTimestamp")
+        }
     }
 
     private func assistantFailure(_ error: String) -> some View {
@@ -1356,7 +1368,7 @@ private struct ToolStatusRow: View {
             .subtracting(tool.actions.contains("ANSWER") ? ["CANCEL"] : [])
     }
 
-    private var emphasized: Bool { !transcriptActions.isEmpty || expanded || tool.phase == "FAILED" }
+    private var emphasized: Bool { !transcriptActions.isEmpty || expanded }
 
     var mailboxQuestion = false
 
@@ -1638,7 +1650,6 @@ private struct ToolStatusRow: View {
         let target = tool.target.isEmpty ? "" : " · \(tool.target)"
         return switch tool.phase {
         case "RUNNING": model.localizedFormat("正在%@%@", operationLabel, target)
-        case "FAILED": model.localizedFormat("%@失败%@", operationLabel, target)
         case "PENDING_CONFIRMATION": model.localizedFormat("等待确认 · %@", operationLabel)
         case "WAITING": model.localizedFormat("等待执行 · %@", operationLabel)
         default: "\(operationLabel)\(target)"
@@ -1665,11 +1676,11 @@ private struct ToolStatusRow: View {
     }
 
     private var statusColor: Color {
-        switch tool.phase { case "FAILED": OpenBitFunTheme.statusDanger; case "COMPLETED": OpenBitFunTheme.statusSuccess; default: OpenBitFunTheme.muted }
+        switch tool.phase { case "COMPLETED": OpenBitFunTheme.statusSuccess; default: OpenBitFunTheme.muted }
     }
 
     private var statusMark: String {
-        switch tool.phase { case "FAILED": "!"; case "PENDING_CONFIRMATION": "?"; case "CANCELLED": "×"; case "COMPLETED": "✓"; default: "•" }
+        switch tool.phase { case "PENDING_CONFIRMATION": "?"; case "CANCELLED": "×"; case "COMPLETED": "✓"; default: "•" }
     }
 }
 

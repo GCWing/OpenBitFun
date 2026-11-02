@@ -30,22 +30,22 @@ export function ComputerUseControlCard() {
   const { t } = useI18n('common');
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [view, setView] = useState<View>();
-  const [expanded, setExpanded] = useState(false);
-  const expandedRef = useRef(false);
-  expandedRef.current = expanded;
+  const [collapsed, setCollapsed] = useState<string>();
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
   const mutation = useRef(0);
   const [stopping, setStopping] = useState(false);
   const [clickFeedback, setClickFeedback] = useState<{ x: number; y: number } | null>(null);
-  const [dismissed, setDismissed] = useState<string>();
   const current = view?.epoch === scope.epoch ? view : undefined;
   const snapshot = current?.snapshot;
+  const identity = `${scope.epoch}:${snapshot?.generation}`;
+  const expanded = collapsed !== identity;
   const active = snapshot?.state === 'active' || snapshot?.state === 'starting' || snapshot?.state === 'awaiting_share';
 
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setView(undefined);
-    setExpanded(false);
     setStopping(false);
     const poll = async () => {
       const revision = mutation.current;
@@ -57,7 +57,9 @@ export function ComputerUseControlCard() {
             && previous.snapshot.target === next.target
             && (previous.snapshot.target_revision ?? 0) === (next.target_revision ?? 0) ? { frame: previous.frame, framePointer: previous.framePointer } : {}),
         }));
-        if (expandedRef.current && next.supported && next.state === 'active' && !next.sharing) {
+        // A collapse applies only to this device and control generation. New
+        // control must request its first frame in the same poll as its status.
+        if (collapsedRef.current !== `${scope.epoch}:${next.generation}` && next.supported && next.state === 'active' && !next.sharing) {
           try {
             const frame = await computerUseControlAPI.preview(next.generation);
             if (disposed || !scope.isCurrent() || revision !== mutation.current) return;
@@ -126,8 +128,7 @@ export function ComputerUseControlCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clickIdentity, expanded]);
 
-  const identity = `${scope.epoch}:${snapshot?.generation}`;
-  if (!snapshot?.supported || snapshot.state === 'idle' || !snapshot.owner || dismissed === identity) return null;
+  if (!snapshot?.supported || !active || !snapshot.owner) return null;
   const pointer = current?.frame ? projectControlPointer(current.frame, current.framePointer ?? null) : null;
   const mode = snapshot.mode === 'observe' ? t('computerControl.observe')
     : snapshot.mode === 'foreground' ? t('computerControl.foreground') : t('computerControl.background');
@@ -139,18 +140,17 @@ export function ComputerUseControlCard() {
       <CardHeader>{t('computerControl.title')}</CardHeader>
       <CardBody className="computer-control-card__body">
         <p role="status" className="computer-control-card__status" data-openbitfun-component="computer-control" data-openbitfun-part="status">
-          {current?.error ? t('computerControl.unavailable') : snapshot.state === 'awaiting_share' ? t('computerSharing.selectApp') : active ? mode : t('computerControl.stopped')}
+          {current?.error ? t('computerControl.unavailable') : snapshot.state === 'awaiting_share' ? t('computerSharing.selectApp') : mode}
         </p>
         {snapshot.target && <OverflowText>{snapshot.sharing?.target_label || snapshot.target}</OverflowText>}
-        {active && snapshot.sharing && <ComputerUseSharingControls snapshot={snapshot}
+        {snapshot.sharing && <ComputerUseSharingControls snapshot={snapshot}
           onMutation={() => { mutation.current += 1; }}
           onSnapshot={next => {
             if (!scope.isCurrent()) return;
             mutation.current += 1;
             setView(previous => !acceptsUpdate(previous?.snapshot, next) ? previous : { epoch: scope.epoch, snapshot: next });
-            if (next.sharing?.phase === 'shared') setExpanded(true);
+            if (next.sharing?.phase === 'shared') setCollapsed(undefined);
           }} />}
-        {snapshot.reason && !active && <p role="status">{snapshot.reason}</p>}
         {expanded && snapshot.sharing?.phase === 'shared' && <SharedPreview key={`${scope.epoch}:${snapshot.generation}:${snapshot.target_revision}`}
           snapshot={snapshot} onSnapshot={next => {
             if (!scope.isCurrent()) return;
@@ -170,12 +170,12 @@ export function ComputerUseControlCard() {
       </CardBody>
       <CardFooter>
         {snapshot.state === 'active' && <Button size="sm" variant="outline" aria-expanded={expanded}
-          onClick={() => setExpanded(value => !value)}>
+          onClick={() => setCollapsed(expanded ? identity : undefined)}>
           {expanded ? t('computerControl.hidePreview') : t('computerControl.showPreview')}
         </Button>}
-        {active ? <Button size="sm" variant="primary" disabled={stopping} onClick={() => void stop()}>
+        <Button size="sm" variant="primary" disabled={stopping} onClick={() => void stop()}>
           {stopping ? t('computerControl.stopping') : t('computerControl.stop')}
-        </Button> : <Button size="sm" variant="outline" onClick={() => setDismissed(identity)}>{t('actions.close')}</Button>}
+        </Button>
       </CardFooter>
     </Card>
     </div>

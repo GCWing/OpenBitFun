@@ -136,13 +136,12 @@ function TerminalSection() {
 
         <ConfigPageSection
           title={t('terminal.sections.terminal')}
-          description={shouldShowCmdFallbackNotice
-            ? t('terminal.sections.terminalHintWithCmdFallback')
-            : t('terminal.sections.terminalHint')}
         >
           <ConfigPageRow
             label={t('terminal.sections.defaultTerminal')}
-            description={t('terminal.controls.description')}
+            description={t(shouldShowCmdFallbackNotice
+              ? 'terminal.sections.terminalHintWithCmdFallback'
+              : 'terminal.controls.description')}
             align="center"
           >
             {availableShells.length > 0 ? (

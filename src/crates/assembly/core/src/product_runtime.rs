@@ -1318,6 +1318,7 @@ impl CoreAgentRuntimeCompatibility {
         #[cfg(feature = "external-sources")]
         {
             page.discovery_warnings.extend(warnings.warnings);
+            page.discovery_diagnostics.extend(warnings.diagnostics);
             page.discovery_pending = warnings.pending;
         }
         Ok(page)
@@ -1748,6 +1749,27 @@ impl CoreAgentRuntimeCompatibility {
                 session_id,
                 model_id,
                 reasoning_preset,
+                include_internal,
+            )
+            .await
+    }
+
+    pub async fn update_session_model_selection_from_storage_path_with_routing(
+        &self,
+        storage_path: &Path,
+        session_id: &str,
+        model_id: &str,
+        reasoning_preset: Option<&str>,
+        routing_mode: Option<&str>,
+        include_internal: bool,
+    ) -> OpenBitFunResult<Session> {
+        self.coordinator
+            .update_session_model_selection_from_storage_path_with_routing(
+                storage_path,
+                session_id,
+                model_id,
+                reasoning_preset,
+                routing_mode,
                 include_internal,
             )
             .await
@@ -3807,6 +3829,7 @@ mod tests {
                 "Reload test".to_string(),
                 "Standard".to_string(),
                 crate::agentic::core::SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4120,6 +4143,7 @@ mod tests {
                 format!("Remote fork {host}"),
                 "Standard".to_string(),
                 crate::agentic::core::SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(remote_path.clone()),
                     remote_connection_id: Some(connection_id.to_string()),
                     remote_ssh_host: Some(host.to_string()),
@@ -4428,6 +4452,7 @@ mod tests {
                     "Temporary question".to_string(),
                     "Standard".to_string(),
                     crate::agentic::core::SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_id: Some(record.id.clone()),
                         workspace_path: Some(remote_path.clone()),
                         remote_connection_id: Some(connection_id.to_string()),
@@ -4627,6 +4652,7 @@ mod tests {
             "Source".into(),
             "Standard".into(),
             crate::agentic::core::SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_id: Some(local.id.clone()),
                 workspace_path: Some("/stale/controller/mirror/sessions".into()),
                 remote_connection_id: Some("stale-ssh".into()),
@@ -4828,6 +4854,7 @@ mod tests {
                 "Transient settlement".to_string(),
                 "Standard".to_string(),
                 crate::agentic::core::SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_root.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -5037,6 +5064,8 @@ mod tests {
                     workspace_path: Some(usage_workspace_path),
                     remote_connection_id: None,
                     remote_ssh_host: None,
+                    include_system_prompt_preview: false,
+                    context_preview_category: None,
                     include_hidden_subagents: false,
                 })
                 .await
@@ -5087,6 +5116,8 @@ mod tests {
                 workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                 remote_connection_id: None,
                 remote_ssh_host: None,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
                 include_hidden_subagents: false,
             },
         )
@@ -5151,6 +5182,8 @@ mod tests {
                 workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                 remote_connection_id: None,
                 remote_ssh_host: None,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
                 include_hidden_subagents: false,
             },
         )

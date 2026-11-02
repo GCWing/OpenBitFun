@@ -8,6 +8,9 @@ use super::model_exchange_trace::{
 };
 use super::prompt_suggestion::{spawn_prompt_suggestion, PromptSuggestionRequest};
 use super::round_executor::{ModelRoundLifecycle, RoundExecutor};
+use super::round_model_routing::{
+    RoundModelExecutionRecord, RoundModelRoute, RoundModelRouteRequest, RoundModelRouter,
+};
 use super::types::{ExecutionContext, ExecutionResult, RoundContext, RoundResult};
 use crate::agentic::agents::{
     build_prompt_context_for_workspace, get_agent_registry, get_embedded_prompt,
@@ -77,6 +80,11 @@ use openbitfun_agent_runtime::prompt_suggestion::{
     PROMPT_SUGGESTION_ELIGIBLE_CONTEXT_KEY,
 };
 use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
+#[cfg(feature = "ptc-runtime")]
+use openbitfun_agent_tools::{
+    PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY, PTC_TOOL_PRESENTATION_CONTEXT_KEY,
+    PTC_TOOL_PRESENTATION_MODE,
+};
 use openbitfun_ai_adapters::ModelExchangeTraceConfig;
 use openbitfun_core_types::{ModelRequestContext, SessionModelBindingPolicy};
 use openbitfun_runtime_ports::{resolve_permission_mode, PermissionMode, PermissionModeLayers};
@@ -138,21 +146,6 @@ fn runtime_context_needs_for_manifest(manifest: &ResolvedToolManifest) -> Runtim
             .iter()
             .map(|definition| definition.name.as_str()),
     )
-}
-
-fn apply_agent_temperature_override(
-    agent: &dyn crate::agentic::agents::Agent,
-    client: Arc<crate::infrastructure::ai::AIClient>,
-) -> Arc<crate::infrastructure::ai::AIClient> {
-    let Some(temperature) = agent.model_temperature_override() else {
-        return client;
-    };
-    if client.config.temperature == Some(temperature) {
-        return client;
-    }
-    let mut derived = client.as_ref().clone();
-    derived.config.temperature = Some(temperature);
-    Arc::new(derived)
 }
 
 fn resolve_round_permission_mode(
@@ -583,6 +576,7 @@ struct TurnPromptScaffoldInput<'a> {
 }
 
 struct FinalizeRoundInput<'a> {
+    prompt_reminders: &'a PrependedPromptReminders,
     permission_constraints: openbitfun_runtime_ports::PermissionConstraintLayer,
     context_window: usize,
     tool_definitions: Option<Vec<ToolDefinition>>,
@@ -597,6 +591,10 @@ struct FinalizeRoundInput<'a> {
     agent_type: String,
     context: &'a ExecutionContext,
     ai_client: Arc<crate::infrastructure::ai::AIClient>,
+    account_client_source:
+        Option<Arc<dyn crate::infrastructure::ai::account_client_source::AccountClientSource>>,
+    channel_client_source:
+        Option<Arc<crate::infrastructure::ai::channel_client_source::ChannelClientSource>>,
 }
 
 #[path = "compression_job.rs"]
@@ -619,6 +617,61 @@ struct CompressionModelSummaryInput<'a> {
     ai_client: Arc<crate::infrastructure::ai::AIClient>,
 }
 
+#[derive(Clone)]
+struct RoundExecutionClient {
+    model_id: String,
+    ai_client: Arc<crate::infrastructure::ai::AIClient>,
+    account_source:
+        Option<Arc<dyn crate::infrastructure::ai::account_client_source::AccountClientSource>>,
+    channel_source:
+        Option<Arc<crate::infrastructure::ai::channel_client_source::ChannelClientSource>>,
+    prepared_model: Option<crate::infrastructure::ai::channel_client_source::PreparedChannel>,
+}
+
+impl RoundExecutionClient {
+    fn new(
+        model_id: String,
+        prepared: crate::infrastructure::ai::channel_client_source::PreparedChannel,
+        channel_source: Option<
+            Arc<crate::infrastructure::ai::channel_client_source::ChannelClientSource>,
+        >,
+    ) -> Self {
+        Self {
+            model_id,
+            ai_client: prepared.client.clone(),
+            account_source: prepared.account_source.clone(),
+            channel_source,
+            prepared_model: Some(prepared),
+        }
+    }
+
+    fn take_for_round(&mut self) -> Self {
+        // Reuse the factory's exact first choice once per slot. Later logical
+        // rounds keep the frozen source and apply its live account policy.
+        Self {
+            prepared_model: self.prepared_model.take(),
+            ..self.clone()
+        }
+    }
+
+    fn install(&mut self, context: &mut RoundContext) -> Arc<crate::infrastructure::ai::AIClient> {
+        context.model_config_id = self.model_id.clone();
+        context.effective_model_name = self.ai_client.config.model.clone();
+        context.account_client_source = self.account_source.clone();
+        context.channel_client_source = self.channel_source.clone();
+        context.prepared_model = self.prepared_model.take();
+        self.ai_client.clone()
+    }
+}
+
+#[derive(Clone)]
+struct RoundExecutionModel {
+    route: RoundModelRoute,
+    client: RoundExecutionClient,
+    model_facts: PrimaryModelFacts,
+    routing: Option<openbitfun_events::agentic::ModelRoutingDecision>,
+}
+
 /// Execution engine
 pub struct ExecutionEngine {
     round_executor: Arc<RoundExecutor>,
@@ -626,6 +679,7 @@ pub struct ExecutionEngine {
     session_manager: Arc<SessionManager>,
     context_compressor: Arc<ContextCompressor>,
     config: ExecutionEngineConfig,
+    round_model_router: Option<Arc<dyn RoundModelRouter>>,
     generation_messages: DashMap<(String, String), Vec<Message>>,
     prompt_suggestions: PromptSuggestionRuntime,
     pub(crate) model_pools: Arc<super::model_pool::ModelPoolRuntime>,
@@ -707,10 +761,21 @@ impl ExecutionEngine {
             session_manager,
             context_compressor,
             config,
+            round_model_router: None,
             generation_messages: DashMap::new(),
             prompt_suggestions: PromptSuggestionRuntime::new(),
             model_pools: Arc::new(super::model_pool::ModelPoolRuntime::default()),
         }
+    }
+
+    /// Install an opt-in per-round execution-model router.
+    ///
+    /// Without this hook the engine preserves its original single-model behavior.
+    pub fn with_round_model_router(mut self, router: Arc<dyn RoundModelRouter>) -> Self {
+        if super::round_model_routing::configuration::available() {
+            self.round_model_router = Some(router);
+        }
+        self
     }
 
     fn remember_generation_message(&self, session_id: &str, turn_id: &str, message: &Message) {
@@ -1468,6 +1533,16 @@ impl ExecutionEngine {
             } else {
                 None
             },
+            ptc_tool_calling_guide: {
+                #[cfg(feature = "ptc-runtime")]
+                {
+                    manifest.ptc_tool_calling_guide.clone()
+                }
+                #[cfg(not(feature = "ptc-runtime"))]
+                {
+                    None
+                }
+            },
         }
     }
 
@@ -1681,6 +1756,7 @@ impl ExecutionEngine {
                 &current_tool_sections,
                 baseline_tool_sections.as_ref(),
             ),
+            ptc_tool_calling_guide: current_tool_sections.ptc_tool_calling_guide.clone(),
             skill_listing,
             agent_listing,
             runtime_context,
@@ -1991,6 +2067,17 @@ impl ExecutionEngine {
             .filter(|model_id| !model_id.is_empty())
             .map(str::to_string)
             .unwrap_or(fallback_model_id.clone());
+        // Retained smart records still use their primary slot while release
+        // routing is closed. An explicit manual choice clears this policy in
+        // SessionManager; reads and execution never rewrite the saved record.
+        let configured_model_id = if session.config.model_routing.as_deref() == Some("smart")
+            && session.config.model_binding_policy != SessionModelBindingPolicy::ApprovedImmutable
+            && session.kind != crate::agentic::core::SessionKind::Subagent
+        {
+            "primary".to_string()
+        } else {
+            configured_model_id
+        };
         let model_id = Self::resolve_model_id_for_turn_selection(
             &ai_config,
             &configured_model_id,
@@ -2043,6 +2130,107 @@ impl ExecutionEngine {
             && msg.metadata.turn_id.as_deref() != Some(current_turn_id)
     }
 
+    fn context_composition_for_send(
+        messages: &[Message],
+        reminders: &PrependedPromptReminders,
+        tools: Option<&[ToolDefinition]>,
+        context_window: usize,
+        current_turn_id: &str,
+        attach_images: bool,
+    ) -> openbitfun_core_types::UsageContextBreakdown {
+        let kept_images = if attach_images {
+            Self::image_bearing_indices_to_keep(messages)
+        } else {
+            HashSet::new()
+        };
+        let estimates = messages
+            .iter()
+            .enumerate()
+            .filter(|(_, message)| {
+                !Self::skip_message_for_model_send(message)
+                    && !Self::is_stale_interrupted_continue(message, current_turn_id)
+            })
+            .map(|(index, message)| {
+                // Use the same eligibility and image-retention policy as model sends;
+                // omitted pixels must not inflate the conversation slice.
+                let tokens = if !kept_images.contains(&index) && Self::message_bears_images(message)
+                {
+                    let mut projected = message.clone();
+                    match &mut projected.content {
+                        MessageContent::Multimodal { text, images } => {
+                            projected.content = MessageContent::Text(if attach_images {
+                                text.clone()
+                            } else {
+                                Self::render_multimodal_as_text(text, images)
+                            });
+                        }
+                        MessageContent::ToolResult {
+                            image_attachments, ..
+                        } => *image_attachments = None,
+                        _ => {}
+                    }
+                    projected.estimate_tokens_with_reasoning(true)
+                } else {
+                    message.estimate_tokens_with_reasoning(true)
+                };
+                (message, tokens as u64)
+            });
+        super::context_composition::estimate_context_composition(
+            estimates,
+            reminders,
+            tools,
+            context_window,
+        )
+    }
+
+    async fn persist_usage_context_preview(
+        &self,
+        context: &ExecutionContext,
+        messages: &[Message],
+        reminders: &PrependedPromptReminders,
+        tools: Option<&[ToolDefinition]>,
+    ) {
+        let Some(storage_path) = self
+            .session_manager
+            .effective_session_storage_path(&context.session_id)
+            .await
+        else {
+            return;
+        };
+        let result = async {
+            let contents = super::context_composition::context_preview_contents(
+                messages.iter().filter(|message| {
+                    !Self::skip_message_for_model_send(message)
+                        && !Self::is_stale_interrupted_continue(message, &context.dialog_turn_id)
+                }),
+                reminders,
+                tools,
+            )
+            .map_err(|error| OpenBitFunError::parse(error.to_string()))?;
+            self.session_manager
+                .persistence_manager()
+                .save_usage_context_snapshot(
+                    &storage_path,
+                    &crate::agentic::persistence::manager::SessionUsageContextSnapshot {
+                        schema_version: 1,
+                        session_id: context.session_id.clone(),
+                        turn_id: context.dialog_turn_id.clone(),
+                        turn_index: context.turn_index,
+                        captured_at: chrono::Utc::now().timestamp_millis().max(0) as u64,
+                        contents,
+                    },
+                )
+                .await
+        }
+        .await;
+        if let Err(error) = result {
+            warn!(
+                "Failed to persist usage context preview: session_id={}, error={}",
+                context.session_id, error
+            );
+        }
+    }
+
     /// True if this message would contribute at least one image to the model (before pruning).
     fn message_bears_images(msg: &Message) -> bool {
         if Self::skip_message_for_model_send(msg) {
@@ -2063,6 +2251,17 @@ impl ExecutionEngine {
     /// prompt caches from that message onward, so older image-bearing messages
     /// are elided this many at a time instead of one per new image.
     const IMAGE_ELISION_BATCH: usize = 4;
+
+    fn routing_capability_fallback(
+        messages: &[Message],
+        primary: &PrimaryModelFacts,
+        economy: &PrimaryModelFacts,
+    ) -> Option<&'static str> {
+        (primary.supports_image_inputs
+            && !economy.supports_image_inputs
+            && messages.iter().any(Self::message_bears_images))
+        .then_some("economy_model_cannot_read_images")
+    }
 
     pub(crate) fn image_input_requirement(
         messages: &[Message],
@@ -2134,6 +2333,13 @@ impl ExecutionEngine {
         .await?;
         final_ai_messages.push(AIMessage::user(render_system_reminder(input.reminder_text)));
         final_ai_messages.push(AIMessage::user(Self::FINALIZE_USER_FOLLOWUP.to_string()));
+        self.persist_usage_context_preview(
+            input.context,
+            input.messages,
+            input.prompt_reminders,
+            input.tool_definitions.as_deref(),
+        )
+        .await;
 
         let model_exchange_trace_dir = self
             .session_manager
@@ -2147,6 +2353,23 @@ impl ExecutionEngine {
             )
             .await;
         let round_context = RoundContext {
+            context_composition: Some({
+                let mut composition = Self::context_composition_for_send(
+                    input.messages,
+                    input.prompt_reminders,
+                    input.tool_definitions.as_deref(),
+                    input.context_window,
+                    &input.context.dialog_turn_id,
+                    input.primary_model_facts.supports_image_inputs,
+                );
+                composition.conversation += TokenCounter::estimate_message_tokens(&AIMessage::user(
+                    render_system_reminder(input.reminder_text),
+                )) as u64
+                    + TokenCounter::estimate_message_tokens(&AIMessage::user(
+                        Self::FINALIZE_USER_FOLLOWUP.to_string(),
+                    )) as u64;
+                composition
+            }),
             session_id: input.context.session_id.clone(),
             subagent_parent_info: input.context.subagent_parent_info.clone(),
             permission_delegation: input.context.permission_delegation.clone(),
@@ -2162,6 +2385,9 @@ impl ExecutionEngine {
             model_config_id: input.primary_model_facts.model_id.clone(),
             effective_model_name: input.ai_client.config.model.clone(),
             model_request_context: input.model_request_context.clone(),
+            account_client_source: input.account_client_source.clone(),
+            channel_client_source: input.channel_client_source.clone(),
+            prepared_model: None,
             primary_model_facts: input.primary_model_facts.clone(),
             agent_type: input.agent_type,
             context_vars: round_context_vars,
@@ -2442,7 +2668,7 @@ impl ExecutionEngine {
                 OpenBitFunError::NotFound(format!("Agent not found: {}", context.agent_type))
             })?;
 
-        let (model_id, model_fingerprint) = self
+        let (model_id, model_binding_fingerprint) = self
             .resolve_model_id_for_turn(
                 session,
                 &context.agent_type,
@@ -2476,36 +2702,32 @@ impl ExecutionEngine {
                 None
             }
         };
-        let ai_client_result = if session.config.model_binding_policy
-            == SessionModelBindingPolicy::Pool
-        {
-            ai_client_factory
-                .get_client_by_approved_binding_with_reasoning_preset(
-                    &model_id,
-                    &model_fingerprint,
-                    None,
-                )
-                .await
-        } else if matches!(
+        let model_request_context = Self::model_request_context(
+            session.effective_prompt_cache_lineage_id(),
+            &context.context,
+        );
+        let initialization_binding = if matches!(
             session.config.model_binding_policy,
             SessionModelBindingPolicy::ApprovedImmutable
         ) {
-            ai_client_factory
-                .get_client_by_approved_binding_with_reasoning_preset(
-                    &model_id,
-                    session
-                        .config
-                        .model_binding_fingerprint
-                        .as_deref()
-                        .unwrap_or_default(),
-                    reasoning_preset.as_deref(),
-                )
-                .await
+            session
+                .config
+                .model_binding_fingerprint
+                .as_deref()
+                .unwrap_or_default()
         } else {
-            ai_client_factory
-                .get_client_resolved_with_reasoning_preset(&model_id, reasoning_preset.as_deref())
-                .await
+            model_binding_fingerprint.as_str()
         };
+        let ai_client_result = ai_client_factory
+            .prepare_native_model_client(
+                &model_id,
+                initialization_binding,
+                reasoning_preset.as_deref(),
+                model_request_context.prompt_cache_route_key.as_deref(),
+                current_agent.model_temperature_override(),
+            )
+            .await
+            .map(|(client, _)| client);
         let ai_client = match ai_client_result {
             Ok(ai_client) => ai_client,
             Err(error) => {
@@ -2525,13 +2747,8 @@ impl ExecutionEngine {
                 )));
             }
         };
-        let ai_client = apply_agent_temperature_override(current_agent.as_ref(), ai_client);
         Self::validate_frozen_model_contract(context).await?;
         Self::validate_frozen_reasoning_contract(context, ai_client.as_ref())?;
-        let model_request_context = Self::model_request_context(
-            session.effective_prompt_cache_lineage_id(),
-            &context.context,
-        );
 
         let primary_model_facts = Self::resolve_primary_model_context(
             &model_id,
@@ -2679,7 +2896,6 @@ impl ExecutionEngine {
         trigger: &str,
         cancellation_token: CancellationToken,
         commit_gate: Arc<ManualCompactionCommitGate>,
-        force: bool,
         policy: crate::service::config::types::LocalContextTruncation,
     ) -> OpenBitFunResult<ContextCompactionOutcome> {
         let mut session = self
@@ -2690,7 +2906,7 @@ impl ExecutionEngine {
             })?;
         let start_time = std::time::Instant::now();
         let preparation = prepare_compression_cancellable(&cancellation_token, async {
-            let local = force || policy == crate::service::config::types::LocalContextTruncation::Always;
+            let local = policy == crate::service::config::types::LocalContextTruncation::Always;
             // A forced local operation must also work without a usable model
             // client. Do not resolve credentials or initialize the AI client.
             let scaffold = if local { None } else {
@@ -3102,7 +3318,8 @@ impl ExecutionEngine {
             dialog_turn_id
         );
 
-        // Things that remain constant in a dialog turn: 1.agent, 2.system prompt, 3.tools, 4.ai client
+        // Turn-stable state includes the agent, permissions, and tool policy. The
+        // execution model and its request scaffold may vary at round boundaries.
         // 1. Get current agent
         let agent_registry = get_agent_registry();
         agent_registry
@@ -3134,6 +3351,15 @@ impl ExecutionEngine {
             .ok_or_else(|| {
                 OpenBitFunError::Session(format!("Session not found: {}", context.session_id))
             })?;
+
+        if context.subagent_parent_info.is_none()
+            && super::round_model_routing::configuration::session_eligible(&session)
+            && super::round_model_routing::configuration::release_notice_required(
+                session.config.model_routing.as_deref(),
+            )
+        {
+            warn!("Smart mode is unavailable in this release; executing in manual mode: session_id={}, turn_id={}", context.session_id, context.dialog_turn_id);
+        }
 
         // 2. Get AI client
         let original_user_input = context
@@ -3347,30 +3573,36 @@ impl ExecutionEngine {
                 }
             }
         };
-        let ai_client_result = if let Some((_, client)) = &initial_pool_attempt {
-            Ok(Arc::clone(client))
-        } else if matches!(
+        let model_request_context = Self::model_request_context(
+            session.effective_prompt_cache_lineage_id(),
+            &context.context,
+        );
+        let initialization_cancel = self.round_executor.ensure_cancel_token(&dialog_turn_id);
+        let initialization_binding = if matches!(
             session.config.model_binding_policy,
             SessionModelBindingPolicy::ApprovedImmutable
         ) {
-            ai_client_factory
-                .get_client_by_approved_binding_with_reasoning_preset(
-                    &model_id,
-                    session
-                        .config
-                        .model_binding_fingerprint
-                        .as_deref()
-                        .unwrap_or_default(),
-                    reasoning_preset.as_deref(),
-                )
-                .await
+            session
+                .config
+                .model_binding_fingerprint
+                .as_deref()
+                .unwrap_or_default()
         } else {
-            ai_client_factory
-                .get_client_resolved_with_reasoning_preset(&model_id, reasoning_preset.as_deref())
-                .await
+            model_fingerprint.as_str()
         };
-        let ai_client = match ai_client_result {
-            Ok(ai_client) => ai_client,
+        let ai_client_result = tokio::select! {
+            biased;
+            _ = initialization_cancel.cancelled() => return Err(OpenBitFunError::Cancelled("Execution cancelled during model initialization".into())),
+            result = ai_client_factory.prepare_native_routed_model_client(
+                &model_id,
+                initialization_binding,
+                reasoning_preset.as_deref(),
+                model_request_context.prompt_cache_route_key.as_deref(),
+                current_agent.model_temperature_override(),
+            ) => result,
+        };
+        let (prepared_model, mut channel_client_source) = match ai_client_result {
+            Ok(prepared) => prepared,
             Err(error) => {
                 if context
                     .context
@@ -3384,13 +3616,11 @@ impl ExecutionEngine {
                 )));
             }
         };
-        let mut ai_client = apply_agent_temperature_override(current_agent.as_ref(), ai_client);
+        let mut ai_client = prepared_model.client.clone();
+        let mut account_client_source = prepared_model.account_source.clone();
+        let mut prepared_model = Some(prepared_model);
         Self::validate_frozen_model_contract(&context).await?;
         Self::validate_frozen_reasoning_contract(&context, ai_client.as_ref())?;
-        let model_request_context = Self::model_request_context(
-            session.effective_prompt_cache_lineage_id(),
-            &context.context,
-        );
 
         // Primary model vision capability (tools + system prompt appendix; also used below for API message stripping).
         let mut primary_model_facts = Self::resolve_primary_model_context(
@@ -3466,6 +3696,20 @@ impl ExecutionEngine {
             deferred_tool_loading_enabled.to_string(),
         );
         execution_context_vars.insert("turn_index".to_string(), context.turn_index.to_string());
+        #[cfg(feature = "ptc-runtime")]
+        if context
+            .context
+            .get(PTC_TOOL_PRESENTATION_CONTEXT_KEY)
+            .is_some_and(|mode| mode.eq_ignore_ascii_case(PTC_TOOL_PRESENTATION_MODE))
+        {
+            // `resolve_tool_manifest` changes the model-facing list to only
+            // `RunCode`. Preserve the original Agent policy separately so the
+            // PTC host can authorize nested SDK calls against that policy.
+            execution_context_vars.insert(
+                PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY.to_string(),
+                serde_json::to_string(&allowed_tools).unwrap_or_else(|_| "[]".to_string()),
+            );
+        }
         let tool_manifest_context_vars = execution_context_vars.clone();
 
         let tool_description_context = tool_context_runtime::build_tool_description_context(
@@ -3570,6 +3814,130 @@ impl ExecutionEngine {
         let mut finalization_reason: Option<&'static str> = None;
         let mut main_context_overflow_recoveries = 0usize;
         let mut active_round_lifecycle: Option<ModelRoundLifecycle> = None;
+        let mut active_round_model: Option<RoundExecutionModel> = None;
+        // Router context is per execution generation and never writes to `messages` or
+        // the primary compactor. Capture initial history before any main compression.
+        let routing_allowed = super::round_model_routing::configuration::available()
+            && selected_pool.is_none()
+            && context.subagent_parent_info.is_none()
+            && super::round_model_routing::configuration::session_eligible(&session);
+        let (configured_routing, routing_setup_failure) =
+            match super::round_model_routing::configuration::prepare_turn(
+                session.config.model_routing.as_deref(),
+                routing_allowed,
+            )
+            .await
+            {
+                Ok(routing) => (routing, None),
+                Err(error) => {
+                    warn!("Router configuration is unavailable; using the admitted primary model: session_id={}, error={}", context.session_id, error);
+                    (None, Some("router_configuration_unavailable".to_string()))
+                }
+            };
+        let turn_router = if let Some(routing) = configured_routing.as_ref() {
+            Some(routing.router.clone())
+        } else if routing_allowed
+            && routing_setup_failure.is_none()
+            && session.config.model_routing.as_deref() != Some("manual")
+        {
+            self.round_model_router.clone()
+        } else {
+            None
+        };
+        // Freeze the candidate/client at admission. Mid-turn settings edits apply next turn.
+        let economy_model_id = if let Some(routing) = configured_routing.as_ref() {
+            Some(routing.economy_model_id.clone())
+        } else if turn_router.is_some() {
+            // Preserve the injected-router hook's legacy fast candidate.
+            ai_client_factory.resolve_model_id("fast").await.ok()
+        } else {
+            None
+        };
+        let mut economy_client = if let Some(id) = economy_model_id.as_deref() {
+            let prepare = async {
+                let config = get_global_config_service()
+                    .await?
+                    .get_effective_ai_config()
+                    .await?;
+                let model = config
+                    .models
+                    .iter()
+                    .find(|model| model.enabled && model.id == id)
+                    .ok_or_else(|| {
+                        OpenBitFunError::Configuration("Economy model is unavailable".into())
+                    })?;
+                let fingerprint = model_runtime_binding_fingerprint(model);
+                let (prepared, channels) = ai_client_factory
+                    .prepare_native_routed_model_client(
+                        id,
+                        &fingerprint,
+                        None,
+                        model_request_context.prompt_cache_route_key.as_deref(),
+                        current_agent.model_temperature_override(),
+                    )
+                    .await
+                    .map_err(|error| OpenBitFunError::AIClient(error.to_string()))?;
+                Ok::<_, OpenBitFunError>(RoundExecutionClient::new(
+                    id.to_string(),
+                    prepared,
+                    channels,
+                ))
+            };
+            tokio::select! {
+                biased;
+                _ = initialization_cancel.cancelled() => return Err(OpenBitFunError::Cancelled("Execution cancelled during economy model initialization".into())),
+                result = prepare => result,
+            }
+            .inspect_err(|error| warn!("Economy client preparation failed; primary fallback remains available: {error}"))
+            .ok()
+        } else {
+            None
+        };
+        let mut router_context = turn_router.as_ref().and_then(|router| {
+            router.create_context(
+                &context.session_id,
+                &context.dialog_turn_id,
+                &original_user_input,
+            )
+        });
+        if let Some(router_context) = router_context.as_mut() {
+            router_context.set_history_cancellation(
+                self.round_executor
+                    .ensure_cancel_token(&context.dialog_turn_id),
+            );
+            // The host's complete visible turn order survives context compression
+            // and changes when undo/rollback branches history. Controller state is
+            // never used as Router recovery authority.
+            let visible_turn_ids = self
+                .session_manager
+                .get_session(&context.session_id)
+                .map(|session| session.dialog_turn_ids)
+                .unwrap_or_default();
+            router_context
+                .restore_session(
+                    self.session_manager
+                        .persistent_context_snapshot_dir(&context.session_id)
+                        .await,
+                    &visible_turn_ids,
+                    &messages,
+                )
+                .await;
+            if let Some(storage_path) = self
+                .session_manager
+                .effective_session_storage_path(&context.session_id)
+                .await
+            {
+                let source = super::round_model_routing::context::history_source::PersistentRouterHistorySource::new(
+                    self.session_manager.persistence_manager(), storage_path,
+                    context.session_id.clone(),
+                );
+                router_context.prepare_history(Arc::new(source), &visible_turn_ids, &messages);
+            } else if visible_turn_ids.len() > 1 {
+                router_context.history_source_unavailable(&visible_turn_ids);
+                warn!("Router history source is unavailable on the execution host; complete legacy history cannot be prepared: session_id={}", context.session_id);
+            }
+            router_context.observe(&messages);
+        }
 
         // Track tool-call patterns for context health, but only use rounds with
         // actual failed tool results for no-progress recovery decisions.
@@ -3623,6 +3991,30 @@ impl ExecutionEngine {
         // Execution-local ownership deliberately prevents cross-turn reuse. Drop
         // cancels both pending IO and backoff on every exit path.
         let mut compression_prefetch: Option<PrefetchedCompression> = None;
+        // Preserve the turn-admission model as the stable primary candidate. A routed
+        // round may shadow the names below, but auxiliary/finalization requests still
+        // use this baseline model and do not recursively invoke the router.
+        let baseline_model_id = model_id.clone();
+        let baseline_ai_client = ai_client.clone();
+        let mut baseline_client = if selected_pool.is_none() {
+            prepared_model.take().map(|prepared| {
+                RoundExecutionClient::new(
+                    baseline_model_id.clone(),
+                    prepared,
+                    channel_client_source.clone(),
+                )
+            })
+        } else {
+            None
+        };
+        let baseline_primary_model_facts = primary_model_facts.clone();
+        let baseline_supports_image_understanding = primary_supports_image_understanding;
+        let baseline_context_profile_policy = context_profile_policy.clone();
+        let mut scaffold_model_key = (
+            baseline_model_id.clone(),
+            baseline_ai_client.config.model.clone(),
+            baseline_supports_image_understanding,
+        );
         let mut compression_trigger_budget = initial_pool_attempt
             .as_ref()
             .map(|(attempt, _)| CompressionTriggerBudget::for_pool(attempt.context_budget))
@@ -3683,12 +4075,259 @@ impl ExecutionEngine {
                 break;
             }
 
+            if selected_pool.is_none() {
+                // Select once at the logical-round boundary. Everything below, including
+                // provider retries and context-overflow recovery, reuses this selection.
+                // Approved immutable sessions and subagents retain the admitted model.
+                let selected_model = if let Some(selected_model) = active_round_model.clone() {
+                    selected_model
+                } else {
+                    let routing_started = std::time::Instant::now();
+                    let mut fallback_reason = routing_setup_failure.clone();
+                    let requested_route = if turn_router.is_some() {
+                        if self
+                            .round_executor
+                            .is_dialog_turn_cancelled(&dialog_turn_id)
+                        {
+                            return Err(OpenBitFunError::cancelled(
+                                "Dialog cancelled before routing",
+                            ));
+                        }
+
+                        let prepared_context = if let Some(router_context) = router_context.as_mut()
+                        {
+                            let preparation_started = std::time::Instant::now();
+                            let token_metrics = router_context.token_metrics();
+                            // The append-only generation transcript also retains feedback that
+                            // main context-overflow recovery may already have removed.
+                            let generated = self
+                                .generation_messages
+                                .get(&(context.session_id.clone(), context.dialog_turn_id.clone()));
+                            let generation_lookup_ms =
+                                preparation_started.elapsed().as_millis() as u64;
+                            let observe_started = std::time::Instant::now();
+                            if let Some(generated) = generated.as_ref() {
+                                router_context.observe(generated.as_slice());
+                            }
+                            drop(generated);
+                            let generation_observe_ms =
+                                observe_started.elapsed().as_millis() as u64;
+                            let mut prepared = router_context.prepare(&messages).await;
+                            prepared.preparation.generation_lookup_ms = generation_lookup_ms;
+                            prepared.preparation.generation_observe_ms = generation_observe_ms;
+                            prepared.preparation.tokens =
+                                router_context.token_metrics().since(token_metrics);
+                            prepared.preparation_ms =
+                                preparation_started.elapsed().as_millis() as u64;
+                            Some(prepared)
+                        } else {
+                            None
+                        };
+                        let request = RoundModelRouteRequest {
+                            root_session_id: context.session_id.clone(),
+                            parent_session_id: None,
+                            session_id: context.session_id.clone(),
+                            dialog_turn_id: context.dialog_turn_id.clone(),
+                            turn_index: context.turn_index,
+                            round_index,
+                            agent_type: agent_type.clone(),
+                            original_user_input: original_user_input.clone(),
+                            messages: if prepared_context.is_some() {
+                                Vec::new()
+                            } else {
+                                messages.clone()
+                            },
+                            prepared_context,
+                        };
+                        let cancel = self.round_executor.ensure_cancel_token(&dialog_turn_id);
+                        let decision = tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => return Err(OpenBitFunError::cancelled("Dialog cancelled during routing")),
+                            result = turn_router.as_ref().expect("turn router checked above").select_model(request) => result,
+                        };
+                        match decision {
+                            Ok(route) => route,
+                            Err(OpenBitFunError::Cancelled(reason)) => {
+                                return Err(OpenBitFunError::Cancelled(reason));
+                            }
+                            Err(error) => {
+                                fallback_reason = Some("router_request_failed".to_string());
+                                warn!(
+                                "Round model routing failed; falling back to primary: session_id={}, turn_id={}, round_index={}, error={}",
+                                context.session_id, context.dialog_turn_id, round_index, error
+                            );
+                                RoundModelRoute::Primary
+                            }
+                        }
+                    } else {
+                        RoundModelRoute::Primary
+                    };
+
+                    let (mut route, mut client) = match requested_route {
+                        RoundModelRoute::Primary => (
+                            RoundModelRoute::Primary,
+                            baseline_client
+                                .as_mut()
+                                .expect("admitted primary client")
+                                .take_for_round(),
+                        ),
+                        RoundModelRoute::Economy => {
+                            let fast_model = match economy_client.as_mut() {
+                                Some(client) => Ok(client.take_for_round()),
+                                _ => Err(OpenBitFunError::Configuration(
+                                    "Economy model is unavailable".into(),
+                                )),
+                            };
+                            match fast_model {
+                                Ok(client) => (RoundModelRoute::Economy, client),
+                                Err(error) => {
+                                    fallback_reason = Some("economy_model_unavailable".into());
+                                    warn!(
+                                    "Economy round model is unavailable; falling back to primary: session_id={}, turn_id={}, round_index={}, error={}",
+                                    context.session_id,
+                                    context.dialog_turn_id,
+                                    round_index,
+                                    error
+                                );
+                                    (
+                                        RoundModelRoute::Primary,
+                                        baseline_client
+                                            .as_mut()
+                                            .expect("admitted primary client")
+                                            .take_for_round(),
+                                    )
+                                }
+                            }
+                        }
+                    };
+                    let mut model_facts = if route == RoundModelRoute::Primary {
+                        baseline_primary_model_facts.clone()
+                    } else {
+                        Self::resolve_primary_model_context(
+                        &client.model_id,
+                        session.config.model_binding_policy,
+                        &client.ai_client.config.model,
+                        &client.ai_client.config.format,
+                        "Config service unavailable, assuming routed model is text-only for image input gating",
+                    )
+                    .await
+                    };
+                    if route == RoundModelRoute::Economy {
+                        if let Some(reason) = Self::routing_capability_fallback(
+                            &messages,
+                            &baseline_primary_model_facts,
+                            &model_facts,
+                        ) {
+                            route = RoundModelRoute::Primary;
+                            client = baseline_client
+                                .as_mut()
+                                .expect("admitted primary client")
+                                .take_for_round();
+                            model_facts = baseline_primary_model_facts.clone();
+                            fallback_reason = Some(reason.into());
+                        }
+                    }
+                    let selected_model = RoundExecutionModel {
+                        route,
+                        client,
+                        model_facts,
+                        routing: (turn_router.is_some() || routing_setup_failure.is_some()).then(
+                            || openbitfun_events::agentic::ModelRoutingDecision {
+                                route: route.model_selector().into(),
+                                latency_ms: routing_started.elapsed().as_millis() as u64,
+                                fallback_reason,
+                            },
+                        ),
+                    };
+                    active_round_model = Some(selected_model.clone());
+                    selected_model
+                };
+
+                if self
+                    .round_executor
+                    .is_dialog_turn_cancelled(&dialog_turn_id)
+                {
+                    return Err(OpenBitFunError::cancelled("Dialog cancelled after routing"));
+                }
+
+                let route = selected_model.route;
+                model_id = selected_model.client.model_id;
+                ai_client = selected_model.client.ai_client;
+                account_client_source = selected_model.client.account_source;
+                channel_client_source = selected_model.client.channel_source;
+                primary_model_facts = selected_model.model_facts;
+                primary_supports_image_understanding = primary_model_facts.supports_image_inputs;
+                context_window = (ai_client.config.context_window as usize).min(session_max_tokens);
+                compression_trigger_budget =
+                    Self::compression_trigger_budget(context_window, ai_client.config.max_tokens);
+                let model_capability_profile = ModelCapabilityProfile::from_resolved_model(
+                    &primary_model_facts.model_id,
+                    &ai_client.config.model,
+                );
+                context_profile_policy = ContextProfilePolicy::for_agent_context(
+                    &agent_type,
+                    is_review_subagent,
+                    model_capability_profile,
+                );
+
+                let next_scaffold_model_key = (
+                    model_id.clone(),
+                    ai_client.config.model.clone(),
+                    primary_supports_image_understanding,
+                );
+                if next_scaffold_model_key != scaffold_model_key {
+                    // A speculative summary owns the previous model's context/budget.
+                    // Dropping it cancels pending IO before publishing another scaffold.
+                    compression_prefetch.take();
+                    turn_prompt_scaffold = self
+                        .resolve_turn_prompt_scaffold(TurnPromptScaffoldInput {
+                            context: &context,
+                            current_agent: current_agent.as_ref(),
+                            model_name: &ai_client.config.model,
+                            supports_image_understanding: primary_supports_image_understanding,
+                            tool_listing_sections: tool_listing_sections.clone(),
+                            runtime_context_needs,
+                            stage: "round_model_switch",
+                        })
+                        .await?;
+                    Self::apply_turn_prompt_scaffold_to_messages(
+                        &mut messages,
+                        &turn_prompt_scaffold,
+                    );
+                    scaffold_model_key = next_scaffold_model_key;
+                }
+                info!(
+                "Round execution model selected: session_id={}, turn_id={}, round_index={}, route={:?}, model_config_id={}, effective_model_name={}, context_window={}",
+                context.session_id,
+                context.dialog_turn_id,
+                round_index,
+                route,
+                model_id,
+                ai_client.config.model,
+                context_window
+            );
+                if let Some(router) = turn_router.as_ref() {
+                    router.record_execution_model(RoundModelExecutionRecord {
+                        root_session_id: context.session_id.clone(),
+                        parent_session_id: None,
+                        session_id: context.session_id.clone(),
+                        dialog_turn_id: context.dialog_turn_id.clone(),
+                        round_index,
+                        route,
+                        model_config_id: model_id.clone(),
+                        effective_model_name: ai_client.config.model.clone(),
+                    });
+                }
+            }
+            let routing_decision = active_round_model
+                .as_ref()
+                .and_then(|model| model.routing.clone());
             let pool_attempt = if let Some(pool_id) = selected_pool.as_deref() {
                 let image_requirement = Self::image_input_requirement(
                     &messages,
                     enable_tools && available_tools.iter().any(|name| name == "analyze_image"),
                 );
-                let (attempt, next_client) = if let Some(prepared) = initial_pool_attempt.take() {
+                let (attempt, _next_client) = if let Some(prepared) = initial_pool_attempt.take() {
                     prepared
                 } else {
                     self.model_pools
@@ -3718,8 +4357,21 @@ impl ExecutionEngine {
                     compression_prefetch.take();
                     model_id = binding.model_id.clone();
                     model_fingerprint = binding.configuration_fingerprint.clone();
-                    ai_client =
-                        apply_agent_temperature_override(current_agent.as_ref(), next_client);
+                    let (next_prepared, next_channels) = tokio::select! {
+                        biased;
+                        _ = initialization_cancel.cancelled() => return Err(OpenBitFunError::Cancelled("Execution cancelled during pool model initialization".into())),
+                        result = ai_client_factory.prepare_native_routed_model_client(
+                            &model_id,
+                            &model_fingerprint,
+                            None,
+                            model_request_context.prompt_cache_route_key.as_deref(),
+                            current_agent.model_temperature_override(),
+                        ) => result.map_err(|error| OpenBitFunError::AIClient(format!("Failed to initialize model pool member: {error:#}")))?,
+                    };
+                    ai_client = next_prepared.client.clone();
+                    account_client_source = next_prepared.account_source.clone();
+                    channel_client_source = next_channels;
+                    prepared_model = Some(next_prepared);
                     primary_model_facts = Self::resolve_primary_model_context(
                         &model_id,
                         SessionModelBindingPolicy::ApprovedImmutable,
@@ -3988,13 +4640,13 @@ impl ExecutionEngine {
                         messages.clone(),
                         token_pressure,
                         context_window,
-                        ai_client.clone(),
+                        baseline_ai_client.clone(),
                         &model_request_context,
                         &tool_definitions,
                         turn_prompt_scaffold.system_prompt_message.clone(),
                         &turn_prompt_scaffold.prepended_prompt_reminders,
-                        primary_supports_image_understanding,
-                        context_profile_policy.compression_contract_limit,
+                        baseline_supports_image_understanding,
+                        baseline_context_profile_policy.compression_contract_limit,
                         context.workspace.as_ref(),
                         context.workspace_services.as_ref(),
                         compression_prefetch.take(),
@@ -4124,7 +4776,8 @@ impl ExecutionEngine {
                 .session_manager
                 .persistent_model_exchange_trace_dir(&context.session_id)
                 .await;
-            let round_context = RoundContext {
+            let mut round_context = RoundContext {
+                context_composition: None,
                 session_id: context.session_id.clone(),
                 subagent_parent_info: context.subagent_parent_info.clone(),
                 permission_delegation: context.permission_delegation.clone(),
@@ -4140,6 +4793,9 @@ impl ExecutionEngine {
                 model_config_id: model_id.clone(),
                 effective_model_name: ai_client.config.model.clone(),
                 model_request_context: model_request_context.clone(),
+                account_client_source: account_client_source.clone(),
+                channel_client_source: channel_client_source.clone(),
+                prepared_model: prepared_model.take(),
                 primary_model_facts: primary_model_facts.clone(),
                 agent_type: agent_type.clone(),
                 context_vars: round_context_vars,
@@ -4160,6 +4816,9 @@ impl ExecutionEngine {
                 remote_exec_port: context.remote_exec_port.clone(),
                 recover_partial_on_cancel: context.recover_partial_on_cancel,
             };
+            if let Some(selected) = active_round_model.as_mut() {
+                ai_client = selected.client.install(&mut round_context);
+            }
 
             // Execute single model round
             debug!(
@@ -4205,6 +4864,14 @@ impl ExecutionEngine {
                 &model_fingerprint,
                 selected_pool.is_some(),
             );
+            round_context.context_composition = Some(Self::context_composition_for_send(
+                &request_messages,
+                &turn_prompt_scaffold.prepended_prompt_reminders,
+                tool_definitions.as_deref(),
+                context_window,
+                &context.dialog_turn_id,
+                primary_supports_image_understanding,
+            ));
             let ai_messages = Self::build_ai_messages_for_send(
                 &request_messages,
                 &ai_client.config.format,
@@ -4216,8 +4883,17 @@ impl ExecutionEngine {
             )
             .await?;
 
+            self.persist_usage_context_preview(
+                &context,
+                &request_messages,
+                &turn_prompt_scaffold.prepended_prompt_reminders,
+                tool_definitions.as_deref(),
+            )
+            .await;
+
             let round_lifecycle =
                 active_round_lifecycle.get_or_insert_with(ModelRoundLifecycle::new);
+            round_lifecycle.routing = routing_decision;
             let attempts_before_member = round_lifecycle.attempts_started();
             let round_result = match self
                 .round_executor
@@ -4298,13 +4974,13 @@ impl ExecutionEngine {
                             messages.clone(),
                             send_pressure,
                             context_window,
-                            ai_client.clone(),
+                            baseline_ai_client.clone(),
                             &model_request_context,
                             &tool_definitions,
                             turn_prompt_scaffold.system_prompt_message.clone(),
                             &turn_prompt_scaffold.prepended_prompt_reminders,
-                            primary_supports_image_understanding,
-                            context_profile_policy.compression_contract_limit,
+                            baseline_supports_image_understanding,
+                            baseline_context_profile_policy.compression_contract_limit,
                             context.workspace.as_ref(),
                             context.workspace_services.as_ref(),
                             compression_prefetch.take(),
@@ -4404,6 +5080,7 @@ impl ExecutionEngine {
                 }
             };
             active_round_lifecycle = None;
+            active_round_model = None;
 
             debug!(
                 "Model round completed: round_index={}, has_more_rounds={}, tool_calls={}",
@@ -5051,8 +5728,11 @@ impl ExecutionEngine {
                 );
                 let final_round_result = self
                     .run_finalize_round(FinalizeRoundInput {
+                        prompt_reminders: &turn_prompt_scaffold.prepended_prompt_reminders,
                         permission_constraints: tool_policy.permission_constraints.clone(),
                         ai_client: ai_client.clone(),
+                        account_client_source: account_client_source.clone(),
+                        channel_client_source: channel_client_source.clone(),
                         context: &context,
                         agent_type: agent_type.clone(),
                         round_number: completed_rounds,
@@ -5083,8 +5763,11 @@ impl ExecutionEngine {
                     );
                     let retry_result = self
                         .run_finalize_round(FinalizeRoundInput {
+                            prompt_reminders: &turn_prompt_scaffold.prepended_prompt_reminders,
                             permission_constraints: tool_policy.permission_constraints.clone(),
                             ai_client: ai_client.clone(),
+                            account_client_source: account_client_source.clone(),
+                            channel_client_source: channel_client_source.clone(),
                             context: &context,
                             agent_type: agent_type.clone(),
                             round_number: completed_rounds,
@@ -5332,6 +6015,16 @@ impl ExecutionEngine {
             warn!("Dialog turn completed but token stats not available");
         }
 
+        if let Some(router_context) = router_context.as_mut() {
+            if let Some(generated) = self
+                .generation_messages
+                .get(&(context.session_id.clone(), context.dialog_turn_id.clone()))
+            {
+                router_context.observe(generated.as_slice());
+            }
+            router_context.finish(&messages).await;
+        }
+
         Ok(ExecutionResult {
             final_message: self
                 .generation_messages
@@ -5417,6 +6110,10 @@ impl ExecutionEngine {
 mod compression_tests;
 
 #[cfg(test)]
+#[path = "smart_routing_tests.rs"]
+mod smart_routing_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         activate_conditional_instructions_after_round,
@@ -5429,7 +6126,9 @@ mod tests {
     use crate::agentic::agents::{
         PrependedPromptReminders, PromptBuilderContext, ToolListingSections, UserContextPolicy,
     };
-    use crate::agentic::core::{InternalReminderKind, Message, MessageRole, ToolCall, ToolResult};
+    use crate::agentic::core::{
+        InternalReminderKind, Message, MessageRole, MessageSemanticKind, ToolCall, ToolResult,
+    };
     use crate::agentic::persistence::PersistenceManager;
     use crate::agentic::session::{
         ContextCompressor, PromptCachePolicy, SessionContextStore, SessionManager,
@@ -5439,6 +6138,7 @@ mod tests {
     use crate::agentic::tools::ToolRuntimeRestrictions;
     use crate::agentic::workspace::{local_workspace_services, WorkspaceBinding};
     use crate::infrastructure::PathManager;
+
     #[cfg(feature = "external-sources")]
     use crate::instruction_sources::test_support::{lock_environment, EnvironmentGuard};
     use crate::service::config::types::AIConfig;
@@ -5455,6 +6155,66 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn smart_release_gate_rejects_injected_runtime_router() {
+        struct FixtureRouter;
+        #[async_trait::async_trait]
+        impl super::RoundModelRouter for FixtureRouter {
+            async fn select_model(
+                &self,
+                _: super::RoundModelRouteRequest,
+            ) -> crate::util::errors::OpenBitFunResult<super::RoundModelRoute> {
+                panic!("A disabled release must never invoke an injected Router")
+            }
+        }
+        let (_dir, engine) = super::compression_tests::engine();
+        let engine = engine.with_round_model_router(Arc::new(FixtureRouter));
+        assert!(engine.round_model_router.is_none());
+    }
+
+    #[test]
+    fn smart_routing_keeps_visual_observations_on_a_capable_model() {
+        use tool_runtime::context::PrimaryModelFacts;
+        let primary = PrimaryModelFacts::new("primary", "vision", "openai", true);
+        let economy = PrimaryModelFacts::new("economy", "text", "openai", false);
+        let image = Message::tool_result(ToolResult {
+            tool_id: "observe".into(),
+            tool_name: "ComputerUse".into(),
+            effective_tool_name: None,
+            result: json!({"screenshot_id": "frame"}),
+            result_for_assistant: None,
+            is_error: false,
+            duration_ms: None,
+            image_attachments: Some(vec![crate::util::types::ToolImageAttachment {
+                mime_type: "image/png".into(),
+                data_base64: "fixture-pixels".into(),
+            }]),
+        });
+        assert_eq!(
+            ExecutionEngine::routing_capability_fallback(&[image.clone()], &primary, &economy),
+            Some("economy_model_cannot_read_images")
+        );
+        assert_eq!(
+            ExecutionEngine::routing_capability_fallback(&[image.clone()], &primary, &primary),
+            None
+        );
+        assert_eq!(
+            ExecutionEngine::routing_capability_fallback(
+                &[Message::user("inspect code".into())],
+                &primary,
+                &economy
+            ),
+            None
+        );
+        let ui_only = image.with_semantic_kind(
+            crate::agentic::core::MessageSemanticKind::ComputerUseVerificationScreenshot,
+        );
+        assert_eq!(
+            ExecutionEngine::routing_capability_fallback(&[ui_only], &primary, &economy),
+            None
+        );
+    }
 
     #[tokio::test]
     async fn computer_use_pixels_and_geometry_reach_real_provider_wire() {
@@ -5590,6 +6350,136 @@ mod tests {
         assert_eq!(image_attachments.unwrap()[0].data_base64, pixels);
     }
 
+    #[tokio::test]
+    async fn configured_image_limit_recovers_legacy_tool_history_on_plain_continue() {
+        use crate::agentic::execution::round_executor::tests::{
+            retry_test_success, RetryTestServer,
+        };
+        use openbitfun_core_types::errors::{AiProviderError, ErrorCategory};
+
+        let server = RetryTestServer::new(vec![
+            (
+                400,
+                json!({"error": {"code": "invalid_request_error", "message": "At most 3 images per request"}}).to_string(),
+            ),
+            retry_test_success(),
+            retry_test_success(),
+        ]);
+        let image = crate::agentic::image_analysis::attachments::test_image();
+        let pixels = image
+            .data_url
+            .unwrap()
+            .split_once(',')
+            .unwrap()
+            .1
+            .to_owned();
+        let mut original = vec![Message::user("Inspect these files".into())];
+        for index in 0..4 {
+            let call = ToolCall {
+                tool_id: format!("view-{index}"),
+                tool_name: "view_image".into(),
+                arguments: json!({"path": format!("image-{index}.png")}),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            };
+            original.push(Message::assistant_with_tools(
+                String::new(),
+                vec![call.clone()],
+            ));
+            original.push(Message::tool_result(ToolResult {
+                tool_id: call.tool_id,
+                tool_name: "view_image".into(),
+                effective_tool_name: None,
+                result: json!({"path": format!("image-{index}.png")}),
+                result_for_assistant: Some("Image attached for model vision.".into()),
+                is_error: false,
+                duration_ms: None,
+                image_attachments: Some(vec![crate::util::types::ToolImageAttachment {
+                    mime_type: "image/png".into(),
+                    data_base64: pixels.clone(),
+                }]),
+            }));
+        }
+        // Restore a pre-existing context, including pixels from a failed turn.
+        let snapshot = serde_json::to_value(&original).unwrap();
+        let store = SessionContextStore::new();
+        store.add_messages(
+            "image-limit",
+            serde_json::from_value(snapshot.clone()).unwrap(),
+        );
+        let uncapped = server.client();
+        let mut capped = (*uncapped).clone();
+        capped.config.max_images_per_request = Some(3);
+
+        for attempt in 0..3 {
+            if attempt > 0 {
+                store.add_message("image-limit", Message::user("Continue".into()));
+            }
+            let messages = ExecutionEngine::build_ai_messages_for_send(
+                &store.get_context_messages("image-limit"),
+                "openai",
+                None,
+                None,
+                "continued-turn",
+                true,
+                &[],
+            )
+            .await
+            .unwrap();
+            let client = if attempt == 0 {
+                uncapped.as_ref()
+            } else {
+                &capped
+            };
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.send_message_once_with_trace_and_request_context(messages, None, None, None),
+            )
+            .await
+            .expect("image request must settle");
+            if attempt == 0 {
+                let error = result.expect_err("the uncapped request reproduces provider rejection");
+                assert_eq!(
+                    error.downcast_ref::<AiProviderError>().unwrap().category,
+                    ErrorCategory::InvalidRequest,
+                );
+            } else {
+                result.expect("plain continuation must fit the configured image limit");
+            }
+        }
+
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        for (request, expected) in requests.iter().zip([4, 3, 3]) {
+            let images = request["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|message| message["content"].as_array())
+                .flatten()
+                .filter(|part| part["type"] == "image_url")
+                .count();
+            assert_eq!(images, expected, "{request}");
+            assert_eq!(
+                request["messages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|message| message["role"] == "tool")
+                    .count(),
+                4
+            );
+        }
+        let preserved = store.get_context_messages("image-limit");
+        assert_eq!(
+            serde_json::to_value(&preserved[..original.len()]).unwrap(),
+            snapshot
+        );
+    }
+
     #[test]
     fn image_input_requirement_tracks_inherited_steered_and_retained_images() {
         use super::ImageInputRequirement as Requirement;
@@ -5701,18 +6591,67 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tools-image-analysis")]
+    #[tokio::test]
+    async fn builtin_miniapp_image_input_keeps_the_normal_analysis_tool_path() {
+        use crate::agentic::agents::{Agent, CoworkMode};
+        use crate::agentic::tools::{implementations::AnalyzeImageTool, Tool};
+
+        let messages = vec![Message::user_multimodal(
+            "Compare these references".into(),
+            vec![crate::agentic::image_analysis::attachments::test_image(); 5],
+        )];
+        let agent = CoworkMode::new();
+        // Select the real image tool explicitly: the minimal runtime test
+        // registry deliberately excludes optional product tool groups.
+        let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(AnalyzeImageTool::new())];
+        let mut context = crate::agentic::tools::ToolUseContext::for_tool_listing(None, None);
+        context.agent_type = Some("Cowork".into());
+        let miniapp_restrictions = crate::agentic::tools::miniapp_agent_run_tool_restrictions(
+            Some(&serde_json::json!({ "surface": "miniapp_agent" })),
+            Some("miniapp-agent:builtin-ppt-live:run-1"),
+        );
+        for restrictions in [ToolRuntimeRestrictions::default(), miniapp_restrictions] {
+            context.runtime_tool_restrictions = restrictions;
+            let visible = openbitfun_agent_tools::resolve_contextual_visible_tools(
+                &tools,
+                &agent.default_tools(),
+                agent.tool_exposure_overrides(),
+                &context,
+                openbitfun_agent_tools::GET_TOOL_SPEC_TOOL_NAME,
+            )
+            .await;
+            let analysis_available = visible
+                .direct_tools
+                .iter()
+                .chain(&visible.deferred_tools)
+                .any(|tool| tool.name() == "analyze_image");
+            assert_eq!(
+                ExecutionEngine::image_input_requirement(&messages, analysis_available),
+                super::ImageInputRequirement::NativeOrAnalysisTool,
+            );
+        }
+    }
+
     #[tokio::test]
     async fn image_inputs_keep_pixels_for_native_models_and_tool_paths_for_text_models() {
-        let mut image = crate::agentic::image_analysis::attachments::test_image();
-        image.image_path =
-            Some("openbitfun://runtime/current/attachments/images/example.png".into());
+        let images: Vec<_> = (0..5)
+            .map(|index| {
+                let mut image = crate::agentic::image_analysis::attachments::test_image();
+                image.id = format!("reference-{index}");
+                image.image_path = Some(format!(
+                    "openbitfun://runtime/current/attachments/images/reference-{index}.png"
+                ));
+                image
+            })
+            .collect();
         let messages = vec![
-            Message::user_multimodal("Read this screenshot".into(), vec![image.clone()])
+            Message::user_multimodal("Compare these five screenshots".into(), images.clone())
                 .with_turn_id("turn".into()),
             Message::internal_reminder_multimodal(
                 crate::agentic::core::InternalReminderKind::UserSteering,
                 "Also check the second image",
-                vec![image.clone()],
+                vec![images[1].clone()],
             )
             .with_turn_id("turn".into()),
         ];
@@ -5729,14 +6668,20 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(native.len(), 2);
-            for message in native {
+            for (message, expected_count) in native.into_iter().zip([5, 1]) {
                 let parts: serde_json::Value =
                     serde_json::from_str(message.content.as_deref().unwrap()).unwrap();
-                assert!(
-                    parts.as_array().unwrap().iter().any(|part| {
-                        matches!(part["type"].as_str(), Some("image") | Some("image_url"))
-                            || part.get("inline_data").is_some()
-                    }),
+                assert_eq!(
+                    parts
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|part| {
+                            matches!(part["type"].as_str(), Some("image") | Some("image_url"))
+                                || part.get("inline_data").is_some()
+                        })
+                        .count(),
+                    expected_count,
                     "{provider}: {parts}"
                 );
             }
@@ -5753,10 +6698,16 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(text_only.len(), 2);
-        for message in text_only {
+        for (message, expected_images) in text_only
+            .into_iter()
+            .zip([images.as_slice(), &images[1..2]])
+        {
             let text = message.content.unwrap();
             assert!(text.contains("analyze_image"));
-            assert!(text.contains(image.image_path.as_deref().unwrap()));
+            for image in expected_images {
+                assert!(text.contains(image.image_path.as_deref().unwrap()));
+                assert!(text.contains(&format!("image_id={}", image.id)));
+            }
             assert!(!text.contains("base64"));
         }
         assert!(messages.iter().all(|message| matches!(&message.content, crate::agentic::core::MessageContent::Multimodal { images, .. } if images[0].data_url.is_some())));
@@ -5929,6 +6880,8 @@ mod tests {
                 .collect(),
             deferred_tool_names: Vec::new(),
             deferred_tool_summaries: Vec::new(),
+            #[cfg(feature = "ptc-runtime")]
+            ptc_tool_calling_guide: None,
             catalog_generation: 0,
         }
     }
@@ -5940,6 +6893,7 @@ mod tests {
             agent_listing: Some("<available_agents>Explore</available_agents>".to_string()),
             direct_tool_listing: None,
             deferred_tool_listing: None,
+            ptc_tool_calling_guide: None,
         };
 
         let (skill_listing, agent_listing) = skill_agent_listing_reminders(Some(&sections));
@@ -6164,6 +7118,29 @@ mod tests {
         assert_eq!(
             super::initial_round_index(&std::collections::HashMap::new()),
             0
+        );
+    }
+
+    #[test]
+    fn context_composition_excludes_ui_frames_and_stale_continuations() {
+        let current = Message::user("Current input".into());
+        let mut screenshot = Message::user("UI-only content".repeat(100));
+        screenshot.metadata.semantic_kind =
+            Some(MessageSemanticKind::ComputerUsePostActionSnapshot);
+        let mut stale = Message::user("Interrupted old turn".repeat(100));
+        stale.metadata.internal_reminder_kind = Some(InternalReminderKind::InterruptedContinue);
+        stale.metadata.turn_id = Some("old-turn".into());
+        let composition = ExecutionEngine::context_composition_for_send(
+            &[current.clone(), screenshot, stale],
+            &PrependedPromptReminders::default(),
+            None,
+            128_000,
+            "current-turn",
+            false,
+        );
+        assert_eq!(
+            composition.conversation,
+            current.estimate_tokens_with_reasoning(true) as u64
         );
     }
 

@@ -10,6 +10,20 @@ function readChatInputComponent(): string {
 describe('composer image file intake', () => {
   const component = readChatInputComponent();
 
+  it.each([
+    ['handleSendOrCancel', 'submittedContexts', 'clearComposerForSubmission'],
+    ['submitBtwFromInput', 'imagesForBtw', "dispatchInput({ type: 'CLEAR_VALUE'"],
+    ['submitMcpPromptFromInput', 'submittedContexts', 'clearComposerForSubmission'],
+    ['submitExternalPromptCommandFromInput', 'contexts', "dispatchInput({ type: 'CLEAR_VALUE'"],
+  ])('keeps an over-limit draft intact in %s after switching models', (entry, snapshot, clear) => {
+    const start = component.indexOf(`const ${entry} = useCallback(`);
+    expect(start).toBeGreaterThan(-1);
+    const body = component.slice(start, component.indexOf('  }, [', start));
+    const admission = body.indexOf(`if (!admitComposerImages(${snapshot})) return`);
+    expect(admission).toBeGreaterThan(-1);
+    expect(body.indexOf(clear)).toBeGreaterThan(admission);
+  });
+
   it('mounts the picker before clicking it so WebKitGTK delivers change', () => {
     // WebKitGTK (the Linux webview) never fires `change` on a detached file
     // input after the native chooser closes, which silently dropped every

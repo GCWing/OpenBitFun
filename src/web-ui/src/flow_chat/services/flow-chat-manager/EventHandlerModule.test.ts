@@ -28,6 +28,7 @@ import { chatInputSessionSubscriptionKey } from '../../utils/chatInputSessionSub
 import { selectInterruptedTurnRecovery } from '../../utils/interruptedTurnRecovery';
 import { promptSuggestionKey, usePromptSuggestionStore } from '../../store/promptSuggestionStore';
 import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 const {
   buildBuiltInBrowserTabOptions,
@@ -52,6 +53,19 @@ describe('isAppWindowFocused', () => {
 describe('host session deletion', () => {
   beforeEach(() => { resetFlowChatStore(); clearAgentCanvasForPeerSwitch(); });
   afterEach(() => { resetFlowChatStore(); clearAgentCanvasForPeerSwitch(); });
+
+  it.each([true, false])('releases retained browser snapshots when the deleted session is active=%s', active => {
+    switchAgentCanvasScope('browser-b');
+    useAgentCanvasStore.getState().addTab({ type: 'text-viewer', title: 'B work' }, 'active');
+    const bTab = useAgentCanvasStore.getState().primaryGroup.tabs[0].id;
+    __test_only__.handleOpenBuiltInBrowser({ sessionId: 'browser-a', targetId: 'page-a', url: 'https://a.example' });
+    if (active) switchAgentCanvasScope('browser-a');
+    __test_only__.handleSessionDeleted(createFlowChatContext(), { sessionId: 'browser-a' });
+    switchAgentCanvasScope('browser-a');
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toEqual([]);
+    switchAgentCanvasScope('browser-b');
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs.map(tab => tab.id)).toEqual([bTab]);
+  });
 
   it.each([true, false])('retires an AgentControl-deleted child tab even when its record is present=%s', recordPresent => {
     createSessionWithTurn(createFinishingTurn());
@@ -133,15 +147,15 @@ describe('prompt suggestion projection', () => {
     usePromptSuggestionStore.setState({ suggestions: {} });
   });
 
-  it('preserves the model text for the latest turn without post-processing', () => {
+  it('trims surrounding whitespace in legacy suggestion events while preserving message content', () => {
     createSessionWithTurn(createFinishingTurn());
 
     handlePromptSuggestion(createFlowChatContext(), {
-      sessionId: 'session-1', sourceTurnId: 'turn-1', suggestion: '  Run the tests  ',
+      sessionId: 'session-1', sourceTurnId: 'turn-1', suggestion: '\n\n  Run  the tests\n  Then commit.  \r\n',
     });
 
     expect(usePromptSuggestionStore.getState().suggestions[promptSuggestionKey('session-1')]).toEqual({
-      suggestion: '  Run the tests  ', sourceTurnId: 'turn-1',
+      suggestion: 'Run  the tests\n  Then commit.', sourceTurnId: 'turn-1',
     });
   });
 
@@ -188,6 +202,55 @@ describe('prompt suggestion projection', () => {
 });
 
 describe('built-in browser open request projection', () => {
+  beforeEach(() => clearAgentCanvasForPeerSwitch());
+  afterEach(() => clearAgentCanvasForPeerSwitch());
+
+  it('binds a manually opened browser tab to its conversation and restores the same target', () => {
+    switchAgentCanvasScope('manual-owner');
+    useAgentCanvasStore.getState().addTab({ type: 'browser', title: 'Browser', data: { url: 'https://example.com' } }, 'active');
+    const data = useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data;
+    expect(data.conversationId).toBe('manual-owner');
+    expect(data.targetId).toMatch(/^embedded-browser-panel-view-/);
+    switchAgentCanvasScope('other-owner');
+    switchAgentCanvasScope('manual-owner');
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data).toEqual(data);
+  });
+
+  it('never binds a peer-host browser label to a controller-local WebView', () => {
+    activateSurface('peer-browser');
+    try {
+      switchAgentCanvasScope('same-session-id');
+      __test_only__.handleOpenBuiltInBrowser({ sessionId: 'same-session-id', targetId: 'embedded-browser-panel-view-1', url: 'https://peer.example' });
+      expect(useAgentCanvasStore.getState().primaryGroup.tabs).toEqual([]);
+    } finally { activateSurface('local'); }
+  });
+
+  it('opens A in its suspended canvas while B remains unchanged, and reuses each native target', () => {
+    switchAgentCanvasScope('browser-b');
+    useAgentCanvasStore.getState().addTab({ type: 'text-viewer', title: 'B work', data: {} }, 'active');
+    const b = useAgentCanvasStore.getState().primaryGroup;
+    const openA = { sessionId: 'browser-a', targetId: 'embedded-browser-panel-view-a', requestId: 'a-1', url: 'https://a.example' };
+    __test_only__.handleOpenBuiltInBrowser(openA);
+    expect(useAgentCanvasStore.getState().scopeKey).toBe('browser-b');
+    expect(useAgentCanvasStore.getState().primaryGroup).toEqual(b);
+    __test_only__.handleOpenBuiltInBrowser({ ...openA, requestId: 'a-2', url: 'https://a.example/next' });
+    switchAgentCanvasScope('browser-a');
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data).toMatchObject({
+      conversationId: 'browser-a', targetId: openA.targetId, url: 'https://a.example/next',
+    });
+    switchAgentCanvasScope('browser-b');
+    expect(useAgentCanvasStore.getState().primaryGroup).toEqual(b);
+  });
+
+  it('retains background browser tabs beyond the ordinary canvas LRU limit', () => {
+    const event = { sessionId: 'retained-a', targetId: 'embedded-browser-panel-view-retained', url: 'https://a.example' };
+    __test_only__.handleOpenBuiltInBrowser(event);
+    for (let index = 0; index < 30; index++) switchAgentCanvasScope(`other-${index}`);
+    switchAgentCanvasScope('retained-a');
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data.targetId).toBe(event.targetId);
+  });
+
   it('correlates replacement and new-tab requests with distinct stable keys', () => {
     expect(buildBuiltInBrowserTabOptions({
       url: ' https://openbitfun.com/ ',
@@ -1424,6 +1487,7 @@ describe('handleModelRoundStart', () => {
       roundIndex: 0,
       modelConfigId: '  config-1  ',
       effectiveModelName: '  gpt-4o  ',
+      routing: { route: 'primary', latencyMs: 25, fallbackReason: 'router_request_failed' },
       renderHints: { disableExploreGrouping: true },
     } as any);
 
@@ -1436,6 +1500,7 @@ describe('handleModelRoundStart', () => {
     expect(turn?.modelRounds[0]).toMatchObject({
       modelConfigId: 'config-1',
       effectiveModelName: 'gpt-4o',
+      routing: { route: 'primary', latencyMs: 25, fallbackReason: 'router_request_failed' },
       renderHints: { disableExploreGrouping: true, disableExploreGroupingSource: 'host' },
     });
   });
@@ -2170,5 +2235,30 @@ describe('handleTokenUsageUpdate', () => {
 
     const session = FlowChatStore.getInstance().getState().sessions.get('session-1');
     expect(session?.currentTokenUsage).toBeUndefined();
+  });
+});
+
+
+describe('model round host timing', () => {
+  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+
+  it.each([
+    [{ firstChunkMs: 20, firstVisibleOutputMs: 200, streamDurationMs: 1_200, ttftMs: 350 }, 350],
+    [{ first_chunk_ms: 20, first_visible_output_ms: 200, stream_duration_ms: 1_200, ttft_ms: 0 }, 0],
+    [{}, undefined],
+  ])('receives projected, replayed and legacy timing: %j', async (timing, ttftMs) => {
+    putFinishingSessionInStore();
+    await stateMachineManager.transition('session-1', SessionExecutionEvent.START, {
+      taskId: 'session-1', dialogTurnId: 'turn-1',
+    });
+    __test_only__.handleModelRoundComplete(createFlowChatContext(), {
+      sessionId: 'session-1', turnId: 'turn-1', roundId: 'round-1', hasToolCalls: false,
+      modelConfigId: 'model', effectiveModelName: 'model', ...timing,
+    });
+    const round = FlowChatStore.getInstance().getState().sessions.get('session-1')?.dialogTurns[0].modelRounds[0];
+    expect(round?.ttftMs).toBe(ttftMs);
+    expect(round?.streamDurationMs).toBe(ttftMs === undefined ? undefined : 1_200);
+    expect(round?.firstVisibleOutputMs).toBe(ttftMs === undefined ? undefined : 200);
   });
 });

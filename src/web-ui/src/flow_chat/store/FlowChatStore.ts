@@ -1,5 +1,5 @@
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
-import { removeBtwSessionFromAgentCanvas } from '@/app/components/panels/content-canvas/stores/canvasStore';
+import { forgetAgentCanvasSession, removeBtwSessionFromAgentCanvas } from '@/app/components/panels/content-canvas/stores/canvasStore';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { projectUserQuestionTiming } from '../utils/userQuestionTiming';
 import { externalHistoryFromMetadata } from '../utils/externalHistory';
@@ -50,6 +50,7 @@ import { stateMachineManager } from '../state-machine';
 import { estimateRetainedBytes, resourceBudget } from '@/shared/utils/resourceBudget';
 import { ProcessingPhase, SessionExecutionState } from '../state-machine/types';
 import { isTurnAwaitingRecovery } from '../utils/interruptedTurnRecovery';
+import { isUnmaterializedSessionDraft } from '../utils/sessionDraft';
 import { sessionActivityStore } from './sessionActivityStore';
 import {
   getActiveSurfaceId,
@@ -5421,7 +5422,10 @@ export class FlowChatStore {
   public removeDeletedSession(sessionId: string, options?: RemoveSessionOptions): string[] {
     const removedIds = this.removeSession(sessionId, options);
     // A deletion event may arrive after the record was already removed.
-    new Set([sessionId, ...removedIds]).forEach(removeBtwSessionFromAgentCanvas);
+    new Set([sessionId, ...removedIds]).forEach(id => {
+      removeBtwSessionFromAgentCanvas(id);
+      forgetAgentCanvasSession(id);
+    });
     return removedIds;
   }
 
@@ -6054,6 +6058,9 @@ export class FlowChatStore {
     const surface = this.activeSurface;
     if (surface.surfaceId === 'local') throw new Error('Local history is owned by the local runtime');
     if (!surface.state.sessions.has(sessionId)) throw new Error('Relay session shell is not loaded');
+    // The host rejects a reserved ID, and that rejection would falsely mark an
+    // empty composer session as a failed history restore. It has no history yet.
+    if (isUnmaterializedSessionDraft(surface.state.sessions.get(sessionId))) return;
     let history = surface.relaySessionHistory.get(sessionId);
     if (!history) {
       history = new RelaySessionHistory(sessionId,
@@ -6129,6 +6136,7 @@ export class FlowChatStore {
   }
 
   public async loadOlderRelaySessionHistory(sessionId: string): Promise<boolean> {
+    if (isUnmaterializedSessionDraft(this.state.sessions.get(sessionId))) return false;
     await this.loadRelaySessionHistory(sessionId);
     const history = this.activeSurface.relaySessionHistory.get(sessionId);
     if (!history) throw new Error('Relay session history is no longer active');
@@ -6584,7 +6592,16 @@ export class FlowChatStore {
       const updatedModelRounds = turn.modelRounds.map(modelRound => {
         if (updated) return modelRound;
 
-        const activeAttempts = modelRound.attempts ?? deriveRoundAttemptsFromItems(modelRound.items);
+        const recordedAttempts = modelRound.attempts;
+        if (!recordedAttempts && !modelRound.items.some((item: any) => itemMatchesIdentity(item, itemId))) {
+          // Derived attempts only repackage these same items, so a round that
+          // does not hold the item cannot hold it after derivation either. A
+          // streamed token lands in the last round; without this probe every
+          // earlier round re-derives its attempts on every flush.
+          return modelRound;
+        }
+
+        const activeAttempts = recordedAttempts ?? deriveRoundAttemptsFromItems(modelRound.items);
         if (activeAttempts && activeAttempts.length > 0) {
           let foundInAttempts = false;
           const nextAttempts = activeAttempts.map(attempt => {
@@ -7199,9 +7216,11 @@ export class FlowChatStore {
             providerId: round.providerId,
             modelConfigId: round.modelConfigId,
             effectiveModelName: round.effectiveModelName,
+          routing: round.routing,
             firstChunkMs: round.firstChunkMs,
             firstVisibleOutputMs: round.firstVisibleOutputMs,
             streamDurationMs: round.streamDurationMs,
+            ttftMs: round.ttftMs,
             attemptCount: round.attemptCount,
             attemptDiagnostics: round.attemptDiagnostics,
             failureCategory: round.failureCategory,
@@ -8581,6 +8600,7 @@ export class FlowChatStore {
       return;
     }
     if (scope.surfaceId !== 'local') {
+      if (isUnmaterializedSessionDraft(initialSession)) return;
       if (initialSession?.externalHistory?.mode === 'follow') {
         // Relay history has its own cursor/version contract. Until it can pin
         // immutable source snapshots, do not silently project a stale source.
@@ -9267,9 +9287,11 @@ export class FlowChatStore {
           providerId: round.providerId,
           modelConfigId: round.modelConfigId,
           effectiveModelName: round.effectiveModelName,
+          routing: round.routing,
           firstChunkMs: round.firstChunkMs,
           firstVisibleOutputMs: round.firstVisibleOutputMs,
           streamDurationMs: round.streamDurationMs,
+          ttftMs: round.ttftMs,
           attemptCount: round.attemptCount,
           attemptDiagnostics: round.attemptDiagnostics,
           failureCategory: round.failureCategory,

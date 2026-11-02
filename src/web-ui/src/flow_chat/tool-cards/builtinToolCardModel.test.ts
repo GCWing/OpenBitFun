@@ -161,6 +161,12 @@ describe('built-in historical result presentation', () => {
     expect(JSON.stringify(created.rawResult)).not.toContain('Bearer private');
     expect(getToolItemCardConfig(item('DesktopCard', { action: 'create' })).attention).toBe('prominent');
 
+    const charted = model('DesktopCard', {
+      action: 'create',
+      card: { title: 'Disk', template: { kind: 'chart', chart: 'stacked', items: [{ label: 'Apps', value: 3 }] } },
+    }, {});
+    expect(charted.fields).toContainEqual({ label: 'fields.template', value: 'desktopCard.templates.chart' });
+
     const listed = model('DesktopCard', { action: 'list' }, { enabled: false, cards: [{ ...record, visible: false }] });
     expect(listed.action).toBe('desktopCard.actions.list');
     expect(listed.notice).toBe('desktopCard.disabledNotice');
@@ -172,6 +178,12 @@ describe('built-in historical result presentation', () => {
     expect(deleted.summary).toBe('pr-42');
     expect(deleted.outcome).toEqual({ label: 'states.deleted', tone: 'neutral' });
     expect(model('DesktopCard', { action: 'future_action' }, {}).action).toBe('tools.DesktopCard · future_action');
+
+    const partial = model('DesktopCard', { action: 'create', card: { title: 'Repo' } }, {
+      card: { ...record, lastData: { fetchedAtMs: 1, value: { stars: null }, warning: 'gh: rate limited' } },
+    });
+    expect(partial.sections).toContainEqual(expect.objectContaining({ label: 'fields.commandStderr', content: 'gh: rate limited' }));
+    expect(created.sections.map(section => section.label)).not.toContain('fields.commandStderr');
   });
 });
 

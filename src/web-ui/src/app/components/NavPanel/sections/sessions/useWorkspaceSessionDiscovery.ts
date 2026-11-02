@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
+import type { SessionDiscoveryDiagnostic, SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
 import { getActiveSurfaceId, getActiveSurfaceScope, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { createLogger } from '@/shared/utils/logger';
+import { EXTERNAL_SESSION_NAMES, isExternalSessionEcosystem } from '@/shared/types/external-session';
 
 const log = createLogger('WorkspaceSessionDiscovery');
-interface DiscoveryState { pending: boolean; warnings: string[] }
+interface DiscoveryState {
+  pending: boolean;
+  warnings: string[];
+  diagnostics: SessionDiscoveryDiagnostic[];
+}
+
+const DISCOVERY_CONFIG_PATH = 'app.external_session_discovery';
+
+function parseEnabledSources(value: unknown): ReadonlySet<string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const settings = value as Record<string, unknown>;
+  return new Set(Object.keys(EXTERNAL_SESSION_NAMES).filter(source => settings[source] === true));
+}
 
 /** Watches only host-advertised in-progress work. Imports remain on the host
  * when this observer is hidden, unmounted, disconnected or switched to a peer. */
@@ -20,14 +33,39 @@ export function useWorkspaceSessionDiscovery(
   const [failed, setFailed] = useState(false);
   const [retryVersion, setRetryVersion] = useState(0);
   const [settingsVersion, setSettingsVersion] = useState(0);
+  const [enabledSources, setEnabledSources] = useState<ReadonlySet<string>>();
+  const enabledSourcesRef = useRef<ReadonlySet<string>>();
+  const settingsRequestRef = useRef(0);
   const scopeKey = JSON.stringify(workspaceIds);
   const scopedWorkspaceIds = useMemo(() => JSON.parse(scopeKey) as string[], [scopeKey]);
   const surfaceId = getActiveSurfaceId();
+  const publishEnabledSources = useCallback((next: ReadonlySet<string> | undefined) => {
+    enabledSourcesRef.current = next;
+    setEnabledSources(next);
+  }, []);
+  const loadEnabledSources = useCallback(() => {
+    const request = ++settingsRequestRef.current;
+    const scope = getActiveSurfaceScope();
+    void configManager.getOptionalConfig<Record<string, boolean>>(DISCOVERY_CONFIG_PATH)
+      .then(settings => {
+        if (request !== settingsRequestRef.current || !scope.isCurrent()) return;
+        publishEnabledSources(parseEnabledSources(settings));
+      })
+      .catch(() => {
+        if (request === settingsRequestRef.current && scope.isCurrent()) publishEnabledSources(undefined);
+      });
+  }, [publishEnabledSources]);
   const observe = useCallback((workspaceId: string, page: SessionMetadataPage, refresh = false) => {
     const key = surfaceScopedKey(surfaceId, workspaceId);
-    const next = { pending: page.discoveryPending === true, warnings: page.discoveryWarnings ?? [] };
+    const next = {
+      pending: page.discoveryPending === true,
+      warnings: page.discoveryWarnings ?? [],
+      diagnostics: page.discoveryDiagnostics ?? [],
+    };
     const previous = statesRef.current[key];
-    if (previous?.pending !== next.pending || JSON.stringify(previous.warnings) !== JSON.stringify(next.warnings)) {
+    if (previous?.pending !== next.pending
+      || JSON.stringify(previous.warnings) !== JSON.stringify(next.warnings)
+      || JSON.stringify(previous.diagnostics) !== JSON.stringify(next.diagnostics)) {
       statesRef.current = { ...statesRef.current, [key]: next };
       setStates(statesRef.current);
     }
@@ -38,12 +76,40 @@ export function useWorkspaceSessionDiscovery(
   }, [onCompleted, surfaceId]);
   const pendingKey = JSON.stringify(workspaceIds.filter(id => states[surfaceScopedKey(surfaceId, id)]?.pending));
   const warnings = useMemo(() => [...new Set(scopedWorkspaceIds.flatMap(id => states[surfaceScopedKey(surfaceId, id)]?.warnings ?? []))], [states, scopedWorkspaceIds, surfaceId]);
-
-  useEffect(() => configManager.onConfigChange(path => {
-    if (path === 'app' || path === 'app.external_session_discovery' || path.startsWith('app.external_session_discovery.')) {
-      setSettingsVersion(version => version + 1);
+  const diagnostics = useMemo(() => {
+    const unique = new Map<string, SessionDiscoveryDiagnostic>();
+    for (const id of scopedWorkspaceIds) {
+      for (const diagnostic of states[surfaceScopedKey(surfaceId, id)]?.diagnostics ?? []) {
+        unique.set(`${diagnostic.ecosystemId}:${diagnostic.code}`, diagnostic);
+      }
     }
-  }), []);
+    return [...unique.values()].sort((left, right) => (
+      left.ecosystemId.localeCompare(right.ecosystemId) || left.code.localeCompare(right.code)
+    ));
+  }, [scopedWorkspaceIds, states, surfaceId]);
+
+  useEffect(() => {
+    publishEnabledSources(undefined);
+    loadEnabledSources();
+    return () => { settingsRequestRef.current += 1; };
+  }, [loadEnabledSources, publishEnabledSources, surfaceId]);
+
+  useEffect(() => configManager.onConfigChange((path, _oldValue, newValue) => {
+    if (path === 'app' || path === DISCOVERY_CONFIG_PATH || path.startsWith(`${DISCOVERY_CONFIG_PATH}.`)) {
+      setSettingsVersion(version => version + 1);
+      const source = path.slice(`${DISCOVERY_CONFIG_PATH}.`.length);
+      const current = enabledSourcesRef.current;
+      if (isExternalSessionEcosystem(source) && typeof newValue === 'boolean' && current !== undefined) {
+        settingsRequestRef.current += 1;
+        const next = new Set(current);
+        if (newValue) next.add(source);
+        else next.delete(source);
+        publishEnabledSources(next);
+      } else {
+        loadEnabledSources();
+      }
+    }
+  }), [loadEnabledSources, publishEnabledSources]);
 
   useEffect(() => {
     if (!settingsVersion || !visible || scopedWorkspaceIds.length === 0) return;
@@ -93,6 +159,8 @@ export function useWorkspaceSessionDiscovery(
     observe,
     pending: pendingKey !== '[]',
     warnings,
+    diagnostics,
+    enabledSources,
     failed,
     retry: () => setRetryVersion(value => value + 1),
   };

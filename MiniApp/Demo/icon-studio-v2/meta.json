@@ -1,0 +1,21 @@
+{
+  "id": "icon-studio-v2",
+  "name": "图标工坊 V2.0.2",
+  "description": "V2.0.2：将简单单色图片描摹为可编辑矢量图标。支持钢笔、节点与贝塞尔手柄、几何绘制、像素吸附、撤销重做、实际尺寸预览和 currentColor SVG 导出。",
+  "icon": "PenTool",
+  "category": "creative",
+  "tags": ["icon", "svg", "vector", "design"],
+  "version": 1,
+  "created_at": 0,
+  "updated_at": 0,
+  "permissions": {
+    "fs": { "read": [], "write": ["{user-selected}"] },
+    "shell": { "allow": [] },
+    "net": { "allow": [] },
+    "node": { "enabled": false }
+  },
+  "i18n": { "locales": {
+    "zh-CN": { "name": "图标工坊 V2.0.2", "description": "导入位图、描摹矢量、调整节点并绘制应用内图标，导出 SVG。", "tags": ["图标", "矢量", "绘制", "设计"] },
+    "en-US": { "name": "Icon Studio V2.0.2", "description": "Trace monochrome images, edit vector nodes, draw UI icons, and export SVG.", "tags": ["icon", "vector", "draw", "design"] }
+  } }
+}

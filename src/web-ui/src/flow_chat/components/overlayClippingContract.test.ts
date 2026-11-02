@@ -11,7 +11,6 @@ const ANCHORED_OVERLAYS = [
   { name: 'chat input pickers', path: './ChatInput.tsx' },
   { name: 'chat context picker', path: './ChatContextPicker.tsx' },
   { name: 'permission menu', path: './ChatInputWorkspaceStrip.tsx' },
-  { name: 'welcome workspace menu', path: './WelcomePanel.tsx' },
   { name: 'session menu', path: './session-menu/SessionMenu.tsx' },
   { name: 'toolbar overflow menu', path: './toolbar-mode/ToolbarMode.tsx' },
   { name: 'message copy menu', path: './modern/ModelRoundItem.tsx' },

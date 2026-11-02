@@ -1,4 +1,9 @@
 {
+  "navigation": {
+    "add": "Add to left navigation",
+    "remove": "Remove from left navigation",
+    "removeApp": "Remove {{name}} from left navigation"
+  },
   "presentation": {
     "titlebar": "App window controls",
     "minimize": "$t(shared:window.minimize)",

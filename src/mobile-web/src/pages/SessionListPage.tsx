@@ -1,6 +1,8 @@
+import { WorkspaceIcon as ProjectWorkspaceIcon } from '../components/WorkspaceIcon';
 import { subscribeHostCatalog } from '../services/HostCatalogSubscription';
 import {
   AppWindow as LucideAppWindow,
+  Bot as LucideBot,
   Check as LucideCheck,
   ChevronRight as LucideChevronRight,
   ChevronsUpDown as LucideChevronsUpDown,
@@ -1459,8 +1461,12 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     t,
   ]);
 
-  const requestHarnessCreate = useCallback((workspace?: RecentWorkspaceEntry) => {
+  const requestSessionCreate = useCallback((workspace?: RecentWorkspaceEntry) => {
     if (creating || targetInitializingRef.current) return;
+    if (workspace?.workspace_kind === 'assistant') {
+      void handleCreateInCompactWorkspace(workspace, 'claw');
+      return;
+    }
     if (sessionMgr.supportsHostCapability(REMOTE_CAPABILITY_HARNESS_PROFILES_V1)) {
       setHarnessCreateRequest({ workspace });
       return;
@@ -1535,20 +1541,22 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
 
   if (compact) {
     const query = searchQuery.trim().toLocaleLowerCase();
-    const compactWorkspaces = workspaceList;
+    const compactWorkspaces = [...workspaceList].sort((left, right) => (
+      Number(right.workspace_kind === 'assistant') - Number(left.workspace_kind === 'assistant')
+    ));
     const activeDeviceId = client?.targetDeviceId
       ?? null;
-    const projectedCompactDevices = !activeDeviceId || compactDevices.some((device) => (
+    const projectedCompactDevices = (!activeDeviceId || compactDevices.some((device) => (
       device.device_id === activeDeviceId
     ))
-      ? compactDevices
+      ? [...compactDevices]
       : [{
           device_id: activeDeviceId,
           device_name: client?.targetDeviceId
             ? controlTarget?.deviceName || client.targetDeviceId
             : t('devices.pairedDesktopName'),
           online: connectionHealth !== 'unreachable',
-        }, ...compactDevices];
+        }, ...compactDevices]).sort((left, right) => Number(right.online) - Number(left.online));
 
     return (
       <div className="harmony-sidebar">
@@ -1651,7 +1659,9 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                       <div className={`harmony-sidebar__workspace-row${current ? ' is-current' : ''}`}>
                         <MobileButton appearance="plain" block className="harmony-sidebar__workspace-main" onClick={() => void handleToggleCompactWorkspace(workspace)}>
                           <span className="harmony-sidebar__folder-icon" aria-hidden="true">
-                            <LucideFolder width="21" height="21" stroke="currentColor" aria-hidden="true" />
+                            {workspace.workspace_kind === 'assistant'
+                              ? <LucideBot width="21" height="21" stroke="currentColor" aria-hidden="true" />
+                              : <ProjectWorkspaceIcon manager={sessionMgr} workspace={workspace} />}
                           </span>
                           <span className="harmony-sidebar__workspace-copy">
                             <span className="harmony-sidebar__row-label">{workspace.name || workspace.path}</span>
@@ -1663,7 +1673,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                           </span>
                         </MobileButton>
                         <MobileIconButton appearance="plain" size="sm" className={`harmony-sidebar__workspace-disclosure${expanded ? ' is-expanded' : ''}`} onClick={() => void handleToggleCompactWorkspace(workspace)} aria-label={expanded ? t('common.close') : t('sessions.sessionHistory')} icon={<LucideChevronRight width="14" height="14" stroke="currentColor" aria-hidden="true" />} />
-                        <MobileIconButton appearance="plain" size="sm" className="harmony-sidebar__row-plus" onClick={() => requestHarnessCreate(workspace)} aria-label={`${workspace.name} · ${t('common.more')}`} disabled={creating} icon={<LucidePlus width="20" height="20" stroke="currentColor" aria-hidden="true" />} />
+                        <MobileIconButton appearance="plain" size="sm" className="harmony-sidebar__row-plus" onClick={() => requestSessionCreate(workspace)} aria-label={`${workspace.name} · ${t('shared.sessions.new')}`} disabled={creating} icon={<LucidePlus width="20" height="20" stroke="currentColor" aria-hidden="true" />} />
                       </div>
                       {expanded && (
                         <div className="harmony-sidebar__workspace-sessions">
@@ -1746,7 +1756,6 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
           isDark={isDark}
           onClose={() => setCompactSettingsOpen(false)}
           onDisconnectRequest={() => { setCompactSettingsOpen(false); setShowDisconnectConfirm(true); }}
-          onOpenDevices={onOpenDevices ? () => { setCompactSettingsOpen(false); onOpenDevices(); } : undefined}
           onSelectDevice={(device) => void handleSelectCompactDevice(device)}
           onToggleTheme={toggleTheme}
           open={compactSettingsOpen}
@@ -1899,7 +1908,9 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
               }}
             >
               <span className="session-list__workspace-icon">
-                <WorkspaceIcon />
+                {currentWorkspace?.workspace_id
+                  ? <ProjectWorkspaceIcon manager={sessionMgr} workspace={currentWorkspace} />
+                  : <WorkspaceIcon />}
               </span>
               <div className="session-list__workspace-copy">
                 <span className="session-list__workspace-label">{t('shared.features.workspace')}</span>
@@ -1936,7 +1947,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                   label: workspace.remote_ssh_host
                     ? `${workspace.name} · ${workspace.remote_ssh_host}`
                     : workspace.name,
-                  leading: <span className="session-list__picker-item-icon"><WorkspaceIcon /></span>,
+                  leading: <span className="session-list__picker-item-icon"><ProjectWorkspaceIcon manager={sessionMgr} workspace={workspace} /></span>,
                   trailing: selected ? <LucideCheck width="16" height="16" stroke="currentColor" aria-hidden="true" /> : undefined,
                   value: String(index),
                 };
@@ -2013,7 +2024,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
           targetInitializing={targetInitializing}
           onCreateClaw={() => void handleCreate('claw')}
           onCreateCowork={() => void handleCreate('cowork')}
-          onRequestCodeHarness={() => requestHarnessCreate()}
+          onRequestCodeHarness={() => requestSessionCreate()}
           renderSessionIcon={(agentType) => <SessionTypeIcon agentType={agentType} />}
         />
 

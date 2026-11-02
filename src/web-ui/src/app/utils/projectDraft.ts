@@ -6,8 +6,15 @@ export interface ProjectFolder {
 export interface ProjectDraft {
   name: string;
   folders: ProjectFolder[];
-  /** Target SSH host when creating an empty project. */
+  /** Target connection (SSH, Docker or WSL) when creating an empty project. */
   remote?: ProjectFolder['remote'];
+}
+
+export class AssistantProjectFolderError extends Error {
+  constructor() {
+    super('The selected folder belongs to an assistant workspace. Select a project folder instead.');
+    this.name = 'AssistantProjectFolderError';
+  }
 }
 
 export class ProjectDirectoryUnavailableError extends Error {

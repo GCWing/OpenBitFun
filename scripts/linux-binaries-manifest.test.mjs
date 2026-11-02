@@ -479,13 +479,9 @@ test('pruning keeps the two newest SemVer releases and drops a newer-looking bet
   fs.rmSync(temp, { recursive: true, force: true });
 });
 
-test('openbitfun sync lock and cron use the in-repo script, not a server-only copy', () => {
+test('openbitfun sync uses the in-repo script and an overridable lock', () => {
   const syncScript = fs.readFileSync(
     path.join(repoRoot, 'scripts/openbitfun-release-sync.sh'),
-    'utf8'
-  );
-  const cronFile = fs.readFileSync(
-    path.join(repoRoot, 'deploy/openbitfun-host/release-sync.cron'),
     'utf8'
   );
   assert.match(
@@ -502,16 +498,6 @@ test('openbitfun sync lock and cron use the in-repo script, not a server-only co
     syncScript,
     /LOCK_FILE="\/root\/repos\/OpenBitFun-AutoUpdate\/sync\.lock"/,
     'a hardcoded AutoUpdate lock forces every new host to recreate a server-only tree'
-  );
-  assert.match(
-    cronFile,
-    /\/root\/repos\/OpenBitFun\/scripts\/openbitfun-release-sync\.sh/,
-    'installed crontab must invoke the OpenBitFun checkout, not a detached copy'
-  );
-  assert.doesNotMatch(
-    cronFile,
-    /OpenBitFun-AutoUpdate/,
-    'the crontab file must not revive the server-only AutoUpdate copy'
   );
   assert.match(
     syncScript,

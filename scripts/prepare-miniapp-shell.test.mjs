@@ -25,9 +25,51 @@ function fixture(t) {
   return root;
 }
 
+// A workspace that already built the design-system consumers, as after any web build.
+function seedDesignSystemConsumers(root) {
+  for (const entry of ['design-tokens', 'theme-openbitfun']) {
+    const file = join(root, 'design-system/packages', entry, 'dist/index.js');
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, 'export {};\n');
+  }
+}
+
+test('a fresh checkout builds the design-system consumers before projecting the chrome theme', (t) => {
+  const root = fixture(t);
+  const calls = [];
+  const run = (command, args) => {
+    calls.push({ command, args });
+    if (command === 'rustc') return { status: 0, stdout: 'host: aarch64-apple-darwin\n' };
+    if (command === 'pnpm') {
+      assert.deepEqual(args, ['--dir', 'design-system', 'run', 'prepare:consumer-dev']);
+      seedDesignSystemConsumers(root);
+      return { status: 0 };
+    }
+    if (command === 'node') return { status: 0 };
+    if (command === 'cargo') {
+      const binary = join(root, 'target/miniapp-shell', SHELL_NAME);
+      mkdirSync(dirname(binary), { recursive: true });
+      writeFileSync(binary, 'window-only-binary');
+      return { status: 0 };
+    }
+    return assert.fail(command);
+  };
+  prepareMiniAppShell({ root, profile: 'release', env: {}, run });
+  assert.deepEqual(calls.map(({ command }) => command), ['rustc', 'node', 'pnpm', 'node', 'cargo']);
+
+  // A workspace that already built them skips the extra build.
+  const warmCalls = [];
+  prepareMiniAppShell({ root, profile: 'release', env: {}, run: (command, args) => {
+    warmCalls.push({ command, args });
+    return run(command, args);
+  } });
+  assert.deepEqual(warmCalls.map(({ command }) => command), ['rustc', 'node', 'node', 'cargo']);
+});
+
 for (const target of [undefined, 'x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu', 'universal-apple-darwin']) {
   test(`prepares a separate optimized sidecar and stages the correct target: ${target || 'host'}`, (t) => {
     const root = fixture(t);
+    seedDesignSystemConsumers(root);
     const calls = [];
     const run = (command, args, options) => {
       calls.push({ command, args, options });

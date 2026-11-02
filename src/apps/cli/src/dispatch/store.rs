@@ -183,8 +183,6 @@ pub(crate) struct StoredFollowUpTurn {
     pub(crate) approval_policy: Option<DispatchApprovalPolicy>,
     #[serde(default)]
     pub(crate) kind: StoredTurnKind,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) force: bool,
     #[serde(default)]
     pub(crate) attachments: Vec<DispatchAttachment>,
     pub(crate) created_at: String,
@@ -204,7 +202,6 @@ impl StoredFollowUpTurn {
                 DispatchTurnKind::Compact if request.force => StoredTurnKind::LocalTruncation,
                 DispatchTurnKind::Compact => StoredTurnKind::Compact,
             },
-            force: request.force,
             attachments: request.attachments.clone(),
             created_at: chrono::Utc::now().to_rfc3339(),
         }
@@ -218,7 +215,7 @@ impl StoredFollowUpTurn {
     }
 
     pub(crate) fn is_forced(&self) -> bool {
-        self.force || self.kind == StoredTurnKind::LocalTruncation
+        self.kind == StoredTurnKind::LocalTruncation
     }
 
     /// A retried turnId must carry the same submission, options included.
@@ -229,7 +226,6 @@ impl StoredFollowUpTurn {
             && self.reasoning_preset == other.reasoning_preset
             && self.approval_policy == other.approval_policy
             && self.kind == other.kind
-            && self.force == other.force
             && self.attachments == other.attachments
     }
 }
@@ -2416,11 +2412,11 @@ mod tests {
         assert!(legacy.get("force").is_none());
         assert_eq!(legacy["kind"], "compact");
         let restored: StoredFollowUpTurn = serde_json::from_value(legacy).unwrap();
-        assert!(!restored.force);
+        assert!(!restored.is_forced());
         request.force = true;
         let forced = StoredFollowUpTurn::from_request(&request);
         let current = serde_json::to_value(&forced).unwrap();
-        assert_eq!(current["force"], true);
+        assert!(current.get("force").is_none());
         assert_eq!(current["kind"], "localTruncation");
         // The legacy public kind has exactly the old persisted variants.
         assert!(serde_json::from_value::<DispatchTurnKind>(current["kind"].clone()).is_err());
@@ -2428,6 +2424,11 @@ mod tests {
         assert!(forced.same_submission(&round_trip));
         assert!(round_trip.is_forced());
         assert_eq!(round_trip.runtime_kind(), DispatchTurnKind::Compact);
+        let mut previously_written = serde_json::to_value(&forced).unwrap();
+        previously_written["force"] = serde_json::json!(true);
+        let previous: StoredFollowUpTurn = serde_json::from_value(previously_written).unwrap();
+        assert!(previous.is_forced());
+        assert!(previous.same_submission(&forced));
         assert!(!restored.same_submission(&forced));
     }
 

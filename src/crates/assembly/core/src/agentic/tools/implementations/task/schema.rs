@@ -90,7 +90,7 @@ Two modes for action='spawn':
 The two modes are mutually exclusive: do not provide `subagent_type` when `fork_context=true`.
 1. With an explicit `subagent_type` (default)
   - Provide `agent_id`, `subagent_type`, and `prompt`.
-  - Available types are listed in the <available_agents> section. Each type has specific capabilities and tools.
+  - The <available_agents> section lists the allowed agent types and their capabilities. Pass the exact `type` value from that catalog as `subagent_type`.
   - In this mode, the subagent does not share your context. Include all necessary background information in the prompt.
 2. By forking the current context
   - Set `fork_context=true`, and provide `agent_id` and `prompt`. Do not provide `subagent_type`.
@@ -162,7 +162,7 @@ impl AgentSpawnTool {
     pub(super) fn render_agent_spawn_description(&self) -> String {
         r#"Launch a new agent to work independently in the background.
 
-Choose an `agent_type` permitted by the current system prompt. Each type has its own role and tool set.
+Choose an `agent_type` permitted by the current system prompt. Pass the exact `type` value from the <available_agents> catalog. Each type has its own role and tool set.
 
 Choose a meaningful `agent_id` for this agent. It must be unique among agents launched by you and match `[a-z][a-z0-9_-]{0,31}`.
 
@@ -172,11 +172,15 @@ Write a self-contained `prompt` that gives the agent everything it needs to comp
 - Pass precise references instead of pasting large file contents.
 - Keep the prompt under 180 lines / 16KB when practical; split broad work into focused agents with clear ownership.
 
-The agent shares the current workspace and starts with a fresh conversation. The result includes a `bg_task_id`. Use `bg_task_id` with AgentWait to collect the result. For agents that support follow-up turns, use the requested `agent_id` with AgentSendInput; use AgentControl with `action="interrupt"` to stop active work or `action="delete"` to remove an agent subtree.
+The agent shares your workspace. If the task targets a different workspace, explicitly include the path in the prompt.
+
+The agent starts with a fresh conversation, and does not inherit your conversation history.
 
 Set `model_id` only when a particular model is required. Omit it to use the agent's configured model. `inherit` selects the current model; `primary` and `fast` select the corresponding configured model slots. Call ListModels before using a configured model ID.
 
-Independent agents can be launched together when that improves coverage or latency. Give agents that may write files non-overlapping scopes so their edits and side effects do not conflict."#
+Independent agents can be launched together when that improves coverage or latency. Give agents that may write files non-overlapping scopes so their edits and side effects do not conflict.
+
+The result includes a `bg_task_id`. Use `bg_task_id` with AgentWait to collect the result. For agents that support follow-up turns, use the requested `agent_id` with AgentSendInput; use AgentControl with `action="interrupt"` to stop active work or `action="delete"` to remove an agent subtree."#
             .to_string()
     }
 }

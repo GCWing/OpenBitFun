@@ -514,29 +514,9 @@ pub async fn save_mcp_json_config(
         .as_ref()
         .ok_or_else(|| "MCP service not initialized".to_string())?;
 
-    let previous_configs = mcp_service
-        .config_service()
-        .load_all_configs()
-        .await
-        .map_err(|e| e.to_string())?;
-
     mcp_service
-        .config_service()
-        .save_mcp_json_config(&json_config, &expected_fingerprint)
+        .save_json_config_and_reconcile(&json_config, &expected_fingerprint)
         .await
-        .map_err(|e| e.to_string())?;
-
-    let current_configs = mcp_service
-        .config_service()
-        .load_all_configs()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    mcp_service
-        .server_manager()
-        .reconcile_persisted_configs(previous_configs, current_configs)
-        .await
-        .map_err(|e| format!("MCP config was saved, but runtime reconciliation failed: {e}"))
 }
 
 /// Content Security Policy configuration for MCP App UI (aligned with VSCode/MCP Apps spec).

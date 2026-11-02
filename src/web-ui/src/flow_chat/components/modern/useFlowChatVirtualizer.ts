@@ -475,6 +475,51 @@ export function useFlowChatVirtualizer<T>({
   const aimStartedAtMsRef = useRef<number | null>(null);
   const getItemKeyRef = useRef(getItemKey);
   getItemKeyRef.current = getItemKey;
+  const itemKeyCacheOwnerRef = useRef(getItemKey);
+  const itemKeyCacheRef = useRef(new WeakMap<object, string>());
+  /**
+   * Keys are derived strings, so a fresh enumeration allocates one string per
+   * row. A quiet stream reuses every row object but the live tail, so one
+   * string per row object lets the sequence be compared by reference instead of
+   * re-joined on every flush.
+   */
+  const itemKeyOf = useCallback((item: T): string => {
+    // Items are rows in production but the hook stays generic, and a primitive
+    // cannot be a weak map key.
+    if (item === null || typeof item !== 'object') return getItemKeyRef.current(item);
+    const cache = itemKeyCacheRef.current;
+    const asObject = item as unknown as object;
+    const cached = cache.get(asObject);
+    if (cached !== undefined) return cached;
+    const key = getItemKeyRef.current(item);
+    cache.set(asObject, key);
+    return key;
+  }, []);
+  const itemKeySequenceRef = useRef<{ keys: string[]; revision: string }>({ keys: [], revision: '' });
+  const itemKeysRef = useRef<string[]>([]);
+  const itemKeyState = useMemo(() => {
+    // A new key function invalidates every cached key.
+    if (itemKeyCacheOwnerRef.current !== getItemKey) {
+      itemKeyCacheOwnerRef.current = getItemKey;
+      itemKeyCacheRef.current = new WeakMap();
+    }
+    const previous = itemKeySequenceRef.current;
+    if (previous.keys.length === items.length) {
+      let same = true;
+      for (let index = 0; index < items.length; index += 1) {
+        if (previous.keys[index] !== itemKeyOf(items[index])) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return previous;
+    }
+    const keys = items.map(itemKeyOf);
+    const next = { keys, revision: keys.join('\u0000') };
+    itemKeySequenceRef.current = next;
+    return next;
+  }, [items, itemKeyOf, getItemKey]);
+  itemKeysRef.current = itemKeyState.keys;
   const estimateItemHeightRef = useRef(estimateItemHeightPx);
   estimateItemHeightRef.current = estimateItemHeightPx;
   const estimateContextRef = useRef(estimateContext);
@@ -508,7 +553,7 @@ export function useFlowChatVirtualizer<T>({
     return item === undefined ? 0 : estimateItemHeightRef.current(item, estimateContextRef.current);
   }, []);
 
-  const itemKeyRevision = useMemo(() => items.map(getItemKey).join('\u0000'), [items, getItemKey]);
+  const itemKeyRevision = itemKeyState.revision;
   const resolveItemKey = useCallback((index: number) => {
     // Recreate the callback when estimate inputs change. TanStack uses the
     // callback identity to invalidate its derived measurement positions while
@@ -657,9 +702,10 @@ export function useFlowChatVirtualizer<T>({
     }
     const previous = previousKnownHeightsRef.current;
     const next = new Map<string, number>();
+    const keys = itemKeysRef.current;
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
-      const key = getItemKeyRef.current(item);
+      const key = keys[index] ?? getItemKeyRef.current(item);
       const knownHeight = getKnownItemHeightPx(item);
       if (knownHeight !== undefined) next.set(key, knownHeight);
       if (knownHeight === undefined && !previous.has(key)) continue;
@@ -706,7 +752,24 @@ export function useFlowChatVirtualizer<T>({
     if (!attached.length || isViewportSuspendedRef.current()) return;
     // Read before any viewport shift or size-cache notification can write.
     measurementBatchRef.current = new Map(attached.map(element => [element, element.offsetHeight]));
-    try { for (const element of attached) virtualizer.measureElement(element); }
+    try {
+      for (const element of attached) {
+        virtualizer.measureElement(element);
+        // Explicit aims keep the library's measurement policy. During smooth
+        // navigation it skips rows far from the target; forcing their sizes
+        // changes that target and makes the re-aim jump with 'auto' behavior.
+        // Reader takeover clears the aim before the next scrolling commit.
+        if (aimStartedAtMsRef.current !== null) continue;
+        // The library observes newly attached rows but skips their inline
+        // measurement during scrolling. In our flow layout their real heights
+        // already displace the following rows in this commit. Reconcile before
+        // paint, rather than showing the displacement until ResizeObserver.
+        const index = Number(element.getAttribute('data-virtual-index'));
+        if (Number.isInteger(index) && index >= 0 && index < itemsRef.current.length) {
+          virtualizer.resizeItem(index, measurementBatchRef.current.get(element)!);
+        }
+      }
+    }
     finally { measurementBatchRef.current = null; }
   });
 
@@ -776,7 +839,7 @@ export function useFlowChatVirtualizer<T>({
   /** A pass owed to a layout that a pane drag had not finished moving. */
   const pendingLayoutMeasureRef = useRef(false);
   useLayoutEffect(() => {
-    const keys = new Set(items.map(getItemKeyRef.current));
+    const keys = new Set(itemKeysRef.current);
     for (const key of previousKeysRef.current) if (!keys.has(key)) retiredMeasurementsRef.current++;
     previousKeysRef.current = keys;
     if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048
