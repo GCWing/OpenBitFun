@@ -69,6 +69,8 @@ vi.mock('@/infrastructure/api/service-api/DesktopCardAPI', () => ({
   // Mirrors the host rule: desktop pinning and global always-on-top are exclusive.
   isDesktopPinned: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean }) =>
     card.desktopPinned === true && !card.alwaysOnTop,
+  hasDesktopPinFailure: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean; desktopPinFailure?: string }) =>
+    typeof card.desktopPinFailure === 'string' && !(card.desktopPinned === true && !card.alwaysOnTop),
   desktopCardAPI: {
     list: mocks.list,
     setDesktopPinned: mocks.setDesktopPinned,

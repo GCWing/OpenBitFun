@@ -85,6 +85,7 @@
     "pin": "Pin to desktop",
     "unpin": "Unpin from desktop",
     "pinned": "Pinned to desktop",
+    "pinLost": "Unpinned: desktop unavailable",
     "delete": "Delete card",
     "deleteConfirmTitle": "Delete card",
     "deleteConfirmMessage": "Delete \"{{title}}\"? This cannot be undone.",

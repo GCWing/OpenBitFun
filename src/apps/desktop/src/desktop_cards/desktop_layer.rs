@@ -2,22 +2,97 @@
 //!
 //! Parent cards to the existing Explorer window containing SHELLDLL_DefView,
 //! above its icon view, rather than the wallpaper WorkerW behind the icons.
-//! No undocumented Shell message, Explorer injection, or global topmost window
-//! is needed. If Explorer does not expose that desktop, fail explicitly.
+//! No undocumented Shell message (such as Progman's 0x052C WorkerW spawn),
+//! Explorer injection, or global topmost window is needed, and nothing here
+//! sends a synchronous message to Explorer. If Explorer does not expose that
+//! desktop, or it is not responding, fail explicitly.
+//!
+//! Remaining risk: a cross-process parent/child relationship attaches the
+//! input queues of OpenBitFun's UI thread and Explorer's desktop thread, so a
+//! long stall on our UI thread can also stall desktop input while a card is
+//! pinned. Cards set `WS_EX_NOPARENTNOTIFY` so destroying a card never sends
+//! `WM_PARENTNOTIFY` into Explorer, and a hung desktop is refused up front.
+//!
+//! When Explorer exits, its desktop window destroys the attached card window.
+//! The service recreates it from the card record (window `Destroyed` event),
+//! and [`install_shell_restart_hook`] reconciles pinned cards again on the
+//! `TaskbarCreated` broadcast that Explorer sends after it restarts.
+
+use std::sync::OnceLock;
 
 use windows::core::{w, BOOL};
 use windows::Win32::Foundation::{
-    GetLastError, SetLastError, HANDLE, HWND, LPARAM, POINT, RECT, WIN32_ERROR,
+    GetLastError, SetLastError, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WIN32_ERROR, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::HiDpi::{AreDpiAwarenessContextsEqual, GetWindowDpiAwarenessContext};
+use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FindWindowExW, GetParent, GetPropW, GetWindowLongW, GetWindowRect, RemovePropW,
-    SetParent, SetPropW, SetWindowLongW, SetWindowPos, GWL_STYLE, HWND_NOTOPMOST, HWND_TOP,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_CHILD, WS_POPUP,
+    EnumWindows, FindWindowExW, GetParent, GetPropW, GetWindowLongW, GetWindowRect,
+    IsHungAppWindow, RegisterWindowMessageW, RemovePropW, SetParent, SetPropW, SetWindowLongW,
+    SetWindowPos, GWL_EXSTYLE, GWL_STYLE, HWND_NOTOPMOST, HWND_TOP, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WS_CHILD, WS_EX_NOPARENTNOTIFY, WS_POPUP,
 };
 
 const ORIGINAL_STYLE: windows::core::PCWSTR = w!("OpenBitFun.DesktopCard.OriginalStyle");
+/// Subclass id for the `TaskbarCreated` hook on the main window.
+const SHELL_RESTART_SUBCLASS_ID: usize = 0x0B17_C4D0;
+
+static TASKBAR_CREATED: OnceLock<u32> = OnceLock::new();
+static SHELL_RESTARTED: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+
+unsafe extern "system" fn shell_restart_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
+    if TASKBAR_CREATED
+        .get()
+        .is_some_and(|id| *id != 0 && *id == message)
+    {
+        if let Some(callback) = SHELL_RESTARTED.get() {
+            // The callback only schedules async work; it never blocks here.
+            callback();
+        }
+    }
+    unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+}
+
+/// Subclasses a top-level window (it must run on that window's UI thread) so
+/// Explorer's `TaskbarCreated` broadcast after a shell restart reaches
+/// `on_restart`. Only top-level windows receive the broadcast; attached cards
+/// are child windows, so the main window carries the hook.
+pub(super) fn install_shell_restart_hook(
+    hwnd: HWND,
+    on_restart: Box<dyn Fn() + Send + Sync>,
+) -> Result<(), String> {
+    let message =
+        *TASKBAR_CREATED.get_or_init(|| unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) });
+    if message == 0 {
+        return Err(format!(
+            "Failed to register the TaskbarCreated message: {}",
+            windows::core::Error::from_win32()
+        ));
+    }
+    if SHELL_RESTARTED.set(on_restart).is_err() {
+        return Ok(()); // Already installed.
+    }
+    if !unsafe { SetWindowSubclass(hwnd, Some(shell_restart_proc), SHELL_RESTART_SUBCLASS_ID, 0) }
+        .as_bool()
+    {
+        return Err("Failed to watch for Windows Explorer restarts.".to_string());
+    }
+    Ok(())
+}
+
+/// Whether Explorer currently exposes a desktop that a card can attach to.
+/// Safe to call from any thread: it only enumerates windows.
+pub(super) fn desktop_available() -> Result<(), String> {
+    desktop_host().map(|_| ())
+}
 
 unsafe extern "system" fn find_desktop(hwnd: HWND, data: LPARAM) -> BOOL {
     // SAFETY: EnumWindows is synchronous and data points to its caller's HWND.
@@ -33,6 +108,10 @@ fn desktop_host() -> Result<HWND, String> {
         .map_err(|error| error.to_string())?;
     if host.is_invalid() {
         Err("Windows desktop is unavailable. Start Windows Explorer and try again.".to_string())
+    } else if unsafe { IsHungAppWindow(host) }.as_bool() {
+        // Attaching joins our UI thread's input queue with Explorer's; never
+        // do that while the desktop is already unresponsive.
+        Err("Windows desktop is not responding. Try again in a moment.".to_string())
     } else {
         Ok(host)
     }
@@ -118,6 +197,23 @@ fn attach_to(hwnd: HWND, parent: HWND) -> Result<(), String> {
             .map_err(|error| error.to_string())?;
     }
     let result = (|| {
+        // Destroying a child normally sends WM_PARENTNOTIFY to its parent
+        // synchronously; with Explorer as the parent that call could block on
+        // a hung shell. The flag is harmless once the card is top-level again.
+        let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+        if ex_style & WS_EX_NOPARENTNOTIFY.0 == 0 {
+            unsafe {
+                SetLastError(WIN32_ERROR(0));
+                let previous = SetWindowLongW(
+                    hwnd,
+                    GWL_EXSTYLE,
+                    (ex_style | WS_EX_NOPARENTNOTIFY.0) as i32,
+                );
+                if previous == 0 && GetLastError().0 != 0 {
+                    return Err(windows::core::Error::from_win32().to_string());
+                }
+            }
+        }
         unsafe {
             SetWindowPos(
                 hwnd,

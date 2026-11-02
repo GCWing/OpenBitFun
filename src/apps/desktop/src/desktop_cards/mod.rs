@@ -12,7 +12,7 @@ mod refresh;
 mod store;
 mod windows;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,6 +43,24 @@ const GEOMETRY_SAVE_DELAY: Duration = Duration::from_millis(600);
 /// How long create/update wait for the first fetch so the tool result can
 /// report real data; slower sources keep loading in the background.
 const FIRST_FETCH_WAIT: Duration = Duration::from_secs(30);
+/// Pinned-card recovery backoff (about 31 s in total). Covers startup before
+/// Explorer has created its desktop and an Explorer restart.
+const PIN_RETRY_DELAYS: [Duration; 7] = [
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+    Duration::from_secs(8),
+    Duration::from_secs(8),
+];
+/// Extension-map keys owned by this host (additive; older hosts keep them).
+const DESKTOP_PINNED_KEY: &str = "desktopPinned";
+/// Always-on-top mode in effect before pinning, restored on unpin.
+const PIN_RESTORE_ON_TOP_KEY: &str = "desktopPinRestoreAlwaysOnTop";
+/// Set when the host had to unpin a card it could not reattach; cleared by the
+/// next explicit stacking change.
+const PIN_FAILURE_KEY: &str = "desktopPinFailure";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +100,8 @@ pub struct DesktopCards {
     timers: Mutex<HashMap<String, CardTimers>>,
     fetch_gate: FetchGate,
     geometry_save_pending: AtomicBool,
+    /// Cards with a pinned-window recovery loop in flight.
+    pin_recovery: Mutex<HashSet<String>>,
     self_ref: Weak<DesktopCards>,
 }
 
@@ -150,6 +170,7 @@ impl DesktopCards {
             timers: Mutex::new(HashMap::new()),
             fetch_gate: FetchGate::default(),
             geometry_save_pending: AtomicBool::new(false),
+            pin_recovery: Mutex::new(HashSet::new()),
             self_ref: self_ref.clone(),
         })
     }
@@ -430,11 +451,8 @@ impl DesktopCards {
             .ok_or_else(|| not_found(card_id))?
             .clone();
         let mut card = previous.clone();
-        card.always_on_top = always_on_top;
-        card.extra.insert(
-            "desktopPinned".to_string(),
-            json!(desktop_pinned.unwrap_or(false)),
-        );
+        apply_stacking_record(&mut card, always_on_top, desktop_pinned);
+        let always_on_top = card.always_on_top;
         let apply = windows::apply_stacking(
             &self.app,
             card_id,
@@ -520,6 +538,10 @@ impl DesktopCards {
                         card.id,
                         error
                     );
+                    if windows::desktop_pinned(&card) {
+                        // Typically startup before Explorer's desktop exists.
+                        self.schedule_pin_recovery(&card.id, "open_failed");
+                    }
                 }
             }
         } else {
@@ -594,6 +616,144 @@ impl DesktopCards {
             }
         }
         card
+    }
+
+    /// Recreates or reattaches a visible pinned card whose window could not be
+    /// placed on the desktop or was destroyed with Explorer's desktop window.
+    /// Retries with bounded backoff, then unpins the card and records an
+    /// explicit failure instead of leaving a "shown" card with no window.
+    fn schedule_pin_recovery(&self, card_id: &str, reason: &'static str) {
+        {
+            let mut recovering = match self.pin_recovery.lock() {
+                Ok(recovering) => recovering,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if !recovering.insert(card_id.to_string()) {
+                return;
+            }
+        }
+        let Some(service) = self.arc() else {
+            return;
+        };
+        let card_id = card_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            service.recover_pin(&card_id, reason).await;
+            let mut recovering = match service.pin_recovery.lock() {
+                Ok(recovering) => recovering,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            recovering.remove(&card_id);
+        });
+    }
+
+    /// Reattaches every visible pinned card, e.g. after Explorer restarted.
+    /// Cards that are still attached to the current desktop are left as is.
+    #[cfg(windows)]
+    fn reconcile_pinned_cards(&self, reason: &'static str) {
+        let Some(service) = self.arc() else {
+            return;
+        };
+        tauri::async_runtime::spawn(async move {
+            if !service.is_enabled() {
+                return;
+            }
+            let cards = service.store.lock().await.snapshot();
+            for card in cards {
+                if card.visible && windows::desktop_pinned(&card) {
+                    service.schedule_pin_recovery(&card.id, reason);
+                }
+            }
+        });
+    }
+
+    async fn recover_pin(&self, card_id: &str, reason: &'static str) {
+        let mut last_error = String::from("Windows desktop is unavailable.");
+        for delay in PIN_RETRY_DELAYS {
+            tokio::time::sleep(delay).await;
+            if crate::desktop_exit_in_progress() {
+                return;
+            }
+            let store = self.store.lock().await;
+            // Re-read each attempt: the user may hide, unpin, or delete the
+            // card, or turn cards off, while recovery waits.
+            let Some(card) = store.get(card_id).cloned() else {
+                return;
+            };
+            if !self.is_enabled() || !card.visible || !windows::desktop_pinned(&card) {
+                return;
+            }
+            if let Err(error) = windows::desktop_available() {
+                last_error = error;
+                continue;
+            }
+            let position = windows::resolve_position(
+                &self.app,
+                &card,
+                windows::open_card_labels(&self.app).len(),
+            );
+            match windows::open_window(&self.app, &card, position).await {
+                Ok(()) => {
+                    drop(store);
+                    log::info!(
+                        "Desktop card pinned window restored: card_id={}, reason={}",
+                        card_id,
+                        reason
+                    );
+                    return;
+                }
+                Err(error) => last_error = error,
+            }
+        }
+        log::warn!(
+            "Desktop card pin recovery exhausted retries: card_id={}, reason={}",
+            card_id,
+            reason
+        );
+        self.fall_back_from_pin(card_id, &last_error).await;
+    }
+
+    /// Unpins a card the desktop could not take back and shows it as a normal
+    /// window, recording the failure so every surface can report it.
+    async fn fall_back_from_pin(&self, card_id: &str, error: &str) {
+        log::warn!(
+            "Desktop card pin recovery failed, unpinning: card_id={}, error={}",
+            card_id,
+            error
+        );
+        let card = {
+            let mut store = self.store.lock().await;
+            let Some(card) = store.get_mut(card_id) else {
+                return;
+            };
+            if !card.visible || !windows::desktop_pinned(card) {
+                return;
+            }
+            apply_stacking_record(card, false, Some(false));
+            card.extra.insert(PIN_FAILURE_KEY.to_string(), json!(error));
+            let mut snapshot = card.clone();
+            if self.is_enabled() {
+                let position = windows::resolve_position(
+                    &self.app,
+                    &snapshot,
+                    windows::open_card_labels(&self.app).len(),
+                );
+                if let Err(open_error) = windows::open_window(&self.app, &snapshot, position).await
+                {
+                    log::warn!(
+                        "Failed to reopen unpinned desktop card, hiding it: card_id={}, error={}",
+                        card_id,
+                        open_error
+                    );
+                    snapshot.visible = false;
+                }
+            }
+            if let Some(stored) = store.get_mut(card_id) {
+                *stored = snapshot.clone();
+            }
+            let _ = Self::save_locked(&mut store);
+            snapshot
+        };
+        self.emit_changed(card_id, Some(&card), false);
     }
 
     fn stop_card_runtime(&self, card_id: &str) {
@@ -816,6 +976,40 @@ impl DesktopCards {
     }
 }
 
+/// Applies a stacking request to the record. Pinning remembers the card's
+/// always-on-top mode, and an explicit unpin (`desktop_pinned == Some(false)`,
+/// which clients send with `always_on_top: false`) restores it. Any explicit
+/// change clears a previous pin-failure notice.
+fn apply_stacking_record(
+    card: &mut DesktopCardRecord,
+    always_on_top: bool,
+    desktop_pinned: Option<bool>,
+) {
+    let was_pinned = windows::desktop_pinned(card);
+    let previous_on_top = card.always_on_top;
+    let pinned = desktop_pinned.unwrap_or(false);
+    let restore_on_top = card
+        .extra
+        .get(PIN_RESTORE_ON_TOP_KEY)
+        .and_then(Value::as_bool);
+    card.always_on_top = if was_pinned && desktop_pinned == Some(false) && !always_on_top {
+        restore_on_top.unwrap_or(false)
+    } else {
+        always_on_top
+    };
+    if pinned {
+        if !was_pinned {
+            card.extra
+                .insert(PIN_RESTORE_ON_TOP_KEY.to_string(), json!(previous_on_top));
+        }
+    } else {
+        card.extra.remove(PIN_RESTORE_ON_TOP_KEY);
+    }
+    card.extra.remove(PIN_FAILURE_KEY);
+    card.extra
+        .insert(DESKTOP_PINNED_KEY.to_string(), json!(pinned));
+}
+
 fn fetches_source(card: &DesktopCardRecord, source: &DesktopCardDataSourceKind) -> bool {
     card.data_source
         .as_ref()
@@ -954,6 +1148,26 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         Box::pin(async move { service.handle_tool_request(request).await })
     }));
 
+    #[cfg(windows)]
+    {
+        let restart_service = Arc::downgrade(&service);
+        if let Err(error) = windows::watch_shell_restarts(
+            app,
+            Box::new(move || {
+                if let Some(service) = restart_service.upgrade() {
+                    log::info!("Windows Explorer restarted, reattaching pinned desktop cards");
+                    service.reconcile_pinned_cards("shell_restarted");
+                }
+            }),
+        ) {
+            // Destroyed-window recovery still covers pinned cards.
+            log::warn!(
+                "Failed to watch for Windows Explorer restarts: error={}",
+                error
+            );
+        }
+    }
+
     spawn_config_listener(service);
     Ok(())
 }
@@ -1010,6 +1224,16 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 }),
             );
         }
+        // A pinned card is a child of Explorer's desktop window, so it is
+        // destroyed when Explorer exits. Hide/delete/disable update the record
+        // before closing, so recovery only proceeds for a card that is still
+        // meant to be shown and pinned.
+        #[cfg(windows)]
+        tauri::WindowEvent::Destroyed => {
+            if !crate::desktop_exit_in_progress() {
+                service.schedule_pin_recovery(card_id, "window_destroyed");
+            }
+        }
         tauri::WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             let card_id = card_id.to_string();
@@ -1047,6 +1271,73 @@ mod tests {
             json!({"kind": "command", "command": command, "intervalSeconds": 300}),
         )
         .unwrap()
+    }
+
+    fn stacking_card(always_on_top: bool) -> DesktopCardRecord {
+        serde_json::from_value(json!({
+            "id": "a", "title": "Note", "template": { "kind": "note", "text": "x" },
+            "alwaysOnTop": always_on_top
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn unpinning_restores_the_always_on_top_mode_from_before_pinning() {
+        for before in [true, false] {
+            let mut card = stacking_card(before);
+            apply_stacking_record(&mut card, false, Some(true));
+            assert!(windows::desktop_pinned(&card));
+            assert_eq!(card.extra[PIN_RESTORE_ON_TOP_KEY], json!(before));
+            // Re-pinning an already pinned card keeps the original mode.
+            apply_stacking_record(&mut card, false, Some(true));
+            assert_eq!(card.extra[PIN_RESTORE_ON_TOP_KEY], json!(before));
+            apply_stacking_record(&mut card, false, Some(false));
+            assert!(!windows::desktop_pinned(&card));
+            assert_eq!(card.always_on_top, before);
+            assert!(!card.extra.contains_key(PIN_RESTORE_ON_TOP_KEY));
+        }
+    }
+
+    #[test]
+    fn legacy_stacking_requests_and_old_pinned_records_stay_compatible() {
+        // A pinned record written before the restore key existed unpins to
+        // the previous behavior (always-on-top off).
+        let mut card = stacking_card(false);
+        card.extra
+            .insert(DESKTOP_PINNED_KEY.to_string(), json!(true));
+        apply_stacking_record(&mut card, false, Some(false));
+        assert!(!card.always_on_top);
+        // A legacy always-on-top request (no desktopPinned) is applied as is
+        // and clears pinning.
+        let mut card = stacking_card(false);
+        apply_stacking_record(&mut card, false, Some(true));
+        apply_stacking_record(&mut card, true, None);
+        assert!(card.always_on_top);
+        assert!(!windows::desktop_pinned(&card));
+        assert!(!card.extra.contains_key(PIN_RESTORE_ON_TOP_KEY));
+    }
+
+    #[test]
+    fn explicit_stacking_changes_clear_a_pin_failure_notice() {
+        let mut card = stacking_card(false);
+        card.extra.insert(
+            PIN_FAILURE_KEY.to_string(),
+            json!("Windows desktop is unavailable."),
+        );
+        let restored: DesktopCardRecord =
+            serde_json::from_value(serde_json::to_value(&card).unwrap()).unwrap();
+        assert_eq!(
+            restored.extra[PIN_FAILURE_KEY],
+            json!("Windows desktop is unavailable.")
+        );
+        apply_stacking_record(&mut card, false, Some(true));
+        assert!(!card.extra.contains_key(PIN_FAILURE_KEY));
+    }
+
+    #[test]
+    fn pin_recovery_backoff_is_bounded() {
+        let total: Duration = PIN_RETRY_DELAYS.iter().sum();
+        assert!(total >= Duration::from_secs(25) && total <= Duration::from_secs(40));
     }
 
     #[test]

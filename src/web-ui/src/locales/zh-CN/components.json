@@ -668,6 +668,7 @@
     "loadFailed": "无法加载此卡片。",
     "unsupportedTemplate": "此卡片需要更新版本的 OpenBitFun。",
     "stackingFailed": "无法切换显示模式：{{error}}",
+    "pinRecoveryFailed": "无法将此卡片保持在桌面上，已改为普通窗口显示。可在菜单中重新固定。",
     "updated": "更新于{{time}}",
     "updatedWithWarning": "更新于{{time}}，部分数据可能缺失",
     "refreshFailed": "刷新失败：{{error}}",

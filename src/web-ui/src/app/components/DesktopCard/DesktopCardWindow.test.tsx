@@ -68,6 +68,8 @@ vi.mock('@/infrastructure/api/service-api/DesktopCardAPI', () => ({
   // Mirrors the host rule: desktop pinning and global always-on-top are exclusive.
   isDesktopPinned: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean }) =>
     card.desktopPinned === true && !card.alwaysOnTop,
+  hasDesktopPinFailure: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean; desktopPinFailure?: string }) =>
+    typeof card.desktopPinFailure === 'string' && !(card.desktopPinned === true && !card.alwaysOnTop),
   desktopCardAPI: {
     get: vi.fn(async () => mocks.card),
     onChanged: vi.fn(() => () => {}),
@@ -170,6 +172,16 @@ describe('DesktopCardWindow', () => {
     expect(mocks.setAlwaysOnTop).toHaveBeenCalledWith('card-1', true);
     expect(container.querySelector('[data-menu-id="desktop-pinned"]')?.getAttribute('aria-checked')).toBe('false');
     expect(container.textContent).toContain('hello');
+  });
+
+  it('tells the user when the host had to unpin the card and clears it after re-pinning', async () => {
+    mocks.card = { ...noteCard(), desktopPinningSupported: true, desktopPinned: false, desktopPinFailure: 'Windows desktop is unavailable.' };
+    await render();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('desktopCard.pinRecoveryFailed');
+    await click('[aria-label="desktopCard.menu.more"]');
+    await click('[data-menu-id="desktop-pinned"]');
+    expect(mocks.setDesktopPinned).toHaveBeenCalledWith('card-1', true);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
   it.each([false, undefined])('hides desktop pinning when the host does not advertise it (%s)', async supported => {

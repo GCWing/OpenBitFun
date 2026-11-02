@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Ellipsis, RefreshCw, X } from 'lucide-react';
 import { Button, Icon, IconButton, MenuPopover, OverflowText, Spinner, type MenuEntry } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
-import { desktopCardAPI, isDesktopPinned, type DesktopCardRecord } from '@/infrastructure/api/service-api/DesktopCardAPI';
+import { desktopCardAPI, hasDesktopPinFailure, isDesktopPinned, type DesktopCardRecord } from '@/infrastructure/api/service-api/DesktopCardAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import {
   DESKTOP_CARD_RESIZE_DIRECTIONS,
@@ -304,6 +304,7 @@ export default function DesktopCardWindow() {
         </div>
       </header>
       <div className="openbitfun-desktop-card__body" data-openbitfun-component="desktop-card" data-openbitfun-part="body">
+        {stackingError === null && hasDesktopPinFailure(card) && <p className="openbitfun-desktop-card__empty" role="alert">{t('desktopCard.pinRecoveryFailed')}</p>}
         {stackingError !== null && <p className="openbitfun-desktop-card__empty" role="alert">{t('desktopCard.stackingFailed', { error: stackingError })}</p>}
         {confirmingDelete ? (
           <div className="openbitfun-desktop-card__confirm" role="alertdialog" aria-label={t('desktopCard.deleteConfirm.title')}>

@@ -3,6 +3,7 @@ import { Eye, EyeOff, Pin, PinOff, Settings, Trash2 } from 'lucide-react';
 import { Button, Icon, IconButton, OverflowText } from '@openbitfun/ui';
 import {
   desktopCardAPI,
+  hasDesktopPinFailure,
   isDesktopPinned,
   type DesktopCardRecord,
 } from '@/infrastructure/api/service-api/DesktopCardAPI';
@@ -173,6 +174,7 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
                         <OverflowText className="overview-desktop-cards__meta">
                           {card.visible ? t('desktopCards.shown') : t('desktopCards.hidden')}
                           {pinned ? ` · ${t('desktopCards.pinned')}` : ''}
+                          {hasDesktopPinFailure(card) ? ` · ${t('desktopCards.pinLost')}` : ''}
                           {card.subtitle ? ` · ${card.subtitle}` : ''}
                         </OverflowText>
                       </div>

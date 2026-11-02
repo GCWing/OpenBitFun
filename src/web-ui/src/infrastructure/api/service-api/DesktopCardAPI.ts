@@ -129,6 +129,12 @@ export interface DesktopCardRecord {
   alwaysOnTop: boolean;
   /** Windows host presentation preference; absent on legacy records. */
   desktopPinned?: boolean;
+  /**
+   * Set by the Windows host when it had to unpin the card because the desktop
+   * could not take it back (for example after Explorer restarted). Cleared by
+   * the next explicit stacking change.
+   */
+  desktopPinFailure?: string;
   /** Runtime capability advertised by get(), not a persisted preference. */
   desktopPinningSupported?: boolean;
   origin?: { sessionId?: string; agentType?: string; workspacePath?: string };
@@ -159,6 +165,13 @@ export function isDesktopPinned(
   card: Pick<DesktopCardRecord, 'desktopPinned' | 'alwaysOnTop'>,
 ): boolean {
   return card.desktopPinned === true && !card.alwaysOnTop;
+}
+
+/** True when the host unpinned the card on its own and the user should know. */
+export function hasDesktopPinFailure(
+  card: Pick<DesktopCardRecord, 'desktopPinned' | 'alwaysOnTop' | 'desktopPinFailure'>,
+): boolean {
+  return typeof card.desktopPinFailure === 'string' && !isDesktopPinned(card);
 }
 
 /** Desktop cards are host windows on this computer; every command stays controller-local. */

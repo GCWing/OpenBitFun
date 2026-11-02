@@ -668,6 +668,7 @@
     "loadFailed": "This card could not be loaded.",
     "unsupportedTemplate": "This card needs a newer version of OpenBitFun.",
     "stackingFailed": "Could not change the display mode: {{error}}",
+    "pinRecoveryFailed": "Could not keep this card on the desktop, so it is shown as a normal window. Pin it again from the menu.",
     "updated": "Updated {{time}}",
     "updatedWithWarning": "Updated {{time}}, some data may be missing",
     "refreshFailed": "Refresh failed: {{error}}",

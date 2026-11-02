@@ -49,6 +49,7 @@
       "unsupported": "請更新目前主機後再管理小卡片。",
       "pinnedOn": "已釘選到桌面，位於圖示之上並在其他應用程式之下",
       "pinnedOff": "未釘選到桌面",
+      "pinRecoveryFailed": "Windows 桌面無法使用，已取消釘選。開啟即可重新釘選。",
       "pinCard": "將「{{title}}」釘選到桌面",
       "pinFailed": "無法切換釘選狀態，請重試。"
     },

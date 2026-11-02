@@ -4,6 +4,7 @@ import { ConfigLoadingState, ConfigPageRow, ConfigPageSection, ConfigRetryState 
 import { aiExperienceConfigService } from '@/infrastructure/config/services/AIExperienceConfigService';
 import {
   desktopCardAPI,
+  hasDesktopPinFailure,
   isDesktopPinned,
   type DesktopCardRecord,
 } from '@/infrastructure/api/service-api/DesktopCardAPI';
@@ -155,7 +156,9 @@ export default function DesktopCardsSettingsSection() {
             align="center"
             description={pinned
               ? t('features.desktopCards.pinnedOn')
-              : t('features.desktopCards.pinnedOff')}
+              : hasDesktopPinFailure(card)
+                ? t('features.desktopCards.pinRecoveryFailed')
+                : t('features.desktopCards.pinnedOff')}
             data-testid="desktop-card-pin-row"
           >
             <Switch

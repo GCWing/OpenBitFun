@@ -49,6 +49,7 @@
       "unsupported": "Update this host to manage desktop cards.",
       "pinnedOn": "Pinned to the desktop, above the icons and behind other apps",
       "pinnedOff": "Not pinned to the desktop",
+      "pinRecoveryFailed": "Unpinned because the Windows desktop was unavailable. Turn this on to pin it again.",
       "pinCard": "Pin {{title}} to the desktop",
       "pinFailed": "Could not change the pin state. Try again."
     },

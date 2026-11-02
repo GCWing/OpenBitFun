@@ -28,6 +28,8 @@ vi.mock('@/infrastructure/api/service-api/DesktopCardAPI', () => ({
   // Mirrors the host rule: desktop pinning and global always-on-top are exclusive.
   isDesktopPinned: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean }) =>
     card.desktopPinned === true && !card.alwaysOnTop,
+  hasDesktopPinFailure: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean; desktopPinFailure?: string }) =>
+    typeof card.desktopPinFailure === 'string' && !(card.desktopPinned === true && !card.alwaysOnTop),
   desktopCardAPI: {
     list: mocks.list,
     setVisible: mocks.setVisible,
@@ -181,6 +183,18 @@ it('treats a globally topmost card as not pinned when pinning it from the list',
   expect(rows()[0].dataset.pinned).toBe('false');
   await act(async () => button(rows()[0], 'desktopCards.pin').click());
   expect(mocks.setDesktopPinned).toHaveBeenCalledWith('a', true);
+});
+
+it('reports a card the host had to unpin instead of showing it as pinned', async () => {
+  mocks.list.mockResolvedValue({
+    enabled: true,
+    desktopPinningSupported: true,
+    cards: [card('a', { desktopPinned: false, desktopPinFailure: 'Windows desktop is unavailable.' })],
+  });
+  await render();
+  expect(rows()[0].dataset.pinned).toBe('false');
+  expect(rows()[0].textContent).toContain('desktopCards.pinLost');
+  expect(rows()[0].textContent).toContain('desktopCards.shown');
 });
 
 it('hides the pin action on hosts without the capability', async () => {

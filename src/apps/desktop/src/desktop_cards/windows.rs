@@ -226,6 +226,49 @@ pub(crate) fn apply_window_size(app: &tauri::AppHandle, card_id: &str, size: Des
     }
 }
 
+/// Whether a desktop for pinned cards exists right now. Checked before
+/// recreating a pinned card's window so recovery retries do not churn
+/// WebViews while Explorer is still starting.
+pub(crate) fn desktop_available() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        super::desktop_layer::desktop_available()
+    }
+    #[cfg(not(windows))]
+    {
+        Err("Pinning cards to the desktop is supported only on Windows.".to_string())
+    }
+}
+
+/// Calls `on_restart` when Windows Explorer restarts (`TaskbarCreated`), so
+/// pinned cards can be reattached to the new desktop.
+#[cfg(windows)]
+pub(crate) fn watch_shell_restarts(
+    app: &tauri::AppHandle,
+    on_restart: Box<dyn Fn() + Send + Sync>,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is unavailable.".to_string())?;
+    let native_window = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let result = native_window
+                .hwnd()
+                .map_err(|error| error.to_string())
+                .and_then(|hwnd| {
+                    super::desktop_layer::install_shell_restart_hook(hwnd, on_restart)
+                });
+            if let Err(error) = result {
+                log::warn!(
+                    "Failed to watch for Windows Explorer restarts: error={}",
+                    error
+                );
+            }
+        })
+        .map_err(|error| error.to_string())
+}
+
 pub(crate) async fn apply_stacking(
     app: &tauri::AppHandle,
     card_id: &str,

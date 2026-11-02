@@ -49,6 +49,7 @@
       "unsupported": "请更新当前主机后再管理小卡片。",
       "pinnedOn": "已固定到桌面，位于图标之上并在其他应用之下",
       "pinnedOff": "未固定到桌面",
+      "pinRecoveryFailed": "Windows 桌面不可用，已取消固定。开启即可重新固定。",
       "pinCard": "把“{{title}}”固定到桌面",
       "pinFailed": "无法切换固定状态，请重试。"
     },

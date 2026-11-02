@@ -149,7 +149,9 @@ On a graphical Windows session with Explorer running, also run
 The native fixtures use hidden disposable windows; they do not establish WebView rendering,
 Win+D behavior, Explorer restart recovery, mixed-DPI monitor dragging, or remote behavior.
 After rebuilding, manually verify those native interactions and switching between desktop pinning,
-global always-on-top, and hide/show. UI, hidden-card pinning, and old-host negotiation coverage:
+global always-on-top, and hide/show. For Explorer restart (`taskkill /f /im explorer.exe`, then
+start it again) a pinned card must reattach within about 30 s, or come back unpinned with the
+pin-failure notice; it must never stay "Shown" without a window. UI, hidden-card pinning, and old-host negotiation coverage:
 `pnpm --dir src/web-ui run test:run src/app/components/DesktopCard/DesktopCardWindow.test.tsx src/infrastructure/api/service-api/DesktopCardAPI.test.ts src/app/scenes/personal-overview/OverviewDesktopCardsSection.test.tsx src/app/scenes/settings/pages/application/DesktopCardsSettingsSection.test.tsx`.
 
 For session storage directory access, run
