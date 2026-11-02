@@ -62,6 +62,7 @@ import { createRemoteCacheScope, remoteCache } from '../services/RemoteCache';
 import { describeRemoteError } from '../services/remoteErrorPresentation';
 // Device-directory read failures share the device pages' relay-failure copy.
 import { deviceFailurePresentation } from '../services/deviceFailureCopy';
+import { nearestSurvivingSession, type SessionDeletionGroup } from '../services/sessionDeletionNavigation';
 import {
   isClawAgent,
   sameWorkspace,
@@ -101,6 +102,11 @@ interface SessionListPageProps {
     agentType?: string,
     workspace?: SessionWorkspaceContext,
   ) => void;
+  /**
+   * The open session was deleted. `next` is the nearest surviving session in
+   * the same list, or null when the detail pane should show the empty panel.
+   */
+  onActiveSessionDeleted?: (next: ActiveSessionReplacement | null) => void;
   onOpenWorkspace: () => void;
   onOpenDeviceTools: () => void;
   onDisconnect: () => void;
@@ -109,6 +115,13 @@ interface SessionListPageProps {
 }
 
 type CompactDevice = RelayDeviceInfo;
+
+export interface ActiveSessionReplacement {
+  sessionId: string;
+  sessionName: string;
+  agentType: string;
+  workspace?: SessionWorkspaceContext;
+}
 
 
 function compactSelectedDeviceIdForClient(client?: RelayHttpClient): string | null {
@@ -290,6 +303,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
   compact = false,
   activeSessionId,
   onSelectSession,
+  onActiveSessionDeleted,
   onOpenWorkspace,
   onOpenDeviceTools,
   onDisconnect,
@@ -534,6 +548,26 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     try {
       await sessionMgr.deleteSession(deleteConfirmTarget.session_id);
       if (!isSessionListCurrent(targetEpoch)) return;
+      if (deleteConfirmTarget.session_id === activeSessionId) {
+        // Leave the deleted session before its chat page reads it again.
+        const groups: SessionDeletionGroup<SessionInfo, RecentWorkspaceEntry>[] = [
+          ...workspaceList.map((workspace) => ({
+            owner: workspace,
+            sessions: compactWorkspaceSessions[compactWorkspaceKey(workspace)]
+              ?? sessions.filter((session) => sessionMatchesWorkspace(session, workspace, workspaceList)),
+          })),
+          { sessions },
+        ];
+        const next = nearestSurvivingSession(groups, deleteConfirmTarget.session_id);
+        onActiveSessionDeleted?.(next ? {
+          sessionId: next.session.session_id,
+          sessionName: next.session.name,
+          agentType: next.session.agent_type,
+          workspace: next.owner
+            ? sessionWorkspaceContext(next.session, workspaceContext(next.owner))
+            : listedSessionWorkspace(next.session),
+        } : null);
+      }
       useMobileStore.getState().removeSession(deleteConfirmTarget.session_id);
       setCompactWorkspaceSessions((current) => Object.fromEntries(
         Object.entries(current).map(([key, workspaceSessions]) => [
@@ -554,7 +588,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     } finally {
       if (isSessionListCurrent(targetEpoch)) setDeleting(false);
     }
-  }, [cacheScope, captureSessionListEpoch, deleteConfirmTarget, isSessionListCurrent, sessionMgr, showToast, t]);
+  }, [activeSessionId, cacheScope, captureSessionListEpoch, compactWorkspaceSessions, deleteConfirmTarget, isSessionListCurrent, listedSessionWorkspace, onActiveSessionDeleted, sessionMgr, sessions, showToast, t, workspaceList]);
 
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);

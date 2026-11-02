@@ -3,7 +3,7 @@ import { MobileBanner, MobileButton, MobileScrim, MobileStatus } from '@openbitf
 import PairingPage, { type BrowserAccountBinding } from './pages/PairingPage';
 import WorkspacePage from './pages/WorkspacePage';
 import DeviceToolsPage from './pages/DeviceToolsPage';
-import SessionListPage from './pages/SessionListPage';
+import SessionListPage, { type ActiveSessionReplacement } from './pages/SessionListPage';
 import DevicesPage from './pages/DevicesPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { I18nProvider, useI18n } from './i18n';
@@ -308,6 +308,25 @@ const AppContent: React.FC = () => {
     navigateTo('chat', 'push');
   }, [isWideLayout, navigateTo, page]);
 
+  // The open session was deleted from the session list. Swap the detail pane
+  // in place (no navigation entry, sidebar left as the user had it) so the
+  // chat page never keeps reading a session the host no longer has.
+  const handleActiveSessionDeleted = useCallback((next: ActiveSessionReplacement | null) => {
+    useMobileStore.getState().setError(null);
+    setChatAutoFocus(false);
+    if (next) {
+      setActiveSessionId(next.sessionId);
+      setActiveSessionName(next.sessionName || 'Session');
+      setActiveSessionAgentType(next.agentType || 'Standard');
+      setActiveSessionWorkspace(next.workspace);
+      return;
+    }
+    setActiveSessionId(null);
+    setActiveSessionName('Session');
+    setActiveSessionAgentType('Standard');
+    setActiveSessionWorkspace(undefined);
+  }, []);
+
   const handleBackToSessions = useCallback(() => {
     navigateTo('sessions', 'pop');
     setTimeout(() => {
@@ -485,6 +504,7 @@ const AppContent: React.FC = () => {
       compact
       activeSessionId={activeSessionId}
       onSelectSession={handleSelectSession}
+      onActiveSessionDeleted={handleActiveSessionDeleted}
       onOpenWorkspace={handleOpenWorkspace}
       onOpenDeviceTools={handleOpenDeviceTools}
       onDisconnect={handleDisconnect}
