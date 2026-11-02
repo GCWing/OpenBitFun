@@ -218,7 +218,7 @@
       "files": "文件",
       "terminals": "终端",
       "local": "本地",
-      "remote": "远程工作区",
+      "remote": "连接环境",
       "peer": "对端设备",
       "switchWorkspace": "切换工作区",
       "chooseShell": "选择 Shell",
@@ -355,7 +355,7 @@
         "environment": {
           "label": "环境",
           "local": "本地",
-          "remote": "远程工作区",
+          "remote": "连接环境",
           "detached": "分离执行"
         },
         "source": {
@@ -1937,7 +1937,7 @@
   "ssh": {
     "remote": {
       "title": "远程 SSH",
-      "connect": "连接远程项目",
+      "connect": "连接",
       "connecting": "连接中...",
       "connected": "已连接",
       "disconnect": "断开连接",
