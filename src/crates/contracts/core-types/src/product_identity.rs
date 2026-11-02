@@ -34,6 +34,16 @@ pub const fn hidden_data_directory() -> &'static str {
     }
 }
 
+/// Hidden directory name used by the legacy BitFun-branded artifacts.
+///
+/// Records written before the BitFun-to-OpenBitFun brand migration may still
+/// point at the legacy data root, so migration-aware code needs this name to
+/// keep reading (and to keep explicit deletion or reset of) those records
+/// working instead of rejecting them as unmanaged paths.
+pub const fn legacy_hidden_data_directory() -> &'static str {
+    ".bitfun"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -43,5 +53,6 @@ mod tests {
         assert_eq!(product_id(), "openbitfun");
         assert_eq!(data_namespace(), "openbitfun");
         assert_eq!(hidden_data_directory(), ".openbitfun");
+        assert_eq!(legacy_hidden_data_directory(), ".bitfun");
     }
 }

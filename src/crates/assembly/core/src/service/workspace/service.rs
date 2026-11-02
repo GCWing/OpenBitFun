@@ -30,7 +30,7 @@ use crate::service::workspace_runtime::{
 };
 use crate::util::errors::*;
 use log::{info, warn};
-use openbitfun_core_types::product_identity::product_id;
+use openbitfun_core_types::product_identity::{legacy_hidden_data_directory, product_id};
 use openbitfun_services_core::workspace_identity::{
     canonicalize_local_workspace_root, local_workspace_roots_equal,
     normalize_remote_workspace_path, remote_workspace_stable_id,
@@ -38,6 +38,7 @@ use openbitfun_services_core::workspace_identity::{
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
@@ -137,6 +138,71 @@ struct AssistantWorkspaceDescriptor {
     path: PathBuf,
     assistant_id: Option<String>,
     display_name: String,
+}
+
+/// Assistant workspace layout check against one personal-assistant root.
+///
+/// A path belongs to the layout when it is the default `<root>/workspace`
+/// directory or a named `<root>/workspace-<id>` sibling. Comparison is
+/// literal, matching how those directories are created and how their paths
+/// are persisted in workspace records; the directory does not need to exist.
+/// Both the current OpenBitFun root and the legacy BitFun root are checked
+/// with the same layout rules, so records written before the
+/// BitFun-to-OpenBitFun brand migration stay recognizable.
+fn assistant_descriptor_in_root(
+    path: &Path,
+    assistant_root: &Path,
+) -> Option<AssistantWorkspaceDescriptor> {
+    if path == assistant_root.join("workspace") {
+        return Some(AssistantWorkspaceDescriptor {
+            path: path.to_path_buf(),
+            assistant_id: None,
+            display_name: WorkspaceService::assistant_display_name(None),
+        });
+    }
+
+    if path.parent()? != assistant_root {
+        return None;
+    }
+
+    let file_name = path.file_name()?.to_string_lossy();
+    let assistant_id = file_name.strip_prefix("workspace-")?;
+    if assistant_id.trim().is_empty() {
+        return None;
+    }
+
+    Some(AssistantWorkspaceDescriptor {
+        path: path.to_path_buf(),
+        assistant_id: Some(assistant_id.to_string()),
+        display_name: WorkspaceService::assistant_display_name(Some(assistant_id)),
+    })
+}
+
+/// Legacy BitFun-brand personal-assistant root: `~/.bitfun/personal_assistant/`.
+///
+/// `BITFUN_HOME` / `BITFUN_E2E_HOME` replace the legacy `.bitfun` data root
+/// itself, with the same resolution as the BitFun-to-OpenBitFun data
+/// migrator, so both sides resolve one legacy root. Returns `None` when no
+/// user home directory is available.
+fn legacy_assistant_workspace_root() -> Option<PathBuf> {
+    resolve_legacy_assistant_workspace_root(
+        std::env::var_os("BITFUN_HOME"),
+        std::env::var_os("BITFUN_E2E_HOME"),
+        dirs::home_dir().as_deref(),
+    )
+}
+
+fn resolve_legacy_assistant_workspace_root(
+    bitfun_home: Option<OsString>,
+    bitfun_e2e_home: Option<OsString>,
+    user_home: Option<&Path>,
+) -> Option<PathBuf> {
+    let non_empty =
+        |value: Option<OsString>| value.filter(|path| !path.is_empty()).map(PathBuf::from);
+    let legacy_home_root = non_empty(bitfun_home)
+        .or_else(|| non_empty(bitfun_e2e_home))
+        .or_else(|| user_home.map(|home| home.join(legacy_hidden_data_directory())))?;
+    Some(legacy_home_root.join("personal_assistant"))
 }
 
 impl WorkspaceService {
@@ -2147,31 +2213,7 @@ impl WorkspaceService {
     }
 
     fn assistant_descriptor_from_path(&self, path: &Path) -> Option<AssistantWorkspaceDescriptor> {
-        let default_workspace = self.path_manager.default_assistant_workspace_dir(None);
-        if path == default_workspace {
-            return Some(AssistantWorkspaceDescriptor {
-                path: path.to_path_buf(),
-                assistant_id: None,
-                display_name: Self::assistant_display_name(None),
-            });
-        }
-
-        let assistant_root = self.path_manager.assistant_workspace_base_dir(None);
-        if path.parent()? != assistant_root {
-            return None;
-        }
-
-        let file_name = path.file_name()?.to_string_lossy();
-        let assistant_id = file_name.strip_prefix("workspace-")?;
-        if assistant_id.trim().is_empty() {
-            return None;
-        }
-
-        Some(AssistantWorkspaceDescriptor {
-            path: path.to_path_buf(),
-            assistant_id: Some(assistant_id.to_string()),
-            display_name: Self::assistant_display_name(Some(assistant_id)),
-        })
+        assistant_descriptor_in_root(path, &self.path_manager.assistant_workspace_base_dir(None))
     }
 
     fn normalize_workspace_options_for_path(
@@ -2404,6 +2446,22 @@ impl WorkspaceService {
     /// Returns whether a path is a managed assistant workspace.
     pub fn is_assistant_workspace_path(&self, path: &Path) -> bool {
         self.assistant_descriptor_from_path(path).is_some()
+    }
+
+    /// Returns whether a path is an assistant workspace record the product can
+    /// still manage: either the current OpenBitFun layout or the legacy
+    /// BitFun layout (`~/.bitfun/personal_assistant/`) left behind by the
+    /// BitFun-to-OpenBitFun brand migration. Deletion and reset guards must
+    /// accept both so a pre-migration record stays an explicit user action
+    /// instead of being rejected as an unmanaged path.
+    pub fn is_manageable_assistant_workspace_path(&self, path: &Path) -> bool {
+        self.is_assistant_workspace_path(path) || self.is_legacy_assistant_workspace_path(path)
+    }
+
+    fn is_legacy_assistant_workspace_path(&self, path: &Path) -> bool {
+        legacy_assistant_workspace_root().is_some_and(|assistant_root| {
+            assistant_descriptor_in_root(path, &assistant_root).is_some()
+        })
     }
 
     /// Clears all persisted data.
@@ -3808,6 +3866,138 @@ mod tests {
             )),
             Some("Legacy TypeScript implementation".to_string())
         );
+    }
+
+    #[test]
+    fn assistant_layout_check_accepts_only_managed_layouts_under_its_root() {
+        let temp = tempfile::tempdir().expect("temp root");
+        let assistant_root = temp.path().join(".bitfun").join("personal_assistant");
+
+        let named = assistant_root.join("workspace-abc");
+        assert_eq!(
+            assistant_descriptor_in_root(&named, &assistant_root)
+                .expect("named legacy layout should be recognized")
+                .assistant_id
+                .as_deref(),
+            Some("abc")
+        );
+        assert!(
+            assistant_descriptor_in_root(&assistant_root.join("workspace"), &assistant_root)
+                .is_some(),
+            "default legacy layout should be recognized"
+        );
+        assert!(
+            assistant_descriptor_in_root(&assistant_root.join("workspace-"), &assistant_root)
+                .is_none(),
+            "a blank assistant id must not be recognized"
+        );
+        assert!(
+            assistant_descriptor_in_root(
+                &temp
+                    .path()
+                    .join(".bitfun")
+                    .join("other")
+                    .join("workspace-x"),
+                &assistant_root
+            )
+            .is_none(),
+            "directories outside the personal_assistant root must be rejected"
+        );
+        assert!(
+            assistant_descriptor_in_root(
+                &temp.path().join("Documents").join("foo"),
+                &assistant_root
+            )
+            .is_none(),
+            "unrelated directories must be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn manageable_check_still_accepts_current_assistant_layout() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        let assistant_root = env.path_manager.assistant_workspace_base_dir(None);
+        let named = assistant_root.join("workspace-current-id");
+
+        assert!(service.is_manageable_assistant_workspace_path(&named));
+        assert!(service.is_manageable_assistant_workspace_path(
+            &env.path_manager.default_assistant_workspace_dir(None)
+        ));
+        assert!(
+            !service.is_manageable_assistant_workspace_path(&named.join("child")),
+            "paths below an assistant workspace are not assistant workspaces"
+        );
+        assert!(!service
+            .is_manageable_assistant_workspace_path(&env.root.join("Documents").join("foo")));
+        assert_eq!(
+            service.is_manageable_assistant_workspace_path(&named),
+            service.is_assistant_workspace_path(&named),
+            "current-layout behavior must not regress"
+        );
+    }
+
+    #[tokio::test]
+    async fn manageable_check_accepts_legacy_bitfun_assistant_roots() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        let legacy_assistant_root =
+            legacy_assistant_workspace_root().expect("legacy assistant root");
+
+        assert!(
+            service.is_manageable_assistant_workspace_path(
+                &legacy_assistant_root.join("workspace-44e0e781")
+            ),
+            "legacy BitFun assistant workspaces must stay manageable"
+        );
+        assert!(
+            service
+                .is_manageable_assistant_workspace_path(&legacy_assistant_root.join("workspace")),
+            "the legacy default assistant workspace must stay manageable"
+        );
+        assert!(
+            !service.is_assistant_workspace_path(&legacy_assistant_root.join("workspace-44e0e781")),
+            "legacy paths must not be classified as current assistant workspaces"
+        );
+        assert!(
+            !service.is_manageable_assistant_workspace_path(
+                &legacy_assistant_root
+                    .parent()
+                    .expect("legacy data root")
+                    .join("other")
+                    .join("workspace-x")
+            ),
+            "directories outside the legacy personal_assistant root must be rejected"
+        );
+        assert!(
+            !service
+                .is_manageable_assistant_workspace_path(&env.root.join("Documents").join("foo")),
+            "unrelated directories must be rejected"
+        );
+    }
+
+    #[test]
+    fn legacy_assistant_root_follows_the_migrator_data_root_precedence() {
+        let home = Path::new("/home/dev");
+        let explicit = OsString::from("/custom/legacy");
+        let e2e = OsString::from("/e2e/legacy");
+        let root = |bitfun_home, e2e_home, user_home| {
+            resolve_legacy_assistant_workspace_root(bitfun_home, e2e_home, user_home)
+        };
+
+        assert_eq!(
+            root(Some(explicit.clone()), Some(e2e.clone()), Some(home)),
+            Some(PathBuf::from("/custom/legacy/personal_assistant"))
+        );
+        assert_eq!(
+            root(Some(OsString::new()), Some(e2e), Some(home)),
+            Some(PathBuf::from("/e2e/legacy/personal_assistant"))
+        );
+        assert_eq!(
+            root(None, None, Some(home)),
+            Some(PathBuf::from("/home/dev/.bitfun/personal_assistant"))
+        );
+        assert_eq!(root(None, None, None), None);
     }
 }
 
