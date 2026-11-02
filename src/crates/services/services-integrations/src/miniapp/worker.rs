@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::{oneshot, Mutex};
 
@@ -34,7 +34,7 @@ pub type SharedMiniAppWorkerEventSink = Arc<dyn MiniAppWorkerEventSink>;
 /// Single JS Worker process: stdin for requests, stderr for RPC responses, stdout for user logs.
 pub struct JsWorker {
     _child: Child,
-    stdin: Mutex<Option<ChildStdin>>,
+    stdin: Arc<Mutex<Option<ChildStdin>>>,
     pending: Arc<Mutex<PendingResponseMap>>,
     last_activity: Arc<AtomicI64>,
 }
@@ -64,6 +64,9 @@ impl JsWorker {
             .map_err(|e| format!("Failed to spawn JS Worker: {}", e))?;
 
         let stdin_handle = child.stdin.take().ok_or("No stdin")?;
+        let stdin = Arc::new(Mutex::new(Some(stdin_handle)));
+        let storage_stdin = Arc::clone(&stdin);
+        let storage_path = app_dir.join("storage.json");
         let stderr = child.stderr.take().ok_or("No stderr")?;
         let _stdout = child.stdout.take();
 
@@ -97,6 +100,44 @@ impl JsWorker {
                     Err(_) => continue,
                 };
 
+                if msg.get("hostRequest").and_then(Value::as_str) == Some("storage") {
+                    let result = async {
+                        let key = msg["params"]["key"]
+                            .as_str()
+                            .ok_or("Storage key must be a string".to_string())?;
+                        match msg["method"].as_str() {
+                            Some("storage.get") => {
+                                Ok(super::storage::read_storage_file(&storage_path)
+                                    .await
+                                    .map_err(|e| e.to_string())?
+                                    .get(key)
+                                    .cloned()
+                                    .unwrap_or(Value::Null))
+                            }
+                            Some("storage.set") => {
+                                super::storage::update_storage_file(
+                                    &storage_path,
+                                    key,
+                                    msg["params"]["value"].clone(),
+                                )
+                                .await
+                                .map_err(|e| e.to_string())?;
+                                Ok(Value::Null)
+                            }
+                            _ => Err("Unsupported framework storage method".to_string()),
+                        }
+                    }
+                    .await;
+                    let response = match result {
+                        Ok(value) => serde_json::json!({"hostResponse":msg["id"],"result":value}),
+                        Err(error) => serde_json::json!({"hostResponse":msg["id"],"error":error}),
+                    };
+                    if let Some(stdin) = storage_stdin.lock().await.as_mut() {
+                        let _ = stdin.write_all(format!("{response}\n").as_bytes()).await;
+                        let _ = stdin.flush().await;
+                    }
+                    continue;
+                }
                 // Lines with an `id` are RPC responses — route to the pending map.
                 let id = msg.get("id").and_then(Value::as_str).map(String::from);
                 if let Some(id) = id {
@@ -136,7 +177,7 @@ impl JsWorker {
 
         Ok(Self {
             _child: child,
-            stdin: Mutex::new(Some(stdin_handle)),
+            stdin,
             pending,
             last_activity,
         })

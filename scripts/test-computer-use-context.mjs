@@ -34,20 +34,21 @@ pub use computer_use_contract as computer_use;
 pub mod computer_use_control;
 #[path = ${source('src/crates/execution/tool-contracts/src/computer_use_geometry.rs')}]
 pub mod computer_use_geometry;
-#[path = ${source('src/apps/desktop/src/computer_use/control_session/admission.rs')}]
+#[path = ${source('src/crates/services/computer-use/src/computer_use/control_session/admission.rs')}]
 mod control_admission;
-#[path = ${source('src/apps/desktop/src/computer_use/observation_cache.rs')}]
+#[path = ${source('src/crates/services/computer-use/src/computer_use/observation_cache.rs')}]
 mod observation_cache;
-pub mod agentic { pub mod tools { pub mod computer_use_host {
-    pub use crate::computer_use_contract::*;
-}}}
+pub mod computer_use_host { pub use crate::computer_use_contract::*; }
+pub mod agentic { pub mod tools { pub use crate::computer_use_host; }}
 mod screen_ocr { pub use crate::computer_use_contract::OcrTextMatch; }
-#[path = ${source('src/apps/desktop/src/computer_use/ocr_context.rs')}]
+#[path = ${source('src/crates/services/computer-use/src/computer_use/ocr_context.rs')}]
 mod ocr_context;
-#[path = ${source('src/apps/desktop/src/computer_use/interactive_filter.rs')}]
+#[path = ${source('src/crates/services/computer-use/src/computer_use/interactive_filter.rs')}]
 mod interactive_filter;
-#[path = ${source('src/apps/desktop/src/computer_use/ax_snapshot_digest.rs')}]
+#[path = ${source('src/crates/services/computer-use/src/computer_use/ax_snapshot_digest.rs')}]
 mod ax_snapshot_digest;
+#[path = ${source('src/crates/services/computer-use/src/computer_use/windows_window_target.rs')}]
+mod windows_window_target;
 #[path = ${source('src/crates/assembly/core/src/agentic/tools/browser_control/snapshot_context.rs')}]
 mod snapshot_context;
 `);

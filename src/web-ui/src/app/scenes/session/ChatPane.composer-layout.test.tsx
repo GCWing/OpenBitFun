@@ -5,7 +5,9 @@ import { expect, it, vi } from 'vitest';
 import ChatPane from './ChatPane';
 
 vi.mock('@/flow_chat/components/modern/ModernFlowChatContainer', () => ({
-  ModernFlowChatContainer: () => <div data-testid="transcript" />,
+  ModernFlowChatContainer: ({ resizeSuspended = false }: { resizeSuspended?: boolean }) => (
+    <div data-testid="transcript" data-resize-suspended={String(resizeSuspended)} />
+  ),
 }));
 vi.mock('@/flow_chat/components/ChatInput', () => ({
   ChatInput: ({ layoutResizeSuspended }: { layoutResizeSuspended: boolean }) => (
@@ -24,6 +26,10 @@ vi.mock('@/flow_chat/session-drivers/sessionFileNavigation', () => ({ sessionWor
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 it('docks only the composer and forwards resize suspension without remounting the transcript or draft', () => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe() {}
+    disconnect() {}
+  });
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -35,15 +41,20 @@ it('docks only the composer and forwards resize suspension without remounting th
     expect(dock.contains(composer)).toBe(true);
     expect(dock.contains(transcript)).toBe(false);
     composer.value = 'unsent';
-    for (const isDragging of [true, false]) {
-      act(() => root.render(<ChatPane width={0} isFullscreen={false} showChatInput isDragging={isDragging} />));
+    // Both the drag itself and the settle window two frames after it: the
+    // transcript stops measuring for either, the composer only for the drag.
+    for (const [isDragging, resizeSuspended] of [[true, true], [false, false], [false, true]] as const) {
+      act(() => root.render(<ChatPane width={0} isFullscreen={false} showChatInput
+        isDragging={isDragging} resizeSuspended={resizeSuspended} />));
       expect(container.querySelector('[data-testid="transcript"]')).toBe(transcript);
       expect(container.querySelector('[data-testid="composer"]')).toBe(composer);
       expect(composer.value).toBe('unsent');
       expect(composer.dataset.resizeSuspended).toBe(String(isDragging));
+      expect(transcript.dataset.resizeSuspended).toBe(String(resizeSuspended));
     }
   } finally {
     act(() => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
   }
 });

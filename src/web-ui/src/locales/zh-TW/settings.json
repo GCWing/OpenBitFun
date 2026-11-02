@@ -22,7 +22,7 @@
       },
       "pet": {
         "label": "寵物與助手",
-        "description": "選擇寵物形象，設定助手即時語音通話"
+        "description": "選擇寵物形象，設定助手即時語音通話與桌面小卡片"
       },
       "terminal": {
         "label": "終端",
@@ -57,7 +57,7 @@
         "description": "連線 MCP 服務，為智能體提供外部工具與資料來源"
       },
       "acp": {
-        "label": "外部智慧體",
+        "label": "ACP",
         "description": "透過 ACP 接入本機或 SSH 主機上的外部智慧體"
       },
       "usage": {
@@ -78,7 +78,7 @@
       },
       "sessionMemory": {
         "label": "工作階段與記憶",
-        "description": "設定新工作階段的執行框架、標題產生與記憶策略"
+        "description": "設定新工作階段的執行模式、標題產生與記憶策略"
       },
       "permissions": {
         "label": "權限規則",
@@ -87,6 +87,10 @@
       "workspaceGit": {
         "label": "工作區與 Git",
         "description": "設定檔案搜尋、Git 提交署名與 Worktree，管理隔離工作目錄"
+      },
+      "externalImport": {
+        "label": "外部匯入",
+        "description": "匯入並管理其他 AI 應用程式中的內容"
       }
     },
     "views": {
@@ -107,7 +111,9 @@
       "quick-actions": "快捷動作",
       "hooks": "事件 Hooks",
       "pet": "寵物",
-      "voice-call": "即時語音通話"
+      "voice-call": "即時語音通話",
+      "desktop-cards": "小卡片",
+      "sidebar-navigation": "左側導覽列"
     }
   },
   "changeGuard": {
@@ -280,7 +286,7 @@
         "toggleBoth": "摺疊所有面板"
       },
       "nav": {
-        "toggleSearch": "開啟導航搜尋"
+        "toggleSearch": "開啟全域搜尋"
       },
       "scene": {
         "focusMerged": "切換場景",
@@ -291,7 +297,7 @@
         "openTerminal": "開啟終端"
       },
       "canvas": {
-        "missionControl": "Mission Control",
+        "missionControl": "全景模式",
         "splitHorizontal": "水平分屏",
         "splitVertical": "垂直分屏",
         "anchorZone": "切換錨點區",
@@ -311,7 +317,8 @@
         "stopGeneration": "停止生成",
         "activateInput": "激活輸入框",
         "newSession": "新增會話",
-        "insertNewline": "在輸入框中插入換行"
+        "insertNewline": "在輸入框中插入換行",
+        "search": "搜尋目前工作階段"
       },
       "filetree": {
         "rename": "重新命名",
@@ -339,6 +346,12 @@
       "canvas": "編輯器畫布及其中的程式碼編輯器取得焦點時生效",
       "filetree": "檔案樹取得焦點時生效",
       "git": "Git 面板取得焦點時生效"
+    },
+    "reserved": {
+      "appSwitch": "此組合鍵用於系統應用程式切換，請選擇其他鍵位。",
+      "systemSearch": "此組合鍵用於系統搜尋，請選擇其他鍵位。",
+      "secureAttention": "此組合鍵用於 Windows 安全畫面，請選擇其他鍵位。",
+      "systemKey": "此組合鍵使用 Windows 系統鍵，請選擇其他鍵位。"
     }
   },
   "advanced": {

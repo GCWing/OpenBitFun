@@ -1,5 +1,51 @@
 # FlowChat Virtualization
 
+## Historical scrolling and measurement
+
+Manual scrolling keeps the host's native wheel/touch behavior. Perceived
+smoothness depends on stable content coordinates as well as frame time; adding
+an easing loop to a height correction would expose the correction as motion.
+The implementation follows the read-before-write guidance in
+[rendering performance](https://web.dev/articles/rendering-performance) and
+[layout thrashing](https://web.dev/articles/avoid-large-complex-layouts-and-layout-thrashing).
+No new motion is introduced, so the existing reduced-motion policy and follow
+targets remain unchanged.
+
+Newly attached rows are measured as one batch in the layout phase, including
+while the reader is scrolling. The library's `measureElement` still registers
+observation, but it skips its inline size update during a gesture; the adapter
+therefore supplies the already-read height through `resizeItem` in that commit.
+In this flow layout the real row heights affect following content immediately.
+Waiting for ResizeObserver lets the old virtual padding and real rows disagree
+for a visible frame.
+
+Explicit item/offset aims retain the library's own attachment-measurement policy.
+A smooth aim intentionally leaves distant rows estimated: forcing their sizes
+can move its target and make the library replace the animation with an `auto`
+jump. Reader intent cancels the aim before scrolling, so newly attached rows
+resume synchronous measurement in the first reader-controlled commit.
+
+Above-viewport measurement shifts pass through the viewport register and credit
+the DOM anchor with the **actual applied** displacement. Otherwise the anchor
+counts that repair as reader travel and applies it again. The anchor remains
+independent of the virtualizer; the list joins these two owners.
+
+The native scroll handler shares one `flowChatViewportGeometry` sample among
+leading-extent, anchor and session-snapshot readers. It is local to that event,
+and discarded if a follow write changes the offset. Layout commits, resize and
+navigation read fresh geometry; this is not a cross-frame cache.
+
+The packaged macOS WebView fixture (80 Turns with Markdown, code, tables and
+collapsed tool groups) reproduced 17 reverse frames during 72 fast upward wheel
+actions, with a maximum 499.45px reversal. After these changes the same five
+slow/fast bidirectional phases had zero reversals over 4px and zero blank frames;
+row/scroller rectangle reads fell from 37,331 to 28,489 across those phases.
+Fast-up frame intervals still reached 26ms at p95 and 53ms at maximum in the
+final run; continuity is established here, not a constant 60fps guarantee.
+These are instrumented native-WebView samples, not physical trackpad or
+cross-platform latency measurements. See `FLOWCHAT_VERIFICATION.md` for the
+repeatable fixture and its limits.
+
 ## Accepted steering display
 
 The host queue's optional `steeringDisplay` receipt projects an accepted message
@@ -48,7 +94,11 @@ elapsed time with the existing actions on the right. Only elapsed time is shown
 inline; its shared Tooltip exposes the completion timestamp and elapsed time.
 Metric typography and Lucide glyph sizing belong to `@openbitfun/ui`.
 The completed-turn copy menu contains one export-as-image action alongside the
-copy actions, without sections. It opens a shared Dialog with two selectable
+copy actions, without sections. It prefers opening below the copy button, aligned
+to its trailing edge, and flips above when the lower viewport space is insufficient.
+The shared anchored-position hook keeps it attached during nested scrolling and
+viewport or content resizing, with viewport-edge clamping and no transcript writes.
+The export action opens a shared Dialog with two selectable
 cards with matching 224×168px footprints, reducing only their width in narrow
 panes. Public CardHeader actions and CardBody slots compose the checkbox and
 preview without overriding Checkbox anatomy. Whole-card activation selects the
@@ -64,13 +114,37 @@ keys select an output without starting capture. Export requires confirmation. Ca
 transcript untouched and restore focus to the resident trigger. The trigger shows
 export progress and stays disabled until capture finishes; the exporter stays
 mounted when the menu and Dialog close. There is no separate image action in the footer.
-The capture uses the same transcript inset and user-bubble tokens as the live
-message, with right alignment, borderless quiet fill and complete text rather
+The capture keeps the live transcript column width and typography, with a
+standalone image inset that grows from space-4 to space-8. It uses the live
+user-bubble tokens, with right alignment, borderless quiet fill and complete text rather
 than the live view's three-line clamp. Persisted reference capsules reuse the
 live message's content renderer. Compact output omits thinking items entirely,
 including their icons; the other output renders expanded thinking in item order.
 The small brand/date header and muted attribution footer use semantic typography,
 spacing and divider tokens, without an assistant slogan or subtitle.
+Round wrappers contain their child margins with `flow-root`: the rasterizer
+freezes computed heights, so collapsing those margins outside a round before
+cloning loses each inter-round gap in the SVG and leaves their sum above the
+footer. Tool summaries remain inside the image inset.
+The image capture copies resolved CSS properties, including browser-prefixed
+paint properties, but excludes inherited custom properties from the cloned SVG.
+The staging DOM receives the initiating transcript column's measured width and
+inherited theme variables, including local font settings. It keeps the shared
+reading-column maximum as a fallback when the source row is no longer mounted;
+the full pane width is never used as the text width. Exported text uses the live
+renderer styles without extra inline padding or export-only link no-wrap rules. Repeating
+the full theme catalog on every cloned node makes long transcripts expensive to
+serialize and rasterize. Capture validates the canvas before adding the logo:
+uniform or transparent output is a failure even when PNG encoding would succeed.
+A failed raster retries at reduced scale; a timeout stops the export. Logo
+compositing reuses the validated canvas and its actual scale, avoiding a second
+full-size bitmap and keeping reduced-resolution exports aligned.
+Capture waits for web fonts before measurement and embeds used faces, preserving
+the bundled HarmonyOS/Fira metrics on Windows/Linux as well as system fonts on
+macOS. Logo geometry is read after fonts settle, before staging DOM cleanup.
+Generative UI card PNG exports use the same capture helper, including blank-image
+rejection and reduced-scale recovery. Encoding failures must not write files or
+show success. Timed-out captures release any raster that completes late.
 Each number has its own hover/focus/click capsule and details card. Clicking
 opens immediately and keeps the card open until another trigger click, an outside
 press, Escape, or scrolling; native button triggers also support keyboard activation. `FlowChatMetric`
@@ -90,10 +164,19 @@ retain their measured space and keyboard access; the typewriter reveal gate
 still takes precedence. Latest-turn identity comes from the session catalog,
 not the last visible virtual row or the end of a history window.
 The cache ring uses reported cache-read tokens divided by input tokens; if any
-call lacks cache telemetry, the turn's ratio stays unknown. The speed levels
-use output tokens divided by the whole turn duration (including tools/waits),
-with thresholds at 15, 40 and 80 tokens/s, disclosed in the Tooltip. This is not
-provider streaming throughput. Total usage and the cache ring form one unit,
+call lacks cache telemetry, the turn's ratio stays unknown. TTFT has a separate capsule showing request-to-first-effective-output latency
+for the first model call (the accepted attempt after a retry). Text, thinking and
+tool output count as effective output; metadata-only packets do not. The host
+reports this optional duration, so controller clock skew and event delivery
+latency do not affect it. The speed levels use output tokens divided by the sum
+of each call's first-effective-output-to-stream-end time, with thresholds at 15,
+40 and 80 tokens/s disclosed in the Tooltip. HTTP setup, TTFT, tool execution and
+post-stream usage persistence are excluded. Missing or inconsistent timing in
+any model call, or retries whose earlier attempt timing is unavailable, omit speed
+rather than substituting turn wall time. Negative-index controller setup/audit
+rows are presentation only and do not participate in either metric.
+Legacy records omit unknown TTFT;
+reported zero remains valid. Timing survives the normal history save/load path. Total usage and the cache ring form one unit,
 hidden only when both values are missing. If usage is known but the cache ratio
 is unknown, a neutral dashed ring remains; cache-only data adds no total placeholder.
 Other unavailable metrics and detail rows are omitted; reported zero remains visible.
@@ -123,6 +206,26 @@ unrecognized attempt identities remain authoritative. Projection never rewrites
 the saved hint, attempts, or member identities.
 
 ## Measurement compensation and cached offsets
+
+Geometry updates and React rendering have separate delivery contracts. The
+virtualizer updates its size cache, applies owner-approved compensation and
+publishes the physical offset synchronously. Its local core adapter coalesces
+render requests within a commit and permits at most 16 notification-driven
+commits before yielding to an animation frame. The frame renders current state;
+it does not retain a scroll target or replay a former owner's write. Cleanup
+cancels the frame, including session remounts and StrictMode effect replay.
+
+This bounds a converging measurement cascade as well as an oscillating one:
+many near-empty rows can require more than React's nested-update limit while
+the window replaces estimates with measurements. Do not defer only the opening
+reconciliation callback: follow layout effects and physical range clamping can
+also advance the window. Explicit `measureRenderedItems` remains synchronous
+for callers that must read geometry before the next React commit. Normal small
+cascades still settle synchronously; the budget reset alone causes no render.
+`useFlowChatVirtualizer.cascade.test.tsx` covers tiny and zero-height rows,
+convergence across frames, reader takeover and remount cleanup using real hooks
+and supplied geometry. It is not proof of the production crash's data trigger
+or native paint timing.
 
 When the viewport owner accepts a shift for a measured row wholly above the
 reader, the virtualizer publishes the actual scroll offset after updating its
@@ -262,12 +365,6 @@ owner's displacement is applied before the new size enters the cache, while
 the anchor remains responsible for restoring relationships across larger layout
 transactions.
 
-The measurement decision is recorded as the switch-gated, coalesced
-`virtualizer.itemResize` probe: item identity, estimated and measured sizes,
-the above-viewport decision, and the real scroll geometry before and after the
-owner's displacement. It deliberately omits flow-item contents, which made the
-temporary investigation probe too large for a lasting diagnostic trail.
-
 **Measurement is forced before any position is read in the commit that changed
 the items.** The library skips its inline resize while the reader is scrolling,
 which is exactly when history arrives, so the cache holds reserved estimates
@@ -365,12 +462,21 @@ embedded transcripts without a rail keep their own layout. The scroller remains
 full width.
 The shared content-padding token defaults to 0.75rem on wide and narrow surfaces,
 keeping the reading column compact while leaving room for decoration and targets.
-The borderless bubble extends into that gutter by its corner radius, and its inner
-padding matches that radius so user text, timestamps, reply prose, and completion
-metadata keep the same content axis. Content-fit bubbles have an 8rem minimum that
-is capped by the 72% message-width limit on narrow surfaces. Content below that
-minimum stays shrink-wrapped and centered; content that reaches the available line
-width retains leading text alignment and wraps normally.
+The borderless bubble ends at the reading column's trailing content edge, with
+inner padding matching its corner radius. Bubbles fit their content without a
+minimum width. Collapsed previews are capped at 28rem and the shared message-width
+limit (72% of the column, up to 48rem by default). Text after the third explicit
+line break is kept in a span outside layout while collapsed, so hidden long lines
+do not contribute to intrinsic width. The visible prefix sizes the bubble; CSS
+still clamps wrapped text to three visual lines. A generated ellipsis marks the
+hidden suffix without changing the rendered-text coordinate sequence. Reference
+capsules stay intact, and copy/edit continue to use the full source.
+Expanding restores the suffix and removes the preview cap: the bubble grows
+leftward as needed from the same trailing edge and downward up to its existing
+60vh scroll limit. Editing retains the full reading-column width. Narrow columns
+remain bounded by the shared width limit.
+These changes use normal layout and the existing resize measurement path, with
+no layout animation or viewport writes.
 Both metadata rows align the last icon frame with the content's trailing edge,
 retaining 28px hit targets and the same compact action gap. Each action cluster
 wraps as a whole when space is limited. A half-space-1 gap groups user metadata

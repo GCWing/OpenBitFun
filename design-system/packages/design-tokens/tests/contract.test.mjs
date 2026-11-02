@@ -405,6 +405,7 @@ test("Dialog tokens preserve the reference surface and chrome contract", async (
   assert.equal(tokens["overlay.dialog.footerBlur"], "blur(10px)");
   assert.equal(tokens["overlay.dialog.footerFadeExtent"], "24px");
   assert.equal(tokens["overlay.dialog.footerContentInset"], "104px");
+  assert.equal(tokens["overlay.dialog.panelBlockSize"], "640px");
 });
 
 test("control heights preserve an eight-pixel size step in every density mode", () => {

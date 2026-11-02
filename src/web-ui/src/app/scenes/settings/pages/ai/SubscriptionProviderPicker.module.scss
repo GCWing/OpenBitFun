@@ -1,0 +1,81 @@
+.picker {
+  display: grid;
+  gap: var(--openbitfun-space-4);
+  min-inline-size: 0;
+}
+
+.tracking {
+  display: grid;
+  gap: var(--openbitfun-space-4);
+  min-inline-size: 0;
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  padding-block: var(--openbitfun-space-3);
+  text-align: center;
+}
+
+.region {
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.progress {
+  display: flex;
+  justify-content: center;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: var(--openbitfun-space-3);
+}
+
+.card {
+  min-inline-size: 0;
+  min-block-size: 144px;
+}
+
+.content {
+  justify-content: center;
+  gap: var(--openbitfun-space-2);
+  padding-block: var(--openbitfun-space-3);
+  text-align: center;
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--openbitfun-space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.plan {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-heading-card-font-family);
+  font-size: var(--openbitfun-type-heading-card-font-size);
+  font-weight: var(--openbitfun-type-heading-card-font-weight);
+  line-height: var(--openbitfun-type-heading-card-line-height);
+  letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
+}
+
+.footer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--openbitfun-space-2);
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--openbitfun-space-2);
+}

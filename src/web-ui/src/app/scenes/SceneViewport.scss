@@ -12,28 +12,6 @@
   background: var(--openbitfun-color-surface-scene);
   box-shadow: none;
 
-  // An open Session panel owns its toolbar/content insets. Reclaim the shell's
-  // trailing gutter here so both toolbar dividers reach the window edge.
-  // Only the visible host participates; retained background sessions do not.
-  .openbitfun-workspace-body__scene-surface > &:has(
-    > .openbitfun-scene-viewport__clip
-    > .openbitfun-scene-viewport__scene--active
-    .openbitfun-session-scene:not(.openbitfun-session-scene--overlay)
-    .openbitfun-session-scene__aux-pane:not(.openbitfun-session-scene__aux-pane--collapsed)
-  ) {
-    inline-size: calc(100% + var(--openbitfun-space-4));
-    margin-inline-end: calc(0px - var(--openbitfun-space-4));
-  }
-
-  // The ecosystem catalog owns its own content padding and starts at the scene edge.
-  .openbitfun-workspace-body__scene-surface > &:has(
-    > .openbitfun-scene-viewport__clip
-    > .openbitfun-scene-viewport__scene--visible[data-scene-id='ecosystem-compatibility']
-  ) {
-    inline-size: calc(100% + var(--openbitfun-space-4));
-    margin-inline-start: calc(0px - var(--openbitfun-space-4));
-  }
-
   &__clip {
     position: absolute;
     inset: 0;
@@ -64,8 +42,6 @@
   // ── Scene slot ────────────────────────────────────────
 
   &__scene {
-    position: absolute;
-    inset: 0;
     display: flex;
     flex-direction: row;
     min-width: 0;
@@ -114,7 +90,7 @@
     }
   }
 
-  &__clip[data-scene-motion-phase='preparing'] {
+  &:not(.openbitfun-scene-viewport--paned) &__clip[data-scene-motion-phase='preparing'] {
     .openbitfun-scene-viewport__scene--incoming.openbitfun-scene-viewport__scene--visible {
       opacity: 0.5;
       transition: none;
@@ -127,9 +103,34 @@
     transition: none;
   }
 
-  .openbitfun-scene-viewport__clip[data-scene-motion-phase='preparing'] {
+  .openbitfun-scene-viewport:not(.openbitfun-scene-viewport--paned) .openbitfun-scene-viewport__clip[data-scene-motion-phase='preparing'] {
     .openbitfun-scene-viewport__scene--incoming.openbitfun-scene-viewport__scene--visible {
       opacity: 1;
     }
   }
+}
+
+// The deck keeps one React/DOM parent for all views. Grid placement moves the
+// original host between panes, preserving iframe, editor and component state.
+.openbitfun-scene-viewport--paned {
+  display: contents;
+  > .openbitfun-scene-viewport__clip { display: contents; }
+  .openbitfun-scene-viewport__scene[hidden] { display: none; }
+  .openbitfun-scene-viewport__scene {
+    background: var(--openbitfun-color-surface-scene);
+  }
+}
+
+.openbitfun-scene-viewport--paned .openbitfun-scene-viewport__scene--incoming[data-pane-motion-phase='preparing'] {
+  opacity: 0.5;
+  transition: none;
+}
+.openbitfun-workbench-layout__body [data-layout='overlay'] [data-split-surface='secondary'] { z-index: 2; }
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-scene-viewport--paned .openbitfun-scene-viewport__scene--incoming[data-pane-motion-phase='preparing'] { opacity: 1; }
+}
+
+.openbitfun-scene-viewport:not(.openbitfun-scene-viewport--paned) .openbitfun-scene-viewport__scene {
+  position: absolute;
+  inset: 0;
 }

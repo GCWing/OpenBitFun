@@ -44,8 +44,13 @@ export async function launchBrowser(options = {}) {
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser',
     process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}/Google/Chrome/Application/chrome.exe`,
+    process.env['PROGRAMFILES(X86)'] && `${process.env['PROGRAMFILES(X86)']}/Google/Chrome/Application/chrome.exe`,
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
+    process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}/Microsoft/Edge/Application/msedge.exe`,
+    process.env['PROGRAMFILES(X86)'] && `${process.env['PROGRAMFILES(X86)']}/Microsoft/Edge/Application/msedge.exe`,
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}/Microsoft/Edge/Application/msedge.exe`,
   ].find(path => path && existsSync(path));
-  assert.ok(executablePath, 'Set PUPPETEER_EXECUTABLE_PATH to an installed Chrome/Chromium browser.');
+  assert.ok(executablePath, 'Set PUPPETEER_EXECUTABLE_PATH to an installed Chrome, Chromium, or Edge browser.');
   return puppeteer.launch({ executablePath, headless: 'new',
     // Fixture pages use remote-looking origins while their simulated Relay is loopback.
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-background-timer-throttling',
@@ -64,7 +69,7 @@ export async function startSourceServer() {
     sockets.handleUpgrade(request, socket, head, ws => fixture.socket(ws, url.searchParams.get('endpoint')));
   });
   await vite.listen();
-  return { origin: `http://127.0.0.1:${vite.httpServer.address().port}`, close: async () => { for (const socket of sockets.clients) socket.terminate(); sockets.close(); realtimeFixtures.clear(); await vite.close(); } };
+  return { origin: `http://127.0.0.1:${vite.httpServer.address().port}`, close: async () => { for (const socket of sockets.clients) socket.terminate(); sockets.close(); realtimeFixtures.clear(); vite.httpServer?.closeAllConnections?.(); await vite.close(); } };
 }
 
 /** Real browser fetches and encrypted RPC envelopes; only Relay/host IO is simulated. */
@@ -350,14 +355,9 @@ export async function disconnect(page) {
 
 export async function signOut(page) {
   await page.bringToFront();
-  // Open the device directory from the UI if this tab is controlling a host.
+  // Disconnect through settings to reach the account device directory.
   if (!await page.$('.devices-page') && await page.$('.harmony-sidebar__settings')) {
-    await page.click('button[aria-label="Settings"]');
-    await page.waitForSelector('button[aria-label="Devices"]', { visible: true });
-    await page.$eval('button[aria-label="Devices"]', async button => {
-      const sheet = button.closest('[role="dialog"]');
-      if (sheet) await Promise.all(sheet.getAnimations().map(animation => animation.finished));
-    });
+    await disconnect(page);
   }
   const button = await page.$('button[aria-label="Devices"]');
   if (button) { await button.click(); await page.waitForSelector('.devices-page'); }

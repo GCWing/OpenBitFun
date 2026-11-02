@@ -410,6 +410,24 @@ fn creation_tools_default_only_to_creative_mode() {
 }
 
 #[test]
+fn desktop_cards_default_to_standard_ultimate_creative_and_claw_modes() {
+    for spec in builtin_agent_specs()
+        .iter()
+        .filter(|spec| spec.category == AgentCategory::Mode)
+    {
+        let mode = (spec.factory)();
+        assert_eq!(
+            mode.default_tools()
+                .iter()
+                .any(|tool| tool == "DesktopCard"),
+            matches!(mode.id(), "Standard" | "Ultimate" | "Creative" | "Claw"),
+            "DesktopCard has unexpected default exposure in {}",
+            mode.id()
+        );
+    }
+}
+
+#[test]
 fn every_builtin_mode_with_control_hub_can_also_schedule_with_cron() {
     // ControlHub's `wait` documentation tells the agent to schedule anything
     // repeating — or further out than an hour — with Cron instead of holding
@@ -718,8 +736,9 @@ async fn task_visible_subagents_are_filtered_by_parent_visibility() {
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
         assert!(ultra_visible.iter().any(|agent| agent.id == swarm_id));
     }
-    assert!(ultra_visible.len() > 3);
-    assert!(ultra_visible
+    assert_eq!(ultra_visible.len(), 3);
+    assert!(!ultra_visible.iter().any(|agent| agent.id == "Explore"));
+    assert!(!ultra_visible
         .iter()
         .any(|agent| agent.id == "GeneralPurpose"));
 
@@ -732,11 +751,11 @@ async fn task_visible_subagents_are_filtered_by_parent_visibility() {
             external_sources_supported: false,
         })
         .await;
-    assert!(planner_visible.len() > 3);
+    assert_eq!(planner_visible.len(), 3);
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
         assert!(planner_visible.iter().any(|agent| agent.id == swarm_id));
     }
-    assert!(planner_visible
+    assert!(!planner_visible
         .iter()
         .any(|agent| agent.id == "GeneralPurpose"));
 }
@@ -2219,6 +2238,7 @@ fn external_primary_route_follows_the_session_execution_worktree() {
     );
 
     let config = SessionConfig {
+        tool_presentation_mode: Default::default(),
         workspace_id: Some(worktree.clone()),
         project_workspace_id: Some(project.clone()),
         workspace_path: Some("/same/execution-path".into()),

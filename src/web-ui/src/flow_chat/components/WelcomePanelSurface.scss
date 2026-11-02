@@ -1,5 +1,0 @@
-@use '@/shared/styles/surface-recipes' as surfaces;
-
-.welcome-panel__dropdown {
-  @include surfaces.floating;
-}

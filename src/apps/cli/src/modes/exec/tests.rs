@@ -1,6 +1,6 @@
 use super::lifecycle::{
     completed_turn_failure, drain_interrupted_turn_events, effective_event_invocation,
-    event_belongs_to_exec_turn, event_turn_id, is_exec_terminal,
+    event_belongs_to_exec_turn, event_turn_id, is_exec_terminal, observed_model_backfill_target,
     permission_action_required_message, resolve_cancelled_turn_observation,
     serialize_stream_envelope, session_in_use_stream_envelope, settlement_failure,
     should_reject_permission_request, ExecApprovalMode, ExecJsonResult, ExecMode, ExecTokenUsage,
@@ -320,6 +320,58 @@ fn json_usage_accumulates_all_model_round_updates_for_the_turn() {
 }
 
 #[test]
+fn observed_model_backfill_preserves_stored_smart_alias_when_release_is_closed() {
+    use openbitfun_agent_runtime::session::SessionConfig;
+    use openbitfun_core::agentic::execution::round_model_routing::configuration::routing_enabled;
+
+    let stored = SessionConfig {
+        model_id: Some("primary".into()),
+        model_routing: Some("smart".into()),
+        ..Default::default()
+    };
+    assert!(!routing_enabled(stored.model_routing.as_deref()).unwrap());
+    let event = AgenticEvent::TokenUsageUpdated {
+        session_id: "session-1".into(),
+        turn_id: "turn-1".into(),
+        model_config_id: "resolved-primary-config".into(),
+        effective_model_name: "provider-model".into(),
+        input_tokens: 100,
+        output_tokens: Some(25),
+        total_tokens: 125,
+        max_context_tokens: Some(200_000),
+        is_subagent: false,
+        cached_tokens: Some(40),
+        token_details: None,
+    };
+    let mut usage = None;
+    let observed = ExecTokenUsage::accumulate_event(&mut usage, &event, "turn-1").unwrap();
+    assert_ne!(stored.model_id.as_deref(), Some(observed));
+    assert_eq!(
+        observed_model_backfill_target(stored.model_routing.as_deref(), observed),
+        None,
+        "an observed concrete ID must not clear saved Smart intent or replace its role alias"
+    );
+    assert_eq!(usage.unwrap().total_tokens, 125);
+}
+
+#[test]
+fn observed_model_backfill_retains_manual_updates_and_filters_role_aliases() {
+    for mode in [None, Some("manual")] {
+        assert_eq!(
+            observed_model_backfill_target(mode, " resolved-config "),
+            Some("resolved-config")
+        );
+        for observed in ["", "  ", "default", "primary", "fast"] {
+            assert_eq!(observed_model_backfill_target(mode, observed), None);
+        }
+    }
+    assert_eq!(
+        observed_model_backfill_target(Some("future-mode"), "resolved-config"),
+        None
+    );
+}
+
+#[test]
 fn json_usage_omits_optional_totals_when_any_round_does_not_report_them() {
     let events = [
         AgenticEvent::TokenUsageUpdated {
@@ -453,6 +505,7 @@ fn every_exec_terminal_event_is_deferred_until_exec_settlement() {
         success: Some(true),
         finish_reason: Some("complete".to_string()),
         has_final_response: Some(true),
+        background_delivery: None,
     };
     let failed = AgenticEvent::DialogTurnFailed {
         session_id: "session-1".to_string(),
@@ -629,6 +682,7 @@ async fn interrupted_turn_buffers_tail_projection_before_a_completed_race() {
                 success: Some(true),
                 finish_reason: Some("complete".to_string()),
                 has_final_response: Some(true),
+                background_delivery: None,
             },
             AgenticEventPriority::Critical,
         ))

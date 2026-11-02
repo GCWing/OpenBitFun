@@ -9,7 +9,7 @@
   .image, .content { display: block; inline-size: 100%; block-size: 100%; overflow: hidden; border-radius: inherit; object-fit: cover; }
   .content { display: grid; place-items: center; }
   .content > :where(svg, img) { inline-size: 100%; block-size: 100%; }
-  .initials { display: grid; inline-size: 100%; block-size: 100%; place-items: center; letter-spacing: var(--openbitfun-letter-spacing-subtle); }
+  .initials { display: grid; inline-size: 100%; block-size: 100%; place-items: center; letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing); }
 
   /* The dot keeps a ring of the surrounding surface so it separates from the artwork it overlaps. */
   .status { position: absolute; inset-block-end: 0; inset-inline-end: 0; inline-size: var(--_avatar-dot); block-size: var(--_avatar-dot); border-radius: var(--openbitfun-radius-pill); background: var(--openbitfun-color-content-muted); box-shadow: 0 0 0 2px var(--openbitfun-color-surface-canvas); }

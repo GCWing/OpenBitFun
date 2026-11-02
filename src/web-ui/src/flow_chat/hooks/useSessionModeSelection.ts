@@ -21,9 +21,9 @@ interface SessionModeSelectionQueue {
 }
 
 /**
- * Keep passive selector hydration separate from an explicit Runtime rebind.
- * A catalog refresh may change which same-name route is currently offered,
- * but only a user selection may replace a Session's durable route owner.
+ * Commit explicit selections after Runtime acceptance. Passive composer
+ * hydration is handled separately by useChatInputModeSync and never publishes
+ * a Session mutation.
  */
 export function useSessionModeSelection(
   target: SessionModeSelectionTarget | null,
@@ -32,7 +32,6 @@ export function useSessionModeSelection(
   onSelectionCommitted?: (modeId: string) => void,
 ): {
   isModeChangePending: boolean;
-  publishModeSelection: (modeId: string) => void;
   requestModeChange: (modeId: string) => void;
 } {
   const publishRef = useRef(publishSelection);
@@ -63,10 +62,6 @@ export function useSessionModeSelection(
   const workspacePath = target?.workspacePath;
   const remoteConnectionId = target?.remoteConnectionId;
   const remoteSshHost = target?.remoteSshHost;
-
-  const publishModeSelection = useCallback((modeId: string) => {
-    publishRef.current(modeId);
-  }, []);
 
   const requestModeChange = useCallback((modeId: string) => {
     if (!sessionId || draft) {
@@ -127,7 +122,6 @@ export function useSessionModeSelection(
 
   return {
     isModeChangePending: Boolean(sessionId && sessionQueuesRef.current.has(sessionId)),
-    publishModeSelection,
     requestModeChange,
   };
 }

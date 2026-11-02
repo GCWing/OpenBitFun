@@ -1,3 +1,6 @@
+import { modelPoolAPI } from '@/infrastructure/api/service-api/ModelPoolAPI';
+import { getModelPoolContextBudget } from './modelPoolContextBudget';
+import { modelSelectionsConfigPath, effectiveModelSelections } from '@/infrastructure/config/services/modelSelections';
 /**
  * Model selector resolution shared by session creation and the composer.
  *
@@ -181,13 +184,18 @@ export async function getModelMaxTokens(modelName?: string, agentType?: string):
     const configData = await configManager.getConfigs([
       'ai.models',
       'ai.default_models',
-      ...(!modelName?.trim() ? ['ai.agent_model_defaults'] : []),
+      ...(!modelName?.trim() ? [modelSelectionsConfigPath()] : []),
     ]);
+    const defaultSelection = !modelName?.trim() ? effectiveModelSelections(configData[modelSelectionsConfigPath()] as AgentModelDefaultsConfig | undefined).mode : undefined;
+    if (defaultSelection?.kind === 'pool') {
+      const statuses = await modelPoolAPI.status(defaultSelection.pool_id);
+      return getModelPoolContextBudget(statuses)?.contextWindow ?? 128128;
+    }
     return resolveModelMaxTokens(
       modelName,
       (configData['ai.models'] as AIModelConfig[] | undefined) || [],
       (configData['ai.default_models'] as DefaultModelsConfig | undefined) || {},
-      (configData['ai.agent_model_defaults'] as AgentModelDefaultsConfig | undefined)?.mode,
+      defaultSelection?.kind === 'model' ? defaultSelection.model_ref : undefined,
     );
   } catch (error) {
     log.warn('Failed to get model max tokens', { modelName, agentType, error });
@@ -203,12 +211,14 @@ export async function resolveReasoningPresetForSessionCreation(
     const configData = await configManager.getConfigs([
       'ai.models',
       'ai.default_models',
-      ...(!modelName?.trim() ? ['ai.agent_model_defaults'] : []),
+      ...(!modelName?.trim() ? [modelSelectionsConfigPath()] : []),
     ]);
     const models = (configData['ai.models'] as AIModelConfig[] | undefined) || [];
     const defaultModels = (configData['ai.default_models'] as DefaultModelsConfig | undefined) || {};
-    const agentModelDefaults = configData['ai.agent_model_defaults'] as AgentModelDefaultsConfig | undefined;
-    const selection = modelName?.trim() || agentModelDefaults?.mode?.trim() || 'primary';
+    const agentModelDefaults = configData[modelSelectionsConfigPath()] as AgentModelDefaultsConfig | undefined;
+    const defaultSelection = !modelName?.trim() ? effectiveModelSelections(agentModelDefaults).mode : undefined;
+    if (!modelName?.trim() && defaultSelection?.kind === 'pool') return undefined;
+    const selection = modelName?.trim() || (defaultSelection?.kind === 'model' ? defaultSelection.model_ref : 'primary');
     const model = resolveModelForContextWindow(selection, models, defaultModels)
       ?? resolveModelForContextWindow('primary', models, defaultModels);
     const modelId = model?.id;

@@ -4,6 +4,7 @@ import { getEffectiveToolName } from './toolInvocationIdentity';
 
 /** Shared by leaf cards and transcript composition so hidden cards leave no row. */
 export function isToolCardVisible(toolItem: FlowToolItem): boolean {
+  if (toolItem.importedSource) return true;
   const failed = toolItem.status === 'error'
     || (toolItem.status === 'completed' && toolItem.toolResult?.success === false);
   if (!failed) return true;

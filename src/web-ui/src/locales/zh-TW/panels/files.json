@@ -161,5 +161,15 @@
     "selectWorkspaceFirst": "請先開啟工作區",
     "searchIndexBuildStarted": "已開始建立工作區索引。",
     "searchIndexRebuildStarted": "已開始重建工作區索引。"
+  },
+  "watch": {
+    "title": "檔案變更監聽已停止",
+    "reason": {
+      "watchLimitExceeded": "系統 watch 配額已用盡，此檢視不會再自動重新整理。",
+      "backendUnavailable": "系統檔案監聽無法使用，此檢視不會再自動重新整理。"
+    },
+    "hintLabel": "解除限制後點擊重試：",
+    "retry": "重試",
+    "retrying": "重試中…"
   }
 }

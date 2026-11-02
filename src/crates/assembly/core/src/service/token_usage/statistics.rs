@@ -250,6 +250,7 @@ mod tests {
             api_key: String::new(),
             context_window: None,
             max_tokens: None,
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             enabled: true,
@@ -266,6 +267,7 @@ mod tests {
             custom_request_body: None,
             custom_request_body_mode: None,
             auth: crate::service::config::types::AuthConfig::ApiKey,
+            channel_routing: None,
         }
     }
 

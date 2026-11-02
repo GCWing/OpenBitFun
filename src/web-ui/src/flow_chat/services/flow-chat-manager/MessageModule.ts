@@ -47,6 +47,8 @@ import {
 } from '../submittedMessagePresentation';
 import { finishSubmittedMessageScrollIntent, peekSubmittedMessageScrollIntent } from '../submittedMessageScrollIntent';
 import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../../events/flowchatNavigation';
+import { forkChatSession } from './SessionModule';
+import { viewedExternalForkTurn } from '../../utils/externalHistory';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -62,6 +64,7 @@ interface SessionConflictRetry {
 const sessionConflictRetries = new Map<string, SessionConflictRetry>();
 const latestSendBySession = new Map<string, symbol>();
 const draftSubmissions = new Set<string>();
+const externalForks = new Map<string, Promise<string>>();
 
 function clearSessionConflictRetry(sendKey: string): void {
   const current = sessionConflictRetries.get(sendKey);
@@ -258,6 +261,40 @@ async function sendMessageInternal(
     throw new Error(`Session does not exist: ${sessionId}`);
   }
   const surfaceScopeAtSend = getActiveSurfaceScope();
+  if (session.externalHistory?.mode === 'follow') {
+    if (surfaceScopeAtSend.surfaceId !== 'local') throw new Error(i18nService.t('flow-chat:externalHistory.unsupportedSurface'));
+    assertSessionConversationCanSubmit(sessionId, session, i18nService.t('flow-chat:chatInput.targetUnavailable'));
+    assertSessionSubmissionAllowed(sessionId, options?.sessionMutationLeaseId);
+    const sourceTurnId = viewedExternalForkTurn(session);
+    if (!sourceTurnId) throw new Error(i18nService.t('flow-chat:externalHistory.openBeforeContinue'));
+    const key = surfaceScopeAtSend.key('external-history-fork', surfaceScopeAtSend.epoch, sessionId);
+    let fork = externalForks.get(key);
+    if (!fork) {
+      fork = forkChatSession(context, sessionId, sourceTurnId);
+      externalForks.set(key, fork);
+    }
+    try {
+      const branchId = await fork;
+      surfaceScopeAtSend.assertCurrent('continue external history in native branch');
+      options?.onSessionForked?.(sessionId, branchId);
+      // Do not replay the retired source placeholder over the host's corrected
+      // branch mode. Keep valid composer selections, even when stored locally.
+      const continuationAgentType = agentType?.trim() === 'primary'
+        && (session.mode || session.config.agentType)?.trim() === 'primary'
+        ? undefined : agentType;
+      return await sendMessageInternal(context, message, branchId, displayMessage, continuationAgentType, switchToMode, options);
+    } finally {
+      if (externalForks.get(key) === fork) externalForks.delete(key);
+    }
+  }
+  // A failed queue entry can retain the old source placeholder after the host
+  // has repaired its native branch. Retry with the branch's current mode.
+  const importedSource = session.externalBranchOf?.ecosystemId ?? session.importedSource;
+  if ((importedSource === 'codex' || importedSource === 'zcode')
+    && (!session.sessionKind || session.sessionKind === 'normal')
+    && agentType?.trim() === 'primary' && session.mode && session.mode !== 'primary') {
+    agentType = session.mode;
+  }
   if (session.sessionKind === 'subagent'
     && getSessionConversationCapability(sessionId, session).reason === 'metadata_pending') {
     const parent = session.parentSessionId
@@ -326,7 +363,7 @@ async function sendMessageInternal(
           const accepted = await queue.submit({ content: message, displayContent: displayMessage,
             agentType: agentType?.trim() || session.mode || 'Standard',
             attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} },
-            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData });
+            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
           surfaceScopeAtSend.assertCurrent('accept queued message');
           if (options?.sendImmediately) {
             await promoteAcceptedHostMessage(queue, accepted);
@@ -356,6 +393,7 @@ async function sendMessageInternal(
       try {
         const item = pendingQueueManager.enqueue({
           sessionId,
+          turnId: options?.turnId,
           content: message,
           displayMessage,
           agentType,
@@ -769,6 +807,7 @@ export async function drainPendingQueue(
               mimeType?: string;
             }>
           | undefined,
+        turnId: next.turnId,
         pendingQueueDraft: next.composerDraft,
         userMessageMetadata: next.userMessageMetadata,
         bypassPendingQueue: true,

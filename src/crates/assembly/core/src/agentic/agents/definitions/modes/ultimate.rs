@@ -33,6 +33,7 @@ impl UltimateHarness {
                 "ExecControl",
                 "ListModels",
                 "Skill",
+                "DesktopCard",
             ]
             .into_iter()
             .map(str::to_string)

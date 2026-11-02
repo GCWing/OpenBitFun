@@ -8,14 +8,15 @@ import { Icon, iconNames, canonicalIconNames, iconAliases } from "../dist/index.
 import { Network } from "lucide-react";
 
 test("Icon exposes the complete named catalog without duplicate names", () => {
-  assert.equal(iconNames.length, 98);
-  assert.equal(canonicalIconNames.length, 95);
+  assert.equal(iconNames.length, 104);
+  assert.equal(canonicalIconNames.length, 101);
   assert.deepEqual(Object.keys(iconAliases).sort(), ["circle", "download"]);
   for (const name of ["thinking", "git", "duplicate", "chevron-left", "selected", "delete", "waitlist-message", "creative", "ultimate", "standard", "minimal", "arrow-down", "unselected"]) {
     assert.ok(canonicalIconNames.includes(name), name);
   }
   assert.equal(new Set(iconNames).size, iconNames.length);
   assert.ok(iconNames.includes("search"));
+  assert.match(renderToStaticMarkup(createElement(Icon, { name: "chart-spline" })), /lucide-chart-spline/);
   assert.ok(canonicalIconNames.includes("list-todo"));
   assert.match(renderToStaticMarkup(createElement(Icon, { name: "list-todo" })), /lucide-list-todo/);
   assert.ok(iconNames.includes("book-open"));
@@ -34,7 +35,7 @@ test("Icon exposes the complete named catalog without duplicate names", () => {
   assert.ok(iconNames.includes("chevron-up"));
   assert.ok(iconNames.includes("refresh"));
   assert.ok(iconNames.includes("layers-plus"));
-  for (const name of ["target", "users", "history", "git-pull-request"]) {
+  for (const name of ["target", "users", "history", "git-pull-request", "battery-full", "galaxy", "playing-cards-fan", "messages-square"]) {
     assert.ok(canonicalIconNames.includes(name));
     assert.match(renderToStaticMarkup(createElement(Icon, { name })), new RegExp(`lucide-${name}`));
   }

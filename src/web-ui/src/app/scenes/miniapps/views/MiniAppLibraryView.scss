@@ -1,7 +1,8 @@
 .miniapp-gallery {
-  &__header-actions {
+  &__catalog-actions {
     display: flex;
     align-items: center;
+    flex: 0 0 auto;
     gap: var(--openbitfun-space-2);
     min-width: 0;
   }
@@ -10,9 +11,14 @@
     display: inline-flex;
   }
 
+  &__action-divider {
+    block-size: var(--openbitfun-space-3);
+    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+  }
+
   &__filters {
     display: grid;
-    grid-template-columns: minmax(160px, 1fr) 132px 132px auto;
+    grid-template-columns: minmax(160px, 1fr) 132px 132px;
     align-items: center;
     gap: var(--openbitfun-space-3);
     min-width: 0;
@@ -25,30 +31,27 @@
     min-width: 0;
   }
 
-  &__result-count {
-    display: inline-flex;
-    align-items: center;
-  }
-
   &__list {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--openbitfun-space-3);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--openbitfun-space-4);
     min-width: 0;
   }
 
   &__list.gallery-grid--skeleton {
-    grid-template-columns: minmax(0, 1fr);
-
     .gallery-skeleton-card {
       width: 100%;
-      min-height: 126px;
-      border-radius: var(--openbitfun-layout-field-group-radius);
+      height: auto;
+      min-height: 0;
+      aspect-ratio: 16 / 9;
+      box-sizing: content-box;
+      padding-block-end: calc(126px + var(--openbitfun-control-height-sm) + var(--openbitfun-space-5));
+      border-radius: var(--openbitfun-layout-card-radius-lg);
     }
   }
 
   &__list--continuation {
-    margin-top: var(--openbitfun-space-3);
+    margin-top: var(--openbitfun-space-4);
   }
 
   &__load-more {
@@ -83,10 +86,13 @@
 .miniapp-library-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   overflow: hidden;
-  border: 0;
-  border-radius: var(--openbitfun-layout-field-group-radius);
+  box-sizing: border-box;
+  // Match the home page's subtle device Cards with the large card radius.
+  border: var(--openbitfun-border-width-default) solid transparent;
+  border-radius: var(--openbitfun-layout-card-radius-lg);
   background: var(--openbitfun-color-surface-tertiary);
   transition:
     background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
@@ -155,7 +161,7 @@
     min-width: 0;
     block-size: 126px;
     box-sizing: border-box;
-    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-5);
   }
 
   &__title-row {
@@ -253,12 +259,20 @@
 
   &__actions {
     display: flex;
+    flex-wrap: wrap;
     align-self: end;
     align-items: center;
     justify-content: flex-end;
     gap: var(--openbitfun-space-2);
     min-width: 0;
-    padding: 0 var(--openbitfun-space-4) var(--openbitfun-space-4);
+    padding: 0 var(--openbitfun-space-5) var(--openbitfun-space-5);
+  }
+
+  &__launch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--openbitfun-space-2);
   }
 
   &__primary {
@@ -275,34 +289,10 @@
   }
 }
 
-@container miniapp-gallery-scene (min-width: 640px) {
-  .miniapp-library-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-
-    &__details {
-      grid-template-columns: minmax(0, 224px) minmax(0, 1fr);
-    }
-
-    &__showcase {
-      border-block-end: 0;
-      border-inline-end: 1px solid var(--openbitfun-color-border-subtle);
-    }
-
-    &__actions {
-      padding: var(--openbitfun-space-2) var(--openbitfun-space-4);
-    }
-  }
-}
-
 @container miniapp-gallery-scene (max-width: 760px) {
   .miniapp-gallery {
-    &__header-actions {
-      width: 100%;
-      flex-wrap: wrap;
-    }
-
     &__filters {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: var(--openbitfun-space-2);
     }
 
@@ -312,9 +302,34 @@
   }
 }
 
+@container miniapp-gallery-scene (max-width: 600px) {
+  .miniapp-gallery__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.miniapp-gallery__list--installed {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--openbitfun-space-4) var(--openbitfun-space-6);
+  margin-inline: calc(-1 * var(--openbitfun-control-action-card-padding-inline));
+
+  &.gallery-grid--skeleton .gallery-skeleton-card {
+    height: var(--openbitfun-control-action-card-sm-min-block-size);
+    aspect-ratio: auto;
+    padding: 0;
+    border-radius: var(--openbitfun-control-action-card-radius);
+  }
+}
+
+@container miniapp-gallery-scene (max-width: 480px) {
+  .miniapp-gallery__list--installed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .miniapp-market-detail {
   display: grid;
-  gap: var(--openbitfun-space-4);
+  gap: var(--openbitfun-space-12);
 
   &__loading {
     display: flex;
@@ -327,23 +342,10 @@
     font-size: var(--openbitfun-type-body-sm-font-size);
   }
 
-  section {
-    display: grid;
-    gap: var(--openbitfun-space-2);
-
-    h4,
+  .miniapp-detail-page__section {
     p,
     ul {
       margin: 0;
-    }
-
-    h4 {
-      color: var(--openbitfun-color-content-primary);
-      font-family: var(--openbitfun-type-heading-card-font-family);
-      font-size: var(--openbitfun-type-heading-card-font-size);
-      font-weight: var(--openbitfun-type-heading-card-font-weight);
-      line-height: var(--openbitfun-type-heading-card-line-height);
-      letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
     }
 
     p,
@@ -377,13 +379,11 @@
     scroll-snap-type: x mandatory;
 
     img {
-      width: min(360px, 80%);
+      width: 100%;
       height: auto;
       aspect-ratio: 16 / 9;
-      flex: 0 0 auto;
-      border: 1px solid var(--openbitfun-color-border-subtle);
-      border-radius: var(--openbitfun-radius-lg);
-      object-fit: cover;
+      flex: 0 0 100%;
+      object-fit: contain;
       scroll-snap-align: start;
     }
   }

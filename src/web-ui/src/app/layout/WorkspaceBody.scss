@@ -8,7 +8,7 @@
 $_nav-width: 300px;
 $_nav-collapsed-width: 76px;
 $_nav-bar-height: var(--openbitfun-layout-toolbar-md-height);
-$_resize-target-width: 6px;
+$_resize-target-width: 12px;
 
 .openbitfun-workspace-body {
   --nav-width: #{$_nav-width};
@@ -112,12 +112,55 @@ $_resize-target-width: 6px;
   top: 0;
   bottom: 0;
   // Center the resize hit target on the navigation / scene boundary. The
-  // scene surface owns the visual feedback so the hit target stays invisible.
+  // scene surface owns the edge; the short grip supplies elastic feedback.
   left: calc(var(--nav-width) - #{$_resize-target-width * 0.5});
   z-index: 10;
   width: $_resize-target-width;
   cursor: ew-resize;
   background: transparent;
+  touch-action: none;
+  outline: none;
+
+  // Once pulled away, keep the grip reachable on either side during the drag
+  // and release. At rest the normal hit target stays on the boundary.
+  &[data-resize-feedback]::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 48px;
+    height: 80px;
+    transform: translate(-50%, -50%);
+  }
+
+  &[data-resize-feedback],
+  &:focus-visible {
+    .openbitfun-workspace-body__nav-grip { opacity: 1; }
+  }
+
+  &:focus-visible .openbitfun-workspace-body__nav-grip {
+    color: var(--openbitfun-color-focus-ring);
+  }
+}
+
+.openbitfun-workspace-body__nav-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 48px;
+  height: 120px;
+  overflow: visible;
+  transform: translate(-50%, -50%);
+  color: var(--openbitfun-color-border-strong);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.openbitfun-is-resizing-nav .openbitfun-workspace-body__nav-grip {
+  opacity: 1;
 }
 
 .openbitfun-workspace-body__scene-area {
@@ -142,7 +185,8 @@ $_resize-target-width: 6px;
   gap: 0;
   min-width: 0;
   min-height: 0;
-  padding: 0 var(--openbitfun-space-4);
+  // The shell is edge-to-edge; individual content views own their gutters.
+  padding: 0;
   overflow: hidden;
   border-radius: var(--_scene-surface-radius) 0 0 var(--_scene-surface-radius);
   background: var(--openbitfun-color-surface-scene);
@@ -172,6 +216,10 @@ $_resize-target-width: 6px;
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .openbitfun-workspace-body__nav-divider:hover:not(:focus-visible) .openbitfun-workspace-body__nav-grip {
+    opacity: 1;
+  }
+
   .openbitfun-workspace-body__nav-divider:hover ~ .openbitfun-workspace-body__scene-area {
     .openbitfun-workspace-body__scene-surface::after {
       border-color: var(--openbitfun-color-border-subtle);
@@ -187,8 +235,8 @@ $_resize-target-width: 6px;
 
 // The compact toolbar remains reachable when the navigation panel is hidden.
 .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
-  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
-    padding-left: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1));
+  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
+    padding-inline-start: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1));
   }
 }
 
@@ -214,15 +262,15 @@ $_resize-target-width: 6px;
 }
 
 .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
-  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
-    transition: padding-left var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
+    transition: padding-inline-start var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
   }
 }
 
 // Reserve traffic-light space only while the native window is not fullscreen.
 .openbitfun-app-layout--macos:not(.openbitfun-app-layout--fullscreen-chrome) .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
-  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
-    padding-left: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1) + 72px);
+  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
+    padding-inline-start: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1) + 72px);
   }
 }
 
@@ -243,11 +291,12 @@ $_resize-target-width: 6px;
 
 @media (prefers-reduced-motion: reduce) {
   .openbitfun-app-layout--macos .openbitfun-workspace-body__collapsed-nav > .openbitfun-nav-bar,
-  .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
+  .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
     transition: none;
   }
 
-  .openbitfun-workspace-body__scene-surface::after {
+  .openbitfun-workspace-body__scene-surface::after,
+  .openbitfun-workspace-body__nav-grip {
     transition: none;
   }
 }

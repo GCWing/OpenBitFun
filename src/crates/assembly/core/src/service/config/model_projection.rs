@@ -42,6 +42,7 @@ pub fn model_summary(model: &AIModelConfig) -> ModelSummary {
         enabled: model.enabled,
         context_window: model.context_window,
         max_tokens: model.max_tokens,
+        max_images_per_request: model.max_images_per_request,
         api_key_configured: !model.api_key.is_empty(),
         custom_header_names,
         custom_request_body_configured: model.custom_request_body.is_some(),
@@ -49,6 +50,9 @@ pub fn model_summary(model: &AIModelConfig) -> ModelSummary {
             AuthConfig::ApiKey => "api_key".to_string(),
             AuthConfig::Subscription { provider, .. } => {
                 format!("subscription:{provider:?}").to_ascii_lowercase()
+            }
+            AuthConfig::SubscriptionPool { provider, .. } => {
+                format!("subscription_pool:{provider:?}").to_ascii_lowercase()
             }
         }),
     }
@@ -62,10 +66,11 @@ pub fn model_list_projection(
         models: models.iter().map(model_summary).collect(),
         primary_model_id: resolve_selector(&config.ai, &config.ai.default_models.primary),
         fast_model_id: resolve_selector(&config.ai, &config.ai.default_models.fast),
-        mode_default_model_id: resolve_model_selector(
-            &config.ai,
-            &config.ai.agent_model_defaults.mode,
-        ),
+        mode_default_model_id: config
+            .ai
+            .mode_model_reference()
+            .ok()
+            .and_then(|reference| resolve_model_selector(&config.ai, &reference)),
     }
 }
 

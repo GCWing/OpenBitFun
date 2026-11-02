@@ -19,6 +19,7 @@ export type SceneTabId =
   | 'settings'
   | 'file-viewer'
   | 'profile'
+  | 'personal-overview'
   | 'agents'
   | 'skills'
   | 'ecosystem-compatibility'
@@ -30,6 +31,7 @@ export type SceneTabId =
   | 'insights'
   | 'shell'
   | `content:${string}`
+  | `project-resources:${string}`
   | `session:${string}`
   | `miniapp:${string}`;
 
@@ -73,7 +75,11 @@ export interface SceneTabDef {
 /** Runtime instance of an open scene. */
 export interface SceneTab {
   id: SceneTabId;
+  /** Legacy tabs without a location open in the primary pane. */
+  pane?: 'primary' | 'secondary';
   session?: SessionSceneTarget;
+  /** Recently opened sessions in this workspace, newest first (including current). */
+  sessionHistory?: string[];
   /** Reference to content state; the tab never owns an editor buffer. */
   contentId?: string;
   /** User ordering preference; independent of closability. */

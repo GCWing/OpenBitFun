@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Icon Studio V2.0.2</title></head>
+<body>
+  <main class="studio">
+    <header class="topbar">
+      <div class="brand"><strong data-i18n="title"></strong><span class="version">V2.0.2</span><span class="tagline" data-i18n="tagline"></span></div>
+      <div class="actions"><button id="import" data-i18n="import"></button><button id="export" class="primary" data-i18n="svg"></button><button id="language" data-i18n="language"></button><button id="theme" data-i18n="theme" hidden></button></div>
+    </header>
+    <input id="file" type="file" accept="image/png,image/jpeg,image/webp,.json" hidden />
+    <div class="editor-layout">
+      <aside class="left-panel">
+        <label for="name" data-i18n="name"></label><input id="name" type="text" value="icon" maxlength="80" />
+        <div class="button-row"><button id="new" data-i18n="new"></button><button id="project" data-i18n="project"></button></div>
+        <h2 data-i18n="tools"></h2>
+        <div id="tools" class="tool-grid" role="toolbar" data-i18n-aria="tools">
+          <button data-tool="select" data-i18n="select" aria-pressed="true"></button><button data-tool="node" data-i18n="node" aria-pressed="false"></button>
+          <button data-tool="pen" data-i18n="pen" aria-pressed="false"></button><button data-tool="pencil" data-i18n="pencil" aria-pressed="false"></button>
+          <button data-tool="line" data-i18n="line" aria-pressed="false"></button><button data-tool="rect" data-i18n="rect" aria-pressed="false"></button>
+          <button data-tool="ellipse" data-i18n="ellipse" aria-pressed="false"></button>
+        </div>
+        <div class="button-row"><button id="undo" data-i18n="undo"></button><button id="redo" data-i18n="redo"></button></div>
+        <h2 data-i18n="templates"></h2><div class="button-row"><button id="home" data-i18n="home"></button><button id="download-starter" data-i18n="download"></button></div>
+        <h2 data-i18n="layers"></h2><div id="layers" class="layers"></div>
+        <div class="button-row compact"><button id="duplicate" data-i18n="duplicate"></button><button id="delete" data-i18n="delete"></button></div>
+        <div class="button-row compact"><button id="raise" data-i18n="up"></button><button id="lower" data-i18n="down"></button></div>
+      </aside>
+      <section class="canvas-panel">
+        <div class="canvas-toolbar">
+          <label><input id="grid" type="checkbox" checked /><span data-i18n="grid"></span></label>
+          <label><span data-i18n="snap"></span><select id="snap"><option value="0" data-i18n="off"></option><option value="0.5" selected>0.5px</option><option value="1">1px</option></select></label>
+          <label><span data-i18n="zoom"></span><select id="zoom"><option value="360">1500%</option><option value="480" selected>2000%</option><option value="720">3000%</option><option value="960">4000%</option></select></label>
+        </div>
+        <div id="viewport" class="viewport">
+          <svg id="canvas" class="drawing-canvas" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="480" height="480" tabindex="0" role="application" data-i18n-aria="canvas">
+            <defs><pattern id="pixel-grid" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M1 0H0V1" class="grid-line" /></pattern></defs>
+            <rect x="0" y="0" width="24" height="24" class="canvas-bg" />
+            <image id="reference-image" x="0" y="0" width="24" height="24" preserveAspectRatio="xMidYMid meet" opacity="0.25" pointer-events="none" />
+            <rect id="grid-overlay" x="0" y="0" width="24" height="24" fill="url(#pixel-grid)" pointer-events="none" />
+            <rect x="2" y="2" width="20" height="20" class="safe-area" pointer-events="none" />
+            <g id="art"></g><g id="draft"></g><g id="handles"></g>
+          </svg>
+        </div>
+        <div class="canvas-footer"><span data-i18n="guide"></span><span id="node-count"></span></div>
+        <section class="preview-panel"><h2 data-i18n="preview"></h2><div id="previews" class="previews"></div></section>
+        <details class="code-panel"><summary data-i18n="code"></summary><textarea id="code" readonly spellcheck="false" data-i18n-aria="code"></textarea><button id="copy" data-i18n="copy"></button><p class="hint" data-i18n="noRasterExport"></p></details>
+      </section>
+      <aside class="right-panel">
+        <h2 data-i18n="properties"></h2><p id="no-selection" class="hint" data-i18n="noSelection"></p>
+        <fieldset id="properties" disabled>
+          <label for="layer-name" data-i18n="layerName"></label><input id="layer-name" maxlength="80" />
+          <label class="check"><input id="visible" type="checkbox" /><span data-i18n="visible"></span></label>
+          <div class="fields"><label>X<input id="shape-x" type="number" step="0.5" /></label><label>Y<input id="shape-y" type="number" step="0.5" /></label><label>W<input id="shape-w" type="number" min="0.1" step="0.5" /></label><label>H<input id="shape-h" type="number" min="0.1" step="0.5" /></label></div>
+          <label class="check"><input id="fill" type="checkbox" /><span data-i18n="filled"></span></label><label class="check"><input id="stroke" type="checkbox" /><span data-i18n="stroked"></span></label>
+          <label class="field-label"><span data-i18n="width"></span><input id="stroke-width" type="number" min="0.1" max="8" step="0.25" value="2" /></label>
+          <div class="fields"><label><span data-i18n="cap"></span><select id="cap"><option value="round" data-i18n="round"></option><option value="butt" data-i18n="butt"></option><option value="square" data-i18n="square"></option></select></label><label><span data-i18n="join"></span><select id="join"><option value="round" data-i18n="round"></option><option value="miter" data-i18n="miter"></option><option value="bevel" data-i18n="bevel"></option></select></label></div>
+          <button id="fit" class="wide" data-i18n="fit"></button><button id="center" class="wide" data-i18n="center"></button><button id="close-path" class="wide" data-i18n="closePath"></button>
+        </fieldset>
+        <section id="node-properties" hidden><h2 data-i18n="nodeTitle"></h2><div class="fields"><label>X<input id="node-x" type="number" step="0.5" data-i18n-aria="nodeX" /></label><label>Y<input id="node-y" type="number" step="0.5" data-i18n-aria="nodeY" /></label></div><div class="button-row"><button id="smooth" data-i18n="smooth"></button><button id="corner" data-i18n="corner"></button></div><div class="button-row"><button id="insert-node" data-i18n="insert"></button><button id="delete-node" data-i18n="removeNode"></button></div></section>
+        <section class="trace-panel"><h2 data-i18n="traceTitle"></h2>
+          <fieldset id="trace-controls" disabled>
+            <label for="trace-contrast"><span data-i18n="contrast"></span><output id="trace-contrast-value">28</output></label><input id="trace-contrast" type="range" min="1" max="180" value="28" />
+            <label for="trace-simplify"><span data-i18n="simplify"></span><output id="trace-simplify-value">1.5</output></label><input id="trace-simplify" type="range" min="0.25" max="4" step="0.25" value="1.5" />
+            <label for="trace-smoothing"><span data-i18n="smoothing"></span><output id="trace-smoothing-value">0.7</output></label><input id="trace-smoothing" type="range" min="0" max="1" step="0.1" value="0.7" />
+            <label for="trace-minArea"><span data-i18n="minArea"></span><output id="trace-minArea-value">6</output></label><input id="trace-minArea" type="range" min="1" max="128" value="6" />
+            <button id="trace" class="wide" data-i18n="trace"></button>
+          </fieldset><p class="hint" data-i18n="traceHelp"></p><p class="hint" data-i18n="sampling"></p>
+          <div id="reference-controls" hidden><h2 data-i18n="reference"></h2><label class="check"><input id="show-reference" type="checkbox" checked /><span data-i18n="hideRef"></span></label><label for="reference-opacity" data-i18n="opacity"></label><input id="reference-opacity" type="range" min="0" max="1" value="0.25" step="0.05" /></div>
+        </section>
+      </aside>
+    </div>
+    <footer><p id="status" role="status" aria-live="polite"></p><p id="instructions" data-i18n="help"></p><p class="hint" data-i18n="autosave"></p></footer>
+  </main>
+</body>
+</html>

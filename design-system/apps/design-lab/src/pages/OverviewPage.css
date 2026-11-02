@@ -44,16 +44,6 @@
   min-width: 0;
 }
 
-/* Typography: the homepage runs the product site's own face — IBM Plex Mono, regular weight,
-   tight leading, slightly negative tracking. The topbar follows on every route, because shell
-   chrome that changed font between pages would read as a bug. Component instances inside the
-   preview frame keep the design system's published type roles, so their text stays on the sans
-   stack. Every other page still renders in the design system's own sans. */
-.lab-shell .lab-page.design-home,
-.lab-topbar {
-  font-family: var(--_lab-font);
-}
-
 /* The headline states the design stance and what it is a stance about: one sentence, no
    subtitle. Weight is the real 600 cut (see the @font-face block in design-layout.css) — the
    reference site has no 600, and a synthesised bold on a display-size mono headline looks
@@ -65,9 +55,8 @@
 .design-home-slogan {
   max-width: 60rem;
   margin: 0;
-  font-family: var(--_lab-font);
   font-size: var(--openbitfun-type-display-fluid-title-font-size);
-  font-weight: var(--openbitfun-font-weight-semibold);
+  font-weight: var(--openbitfun-type-display-sm-font-weight);
   line-height: var(--openbitfun-type-display-fluid-title-line-height);
   letter-spacing: var(--openbitfun-type-display-fluid-title-letter-spacing);
   text-wrap: balance;
@@ -250,13 +239,13 @@
 /* The display PageHeader is sized in the page's own scale; inside the frame it follows the frame
    instead, so the window stays a legible picture at every width the page allows. */
 .design-home-preview-welcome-header [data-openbitfun-part="heading"] {
-  font-size: clamp(var(--openbitfun-font-size-2xl), 4.6cqi, var(--openbitfun-type-heading-welcome-font-size));
+  font-size: clamp(var(--openbitfun-type-heading-panel-font-size), 4.6cqi, var(--openbitfun-type-heading-welcome-font-size)); /* typography-audit: allow -- This scaled specimen keeps fluid container/viewport geometry between the established type scale bounds. */
   text-wrap: balance;
 }
 
 .design-home-preview-welcome-header [data-openbitfun-part="description"] {
   color: var(--openbitfun-color-content-secondary);
-  font-size: clamp(var(--openbitfun-font-size-sm), 2.2cqi, var(--openbitfun-type-page-intro-font-size));
+  font-size: clamp(var(--openbitfun-type-body-sm-font-size), 2.2cqi, var(--openbitfun-type-page-intro-font-size)); /* typography-audit: allow -- This scaled specimen keeps fluid container/viewport geometry between the established type scale bounds. */
 }
 
 .design-home-preview-composer {
@@ -293,8 +282,8 @@
   margin: 0;
   /* One step under the hero's sentence and two over the steps: the band is a closing note, not a
      second headline. Fluid so it grows with the window like the rest of the page's display type. */
-  font-size: clamp(var(--openbitfun-font-size-3xl), 2.4vw, var(--openbitfun-type-display-sm-font-size));
-  font-weight: var(--openbitfun-font-weight-semibold);
+  font-size: clamp(var(--openbitfun-font-size-3xl), 2.4vw, var(--openbitfun-type-display-sm-font-size)); /* typography-audit: allow -- This scaled specimen keeps fluid container/viewport geometry between the established type scale bounds. */
+  font-weight: var(--openbitfun-type-display-sm-font-weight);
   line-height: var(--openbitfun-type-display-sm-line-height);
   letter-spacing: var(--openbitfun-type-display-sm-letter-spacing);
   text-wrap: balance;
@@ -320,10 +309,6 @@
    tile; if a surface-inverse token is ever added, this is the line that should switch to it. */
 .design-home-footer {
   --_lab-band-pad-block: calc(var(--openbitfun-space-12) * var(--_lab-home-air));
-  /* The band is the viewport, not the page's column, so it reproduces the column gutter in its own
-     padding: the shell's auto margin plus the page's 36px inner padding. Below the shell's width cap
-     that expression goes negative, which is what the max() floors. */
-  --_lab-column-gutter: max(var(--openbitfun-space-6), calc((100vw - var(--_lab-content-width)) / 2 + var(--openbitfun-space-6)));
   --_lab-on-dark: var(--openbitfun-color-content-on-dark);
   --_lab-on-dark-secondary: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 72%, transparent);
   --_lab-on-dark-muted: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 50%, transparent);
@@ -332,15 +317,11 @@
   display: flex;
   flex-direction: column;
   gap: calc(var(--openbitfun-space-12) * var(--_lab-home-air));
-  /* Full bleed: the band leaves the page's centred column and runs to both edges, so it carries no
-     radius and the page keeps no block-end padding under it. */
-  inline-size: 100vw;
-  margin-inline: calc(50% - 50vw);
+  /* Full-bleed geometry and column alignment are owned by design-layout.css. */
   /* The band opens on the page's full rhythm but closes on half of it: the small print is the last
      line on the page, so the space under it only has to hold the band's edge rather than separate
      it from anything. */
   padding-block: var(--_lab-band-pad-block) calc(var(--openbitfun-space-6) * var(--_lab-home-air));
-  padding-inline: var(--_lab-column-gutter);
   color: var(--_lab-on-dark);
   background: var(--openbitfun-color-content-on-light);
 }
@@ -372,10 +353,6 @@
   margin: 0;
   color: var(--_lab-on-dark);
   text-decoration: none;
-  font-size: var(--_lab-wordmark-size);
-  font-weight: var(--_lab-wordmark-weight);
-  letter-spacing: var(--_lab-wordmark-tracking);
-  line-height: var(--_lab-wordmark-leading);
 }
 
 .design-home-footer-wordmark-arrow {
@@ -443,7 +420,7 @@
   font-size: var(--openbitfun-type-heading-section-font-size);
   font-weight: var(--openbitfun-type-heading-section-font-weight);
   line-height: var(--openbitfun-type-heading-section-line-height);
-  letter-spacing: var(--openbitfun-letter-spacing-tight);
+  letter-spacing: var(--openbitfun-type-display-sm-letter-spacing);
 }
 
 .design-home-footer-path h2 a {

@@ -58,6 +58,7 @@ pub enum ProductFeatureGroup {
     BrowserWeb,
     ComputerUse,
     ImageAnalysis,
+    ImageGeneration,
     MiniApp,
     Pages,
     Creation,
@@ -74,6 +75,7 @@ impl ProductFeatureGroup {
             Self::BrowserWeb => "browser-web",
             Self::ComputerUse => "computer-use",
             Self::ImageAnalysis => "image-analysis",
+            Self::ImageGeneration => "image-generation",
             Self::MiniApp => "miniapp",
             Self::Pages => "pages",
             Self::Creation => "creation",
@@ -98,6 +100,7 @@ impl From<ToolPackFeatureGroup> for ProductFeatureGroup {
             ToolPackFeatureGroup::BrowserWeb => Self::BrowserWeb,
             ToolPackFeatureGroup::ComputerUse => Self::ComputerUse,
             ToolPackFeatureGroup::ImageAnalysis => Self::ImageAnalysis,
+            ToolPackFeatureGroup::ImageGeneration => Self::ImageGeneration,
             ToolPackFeatureGroup::MiniApp => Self::MiniApp,
             ToolPackFeatureGroup::Pages => Self::Pages,
             ToolPackFeatureGroup::Creation => Self::Creation,
@@ -116,6 +119,7 @@ impl From<ProductFeatureGroup> for ToolPackFeatureGroup {
             ProductFeatureGroup::BrowserWeb => Self::BrowserWeb,
             ProductFeatureGroup::ComputerUse => Self::ComputerUse,
             ProductFeatureGroup::ImageAnalysis => Self::ImageAnalysis,
+            ProductFeatureGroup::ImageGeneration => Self::ImageGeneration,
             ProductFeatureGroup::MiniApp => Self::MiniApp,
             ProductFeatureGroup::Pages => Self::Pages,
             ProductFeatureGroup::Creation => Self::Creation,
@@ -170,7 +174,7 @@ impl ProductCapabilityPack {
 pub enum DeliveryProfile {
     ProductFull,
     Desktop,
-    DataMigrator,
+    DataTools,
     Cli,
     Server,
     Remote,
@@ -185,7 +189,7 @@ impl DeliveryProfile {
         match self {
             Self::ProductFull => "product-full",
             Self::Desktop => "desktop",
-            Self::DataMigrator => "data-migrator",
+            Self::DataTools => "data-tools",
             Self::Cli => "cli",
             Self::Server => "server",
             Self::Remote => "remote",
@@ -200,7 +204,7 @@ impl DeliveryProfile {
         &[
             Self::ProductFull,
             Self::Desktop,
-            Self::DataMigrator,
+            Self::DataTools,
             Self::Cli,
             Self::Server,
             Self::Remote,
@@ -262,7 +266,7 @@ const PRODUCT_DELIVERY_PROFILE_ENTRIES: &[ProductDeliveryProfileEntry] = &[
         ProductCoreDependencyMode::ProductFullCompatibility,
     ),
     ProductDeliveryProfileEntry::new(
-        DeliveryProfile::DataMigrator,
+        DeliveryProfile::DataTools,
         ProductCoreDependencyMode::ExplicitCoreCapabilityClosure,
     ),
     ProductDeliveryProfileEntry::new(
@@ -956,7 +960,7 @@ pub fn product_extension_capabilities_for_profile(
         DeliveryProfile::Server
         | DeliveryProfile::Remote
         | DeliveryProfile::Acp
-        | DeliveryProfile::DataMigrator
+        | DeliveryProfile::DataTools
         | DeliveryProfile::Web
         | DeliveryProfile::MobileWeb
         | DeliveryProfile::Sdk => PluginRuntimeUnavailableReason::UnsupportedProfile,
@@ -1153,7 +1157,7 @@ fn product_capability_registry_for_profile(profile: DeliveryProfile) -> ProductC
         }
         DeliveryProfile::Server
         | DeliveryProfile::Remote
-        | DeliveryProfile::DataMigrator
+        | DeliveryProfile::DataTools
         | DeliveryProfile::Web
         | DeliveryProfile::MobileWeb => {
             ProductCapabilityRegistry::new(EMPTY_PRODUCT_CAPABILITY_PACKS)

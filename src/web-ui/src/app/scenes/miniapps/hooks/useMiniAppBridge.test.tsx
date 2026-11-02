@@ -218,6 +218,45 @@ describe('useMiniAppBridge floating Agent routing', () => {
     } finally { window.removeEventListener(MINIAPP_COMPOSER_FOCUS_EVENT, record); }
   });
 
+  it('delivers image attachments to the MiniApp and acknowledges the typed send only after Agent acceptance', async () => {
+    await act(async () => { root.render(<BridgeHarness />); });
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    await dispatchRpc(iframe, 1, 'chat.claimComposer');
+    await dispatchRpc(iframe, 2, 'agent.ensureSession', { appDataWorkspace: 'chat' });
+    await dispatchRpc(iframe, 3, 'chat.focusSession', { sessionId: 'session-1' });
+    const token = useMiniAppStore.getState().composerClaims[app.id]!.token;
+    const post = vi.spyOn(iframe.contentWindow!, 'postMessage');
+    const imageContexts = [{ id: 'reference', data_url: 'data:image/png;base64,YQ==', mime_type: 'image/png' }];
+    const completion = requestMiniAppComposerMessage({
+      token, text: 'Follow the reference', sessionId: 'session-1', imageContexts,
+    }, undefined, { resolveOnAgentRun: true });
+    const payload = post.mock.calls.map(([message]) => message)
+      .find(message => message.event === 'chat:userMessage').payload;
+    expect(payload.imageContexts).toEqual(imageContexts);
+    let accepted = false;
+    void completion.then(() => { accepted = true; });
+    await Promise.resolve();
+    expect(accepted).toBe(false);
+    await dispatchRpc(iframe, 4, 'agent.run', {
+      prompt: 'internal prompt', sessionId: payload.sessionId,
+      imageContexts: payload.imageContexts, chatRequestId: payload.requestId,
+    });
+    await completion;
+    expect(mocks.agentRun.mock.calls[0][3].imageContexts).toEqual(imageContexts);
+    expect(accepted).toBe(true);
+  });
+
+  it('rejects malformed image options rather than silently dropping them', async () => {
+    await act(async () => { root.render(<BridgeHarness />); });
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const post = vi.spyOn(iframe.contentWindow!, 'postMessage');
+    await dispatchRpc(iframe, 1, 'agent.run', { prompt: 'look', imageContexts: 'bad' });
+    expect(mocks.agentRun).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({
+      id: 1, error: expect.objectContaining({ message: expect.stringContaining('imageContexts must be an array') }),
+    }), '*');
+  });
+
   it('rejects malformed Agent context files instead of dropping them', async () => {
     await act(async () => {
       root.render(<BridgeHarness />);

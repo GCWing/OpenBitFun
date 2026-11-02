@@ -7,6 +7,7 @@ import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneSt
 import { isSessionSceneId, type SessionSceneTarget } from '../components/SceneBar/types';
 import { startSessionPaneLayoutSync } from '../scenes/session/sessionPaneLayoutSync';
 import { resolveSessionSceneTarget, resolveSessionSceneWorkspace } from './sessionSceneTarget';
+import { selectedSessionTab, tabPane } from '../workbench/scenePaneModel';
 
 const log = createLogger('SessionSceneLifecycle');
 
@@ -81,8 +82,9 @@ export function startSessionSceneLifecycle(): () => void {
       // The pending navigation owns the upcoming selection. Bootstrap/hydrate
       // notifications cannot replace its destination or steal its focus.
       if (selectionChanged && selected && !scenes.pendingTabId) {
-        if (isSessionSceneId(scenes.activeTabId)) {
-          scenes.openSessionScene(selected);
+        const presentation = selectedSessionTab(scenes);
+        if (presentation || isSessionSceneId(scenes.activeTabId)) {
+          scenes.openSessionScene(selected, { focus: !presentation || scenes.focusedPane === tabPane(presentation) });
         } else {
           scenes.updateSessionScene(selected);
         }
@@ -90,18 +92,20 @@ export function startSessionSceneLifecycle(): () => void {
       const source = flowChatStore.getState();
       const targets = new Map<string, SessionSceneTarget>();
       for (const tab of useSceneStore.getState().openTabs) {
-        const session = tab.session?.surfaceId === surfaceId
-          ? source.sessions.get(tab.session.sessionId) : undefined;
-        // Retire only explicitly closed workspace tabs. Cached sessions remain
-        // recoverable, and an offline remote workspace is not a close event.
-        if (session && closedWorkspace && resolveSessionSceneWorkspace(session, [closedWorkspace])) continue;
-        if (session) targets.set(session.sessionId, scenes.pendingTabId && tab.session
-          // Keep the transaction's identity until it commits. Metadata may
-          // acquire a workspace id while activation is awaiting the host.
-          ? tab.session
-          : resolveSessionSceneTarget(
-            session, workspaceManager.getState().openedWorkspaces.values(), surfaceId,
-          ));
+        if (!tab.session || tab.session.surfaceId !== surfaceId) continue;
+        for (const sessionId of new Set([tab.session.sessionId, ...tab.sessionHistory ?? []])) {
+          const session = source.sessions.get(sessionId);
+          // Retire only explicitly closed workspace tabs. Cached sessions remain
+          // recoverable, and an offline remote workspace is not a close event.
+          if (session && closedWorkspace && resolveSessionSceneWorkspace(session, [closedWorkspace])) continue;
+          if (session) targets.set(sessionId, scenes.pendingTabId
+            // Keep the transaction's identity until it commits. Metadata may
+            // acquire a workspace id while activation is awaiting the host.
+            ? { ...tab.session, sessionId }
+            : resolveSessionSceneTarget(
+              session, workspaceManager.getState().openedWorkspaces.values(), surfaceId,
+            ));
+        }
       }
       useSceneStore.getState().reconcileSessionScenes(targets);
     } finally {

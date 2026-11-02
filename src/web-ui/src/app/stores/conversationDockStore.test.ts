@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { dockConversationKey, useConversationDockStore, type DockConversation } from './conversationDockStore';
 
 const control: DockConversation = { surfaceId: 'local', workspaceKey: 'control', sessionId: 'control', kind: 'control' };
 const task: DockConversation = { surfaceId: 'local', workspaceKey: 'project', sessionId: 'task', kind: 'session' };
 describe('conversation dock references', () => {
-  beforeEach(() => useConversationDockStore.setState({ entries: [], activeBySurface: {}, drafts: {}, open: false }));
+  beforeEach(() => {
+    activateSurface('local');
+    useConversationDockStore.setState(useConversationDockStore.getInitialState());
+  });
   it('deduplicates sessions within a device and keeps the control reference pinned', () => {
     const dock = useConversationDockStore.getState();
     dock.add(control); dock.add(task); dock.add(task); dock.add({ ...task, surfaceId: 'peer' });
@@ -56,5 +60,42 @@ describe('conversation dock references', () => {
     dock.add(rebound, false);
     expect(useConversationDockStore.getState().entries).toEqual([control, rebound]);
     expect(useConversationDockStore.getState().activeBySurface.local).toBe(dockConversationKey(rebound));
+  });
+  it.each([false, true])('collapses Hi after the final app closes (pinned control: %s)', pinned => {
+    const dock = useConversationDockStore.getState();
+    const app: DockConversation = { ...task, kind: 'miniapp', appId: 'slides' };
+    if (pinned) dock.add(control);
+    dock.add(app); dock.setOpen(true);
+    dock.closeMiniApp('local', 'slides');
+    expect(useConversationDockStore.getState().open).toBe(false);
+    expect(useConversationDockStore.getState().entries).toEqual(pinned ? [control] : []);
+  });
+  it.each(['session', 'miniapp'] as const)('keeps Hi expanded when another %s tab remains', kind => {
+    const dock = useConversationDockStore.getState();
+    const remaining: DockConversation = { ...task, kind, appId: kind === 'miniapp' ? 'chart' : undefined };
+    dock.add(control); dock.add(remaining);
+    dock.add({ ...task, kind: 'miniapp', sessionId: 'slides-topic', appId: 'slides' });
+    dock.setOpen(true); dock.closeMiniApp('local', 'slides');
+    expect(useConversationDockStore.getState().open).toBe(true);
+    expect(useConversationDockStore.getState().entries).toEqual([control, remaining]);
+  });
+  it('collapses after close even when composer cleanup removed the app reference first', () => {
+    const dock = useConversationDockStore.getState();
+    dock.add(control); dock.add({ ...task, kind: 'miniapp', appId: 'slides' });
+    dock.setOpen(true); dock.remove(dockConversationKey(task));
+    expect(useConversationDockStore.getState().open).toBe(true);
+    dock.closeMiniApp('local', 'slides');
+    expect(useConversationDockStore.getState().open).toBe(false);
+  });
+  it('does not count another device\'s tabs or collapse its visible Hi', () => {
+    const dock = useConversationDockStore.getState();
+    dock.add({ ...task, surfaceId: 'peer' });
+    dock.add({ ...task, kind: 'miniapp', appId: 'slides' }); dock.setOpen(true);
+    dock.closeMiniApp('local', 'slides');
+    expect(useConversationDockStore.getState().open).toBe(false);
+    activateSurface('peer'); dock.setOpen(true);
+    dock.closeMiniApp('local', 'slides');
+    expect(useConversationDockStore.getState().open).toBe(true);
+    expect(useConversationDockStore.getState().entries).toEqual([{ ...task, surfaceId: 'peer' }]);
   });
 });

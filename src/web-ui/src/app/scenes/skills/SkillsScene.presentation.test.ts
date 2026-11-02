@@ -10,41 +10,49 @@ function readSibling(filename: string): string {
 }
 
 describe('Skills scene presentation', () => {
-  it('keeps the installed collection in one continuous scroll region', () => {
+  it('keeps the installed collection in the shared page scroll region', () => {
     const source = readSibling('./SkillsScene.tsx');
 
-    expect(source).toContain('{installedFiltered.map((skill) => (');
-    expect(source).toMatch(/<ScrollArea\s+className="skills-main__grid"/);
-    expect(source).not.toContain('INSTALLED_PAGE_SIZE');
-    expect(source).not.toContain('skills-installed__pagination');
+    expect(source).toContain('{installedPagination.skills.map((skill) => (');
+    expect(source).toContain('<ScrollArea className="skills-scene__scroll" ref={scrollRef}>');
+    expect(source).not.toMatch(/<ScrollArea\s+className="skills-main__/);
+    expect(source.match(/<SkillsPagination\b/g)).toHaveLength(2);
+    expect(source.match(/<SkillsGrid\b/g)).toHaveLength(2);
+    expect(source).toContain('total={installedFiltered.length}');
   });
 
-  it('lets short lists end with their final row and constrains long lists to the scene', () => {
+  it('lays out skill items in two columns inside the page scroll region', () => {
     const stylesheet = readSibling('./SkillsScene.scss');
-    const listStylesheet = readSibling('./components/_SkillsList.scss');
-    const shellStart = stylesheet.indexOf('.skills-main__list-shell {');
-    const shellEnd = stylesheet.indexOf('.skills-main__list-header,', shellStart);
-    const scrollStart = stylesheet.indexOf('.skills-main__grid,');
-    const scrollEnd = stylesheet.indexOf('.skills-main__grid {', scrollStart);
+    const gridStart = stylesheet.indexOf('.skills-main__grid,');
+    const gridEnd = stylesheet.indexOf('.skills-card-skeleton {', gridStart);
 
-    expect(stylesheet.slice(shellStart, shellEnd)).toContain('overflow: hidden;');
-    expect(stylesheet.slice(shellStart, shellEnd)).toContain('padding: var(--openbitfun-space-2) var(--openbitfun-space-6) var(--openbitfun-space-6);');
-    expect(stylesheet.slice(scrollStart, scrollEnd)).toContain('flex: 0 1 auto;');
-    expect(stylesheet).toContain('@include skills-list.row;');
-    expect(listStylesheet).toContain('min-block-size: 88px;');
+    expect(stylesheet.slice(gridStart, gridEnd)).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(stylesheet.slice(gridStart, gridEnd)).not.toContain('overflow:');
+    expect(stylesheet).toContain('scrollbar-gutter: stable both-edges;');
+    expect(stylesheet).toContain('@container skills-content (max-width: 480px)');
+    expect(stylesheet).toContain('grid-template-columns: minmax(0, 1fr);');
   });
 
-  it('uses the ecosystem navigation width and shared content typography', () => {
+  it('uses a centered title and a compact market entry above the shared content frame', () => {
     const stylesheet = readSibling('./SkillsScene.scss');
+    const source = readSibling('./SkillsScene.tsx');
+    const titleStart = stylesheet.indexOf('.skills-scene__title {');
+    const titleEnd = stylesheet.indexOf('\n}', titleStart);
+    const marketStart = source.indexOf('className="skills-scene__market-button"');
+    const marketEnd = source.indexOf('</Button>', marketStart);
 
-    expect(stylesheet).toContain('$skills-sidebar-width: 264px;');
-    expect(stylesheet).toContain('min-height: 32px;');
-    expect(stylesheet).toContain('font-size: var(--openbitfun-type-heading-dialog-font-size);');
+    expect(stylesheet).toContain('@include configLayout.content-frame;');
+    expect(stylesheet.slice(titleStart, titleEnd)).toContain('text-align: center;');
+    expect(source.slice(marketStart, marketEnd)).toContain('variant="text"');
+    expect(source.slice(marketStart, marketEnd)).toContain('size="sm"');
+    expect(source).not.toContain('NavigationPanel');
+    expect(source).not.toContain('skills-navigation');
+    expect(source).not.toContain('titleListAll');
   });
 
   it('presents add skill as the same compact primary action used to create an agent', () => {
     const source = readSibling('./SkillsScene.tsx');
-    const actionStart = source.indexOf('className="skills-content-header__action"');
+    const actionStart = source.indexOf('className="skills-controls__add"');
     const actionEnd = source.indexOf('</Button>', actionStart);
     const action = source.slice(actionStart, actionEnd);
 
@@ -57,36 +65,34 @@ describe('Skills scene presentation', () => {
 
   it('lets the skills page inherit the surrounding scene surface', () => {
     const stylesheet = readSibling('./SkillsScene.scss');
-    const listStylesheet = readSibling('./components/_SkillsList.scss');
     const listSurfaceStart = stylesheet.indexOf('.skills-main__table {');
     const listSurfaceEnd = stylesheet.indexOf('\n}', listSurfaceStart);
-    const surfaceStart = listStylesheet.indexOf('@mixin surface {');
-    const surfaceEnd = listStylesheet.indexOf('\n}', surfaceStart);
-    const headerStart = stylesheet.indexOf('.skills-content-header {');
-    const headerEnd = stylesheet.indexOf('\n}', headerStart);
 
     expect(stylesheet).not.toContain('background: var(--openbitfun-color-surface-canvas);');
-    expect(stylesheet.slice(listSurfaceStart, listSurfaceEnd)).toContain('@include skills-list.surface;');
-    expect(listStylesheet.slice(surfaceStart, surfaceEnd)).toContain('background: transparent;');
-    expect(stylesheet.slice(headerStart, headerEnd)).not.toContain('background:');
+    expect(stylesheet.slice(listSurfaceStart, listSurfaceEnd)).not.toContain('background:');
+    expect(stylesheet.slice(listSurfaceStart, listSurfaceEnd)).not.toContain('border:');
+    expect(readSibling('./components/SkillCard.scss')).toContain('background: var(--openbitfun-color-action-quiet-hover);');
   });
 
-  it('keeps the group scrollbar on the scene edge without moving its content', () => {
-    const stylesheet = readSibling('./components/SkillGroupsView.scss');
-    expect(stylesheet).toContain('--skill-groups-inline-inset: var(--openbitfun-space-6);');
-    expect(stylesheet).toContain(
-      'padding-inline: var(--skill-groups-inline-inset) calc(var(--skill-groups-inline-inset) + var(--openbitfun-space-1));',
-    );
-  });
-
-  it('keeps row navigation and destructive actions as separate compact targets', () => {
-    const source = readSibling('./SkillsScene.tsx');
+  it('aligns the groups with the shared page frame', () => {
     const stylesheet = readSibling('./SkillsScene.scss');
+    expect(stylesheet).toContain('.skills-page .skill-groups {');
+    expect(stylesheet).toContain('--skill-groups-inline-inset: 0px;');
+  });
 
-    expect(source).toContain('className="skills-card__actions"');
-    expect(source).toContain('data-openbitfun-part="installedCardDetails"');
-    expect(source).toContain('data-openbitfun-part="installedCardDelete"');
-    expect(stylesheet).toContain('minmax(120px, 0.85fr) 64px;');
+  it('keeps skill items to two text lines and management actions in the detail view', () => {
+    const source = readSibling('./SkillsScene.tsx');
+    const stylesheet = readSibling('./components/SkillCard.scss');
+    const card = readSibling('./components/SkillCard.tsx');
+
+    expect(source.match(/<SkillCard\b/g)).toHaveLength(2);
+    expect(card).toContain('className="skills-card__actions"');
+    expect(source).not.toContain('data-openbitfun-part="installedCardDelete"');
+    expect(card).not.toContain('lines={2}');
+    expect(source).toContain('data-openbitfun-part="detailStatus"');
+    expect(source).toContain('installed.handleGlobalSkillToggle(selectedInstalledSkill, event.target.checked)');
+    expect(source).toContain('setDeleteTarget(selectedInstalledSkill)');
+    expect(stylesheet).toContain("grid-template-areas: 'identity actions';");
     expect(stylesheet).toContain('.skills-card__actions {');
   });
 });

@@ -106,6 +106,197 @@ describe('MEditorErrorBoundary', () => {
     return { ref, onDirtyChange, onSave, setDocumentValue: (next: string) => setDocumentValue(next) };
   }
 
+  function pasteClipboard(text: string, html = '', metadata: Record<string, string> = {}) {
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: {
+      getData: (type: string) => type === 'text/plain' ? text : type === 'text/html' ? html : metadata[type] ?? '',
+      files: [],
+      types: [...(html ? ['text/plain', 'text/html'] : ['text/plain']), ...Object.keys(metadata)],
+    } });
+    act(() => { getEditor().view.dom.dispatchEvent(event); });
+  }
+
+  function sourceClipboardHtml(source: string): string {
+    const wrapper = document.createElement('div');
+    wrapper.style.whiteSpace = 'pre';
+    for (const line of source.split('\n')) {
+      const row = wrapper.appendChild(document.createElement('div'));
+      const token = row.appendChild(document.createElement('span'));
+      token.textContent = line || '\u00a0';
+    }
+    return wrapper.outerHTML;
+  }
+
+  it.each([
+    { name: 'styled source HTML', withHtml: true, prefix: '', metadata: {} },
+    { name: 'styled source HTML with clipboard headers', withHtml: true, prefix: '<meta charset="utf-8">', metadata: {} },
+    { name: 'Monaco source HTML and Markdown metadata', withHtml: true, prefix: '', metadata: { 'vscode-editor-data': '{"version":1,"mode":"markdown"}' } },
+    { name: 'Markdown editor metadata without HTML', withHtml: false, prefix: '', metadata: { 'vscode-editor-data': '{"version":1,"mode":"markdown"}' } },
+  ])('renders README Markdown copied with $name', async ({ withHtml, prefix, metadata }) => {
+    const readme = '**English** · [中文](README.zh-CN.md)\n\n<div align="center">\n\n<img src="./png/openbitfun-wordmark.png" alt="OpenBitFun" width="520" />\n\n### Built to keep going.\n\nOpenBitFun is an agent workspace.\n\n</div>';
+    const { ref } = await renderEditor('');
+    pasteClipboard(readme, withHtml ? prefix + sourceClipboardHtml(readme) : '', metadata);
+    await act(async () => { await vi.dynamicImportSettled(); });
+    expect(container.querySelector('.ProseMirror strong')?.textContent).toBe('English');
+    expect(container.querySelector('.ProseMirror a')?.getAttribute('href')).toBe('README.zh-CN.md');
+    expect(container.querySelector('.ProseMirror h3')?.textContent).toBe('Built to keep going.');
+    expect(container.querySelector('.ProseMirror > pre')).toBeNull();
+    expect(ref.current?.getValue()).toContain('**English**');
+    act(() => { getEditor().commands.undo(); });
+    expect(ref.current?.getValue()).toBe('');
+  });
+
+  it('keeps non-Markdown source code on the native code-block paste path', async () => {
+    await renderEditor('');
+    const code = '# Python comment\nprint("hello")';
+    pasteClipboard(code, sourceClipboardHtml(code), { 'vscode-editor-data': '{"version":1,"mode":"python"}' });
+    expect(container.querySelector('.ProseMirror pre code')?.textContent).toBe(code);
+    expect(container.querySelector('.ProseMirror h1')).toBeNull();
+  });
+
+  it('honors explicit plain-text paste even when source HTML is present', async () => {
+    await renderEditor('');
+    act(() => { getEditor().view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', keyCode: 16, shiftKey: true, bubbles: true })); });
+    pasteClipboard('# Literal heading', sourceClipboardHtml('# Literal heading'));
+    act(() => { getEditor().view.dom.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', keyCode: 16, bubbles: true })); });
+    expect(getEditor().getText()).toBe('# Literal heading');
+    expect(container.querySelector('.ProseMirror h1')).toBeNull();
+  });
+
+  it('renders pasted Markdown as editable blocks and keeps paste in one undo step', async () => {
+    const { ref } = await renderEditor('Original');
+    act(() => { getEditor().commands.selectAll(); });
+    pasteClipboard('# Role\n\n**Be precise.**\n\n- Return evidence.\n\n```js\nconst value = 1;\n```');
+    expect(container.querySelector('.ProseMirror h1')?.textContent).toBe('Role');
+    expect(container.querySelector('.ProseMirror strong')?.textContent).toBe('Be precise.');
+    expect(container.querySelector('.ProseMirror li')?.textContent).toBe('Return evidence.');
+    expect(container.querySelector('.ProseMirror pre code')?.textContent).toBe('const value = 1;');
+    expect(ref.current?.getValue()).toContain('# Role\n\n**Be precise.**');
+    act(() => { getEditor().commands.undo(); });
+    expect(ref.current?.getValue()).toBe('Original');
+    act(() => { getEditor().commands.redo(); });
+    expect(container.querySelector('.ProseMirror h1')?.textContent).toBe('Role');
+  });
+
+  it('inserts pasted inline Markdown at the selection without replacing surrounding text', async () => {
+    const { ref } = await renderEditor('Before after');
+    act(() => { getEditor().commands.setTextSelection({ from: 8, to: 13 }); });
+    pasteClipboard('**replacement**');
+    expect(container.querySelector('.ProseMirror strong')?.textContent).toBe('replacement');
+    expect(ref.current?.getValue()).toBe('Before **replacement**');
+  });
+
+  it('inherits the current formatting when pasted text has no Markdown formatting', async () => {
+    const { ref } = await renderEditor('**Before after**');
+    act(() => { getEditor().commands.setTextSelection({ from: 8, to: 13 }); });
+    pasteClipboard('replacement');
+    expect(ref.current?.getValue()).toBe('**Before replacement**');
+  });
+
+  it('keeps rich HTML clipboard formatting instead of reparsing its text as Markdown', async () => {
+    await renderEditor('');
+    pasteClipboard('# Literal text', '<h2>Rich title</h2><p><em>Rich emphasis</em></p>');
+    expect(container.querySelector('.ProseMirror h2')?.textContent).toBe('Rich title');
+    expect(container.querySelector('.ProseMirror em')?.textContent).toBe('Rich emphasis');
+    expect(container.querySelector('.ProseMirror h1')).toBeNull();
+  });
+
+  it('preserves literal Markdown when copied from an existing rich-text document', async () => {
+    await renderEditor('');
+    pasteClipboard('# Literal heading', '<p data-pm-slice="1 1 []"># Literal heading</p>');
+    expect(getEditor().getText()).toBe('# Literal heading');
+    expect(container.querySelector('.ProseMirror h1')).toBeNull();
+  });
+
+  it('keeps Markdown syntax literal when pasting into a code block', async () => {
+    await renderEditor('```text\noriginal\n```');
+    act(() => { getEditor().commands.setTextSelection({ from: 1, to: 9 }); });
+    pasteClipboard('# Heading\n\n**literal**');
+    expect(container.querySelector('.ProseMirror pre code')?.textContent).toBe('# Heading\n\n**literal**');
+    expect(container.querySelector('.ProseMirror h1, .ProseMirror strong')).toBeNull();
+  });
+
+  it('keeps explicit plain-text paste equivalent to the native editor behavior', async () => {
+    const pastePlain = () => {
+      act(() => { getEditor().view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', keyCode: 16, shiftKey: true, bubbles: true })); });
+      pasteClipboard('# Heading\n\n**literal**');
+      act(() => { getEditor().view.dom.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', keyCode: 16, bubbles: true })); });
+    };
+    const native = await renderEditor('');
+    getEditor().view.setProps({ clipboardTextParser: undefined });
+    pastePlain();
+    const nativeMarkdown = native.ref.current?.getValue();
+
+    const configured = await renderEditor('');
+    pastePlain();
+    expect(configured.ref.current?.getValue()).toBe(nativeMarkdown);
+    expect(getEditor().getText()).toContain('# Heading');
+    expect(container.querySelector('.ProseMirror h1')).toBeNull();
+  });
+
+  it('keeps task-specific empty-document guidance visible when focused and restores it after clearing', async () => {
+    const onChange = vi.fn();
+    const onDirtyChange = vi.fn();
+    const ref = createRef<EditorInstance>();
+    await act(async () => root.render(
+      <MEditor ref={ref} defaultValue="" placeholder="Empty block" emptyDocumentPlaceholder="Write the system prompt"
+        onChange={onChange} onDirtyChange={onDirtyChange} />,
+    ));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    onChange.mockClear();
+    onDirtyChange.mockClear();
+    expect(container.querySelector('p[data-placeholder]')?.getAttribute('data-placeholder')).toBe('Write the system prompt');
+    act(() => getEditor().view.dom.focus());
+    expect(container.querySelector('p[data-placeholder]')?.getAttribute('data-placeholder')).toBe('Write the system prompt');
+    expect(ref.current?.getValue()).toBe('');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+
+    act(() => getEditor().commands.insertContent('Instructions'));
+    expect(container.querySelector('p[data-placeholder]')).toBeNull();
+    act(() => { getEditor().commands.splitBlock(); });
+    expect(container.querySelector('p[data-placeholder]')?.getAttribute('data-placeholder')).toBe('editor.meditor.inlineAi.triggerHint');
+    act(() => { getEditor().commands.clearContent(); });
+    expect(container.querySelector('p[data-placeholder]')?.getAttribute('data-placeholder')).toBe('Write the system prompt');
+    expect(ref.current?.getValue()).toBe('');
+  });
+
+  it('updates empty-document guidance without replacing the editor, changing content or losing undo', async () => {
+    const onChange = vi.fn();
+    const ref = createRef<EditorInstance>();
+    const renderHint = async (hint: string) => {
+      await act(async () => root.render(<MEditor ref={ref} defaultValue="" emptyDocumentPlaceholder={hint} onChange={onChange} />));
+    };
+    await renderHint('Initial guidance');
+    const editor = getEditor();
+    onChange.mockClear();
+    await renderHint('Updated guidance');
+    expect(getEditor()).toBe(editor);
+    expect(container.querySelector('p[data-placeholder]')?.getAttribute('data-placeholder')).toBe('Updated guidance');
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => editor.commands.insertContent('Draft'));
+    onChange.mockClear();
+    await renderHint('New task guidance');
+    expect(getEditor()).toBe(editor);
+    expect(ref.current?.getValue()).toBe('Draft');
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => { editor.commands.undo(); });
+    expect(ref.current?.getValue()).toBe('');
+    expect(container.querySelector('p[data-placeholder]')?.getAttribute('data-placeholder')).toBe('New task guidance');
+  });
+
+  it('keeps the existing AI hint for consumers without an empty-document override', async () => {
+    await renderEditor('');
+    act(() => getEditor().view.dom.focus());
+    expect(container.querySelector('p[data-placeholder]')?.getAttribute('data-placeholder')).toBe('editor.meditor.inlineAi.triggerHint');
+  });
+
+  it('uses the task-specific hint in source mode too', async () => {
+    await act(async () => root.render(<MEditor defaultValue="" mode="edit" placeholder="Empty block" emptyDocumentPlaceholder="Write the system prompt" />));
+    expect(container.querySelector('textarea')?.placeholder).toBe('Write the system prompt');
+  });
+
   it.each([
     sourceMarkdown,
     '# Before\n\n<div data-custom="yes">HTML</div>\n\nAfter',

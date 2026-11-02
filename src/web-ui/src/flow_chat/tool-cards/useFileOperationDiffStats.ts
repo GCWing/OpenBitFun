@@ -22,7 +22,7 @@ export function useFileOperationDiffStats(items: readonly FlowToolItem[], {
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats>();
   const dispatchSession = hasSessionFileProvider(sessionId);
   const operationIdsKey = JSON.stringify(sessionId && !dispatchSession ? items
-    .filter(item => getToolCardStatus(item) === 'completed'
+    .filter(item => !item.importedSource && getToolCardStatus(item) === 'completed'
       && (snapshotsAvailable || item.toolResult?.result?.snapshot_recorded === true))
     .map(item => item.toolCall?.id).filter(Boolean) : []);
   const operationIds = useMemo(() => new Set<string>(JSON.parse(operationIdsKey)), [operationIdsKey]);

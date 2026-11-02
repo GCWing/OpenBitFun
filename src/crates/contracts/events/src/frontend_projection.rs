@@ -128,6 +128,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
             round_index,
             model_config_id,
             effective_model_name,
+            routing,
         } => Some(AgenticFrontendEvent::new(
             "agentic://model-round-started",
             json!({
@@ -138,6 +139,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "roundIndex": round_index,
                 "modelConfigId": model_config_id,
                 "effectiveModelName": effective_model_name,
+                "routing": routing,
             }),
         )),
         AgenticEvent::TextChunk {
@@ -207,6 +209,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
             success,
             finish_reason,
             has_final_response,
+            background_delivery,
             ..
         } => Some(AgenticFrontendEvent::new(
             "agentic://dialog-turn-completed",
@@ -218,6 +221,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "success": success,
                 "finishReason": finish_reason,
                 "hasFinalResponse": has_final_response,
+                "backgroundDelivery": background_delivery,
             }),
         )),
         AgenticEvent::SessionTitleGenerated {
@@ -231,6 +235,20 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "title": title,
                 "method": method,
                 "timestamp": chrono::Utc::now().timestamp_millis(),
+            }),
+        )),
+        AgenticEvent::PromptSuggestionGenerated {
+            session_id,
+            turn_id,
+            suggestion,
+        } => Some(AgenticFrontendEvent::new(
+            "agentic://prompt-suggestion",
+            // Not `turnId`: clients treat `turnId` as a write to that turn and
+            // drop it once the turn settled, which always precedes this hint.
+            json!({
+                "sessionId": session_id,
+                "sourceTurnId": turn_id,
+                "suggestion": suggestion,
             }),
         )),
         AgenticEvent::DialogTurnCancelled {
@@ -463,6 +481,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
             first_chunk_ms,
             first_visible_output_ms,
             stream_duration_ms,
+            ttft_ms,
             attempt_count,
             failure_category,
             token_details,
@@ -480,6 +499,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "firstChunkMs": first_chunk_ms,
                 "firstVisibleOutputMs": first_visible_output_ms,
                 "streamDurationMs": stream_duration_ms,
+                "ttftMs": ttft_ms,
                 "attemptCount": attempt_count,
                 "failureCategory": failure_category,
                 "tokenDetails": token_details,
@@ -531,6 +551,32 @@ mod tests {
     use openbitfun_core_types::{
         ReasoningContentKind, SessionExecutionTarget, SessionExecutionTargetKind, WorktreeLifecycle,
     };
+
+    #[test]
+    fn turn_failure_projects_recovery_constraint_with_original_provider_facts() {
+        let mut detail = openbitfun_core_types::errors::AiProviderError::from_parts(
+            "Quota exhausted; request_id=original-request".into(),
+            Some("codex".into()),
+            Some("insufficient_quota".into()),
+            Some(402),
+        )
+        .detail();
+        detail.recovery_constraint = Some("account_bound_replay".into());
+        let projected = project_agentic_frontend_event(AgenticEvent::DialogTurnFailed {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            error: "Quota exhausted".into(),
+            error_category: Some(openbitfun_core_types::errors::ErrorCategory::ProviderQuota),
+            error_detail: Some(detail),
+        })
+        .unwrap();
+        let detail = &projected.payload["errorDetail"];
+        assert_eq!(detail["recoveryConstraint"], "account_bound_replay");
+        assert_eq!(detail["category"], "provider_quota");
+        assert_eq!(detail["providerCode"], "insufficient_quota");
+        assert_eq!(detail["httpStatus"], 402);
+        assert_eq!(detail["requestId"], "original-request");
+    }
 
     #[test]
     fn session_created_projects_worktree_binding_fields() {
@@ -613,11 +659,49 @@ mod tests {
             success: Some(true),
             finish_reason: Some("stop".to_string()),
             has_final_response: Some(true),
+            background_delivery: None,
         })
         .expect("projected");
 
         assert_eq!(projected.event_name, "agentic://dialog-turn-completed");
         assert_eq!(projected.payload["durationMs"], 21_206);
+    }
+
+    #[test]
+    fn background_completion_round_trips_and_projects_additive_delivery_facts() {
+        use openbitfun_core_types::background_delivery::{
+            BackgroundDelivery, BackgroundReportDisposition, BackgroundReportPolicy,
+        };
+        let mut delivery = BackgroundDelivery::pending(
+            "any-task".into(),
+            "run".into(),
+            BackgroundReportPolicy::Conditional,
+        );
+        delivery.disposition = BackgroundReportDisposition::Quiet;
+        delivery.resolved_at_ms = Some(1);
+        let event = AgenticEvent::DialogTurnCompleted {
+            session_id: "session".into(),
+            turn_id: "run".into(),
+            total_rounds: 0,
+            total_tools: 0,
+            duration_ms: 0,
+            partial_recovery_reason: None,
+            success: Some(true),
+            finish_reason: Some("background_quiet".into()),
+            has_final_response: Some(false),
+            background_delivery: Some(delivery),
+        };
+        let mut old = serde_json::to_value(&event).unwrap();
+        let restored: AgenticEvent = serde_json::from_value(old.clone()).unwrap();
+        let projected = project_agentic_frontend_event(restored).unwrap();
+        assert_eq!(projected.payload["backgroundDelivery"]["runId"], "run");
+        assert_eq!(
+            projected.payload["backgroundDelivery"]["disposition"],
+            "quiet"
+        );
+        // Legacy payloads lack the additive field and keep their established completion contract.
+        old.as_object_mut().unwrap().remove("background_delivery");
+        assert!(serde_json::from_value::<AgenticEvent>(old).is_ok());
     }
 
     #[test]
@@ -678,6 +762,7 @@ mod tests {
             round_index: 0,
             model_config_id: "model-config".to_string(),
             effective_model_name: "provider-model".to_string(),
+            routing: None,
         })
         .expect("projected");
 
@@ -699,6 +784,7 @@ mod tests {
             first_chunk_ms: None,
             first_visible_output_ms: None,
             stream_duration_ms: None,
+            ttft_ms: Some(35),
             attempt_count: Some(1),
             failure_category: Some("invalid_tool_arguments".to_string()),
             token_details: None,
@@ -707,6 +793,7 @@ mod tests {
 
         assert_eq!(projected.event_name, "agentic://model-round-completed");
         assert_eq!(projected.payload["attemptCount"], 1);
+        assert_eq!(projected.payload["ttftMs"], 35);
     }
 
     #[test]
@@ -786,6 +873,26 @@ mod tests {
         assert_eq!(projected.event_name, "session_title_generated");
         assert_eq!(projected.payload["sessionId"], "session-1");
         assert!(projected.payload["timestamp"].as_i64().is_some());
+    }
+
+    #[test]
+    fn prompt_suggestion_projects_session_scoped_hint() {
+        let projected = project_agentic_frontend_event(AgenticEvent::PromptSuggestionGenerated {
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            suggestion: "Run the tests".to_string(),
+        })
+        .expect("projected");
+
+        assert_eq!(projected.event_name, "agentic://prompt-suggestion");
+        assert_eq!(
+            projected.payload,
+            json!({
+                "sessionId": "session-1",
+                "sourceTurnId": "turn-1",
+                "suggestion": "Run the tests",
+            })
+        );
     }
 
     #[test]

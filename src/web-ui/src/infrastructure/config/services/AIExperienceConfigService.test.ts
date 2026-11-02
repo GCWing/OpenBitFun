@@ -189,6 +189,32 @@ describe('AIExperienceConfigService startup behavior', () => {
     expect(settings.quick_actions).toEqual([]);
   });
 
+  it('keeps prompt suggestion settings unavailable when an older host omits the field', async () => {
+    configApiMock.getConfig.mockResolvedValueOnce({ enable_session_title_generation: false });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    const settings = await aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true });
+
+    expect(settings.enable_prompt_suggestion).toBeUndefined();
+    expect(settings.enable_session_title_generation).toBe(false);
+  });
+
+  it('persists a prompt suggestion opt-out as a single field write', async () => {
+    const persisted = { enable_prompt_suggestion: true, quick_actions: [] as unknown[] };
+    configManagerMock.getConfig.mockResolvedValue(persisted);
+    configManagerMock.setConfig.mockImplementation(async (path: string, value: unknown) => {
+      expect(path).toBe('app.ai_experience.enable_prompt_suggestion');
+      persisted.enable_prompt_suggestion = value as boolean;
+    });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    await aiExperienceConfigService.saveSettings({ enable_prompt_suggestion: false });
+    await aiExperienceConfigService.reload();
+
+    expect(configManagerMock.setConfig).toHaveBeenCalledTimes(1);
+    expect(aiExperienceConfigService.getSettings().enable_prompt_suggestion).toBe(false);
+  });
+
   it('persists a co-author opt-out without overwriting quick actions or voice settings', async () => {
     const persisted = {
       enable_git_commit_coauthor: true,

@@ -59,6 +59,7 @@ export { Avatar, AvatarGroup, type AvatarGroupProps, type AvatarProps, type Avat
 export { Button, type ButtonProps } from "./components/Button";
 export { Capsule, type CapsuleProps } from "./components/Capsule";
 export { Checkbox, type CheckboxProps, type CheckboxSize } from "./components/Checkbox";
+export { ColorPicker, type ColorPickerProps, type ColorPickerLabels } from "./components/ColorPicker";
 export {
   Card,
   CardBody,
@@ -186,6 +187,7 @@ export {
   DialogFooter,
   DialogHeader,
   DialogHeaderActions,
+  DialogHeaderLeading,
   DialogHeading,
   DialogTitle,
   Sheet,
@@ -195,6 +197,7 @@ export {
   type DialogFooterAppearance,
   type DialogFooterProps,
   type DialogHeaderProps,
+  type DialogPreset,
   type DialogProps,
   type DialogSize,
   type SheetPlacement,
@@ -221,6 +224,7 @@ export {
   type NavigationPanelSeparatorProps,
 } from "./components/NavigationPanel";
 export { PageHeader, type PageHeaderProps } from "./components/PageHeader";
+export { SetupWizard, type SetupWizardProps, type SetupWizardStep } from "./components/SetupWizard";
 export { Radio, type RadioProps, type RadioSize } from "./components/Radio";
 export { RollingText, type RollingTextProps } from "./components/RollingText";
 export { ShimmerText, type ShimmerTextProps } from "./components/ShimmerText";
@@ -305,5 +309,7 @@ export {
 } from "./primitives/ThemeRoot";
 
 export { LayersPlusIcon } from "./components/Icon";
-export { SplitView, SplitViewPrimaryDock } from './components/SplitView';
-export type { SplitViewProps, SplitViewMode } from './components/SplitView';
+export { SplitView, SplitViewPrimaryDock, SplitViewSurface } from './components/SplitView';
+export type { SplitViewProps, SplitViewMode, SplitViewHeaderGeometry } from './components/SplitView';
+
+export { FieldAccessibilityProvider } from "./components/Field/FieldAccessibility";

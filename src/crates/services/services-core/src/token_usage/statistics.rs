@@ -76,6 +76,8 @@ pub struct UsageStatisticsEntry {
     pub provider_name: Option<String>,
     pub attribution_status: UsageAttributionStatus,
     pub requests: u32,
+    #[serde(default)]
+    pub unknown_usage_requests: u32,
     pub tokens: u64,
     /// Cache hit ratio (0.0..=1.0) for this entry when any request reported
     /// cache telemetry, otherwise `None`.
@@ -96,6 +98,7 @@ impl UsageStatisticsEntry {
             provider_name: attribution.provider_name,
             attribution_status: attribution.attribution_status,
             requests: 0,
+            unknown_usage_requests: 0,
             tokens: 0,
             cache_hit_rate: None,
             cached_tokens: 0,
@@ -127,6 +130,20 @@ pub struct UsageTrendPoint {
 #[serde(rename_all = "camelCase")]
 pub struct UsageStatistics {
     pub total_requests: u32,
+    #[serde(default)]
+    pub unknown_usage_requests: u32,
+    #[serde(default)]
+    pub failed_requests: u32,
+    #[serde(default)]
+    pub by_account: Vec<AccountUsageStatistics>,
+    /// Frozen request-time channels; legacy records stay explicitly unattributed.
+    #[serde(default)]
+    pub by_channel: Vec<UsageStatisticsEntry>,
+    /// Latest native attempts in this range; legacy records have no invented IDs.
+    #[serde(default)]
+    pub recent_attempts: Vec<UsageAttemptSummary>,
+    #[serde(default)]
+    pub attempts_truncated: bool,
     pub total_tokens: u64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
@@ -143,6 +160,40 @@ pub struct UsageStatistics {
     /// when the requested bucketing would produce too many points).
     pub granularity: UsageGranularity,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountUsageStatistics {
+    pub key: String,
+    /// `subscription`, `subscription_identity_unknown`, `api_key` or
+    /// `historical_unknown`; account lookup never rewrites recorded identity.
+    pub kind: String,
+    pub provider: Option<String>,
+    pub account_id: Option<String>,
+    pub upstream_account_id: Option<String>,
+    pub requests: u32,
+    pub failed_requests: u32,
+    pub unknown_usage_requests: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cached_tokens: u64,
+}
+
+/// Non-secret attempt facts from the ledger, never joined to current credentials.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageAttemptSummary {
+    pub account_key: String,
+    pub timestamp: DateTime<Utc>,
+    pub session_id: String,
+    pub turn_id: String,
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    #[serde(flatten)]
+    pub request: super::types::ModelRequestUsageContext,
+}
+
+const MAX_RECENT_ATTEMPTS: usize = 50;
 
 /// Upper bound on trend points. Very long time ranges (e.g. "all time" with
 /// hourly buckets) are coarsened or truncated to the most recent buckets so the
@@ -176,6 +227,11 @@ where
     F: Fn(&TokenUsageRecord) -> UsageAttribution,
 {
     let mut total_requests = 0u32;
+    let mut unknown_usage_requests = 0u32;
+    let mut failed_requests = 0u32;
+    let mut by_account = HashMap::<String, AccountUsageStatistics>::new();
+    let mut recent_attempts = Vec::<UsageAttemptSummary>::new();
+    let mut native_attempt_count = 0usize;
     let mut total_input = 0u64;
     let mut total_output = 0u64;
     let mut total_cached = 0u64;
@@ -185,15 +241,127 @@ where
     let mut by_model: HashMap<String, UsageStatisticsEntry> = HashMap::new();
     let mut by_group: HashMap<String, UsageStatisticsEntry> = HashMap::new();
     let mut by_endpoint: HashMap<String, UsageStatisticsEntry> = HashMap::new();
+    let mut by_channel: HashMap<String, UsageStatisticsEntry> = HashMap::new();
 
     for record in records {
         total_requests += 1;
-        total_input += record.input_tokens as u64;
-        total_output += record.output_tokens as u64;
-        total_cached += record.cached_tokens as u64;
-        total_cache_write += record.cache_write_tokens as u64;
-        if record.cached_tokens_available {
-            total_cache_reported_input += record.input_tokens as u64;
+        let known = record.usage_is_known();
+        let context = record.request_context();
+        let channel = context
+            .as_ref()
+            .and_then(|request| request.channel.as_ref())
+            .map(|channel| UsageDimensionAttribution {
+                key: format!(
+                    "channel:{}:{}",
+                    channel.model_config_id, channel.binding_fingerprint
+                ),
+                name: channel.name.clone(),
+                provider_name: Some(channel.protocol.clone()),
+                attribution_status: UsageAttributionStatus::Resolved,
+            })
+            .unwrap_or_else(|| UsageDimensionAttribution {
+                key: "legacy_unknown_channel".into(),
+                name: record.effective_model_name.clone(),
+                provider_name: None,
+                attribution_status: UsageAttributionStatus::ConfigIdMissing,
+            });
+        accumulate_entry(&mut by_channel, channel, record);
+        let failed = context
+            .as_ref()
+            .is_some_and(|context| context.outcome == super::types::ModelRequestOutcome::Failed);
+        unknown_usage_requests += u32::from(!known);
+        failed_requests += u32::from(failed);
+        let (key, kind, provider, account_id, upstream_account_id) = match context.as_ref() {
+            Some(context) => match &context.account {
+                Some(account) => (
+                    format!(
+                        "subscription:{}",
+                        serde_json::json!([
+                            account.provider,
+                            account.account_id,
+                            account.upstream_account_id
+                        ])
+                    ),
+                    "subscription",
+                    Some(account.provider.clone()),
+                    Some(account.account_id.clone()),
+                    account.upstream_account_id.clone(),
+                ),
+                None if context.authentication == super::types::UsageAuthenticationKind::ApiKey => {
+                    ("api-key".into(), "api_key", None, None, None)
+                }
+                None => (
+                    "subscription-unknown".into(),
+                    "subscription_identity_unknown",
+                    None,
+                    None,
+                    None,
+                ),
+            },
+            None => (
+                "historical-unknown".into(),
+                "historical_unknown",
+                None,
+                None,
+                None,
+            ),
+        };
+        if let Some(context) = context {
+            native_attempt_count += 1;
+            // Keep the dashboard detail window bounded while aggregating the entire range.
+            let position = recent_attempts
+                .binary_search_by(|existing| {
+                    record
+                        .timestamp
+                        .cmp(&existing.timestamp)
+                        .then_with(|| existing.request.attempt_id.cmp(&context.attempt_id))
+                })
+                .unwrap_or_else(|position| position);
+            if position < MAX_RECENT_ATTEMPTS {
+                recent_attempts.insert(
+                    position,
+                    UsageAttemptSummary {
+                        account_key: key.clone(),
+                        timestamp: record.timestamp,
+                        session_id: record.session_id.clone(),
+                        turn_id: record.turn_id.clone(),
+                        input_tokens: known.then_some(record.input_tokens),
+                        output_tokens: known.then_some(record.output_tokens),
+                        request: context,
+                    },
+                );
+                recent_attempts.truncate(MAX_RECENT_ATTEMPTS);
+            }
+        }
+        let account = by_account
+            .entry(key.clone())
+            .or_insert_with(|| AccountUsageStatistics {
+                key,
+                kind: kind.into(),
+                provider,
+                account_id,
+                upstream_account_id,
+                requests: 0,
+                failed_requests: 0,
+                unknown_usage_requests: 0,
+                input_tokens: 0,
+                output_tokens: 0,
+                cached_tokens: 0,
+            });
+        account.requests += 1;
+        account.failed_requests += u32::from(failed);
+        account.unknown_usage_requests += u32::from(!known);
+        if known {
+            account.input_tokens += u64::from(record.input_tokens);
+            account.output_tokens += u64::from(record.output_tokens);
+            account.cached_tokens += u64::from(record.cached_tokens);
+            total_input += record.input_tokens as u64;
+            total_output += record.output_tokens as u64;
+            total_cached += record.cached_tokens as u64;
+            total_cache_write += record.cache_write_tokens as u64;
+            if record.cached_tokens_available {
+                total_cache_reported_input += record.input_tokens as u64;
+            }
         }
 
         let attribution = attribute(record);
@@ -205,8 +373,24 @@ where
     let time_zone = parse_time_zone(time_zone).unwrap_or(chrono_tz::UTC);
     let (trend, effective_granularity) = build_trend(records, granularity, time_zone);
 
+    let attempts_truncated = native_attempt_count > MAX_RECENT_ATTEMPTS;
+
     UsageStatistics {
+        recent_attempts,
+        attempts_truncated,
         total_requests,
+        unknown_usage_requests,
+        failed_requests,
+        by_account: {
+            let mut accounts: Vec<_> = by_account.into_values().collect();
+            accounts.sort_by(|left, right| {
+                right
+                    .requests
+                    .cmp(&left.requests)
+                    .then_with(|| left.key.cmp(&right.key))
+            });
+            accounts
+        },
         total_tokens: total_input + total_output,
         total_input_tokens: total_input,
         total_output_tokens: total_output,
@@ -214,6 +398,7 @@ where
         total_cache_write_tokens: total_cache_write,
         total_cache_reported_input_tokens: total_cache_reported_input,
         by_model: finalize_entries(by_model),
+        by_channel: finalize_entries(by_channel),
         by_group: finalize_entries(by_group),
         by_endpoint: finalize_entries(by_endpoint),
         trend,
@@ -231,6 +416,10 @@ fn accumulate_entry(
         .entry(key)
         .or_insert_with(|| UsageStatisticsEntry::new(attribution));
     entry.requests += 1;
+    if !record.usage_is_known() {
+        entry.unknown_usage_requests += 1;
+        return;
+    }
     entry.tokens += record.total_tokens as u64;
     entry.cached_tokens += record.cached_tokens as u64;
     if record.cached_tokens_available {
@@ -278,6 +467,9 @@ fn build_trend(
 
     let mut granularity = granularity;
     let mut buckets = bucket_records(records, granularity, time_zone);
+    if buckets.is_empty() {
+        return (Vec::new(), granularity);
+    }
 
     let mut first = *buckets.keys().min().unwrap_or(&0);
     let mut last = *buckets.keys().max().unwrap_or(&0);
@@ -315,6 +507,9 @@ fn bucket_records(
 ) -> HashMap<i64, TrendBucket> {
     let mut buckets: HashMap<i64, TrendBucket> = HashMap::new();
     for record in records {
+        if !record.usage_is_known() {
+            continue;
+        }
         let key = bucket_key(record.timestamp, granularity, time_zone);
         let bucket = buckets.entry(key).or_insert_with(|| TrendBucket {
             key,
@@ -692,6 +887,179 @@ mod tests {
             stats.trend[2].bucket,
             Utc.with_ymd_and_hms(2026, 3, 9, 4, 0, 0).unwrap()
         );
+    }
+
+    #[test]
+    fn channels_keep_request_time_identity_and_unknown_legacy_records() {
+        let time = Utc.with_ymd_and_hms(2026, 10, 15, 10, 0, 0).unwrap();
+        let mut first = record("same-model", time, 10, 2, 0, 0, false);
+        let mut second = record("same-model", time, 0, 0, 0, 0, false);
+        for (record, id, known) in [
+            (&mut first, "old-channel", true),
+            (&mut second, "backup", false),
+        ] {
+            record.token_details = Some(serde_json::json!({"openbitfunModelRequest":{
+                "version":1,"roundId":"round","attemptId":id,"attemptIndex":1,"startedAt":time,
+                "authentication":"api_key","requestedModel":"same-model","outcome":"failed","usageKnown":known,
+                "channel":{"modelConfigId":id,"name":id,"protocol":"anthropic","bindingFingerprint":"recorded-fingerprint"}
+            }}));
+        }
+        let legacy = record("same-model", time, 4, 1, 0, 0, false);
+        let stats = aggregate_statistics(
+            &[first, second, legacy],
+            UsageGranularity::Day,
+            attribution(),
+        );
+        assert_eq!(stats.by_channel.len(), 3);
+        let frozen = stats
+            .by_channel
+            .iter()
+            .find(|channel| channel.name == "old-channel")
+            .unwrap();
+        assert_eq!(frozen.provider_name.as_deref(), Some("anthropic"));
+        assert_eq!(frozen.tokens, 12);
+        let unknown = stats
+            .by_channel
+            .iter()
+            .find(|channel| channel.name == "backup")
+            .unwrap();
+        assert_eq!(unknown.unknown_usage_requests, 1);
+        assert_eq!(
+            stats
+                .by_channel
+                .iter()
+                .find(|channel| channel.key == "legacy_unknown_channel")
+                .unwrap()
+                .attribution_status,
+            UsageAttributionStatus::ConfigIdMissing
+        );
+        assert_eq!(stats.total_tokens, 17);
+    }
+
+    #[test]
+    fn account_totals_preserve_recorded_seats_unknown_usage_and_legacy_identity() {
+        let time = Utc.with_ymd_and_hms(2026, 10, 13, 10, 0, 0).unwrap();
+        let mut first = record("same-model", time, 10, 2, 3, 0, true);
+        let context = |seat: &str, known: bool| {
+            serde_json::json!({"openbitfunModelRequest":{
+                "version":1,"roundId":"round","attemptId":seat,"attemptIndex":1,"startedAt":time,
+                "authentication":"subscription","account":{"provider":"codex","account_id":"codex","upstream_account_id":seat},
+                "requestedModel":"same-model","outcome":"failed","usageKnown":known
+            }})
+        };
+        first.token_details = Some(context("seat-one", true));
+        first.token_details.as_mut().unwrap()["openbitfunModelRequest"]["routingWarnings"] =
+            serde_json::json!(["affinity_unavailable", "future_observation"]);
+        let mut second = record("same-model", time, 0, 0, 0, 0, false);
+        second.token_details = Some(context("seat-two", false));
+        let legacy = record("same-model", time, 20, 5, 0, 0, false);
+        let unreported =
+            aggregate_statistics(&[second.clone()], UsageGranularity::Hour, attribution());
+        assert!(
+            unreported.trend.is_empty(),
+            "unknown usage must not create a fabricated zero bucket at the Unix epoch"
+        );
+        assert_eq!(unreported.unknown_usage_requests, 1);
+        let stats = aggregate_statistics(
+            &[first, second, legacy],
+            UsageGranularity::Hour,
+            attribution(),
+        );
+        assert_eq!(stats.total_requests, 3);
+        assert_eq!(stats.total_tokens, 37);
+        assert_eq!(stats.unknown_usage_requests, 1);
+        assert_eq!(stats.failed_requests, 2);
+        assert_eq!(
+            stats.by_account.len(),
+            3,
+            "the mutable default slot must not merge different recorded upstream seats"
+        );
+        let unknown = stats
+            .by_account
+            .iter()
+            .find(|account| account.upstream_account_id.as_deref() == Some("seat-two"))
+            .unwrap();
+        assert_eq!(unknown.unknown_usage_requests, 1);
+        assert_eq!(unknown.input_tokens, 0);
+        assert!(stats
+            .by_account
+            .iter()
+            .any(|account| account.kind == "historical_unknown" && account.requests == 1));
+        let mut old_payload = serde_json::to_value(&stats).unwrap();
+        for field in [
+            "unknownUsageRequests",
+            "failedRequests",
+            "byAccount",
+            "recentAttempts",
+            "attemptsTruncated",
+        ] {
+            old_payload.as_object_mut().unwrap().remove(field);
+        }
+        let restored: UsageStatistics = serde_json::from_value(old_payload).unwrap();
+        assert_eq!(restored.unknown_usage_requests, 0);
+        assert!(restored.by_account.is_empty());
+        assert!(restored.recent_attempts.is_empty());
+        assert!(!restored.attempts_truncated);
+        assert_eq!(
+            stats.recent_attempts.len(),
+            2,
+            "legacy rows must not gain invented attempt identities"
+        );
+        let failed = stats
+            .recent_attempts
+            .iter()
+            .find(|attempt| attempt.request.attempt_id == "seat-one")
+            .unwrap();
+        assert_eq!(failed.input_tokens, Some(10));
+        assert_eq!(
+            failed.request.routing_warnings,
+            ["affinity_unavailable", "future_observation"]
+        );
+        let failed_payload = serde_json::to_value(failed).unwrap();
+        assert_eq!(
+            failed_payload["routingWarnings"],
+            serde_json::json!(["affinity_unavailable", "future_observation"])
+        );
+        let restored: UsageAttemptSummary = serde_json::from_value(failed_payload).unwrap();
+        assert_eq!(
+            restored.request.routing_warnings,
+            failed.request.routing_warnings
+        );
+        let unknown = stats
+            .recent_attempts
+            .iter()
+            .find(|attempt| attempt.request.attempt_id == "seat-two")
+            .unwrap();
+        assert_eq!(unknown.input_tokens, None);
+        assert_eq!(unknown.output_tokens, None);
+        assert!(
+            unknown.request.routing_warnings.is_empty(),
+            "legacy attempts omit the additive observation"
+        );
+        let payload = serde_json::to_value(unknown).unwrap();
+        assert_eq!(payload["outcome"], "failed");
+        assert_eq!(payload["usageKnown"], false);
+        assert_eq!(payload["accountKey"], unknown.account_key);
+    }
+
+    #[test]
+    fn recent_attempts_are_latest_bounded_and_do_not_truncate_totals() {
+        let time = Utc.with_ymd_and_hms(2026, 10, 15, 10, 0, 0).unwrap();
+        let records: Vec<_> = (0..55).map(|index| {
+            let mut value = record("model", time + Duration::seconds(index), 2, 1, 0, 0, false);
+            value.token_details = Some(serde_json::json!({"openbitfunModelRequest":{
+                "version":1,"roundId":"round","attemptId":format!("attempt-{index}"),"attemptIndex":index+1,"startedAt":value.timestamp,
+                "authentication":"api_key","requestedModel":"model","outcome":"completed","usageKnown":true
+            }}));
+            value
+        }).collect();
+        let stats = aggregate_statistics(&records, UsageGranularity::Hour, attribution());
+        assert_eq!(stats.total_requests, 55);
+        assert_eq!(stats.total_tokens, 165);
+        assert!(stats.attempts_truncated);
+        assert_eq!(stats.recent_attempts.len(), 50);
+        assert_eq!(stats.recent_attempts[0].request.attempt_id, "attempt-54");
+        assert_eq!(stats.recent_attempts[49].request.attempt_id, "attempt-5");
     }
 
     #[test]

@@ -29,8 +29,12 @@ static void publish(void) {
 @interface OBFControlsApp : NSApplication
 @end
 @implementation OBFControlsApp
-- (void)sendEvent:(NSEvent *)event {
-    if (event.type == NSEventTypeLeftMouseDown || event.type == NSEventTypeLeftMouseUp) {
+- (NSEvent *)nextEventMatchingMask:(NSEventMask)mask untilDate:(NSDate *)expiration inMode:(NSRunLoopMode)mode dequeue:(BOOL)dequeue {
+    NSEvent *event = [super nextEventMatchingMask:mask untilDate:expiration inMode:mode dequeue:dequeue];
+    // Observe actual dequeued events, including a standard control's tracking
+    // loop. NSButton consumes mouse-up inside mouseDown:, so sendEvent: alone
+    // cannot witness both halves of an otherwise correctly delivered click.
+    if (dequeue && (event.type == NSEventTypeLeftMouseDown || event.type == NSEventTypeLeftMouseUp)) {
         NSPoint local = event.locationInWindow;
         NSPoint content = [targetWindow.contentView convertPoint:local fromView:nil];
         NSView *hit = event.windowNumber == targetWindow.windowNumber ? [targetWindow.contentView hitTest:content] : nil;
@@ -38,6 +42,9 @@ static void publish(void) {
         BOOL outsideFrame = !NSPointInRect(screen, targetWindow.frame);
         [events addObject:@{@"type":@(event.type), @"window_id":@(event.windowNumber), @"target_key_before":@(targetWindow.keyWindow), @"target_active_before":@(NSApp.active), @"outside_frame":@(outsideFrame), @"time":@(NSProcessInfo.processInfo.systemUptime), @"flags":@(event.modifierFlags), @"x":@(local.x), @"y":@(local.y), @"hit":NSStringFromClass(hit.class) ?: @"none"}];
     }
+    return event;
+}
+- (void)sendEvent:(NSEvent *)event {
     [super sendEvent:event];
     publish();
 }
@@ -158,7 +165,8 @@ int main(int argc, const char **argv) { @autoreleasepool {
     events = [NSMutableArray array]; canvasText = [NSMutableString string];
     NSApplication *app = [OBFControlsApp sharedApplication];
     [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
-    targetWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,700,300) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    // Miniaturizable so the foreground fixture can exercise minimized-window restore.
+    targetWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,700,300) styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable backing:NSBackingStoreBuffered defer:NO];
     targetWindow.title = @"OpenBitFun Inactive Controls Fixture";
     targetWindow.releasedWhenClosed = NO;
     OBFControlsActions *actions = [[OBFControlsActions alloc] init];

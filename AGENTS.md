@@ -41,8 +41,8 @@ Keep crate dependencies inside each layer to the smallest set needed.
 |---|---|---|---|---|---|
 | 1 | Interfaces and entrypoints | `src/apps/*`, `src/web-ui`, `src/mobile-web`, `OpenBitFun-Installer`, `tests/e2e`, `src/crates/interfaces` | Product hosts, commands, UI entrypoints, protocol interfaces, and cross-surface tests | desktop, CLI, server, relay, Web UI, mobile web, installer, E2E, `acp`, `app-server`, `sdk-host` | nearest local `AGENTS.md`; [interfaces](src/crates/interfaces/AGENTS.md) |
 | 2 | Product assembly | `src/crates/assembly` | Compatibility exports, product capability selection, product-full wiring, immutable built-in Agent content, adapter/service registration, and ecosystem-neutral source coordination | `agent-content`, `core`, `external-sources`, `product-capabilities` | [AGENTS.md](src/crates/assembly/AGENTS.md) |
-| 3 | Adapters | `src/crates/adapters` | AI/transport/WebDriver protocol adapters, external AI work source adapters (OpenCode/Claude Code/Codex), and external-provider translation | `agent-runtime-ipc`, `ai-adapters`, `opencode-adapter`, `claude-code-adapter`, `codex-adapter`, `static-hook-support`, `transport`, `webdriver` | [AGENTS.md](src/crates/adapters/AGENTS.md) |
-| 4 | Services | `src/crates/services` | Reusable OS, filesystem, terminal, MCP, remote, git, watch, process, session persistence primitives, MiniApp runtime IO, and network implementations | `services-core`, `services-integrations`, `miniapp-market-service`, `relay-service`, `page-function-runtime`, `terminal` | [AGENTS.md](src/crates/services/AGENTS.md) |
+| 3 | Adapters | `src/crates/adapters` | AI/transport/WebDriver protocol adapters, external AI work source adapters (OpenCode/Claude Code/Codex/Zcode), and external-provider translation | `agent-runtime-ipc`, `ai-adapters`, `opencode-adapter`, `claude-code-adapter`, `codex-adapter`, `zcode-adapter`, `static-hook-support`, `transport`, `webdriver` | [AGENTS.md](src/crates/adapters/AGENTS.md) |
+| 4 | Services | `src/crates/services` | Reusable OS, filesystem, terminal, MCP, remote, git, watch, process, session persistence primitives, MiniApp runtime IO, and network implementations | `services-core`, `services-integrations`, `computer-use`, `miniapp-market-service`, `relay-service`, `page-function-runtime`, `terminal` | [AGENTS.md](src/crates/services/AGENTS.md) |
 | 5 | Execution primitives | `src/crates/execution` | Portable Agent Runtime, named-workflow policy, stream, plugin runtime client, typed-service, tool-contract, tool-group, and tool-execution building blocks | `agent-runtime`, `agent-workflows`, `agent-stream`, `tool-contracts`, `plugin-runtime-client`, `runtime-services`, `tool-provider-groups`, `tool-execution` | [AGENTS.md](src/crates/execution/AGENTS.md) |
 | 6 | Stable contracts and product domains | `src/crates/contracts` | Shared DTOs, event shapes, runtime ports, and product domain contracts/policies | `core-types`, `events`, `runtime-ports`, `product-domains` | [AGENTS.md](src/crates/contracts/AGENTS.md) |
 
@@ -80,6 +80,27 @@ commands, use the nearest local guide. The full script registry remains in
 [`package.json`](package.json).
 
 ## Global rules
+
+### Check for existing bug fixes before editing
+
+OpenBitFun currently releases roughly once a week, so a user report may describe
+a released version whose bug is already fixed on `main` or being addressed in an
+open PR. **Before changing code for a bug, check both:**
+
+- **Latest `main`:** refresh the upstream `main` ref without disturbing local
+  work, then inspect the relevant implementation, tests, and commit history.
+  Check the reported version and reproduction conditions when available; base
+  the conclusion on code and behavior, not commit titles alone.
+- **Open PRs, including drafts:** search by symptoms and affected modules, then
+  inspect relevant diffs to establish whether they cover the same root cause
+  and scenario. A similar title alone does not establish coverage.
+
+If `main` already contains the fix, report the supporting commit/code and whether
+it is released; do not implement it again. If an open PR covers it, link that PR
+and build on or coordinate with the existing work; limit new changes to verified
+gaps. Record the check result before starting a new fix. If upstream code or PRs
+cannot be checked, state that limitation explicitly instead of claiming that no
+fix exists.
 
 ### Process artifacts
 

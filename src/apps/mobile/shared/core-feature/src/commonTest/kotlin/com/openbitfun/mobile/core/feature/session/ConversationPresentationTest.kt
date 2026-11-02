@@ -16,6 +16,17 @@ import kotlin.test.assertTrue
 
 class ConversationPresentationTest {
     @Test
+    fun messageTimesSurviveProjectionWithLegacyScalesAndMissingValues() {
+        val rows = timeline(persisted = listOf(
+            message("user", "user", "Question").copy(timestamp = "1700000000"),
+            message("assistant", "assistant", "Answer").copy(timestamp = "1700000001000"),
+            message("legacy", "assistant", "Old answer").copy(timestamp = null),
+            message("invalid", "user", "Old question").copy(timestamp = "invalid"),
+        )).conversationRows()
+        assertEquals(listOf(1700000000000L, 1700000001000L, null, null), rows.map { it.timestampMs })
+    }
+
+    @Test
     fun anEmptySessionGetsTheOneRowNobodyOwns() {
         val rows = timeline().conversationRows()
 

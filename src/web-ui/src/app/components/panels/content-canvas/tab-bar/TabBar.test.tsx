@@ -42,10 +42,15 @@ describe('canvas TabGroup integration', () => {
   let container: HTMLDivElement;
   let root: Root;
   let props: TabBarProps;
+  let observedElements: Element[];
 
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    observedElements = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observe(element: Element) { observedElements.push(element); }
+      disconnect() {}
+    });
     contextMenu.showMenu.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -161,24 +166,39 @@ describe('canvas TabGroup integration', () => {
     expect(props.onReorderTab).toHaveBeenCalledExactlyOnceWith('a', 1);
   });
 
-  it('keeps overflow tabs keyboard-accessible and removes the menu after space becomes available', () => {
+  it('includes tabs covered by the floating capsule and removes it when content fits without the scroll inset', () => {
     render();
     const list = container.querySelector<HTMLElement>('[role="tablist"]')!;
     const toolbar = container.querySelector<HTMLElement>('.canvas-tab-bar')!;
-    let width = 120;
+    let width = 220;
     Object.defineProperty(list, 'clientWidth', { get: () => width });
-    Object.defineProperty(list, 'scrollWidth', { value: 300 });
+    Object.defineProperty(list, 'scrollWidth', { value: 364 });
+    Object.defineProperty(container.querySelector('.canvas-tab-bar__overflow')!, 'offsetWidth', { value: 64 });
+    const scrollIntoView = vi.fn();
     Object.defineProperty(toolbar, 'clientWidth', { get: () => width + 30 });
     vi.spyOn(list, 'getBoundingClientRect').mockImplementation(() => ({ left: 0, right: width } as DOMRect));
     props.tabs.forEach((item, index) => {
       vi.spyOn(wrapper(item.id).parentElement!, 'getBoundingClientRect').mockReturnValue({ left: index * 100, right: (index + 1) * 100 } as DOMRect);
+      Object.defineProperty(wrapper(item.id).parentElement!, 'scrollIntoView', { value: scrollIntoView });
     });
 
     act(() => list.dispatchEvent(new Event('scroll')));
     expect(container.querySelector('[data-openbitfun-product-part="badge"]')?.textContent).toBe('+2');
+    expect(container.querySelector('[data-openbitfun-product-part="trigger"]')?.getAttribute('data-openbitfun-variant')).toBe('glass');
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(3);
-    width = 400;
+    props.activeTabId = 'c';
+    render();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+    width = 320;
     act(() => list.dispatchEvent(new Event('scroll')));
     expect(container.querySelector('[data-openbitfun-product-component="canvas-tab-overflow"]')).toBeNull();
+  });
+
+  it('does not observe the overflow capsule that is sized from overflow state', () => {
+    render();
+    const list = container.querySelector<HTMLElement>('[role="tablist"]')!;
+    const overflow = container.querySelector<HTMLElement>('.canvas-tab-bar__overflow')!;
+    expect(observedElements).toContain(list);
+    expect(observedElements).not.toContain(overflow);
   });
 });

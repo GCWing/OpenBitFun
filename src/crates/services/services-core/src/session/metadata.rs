@@ -314,6 +314,7 @@ pub fn try_refresh_session_metadata_for_saved_turn(
 }
 
 fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
+    let previous_unread_target = unread_completion_target(metadata);
     let next = SessionLastTurn {
         turn_id: turn.turn_id.clone(),
         turn_index: turn.turn_index,
@@ -341,7 +342,12 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
                 .recovery_pending
                 .is_none_or(|pending| next.recovery_pending == Some(pending))
     });
-    if !same_outcome {
+    let quiet = turn.status == TurnStatus::Completed
+        && openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(turn.user_message.metadata.as_ref(), &turn.turn_id)
+            .is_some_and(|delivery| delivery.execution_generation == turn.recovery_epoch.unwrap_or(0)
+                && delivery.disposition == openbitfun_core_types::background_delivery::BackgroundReportDisposition::Quiet && delivery.suppresses_report());
+    let mut unread_target = previous_unread_target;
+    if !same_outcome && !quiet {
         if let Some(outcome) = match turn.status {
             TurnStatus::Completed => Some("completed"),
             TurnStatus::Error => Some("error"),
@@ -350,18 +356,188 @@ fn refresh_latest_turn(metadata: &mut SessionMetadata, turn: &DialogTurnData) {
         } {
             metadata.unread_completion = Some(outcome.to_string());
             metadata.needs_user_attention = None;
+            unread_target = Some(next.clone());
+        }
+    }
+    let custom = metadata
+        .custom_metadata
+        .get_or_insert_with(|| serde_json::json!({}));
+    if let Some(object) = custom.as_object_mut() {
+        if let Some(delivery) =
+            openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                turn.user_message.metadata.as_ref(),
+                &turn.turn_id,
+            )
+        {
+            object.insert(
+                "lastBackgroundDelivery".to_owned(),
+                serde_json::to_value(delivery).unwrap_or(Value::Null),
+            );
+        } else {
+            object.remove("lastBackgroundDelivery");
+        }
+        if let Some(target) = unread_target.filter(|_| metadata.unread_completion.is_some()) {
+            object.insert(
+                "unreadCompletionTarget".to_owned(),
+                serde_json::to_value(target).unwrap_or(Value::Null),
+            );
+        } else {
+            object.remove("unreadCompletionTarget");
         }
     }
     metadata.last_turn = Some(next);
 }
 
+/// The unread result may predate a later quiet run. Old metadata falls back to last_turn.
+pub fn unread_completion_target(metadata: &SessionMetadata) -> Option<SessionLastTurn> {
+    metadata.unread_completion.as_ref()?;
+    receipt_target(metadata)
+}
+
+fn receipt_target(metadata: &SessionMetadata) -> Option<SessionLastTurn> {
+    metadata
+        .custom_metadata
+        .as_ref()
+        .and_then(|custom| custom.get("unreadCompletionTarget"))
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .or_else(|| metadata.last_turn.clone())
+}
+
+#[cfg(test)]
+mod background_delivery_contracts {
+    use super::super::types::UserMessageData;
+    use super::*;
+    use openbitfun_core_types::background_delivery::{
+        BackgroundDelivery, BackgroundReportDisposition as Disposition,
+        BackgroundReportPolicy as Policy, BACKGROUND_DELIVERY_METADATA_KEY,
+    };
+
+    fn turn(id: &str, index: usize, quiet: bool) -> DialogTurnData {
+        let mut data = DialogTurnData::new(
+            id.into(),
+            index,
+            "session".into(),
+            UserMessageData {
+                id: format!("{id}-input"),
+                content: "Monitor changes.".into(),
+                timestamp: index as u64,
+                metadata: None,
+            },
+        );
+        data.status = TurnStatus::Completed;
+        data.end_time = Some(index as u64 + 1);
+        if quiet {
+            let mut delivery = BackgroundDelivery::pending(
+                "generic-monitor".into(),
+                id.into(),
+                Policy::Conditional,
+            );
+            delivery.disposition = Disposition::Quiet;
+            delivery.resolved_at_ms = Some(1);
+            data.user_message.metadata =
+                Some(serde_json::json!({BACKGROUND_DELIVERY_METADATA_KEY:delivery}));
+        }
+        data
+    }
+
+    #[test]
+    fn quiet_run_keeps_prior_unread_and_attention_while_execution_advances() {
+        let mut metadata = SessionMetadata::new(
+            "session".into(),
+            "Monitor".into(),
+            "Standard".into(),
+            "model".into(),
+        );
+        let report = turn("nine", 0, false);
+        refresh_latest_turn(&mut metadata, &report);
+        metadata.needs_user_attention = Some("ask_user".into());
+        let mut running = turn("eleven", 1, true);
+        running.status = TurnStatus::InProgress;
+        refresh_latest_turn(&mut metadata, &running);
+        let quiet = turn("eleven", 1, true);
+        refresh_latest_turn(&mut metadata, &quiet);
+        assert_eq!(metadata.last_turn.as_ref().unwrap().turn_id, "eleven");
+        assert_eq!(unread_completion_target(&metadata).unwrap().turn_id, "nine");
+        assert_eq!(metadata.unread_completion.as_deref(), Some("completed"));
+        assert_eq!(metadata.needs_user_attention.as_deref(), Some("ask_user"));
+        let old_receipt = metadata.clone();
+        let mut read = old_receipt.clone();
+        read.unread_completion = None;
+        apply_session_unread_completion(&mut metadata, &read);
+        assert!(metadata.unread_completion.is_none());
+        refresh_latest_turn(&mut metadata, &turn("thirteen", 2, false));
+        apply_session_unread_completion(&mut metadata, &read);
+        assert_eq!(
+            unread_completion_target(&metadata).unwrap().turn_id,
+            "thirteen"
+        );
+        assert_eq!(metadata.unread_completion.as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn an_empty_quiet_record_is_normal_and_unknown_extensions_do_not_suppress_unread() {
+        let mut metadata = SessionMetadata::new(
+            "session".into(),
+            "Monitor".into(),
+            "Standard".into(),
+            "model".into(),
+        );
+        let quiet = turn("quiet", 0, true);
+        assert!(quiet.model_rounds.is_empty());
+        refresh_latest_turn(&mut metadata, &quiet);
+        let mut old_observer = metadata.clone();
+        old_observer.unread_completion = Some("completed".into());
+        apply_session_unread_completion(&mut metadata, &old_observer);
+        assert!(metadata.unread_completion.is_none());
+
+        assert!(metadata.unread_completion.is_none());
+        let mut unknown = turn("future", 1, true);
+        unknown.user_message.metadata.as_mut().unwrap()[BACKGROUND_DELIVERY_METADATA_KEY]
+            ["schemaVersion"] = serde_json::json!(2);
+        refresh_latest_turn(&mut metadata, &unknown);
+        assert_eq!(metadata.unread_completion.as_deref(), Some("completed"));
+        let decoded: SessionMetadata =
+            serde_json::from_str(&serde_json::to_string(&metadata).unwrap()).unwrap();
+        assert_eq!(
+            unread_completion_target(&decoded).unwrap().turn_id,
+            "future"
+        );
+    }
+}
+
 /// A delayed UI acknowledgement must not clear a newer completion. New clients
 /// name the rendered Turn/generation; old clients retain the finish-time guard.
 pub fn apply_session_unread_completion(current: &mut SessionMetadata, incoming: &SessionMetadata) {
-    let matches_result = match (&current.last_turn, &incoming.last_turn) {
+    let current_target = unread_completion_target(current);
+    let incoming_target = receipt_target(incoming);
+    // An older observer may still mark a quiet completion as new unread work.
+    // Read receipts remain client-owned, while the host owns result creation.
+    let suppressed_latest = current
+        .last_turn
+        .as_ref()
+        .and_then(|last| {
+            let value = current
+                .custom_metadata
+                .as_ref()?
+                .get("lastBackgroundDelivery")?;
+            let delivery: openbitfun_core_types::background_delivery::BackgroundDelivery =
+                serde_json::from_value(value.clone()).ok()?;
+            Some(
+                delivery.run_id == last.turn_id
+                    && delivery.execution_generation == last.execution_generation.unwrap_or(0)
+                    && last.status == TurnStatus::Completed
+                    && delivery.suppresses_report(),
+            )
+        })
+        .unwrap_or(false);
+    if current_target.is_none() && incoming.unread_completion.is_some() && suppressed_latest {
+        return;
+    }
+    let matches_result = match (&current_target, &incoming_target) {
         (Some(current), Some(incoming)) => {
             current.turn_id == incoming.turn_id
-                && current.execution_generation == incoming.execution_generation
+                && current.execution_generation.unwrap_or(0)
+                    == incoming.execution_generation.unwrap_or(0)
                 && current.status == incoming.status
                 && current
                     .recovery_pending
@@ -375,6 +551,15 @@ pub fn apply_session_unread_completion(current: &mut SessionMetadata, incoming: 
     };
     if matches_result {
         current.unread_completion = incoming.unread_completion.clone();
+        if current.unread_completion.is_none() {
+            if let Some(object) = current
+                .custom_metadata
+                .as_mut()
+                .and_then(Value::as_object_mut)
+            {
+                object.remove("unreadCompletionTarget");
+            }
+        }
     }
 }
 

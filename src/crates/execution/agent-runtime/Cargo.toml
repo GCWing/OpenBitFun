@@ -17,6 +17,7 @@ required-features = ["agent-runtime"]
 
 [features]
 default = []
+account-routing = ["dep:openbitfun-core-types"]
 definition-contracts = [
     "native-hook-settings",
     "dep:openbitfun-core-types",
@@ -30,6 +31,7 @@ native-hook-settings = ["dep:regex", "dep:serde_json"]
 native-hook-runtime = [
     "native-hook-settings",
     "dep:async-trait",
+    "dep:libc",
     "dep:log",
     "dep:serde",
     "dep:serde_json",
@@ -43,6 +45,7 @@ native-hook-runtime = [
     "tokio/time",
 ]
 agent-runtime = [
+    "account-routing",
     "definition-contracts",
     "native-hook-runtime",
     "dep:async-trait",
@@ -89,6 +92,14 @@ thiserror = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
+
+# `native_hooks` stops a timed-out handler's process group on Unix so handler
+# descendants cannot survive the timeout as orphans.
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = { workspace = true }
 
 [[test]]
 name = "agent_definition_contracts"

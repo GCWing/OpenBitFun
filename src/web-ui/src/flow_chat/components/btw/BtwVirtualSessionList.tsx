@@ -1,5 +1,5 @@
 import { useEmbeddedTimelineFollow } from '../../timeline/useEmbeddedTimelineFollow';
-import { Fragment, useEffect, useRef, useState, type RefObject, type MutableRefObject } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type RefObject, type MutableRefObject } from 'react';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import { VirtualItemRenderer } from '../modern/VirtualItemRenderer';
 import { useFlowChatVirtualizer } from '../modern/useFlowChatVirtualizer';
@@ -32,26 +32,51 @@ interface BtwVirtualSessionListProps {
   isHistorical: boolean;
   viewState?: BtwPanelViewState;
   onExpandGroup?: (id: string) => void;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  measurementSuspended?: boolean;
 }
 
 /** The embedded transcript shares row placement, not the primary session shell. */
 export function BtwVirtualSessionList({
   items: sourceItems, scrollerRef, headerRef, followRef, viewportOwner,
   exploreGroupStates, isHistorical, viewState, onExpandGroup,
+  measurementSuspended = false,
 }: BtwVirtualSessionListProps) {
   const { sessionId } = useFlowChatContext();
   const { items, reader } = useConversationTimeline(sourceItems, sessionId, 'side');
   const windowRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const measurementSuspendedRef = useRef(measurementSuspended);
+  measurementSuspendedRef.current = measurementSuspended;
+  /** The last width the observer saw while the pane was still moving. */
+  const pendingWidthRef = useRef<number | null>(null);
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const updateWidth = () => setWidth(scroller.clientWidth);
+    const updateWidth = () => {
+      /*
+       * A divider drag changes this scroller's width every frame, and the row
+       * estimates — with every height measured against them — are derived from
+       * it. Hold the last settled width for the duration; the settle below
+       * publishes the width the drag ended on exactly once.
+       */
+      if (measurementSuspendedRef.current) {
+        pendingWidthRef.current = scroller.clientWidth;
+        return;
+      }
+      setWidth(scroller.clientWidth);
+    };
     const observer = new ResizeObserver(updateWidth);
     observer.observe(scroller);
     updateWidth();
     return () => observer.disconnect();
   }, [scrollerRef]);
+  useLayoutEffect(() => {
+    if (measurementSuspended) return;
+    const pending = pendingWidthRef.current;
+    pendingWidthRef.current = null;
+    if (pending !== null) setWidth(current => (current === pending ? current : pending));
+  }, [measurementSuspended]);
   const cancelAimRef = useRef<() => void>(() => {});
   const pinnedKeys = useTimelineInteraction(scrollerRef, reader, () => followRef.current, undefined, () => {
     followRef.current = false;
@@ -72,6 +97,7 @@ export function BtwVirtualSessionList({
     },
     estimateContextRevision: `${width}|${isHistorical}|${[...exploreGroupStates]
       .map(([id, expanded]) => `${id}:${expanded}`).join(',')}`,
+    measurementSuspended,
     scrollPaddingStartPx: 0,
     writeViewport: viewportOwner.write,
     shiftViewport: viewportOwner.shift,

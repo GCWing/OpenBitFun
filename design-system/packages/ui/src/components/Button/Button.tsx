@@ -5,6 +5,7 @@ import {
 } from "react";
 import { classNames } from "../../internal/classNames";
 import { OverflowText } from "../../primitives/OverflowText";
+import glassStyles from "../../internal/GlassAction.module.css";
 import styles from "./Button.module.css";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -16,7 +17,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "xs" | "sm" | "md" | "lg";
   tone?: "danger" | "neutral";
   trailingIcon?: ReactNode;
-  variant?: "fill" | "outline" | "primary" | "secondary" | "text";
+  variant?: "fill" | "glass" | "outline" | "primary" | "quiet" | "secondary" | "text";
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
@@ -37,7 +38,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button data-overflow-trigger
       {...props}
       aria-busy={loading || undefined}
-      className={classNames(styles.button, className)}
+      className={classNames(styles.button, variant === "glass" && glassStyles.surface, className)}
       data-openbitfun-component="button"
       data-openbitfun-part="root"
       data-openbitfun-tone={tone}

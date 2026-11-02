@@ -39,20 +39,22 @@ export interface ToolDurationProps {
   showCompletedDuration?: boolean;
   completedStatus?: 'success' | 'error' | 'cancelled';
   completionLabel?: string;
+  /** Host-owned localization. Omit to retain the default compact format. */
+  formatDuration?: (milliseconds: number, precision: 'live' | 'precise') => string;
   children?: ReactNode;
 }
 
 /** Controlled duration anatomy. Clock, timeout mutations and overlays belong to the host. */
 export function ToolDuration({
   isRunning, showIcon = true, elapsedMs = 0, remainingMs, timeoutMs, timeoutDisabled = false, open = false,
-  completedDurationMs, showCompletedDuration = true, completedStatus, completionLabel, children,
+  completedDurationMs, showCompletedDuration = true, completedStatus, completionLabel, children, formatDuration,
 }: ToolDurationProps) {
   if (!isRunning) {
     if (completedDurationMs == null || !showCompletedDuration) return null;
     return <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="root" data-openbitfun-mode="completed"
       className={`duration-text duration-text--completed${completedStatus ? ` duration-text--completed-${completedStatus}` : ''}`}
       title={completionLabel} aria-label={completionLabel}>
-      <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="duration">{formatDurationPrecise(completedDurationMs)}</span>
+      <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="duration">{formatDuration?.(completedDurationMs, 'precise') ?? formatDurationPrecise(completedDurationMs)}</span>
     </span>;
   }
   const hasTimeout = Boolean(timeoutMs && timeoutMs > 0);
@@ -62,13 +64,13 @@ export function ToolDuration({
     data-openbitfun-state={[isWarning && 'warning', timeoutDisabled && 'disabled', open && 'open'].filter(Boolean).join(' ')} className="tool-timeout-indicator">
     <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="duration" className={`duration-text duration-text--live ${isWarning ? 'duration-text--warning' : ''}`}>
       {showIcon && <Icon glyph={Timer} size="sm" />}
-      <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="elapsed" className="duration-elapsed">{formatDurationLive(elapsedMs)}</span>
+      <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="elapsed" className="duration-elapsed">{formatDuration?.(elapsedMs, 'live') ?? formatDurationLive(elapsedMs)}</span>
       {hasTimeout && <>
         <span className="duration-separator">/</span>
         <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="timeout"
           className={`duration-timeout ${timeoutDisabled ? 'duration-timeout--disabled' : ''} ${isWarning ? 'duration-timeout--warning' : ''}`}>
           {timeoutDisabled ? <Icon glyph={InfinityIcon} size="sm" className="duration-timeout--infinity" />
-            : formatDurationLive(displayRemaining ?? timeoutMs!)}
+            : (formatDuration?.(displayRemaining ?? timeoutMs!, 'live') ?? formatDurationLive(displayRemaining ?? timeoutMs!))}
         </span>
       </>}
     </span>

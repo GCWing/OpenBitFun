@@ -32,7 +32,7 @@ pub(super) fn diagnose_plan_artifact(content: &str) -> Vec<PlanArtifactIssue> {
         Ok(Value::Mapping(mapping)) => diagnose_frontmatter(&mapping, &mut issues),
         Ok(_) => issues.push(PlanArtifactIssue::new(
             "invalid_frontmatter_object",
-            "Make the YAML frontmatter an object containing `name`, `overview`, and `todos`.",
+            "Make the YAML frontmatter an object containing `name` and `overview`.",
         )),
         Err(error) => issues.push(PlanArtifactIssue::new(
             "invalid_frontmatter_yaml",
@@ -82,10 +82,6 @@ fn diagnose_frontmatter(mapping: &Mapping, issues: &mut Vec<PlanArtifactIssue>) 
     diagnose_required_string(mapping, "overview", issues);
 
     let Some(todos) = mapping_field(mapping, "todos") else {
-        issues.push(PlanArtifactIssue::new(
-            "missing_todos",
-            "Add a `todos` array to the YAML frontmatter; use `todos: []` for a simple plan.",
-        ));
         return;
     };
     let Value::Sequence(todos) = todos else {
@@ -238,10 +234,10 @@ Plan body.
     }
 
     #[test]
-    fn requires_todos_to_exist_and_be_an_array() {
+    fn accepts_missing_todos_but_validates_legacy_todos() {
         assert_eq!(
             issue_codes("---\nname: Plan\noverview: Overview\n---\nBody"),
-            vec!["missing_todos"]
+            Vec::<&str>::new()
         );
         assert_eq!(
             issue_codes("---\nname: Plan\noverview: Overview\ntodos: nope\n---\nBody"),

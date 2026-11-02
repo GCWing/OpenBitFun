@@ -16,6 +16,7 @@ import {
 } from '../../utils/toolInvocationIdentity';
 import { resolveSessionDriverId } from '../../session-drivers/resolve';
 import { resolveStorageTurnIndex } from '../../utils/flowChatTurnIdentity';
+import { sessionActivityStore } from '../../store/sessionActivityStore';
 
 const log = createLogger('PersistenceModule');
 const COALESCED_IMMEDIATE_SAVE_DELAY_MS = 500;
@@ -437,6 +438,9 @@ export function convertDialogTurnToBackendFormat(dialogTurn: DialogTurn, turnInd
         roundGroupId: round.roundGroupId,
         timestamp: round.startTime,
         renderHints: round.renderHints,
+        modelConfigId: round.modelConfigId,
+        effectiveModelName: round.effectiveModelName,
+        routing: round.routing,
         textItems: round.items
           .map((item, index) => ({ item, index }))
           .filter(({ item }) => item.type === 'text')
@@ -509,6 +513,11 @@ export function convertDialogTurnToBackendFormat(dialogTurn: DialogTurn, turnInd
           }),
         startTime: round.startTime,
         endTime: round.endTime,
+        durationMs: round.durationMs,
+        firstChunkMs: round.firstChunkMs,
+        firstVisibleOutputMs: round.firstVisibleOutputMs,
+        streamDurationMs: round.streamDurationMs,
+        ttftMs: round.ttftMs,
         attemptCount: round.attemptCount,
         attemptDiagnostics: round.attemptDiagnostics,
         status: round.status || 'completed',
@@ -572,6 +581,13 @@ export async function updateSessionMetadata(
     if (!scope.isCurrent()) return;
 
     const metadata = buildSessionMetadata(session, existingMetadata);
+    if (fields?.includes('unreadCompletion')) {
+      const activity = sessionActivityStore.get(sessionId)?.summary;
+      // lastTurn is a receipt guard in a UI patch, not a write to the host's
+      // execution summary. A newer quiet run must not change its target.
+      const unreadTurn = activity?.unreadTurn;
+      if (unreadTurn) metadata.lastTurn = unreadTurn;
+    }
 
     await sessionAPI.saveSessionMetadata(
       metadata,

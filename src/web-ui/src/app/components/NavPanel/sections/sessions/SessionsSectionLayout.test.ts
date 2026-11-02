@@ -24,7 +24,7 @@ function extractInlineItemActionsBlock(stylesheet: string): string {
 }
 
 function extractInlineItemBlock(stylesheet: string, element: string): string {
-  const match = stylesheet.match(new RegExp(`&__inline-item-${element}\\s*\\{(?<body>[\\s\\S]*?)\\n\\s*\\}`));
+  const match = stylesheet.match(new RegExp(`&__inline-item-${element}(?:\\s*,\\s*&__[\\w-]+)*\\s*\\{(?<body>[\\s\\S]*?)\\n\\s*\\}`));
   return match?.groups?.body ?? '';
 }
 
@@ -98,6 +98,13 @@ describe('SessionsSection layout styles', () => {
     expect(sessionTooltip).not.toContain('followCursor');
   });
 
+  it('presents discovery failures as transient notifications instead of a persistent list alert', () => {
+    const source = readSessionsSectionSource();
+    expect(source).toContain('notificationService.warning');
+    expect(source).not.toContain('<Alert');
+    expect(source).not.toContain('discoveryNotice');
+  });
+
   it('centers empty session placeholder content', () => {
     const stylesheet = readSessionsSectionStylesheet();
     const emptyBlock = extractBlock(stylesheet, '&__inline-empty');
@@ -159,7 +166,7 @@ describe('SessionsSection layout styles', () => {
     expect(source).toMatch(/<OverflowText[^>]*className="openbitfun-nav-panel__inline-toggle-label"/);
     // The chip is decorative; the full sentence stays on the button's aria-label.
     expect(source).toContain('className="openbitfun-nav-panel__inline-toggle-count" aria-hidden');
-    expect(source).toContain("aria-label={t('nav.sessions.showMore', {");
+    expect(source).toContain("aria-label={isSessionCountComplete ? t('nav.sessions.showMore', {");
     expect(source).toContain('aria-label={expandToggleLabels.ariaLabel}');
     expect(source).not.toContain('inline-toggle-dots');
   });

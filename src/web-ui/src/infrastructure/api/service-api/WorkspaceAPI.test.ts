@@ -40,6 +40,13 @@ describe('WorkspaceAPI', () => {
     expect(invokeMock).toHaveBeenCalledWith('get_file_metadata', { request: { workspaceId: 'second-id', path: '/same/file.txt' } });
   });
 
+  it('scopes native directory reveals while preserving the existing path-only request', async () => {
+    await workspaceAPI.revealInExplorer('/project/docs', 'project-id');
+    expect(invokeMock).toHaveBeenLastCalledWith('reveal_in_explorer', { request: { path: '/project/docs', workspaceId: 'project-id' } });
+    await workspaceAPI.revealInExplorer('/downloads');
+    expect(invokeMock).toHaveBeenLastCalledWith('reveal_in_explorer', { request: { path: '/downloads' } });
+  });
+
   it('uses workspace IDs for directory trees and paginated children', async () => {
     await workspaceAPI.getFileTree('workspace-id', '/same/folder', 1);
     expect(invokeMock).toHaveBeenCalledWith('get_file_tree', {

@@ -11,11 +11,18 @@ This directory follows `src/web-ui/AGENTS.md`.
   original Markdown when parsing and serializing. HTML rendering uses the shared
   sanitized Markdown renderer.
 - Markdown serialization uses the parser-matched remark extensions. Preserve link titles, code whitespace, and literal syntax; validate emitted inline ranges and use equivalent inline HTML only when Markdown delimiters cannot preserve them. Unsupported block conversions stay local to their source region.
+- Rich text parses pasted plain-text Markdown with the same document parser.
+  Styled source HTML and Markdown editor clipboard metadata must also reach this
+  parser rather than becoming literal paragraphs or a single code block.
+  Preserve native rich HTML, code-block and explicit plain-text paste behavior.
 - Source-backed reference blocks share document-level definitions, numbering,
   and anchors. Preview context is transient and must not enter saved Markdown.
 - Rich text reuses the existing MarkdownRenderer typography and component styles.
   Preserve the pre-existing preview appearance; do not add an editor-specific
   visual redesign.
+- Embedded consumers can set `emptyDocumentPlaceholder` to keep task-specific
+  guidance visible in an empty document, including while focused. Keep these hints
+  in placeholder decorations; they must not enter saved content or undo history.
 - Outside local editing, embeds keep their original rendered appearance. Show
   additional source-editing labels and completion controls only while that embed
   is being edited.

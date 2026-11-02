@@ -2,11 +2,11 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const buttonMeta = {
   category: "action",
-  description: "An action with transparent outline and text variants, neutral fill, secondary, and primary presentation.",
+  description: "An action with outline, quiet neutral text, link text, floating glass, neutral fill, secondary, and primary presentation.",
   maturity: "stable",
   name: "Button",
   props: [
-    { defaultValue: "outline", name: "variant", type: "outline | fill | secondary | primary | text" },
+    { defaultValue: "outline", name: "variant", type: "outline | glass | fill | secondary | primary | quiet | text" },
     { defaultValue: "md", name: "size", type: "xs | sm | md | lg" },
     { defaultValue: "neutral", name: "tone", type: "neutral | danger" },
     { defaultValue: "false", name: "loading", type: "boolean" },
@@ -16,6 +16,9 @@ export const buttonMeta = {
   ],
   states: ["default", "hover", "active", "disabled"],
   tokens: [
+    "color.surface.raised",
+    "color.border.subtle",
+    "effect.blur.subtle",
     "opacity.iconArtwork",
     "component.button.content",
     "component.button.outlineBorder",
@@ -35,6 +38,8 @@ export const buttonMeta = {
     "color.action.primary.content",
     "color.surface.tertiary",
     "color.border.default",
+    "color.content.primary",
+    "color.content.secondary",
     "color.border.strong",
     "color.focus.ring",
     "color.status.danger.border",
@@ -53,5 +58,7 @@ export const buttonMeta = {
     "type.label.lg.fontSize",
     "type.label.selected.fontWeight",
     "radius.pill",
+    "radius.base",
+    "space.3",
   ],
 } as const satisfies ComponentMeta;

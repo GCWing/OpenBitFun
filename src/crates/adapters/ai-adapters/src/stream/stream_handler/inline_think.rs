@@ -107,6 +107,23 @@ impl InlineThinkParser {
         &mut self,
         mut response: UnifiedResponse,
     ) -> Vec<UnifiedResponse> {
+        let observed_model = response.response_model.take();
+        let mut normalized = self.normalize_content(response);
+        if let Some(model) = observed_model {
+            if let Some(first) = normalized.first_mut() {
+                first.response_model = Some(model);
+            } else {
+                // An observation must survive a failure while text is still buffered.
+                normalized.push(UnifiedResponse {
+                    response_model: Some(model),
+                    ..Default::default()
+                });
+            }
+        }
+        normalized
+    }
+
+    fn normalize_content(&mut self, mut response: UnifiedResponse) -> Vec<UnifiedResponse> {
         if !self.enabled {
             return vec![response];
         }
@@ -278,6 +295,24 @@ mod tests {
         longest_suffix_prefix_len, InlineThinkActivation, InlineThinkMode, InlineThinkParser,
     };
     use crate::stream::types::unified::UnifiedResponse;
+
+    #[test]
+    fn model_observation_is_not_held_behind_a_buffered_think_tag() {
+        let mut parser = InlineThinkParser::new(true);
+        let responses = parser.normalize_response(UnifiedResponse {
+            text: Some("<thi".into()),
+            response_model: Some("reported-snapshot".into()),
+            ..Default::default()
+        });
+        assert_eq!(responses.len(), 1);
+        assert_eq!(
+            responses[0].response_model.as_deref(),
+            Some("reported-snapshot")
+        );
+        assert!(responses[0].text.is_none());
+        assert!(responses[0].reasoning_content.is_none());
+        assert!(responses[0].tool_call.is_none());
+    }
 
     #[test]
     fn longest_suffix_prefix_len_detects_partial_tag_boundary() {

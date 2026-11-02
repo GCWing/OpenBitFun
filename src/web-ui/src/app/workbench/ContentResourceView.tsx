@@ -1,3 +1,4 @@
+import { hasRetainedCanvasDocument } from '../components/panels/content-canvas/stores/canvasStore';
 import { ResourceFileContext } from '@/infrastructure/api/ResourceFileContext';
 import { useEffect, useMemo } from 'react';
 import FlexiblePanel from '../components/panels/base/FlexiblePanel';
@@ -9,8 +10,11 @@ import { useI18n } from '@/infrastructure/i18n';
 import { useSceneStore } from '../stores/sceneStore';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
+import { useWorkbenchResize } from './workbenchResize';
 
 export default function ContentResourceView({ resourceId, isActive }: { resourceId: string; isActive: boolean }) {
+  const { measurementSuspended } = useWorkbenchResize();
+  const focused = useSceneStore(state => state.activeTabId === `content:${resourceId}`);
   const resource = useContentResourceStore(state => state.resources[resourceId]);
   const update = useContentResourceStore(state => state.update);
   const { t } = useI18n('components');
@@ -22,7 +26,7 @@ export default function ContentResourceView({ resourceId, isActive }: { resource
     [documentId, filePath, resourceScope],
   );
   useEffect(() => () => {
-    if (document && !useContentResourceStore.getState().resources[resourceId]) releaseEditorDocument(document.id);
+    if (document && !useContentResourceStore.getState().resources[resourceId] && !hasRetainedCanvasDocument(document.id)) releaseEditorDocument(document.id);
   }, [document, resourceId]);
   useEffect(() => registerContentCloseGuard(resourceId, async () => {
     const latest = useContentResourceStore.getState().resources[resourceId];
@@ -37,14 +41,15 @@ export default function ContentResourceView({ resourceId, isActive }: { resource
     await document.save();
     return !useContentResourceStore.getState().resources[resourceId]?.isDirty;
   }), [document, resourceId, t]);
-  useShortcut('tab.close', { key: 'w', ctrl: true, scope: 'canvas', allowInInput: true },
+  useShortcut('tab.close', { key: 'w', ctrl: true, scope: 'workbench-content', allowInInput: true },
     () => useSceneStore.getState().closeScene(`content:${resourceId}`),
-    { enabled: isActive, priority: 20, description: 'keyboard.shortcuts.tab.close' });
+    { enabled: isActive && focused, priority: 20, description: 'keyboard.shortcuts.tab.close' });
   if (!resource || !document) return null;
   return (
     <EditorDocumentContext.Provider value={document}>
       <ResourceFileContext.Provider value={document}>
       <FlexiblePanel content={resource.content} workspacePath={resource.scope.workspacePath} isActive={isActive}
+        resizeSuspended={measurementSuspended} terminalResizeSuspended={measurementSuspended}
         onContentChange={content => {
           if (content) {
             // Buffers belong to EditorDocument. Keep file presentation updates out of the tab store's hot path.

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { traceViewportRepeating } from '@/infrastructure/diagnostics/flowChatViewportDiagnostics';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import {
   claimSubmittedMessageScrollIntent, finishSubmittedMessageScrollIntent,
@@ -88,7 +87,7 @@ export function useFlowChatFollowOutput(options: Options) {
     if (unbound) finishSubmittedMessageScrollIntent(unbound);
     if (discarded) o.cancelPendingPlacement();
   }, []);
-  const exitFollowOutput = useCallback((reason: FollowOutputExitReason) => {
+  const exitFollowOutput = useCallback((_reason: FollowOutputExitReason) => {
     const o = current.current;
     setFollowing(false);
     phase.current = 'reading';
@@ -96,10 +95,6 @@ export function useFlowChatFollowOutput(options: Options) {
     discardPending();
     stop();
     o.viewportOwner.release('follow-output');
-    traceViewportRepeating(`follow|exit|${reason}`, {
-      location: 'followOutput.exit', message: 'The reader owns the viewport',
-      data: () => ({ reason, viewportId: o.viewportId }),
-    });
   }, [discardPending, setFollowing, stop]);
 
   run.current = now => {
@@ -153,10 +148,6 @@ export function useFlowChatFollowOutput(options: Options) {
     if (!animate && reason !== 'reader-at-bottom') {
       if (o.viewportOwner.write({ owner: 'follow-output', topPx: target.current })) o.onViewportOffset?.(scroller.scrollTop);
     }
-    traceViewportRepeating(`follow|enter|${reason}`, {
-      location: 'followOutput.enter', message: 'Following the desktop reading line',
-      data: () => ({ reason, viewportId: o.viewportId, targetPx: target.current }),
-    });
     wake();
   }, [available, discardPending, setFollowing, wake]);
 
@@ -241,11 +232,6 @@ export function useFlowChatFollowOutput(options: Options) {
       phase.current = 'following';
     }
     target.current = next;
-    traceViewportRepeating(`follow|layout|${o.viewportId}|${phase.current}`, {
-      location: 'followOutput.layout', message: 'Refreshed the physical follow endpoint',
-      data: () => ({ viewportId: o.viewportId, phase: phase.current, targetPx: next,
-        scrollTopPx: o.scrollerRef.current?.scrollTop, itemCount: o.virtualItemCount }),
-    });
     if (o.isOpeningViewport()) {
       if (o.viewportOwner.write({ owner: 'follow-output', topPx: next })) o.onViewportOffset?.(o.scrollerRef.current!.scrollTop);
     }

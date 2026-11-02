@@ -1,0 +1,34 @@
+[package]
+name = "openbitfun-data-tools"
+version = "0.2.0"
+authors.workspace = true
+edition.workspace = true
+description = "OpenBitFun offline data migration, reset and session repair tools"
+
+[lib]
+name = "openbitfun_data_tools_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "openbitfun-data-tools"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+openbitfun-services-core = { path = "../../crates/services/services-core", features = ["session-recovery"] }
+openbitfun-legacy-migration-adapters = { path = "../../crates/services/legacy-migration-adapters" }
+openbitfun-core-types = { path = "../../crates/contracts/core-types" }
+openbitfun-legacy-migration = { path = "../../crates/services/legacy-migration" }
+openbitfun-product-domains = { path = "../../crates/contracts/product-domains", features = ["legacy-migration"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

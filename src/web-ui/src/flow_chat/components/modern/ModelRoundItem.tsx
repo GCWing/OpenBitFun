@@ -371,6 +371,8 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     turnStartedAt,
     turnEndedAt,
     turnDurationMs,
+    turnOutputDurationMs,
+    turnTtftMs,
     turnTokenUsage,
     canvasArtifactItems = [],
     expandedThinkingItemIds = [],
@@ -392,7 +394,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
       open: isCopyMenuOpen,
       anchorRef: copyButtonRef,
       popoverRef: copyMenuRef,
-      preferredPlacement: 'top',
+      preferredPlacement: 'bottom',
       alignment: 'end',
       gap: 4,
     });
@@ -551,9 +553,6 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     );
 
     const completedAt = turnEndedAt ?? round.endTime;
-    const usageDurationMs = turnDurationMs ??
-      (typeof turnStartedAt === 'number' && typeof completedAt === 'number'
-        ? Math.max(0, completedAt - turnStartedAt) : undefined);
     const effectiveDurationMs = turnDurationMs ??
       (typeof turnStartedAt === 'number' && typeof completedAt === 'number'
         ? Math.max(0, completedAt - turnStartedAt)
@@ -602,6 +601,12 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         data-effective-model-name={round.effectiveModelName || ''}
         data-streaming={isVisuallyStreaming ? 'true' : 'false'}
       >
+        {(!blockPart || blockPart === 'header') && round.routing && <div className="model-round-item__meta" data-testid="model-round-routing">
+          <Tooltip content={t('modelSelector.routing.latency', { ms: round.routing.latencyMs })}>
+            <span>{t(round.routing.fallbackReason ? 'modelSelector.routing.fallback' : round.routing.route === 'economy'
+              ? 'modelSelector.economyModel' : 'modelSelector.primaryModel')} · {round.effectiveModelName}</span>
+          </Tooltip>
+        </div>}
         {(!blockPart || blockPart === 'header') && round.renderHints?.continuedAfterInterruption && (
           <div className="model-round-item__continuation">{t('modelRound.continued')}</div>
         )}
@@ -753,7 +758,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         {shouldReserveFooter && (
           <TurnFooter turnId={turnId} isLatestTurn={isLatestTurn} ready={shouldRevealFooter}>
             <div className="model-round-item__usage">
-              <TurnUsageMetrics usage={turnTokenUsage} durationMs={usageDurationMs} focusable={shouldRevealFooter} />
+              <TurnUsageMetrics usage={turnTokenUsage} durationMs={turnOutputDurationMs} ttftMs={turnTtftMs} focusable={shouldRevealFooter} />
             </div>
             <div className="model-round-item__completion">
               {durationMetaItem && (
@@ -806,7 +811,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
                         ref={copyMenuRef}
                         className="model-round-item__copy-menu"
                         data-testid="model-round-copy-menu"
-                        data-openbitfun-placement={copyMenuLayout?.placement ?? 'top'}
+                        data-openbitfun-placement={copyMenuLayout?.placement ?? 'bottom'}
                         style={{
                           top: `${copyMenuLayout?.top ?? 0}px`,
                           left: `${copyMenuLayout?.left ?? 0}px`,

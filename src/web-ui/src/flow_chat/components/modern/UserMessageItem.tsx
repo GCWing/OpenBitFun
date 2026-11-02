@@ -59,11 +59,13 @@ import {
 import { restoreImageContextsFromPayload } from '../../utils/imageContextRestoration';
 import { writeComposerClipboardPayload } from '../../utils/composerClipboard';
 import { buildImagePayload } from '../../utils/imagePayload';
-import { UserMessagePresentationContent, UserMessageTextContent } from './UserMessagePresentationContent';
+import { UserMessagePresentationContent } from './UserMessagePresentationContent';
+import { splitUserMessagePreview } from './userMessagePreview';
 import { UserMessageImage } from './UserMessageImage';
 import { useSubmittedMessageMotion } from './useSubmittedMessageMotion';
 import { finishSubmittedMessagePreview } from '../../services/submittedMessagePresentation';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { backgroundDeliveryFromMetadata } from '../../utils/backgroundDelivery';
 import './UserMessageItem.scss';
 
 const log = createLogger('UserMessageItem');
@@ -238,6 +240,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       : -1;
     const isDispatchSession = resolveSessionDriverId(resolvedSessionId ?? '', currentSession ?? undefined) === 'dispatch';
     const isRemoteSession = !isLocalWorkspaceSession(currentSession ?? undefined, null) || isDispatchSession;
+    const isFollowedSource = currentSession?.externalHistory?.mode === 'follow';
     const isSystemTriggered = Boolean(
       message?.metadata?.triggerSource && message.metadata.triggerSource !== 'desktop_ui',
     );
@@ -248,6 +251,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       !!resolvedSessionId &&
       actionTurnIndex >= 0 &&
       !isRemoteSession &&
+      !isFollowedSource &&
       isSessionIdle &&
       !sessionMutation &&
       !isEditSubmitting;
@@ -256,6 +260,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       !!resolvedSessionId &&
       actionTurnIndex >= 0 &&
       !isRemoteSession &&
+      !isFollowedSource &&
       !isThreadGoalSystemMessage &&
       !isSystemTriggered &&
       !steeringStatus && !hostQueueStatus;
@@ -264,7 +269,9 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
     const canShowRollbackMenuItem = !isFailed && canShowRollbackAction && !steeringStatus && !hostQueueStatus;
     const canShowActionMenu = canShowEditAction || canShowRollbackMenuItem;
     const rollbackPending = sessionMutation?.kind === 'rollback' && sessionMutation.targetTurnId === turnId;
-    const editDisabledReason = isDispatchSession
+    const editDisabledReason = isFollowedSource
+      ? t('externalHistory.forkBeforeEdit')
+      : isDispatchSession
       ? t('message.editDisabledDispatch')
       : isRemoteSession
       ? t('message.editDisabledRemote')
@@ -279,6 +286,8 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               : t('message.cannotEdit');
     const rollbackTooltip = canRollback
       ? t('message.rollbackTo', { index: actionTurnIndex + 1 })
+      : isFollowedSource
+        ? t('externalHistory.forkBeforeEdit')
       : isDispatchSession
         ? t('message.rollbackDisabledDispatch')
       : isRemoteSession
@@ -327,6 +336,11 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
     const copyTokens = composerPresentation
       ? composerPresentationToClipboardText(composerPresentation)
       : messageContent;
+
+    const messagePreview = useMemo(() => splitUserMessagePreview(composerPresentation ?? {
+      version: 1,
+      segments: [{ kind: 'text', text: displayText }],
+    }), [composerPresentation, displayText]);
     
     // Check whether content overflows. Uses the shared ResizeObserver instead
     // of a per-message window resize listener: observer callbacks run after
@@ -340,7 +354,8 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
 
       const checkOverflow = () => {
         // Detect truncated text.
-        const isOverflowing = element.scrollHeight > element.clientHeight ||
+        const isOverflowing = messagePreview.overflow !== null ||
+                              element.scrollHeight > element.clientHeight ||
                               element.scrollWidth > element.clientWidth;
         setHasOverflow(isOverflowing);
       };
@@ -353,7 +368,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       // window-resize handler, which re-read the ref lazily on every event), so
       // the effect must re-run on those transitions or it keeps observing a
       // detached node and never observes the live one.
-    }, [composerPresentation, displayText, expanded, isEditing, isFailed]);
+    }, [messagePreview, expanded, isEditing, isFailed]);
     
     // Copy the user message.
     const handleCopy = useCallback(async (e: React.MouseEvent) => {
@@ -561,7 +576,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
           sessionId: currentSession?.sessionId ?? resolvedSessionId,
           workspacePath: currentSession?.workspacePath,
           initialTab,
-          title: t('usage.title'),
+          title: t('usage.panel.report'),
           expand: true,
         });
       });
@@ -625,6 +640,17 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       </div>
     ) : null;
     
+    const messageTextContent = messagePreview.overflow ? (
+      <>
+        <span className="user-message-item__content-preview">
+          <UserMessagePresentationContent presentation={messagePreview.preview} />
+        </span>
+        <span className="user-message-item__content-overflow">
+          <UserMessagePresentationContent presentation={messagePreview.overflow} />
+        </span>
+      </>
+    ) : <UserMessagePresentationContent presentation={messagePreview.preview} />;
+
     return (
       <div className="user-message-item-shell" ref={shellRef}>
         {messageImageGallery}
@@ -664,6 +690,8 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
           </div>
         ) : (
           <div className="user-message-item__main" data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="main">
+          {backgroundDeliveryFromMetadata(message.metadata, turnId)?.reason === 'recovery_completed'
+                    ? <p>{t('backgroundDelivery.recoveryCompleted')}</p> : null}
           <div
             className={
               isFailed
@@ -686,9 +714,8 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                     cursor: (hasOverflow || expanded) ? 'pointer' : 'text',
                   }}
                 >
-                  {composerPresentation ? (
-                    <UserMessagePresentationContent presentation={composerPresentation} />
-                  ) : <UserMessageTextContent text={displayText} />}
+
+                  {messageTextContent}
                 </div>
                 {steeringTag && (
                   <div className={`user-message-item__steering-tag ${steeringTag.className}`} data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="steeringTag">
@@ -711,9 +738,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                     cursor: (hasOverflow || expanded) ? 'pointer' : 'text',
                   }}
                 >
-                  {composerPresentation ? (
-                    <UserMessagePresentationContent presentation={composerPresentation} />
-                  ) : <UserMessageTextContent text={displayText} />}
+                  {messageTextContent}
                 </div>
                 {steeringTag && (
                   <div className={`user-message-item__steering-tag ${steeringTag.className}`} data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="steeringTag">

@@ -1,0 +1,101 @@
+{
+  "loadingValue": "…",
+  "unavailableValue": "—",
+  "retry": "Refresh",
+  "greetings": {
+    "spotted": "Hey, caught you peeking!",
+    "mystery": "Well hello, mystery guest!",
+    "ideas": "Hey, ideas are bubbling!",
+    "create": "Since you're here, let's make mischief!",
+    "energy": "You’re here! Now we’re talking!",
+    "ready": "Your sidekick is ready. Cue the entrance!"
+  },
+  "metrics": {
+    "title": "Usage overview",
+    "totalTokens": "Total tokens",
+    "peakTokens": "Peak daily tokens",
+    "longestTask": "Longest task",
+    "longestStreak": "Longest streak",
+    "currentStreak": "Current streak",
+    "days": "{{count}} days",
+    "partial": "Peak usage and streaks cover the retained activity history only."
+  },
+  "agents": {
+    "title": "Agents",
+    "loading": "Loading Agents…",
+    "failed": "Could not load Agents from the active host. Check the connection and try again.",
+    "assistants": {
+      "description": "Long-term collaborators with their own memory."
+    },
+    "description": "Built-in and custom Agents for your workflows.",
+    "create": "Create Agent",
+    "createAssistant": "Create assistant",
+    "createAssistantConfirmMessage": "Create a new assistant? After creation, you can configure its identity, tools, and personality.",
+    "createAssistantFailed": "Could not create the assistant. Please try again."
+  },
+  "devices": {
+    "title": "Devices",
+    "manage": "Manage devices",
+    "scrollPrevious": "Scroll devices left",
+    "scrollNext": "Scroll devices right",
+    "online": "Online",
+    "offline": "Offline",
+    "current": "Current device",
+    "thisDevice": "This device",
+    "incompatible": "Update required for control",
+    "loading": "Loading devices…",
+    "signInHint": "Sign in to connect more devices",
+    "failed": "Could not refresh devices. Any devices shown may be out of date. Retry or open device management to check the connection.",
+    "empty": "No linked devices yet. Sign in to the same account on another device to connect it.",
+    "viewAll": "View all {{count}} devices"
+  },
+  "usage": {
+    "loading": "Loading token activity…",
+    "failed": "Could not load usage from the active host. Check the connection and try again.",
+    "unsupported": "This host does not support usage statistics. Update the host to view token activity."
+  },
+  "activity": {
+    "title": "Token activity"
+  },
+  "miniApps": {
+    "start": "Launch",
+    "backToOverview": "Back to home",
+    "create": "Create Mini App",
+    "manage": "Manage Mini Apps",
+    "installed": "Installed",
+    "runningCount": "{{count}} running",
+    "moreInstalled": "View {{count}} more Mini Apps",
+    "loading": "Loading Mini Apps…",
+    "failed": "Could not load Mini Apps from the active host. Check the connection and host support, then retry.",
+    "empty": "No Mini Apps yet"
+  },
+  "desktopCards": {
+    "title": "Desktop cards",
+    "settings": "Card settings",
+    "listTitle": "My cards",
+    "visibleCount": "{{count}} on desktop",
+    "disabled": "Turned off in settings. Cards are kept and come back when you turn them on.",
+    "loading": "Loading desktop cards…",
+    "failed": "Could not load desktop cards. Try again.",
+    "empty": "No cards yet. Ask the agent, for example \"remind me in 20 minutes\" or \"keep an eye on this PR\".",
+    "shown": "On desktop",
+    "hidden": "Hidden",
+    "show": "Show on desktop",
+    "hide": "Hide from desktop",
+    "delete": "Delete card",
+    "deleteConfirmTitle": "Delete card",
+    "deleteConfirmMessage": "Delete \"{{title}}\"? This cannot be undone.",
+    "actionFailed": "Could not update the card. Try again."
+  },
+  "skills": {
+    "add": "Add skill",
+    "loading": "Loading Skills…",
+    "failed": "Could not load Skills for the active workspace. Check the connection and host support, then retry.",
+    "incomplete": "Some Skill sources could not be fully read. Open Skill management for details.",
+    "diagnosticsUnavailable": "This host does not provide scan diagnostics. The count reflects the Skills returned by the host.",
+    "installed": "Installed Skills",
+    "installedDescription": "Reuse installed skills in your tasks.",
+    "discover": "Find More Skills",
+    "discoverDescription": "Discover more reusable skills."
+  }
+}

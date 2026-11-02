@@ -104,6 +104,7 @@ export interface WorkspaceInfo {
   workspaceType: WorkspaceType;
   workspaceKind: WorkspaceKind;
   assistantId?: string | null;
+  defaultNameNumber?: number | null;
   languages: string[];
   openedAt: string;
   lastAccessed: string;

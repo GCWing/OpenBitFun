@@ -1,6 +1,6 @@
 /**
  * Scene-level tabs. Tab anatomy and visual states come from @openbitfun/ui;
- * SceneBar owns only product-shell layout, overflow, and label truncation.
+ * SceneBar owns product-shell layout, overflow, label truncation, and close-action emphasis.
  */
 
 .openbitfun-scene-bar {
@@ -18,6 +18,9 @@
     display: flex;
     flex: 0 0 auto;
     min-width: 0;
+
+    // Keep the tab's layout and hit target while its portalled surface expands.
+    &[data-session-history-open='true'] [role='tab'] { opacity: 0; }
 
     &[data-canvas-drop-position]::after {
       content: '';
@@ -174,12 +177,21 @@
   }
 
   &__tabs [data-openbitfun-part='item'] {
-    // Cap the whole tab, including its label padding and close-action reserve.
+    // Cap the resting capsule; TabGroup grows its action area beyond this width.
     max-inline-size: 220px;
+  }
+
+  &__tabs [data-openbitfun-part='label'] {
+    // Reserve three full-width characters, excluding tab padding and actions.
+    min-inline-size: 3em;
   }
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .openbitfun-scene-bar [data-scene-bar-part='closeTab']:hover:not(:disabled) {
+    color: var(--openbitfun-color-status-danger-emphasis);
+  }
+
   .openbitfun-scene-bar__scroll-button:hover {
     background: var(--openbitfun-color-action-neutral-surface-hover);
   }

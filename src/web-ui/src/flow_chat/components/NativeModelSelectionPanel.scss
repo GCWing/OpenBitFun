@@ -1,0 +1,27 @@
+.native-model-selection {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--openbitfun-overlay-menu-row-gap);
+
+  &__activation {
+    justify-content: center;
+    align-items: center;
+    padding-block: var(--openbitfun-space-3);
+
+    &[data-empty='true'] {
+      padding-block: 0;
+    }
+  }
+
+  &__toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__picker-options {
+    display: grid;
+    min-block-size: 0;
+    max-block-size: min(320px, 45vh);
+  }
+}

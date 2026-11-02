@@ -13,7 +13,7 @@ MiniApp **能且只能**用以下 API，没有任何"通用 OpenBitFun 后端通
 - `app.net.fetch` —— HTTP 请求（受 `permissions.net.allow` 域名白名单限制）
 - `app.os.info` —— 只读系统信息
 - `app.storage.get/set` —— 每应用独立 KV 存储
-- `app.agent.*` —— 小应用自有隐藏 Agent 会话；支持有界只读上下文快照
+- `app.agent.*` —— 小应用自有隐藏 Agent 会话；支持有界只读上下文快照；`app.agent.expose()` 把当前业务状态和语义动作暴露给宿主 Agent，是新建应用的默认操作路径（旧应用可缺省；自动活动信息不能代替业务状态）
 - `app.ai.complete / chat / cancel / getModels` —— 复用宿主 AI（无需 API Key）
 - `app.dialog.open/save/message` —— 文件对话框
 - `app.clipboard.readText/writeText` —— 剪贴板
@@ -186,6 +186,57 @@ await app.agent.run('分析当前盘面。', {
 `contextFiles` 按需读取；使用宿主给出的精确路径，不拼接固定的 `.miniapp-context` 路径。
 需要当前新闻、公告或财务依据时，Agent 仍可独立使用 `WebSearch` / `WebFetch`，并区分数据时间、
 发布时间与推断。不要用“只允许引用快照字段”的指令关闭这些研究能力。
+
+### `app.agent.expose()` — 把小应用自身的实时状态暴露给 Agent
+
+方向与 `app.agent.run()` 相反：宿主 Agent 来驱动这个小应用。注册后，Agent 端 `MiniAppBrowser`
+的 `observe_bridge` 会拿到 `observe()` 的返回值，`act_bridge` 会调用 `act(action)`。
+
+这是**新建应用的默认能力**；协议仍兼容没有接入的旧应用。Agent 先读源码理解参数与业务函数，
+再读取当前实例的状态、调用动作。普通操作不需要修改源码、重载页面或使用 CU。
+未接入时注入运行时只报告动画活动和输入回显，不能代表业务状态。
+DOM/输入用于旧应用兼容，截图用于结构化状态无法回答的视觉问题；严格隔离页面和独立窗口不提供 DOM / 截图能力。
+
+```javascript
+// Business functions are also called by UI handlers; register after restore().
+app.agent?.expose?.({
+  observe: observeBusinessState,
+  actions: ['set-input', 'apply-pattern'],
+  act: (action) => {
+    if (action?.type === 'set-input') {
+      // Validate all parameters before mutation; omitted fields remain intact.
+      updateInputs(action.input);
+    } else if (action?.type === 'apply-pattern') {
+      applyPattern(action.id);
+    } else {
+      throw new Error('Unsupported action');
+    }
+    return { applied: true, state: observeBusinessState() };
+  },
+});
+```
+
+完整实现见 `references/examples/builtin-regex-playground/ui.js`。
+`set-input` 参数为 `{ input: { pattern?, text?, replacement?, flags? } }`（均为字符串），
+`apply-pattern` 参数为 `{ id: 'email' }`；保留当前文本并直接刷新匹配结果。
+观察返回当前草稿、匹配、选择和替换预览；长字段带 `length` / `truncated`，列表也明确标记截断。
+
+要点：
+
+- 注册接口本身不需要 `permissions.agent.*`；动作调用 `app.fs`、`app.net` 等能力时仍走原有权限路径。
+- `observe` 只读，动作与 UI 共用业务函数。普通操作不触发源码更新/重载；返回结果表示业务完成，异步操作应等待完成或明确报告进行中。
+- 通常在初始化和状态恢复后注册一次；处理器读取当前状态。重新调用会替换处理器，通常无需每帧注册。
+- `observe` 抛出异常会被宿主收到为可读的失败，不会挂死请求；长时间阻塞的处理会触发宿主超时。
+- 对纯 canvas、游戏或其他自定义渲染界面，自动观测仅报告动画活动、输入回显和画布尺寸；`canvasTextUnavailable: true` 明确表示不读取当前画布文字。
+  但命名状态和语义动作需要 `expose()`。如果任务依赖连续变化的状态，应暴露完成任务所需的少量权威字段与动作，
+  避免 Agent 只能靠逐帧截图或反复试探。
+- 只返回必要的少量字段（分数、生命、关卡、关键坐标等），不要把整帧像素或大数组塞进 `observe`。
+- 对可预测的业务流程，动作可以对应完整且有界的用户意图（例如打开记录、应用筛选、提交表单），
+  让 Agent 能直接执行已知步骤，再用 `observe()` 确认结果；不要强迫它在每个低层输入后都重新观察。
+- `actions` 是可选的动作词表：写了，Agent 在 `observe_bridge` 里就能看到「这个应用认哪些动作」，
+  Agent 仍通过源码了解参数与业务语义；没写时先读源码，不试探动作名称。词表是提示，不是白名单，
+  `act` 必须自行校验参数并拒绝未知动作（抛出错误），不能把忽略动作当作成功。最多 32 个，
+  每个名字 trim 后 1-48 个可打印 ASCII 字符，区分大小写；接受 `['restart']` 或 `[{ type: 'restart' }]` 两种写法。
 
 ### `app.dialog.*` — 系统对话框
 
@@ -474,3 +525,65 @@ const savePath = await app.dialog.save({
 ```
 
 依赖 URL 的域名必须在 `permissions.net.allow` 中声明。
+
+## MiniApp window chrome
+
+`meta.json` may contain an optional `chrome.titlebar`. The host renders a
+customizable row while preserving platform window conventions: actual native
+traffic lights on macOS, and the main app's right-hand caption controls on Windows.
+The same declared app actions appear at the right of OpenBitFun's top bar when
+embedded. The Shell keeps its native lifecycle controls and return-to-app icon.
+
+```json
+{
+  "chrome": {
+    "titlebar": {
+      "showTitle": true,
+      "showIcon": false,
+      "titleAlignment": "start",
+      "density": "compact",
+      "buttonShape": "rounded",
+      "surface": "surface-scene",
+      "foreground": "content-primary",
+      "border": "border-subtle",
+      "actions": [{
+        "id": "export", "icon": "download", "label": "Export",
+        "labels": {"zh-CN": "导出", "zh-TW": "匯出"}, "enabled": true
+      }]
+    }
+  }
+}
+```
+
+The app logo is hidden by default; set `showIcon: true` to display it.
+An optional `title` overrides the localized app name. `titleAlignment` is `start`
+or `center`; `density` is `compact` or `comfortable`; `buttonShape` is `square`
+or `rounded` for app/return buttons. System controls cannot be moved or restyled
+by the app. Legacy `controlsPosition` values are retained for compatibility and
+ignored by the renderer. macOS keeps the main app's toolbar height even with
+`compact` density, reserving space for its native traffic lights. Semantic `surface` choices
+are `surface-scene`, `surface-canvas`, `surface-raised`, `surface-subtle`;
+`foreground` is `content-primary`, `content-secondary`, `content-muted`;
+`border` is `border-subtle`, `border-default`, `border-strong`.
+
+Action IDs must be unique and labels nonempty. Supported action icon keys:
+`download`, `save`, `search`, `settings`, `refresh`, `plus`, `play`, `stop`,
+`check`, `share`, `help`. Handle actions in `source/ui.js`:
+
+```js
+const handleAction = ({ actionId }) => {
+  if (actionId === 'export') exportDocument();
+};
+app.chrome?.onAction(handleAction);
+// app.chrome?.offAction(handleAction) removes this subscription.
+```
+
+Actions are delivered only to the owning content view, with its existing
+permissions. They never invoke arbitrary native commands. In a draft, the
+window controls are inert and the titlebar's appearance can be previewed; macOS
+previews reserve native control space without drawing imitation traffic lights.
+Editing `chrome` does not grant host permissions. Use `{ "chrome": {} }` to
+restore defaults. `OpenBitFunControl` create/update operations also accept
+`chrome`, so remote controllers can edit the configuration without accessing a
+local path. Native presentation remains unavailable for remote workspaces,
+Peer Device Mode, mobile and Detached Dispatch.

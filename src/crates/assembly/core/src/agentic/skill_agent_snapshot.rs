@@ -12,7 +12,8 @@ use crate::agentic::WorkspaceBinding;
 pub use openbitfun_agent_runtime::skill_agent_snapshot::{
     build_skill_agent_tool_listing_sections_from_snapshot, diff_skill_agent_snapshot,
     render_full_agent_listing_body, render_full_skill_listing_body, AgentSnapshotEntry,
-    SkillAgentDiff, SkillSnapshotEntry, TurnSkillAgentSnapshot, TurnSkillAgentSnapshotStore,
+    DeferredToolSnapshotEntry, SkillAgentDiff, SkillSnapshotEntry, TurnSkillAgentSnapshot,
+    TurnSkillAgentSnapshotStore,
 };
 
 #[derive(Debug, Clone)]
@@ -31,7 +32,10 @@ pub async fn resolve_skill_agent_snapshot(
 ) -> SkillAgentSnapshotResolution {
     if !enable_tools {
         return SkillAgentSnapshotResolution {
-            snapshot: TurnSkillAgentSnapshot::default(),
+            snapshot: TurnSkillAgentSnapshot {
+                deferred_tools: Some(Vec::new()),
+                ..Default::default()
+            },
             tool_listing_sections: ToolListingSections::default(),
         };
     }
@@ -103,7 +107,13 @@ async fn build_skill_agent_snapshot(
     let mut snapshot = TurnSkillAgentSnapshot::default();
 
     if has_tool("Skill") {
-        snapshot.skills = load_skill_entries(workspace, workspace_services, Some(agent_type)).await;
+        snapshot.skills = load_skill_entries(
+            workspace,
+            workspace_services,
+            Some(agent_type),
+            has_tool("generate_image"),
+        )
+        .await;
     }
 
     if has_tool("Task") || has_tool("AgentSpawn") {
@@ -111,7 +121,24 @@ async fn build_skill_agent_snapshot(
             load_subagent_entries(workspace, Some(agent_type), runtime_tool_restrictions).await;
     }
 
+    snapshot.deferred_tools = Some(deferred_tool_entries(manifest));
+
     snapshot
+}
+
+fn deferred_tool_entries(manifest: &ResolvedToolManifest) -> Vec<DeferredToolSnapshotEntry> {
+    if !manifest
+        .tool_definitions
+        .iter()
+        .any(|definition| definition.name == "GetToolSpec")
+    {
+        return Vec::new();
+    }
+    manifest
+        .deferred_tool_summaries
+        .iter()
+        .map(DeferredToolSnapshotEntry::from)
+        .collect()
 }
 
 fn build_tool_listing_sections(
@@ -145,6 +172,16 @@ fn build_tool_listing_sections(
         } else {
             None
         },
+        ptc_tool_calling_guide: {
+            #[cfg(feature = "ptc-runtime")]
+            {
+                manifest.ptc_tool_calling_guide.clone()
+            }
+            #[cfg(not(feature = "ptc-runtime"))]
+            {
+                None
+            }
+        },
     }
 }
 
@@ -152,6 +189,7 @@ async fn load_skill_entries(
     workspace: Option<&WorkspaceBinding>,
     workspace_services: Option<&WorkspaceServices>,
     agent_type: Option<&str>,
+    image_generation_available: bool,
 ) -> Vec<SkillSnapshotEntry> {
     let registry = get_skill_registry();
     let skills = match workspace {
@@ -180,10 +218,13 @@ async fn load_skill_entries(
         }
     };
 
-    skills
-        .into_iter()
-        .map(skill_snapshot_entry_from_skill_info)
-        .collect()
+    openbitfun_agent_runtime::skills::filter_implicit_image_skills(
+        skills,
+        image_generation_available,
+    )
+    .into_iter()
+    .map(skill_snapshot_entry_from_skill_info)
+    .collect()
 }
 
 fn skill_snapshot_entry_from_skill_info(skill: SkillInfo) -> SkillSnapshotEntry {
@@ -280,6 +321,8 @@ mod tests {
                 name: "WebFetch".to_string(),
                 short_description: Some("Fetch a web page".to_string()),
             }],
+            #[cfg(feature = "ptc-runtime")]
+            ptc_tool_calling_guide: None,
             catalog_generation: 7,
         };
 

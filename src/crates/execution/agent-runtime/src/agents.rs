@@ -144,13 +144,16 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
             "Explore",
             SubAgent,
             "fast",
-            SubagentVisibilityPolicy::public(),
+            // Explore remains available to ordinary modes, but Ultimate's
+            // Swarm surface only exposes its built-in Swarm roles by default.
+            // A user override can explicitly enable it for Ultimate.
+            SubagentVisibilityPolicy::public().deny_for(["Ultimate", "SwarmPlanner"]),
         ),
         builtin_agent_spec(
             "GeneralPurpose",
             SubAgent,
             "fast",
-            SubagentVisibilityPolicy::public(),
+            SubagentVisibilityPolicy::public().deny_for(["Ultimate", "SwarmPlanner"]),
         ),
         builtin_agent_spec(
             "ResearchSpecialist",
@@ -461,6 +464,10 @@ pub fn resolve_subagent_default_enabled(
     visibility: &SubagentVisibilityPolicy,
     parent_agent_type: Option<&str>,
 ) -> bool {
+    if parent_agent_type.is_some_and(is_swarm_planner_agent_type) {
+        return source == SubagentSourceKind::Builtin
+            && visibility.can_access_from_parent(parent_agent_type);
+    }
     match source {
         SubagentSourceKind::Builtin => visibility.can_access_from_parent(parent_agent_type),
         SubagentSourceKind::Project

@@ -1,3 +1,7 @@
+import { filterSelectableTextChatModels } from '@/infrastructure/config/services/modelCategory';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { modelSelectionsConfigPath, effectiveModelSelections, readModelSelections } from '@/infrastructure/config/services/modelSelections';
+import { readableModelPools, supportsModelPools, type ModelPoolDefinition, type ModelPoolDocument } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import ReviewCapacitySection from '@/app/scenes/settings/pages/ai/ReviewCapacitySection';
 import ToolJsonRepairSection from '@/app/scenes/settings/pages/ai/ToolJsonRepairSection';
@@ -14,7 +18,7 @@ import { useModelSelectPresentation } from '@/infrastructure/config/components/M
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import type {
   AIModelConfig,
-  SubagentModelSelection
+  AgentModelTargetSelection, AgentModelSelections
 } from '@/infrastructure/config/types';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
@@ -37,6 +41,7 @@ type DescribedSelectOption = SelectOption & { description?: string };
 const log = createLogger('ExecutionSettingsPage');
 
 type SubagentBatchExecutionPolicy = 'safe_only' | 'force_parallel' | 'serial';
+type ToolPresentationMode = 'native' | 'ptc' | 'ptc_python';
 
 const DEFAULT_SUBAGENT_BATCH_EXECUTION_POLICY: SubagentBatchExecutionPolicy = 'force_parallel';
 
@@ -63,16 +68,26 @@ const ExecutionSettingsPage: React.FC = () => {
 
   const { buildModelOption } = useModelSelectPresentation();
 
-  const seed = useConfigSeed(['ai.agent_model_defaults.subagents.default', 'ai.models', 'ai.enable_deferred_tool_loading', 'ai.subagent_max_concurrency', 'ai.swarm_max_concurrency', 'ai.tool_execution_timeout_secs', 'ai.subagent_batch_execution_policy', 'ai.user_question_timeout_secs']);
-  const [subagentDefaultModel, setSubagentDefaultModel] = useState<SubagentModelSelection>(seed.get<SubagentModelSelection | null>('ai.agent_model_defaults.subagents.default', null) ?? { kind: 'fixed', model_id: 'fast' });
+  const seed = useConfigSeed([modelSelectionsConfigPath(), 'ai.models', 'ai.enable_deferred_tool_loading', 'ai.subagent_max_concurrency', 'ai.swarm_max_concurrency', 'ai.tool_execution_timeout_secs', 'ai.subagent_batch_execution_policy', 'ai.user_question_timeout_secs', 'ai.tool_presentation_mode']);
+  let seededSelections: AgentModelSelections | undefined;
+  if (seed.loaded) {
+    try { seededSelections = effectiveModelSelections(seed.get(modelSelectionsConfigPath(), undefined)); }
+    catch { /* The strict read below surfaces malformed or missing settings. */ }
+  }
+  const hasSeededPageData = seed.loaded && Boolean(seededSelections);
+  const [subagentDefaultModel, setSubagentDefaultModel] = useState<AgentModelTargetSelection>(() => seededSelections?.subagents.default ?? { kind: 'inherit' });
+  const [modelPools, setModelPools] = useState<ModelPoolDefinition[]>(() => {
+    const document = seed.get<ModelPoolDocument | null>('ai.model_pools', null);
+    return document ? readableModelPools(document) : [];
+  });
 
   const [configuredModels, setConfiguredModels] = useState<AIModelConfig[]>(seed.get<AIModelConfig[] | null>('ai.models', null) ?? []);
 
-  const [isLoading, setIsLoading] = useState(!seed.loaded);
+  const [isLoading, setIsLoading] = useState(!hasSeededPageData);
 
   const [loadError, setLoadError] = useState(false);
 
-  const hasLoadedPageDataRef = useRef(seed.loaded);
+  const hasLoadedPageDataRef = useRef(hasSeededPageData);
 
   const [enableDeferredToolLoading, setEnableDeferredToolLoading] = useState(seed.get('ai.enable_deferred_tool_loading', true) ?? true);
 
@@ -90,6 +105,15 @@ const ExecutionSettingsPage: React.FC = () => {
   const [toolExecConfigLoading, setToolExecConfigLoading] = useState(false);
 
   const [deferredToolLoadingConfigSaving, setDeferredToolLoadingConfigSaving] = useState(false);
+
+  const [toolPresentationMode, setToolPresentationMode] = useState<ToolPresentationMode>(
+    (() => {
+      const value = seed.get<ToolPresentationMode | null>('ai.tool_presentation_mode', 'native');
+      return value === 'ptc' || value === 'ptc_python' ? value : 'native';
+    })(),
+  );
+
+  const [toolPresentationModeSaving, setToolPresentationModeSaving] = useState(false);
 
   const subagentBatchExecutionPolicyOptions: DescribedSelectOption[] = [
     {
@@ -122,6 +146,27 @@ const ExecutionSettingsPage: React.FC = () => {
     }
   };
 
+  const handleToolPresentationModeChange = async (value: string | number | (string | number)[]) => {
+    const selected = String(Array.isArray(value) ? value[0] : value);
+    const nextMode: ToolPresentationMode = selected === 'ptc' || selected === 'ptc_python'
+      ? selected
+      : 'native';
+    if (nextMode === toolPresentationMode) return;
+    const previousMode = toolPresentationMode;
+    setToolPresentationMode(nextMode);
+    setToolPresentationModeSaving(true);
+    try {
+      await configManager.setConfig('ai.tool_presentation_mode', nextMode);
+      notificationService.success(t('messages.saveSuccess'), { duration: 2000 });
+    } catch (error) {
+      log.error('Failed to save tool presentation mode', error);
+      setToolPresentationMode(previousMode);
+      notificationService.error(t('messages.saveFailed'));
+    } finally {
+      setToolPresentationModeSaving(false);
+    }
+  };
+
   const handleSubagentBatchExecutionPolicyChange = async (value: string | number | (string | number)[]) => {
     const nextPolicy = normalizeSubagentBatchExecutionPolicy(Array.isArray(value) ? value[0] : value);
     const previousPolicy = subagentBatchExecutionPolicy;
@@ -143,31 +188,38 @@ const ExecutionSettingsPage: React.FC = () => {
     }
   };
 
-  const subagentModelValue = subagentDefaultModel.kind === 'inherit' ? 'inherit' : subagentDefaultModel.model_id;
+  const subagentModelValue = JSON.stringify(subagentDefaultModel);
 
   const subagentModelOptions: ComboboxOption[] = [
-    { value: 'inherit', label: tTools('config.subagentModelInherit') },
-    { value: 'fast', label: tModels('sessionTitle.model.fast') },
-    { value: 'primary', label: tModels('sessionTitle.model.primary') },
-    ...configuredModels.filter(model => model.enabled && model.id).map(buildModelOption),
+    { value: JSON.stringify({ kind: 'inherit' }), label: tTools('config.subagentModelInherit') },
+    { value: JSON.stringify({ kind: 'model', model_ref: 'fast' }), label: tModels('sessionTitle.model.fast') },
+    { value: JSON.stringify({ kind: 'model', model_ref: 'primary' }), label: tModels('sessionTitle.model.primary') },
+    ...filterSelectableTextChatModels(configuredModels).filter(model => model.id).map(model => ({ ...buildModelOption(model), value: JSON.stringify({ kind: 'model', model_ref: model.id }) })),
+    ...(supportsModelPools() ? modelPools.map(pool => ({ value: JSON.stringify({ kind: 'pool', pool_id: pool.id }), label: pool.name, description: tModels('pools.title') })) : []),
   ];
 
   const handleSubagentDefaultModelChange = async (value: string | number) => {
-    const selection: SubagentModelSelection = value === 'inherit'
-      ? { kind: 'inherit' }
-      : { kind: 'fixed', model_id: String(value) };
+    const scope = getActiveSurfaceScope();
+    const selection = JSON.parse(String(value)) as AgentModelTargetSelection;
     setToolExecConfigLoading(true);
     try {
-      await configManager.setConfig('ai.agent_model_defaults.subagents.default', selection);
+      if (modelSelectionsConfigPath() === 'ai.agent_model_selections') {
+        await configManager.setConfig('ai.agent_model_selections.subagents.default', selection);
+      } else {
+        if (selection.kind === 'pool') throw new Error('This host does not support model_pool_selection_v1');
+        await configManager.setConfig('ai.agent_model_defaults.subagents.default', selection.kind === 'inherit' ? selection : { kind: 'fixed', model_id: selection.model_ref });
+      }
+      if (!scope.isCurrent()) return;
       setSubagentDefaultModel(selection);
       notificationService.success(tTools('messages.saveSuccess'), { duration: 2000 });
     } catch (error) {
+      if (!scope.isCurrent()) return;
       log.error('Failed to save default subagent model', error);
       notificationService.error(
         `${tTools('messages.saveFailed')}: ${error instanceof Error ? error.message : String(error)}`
       );
     } finally {
-      setToolExecConfigLoading(false);
+      if (scope.isCurrent()) setToolExecConfigLoading(false);
     }
   };
 
@@ -264,8 +316,10 @@ const ExecutionSettingsPage: React.FC = () => {
         execTimeout,
         loadedSubagentBatchExecutionPolicy,
         loadedUserQuestionTimeout,
+        loadedToolPresentationMode,
+        poolDocument,
       ] = await Promise.all([
-        configManager.getConfig<SubagentModelSelection>('ai.agent_model_defaults.subagents.default'),
+        readModelSelections(),
         configManager.getConfig<AIModelConfig[]>('ai.models'),
         configManager.getConfig<boolean>('ai.enable_deferred_tool_loading'),
         configManager.getConfig<number | null>('ai.subagent_max_concurrency'),
@@ -273,8 +327,11 @@ const ExecutionSettingsPage: React.FC = () => {
         configManager.getConfig<number | null>('ai.tool_execution_timeout_secs'),
         configManager.getConfig<SubagentBatchExecutionPolicy>('ai.subagent_batch_execution_policy'),
         configManager.getOptionalConfig<number | null>('ai.user_question_timeout_secs'),
+        configManager.getOptionalConfig<string>('ai.tool_presentation_mode'),
+        supportsModelPools() ? configManager.getOptionalConfig<ModelPoolDocument>('ai.model_pools') : Promise.resolve(undefined),
       ]);
-      setSubagentDefaultModel(loadedSubagentDefaultModel ?? { kind: 'fixed', model_id: 'fast' });
+      setSubagentDefaultModel(loadedSubagentDefaultModel.subagents.default);
+      setModelPools(poolDocument ? readableModelPools(poolDocument) : []);
       setConfiguredModels(loadedModels ?? []);
       setEnableDeferredToolLoading(deferredToolLoadingEnabled ?? true);
       setSubagentMaxConcurrency(loadedSubagentMaxConcurrency != null
@@ -288,6 +345,11 @@ const ExecutionSettingsPage: React.FC = () => {
         ? '180'
         : loadedUserQuestionTimeout === null ? '0' : String(loadedUserQuestionTimeout));
       setSubagentBatchExecutionPolicy(normalizeSubagentBatchExecutionPolicy(loadedSubagentBatchExecutionPolicy));
+      setToolPresentationMode(
+        loadedToolPresentationMode === 'ptc' || loadedToolPresentationMode === 'ptc_python'
+          ? loadedToolPresentationMode
+          : 'native',
+      );
 
       hasLoadedPageDataRef.current = true;
     } catch (error) {
@@ -299,13 +361,25 @@ const ExecutionSettingsPage: React.FC = () => {
   }, []);
   useEffect(() => {
 
-    if (!seed.loaded) void loadPageData();
-  }, [loadPageData, seed.loaded]);
+    if (!hasSeededPageData) {
+      void loadPageData();
+      return;
+    }
+    if (!supportsModelPools()) return;
+    const scope = getActiveSurfaceScope();
+    let active = true;
+    void configManager.getOptionalConfig<ModelPoolDocument>('ai.model_pools').then(document => {
+      if (active && scope.isCurrent()) setModelPools(document ? readableModelPools(document) : []);
+    }).catch(error => {
+      if (active && scope.isCurrent()) { log.error('Failed to load model pools', { error }); setLoadError(true); }
+    });
+    return () => { active = false; };
+  }, [loadPageData, hasSeededPageData]);
 
   if (!subagentModelOptions.some(option => option.value === subagentModelValue)) {
     subagentModelOptions.push({
       value: subagentModelValue,
-      label: tModels('sessionTitle.models.unavailable', { id: subagentModelValue }),
+      label: tModels('sessionTitle.models.unavailable', { id: subagentDefaultModel.kind === 'pool' ? subagentDefaultModel.pool_id : subagentDefaultModel.kind === 'model' ? subagentDefaultModel.model_ref : tTools('config.subagentModelInherit') }),
       disabled: true,
     });
   }
@@ -320,7 +394,6 @@ const ExecutionSettingsPage: React.FC = () => {
 
           <ConfigPageSection
             title={t('deferredToolLoading.sectionTitle')}
-            description={t('deferredToolLoading.sectionDescription')}
           >
             <ConfigPageRow
               label={t('common.enable')}
@@ -337,10 +410,33 @@ const ExecutionSettingsPage: React.FC = () => {
             </ConfigPageRow>
           </ConfigPageSection>
 
+          <ConfigPageSection
+            title={t('toolPresentation.sectionTitle')}
+          >
+            <ConfigPageRow
+              label={t('toolPresentation.mode')}
+              description={t('toolPresentation.description')}
+              align="center"
+            >
+              <div className="openbitfun-runtime-settings__row-control" data-openbitfun-component="runtime-settings" data-openbitfun-part="control">
+                <Select
+                  size="sm"
+                  value={toolPresentationMode}
+                  options={[
+                    { value: 'native', label: t('toolPresentation.native') },
+                    { value: 'ptc', label: t('toolPresentation.ptc'), tooltip: t('toolPresentation.ptcTooltip') },
+                    { value: 'ptc_python', label: t('toolPresentation.ptcPython'), tooltip: t('toolPresentation.ptcPythonTooltip') },
+                  ]}
+                  disabled={toolPresentationModeSaving}
+                  onValueChange={handleToolPresentationModeChange}
+                />
+              </div>
+            </ConfigPageRow>
+          </ConfigPageSection>
+
           {/* ── Tool execution behavior ────────────────────────────── */}
           <ConfigPageSection
             title={t('toolExecution.sectionTitle')}
-            description={t('toolExecution.sectionDescription')}
           >
             <ConfigPageRow
               label={tTools('config.executionTimeout')}
@@ -384,7 +480,6 @@ const ExecutionSettingsPage: React.FC = () => {
 
           <ConfigPageSection
             title={tTools('section.subagents.title')}
-            description={tTools('section.subagents.description')}
           >
             <ConfigPageRow
               className="openbitfun-runtime-settings__subagent-model-row"

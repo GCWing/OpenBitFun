@@ -200,3 +200,6 @@ export function MarketplacePublishToolCard({ appearance = false, ...props }: Sem
 export function PlaybookToolCard(props: SemanticToolCardProps) {
   return <SemanticToolCard {...props} identity="playbook" iconName="workflow" />;
 }
+export function DesktopCardToolCard(props: SemanticToolCardProps) {
+  return <SemanticToolCard {...props} identity="desktop-card" iconName="floating-window" />;
+}

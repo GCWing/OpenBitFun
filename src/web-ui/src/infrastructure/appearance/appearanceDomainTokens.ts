@@ -66,6 +66,7 @@ export const APPEARANCE_LANGUAGE_TOKENS = {
   javascriptReact: languageToken('cyan'),
   python: languageToken('blue'),
   rust: languageToken('orange'),
+  cangjie: languageToken('red'),
   go: languageToken('cyan'),
   java: languageToken('orange'),
   kotlin: languageToken('purple'),

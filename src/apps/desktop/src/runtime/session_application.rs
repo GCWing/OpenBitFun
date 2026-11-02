@@ -392,17 +392,19 @@ impl DesktopSessionApplication {
         cursor: Option<&str>,
         limit: usize,
         session_ids: Option<&[String]>,
+        query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
     ) -> DesktopSessionApplicationResult<SessionMetadataPage> {
         let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
         let mut page = self
             .compatibility
-            .list_persisted_sessions_page_with_activity(
+            .list_persisted_sessions_page_with_activity_and_query(
                 &self.agent_runtime,
                 &storage_path,
                 cursor,
                 limit,
                 session_ids,
+                query.filter(|query| query.workspace_id == scope.workspace_id),
             )
             .await
             .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))?;
@@ -600,6 +602,8 @@ impl DesktopSessionApplication {
         request: DesktopSessionScopeRequest,
         session_id: String,
         include_hidden_subagents: bool,
+        include_system_prompt_preview: bool,
+        context_preview_category: Option<openbitfun_core_types::UsageContextCategory>,
     ) -> DesktopSessionApplicationResult<SessionUsageReport> {
         let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
@@ -612,6 +616,8 @@ impl DesktopSessionApplication {
                 remote_connection_id: scope.remote_connection_id.clone(),
                 remote_ssh_host: scope.requested_remote_ssh_host.clone(),
                 include_hidden_subagents,
+                include_system_prompt_preview,
+                context_preview_category,
             })
             .await
             .map_err(|error| DesktopSessionApplicationError::Runtime(error.into_message()))?;
@@ -748,6 +754,7 @@ impl DesktopSessionApplication {
         model_id: &str,
         reasoning_preset: Option<&str>,
         include_internal: bool,
+        routing_mode: Option<&str>,
     ) -> DesktopSessionApplicationResult<bool> {
         if self
             .compatibility
@@ -759,11 +766,12 @@ impl DesktopSessionApplication {
         let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         self.compatibility
-            .update_session_model_selection_from_storage_path(
+            .update_session_model_selection_from_storage_path_with_routing(
                 &self.storage_path(&scope),
                 session_id,
                 model_id,
                 reasoning_preset,
+                routing_mode,
                 include_internal,
             )
             .await

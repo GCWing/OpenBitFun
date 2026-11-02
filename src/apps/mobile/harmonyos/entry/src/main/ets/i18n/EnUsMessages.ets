@@ -1,4 +1,5 @@
 export const EN_US_MESSAGES: [string, string][] = [
+  ['session.newTitle', 'New Session'],
   ['workspaceTools.browse', 'Browse runtime folders'],
   ['workspaceTools.selectFolder', 'Use this folder'],
   ['workspaceTools.back', 'Back to files'],
@@ -101,6 +102,7 @@ export const EN_US_MESSAGES: [string, string][] = [
   ['notification.taskCompletedBody', 'Your OpenBitFun task is ready. Tap to open OpenBitFun and view the result.'],
 
   ['chatHome.prompt', 'What do you want to do today?'],
+  ['chat.promptSuggestionAccept', 'Use suggestion'],
   ['chatHome.placeholder', 'Ask OpenBitFun'],
   ['chatHome.localHint', 'This chat stays on the phone. Switch to Remote to read and write projects on your computer.'],
   ['chatHome.research', 'Find sources'],

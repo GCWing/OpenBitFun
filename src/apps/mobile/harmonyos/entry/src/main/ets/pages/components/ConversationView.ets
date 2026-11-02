@@ -558,6 +558,7 @@ export struct ConversationView {
       capabilities: this.composerCapabilities,
       inputId: this.composerInputId,
       chatInput: this.chatInput,
+      promptSuggestion: this.stagingTargetTurnId.length > 0 ? '' : this.state.promptSuggestion,
       selectedImages: this.selectedImages,
       isBusy: this.isBusy,
       canStop: this.canStop,

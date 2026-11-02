@@ -35,11 +35,13 @@
     pointer-events: none;
   }
 
-  .root[data-layout="overlay"][data-mode="split"] > .primary .primaryDock {
+  .root[data-layout="overlay"][data-mode="split"] > .primary .primaryDock,
+  .root[data-layout="overlay"][data-mode="split"] .surface.primary .primaryDock {
     inline-size: max(0px, calc(100% - var(--_split-view-right-size) - var(--openbitfun-border-width-default)));
   }
 
-  .root[data-layout="overlay"][data-mode="split"][data-secondary-side="left"] > .primary .primaryDock {
+  .root[data-layout="overlay"][data-mode="split"][data-secondary-side="left"] > .primary .primaryDock,
+  .root[data-layout="overlay"][data-mode="split"][data-secondary-side="left"] .surface.primary .primaryDock {
     inset-inline-start: calc(var(--_split-view-right-size) + var(--openbitfun-border-width-default));
   }
 
@@ -72,6 +74,26 @@
     inset-inline-end: auto;
   }
 
+  .root .header > .headerColumns {
+    grid-template-columns: minmax(0, 1fr) var(--openbitfun-border-width-default) minmax(0, var(--_split-view-right-size));
+  }
+  .root[data-layout="overlay"][data-secondary-side="left"][data-mode="split"] .headerColumns {
+    grid-template-columns: minmax(0, var(--_split-view-right-size)) var(--openbitfun-border-width-default) minmax(0, 1fr);
+  }
+  .header { grid-area: header; min-inline-size: 0; z-index: var(--openbitfun-layer-sticky); }
+  .root[data-has-header] {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "header header header" "primary divider secondary";
+  }
+  .root[data-has-header][data-secondary-side="left"] { grid-template-areas: "header header header" "secondary divider primary"; }
+  .root[data-has-header][data-mode="primary"],
+  .root[data-has-header][data-layout="overlay"]:not([data-mode="secondary"]) { grid-template-areas: "header" "primary"; }
+  .root[data-has-header][data-mode="secondary"] { grid-template-areas: "header" "secondary"; }
+  .root[data-has-header][data-layout="overlay"][data-mode="split"] .secondary,
+  .root[data-has-header][data-layout="overlay"][data-mode="split"] .divider {
+    grid-row: 2;
+  }
+
   .pane {
     display: flex;
     flex-direction: column;
@@ -80,6 +102,9 @@
     overflow: hidden;
   }
 
+  .surface { position: relative; }
+  .surface[data-split-active="false"] { visibility: hidden; opacity: 0; pointer-events: none; }
+  .root[data-layout="overlay"][data-mode="split"] .secondary { z-index: 2; }
   .primary { grid-area: primary; }
   .secondary { grid-area: secondary; }
   .pane[hidden], .divider[hidden] { display: none; }

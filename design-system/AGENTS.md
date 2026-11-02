@@ -49,3 +49,28 @@ pnpm --dir design-system run build:ui && node --test design-system/packages/ui/t
 ```
 
 Do not use browser automation or mock screenshots as visual proof. Design Lab is the manual authoring surface; source, build, HTTP, and package checks do not establish final visual fidelity.
+
+For SplitView geometry, drag cancellation, and cached resize bounds:
+
+```bash
+pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/split-view.test.mjs
+pnpm --dir src/web-ui exec vitest run src/shared/ui/SplitView.test.tsx
+```
+
+For Select presentation, compact/expanded labels, native form participation and keyboard selection:
+
+```bash
+pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/select.test.mjs design-system/packages/ui/tests/registry.test.mjs
+pnpm --dir src/web-ui exec vitest run src/shared/ui/Select.test.tsx
+```
+
+These package and DOM checks do not establish native rendering or live remote behavior.
+
+For ColorPicker HEX drafts, flower selection, curved lightness dragging and keyboard input:
+
+```bash
+pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/color-picker.test.mjs design-system/packages/ui/tests/registry.test.mjs
+pnpm --dir src/web-ui run test:run src/shared/ui/ColorPicker.test.tsx src/app/components/WorkspaceIcon/WorkspaceIconDialog.test.tsx
+```
+
+These package and DOM checks do not establish visual fidelity or live remote behavior.

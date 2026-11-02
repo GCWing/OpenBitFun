@@ -6,6 +6,7 @@ import {
   useId,
   useRef,
   useState,
+  version as reactVersion,
   type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -71,6 +72,15 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
     return;
   }
   (ref as { current: T | null }).current = value;
+}
+
+// React 19 passes `ref` as a regular prop and warns when `element.ref` is read.
+const REF_IS_PROP = Number.parseInt(reactVersion, 10) >= 19;
+
+function readElementRef(element: ReactElement | undefined): Ref<HTMLElement> | undefined {
+  if (!element) return undefined;
+  if (REF_IS_PROP) return (element.props as { ref?: Ref<HTMLElement> }).ref;
+  return (element as ReactElement & { ref?: Ref<HTMLElement> }).ref;
 }
 
 const OPPOSITE_PLACEMENT: Record<TooltipPlacement, TooltipPlacement> = {
@@ -475,7 +485,7 @@ export function Tooltip({
   }, [stopWatchingScroll, triggerRef, visible]);
 
   const childProps = (children?.props ?? {}) as Record<string, unknown>;
-  const childRef = (children as (ReactElement & { ref?: Ref<HTMLElement> }) | undefined)?.ref;
+  const childRef = readElementRef(children as ReactElement | undefined);
 
   const handleTriggerRef = useCallback((node: HTMLElement | null) => {
     internalTriggerRef.current = node;
@@ -552,7 +562,8 @@ export function Tooltip({
 
   return (
     <>
-      <TooltipTriggerContext.Provider value={!disabled}>
+      {/* Disabling an authored hint must not enable a nested overflow hint. */}
+      <TooltipTriggerContext.Provider value={true}>
         {triggerElement}
       </TooltipTriggerContext.Provider>
       {visible && (

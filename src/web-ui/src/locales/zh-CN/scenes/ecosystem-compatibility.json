@@ -1,5 +1,8 @@
 {
-  "title": "生态兼容",
+  "title": "外部导入",
+  "applications": {
+    "title": "外部应用"
+  },
   "loading": "正在检查兼容状态…",
   "partialLoad": "部分状态未能读取：{{sources}} {{acp}}。已保留其余可用内容。",
   "retry": "重试",
@@ -52,7 +55,7 @@
     "notice": "“{{name}}”正在开发中。"
   },
   "capabilities": {
-    "account": "账号",
+    "account": "账号订阅",
     "settings": "配置与偏好",
     "command": "命令",
     "tool": "工具",
@@ -64,6 +67,28 @@
     "plugin": "插件",
     "pet": "宠物",
     "instruction": "指令与规则"
+  },
+  "sessions": {
+    "removed": {
+      "title": "已移除的源会话",
+      "description": "将源会话重新添加到会话列表。已有的 OpenBitFun 续聊分支保持独立，源会话在打开时更新历史。",
+      "empty": "没有已移除的源会话。",
+      "restore": "重新添加",
+      "restoreNamed": "重新添加“{{name}}”",
+      "retry": "重试",
+      "loadFailed": "无法读取已移除的源会话，请在主机可用后重试。",
+      "restoreFailed": "无法重新添加此源会话。移除记录已保留，请稍后重试。",
+      "refreshFailed": "源会话已重新添加，但列表刷新失败。请重新打开工作区查看。",
+      "unsupportedHost": "当前主机不支持重新添加已移除的源会话，请更新运行会话的主机后重试。",
+      "unsupportedSurface": "请在会话所属主机管理已移除的源会话，Peer 模式暂不支持此操作。"
+    },
+    "autoDiscovery": {
+      "label": "自动发现 {{name}} 会话",
+      "description": "打开工作区时，只建立 {{name}} 会话的轻量索引并显示在列表中。首次打开或续聊时才保存完整历史；未打开的会话仍依赖原始来源。关闭开关后立即隐藏该来源的跟随条目，已分叉的本地副本继续保留。暂不支持 SSH 工作区发现。",
+      "unsupported": "当前主机不支持会话自动发现，请更新会话所在主机后启用。",
+      "loadFailed": "无法加载会话自动发现设置。",
+      "saveFailed": "无法保存会话自动发现设置。"
+    }
   },
   "import": {
     "title": "导入与复用",
@@ -149,7 +174,7 @@
         "failed": "保存 {{name}} 的子智能体配置失败"
       }
     },
-    "openManager": "管理 ACP 智能体",
+    "openManager": "ACP连接",
     "managerLabel": "ACP 智能体管理",
     "managerScope": "安装、启用或调整当前生态的 ACP 智能体。",
     "loadingManager": "正在加载 ACP 智能体管理…",
@@ -253,7 +278,7 @@
     },
     "repairSource": "补齐来源",
     "nativeUserTarget": "OpenBitFun · 用户配置",
-    "undoAll": "一键撤销",
+    "undoAll": "撤销",
     "importSelected": "导入所选",
     "undoSelected": "撤销所选",
     "selectedCount": "已选 {{count}} 项",

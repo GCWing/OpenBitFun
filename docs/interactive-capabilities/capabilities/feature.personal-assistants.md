@@ -11,9 +11,9 @@ title_en: "Personal assistants"
 
 > 功能 / Feature
 
-在助理空间中创建和管理自己的长期 AI 助理，定义身份与人设、配置默认能力，并从同一处开始会话或安排定时任务。
+在助理空间中创建和管理自己的长期 AI 助理，定义身份与人设，并从同一处开始会话或安排定时任务。
 
-Create and manage persistent AI assistants, define their identity and persona, configure default capabilities, and start chats or scheduled work from one place.
+Create and manage persistent AI assistants, define their identity and persona, and start chats or scheduled work from one place.
 
 ## 完整功能清单 / Everything included
 
@@ -27,16 +27,8 @@ Create and manage persistent AI assistants, define their identity and persona, c
   - Edit an assistant's name, creature type, and vibe, then choose an official avatar, emoji, or custom avatar character
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 读取和编辑 IDENTITY.md、SOUL.md 与 USER.md，并自动保存 Markdown 正文和 Frontmatter
   - Read and edit IDENTITY.md, SOUL.md, and USER.md with autosaved Markdown body and frontmatter
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 为新助理选择默认 Skills，识别用户级与项目级来源、遮蔽关系和当前可用状态
-  - Choose default Skills for new assistants while seeing user/project sources, shadowing, and availability
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 逐个或批量启用默认内置工具，并查看说明、只读或可执行属性及产品默认状态
-  - Enable default built-in tools individually or in groups and inspect descriptions, read-only or executable access, and product defaults
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 按 MCP 服务器查看连接状态、工具详情与传输信息，并为新助理启用整个服务或单个工具
-  - Inspect MCP server status, tool details, and transport, then enable a whole server or individual tools for new assistants
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 按 Skills、内置工具或 MCP 分类搜索，筛选启用、停用、已更改或不可用项，查看详情并恢复产品默认值
-  - Search Skills, built-in tools, or MCP entries; filter enabled, disabled, changed, or unavailable items; inspect details; and restore product defaults
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 从助理卡片新建会话，或在助理详情中选择模型、输入消息并查看该助理的历史会话
-  - Start a session from an assistant card, or choose a model, send a message, and browse that assistant's sessions from its detail page
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 在助理详情中选择模型、输入消息并查看该助理的历史会话
+  - Choose a model, send a message, and browse an assistant's sessions from its detail page
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看和管理仅属于当前助理工作区的定时会话与自动任务
   - Review and manage scheduled sessions and automated jobs scoped to the current assistant workspace
 
@@ -46,8 +38,8 @@ Create and manage persistent AI assistants, define their identity and persona, c
    Open Assistants
 2. 创建助理或选择现有助理
    Create an assistant or choose an existing one
-3. 编辑身份与人设，配置默认能力，然后开始会话或定时任务
-   Edit its identity and persona, configure defaults, then start a chat or scheduled task
+3. 编辑身份与人设，然后开始会话或定时任务
+   Edit its identity and persona, then start a chat or scheduled task
 
 入口 / Entry: OpenBitFun 对应场景
 
@@ -67,8 +59,8 @@ Create and manage persistent AI assistants, define their identity and persona, c
 
 - “打开我的个人助理”
   - “Open my personal assistants”
-- “带我去育苗场配置助理的默认工具”
-  - “Take me to the nursery to configure default assistant tools”
+- “帮我创建一个新的个人助理”
+  - “Help me create a new personal assistant”
 - “我想修改主助理的人设”
   - “I want to edit my primary assistant's persona”
 

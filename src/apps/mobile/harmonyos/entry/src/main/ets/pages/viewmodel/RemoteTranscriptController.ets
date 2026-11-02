@@ -455,6 +455,7 @@ export class RemoteTranscriptController {
     }
     runtime.timeline.applySnapshot(snapshot);
     this.syncRemoteTimeline();
+    this.remote.conversation.promptSuggestion = snapshot.promptSuggestion ?? '';
     if (snapshot.historyLoading === true) {
       // A history page publishes once per record it contains, and every one of
       // them lands in front of the window, so no row already on disk survives:

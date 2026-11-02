@@ -25,14 +25,16 @@ Open a local directory or create a project so files, sessions, terminals, and ag
   - Review, clean up, and reopen recently used projects
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 扫描并维护工作区名称、信息、关联目录和 Persona 文件
   - Scan and maintain workspace names, metadata, related directories, and persona files
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 监听项目文件变化并查看当前监听路径
-  - Watch project file changes and inspect active watched paths
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 监听项目文件变化、检查监听状态并在失败后恢复
+  - Watch project file changes, inspect watch status, and recover a stopped watcher
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 按文件名、路径或文件内容搜索本地工作区
   - Search local workspaces by filename, path, or file content
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 从项目流程打开 SSH 或其他远程工作区
   - Open SSH and other remote workspaces from the project flow
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看当前工作区、应用状态、健康状态与统计信息
   - Inspect the current workspace, app state, health, and statistics
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择项目图案和颜色，或使用自定义图片
+  - Choose project icon shapes and colors, or use a custom image
 
 ## 怎么用 / How to use it
 

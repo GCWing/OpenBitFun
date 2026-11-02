@@ -1,5 +1,8 @@
 {
-  "title": "Ecosystem Compatibility",
+  "title": "External Import",
+  "applications": {
+    "title": "External apps"
+  },
   "loading": "Checking compatibility…",
   "partialLoad": "Some status could not be read: {{sources}} {{acp}}. Other available content is still shown.",
   "retry": "Retry",
@@ -52,7 +55,7 @@
     "notice": "“{{name}}” is in development."
   },
   "capabilities": {
-    "account": "Accounts",
+    "account": "Account subscriptions",
     "settings": "Settings & preferences",
     "command": "Commands",
     "tool": "Tools",
@@ -64,6 +67,28 @@
     "plugin": "Plugins",
     "pet": "Pets",
     "instruction": "Instructions"
+  },
+  "sessions": {
+    "removed": {
+      "title": "Removed source sessions",
+      "description": "Add a source session back to the session list. Its existing OpenBitFun branches remain independent; history updates when you open the source.",
+      "empty": "No source sessions have been removed.",
+      "restore": "Add again",
+      "restoreNamed": "Add “{{name}}” again",
+      "retry": "Retry",
+      "loadFailed": "Could not load removed source sessions. Retry when the host is available.",
+      "restoreFailed": "Could not add this source session again. The removal record is kept; retry later.",
+      "refreshFailed": "The source was added again, but the session list could not refresh. Reopen the workspace to see it.",
+      "unsupportedHost": "This host does not support restoring removed source sessions. Update the serving host and retry.",
+      "unsupportedSurface": "Manage removed source sessions on their owning host. This action is unavailable in Peer mode."
+    },
+    "autoDiscovery": {
+      "label": "Automatically discover {{name}} sessions",
+      "description": "When a workspace opens, list its {{name}} sessions using a lightweight index. The full history is saved locally the first time you open or continue a session. Unopened history requires the original source. Turning this off immediately hides source-following entries; local forks remain visible. SSH workspace discovery is not available.",
+      "unsupported": "This host does not support automatic session discovery. Update the serving host to enable it.",
+      "loadFailed": "Could not load automatic session discovery settings.",
+      "saveFailed": "Could not save the automatic session discovery setting."
+    }
   },
   "import": {
     "title": "Import and reuse",
@@ -149,7 +174,7 @@
         "failed": "Failed to save the subagent profile for {{name}}"
       }
     },
-    "openManager": "Manage ACP agents",
+    "openManager": "ACP connection",
     "managerLabel": "ACP agent management",
     "managerScope": "Install, enable, or adjust ACP agents for this ecosystem.",
     "loadingManager": "Loading ACP agent management…",
@@ -253,7 +278,7 @@
     },
     "repairSource": "Repair source label",
     "nativeUserTarget": "OpenBitFun · User configuration",
-    "undoAll": "Undo all",
+    "undoAll": "Undo",
     "importSelected": "Import selected",
     "undoSelected": "Undo selected",
     "selectedCount": "{{count}} selected",

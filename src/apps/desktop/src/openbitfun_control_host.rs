@@ -12,8 +12,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use openbitfun_core::agentic::tools::openbitfun_control_config::{
-    apply_legacy_config_mutation, config_handler_path, configure_config_backed_option,
-    exact_config_binding, read_config_backed_option, ProductConfigBinding,
+    apply_legacy_config_mutation, apply_legacy_config_mutation_with_model_snapshot,
+    config_handler_path, configure_config_backed_option, exact_config_binding,
+    read_config_backed_option, ProductConfigBinding,
 };
 use openbitfun_core::agentic::tools::openbitfun_control_host::{
     set_openbitfun_control_port, OpenBitFunControlHostRequest, ProductControlAction,
@@ -555,6 +556,28 @@ async fn inspect_desktop(
         ),
     );
     option_values.insert("revision".to_string(), Value::from(current_revision()));
+    if capability_id == "setting.tools.mcp" && state.mcp_service.is_none() {
+        option_values.insert(
+            "controlAvailability".into(),
+            json!({
+                "status": "unavailable",
+                "contractAvailable": true,
+                "adapter": "desktop-native",
+                "readBack": false,
+                "reason": "MCP service is not initialized on the executing product host",
+            }),
+        );
+    }
+    if capability_id == "feature.remote-connect" {
+        let status = crate::api::remote_connect_api::execute_remote_control(
+            openbitfun_product_domains::remote_control::RemoteControlRequest::Status,
+        )
+        .await;
+        option_values.insert(
+            "remoteConnect".into(),
+            status.unwrap_or_else(|error| json!({"status":"unavailable", "reason":error})),
+        );
+    }
     if capability_id == "setting.application.pet" {
         let provider_state = match companion_state(&state).await {
             Ok(value) => value,
@@ -699,7 +722,11 @@ pub(crate) async fn set_config_from_gui(
     app: &AppHandle,
     path: &str,
     value: Value,
+    expected_models: Option<Value>,
 ) -> Result<Value, String> {
+    if expected_models.is_some() && path != "ai.models" {
+        return Err("A model snapshot requires the ai.models array path".into());
+    }
     if let Some((capability, option)) = exact_config_binding(path)? {
         return configure_option_transaction(app, &capability.id, &option.id, &value).await;
     }
@@ -707,7 +734,13 @@ pub(crate) async fn set_config_from_gui(
     let _transaction = product_control_transaction().lock().await;
     let state = app.state::<AppState>();
     let previous_value = state.config_service.get_config(Some(path)).await.ok();
-    let applied = apply_legacy_config_mutation(&state.config_service, path, value).await?;
+    let applied = apply_legacy_config_mutation_with_model_snapshot(
+        &state.config_service,
+        path,
+        value,
+        expected_models,
+    )
+    .await?;
     if !applied.changed {
         return Ok(json!({
             "catalogDigest": openbitfun_product_domains::product_control::catalog()?.digest.clone(),
@@ -821,6 +854,9 @@ async fn configure_desktop_provider_option(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DesktopProviderOperation {
     MiniApp(miniapps::Operation),
+    Mcp(openbitfun_core::service::mcp::control::MCPControlOperation),
+    RemoteConnect(&'static str),
+    DetachedDispatch(&'static str),
     ListCompanionPets,
     UseCompanionPet,
     DeleteCompanionPet,
@@ -831,7 +867,26 @@ fn desktop_provider_operation(
     operation_id: &str,
 ) -> Option<DesktopProviderOperation> {
     match (provider_id, operation_id) {
+        ("remote-connect", id) => [
+            "status",
+            "start",
+            "stop",
+            "configure-bot",
+            "weixin-login-start",
+            "weixin-login-poll",
+            "set-bot-verbose",
+        ]
+        .into_iter()
+        .find(|operation| *operation == id)
+        .map(DesktopProviderOperation::RemoteConnect),
+        ("detached-dispatch", id) => ["list-targets", "submit", "status", "list-jobs", "cancel"]
+            .into_iter()
+            .find(|operation| *operation == id)
+            .map(DesktopProviderOperation::DetachedDispatch),
         ("miniapp", id) => miniapps::operation(id).map(DesktopProviderOperation::MiniApp),
+        ("mcp", id) => {
+            openbitfun_core::service::mcp::control::operation(id).map(DesktopProviderOperation::Mcp)
+        }
         ("agent-companion-pet", "list") => Some(DesktopProviderOperation::ListCompanionPets),
         ("agent-companion-pet", "use") => Some(DesktopProviderOperation::UseCompanionPet),
         ("agent-companion-pet", "delete") => Some(DesktopProviderOperation::DeleteCompanionPet),
@@ -866,6 +921,42 @@ async fn execute_desktop_provider_operation(
 ) -> Result<Value, String> {
     let state = app.state::<AppState>();
     match operation {
+        DesktopProviderOperation::RemoteConnect(operation) => {
+            let request =
+                openbitfun_product_domains::remote_control::RemoteControlRequest::from_operation(
+                    operation, arguments,
+                )?;
+            crate::api::remote_connect_api::execute_remote_control(request).await
+        }
+        DesktopProviderOperation::DetachedDispatch(operation) => {
+            let request = openbitfun_product_domains::detached_dispatch_control::DetachedDispatchControlRequest::from_operation(
+                operation, arguments,
+            )?;
+            let path_manager =
+                app.state::<std::sync::Arc<openbitfun_core::infrastructure::PathManager>>();
+            crate::api::dispatch_api::execute_agent_dispatch_control(
+                &state,
+                path_manager.as_ref(),
+                request,
+            )
+            .await
+        }
+        DesktopProviderOperation::Mcp(operation) => {
+            let mut result = state
+                .mcp_service
+                .as_ref()
+                .ok_or_else(|| {
+                    "unsupported: MCP service is not initialized on the executing product host"
+                        .to_string()
+                })?
+                .execute_control(operation, arguments)
+                .await?;
+            if operation != openbitfun_core::service::mcp::control::MCPControlOperation::List {
+                result["presentationSync"] =
+                    emit_applied("setting.tools.mcp", None, None, &["mcp_servers"], None).await;
+            }
+            Ok(result)
+        }
         DesktopProviderOperation::MiniApp(operation) => {
             miniapps::execute(
                 &state.miniapp_manager,
@@ -1025,7 +1116,14 @@ async fn execute_desktop(
     // Reads stay concurrent. Every mutating product operation shares the same
     // transaction coordinator as GUI and Agent setting mutations, so revision
     // order matches the order in which product state/effects are committed.
-    let _transaction = if operation.risk == ProductControlRisk::Read {
+    // Dispatch jobs change no product settings, and a submit can spend minutes
+    // uploading its baseline; holding the transaction would stall settings.
+    let dispatch_job = matches!(
+        &operation.handler,
+        ProductCapabilityOperationHandler::Provider { provider_id, .. }
+            if provider_id == openbitfun_product_domains::detached_dispatch_control::DETACHED_DISPATCH_CONTROL_PROVIDER
+    );
+    let _transaction = if operation.risk == ProductControlRisk::Read || dispatch_job {
         None
     } else {
         Some(product_control_transaction().lock().await)

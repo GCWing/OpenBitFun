@@ -17,30 +17,30 @@ export {
   type ReviewSubagentToolReadinessResult,
 } from '@/shared/services/reviewSubagentCapabilities';
 
-export function filterToolsForReviewMode(
+export function filterToolsForReadonlyMode(
   tools: SubagentEditorToolInfo[],
-  review: boolean,
+  readonly: boolean,
 ): SubagentEditorToolInfo[] {
-  return review ? tools.filter((tool) => tool.isReadonly) : tools;
+  return readonly ? tools.filter((tool) => tool.isReadonly) : tools;
 }
 
-export interface NormalizeReviewModeStateInput {
+export interface NormalizeToolPermissionStateInput {
   review: boolean;
   readonly: boolean;
   selectedTools: Set<string>;
   availableTools: SubagentEditorToolInfo[];
 }
 
-export interface NormalizeReviewModeStateResult {
+export interface NormalizeToolPermissionStateResult {
   readonly: boolean;
   selectedTools: Set<string>;
   removedToolNames: string[];
 }
 
-export function normalizeReviewModeState(
-  input: NormalizeReviewModeStateInput,
-): NormalizeReviewModeStateResult {
-  if (!input.review) {
+export function normalizeToolPermissionState(
+  input: NormalizeToolPermissionStateInput,
+): NormalizeToolPermissionStateResult {
+  if (!input.review && !input.readonly) {
     return {
       readonly: input.readonly,
       selectedTools: new Set(input.selectedTools),

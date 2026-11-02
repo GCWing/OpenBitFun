@@ -28,12 +28,16 @@ pub mod control_hub_tool;
 #[cfg(feature = "tools-agent-control")]
 pub mod cron_tool;
 pub mod delete_file_tool;
+#[cfg(feature = "tools-agent-control")]
+pub mod desktop_card_tool;
 pub mod exec_command;
 pub mod file_edit_tool;
 pub mod file_read_tool;
 pub mod file_write_tool;
 #[cfg(feature = "tools-creation")]
 pub mod frontend_workbench_tool;
+#[cfg(feature = "tools-image-generation")]
+pub mod generate_image_tool;
 #[cfg(feature = "tools-miniapp")]
 pub mod generative_ui_tool;
 #[cfg(feature = "tools-git")]
@@ -47,6 +51,8 @@ pub mod ls_tool;
 #[cfg(feature = "tools-mcp")]
 pub mod mcp_tools;
 #[cfg(feature = "tools-miniapp")]
+pub mod miniapp_browser;
+#[cfg(feature = "tools-miniapp")]
 pub mod miniapp_finalize_tool;
 #[cfg(feature = "tools-miniapp")]
 pub mod miniapp_init_tool;
@@ -56,12 +62,16 @@ pub mod openbitfun_control_tool;
 #[cfg(feature = "tools-pages")]
 pub mod page_deploy_tool;
 #[cfg(feature = "tools-pages")]
+pub mod page_manage_tool;
+#[cfg(feature = "tools-pages")]
 pub mod page_publish_tool;
 mod plan_artifact_diagnostics;
 #[cfg(feature = "tools-miniapp")]
 pub mod playbook_tool;
 #[cfg(feature = "tools-agent-control")]
 pub mod port_forward_tool;
+#[cfg(feature = "ptc-runtime")]
+pub mod ptc_run_code_tool;
 #[cfg(feature = "tools-git")]
 pub mod review_platform_tool;
 pub mod session_control_tool;
@@ -77,6 +87,7 @@ pub mod util;
 pub mod view_image_tool;
 #[cfg(feature = "tools-browser-web")]
 pub mod web;
+#[cfg(feature = "tools-git")]
 pub mod worktree_tool;
 
 #[deprecated(note = "GetToolSpecTool is owned by the product tool runtime boundary")]
@@ -99,12 +110,16 @@ pub use control_hub_tool::ControlHubTool;
 #[cfg(feature = "tools-agent-control")]
 pub use cron_tool::CronTool;
 pub use delete_file_tool::DeleteFileTool;
+#[cfg(feature = "tools-agent-control")]
+pub use desktop_card_tool::DesktopCardTool;
 pub use exec_command::{ExecCommandTool, ExecControlTool, WriteStdinTool};
 pub use file_edit_tool::FileEditTool;
 pub use file_read_tool::FileReadTool;
 pub use file_write_tool::FileWriteTool;
 #[cfg(feature = "tools-creation")]
 pub use frontend_workbench_tool::FrontendWorkbenchTool;
+#[cfg(feature = "tools-image-generation")]
+pub use generate_image_tool::GenerateImageTool;
 #[cfg(feature = "tools-miniapp")]
 pub use generative_ui_tool::GenerativeUITool;
 #[cfg(feature = "tools-git")]
@@ -120,6 +135,8 @@ pub use mcp_tools::{
     GetMCPPromptTool, ListMCPPromptsTool, ListMCPResourcesTool, ReadMCPResourceTool,
 };
 #[cfg(feature = "tools-miniapp")]
+pub use miniapp_browser::MiniAppBrowserTool;
+#[cfg(feature = "tools-miniapp")]
 pub use miniapp_finalize_tool::FinalizeMiniAppTool;
 #[cfg(feature = "tools-miniapp")]
 pub use miniapp_init_tool::InitMiniAppTool;
@@ -129,11 +146,15 @@ pub use openbitfun_control_tool::OpenBitFunControlTool;
 #[cfg(feature = "tools-pages")]
 pub use page_deploy_tool::PageDeployTool;
 #[cfg(feature = "tools-pages")]
+pub use page_manage_tool::PageManageTool;
+#[cfg(feature = "tools-pages")]
 pub use page_publish_tool::PagePublishTool;
 #[cfg(feature = "tools-miniapp")]
 pub use playbook_tool::PlaybookTool;
 #[cfg(feature = "tools-agent-control")]
 pub use port_forward_tool::PortForwardTool;
+#[cfg(feature = "ptc-runtime")]
+pub use ptc_run_code_tool::PtcRunCodeTool;
 #[cfg(feature = "tools-git")]
 pub use review_platform_tool::ReviewPlatformTool;
 pub use session_control_tool::SessionControlTool;
@@ -148,4 +169,5 @@ pub use todo_write_tool::TodoWriteTool;
 pub use view_image_tool::ViewImageTool;
 #[cfg(feature = "tools-browser-web")]
 pub use web::{WebFetchTool, WebSearchTool};
+#[cfg(feature = "tools-git")]
 pub use worktree_tool::WorktreeTool;

@@ -44,9 +44,9 @@ const footerSurfaces: FooterSurfaceContract[] = [
     selector: '&__modal-footer',
   },
   {
-    source: '../../app/scenes/skills/SkillsScene.tsx',
+    source: '../../app/scenes/skills/components/AddSkillDialog.tsx',
     marker: 'className="openbitfun-skills-scene__modal-form-actions"',
-    stylesheet: '../../app/scenes/skills/SkillsScene.scss',
+    stylesheet: '../../app/scenes/skills/components/AddSkillDialog.scss',
     selector: '&__modal-form-actions',
   },
   {

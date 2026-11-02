@@ -54,6 +54,7 @@ export class ConversationViewState {
   selectedImages: ConversationUiSelectedImage[] = [];
   isVoiceListening: boolean = false;
   chatInput: string = '';
+  promptSuggestion: string = '';
   /**
    * The facts a tap on the rollback entry is judged with.
    *
@@ -145,6 +146,7 @@ export class ConversationViewState {
     state.selectedImages = core.selectedImages.map((image) => toConversationUiSelectedImage(image));
     state.isVoiceListening = core.isVoiceListening;
     state.chatInput = core.chatInput;
+    state.promptSuggestion = core.promptSuggestion;
     return state;
   }
 

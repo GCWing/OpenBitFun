@@ -273,6 +273,7 @@ const getLanguageDisplayName = (id: string, aliases?: string[]): string => {
     bash: 'Bash',
     plaintext: 'Plain Text',
     toml: 'TOML',
+    cangjie: 'Cangjie',
     vue: 'Vue',
     svelte: 'Svelte',
     graphql: 'GraphQL',

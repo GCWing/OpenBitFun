@@ -25,7 +25,7 @@ vi.mock('@/infrastructure/i18n', () => ({
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({ api: { invoke: mocks.invoke } }));
 vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({ systemAPI: { getSystemInfo: async () => ({ platform: 'macos' }) } }));
 vi.mock('../../../../../infrastructure/config/services/ConfigManager', () => ({ configManager: { hasCachedConfig: () => false, getCachedConfig: () => undefined,
-  getConfig: mocks.getConfig, getOptionalConfig: async () => true, setConfig: mocks.setConfig,
+  getConfig: mocks.getConfig, getOptionalConfig: async (path: string) => path === 'ai.agent_model_selections' ? { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } } : true, setConfig: mocks.setConfig,
 } }));
 vi.mock('../../../../../infrastructure/config/hooks/useComputerUseEnabled', () => ({ useComputerUseEnabled: () => ({ computerUseEnabled: false, setComputerUseEnabled: mocks.setEnabled }) }));
 vi.mock('../../../../../infrastructure/config/services/AIExperienceConfigService', () => ({ aiExperienceConfigService: { getCachedSettings: () => null, getSettingsAsync: async () => ({ enable_workspace_search: true }) } }));
@@ -44,8 +44,8 @@ vi.mock('../ai/ReviewCapacitySection', () => ({ default: () => null }));
 vi.mock('../ai/ToolJsonRepairSection', () => ({ default: () => null }));
 vi.mock('@openbitfun/ui', async (original) => ({
   ...await original<typeof import('@openbitfun/ui')>(),
-  Select: ({ value, options, disabled }: { value: string; options: Array<{ value: string; label: string }>; disabled: boolean }) => (
-    <select value={value} disabled={disabled} onChange={() => {}}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+  Select: ({ value, options, disabled, onValueChange }: { value: string; options: Array<{ value: string; label: string }>; disabled: boolean; onValueChange?: (value: string) => void }) => (
+    <select value={value} disabled={disabled} onChange={event => onValueChange?.(event.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
   ),
 }));
 
@@ -185,6 +185,36 @@ describe('Browser and desktop control settings', () => {
     await act(async () => button('browserControl.connect').click());
     expect(mocks.invoke).toHaveBeenCalledWith('browser_control_launch', { request: { port: 9222 } });
     expect(mocks.invoke).not.toHaveBeenCalledWith('browser_control_enable_default_cdp', expect.anything());
+  });
+
+  it.each([false, true])('revokes previous browser access before saving a new choice (disconnect fails: %s)', async (fails) => {
+    const original = mocks.invoke.getMockImplementation()!;
+    const order: string[] = [];
+    mocks.invoke.mockImplementation(async (command: string, ...args: unknown[]) => {
+      if (command === 'browser_control_list_browsers') return { options: [
+        { value: 'default', label: 'Default browser', installed: true },
+        { value: 'edge', label: 'Edge', installed: true },
+      ] };
+      if (command === 'browser_control_disconnect') {
+        order.push('disconnect');
+        if (fails) throw new Error('Disconnect failed');
+      }
+      return original(command, ...args);
+    });
+    mocks.setConfig.mockImplementation(async () => { order.push('save'); });
+    await render();
+    const select = container.querySelector('select')!;
+    await act(async () => {
+      select.value = 'edge';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(order).toEqual(fails ? ['disconnect'] : ['disconnect', 'save']);
+    if (fails) {
+      expect(mocks.setConfig).not.toHaveBeenCalled();
+      expect(select.value).toBe('default');
+    } else {
+      expect(mocks.setConfig).toHaveBeenCalledWith('ai.browser_control_preferred_browser', 'edge');
+    }
   });
 
   it('keeps the selected browser visible while connected and disconnects through the existing command', async () => {

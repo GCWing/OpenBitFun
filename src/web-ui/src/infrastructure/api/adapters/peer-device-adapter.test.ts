@@ -20,6 +20,68 @@ import {
 import { TauriTransportAdapter } from './tauri-adapter';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
+describe('smart routing host capability', () => {
+  it('rejects unsupported routing reads and mutations before RPC', async () => {
+    const rpc = vi.fn();
+    const adapter = new PeerDeviceTransportAdapter('peer-1', rpc);
+    await expect(adapter.request('get_model_routing_status', { request: {} })).rejects.toThrow('model_routing_v1_unsupported');
+    await expect(adapter.request('update_session_model', { request: { sessionId: 's', modelName: 'primary', routingMode: 'smart' } })).rejects.toThrow('model_routing_v1_unsupported');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('forwards routing to a capable host and keeps legacy manual requests compatible', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: null }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', rpc, { supportsModelRoutingV1: true });
+    const params = { request: { sessionId: 's', modelName: 'primary', routingMode: 'smart' } };
+    await adapter.request('update_session_model', params);
+    expect(JSON.parse(rpc.mock.calls[0][1])).toMatchObject({ command: 'update_session_model', args: params });
+    adapter.setHostCapabilities({ supportsModelRoutingV1: false });
+    await adapter.request('update_session_model', { request: { sessionId: 's', modelName: 'fast' } });
+  });
+});
+
+describe('model pool capability negotiation', () => {
+  const commands = ['get_model_pools', 'save_model_pool', 'delete_model_pool', 'get_model_pool_status',
+    'get_session_model_target', 'update_session_model_target', 'retry_model_pool_member'];
+  it.each(commands)('rejects %s on old hosts before RPC', async command => {
+    const rpc = vi.fn();
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    await expect(adapter.request(command, { request: {} })).rejects.toThrow('model_pool_selection_v1');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it('forwards typed selection only while the capability is advertised', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc, { supportsModelPoolSelectionV1: true });
+    const args = { request: { sessionId: 'session', selection: { kind: 'pool', pool_id: 'pool' } } };
+    await adapter.request('update_session_model_target', args);
+    expect(JSON.parse(rpc.mock.calls[0][1])).toMatchObject({ command: 'update_session_model_target', args });
+    adapter.setHostCapabilities({ supportsModelPoolSelectionV1: false });
+    await expect(adapter.request('update_session_model_target', args)).rejects.toThrow('model_pool_selection_v1');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BTW model pool capability', () => {
+  const args = { request: { initialModelTarget: { selection: { kind: 'pool', pool_id: 'pool' } } } };
+  it.each([{}, { supportsModelPoolSelectionV1: true }])('rejects typed BTW choices on older hosts: %j', async caps => {
+    const rpc = vi.fn();
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc, caps);
+    await expect(adapter.request('btw_ask_stream', args)).rejects.toThrow('btw_model_pool_selection_v1');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it('forwards inherited requests and negotiates explicit choices including capability withdrawal', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    await adapter.request('btw_ask_stream', { request: { question: 'Inherited' } });
+    adapter.setHostCapabilities({ supportsModelPoolSelectionV1: true, supportsBtwModelPoolSelectionV1: true });
+    await adapter.request('btw_ask_stream', args);
+    expect(JSON.parse(rpc.mock.calls[1][1])).toMatchObject({ command: 'btw_ask_stream', args });
+    adapter.setHostCapabilities({ supportsBtwModelPoolSelectionV1: false });
+    await expect(adapter.request('btw_ask_stream', args)).rejects.toThrow('btw_model_pool_selection_v1');
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('whole-session copy capability', () => {
   it('rejects copying before RPC on a host without the new request contract', async () => {
     const deviceRpc = vi.fn();
@@ -134,6 +196,7 @@ describe('isPeerLocalOnlyCommand', () => {
     // them to a peer would regress (peer host does not implement them, and
     // they drive the controller's own embedded surfaces).
     expect(isPeerLocalOnlyCommand('browser_webview_create')).toBe(true);
+    expect(isPeerLocalOnlyCommand('browser_get_url')).toBe(true);
     expect(isPeerLocalOnlyCommand('browser_webview_capture_preview')).toBe(true);
     expect(isPeerLocalOnlyCommand('browser_webview_eval')).toBe(true);
     expect(isPeerLocalOnlyCommand('browser_webview_navigate')).toBe(true);
@@ -539,6 +602,33 @@ describe('PeerDeviceTransportAdapter queue', () => {
     expect(deviceRpc).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [{ id: 'image-1', data_url: 'data:image/png;base64,YQ==', mime_type: 'image/png' }],
+    'malformed',
+  ])('rejects MiniApp images before an older peer can silently drop them', async imageContexts => {
+    const deviceRpc = vi.fn();
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await expect(adapter.request('miniapp_agent_run', {
+      request: { appId: 'ppt', prompt: 'Look', imageContexts },
+    })).rejects.toThrow('miniapp_agent_images_v1_unsupported');
+    expect(deviceRpc).not.toHaveBeenCalled();
+  });
+
+  it('forwards negotiated MiniApp images intact and revokes support after a host downgrade', async () => {
+    const outcome = { sessionId: 'session-1', turnId: 'turn-1' };
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: outcome }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsMiniAppAgentImagesV1: true });
+    const request = { appId: 'ppt', prompt: 'Look', imageContexts: [
+      { id: 'image-1', data_url: 'data:image/png;base64,YQ==', mime_type: 'image/png' },
+    ] };
+    await expect(adapter.request('miniapp_agent_run', { request })).resolves.toEqual(outcome);
+    expect(JSON.stringify(deviceRpc.mock.calls[0])).toContain('data:image/png;base64,YQ==');
+    adapter.setHostCapabilities({ supportsMiniAppAgentImagesV1: false });
+    await expect(adapter.request('miniapp_agent_run', { request })).rejects.toThrow('miniapp_agent_images_v1_unsupported');
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+    await expect(adapter.request('miniapp_agent_run', { request: { ...request, imageContexts: [] } })).resolves.toEqual(outcome);
+  });
+
   it('rejects malformed MiniApp Agent context files before an older Peer can ignore them', async () => {
     const deviceRpc = vi.fn();
     const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
@@ -637,6 +727,17 @@ describe('PeerDeviceTransportAdapter queue', () => {
     await expect(adapter.request('product_control_invoke', {
       request: { action: 'get', capabilityId: 'setting.tools.execution' },
     })).resolves.toEqual(outcome);
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires the Remote Connect capability before executing a management operation', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { started: true } }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsProductControlV1: true });
+    const request = { request: { action: 'execute', capabilityId: 'feature.remote-connect', operationId: 'start', arguments: { method: 'weixin' } } };
+    await expect(adapter.request('product_control_invoke', request)).rejects.toThrow('remote_connect_control_v1_unsupported');
+    expect(deviceRpc).not.toHaveBeenCalled();
+    const capable = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsProductControlV1: true, supportsRemoteConnectControlV1: true });
+    await expect(capable.request('product_control_invoke', request)).resolves.toEqual({ started: true });
     expect(deviceRpc).toHaveBeenCalledTimes(1);
   });
 

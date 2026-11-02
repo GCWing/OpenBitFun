@@ -574,20 +574,25 @@ async fn fetch_metadata(
     Ok(serde_json::Value::Object(metadata))
 }
 
-async fn persist_tokens(
+async fn persist_tokens_for_account(
+    slot: &str,
     tokens: TokenResponse,
     metadata: serde_json::Value,
     expected_revision: u64,
 ) -> Result<()> {
     let expires = now_ms() + tokens.expires_in * 1000;
-    let outcome = store::upsert_if_revision(
-        STORE_KEY,
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Opencode,
+        slot,
         expected_revision,
         StoredCredential::Oauth {
             refresh: tokens.refresh_token,
             access: tokens.access_token,
             expires,
-            account_id: None,
+            account_id: metadata
+                .get("account_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
             metadata: Some(metadata),
         },
     )
@@ -649,7 +654,8 @@ fn absolute_verification_url(uri: &str) -> Result<String> {
 
 /// Starts the device-code login flow. The verification URL and user code are
 /// returned immediately; the runner polls in the background.
-pub(crate) async fn begin_login(
+pub(crate) async fn begin_login_for_account(
+    slot: String,
     cancel: CancellationToken,
     expected_revision: u64,
     options: SubscriptionHttpOptions,
@@ -683,7 +689,9 @@ pub(crate) async fn begin_login(
                 let metadata = fetch_metadata(&tokens.access_token, None, &options, false).await?;
                 Ok((tokens, metadata))
             },
-            move |(tokens, metadata)| persist_tokens(tokens, metadata, expected_revision),
+            move |(tokens, metadata)| async move {
+                persist_tokens_for_account(&slot, tokens, metadata, expected_revision).await
+            },
         )
         .await
     };
@@ -698,9 +706,29 @@ pub(crate) async fn begin_login(
     })
 }
 
-async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<FreshCredential> {
-    let _refresh_lease = store::acquire_provider_refresh_lease(STORE_KEY).await?;
-    let snapshot = store::load_entry_with_revision(STORE_KEY).await?;
+async fn ensure_fresh_for_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<FreshCredential> {
+    let (slot, rejected_access, options) = (
+        slot.to_owned(),
+        rejected_access.map(str::to_owned),
+        options.clone(),
+    );
+    super::complete_credential_refresh(async move {
+        ensure_fresh_in_account(&slot, rejected_access.as_deref(), &options).await
+    })
+    .await
+}
+
+async fn ensure_fresh_in_account(
+    slot: &str,
+    rejected_access: Option<&str>,
+    options: &SubscriptionHttpOptions,
+) -> Result<FreshCredential> {
+    let _refresh_lease = store::acquire_provider_refresh_lease(slot).await?;
+    let snapshot = store::load_entry_with_revision(slot).await?;
     let entry = snapshot
         .credential
         .ok_or_else(|| anyhow!("OpenCode is not connected; sign in first"))?;
@@ -717,7 +745,7 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<FreshCredenti
             account_id,
             metadata,
         } => {
-            if expires > now_ms() + REFRESH_LEEWAY_MS {
+            if rejected_access != Some(access.as_str()) && expires > now_ms() + REFRESH_LEEWAY_MS {
                 return Ok(FreshCredential {
                     access,
                     expires_at_ms: Some(expires),
@@ -728,8 +756,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<FreshCredenti
             let new_expires = now_ms() + refreshed.expires_in * 1000;
             let refreshed_access = refreshed.access_token.clone();
             let refreshed_metadata = metadata.clone();
-            let outcome = store::upsert_if_revision(
-                STORE_KEY,
+            let outcome = super::accounts::persist_account_credential(
+                super::SubscriptionProvider::Opencode,
+                slot,
                 snapshot.revision,
                 StoredCredential::Oauth {
                     refresh: refreshed.refresh_token,
@@ -750,8 +779,9 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<FreshCredenti
                     })
                 }
                 store::ConditionalCommitOutcome::Conflict { current_revision } => {
-                    let current = super::load_current_store_after_conflict(
+                    let current = super::load_account_store_after_conflict(
                         super::SubscriptionProvider::Opencode,
+                        slot,
                         current_revision,
                     )
                     .await?;
@@ -793,9 +823,12 @@ async fn ensure_fresh(options: &SubscriptionHttpOptions) -> Result<FreshCredenti
 }
 
 /// Refreshes account/org/catalog metadata using a fresh credential.
-pub(crate) async fn refresh_profile(options: &SubscriptionHttpOptions) -> Result<()> {
-    ensure_fresh(options).await?;
-    let snapshot = store::load_entry_with_revision(STORE_KEY).await?;
+pub(crate) async fn refresh_account_profile(
+    slot: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<()> {
+    ensure_fresh_for_account(slot, None, options).await?;
+    let snapshot = store::load_entry_with_revision(slot).await?;
     let entry = snapshot
         .credential
         .ok_or_else(|| anyhow!("OpenCode is not connected; sign in first"))?;
@@ -824,7 +857,11 @@ pub(crate) async fn refresh_profile(options: &SubscriptionHttpOptions) -> Result
             refresh,
             access,
             expires,
-            account_id,
+            account_id: metadata
+                .get("account_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+                .or(account_id),
             metadata: Some(metadata),
         },
         StoredCredential::Api { key, .. } => StoredCredential::Api {
@@ -832,7 +869,13 @@ pub(crate) async fn refresh_profile(options: &SubscriptionHttpOptions) -> Result
             metadata: Some(metadata),
         },
     };
-    let outcome = store::upsert_if_revision(STORE_KEY, snapshot.revision, updated).await?;
+    let outcome = super::accounts::persist_account_credential(
+        super::SubscriptionProvider::Opencode,
+        slot,
+        snapshot.revision,
+        updated,
+    )
+    .await?;
     super::require_current_store_revision(super::SubscriptionProvider::Opencode, outcome)?;
     log::info!("opencode account metadata refreshed");
     Ok(())
@@ -877,7 +920,8 @@ fn route_for_model(
 
 /// Account catalog owns the protocol; callers select only a plan and model.
 /// Legacy credentials lazily acquire account routing without resetting saved models.
-pub(crate) async fn resolve_for_model(
+pub(crate) async fn resolve_account_for_model(
+    slot: &str,
     plan: Option<OpenCodePlan>,
     configured_format: &str,
     model: &str,
@@ -886,15 +930,15 @@ pub(crate) async fn resolve_for_model(
     if plan == Some(OpenCodePlan::Go) {
         return Err(anyhow!(super::OPENCODE_GO_REQUIRES_API_KEY));
     }
-    let mut credential = ensure_fresh(options).await?;
+    let mut credential = ensure_fresh_for_account(slot, None, options).await?;
     if credential
         .metadata
         .as_ref()
         .and_then(|value| value.get(CONSOLE_ROUTES_KEY))
         .is_none()
     {
-        refresh_profile(options).await?;
-        credential = ensure_fresh(options).await?;
+        refresh_account_profile(slot, options).await?;
+        credential = ensure_fresh_for_account(slot, None, options).await?;
     }
     let route = route_for_model(plan, configured_format, model, credential.metadata.as_ref())?;
     let mut extra_headers = inference_headers();
@@ -928,6 +972,26 @@ pub(crate) fn suggested() -> (&'static str, &'static str, &'static str) {
     ("openai", ZEN_BASE_URL, DEFAULT_MODEL)
 }
 
+pub(crate) async fn refresh_profile(options: &SubscriptionHttpOptions) -> Result<()> {
+    refresh_account_profile(STORE_KEY, options).await
+}
+pub(crate) async fn resolve_for_model(
+    plan: Option<OpenCodePlan>,
+    format: &str,
+    model: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<ResolvedCredential> {
+    resolve_account_for_model(STORE_KEY, plan, format, model, options).await
+}
+
+pub(crate) async fn recover_rejected_account(
+    slot: &str,
+    rejected_access: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<()> {
+    ensure_fresh_for_account(slot, Some(rejected_access), options).await?;
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -26,6 +26,8 @@
 Language Select → Options → Progress → Model Setup → Theme Setup
 ```
 
+如果所选路径已有 OpenBitFun 安装，流程会在 `Progress` 后结束，保留已有的模型和主题配置。
+
 ## 命令
 
 这些是命令参考，不是默认预检清单。PR 范围请以下方 Verification 为准。
@@ -54,6 +56,12 @@ cargo check --manifest-path OpenBitFun-Installer/src-tauri/Cargo.toml      # Tau
 
 ```bash
 cargo test --manifest-path OpenBitFun-Installer/src-tauri/Cargo.toml --lib preview::tests
+```
+
+修改 ZIP 依赖或解压逻辑时，验证旧版安装器载荷的兼容性：
+
+```bash
+cargo test --manifest-path OpenBitFun-Installer/src-tauri/Cargo.toml --lib installer::extract::tests
 ```
 
 只有修改打包、payload、native bundling、安装/卸载流程、注册表、快捷方式或解压逻辑时，才运行完整安装器构建：

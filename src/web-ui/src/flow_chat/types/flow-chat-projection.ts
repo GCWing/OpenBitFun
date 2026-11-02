@@ -22,6 +22,14 @@ export type VirtualItem = VirtualContent & { timeline?: TimelineBlock };
 
 type VirtualContent =
   | {
+      type: 'background-run';
+      data: DialogTurn['userMessage'];
+      turn: DialogTurn;
+      turnId: string;
+      absoluteTurnIndex?: number;
+      turnStatus?: DialogTurn['status'];
+    }
+  | {
       type: 'user-message';
       data: DialogTurn['userMessage'];
       turnId: string;
@@ -56,6 +64,9 @@ type VirtualContent =
       turnStartedAt?: number;
       turnEndedAt?: number;
       turnDurationMs?: number;
+      /** Streaming window only; the throughput denominator, not turn wall time. */
+      turnOutputDurationMs?: number;
+      turnTtftMs?: number;
       turnTokenUsage?: TokenUsage;
       canvasArtifactItems?: FlowToolItem[];
     }

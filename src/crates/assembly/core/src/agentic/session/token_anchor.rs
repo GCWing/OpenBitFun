@@ -183,6 +183,19 @@ impl TokenAnchorStore {
         session_id: &str,
         messages: &[Message],
     ) -> TokenAnchorSelection {
+        self.select_latest_matching_for_model(session_id, messages, None)
+    }
+
+    /// Select the newest matching prefix produced by the requested model.
+    ///
+    /// Provider token counts are model-specific, so a mixed-model conversation
+    /// must not reuse an anchor emitted by a different model.
+    pub fn select_latest_matching_for_model(
+        &self,
+        session_id: &str,
+        messages: &[Message],
+        model_id: Option<&str>,
+    ) -> TokenAnchorSelection {
         let Some(anchors) = self.anchors_by_session.get(session_id) else {
             return TokenAnchorSelection {
                 selected: None,
@@ -196,7 +209,12 @@ impl TokenAnchorStore {
 
         let mut skipped = Vec::new();
         for anchor in anchors.iter().rev() {
-            if let Some(reason) = anchor.prefix_mismatch_reason(messages) {
+            let mismatch = if model_id.is_some_and(|id| id != anchor.model_id) {
+                Some("model_id_mismatch".to_string())
+            } else {
+                anchor.prefix_mismatch_reason(messages)
+            };
+            if let Some(reason) = mismatch {
                 skipped.push(TokenAnchorSkip {
                     anchor_id: anchor.anchor_id.clone(),
                     prefix_message_count: anchor.prefix_message_count,
@@ -356,6 +374,43 @@ mod tests {
     }
 
     #[test]
+    fn model_pool_switch_does_not_reuse_other_models_token_counts() {
+        let store = TokenAnchorStore::new();
+        let messages = vec![Message::user("hello".into())];
+        let mut anchor = TokenAnchor::from_request_prefix(
+            TokenAnchorInput {
+                session_id: "session".into(),
+                turn_id: "turn".into(),
+                round_id: "round".into(),
+                model_id: "a".into(),
+                input_tokens: 123,
+                system_tokens_at_anchor: 0,
+                tool_tokens_at_anchor: 0,
+                prepended_reminder_tokens_at_anchor: 0,
+            },
+            &messages,
+        );
+        store.append(anchor.clone());
+        anchor.model_id = "b".into();
+        anchor.input_tokens = 456;
+        store.append(anchor);
+        assert_eq!(
+            store
+                .select_latest_matching_for_model("session", &messages, Some("a"))
+                .selected
+                .unwrap()
+                .input_tokens,
+            123
+        );
+        let selection = store.select_latest_matching_for_model("session", &messages, Some("c"));
+        assert!(selection.selected.is_none());
+        assert!(selection
+            .skipped
+            .iter()
+            .all(|skip| skip.reason == "model_id_mismatch"));
+    }
+
+    #[test]
     fn matching_anchor_survives_suffix_append() {
         let prefix = vec![
             Message::system("sys".to_string()),
@@ -475,6 +530,58 @@ mod tests {
             .expect("older anchor should remain usable after rollback");
 
         assert_eq!(selected.anchor_id, first_anchor.anchor_id);
+    }
+
+    #[test]
+    fn store_does_not_reuse_anchor_from_another_model() {
+        let prefix = vec![
+            Message::system("sys".to_string()),
+            Message::user("hello".to_string()),
+        ];
+        let primary_anchor = TokenAnchor::from_request_prefix(
+            TokenAnchorInput {
+                session_id: "session".to_string(),
+                turn_id: "turn".to_string(),
+                round_id: "round-primary".to_string(),
+                model_id: "primary-provider-model".to_string(),
+                input_tokens: 100,
+                system_tokens_at_anchor: 10,
+                tool_tokens_at_anchor: 20,
+                prepended_reminder_tokens_at_anchor: 0,
+            },
+            &prefix,
+        );
+        let fast_anchor = TokenAnchor::from_request_prefix(
+            TokenAnchorInput {
+                session_id: "session".to_string(),
+                turn_id: "turn".to_string(),
+                round_id: "round-fast".to_string(),
+                model_id: "fast-provider-model".to_string(),
+                input_tokens: 80,
+                system_tokens_at_anchor: 10,
+                tool_tokens_at_anchor: 20,
+                prepended_reminder_tokens_at_anchor: 0,
+            },
+            &prefix,
+        );
+        let store = TokenAnchorStore::new();
+        store.append(primary_anchor.clone());
+        store.append(fast_anchor);
+
+        let selection = store.select_latest_matching_for_model(
+            "session",
+            &prefix,
+            Some("primary-provider-model"),
+        );
+
+        assert_eq!(
+            selection.selected.map(|anchor| anchor.anchor_id),
+            Some(primary_anchor.anchor_id)
+        );
+        assert!(selection
+            .skipped
+            .iter()
+            .any(|skip| skip.reason.contains("model_id_mismatch")));
     }
 
     #[test]

@@ -56,6 +56,8 @@ export interface MarkdownEditorProps {
   filePath?: string;
   /** Initial content - used when no filePath */
   initialContent?: string;
+  /** Task-specific empty-state copy; takes precedence over the focused AI hint. */
+  emptyDocumentPlaceholder?: string;
   /** Owning workspace ID for editors rendered without an EditorDocument. */
   workspaceId?: string;
   /** Workspace root (IO projection only; never identity). */
@@ -84,6 +86,7 @@ export interface MarkdownEditorProps {
 const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   filePath,
   initialContent = '',
+  emptyDocumentPlaceholder,
   workspaceId,
   workspacePath,
   readOnly = false,
@@ -711,6 +714,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           height="100%"
           width="100%"
           placeholder={t('editor.markdownEditor.placeholder')}
+          emptyDocumentPlaceholder={emptyDocumentPlaceholder}
           readonly={readOnly}
           toolbar={false}
           filePath={filePath}

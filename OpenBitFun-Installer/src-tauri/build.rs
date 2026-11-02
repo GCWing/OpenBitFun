@@ -2,7 +2,7 @@ use std::fs;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 const REQUIRED_PAYLOAD_FILES: [&str; 6] = [
@@ -77,8 +77,9 @@ fn validate_release_payload_zip(out_zip: &Path) -> Result<(), Box<dyn std::error
     let mut available = std::collections::HashSet::new();
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        if !entry.name().ends_with('/') {
-            available.insert(entry.name().replace('\\', "/"));
+        let name = entry.name()?;
+        if !name.ends_with('/') {
+            available.insert(name.replace('\\', "/"));
         }
     }
 
@@ -112,7 +113,7 @@ fn emit_rerun_for_files(dir: &Path) -> io::Result<()> {
 
 fn create_empty_zip(out_zip: &Path) -> zip::result::ZipResult<()> {
     let file = File::create(out_zip)?;
-    let mut zip = ZipWriter::new(file);
+    let zip = ZipWriter::new(file);
     zip.finish()?;
     Ok(())
 }
@@ -120,7 +121,7 @@ fn create_empty_zip(out_zip: &Path) -> zip::result::ZipResult<()> {
 fn create_payload_zip(payload_dir: &Path, out_zip: &Path) -> zip::result::ZipResult<usize> {
     let file = File::create(out_zip)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     let mut file_count = 0usize;
     add_dir_to_zip(&mut zip, payload_dir, payload_dir, options, &mut file_count)?;
@@ -133,7 +134,7 @@ fn add_dir_to_zip<W: Write + Seek>(
     zip: &mut ZipWriter<W>,
     root: &Path,
     current: &Path,
-    options: FileOptions,
+    options: SimpleFileOptions,
     file_count: &mut usize,
 ) -> zip::result::ZipResult<()> {
     let mut entries = fs::read_dir(current)?

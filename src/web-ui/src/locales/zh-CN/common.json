@@ -73,6 +73,7 @@
     "backShortcut": "后退 (Alt+←)",
     "forwardShortcut": "前进 (Alt+→)",
     "items": {
+      "personalOverview": "首页",
       "sessions": "会话",
       "project": "项目",
       "persona": "智能成员",
@@ -81,12 +82,13 @@
       "longTermTracking": "长期跟踪",
       "agents": "智能体",
       "skills": "技能",
-      "ecosystemCompatibility": "生态兼容",
+      "ecosystemCompatibility": "外部导入",
       "tools": "工具",
       "terminal": "Shell",
       "git": "Git",
       "miniApps": "小应用",
-      "insights": "洞察"
+      "insights": "洞察",
+      "discoverSkills": "发现技能"
     },
     "tooltips": {
       "persona": "智能成员 — 展开查看基于角色和记忆的成员会话",
@@ -94,8 +96,8 @@
       "longTermTracking": "长期跟踪 — 持续任务与长期对话",
       "agents": "它能调用哪些智能体",
       "skills": "它懂什么专项知识 — 技能知识文件",
-      "ecosystemCompatibility": "生态兼容 — 管理其他 AI 应用的兼容能力与扩展",
-      "ecosystemCompatibilityUnseen": "生态兼容 — 发现了新的兼容应用",
+      "ecosystemCompatibility": "外部导入 — 导入其他 AI 应用的内容，集成并管理可用能力",
+      "ecosystemCompatibilityUnseen": "外部导入 — 发现了新的外部应用",
       "tools": "它能用什么工具 — 内置工具与 MCP 服务",
       "addWorkspace": "添加工作区",
       "addSessionGroup": "添加项目或个人助理"
@@ -159,7 +161,7 @@
         "openInsights": "打开洞察",
         "openSettings": "打开设置",
         "openKeyboardShortcuts": "打开键盘快捷键",
-        "openIntegrations": "打开生态兼容"
+        "openIntegrations": "打开外部导入"
       },
       "actionDescriptions": {
         "newSession": "通过统一会话流程开始新对话",
@@ -175,7 +177,7 @@
         "openInsights": "查看活动与使用洞察",
         "openSettings": "配置 OpenBitFun",
         "openKeyboardShortcuts": "查看和自定义键盘快捷键",
-        "openIntegrations": "管理外部 AI 应用中的兼容能力与运行方式"
+        "openIntegrations": "导入其他 AI 应用的内容，集成并管理可用能力"
       },
       "badges": {
         "userMessage": "你",
@@ -191,7 +193,9 @@
         "activationFailed": "无法打开该结果",
         "remoteFileSearchUnavailable": "远程项目 {{workspace}} 暂不支持文件搜索",
         "sessionUnavailable": "该会话已不可用"
-      }
+      },
+      "diagnosticTarget": "搜索设备：{{host}}",
+      "retrySource": "重试此来源"
     },
     "displayModes": {
       "pro": "专业模式",
@@ -214,7 +218,7 @@
       "files": "文件",
       "terminals": "终端",
       "local": "本地",
-      "remote": "远程工作区",
+      "remote": "连接环境",
       "peer": "对端设备",
       "switchWorkspace": "切换工作区",
       "chooseShell": "选择 Shell",
@@ -270,6 +274,15 @@
       }
     },
     "sessions": {
+      "removeSource": "从 OpenBitFun 移除",
+      "removeSourceConfirmTitle": "从 OpenBitFun 移除源会话？",
+      "removeSourceConfirmMessage": "“{{name}}”将从 OpenBitFun 移除。原应用中的会话和已有续聊分支都会保留，可在生态兼容设置中重新添加。",
+      "removeSourceExplanation": "源会话仅从 OpenBitFun 移除；原应用中的会话和续聊分支都会保留，可在生态兼容设置中重新添加。",
+      "removeSelected": "移除所选源会话",
+      "bulkRemoveSourceConfirmTitle": "移除所选源会话？",
+      "bulkRemoveSourceConfirmMessage": "将从 OpenBitFun 移除 {{count}} 个源会话。原应用中的会话和已有续聊分支都会保留，可在生态兼容设置中重新添加。",
+      "removedSelected": "已从列表移除 {{count}} 个会话。",
+      "removedSourceSucceeded": "已从 OpenBitFun 的 {{workspace}} 中移除“{{name}}”。",
       "newSession": "新建会话",
       "acpSessions": "ACP 会话",
       "dispatchRunningOn": "在 {{target}} 上运行（{{state}}）",
@@ -287,7 +300,7 @@
       "newCodeSession": "新建 Code 会话",
       "newCoworkSession": "新建 Cowork 会话",
       "newExternalAgentSessionShort": "{{agentName}} 会话",
-      "newClawSession": "新建 Claw 会话",
+      "newClawSession": "新建助理会话",
       "newPrimaryAssistantSession": "新建主助理会话",
       "chooseAssistant": "选择助理",
       "newAssistantSessionFor": "为 {{assistantName}} 新建会话",
@@ -320,7 +333,8 @@
           "label": "显示",
           "all": "全部会话",
           "unread": "未读会话",
-          "attention": "需要处理"
+          "attention": "需要处理",
+          "archived": "已归档会话"
         },
         "filters": {
           "label": "筛选",
@@ -342,7 +356,7 @@
         "environment": {
           "label": "环境",
           "local": "本地",
-          "remote": "远程工作区",
+          "remote": "连接环境",
           "detached": "分离执行"
         },
         "source": {
@@ -357,10 +371,7 @@
       },
       "rename": "重命名",
       "renameOutcomeUnknown": "重命名结果尚不确定。请刷新或重新打开会话列表，确认当前名称后再重试。",
-      "copySessionId": "复制 ID",
-      "copySessionIdSuccess": "已复制会话 ID",
-      "copySessionIdFailed": "复制会话 ID 失败",
-      "duplicate": "复制会话",
+      "duplicate": "创建副本",
       "duplicateSuccess": "已复制为「{{name}}」",
       "duplicateFailed": "复制会话失败",
       "duplicateCreatedRefreshFailed": "已复制为「{{name}}」。请刷新会话列表查看，再次复制会创建另一个副本。",
@@ -375,9 +386,6 @@
       "exportMarkdown": "导出为 Markdown",
       "exportMarkdownFull": "导出完整过程",
       "exportMarkdownResult": "导出结果",
-      "delete": "删除",
-      "deleteConfirmTitle": "永久删除会话？",
-      "deleteConfirmMessage": "“{{name}}”及其子会话将被永久删除。此操作无法撤销。",
       "confirmEdit": "确认",
       "cancelEdit": "取消",
       "loading": "加载中...",
@@ -388,6 +396,17 @@
       "showAll": "还有 {{count}} 个（展开全部）",
       "showAllLabel": "展开全部",
       "showLess": "收起",
+      "history": "历史会话",
+      "assistantHistory": "{{name}} · 历史会话",
+      "openFailed": "无法打开会话",
+      "openAssistant": "打开助理会话",
+      "defaultSession": "默认",
+      "setDefault": "设为默认会话",
+      "clearDefault": "取消默认会话",
+      "defaultUnsupported": "当前宿主不支持设置助理默认会话，请更新宿主后使用。",
+      "defaultReadFailed": "无法读取默认会话，点击重试",
+      "defaultSaveFailed": "无法保存默认会话",
+      "defaultUnavailable": "默认会话已不可用，请在历史会话中选择其他会话。",
       "assistantOwner": "所属助理：{{name}}",
       "parentSession": "父会话",
       "childSourceWithoutTurn": "来自 {{parentTitle}}",
@@ -432,6 +451,7 @@
       "batchChildSession": "子会话",
       "batchTurnsLabel": "{{count}} 轮",
       "archive": "归档",
+      "archivedBadge": "已归档",
       "assistantBootstrapDraft": "请按照 BOOTSTRAP.md 的说明，和我一起完成助理初始化。",
       "archiveAll": "归档所有会话",
       "archiveSelected": "归档所选",
@@ -459,13 +479,21 @@
       "restore": "恢复",
       "restoreSucceeded": "已恢复“{{name}}”（{{workspace}}）。",
       "restoreRefreshFailed": "会话已恢复，但会话列表刷新失败；请手动刷新工作区。",
-      "archivedAll": "已归档 {{count}} 个会话，可在设置 → 已归档会话中查看。",
+      "archivedAll": "已归档 {{count}} 个会话，可在设置 → 已归档会话中查看或删除。",
       "restoreFailed": "恢复会话失败",
       "deleteArchivedFailed": "删除会话失败",
       "deleteAllArchivedFailed": "删除全部已归档会话失败",
       "archiveAllFailed": "归档会话失败",
       "bulkArchiveFailed": "批量归档会话失败",
-      "bulkDeleteFailed": "批量删除会话失败"
+      "bulkDeleteFailed": "批量删除会话失败",
+      "sourceAgentFilter": "会话来源",
+      "allSourceAgents": "全部 Agent",
+      "sourceAgentLabel": "来自 {{name}} 的会话",
+      "discoveryPartial": "部分外部会话无法发现，已有会话仍可使用。",
+      "discoveryWarningTitle": "外部会话发现",
+      "discoveryReadFailed": "部分 {{source}} 会话记录无法读取，已有会话仍可使用。",
+      "discoveryWorkspaceUnresolved": "部分 {{source}} 会话无法匹配到工作区，已有会话仍可使用。",
+      "discoveringExternal": "正在发现外部会话…"
     },
     "scheduledJobs": {
       "title": "定时任务",
@@ -490,20 +518,28 @@
         "anchorMs": "锚点时间（可选）",
         "cronExpr": "Cron 表达式",
         "timezone": "时区（可选）",
-        "prompt": "任务内容"
+        "prompt": "任务内容",
+        "reportPolicy": "结果投递"
       },
       "placeholders": {
         "workspacePath": "请输入工作区路径",
         "session": "请选择或输入会话 ID",
         "optionalSession": "留空则创建新会话后执行",
-        "agentType": "例如：Standard、Cowork 或 Claw",
+        "agentType": "例如：$t(shared:agents.Standard)、$t(shared:agents.Cowork) 或 $t(shared:agents.Claw)",
         "name": "例如：每日全球新闻简报",
         "anchorMs": "留空则使用创建时刻",
         "timezone": "例如：Asia/Shanghai",
         "prompt": "请输入定时触发时发送给智能体的内容"
       },
       "hints": {
-        "cronExpr": "Cron 格式：分 时 日 月 周，例如 0 8 * * * 表示每天 08:00。"
+        "cronExpr": "Cron 格式：分 时 日 月 周，例如 0 8 * * * 表示每天 08:00。",
+        "reportPolicy": "在任务内容中说明报告条件；失败或判定不明确时仍会报告。",
+        "reportPolicyUnsupported": "此主机暂不支持设置结果投递，继续按原任务说明执行。"
+      },
+      "reportPolicies": {
+        "inherit": "按任务说明",
+        "always": "每次报告",
+        "conditional": "符合条件才报告"
       },
       "scheduleKinds": {
         "at": "单次执行",
@@ -573,6 +609,10 @@
         "minute": "分钟",
         "hour": "小时",
         "day": "天"
+      },
+      "columns": {
+        "status": "状态",
+        "actions": "操作"
       }
     },
     "workspaces": {
@@ -581,7 +621,7 @@
       "emptyAssistants": "暂无个人助理",
       "emptySessionGroups": "暂无项目或助理",
       "closeFailed": "关闭工作区失败",
-      "closeAssistantUnsupported": "当前宿主不支持关闭和重新打开助理，请更新宿主后使用。",
+      "closeAssistantUnsupported": "当前宿主不支持隐藏和重新显示助理，请更新宿主后使用。",
       "createAssistantFailed": "新建个人助理失败",
       "deleteAssistantFailed": "删除个人助理失败",
       "assistantDeleted": "已删除个人助理",
@@ -620,10 +660,11 @@
         "newSession": "新建会话",
         "newAssistant": "新建个人助理",
         "deleteAssistant": "删除个人助理",
-        "closeAssistant": "关闭助理",
+        "manageAssistant": "管理助理",
+        "closeAssistant": "隐藏助理",
         "resetWorkspace": "重置工作区",
-        "manageRelatedPaths": "关联目录",
-        "manageProjectPermissions": "项目权限",
+        "projectResources": "项目资源",
+        "openDirectory": "打开目录",
         "rename": "重命名项目",
         "copyPath": "复制路径",
         "reveal": "在资源管理器中打开",
@@ -642,27 +683,26 @@
       "relatedPaths": {
         "badge": "{{count}} 关联",
         "dialog": {
-          "nativeHeading": "OpenBitFun 工作空间目录",
           "externalHeading": "OpenCode 引用",
-          "externalDescription": "按 OpenCode 的来源优先级从其配置中发现。此处仅只读展示，不会授予额外的文件访问权限。",
-          "externalLoading": "正在加载 OpenCode 引用…",
-          "externalEmpty": "当前工作空间未发现可见的本地 OpenCode 引用。",
-          "externalDiagnostics": "{{count}} 个引用条目需要注意",
+          "externalLoading": "正在加载引用…",
+          "externalDiagnostics": "{{count}} 项引用异常",
           "readOnly": "只读",
           "title": "关联目录",
-          "heading": "为当前工作区补充相关目录",
-          "description": "这些目录会连同说明一起进入工作区上下文，适合跨项目迁移、monorepo 子目录协作等场景。",
-          "localScope": "当前工作区是本地环境，因此这里只能关联本地目录。",
-          "remoteScope": "当前工作区是远程环境，因此这里只能关联连接“{{connectionName}}”下的目录。",
-          "empty": "还没有关联目录。添加后，AI 会在工作区上下文中看到这些目录和说明。",
+          "remoteScope": "仅限“{{connectionName}}”上的目录",
+          "primaryDirectory": "主目录",
           "itemLabel": "目录 {{index}}",
           "add": "添加目录",
           "selectDirectoryTitle": "选择关联目录",
-          "pathPlaceholder": "输入目录路径，或使用右侧选择器",
-          "descriptionPlaceholder": "选填：简短说明这个目录为什么重要，例如：旧版 TypeScript 实现 / monorepo 中的 billing 子目录"
+          "pathPlaceholder": "目录路径",
+          "descriptionLabel": "说明（选填）",
+          "columns": {
+            "directory": "目录",
+            "description": "说明",
+            "actions": "操作"
+          }
         },
         "messages": {
-          "externalLoadFailed": "无法加载 OpenCode 引用，OpenBitFun 工作空间目录不受影响。",
+          "externalLoadFailed": "无法加载 OpenCode 引用",
           "saveFailed": "保存关联目录失败",
           "selectFailed": "选择目录失败"
         },
@@ -679,6 +719,56 @@
         "title": "重置 {{name}}？",
         "message": "此操作会清空该工作区目录下的所有内容，并恢复默认 persona 文件；不会删除工作区目录本身。",
         "pathLabel": "工作区路径"
+      },
+      "icon": {
+        "title": "更改图标",
+        "description": "自定义 {{name}} 的图标，设置保存在工作区所属主机上。",
+        "default": "内置图标",
+        "chooseIcon": "选择图标",
+        "builtinIcons": "图标",
+        "glyphsUnsupported": "当前主机暂不支持切换内置图标。",
+        "workIcons": "工作与学习",
+        "lifeIcons": "生活与兴趣",
+        "chooseLightImage": "选择浅色图片",
+        "chooseDarkImage": "选择深色图片",
+        "themedImagesUnsupported": "当前主机仅支持两种主题共用一张图片，升级主机后可单独设置深色图片。",
+        "glyphs": {
+          "default": "默认", "code": "代码", "learning": "学习", "design": "设计",
+          "documents": "文档", "research": "研究", "web": "网站", "mobile": "移动应用",
+          "games": "游戏", "data": "数据", "business": "业务", "tools": "工具",
+          "travel": "旅行", "food": "美食", "fitness": "运动", "music": "音乐", "reading": "阅读", "home": "家庭", "finance": "理财", "photography": "摄影", "pets": "宠物", "nature": "自然", "shopping": "购物", "movies": "电影"
+        },
+        "image": "自定义图片",
+        "preview": "图标预览",
+        "colors": "图标颜色",
+        "customColor": "自定义颜色",
+        "colorValue": "颜色值",
+        "lightness": "明度",
+        "presetColors": "预设颜色",
+        "chooseImage": "选择图片",
+        "imageHint": "支持 PNG、JPEG、WebP，最大 5 MB。图片随工作区保存，无需保留原文件。",
+        "crop": "裁剪填满正方形",
+        "zoom": "缩放",
+        "reset": "恢复默认",
+        "retry": "重试",
+        "loading": "正在加载图标…",
+        "unsupported": "当前主机不支持工作区图标定制，请升级主机或使用支持此功能的桌面端、CLI 主机。",
+        "loadFailed": "自定义图标暂时无法加载，已显示默认图标，原设置仍然保留。",
+        "invalidImage": "请选择不超过 5 MB、2000 万像素的 PNG、JPEG 或 WebP 图片。",
+        "saveFailed": "无法保存图标：{{reason}}",
+        "palette": {
+          "default": "默认",
+          "blue": "蓝色",
+          "cyan": "青色",
+          "green": "绿色",
+          "yellow": "黄色",
+          "orange": "橙色",
+          "red": "红色",
+          "purple": "紫色",
+          "pink": "粉色"
+        },
+        "light": "浅色预览",
+        "dark": "深色预览"
       }
     },
     "agents": {
@@ -703,11 +793,16 @@
     "notifications": "通知",
     "settingsMenu": {
       "floatingWindow": "悬浮窗",
-      "theme": "主题",
-      "themeConfiguration": "主题配置",
-      "appearanceSwitchFailed": "主题切换失败，请重试。",
+      "feedback": "用户反馈",
+      "feedbackUnavailable": "用户反馈尚未配置。",
+      "feedbackOpenFailed": "无法打开用户反馈。",
       "openSettings": "$t(shared:features.settings)",
       "about": "关于"
+    },
+    "customization": {
+      "localDesktopOnly": "仅支持本机桌面。切换设备时会保留固定设置。",
+      "unavailableEntry": "暂不可用的入口（{{id}}）",
+      "openFailed": "无法打开{{name}}，请重试。"
     }
   },
   "window": {
@@ -719,24 +814,93 @@
   "browserView": {
     "addressPlaceholder": "输入网址，例如 {{exampleUrl}}",
     "startElementSelection": "选取元素",
-    "stopElementSelection": "退出元素选取"
+    "stopElementSelection": "退出元素选取",
+    "stopLoading": "停止加载"
+  },
+  "workspaceSource": {
+    "location": "工作位置",
+    "environment": "工作环境",
+    "currentHost": "此电脑",
+    "deviceNameUnavailable": "设备名称不可用",
+    "namedHost": "此电脑 · {{name}}",
+    "otherHost": "远程主机",
+    "system": "主机系统",
+    "container": "容器",
+    "wsl": "WSL",
+    "currentHostHint": "文件和命令均位于当前工作主机。",
+    "otherHostHint": "通过 SSH 连接远程主机或容器。原生 WSL 仅支持当前 Windows 工作主机。",
+    "wslHint": "下一步选择当前 Windows 工作主机上的 Linux 发行版。",
+    "foldersLockedHint": "移除文件夹后可切换。",
+    "connectionChoice": "连接配置",
+    "availableOptions": "可用连接与环境",
+    "refreshOptions": "刷新可用选项",
+    "noAvailableOptions": "暂无可用项",
+    "selectHostHint": "选择主机以检测容器",
+    "useSavedConnection": "使用已有连接",
+    "containerOptions": "容器选项",
+    "agentHint": "使用工作主机 SSH Agent 中的身份。可在高级设置中指定身份或备用密钥。",
+    "authenticationSettings": "更改认证设置",
+    "connectionFailed": "无法连接工作环境。",
+    "connectionTitle": "连接工作环境",
+    "editConnectionTitle": "编辑连接 · {{name}}",
+    "connectRemoteHostTitle": "连接远程主机",
+    "connectWslTitle": "连接 WSL · {{host}}",
+    "connectContainerTitle": "连接容器 · {{host}}",
+    "connectRemoteContainerTitle": "连接远程容器",
+    "backToProject": "返回项目设置",
+    "connectAndCreate": "连接并创建项目",
+    "connectAndBrowse": "连接并选择文件夹",
+    "containerConnection": "连接方式",
+    "viaHost": "通过 Docker 宿主机",
+    "directContainer": "直接 SSH 连接容器",
+    "viaHostHint": "下面的地址和认证信息用于 Docker 宿主机，连接后再进入容器。",
+    "directContainerHint": "下面的地址和认证信息用于容器自身的 SSH 服务。",
+    "dockerHostAddress": "Docker 宿主机地址",
+    "containerAddress": "容器 SSH 地址",
+    "dockerUnavailable": "未找到 Docker，请安装或检查路径。",
+    "dockerNotRunning": "请启动 Docker 后重试。",
+    "dockerPermissionDenied": "请检查 Docker 访问权限。",
+    "containerDiscoveryFailed": "无法加载容器，请检查主机和 Docker 后重试。",
+    "hostDiscoveryFailed": "无法加载主机，请重试。",
+    "existingHostRequired": "请选择已有的 SSH 主机。",
+    "sshHost": "SSH 主机",
+    "sourceUnsupported": "当前主机不支持此环境。",
+    "checkingWsl": "正在检查当前主机的 WSL 支持…"
   },
   "newProject": {
-    "title": "新建工作区",
-    "subtitle": "创建一个新的工作区目录",
+    "title": "创建项目",
+    "subtitle": "创建新的项目文件夹",
     "parentDirectory": "父文件夹",
-    "parentDirectoryPlaceholder": "点击右侧按钮选择父文件夹",
-    "selectParentDirectory": "选择新工作区的父文件夹位置",
+    "parentDirectoryPlaceholder": "选择新项目文件夹的存放位置",
+    "selectParentDirectory": "选择项目的父文件夹",
     "select": "选择",
-    "projectName": "工作区名称",
-    "projectNamePlaceholder": "例如：my-project",
+    "projectName": "项目名称",
+    "projectNamePlaceholder": "项目名称",
     "fullPath": "完整路径",
     "cancel": "取消",
-    "create": "创建",
+    "create": "创建项目",
     "creating": "创建中...",
     "errorSelectParent": "请选择父文件夹",
-    "errorEnterName": "请输入工作区名称",
-    "errorCreateFailed": "创建工作区失败"
+    "errorEnterName": "请输入项目名称",
+    "errorCreateFailed": "创建项目失败",
+    "sourceFolder": "源文件夹",
+    "errorSelectDirectory": "无法选择文件夹，请重试",
+    "folderSource": "文件夹来源",
+    "hostFolders": "此电脑",
+    "remoteFolders": "远程 SSH 设备",
+    "selectSourceFolder": "添加项目文件夹",
+    "removeFolder": "移除 {{name}}",
+    "singleFolderNameHint": "留空则使用文件夹名称。",
+    "groupNameHint": "为这些文件夹设置一个统一的项目名称。",
+    "emptyProjectHint": "保存到当前设备：",
+    "invalidDirectoryName": "请输入单个文件夹名称，不能包含斜杠，也不能为 . 或 ..",
+    "sameHostRequired": "同一项目的文件夹必须位于同一台主机。",
+    "assistantFolderUnavailable": "此文件夹属于助理工作区，不能添加为项目。请选择其他文件夹，或移除此文件夹并输入名称以创建新项目。",
+    "remoteUnavailable": "当前界面不支持选择远程文件夹。",
+    "remoteConnectionChanged": "远程连接已改变，请重新选择项目文件夹。",
+    "defaultDirectoryUnavailable": "目标设备未提供用户目录，请更新或重新连接该设备后重试。",
+    "sourceFoldersHint": "可添加多个文件夹",
+    "emptyRemoteProjectHint": "保存到 SSH 主机："
   },
   "peerConnection": {
     "reconnectingShort": "正在重连…",
@@ -760,6 +924,18 @@
   "deviceOverview": {
     "devicesAndConnections": "设备与连接",
     "connectDevice": "连接该设备",
+    "inUse": "正在控制",
+    "localDevice": "本地设备",
+    "connectAndUse": "连接并使用",
+    "switchUse": "切换使用",
+    "disconnectAction": "断开链接",
+    "cancelRemoteControl": "取消远控",
+    "disconnectActionHint": "断开并返回本机，设备上的任务继续运行",
+    "returnLocalAction": "返回本机",
+    "unavailableAction": "无法连接",
+    "connectingAction": "连接中…",
+    "switchingAction": "切换中…",
+    "disconnectingAction": "断开中…",
     "previousDevice": "上一台设备",
     "nextDevice": "下一台设备",
     "title": "设备状态",
@@ -777,11 +953,12 @@
     "footerControlledBy": "{{device}} 正在控制",
     "footerDistributedExecution": "{{count}} 台设备正在执行",
     "current": "当前",
-    "currentUse": "当前使用",
-    "currentLocalDevice": "当前本地设备",
-    "controlling": "正在控制",
+    "currentUse": "远程",
+    "currentLocalDevice": "本地",
+    "controlling": "控制中",
     "executingTasks": "{{count}} 个任务",
     "connectedDevices": "协同设备",
+    "deviceCount": "{{formattedCount}} 台设备",
     "connectionService": "连接服务",
     "accountService": "账号服务",
     "controllers": "控制端",
@@ -830,7 +1007,7 @@
     "usernamePlaceholder": "请输入用户名",
     "passwordPlaceholder": "请输入密码",
     "authServerPlaceholder": "https://auth.example.com",
-    "login": "使用邮箱或 GitHub 登录",
+    "login": "登录账号",
     "cancel": "取消",
     "emptyFields": "请填写所有字段",
     "invalidCredentialsLength": "用户名或密码过长",
@@ -1315,6 +1492,10 @@
       "name": "文本选择菜单",
       "description": "提供文本选择相关的操作"
     },
+    "textInputMenu": {
+      "name": "输入框菜单",
+      "description": "为输入框提供复制、粘贴、剪切和全选操作"
+    },
     "terminalMenu": {
       "name": "终端菜单",
       "description": "提供终端相关的操作",
@@ -1567,6 +1748,7 @@
     "panelView": "面板视图"
   },
   "sceneBar": {
+    "recentSessions": "最近打开的会话",
     "tabsLabel": "场景标签页",
     "scrollPrevious": "向左滚动标签页",
     "scrollNext": "向右滚动标签页",
@@ -1610,7 +1792,7 @@
     "newCodeSessionDesc": "开始代码任务、调试问题，或打开一个项目进入开发状态",
     "newCoworkSession": "新建 Cowork 会话",
     "newCoworkSessionDesc": "适合整理需求、推进任务、起草内容和日常协作",
-    "newClawSession": "新建 Claw 会话",
+    "newClawSession": "新建助理会话",
     "newClawSessionDesc": "进入个人助理工作区，延续上下文与偏好持续协作",
     "assistantEntryLabel": "个人助理",
     "assistantEntryTitle": "除了项目工作流，你也可以直接使用 OpenBitFun 助理",
@@ -1751,7 +1933,7 @@
   "ssh": {
     "remote": {
       "title": "远程 SSH",
-      "connect": "连接远程项目",
+      "connect": "连接",
       "connecting": "连接中...",
       "connected": "已连接",
       "disconnect": "断开连接",
@@ -1771,8 +1953,8 @@
       "wslUser": "Linux 用户（可选）",
       "wslDefaultUser": "使用发行版默认用户",
       "wslHint": "直接连接 Windows 主机上已安装的 WSL 发行版，无需配置 SSH 服务。",
-      "wslUnsupported": "WSL 需要运行在 Windows 上的 OpenBitFun 主机，当前主机不支持直接连接 WSL。",
-      "wslNoDistributions": "未找到 WSL 发行版，请在 Windows 主机上安装 Linux 发行版后刷新。",
+      "wslUnsupported": "当前主机不支持 WSL。",
+      "wslNoDistributions": "未检测到 WSL 发行版。",
       "wslDistributionRequired": "请选择已安装的 WSL 发行版。",
       "wslDiscoveryFailed": "无法加载 WSL 发行版。",
       "proxyJump": "跳板链（ProxyJump）",
@@ -1796,7 +1978,7 @@
       "containerUser": "容器用户",
       "optional": "可选",
       "remoteDockerHint": "先通过 SSH 到达 Docker 宿主；终端、智能体命令与工作区文件操作随后都在该容器内执行。",
-      "localDockerHint": "使用本机 Docker CLI；终端、智能体命令与工作区文件操作都在该容器内执行。",
+      "localDockerHint": "使用当前工作主机上的 Docker CLI；终端、智能体命令与工作区文件操作都在该容器内执行。",
       "containerSshdHint": "上方主机、端口、用户和认证信息需直接指向容器内的 sshd。",
       "host": "主机地址",
       "port": "端口",
@@ -1881,7 +2063,7 @@
     "portForward": {
       "menuEntry": "端口映射",
       "title": "端口映射",
-      "intro": "把远程主机上正在监听的端口映射到本机访问。映射不会自动建立，只有你在这里添加的才会生效。",
+      "intro": "把远程主机上正在监听的端口映射到本机访问。只有你在这里添加，或在远程终端中打开 localhost 链接时，才会建立映射。",
       "detectedTitle": "远程正在监听",
       "detecting": "正在检测远程端口…",
       "detect": "重新检测",
@@ -1950,6 +2132,7 @@
       "targetIsPullRequest": "此条目是拉取请求，请按拉取请求打开，而不是按问题打开。"
     },
     "messages": {
+      "hostUnsupported": "当前设备不支持内置 PR 查看，请使用系统浏览器打开 PR 链接。",
       "noWorkspace": "没有可用的活动工作区。",
       "unsupportedLink": "此链接不是受支持的拉取请求链接。",
       "detailsFailed": "加载拉取请求详情失败。",
@@ -2137,5 +2320,22 @@
     "singleClick": "单击",
     "doubleClick": "双击",
     "modifiedDragUnavailable": "共享预览暂不支持同时按住修饰键拖动。"
+  },
+  "newWorkspace": {
+    "title": "创建",
+    "description": "选择要创建的内容。",
+    "assistantTitle": "个人助理",
+    "assistantDescription": "与你长期协作，拥有独立记忆。",
+    "projectTitle": "工程",
+    "projectDescription": "关联已有文件夹，或创建全新工程。",
+    "createAssistant": "创建助理",
+    "createProject": "创建工程",
+    "assistantError": "无法创建助理，请稍后重试。",
+    "back": "返回选择"
+  },
+  "peerHost": {
+    "unavailable": "此功能在该设备上不可用。",
+    "updateRequired": "该设备上的 OpenBitFun 版本不支持此功能。请尝试在该设备上更新 OpenBitFun。",
+    "withDetail": "{{message}}（{{detail}}）"
   }
 }

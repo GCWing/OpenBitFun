@@ -35,9 +35,13 @@ interface HarnessProps {
   onApi: (api: FlowChatVirtualizer) => void;
   isViewportSuspended?: () => boolean;
   widthPx?: number;
+  /** A pane resize is changing the width on every frame. */
+  measurementSuspended?: boolean;
 }
 
-function Harness({ scroller, header, items, onApi, isViewportSuspended, widthPx }: HarnessProps) {
+function Harness({
+  scroller, header, items, onApi, isViewportSuspended, widthPx, measurementSuspended,
+}: HarnessProps) {
   const scrollerRef = React.useRef<HTMLElement | null>(scroller);
   const headerRef = React.useRef<HTMLElement | null>(header);
   onApi(useFlowChatVirtualizer({
@@ -49,6 +53,7 @@ function Harness({ scroller, header, items, onApi, isViewportSuspended, widthPx 
     getKnownItemHeightPx: (item: Item) => item.knownHeightPx,
     estimateContext: { availableWidthPx: widthPx },
     isViewportSuspended,
+    measurementSuspended,
     scrollPaddingStartPx: 0,
     writeViewport: () => true,
   }));
@@ -220,6 +225,55 @@ describe('useFlowChatVirtualizer measurement', () => {
       { startPx: 0, endPx: ESTIMATE_PX },
       { startPx: ESTIMATE_PX, endPx: ESTIMATE_PX * 2 },
     ]);
+  });
+
+  /**
+   * The pane-resize case: the width changes on every frame of a divider drag,
+   * and every measurement this pass takes is derived from it.
+   *
+   * The row is read through a counting `offsetHeight`, which is the work the
+   * pass is for: one read per pass, and the count says how many passes ran.
+   */
+  it('skips the layout-signature pass while a pane resize is suspended and runs it once on release', () => {
+    const items = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
+    let rowHeightPx = 300;
+    let rowReads = 0;
+    const row = document.createElement('div');
+    row.setAttribute('data-virtual-index', '2');
+    Object.defineProperty(row, 'offsetHeight', {
+      configurable: true,
+      get: () => { rowReads += 1; return rowHeightPx; },
+    });
+    scroller.appendChild(row);
+    const renderAt = (widthPx: number, measurementSuspended?: boolean) => act(() => root.render(
+      <Harness
+        scroller={scroller}
+        header={header}
+        items={items}
+        widthPx={widthPx}
+        measurementSuspended={measurementSuspended}
+        onApi={next => { api = next; }}
+      />,
+    ));
+
+    renderAt(500);
+    expect(api.getItemBounds(2)).toEqual({ startPx: ESTIMATE_PX * 2, endPx: ESTIMATE_PX * 2 + 300 });
+    const readsAfterSettle = rowReads;
+
+    // The drag starts: the content re-wraps and the width keeps changing.
+    rowHeightPx = 380;
+    for (const widthPx of [480, 440, 400, 360]) renderAt(widthPx, true);
+    expect(rowReads).toBe(readsAfterSettle);
+    expect(api.getItemBounds(2)).toEqual({ startPx: ESTIMATE_PX * 2, endPx: ESTIMATE_PX * 2 + 300 });
+
+    // The layout settles: one pass, against the width that stopped moving.
+    renderAt(360, false);
+    expect(rowReads).toBe(readsAfterSettle + 1);
+    expect(api.getItemBounds(2)).toEqual({ startPx: ESTIMATE_PX * 2, endPx: ESTIMATE_PX * 2 + 380 });
+
+    // And nothing after it: the settled signature is the measured one.
+    renderAt(360, false);
+    expect(rowReads).toBe(readsAfterSettle + 1);
   });
 
   it('ignores an element carrying no usable index', () => {

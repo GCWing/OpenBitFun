@@ -24,8 +24,7 @@
     "dueSoon": "未来 24 小时待执行"
   },
   "calendar": {
-    "title": "更晚",
-    "hint": "全部计划执行时间，含 24 小时内的任务",
+    "title": "日历",
     "previousMonth": "上个月",
     "nextMonth": "下个月",
     "today": "今天",

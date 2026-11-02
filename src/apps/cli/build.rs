@@ -4,6 +4,11 @@ use std::io::Write;
 use std::path::Path;
 
 fn main() {
+    // Cargo does not propagate a dependency's link-arg to the final executable.
+    // Keep the shared provider optional on macOS older than ScreenCaptureKit.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,ScreenCaptureKit");
+    }
     if let Err(e) = embed_cli_prompts() {
         eprintln!("Warning: Failed to embed CLI prompts: {}", e);
     }

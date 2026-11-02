@@ -4,6 +4,7 @@ import {
   GoalToolCard, AgentRosterToolCard, SessionHistoryToolCard, ImageAnalysisToolCard, TimeToolCard,
   McpResourceToolCard, WorktreeToolCard, PortForwardToolCard, ReviewPlatformToolCard,
   FrontendWorkbenchToolCard, MiniAppFinalizeToolCard, MarketplacePublishToolCard, PlaybookToolCard,
+  DesktopCardToolCard,
   type SemanticToolCardAction, type SemanticToolCardProps, type SemanticToolCardRecord,
 } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
@@ -13,6 +14,7 @@ import { notificationService } from '@/shared/notification-system';
 import { copyTextToClipboard } from '@/shared/utils/textSelection';
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { getActiveSurfaceScope, isLocalSurface, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { useReviewPlatformSupport } from '@/infrastructure/peer-device/useReviewPlatformSupport';
 import { flowChatStore } from '../store/FlowChatStore';
 import { openMainSession } from '../services/sessionActivation';
 import { sessionProjectWorkspaceId } from '../utils/sessionWorkspace';
@@ -40,10 +42,12 @@ const views: Record<BuiltinCardFamily, React.ComponentType<SemanticToolCardProps
   worktree: WorktreeToolCard, 'port-forward': PortForwardToolCard, 'review-platform': ReviewPlatformToolCard,
   'frontend-workbench': FrontendWorkbenchToolCard, 'miniapp-finalize': MiniAppFinalizeToolCard,
   'marketplace-publish': MarketplacePublishToolCard, playbook: PlaybookToolCard,
+  'desktop-card': DesktopCardToolCard,
 };
 
 export const BuiltinToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, onExpand, onOpenInEditor }) => {
   const { t, formatNumber } = useI18n('flow-chat');
+  const canViewPullRequests = useReviewPlatformSupport();
   const [isExpanded, setExpanded] = useToolCardDisclosure('isExpanded');
   const [market, setMarket] = useState<'miniapps' | 'appearance'>();
   const [marketOpen, setMarketOpen] = useState(false);
@@ -106,11 +110,11 @@ export const BuiltinToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, 
     }) });
     if (link.kind === 'market') actions.push({ key, label: link.label, icon: 'store', disabled: detached,
       onPress: () => { setMarket(link.value === 'appearance' ? 'appearance' : 'miniapps'); setMarketOpen(true); } });
-    if (link.kind === 'review') actions.push({ key, label: link.label, icon: 'git-pull-request', disabled: detached || !workspaceId,
+    if (link.kind === 'review') actions.push({ key, label: link.label, icon: 'git-pull-request', disabled: detached || !workspaceId || !canViewPullRequests,
       onPress: () => run(async () => {
         const scope = getActiveSurfaceScope();
         const { createReviewPlatformTab } = await import('@/shared/utils/tabUtils');
-        if (scope.isCurrent() && workspaceId) createReviewPlatformTab(workspaceId, link.value);
+        if (scope.isCurrent() && workspaceId && canViewPullRequests) createReviewPlatformTab(workspaceId, link.value);
       }) });
     if (link.intent !== 'primary' && (link.kind === 'url' || link.kind === 'file' || link.kind === 'copy-path')) actions.push({ key: `${key}:copy`,
       label: t(link.kind === 'url' ? 'toolCards.builtin.links.copyAddress' : 'toolCards.builtin.links.copyPath'), icon: 'duplicate',
@@ -146,7 +150,9 @@ export const BuiltinToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, 
     sections: model.sections, emptyContent: model.emptyContent, error: model.error,
     notice: detached && allLinks.some(link => ['file', 'session', 'miniapp', 'review', 'market'].includes(link.kind))
       ? [model.notice, t('toolCards.builtin.hostUnavailable')].filter(Boolean).join('\n')
-      : remoteLoopback ? [model.notice, t('toolCards.builtin.remoteLoopback')].filter(Boolean).join('\n') : model.notice,
+      : remoteLoopback ? [model.notice, t('toolCards.builtin.remoteLoopback')].filter(Boolean).join('\n')
+        : !canViewPullRequests && allLinks.some(link => link.kind === 'review')
+          ? [model.notice, t('common:reviewPlatform.messages.hostUnsupported')].filter(Boolean).join('\n') : model.notice,
     connection: model.connection, ordered: model.ordered, actions: toActions(model.links),
     media: isExpanded && model.family === 'image-analysis' ? model.imageSources.length > 0
       ? model.imageSources.map((src, index) => <img src={src} key={index} alt={model.summary ?? model.action} loading="lazy" onLoad={dispatchToolCardToggle} />)

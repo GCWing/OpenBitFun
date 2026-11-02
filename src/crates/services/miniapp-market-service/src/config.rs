@@ -51,11 +51,8 @@ impl MarketConfig {
                 "MARKET_SESSION_SECRET must contain at least 24 characters"
             ));
         }
-        let admin_github_ids = env::var("MARKET_ADMIN_GITHUB_IDS")
-            .unwrap_or_else(|_| "24753352".to_string())
-            .split(',')
-            .filter_map(|value| value.trim().parse::<i64>().ok())
-            .collect();
+        let admin_github_ids =
+            parse_admin_github_ids(&env::var("MARKET_ADMIN_GITHUB_IDS").unwrap_or_default());
         let public_browse = env::var("MARKET_PUBLIC_BROWSE")
             .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"))
             .unwrap_or(true);
@@ -88,6 +85,32 @@ impl MarketConfig {
             .clone()
             .unwrap_or_else(|| format!("{}/api/v1/auth/github/callback", self.public_base_url))
     }
+
+    /// Public origin that serves the shared sign-in and completion pages.
+    ///
+    /// Prefer the callback origin when configured, so a deployment can keep the
+    /// auth facade on its own hostname. Otherwise the market origin is used.
+    pub fn auth_base_url(&self) -> String {
+        self.github_callback_url
+            .as_deref()
+            .and_then(origin_of)
+            .or_else(|| origin_of(&self.public_base_url))
+            .unwrap_or_else(|| self.public_base_url.trim_end_matches('/').to_string())
+    }
+}
+
+fn origin_of(raw: &str) -> Option<String> {
+    let mut url = url::Url::parse(raw).ok()?;
+    url.set_path("");
+    url.set_query(None);
+    url.set_fragment(None);
+    Some(url.as_str().trim_end_matches('/').to_string())
+}
+
+fn parse_admin_github_ids(raw: &str) -> HashSet<i64> {
+    raw.split(',')
+        .filter_map(|value| value.trim().parse::<i64>().ok())
+        .collect()
 }
 
 fn non_empty_env(key: &str) -> Option<String> {
@@ -95,4 +118,36 @@ fn non_empty_env(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_ids_are_empty_without_an_explicit_deployment_setting() {
+        assert!(parse_admin_github_ids("").is_empty());
+        assert!(parse_admin_github_ids(" , ").is_empty());
+    }
+
+    #[test]
+    fn admin_ids_parse_comma_separated_values() {
+        assert_eq!(
+            parse_admin_github_ids(" 42, 0,not-a-number,7 "),
+            HashSet::from([42, 0, 7])
+        );
+    }
+
+    #[test]
+    fn origin_of_strips_path_query_and_fragment() {
+        assert_eq!(
+            origin_of("https://auth.example.com/api/v1/auth/github/callback?x=1#frag").as_deref(),
+            Some("https://auth.example.com")
+        );
+        assert_eq!(
+            origin_of("http://127.0.0.1:9710/miniapp").as_deref(),
+            Some("http://127.0.0.1:9710")
+        );
+        assert_eq!(origin_of("not a url"), None);
+    }
 }

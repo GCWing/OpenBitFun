@@ -43,7 +43,113 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/common/S
 ```
 
 Follow the parent guide for `check:web`, i18n, and Appearance registration checks.
+For the independent Appearance conversation-width setting and shared drag preference:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/application/FlowChatWidthSettingsSection.test.tsx src/flow_chat/components/FlowChatWidthBoundary.test.tsx src/infrastructure/appearance/preferences/flowChatWidthStore.test.ts
+```
+
+These local DOM/storage fixtures do not establish rendered visuals or live remote behavior.
+
+For Appearance sidebar pinning, capsule selection, ordering, persistence and contribution lifecycle:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/navigation/sidebarPreferences.test.ts src/app/navigation/sidebarRegistry.test.ts src/app/scenes/settings/pages/application/SidebarSettingsSection.test.tsx src/app/scenes/settings/settingsRegistry.test.ts src/app/components/NavPanel/MainNav.projectCreation.test.tsx src/app/scenes/skills/skillsSceneStore.test.ts
+```
+
+Keep trusted navigation contributions separate from controller-local preferences and
+device-scoped MiniApp pins. These tests simulate Peer activation and capability gates;
+they do not establish live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
+
+Model connection and detail editors use the shared `Dialog preset="panel"`
+with a centered provider identity and the panel's top/bottom spacing. Keep the
+editor footer `appearance="floating"` for centered actions. This presentation is
+intentional; form controls inside still follow the standard shared sizing and
+field-surface contracts.
+
+For model-pool strategy selection, member search/multi-selection, nested-dialog
+dismissal, preserved records and device-switch isolation, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/ModelPoolsSection.test.tsx src/app/scenes/settings/pages/ai/ModelDiscoveryPicker.test.tsx src/infrastructure/config/components/common/SettingsControlSizing.test.ts
+```
+
+These DOM fixtures simulate device activation and unsupported peer capabilities;
+they do not establish live remote behavior or visual fidelity.
+
 When changing destination migrations or catalog source evidence, also run
 `pnpm run capabilities:generate`, `pnpm run capabilities:check`, and
 `pnpm run capabilities:test`; retain historical wire destinations for older clients.
 These source and DOM tests do not establish visual or remote runtime behavior.
+
+Subscription services group ZCode's regional accounts under one product entry.
+Region choice is presentation only: retain each account's provider/credential
+identity, show both connected regions, and keep an existing model pinned to its
+original region. A new connection can select a region before authorization.
+Use the existing host-owned auth APIs and advertised providers, including on peers.
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/subscriptionServices.test.ts src/app/scenes/settings/pages/ai/ZcodeSubscriptionGroup.test.tsx src/infrastructure/config/components/subscriptionLoginCoordinator.test.ts
+```
+
+These tests cover product grouping, regional selection and account isolation in
+local DOM/fixtures; they do not exercise a real remote host or provider login.
+
+Subscription import presents provider cards with their own sign-in buttons and
+in-card region selection; existing account management is opened from account
+entries. Starting sign-in replaces the picker with the selected provider's
+authorization tracker; cancel waits for host cleanup before returning to the
+picker, and failed attempts can retry in the same slot or return.
+For picker loading, regional sign-in, retry/cancel,
+and the separate account-management route, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx src/app/scenes/settings/pages/ai/ModelSettingsPage.presentation.test.ts
+```
+
+These DOM fixtures do not establish visual fidelity or live remote sign-in.
+
+Subscription allowance panels use `useSubscriptionQuota` and the typed host API.
+Keep observations scoped to device activation and exact account slot; gate peers
+on `subscription_quota_v1`, with an explicit unsupported state and no local
+fallback. Refresh visible active panels only, retain failed observations as stale,
+and never turn a missing amount into zero. Keep vendor protocol interpretation
+in the adapter; UI formats canonical amounts, units, windows and dates.
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/SubscriptionQuotaPanel.test.tsx src/app/scenes/settings/pages/ai/subscriptionQuotaPresentation.test.ts src/infrastructure/config/hooks/useSubscriptionQuota.test.tsx src/infrastructure/api/service-api/AIApi.quota.test.ts src/infrastructure/peer-device/peerCapabilityResolution.test.ts
+```
+
+These fixtures verify data presentation and activation/account isolation; they
+do not establish rendered visual fidelity or physical remote-host behavior.
+
+For the three-row subscription capsule summary, its always-visible More entry,
+resize/focus behavior, and provider-filtered account browser:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/SubscriptionCapsuleList.test.tsx src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx
+```
+
+These DOM fixtures use measured-width stubs and simulated device activation;
+they do not establish native rendering or live remote behavior.
+
+Service headings use the provider catalog; account rows use exact host-owned slots
+from `list_subscription_account_instances`. Preserve retained signed-out identities,
+disabled states, pending new slots and identical labels. Refresh, catalog discovery,
+import and sign-out must carry the selected slot; sign-out impact includes only
+models/pools which name it. Publish catalog/instance reads together under the device
+activation key and hide the previous host's accounts immediately on activation.
+
+OpenCode Go API-key quotas use a saved model ID, gated by
+`subscription_model_quota_v1`; no draft credential belongs in that request. Zen and
+public free access have explicit informational states plus the console action.
+
+Focused checks:
+`pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/SubscriptionServiceGroup.test.tsx src/app/scenes/settings/pages/ai/subscriptionServices.test.ts src/app/scenes/settings/pages/ai/ZcodeSubscriptionGroup.test.tsx src/app/scenes/settings/pages/ai/OpenCodeModelQuota.test.ts src/infrastructure/api/service-api/AIApi.quota.test.ts`.
+These are local DOM/data fixtures, not visual or physical remote-host acceptance.
+
+Grok OAuth period/on-demand allowance requires `grok_quota_v1` on peers in
+addition to the existing account-quota capability. Keep API-key model setup in
+the ordinary provider/custom model flow; MiniMax, Kimi Code and StepFun have no
+separate subscription importer or allowance UI. The existing OpenCode Go path
+retains its independently advertised capability.

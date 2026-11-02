@@ -255,6 +255,33 @@ describe('overflow text full-content access', () => {
     expect(tooltip()?.textContent).toBe('Existing full description');
   });
 
+  it.each([false, true])('suppresses nested overflow hints when the explicit tooltip is disabled (already visible: %s)', visible => {
+    const content = (disabled: boolean) => (
+      <Tooltip content="Branch details" disabled={disabled}>
+        <button data-overflow-trigger><OverflowText>{longLabel}</OverflowText></button>
+      </Tooltip>
+    );
+    render(content(false));
+    const button = host.querySelector('button')!;
+    act(() => button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    if (visible) {
+      reveal();
+      expect(tooltip()?.textContent).toBe('Branch details');
+    }
+
+    render(content(true));
+    hover(button);
+    act(() => button.focus());
+    reveal();
+    expect(tooltip()).toBeNull();
+    expect(host.querySelector('[data-overflow-tooltip="true"]')).toBeNull();
+
+    render(content(false));
+    act(() => button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    reveal();
+    expect(tooltip()?.textContent).toBe('Branch details');
+  });
+
   it('detects vertical clipping and preserves multiline paragraph semantics', () => {
     availableWidth = 1000;
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(40);

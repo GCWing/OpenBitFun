@@ -124,7 +124,7 @@ export const computerUseControlAPI = {
   stop: (generation: number) => api.invoke<ComputerUseControlSnapshot>(
     'computer_use_control_stop', { request: { generation } },
   ),
-  preview: (generation: number) => api.invoke<ComputerUseControlPreview>(
+  preview: (generation: number) => api.invoke<ComputerUseControlPreview | null>(
     'computer_use_control_preview', { request: { generation } },
   ),
   permissions: () => api.invoke<{ permissions?: ComputerUsePermissions }>('computer_use_get_status'),

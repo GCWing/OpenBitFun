@@ -27,8 +27,11 @@ const productIdentityOwner = 'src/crates/contracts/core-types/src/product_identi
 const retiredIdentityDataBoundaryFiles = new Set([
   'OPENBITFUN_LEGACY_DATA_MIGRATION_IMPLEMENTATION_PLAN.md',
   'OPENBITFUN_LEGACY_DATA_MIGRATION_INVENTORY.md',
-  'deploy/openbitfun-host/README.md',
-  'deploy/openbitfun-host/migrate-market-data-v1.py',
+  'deploy/market-data-migration/migrate-market-data-v1.py',
+  // Offline recovery must recognize the pre-rename assistant data location.
+  'scripts/recovery/repair-session-storage.py',
+  'scripts/recovery/repair-session-storage.test.py',
+  'scripts/recovery/repair-session-storage.md',
   'src/apps/relay-server/README.md',
   // HarmonyOS must keep its published bundle id and encrypted-storage names
   // for in-place upgrades. Runtime identifiers are centralized in one source;
@@ -38,10 +41,11 @@ const retiredIdentityDataBoundaryFiles = new Set([
   'src/apps/mobile/harmonyos/entry/src/main/resources/base/profile/backup_config.json',
 ]);
 const retiredIdentityDataBoundaryPrefixes = Object.freeze([
-  'src/apps/data-migrator/',
+  'src/apps/data-tools/',
   'src/crates/assembly/core/src/legacy_migration/',
   'src/crates/services/legacy-migration/',
   'src/crates/services/legacy-migration-adapters/',
+  'src/crates/services/services-core/src/session_recovery/',
   // Pinned legacy updater feeds reproduce the historical 0.2.x manifests
   // (download URLs and file names included) so old clients keep resolving
   // their last real release; they must not be rewritten to the new identity.
@@ -49,7 +53,7 @@ const retiredIdentityDataBoundaryPrefixes = Object.freeze([
 ]);
 const noncanonicalIdentityDataBoundaryFiles = new Set([
   'OPENBITFUN_LEGACY_DATA_MIGRATION_INVENTORY.md',
-  'deploy/openbitfun-host/migrate-market-data-v1.py',
+  'deploy/market-data-migration/migrate-market-data-v1.py',
 ]);
 
 // Published external GitHub identifiers that embed the retired token. These are

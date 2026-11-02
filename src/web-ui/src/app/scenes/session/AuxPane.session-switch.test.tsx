@@ -46,12 +46,10 @@ vi.mock('@/shared/utils/logger', () => ({
 
 import AuxPane from './AuxPane';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
-import { hideSessionAuxPane } from './sessionPanelLayout';
 
 vi.mock('./sessionPanelLayout', () => ({
   expandSessionAuxPane: vi.fn(),
   collapseSessionAuxPane: vi.fn(),
-  hideSessionAuxPane: vi.fn(),
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -66,7 +64,6 @@ describe('AuxPane session canvas switching', () => {
 
   beforeEach(() => {
     mocks.switchAgentCanvasScope.mockReset();
-    vi.mocked(hideSessionAuxPane).mockClear();
     setActiveSession('session-a');
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -87,9 +84,10 @@ describe('AuxPane session canvas switching', () => {
     expect(mocks.switchAgentCanvasScope).toHaveBeenCalledWith('session-a');
   });
 
-  it('offers reversible fullscreen and hides the host without closing its tabs', () => {
+  it('offers reversible fullscreen without a duplicate hide control or closing its tabs', () => {
     const onToggleFullscreen = vi.fn();
     act(() => root.render(<AuxPane onToggleFullscreen={onToggleFullscreen} />));
+    expect(container.querySelector('[aria-label="canvas.hidePanel"]')).toBeNull();
     const maximize = container.querySelector<HTMLButtonElement>('[aria-label="canvas.maximizePanel"]')!;
     expect(maximize.getAttribute('aria-pressed')).toBe('false');
     act(() => maximize.click());
@@ -100,8 +98,7 @@ describe('AuxPane session canvas switching', () => {
     expect(restore.getAttribute('aria-pressed')).toBe('true');
     act(() => restore.click());
     expect(onToggleFullscreen).toHaveBeenCalledTimes(2);
-    act(() => container.querySelector<HTMLButtonElement>('[aria-label="canvas.hidePanel"]')!.click());
-    expect(hideSessionAuxPane).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[aria-label="canvas.hidePanel"]')).toBeNull();
     expect(mocks.canvasStore.closeAllTabs).not.toHaveBeenCalled();
   });
 

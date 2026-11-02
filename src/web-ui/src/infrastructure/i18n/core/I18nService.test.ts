@@ -10,6 +10,18 @@ describe('I18nService shared namespace contract', () => {
     expect(service.t('common:actions.copy')).not.toBe('common:actions.copy');
   });
 
+  it('can restore a bootstrap namespace without a duplicate lazy import', async () => {
+    const service = new I18nService();
+    const i18n = service.getI18nInstance();
+    const expected = service.t('common:actions.copy');
+    i18n.removeResourceBundle(DEFAULT_LOCALE, 'common');
+
+    await service.loadNamespace('common');
+
+    expect(i18n.hasResourceBundle(DEFAULT_LOCALE, 'common')).toBe(true);
+    expect(service.t('common:actions.copy')).toBe(expected);
+  });
+
   it('keeps shared terms explicit so surface namespaces retain priority', () => {
     const service = new I18nService();
     const i18n = service.getI18nInstance();

@@ -5,6 +5,7 @@ mod hook_source;
 mod instruction_source;
 mod mcp_source;
 mod pet_source;
+pub mod session;
 
 pub use pet_source::{builtin_pet_sources, BuiltinPetCatalog, BuiltinPetSource};
 

@@ -79,6 +79,11 @@ pub struct BrowserLaunchOptions {
     /// explicit setup action; ordinary agent connects should return guidance
     /// quickly instead of holding a tool call open.
     pub wait_for_user_profile_setup: bool,
+    /// Bring the launched browser to the foreground. Off by default: browser
+    /// control is background work, and activating the user's browser on every
+    /// attach steals focus from whatever they were doing. Opt in only for a
+    /// user-visible action such as restarting their browser from Settings.
+    pub activate: bool,
 }
 
 impl BrowserLauncher {
@@ -648,17 +653,36 @@ impl BrowserLauncher {
         }
     }
 
+    /// `open` arguments for launching a macOS browser instance.
+    ///
+    /// Without `-g`, `open` activates the application, so every launch pulled
+    /// the user's browser in front of whatever they were doing. Background
+    /// control therefore launches with `-g` and lets an explicit user-visible
+    /// action opt back into activation.
+    #[cfg(target_os = "macos")]
+    fn macos_open_args(app_name: &str, browser_args: &[String], activate: bool) -> Vec<String> {
+        let mut args = Vec::with_capacity(browser_args.len() + 5);
+        if !activate {
+            args.push("-g".to_string());
+        }
+        args.push("-n".to_string());
+        args.push("-a".to_string());
+        args.push(app_name.to_string());
+        args.push("--args".to_string());
+        args.extend(browser_args.iter().cloned());
+        args
+    }
+
     #[cfg(target_os = "macos")]
     fn spawn_macos_browser(
         kind: &BrowserKind,
         exe: &str,
         args: &[String],
+        activate: bool,
     ) -> std::io::Result<std::process::Child> {
         if let Some(app_name) = Self::launch_app_name(kind) {
-            let mut command = silent_command("open");
-            command.args(["-na", app_name, "--args"]);
-            command.args(args);
-            command.spawn()
+            let open_args = Self::macos_open_args(app_name, args, activate);
+            silent_command("open").args(open_args).spawn()
         } else {
             silent_command(exe).args(args).spawn()
         }
@@ -669,6 +693,7 @@ impl BrowserLauncher {
         _kind: &BrowserKind,
         exe: &str,
         args: &[String],
+        _activate: bool,
     ) -> std::io::Result<std::process::Child> {
         silent_command(exe).args(args).spawn()
     }
@@ -678,8 +703,47 @@ impl BrowserLauncher {
         kind: &BrowserKind,
         exe: &str,
         args: &[String],
+        activate: bool,
     ) -> std::io::Result<std::process::Child> {
-        Self::spawn_macos_browser(kind, exe, args)
+        Self::spawn_macos_browser(kind, exe, args, activate)
+    }
+
+    /// Bring an already-running browser to the foreground.
+    ///
+    /// A browser-owned consent or approval prompt is only answerable from a
+    /// visible window, so the flows that request one must surface the browser
+    /// instead of leaving the user to hunt for a background window. Returns
+    /// whether the request was accepted; platforms without a supported
+    /// activation entry point report `false` and the caller keeps its normal
+    /// guidance.
+    pub fn activate_browser(kind: &BrowserKind) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            let Some(app_name) = Self::launch_app_name(kind) else {
+                return false;
+            };
+            match silent_command("open").args(["-a", app_name]).output() {
+                Ok(output) if output.status.success() => true,
+                Ok(output) => {
+                    debug!(
+                        "Could not activate {}: {}",
+                        kind,
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    );
+                    false
+                }
+                Err(error) => {
+                    debug!("Could not run open to activate {}: {}", kind, error);
+                    false
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = kind;
+            false
+        }
     }
 
     /// Get the executable path or launch command for a browser kind.
@@ -852,20 +916,32 @@ impl BrowserLauncher {
         };
         let flag = format!("--remote-debugging-port={}", port);
         let profile_flag = format!("--user-data-dir={}", profile_dir.display());
-        let extra: Vec<String> = vec![
+        let mut extra: Vec<String> = vec![
             flag.clone(),
             profile_flag,
             "--no-first-run".to_string(),
             "--no-default-browser-check".to_string(),
         ];
+        // This instance exists for background automation: keep its renderer and
+        // timers running while the window is not focused or is occluded, so a
+        // background-driven page still loads, animates, and captures.
+        extra.extend(
+            [
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-background-timer-throttling",
+            ]
+            .map(str::to_string),
+        );
 
         info!(
-            "Launching {} with CDP on port {} (user_data_dir={})",
+            "Launching {} with CDP on port {} (user_data_dir={}, activate={})",
             kind,
             port,
-            profile_dir.display()
+            profile_dir.display(),
+            options.activate
         );
-        let result = Self::spawn_browser(kind, &exe, &extra);
+        let result = Self::spawn_browser(kind, &exe, &extra, options.activate);
 
         match result {
             Ok(_child) => {
@@ -888,8 +964,19 @@ impl BrowserLauncher {
         }
     }
 
+    /// Restart is a user-initiated, visible action: the browser was just quit,
+    /// so it comes back in the foreground instead of hiding behind the app the
+    /// user clicked Restart in.
     pub async fn restart_with_cdp(kind: &BrowserKind, port: u16) -> Result<LaunchResult> {
-        Self::launch_with_cdp_options(kind, port, BrowserLaunchOptions::default()).await
+        Self::launch_with_cdp_options(
+            kind,
+            port,
+            BrowserLaunchOptions {
+                activate: true,
+                ..BrowserLaunchOptions::default()
+            },
+        )
+        .await
     }
 
     #[allow(dead_code)]
@@ -1167,5 +1254,33 @@ mod tests {
             r#"{"devtools":{"remote_debugging":{"user-enabled":false}}}"#
         ));
         assert!(!BrowserLauncher::default_cdp_preference_enabled("{}"));
+    }
+
+    #[test]
+    fn browser_launch_does_not_activate_by_default() {
+        assert!(!BrowserLaunchOptions::default().activate);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_background_launch_keeps_the_browser_out_of_the_foreground() {
+        let browser_args = vec!["--remote-debugging-port=9222".to_string()];
+
+        let background = BrowserLauncher::macos_open_args("Google Chrome", &browser_args, false);
+        assert_eq!(
+            background,
+            vec![
+                "-g".to_string(),
+                "-n".to_string(),
+                "-a".to_string(),
+                "Google Chrome".to_string(),
+                "--args".to_string(),
+                "--remote-debugging-port=9222".to_string(),
+            ]
+        );
+
+        let foreground = BrowserLauncher::macos_open_args("Google Chrome", &browser_args, true);
+        assert!(!foreground.iter().any(|argument| argument == "-g"));
+        assert!(foreground.contains(&"--args".to_string()));
     }
 }

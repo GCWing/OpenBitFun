@@ -90,9 +90,8 @@ export default function EcosystemPets({ supported, refreshVersion, open, onOpenC
     <div role="row" className="ecosystem-compatibility__content-summary">
       <span role="cell" className="ecosystem-compatibility__import-item">
         <span className="ecosystem-compatibility__import-item-icon"><Icon glyph={PawPrint} size="md" /></span>
-        <span className="ecosystem-compatibility__import-item-copy"><strong>{t('capabilities.pet')}</strong><small>{t('content.pets.description')}</small></span>
+        <span className="ecosystem-compatibility__import-item-copy"><strong><OverflowText>{t('capabilities.pet')}</OverflowText></strong></span>
       </span>
-      <span role="cell">Codex</span>
       <span role="cell" className="ecosystem-compatibility__content-summary-state">
         <StatusPill tone="neutral">{state === 'available' ? t('content.itemCount', { count: formatNumber(entries.length) }) : state === 'loading' ? t('loading') : t(`content.pets.states.${state}`)}</StatusPill>
         <IconButton size="sm" variant="quiet" icon={<Icon name="chevron-right" size="sm" />} aria-haspopup="dialog" aria-controls={id}
@@ -141,8 +140,11 @@ export default function EcosystemPets({ supported, refreshVersion, open, onOpenC
         </ScrollArea>
       </DialogBody>
     </Dialog>
-    <Dialog open={supported && !!review} onOpenChange={(open) => { if (!open && !busy) setReview(null); }}>
-      <DialogHeader><DialogTitle>{t('content.pets.reviewTitle')}</DialogTitle></DialogHeader>
+    <Dialog open={supported && !!review} onOpenChange={(open) => { if (!open && !busy) setReview(null); }} closeOnEscape={!busy} closeOnPointerOutside={!busy}>
+      <DialogHeader>
+        <DialogHeading><DialogTitle>{t('content.pets.reviewTitle')}</DialogTitle></DialogHeading>
+        <DialogHeaderActions>{!busy ? <DialogClose /> : null}</DialogHeaderActions>
+      </DialogHeader>
       <DialogBody>{review && supported ? <div className="ecosystem-compatibility__content-detail">
         <img className="ecosystem-compatibility__pet-preview" src={review.previewDataUrl} alt={review.pet.displayName} />
         <strong>{review.pet.displayName}</strong><p>{t(review.builtinId ? 'content.pets.builtinSource' : 'content.pets.customSource')}</p><p>{review.pet.packagePath}</p><p>{t('content.pets.reviewDescription')}</p>

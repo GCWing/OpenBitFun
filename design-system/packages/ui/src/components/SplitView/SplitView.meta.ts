@@ -8,6 +8,8 @@ export const splitViewMeta = {
   props: [
     { name: 'primary', type: 'ReactNode' },
     { name: 'secondary', type: 'ReactNode' },
+    { name: 'header', type: 'ReactNode | (geometry: SplitViewHeaderGeometry) => ReactNode' },
+    { name: 'surfaces', type: 'ReactNode' },
     { name: 'mode', type: 'split | primary | secondary', defaultValue: 'split' },
     { name: 'layout', type: 'split | overlay', defaultValue: 'split' },
     { name: 'secondarySide', type: 'left | right', defaultValue: 'right' },

@@ -81,13 +81,10 @@ export class RemoteCommandFactory {
   }
 
   static createSession(options: CreateSessionOptions, workspacePath: string): RemoteCommand {
-    const normalizedAgentType = (options.agentType || '').toLowerCase();
-    const defaultTitle = normalizedAgentType === 'claw' || normalizedAgentType === 'assistant' || normalizedAgentType === 'chat' ?
-      'Remote Assistant Session' : normalizedAgentType === 'cowork' ? 'Remote Cowork Session' : 'Remote Code Session';
     const command: RemoteCommand = {
       cmd: 'create_session',
       agent_type: options.agentType,
-      session_name: options.title.trim() || defaultTitle
+      session_name: options.title.trim()
     };
     if (options.workspaceId) {
       command.workspace_id = options.workspaceId;

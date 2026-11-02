@@ -6,6 +6,7 @@ import { avatarMeta } from "./components/Avatar/Avatar.meta";
 import { buttonMeta } from "./components/Button/Button.meta";
 import { capsuleMeta } from "./components/Capsule/Capsule.meta";
 import { checkboxMeta } from "./components/Checkbox/Checkbox.meta";
+import { colorPickerMeta } from "./components/ColorPicker/ColorPicker.meta";
 import { cardMeta } from "./components/Card/Card.meta";
 import { composerMeta } from "./components/Composer/Composer.meta";
 import { comboboxMeta } from "./components/Combobox/Combobox.meta";
@@ -28,6 +29,7 @@ import { navigationPanelMeta } from "./components/NavigationPanel/NavigationPane
 import { numberInputMeta } from "./components/NumberInput/NumberInput.meta";
 import { numberBadgeMeta } from "./components/NumberBadge/NumberBadge.meta";
 import { pageHeaderMeta } from "./components/PageHeader/PageHeader.meta";
+import { setupWizardMeta } from "./components/SetupWizard/SetupWizard.meta";
 import { radioMeta } from "./components/Radio/Radio.meta";
 import { rollingTextMeta } from "./components/RollingText/RollingText.meta";
 import { shimmerTextMeta } from "./components/ShimmerText/ShimmerText.meta";
@@ -141,6 +143,7 @@ export const componentRegistry = [
   capsuleMeta,
   cardMeta,
   checkboxMeta,
+  colorPickerMeta,
   chatComposerMeta,
   thinkingBlockMeta,
   flowGroupMeta,
@@ -217,6 +220,7 @@ export const componentRegistry = [
   numberBadgeMeta,
   pageDeployToolCardMeta,
   pageHeaderMeta,
+  setupWizardMeta,
   radioMeta,
   pagePublishToolCardMeta,
   prominentToolCardMeta,

@@ -66,17 +66,6 @@ export function useChatInputTargets(options: {
     candidates: candidatesFor(options.currentSessionId, options.activeChild, options.sessions),
   });
 
-  // Resolve synchronously in render; cleanup only prevents a removed selection
-  // from reviving when a closed pane or an unavailable child reappears later.
-  useLayoutEffect(() => {
-    if (requested && (requested.surfaceId !== surfaceId
-      || requested.parentSessionId !== options.currentSessionId
-      || requested.sessionId !== resolution.effectiveSessionId)) {
-      requestedRef.current = null;
-      setRequested(null);
-    }
-  }, [options.currentSessionId, requested, resolution.effectiveSessionId, surfaceId]);
-
   const resolveLive = useCallback(() => {
     const current = optionsRef.current;
     const state = FlowChatStore.getInstance().getState();
@@ -90,6 +79,18 @@ export function useChatInputTargets(options: {
         tab?.content.data as BtwSessionPanelData | undefined, state.sessions),
     });
   }, []);
+
+  // A new side-question pane can render before ChatInput's session snapshot
+  // catches up. Only authoritative state may discard an explicit selection.
+  // Closed panes and unavailable children must still release their selection.
+  useLayoutEffect(() => {
+    if (requested && (requested.surfaceId !== surfaceId
+      || requested.parentSessionId !== options.currentSessionId
+      || requested.sessionId !== resolveLive().effectiveSessionId)) {
+      requestedRef.current = null;
+      setRequested(null);
+    }
+  }, [options.currentSessionId, requested, resolution.effectiveSessionId, resolveLive, surfaceId]);
 
   const selectTargetSession = useCallback((sessionId: string) => {
     const current = optionsRef.current;

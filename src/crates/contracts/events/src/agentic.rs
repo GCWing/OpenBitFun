@@ -22,6 +22,16 @@ where
     }
 }
 
+/// Observable selection facts for one logical round; not a billing estimate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRoutingDecision {
+    pub route: String,
+    pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AgenticEventPriority {
     Critical = 0, // Immediately send (error, cancellation)
@@ -141,6 +151,14 @@ pub enum AgenticEvent {
         title: String,
         method: String,
     },
+
+    /// One-sentence next-input suggestion offered after a completed turn.
+    /// Session-scoped hint: it is not part of the turn lifecycle or journal.
+    PromptSuggestionGenerated {
+        session_id: String,
+        turn_id: String,
+        suggestion: String,
+    },
     ImageAnalysisStarted {
         session_id: String,
         image_count: usize,
@@ -206,6 +224,8 @@ pub enum AgenticEvent {
         /// Whether the turn produced a user-visible final response.
         #[serde(skip_serializing_if = "Option::is_none")]
         has_final_response: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        background_delivery: Option<openbitfun_core_types::background_delivery::BackgroundDelivery>,
     },
 
     DialogTurnCancelled {
@@ -303,6 +323,8 @@ pub enum AgenticEvent {
         model_config_id: String,
         /// Provider model name sent on the request.
         effective_model_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        routing: Option<ModelRoutingDecision>,
     },
 
     /// Emitted as soon as an automatic retry supersedes one model attempt.
@@ -332,6 +354,9 @@ pub enum AgenticEvent {
         first_visible_output_ms: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         stream_duration_ms: Option<u64>,
+        /// Request start to first effective output for the accepted model attempt.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ttft_ms: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         attempt_count: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -662,6 +687,7 @@ impl AgenticEvent {
             | Self::SessionHistoryChanged { session_id, .. }
             | Self::SessionDeleted { session_id }
             | Self::SessionTitleGenerated { session_id, .. }
+            | Self::PromptSuggestionGenerated { session_id, .. }
             | Self::ImageAnalysisStarted { session_id, .. }
             | Self::ImageAnalysisCompleted { session_id, .. }
             | Self::DialogTurnStarted { session_id, .. }
@@ -747,6 +773,7 @@ impl AgenticEvent {
             | Self::ContextCompressionStarted { .. }
             | Self::ThreadGoalUpdated { .. }
             | Self::UserSteeringInjected { .. }
+            | Self::PromptSuggestionGenerated { .. }
             | Self::ContextCompressionCompleted { .. } => AgenticEventPriority::Normal,
 
             Self::ToolEvent { tool_event, .. } => tool_event.default_priority(),
@@ -849,6 +876,7 @@ mod tests {
             first_chunk_ms: Some(10),
             first_visible_output_ms: Some(12),
             stream_duration_ms: Some(100),
+            ttft_ms: Some(35),
             attempt_count: Some(1),
             failure_category: None,
             token_details: Some(serde_json::json!({ "reasoningTokens": 7 })),
@@ -860,6 +888,7 @@ mod tests {
         assert_eq!(json["model_config_id"], "model-config");
         assert_eq!(json["effective_model_name"], "provider-model");
         assert_eq!(json["first_chunk_ms"], 10);
+        assert_eq!(json["ttft_ms"], 35);
         assert_eq!(json["token_details"]["reasoningTokens"], 7);
     }
 
@@ -875,11 +904,17 @@ mod tests {
             "effective_model_name": "provider-model"
         });
 
-        let event: AgenticEvent = serde_json::from_value(json).expect("event");
+        let event: AgenticEvent = serde_json::from_value(json.clone()).expect("event");
+        assert_eq!(serde_json::to_value(&event).unwrap(), json);
 
         match event {
-            AgenticEvent::ModelRoundCompleted { duration_ms, .. } => {
+            AgenticEvent::ModelRoundCompleted {
+                duration_ms,
+                ttft_ms,
+                ..
+            } => {
                 assert_eq!(duration_ms, None);
+                assert_eq!(ttft_ms, None);
             }
             _ => panic!("unexpected event"),
         }

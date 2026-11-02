@@ -170,6 +170,7 @@ export function getLanguageDisplayName(language?: string): string {
     'cpp': 'C++',
     'c': 'C',
     'csharp': 'C#',
+    'cangjie': 'Cangjie',
     'html': 'HTML',
     'css': 'CSS',
     'scss': 'SCSS',

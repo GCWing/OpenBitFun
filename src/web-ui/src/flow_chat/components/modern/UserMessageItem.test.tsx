@@ -2,6 +2,8 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
+import { fileURLToPath } from 'node:url';
+import { compile } from 'sass';
 
 import { FlowChatContext } from './FlowChatContext';
 import { UserMessageItem } from './UserMessageItem';
@@ -273,6 +275,39 @@ describe('UserMessageItem steering tag', () => {
     });
     useMessageEditStore.getState().cancelEdit();
     vi.unstubAllGlobals();
+  });
+
+  it.each(['completed', 'error'] as const)('sizes only the preview while retaining complete %s message text', async turnStatus => {
+    const stylesheet = document.createElement('style');
+    stylesheet.textContent = compile(fileURLToPath(new URL('./UserMessageItem.scss', import.meta.url))).css;
+    document.head.append(stylesheet);
+    const preview = 'A short introduction\n\nA short question';
+    const hidden = '\nA much longer explanation that must not widen the preview.';
+    const text = preview + hidden;
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: false }}>
+        <UserMessageItem message={{ id: 'long-message', content: text, timestamp: 1000 }}
+          turnId="long-turn" turnStatus={turnStatus} />
+      </FlowChatContext.Provider>,
+    ));
+
+    const content = container.querySelector<HTMLElement>('[data-testid="chat-user-message-content"]')!;
+    const tail = content.querySelector<HTMLElement>('.user-message-item__content-overflow')!;
+    expect(content.querySelector('.user-message-item__content-preview')?.textContent).toBe(preview);
+    expect(tail.textContent).toBe(hidden);
+    expect(dom.window.getComputedStyle(tail).display).toBe('none');
+    expect(content.textContent).toBe(text);
+    expect(content.title).toBe('message.clickToExpand');
+
+    act(() => content.click());
+    expect(dom.window.getComputedStyle(tail).display).toBe('contents');
+    expect(content.textContent).toBe(text);
+    expect(content.title).toBe('message.clickToCollapse');
+
+    act(() => content.click());
+    expect(dom.window.getComputedStyle(tail).display).toBe('none');
+    await act(async () => container.querySelector<HTMLButtonElement>('.user-message-item__copy-btn')!.click());
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(text);
   });
 
   it('uses the shared image dialog without changing image or background click behavior', () => {
@@ -858,6 +893,7 @@ describe('UserMessageItem steering tag', () => {
   });
 
   it.each([
+    { binding: { workspaceId: workspaceRecords.local.id, externalHistory: { mode: 'follow' }, config: {} }, reason: 'Source' },
     { binding: { workspaceId: workspaceRecords.remote.id, config: {} }, reason: 'Remote' },
     { binding: { workspaceId: workspaceRecords.local.id, config: { dispatchJobId: 'job-a100' } }, reason: 'Dispatch' },
     { binding: { workspaceId: workspaceRecords.local.id, config: { dispatchTarget: { kind: 'device', deviceId: 'target', workspacePath: '/w', displayName: 'Target' } } }, reason: 'Dispatch' },
@@ -900,10 +936,10 @@ describe('UserMessageItem steering tag', () => {
     const editButton = getMessageAction('edit');
 
     expect(rollbackButton?.disabled).toBe(true);
-    expect(rollbackButton?.getAttribute('aria-label')).toContain(`message.rollbackDisabled${reason}`);
+    expect(rollbackButton?.getAttribute('aria-label')).toContain(reason === 'Source' ? 'externalHistory.forkBeforeEdit' : `message.rollbackDisabled${reason}`);
     expect(rollbackButton?.hasAttribute('title')).toBe(false);
     expect(editButton?.disabled).toBe(true);
-    expect(editButton?.getAttribute('aria-label')).toContain(`message.editDisabled${reason}`);
+    expect(editButton?.getAttribute('aria-label')).toContain(reason === 'Source' ? 'externalHistory.forkBeforeEdit' : `message.editDisabled${reason}`);
     expect(editButton?.hasAttribute('title')).toBe(false);
   });
 

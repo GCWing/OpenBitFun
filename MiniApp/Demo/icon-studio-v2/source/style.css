@@ -1,0 +1,106 @@
+/* === Design System ===
+ * Theme: A compact vector workbench using the host's light/dark appearance.
+ * Palette: Public MiniApp surface, content, border and focus tokens only.
+ * Typography: Host sans 13px body; 18px brand; host mono for SVG and coordinates.
+ * Radius: Host card radius; 6px controls.
+ * Motif: One-pixel panel dividers, a precise canvas and repeated property rows.
+ * Authored artwork uses currentColor; its appearance follows preview context.
+ * ===================== */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+:root { color-scheme: dark; }
+:root[data-openbitfun-appearance-mode="light"] { color-scheme: light; }
+body { margin: 0; font: 13px/1.5 var(--openbitfun-font-sans); color: var(--openbitfun-text); background: var(--openbitfun-bg); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, select, input:not([type="range"]):not([type="checkbox"]) { min-height: 34px; border: 1px solid var(--openbitfun-border); border-radius: 6px; background: var(--openbitfun-field-bg); padding: 6px 8px; }
+button { cursor: pointer; background: var(--openbitfun-element-bg); }
+button:hover:not(:disabled) { background: var(--openbitfun-element-hover); }
+button:disabled, fieldset:disabled { opacity: .45; cursor: default; }
+button[aria-pressed="true"] { color: var(--openbitfun-accent); border-color: var(--openbitfun-accent); background: color-mix(in srgb, var(--openbitfun-accent) 10%, var(--openbitfun-bg)); }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, textarea:focus-visible, svg:focus-visible { outline: 2px solid var(--openbitfun-focus-ring); outline-offset: 2px; }
+.primary { background: var(--openbitfun-accent); color: var(--openbitfun-text-on-accent); border-color: transparent; }
+.primary:hover:not(:disabled) { background: var(--openbitfun-accent-hover); }
+.topbar, .brand, .actions, .button-row, .canvas-toolbar, .canvas-footer, .previews { display: flex; align-items: center; gap: 8px; }
+.topbar { padding: 12px 16px; border-bottom: 1px solid var(--openbitfun-border); justify-content: space-between; flex-wrap: wrap; }
+.brand strong { font-size: 18px; font-weight: 600; }
+.version { font: 12px var(--openbitfun-font-mono); color: var(--openbitfun-text-secondary); border: 1px solid var(--openbitfun-border); border-radius: 6px; padding: 3px 6px; }
+.tagline { color: var(--openbitfun-text-secondary); margin-left: 8px; }
+.editor-layout { display: grid; grid-template-columns: 204px minmax(360px, 1fr) 252px; min-height: calc(100vh - 164px); }
+.left-panel, .right-panel { padding: 16px 12px; background: var(--openbitfun-bg-secondary); }
+.left-panel { border-right: 1px solid var(--openbitfun-border); }
+.right-panel { border-left: 1px solid var(--openbitfun-border); }
+h2 { font-size: 13px; font-weight: 600; margin: 20px 0 10px; }
+.right-panel > h2:first-child { margin-top: 0; }
+.left-panel > input { width: 100%; margin: 4px 0 8px; }
+.button-row { margin: 8px 0; align-items: stretch; }
+.button-row > button { flex: 1; min-width: 0; }
+.tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tool-grid button { text-align: left; }
+.layers { min-height: 80px; max-height: 260px; overflow-y: auto; }
+.layer { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid transparent; border-radius: 6px; }
+.layer.active { border-color: var(--openbitfun-accent); }
+.layer button { border: 0; background: transparent; text-align: left; width: 100%; overflow-wrap: anywhere; }
+.layer input { flex-shrink: 0; }
+input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--openbitfun-accent); }
+input[type="range"] { display: block; width: 100%; margin: 0 0 8px; height: 32px; accent-color: var(--openbitfun-accent); }
+fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+fieldset > input { width: 100%; }
+label.check, .canvas-toolbar label { display: flex; align-items: center; gap: 6px; min-height: 34px; cursor: pointer; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.fields label > input, .fields label > select { display: block; width: 100%; margin-top: 4px; }
+.field-label, #trace-controls > label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.field-label input { width: 76px; }
+.wide { display: block; width: 100%; margin: 8px 0; }
+.hint, .canvas-footer, #instructions { color: var(--openbitfun-text-secondary); }
+.hint { margin: 8px 0; font-size: 13px; }
+.canvas-panel { min-width: 0; }
+.canvas-toolbar { padding: 8px 12px; justify-content: center; flex-wrap: wrap; border-bottom: 1px solid var(--openbitfun-border-subtle); }
+.viewport { height: 520px; overflow: auto; display: flex; align-items: flex-start; justify-content: flex-start; padding: 24px; background: var(--openbitfun-bg-tertiary); }
+.drawing-canvas { flex-shrink: 0; display: block; margin: auto; background: var(--openbitfun-bg); box-shadow: var(--openbitfun-shadow-card); touch-action: none; color: var(--openbitfun-text-secondary); user-select: none; }
+.canvas-bg { fill: var(--openbitfun-bg); }
+.grid-line { fill: none; stroke: var(--openbitfun-border-subtle); stroke-width: .025; }
+.safe-area { fill: none; stroke: var(--openbitfun-border); stroke-width: .04; stroke-dasharray: .2 .2; }
+.selection-box { fill: none; stroke: var(--openbitfun-accent); stroke-width: .05; stroke-dasharray: .2 .15; pointer-events: none; }
+.node-point { fill: var(--openbitfun-bg); stroke: var(--openbitfun-accent); stroke-width: .06; }
+.node-point.active { fill: var(--openbitfun-accent); }
+.node-hit { fill: transparent; cursor: move; }
+.control-line { fill: none; stroke: var(--openbitfun-accent); stroke-width: .04; pointer-events: none; }
+.control-point { fill: var(--openbitfun-bg); stroke: var(--openbitfun-accent); stroke-width: .05; cursor: move; }
+.art-hit { fill: none; stroke: transparent; stroke-width: .65; cursor: move; }
+#art > g { cursor: move; }
+.canvas-footer { padding: 10px 12px; justify-content: space-between; flex-wrap: wrap; border-bottom: 1px solid var(--openbitfun-border-subtle); }
+.preview-panel { padding: 0 16px 12px; }
+.previews { flex-wrap: wrap; gap: 24px; }
+.preview-sample { display: flex; align-items: center; gap: 12px; }
+.preview-sample svg { display: block; color: var(--openbitfun-text-secondary); }
+.preview-pair { padding: 8px; display: flex; gap: 12px; align-items: center; border: 1px solid var(--openbitfun-border); border-radius: 6px; }
+.preview-inverse { background: var(--openbitfun-text); color: var(--openbitfun-bg); }
+.preview-inverse svg { color: inherit; }
+.code-panel { margin: 0 16px 16px; }
+summary { cursor: pointer; min-height: 34px; padding-top: 6px; }
+#code { display: block; width: 100%; height: 140px; resize: vertical; padding: 12px; margin: 8px 0; border: 1px solid var(--openbitfun-border); border-radius: 6px; background: var(--openbitfun-field-bg); font: 12px/1.5 var(--openbitfun-font-mono); }
+.trace-panel { border-top: 1px solid var(--openbitfun-border); margin-top: 16px; }
+footer { border-top: 1px solid var(--openbitfun-border); padding: 12px 16px; }
+footer p { margin: 2px 0; }
+#status { min-height: 22px; }
+#status[data-tone="error"] { color: var(--openbitfun-error); }
+#status[data-tone="warning"] { color: var(--openbitfun-warning); }
+body.dragging .studio { outline: 2px dashed var(--openbitfun-accent); outline-offset: -3px; }
+@media (max-width: 1100px) { .tagline { display: none; } .editor-layout { grid-template-columns: 180px minmax(300px, 1fr) 232px; } }
+@media (max-width: 800px) {
+  .editor-layout { grid-template-columns: 160px minmax(0, 1fr); }
+  .right-panel { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border-left: 0; border-top: 1px solid var(--openbitfun-border); }
+  .right-panel > h2, #no-selection { grid-column: 1 / -1; }
+  .trace-panel { border-top: 0; margin-top: 0; }
+  .viewport { height: 450px; padding: 16px; }
+}
+@media (max-width: 520px) {
+  .editor-layout { display: flex; flex-direction: column; }
+  .left-panel { border-right: 0; }
+  .tool-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .layers { max-height: 130px; }
+  .right-panel { display: block; }
+  .viewport { height: 400px; }
+  .actions { flex-wrap: wrap; }
+  .canvas-toolbar { justify-content: flex-start; }
+}

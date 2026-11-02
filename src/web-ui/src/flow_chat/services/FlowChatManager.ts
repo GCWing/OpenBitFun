@@ -11,6 +11,7 @@ import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
 import { processingStatusManager } from './ProcessingStatusManager';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { useModernFlowChatStore } from '../store/modernFlowChatStore';
+import { usePromptSuggestionStore } from '../store/promptSuggestionStore';
 import { ACPClientAPI } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { stateMachineManager } from '../state-machine';
 import { EventBatcher } from './EventBatcher';
@@ -91,6 +92,7 @@ type FlowChatSendMessageOptions = Pick<
   | 'preserveTurnOnStartError'
   | 'onSessionConflictRetryStart'
   | 'onSessionConflictRetrySuccess'
+  | 'onSessionForked'
   | 'sessionMutationLeaseId'
 >;
 
@@ -559,6 +561,7 @@ export class FlowChatManager {
 
   /** Permanently forget a peer that was explicitly detached or became lost. */
   public discardDeviceSurface(surfaceId: DeviceSurfaceId): void {
+    usePromptSuggestionStore.getState().removeSurfaceSuggestions(surfaceId);
     this.context.flowChatStore.discardSurfaceState(surfaceId);
     sessionNavStatusService.clearSurface(surfaceId);
     stateMachineManager.clearSurface(surfaceId);
@@ -699,7 +702,7 @@ export class FlowChatManager {
   }
 
   public discardLocalSession(sessionId: string): string[] {
-    const removedSessionIds = this.context.flowChatStore.removeSession(sessionId);
+    const removedSessionIds = this.context.flowChatStore.removeDeletedSession(sessionId);
     removedSessionIds.forEach(id => {
       stateMachineManager.delete(id);
       this.context.processingManager.clearSessionStatus(id);

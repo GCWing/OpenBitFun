@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SESSION_TAB_DRAG_TYPE, dropSessionTabOnWorkbench, popOutCanvasTab, writeSessionTabDrag } from './canvasTabTransfer';
 import { useContentResourceStore } from './contentResourceStore';
 import { useSceneStore } from '../stores/sceneStore';
-import { clearAgentCanvasForPeerSwitch, useAgentCanvasStore } from '../components/panels/content-canvas/stores';
+import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '../components/panels/content-canvas/stores';
 import { openCanvasContent, openWorkbenchContent } from '@/shared/services/workbenchContentService';
 import { getEditorDocument, releaseEditorDocument } from '@/tools/editor/services/EditorDocument';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { canvasTabDocumentId } from '../components/panels/content-canvas/types';
+import { writeSceneTabDrag, dropSceneTab } from './sceneTabTransfer';
 import type { PanelContent } from '@/shared/types/panelContent';
 
 const scope = { surfaceId: 'local', workspacePath: '/project', remoteConnectionId: 'ssh-project' };
@@ -38,7 +40,7 @@ describe('canvas-to-workbench view transfer', () => {
     useSceneStore.getState().resetForPeerSwitch();
   });
   afterEach(() => {
-    for (const tab of useAgentCanvasStore.getState().getAllTabs()) releaseEditorDocument(`canvas:${tab.id}`);
+    for (const tab of useAgentCanvasStore.getState().getAllTabs()) releaseEditorDocument(canvasTabDocumentId(tab));
     for (const resource of Object.values(useContentResourceStore.getState().resources)) releaseEditorDocument(resource.documentId);
     clearAgentCanvasForPeerSwitch();
     useContentResourceStore.setState({ resources: {} });
@@ -117,5 +119,37 @@ describe('canvas-to-workbench view transfer', () => {
     expect(dropSessionTabOnWorkbench(transfer)).toBeNull();
     expect(useSceneStore.getState().openTabs).toHaveLength(0);
     expect(useAgentCanvasStore.getState().draggingTabId).toBeNull();
+  });
+  it('moves a dirty pinned file both ways without changing its resource, document or origin', async () => {
+    const resourceId = openWorkbenchContent(file, { scope });
+    const document = getEditorDocument(resourceId, scope, '/project/a.ts');
+    document.capture('draft', true, 'saved');
+    useContentResourceStore.getState().update(resourceId, { isDirty: true, fileMissing: true });
+    useSceneStore.getState().togglePinScene(`content:${resourceId}`);
+    const resource = useContentResourceStore.getState().resources[resourceId];
+    for (const pane of ['secondary', 'primary'] as const) {
+      const transfer = dragData();
+      writeSceneTabDrag(transfer, `content:${resourceId}`);
+      expect(await dropSceneTab(transfer, pane)).toBe(true);
+      expect(useContentResourceStore.getState().resources[resourceId]).toBe(resource);
+      expect(resource).toMatchObject({ isDirty: true, fileMissing: true, scope });
+      expect(useSceneStore.getState().openTabs[0]).toMatchObject({ pane, pinned: true });
+      expect(getEditorDocument(resourceId, scope)).toBe(document);
+      expect(document.snapshot?.content).toBe('draft');
+    }
+  });
+
+  it('moves a terminal without entering the canvas close/restore lifecycle', async () => {
+    const id = openWorkbenchContent({ type: 'terminal', title: 'Build', data: { sessionId: 'pty-existing' } }, { scope });
+    const resource = useContentResourceStore.getState().resources[id];
+    const transfer = dragData();
+    writeSceneTabDrag(transfer, `content:${id}`);
+    expect(await dropSceneTab(transfer, 'secondary')).toBe(true);
+    expect(useContentResourceStore.getState().resources[id]).toBe(resource);
+    expect(useAgentCanvasStore.getState().closedTabs).toHaveLength(0);
+  });
+
+  it('keeps legacy canvas document IDs readable', () => {
+    expect(canvasTabDocumentId({ id: 'legacy-tab' })).toBe('canvas:legacy-tab');
   });
 });

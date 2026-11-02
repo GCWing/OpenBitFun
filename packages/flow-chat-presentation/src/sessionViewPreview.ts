@@ -21,6 +21,7 @@ export function isOnlySessionViewPreviewText(value: unknown): boolean {
 }
 
 export function formatSessionViewPreviewText(value: string): string {
+  if (!value.includes(LEGACY_SESSION_VIEW_TRUNCATED_MARKER)) return value;
   return value
     .replace(/\n\.\.\.\[truncated for session view\]/g, `\n... ${SESSION_VIEW_TRUNCATED_MESSAGE}`)
     .replace(/\.\.\.\[truncated for session view\]/g, `... ${SESSION_VIEW_TRUNCATED_MESSAGE}`)

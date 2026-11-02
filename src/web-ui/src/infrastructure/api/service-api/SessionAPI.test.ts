@@ -24,6 +24,22 @@ describe('SessionAPI paged metadata reads', () => {
     peerCapabilities.workspaceIdReferencesV1 = true;
   });
 
+  it('requests prompt content only for an explicit usage preview', async () => {
+    invokeMock.mockResolvedValue({});
+    await sessionAPI.getSessionUsageReport({ sessionId: 'session-1', workspaceId: 'workspace-1' });
+    expect(invokeMock).toHaveBeenLastCalledWith('get_session_usage_report', {
+      request: { session_id: 'session-1', workspace_id: 'workspace-1', include_hidden_subagents: true },
+    });
+    await sessionAPI.getSessionUsageReport({ sessionId: 'session-1', workspaceId: 'workspace-1', includeSystemPromptPreview: true, includeHiddenSubagents: false });
+    expect(invokeMock).toHaveBeenLastCalledWith('get_session_usage_report', {
+      request: { session_id: 'session-1', workspace_id: 'workspace-1', include_hidden_subagents: false, include_system_prompt_preview: true },
+    });
+    await sessionAPI.getSessionUsageReport({ sessionId: 'session-1', workspaceId: 'workspace-1', contextPreviewCategory: 'mcpTools', includeHiddenSubagents: false });
+    expect(invokeMock).toHaveBeenLastCalledWith('get_session_usage_report', {
+      request: { session_id: 'session-1', workspace_id: 'workspace-1', include_hidden_subagents: false, context_preview_category: 'mcpTools' },
+    });
+  });
+
   it('does not send a local workspace request to an equal ID on a newly selected peer', async () => {
     const pending = sessionAPI.listSessionsPage({ workspaceId: 'same-workspace-id', limit: 5 });
     activateSurface('peer-with-the-same-workspace');
@@ -91,6 +107,17 @@ describe('SessionAPI paged metadata reads', () => {
 
     expect(invokeMock).toHaveBeenCalledWith('list_persisted_sessions', {
       request: { workspace_path: '/same/root', remote_connection_id: 'ssh-id', remote_ssh_host: 'localhost' },
+    });
+  });
+
+  it.each(['local', 'peer'])('forwards a read-only catalog query on the %s surface and preserves the host acknowledgement', async surface => {
+    activateSurface(surface);
+    const query = { workspaceId: 'project', ordering: 'updated' as const, source: 'codex', sortTimestamps: { running: 123 } };
+    const response = { sessions: [], totalTopLevelCount: 42, loadedTopLevelCount: 0, hasMore: false, catalogQuery: query };
+    invokeMock.mockResolvedValueOnce(response);
+    await expect(sessionAPI.listSessionsPage({ workspaceId: 'project', limit: 5, query })).resolves.toBe(response);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('list_persisted_sessions_page', {
+      request: { workspace_id: 'project', limit: 5, query },
     });
   });
 

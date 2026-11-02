@@ -1,4 +1,10 @@
 {
+  "window": {
+    "minimize": "Minimize app window",
+    "maximize": "Maximize app window",
+    "restore": "Restore app window",
+    "close": "Close app window"
+  },
   "product": {
     "name": "OpenBitFun",
     "remote": "OpenBitFun Remote"
@@ -49,5 +55,8 @@
     "done": "Done",
     "failed": "Failed",
     "cancelled": "Cancelled"
+  },
+  "sessions": {
+    "new": "New Session"
   }
 }

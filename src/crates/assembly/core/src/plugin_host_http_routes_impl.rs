@@ -135,6 +135,7 @@ async fn session_create(context: &PluginHostInstance, body: &[u8]) -> RouteResul
                 .unwrap_or_else(|| "OpenCode Plugin Session".to_string()),
             "Standard".to_string(),
             crate::agentic::core::SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_id: Some(context.workspace_id.clone()),
                 workspace_path: Some(context.directory.to_string_lossy().into_owned()),
                 project_workspace_path: Some(context.directory.to_string_lossy().into_owned()),

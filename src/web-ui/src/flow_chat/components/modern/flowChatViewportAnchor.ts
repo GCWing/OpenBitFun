@@ -103,18 +103,6 @@ export const ANCHOR_MISSING_TURN_ATTEMPTS = 20;
 export const ANCHOR_CORRECTION_EPSILON_PX = 0.5;
 
 /**
- * Above this a correction is something the reader can feel.
- *
- * Used to keep the two apart in the trail, and only there. Corrections repeat
- * at frame rate so they are coalesced, and a single run collapses whatever it
- * spans into its first sample: two rounds of diagnosis in a row read `0.7px`
- * against a suppressed travel of 458.7px over seven samples, which is a
- * different fault entirely and could not be attributed to any anchor. A run
- * that a real correction can fall into unseen is not a trail.
- */
-export const ANCHOR_NOTABLE_CORRECTION_PX = 8;
-
-/**
  * The topmost Turn the viewport still shows any part of.
  *
  * A candidate that has not reached the top edge yet is the one the reader is

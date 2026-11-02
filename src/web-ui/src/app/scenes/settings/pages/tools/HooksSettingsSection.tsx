@@ -311,7 +311,7 @@ const HooksSettingsSection: React.FC = () => {
   const content = (
     <>
       <ConfigPageSectionStack>
-        <ConfigPageSection title={t('activation.title')} description={t('activation.description')}>
+        <ConfigPageSection title={t('activation.title')}>
           <ConfigPageRow
             label={t('fields.enabled.label')}
             align="center"
@@ -340,7 +340,7 @@ const HooksSettingsSection: React.FC = () => {
         </ConfigPageSection>
 
 
-        <ConfigPageSection title={t('locations.title')} description={t('locations.description')}>
+        <ConfigPageSection title={t('locations.title')}>
           <ConfigPageRow
             label={t('locations.userFile.label')}
             description={t('locations.userFile.description')}
@@ -360,7 +360,6 @@ const HooksSettingsSection: React.FC = () => {
 
         <ConfigPageSection
           title={t('imports.title')}
-          description={config.enabled ? t('imports.description') : t('imports.masterDisabled')}
           extra={remoteWorkspace ? null : (
             <Button
               variant="outline"
@@ -375,6 +374,11 @@ const HooksSettingsSection: React.FC = () => {
             </Button>
           )}
         >
+          {!config.enabled && (
+            <ConfigPageRow label={t('imports.masterDisabled')}>
+              {null}
+            </ConfigPageRow>
+          )}
           {remoteWorkspace ? (
             <ConfigPageRow label={t('imports.remoteUnsupported')} align="center">
               {null}
@@ -466,7 +470,6 @@ const HooksSettingsSection: React.FC = () => {
 
         <ConfigPageSection
           title={t('compatibility.title')}
-          description={t('compatibility.description')}
         >
           <ConfigPageRow
             label={t('compatibility.reference.label')}

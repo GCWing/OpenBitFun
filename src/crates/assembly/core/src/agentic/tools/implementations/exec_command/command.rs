@@ -222,7 +222,21 @@ impl ExecCommandTool {
     }
 
     fn command_env() -> HashMap<String, String> {
-        exec_command_noninteractive_env()
+        let environment = exec_command_noninteractive_env();
+        // The terminal executor applies this map on top of the host
+        // environment, which a Linux GUI or `.desktop` launch starts without a
+        // login shell's PATH. Setting it here is what lets the shell resolve a
+        // toolchain-managed `node`/`bun` the way a terminal does.
+        // Windows and macOS keep the inherited environment unchanged.
+        #[cfg(target_os = "linux")]
+        let environment = {
+            let mut environment = environment;
+            if let Some(path) = openbitfun_services_core::process_manager::platform_path_env() {
+                environment.insert("PATH".to_string(), path.to_string_lossy().into_owned());
+            }
+            environment
+        };
+        environment
     }
 
     fn requested_workdir(input: &Value, context: &ToolUseContext) -> OpenBitFunResult<String> {
@@ -716,6 +730,29 @@ Output:
                 }
             },
             "required": ["cmd"],
+            "additionalProperties": false
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "wall_time_seconds": {"type": "number"},
+                "output": {"type": "string"},
+                "session_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "exit_code": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "completion": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {"type": "object", "properties": {
+                            "source": {"type": "string"},
+                            "status": {"type": "string"}
+                        }, "additionalProperties": false}
+                    ]
+                }
+            },
+            "required": ["wall_time_seconds", "output", "session_id", "exit_code", "completion"],
             "additionalProperties": false
         })
     }
@@ -1384,6 +1421,44 @@ mod tests {
         assert!(error
             .to_string()
             .contains("terminal runtime service is required for ExecCommand"));
+    }
+
+    /// The terminal executor clears the inherited environment and applies this
+    /// map, so the shell only sees a login-shell PATH if it is part of the map.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn noninteractive_shell_environment_carries_the_merged_platform_path() {
+        let environment = ExecCommandTool::command_env();
+
+        let path = environment
+            .get("PATH")
+            .expect("a Linux non-interactive shell needs PATH");
+        let expected = openbitfun_services_core::process_manager::platform_path_env()
+            .expect("Linux always resolves a platform PATH");
+        assert_eq!(path, &expected.to_string_lossy());
+        // A shell launched without a login-shell PATH must still reach the
+        // directories the app restores for every other child process.
+        let entries: Vec<PathBuf> = std::env::split_paths(path).collect();
+        for platform_entry in openbitfun_services_core::system::platform_path_entries() {
+            assert!(
+                entries.contains(&platform_entry),
+                "shell PATH is missing {}: {path}",
+                platform_entry.display()
+            );
+        }
+
+        // The non-interactive contract is additive, not replaced.
+        assert_eq!(
+            environment
+                .get("OPENBITFUN_NONINTERACTIVE")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(environment.get("NO_COLOR").map(String::as_str), Some("1"));
+        assert_eq!(
+            environment.get("GIT_TERMINAL_PROMPT").map(String::as_str),
+            Some("0")
+        );
     }
 }
 

@@ -117,6 +117,33 @@ impl Tool for WebSearchTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "url": {"type": "string"},
+                            "published": {"type": "string"},
+                            "author": {"type": "string"}
+                        },
+                        "required": ["title", "url"],
+                        "additionalProperties": false
+                    }
+                },
+                "result_count": {"type": "integer"},
+                "provider": {"type": "string"}
+            },
+            "required": ["query", "results", "result_count", "provider"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

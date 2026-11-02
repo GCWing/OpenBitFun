@@ -35,6 +35,7 @@ import {
   writeComposerClipboardData,
 } from '../utils/composerClipboard';
 import './RichTextInput.scss';
+import { stripKeyboardControlCharacters } from '../../../../shared/text-input/textInputGuard';
 
 const SKILL_REFERENCE_BADGE_ICON = renderToStaticMarkup(
   <Icon name="book-open" size="xs" aria-hidden="true" />,
@@ -867,11 +868,10 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   }, []);
 
   function sanitizeText(text: string): string {
-    // Strip zero-width and control characters that WebKit/WebView may inject
-    // (e.g. from dead-key sequences, function keys, arrow keys, etc.)
-    // Preserve normal whitespace: space (0x20), tab (0x09), newline (0x0A), carriage return (0x0D).
-    // eslint-disable-next-line no-control-regex -- This intentionally removes specific ASCII control-character ranges.
-    return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\u200B-\u200F\u2028\u2029\uFEFF\u2060\u00AD]/g, '');
+    // U+200B is the composer's capsule caret anchor, not authored text. Other
+    // Unicode format characters can be meaningful (emoji ZWJ, Persian ZWNJ,
+    // bidi marks), so do not treat every invisible character as a stray key.
+    return stripKeyboardControlCharacters(text).replace(/\u200B/g, '');
   }
 
   // Extract plain text including # tag format
@@ -1098,21 +1098,6 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
 
   triggerSyncRef.current = handleInput;
 
-  const handleBeforeInput = useCallback((e: React.FormEvent<HTMLDivElement>) => {
-    const inputEvent = e.nativeEvent as InputEvent;
-    const inputType = inputEvent.inputType;
-
-    // Only act on insertText – block attempts to insert purely-invisible content.
-    // We intentionally avoid a blanket whitelist so that we never accidentally
-    // block browser-internal input types (cursor movement, spellcheck, etc.).
-    if (inputType === 'insertText' && inputEvent.data != null) {
-      const cleaned = sanitizeText(inputEvent.data);
-      if (cleaned.length === 0) {
-        e.preventDefault();
-      }
-    }
-  }, []);
-
   /**
    * Inserts pasted text at the caret, rebuilding capsule elements for the
    * inline tokens it carries. Returns false when the text has no token, so the
@@ -1210,7 +1195,8 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     // A composer payload keeps its canonical tokens, so pasted capsules survive
     // the trip through the system clipboard.
     const payloadTokens = readComposerClipboardTokens(e.clipboardData.getData('text/html'));
-    const text = payloadTokens || e.clipboardData.getData('text/plain');
+    const text = sanitizeText(payloadTokens || e.clipboardData.getData('text/plain'));
+    if (!text) return;
     const largePastePlaceholder = onLargePaste?.(text);
     if (largePastePlaceholder && internalRef.current) {
       const selection = window.getSelection();
@@ -1747,7 +1733,6 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         ref={internalRef}
         className={`rich-text-input ${isFocused ? 'rich-text-input--focused' : ''} ${className}`}
         contentEditable={!disabled}
-        onBeforeInput={handleBeforeInput}
         onInput={handleInput}
         onPaste={handlePaste}
         onCopy={handleCopy}

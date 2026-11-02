@@ -6,6 +6,7 @@ import type {
 } from '@/infrastructure/api/service-api/MiniAppMarketAPI';
 
 export type MiniAppLibraryAction = 'get' | 'open' | 'update';
+export type MiniAppLibraryCatalog = 'installed' | 'market';
 
 export interface MiniAppLibraryItem {
   key: string;
@@ -24,6 +25,13 @@ const ACTION_PRIORITY: Record<MiniAppLibraryAction, number> = {
   open: 1,
   get: 2,
 };
+
+export function selectMiniAppLibraryItems(
+  items: MiniAppLibraryItem[],
+  catalog: MiniAppLibraryCatalog,
+): MiniAppLibraryItem[] {
+  return items.filter((item) => catalog === 'installed' ? Boolean(item.app) : Boolean(item.listing));
+}
 
 /**
  * Projects the local catalog and the marketplace into one App Store-style

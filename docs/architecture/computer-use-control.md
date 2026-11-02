@@ -10,6 +10,36 @@ cross-compilation. Windows native execution, GNOME Wayland portal execution and
 remote end-to-end control remain acceptance gaps. Compilation is not native
 acceptance, and background support is limited to each provider's declared routes.
 
+## Native provider ownership
+
+`services/computer-use` owns the Windows, macOS and Linux native implementation.
+Desktop and graphical CLI execution inject the same `NativeComputerUseHost`;
+`tool-contracts::computer_use_host` owns the portable provider interface and
+`core::agentic::tools::computer_use_host` remains a source-path facade. Core
+continues to own tool orchestration and product permission policy. The provider
+receives the host's diagnostic directory instead of discovering Core config.
+
+CLI chat/exec (including the executing Shared/Peer host) register a provider only
+inside a graphical login session. macOS keeps the real main thread servicing
+CoreFoundation/main dispatch while the existing async Runtime runs on its worker.
+Shutdown revokes native control before that run loop ends. Startup never prompts
+for OS consent. The `computer-use` CLI command exposes status, the existing
+`ai.computer_use_enabled` switch and explicit native permission requests. The
+shared setting defaults to enabled when absent; saved true/false values survive
+upgrades. Provider availability, OS consent and tool approval are separate gates.
+Linux's GStreamer/Tesseract adapters load system libraries on demand so headless
+CLI startup does not require desktop packages. Missing libraries and plugins
+return explicit capture/OCR errors. The native contract and existing Linux
+portal/AT-SPI capability limits remain unchanged.
+
+Remote workspace refusal is unchanged. Remote control can drive a graphical CLI
+host's Agent with its own OS consent and normal cancellation; OS dialogs still
+require a person at that host. CLI does not advertise the Desktop sharing/preview
+capability. Detached Dispatch has no negotiated GUI provider and stays disabled;
+ACP and the stdio server likewise keep their provider-free initialization. No
+persisted record or remote wire shape changes in this extraction.
+
+
 ## Product contract
 
 Computer Use controls the GUI on the machine that owns the selected provider.
@@ -19,14 +49,82 @@ never the covering application's content or an unsolicited desktop capture.
 
 Background mode must not raise a window, change the human's keyboard focus, switch
 Spaces/desktops, or silently use global seat input. A backend's inability to meet
-that contract must be visible. Foreground takeover requires explicit user
-permission; approval of a message's content and recipient does not authorize it.
-A generated agent plan cannot widen the original user's authorization.
+that contract must be visible. A user's GUI task authorizes a foreground
+transition when its required background route is unsupported or verified
+ineffective, unless the user requested background-only/no-disruption. The Agent
+announces that mode change and selects it through `start_control`; native input
+never silently escalates or retries. A generated agent plan cannot override the
+original user's constraints, Stop, cancellation or OS permission denial.
 
 The operating system owns privacy/sharing indicators. OpenBitFun neither imitates
 macOS's Sharing menu on other systems nor suppresses native capture borders.
 Product feedback adds target, mode, action, preview and Stop without claiming to
 replace system consent or system Stop Sharing.
+
+## Browser tool orchestration
+
+`ControlHub.browser.navigate {url, observe?}` is the task entry point for rendered
+pages. On Desktop it opens a built-in WebView when the conversation has no page;
+otherwise it navigates that conversation's selected page. `observe: snapshot`
+returns interactive refs and `observe: article` returns readable content in the
+same call. Opening, connection, fixed sleeps and redundant reads are not required
+preflight steps. The Desktop host correlates the exact requested WebView before
+returning it; load/observation receipts separately describe readiness.
+
+| Intent / action family | Contract |
+|---|---|
+| Discover / public HTTP | `WebSearch` discovers URLs; `WebFetch` reads public HTTP without browser cookies. These remain separate from rendered browser work. |
+| Open / read rendered content | `navigate`, `snapshot`, `read_article`, `get` and its `get_text/get_html/get_url/get_title` aliases. `observe` avoids a second read after navigation. |
+| Account / existing external tab | Prefer the Settings-selected, user-authorized CDP connection. `connect` selects an exact `session_id` or unique URL/title match without navigating it. An unbound navigation creates a new tab, preserving existing tabs. |
+| Interact | `click`, `hover`, `fill`, `type`, `check/uncheck`, `select`, `press_key`, `scroll`, `auto_scroll`; use observed refs or selectors and refresh only when the next decision needs new state. |
+| Readiness / capture | Condition-based `wait` and `screenshot`; built-in network-idle means native load completion, and full-page capture requires CDP. A duration-only wait requires no browser session. |
+| Page lifecycle | `tab_new`, `back/forward/reload`, `close`, `list_pages/tab_query`, `switch_page`, `list_sessions`. Keep exact returned page identity across calls. |
+| Page-context requests | `fetch` uses the selected page's credentials and CORS rules; `cookies/set_cookies` and `evaluate` remain explicit advanced operations. HTTP error responses preserve status/body; CORS/transport failure is a tool error. |
+| CDP-only diagnostics | `network/network_requests`, `console`, `errors`, `trace`, `dialog`, `set_file_input_files` and allow-listed raw `cdp`. Built-in engines return explicit unsupported results. |
+| Show empty product surface | `OpenBitFunControl.open(feature.browser)` shows the browser UI without inventing a URL. It is distinct from website navigation. |
+
+The common actions use the existing `BrowserActions` engine port for WebView and
+CDP. A conversation retains target/page identity; explicit or stale ids never
+fall through to a different tab. Ending a conversation releases its selection,
+not the user's browser pages. `open_builtin` and URL-bearing `read_article`
+remain compatible aliases, including their legacy result keys.
+
+External browser actions are background work. A conversation's tab is created in
+the background and selecting a page never raises the user's window; only an
+explicit `activate: true` request surfaces it, for steps that need the human
+(show or watch, sign-in, consent, payment, CAPTCHA, a native picker). Launch
+follows the same rule, so macOS starts the browser without activating it. The
+exceptions are the browser-owned approval prompt for a guarded real-profile
+connection and a user-initiated restart from Settings. A platform without a
+non-activating launch can let the initial browser start take focus; every later
+CDP action stays in the background.
+
+Browser permissions are independent of `ai.computer_use_enabled`. External
+browser identity/availability is exposed only after a Settings connection has
+succeeded (or an opted-in startup connection receives browser-owned consent).
+The Agent never starts another profile or opens permission settings through
+`connect`. Disconnect blocks subsequent actions and clears page transports.
+Explicit `mode: headless` remains an attach-only path for disposable project
+browsers; product name and browser-reported user agent establish headless mode,
+and a normal headed endpoint is rejected before page enumeration.
+
+Navigation receipts distinguish a submitted navigation, load completion and an
+optional failed observation. Observation failure never replays navigation or
+input. Download and same-document transitions do not wait for nonexistent load
+events. Full-page CDP screenshots use a document clip with
+`captureBeyondViewport`, preserving viewport/emulation state; see the
+[CDP capture contract](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot).
+Errors and recovery hints, complete bounded article text and fetch response
+bodies survive assistant rendering. Partial action failures remain `ok: false`
+with any receipts retained.
+
+Remote-workspace sessions reject browser access before host IO; there is no
+remote-workspace browser provider or silent controller-local fallback. A local
+host driven through remote control or Peer Device Mode still owns its browser
+provider/permission. Headless and detached hosts require an explicit available
+CDP endpoint; they cannot create a Desktop WebView or prompt a disconnected
+controller to approve a browser. Local unit/Chromium fixtures do not establish
+mobile/IM, peer, detached, or native WebKit end-to-end behavior.
 
 ## Platform architecture
 
@@ -94,6 +192,40 @@ they do not require a user to select the next app. Background AT-SPI startup
 does not open a portal picker. Linux portal capture and foreground seat input
 still require compositor-owned consent.
 
+`list_windows` is read-only discovery independent of the active capture and AX
+tree. macOS returns WindowServer top-level windows including off-screen entries;
+Windows returns visible titled top-level windows, with minimized and cloaked ones
+reported as off-screen and without `bounds`, since a minimized window's
+rectangle is a DWM placeholder. Every entry carries an explicit `is_on_screen`;
+a missing macOS on-screen key means off-screen. Titles and owner PIDs reveal
+multi-window and helper-process UIs that an application list cannot. `query`
+matches application names, bundle identifiers and titles case-insensitively
+across processes. An unfiltered listing returns on-screen windows and summarizes
+off-screen ones per application (`offscreen_by_application`, at most 40
+applications, with `offscreen_applications_omitted` counting the rest); `app`
+or `query` listings include off-screen windows unless `include_offscreen:
+false`, and `app: null` is unfiltered.
+
+App input actions compare the on-screen window inventory before and after the
+input and report windows that appeared in any process as `opened_windows`,
+excluding the bound window, its popups and OpenBitFun's own windows. The report
+never rebinds the session; the Agent observes the window it chooses.
+Hosts advertising `window-target-v1` accept `app: {pid, window_id}` to select an
+exact native window. Both IDs must be positive, and native capture validates the
+window's ownership before binding it. Omitted window IDs retain an existing
+binding. Older hosts and Linux reject exact-window requests explicitly; Linux
+keeps its existing AT-SPI and portal selection contracts. No remote-workspace
+request falls back to the controller's desktop.
+
+For an unbound Windows PID/name selector, default selection prefers ordinary
+content windows over tool/no-activate windows and topmost companions, preserving
+native order among equal candidates. An enabled dialog can outrank a disabled
+main window, and utility-only applications remain selectable. Known hidden,
+minimized, cloaked, capture-restricted or empty targets are ineligible for this
+default. Explicit IDs and live bindings bypass ranking. WGC remains the capture
+authority; a creation failure returns the exact HWND and window facts with
+explicit-selection guidance, without probing or switching to another window.
+
 The optional manual-sharing API uses `awaiting_share`, opaque process-bound
 choices, observe-first capture and a separate revocable input grant. Its scope
 does not apply to normal Agent tasks. Existing remembered preferences and manual
@@ -125,15 +257,66 @@ for the same authorization again. Genuine missing information, OS-owned consent,
 explicit permission denials and user Stop remain authoritative.
 
 Computer Use, Cowork, Claw and shared parent-agent guidance use the same autonomous
-targeting and composition rules. Browser connection hints offer an already-authorized ComputerUse route when CDP
-is unavailable instead of requiring the user to operate Settings. A user-disabled
-browser connection is not re-enabled. `open_app` no longer has a platform-wide
+targeting and composition rules. Browser selection and connection are user-owned
+Settings actions. Account-dependent work prefers the selected browser only after
+connection/consent; a missing grant or user Disconnect cannot be bypassed through
+ComputerUse, a different profile, or an agent-driven debugging setup. Native
+browser chrome still uses independently authorized ComputerUse capabilities. `open_app` no longer has a platform-wide
 foreground-only policy: macOS uses `open -g` and Windows requests
 `SW_SHOWNOACTIVATE` for background launches. These are launch requests, not proof
 that every third-party app honors activation policy; subsequent observations
 establish actual state. Linux currently reports unavailable background launch
 instead of silently using an activating launcher. Existing AT-SPI targets remain
 usable. GUI-less hosts and remote workspaces do not fall back to the local GUI.
+In foreground mode Linux starts an executable without waiting for the GUI process
+to exit, or uses `gtk-launch` for a desktop ID / `gio launch` for a desktop-file
+path. Launcher waits are bounded and their PID is never reported as the app PID.
+The launch receipt still requires application/window discovery and verification.
+
+Successful launch with an unresolved PID/window is not an actionable observation.
+Its receipt recommends native window discovery (or AT-SPI application discovery
+on Linux), rather than an unbound screenshot of the current foreground app.
+Capture failure after input retains valid accessibility facts and also reports
+`observation_error`; missing pixels never establish failed input.
+
+macOS and Windows advertise `activate-app-v1`. In foreground mode, `activate_app`
+activates the prepared exact window, checks actual foreground ownership, and
+returns a new observation before the next input. Global input checks that its
+foreground destination matches the observed binding. Windows may deny activation;
+macOS AXRaise/focus may be unavailable. Those failures send no task input and do
+not invoke Alt-Tab or click a guessed location. Linux uses its consented portal
+surface instead of native-window activation; an AT-SPI PID cannot identify that
+surface. App-directed actions retain their semantic/directed route in either mode.
+In a background session `activate_app` and global pointer/keyboard actions are
+rejected at admission with an action-specific `FOREGROUND_REQUIRED` message that
+names the background `app_*` alternative; nothing is activated or sent.
+
+A selected window without a live surface fails with the precise state the host
+can establish: `TARGET_APP_HIDDEN` for a hidden macOS application, and
+`TARGET_SURFACE_UNAVAILABLE` naming a minimized, cloaked or off-Space window.
+Windows reports display-affinity exclusion as `CAPTURE_TARGET_UNAVAILABLE`. The
+tool appends the process's other on-screen windows as exact selectors and a
+mode-aware recovery. Only a foreground `activate_app` recovers such a window,
+and only when it is minimized or its application hidden: the host unhides the
+application and un-minimizes the explicit or bound window, else on macOS the
+window capture selects (the one the error named) and on Windows the process's
+first minimized window (macOS `AXMinimized`, Windows `SW_RESTORE`), within the
+admitted sharing scope, then prepares the target again and reports
+`restored_window: true`. On macOS activation also sets the capture input
+barrier, so the returned observation comes from a frame delivered after it. A
+window on another Space or virtual desktop cannot be restored; once a restore
+found nothing to change, could not read the window's state, failed, or left no
+live surface, the recovery note says so instead of offering `activate_app`
+again. A failure after a successful restore says the window was already
+restored. Background actions never
+restore, unhide or activate a window, and no other window or desktop pixels are
+substituted. A `wait` whose target is unavailable still waits and reports that
+error as `observation_error` instead of observing another window; control and
+authorization failures fail the wait.
+
+A `wait` that names `app`, or runs with a bound window, returns that window's
+observation after the duration, with the same `include_image` choice. A bare
+`wait` with no bound window stays a receipt.
 
 Manual preview input joins the same exclusive action lease as the Agent. Pointer
 gestures retain their screenshot until release; resizing or revocation cancels
@@ -174,6 +357,25 @@ search results still require an observation before choosing a result. macOS and
 Windows clicks have no implicit per-step settle sleep; explicit `wait_ms_after`
 is preserved. A program takes its final observation through the capture provider
 instead of multiplying a fixed delay by its step count.
+
+Before that final observation the host waits once for the bound window to stop
+repainting (`settle_after_input`). The decision is the portable
+`app_input_settle_decision` in the tool contract: settled after 250 ms without a
+content change once a change was seen, or after 400 ms when nothing changed;
+`still_changing` at 2 s. macOS counts complete ScreenCaptureKit frames presented
+after the input barrier, Windows counts WGC frame arrivals (keeping the newest as
+the retained frame), and Linux compares portal sample digests. Accessibility-only
+observation has no frame stream and reports `unavailable`. The receipt's
+`settle` field (`stable`, `still_changing`, `unavailable`, `skipped`,
+`interrupted`) tells the model whether the observation shows a settled result.
+Settling never retries input, never fails a delivered step, and is interrupted
+by Stop, cancellation and rebinding like any other wait. `activate_app` settles
+the same way before its observation.
+
+A program request without a top-level `steps` array, or with fields of another
+action shape, fails before any input with `INVALID_PARAMS` naming the unknown
+fields and the expected shape. Step decoding reports the failing step index and
+action.
 
 For an observed search field whose Return-to-search behavior is already known,
 a program can combine `app_type_text` with that field as `focus`, followed by
@@ -245,6 +447,12 @@ must respect a user stop or denial. Optional manual sharing retains its separate
 `awaiting_share → active(observe) → active(granted mode)` lifecycle; revoking its
 grant preserves observation and invalidates stale input workers immediately.
 
+A same-owner mode change preserves an Agent session's exact target, while
+advancing generation and invalidating its native resources and references.
+Restarting a stopped task or leaving manual sharing does not inherit that target.
+Tool-issued Stop reports `agent_stopped`; native user Stop remains `user_stopped`.
+Neither reason authorizes automatic restart during the same task.
+
 Stop revokes admission and advances generation before cancelling native work,
 releasing owned pressed keys/buttons, stopping capture and hiding feedback.
 Native Closed/Stop Sharing, cancellation, permission revocation and target loss
@@ -307,6 +515,13 @@ or screen-capture-permission failures, marked `capture_preparation_error`,
 create no binding and attach no prior target's pixels. Lock, stop, ownership,
 generation, revocation and unknown errors cannot use that fallback.
 
+An exact-window preparation failure cannot fall back to another window's AX
+tree, including a previously bound window of the same PID. App-only preparation
+failures suggest native window discovery instead of asserting that the task is
+absent. `describe_screen` keeps its text-only default and honors explicit
+`include_image: true` for vision-capable models, with the selected image's
+reference and geometry in the result. Text-only models receive no image bytes.
+
 A text-only screenshot request performs a real text observation. Tool results
 preserve structured identities, AX/OCR facts, errors and geometry in the model's
 actual result channel; a short summary is not a replacement. Image attachments
@@ -318,8 +533,45 @@ Post-input observation is fresh with respect to the capture provider's guarantee
 macOS marks a host-clock input barrier and waits for a later complete or idle
 ScreenCaptureKit sample. Idle can establish unchanged pixels; resize still needs
 a valid complete frame. This proves capture timing, not completion of asynchronous
-application work. Windows drains WGC frames to the newest available frame; it
-does not claim an equivalent input-clock barrier.
+application work; the settle wait above narrows that gap for repaint-driven UI
+but cannot prove completion of work that does not repaint. Windows drains WGC
+frames to the newest available frame; it does not claim an equivalent
+input-clock barrier.
+
+### Popup and menu windows
+
+Open menus, dropdowns, suggestion lists and floating panels are separate native
+windows of the bound process, so a single-window capture omits them while a
+physical pointer over them reaches them. The bound window's authority extends to
+these windows and to nothing else: same PID, on screen in front of the bound
+window and intersecting it. macOS selects raised WindowServer layers (above 0 and
+below the screen-saver level) and AppKit child windows of the bound window
+(SkyLight `SLSCopyAssociatedWindows`, transitively), because child windows
+inherit their parent's layer; without that SPI only raised layers qualify.
+Windows selects visible, uncloaked top-level
+windows owned by the bound HWND, or unowned captionless fixed-size non-app
+popups. Sibling main windows and other processes never qualify; titles, classes
+and application names are never consulted.
+
+Each observation composites those windows over the bound capture, back to front
+(macOS 14+ `SCScreenshotManager` with a display filter that includes only the
+popup, because a desktop-independent filter on a child window renders its whole
+window group; Windows one-shot WGC on the capture worker) and reports them in
+`auxiliary_windows` with image rectangle, global bounds, and `composited`. A
+popup whose pixels cannot be captured is still reported with
+`composited: false` and a reason, never filled with desktop pixels. macOS adds
+their AX subtrees (popup AXWindows, and open application AXMenus matched to
+their window by frame) as extra top-level nodes, and AX target validation
+accepts elements of those windows.
+
+Pointer input follows physical hit testing: a press, move or scroll whose point
+is inside such a window is routed to the front-most one there, using its own
+window-local coordinates. Drag and release stay with the window that received
+the press; if that popup has closed, the release goes to the bound window so no
+button stays held. macOS skips the out-of-window focus-preparation click when
+the pointer targets a popup, because that click would dismiss it. Keyboard input
+keeps the bound window's route. Older hosts and payloads without
+`auxiliary_windows` deserialize to an empty list.
 
 Windows input preparation validates and reuses the live WGC session without
 consuming or encoding a frame. Only an actual observation requests pixels. WGC BGRA converts directly to RGBA
@@ -328,6 +580,76 @@ desktop capture fallback. Preview encoding supplies its known dimensions rather
 than decoding its own JPEG. Unchanged legitimate dark frames are preserved.
 Explicit action waits subscribe to session changes; Stop, revocation or target
 replacement interrupts them immediately, including waits between batch steps.
+
+### Zoomed observations
+
+Window observations are taken at the window's logical size (macOS points,
+Windows physical pixels), so small text, icons and game tiles can be ambiguous.
+Hosts advertising `app-zoom-v1` (macOS and Windows) accept
+`get_app_state` with `zoom: {screenshot_id, x, y, width, height}` in that
+screenshot's image pixels. The rectangle must lie inside the image content; the
+referenced screenshot must still match the bound window's size and projection.
+The host takes a fresh capture of the bound window at the most detail it offers
+(macOS 14+ `SCScreenshotManager` with the stream's desktop-independent window
+filter at the display's backing scale, the live stream frame on older macOS,
+the WGC frame on Windows), composites popups as in a full observation, crops
+the region snapped to whole source pixels, and enlarges it toward a legible
+size below the vision-model downscale limit (long edge 1024 to 1568 pixels, at
+most eight output pixels per window unit).
+
+The zoomed image is an image observation with its own `screenshot_id`. Its
+pointer map records the region's offset inside the window and the window size,
+so `image_xy` on it maps into that region and survives pure window movement; a
+resize invalidates it like any other observation. Full and zoomed observations
+of the same window remain usable together while its size is unchanged. The map
+marks itself as zoomed rather than being inferred from its region, so a zoom of
+the whole window is still a zoom. While a zoom is the latest image, `image_xy`
+targets without a `screenshot_id` are rejected with `SCREENSHOT_ID_REQUIRED`
+instead of being guessed; legacy global image-coordinate actions, which take
+no `screenshot_id`, keep addressing the latest image. Popups composited into the
+zoom are listed in its `auxiliary_windows`, clipped to the region. A zoom
+is vision-only, refreshes no AX tree or `observation_id`, never falls back to an
+accessibility-only read, and never captures outside the bound window. Linux and
+older hosts report the capability as unsupported.
+
+### Host clipboard text
+
+`clipboard_get` and `clipboard_set` are existing ComputerUse actions backed by
+the Services Core local-system provider. They address the runtime host's desktop
+clipboard and do not activate an app, require a bound window, or send a paste.
+Both take the control owner lease; reads are allowed in observe mode, writes are
+not. Stop and owner changes invalidate reads. Window-only sharing authorizes
+neither action because the clipboard is a global desktop resource.
+
+The provider uses AppKit string types on macOS, an STA Windows Forms helper on
+Windows, and explicit UTF-8 text helpers for the selected Linux display server.
+Wayland uses `wl-copy`/`wl-paste`; X11 uses `xclip` or `xsel`. Missing desktop
+sessions/helpers fail explicitly, with no Wayland-to-XWayland fallback. Payloads
+travel through stdin/stdout, never interpolated scripts or command arguments.
+Reads/writes preserve Unicode and line endings; writes of empty text clear the
+text clipboard. NUL and text beyond the 16 MiB transport ceiling are rejected.
+
+Each helper has a ten-second deadline and bounded cleanup. A failed or timed-out
+write is an unknown outcome and is never automatically repeated through another
+helper. Linux owner processes may outlive a successful write to serve future
+paste requests, so write completion waits for the launcher, not pipe EOF from
+its descendants. Dropping the operation kills the launcher if it is still live.
+
+Native round trips run on macOS against a named pasteboard and on Linux inside
+disposable X11 and Wayland seats. Windows shares one clipboard per session and
+offers no disposable equivalent, so CI asserts the Windows helper definition
+instead of driving the runner's global clipboard; real Windows clipboard reads
+and writes are verified on a Windows desktop.
+
+`clipboard_get.max_output_bytes` defaults to 64 KiB and caps at 1 MiB; the old
+`max_bytes` alias remains readable and the canonical field wins when both occur.
+The result keeps `text`, original UTF-8 `byte_length`, and `truncated`; truncation
+does not add marker text to the clipboard content. Both model schemas expose the
+same actions and parameters. No persisted or protocol shape is renamed.
+
+Remote workspace and headless dispatch paths reject these tools before native
+IO. Remote control and peer desktop sessions execute against their runtime host;
+they never read/write the driving surface's clipboard as a fallback.
 
 ## Native input rules
 
@@ -346,8 +668,8 @@ operation or prove all transient or later application behavior.
 ### macOS
 
 Retain the selected content window across observations. A sharing-indicator
-window appearing earlier in WindowServer order must not replace it. Conflicting
-explicit window selection fails; validate a replacement before releasing a live
+window appearing earlier in WindowServer order must not replace it. An explicit
+window ID can select another window, including within the same PID; validate a replacement before releasing a live
 capture. AX focused-window observation resolves the actual bound window, not an
 unrelated Sharing dialog. Missing exact identity is an error.
 
@@ -355,8 +677,12 @@ For one unmodified left ImageXy click, native application-root AX hit testing ma
 select an explicitly pressable button, checkbox, radio button or link. The hit
 must belong to the exact bound window and contain the point. Do not rank nearby
 rectangles, climb ancestors or replace double/right/modifier clicks with AXPress.
-Only explicit ActionUnsupported permits a different delivery path; unknown AX
-outcomes stop without a duplicate click.
+For an attempted AX mutation, only explicit ActionUnsupported permits a different
+delivery path; unknown mutation outcomes stop without a duplicate click. The
+optional read-only point lookup has a local 300 ms messaging timeout. An absent,
+unsupported or temporarily unresponsive AX hit test retains the independently
+validated window-coordinate route; permission, identity and unknown errors stay
+visible. This is a route choice before input, never a retry of an uncertain action.
 
 Text/key `focus` uses retained AX identity or native hit testing and semantic
 focus for text controls. Other eligible targets use the exact-window directed
@@ -388,7 +714,10 @@ The directed mouse source is `CombinedSessionState`, with modifier flags set
 explicitly to the requested modifiers. A private mouse source itself caused
 AppKit to raise inactive windows in the strict fixture; changing only that source
 is therefore part of the routing contract, not a reason to add Command. Keyboard
-events retain a private source. Event field 58 is set to 1 for window routing; it
+events retain a private source. A chord uses one source, unique modifiers and
+cumulative press/release flags, ending with no modifiers held. Native modifier
+events are `FlagsChanged`, so cancellation tracks and releases them as well as
+ordinary keys. Event field 58 is set to 1 for window routing; it
 is not a click-group identifier and must not be repurposed as one. These event
 fields are native adapter details, not application-specific rules.
 
@@ -402,10 +731,15 @@ window-addressed down/up focus pair is placed outside the content frame at local
 observed target coordinates and original modifiers. There is no implicit Command,
 global foreground switch, window raise/restore or human-cursor warp.
 
-The preparation cache includes generation, PID, window ID, human foreground
-identity and activation epoch, so preparation is not repeated for every key or
-batch step while stale activation state cannot be reused. There is no app-name
-rule or guessed content-control coordinate. Preparation does not depend on an AX
+The preparation cache includes generation, PID, process-serial identity, window
+ID, human foreground identity, global activation epoch and target-local loss
+epoch. A PID-scoped, listen-only event tap invalidates preparation when native
+deactivation or key-focus loss occurs, even when the human foreground PID does
+not change. It returns every event unchanged and never suppresses input. A
+missing or disabled observer disables cache reuse while keeping directed input
+available; it does not trigger foreground takeover. Stop, target replacement and
+capture failure remove the matching observer. There is no app-name rule or
+guessed content-control coordinate. Preparation does not depend on an AX
 key-state acknowledgement, which normal AppKit windows can omit; fixtures inspect
 their own `NSWindow.keyWindow` directly.
 
@@ -442,10 +776,46 @@ capture errors. No unlock, wake or automatic activation is a recovery action.
 
 ### Windows
 
-Observation and semantic actions share a retained MTA UIA worker/cache. Validate
-PID, HWND, generation, target revision, enabled state and geometry before supported Invoke,
+Observation, semantic actions, locate, hit-testing and shortcut discovery share
+a retained MTA UIA worker/cache. Validate
+root PID, HWND, generation, target revision, enabled state and geometry before supported Invoke,
 Toggle, SelectionItem or Scroll operations. Release retained COM references with
 the cache; do not rebuild indices during input.
+
+Hosted UIA controls can have a different process from their root HWND. A bounded
+RawView ancestry walk proves membership in the bound root; equality with the root
+PID is not a substitute. Recheck root ownership after the walk and reject detached
+controls, unrelated same-process windows and disabled elements.
+
+WGC retains the last valid pixels for the current native stream. An empty frame
+queue on a static window reuses those pixels with `capture_frame.age_ms` and
+`capture_frame.reused`, rather than claiming the target closed. Stop, target,
+generation and size changes invalidate reuse. Frame recency is not evidence of
+input delivery; the Agent checks AX/application state or observes again. A stream
+without its first frame reports `CAPTURE_FRAME_PENDING`. A native frame-pool
+failure invalidates retained pixels and returns an error; only a successful
+empty queue permits frame reuse.
+
+Use `CUIAutomation8` / `IUIAutomation2` with automatic focus disabled, a two-second
+connection timeout and a five-second transaction timeout. A separate ten-second
+caller deadline bounds providers that do not honor COM timeouts. Control-token
+cancellation is polled every 50 ms. An occupied worker rejects new requests with
+`AX_PROVIDER_BUSY` until its native call actually returns; caller timeout never
+creates replacement workers or queues more work. Stop and status do not wait on
+that worker. Recheck the request fence immediately before input so a late
+preflight cannot dispatch after abandonment. Once input enters a provider, a
+timeout, cancellation or provider error means `INPUT_OUTCOME_UNKNOWN`; never
+replay it or fall back to a coordinate click. Discard abandoned observations on
+the owning apartment. Idle cache cleanup runs asynchronously there; a new request
+waits for that cleanup within its deadline, without queuing input or blocking Stop.
+A retained observation also carries caller acceptance:
+publishing native cache entries before a rejected reply does not make their
+indices valid for subsequent input. Native input already submitted can still finish after
+Stop, and a permanently hung provider requires recovery or a host restart.
+
+The control card treats preview availability separately from control status.
+Missing AX-only images, capture failures and stale frames clear the preview
+without hiding valid status or disabling Stop.
 
 Standard Unicode Edit/RichEdit text insertion replaces the current selection
 through `EM_REPLACESEL`, preserving text outside that selection. An observed
@@ -492,6 +862,18 @@ preview feedback conservatively when native visibility cannot be established.
 Ubuntu preview does not invent a Wayland global overlay. Reduced-motion retains
 static position feedback without movement transitions.
 
+macOS and Windows use the same platform-independent, critically damped spring
+in `pointer_motion.h`. It retains displayed position and velocity on retarget,
+uses elapsed monotonic time, and catches up after a delayed frame without
+replaying queued movements. macOS samples motion separately from its slower
+window/occlusion refresh. Windows coalesces visual destinations on a persistent
+window-owning worker; Stop wakes it and releases the window. Both stop frequent
+updates at rest, respect the OS motion preference and pulse clicks at visual
+arrival without delaying native input. This follows the displayed-tip and
+retained-velocity approach in
+[open-computer-use Cursor Motion](https://github.com/ifuryst/open-computer-use/blob/43eb4b53de7a15b3f99ec2c9922bedeb95602266/packages/OpenComputerUseKit/Sources/OpenComputerUseKit/CursorMotionModel.swift);
+the native integration remains asynchronous.
+
 The physical preview cursor is a deterministic 240 Hz simulation sampled by
 `requestAnimationFrame`, with retargeting, directional rotation, speed stretch,
 arrival deformation, opacity/blur and resize behavior from the reference. Motion
@@ -499,6 +881,12 @@ never acknowledges, schedules or delays native input. Reduced-motion uses
 immediate feedback. Rust-generated golden traces test the mathematical port,
 not native OS delivery. The click ring expires independently of the persistent
 pointer.
+Both the Agent control card and the shared interactive preview use this renderer
+on macOS, Windows and Linux, including peer-host previews. Position is written
+through `translate3d` rather than per-frame layout properties. Unchanged resize
+notifications do not retarget it, and direct user manipulation cancels animation
+immediately. The golden model is unchanged; component tests separately cover
+render scheduling, cancellation, resize and live reduced-motion changes.
 
 The product surface shows authoritative target, mode, status and Stop while the
 chat card is collapsed. Preview sampling is bounded and stops when unobserved;
@@ -510,7 +898,7 @@ checks discard stale preview responses and device-switch results.
 | Scenario | Required behavior |
 |---|---|
 | Remote workspace | Existing SSH/Docker workspace refusal; never operate the controller's local GUI as fallback |
-| Remote control | An executing Desktop's Agent selects and controls its own applications without requiring an App picker on Mobile/IM; cancellation remains reachable. Native OS consent and missing GUI providers are explicit limitations; no hidden app-selection dialog |
+| Remote control | An executing Desktop or graphical CLI host's Agent selects and controls its own applications without requiring an App picker on Mobile/IM; cancellation remains reachable. Native OS consent and missing GUI providers are explicit limitations; no hidden app-selection dialog |
 | Peer Device | Share/permission/preview commands proxy to the peer only after `computer_use_sharing_v1` negotiation; controller permission is not peer permission; old peers and CLI without GUI reject explicitly |
 | Detached Dispatch | Headless execution has no implied GUI capability or submitter UI dependency; require an explicitly negotiated target provider |
 
@@ -520,7 +908,140 @@ persisted sessions, settings or profiles to repair incompatibility. Internal Rus
 port cleanup does not authorize changing persisted or cross-version wire shapes.
 Local fixtures and unsupported-host unit tests are not remote end-to-end evidence.
 
+Window discovery filters, `opened_windows`, `restored_window`, the `wait`
+observation and `zoom` are additive tool fields. A host without `app-zoom-v1`
+gets an explicit unsupported error before any capture; a host provider without
+window restore keeps the original surface error. Older `list_windows` providers
+that omit `is_on_screen` are treated as on-screen, as before.
+
 ## Verification and acceptance
+
+### Background input evidence, 2026-10-17
+
+REA inspected the installed Codex 26.1013.31256 artifact and its `@oai/sky`
+0.7.8 macOS client. The native `SkyComputerUseService` SHA-256 is
+`f21c31c0ee5df419dbd165bf76ebd65c64d864c6fec5b6c6c3a23c42ff3d2e13`.
+JavaScript inventory/analysis covered 41 files without parse failures; 1,513
+dynamic/external semantic relationships remained unknown. Native evidence is
+Mach-O metadata plus symbol-correlated ARM64 disassembly, not recovered Swift
+source: a configured native decompiler was unavailable.
+
+The inspected paths establish these implementation facts:
+
+- The macOS client keeps a transport per API version, serializes requests and
+  uses length-prefixed JSON messages over a Unix socket, with request IDs and
+  deadlines. Input receipts and subsequent application-state reads are separate.
+- `SynthesizedEvent.send(to:)` at `0x10075ad0c` calls the PID-directed event
+  wrapper. Mouse construction supplies a window number and window-local point.
+  PID targeting alone is not the entire background-input mechanism.
+- `SyntheticAppFocusEnforcer` distinguishes actual foreground ownership from
+  whether the target believes itself active/focused. `enforceActiveState` at
+  `0x1007479fc` constructs target-local activation events; `startMonitoring` at
+  `0x100747348` observes target-process events and updates that local state.
+- `safelyEnforceActiveState` at `0x1007482a8` also contains temporary event taps
+  and conditional foreground restoration: `0x100748c64` calls
+  `activateWithOptions:` on the saved foreground application. Its tap callbacks
+  include event suppression/redirection. Static inspection does not establish
+  that every Codex route avoids foreground changes. OpenBitFun retains its
+  stricter background contract and does not adopt those branches.
+
+The REA JavaScript parent Evidence ID is
+`ev_a10e7629df3bce8ec8fe8be5d0d9a870f775b7d798e8eb363f4b718c31a9de02`;
+the Mach-O Evidence ID is
+`ev_299cc4d31a7f4b5776f8c39358856b799661ae9229faee6e45abcb2bc5c13f20`.
+These are static shipped-artifact findings, separate from the real-application
+trials below. They do not recover hidden model prompts or establish a general
+success rate. Third-party artifacts are not build or runtime dependencies.
+
+The focused Desktop Computer Use unit suite passed 181 tests with nine opt-in
+native tests ignored. These cover the new optional AX read policy, actual native
+chord event flags and cancellation bookkeeping, target-loss cache invalidation,
+and foreground-admission guidance. Objective-C strict syntax checking also
+passed. This does not establish native delivery or application compatibility.
+
+Both local native acceptance commands passed: `--orchestration` and `--busy-ax`.
+The full Tool fixture induces real target-local deactivation without a global
+foreground switch. Subsequent ordinary input prepares focus again and reaches
+the original canvas, without repeating its content click or changing another
+field. The `--busy-ax` fixture pauses only its disposable target to trigger real
+AX messaging failure; after resumption, exactly one pointer down/up pair reaches
+the button and activates it once. The mouse witness records dequeued events,
+including those consumed inside standard controls' tracking loops, without
+changing their input behavior or overriding `acceptsFirstMouse`.
+
+Both runs retained independent foreground/key, stacking, observer-input and
+physical-cursor assertions. The full fixture also passed semantic Unicode input,
+modifier shortcuts, scroll, preview revocation and Stop cleanup. Earlier runs
+blocked by the hardware-idle gate were inconclusive and are not counted as
+passes. This is native evidence for the dedicated fixtures on this macOS host,
+not a broad application success-rate benchmark or cross-Space guarantee.
+Windows/Linux native delivery and all four remote scenarios were not exercised
+by this change.
+
+The subsequent systematic native comparison also covered capture selection,
+helper-process target resolution, first-click policy, scrolling, dragging,
+menus/sheets and cancellation. The reference uses desktop-independent window
+capture on an inspected ScreenCaptureKit path; it also has other capture routes.
+Its input target resolver can follow out-of-process AX targets, whereas
+OpenBitFun keeps input within the authorized captured PID/window and that
+window's same-process popups (see Popup and menu windows). Copying that
+resolver would require an explicit authority design. Reference menu/window
+observers and drag APIs do not establish equivalent coverage of system popups,
+all helper processes or cancellation races.
+
+For text, `+[SAIVirtualKeyPress keyPressesForString:]` at `0x10024c2e4` searches
+the current keyboard layout with `UCKeyTranslate`. At `0x10024c428`, an unmatched
+UTF-16 unit is logged and skipped; this method has no Unicode-only fallback.
+The later event converter's optional Unicode field does not remove that
+limitation. OpenBitFun retains direct Unicode scalar delivery and a private
+keyboard source. Fixed US-keyboard shortcut mapping and the local 8 ms text
+pacing policy are not claims of reference parity or non-US layout coverage.
+
+Real-application trials used disposable local documents and isolated browser /
+editor profiles. OpenBitFun actions went through the production
+`ComputerUseTool` and real main-thread run loop using the devtools JSONL probe.
+Reference actions used the installed Codex public native app API; the two
+backends never sent input concurrently to the same application. Results were
+checked in the returned AX tree and, for editors, the saved file, rather than
+inferred from successful action receipts.
+
+| Application / UI family | OpenBitFun observed result | Codex observed result |
+|---|---|---|
+| TextEdit 1.20 / AppKit | Image-coordinate focus, select-all, full `OpenBitFun background 文本🙂`, and save | Click, select-all and save worked; `typeText` retained only `Codex background ` in this trial |
+| Microsoft Edge 155.0.4283.60 / Chromium | One additional button activation, full Unicode input, and anchored scroll | One button activation and anchored scroll; `typeText` retained only ASCII |
+| VS Code 1.117.0 / Electron | Image-coordinate editor focus, full Unicode, Command+Shift+Left replacement and save produced exactly `OpenBitFun shortcut 文本🙂` | Editor click, select-all and save worked; the saved text contained only ASCII |
+| Calculator 11.0 / native controls | Background clear plus directed key sequence `17 + 25` produced `42` | Background clear plus the equivalent key sequence produced `42` |
+
+These are individual compatibility observations on this host/version, not a
+success-rate benchmark or a claim that every Codex text path drops Unicode.
+The reference's static layout-lookup branch is consistent with the observed
+loss, but those actions were not instruction-traced. A planned LibreOffice
+trial could not launch and is not counted as acceptance.
+
+An independent passive witness sampled frontmost PID, physical cursor, AX
+focused-window identity and relative stacking at a requested 10 ms interval,
+with activation notifications and sampling-gap records. It requested no OS
+permissions, created no window and posted no input. No trial recorded the
+target application becoming the human foreground. During the OpenBitFun Edge
+and Calculator intervals, foreground PID and cursor were unchanged and the
+target stayed below the foreground window; available AX focus samples retained
+the same window ID. Some AX reads timed out or became stale and remain unknown.
+TextEdit / VS Code intervals also contained real user cursor movement or
+switches among other foreground applications, so they are not an unchanged-
+desktop proof. The Codex Edge click/text interval contained one target-above-
+foreground stacking sample between below samples with the same foreground PID
+and AX window ID. Its cause was not isolated; it is not evidence of invariant
+window order. Polling can miss transients; the controlled fixture's independent
+observer-input, key-window and exact-delivery checks remain necessary.
+
+Cancellation cleanup now retains and revalidates process identity, confirms the
+original window still belongs to that process, and uses current window geometry
+for mouse release routing. A missing target or failed window-local route cannot
+fall back to an unbound event. These checks reduce stale-target delivery; they
+do not make the identity-check-to-post interval atomic. The focused unit tests
+cover identity changes, routing failure, window changes and serialized cleanup
+before capture teardown, while native Stop
+acceptance exercises ordinary cleanup.
 
 ### Latency design evidence, 2026-10-13
 
@@ -690,13 +1211,14 @@ expanded. That visual harness mocks transport. It is not an end-to-end Tauri
 permission-dialog test. Full OS denied-to-granted/restart flows and system Stop
 Sharing UI interaction remain manual acceptance work.
 
-Run focused checks from the [Desktop Computer Use guide](../../src/apps/desktop/src/computer_use/AGENTS.md)
+Run focused checks from the [Native Computer Use guide](../../src/crates/services/computer-use/AGENTS.md)
 and [Core guide](../../src/crates/assembly/core/AGENTS.md). A build-only result,
 ignored native test or permissive first-click fixture is not a successful strict
 background-input run.
 
 | Area | Recorded evidence | Remaining scope |
 |---|---|---|
+| CLI shared native provider | macOS real CLI process observed a disposable native window, returned AX and image content, and stopped control; shared native directed-input and Desktop full Tool fixtures passed. Linux CLI compiled; shared-provider tests, GTK/AT-SPI under D-Bus/Xvfb, generated GStreamer frames, real Tesseract OCR and missing-runtime-library errors passed. Windows shared Rust library and tests type-checked | Windows native runtime/C linkage; Linux Wayland portal chooser, PipeWire seat input; all four remote scenarios remain without end-to-end GUI evidence |
 | macOS strict production Tool pipeline | User-selected share and separate grant; five-action non-AX canvas/text/menu/scroll/emoji program with one final observation; exactly one content click and one outside-frame focus pair; native preview input and revocation; observer foreground/key/stacking and human cursor unchanged; no observer input; Stop deactivated target | Wider applications, cross-Space behavior and visual system Sharing UI acceptance |
 | macOS capture/feedback | Dedicated native fixtures exercised obscured target pixels, binding retention, movement/resize, hidden/minimized errors, closure and pointer lifetime; earlier locked-session rejection evidence was not rerun | System Stop Sharing interaction and broader platform/application matrix |
 | Linux text semantics and scope | 65 production-module tests plus a real GTK/AT-SPI activation and UTF-8 insertion fixture under D-Bus/Xvfb; portable admission, permission, grant and geometry checks | Full Linux Desktop build, GNOME Wayland portal consent, real PipeWire/seat input and sharing UI; arbitrary background coordinates remain explicitly unsupported |

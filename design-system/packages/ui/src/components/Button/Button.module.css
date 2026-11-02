@@ -90,6 +90,17 @@
     --_button-border-active: transparent;
   }
 
+  /* GlassAction owns the material, including contrast/transparency fallbacks. */
+  .button[data-openbitfun-variant="glass"] {
+    --_button-border: transparent;
+    --_button-border-hover: transparent;
+    --_button-border-active: transparent;
+  }
+
+  .button[data-openbitfun-variant="glass"]::before {
+    content: none;
+  }
+
   .button[data-openbitfun-variant="primary"] {
     --_button-background: var(--openbitfun-component-button-primary-background);
     --_button-background-hover: var(--openbitfun-component-button-primary-background-hover);
@@ -131,6 +142,23 @@
     --_button-content-disabled: var(--openbitfun-component-button-text-content-disabled);
 
     border-radius: 0;
+  }
+
+  .button[data-openbitfun-variant="quiet"] {
+    --_button-background: transparent;
+    --_button-background-hover: transparent;
+    --_button-background-active: transparent;
+    --_button-border: transparent;
+    --_button-border-hover: var(--openbitfun-color-border-default);
+    --_button-border-active: var(--openbitfun-color-border-default);
+    --_button-content: var(--openbitfun-color-content-secondary);
+
+    padding-inline: var(--openbitfun-space-3);
+    border-radius: var(--openbitfun-radius-base);
+  }
+
+  .button[data-openbitfun-tone="neutral"][data-openbitfun-variant="quiet"]:is(:hover, :active, [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="active"]):not(:disabled) {
+    --_button-content: var(--openbitfun-color-content-primary);
   }
 
   .button[data-openbitfun-variant="text"]:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled) {
@@ -183,6 +211,12 @@
 
   .button[data-openbitfun-tone="danger"][data-openbitfun-variant="text"] {
     --_button-content: var(--openbitfun-color-status-danger-content);
+  }
+
+  .button[data-openbitfun-tone="danger"][data-openbitfun-variant="quiet"] {
+    --_button-border: transparent;
+    --_button-border-hover: var(--openbitfun-color-status-danger-border);
+    --_button-border-active: var(--openbitfun-color-status-danger-border);
   }
 
   .button[data-openbitfun-tone="danger"][data-openbitfun-variant="fill"]:disabled {

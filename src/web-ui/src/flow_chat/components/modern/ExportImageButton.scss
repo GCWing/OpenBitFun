@@ -4,6 +4,9 @@
 // Export wrapper
 .export-image-wrapper {
   overflow: visible;
+  // Also bound captures whose source row has been virtualized away.
+  width: 100vw;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
 }
 
 .export-image-options {
@@ -65,50 +68,29 @@
 
 // Export content container
 .export-content {
-  @include transcriptLayout.content-column;
+  @include transcriptLayout.reading-column;
 
-  // Preserve the transcript inset while adding quiet framing above/below.
+  // Keep the live column and typography, with room for a standalone image frame.
+  padding-inline: clamp(var(--openbitfun-space-4), 4%, var(--openbitfun-space-8));
   padding-block: var(--openbitfun-space-6);
   background: var(--openbitfun-color-surface-scene);
   box-sizing: border-box;
-  font-family: var(--openbitfun-type-body-sm-font-family);
-  // The capture wrapper sets the live pane width for container-aware text layout.
+  font-family: var(--openbitfun-type-flow-body-font-family);
+  font-size: var(--openbitfun-type-flow-body-font-size);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  // The capture wrapper sets the live reading-column width.
   container-type: inline-size;
 
   /* Prevent unwanted wrapping of short inline text */
   .thinking-label,
   .thinking-collapsed-header,
   [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='action'],
-  [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='content'],
-  [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='extra'],
   .export-content__title,
   .export-content__timestamp,
   .export-content__footer span,
   .export-content__footer-brand {
     white-space: nowrap !important;
     flex-shrink: 0 !important;
-  }
-
-  /* modern-screenshot does not have the last-character wrapping bug that
-     html-to-image had, so links can stay display:inline for natural line
-     breaking. We keep padding-right to give inline elements a tiny buffer. */
-  a, code, strong, em, u, .file-mention {
-    padding-right: 2px;
-  }
-  
-  /* Keep font rendering as close to the live chat as possible so text
-     wrapping is identical. Do NOT override letter-spacing or ligatures
-     globally — those can change word widths and cause line-break deltas. */
-  * {
-    -webkit-font-smoothing: antialiased;
-    text-rendering: geometricPrecision;
-  }
-
-  /* Prevent links from being broken across lines inside the exported image.
-     FileLink is a <button> (inline-block) whose default white-space:normal
-     can wrap its text in SVG foreignObject contexts. */
-  a, .file-link, .tab-link, .visualization-link {
-    white-space: nowrap !important;
   }
 
   // ===== Header =====
@@ -188,6 +170,10 @@
   }
 
   &__model-round {
+    // The rasterizer freezes computed heights. Contain child margins before
+    // measurement so cloning cannot move inter-round gaps inside fixed boxes
+    // and accumulate that missing space below the final response.
+    display: flow-root;
   }
 
   &__text-item {
@@ -226,6 +212,8 @@
 
   &__tool-item {
     margin-bottom: var(--openbitfun-control-flow-chat-flow-item-gap);
+    // Long command summaries must respect the image's trailing inset.
+    overflow: hidden;
     
     // Hide tool card action buttons and expanded content.
     .tool-card__actions,
@@ -237,8 +225,8 @@
 
   // ===== Footer =====
   &__footer {
-    margin-block-start: var(--openbitfun-space-8);
-    padding-block-start: var(--openbitfun-space-4);
+    margin-block-start: var(--openbitfun-space-4);
+    padding-block-start: var(--openbitfun-space-3);
     border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
     display: flex;
     align-items: center;

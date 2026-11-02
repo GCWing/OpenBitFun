@@ -20,10 +20,11 @@ pub use openbitfun_services_integrations::remote_connect::bot::{
     auto_push_failed_message, auto_push_intro, auto_push_skip_too_large_message,
     collect_auto_push_files, detect_mime_type, extract_computer_file_paths,
     extract_downloadable_file_paths, extract_output_file_references, format_file_size,
-    get_file_metadata, load_bot_persistence, read_workspace_file, resolve_workspace_path,
-    save_bot_persistence, update_bot_persistence, AutoPushFile, BotConfig, BotLanguage,
-    BotPairingInfo, BotPersistenceData, MenuItem, MenuItemStyle, MenuView, RemoteConnectFormState,
-    RemoteDeviceTarget, SavedBotConnection, WorkspaceFileContent,
+    get_file_metadata, load_bot_persistence, read_bot_credentials_file, read_workspace_file,
+    resolve_workspace_path, save_bot_persistence, try_load_bot_persistence,
+    try_update_bot_persistence, update_bot_persistence, AutoPushFile, BotConfig, BotLanguage,
+    BotListenerLease, BotPairingInfo, BotPersistenceData, MenuItem, MenuItemStyle, MenuView,
+    RemoteConnectFormState, RemoteDeviceTarget, SavedBotConnection, WorkspaceFileContent,
 };
 
 use std::collections::HashMap;

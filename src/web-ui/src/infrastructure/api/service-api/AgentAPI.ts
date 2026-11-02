@@ -33,6 +33,14 @@ export interface SessionTitleGeneratedEvent {
   timestamp: number;
 }
 
+/** One-sentence next-input suggestion offered after a completed turn. */
+export interface PromptSuggestionEvent {
+  sessionId: string;
+  /** Not `turnId`: the hint must not be treated as a write to the settled turn. */
+  sourceTurnId: string;
+  suggestion: string;
+}
+
 export interface SessionModelFallbackAppliedEvent {
   sessionId: string;
   previousModelId: string;
@@ -448,6 +456,26 @@ export interface EnsureAssistantBootstrapResponse {
   detail?: string;
 }
 
+export interface ModelRoutingStatus {
+  apiVersion: number;
+  /** Product availability must be explicitly advertised; absent on older hosts. */
+  available?: boolean;
+  mode: string;
+  defaultMode: string;
+  ready: boolean;
+  connected: boolean | null;
+  /** Router-only probe failure; older hosts may only provide the general issue. */
+  connectionIssue?: string | null;
+  issue: string | null;
+  summaryEnabled: boolean;
+  /** Explicit execution-host capability for Router budgeting without a tokenizer file. */
+  estimatedTokenBudgetSupported?: boolean;
+  /** Legacy response field; current hosts omit this retired control. */
+  subagentModel?: string;
+}
+export type ModelRoutingStatusRequest = Partial<Pick<UpdateSessionModelRequest,
+  'sessionId' | 'workspaceId' | 'workspacePath' | 'remoteConnectionId' | 'remoteSshHost'>> & { probe?: boolean };
+
 export interface UpdateSessionModelRequest {
   sessionId: string;
   modelName: string;
@@ -458,6 +486,7 @@ export interface UpdateSessionModelRequest {
   remoteConnectionId?: string;
   remoteSshHost?: string;
   includeInternal?: boolean;
+  routingMode?: 'manual' | 'smart';
 }
 
 /** `ask` | `auto_approve` | `full_access`; `null` clears the session override. */
@@ -638,6 +667,10 @@ export type DialogTurnStartedEvent = AgenticEvent;
 
 export interface OpenBuiltInBrowserEvent {
   requestId?: string;
+  /** Owning Agent conversation, independent of the currently displayed one. */
+  sessionId?: string;
+  /** Host-owned native page; mounting its panel only attaches presentation. */
+  targetId?: string;
   url: string;
   title?: string;
   replaceExisting?: boolean;
@@ -745,6 +778,8 @@ export interface ModelRoundCompletedEvent extends AgenticEvent {
   firstChunkMs?: number;
   firstVisibleOutputMs?: number;
   streamDurationMs?: number;
+  /** Request start to first effective output for the accepted model attempt. */
+  ttftMs?: number;
   attemptCount?: number;
   failureCategory?: string;
   tokenDetails?: unknown;
@@ -765,6 +800,7 @@ export interface ModelRoundStartedEvent extends AgenticEvent {
   modelConfigId?: string;
   /** Provider model name sent on the request. */
   effectiveModelName?: string;
+  routing?: import('@/shared/types/session-history').ModelRoutingDecision;
 }
 
 export interface AcpContextUsageUpdatedEvent extends AgenticEvent {
@@ -1233,6 +1269,10 @@ export class AgentAPI {
     }
   }
 
+  async getModelRoutingStatus(request: ModelRoutingStatusRequest = {}): Promise<ModelRoutingStatus> {
+    return api.invoke<ModelRoutingStatus>('get_model_routing_status', { request }, { retries: 0 });
+  }
+
   async updateSessionModel(request: UpdateSessionModelRequest): Promise<void> {
     try {
       await api.invoke<void>('update_session_model', { request });
@@ -1463,6 +1503,10 @@ export class AgentAPI {
    
   onDialogTurnCompleted(callback: (event: AgenticEvent) => void): () => void {
     return api.listen<AgenticEvent>('agentic://dialog-turn-completed', callback);
+  }
+
+  onPromptSuggestion(callback: (event: PromptSuggestionEvent) => void): () => void {
+    return api.listen<PromptSuggestionEvent>('agentic://prompt-suggestion', callback);
   }
 
   onUserSteeringInjected(

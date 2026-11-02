@@ -103,6 +103,19 @@ impl Tool for FileEditTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string"},
+                "success": {"type": "boolean"},
+                "match_count": {"type": "integer"}
+            },
+            "required": ["file_path", "success"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

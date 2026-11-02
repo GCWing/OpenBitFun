@@ -267,9 +267,16 @@ const DeviceControlSettingsPage: React.FC = () => {
   const handleBrowserControlBrowserChange = async (value: string | number) => {
     const nextValue = String(value || DEFAULT_BROWSER_CONTROL_BROWSER);
     const previousValue = preferredBrowser;
+    if (nextValue === previousValue) return;
     setPreferredBrowser(nextValue);
     setBrowserControlBusy(true);
     try {
+      // A browser choice must revoke the previous profile before it changes
+      // what Settings displays, including when the new browser cannot connect.
+      await api.invoke<BrowserControlDisconnectResponse>(
+        'browser_control_disconnect',
+        { request: { port: 9222 } },
+      );
       await configManager.setConfig(
         'ai.browser_control_preferred_browser',
         nextValue === DEFAULT_BROWSER_CONTROL_BROWSER ? '' : nextValue,
@@ -524,9 +531,6 @@ const DeviceControlSettingsPage: React.FC = () => {
           {/* ── Computer use (desktop) ─────────────────────────────── */}
           <ConfigPageSection
             title={t('computerUse.sectionTitle')}
-            description={
-              IS_TAURI_DESKTOP ? t('computerUse.sectionDescription') : t('computerUse.desktopOnly')
-            }
             extra={IS_TAURI_DESKTOP && !peerBrowserControlUnsupported ? (
               <ConfigRefreshButton
                 tooltip={t('computerUse.refreshStatus')}
@@ -642,7 +646,11 @@ const DeviceControlSettingsPage: React.FC = () => {
               >
                 <span />
               </ConfigPageRow>
-            ) : null}
+            ) : (
+              <ConfigPageRow label={t('computerUse.desktopOnly')}>
+                {null}
+              </ConfigPageRow>
+            )}
           </ConfigPageSection>
 
           {/* ── Browser control (CDP) ──────────────────────────────── */}
@@ -656,9 +664,6 @@ const DeviceControlSettingsPage: React.FC = () => {
                 onClick={() => void refreshBrowserControlStatus()}
               />
             ) : undefined}
-            description={
-              IS_TAURI_DESKTOP ? t('browserControl.sectionDescription') : t('browserControl.desktopOnly')
-            }
           >
             {IS_TAURI_DESKTOP && !peerBrowserControlUnsupported ? (
               <>
@@ -774,7 +779,11 @@ const DeviceControlSettingsPage: React.FC = () => {
               >
                 <span />
               </ConfigPageRow>
-            ) : null}
+            ) : (
+              <ConfigPageRow label={t('browserControl.desktopOnly')}>
+                {null}
+              </ConfigPageRow>
+            )}
           </ConfigPageSection>
 
           <Dialog

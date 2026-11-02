@@ -3,6 +3,7 @@ import {
   builtinBasename, builtinRecords, builtinState, builtinText,
   type BuiltinCardContext, type BuiltinCardField, type BuiltinCardLink, type BuiltinCardRecord,
 } from './builtinToolCardModel';
+import { buildDesktopCardToolCard } from './builtinDesktopCardModel';
 
 export function buildBuiltinWorkflowCard(context: BuiltinCardContext): void {
   const { model, input, data, done, t, field, section, outcome, operation, list, link } = context;
@@ -210,5 +211,8 @@ export function buildBuiltinWorkflowCard(context: BuiltinCardContext): void {
       }
       return;
     }
+    case 'DesktopCard':
+      buildDesktopCardToolCard(context);
+      return;
   }
 }

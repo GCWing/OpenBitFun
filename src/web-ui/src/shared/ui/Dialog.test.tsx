@@ -133,4 +133,35 @@ describe('overlay exit content', () => {
     act(() => vi.advanceTimersByTime(1));
     expect(surface.isConnected).toBe(false);
   });
+
+  it('retains the fixed panel preset through exit and restores ordinary sizing on reopen', () => {
+    function render(open: boolean, panel: boolean) {
+      act(() => root.render(
+        <Dialog open={open} onOpenChange={() => undefined} preset={panel ? 'panel' : 'default'} size="sm">
+          <DialogHeader><DialogHeading><DialogTitle>Accounts</DialogTitle></DialogHeading></DialogHeader>
+          <DialogBody><button>Account</button></DialogBody>
+        </Dialog>,
+      ));
+    }
+
+    render(true, true);
+    const surface = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(surface.dataset.preset).toBe('panel');
+    expect(surface.dataset.size).toBe('xl');
+    expect(surface.hasAttribute('preset')).toBe(false);
+    expect(document.getElementById(surface.getAttribute('aria-labelledby')!)?.textContent).toBe('Accounts');
+    expect(surface.hasAttribute('aria-describedby')).toBe(false);
+
+    render(false, false);
+    expect(surface.dataset.preset).toBe('panel');
+    expect(surface.dataset.size).toBe('xl');
+    expect(surface.hasAttribute('inert')).toBe(true);
+
+    render(true, false);
+    expect(surface.dataset.preset).toBe('default');
+    expect(surface.dataset.size).toBe('sm');
+    expect(surface.hasAttribute('inert')).toBe(false);
+    act(() => vi.advanceTimersByTime(180));
+    expect(surface.isConnected).toBe(true);
+  });
 });

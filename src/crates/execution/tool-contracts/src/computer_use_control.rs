@@ -125,10 +125,10 @@ impl ControlActionPolicy {
     pub fn for_action(action: &str) -> Option<Self> {
         let (observation, foreground, target, lease) = match action {
             "start_control" | "stop_control" => (false, false, false, false),
-            "control_status" | "list_apps" | "list_displays" | "get_os_info" | "clipboard_get" => {
+            "control_status" | "list_apps" | "list_windows" | "list_displays" | "get_os_info" => {
                 (true, false, false, false)
             }
-            "wait" => (true, false, false, true),
+            "wait" | "clipboard_get" => (true, false, false, true),
             "screenshot"
             | "describe_screen"
             | "locate"
@@ -149,6 +149,7 @@ impl ControlActionPolicy {
             | "visual_click" => (false, false, true, true),
             "clipboard_set" => (false, false, false, true),
             "open_app" => (false, false, false, true),
+            "activate_app" => (false, true, true, true),
             "run_apple_script" | "run_script" | "open_url" | "open_file" => {
                 (false, true, false, true)
             }
@@ -235,8 +236,20 @@ mod tests {
         assert!(ControlActionPolicy::for_action("native_surprise").is_none());
         let observation = ControlActionPolicy::for_action("get_app_state").unwrap();
         assert!(observation.observation && observation.target && observation.lease);
-        let discovery = ControlActionPolicy::for_action("list_apps").unwrap();
-        assert!(discovery.observation && !discovery.target && !discovery.lease);
+        for action in ["list_apps", "list_windows"] {
+            let discovery = ControlActionPolicy::for_action(action).unwrap();
+            assert!(discovery.observation && !discovery.target && !discovery.lease);
+        }
+    }
+
+    #[test]
+    fn clipboard_access_requires_a_lease_without_foreground_or_window_input() {
+        for action in ["clipboard_get", "clipboard_set"] {
+            let policy = ControlActionPolicy::for_action(action).unwrap();
+            assert!(policy.lease);
+            assert!(!policy.foreground && !policy.target);
+            assert_eq!(policy.observation, action == "clipboard_get");
+        }
     }
 
     #[test]

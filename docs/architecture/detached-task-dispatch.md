@@ -22,6 +22,21 @@ There are three roles:
 - A **transport adapter** moves the same narrow JSON protocol over SSH or an
   end-to-end encrypted account-device RPC.
 
+Desktop (`dispatch_*` commands) and the CLI (`openbitfun dispatch outbound`) are
+both controllers over the same Core controller. The account-device `host_invoke`
+envelope is shared through `AccountRuntimeDeviceDispatchRpc` and its
+encode/decode helpers, so the two hosts cannot drift.
+
+The Agent reaches the same controller through the `detached-dispatch`
+product-control provider on `feature.detached-dispatch` (`list-targets`,
+`submit`, `status`, `list-jobs`, `cancel`). Both hosts bind it to Core's
+`execute_dispatch_control`, which `dispatch outbound` also uses; hosts supply
+only their account session and SSH manager. `list-targets` returns every
+same-account device with `isCurrentDevice` and the saved SSH targets, so the
+Agent never infers the device count from Remote Connect status. `submit` is
+refused inside a detached dispatch worker, so a job cannot fan out further
+dispatches.
+
 The controller is never a runtime or filesystem proxy for a non-local job. It
 stores only an outbound observer record under
 `~/.openbitfun/dispatch/outbound/`; it must not create the target session in the
@@ -224,6 +239,26 @@ version equality is not evidence of this behavior. Version 6 adds the immutable
 `productId` and `dataNamespace` handshake. A target with a different or missing
 product identity is rejected before workspace preparation; protocol equality
 cannot make two product data spaces compatible.
+
+SSH model-directory sync uses the existing protected configuration export for
+explicit subscription accounts. Before writing a directory that contains an
+explicit account binding, the controller requires the optional target capability
+`subscription_account_bindings_v1`; an account pool also requires
+`subscription_account_failover_v1`. The CLI dispatch probe advertises its native
+runtime support separately from account-management handlers. These capabilities
+are not new requirements for ordinary API-key or legacy-default-account jobs,
+and do not change protocol version 6. Submit-time repair reuses its existing
+probe; explicit sync probes only when these account semantics need negotiation.
+Unsupported capability or unknown account-guard versions fail before target
+configuration writes and remain explicit preflight errors, with the existing
+model-sync audit retaining the cause. Account-bearing sync also validates the
+existing product identity, data namespace and protocol contract; capability
+flags alone cannot authorize a write into another product's data space. OAuth
+credentials are not copied: account slots must be authorized on the executing
+host. Protected records retain their
+original binding and policy revision for a capable target to restore, while an
+older reader cannot turn the new account fields into its default OAuth login.
+
 
 `probe` is read-only and never installs software. Immediately before SSH
 provisioning, submission probes again and automatically installs or upgrades a

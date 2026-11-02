@@ -50,7 +50,9 @@ slices that are outside pure product logic but still platform-neutral.
   session-selected `WorkspaceFileSystem`; `remote-connect` therefore selects
   `runtime-ports/workspace-ports` without enabling an SSH implementation. Core
   supplies the session root and provider. IM adapters consume authorized bytes
-  and must not re-resolve paths on the bot host.
+  and must not re-resolve paths on the bot host. Explicit controller file reads may use
+  provider scope outside the workspace; automatic output delivery and runtime
+  artifact URIs retain workspace/root confinement.
 - Remote workspace facts, session metadata, file projection DTOs, and
   workspace/projection host traits belong in `openbitfun-runtime-ports`.
 - Workspace-root source selection, persistence/workspace service reads,
@@ -129,6 +131,7 @@ streamable HTTP stay independent. Representative stable entry points are:
 
 ```bash
 cargo check -p openbitfun-services-integrations --no-default-features
+cargo test -p openbitfun-services-integrations --no-default-features --features browser-control --lib browser_control::cdp::tests::
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-persistence --lib remote_persistence::tests::
 cargo test -p openbitfun-services-integrations --no-default-features --features mcp --test mcp_contracts
 cargo test -p openbitfun-services-integrations --no-default-features --features mcp --test mcp_streamable_http_contracts
@@ -136,12 +139,14 @@ cargo test -p openbitfun-services-integrations --no-default-features --features 
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::manager::tests::workspace_
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::wsl::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::relay_deploy::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::account::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::relay_client::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream_subscriber::tests::
 cargo test -p openbitfun-services-integrations --no-default-features --features file-watch --test file_watch_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features workspace-search --test workspace_search_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features deep-research --lib deep_research::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features web-tools --lib web_tools::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features review-platform --lib review_platform
 pnpm run check:core-boundaries
 ```
@@ -155,6 +160,11 @@ boundaries, and bounded disk storage), run:
 ```bash
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features miniapp-market --lib market_image::tests
 ```
+
+For MiniApp instance leases, storage transactions, and Worker lifecycle, use
+`cargo test --locked -p openbitfun-services-integrations --no-default-features --features miniapp-runtime --lib miniapp::`.
+Framework Worker storage shares the host JSON transaction owner; preserve custom
+`worker.js` method overrides before routing built-in `storage.*` requests.
 
 On Windows with an initialized WSL distribution, set `OPENBITFUN_TEST_WSL_DISTRO`
 and run `cargo test -p openbitfun-services-integrations --no-default-features
@@ -197,3 +207,44 @@ For models.dev snapshot reuse, last-valid recovery, and background refresh:
 ```bash
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features models-dev --lib models_dev::tests
 ```
+
+For workspace-confined HTML resources, revision-checked chunk reads, bounded
+prefetch, cache invalidation and cancellation, run:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::html_preview
+```
+
+To use a real OpenSSH SFTP executable over loopback SSH, set
+`OPENBITFUN_TEST_SFTP_SERVER` and run the same package with
+`--features remote-connect,remote-ssh-concrete --lib openssh_html_preview_reads_nested_site_resources -- --ignored`.
+This checks the production remote filesystem provider, root-relative assets,
+parent-relative resources and workspace boundaries; it does not establish
+multi-device relay or physical-host coverage.
+
+For the reproducible resource-loading experiment, use the same OpenSSH fixture
+with `--lib openssh_html_preview_loading_benchmark -- --ignored --nocapture`.
+It adds 40 ms to each complete SFTP response without serializing replies, loads
+HTML followed by four assets (about 2.72 MiB), checks every byte, and reports
+three serial-baseline / prefetched-cold / revalidated-warm samples. The baseline
+retains the previous serial chunk algorithm with the same filesystem provider;
+browser rendering and public-network variability are outside this measurement.
+Do not turn timing ratios into CI assertions.
+
+For workspace icon RemoteCommand reads, capability negotiation and explicit
+mobile/IM editing rejection:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::tests::workspace_icon_
+```
+
+For WeChat inbound CDN files, attachment storage, and provider-neutral bot contracts:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::bot::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib session_attachment_contract_tests
+```
+
+The attachment fixtures exercise real local file IO and a simulated POSIX remote
+filesystem, including offline rejection. They do not establish live WeChat, SSH,
+Peer Device, or Detached Dispatch coverage.

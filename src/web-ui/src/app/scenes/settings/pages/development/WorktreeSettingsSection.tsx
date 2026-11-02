@@ -473,7 +473,6 @@ const WorktreeSettingsSection: React.FC = () => {
       <>
         <ConfigPageSection
           title={t('settings.isolation.title')}
-          description={t('settings.isolation.description')}
           extra={(
             <Button
               variant="outline"
@@ -534,6 +533,7 @@ const WorktreeSettingsSection: React.FC = () => {
             align="center"
           >
             <NumberInput
+              size="sm"
               value={settings.autoDeleteLimit}
               onValueChange={value => updateSettings({ autoDeleteLimit: value })}
               min={AUTO_DELETE_LIMIT_MIN}
@@ -799,7 +799,6 @@ const WorktreeSettingsSection: React.FC = () => {
           className="openbitfun-worktree-settings__management-section"
           bodySurface={false}
           title={t('management.title')}
-          description={t('management.description')}
           extra={(
             <ConfigRefreshButton
               tooltip={t('management.refresh')}

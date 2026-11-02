@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { ensureFlashgrepBinary } from './prepare-flashgrep-resource.mjs';
+import { prepareMiniAppShell } from './prepare-miniapp-shell.mjs';
 import { extractProductConfigArg } from './product-customization/cli.mjs';
 import { productBuildEnvironment } from './product-customization/projections.mjs';
 import { resolveProductDefinition } from './product-customization/resolver.mjs';
@@ -53,6 +54,10 @@ async function main() {
   const macosBundle = requestsMacosBundle(forward);
   if (macosBundle) requireModernIconTools();
   if (!bundleOnly) preparePluginHost();
+  const miniappShell = prepareMiniAppShell({
+    target: optionValue(forward, '--target'),
+    profile: forward.includes('--debug') ? 'debug' : optionValue(forward, '--profile') || 'release',
+  });
   const flashgrepBinary = prepareMacOSFlashgrepForSigning(
     ensureFlashgrepBinary({ target: optionValue(forward, '--target') || rustHostTargetTriple() }),
     desktopDir,
@@ -69,6 +74,7 @@ async function main() {
   const tauriConfig = prepareTauriConfig(join(desktopDir, 'tauri.conf.json'), {
     desktopDir,
     flashgrepBinary,
+    miniappShell,
     resolution,
     releaseChannel,
   });
@@ -330,7 +336,7 @@ export function configureWindowsSigning(config, env = process.env, platform = pr
 
 export function prepareTauriConfig(
   baseConfigPath,
-  { desktopDir, flashgrepBinary, resolution, releaseChannel }
+  { desktopDir, flashgrepBinary, miniappShell, resolution, releaseChannel }
 ) {
   const config = JSON.parse(readFileSync(baseConfigPath, 'utf8'));
   if (resolution) {
@@ -345,6 +351,10 @@ export function prepareTauriConfig(
   // overwrite tauri.macos.conf.json and silently discard the .icon source.
   delete config.bundle.icon;
   configureWindowsSigning(config);
+  if (miniappShell) {
+    config.bundle.externalBin = [...(config.bundle.externalBin || []),
+      toTauriPath(relative(desktopDir, miniappShell.sidecarBase))];
+  }
   injectTargetFlashgrepResource(config, desktopDir, flashgrepBinary);
   // The DeepSeek bridge is not a compile-time resource: cargo check and
   // desktop:dev must not require packages/dsh-acp/dist-profile. Official

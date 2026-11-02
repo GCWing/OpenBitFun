@@ -8,6 +8,7 @@ import { useThinkingAnnotation } from './useThinkingAnnotation';
 import type { ThinkingContinuationResolver } from './useThinkingAnnotation';
 import { useThinkingHandoff } from './useThinkingHandoff';
 import { useThinkingSuccessor } from './useThinkingSuccessor';
+import { inertProps } from '../../internal/inert';
 import './ConversationBlocks.css';
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
@@ -145,7 +146,7 @@ export const ThinkingBlock = forwardRef<HTMLDivElement, ThinkingBlockProps>(func
         </label>
       </div>
     </div>
-    <div id={contentId} aria-hidden={!expanded} {...{ inert: !expanded ? '' : undefined }}
+    <div id={contentId} aria-hidden={!expanded} {...inertProps(!expanded)}
       ref={expandContainerRef}
       className={`thinking-expand-container${expanded ? ' thinking-expand-container--open' : ''}`}
       data-openbitfun-component="model-thinking-display" data-openbitfun-part="expandContainer">
@@ -153,7 +154,7 @@ export const ThinkingBlock = forwardRef<HTMLDivElement, ThinkingBlockProps>(func
         data-openbitfun-component="model-thinking-display" data-openbitfun-part="contentWrapper">
         <div {...contentProps} ref={contentRef} data-openbitfun-component="model-thinking-display"
           data-openbitfun-part="content" data-testid="chat-thinking-content" data-status={status}
-          aria-hidden={compactViewport || undefined} {...{ inert: compactViewport ? '' : undefined }}
+          aria-hidden={compactViewport || undefined} {...inertProps(Boolean(compactViewport))}
           data-streaming={streaming ? 'true' : 'false'} className={`thinking-content expanded ${contentProps?.className ?? ''}`.trim()}>
           <div className="thinking-content-body">{children}</div>
         </div>

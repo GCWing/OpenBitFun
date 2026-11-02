@@ -42,6 +42,10 @@ src/crates/contracts/product-domains/src/generated/remote-surface-registry.json 
 # uploaded assets, so their newlines must survive every checkout unchanged.
 scripts/fixtures/legacy-update-feeds/*.json text eol=lf
 
+# Native icon export provenance hashes the exact source bytes on every platform.
+assets/brand/macos/openbitfun.icon/icon.json text eol=lf
+assets/brand/macos/legacy-canvas.json text eol=lf
+
 # models.dev provenance hashes exact redistributed bytes. Keep these assets
 # stable across checkout platforms so the offline release check is reproducible.
 src/crates/services/services-integrations/assets/models-dev.json text eol=lf

@@ -31,10 +31,10 @@ export function RemoteNetworkConnections({
   onDisconnect,
 }: RemoteNetworkConnectionsProps) {
   const { t, formatNumber } = useI18n('common');
-  const connection = selectRemoteNetworkConnection(status, invitation);
+  const connection = selectRemoteNetworkConnection(status, invitation, method);
   const connected = connection.connected && connection.method === method
     && connection.relayUrl === normalizeRelayUrl(relayUrl);
-  const clients = connected ? status?.clients ?? [] : [];
+  const clients = connected ? connection.clients : [];
   const count = clients.length;
 
   return <div className="openbitfun-remote-connect__body">

@@ -5,6 +5,7 @@ export const filesPanelAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   parts: [
     { id: 'root' },
     { id: 'content' },
+    { id: 'watchNotice' },
     { id: 'search' },
     { id: 'searchToolbar' },
     { id: 'main' },

@@ -64,6 +64,8 @@ pub struct ListPersistedSessionsPageRequest {
     #[serde(default, alias = "sessionIds")]
     pub session_ids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<openbitfun_services_core::session::page::SessionCatalogQuery>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
@@ -231,6 +233,10 @@ pub struct GetSessionUsageReportRequest {
     pub remote_ssh_host: Option<String>,
     #[serde(default = "default_include_hidden_subagents")]
     pub include_hidden_subagents: bool,
+    #[serde(default)]
+    pub include_system_prompt_preview: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_preview_category: Option<openbitfun_core_types::UsageContextCategory>,
 }
 
 fn default_include_hidden_subagents() -> bool {
@@ -458,6 +464,7 @@ pub async fn list_persisted_sessions_page(
             request.cursor.as_deref(),
             request.limit,
             request.session_ids.as_deref(),
+            request.query.as_ref(),
         )
         .await
         .map_err(|error| {
@@ -550,6 +557,8 @@ pub async fn get_session_usage_report(
             ),
             request.session_id,
             request.include_hidden_subagents,
+            request.include_system_prompt_preview,
+            request.context_preview_category,
         )
         .await
         .map_err(|error| {
@@ -909,4 +918,25 @@ pub async fn delete_all_archived_sessions(
     }
 
     Ok(deleted_count)
+}
+
+#[cfg(test)]
+mod catalog_request_tests {
+    use super::ListPersistedSessionsPageRequest;
+
+    #[test]
+    fn session_catalog_request_preserves_legacy_payload_and_optional_query() {
+        let legacy = serde_json::json!({"workspace_id": "main", "workspace_path": "", "limit": 5, "session_ids": null});
+        let request: ListPersistedSessionsPageRequest =
+            serde_json::from_value(legacy.clone()).unwrap();
+        assert!(request.query.is_none());
+        assert_eq!(serde_json::to_value(request).unwrap(), legacy);
+        let mut current = legacy;
+        current["query"] =
+            serde_json::json!({"workspaceId": "main", "ordering": "updated", "source": "codex"});
+        let request: ListPersistedSessionsPageRequest =
+            serde_json::from_value(current.clone()).unwrap();
+        assert_eq!(request.query.as_ref().unwrap().workspace_id, "main");
+        assert_eq!(serde_json::to_value(request).unwrap(), current);
+    }
 }

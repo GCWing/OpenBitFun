@@ -26,7 +26,7 @@ concurrency:
 jobs:
   # ── Resolve version info (mirrors desktop-package.yml) ─────────────
   prepare:
-    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'data-migrator-v')
+    if: github.event_name != 'release' || (!startsWith(github.event.release.tag_name, 'data-tools-v') && !startsWith(github.event.release.tag_name, 'data-migrator-v'))
     name: Prepare
     runs-on: ubuntu-latest
     outputs:

@@ -91,10 +91,10 @@ export function OverviewPage({ onNavigate, colorScheme, contrast, density, token
   const previewSessions: readonly PreviewSessionRow[] = [
     { id: "claw", icon: "user", name: "Claw" },
     { id: "claw-session", indent: true, name: "New Claw Session" },
-    { id: "bitfun", icon: "folder", name: "BitFun" },
-    { id: "bitfun-session", indent: true, name: "New Code Session" },
-    { id: "bitfun-welcome", indent: true, name: t("design.homePreview.welcome"), selected: true },
-    { id: "bitfun-more", name: t("design.homePreview.showMore"), metadata: <NumberBadge value="+14" /> },
+    { id: "openbitfun", icon: "folder", name: "OpenBitFun" },
+    { id: "openbitfun-session", indent: true, name: "New Code Session" },
+    { id: "openbitfun-welcome", indent: true, name: t("design.homePreview.welcome"), selected: true },
+    { id: "openbitfun-more", name: t("design.homePreview.showMore"), metadata: <NumberBadge value="+14" /> },
     { id: "root", icon: "session", name: "root", metadata: <StatusPill emphasis tone="success">38.47.103.247</StatusPill> },
     { id: "root-session", indent: true, name: "New Code Session" },
     { id: "root-relay", indent: true, name: "relay-server account" },
@@ -184,7 +184,7 @@ export function OverviewPage({ onNavigate, colorScheme, contrast, density, token
                             {t("design.homePreview.contextMachine")}
                           </Button>
                           <ComposerDivider />
-                          <Button size="xs" tabIndex={-1} trailingIcon={<Icon name="chevron-down" />} variant="text">BitFun</Button>
+                          <Button size="xs" tabIndex={-1} trailingIcon={<Icon name="chevron-down" />} variant="text">OpenBitFun</Button>
                           <ComposerDivider />
                           <span className="design-home-preview-context">1.0.0-explore</span>
                           <ComposerDivider />

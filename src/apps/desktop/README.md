@@ -3,6 +3,354 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Model selection and smart routing
+
+**Release availability:** smart mode is not available in this release. The GUI
+keeps its entry disabled, and the shared runtime rejects activation, including
+from older clients. Saved smart-mode configuration and history are retained;
+ordinary conversation execution does not invoke the Router or its summaries.
+Configuration files and legacy Router environment variables cannot enable it.
+The implementation details below document the retained experimental path.
+
+Smart mode chooses between the primary model and an independently configured
+economy model for each main conversation step. Switching smart mode on or off
+changes the current conversation or draft, without changing the strategy default
+for future conversations. There is no remember-selection or scope control.
+Before a conversation or draft exists, the host strategy default owns the
+selection. Manual model and pool choices retain their existing session and
+future-default saving rules. Primary/economy role bindings remain shared model
+configuration.
+
+Subagents keep their independent explicit model or pool selection, agent/default
+settings, inheritance and Fork rules. Ordinary fresh subagents retain the fast
+model fallback; enabling smart mode does not replace it with the primary or economy
+model. Existing subagents retain their own binding when resumed. They do not
+participate in Router classification or Router summaries. The legacy
+`ai.model_routing.subagent_model` field remains readable for compatibility but
+does not control subagent selection, and the GUI exposes no smart-subagent setting.
+Choices made in a new conversation draft are applied on its execution host
+before the first message is sent.
+
+In **Settings → AI → Models**, add the Router as an API-key model, then open
+**Router service** to select it. No tokenizer file or remote tokenization endpoint
+is required. OpenBitFun estimates the input locally and uses the service's full
+prompt usage to tighten the budget independently for each execution.
+The Router must support the classifier protocol
+described in [the deployment guide](../../../deploy/model-router/README.md).
+Configure the primary and economy models, then save and test the connections
+before enabling smart mode in the composer. The dialog shows independent
+connection results for the primary model, economy model and Router service;
+the Router check also validates the classifier protocol. Saving configuration
+alone does not prove connectivity. Router
+request failures fall back to the primary model; each response records its
+actual model and fallback status. Smart mode automatically maintains Router
+context summaries with the economy model before input fills the budget. If the
+complete context still fits, pending or failed summaries do not interrupt routing;
+otherwise the current round uses the primary model until complete context is available.
+When an older conversation first enters smart mode, the execution host reads its
+visible persisted turns incrementally and builds a separate Router summary. Each
+accepted chunk saves its source cursor, so interrupted preparation resumes rather
+than losing the prefix. Preparation can continue between turns; the next routing
+boundary adopts the completed history together with new observations. Summary
+requests use the economy model's own lowest supported effort, independently of
+its chat default, and are bounded by that model's input window.
+Billing hints do not establish actual charges.
+
+Older execution hosts without `estimatedTokenBudgetSupported` can continue saving
+Router settings when a tokenizer path is already configured; the GUI preserves
+that path. Without an existing path, the GUI asks you to upgrade the execution
+host and blocks saving those settings. Upgrading only the controller does not
+add this capability to the host.
+
+Persisted conversations carry their independent Router summary into the next
+smart turn. Recovery validates the visible conversation history; reverting or
+forking never imports an abandoned or another conversation's summary. Legacy
+checkpoints without history proof or following a manual turn rebuild from the
+execution host's visible original turn records instead of the main context
+compression summary.
+
+The execution host bounds Router requests per service (two running and up to
+32 waiting by default). Root conversation groups take turns receiving capacity,
+with FIFO ordering within each group; one group can have at most eight
+waiting requests at the default limits. Idle slots can be borrowed. Queue time
+counts toward the routing timeout. Cancellation removes the waiter; overload
+and timeout retain the primary-model fallback. Optional
+background summaries use a separate fair queue, merge pending observations per
+conversation, and do not block model selection. These queues serve eligible main
+conversations; subagents and model-pool conversations do not enter the Router.
+Traces retain root, parent, session, turn and round IDs for isolation.
+A route that would discard images readable by the primary model falls back to
+primary; retries retain the model chosen for that logical round. Host startup
+overrides and persistence details are in the deployment guide linked above.
+
+Peer Device Mode applies configuration on the execution host and requires a host
+advertising smart-routing support. SSH/Docker workspaces also use their owning
+OpenBitFun runtime's Router configuration, not configuration or local files on the
+controller. Mobile and bot model editors explicitly reject changes to smart
+sessions; use the GUI to change the strategy. External agents and approved
+immutable dispatch jobs retain their existing model bindings.
+Local fixture tests do not establish live remote execution or classifier quality.
+Before production evaluation, compare fixed-primary and routed main conversations for
+completion quality, total latency, model/cache usage and auxiliary request cost.
+
+## Remote Connect
+
+Sign in once with the shared GitHub account. The official Relay and **Same
+network** (the embedded LAN Relay) can run at the same time. Each tab shows its
+own connection and connected browsers; **Disconnect** affects that tab only.
+Closing a connection code keeps an established connection running.
+
+**My devices**, Peer Device Mode, account synchronization and detached dispatch
+use the official Relay. Starting or stopping the LAN Relay does not switch their
+account or endpoint. LAN invitations advertise the selected network interface;
+select it again and create a new invitation after changing networks.
+
+The official device session is restored on restart. The embedded LAN connection
+is temporary and starts when requested. Builds that previously saved a temporary
+LAN session in the account slot attempt to restore the official Relay from the
+shared identity; failed sign-in leaves the previous credential on disk. Signing
+out closes both connections.
+
+## Global agent instructions
+
+Put personal instructions for local OpenBitFun sessions in
+`~/.openbitfun/AGENTS.md` (`%USERPROFILE%\.openbitfun\AGENTS.md` on Windows).
+If `OPENBITFUN_HOME` is set, the file is read from that directory instead.
+A non-empty file replaces Codex's global instructions, including
+`AGENTS.override.md`. If the OpenBitFun file is missing, empty, or whitespace-only,
+OpenBitFun keeps loading Codex's global instructions as before. OpenCode,
+Claude Code, and project instruction files continue to load independently.
+
+After editing the file, run `/reload instructions` in the session. The next
+message rebuilds its instruction context. Remote SSH/Docker workspaces use
+their workspace instruction files and do not load the controller's global files.
+
+## Project agent instructions
+
+OpenBitFun selects one instruction family at the workspace root, in this order:
+
+1. AGENTS: the first non-empty file among `AGENTS.override.md` and `AGENTS.md`.
+2. Claude: the first non-empty file among `CLAUDE.md` and `.claude/CLAUDE.md`,
+   followed by `CLAUDE.local.md` and `.claude/rules/**/*.md`.
+3. OpenCode: local instruction files referenced by the project OpenCode configs.
+
+Missing, empty, and whitespace-only files do not block a fallback. Once a
+family supplies instructions, lower-priority families are skipped. A Claude
+family containing only local notes or path-scoped rules still counts as selected.
+Path-scoped rules load only after a matching file is read, and only when the
+Claude family is selected. Use `/reload instructions` after changing the files
+to rebuild startup context on the next message.
+
+## Independent MiniApps
+
+MiniApps use a customizable titlebar in independent windows, with native macOS
+traffic lights and the main application's right-hand Windows caption controls.
+The return icon brings the app back to OpenBitFun. Inside OpenBitFun, MiniApp actions live on
+the main top bar, alongside an icon to open an independent window. System app
+installation actions are available from **More app actions**. Customization uses
+the Creative mode icon; the default action group has no reload icon.
+
+Each app can customize `chrome.titlebar` in its `meta.json`: title and icon
+visibility, alignment, density, app button shape, semantic colors,
+and app action buttons. Draft previews include the same titlebar renderer used by
+the native shell. The titlebar logo is hidden by default; set `showIcon: true` to
+display it. The settings travel with imports, marketplace packages, saved
+versions and rollbacks. App actions emit `chrome:action` in the current view;
+minimize, maximize, drag, resize, close and return remain host operations.
+System button placement and appearance follow the host platform. Legacy
+`controlsPosition` values are preserved but do not move system controls. macOS
+keeps the main window's toolbar height and native control inset for both densities;
+draft previews reserve that space without drawing imitation traffic lights.
+Missing configuration uses the default custom titlebar. Existing exported apps
+need **Update system app** and a restart to use the new Shell. Older hosts and
+Shells remain compatible; custom chrome support is advertised as
+`miniapp_custom_chrome_v1` without changing the v1 launch-record format.
+
+Installed MiniApp cards offer **Open in app** and **Open in a window** before
+launch, including when an update is available. Running state appears on the
+same card. Selecting the current destination focuses it; selecting the other
+destination transfers it after confirmation. App details provide **Stop** and
+**Add system app** without requiring a launch first. A tab also provides **Open in
+a window** and **Add system app**. Every generated icon carries the OpenBitFun
+mark in its bottom-right corner. System launchers are placed in the user's
+Applications folder on macOS, Start Menu on Windows, and application menu on Linux.
+System app names show the app title without internal IDs. Once added, app details
+and the tab header offer **Update system app** and **Uninstall system app**.
+Updating refreshes older numbered or oversized launchers. Uninstalling removes
+only owned system entries, retaining the MiniApp, saved data and running tasks;
+it can be added again later. Removing an entry through the OS is also detected
+when app details are reopened.
+
+The system launcher can start OpenBitFun in the background. Closing the last tab
+or independent window stops that MiniApp's Worker, Agent runs and streams.
+During a window/tab transfer, a prepared destination keeps the instance alive;
+late close notifications from the source do not stop it. **Stop** ends an instance
+even while a presentation is open. A crashed shell is cleaned up after its lease
+expires. Refreshing, hiding a window or switching device surfaces is not a close.
+An explicit quit of OpenBitFun ends its host runtime. Window/tab switching reopens
+the document and retains saved data; save unsaved page state before confirming.
+The source closes only after the destination is ready. One installed app is bound
+to one workspace per host until its instance is stopped.
+
+Each native window uses a separately built **MiniApp Shell**, which contains only
+the window, local system adapters and private IPC. Agent execution, storage,
+tasks and instance management stay in the shared OpenBitFun host. macOS exports
+copy this small executable plus the icon and app identity; Windows/Linux entries
+point to the installed shell. The full Desktop program is never copied into an
+export. Updating an older system app upgrades its executable while retaining
+its launch identity and saved data.
+
+On macOS, Dock icons come from each MiniApp bundle's own ICNS. Independent
+windows and system installations use the same catalog glyph and fixed brand
+watermark, with a rounded body and transparent canvas inset. The shell always
+uses bundled resources, including beside a development host, so Tauri cannot
+replace the Dock icon with the OpenBitFun development icon. After upgrading an
+older exported app, choose **Update system app**, then quit and reopen that
+MiniApp to load the new executable and icon.
+
+The normal development and packaging commands prepare the optimized shell
+automatically. After changing shell Rust/HTML during an existing development
+session, run `pnpm run prepare:miniapp-shell` before reopening the MiniApp.
+Direct Cargo Desktop builds need the same preparation once. Packaging uses
+Tauri's `externalBin` for platform placement and signing; raw builds require the
+adjacent `openbitfun-miniapp-shell` executable (`.exe` on Windows).
+
+An independent window displays its own Agent permission requests through the
+shared runtime mailbox. Legacy MiniApps that call `agent.cancelStaleRuns` on every
+reload must use explicit per-turn cancellation instead in managed instances;
+automatic reload cleanup is rejected to preserve running work during transfers.
+The independent shell uses the configured light/dark mode at launch; its native
+chrome does not yet mirror live theme customizations from the main window.
+
+Independent windows have an app-specific **Hi** chat panel, enabled when the app
+claims the composer through `app.chat.claimComposer()`. The app can supply its
+title, welcome text and suggestions; messages continue through its existing
+`chat:userMessage` handler and Agent session. The panel follows only the app's
+bound topic and supports streaming replies, per-turn Stop and approval hints.
+Its launcher, floating panel, message typography/bubbles and composer compile
+the same style sources used by the main window's Hi and FlowChat. This shares
+appearance without adding React or the main window's runtime to the Shell.
+Collapsing or releasing chat does not stop accepted work. After a MiniApp closes
+or transfers to an independent window, the main window's Hi collapses when only
+its pinned control conversation remains (or no tabs remain). Other conversation
+tabs keep it expanded; topic switches and reloads do not trigger this cleanup.
+Compatible hosts advertise
+`miniapp_chat_snapshot_v1` to restore the latest 16 turns plus current execution
+after a reload or event gap; older hosts keep live chat and display the history
+limitation. Existing system apps need **Update system app** and a restart to
+load the new Shell chat assets.
+
+Independent presentation is unavailable for remote workspaces, Peer Device Mode,
+mobile/bot control, and detached CLI jobs. These entry points do not silently
+launch a local copy. App content control is reserved but not yet advertised.
+
+## OpenCode model services
+
+In **Settings → Models**, add **OpenCode Zen** for free models or pay-as-you-go
+access, or **OpenCode Go** with your Go API key. Zen uses the public key when
+the API key field is empty; paid models require your own key. Fetch the model
+list to select each model's Chat Completions, Responses, or Messages route.
+
+Free-model requests include OpenCode gateway headers and map the session's Bash
+and Read tools to the gateway's lowercase names. If the model requests a tool
+that the session does not provide, the request ends with an explicit error.
+The public free-model route uses matching session headers and excludes the old
+request header. This compatibility applies to the public Zen API-key connection;
+it does not reroute Console OAuth credentials. To use a free model on this path,
+choose OpenCode Zen with API-key authentication and leave the key empty (or use
+the literal `public`).
+Console OAuth remains a separate Zen authentication option; existing account
+credentials and saved model configurations are retained.
+
+## ZCode subscriptions
+
+In **Settings → Models → Subscription accounts**, sign in to **ZCode**. ZCode
+asks you to choose **Z.ai** or **BigModel** when you start sign-in. Connected
+regional accounts stay visible separately under ZCode so each can be imported or
+signed out. Finish sign-in in the browser, return to OpenBitFun, choose **Use as
+model**, then select models from the live catalog. Authorization runs on the model
+host; the verification page can be opened on another device. Credentials are kept
+in OpenBitFun's vault.
+
+ZCode browser sign-in reuses or creates the selected project's `zcode-api-key`
+(a team's `zcode-team-api-key`) and uses the Coding Plan Messages endpoint.
+Personal subscriptions and assigned team seats are supported. ZCode Start/gift
+plans are separate routes and are not imported by this channel. A missing plan
+or unavailable catalog returns an error instead of selecting another plan.
+
+The real authorization-init endpoints were exercised on 2026-10-19. Completing
+sign-in and model inference require the user's account; initialization alone
+does not verify subscription eligibility or model availability.
+
+WorkBuddy (China) and WorkBuddy AI (international) subscriptions were removed
+after the vendor stopped supporting subscription access through OpenBitFun.
+Existing model configurations and vault credentials are preserved: a model still
+pointing at either product shows a removed-provider notice instead of a sign-in
+or import action, and the account stays listed only while this host holds its
+state so it can still be signed out and cleaned up. Recreate those models as an
+API-key provider to keep using them, and do not reintroduce the retired
+request/authorization protocol.
+
+## Subscription allowance
+
+Subscription accounts are grouped by service. Each account has its own identity,
+status, allowance and actions; identical email addresses retain distinct account
+markers. **Add account** starts a new slot on hosts that advertise support.
+Refreshing, importing and signing out target that exact slot; sign-out confirmation
+lists only models and pools which reference it. ZCode keeps one service heading
+with Z.ai/BigModel labels on its account rows.
+
+Connected accounts show allowance in **Settings → Models → Subscription accounts**
+and beside selected accounts in the model editor. Codex shows its reported rate
+windows and additional model limits. ZCode (Z.ai and BigModel) shows its reported
+Coding Plan windows, with MCP calls shown separately. Totals, reset times and plan
+expiry appear only when the provider reports them. Other channels explicitly show
+that allowance lookup is unsupported.
+
+OpenBitFun reads allowance from the account's host, supports manual refresh, and
+refreshes visible active panels once per minute. A failed refresh retains the last
+observation with a stale indicator. Unknown amounts stay unknown; zero and
+unlimited are distinct. These ZCode observations are informational and do not
+change model routing. Older peers without the quota capability show an
+unsupported-host state.
+
+Grok OAuth accounts show the reported billing period and optional on-demand
+usage in the existing subscription account panel. Reads use the selected account,
+including its CLI headers. Peers require `grok_quota_v1`; older account-quota
+support does not imply Grok billing support. These observations are display-only.
+
+OpenCode Go API-key models show 5-hour, weekly and monthly usage in their connection
+editor after the connection is saved. Keys stay on the configuration's host, and
+older peers require the separate `subscription_model_quota_v1` capability before
+receiving model-scoped requests. Invalid keys and keys without Go entitlement show
+distinct messages. Idle windows do not show placeholder reset dates. This endpoint
+does not report monetary balances. Zen/Console balance lookup is unavailable while
+[the upstream balance API request](https://github.com/anomalyco/opencode/issues/10448)
+remains open; use **Open console**. Public free-model access explicitly states that
+remaining free usage and reset times are not exposed. Console OAuth is never sent
+to Go's API-key billing endpoint. Local HTTP/DOM fixtures cover these paths; live account
+billing and physical remote hosts have not been verified.
+
+## Subscription routing status
+
+The Models settings frontend was restored to upstream/main on 2026-10-16.
+That rollback withdrew the earlier account cards, quota panels, account/channel
+editors, enhanced usage displays, chat diagnostics and account-aware frontend
+API/Peer wiring. The current subscription sign-in and allowance panels are
+described above.
+Existing account credentials and configurations are retained; this UI rollback
+does not enable, disable or clear account pools.
+
+The native backend still supports provider-scoped account slots, credential
+isolation and explicit account/channel failover. See the
+[architecture and current limitations](../../../docs/architecture/subscription-account-routing-design.md).
+Earlier full Desktop mock results refer to the withdrawn UI version and do not
+prove integration of these controls in the current Models page. Real providers
+and physical remote hosts remain unverified.
+
+The backend retains account/channel usage attribution; the frontend has its
+original statistics display.
+
 ## Session storage directories
 
 The workspace and session action menus include **Open session storage directory**.
@@ -55,6 +403,33 @@ on Return, combine text with `focus` and a Return key step, then inspect the
 results before selecting one. Focus-and-type by itself is already one call;
 batching cannot repair an unavailable input route.
 
+ComputerUse also reads and writes plain text on the **runtime host's clipboard**:
+
+```json
+{"action":"clipboard_set","text":"Text to copy\nincluding another line"}
+{"action":"clipboard_get","max_output_bytes":65536}
+```
+
+These actions work on Windows, macOS and Linux without activating an application.
+They do not paste or submit text. `clipboard_set` replaces the clipboard; an empty
+string clears its text. Unicode and line endings are preserved. Text containing
+NUL or exceeding 16 MiB is rejected. `clipboard_get` returns `text`, the original
+`byte_length`, and `truncated`; its output limit defaults to 64 KiB and caps at
+1 MiB, ending on a UTF-8 boundary. The older `max_bytes` name remains accepted.
+
+Windows uses the built-in Windows PowerShell and Windows Forms clipboard APIs;
+macOS uses AppKit through the built-in JavaScript bridge. On Linux, install
+`wl-clipboard` for Wayland, or `xclip`/`xsel` for X11, and run OpenBitFun in that
+desktop session. Wayland does not silently fall back to an XWayland clipboard.
+Helpers have a ten-second deadline. A failed write may already have changed the
+clipboard; inspect it before retrying. Image/file clipboard formats are not
+exposed by these text actions.
+
+Clipboard access obeys the ComputerUse session and Stop. Window-only sharing
+does not grant access to the global clipboard. SSH workspaces and headless hosts
+reject these actions; a remote controller uses the executing desktop host's
+clipboard, never its own local clipboard as a fallback.
+
 On macOS, persistent ScreenCaptureKit window sharing uses the system's sharing
 controls. macOS 12.3 or newer is required for capture; system indicator appearance
 depends on the OS version. Hidden or minimized targets must be restored before
@@ -66,6 +441,17 @@ image coordinates, or the bound window’s existing focused native edit control.
 Unsupported providers return a capability error. These Windows paths have
 cross-compilation coverage; interactive Windows acceptance is still pending. Windows does not
 have the macOS Sharing menu.
+
+Windows accessibility requests return after ten seconds if the application's
+provider stops responding. Stop remains available and prevents input that has
+not yet been submitted. An `INPUT_OUTCOME_UNKNOWN` error means the application
+may still complete the input: wait for it to recover, then observe before taking
+another action. OpenBitFun does not automatically repeat the click or text. While
+that native call is still running, new accessibility requests return
+`AX_PROVIDER_BUSY`; a provider that never returns requires the target to recover
+or OpenBitFun to restart. A missing preview only means no valid image is available
+(including observations requested without images); it does not mean that the
+control status is unavailable.
 
 See the [cross-platform control contract](../../../docs/architecture/computer-use-control.md)
 for platform limits, lifecycle guarantees, and native verification scenarios.
@@ -236,8 +622,8 @@ the restarting desktop are interrupted.
 
 ## Windows WSL workspaces
 
-In the remote connection dialog, choose **Workspace target → Windows WSL**.
-Select an installed Linux distribution, optionally enter a Linux user, then
+Choose **Work location → This computer**, then **Work environment → WSL**.
+Select an installed Linux distribution, optionally enter a Linux user under **Advanced settings**, then
 connect and choose a folder inside that distribution. **Refresh distributions**
 reloads the list after you install another distribution. No SSH server or SSH
 credentials are needed. WSL must already be installed and the distribution must
@@ -283,10 +669,27 @@ main Git checkout's target cache. If absent, curl downloads the version-specific
 archive, supporting HTTP and SOCKS proxies; Cargo handles extraction and linking.
 Explicit `SHERPA_ONNX_LIB_DIR` and `SHERPA_ONNX_ARCHIVE_DIR` overrides are preserved.
 
-When another worktree uses the default ports, start a separate dev server:
+Development shares the installed app's existing settings, workspaces and sessions
+by default. Both launchers keep a separate development host channel and retain
+the existing session writer and scheduler leases:
 
 ```sh
-OPENBITFUN_DEV_PORT=1432 pnpm run desktop:dev
+pnpm run desktop:dev
+pnpm run desktop:preview:debug
+```
+
+Use `--isolated-data` for separate development data under the current checkout's
+`.openbitfun/desktop-dev/{user,home}` directories. Existing isolated data stays in
+place and remains accessible with this flag; switching modes does not move or
+delete sessions. Explicit storage environment overrides remain authoritative,
+and `--shared-data` is still accepted as an explicit alias for the default.
+
+To run an independent instance in another worktree, isolate its data and choose
+different ports. Changing ports alone does not separate the development host
+that owns the shared product data:
+
+```sh
+OPENBITFUN_DEV_PORT=1432 pnpm run desktop:dev -- --isolated-data
 ```
 
 HMR uses port 1431 in this example; `OPENBITFUN_DEV_HMR_PORT` can override it.
@@ -377,6 +780,39 @@ project installation remains unsupported; choose user scope to install on the
 serving host. Mobile/bot controls, CLI peers and Detached Dispatch do not gain a
 marketplace configuration or installation entry point.
 
+## Files sent through WeChat
+
+Send an ordinary file or a native video in the paired WeChat chat to make it available to the
+selected Agent session. OpenBitFun downloads and decrypts the file, saves it in
+a unique `.openbitfun-inbound-<id>` directory inside that session's workspace,
+and supplies its path to the Agent. Existing files are not overwritten. File
+contents stay out of the message text; the Agent can read the saved file using
+its tools. Files remain available for later turns and can be removed manually
+when no longer needed. On POSIX filesystems, directories use `0700` and files
+use `0600` permissions.
+
+A message accepts up to five files totaling 30 MiB. Missing download information,
+failed downloads, and unavailable workspaces produce an explicit error instead
+of submitting an empty message. Complete pending menu selections or approvals
+before sending a file.
+
+SSH workspaces use the session's remote filesystem and never fall back to the
+host's local filesystem. Cross-device bot sessions negotiate `session_attachments_v1`,
+transfer the bytes through encrypted device RPC, and use the path returned by the
+execution host. Upgrade an older target host when prompted; file input is never
+silently omitted. Accepted writes finish on the target even if the controller
+disconnects. Retries with the same attachment identity reuse identical saved bytes
+and reject changed or incomplete content. This input path does not submit
+attachments to Detached Dispatch jobs.
+
+Messages from one WeChat peer finish attachment preparation and turn admission in
+receive order. Model replies run independently, so approvals and follow-up input
+remain available. Failed image downloads also reject the message with a visible
+error instead of silently submitting empty or partial media input. Native videos
+are delivered as unchanged `.mp4` files through the same local/remote path;
+video analysis depends on the Agent's available tools. Voice messages without
+transcripts currently return an unsupported notice.
+
 ## WeChat session result notifications
 
 While the WeChat bot is running, completed turns in its currently selected local
@@ -407,3 +843,181 @@ account device, the existing reply includes an explicit notice that proactive
 scheduled-job and desktop-result notifications are unavailable there. Ordinary
 WeChat-initiated requests keep their existing cross-device reply path. This feature
 does not add cross-host Peer Device or Detached Dispatch result delivery.
+
+## Image input limits
+
+For a vision model that accepts only a limited number of images, set **Images
+per request** in its model settings (for example, `3`). Leave it empty to
+keep the existing image-history behavior. The saved model field is
+`max_images_per_request`; it limits input images, including user attachments,
+retained history, and tool results, rather than generated images.
+
+User submissions above the configured limit are rejected before entering the
+conversation. Pools and channel routes use the smallest configured limit among
+their enabled vision models when admitting new attachments, so fallback models
+can accept the same batch. Each model request keeps the newest image-bearing
+messages within that limit and includes an omission notice for pixels left out. The Agent can
+read omitted files again in smaller batches; the original conversation is retained.
+Plain text continuation also applies the limit, including to old tool-image history.
+Each selected model or fallback channel uses its own limit at the executing host;
+older hosts must be upgraded to enforce this optional setting.
+
+## Model pools
+
+In **Settings → AI models → Model pools**, create named pools from existing model
+configurations. Add/remove members, move them up/down, and choose **Ordered** or
+**Balanced**. In a native chat's model menu, switch to **Battery mode** and
+choose a pool. Its summary shows the pool name, the last accepted concrete member
+and the routing strategy. Click the pool name to choose another pool; manual mode
+continues to list only individual models. Pool requests use
+each member's configured defaults; session reasoning overrides are hidden while
+a pool is selected. A successful explicit model or pool choice is remembered for
+new native chats. Existing chats keep their selection; automatic pool failover
+does not change the preference. Subagent defaults, built-in overrides and fork
+defaults accept a model, a pool, or parent inheritance; a child owns its binding.
+
+Ordered uses the first eligible member when establishing or replacing a binding.
+Balanced rotates new assignments across eligible members. Both preserve a healthy
+chat binding, even when a higher-priority member recovers or the pool is reordered.
+This balances assignments within one Runtime, not tokens, cost, or work across
+independent hosts. Native child agents that inherit the parent choice inherit the
+pool and receive their own assignment; externally approved fixed bindings stay fixed.
+
+Health comes from actual requests, without background quota or balance queries.
+Network failures, throttling, quota exhaustion and unavailable providers cool down;
+authentication, billing and permission failures require attention. After cooldown,
+one live request probes the member. The **Retry** action permits another attempt
+after repairing configuration. Disabled, deleted and incompatible members are
+skipped. Health is shared when multiple pools refer to the same model configuration.
+
+Image requests are checked before submission and again when selecting a member.
+A text-only member remains eligible when it can call `analyze_image`, the Agent
+allows that tool, and a separate enabled image understanding model is configured.
+Otherwise the pool skips it and selects a compatible multimodal member. Images
+in inherited context and later user steering follow the same rule; tool-result
+pixels require native image support. Request incompatibility does not mark a
+member unhealthy or change the pool's shared context budget.
+
+Each member retains ordinary response recovery, up to ten attempts including the
+initial request, with the existing early-stop rules. Before effective output,
+network failures, timeouts, throttling and unavailable providers switch promptly
+when another eligible member is ready. Without an alternative, the same member
+retains ordinary retries. Authentication, permission, billing and quota failures
+can also switch members; invalid requests, content-policy rejections and
+cancellation cannot. Empty or malformed responses and unclassified provider
+failures use member-local recovery first, then may switch without marking that
+member globally unhealthy.
+
+Pool traversal has no shared ten-attempt cap: each failed member is excluded for
+the current recovery traversal, so an eleventh member remains reachable. Retry
+backoff and cooldown use the current member's attempt count. Failover is forbidden
+once any attempt in the logical round has produced effective output, even if a
+later attempt fails before output. Existing same-model stream recovery remains
+available; cross-member recovery never replays output or completed tools.
+Switching updates model-specific prompt/tool configuration and provider replay
+projection. If no compatible member is available, the request
+fails with member states and the earliest known retry time; it never silently
+uses the primary model or another pool. Deleting a pool preserves chat references
+and any default pointer so users can explicitly select a replacement. Pool edits
+run under the main configuration write lock; concurrent edits to the same pool
+use the last saved value without stale-draft conflict detection.
+
+Pool chats and subagents use the smallest resolved context window among valid,
+enabled text members. The compression trigger is the smallest member input budget
+(its context window minus its output allowance and safety reserve), which can
+come from a different member. Offline and cooling-down members still contribute;
+request-specific tool/image filtering does not expand the common budget. Member
+configuration and output limits remain unchanged. Automatic and manual compression
+share this budget, and each model round refreshes it after configuration edits.
+The selector tooltip shows the pool window and compression trigger above the
+current member's details. Limits come from the execution host, including Peer
+Device Mode; the controller never substitutes its own model configuration.
+
+Pool definitions are stored in the main configuration at `ai.model_pools`.
+New pools receive an ID such as `model-pool-a7k2m9`: six random lowercase letters
+or digits after the prefix. The execution host checks for collisions while saving;
+renaming or editing a pool preserves its ID and chat references.
+Typed defaults live in `ai.agent_model_selections` (`mode`, plus
+`subagents.default`, `subagents.builtin` and `subagents.fork`). An absent selections
+section is converted from `ai.agent_model_defaults` during configuration loading
+and persisted atomically. Migration only adds the new field to the existing file;
+startup recovery does not rewrite unrelated source records. Once present, the
+whole typed section is authoritative, including empty builtin overrides. Invalid
+or null selections are retained and fail visibly instead of falling back.
+Imports, whole-config/AI replacements and installer-config repairs perform the
+same migration at their ingestion boundary. Fresh configs and resets initialize
+typed defaults directly. Runtime reads require the new section; ordinary field
+updates and saves do not perform legacy migration.
+Legacy defaults remain readable by older versions but are no longer updated.
+Legacy client write requests are translated into typed updates on the new host.
+Old versions may discard new fields when rewriting the main config; preserving
+new settings across downgrade/write/upgrade is not guaranteed. The unreleased standalone pool file is no longer read.
+
+Runtime health, cursors and bindings remain in `model-pool-runtime.v1.json`;
+session metadata retains selection intent and the last accepted binding. Runtime
+state and pool records do not contain copied API credentials. Pool definitions
+and their containing section have no edit revision fields. Typed operations require the execution
+host's advertised `model_pool_selection_v1` capability.
+
+Desktop supports local and SSH/Docker workspace sessions through the shared Runtime.
+BTW side questions inherit the parent's pool and current binding under both
+routing strategies, preserving cache reuse while that member remains usable.
+The BTW selector can explicitly choose another pool or a fixed model, including
+before the first selected-text question. Peer hosts must advertise
+`btw_model_pool_selection_v1` for these typed initial choices; older hosts retain
+the inherited path without silently replacing a pool with its current member.
+
+Peer Device Mode routes pool operations to capable Desktop/CLI hosts. Standalone
+browser clients, detached dispatch, and ACP/external-agent model selection
+do not expose pool selection in this version. Mobile/IM clients can continue a
+host-owned pool chat, but their legacy model-change operation explicitly refuses
+to replace a pool; use a capable desktop controller to change that selection.
+Defaults are snapshotted when native sessions are created; unrelated auxiliary
+model slots and externally approved immutable model bindings keep their rules.
+
+Validation uses local unit tests, mock HTTP streams, transport capability tests,
+and host compilation. These do not establish live SSH/Docker, relay/mobile/IM,
+Peer Device or detached-dispatch behavior. No interactive UI validation was run.
+
+### Workspace icons
+
+Open **Project resources** and click the large project icon in the header to edit it.
+Choose a built-in Lucide icon for code, learning, design, documents, research, websites,
+mobile apps, games, data, business or tools. The **Life & hobbies** group includes travel, food,
+fitness, music, reading, home, finance, photography, pets, nature, shopping and movies.
+Apply a preset or custom HEX color to any built-in icon.
+The default shape remains a folder for local projects and a server for remote projects.
+Alternatively, upload a PNG/JPEG/WebP (up to 5 MB and
+20 megapixels). The square editor centers light/dark previews below a fixed mode switch. Click
+either preview to open the built-in icon picker; choosing a glyph closes the picker. Custom colors
+also open separately, keeping the editor size stable. Image mode supports centered square
+cropping and zoom independently for each theme. Click the light or dark preview to upload
+its image; the emphasized **Choose image** button always sets the default image, preserving
+any separately selected dark variant. An existing single
+image works in both themes until a separate dark image is set. Uploading a dark image first
+also supplies the light/legacy fallback, which can then be replaced independently.
+To return to the original icon, select **Built-in icons**, choose the
+**Default** glyph and color swatch, and save. Closing the editor cancels its draft.
+
+Icons belong to the workspace catalog on the selected OpenBitFun host. Desktop and CLI
+Peer Hosts support reading/editing them; mobile Remote Control displays them read-only.
+Older peers and the retired standalone Web Server explicitly do not offer editing. SSH/Docker
+projects store this presentation metadata on their catalog host, so an offline execution
+filesystem does not need to be opened. Worktrees inherit their main project's icon. Separate
+hosts opening the same Git repository do not automatically synchronize their catalogs.
+
+Glyph choices are advertised by `supportedGlyphs` in the icon snapshot. Hosts without
+that offer retain color/image editing; glyph writes re-check the offer before submitting.
+Legacy color-only edits preserve the stored glyph. Unknown future glyphs retain their
+saved identity and display the default artwork with an availability hint. Separate theme
+uploads similarly require the `supportsThemedImages` snapshot capability. Older controllers
+keep working with the base image, and their image edits preserve the stored dark variant.
+When one image asset is unavailable, current controllers use the available variant with
+a load warning and keep both saved references intact.
+
+Uploaded images are normalized and stored under the host's user data `workspace-icons/`
+directory; moving/deleting the source image does not change the saved icon. Include that
+directory together with `workspace_data.json` in a full backup. A workspace metadata-only
+export does not embed image bytes; missing assets display the default icon with a load warning
+and preserve the saved reference. Unreferenced assets are retained; resetting an icon does
+not delete another record's shared image. Unknown icon versions remain intact.

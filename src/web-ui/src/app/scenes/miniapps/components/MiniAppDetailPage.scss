@@ -1,0 +1,174 @@
+@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
+
+.miniapp-detail-page {
+  @include configLayout.content-frame;
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-5);
+  padding-block: var(--openbitfun-space-5) var(--openbitfun-space-10);
+  color: var(--openbitfun-color-content-primary);
+  outline: none;
+
+  &__hero {
+    display: grid;
+    gap: var(--openbitfun-space-4);
+  }
+
+  &__icon {
+    display: flex;
+    align-items: center;
+    justify-self: start;
+    overflow: visible;
+  }
+
+  &__identity {
+    display: grid;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2) var(--openbitfun-space-4);
+    min-width: 0;
+  }
+
+  &__title {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--openbitfun-type-heading-page-font-family);
+    font-size: var(--openbitfun-type-heading-page-font-size);
+    font-weight: var(--openbitfun-type-heading-page-font-weight);
+    line-height: var(--openbitfun-type-heading-page-line-height);
+    letter-spacing: var(--openbitfun-type-heading-page-letter-spacing);
+  }
+
+  &__description {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-body-lg-font-family);
+    font-size: var(--openbitfun-type-body-lg-font-size);
+    font-weight: var(--openbitfun-type-body-lg-font-weight);
+    line-height: var(--openbitfun-type-body-lg-line-height);
+    letter-spacing: var(--openbitfun-type-body-lg-letter-spacing);
+  }
+
+  &__actions,
+  &__metadata {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__actions {
+    margin-inline-start: auto;
+    max-inline-size: 100%;
+    justify-content: flex-end;
+  }
+
+  &__metadata {
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-meta-font-family);
+    font-size: var(--openbitfun-type-meta-font-size);
+    font-weight: var(--openbitfun-type-meta-font-weight);
+    line-height: var(--openbitfun-type-meta-line-height);
+    letter-spacing: var(--openbitfun-type-meta-letter-spacing);
+  }
+
+  &__preview {
+    overflow: hidden;
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-layout-card-radius-lg);
+
+    img {
+      display: block;
+      inline-size: 100%;
+      block-size: auto;
+    }
+  }
+
+  &__body {
+    display: grid;
+    gap: var(--openbitfun-space-12);
+    min-width: 0;
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-5);
+    min-width: 0;
+  }
+
+  &__section-title {
+    margin: 0;
+    font-family: var(--openbitfun-type-heading-section-font-family);
+    font-size: var(--openbitfun-type-heading-section-font-size);
+    font-weight: var(--openbitfun-type-heading-section-font-weight);
+    line-height: var(--openbitfun-type-heading-section-line-height);
+    letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+  }
+
+  &__capabilities,
+  &__information {
+    display: grid;
+    gap: var(--openbitfun-space-4);
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  &__capability {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--openbitfun-space-3);
+  }
+
+  &__capability-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 32px;
+    block-size: 32px;
+    color: var(--openbitfun-color-content-muted);
+  }
+
+  &__capability-copy {
+    display: grid;
+    gap: var(--openbitfun-space-1);
+    min-width: 0;
+  }
+
+  &__label {
+    font-family: var(--openbitfun-type-label-md-font-family);
+    font-size: var(--openbitfun-type-label-md-font-size);
+    font-weight: var(--openbitfun-type-label-md-font-weight);
+    line-height: var(--openbitfun-type-label-md-line-height);
+    letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+  }
+
+  &__copy,
+  &__information {
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+  }
+
+  &__information-row {
+    display: grid;
+    grid-template-columns: minmax(96px, 1fr) minmax(0, 3fr);
+    gap: var(--openbitfun-space-4);
+
+    dt { color: var(--openbitfun-color-content-muted); }
+    dd { margin: 0; overflow-wrap: anywhere; }
+  }
+
+}

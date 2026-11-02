@@ -109,3 +109,20 @@ test('elapsed time uses its own metric trigger and separates visible text from d
   assert.match(details, /<dd[^>]*>72%<\/dd>/);
   assert.match(details, /Input tokens only/);
 });
+
+
+test('TTFT has its own accessible capsule and remains visible without rate or usage', () => {
+  const html = renderToStaticMarkup(React.createElement(FlowChatTurnMetrics, {
+    ...props, tokenValue: null, cacheHitRate: null, rateValue: null,
+    ttftValue: 'TTFT 1.25 s', ttftDescription: 'Time to first token: 1.25 seconds',
+  }));
+  assert.match(html, /data-openbitfun-part="ttft"/);
+  assert.match(html, /aria-label="Time to first token: 1.25 seconds"/);
+  assert.match(html, />TTFT 1.25 s<\/span>/);
+  assert.doesNotMatch(html, /data-openbitfun-part="tokens"|data-openbitfun-part="speed"/);
+  const pending = renderToStaticMarkup(React.createElement(FlowChatTurnMetrics, {
+    ...props, ttftValue: 'TTFT 0 s', ttftDescription: 'Time to first token: 0 seconds', focusable: false,
+  }));
+  assert.match(pending, />TTFT 0 s<\/span>/);
+  assert.doesNotMatch(pending, /tabindex="0"/);
+});

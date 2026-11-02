@@ -41,7 +41,9 @@ export default function MessageSendingSettingsSection() {
         retryLabel={t('common.retry')} onRetry={() => void reload()} />
         : behavior === null ? <ConfigLoadingState label={t('messageSending.loading')} />
           : <ConfigPageRow label={t('messageSending.duringTurn')}
-            description={t('messageSending.description')} align="center">
+            description={behavior === 'queue'
+              ? t('messageSending.queueDescription')
+              : t('messageSending.immediateDescription')} align="center">
             <Select size="sm" value={behavior} disabled={saving}
               aria-label={t('messageSending.duringTurn')}
               options={[

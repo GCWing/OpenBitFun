@@ -1,4 +1,4 @@
-import { isRemoteWorkspace, type WorkspaceInfo } from '@/shared/types';
+import type { WorkspaceInfo } from '@/shared/types';
 import type { GitBasicInfoOptions } from '@/tools/git/hooks/useGitState';
 
 export const WORKSPACE_GIT_BASIC_INFO_SOURCE = 'workspace_item_git_basic_info';
@@ -10,13 +10,9 @@ export const WORKSPACE_GIT_PENDING_CANCEL_SOURCES = [
 export const WORKSPACE_GIT_PENDING_CANCEL_REASONS = ['mount', 'visibility'] as const;
 
 export function getWorkspaceGitBasicInfoOptions(
-  workspace: WorkspaceInfo,
+  _workspace: WorkspaceInfo,
   isActive: boolean
 ): GitBasicInfoOptions | undefined {
-  if (isRemoteWorkspace(workspace)) {
-    return undefined;
-  }
-
   return {
     isActive,
     refreshOnMount: isActive,

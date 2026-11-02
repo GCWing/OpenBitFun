@@ -1,3 +1,4 @@
+import { formatDuration } from '@/shared/utils/format';
 import React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -131,8 +132,8 @@ describe('ToolTimeoutIndicator', () => {
     );
 
     expect(html).toContain('duration-text--completed-success');
-    expect(html).toContain('Completed in 1.3s');
-    expect(html).toContain('1.3s');
+    expect(html).toContain(`Completed in ${formatDuration(1250)}`);
+    expect(html).toContain(formatDuration(1250));
     expect(html).not.toContain('<svg');
   });
 
@@ -160,8 +161,8 @@ describe('ToolTimeoutIndicator', () => {
     );
 
     expect(html).toContain('duration-text--completed-error');
-    expect(html).toContain('Failed after 2.4s: provider timed out');
-    expect(html).toContain('2.4s');
+    expect(html).toContain(`Failed after ${formatDuration(2400)}: provider timed out`);
+    expect(html).toContain(formatDuration(2400));
     expect(html).not.toContain('<svg');
   });
 

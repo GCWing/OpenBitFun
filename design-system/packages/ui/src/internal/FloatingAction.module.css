@@ -24,6 +24,15 @@
     transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
+  .action[data-floating-action-group] {
+    inline-size: max-content;
+  }
+
+  .action[data-floating-action-group] > button {
+    flex: 0 0 var(--_floating-action-size);
+    inline-size: var(--_floating-action-size);
+  }
+
   @media (hover: hover) and (pointer: fine) {
     .action {
       pointer-events: none;

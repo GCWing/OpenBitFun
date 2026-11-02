@@ -19,7 +19,7 @@ interface NormalizedTurnCompletionNoticeState {
   hasFinalResponse?: boolean;
 }
 
-const NORMAL_FINISH_REASONS = new Set(['complete', 'user_steering']);
+const NORMAL_FINISH_REASONS = new Set(['complete', 'user_steering', 'background_quiet']);
 
 const TURN_COMPLETION_NOTICE_CONFIG: Record<string, TurnCompletionNoticeConfig> = {
   repeated_tool_failures: {

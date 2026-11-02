@@ -207,6 +207,12 @@ public class RemoteSessionStore internal constructor(
     public val supportsWorkspaceIdReferences: Boolean?
         get() = if (hostCapabilitiesKnown) WorkspaceReferencePolicy.supportsWorkspaceIdReferences(hostCapabilities) else null
 
+    /** The workspace identity used by the current session-list requests. */
+    public val activeWorkspaceIdentity: RemoteWorkspaceIdentity?
+        get() = workspacePath.trim().takeIf(String::isNotEmpty)?.let {
+            RemoteWorkspaceIdentity(it, workspaceConnectionId, workspaceSshHost, workspaceId)
+        }
+
     public fun dispatch(intent: RemoteSessionIntent) {
         val current = _state.value as? RemoteSessionUiState.Ready
         when (intent) {
@@ -463,8 +469,8 @@ public class RemoteSessionStore internal constructor(
     }
 
     /** Persists the directory's merged cross-workspace snapshot for offline restore. */
-    internal fun persistDirectorySessions(sessions: List<RemoteSession>) {
-        savePersistedSessions(sessions, false)
+    internal fun persistDirectorySessions(sessions: List<RemoteSession>, hasMore: Boolean = false) {
+        savePersistedSessions(sessions, hasMore)
     }
 
     private fun loadWorkspaceSessions(path: String, force: Boolean, remoteConnectionId: String?, remoteSshHost: String?, workspaceId: String?) {
@@ -606,7 +612,7 @@ public class RemoteSessionStore internal constructor(
 
     private fun publishAuthorityReady(ready: RemoteSessionUiState.Ready): Long {
         authorityRevision += 1
-        _state.value = ready.copy(revision = authorityRevision)
+        _state.value = ready.copy(revision = authorityRevision, promptSuggestion = currentPromptSuggestion(ready.selectedSessionId))
         return authorityRevision
     }
 
@@ -622,6 +628,8 @@ public class RemoteSessionStore internal constructor(
     private fun isCurrentWork(token: Long): Boolean = token == workGeneration
 
     public fun stop() {
+        sessionRecords = null
+        (_state.value as? RemoteSessionUiState.Ready)?.let { _state.value = it.copy(promptSuggestion = null) }
         catalogSubscription?.cancel(); catalogRefresh?.cancel()
         permissionMailbox.select(null)
         setForeground(false)
@@ -925,6 +933,8 @@ public class RemoteSessionStore internal constructor(
             return
         }
         val current = _state.value as? RemoteSessionUiState.Ready
+        sessionRecords = null
+        if (current != null) _state.value = current.copy(promptSuggestion = null)
         val restoredDraft = loadPersistedDraft(normalized)
         var resumableCursor: ChatSessionCursor? = null
         if (persistenceEnabled) {
@@ -1008,7 +1018,7 @@ public class RemoteSessionStore internal constructor(
                     modelCatalogFailure = modelCatalogFailure ?: current?.modelCatalogFailure,
                     draft = restoredDraft,
                     revision = current?.revision ?: authorityRevision,
-                )
+                ).copy(promptSuggestion = currentPromptSuggestion(normalized))
                 markConnected()
                 refreshModelCatalog()
             } catch (cancelled: CancellationException) {
@@ -1022,6 +1032,10 @@ public class RemoteSessionStore internal constructor(
     }
 
     private var sessionHistoryHasMore = false
+    private var sessionRecords: SessionRecordReplica? = null
+
+    private fun currentPromptSuggestion(sessionId: String?): String? =
+        sessionRecords?.takeIf { it.sessionId == sessionId }?.promptSuggestion()
     private var transcriptWrite: Job? = null
 
     /**
@@ -1073,7 +1087,8 @@ public class RemoteSessionStore internal constructor(
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
         val snapshot = timelineStore.snapshot()
         if (current.selectedSessionId != snapshot.sessionId) return
-        _state.value = current.copy(timeline = snapshot, hasMoreMessages = sessionHistoryHasMore)
+        _state.value = current.copy(timeline = snapshot, hasMoreMessages = sessionHistoryHasMore,
+            promptSuggestion = currentPromptSuggestion(current.selectedSessionId))
         markConnected()
     }
 
@@ -1092,6 +1107,7 @@ public class RemoteSessionStore internal constructor(
                 // fail to parse.
                 if (hostCapabilitiesKnown && REMOTE_CAPABILITY_HOST_STREAM_V1 !in hostCapabilities) throw HostStreamUnsupportedException()
                 var records = SessionRecordReplica(sessionId)
+                sessionRecords = records
                 var caughtUp = false
                 var replayingHistory = false
                 /**
@@ -1139,6 +1155,10 @@ public class RemoteSessionStore internal constructor(
                     check(event["session_id"]?.jsonPrimitive?.content == sessionId) { "Session binding mismatch" }
                     val payload = event["payload"] as? JsonObject ?: error("Missing session event payload")
                     when (event["event"]?.jsonPrimitive?.content) {
+                        "agentic://prompt-suggestion" -> {
+                            records.applyPromptSuggestion(payload)
+                            if (caughtUp && !replayingHistory) publishDurableTimeline()
+                        }
                         "session-record", "agentic://tool-event" -> {
                             if (event["event"]?.jsonPrimitive?.content == "session-record") records.apply(payload) else {
                                 records.applyControl(payload)
@@ -1164,6 +1184,10 @@ public class RemoteSessionStore internal constructor(
                         STREAM_EVENT_GAP -> {
                             replayingHistory = true
                             records = SessionRecordReplica(sessionId)
+                            sessionRecords = records
+                            (_state.value as? RemoteSessionUiState.Ready)?.let {
+                                _state.value = it.copy(promptSuggestion = null)
+                            }
                             timelineStore.reset(sessionId)
                             permissionMailbox.invalidate()
                         }
@@ -1381,6 +1405,7 @@ public class RemoteSessionStore internal constructor(
                 val confirmedSession = RemoteSession(
                     id = sessionId,
                     title = created.title?.takeIf(String::isNotBlank)
+                        ?: intent.title.trim().takeIf(String::isNotBlank)
                         ?: SessionNaming.fallbackTitle(intent.agentType),
                     agentType = intent.agentType,
                     status = "active",
@@ -1665,6 +1690,7 @@ public class RemoteSessionStore internal constructor(
         if (sessionId.isEmpty() || (content.trim().isEmpty() && intent.images.isNullOrEmpty())) return
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
         if (current.busy || current.selectedSessionId != sessionId || _connectionPhase.value != ConnectionPhase.CONNECTED) return
+        sessionRecords?.clearPromptSuggestion()
         val submittedDraftRevision = draftRevision
         val activeTurnId = current.timeline?.activeTurn?.turnId?.takeIf { it.isNotBlank() }
         val steering = plan == null && activeTurnId != null && "dialog_steer_v1" in hostCapabilities
@@ -1692,7 +1718,7 @@ public class RemoteSessionStore internal constructor(
             renderVersion = null,
             turnId = clientTurnId,
             detail = null,
-            timestamp = null,
+            timestamp = Clock.System.now().toString(),
             thinking = null,
             tools = null,
             items = null,
@@ -1702,7 +1728,7 @@ public class RemoteSessionStore internal constructor(
         timelineStore.appendOptimisticMessage(local)
         val pendingActiveId = timelineStore.setPendingActiveTurn(local.id)
         (transport as? RemoteSessionStreamTransport)?.wakeSessionStreams()
-        _state.value = current.copy(busy = true, timeline = timelineStore.snapshot())
+        _state.value = current.copy(busy = true, timeline = timelineStore.snapshot(), promptSuggestion = null)
         val operationToken = beginWork()
         work = scope.launch {
             try {

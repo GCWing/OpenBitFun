@@ -639,6 +639,17 @@ pub struct DialogTurnTokenUsageData {
     )]
     pub output_tokens: Option<u64>,
 
+    /// Provider-reported cache-hit input tokens, when available.
+    ///
+    /// This is optional because providers may omit cache telemetry and older
+    /// persisted turns predate this field.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "cached_tokens"
+    )]
+    pub cached_tokens: Option<u64>,
+
     /// Total tokens reported by the provider for this request.
     #[serde(alias = "total_tokens")]
     pub total_tokens: u64,
@@ -766,6 +777,8 @@ pub struct ModelRoundData {
     pub model_config_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_model_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<openbitfun_events::agentic::ModelRoutingDecision>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -784,6 +797,9 @@ pub struct ModelRoundData {
         alias = "stream_duration_ms"
     )]
     pub stream_duration_ms: Option<u64>,
+    /// Request start to first effective output for the accepted model attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "ttft_ms")]
+    pub ttft_ms: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1142,6 +1158,41 @@ pub struct SessionLastTurn {
 }
 
 impl SessionMetadata {
+    /// Early external-history indexes used the model selector as the native
+    /// session mode. Project only that known imported shape; `primary` is not
+    /// a general alias for custom agents or external runtime bindings.
+    pub fn normalize_legacy_imported_agent_type(&mut self) {
+        if self.agent_type != "primary" || self.session_kind != SessionKind::Standard {
+            return;
+        }
+        let Some(custom) = self.custom_metadata.as_ref() else {
+            return;
+        };
+        if custom
+            .get(openbitfun_core_types::SESSION_PROVIDER_METADATA_KEY)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|provider| !provider.is_empty())
+        {
+            return;
+        }
+        let has_import_identity = |value: &serde_json::Value, ecosystem_key: &str| {
+            matches!(
+                value.get(ecosystem_key).and_then(serde_json::Value::as_str),
+                Some("codex" | "zcode")
+            ) && value
+                .get("sourceSessionId")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| !id.is_empty())
+        };
+        if has_import_identity(custom, "importedFrom")
+            || custom
+                .get("externalBranchOf")
+                .is_some_and(|source| has_import_identity(source, "ecosystemId"))
+        {
+            self.agent_type = "Standard".to_string();
+        }
+    }
+
     /// Translate the retired native selector without changing external agents' IDs.
     pub fn compatible_model_selector<'a>(&self, selector: &'a str) -> &'a str {
         let external_provider = self
@@ -1488,6 +1539,7 @@ mod tests {
             "tokenUsage": {
                 "inputTokens": 1200,
                 "outputTokens": 320,
+                "cachedTokens": 900,
                 "totalTokens": 1520,
                 "timestamp": 2
             },
@@ -1503,10 +1555,45 @@ mod tests {
             .expect("token usage should be preserved");
         assert_eq!(token_usage.input_tokens, 1200);
         assert_eq!(token_usage.output_tokens, Some(320));
+        assert_eq!(token_usage.cached_tokens, Some(900));
         assert_eq!(token_usage.total_tokens, 1520);
 
         let serialized = serde_json::to_value(&turn).expect("turn should serialize");
+        assert_eq!(serialized["tokenUsage"]["cachedTokens"], 900);
         assert_eq!(serialized["tokenUsage"]["totalTokens"], 1520);
+    }
+
+    #[test]
+    fn dialog_turn_token_usage_defaults_missing_cache_tokens_for_legacy_payloads() {
+        let payload = serde_json::json!({
+            "inputTokens": 1200,
+            "outputTokens": 320,
+            "totalTokens": 1520,
+            "timestamp": 2
+        });
+
+        let usage: super::DialogTurnTokenUsageData =
+            serde_json::from_value(payload).expect("legacy token usage should deserialize");
+
+        assert_eq!(usage.cached_tokens, None);
+        let serialized = serde_json::to_value(&usage).expect("legacy usage should serialize");
+        assert!(!serialized.as_object().unwrap().contains_key("cachedTokens"));
+    }
+
+    #[test]
+    fn dialog_turn_token_usage_accepts_legacy_snake_case_cache_tokens() {
+        let payload = serde_json::json!({
+            "input_tokens": 1200,
+            "output_tokens": 320,
+            "cached_tokens": 900,
+            "total_tokens": 1520,
+            "timestamp": 2
+        });
+
+        let usage: super::DialogTurnTokenUsageData =
+            serde_json::from_value(payload).expect("legacy cache telemetry should deserialize");
+
+        assert_eq!(usage.cached_tokens, Some(900));
     }
 
     #[test]
@@ -1698,6 +1785,15 @@ mod tests {
         assert_eq!(legacy_round.duration_ms, None);
         assert_eq!(legacy_round.model_config_id, None);
         assert_eq!(legacy_round.first_chunk_ms, None);
+        assert_eq!(legacy_round.ttft_ms, None);
+        let legacy_encoded = serde_json::to_value(&legacy_round).unwrap();
+        assert!(legacy_encoded.get("ttftMs").is_none());
+        assert_eq!(
+            serde_json::from_value::<ModelRoundData>(legacy_encoded)
+                .unwrap()
+                .ttft_ms,
+            None
+        );
 
         let round_payload = serde_json::json!({
             "id": "round-1",
@@ -1716,6 +1812,7 @@ mod tests {
             "firstChunkMs": 10,
             "firstVisibleOutputMs": 12,
             "streamDurationMs": 90,
+            "ttftMs": 35,
             "attemptCount": 2,
             "failureCategory": "rate_limit",
             "tokenDetails": { "reasoningTokens": 7 },
@@ -1729,6 +1826,7 @@ mod tests {
         assert_eq!(round.model_config_id.as_deref(), Some("model-config-a"));
         assert_eq!(round.effective_model_name.as_deref(), Some("model-a"));
         assert_eq!(round.first_visible_output_ms, Some(12));
+        assert_eq!(round.ttft_ms, Some(35));
         assert_eq!(round.attempt_count, Some(2));
         assert_eq!(round.failure_category.as_deref(), Some("rate_limit"));
 
@@ -1737,6 +1835,16 @@ mod tests {
         assert_eq!(encoded["modelConfigId"], "model-config-a");
         assert_eq!(encoded["effectiveModelName"], "model-a");
         assert_eq!(encoded["firstChunkMs"], 10);
+        assert_eq!(encoded["ttftMs"], 35);
+        let mut snake_case = encoded.clone();
+        snake_case.as_object_mut().unwrap().remove("ttftMs");
+        snake_case["ttft_ms"] = serde_json::json!(0);
+        assert_eq!(
+            serde_json::from_value::<ModelRoundData>(snake_case)
+                .unwrap()
+                .ttft_ms,
+            Some(0)
+        );
 
         let tool_payload = serde_json::json!({
             "id": "tool-1",

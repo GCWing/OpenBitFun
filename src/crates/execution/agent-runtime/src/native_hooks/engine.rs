@@ -20,11 +20,12 @@ use super::registry::{RuntimeHookErrorPolicy, RuntimeHookRegistry};
 use super::settings::{AgentHookEvent, AgentHookHandler, AgentHookSettings};
 use log::{debug, warn};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 /// Cap for a single model-visible hook text (reason or context). Larger
@@ -40,6 +41,10 @@ pub struct AgentHookEngine {
     registry: RuntimeHookRegistry,
     settings: Option<Arc<AgentHookSettings>>,
     project_hooks_disabled: bool,
+    /// Environment every command handler inherits. The host supplies what its
+    /// own launch environment lost (a GUI launch starts without the login
+    /// shell PATH); a handler's own options always win.
+    environment_defaults: Arc<BTreeMap<String, String>>,
 }
 
 impl AgentHookEngine {
@@ -52,6 +57,7 @@ impl AgentHookEngine {
             registry,
             settings: Some(Arc::new(settings)),
             project_hooks_disabled: false,
+            environment_defaults: Arc::default(),
         }
     }
 
@@ -60,7 +66,31 @@ impl AgentHookEngine {
             registry,
             settings: None,
             project_hooks_disabled: false,
+            environment_defaults: Arc::default(),
         }
+    }
+
+    /// Environment entries every command handler inherits unless its own
+    /// options define the same key.
+    pub fn with_environment_defaults(mut self, defaults: BTreeMap<String, String>) -> Self {
+        self.environment_defaults = Arc::new(defaults);
+        self
+    }
+
+    /// Environment for one command handler: the host's defaults first, then the
+    /// handler's own entries, which win on a shared key.
+    fn handler_environment(&self, options: &CommandHookOptions) -> BTreeMap<String, String> {
+        if self.environment_defaults.is_empty() {
+            return options.environment.clone();
+        }
+        let mut environment = (*self.environment_defaults).clone();
+        environment.extend(
+            options
+                .environment
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+        environment
     }
 
     pub fn with_project_hooks_enabled(mut self, enabled: bool) -> Self {
@@ -410,7 +440,14 @@ impl AgentHookEngine {
             command,
             timeout.as_millis()
         );
-        let run = run_hook_command(command, payload_json, cwd, timeout, &options.environment).await;
+        let run = run_hook_command(
+            command,
+            payload_json,
+            cwd,
+            timeout,
+            &self.handler_environment(options),
+        )
+        .await;
         let mut succeeded = false;
         let finalized = match run {
             HookCommandRun::SpawnFailed(error) => {
@@ -587,14 +624,42 @@ enum HookCommandRun {
     SpawnFailed(String),
 }
 
-async fn run_hook_command(
-    command: &str,
-    payload_json: &str,
-    cwd: &Path,
-    timeout: Duration,
-    environment: &std::collections::BTreeMap<String, String>,
-) -> HookCommandRun {
-    let mut process = if cfg!(windows) {
+/// Grace a timed-out handler receives after `SIGTERM` before its whole process
+/// group is force-killed.
+#[cfg(unix)]
+const HOOK_TERMINATE_GRACE: Duration = Duration::from_millis(500);
+
+/// Kills the handler's process group if this run ends without being disarmed.
+///
+/// Dropping the interaction future (turn cancelled, task shut down) must not
+/// leave a hook and the processes it started behind. The guard is disarmed
+/// after a normal exit so a handler may still intentionally leave a background
+/// process running.
+#[cfg(unix)]
+struct HookProcessGroup(Option<i32>);
+
+#[cfg(unix)]
+impl HookProcessGroup {
+    fn new(process_group_id: Option<i32>) -> Self {
+        Self(process_group_id)
+    }
+
+    fn disarm(&mut self) {
+        self.0 = None;
+    }
+}
+
+#[cfg(unix)]
+impl Drop for HookProcessGroup {
+    fn drop(&mut self) {
+        if let Some(process_group_id) = self.0 {
+            signal_hook_process_group(process_group_id, libc::SIGKILL);
+        }
+    }
+}
+
+fn hook_command(command: &str) -> Command {
+    if cfg!(windows) {
         let mut process = Command::new("cmd");
         process.arg("/C").arg(command);
         process
@@ -602,7 +667,17 @@ async fn run_hook_command(
         let mut process = Command::new("sh");
         process.arg("-c").arg(command);
         process
-    };
+    }
+}
+
+async fn run_hook_command(
+    command: &str,
+    payload_json: &str,
+    cwd: &Path,
+    timeout: Duration,
+    environment: &BTreeMap<String, String>,
+) -> HookCommandRun {
+    let mut process = hook_command(command);
     process.envs(environment);
     if let Some(cwd) = existing_dir(cwd) {
         process.current_dir(cwd);
@@ -614,6 +689,11 @@ async fn run_hook_command(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         process.as_std_mut().creation_flags(CREATE_NO_WINDOW);
     }
+    // The handler owns its own process group on Unix so a timeout can stop the
+    // handler *and* everything it started. `kill_on_drop` alone only reaps the
+    // shell, leaving its children as orphans.
+    #[cfg(unix)]
+    process.process_group(0);
     process
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -624,35 +704,109 @@ async fn run_hook_command(
         Ok(child) => child,
         Err(error) => return HookCommandRun::SpawnFailed(error.to_string()),
     };
+    #[cfg(unix)]
+    let mut process_group = HookProcessGroup::new(child.id().map(|pid| pid as i32));
+
     let mut stdin = child.stdin.take();
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
 
     // The stdin write must be inside the timeout and must not be awaited to
     // completion before the child is reaped: a handler that never reads stdin
     // blocks the write once the payload exceeds the pipe buffer, and a
     // handler that exits early makes the write fail with EPIPE. Driving the
-    // write concurrently with `wait_with_output` covers both, and the whole
-    // interaction is bounded by one timeout.
+    // write and both pipe reads concurrently with the child wait covers both,
+    // and the whole interaction is bounded by one timeout.
     let interaction = async {
-        let write = async {
-            if let Some(mut stdin) = stdin.take() {
-                let _ = stdin.write_all(payload_json.as_bytes()).await;
-                let _ = stdin.shutdown().await;
-            }
-        };
-        let (_, output) = tokio::join!(write, child.wait_with_output());
-        output
+        let (_, stdout, stderr, status) = tokio::join!(
+            async {
+                if let Some(mut stdin) = stdin.take() {
+                    let _ = stdin.write_all(payload_json.as_bytes()).await;
+                    let _ = stdin.shutdown().await;
+                }
+            },
+            read_hook_pipe(stdout.take()),
+            read_hook_pipe(stderr.take()),
+            child.wait(),
+        );
+        (stdout, stderr, status)
     };
 
     match tokio::time::timeout(timeout, interaction).await {
-        Ok(Ok(output)) => HookCommandRun::Completed {
-            exit_code: output.status.code(),
-            stdout: bounded_lossy_string(output.stdout),
-            stderr: bounded_lossy_string(output.stderr),
-        },
-        Ok(Err(error)) => HookCommandRun::SpawnFailed(error.to_string()),
-        // `kill_on_drop` reaps the child when the timeout drops the future.
-        Err(_) => HookCommandRun::TimedOut,
+        Ok((stdout, stderr, Ok(status))) => {
+            #[cfg(unix)]
+            process_group.disarm();
+            HookCommandRun::Completed {
+                exit_code: status.code(),
+                stdout: bounded_lossy_string(stdout),
+                stderr: bounded_lossy_string(stderr),
+            }
+        }
+        Ok((_, _, Err(error))) => {
+            HookCommandRun::SpawnFailed(format!("hook process could not be reaped: {error}"))
+        }
+        Err(_) => {
+            #[cfg(unix)]
+            {
+                terminate_hook_process_group(&mut child, process_group.0).await;
+                process_group.disarm();
+            }
+            #[cfg(not(unix))]
+            terminate_hook_process_group(&mut child).await;
+            HookCommandRun::TimedOut
+        }
     }
+}
+
+async fn read_hook_pipe<R>(pipe: Option<R>) -> Vec<u8>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let Some(mut pipe) = pipe else {
+        return Vec::new();
+    };
+    let mut buffer = Vec::new();
+    let _ = pipe.read_to_end(&mut buffer).await;
+    buffer
+}
+
+#[cfg(unix)]
+async fn terminate_hook_process_group(
+    child: &mut tokio::process::Child,
+    process_group_id: Option<i32>,
+) {
+    let Some(process_group_id) = process_group_id else {
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+        return;
+    };
+
+    signal_hook_process_group(process_group_id, libc::SIGTERM);
+    let deadline = tokio::time::Instant::now() + HOOK_TERMINATE_GRACE;
+    while tokio::time::Instant::now() < deadline && hook_process_group_is_alive(process_group_id) {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    signal_hook_process_group(process_group_id, libc::SIGKILL);
+    let _ = child.wait().await;
+}
+
+#[cfg(unix)]
+fn signal_hook_process_group(process_group_id: i32, signal: libc::c_int) {
+    // SAFETY: a negative pid targets the process group created by
+    // `process_group(0)`; no borrowed memory crosses the FFI boundary.
+    let _ = unsafe { libc::kill(-process_group_id, signal) };
+}
+
+#[cfg(unix)]
+fn hook_process_group_is_alive(process_group_id: i32) -> bool {
+    // SAFETY: signal 0 only probes whether the group still exists.
+    unsafe { libc::kill(-process_group_id, 0) == 0 }
+}
+
+#[cfg(not(unix))]
+async fn terminate_hook_process_group(child: &mut tokio::process::Child) {
+    let _ = child.start_kill();
+    let _ = child.wait().await;
 }
 
 fn existing_dir(path: &Path) -> Option<PathBuf> {

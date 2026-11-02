@@ -6,6 +6,7 @@ export const semanticToolEn = {
   "flowChat.builtin.tools.AgentDelete": "Delete agents",
   "flowChat.builtin.tools.SessionHistory": "Export history",
   "flowChat.builtin.tools.analyze_image": "Analyze image",
+  "flowChat.builtin.tools.generate_image": "Generate image",
   "flowChat.builtin.tools.GetTime": "Read time",
   "flowChat.builtin.tools.ListMCPResources": "Discover resources",
   "flowChat.builtin.tools.ReadMCPResource": "Read resource",
@@ -19,6 +20,7 @@ export const semanticToolEn = {
   "flowChat.builtin.tools.PublishMiniApp": "Submit Mini App",
   "flowChat.builtin.tools.PublishAppearance": "Submit Skin",
   "flowChat.builtin.tools.Playbook": "Read operation guide",
+  "flowChat.builtin.tools.DesktopCard": "Desktop card",
   "flowChat.builtin.fields.results": "Results",
   "flowChat.builtin.fields.objective": "Objective",
   "flowChat.builtin.fields.state": "State",
@@ -120,6 +122,9 @@ export const semanticToolEn = {
   "flowChat.builtin.fields.checksPending": "Checks pending",
   "flowChat.builtin.fields.author": "Author",
   "flowChat.builtin.fields.lastOutcome": "Last transaction outcome",
+  "flowChat.builtin.fields.card": "Card ID",
+  "flowChat.builtin.fields.dataSource": "Data source",
+  "flowChat.builtin.fields.visibility": "Visibility",
   "flowChat.builtin.states.active": "Active",
   "flowChat.builtin.states.running": "Running",
   "flowChat.builtin.states.complete": "Done",
@@ -159,6 +164,7 @@ export const semanticToolEn = {
   "flowChat.builtin.states.managed": "Managed worktree",
   "flowChat.builtin.states.permanent": "Permanent worktree",
   "flowChat.builtin.states.external": "External worktree",
+  "flowChat.builtin.states.cardCreated": "Created and shown",
   "flowChat.builtin.rawResult": "Recorded result details",
   "flowChat.builtin.directChildren": "Direct child agents",
   "flowChat.builtin.deleteAgentScope": "Deletes the selected agents and their descendants, including their sessions and pending results. Active work is cancelled.",
@@ -166,6 +172,7 @@ export const semanticToolEn = {
   "flowChat.builtin.runtimeNotified": "Open Mini App runtimes were notified to reload.",
   "flowChat.builtin.reviewPending": "The submission is awaiting marketplace review. Follow its status in My submissions.",
   "flowChat.builtin.playbookInstructions": "These are the resolved instructions. Their steps are executed through subsequent tool calls.",
+  "flowChat.builtin.desktopCard.visible": "Shown on desktop",
   "flowChat.builtin.samples.goal": "Improve keyboard navigation",
   "flowChat.builtin.samples.analysis": "The page contains a navigation rail, a summary and a results table.",
   "flowChat.builtin.samples.error": "The host could not finish this operation. Recorded details remain available.",
@@ -181,7 +188,8 @@ export const semanticToolEn = {
   "component.FrontendWorkbenchToolCard.description": "Frontend customization",
   "component.MiniAppFinalizeToolCard.description": "Update Mini App",
   "component.MarketplacePublishToolCard.description": "Submit Mini App",
-  "component.PlaybookToolCard.description": "Read operation guide"
+  "component.PlaybookToolCard.description": "Read operation guide",
+  "component.DesktopCardToolCard.description": "Desktop card"
 } as const;
 
 export const semanticToolZhCN = {
@@ -192,6 +200,7 @@ export const semanticToolZhCN = {
   "flowChat.builtin.tools.AgentDelete": "删除子代理",
   "flowChat.builtin.tools.SessionHistory": "导出会话历史",
   "flowChat.builtin.tools.analyze_image": "分析图片",
+  "flowChat.builtin.tools.generate_image": "生成图片",
   "flowChat.builtin.tools.GetTime": "读取时间",
   "flowChat.builtin.tools.ListMCPResources": "发现资源",
   "flowChat.builtin.tools.ReadMCPResource": "读取资源",
@@ -205,6 +214,7 @@ export const semanticToolZhCN = {
   "flowChat.builtin.tools.PublishMiniApp": "提交小应用审核",
   "flowChat.builtin.tools.PublishAppearance": "提交皮肤审核",
   "flowChat.builtin.tools.Playbook": "读取操作流程",
+  "flowChat.builtin.tools.DesktopCard": "小卡片",
   "flowChat.builtin.fields.results": "结果",
   "flowChat.builtin.fields.objective": "目标",
   "flowChat.builtin.fields.state": "状态",
@@ -306,6 +316,9 @@ export const semanticToolZhCN = {
   "flowChat.builtin.fields.checksPending": "待完成检查数",
   "flowChat.builtin.fields.author": "作者",
   "flowChat.builtin.fields.lastOutcome": "上次事务结果",
+  "flowChat.builtin.fields.card": "卡片 ID",
+  "flowChat.builtin.fields.dataSource": "数据来源",
+  "flowChat.builtin.fields.visibility": "显示状态",
   "flowChat.builtin.states.active": "进行中",
   "flowChat.builtin.states.running": "运行中",
   "flowChat.builtin.states.complete": "已完成",
@@ -345,6 +358,7 @@ export const semanticToolZhCN = {
   "flowChat.builtin.states.managed": "托管工作树",
   "flowChat.builtin.states.permanent": "永久工作树",
   "flowChat.builtin.states.external": "外部工作树",
+  "flowChat.builtin.states.cardCreated": "已创建并显示",
   "flowChat.builtin.rawResult": "原始结果详情",
   "flowChat.builtin.directChildren": "直属子代理",
   "flowChat.builtin.deleteAgentScope": "删除所选子代理及其后代的会话和待处理结果，并取消进行中的工作。",
@@ -352,6 +366,7 @@ export const semanticToolZhCN = {
   "flowChat.builtin.runtimeNotified": "已通知打开的小应用重新加载。",
   "flowChat.builtin.reviewPending": "投稿正在等待市场审核，可在“我的投稿”查看进度。",
   "flowChat.builtin.playbookInstructions": "这里显示的是已载入的操作步骤，实际执行由后续工具调用完成。",
+  "flowChat.builtin.desktopCard.visible": "显示在桌面",
   "flowChat.builtin.samples.goal": "完善键盘导航",
   "flowChat.builtin.samples.analysis": "页面包含导航栏、摘要和结果表格。",
   "flowChat.builtin.samples.error": "主机未能完成此操作，仍可查看已记录的详情。",
@@ -367,7 +382,8 @@ export const semanticToolZhCN = {
   "component.FrontendWorkbenchToolCard.description": "界面定制",
   "component.MiniAppFinalizeToolCard.description": "更新小应用",
   "component.MarketplacePublishToolCard.description": "提交小应用审核",
-  "component.PlaybookToolCard.description": "读取操作流程"
+  "component.PlaybookToolCard.description": "读取操作流程",
+  "component.DesktopCardToolCard.description": "小卡片"
 } as const;
 
 export const semanticToolZhTW = {
@@ -378,6 +394,7 @@ export const semanticToolZhTW = {
   "flowChat.builtin.tools.AgentDelete": "刪除子代理",
   "flowChat.builtin.tools.SessionHistory": "匯出工作階段歷史",
   "flowChat.builtin.tools.analyze_image": "分析圖片",
+  "flowChat.builtin.tools.generate_image": "生成圖片",
   "flowChat.builtin.tools.GetTime": "讀取時間",
   "flowChat.builtin.tools.ListMCPResources": "探索資源",
   "flowChat.builtin.tools.ReadMCPResource": "讀取資源",
@@ -391,6 +408,7 @@ export const semanticToolZhTW = {
   "flowChat.builtin.tools.PublishMiniApp": "提交小應用程式審核",
   "flowChat.builtin.tools.PublishAppearance": "提交外觀審核",
   "flowChat.builtin.tools.Playbook": "讀取操作流程",
+  "flowChat.builtin.tools.DesktopCard": "小卡片",
   "flowChat.builtin.fields.results": "結果",
   "flowChat.builtin.fields.objective": "目標",
   "flowChat.builtin.fields.state": "狀態",
@@ -492,6 +510,9 @@ export const semanticToolZhTW = {
   "flowChat.builtin.fields.checksPending": "待完成檢查數",
   "flowChat.builtin.fields.author": "作者",
   "flowChat.builtin.fields.lastOutcome": "上次交易結果",
+  "flowChat.builtin.fields.card": "卡片 ID",
+  "flowChat.builtin.fields.dataSource": "資料來源",
+  "flowChat.builtin.fields.visibility": "顯示狀態",
   "flowChat.builtin.states.active": "進行中",
   "flowChat.builtin.states.running": "執行中",
   "flowChat.builtin.states.complete": "已完成",
@@ -531,6 +552,7 @@ export const semanticToolZhTW = {
   "flowChat.builtin.states.managed": "受管理工作樹",
   "flowChat.builtin.states.permanent": "永久工作樹",
   "flowChat.builtin.states.external": "外部工作樹",
+  "flowChat.builtin.states.cardCreated": "已建立並顯示",
   "flowChat.builtin.rawResult": "原始結果詳細資料",
   "flowChat.builtin.directChildren": "直屬子代理",
   "flowChat.builtin.deleteAgentScope": "刪除所選子代理及其後代的工作階段和待處理結果，並取消進行中的工作。",
@@ -538,6 +560,7 @@ export const semanticToolZhTW = {
   "flowChat.builtin.runtimeNotified": "已通知開啟的小應用程式重新載入。",
   "flowChat.builtin.reviewPending": "投稿正在等待市集審核，可在「我的投稿」檢視進度。",
   "flowChat.builtin.playbookInstructions": "此處顯示已載入的操作步驟，實際執行由後續工具呼叫完成。",
+  "flowChat.builtin.desktopCard.visible": "顯示在桌面",
   "flowChat.builtin.samples.goal": "完善鍵盤導覽",
   "flowChat.builtin.samples.analysis": "頁面包含導覽列、摘要與結果表格。",
   "flowChat.builtin.samples.error": "主機未能完成此操作，仍可檢視已記錄的詳情。",
@@ -553,5 +576,6 @@ export const semanticToolZhTW = {
   "component.FrontendWorkbenchToolCard.description": "介面自訂",
   "component.MiniAppFinalizeToolCard.description": "更新小應用程式",
   "component.MarketplacePublishToolCard.description": "提交小應用程式審核",
-  "component.PlaybookToolCard.description": "讀取操作流程"
+  "component.PlaybookToolCard.description": "讀取操作流程",
+  "component.DesktopCardToolCard.description": "小卡片"
 } as const;

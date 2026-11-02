@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "data-tools",
+  "description": "Minimal local capability set for OpenBitFun Data Tools",
+  "windows": ["data-tools"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close"
+  ]
+}

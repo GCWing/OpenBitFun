@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenBitFun MiniApp",
+  "identifier": "com.openbitfun.miniapp-shell",
+  "build": { "frontendDist": "bootstrap" },
+  "bundle": { "active": false, "icon": ["../desktop/icons/openbitfun-app-icon.png", "../desktop/icons/openbitfun-app-icon.ico"] },
+  "app": {
+    "windows": [],
+    "security": { "csp": null, "capabilities": [] },
+    "withGlobalTauri": true
+  }
+}

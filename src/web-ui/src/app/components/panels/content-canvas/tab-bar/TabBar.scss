@@ -5,19 +5,46 @@
   padding-block: 0;
   background: var(--openbitfun-color-surface-scene);
 
+  &__strip {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-inline-size: 0;
+  }
+
   &__tabs {
+    box-sizing: border-box;
     display: flex;
     flex: 1;
     min-inline-size: 0;
     padding-block: var(--openbitfun-layout-toolbar-sm-padding-block);
+    // Content continues beneath the floating capsule; the final item can still
+    // scroll completely clear of it, including during keyboard navigation.
+    padding-inline-end: var(--_canvas-tabs-overflow-inset);
+    scroll-padding-inline-end: var(--_canvas-tabs-overflow-inset);
     overflow-x: auto;
     overflow-y: hidden;
     overscroll-behavior-x: contain;
     scrollbar-width: none;
+    mask-image: linear-gradient(to right,
+      currentColor calc(100% - min(var(--_canvas-tabs-overflow-inset), var(--openbitfun-layout-toolbar-overflow-fade-extent))),
+      transparent 100%);
 
     &::-webkit-scrollbar {
       display: none;
     }
+  }
+
+  &__overflow {
+    position: absolute;
+    inset-inline-end: 0;
+    inset-block: 0;
+    display: flex;
+    align-items: center;
+    padding-inline-start: var(--openbitfun-space-1);
+    pointer-events: none;
+
+    > .canvas-tab-panorama-wrapper { pointer-events: auto; }
   }
 
   &__tab-wrapper {

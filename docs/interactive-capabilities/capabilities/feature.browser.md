@@ -57,9 +57,9 @@ Open webpages and local services inside OpenBitFun, where an agent can inspect t
 
 | 操作 / Action | 中文说明 | English description |
 | --- | --- | --- |
-| ControlHub · 1 | 用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank | When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank |
-| ControlHub · 2 | 对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约 | Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract |
-| ControlHub · 3 | 页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external | Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection |
+| ControlHub · 1 | 用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank | When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank |
+| ControlHub · 2 | 对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约 | Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract |
+| ControlHub · 3 | 复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接 | Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection |
 
 ## 可配置选项 / Configurable options
 

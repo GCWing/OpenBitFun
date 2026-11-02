@@ -21,6 +21,7 @@ import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
 import { Icon } from '@openbitfun/ui';
 import { TimelineContentBlock } from '../../timeline/TimelineContentBlock';
 import { useTurnFooterInteraction } from './useTurnFooterInteraction';
+import { BackgroundRunItem } from './BackgroundRunItem';
 
 interface VirtualItemRendererProps {
   item: VirtualItem;
@@ -55,9 +56,12 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
       measureRef?.(element);
     }, [measureRef]);
     const searchLine = useFlowChatSearchPresentation(wrapper, searchQuery, matches, currentMatch);
+    const itemFocus = searchLine && 'markerTop' in searchLine ? searchLine : null;
 
     const content = (() => {
       switch (item.type) {
+        case 'background-run':
+          return <BackgroundRunItem turn={item.turn} absoluteTurnIndex={item.absoluteTurnIndex} forceOpen={isSearchMatch} expandedThinkingItemIds={matches?.flatMap(match => [...match.expandableIds ?? []]) ?? []} />;
         case 'user-message':
           return (
             <UserMessageItem
@@ -97,6 +101,8 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
               turnStartedAt={item.turnStartedAt}
               turnEndedAt={item.turnEndedAt}
               turnDurationMs={item.turnDurationMs}
+              turnOutputDurationMs={item.turnOutputDurationMs}
+              turnTtftMs={item.turnTtftMs}
               turnTokenUsage={item.turnTokenUsage}
               canvasArtifactItems={item.canvasArtifactItems}
               expandedThinkingItemIds={item.layoutHints?.expandedThinkingItemIds ?? []}
@@ -168,7 +174,15 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
           className="flowchat-search-line"
           data-openbitfun-component="virtual-item"
           data-openbitfun-part="searchLine"
-          style={searchLine ?? undefined}
+          data-openbitfun-state={itemFocus ? 'itemFocus' : undefined}
+          style={searchLine ? {
+            top: searchLine.top, left: searchLine.left, width: searchLine.width, height: searchLine.height,
+            ...(itemFocus ? {
+              '--_flowchat-focus-marker-top': `${itemFocus.markerTop}px`,
+              '--_flowchat-focus-marker-left': `${itemFocus.markerLeft}px`,
+              '--_flowchat-focus-marker-height': `${itemFocus.markerHeight}px`,
+            } : {}),
+          } as React.CSSProperties : undefined}
         />
       </div>
     );

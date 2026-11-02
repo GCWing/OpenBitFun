@@ -89,6 +89,33 @@ Usage:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "path": {"type": "string"},
+                            "is_dir": {"type": "boolean"}
+                        },
+                        "required": ["name", "path", "is_dir"],
+                        "additionalProperties": false
+                    }
+                },
+                "total": {"type": "integer"},
+                "limit": {"type": "integer"},
+                "truncated": {"type": "boolean"}
+            },
+            "required": ["path", "entries", "total", "limit", "truncated"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }

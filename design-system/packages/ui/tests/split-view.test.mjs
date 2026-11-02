@@ -21,6 +21,6 @@ test('the dock tracks displayed width only in overlay layout and leaves primary 
   const styles = await readFile(new URL('../src/components/SplitView/SplitView.module.css', import.meta.url), 'utf8');
   assert.match(styles, /\.root\[data-layout="overlay"\]:not\(\[data-mode="secondary"\]\)\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(styles, /\.primaryDock\s*\{[^}]*position: absolute;[^}]*inline-size: 100%;[^}]*pointer-events: none;/);
-  assert.match(styles, /\.root\[data-layout="overlay"\]\[data-mode="split"\] > \.primary \.primaryDock\s*\{[^}]*inline-size: max\(0px, calc\(100% - var\(--_split-view-right-size\) - var\(--openbitfun-border-width-default\)\)\)/);
-  assert.match(styles, /\[data-secondary-side="left"\] > \.primary \.primaryDock\s*\{[^}]*inset-inline-start: calc\(var\(--_split-view-right-size\) \+ var\(--openbitfun-border-width-default\)\)/);
+  assert.match(styles, /\.root\[data-layout="overlay"\]\[data-mode="split"\] > \.primary \.primaryDock,[^{]*\s*\{[^}]*inline-size: max\(0px, calc\(100% - var\(--_split-view-right-size\) - var\(--openbitfun-border-width-default\)\)\)/);
+  assert.match(styles, /\[data-secondary-side="left"\] > \.primary \.primaryDock,[^{]*\s*\{[^}]*inset-inline-start: calc\(var\(--_split-view-right-size\) \+ var\(--openbitfun-border-width-default\)\)/);
 });

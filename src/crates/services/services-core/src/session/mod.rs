@@ -4,9 +4,11 @@ mod lineage;
 mod memory_workspace;
 mod metadata;
 mod metadata_store;
+pub mod naming;
 mod offline_import;
 mod ordinal;
 pub mod page;
+pub mod trajectory;
 pub mod types;
 mod write_lock;
 
@@ -29,14 +31,17 @@ pub use metadata::{
     normalized_session_relationship, refresh_session_metadata_from_turns,
     remove_session_index_entry, set_deep_review_cache, set_deep_review_run_manifest,
     set_review_target_evidence, set_session_relationship,
-    try_refresh_session_metadata_for_saved_turn, upsert_session_index_entry,
-    SessionMetadataBuildFacts,
+    try_refresh_session_metadata_for_saved_turn, unread_completion_target,
+    upsert_session_index_entry, SessionMetadataBuildFacts,
 };
 pub use metadata_store::{SessionMetadataStore, SessionMetadataStoreError};
 pub use offline_import::{
     OfflineSessionBundle, OfflineSessionImportError, OfflineSessionImportStore,
 };
 pub use openbitfun_core_types::{SessionKind, SESSION_PROVIDER_ACP, SESSION_PROVIDER_METADATA_KEY};
-pub use page::{build_session_metadata_page, empty_session_metadata_page, SessionMetadataPage};
+pub use page::{
+    build_session_metadata_page, empty_session_metadata_page, SessionDiscoveryDiagnostic,
+    SessionMetadataPage,
+};
 pub use types::*;
 pub use write_lock::{SessionWriteLock, SessionWriteLockError};

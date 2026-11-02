@@ -1,4 +1,10 @@
 {
+  "window": {
+    "minimize": "最小化應用視窗",
+    "maximize": "最大化應用視窗",
+    "restore": "還原應用視窗",
+    "close": "關閉應用視窗"
+  },
   "product": {
     "name": "OpenBitFun",
     "remote": "OpenBitFun Remote"
@@ -49,5 +55,8 @@
     "done": "已完成",
     "failed": "失敗",
     "cancelled": "已取消"
+  },
+  "sessions": {
+    "new": "新會話"
   }
 }

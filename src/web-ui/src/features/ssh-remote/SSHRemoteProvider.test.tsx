@@ -1014,4 +1014,21 @@ describe('SSHRemoteProvider remote workspace connection conflicts', () => {
     expect(confirmWarningMock).not.toHaveBeenCalled();
     expect(sshApiMock.openWorkspace).not.toHaveBeenCalled();
   });
+
+  it('resolves a project source without opening a browser or reactivating a workspace', async () => {
+    await renderProvider();
+    sshApiMock.connect.mockResolvedValue({ success: true, connectionId: 'container', serverInfo: { homeDir: '/home/dev' } });
+    let result: unknown;
+    await act(async () => {
+      result = await context!.connect('container', { id: 'container', name: 'Dev', host: 'host.test', port: 22,
+        username: 'dev', auth: { type: 'PrivateKey', keyPath: '/keys/dev' } }, { browseAfterConnect: false });
+    });
+    expect(result).toMatchObject({ connectionId: 'container' });
+    expect(context!.connectionId).toBe('container');
+    expect(context!.showFileBrowser).toBe(false);
+    expect(context!.remoteFileBrowserInitialPath).toBe('/home/dev');
+    expect(sshApiMock.openWorkspace).not.toHaveBeenCalled();
+    expect(workspaceManagerMock.openRemoteWorkspace).not.toHaveBeenCalled();
+  });
+
 });
