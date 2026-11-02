@@ -317,9 +317,9 @@ export struct ConversationView {
    * Where the chrome is the platform's — the compact conversation route — this
    * band paints nothing at all. Painting the page's overlay colour and blurring
    * here would be the second glass over the title bar's own material, which is
-   * what the plan forbids outright; the platform's gradient blur is the
-   * compensating mechanism instead, and it needs the transcript to run *under*
-   * the band rather than below it.
+   * what the plan forbids outright; the platform's own bar is the one that paints
+   * the floor and draws the blur, and it has a floor at every offset because this
+   * transcript runs *under* the band rather than below it.
    *
    * What is left is the band's own box, which is still the transcript's content
    * start offset and still carries the window's side strips. Its top padding is

@@ -3,9 +3,10 @@
  *
  * The compact conversation route hands its header to the platform: the band's
  * title and its menu trigger are `HdsNavDestination.titleBar` content, the return
- * control is the platform's own, and the band's gradient blur and immersive
- * material are its style. This file is the one place that asks the two questions
- * behind that handover and turns the answers into platform values:
+ * control is the platform's own, and the band's always-on translucent fill and,
+ * from API 23, its immersive material are its style. This file is the one place
+ * that asks the two questions behind that handover and turns the answers into
+ * platform values:
  *
  * 1. *What can this device name?* — `HdsTitleBarSupport.decide()`, which resolves
  *    the pure policy (`resolveHdsTitleBar`) against the facts
@@ -16,13 +17,23 @@
  *    all, which is the one degradation that cannot be wrong: a member that does
  *    not exist on the device is not a value the platform can ignore.
  *
- * 2. *What does the band paint?* — the theme's own colours, never a literal. Both
- *    styles are always configured, and they differ in exactly one place: the
- *    background floor is transparent while the content is at the top and the
- *    page's overlay colour once the transcript has scrolled under the band. That
- *    is the gradient blur's two ends, and because every colour here is a
- *    `$r('app.color.*')` resource the platform's own colour inversion can act on
- *    it (the plan's note: `colorInvert` follows resource-set colours only).
+ * 2. *What does the band paint?* — the theme's own colours, never a literal. The
+ *    band has one style, and that style has a floor at every scroll offset,
+ *    because this band is an overlay: the transcript is bottom-anchored and its
+ *    list starts at the top of the pane, so at the resting position — the newest
+ *    message, where a conversation is opened — rows already sit *under* the band,
+ *    and every offset above that keeps them there. A scroll effect is the wrong
+ *    shape for an overlay: it gives the at-rest end a transparent fill and, by the
+ *    platform's own documented default under `enableScrollEffect: true`, a
+ *    `blurRadius` of 0.0, so the band is a transparent hole wherever the
+ *    transcript has not scrolled far enough to reach the scrolled end. Measured on
+ *    the phone: a transcript line sat on the band's top edge and read through it
+ *    at the same contrast as the lines below. So the scroll effect is off, which
+ *    is what makes the platform paint its own always-on translucent bar, and the
+ *    floor is then stated as the page's own overlay colour rather than left to the
+ *    platform's grey. Because every colour here is a `$r('app.color.*')` resource,
+ *    the platform's own colour inversion still acts on it (the plan's note:
+ *    `colorInvert` follows resource-set colours only).
  *
  * The two controls are the platform's, not the app's. The back control is
  * `HdsNavDestination`'s own — this file configures no `backIcon` at all, so the
@@ -59,7 +70,7 @@ import { HdsTitleBarMaterialService, HdsTitleBarSnapshot } from '../../services/
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CONVERSATION_HEADER_MENU_ANCHOR_ID } from './ConversationHeaderMenu';
 import { SystemSymbolIcon } from './SystemSymbolIcon';
-import { INK, MUTED, PAGE_BG_OVERLAY, TRANSPARENT } from './Theme';
+import { INK, MUTED, PAGE_BG_OVERLAY } from './Theme';
 
 /**
  * What one band says and what its one control does.
@@ -200,18 +211,31 @@ export class HdsTitleBarSupport {
   /**
    * The band's style for one decision.
    *
-   * The material effect is attached only where the gate allows it, and the two
-   * styles are always both configured: `originalStyle` is the band at rest,
-   * `scrollEffectStyle` is the band with the transcript underneath it.
+   * The material effect is attached only where the gate allows it, and there is
+   * one style rather than two ends: the band has a floor at every offset, so a
+   * `scrollEffectStyle` would be a second fill the band never reaches. The scroll
+   * effect is off explicitly, which is the whole mechanism — with it off the
+   * platform applies `originalStyle` alone ("only `originalStyle` takes effect")
+   * and supplies its own always-on translucent bar: with a `systemMaterialEffect`
+   * attached, or on the immersive blur family, its documented `originalStyle`
+   * defaults are a `sys.color.comp_background_gray` fill and a 12.0 blur radius
+   * (16.0 without the material). That is the platform's own mechanism for the
+   * thing this band needs, and the app does not restate it: naming `blurRadius`
+   * would be a 23+ member and a second gate for a value the platform already has.
+   *
+   * `scrollEffectType` stays configured even though the effect is off: it is what
+   * selects the blur family, so it is what decides which set of platform defaults
+   * the bar is drawn with, and it is the member the 23+ gate owns.
    */
   static style(decision: HdsTitleBarDecision): TitleBarStyleOptions {
     const style: TitleBarStyleOptions = {
       scrollEffectOpts: {
-        enableScrollEffect: true,
+        // Off, not by omission: the platform's default is `true`, and `true` is
+        // what gave the at-rest end a transparent fill with no blur radius.
+        enableScrollEffect: false,
         scrollEffectType: HdsTitleBarSupport.scrollEffectType(decision)
       },
-      originalStyle: HdsTitleBarSupport.barStyle(false),
-      scrollEffectStyle: HdsTitleBarSupport.barStyle(true)
+      originalStyle: HdsTitleBarSupport.barStyle()
     };
     const material: SystemMaterialParams | undefined = HdsTitleBarSupport.systemMaterial(decision);
     if (material !== undefined) {
@@ -266,37 +290,37 @@ export class HdsTitleBarSupport {
   }
 
   /**
-   * One end of the gradient: the band at rest, or the band with content under it.
+   * The band's one style: a floor, the two text lines, and the return glyph's ink.
    *
-   * `TRANSPARENT` at the top is what lets the page's own background show through
-   * while there is nothing to blur, and `PAGE_BG_OVERLAY` is the floor the theme
-   * already uses for a band a transcript scrolls under — a partial-alpha page
-   * colour under the blur, not a replacement for it, so the title stays legible
-   * on a build or a device where the blur does not land.
+   * The floor is `PAGE_BG_OVERLAY` — the page's own colour at partial alpha — and
+   * it is stated rather than inherited for two reasons. It is the colour the theme
+   * already uses for a surface a transcript scrolls under, so the band matches the
+   * page instead of the platform's `sys.color.comp_background_gray`, and the wide
+   * self-drawn band's glass is the same recipe. And it is a `$r('app.color.*')`
+   * resource, which is the only kind of colour the platform's own inversion
+   * follows: a literal here would stop the band tracking the appearance.
    *
-   * The floor, the two text lines and the platform's own return glyph's ink are
-   * the whole of it. The two controls keep the platform's own chip — no
-   * `menuStyle` and no `backIconStyle.backgroundColor` — because the chip is what
-   * the platform draws and the app has no business recolouring it.
+   * It is *not* transparent, and that is the point of the style. The transcript is
+   * bottom-anchored and starts at the top of the pane, so rows sit under this band
+   * at the resting position and at every offset above it; a transparent floor is a
+   * hole rather than an edge. The blur the platform draws over it is the effect —
+   * this floor is the half that keeps the title legible on a build or a device
+   * where the blur does not land, which is also how the wide band uses the token.
    *
-   * The back control's *ink* is the one thing the platform cannot answer for here.
-   * `HdsNavigationIconItemStyle.iconColor` defaults to the immersive pair: while
-   * the floor is `TRANSPARENT` (the band at rest, over the page the app leaves
-   * open) the platform paints the default glyph in `sys.color.icon_on_primary` —
-   * a light, appearance-independent colour — on a chip whose fill *does* follow the
-   * appearance. Measured on the phone: at rest in the light appearance the chip's
-   * interior is uniformly white (luminance min 243), so the platform's own arrow
-   * was invisible and the only way out of a conversation looked like an empty
-   * circle; once the transcript is under the band the same glyph is drawn dark and
-   * legible. The floor stays transparent — that is the immersive band, and the user
-   * owns it — so the ink is stated here, from the theme, and only for the return
-   * glyph: the menu trigger is a symbol modifier and already carries the theme's
-   * ink, which is why it never needed this.
+   * The return control's *ink* is what the platform cannot answer for here.
+   * `HdsNavigationIconItemStyle.iconColor` defaults to the immersive pair — a
+   * light, appearance-independent colour on a chip whose fill *does* follow the
+   * appearance — so the platform's own arrow is not guaranteed to contrast with
+   * its own chip. The app states it from the theme instead, and only for the
+   * return glyph: the menu trigger is a symbol modifier and already carries the
+   * theme's ink, which is why it never needed this. Neither chip's fill is stated
+   * (`backIconStyle.backgroundColor`): the chip is what the platform draws and the
+   * app has no business recolouring it.
    */
-  private static barStyle(scrolledUnder: boolean): HdsNavigationTitleBarStyle {
+  private static barStyle(): HdsNavigationTitleBarStyle {
     return {
       backgroundStyle: {
-        backgroundColor: scrolledUnder ? PAGE_BG_OVERLAY : TRANSPARENT
+        backgroundColor: PAGE_BG_OVERLAY
       },
       contentStyle: {
         titleStyle: {

@@ -471,9 +471,9 @@ test('the compact conversation hands its top band to the platform, and paints no
   //
   // What it may not keep is a fill or a blur. A page band painting the overlay
   // colour and blurring behind a bar that has its own material is the second
-  // glass over the first, which is what the plan forbids outright: the platform's
-  // gradient blur is the compensating mechanism, and it needs the transcript to
-  // run *under* the band rather than below it.
+  // glass over the first, which is what the plan forbids outright: the platform
+  // bar's own floor and blur are the compensating mechanism, and they need the
+  // transcript to run *under* the band rather than below it.
   const platform = builderBody(conversationView, 'PlatformTopBand');
   assert.equal(call(platform, 'padding'),
     '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topBandOffset() })',
@@ -1788,19 +1788,54 @@ test('the title bar\'s 23+ members are reachable only through the gate', () => {
   }
 });
 
-test('the platform band is themed, and its two ends are two ends of one gradient', () => {
-  // Both ends of the scroll effect are always configured, and they differ in
-  // exactly one place: the floor is transparent while the content is at the top
-  // and the page's overlay colour once the transcript has scrolled under it. That
-  // is the gradient blur's two ends, and it is also the dynamic inversion's
-  // evidence — the platform can only follow a resource colour it was given.
+test('the platform band has one floor at every offset, and the scroll effect that would make it a hole is off', () => {
+  // The band is an overlay, not a band above the content: the transcript is
+  // bottom-anchored and its list starts at the top of the pane, so at the resting
+  // position — and at every offset above it — rows sit *under* the band. A scroll
+  // effect is the wrong shape for that: the platform's documented defaults under
+  // `enableScrollEffect: true` are a transparent `originalStyle` fill and a
+  // `blurRadius` of 0.0, so the at-rest end is a hole. Measured on the phone: a
+  // transcript line sat on the band's top edge and read through it at the same
+  // contrast as the lines below it. So there is one style, it has a floor, and the
+  // scroll effect is off — which is also what makes the platform paint its own
+  // always-on translucent bar.
   const style = normalize(staticBody(hdsTitleBarSupport, 'static style('));
-  assert.match(style,
-    /originalStyle: HdsTitleBarSupport\.barStyle\(false\), scrollEffectStyle: HdsTitleBarSupport\.barStyle\(true\)/,
-    'both ends of the scroll effect must be configured, and configured as two different ends');
+  assert.match(style, /enableScrollEffect: false/,
+    'the scroll effect must be switched off explicitly: the platform\'s default is `true`, and `true` is what ' +
+    'gives the at-rest end a transparent floor with no blur radius');
+  assert.match(style, /originalStyle: HdsTitleBarSupport\.barStyle\(\)/,
+    'the band\'s one style must be the original style: with the scroll effect off it is the only style the ' +
+    'platform applies, so it is the only one the app may configure');
+  // The off switch and the absence of the second style are one contract: a
+  // `scrollEffectStyle` left behind would be dead configuration that reads as a
+  // second end the band still has, and it is how this defect would come back.
+  assert.equal(normalize(staticBody(hdsTitleBarSupport, 'static style(')).includes('scrollEffectStyle'), false,
+    'the band must configure no `scrollEffectStyle`: with the scroll effect off it is never applied, and a band ' +
+    'with two ends is the shape that made the at-rest end a transparent hole');
+  assert.equal(codeOf(hdsTitleBarSupport).includes('scrollEffectStyle'), false,
+    'no code path in the support class may name `scrollEffectStyle`: the band has one style');
+  // `scrollEffectType` stays, because it still selects the blur family and
+  // therefore which platform defaults the bar is drawn with. That is asserted
+  // where the gate owns it; what this test adds is that it did not leave with the
+  // second style.
+  assert.match(style, /scrollEffectType: HdsTitleBarSupport\.scrollEffectType\(decision\)/,
+    'the blur family must stay configured: it is what selects which platform defaults the bar is drawn with');
+
   const barStyle = normalize(staticBody(hdsTitleBarSupport, 'private static barStyle('));
-  assert.match(barStyle, /backgroundColor: scrolledUnder \? PAGE_BG_OVERLAY : TRANSPARENT/,
-    'the two ends must differ in the floor they paint: the same colour twice is a band that never changes');
+  assert.match(barStyle, /backgroundStyle: \{ backgroundColor: PAGE_BG_OVERLAY \}/,
+    'the band\'s floor must be the page\'s own overlay colour, stated once: the platform would otherwise fill in ' +
+    'its own `sys.color.comp_background_gray`, and this band is the page\'s colour');
+  // The floor is the whole point of this test, so it is asserted as a property and
+  // not only as a spelling: the transparent token means a hole, and so does a floor
+  // chosen at run time from the transcript's offset.
+  assert.equal(/TRANSPARENT/.test(barStyle), false,
+    'the band\'s floor must never be the transparent token: the transcript sits under the band at rest, so a ' +
+    'transparent floor is the hole this contract exists to close');
+  assert.equal(/\?/.test(barStyle), false,
+    'the floor is one colour at every offset: a ternary here is a second end, which is the shape that made the ' +
+    'at-rest end transparent');
+  assert.equal(staticBody(hdsTitleBarSupport, 'private static barStyle(').includes('scrolledUnder'), false,
+    '`barStyle` must take no scroll state: nothing about the band may depend on the transcript\'s offset');
 
   // Every colour is a Theme token, and the keys are the closed vocabulary the
   // title bar's style has: a literal here is a band that stops following the
@@ -1812,17 +1847,20 @@ test('the platform band is themed, and its two ends are two ends of one gradient
     /(?:backgroundColor|mainTitleColor|subTitleColor|iconColor):\s*(?:[A-Za-z0-9_]+ \? )?([A-Za-z0-9_]+)(?: : ([A-Za-z0-9_]+))?/g)]
     .flatMap((match) => [match[1], match[2]].filter((value) => value !== undefined));
   const distinct = [...new Set(values)].sort();
-  assert.deepEqual(distinct, ['INK', 'MUTED', 'PAGE_BG_OVERLAY', 'TRANSPARENT'],
+  assert.deepEqual(distinct, ['INK', 'MUTED', 'PAGE_BG_OVERLAY'],
     'the band states a colour for its floor, its two lines and the platform return glyph\'s ink, and nothing ' +
-    'else: the chips are the platform\'s, so there is no chip fill or menu colour to state');
+    'else: the chips are the platform\'s, so there is no chip fill to state');
   for (const value of distinct) {
     assert.ok(tokens.includes(value),
       `${value} must be a Theme token imported by the support class: a literal colour stops following the appearance`);
   }
+  assert.equal(tokens.includes('TRANSPARENT'), false,
+    'the support class must not even import the transparent token: an unused import is how the next author finds ' +
+    'the spelling that turns the floor back into a hole');
   // The key vocabulary is re-derived from `barStyle`: the return glyph's *ink* is
-  // stated (the platform's own default for it is the immersive pair — light while
-  // the floor is transparent — so at rest in the light appearance the platform drew
-  // a white arrow on a light chip and the way out of a conversation was invisible),
+  // stated (the platform's own default for it is the immersive pair, a light and
+  // appearance-independent colour on a chip whose fill does follow the appearance,
+  // so the arrow is not guaranteed to contrast with its own chip),
   // and nothing else about that control is: no `backgroundColor`, because the chip
   // is the platform's, and no `menuStyle` at all, because the menu trigger is a
   // symbol modifier that already carries the theme's ink.

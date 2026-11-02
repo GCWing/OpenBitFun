@@ -5,10 +5,10 @@
  * The platform's title bar (`HdsNavigation` / `HdsNavDestination` `titleBar`) is
  * the chrome the compact conversation route hands its header to: the band that
  * used to be drawn in the page now belongs to the platform, which is also what
- * makes the gradient blur and the immersive material available at all. The
- * members that describe that behaviour do not all arrive at once:
+ * makes the platform's own translucent bar and the immersive material available at
+ * all. The members that describe that behaviour do not all arrive at once:
  *
- * - `titleBar`, `TitleBarStyleOptions.originalStyle` / `scrollEffectStyle` and
+ * - `titleBar`, `TitleBarStyleOptions.originalStyle` and
  *   `ScrollEffectType.GRADIENT_BLUR` start at 5.1.0(18) / 6.0.0(20), so the app's
  *   `compatibleSdkVersion` 6.0.1(21) can name them on every supported device;
  * - `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR` and `systemMaterialEffect`
@@ -34,10 +34,13 @@
  * everywhere else — the system picks the cost from the device's own performance.
  *
  * What each tier actually looks like on a 21/22 device is *undetermined*: the
- * `systemMaterialEffect` field is a 23+ member, so it is not passed there at all
- * and the tier is the self-painted fallback plus `GRADIENT_BLUR`. Whether a
- * 21/22 build would render an effect handed to it anyway is a device question,
- * and this file deliberately does not gamble the whole band on the answer.
+ * `systemMaterialEffect` field is a 23+ member, so it is not passed there at all,
+ * and the tier is the platform's `originalStyle` floor on the `GRADIENT_BLUR` family
+ * with no material — which, since `blurRadius` is a 23+ member too, may be that
+ * floor with no blur over it. The floor is what has to hold either way: the
+ * transcript sits under this band at every offset, so the band is never allowed to
+ * be transparent, and a tier that only loses its blur still has a legible bar. This
+ * file deliberately does not gamble the whole band on the blur.
  *
  * The three restrictions that keep this file pure policy, the same ones
  * `ImmersiveMaterialPolicy` keeps:

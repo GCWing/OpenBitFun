@@ -221,10 +221,11 @@ export struct AppRootPresentation {
   /**
    * One pushed route. Only the compact conversation hands its chrome to the
    * platform: its header band becomes the destination's own title bar, which is
-   * what gives the band the platform's gradient blur and — from API 23 on — the
-   * immersive material. Every other destination keeps `hideTitleBar(true)` and
-   * draws its own header, and the wide layout is not a destination at all (see
-   * `WideRouteContent`), so it never reaches this builder's title bar branch.
+   * what gives the band the platform's own translucent bar — its blur family and,
+   * from API 23 on, the immersive material. Every other destination keeps
+   * `hideTitleBar(true)` and draws its own header, and the wide layout is not a
+   * destination at all (see `WideRouteContent`), so it never reaches this builder's
+   * title bar branch.
    */
   @Builder
   NavigationDestination(name: string) {
