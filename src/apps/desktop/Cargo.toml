@@ -122,6 +122,7 @@ windows = { workspace = true, features = [
   "Win32_System_Com_StructuredStorage",
   "Win32_System_Ole",
   "Win32_System_Variant",
+  "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_Shell_PropertiesSystem",

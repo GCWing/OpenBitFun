@@ -46,7 +46,11 @@
       "subtitle": "在主視窗之外顯示提醒、PR 狀態、進度、天氣等值得隨時看一眼的小卡片",
       "enable": "啟用小卡片",
       "description": "關閉後卡片會隱藏，智慧體也無法再建立或更新卡片，現有卡片會保留。",
-      "unsupported": "請更新目前主機後再管理小卡片。"
+      "unsupported": "請更新目前主機後再管理小卡片。",
+      "pinnedOn": "已釘選到桌面，位於圖示之上並在其他應用程式之下",
+      "pinnedOff": "未釘選到桌面",
+      "pinCard": "將「{{title}}」釘選到桌面",
+      "pinFailed": "無法切換釘選狀態，請重試。"
     },
     "workspaceSearch": {
       "title": "加速工作區搜尋",

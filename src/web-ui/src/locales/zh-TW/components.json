@@ -667,6 +667,7 @@
     "loading": "載入中…",
     "loadFailed": "無法載入此卡片。",
     "unsupportedTemplate": "此卡片需要更新版本的 OpenBitFun。",
+    "stackingFailed": "無法切換顯示模式：{{error}}",
     "updated": "更新於{{time}}",
     "updatedWithWarning": "更新於{{time}}，部分資料可能缺失",
     "refreshFailed": "重新整理失敗：{{error}}",
@@ -675,7 +676,8 @@
       "refresh": "重新整理",
       "openLink": "開啟連結",
       "openSession": "開啟來源會話",
-      "alwaysOnTop": "保持置頂",
+      "alwaysOnTop": "全域置頂",
+      "desktopPinned": "固定桌面",
       "hide": "隱藏卡片",
       "delete": "刪除卡片"
     },

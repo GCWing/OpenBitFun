@@ -46,7 +46,11 @@
       "subtitle": "Small cards outside the main window for reminders, PR status, progress, weather, and other things worth a glance",
       "enable": "Enable desktop cards",
       "description": "When off, cards are hidden and the agent can no longer create or update them. Existing cards are kept.",
-      "unsupported": "Update this host to manage desktop cards."
+      "unsupported": "Update this host to manage desktop cards.",
+      "pinnedOn": "Pinned to the desktop, above the icons and behind other apps",
+      "pinnedOff": "Not pinned to the desktop",
+      "pinCard": "Pin {{title}} to the desktop",
+      "pinFailed": "Could not change the pin state. Try again."
     },
     "workspaceSearch": {
       "title": "Accelerated workspace search",

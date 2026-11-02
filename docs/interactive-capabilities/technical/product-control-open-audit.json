@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "513e184cc2d93f183cdea258516f532caf58ac6400ef76dce9b54f6de0752627",
-  "count": 204,
+  "catalogDigest": "6ae2eeaa19e6342f9dcf7ff33b7c0fa94547ee1c02fc1835f6f4471caab6fbb3",
+  "count": 205,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 169,
+    "unstructuredInteraction": 170,
     "visualSelection": 26
   },
   "entries": [
@@ -2356,6 +2356,26 @@
         "command:hide_agent_companion_desktop_pet",
         "command:resize_agent_companion_desktop_pet",
         "command:show_main_window"
+      ]
+    },
+    {
+      "capabilityId": "feature.desktop-cards",
+      "itemId": "desktop-pinning",
+      "titleZh": "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态",
+      "titleEn": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards",
+      "reasonCode": "unstructuredInteraction",
+      "reasonZh": "“在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态”会让卡片进入 Explorer 桌面层，位于桌面图标之上、其他应用之下，并且需要 Explorer 可用且 DPI 上下文一致才能成立；DesktopCard 工具的配置里没有这项显示偏好，因此由用户在卡片菜单或管理列表里切换，智能体只打开精确入口。",
+      "reasonEn": "“Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards” moves the card into the Explorer desktop layer, above the icons and behind other apps, and only holds while Explorer is available with a matching DPI context; the DesktopCard tool configuration deliberately does not carry this display preference, so the user toggles it from the card menu or a management list and the Agent only opens the exact entry.",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "application.pet",
+        "sectionId": "desktop-cards"
+      },
+      "evidence": [
+        "command:desktop_card_set_always_on_top",
+        "source:src/apps/desktop/src/desktop_cards/desktop_layer.rs#SHELLDLL_DefView",
+        "source:src/web-ui/src/app/scenes/personal-overview/OverviewDesktopCardsSection.tsx#desktopCards.pin",
+        "source:src/web-ui/src/app/scenes/settings/pages/application/DesktopCardsSettingsSection.tsx#desktop-card-pin-row"
       ]
     },
     {

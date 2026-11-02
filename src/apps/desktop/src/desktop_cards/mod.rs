@@ -5,6 +5,8 @@
 //! notifications, and the `app.ai_experience.enable_desktop_cards` gate.
 
 pub mod commands;
+#[cfg(windows)]
+mod desktop_layer;
 mod fetch_gate;
 mod refresh;
 mod store;
@@ -298,6 +300,9 @@ impl DesktopCards {
         card_id: &str,
         patch: DesktopCardPatch,
     ) -> Result<DesktopCardRecord, String> {
+        if let Some(always_on_top) = patch.always_on_top {
+            self.set_stacking(card_id, always_on_top, None).await?;
+        }
         let card = {
             let mut store = self.store.lock().await;
             let card = store.get_mut(card_id).ok_or_else(|| not_found(card_id))?;
@@ -313,9 +318,6 @@ impl DesktopCards {
         if let Some(size) = patch.size {
             windows::apply_window_size(&self.app, card_id, clamp_size(size));
         }
-        if let Some(always_on_top) = patch.always_on_top {
-            windows::apply_always_on_top(&self.app, card_id, always_on_top);
-        }
         let card = self.sync_card_runtime(card).await;
         self.emit_changed(card_id, Some(&card), false);
         Ok(self.await_first_fetch(card).await)
@@ -329,6 +331,14 @@ impl DesktopCards {
         let card = {
             let mut store = self.store.lock().await;
             let card = store.get_mut(card_id).ok_or_else(|| not_found(card_id))?;
+            if visible && self.is_enabled() && windows::desktop_pinned(card) {
+                let position = windows::resolve_position(
+                    &self.app,
+                    card,
+                    windows::open_card_labels(&self.app).len(),
+                );
+                windows::open_window(&self.app, card, position).await?;
+            }
             card.visible = visible;
             let card = card.clone();
             Self::save_locked(&mut store)?;
@@ -398,20 +408,63 @@ impl DesktopCards {
         Ok(card)
     }
 
-    pub async fn set_always_on_top(
+    pub async fn set_stacking(
         &self,
         card_id: &str,
         always_on_top: bool,
+        desktop_pinned: Option<bool>,
     ) -> Result<DesktopCardRecord, String> {
-        let card = {
-            let mut store = self.store.lock().await;
-            let card = store.get_mut(card_id).ok_or_else(|| not_found(card_id))?;
-            card.always_on_top = always_on_top;
-            let card = card.clone();
-            Self::save_locked(&mut store)?;
-            card
-        };
-        windows::apply_always_on_top(&self.app, card_id, always_on_top);
+        if desktop_pinned == Some(true) && !cfg!(windows) {
+            return Err("Pinning cards to the desktop is supported only on Windows.".to_string());
+        }
+        if desktop_pinned == Some(true) && always_on_top {
+            return Err(
+                "Desktop pinning and global always-on-top are mutually exclusive.".to_string(),
+            );
+        }
+        // Serialize presentation changes with persistence. Do not announce or
+        // persist success when Windows refuses to attach/detach the window.
+        let mut store = self.store.lock().await;
+        let previous = store
+            .get(card_id)
+            .ok_or_else(|| not_found(card_id))?
+            .clone();
+        let mut card = previous.clone();
+        card.always_on_top = always_on_top;
+        card.extra.insert(
+            "desktopPinned".to_string(),
+            json!(desktop_pinned.unwrap_or(false)),
+        );
+        let apply = windows::apply_stacking(
+            &self.app,
+            card_id,
+            always_on_top,
+            windows::desktop_pinned(&card),
+        )
+        .await;
+        if let Err(error) = apply {
+            let rollback = windows::apply_stacking(
+                &self.app,
+                card_id,
+                previous.always_on_top,
+                windows::desktop_pinned(&previous),
+            )
+            .await;
+            return Err(format!("{error}; rollback: {rollback:?}"));
+        }
+        *store.get_mut(card_id).ok_or_else(|| not_found(card_id))? = card.clone();
+        if let Err(error) = Self::save_locked(&mut store) {
+            *store.get_mut(card_id).ok_or_else(|| not_found(card_id))? = previous.clone();
+            let rollback = windows::apply_stacking(
+                &self.app,
+                card_id,
+                previous.always_on_top,
+                windows::desktop_pinned(&previous),
+            )
+            .await;
+            return Err(format!("{error}; rollback: {rollback:?}"));
+        }
+        drop(store);
         self.emit_changed(card_id, Some(&card), false);
         Ok(card)
     }
@@ -450,7 +503,7 @@ impl DesktopCards {
         if active {
             let cascade_index = windows::open_card_labels(&self.app).len();
             let position = windows::resolve_position(&self.app, &card, cascade_index);
-            match windows::open_window(&self.app, &card, position) {
+            match windows::open_window(&self.app, &card, position).await {
                 Ok(()) => {
                     if position.is_some() && position != card.position {
                         card.position = position;
@@ -672,7 +725,7 @@ impl DesktopCards {
             );
         }
         let card = self.sync_card_runtime(card).await;
-        if self.is_enabled() {
+        if self.is_enabled() && !windows::desktop_pinned(&card) {
             windows::bring_to_front(&self.app, card_id);
         }
         self.emit_changed(card_id, Some(&card), false);
@@ -916,6 +969,18 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     let service = Arc::clone(service.inner());
     match event {
         tauri::WindowEvent::Moved(position) => {
+            // WM_MOVE reports parent-client coordinates for attached windows.
+            // Persist screen coordinates so detach and multi-monitor restore do
+            // not jump by Explorer's desktop origin or non-client offset.
+            #[cfg(windows)]
+            let position = match window
+                .hwnd()
+                .ok()
+                .and_then(|hwnd| desktop_layer::screen_position(hwnd).ok())
+            {
+                Some(point) => tauri::PhysicalPosition::new(point.x, point.y),
+                None => *position,
+            };
             let scale = window.scale_factor().unwrap_or(1.0);
             let position = position.to_logical::<f64>(scale);
             service.record_geometry(

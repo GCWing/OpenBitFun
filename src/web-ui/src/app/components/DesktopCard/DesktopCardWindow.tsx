@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Ellipsis, RefreshCw, X } from 'lucide-react';
 import { Button, Icon, IconButton, MenuPopover, OverflowText, Spinner, type MenuEntry } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
-import { desktopCardAPI, type DesktopCardRecord } from '@/infrastructure/api/service-api/DesktopCardAPI';
+import { desktopCardAPI, isDesktopPinned, type DesktopCardRecord } from '@/infrastructure/api/service-api/DesktopCardAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import {
   DESKTOP_CARD_RESIZE_DIRECTIONS,
@@ -11,7 +11,7 @@ import {
   startDesktopCardWindowDrag,
   startDesktopCardWindowResize,
 } from '@/infrastructure/desktop-cards/desktopCardWindow';
-import { isMacOSDesktopRuntime, supportsNativeWindowControls } from '@/infrastructure/runtime/environment';
+import { isMacOSDesktopRuntime, isWindowsDesktopRuntime, supportsNativeWindowControls } from '@/infrastructure/runtime/environment';
 import { createLogger } from '@/shared/utils/logger';
 import {
   ChartTemplate,
@@ -135,6 +135,9 @@ export default function DesktopCardWindow() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [desktopPinningSupported, setDesktopPinningSupported] = useState(false);
+  const [stackingBusy, setStackingBusy] = useState(false);
+  const [stackingError, setStackingError] = useState<string | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const formatters = useMemo<DesktopCardFormatters>(() => ({
     formatNumber,
@@ -162,7 +165,11 @@ export default function DesktopCardWindow() {
       if (payload.card) setCard(payload.card);
     });
     void desktopCardAPI.get(cardId)
-      .then(record => { if (!disposed) setCard(record); })
+      .then(record => {
+        if (disposed) return;
+        setCard(record);
+        setDesktopPinningSupported(isWindowsDesktopRuntime() && record.desktopPinningSupported === true);
+      })
       .catch(error => {
         log.warn('Failed to load desktop card', { cardId, error });
         if (!disposed) setLoadFailed(true);
@@ -202,6 +209,16 @@ export default function DesktopCardWindow() {
       .catch(error => log.warn('Failed to refresh desktop card', { cardId, error }))
       .finally(() => setRefreshing(false));
   }, [cardId, refreshing]);
+
+  const changeStacking = (change: () => Promise<DesktopCardRecord>) => {
+    if (stackingBusy) return;
+    setStackingBusy(true);
+    setStackingError(null);
+    void change().then(setCard).catch(error => {
+      log.warn('Failed to change desktop card stacking', { cardId, error });
+      setStackingError(error instanceof Error ? error.message : String(error));
+    }).finally(() => setStackingBusy(false));
+  };
 
   const onHeaderMouseDown = (event: React.MouseEvent<HTMLElement>) => {
     if (event.button !== 0 || event.detail > 1 || isInteractiveTarget(event.target)) return;
@@ -243,12 +260,17 @@ export default function DesktopCardWindow() {
       label: t('desktopCard.menu.alwaysOnTop'),
       role: 'menuitemcheckbox',
       checked: card.alwaysOnTop,
-      onSelect: () => {
-        void desktopCardAPI.setAlwaysOnTop(card.id, !card.alwaysOnTop).catch(error => {
-          log.warn('Failed to toggle desktop card always-on-top', { cardId: card.id, error });
-        });
-      },
+      disabled: stackingBusy,
+      onSelect: () => changeStacking(() => desktopCardAPI.setAlwaysOnTop(card.id, !card.alwaysOnTop)),
     },
+    ...(desktopPinningSupported ? [{
+      id: 'desktop-pinned',
+      label: t('desktopCard.menu.desktopPinned'),
+      role: 'menuitemcheckbox' as const,
+      checked: isDesktopPinned(card),
+      disabled: stackingBusy,
+      onSelect: () => changeStacking(() => desktopCardAPI.setDesktopPinned(card.id, !isDesktopPinned(card))),
+    }] : []),
     { id: 'separator', label: '', separator: true },
     { id: 'hide', label: t('desktopCard.menu.hide'), onSelect: hide },
     { id: 'delete', label: t('desktopCard.menu.delete'), tone: 'danger', onSelect: () => setConfirmingDelete(true) },
@@ -282,6 +304,7 @@ export default function DesktopCardWindow() {
         </div>
       </header>
       <div className="openbitfun-desktop-card__body" data-openbitfun-component="desktop-card" data-openbitfun-part="body">
+        {stackingError !== null && <p className="openbitfun-desktop-card__empty" role="alert">{t('desktopCard.stackingFailed', { error: stackingError })}</p>}
         {confirmingDelete ? (
           <div className="openbitfun-desktop-card__confirm" role="alertdialog" aria-label={t('desktopCard.deleteConfirm.title')}>
             <p>{t('desktopCard.deleteConfirm.message')}</p>
