@@ -16,5 +16,13 @@
       "cancel": "Cancel",
       "save": "Save"
     }
+  },
+  "linkForward": {
+    "label": "Terminal link",
+    "created": "Forwarded remote port {{remotePort}} to {{localAddress}}.",
+    "failed": "Could not forward remote port {{port}}: {{error}}",
+    "peerUnsupported": "Ports cannot be forwarded while controlling another device. This link points at the remote host, not this machine.",
+    "openAnyway": "Open link anyway",
+    "noPort": "This link points at the remote host, not this machine, and has no port to forward."
   }
 }
