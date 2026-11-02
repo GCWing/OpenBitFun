@@ -12,6 +12,12 @@ const log = createLogger('RelaySessionHistory');
  */
 const RECORD_FLUSH_DELAY_MS = 16;
 
+/**
+ * A page in flight renders as one batch at its ready event, even when its record
+ * events span frames. Only a backstop, so a stalled page cannot hold live records.
+ */
+const PAGE_RECORD_FLUSH_DELAY_MS = 250;
+
 export interface RelayHistoryReady {
   sessionId: string;
   hasMore: boolean;
@@ -107,7 +113,9 @@ export class RelaySessionHistory {
   private isCurrent(): boolean { return !this.closed && this.scope.isCurrent(); }
 
   private scheduleFlush(): void {
-    if (this.flushTimer === null) this.flushTimer = setTimeout(() => this.flush(), RECORD_FLUSH_DELAY_MS);
+    if (this.flushTimer !== null) return;
+    const pageInFlight = this.ready === null || this.pageApplied !== null;
+    this.flushTimer = setTimeout(() => this.flush(), pageInFlight ? PAGE_RECORD_FLUSH_DELAY_MS : RECORD_FLUSH_DELAY_MS);
   }
 
   private flush(): boolean {

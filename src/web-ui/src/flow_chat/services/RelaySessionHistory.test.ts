@@ -91,6 +91,35 @@ describe('RelaySessionHistory', () => {
     history.close();
   });
 
+  it('keeps a page in one batch across frames but cannot be stalled by it', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150 });
+      return 'subscription';
+    });
+    fixture.older.mockImplementation(() => new Promise<void>(() => {}));
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    void history.loadOlder().catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    for (let index = 0; index < 20; index += 1) {
+      fixture.record?.({ sessionId: 'session', id: `item/${index}` });
+      await vi.advanceTimersByTimeAsync(5);
+    }
+    expect(flush).not.toHaveBeenCalled();
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 150 });
+    expect(flush).toHaveBeenCalledOnce();
+
+    void history.loadOlder().catch(() => {});
+    fixture.record?.({ sessionId: 'session', id: 'item/stalled' });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(flush).toHaveBeenCalledTimes(2);
+    history.close();
+  });
+
   it('flushes live records that have no ready event once per frame', async () => {
     vi.useFakeTimers();
     fixture.subscribe.mockImplementation(async () => {

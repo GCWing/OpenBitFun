@@ -1967,13 +1967,6 @@ const isTerminalRelayTurnStatus = (status: DialogTurn['status']): boolean => (
   status === 'completed' || status === 'cancelled' || status === 'error'
 );
 
-/** Undefined means the count is unknown, which is not the same as the loaded tail. */
-function seedRelayTurnCount(session: Session): number | undefined {
-  const known = session.totalTurnCount ?? session.persistedTurnCount;
-  return known === undefined ? undefined
-    : Math.max(known, session.persistedTurnCount ?? 0, canonicalSessionTurns(session).length);
-}
-
 export class FlowChatStore {
   private static instance: FlowChatStore;
   private surfaceContainers = new Map<DeviceSurfaceId, SurfaceStateContainer>();
@@ -6078,7 +6071,6 @@ export class FlowChatStore {
     if (isUnmaterializedSessionDraft(surface.state.sessions.get(sessionId))) return;
     let history = surface.relaySessionHistory.get(sessionId);
     if (!history) {
-      let turnCountRequested = false;
       history = new RelaySessionHistory(sessionId,
         record => this.applyRelaySessionRecord(record),
         ready => {
@@ -6090,18 +6082,10 @@ export class FlowChatStore {
               // This surface owns presentation only. Execution-context loading
               // remains on the runtime when it accepts the next command.
               contextRestoreState: 'ready',
-              isPartial: ready.hasMore, loadedTurnCount: session.dialogTurns.length,
-              // A partial view is the tail, so its ordinals need the whole count.
-              totalTurnCount: ready.hasMore ? seedRelayTurnCount(session) : undefined });
+              isPartial: ready.hasMore, loadedTurnCount: session.dialogTurns.length });
             return { ...previous, sessions };
           });
           if (!ready.hasMore) this.refreshRelayTurnCatalog(sessionId);
-          else if (!turnCountRequested) {
-            turnCountRequested = true;
-            void this.refreshRelayTurnCount(sessionId).catch(error => {
-              log.warn('Relay session turn count refresh failed', { sessionId, error });
-            });
-          }
         }, error => {
           log.error('Relay session history failed', { sessionId, error });
           this.setSessionHistoryState(sessionId, 'failed');
@@ -6122,28 +6106,6 @@ export class FlowChatStore {
       if (surface.relaySessionHistory.get(sessionId) === history) surface.relaySessionHistory.delete(sessionId);
       throw error;
     }
-  }
-
-  /** The session list can predate the opened stream, so ask the host once per subscription. */
-  private async refreshRelayTurnCount(sessionId: string): Promise<void> {
-    const surface = this.activeSurface;
-    const scope = getActiveSurfaceScope();
-    const shell = surface.state.sessions.get(sessionId);
-    const workspaceId = shell && sessionOwningWorkspaceId(shell);
-    if (!workspaceId) return;
-    const { sessionAPI } = await import('@/infrastructure/api/service-api/SessionAPI');
-    scope.assertCurrent('load relay session turn count');
-    const metadata = await sessionAPI.loadSessionMetadata(sessionId, workspaceId);
-    if (!metadata || !scope.isCurrent() || surface !== this.activeSurface) return;
-    this.setState(previous => {
-      const session = previous.sessions.get(sessionId);
-      if (session?.isPartial !== true) return previous;
-      const sessions = new Map(previous.sessions);
-      sessions.set(sessionId, { ...session,
-        persistedTurnCount: metadata.turnCount,
-        totalTurnCount: Math.max(metadata.turnCount, seedRelayTurnCount(session) ?? 0) });
-      return { ...previous, sessions };
-    });
   }
 
   private refreshRelayInteractionMailbox(sessionId: string): Promise<void> {
@@ -6279,29 +6241,13 @@ export class FlowChatStore {
       const dialogTurns = session.dialogTurns.filter(turn => (
         !settled.has(turn.id) && !incoming.has(turn.userMessage.id)
       ));
-      const newestRetained = dialogTurns.at(-1);
-      const compare = (a: DialogTurn, b: DialogTurn): number => (
-        a.storageTurnIndex !== undefined && b.storageTurnIndex !== undefined
-          ? a.storageTurnIndex - b.storageTurnIndex : a.startTime - b.startTime
-      );
       if (incoming.size > 0) {
         dialogTurns.push(...incoming.values());
-        dialogTurns.sort(compare);
+        dialogTurns.sort((a, b) => a.storageTurnIndex !== undefined && b.storageTurnIndex !== undefined
+          ? a.storageTurnIndex - b.storageTurnIndex : a.startTime - b.startTime);
       }
-      // Live turns move the tail of a partial view; older pages do not.
-      const rendered = new Set(session.dialogTurns.flatMap(turn => [turn.id, turn.userMessage.id]));
-      const appended = [...incoming.values()].filter(turn => (
-        !rendered.has(turn.id) && !rendered.has(turn.userMessage.id)
-        && !!newestRetained && compare(turn, newestRetained) > 0
-      )).length;
-      const removed = session.dialogTurns.filter(turn => (
-        settled.has(turn.id) && !incoming.has(turn.userMessage.id)
-      )).length;
       const sessions = new Map(previous.sessions);
-      sessions.set(sessionId, { ...session, dialogTurns,
-        totalTurnCount: session.isPartial === true && session.totalTurnCount !== undefined
-          ? Math.max(session.totalTurnCount + appended - removed, dialogTurns.length)
-          : session.totalTurnCount });
+      sessions.set(sessionId, { ...session, dialogTurns });
       return { ...previous, sessions };
     });
     if (failed.size > 0) surface.relayPendingRecordTurns.set(sessionId, new Set(failed.keys()));

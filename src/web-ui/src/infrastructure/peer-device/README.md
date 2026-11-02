@@ -21,15 +21,13 @@ host, and a stream-epoch change (host restart) drops the replica before replay.
 The latest page paints first; older pages share one in-flight reader. A visible
 open or explicit reader request can warm one adjacent page while the document is
 visible and the shared resource budget permits it. This never recursively drains
-the transcript, and neither does switching to a session: its older pages load
-when the reader or an explicit full-history request asks for them. Hiding a view
-pauses optional prefetch only; live records, reconnect and interaction-mailbox
-delivery keep their subscriptions.
+the transcript. Hiding a view pauses optional prefetch only; live records,
+reconnect and interaction-mailbox delivery keep their subscriptions.
 
 The host sends each record of a page as its own event. Records reduce into the
 replica as they arrive; rendering the changed turns is coalesced to one store
-update per frame and always happens before a page's ready event. Rendering per
-record is quadratic in the items of a long turn and freezes the UI thread. Live
+update per frame, and a page in flight renders as one batch before its ready
+event. Rendering per record is quadratic in the items of a long turn and freezes the UI thread. Live
 pages have no ready event, so the frame timer publishes them; it is a timer
 rather than an animation frame so hidden windows keep applying records. A running
 turn reaching a terminal status, a visibility change, and any direct turn, round
@@ -37,10 +35,8 @@ or tool event flush first, so those facts never apply over a stale render. Any
 new path that presents a page as ready, including a synthetic one, must flush
 first and must not report `hasMore: false` without proof.
 
-A rendered turn stays pending until it was converted: the replica will not report
-a held revision again. A partial view is the tail, so its ordinals are anchored to
-the host's turn count. When that count is unknown the rail stays hidden and
-turn-addressed actions stay disabled rather than numbering the tail from 1.
+A turn stays pending until it was converted: the replica will not report a held
+revision again.
 Receive cursors advance only after applying
 records, never from a send acknowledgement. Transport reconnect resumes that same
 subscription. Local Runtime projection machinery is not a second Relay content

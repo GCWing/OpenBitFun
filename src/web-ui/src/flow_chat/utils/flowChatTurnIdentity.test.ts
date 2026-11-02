@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTurnOrdinalResolver, nextStorageTurnIndex, sessionTurnOrdinalsKnown } from './flowChatTurnIdentity';
+import { nextStorageTurnIndex } from './flowChatTurnIdentity';
 import type { DialogTurn } from '../types/flow-chat';
 
 const SESSION_ID = 'acp_dsh_session';
@@ -24,27 +24,6 @@ function session(overrides: Record<string, unknown> = {}): any {
     ...overrides,
   };
 }
-
-describe('sessionTurnOrdinalsKnown', () => {
-  const turn = { id: 'tail', userMessage: { id: 'user-tail' } } as any;
-
-  it('does not number a partial tail whose total is unknown', () => {
-    const session = { sessionId: 's', dialogTurns: [turn], isPartial: true } as any;
-    expect(sessionTurnOrdinalsKnown(session)).toBe(false);
-    expect(createTurnOrdinalResolver(session)(0)).toBeUndefined();
-  });
-
-  it('anchors a partial tail to a known total', () => {
-    const session = { sessionId: 's', dialogTurns: [turn], isPartial: true, totalTurnCount: 20 } as any;
-    expect(sessionTurnOrdinalsKnown(session)).toBe(true);
-    expect(createTurnOrdinalResolver(session)(0)).toBe(19);
-  });
-
-  it('numbers a complete session from its loaded turns', () => {
-    const session = { sessionId: 's', dialogTurns: [turn], isPartial: false } as any;
-    expect(createTurnOrdinalResolver(session)(0)).toBe(0);
-  });
-});
 
 describe('nextStorageTurnIndex', () => {
   it('gives the first turn of an empty session slot zero', () => {

@@ -16,8 +16,6 @@ import type { FlowChatState, ModelRound, Session } from '../types/flow-chat';
 import { startupTrace } from '@/shared/utils/startupTrace';
 import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import { SessionRecordReplica } from '../session-stream/SessionRecordReplica';
-import { sessionTurnOrdinalsKnown } from '../utils/flowChatTurnIdentity';
-import { absoluteSessionTurnIndexForId } from '../utils/flowChatTurnOrdinal';
 import { isSessionBindingLocked } from '../utils/sessionLifecycle';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
@@ -52,6 +50,7 @@ function fixtureWorkspaceId(rootPath: string, connectionId?: string, sshHost?: s
 const apiMocks = vi.hoisted(() => ({
   getSessionInteractionMailbox: vi.fn(async (sessionId: string) => ({sessionId, userQuestions:{revision:0,questions:[]}, permissions:{revision:0,requests:[]}})),
   subscribeRelaySession: vi.fn(),
+  loadOlderRelaySession: vi.fn(),
   relayRecord: null as ((value: any) => void) | null,
   relayReady: null as ((value: any) => void) | null,
   listSessions: vi.fn(),
@@ -148,6 +147,7 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({
     onSessionReady: (listener: (value: any) => void) => { apiMocks.relayReady = listener; return () => { apiMocks.relayReady = null; }; },
     onSessionSyncError: vi.fn(() => () => {}),
     subscribeSession: apiMocks.subscribeRelaySession,
+    loadOlderSession: apiMocks.loadOlderRelaySession,
     unsubscribeSession: vi.fn(async () => {}),
   },
 }));
@@ -7928,8 +7928,6 @@ describe('FlowChatStore device surfaces', () => {
 
     beforeEach(() => {
       stateMachineManagerMock.getOrCreate.mockReturnValue({ acceptRuntimeStatus: vi.fn() });
-      apiMocks.loadSessionMetadata.mockReset();
-      apiMocks.loadSessionMetadata.mockResolvedValue(null);
     });
 
     it('renders a page of one long turn once, before ready reports it', async () => {
@@ -8045,75 +8043,50 @@ describe('FlowChatStore device surfaces', () => {
       expect(texts('peer-switch')).toHaveLength(1);
     });
 
-    const seedPartial = (sessionId: string, persistedTurnCount?: number) => {
-      flowChatStore.setState(() => ({
-        sessions: new Map([[sessionId, createSession({
-          sessionId, isHistorical: true, historyState: 'metadata-only', persistedTurnCount,
-        })]]),
-        activeSessionId: sessionId,
-      }));
-    };
-    const openTail = async (sessionId: string, turnIndexes: number[], hasMore = true) => {
-      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
-        turnIndexes.forEach((turnIndex, index) => apiMocks.relayRecord?.(itemRecord(sessionId, turnIndex, 0, index + 1)));
-        apiMocks.relayReady?.({ sessionId, hasMore, oldestSeq: 100, cursor: 150 });
-        return `${sessionId}-subscription`;
+    it('applies each drained page in one pass', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-drain');
+      const pages = 6;
+      const recordsPerPage = 50;
+      const deliver = (page: number) => {
+        // Newest first, as the host reads history backward through one long turn.
+        const start = (pages - 1 - page) * recordsPerPage;
+        for (let index = 0; index < recordsPerPage; index += 1) {
+          apiMocks.relayRecord?.(itemRecord('peer-drain', 0, start + index));
+        }
+        apiMocks.relayReady?.({ sessionId: 'peer-drain', hasMore: page < pages - 1, oldestSeq: start + 1, cursor: pages * recordsPerPage });
+      };
+      const session = () => flowChatStore.getState().sessions.get('peer-drain')!;
+      let page = 0;
+      let lastTurns: Session['dialogTurns'] | undefined;
+      let recordUpdates = 0;
+      let storeUpdates = 0;
+      const unsubscribe = flowChatStore.subscribe(state => {
+        storeUpdates += 1;
+        const turns = state.sessions.get('peer-drain')?.dialogTurns;
+        if (turns !== lastTurns) { recordUpdates += 1; lastTurns = turns; }
       });
-      await flowChatStore.loadRelaySessionHistory(sessionId);
-    };
-    const absolute = (sessionId: string, turnId: string) => (
-      absoluteSessionTurnIndexForId(flowChatStore.getState().sessions.get(sessionId)!, turnId)
-    );
+      const snapshot = vi.spyOn(SessionRecordReplica.prototype, 'snapshot');
+      apiMocks.loadOlderRelaySession.mockImplementation(async () => { page += 1; deliver(page); });
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        recordUpdates = 0;
+        storeUpdates = 0;
+        lastTurns = session().dialogTurns;
+        deliver(0);
+        return 'peer-drain-subscription';
+      });
 
-    it('numbers a partial tail from the host count and follows live turns', async () => {
-      activateSurface(PEER_SURFACE_ID);
-      seedPartial('peer-tail', 20);
-      await openTail('peer-tail', [18, 19]);
+      await flowChatStore.loadRelaySessionHistory('peer-drain');
+      await expect(flowChatStore.ensureSessionFullHistory('peer-drain', 'test')).resolves.toBe(true);
+      unsubscribe();
 
-      expect(absolute('peer-tail', 'turn-18')).toBe(19);
-      expect(absolute('peer-tail', 'turn-19')).toBe(20);
-
-      apiMocks.relayRecord?.(itemRecord('peer-tail', 20, 0, 9));
-      await vi.waitFor(() => expect(absolute('peer-tail', 'turn-20')).toBe(21));
-      expect(absolute('peer-tail', 'turn-19')).toBe(20);
-    });
-
-    it('does not count an older page as new turns', async () => {
-      activateSurface(PEER_SURFACE_ID);
-      seedPartial('peer-older', 20);
-      await openTail('peer-older', [18, 19]);
-
-      apiMocks.relayRecord?.(itemRecord('peer-older', 17, 0, 9));
-      apiMocks.relayReady?.({ sessionId: 'peer-older', hasMore: true, oldestSeq: 50, cursor: 150 });
-
-      expect(flowChatStore.getState().sessions.get('peer-older')?.totalTurnCount).toBe(20);
-      expect(absolute('peer-older', 'turn-17')).toBe(18);
-    });
-
-    it('corrects a stale session list from the host', async () => {
-      activateSurface(PEER_SURFACE_ID);
-      seedPartial('peer-stale', 20);
-      apiMocks.loadSessionMetadata.mockResolvedValue({ turnCount: 25 });
-      await openTail('peer-stale', [23, 24]);
-
-      await vi.waitFor(() => expect(absolute('peer-stale', 'turn-24')).toBe(25));
-    });
-
-    it('withholds ordinals until the count is known, then numbers complete history', async () => {
-      activateSurface(PEER_SURFACE_ID);
-      seedPartial('peer-unknown');
-      apiMocks.loadSessionMetadata.mockRejectedValue(new Error('Host busy'));
-      await openTail('peer-unknown', [18, 19]);
-
-      const session = () => flowChatStore.getState().sessions.get('peer-unknown')!;
-      expect(session().isPartial).toBe(true);
-      expect(sessionTurnOrdinalsKnown(session())).toBe(false);
-      expect(absolute('peer-unknown', 'turn-19')).toBeUndefined();
-
-      apiMocks.relayReady?.({ sessionId: 'peer-unknown', hasMore: false, oldestSeq: 1, cursor: 150 });
-
-      expect(session().isPartial).toBe(false);
-      expect(absolute('peer-unknown', 'turn-19')).toBe(2);
+      expect(page).toBe(pages - 1);
+      expect(recordUpdates).toBe(pages);
+      expect(snapshot).toHaveBeenCalledTimes(pages);
+      snapshot.mockRestore();
+      // Ready and catalog bookkeeping add a small constant per page, not per record.
+      expect(storeUpdates).toBeLessThanOrEqual(pages * 4);
+      expect(texts('peer-drain')).toHaveLength(pages * recordsPerPage);
     });
 
     it('renders good turns past a failed one, stays failed, and retries the held turn', async () => {
