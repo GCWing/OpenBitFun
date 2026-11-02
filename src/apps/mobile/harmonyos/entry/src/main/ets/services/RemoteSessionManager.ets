@@ -23,6 +23,7 @@ import { RemoteResponseMapper } from './RemoteResponseMapper';
 import { stampRemoteSessionsWorkspace } from './RemoteSessionIdentity';
 import { TranscriptIntegrityPolicy } from './TranscriptIntegrityPolicy';
 import { RemoteSessionClient } from './RemoteSessionController';
+import { SubagentStreamSource } from './SubagentStreamCoordinator';
 import { RemoteToolActionClient } from './RemoteToolActionController';
 
 /**
@@ -76,7 +77,7 @@ interface SessionUsageRequest {
 
 interface SessionUsageArgs { request: SessionUsageRequest; }
 
-export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteSessionClient, RemoteToolActionClient, RemoteCommandPaletteClient {
+export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteSessionClient, RemoteToolActionClient, RemoteCommandPaletteClient, SubagentStreamSource {
   private transport?: RemoteCommandTransport;
   private transportGeneration: number = 0;
   private workspace?: WorkspaceInfo;

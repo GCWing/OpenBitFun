@@ -8,8 +8,11 @@ import type ChatTranscript from '../../../../../mobile-web/src/components/ChatTr
 import type ChatMessageActions from '../../../../../mobile-web/src/components/ChatMessageActions';
 import type { RemoteSessionManager } from '../../../../../mobile-web/src/services/RemoteSessionManager';
 
+const mobileI18n = vi.hoisted(() => ({
+  t: (key: string) => key,
+}));
 vi.mock('../../../../../mobile-web/src/i18n', () => ({
-  useI18n: () => ({ lang: 'en', t: (key: string) => key }),
+  useI18n: () => ({ lang: 'en', t: mobileI18n.t }),
 }));
 vi.mock('../../../../../mobile-web/src/components/ChatHeader', () => ({ default: () => null }));
 vi.mock('../../../../../mobile-web/src/components/ChatTranscript', () => ({
