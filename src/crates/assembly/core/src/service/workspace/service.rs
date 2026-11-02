@@ -16,12 +16,13 @@ use super::persistence::{
 use super::WorktreeTopologyFreshness;
 use crate::infrastructure::storage::{PersistenceService, StorageOptions};
 use crate::infrastructure::{try_get_path_manager_arc, PathManager};
+use crate::legacy_migration::legacy_assistant_workspace_root;
+#[cfg(feature = "remote-workspace")]
 use crate::service::bootstrap::{
     ensure_workspace_gitignore_ignores_openbitfun, initialize_workspace_persona_files,
 };
 #[cfg(feature = "git")]
 use crate::service::git::{GitError, GitWorktreeInfo};
-#[cfg(feature = "remote-workspace")]
 use crate::service::remote_ssh::workspace_state::{
     get_remote_workspace_manager, init_remote_workspace_manager,
 };
@@ -30,7 +31,7 @@ use crate::service::workspace_runtime::{
 };
 use crate::util::errors::*;
 use log::{info, warn};
-use openbitfun_core_types::product_identity::{legacy_hidden_data_directory, product_id};
+use openbitfun_core_types::product_identity::product_id;
 use openbitfun_services_core::workspace_identity::{
     canonicalize_local_workspace_root, local_workspace_roots_equal,
     normalize_remote_workspace_path, remote_workspace_stable_id,
@@ -38,7 +39,6 @@ use openbitfun_services_core::workspace_identity::{
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
@@ -146,9 +146,8 @@ struct AssistantWorkspaceDescriptor {
 /// directory or a named `<root>/workspace-<id>` sibling. Comparison is
 /// literal, matching how those directories are created and how their paths
 /// are persisted in workspace records; the directory does not need to exist.
-/// Both the current OpenBitFun root and the legacy BitFun root are checked
-/// with the same layout rules, so records written before the
-/// BitFun-to-OpenBitFun brand migration stay recognizable.
+/// The current root and the pre-rename root are checked with the same layout
+/// rules, so records written before the brand migration stay recognizable.
 fn assistant_descriptor_in_root(
     path: &Path,
     assistant_root: &Path,
@@ -176,33 +175,6 @@ fn assistant_descriptor_in_root(
         assistant_id: Some(assistant_id.to_string()),
         display_name: WorkspaceService::assistant_display_name(Some(assistant_id)),
     })
-}
-
-/// Legacy BitFun-brand personal-assistant root: `~/.bitfun/personal_assistant/`.
-///
-/// `BITFUN_HOME` / `BITFUN_E2E_HOME` replace the legacy `.bitfun` data root
-/// itself, with the same resolution as the BitFun-to-OpenBitFun data
-/// migrator, so both sides resolve one legacy root. Returns `None` when no
-/// user home directory is available.
-fn legacy_assistant_workspace_root() -> Option<PathBuf> {
-    resolve_legacy_assistant_workspace_root(
-        std::env::var_os("BITFUN_HOME"),
-        std::env::var_os("BITFUN_E2E_HOME"),
-        dirs::home_dir().as_deref(),
-    )
-}
-
-fn resolve_legacy_assistant_workspace_root(
-    bitfun_home: Option<OsString>,
-    bitfun_e2e_home: Option<OsString>,
-    user_home: Option<&Path>,
-) -> Option<PathBuf> {
-    let non_empty =
-        |value: Option<OsString>| value.filter(|path| !path.is_empty()).map(PathBuf::from);
-    let legacy_home_root = non_empty(bitfun_home)
-        .or_else(|| non_empty(bitfun_e2e_home))
-        .or_else(|| user_home.map(|home| home.join(legacy_hidden_data_directory())))?;
-    Some(legacy_home_root.join("personal_assistant"))
 }
 
 impl WorkspaceService {
@@ -2449,10 +2421,9 @@ impl WorkspaceService {
     }
 
     /// Returns whether a path is an assistant workspace record the product can
-    /// still manage: either the current OpenBitFun layout or the legacy
-    /// BitFun layout (`~/.bitfun/personal_assistant/`) left behind by the
-    /// BitFun-to-OpenBitFun brand migration. Deletion and reset guards must
-    /// accept both so a pre-migration record stays an explicit user action
+    /// still manage: either the current layout or the pre-rename layout left
+    /// behind by the brand migration. Deletion and reset guards must accept
+    /// both so a pre-migration record stays an explicit user action
     /// instead of being rejected as an unmanaged path.
     pub fn is_manageable_assistant_workspace_path(&self, path: &Path) -> bool {
         self.is_assistant_workspace_path(path) || self.is_legacy_assistant_workspace_path(path)
@@ -3871,7 +3842,7 @@ mod tests {
     #[test]
     fn assistant_layout_check_accepts_only_managed_layouts_under_its_root() {
         let temp = tempfile::tempdir().expect("temp root");
-        let assistant_root = temp.path().join(".bitfun").join("personal_assistant");
+        let assistant_root = temp.path().join(".legacy-data").join("personal_assistant");
 
         let named = assistant_root.join("workspace-abc");
         assert_eq!(
@@ -3895,7 +3866,7 @@ mod tests {
             assistant_descriptor_in_root(
                 &temp
                     .path()
-                    .join(".bitfun")
+                    .join(".legacy-data")
                     .join("other")
                     .join("workspace-x"),
                 &assistant_root
@@ -3938,7 +3909,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manageable_check_accepts_legacy_bitfun_assistant_roots() {
+    async fn manageable_check_accepts_legacy_assistant_roots() {
         let env = TestEnvironment::new();
         let service = build_test_workspace_service(env.path_manager.clone()).await;
         let legacy_assistant_root =
@@ -3948,7 +3919,7 @@ mod tests {
             service.is_manageable_assistant_workspace_path(
                 &legacy_assistant_root.join("workspace-44e0e781")
             ),
-            "legacy BitFun assistant workspaces must stay manageable"
+            "pre-rename assistant workspaces must stay manageable"
         );
         assert!(
             service
@@ -3974,30 +3945,6 @@ mod tests {
                 .is_manageable_assistant_workspace_path(&env.root.join("Documents").join("foo")),
             "unrelated directories must be rejected"
         );
-    }
-
-    #[test]
-    fn legacy_assistant_root_follows_the_migrator_data_root_precedence() {
-        let home = Path::new("/home/dev");
-        let explicit = OsString::from("/custom/legacy");
-        let e2e = OsString::from("/e2e/legacy");
-        let root = |bitfun_home, e2e_home, user_home| {
-            resolve_legacy_assistant_workspace_root(bitfun_home, e2e_home, user_home)
-        };
-
-        assert_eq!(
-            root(Some(explicit.clone()), Some(e2e.clone()), Some(home)),
-            Some(PathBuf::from("/custom/legacy/personal_assistant"))
-        );
-        assert_eq!(
-            root(Some(OsString::new()), Some(e2e), Some(home)),
-            Some(PathBuf::from("/e2e/legacy/personal_assistant"))
-        );
-        assert_eq!(
-            root(None, None, Some(home)),
-            Some(PathBuf::from("/home/dev/.bitfun/personal_assistant"))
-        );
-        assert_eq!(root(None, None, None), None);
     }
 }
 

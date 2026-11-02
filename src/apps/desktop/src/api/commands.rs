@@ -1644,9 +1644,9 @@ enum AssistantWorkspaceDirectoryPlan {
 /// Guards `delete_assistant_workspace` against deleting arbitrary directories.
 ///
 /// Existing directories outside the managed assistant roots (the current
-/// OpenBitFun layout and the legacy BitFun layout left behind by the
-/// BitFun-to-OpenBitFun brand migration) are refused; a record whose
-/// directory is already gone resolves to a registry-only cleanup.
+/// layout and the pre-rename layout left behind by the brand migration) are
+/// refused; a record whose directory is already gone resolves to a
+/// registry-only cleanup.
 fn assistant_workspace_directory_plan(
     path: &Path,
     is_managed_path: bool,
