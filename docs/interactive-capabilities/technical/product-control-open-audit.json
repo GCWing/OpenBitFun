@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "17f5700a9faf966a376680ae8480c1ce1cf06d69caab971e88c33e1c96a1802a",
+  "catalogDigest": "eac1f9fc6338c11451dfeb8ff17123dad2d8de1f1339de27eeaa17cb22e5ff66",
   "count": 200,
   "reasonCounts": {
     "externalAuth": 4,
@@ -3087,11 +3087,11 @@
     {
       "capabilityId": "setting.tools.web-search",
       "itemId": "provider",
-      "titleZh": "在免费 Exa MCP、Exa Search API、Tavily、DeepSeek 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务",
-      "titleEn": "Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, or OpenBitFun Search HTTP Protocol as the runtime provider",
+      "titleZh": "在免费 Exa MCP、Exa Search API、Tavily、DeepSeek、Keenable 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务",
+      "titleEn": "Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, Keenable, or OpenBitFun Search HTTP Protocol as the runtime provider",
       "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“在免费 Exa MCP、Exa Search API、Tavily、DeepSeek 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务”与各服务的配置状态相关，目前没有一个能安全完成选择、检查和保存整个流程的单一结构化 Command；智能体会打开精确设置入口，由用户确认配置。",
-      "reasonEn": "“Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, or OpenBitFun Search HTTP Protocol as the runtime provider” depends on provider-specific configuration state, and no single structured Command can safely complete selection, validation, and saving; the Agent opens the exact settings entry for user confirmation.",
+      "reasonZh": "“在免费 Exa MCP、Exa Search API、Tavily、DeepSeek、Keenable 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务”与各服务的配置状态相关，目前没有一个能安全完成选择、检查和保存整个流程的单一结构化 Command；智能体会打开精确设置入口，由用户确认配置。",
+      "reasonEn": "“Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, Keenable, or OpenBitFun Search HTTP Protocol as the runtime provider” depends on provider-specific configuration state, and no single structured Command can safely complete selection, validation, and saving; the Agent opens the exact settings entry for user confirmation.",
       "presentationTarget": {
         "kind": "settings",
         "pageId": "tools.webSearch"

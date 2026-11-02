@@ -383,7 +383,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     icon: Globe,
     labelKey: 'navigation.pages.webSearch.label',
     descriptionKey: 'navigation.pages.webSearch.description',
-    keywords: ['web search', 'exa', 'tavily', 'deepseek', 'http', 'provider', 'api key'],
+    keywords: ['web search', 'exa', 'tavily', 'deepseek', 'keenable', 'http', 'provider', 'api key'],
     namespaces: ['settings/web-search'],
     searchPhrases: [
       phrase('settings/web-search', 'title'),
