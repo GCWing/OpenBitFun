@@ -17,6 +17,8 @@ server close could leave namespace receivers waiting forever, preventing the
 account connection owner from reconnecting and publishing device presence.
 The engine closes its inbound queue before notifying the manager so pending
 outbound writes cannot deadlock the close notification under backpressure.
+If the manager has already exited, the failed notification is logged at debug
+level and the server close still completes normally.
 Wire formats and the existing reconnect policy are unchanged.
 
 The focused product regression command is:

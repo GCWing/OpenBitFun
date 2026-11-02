@@ -166,9 +166,11 @@ where
                             // The Socket.IO manager still owns live namespace
                             // senders. Notify it before this task exits so its
                             // receivers close and the account owner can reconnect.
-                            sink.send(Message::Close)
-                                .await
-                                .map_err(|e| EngineError::SendSink(e.into()))?;
+                            // A manager that already exited has nothing left to
+                            // release, so a failed notification is not an error.
+                            if let Err(error) = sink.send(Message::Close).await {
+                                tracing::debug!(%error, "manager already closed");
+                            }
                             break;
                         }
                         Packet::Ping(payload) => {
@@ -386,6 +388,16 @@ mod tests {
             messages.lock().unwrap().as_slice(),
             [Message::Close]
         ));
+    }
+
+    #[tokio::test]
+    async fn engine_io_server_close_tolerates_closed_manager() {
+        let s = setup();
+        s.tx.send(EngineAction::Transport(Frame::Packet(Packet::Close)))
+            .await
+            .unwrap();
+        let (result, _) = s.run_with(FailingSink).await;
+        result.unwrap();
     }
 
     #[tokio::test]
