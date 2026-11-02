@@ -998,7 +998,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
     // sent in one tap.
     const explicitText = typeof overrideText === 'string' ? overrideText : null;
     const text = (explicitText ?? input).trim();
-    const imgs = pendingImages;
+    // Attachments belong to the draft, which a suggestion leaves untouched.
+    const imgs = explicitText === null ? pendingImages : [];
     if ((!text && imgs.length === 0) || imageAnalyzing || sendInFlightRef.current) return;
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;

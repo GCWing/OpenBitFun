@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { launchBrowser, startSourceServer } from './helpers/browser-account-harness.mjs';
 
@@ -192,4 +195,44 @@ test('one-tap suggestions use the real chat queue and preserve drafts across ack
       await page.close();
     }
   } finally { await browser.close(); await server.close(); }
+});
+
+test('a one-tap suggestion leaves images attached to the draft', { timeout: 60_000 }, async () => {
+  const server = await startSourceServer();
+  const browser = await launchBrowser();
+  const directory = await mkdtemp(join(tmpdir(), 'suggestion-image-'));
+  try {
+    const image = join(directory, 'draft.png');
+    await writeFile(image, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEBgIApD5fRAAAAABJRU5ErkJggg==', 'base64'));
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844 });
+    await page.goto(server.origin);
+    await page.evaluate(async () => {
+      const { mountAssistantSessionFixture } = await import('/tests/fixtures/assistant-session.tsx');
+      window.chat = await mountAssistantSessionFixture({ openChat: true });
+    });
+    await page.waitForFunction(() => window.chat.ready());
+    await page.evaluate(() => {
+      const { sessionId } = window.chat;
+      window.chat.event({ event: 'session-record', session_id: sessionId, payload: {
+        sessionId, id: 'turn/first', revision: 1,
+        turn: { turnId: 'first', sessionId, turnIndex: 0, status: 'completed', timestamp: 1,
+          userMessage: { id: 'user-1', content: 'Review', timestamp: 1 } },
+      } });
+      window.chat.event({ event: 'agentic://prompt-suggestion', session_id: sessionId,
+        payload: { sessionId, sourceTurnId: 'first', suggestion: 'Run the tests' } });
+    });
+    const input = await page.waitForSelector('input[type="file"]');
+    await input.uploadFile(image);
+    await page.waitForSelector('.chat-page__image-preview-row');
+    const send = '[data-testid="chat-prompt-suggestion-send"]';
+    await page.waitForSelector(send);
+    await page.click(send);
+    await page.waitForFunction(() => window.chat.receipts.size === 1);
+    const [submission] = await page.evaluate(() => window.chat.calls.filter(call => call.request?.action === 'submit'));
+    assert.equal(submission.request.message.content, 'Run the tests');
+    assert.deepEqual(submission.request.message.attachments ?? [], []);
+    assert.ok(await page.$('.chat-page__image-preview-row'), 'the draft image must stay attached');
+    await page.evaluate(() => window.chat.dispose());
+  } finally { await browser.close(); await server.close(); await rm(directory, { recursive: true, force: true }); }
 });
