@@ -17,12 +17,12 @@ use super::WorktreeTopologyFreshness;
 use crate::infrastructure::storage::{PersistenceService, StorageOptions};
 use crate::infrastructure::{try_get_path_manager_arc, PathManager};
 use crate::legacy_migration::legacy_assistant_workspace_root;
-#[cfg(feature = "remote-workspace")]
 use crate::service::bootstrap::{
     ensure_workspace_gitignore_ignores_openbitfun, initialize_workspace_persona_files,
 };
 #[cfg(feature = "git")]
 use crate::service::git::{GitError, GitWorktreeInfo};
+#[cfg(feature = "remote-workspace")]
 use crate::service::remote_ssh::workspace_state::{
     get_remote_workspace_manager, init_remote_workspace_manager,
 };
