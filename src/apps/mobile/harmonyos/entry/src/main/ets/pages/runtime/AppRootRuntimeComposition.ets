@@ -9,6 +9,7 @@ import { accountDeviceLink } from '../../services/AccountDeviceLink';
 import {
   ChatMessage,
   RemoteCommandCatalog,
+  RemoteDefaultModels,
   RemoteModelCatalog,
   RemotePermissionMode,
   RemoteQuestionAnswerPayload,
@@ -1003,6 +1004,14 @@ export abstract class AppRootRuntimeComposition {
       getPermissionMode: (): Promise<RemotePermissionMode> => this.settingsController.getRemotePermissionMode(),
       setPermissionMode: (mode: RemotePermissionMode): Promise<RemotePermissionMode> =>
         this.settingsController.setRemotePermissionMode(mode),
+      getDeviceModelCatalog: (): Promise<RemoteModelCatalog> =>
+        this.settingsController.getDeviceModelCatalog(),
+      setDeviceModelDefaults: (
+        primary: string | null,
+        fast: string | null,
+        imageUnderstanding: string | null
+      ): Promise<RemoteDefaultModels> =>
+        this.settingsController.setDeviceModelDefaults(primary, fast, imageUnderstanding),
       setLanguage: async (language: string): Promise<void> => {
         await this.localeController.setLanguage(language);
       }

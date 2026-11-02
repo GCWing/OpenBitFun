@@ -280,6 +280,28 @@ const IDEMPOTENT_MUTATION_RPC_POLICY: PeerRpcPolicy = {
   retryKind: 'idempotent-mutation',
 };
 
+/**
+ * Browser Control setup waits on browser-owned consent on the host: up to one
+ * minute for the Remote debugging toggle and up to 90 seconds for the
+ * connection approval prompt. Updated hosts allow 180 s for these commands;
+ * the controller waits slightly longer so the host's own outcome arrives
+ * first. An older host still answers with its 120 s timeout error.
+ */
+export const PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS = 185_000;
+
+const BROWSER_CONTROL_SETUP_COMMANDS = new Set([
+  'browser_control_launch',
+  'browser_control_enable_default_cdp',
+  'browser_control_restart_with_cdp',
+]);
+
+const BROWSER_CONTROL_SETUP_RPC_POLICY: PeerRpcPolicy = {
+  timeoutMs: PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS,
+  maxRetries: 0,
+  retryKind: 'none',
+};
+
+
 type DeviceRpcFn = (
   targetDeviceId: string,
   commandJson: string,
@@ -304,6 +326,7 @@ export interface PeerDeviceTransportHooks {
   /** Enables MiniApp Agent turns carrying inline image attachments. */
   supportsMiniAppAgentImagesV1?: boolean;
   supportsWslWorkspacesV1?: boolean;
+  supportsSshNoneAuthV1?: boolean;
   supportsSshPortScopedIdentityV1?: boolean;
   supportsWholeSessionCopyV1?: boolean;
   supportsModelRoutingV1?: boolean;
@@ -447,6 +470,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsMiniAppAgentContextFilesV1'
       | 'supportsMiniAppAgentImagesV1'
       | 'supportsWslWorkspacesV1'
+      | 'supportsSshNoneAuthV1'
       | 'supportsSshPortScopedIdentityV1'
       | 'supportsWholeSessionCopyV1'
       | 'supportsModelRoutingV1'
@@ -570,6 +594,13 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     ) {
       throw new PeerProductCommandError(
         'wsl_workspaces_v1_unsupported: The connected Peer host does not support native WSL workspaces',
+      );
+    }
+
+    const sshAuthType = (params as { config?: { auth?: { type?: unknown } } } | undefined)?.config?.auth?.type;
+    if (action.startsWith('ssh_') && sshAuthType === 'None' && this.hooks.supportsSshNoneAuthV1 !== true) {
+      throw new PeerProductCommandError(
+        'ssh_none_auth_v1_unsupported: The connected Peer host does not support SSH connections without authentication; update the executing Desktop host',
       );
     }
 
@@ -880,12 +911,14 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       command: action,
       args: translateAgentIdentityCommand(action, params ?? {}, 'legacy'),
     });
-    const rpcPolicy = isPeerRetryableReadCommand(action)
-      ? READ_RPC_POLICY
-      : this.hooks.supportsIdempotentDialogSubmit === true &&
-          isPeerRetryableIdempotentMutation(action, params)
-        ? IDEMPOTENT_MUTATION_RPC_POLICY
-        : MUTATION_RPC_POLICY;
+    const rpcPolicy = BROWSER_CONTROL_SETUP_COMMANDS.has(action)
+      ? BROWSER_CONTROL_SETUP_RPC_POLICY
+      : isPeerRetryableReadCommand(action)
+        ? READ_RPC_POLICY
+        : this.hooks.supportsIdempotentDialogSubmit === true &&
+            isPeerRetryableIdempotentMutation(action, params)
+          ? IDEMPOTENT_MUTATION_RPC_POLICY
+          : MUTATION_RPC_POLICY;
 
     try {
       const raw = await this.invokeDeviceRpc(

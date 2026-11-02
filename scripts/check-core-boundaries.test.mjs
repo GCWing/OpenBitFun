@@ -1915,6 +1915,7 @@ const CLI_REVIEWED_CORE_FEATURES = [
   ...ACP_REVIEWED_CORE_FEATURES,
   'product-search',
   'remote-connect',
+  'file-watch',
   'plugin-runtime',
   'opencode-plugin-host',
   'dispatch-store',
@@ -3022,6 +3023,7 @@ test('services integrations Tokio owner contracts reject feature-union masking',
     'utf8',
   );
   const mutations = [
+    ['browser-control', 'tokio/rt', /browser-control missing effective Tokio capabilities: rt/],
     ['plugin-source', 'tokio/time', /plugin-source missing effective Tokio capabilities: time/],
     ['mcp', 'tokio/process', /mcp missing effective Tokio capabilities: process/],
     ['miniapp-market', 'miniapp-runtime', /miniapp-market missing effective Tokio capabilities: fs/],

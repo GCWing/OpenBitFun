@@ -1723,6 +1723,8 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     }
   }, [activeLargePaste]);
 
+  // WebKit also gates smart quote and dash substitution on spellcheck.
+  // Keep prompt text literal by disabling native text correction below.
   return (
     <>
       <div
@@ -1733,6 +1735,9 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         ref={internalRef}
         className={`rich-text-input ${isFocused ? 'rich-text-input--focused' : ''} ${className}`}
         contentEditable={!disabled}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
         onInput={handleInput}
         onPaste={handlePaste}
         onCopy={handleCopy}

@@ -14,6 +14,7 @@ import {
   type SessionMutationKind,
 } from '../store/sessionMutationStore';
 import {
+  isHostIssuedTurnCatalogRevision,
   resolveMaterializedSessionTurnIdentity,
   resolveStorageTurnIndex,
 } from '../utils/flowChatTurnIdentity';
@@ -63,7 +64,11 @@ function validProjectedCatalogRevision(
   session: Session,
   catalog: SessionTurnCatalog | undefined,
 ): string | undefined {
-  if (!catalog || catalog.sessionId !== session.sessionId) {
+  if (
+    !catalog
+    || catalog.sessionId !== session.sessionId
+    || !isHostIssuedTurnCatalogRevision(catalog.revision)
+  ) {
     return undefined;
   }
   const coversProjectedTurns = session.dialogTurns.every((turn) => {

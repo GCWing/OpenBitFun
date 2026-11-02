@@ -29,6 +29,7 @@ const routingStatus = (connected: boolean | null) => ({
   apiVersion: 1, available: true, mode: 'manual', defaultMode: 'manual', ready: connected === true,
   connected, issue: connected === true ? null : 'Configure Router', summaryEnabled: true,
   estimatedTokenBudgetSupported: true,
+  routerProtocols: ['openai_logprobs', 'openai_router_extension'],
 });
 
 describe('Router setup', () => {
@@ -51,7 +52,19 @@ describe('Router setup', () => {
     await act(async () => Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
       .find(option => option.textContent?.includes(value))!.click());
   };
-  const changeEconomy = () => changeRole('economy', 'next');
+  const changeEconomy = (value = 'next') => changeRole('economy', value);
+  const changeProtocol = async (label = 'router.protocolClassifier') => {
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[role="combobox"][aria-label="router.protocol"]')!.click());
+    await act(async () => Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]'))
+      .find(option => option.textContent?.includes(label))!.click());
+  };
+  const changeTimeout = async (value: string) => {
+    await act(async () => {
+      const input = document.body.querySelector<HTMLInputElement>('[aria-label="router.timeout"]')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
   const row = (role: 'primary' | 'economy' | 'router') => document.body.querySelector<HTMLElement>(`[data-model-routing-check="${role}"]`)!;
   const expectState = (role: 'primary' | 'economy' | 'router', state: string) => {
     expect(row(role)).not.toBeNull();
@@ -114,7 +127,7 @@ describe('Router setup', () => {
     host.simple_threshold = .9; host.timeout_ms = 20000;
     expect(document.body.querySelector('[data-testid="model-billing-toggle"]')).toBeNull();
     expect(document.body.querySelector('[aria-label="router.threshold"]')).toBeNull();
-    expect(document.body.querySelector('[aria-label="router.timeout"]')).toBeNull();
+    expect(document.body.querySelector<HTMLInputElement>('[aria-label="router.timeout"]')!.value).toBe('10');
     expect(document.body.querySelector('[role="switch"]')).toBeNull();
     await act(async () => button('router.save').click());
     expect(host.summary_enabled).toBe(true);
@@ -138,6 +151,153 @@ describe('Router setup', () => {
     expect(host.default_mode).toBe('manual');
     expect(defaults).toEqual({ primary: 'main', economy: 'economy', fast: 'main' });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('saves the advertised classifier profile and serial-service timeout through the existing Router probe', async () => {
+    host.futureField = 'keep';
+    await render([...models, { ...models[1], id: 'worker', model_name: 'worker' }]);
+    await changeProtocol();
+    expect(document.body.querySelector<HTMLInputElement>('[aria-label="router.timeout"]')!.value).toBe('120');
+    await changeEconomy('worker');
+    await check();
+    expect(host.protocol).toBe('openai_router_extension');
+    expect(host.timeout_ms).toBe(120000);
+    expect(host.futureField).toBe('keep');
+    expect(host.tokenizer_path).toBe('');
+    expect(defaults.economy).toBe('worker');
+    expect(agentAPI.getModelRoutingStatus).toHaveBeenLastCalledWith({ probe: true });
+    expect(aiApi.testAIConfigConnection).toHaveBeenCalledTimes(2);
+    for (const role of ['primary', 'economy', 'router'] as const) expectState(role, 'connected');
+    await check();
+    expect(document.body.textContent).not.toContain('router.configurationChanged');
+    expectState('router', 'connected');
+  });
+
+  it('keeps a configured timeout when choosing the classifier profile', async () => {
+    host.timeout_ms = 45000;
+    await render();
+    await changeProtocol();
+    await act(async () => button('router.save').click());
+    expect(host.timeout_ms).toBe(45000);
+    expect(host.protocol).toBe('openai_router_extension');
+  });
+
+  it.each(['openai_logprobs', 'openai_router_extension'])(
+    'only excludes the Router service from primary and economy choices for classifier profile: %s', async protocol => {
+      host.protocol = protocol;
+      await render();
+      for (const role of ['primary', 'economy'] as const) {
+        await act(async () => document.body.querySelector<HTMLButtonElement>(`[role="combobox"][aria-label="core.${role}.label"]`)!.click());
+        const options = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).map(option => option.textContent ?? '');
+        expect(options.some(text => text.includes('main'))).toBe(true);
+        expect(options.some(text => text.includes('economy'))).toBe(true);
+        expect(options.some(text => text.includes('next'))).toBe(protocol === 'openai_logprobs');
+        await act(async () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+      }
+    },
+  );
+
+  it('keeps a user-edited timeout when choosing the classifier profile and invalidates old greens', async () => {
+    await render(); await check();
+    await changeTimeout('7');
+    expect(document.body.querySelector('[data-model-routing-check]')).toBeNull();
+    await changeProtocol();
+    expect(document.body.querySelector<HTMLInputElement>('[aria-label="router.timeout"]')!.value).toBe('7');
+    await check();
+    expect(host.timeout_ms).toBe(7000);
+    expectState('router', 'connected');
+  });
+
+  it.each(['', '0', '-1', '100000000000000'])('refuses invalid timeout %j without any writes or probes', async timeout => {
+    await render(); await changeTimeout(timeout);
+    await act(async () => button('router.save').click());
+    expect(document.body.textContent).toContain('router.timeoutInvalid');
+    expect(configManager.updateConfig).not.toHaveBeenCalled();
+    expect(aiApi.testAIConfigConnection).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy hosts usable without requiring a protocol capability for the standard profile', async () => {
+    vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValue({ ...routingStatus(true), routerProtocols: undefined });
+    await act(async () => root.render(<ModelRouterSettings models={models} initialStatus={{ ...routingStatus(true), routerProtocols: undefined }} onClose={onClose} onSaved={onSaved} />));
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[role="combobox"][aria-label="router.protocol"]')!.click());
+    const classifier = Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).find(option => option.textContent?.includes('router.protocolClassifier'))!;
+    expect(classifier.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    await act(async () => button('router.save').click());
+    expect(host.protocol).toBe('openai_logprobs');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a classifier profile on an older host before either role or Router writes', async () => {
+    await render(); await changeProtocol(); await changeEconomy('main');
+    vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValueOnce({ ...routingStatus(true), routerProtocols: undefined });
+    await act(async () => button('router.save').click());
+    expect(document.body.textContent).toContain('router.protocolUnsupported');
+    expect(configManager.updateConfig).not.toHaveBeenCalled();
+    expect(configAPI.getConfig).not.toHaveBeenCalled();
+    expect(defaults.economy).toBe('economy');
+  });
+
+  it('preserves an unknown future protocol instead of replacing it with the legacy default', async () => {
+    host.protocol = 'future_classifier_v2';
+    await render();
+    expect(document.body.querySelector('[aria-label="router.protocol"]')!.textContent).toContain('router.protocolUnknown');
+    await act(async () => button('router.save').click());
+    expect(document.body.textContent).toContain('router.protocolUnsupported');
+    expect(host.protocol).toBe('future_classifier_v2');
+    expect(configManager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it.each(['protocol', 'timeout_ms'] as const)('does not replace a concurrent host %s edit while saving a classifier draft', async field => {
+    await render(); await changeProtocol(); await changeEconomy('main');
+    if (field === 'protocol') host.protocol = 'openai_router_extension';
+    else host.timeout_ms = 30000;
+    await act(async () => button('router.save').click());
+    expect(document.body.textContent).toContain('router.configurationChanged');
+    expect(configManager.updateConfig).not.toHaveBeenCalled();
+    expect(defaults.economy).toBe('economy');
+  });
+
+  it('abandons the classifier configuration read after changing execution hosts', async () => {
+    await render(); await changeProtocol();
+    const current = deferred<ModelRoutingConfig>();
+    vi.mocked(configAPI.getConfig).mockReturnValueOnce(current.promise);
+    await check();
+    await act(async () => activateSurface('peer-other'));
+    await act(async () => current.resolve({ ...host }));
+    expect(configManager.updateConfig).not.toHaveBeenCalled();
+    expect(aiApi.testAIConfigConnection).not.toHaveBeenCalled();
+  });
+
+  it.each(['protocol', 'timeout_ms'] as const)('retains a concurrent %s change arriving after validation but before the Router write', async field => {
+    await render(); await changeProtocol();
+    vi.mocked(configManager.updateConfig).mockImplementationOnce(async (_path, update) => {
+      if (field === 'protocol') host.protocol = 'future_classifier_v2';
+      else host.timeout_ms = 30000;
+      host = update(host) as typeof host;
+      return host;
+    });
+    await check();
+    expect(document.body.textContent).toContain('router.configurationChanged');
+    if (field === 'protocol') expect(host.protocol).toBe('future_classifier_v2');
+    else expect(host.timeout_ms).toBe(30000);
+    expect(host.protocol).not.toBe('openai_router_extension');
+    expect(host.summary_enabled).toBe(false);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(aiApi.testAIConfigConnection).not.toHaveBeenCalled();
+    expect(agentAPI.getModelRoutingStatus).not.toHaveBeenCalledWith({ probe: true });
+  });
+
+  it.each([
+    ['ai.model_routing.protocol', 'openai_router_extension'],
+    ['ai.model_routing.timeout_ms', 120000],
+    ['ai.model_routing', { router_model_id: 'next', protocol: 'openai_router_extension', timeout_ms: 10000 }],
+    ['ai.model_routing', { router_model_id: 'next', timeout_ms: 120000 }],
+  ] as Array<[string, unknown]>)('invalidates Router checks when its wire profile or deadline changes at %s', async (path, value) => {
+    await render(); await check();
+    await act(async () => configChanged(path, undefined, value));
+    expect(document.body.querySelector('[data-model-routing-check]')).toBeNull();
+    expect(button('router.test').disabled).toBe(false);
   });
 
   it('configures smart model roles while preserving concurrent worker defaults and legacy subagent settings', async () => {
@@ -417,6 +577,8 @@ describe('Router setup', () => {
     ['Router requires OpenAI Chat Completions API format; select an OpenAI-compatible classifier service', 'protocol'],
     ['Router protocol mismatch: classifier token IDs and logprobs are required', 'protocol'],
     ['Router response lacks classifier token logprobs', 'protocol'],
+    ['Router classification extension is missing or invalid', 'protocol'],
+    ['Router content and classification prediction disagree', 'protocol'],
     ['Failed to decode Router response: invalid response body', 'protocol'],
     ['Router returned HTTP 401', 'authentication'],
     ['Router returned HTTP 403', 'authentication'],

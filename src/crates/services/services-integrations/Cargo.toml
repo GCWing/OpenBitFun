@@ -110,7 +110,7 @@ models-dev = [
     "tokio/time",
     "windows",
 ]
-browser-control = ["anyhow", "openbitfun-services-core/process-runtime", "openbitfun-services-core/tls-provider", "dirs", "reqwest", "reqwest/json", "reqwest/rustls-no-provider", "thiserror", "tokio/time"]
+browser-control = ["anyhow", "openbitfun-services-core/process-runtime", "openbitfun-services-core/tls-provider", "dirs", "reqwest", "reqwest/json", "reqwest/rustls-no-provider", "thiserror", "tokio/rt", "tokio/time"]
 canvas-runtime = [
     "dep:openbitfun-product-domains",
     "oxc",

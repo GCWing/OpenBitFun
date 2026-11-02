@@ -213,7 +213,7 @@ fn compute_initial_identity() -> DeviceIdentity {
     }
 }
 
-fn identity_file_path() -> Result<PathBuf> {
+pub(crate) fn identity_file_path() -> Result<PathBuf> {
     #[cfg(test)]
     {
         let override_path = TEST_IDENTITY_PATH.with(|cell| cell.borrow().clone());

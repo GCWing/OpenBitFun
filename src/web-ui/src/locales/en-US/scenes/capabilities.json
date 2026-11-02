@@ -374,7 +374,8 @@
             "agent-cards": "Create countdown, checklist, note, progress, metrics, chart, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
             "home-management": "See every card in the Home Desktop cards section, and show, hide, or delete individual cards",
             "card-actions": "Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card",
-            "drag-restore": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens"
+            "drag-restore": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
+            "desktop-pinning": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards"
           }
         }
       },

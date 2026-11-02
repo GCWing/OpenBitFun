@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "bfef9ea206f6148113f912b1294d2922ed3ecdc3021a6902661259725b2a9421",
+  "catalogDigest": "0917ed10617abd8b8c0aa33e872ae7f43f849df66d8181e62390d3ae42f94335",
   "commandCount": 709,
   "coverage": {
     "commandCount": 709,
@@ -2198,7 +2198,8 @@
         "feature.desktop-cards"
       ],
       "documentedItemIds": [
-        "feature.desktop-cards:card-actions"
+        "feature.desktop-cards:card-actions",
+        "feature.desktop-cards:desktop-pinning"
       ],
       "visibility": "documented",
       "rustPath": "desktop_cards::commands::desktop_card_set_always_on_top",
@@ -3414,7 +3415,7 @@
       "rustPath": "get_file_editor_sync_hash",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn get_file_editor_sync_hash( state: State<'_, AppState>, request: GetFileMetadataRequest, ) -> Result<serde_json::Value, String>",
-      "remoteWorkspacePolicy": "LegacyUnaudited"
+      "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
       "id": "get_file_metadata",
@@ -10426,7 +10427,7 @@
       "rustPath": "stop_file_watch",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn stop_file_watch( state: State<'_, AppState>, request: Option<WorkspaceFileWatchRequest>, path: Option<String>, ) -> Result<(), String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+      "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
       "id": "stop_mcp_server",

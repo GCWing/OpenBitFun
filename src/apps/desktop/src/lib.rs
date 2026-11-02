@@ -2397,6 +2397,13 @@ static PROCESS_EXIT_CLEANUP_COMPLETE: AtomicBool = AtomicBool::new(false);
 static DESKTOP_EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 static PROCESS_EXIT_CLEANUP_NOTIFY: OnceLock<tokio::sync::Notify> = OnceLock::new();
 
+/// Whether a graceful desktop exit has started; background recovery must not
+/// recreate windows while the app is shutting down.
+pub(crate) fn desktop_exit_in_progress() -> bool {
+    DESKTOP_EXIT_REQUESTED.load(Ordering::Acquire)
+        || PROCESS_EXIT_CLEANUP_STARTED.load(Ordering::Acquire)
+}
+
 pub(crate) async fn perform_process_exit_cleanup() -> bool {
     let notify = PROCESS_EXIT_CLEANUP_NOTIFY.get_or_init(tokio::sync::Notify::new);
     if PROCESS_EXIT_CLEANUP_STARTED.swap(true, Ordering::AcqRel) {

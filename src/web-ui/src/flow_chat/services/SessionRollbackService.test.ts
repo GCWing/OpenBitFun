@@ -32,6 +32,7 @@ import {
   stateMachineManager,
 } from '../state-machine';
 import { pendingQueueManager } from './flow-chat-manager/PendingQueueModule';
+import { localTurnCatalogRevision } from '../utils/flowChatTurnIdentity';
 
 describe('SessionRollbackService', () => {
   it('rejects detached history mutation before any local backend call', async () => {
@@ -113,6 +114,31 @@ describe('SessionRollbackService', () => {
   it('omits a stale catalog revision when the current Turn is not represented', async () => {
     const session = sessions.get('session-1');
     session.turnCatalog.entries[0].turnId = 'retired-turn-7';
+    agentApiMock.rollbackSessionToTurn.mockResolvedValue({
+      status: 'completed',
+      restoredFiles: [],
+      retiredTurnIds: ['turn-7'],
+      composer: { kind: 'preserve' },
+    });
+
+    await rollbackSessionToTurn({
+      sessionId: 'session-1',
+      targetTurnId: 'turn-7',
+      kind: 'rollback',
+    });
+
+    expect(agentApiMock.rollbackSessionToTurn).toHaveBeenCalledWith(expect.objectContaining({
+      targetTurnId: 'turn-7',
+      expectedStorageTurnIndex: 7,
+      expectedCatalogRevision: undefined,
+    }));
+  });
+
+  it('omits a controller-minted catalog revision the host never issued', async () => {
+    // Peer Device sessions build their catalog from replicated records; the
+    // host computes its own revision, so a local one would always look stale.
+    const session = sessions.get('session-1');
+    session.turnCatalog.revision = localTurnCatalogRevision('relay:turn-7');
     agentApiMock.rollbackSessionToTurn.mockResolvedValue({
       status: 'completed',
       restoredFiles: [],

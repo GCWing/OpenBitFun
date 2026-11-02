@@ -1215,6 +1215,9 @@ pub struct ModelRoutingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_mode: Option<String>,
     pub router_model_id: Option<String>,
+    /// Explicit classifier response contract. Unknown future values stay readable
+    /// and are rejected by an execution host that cannot implement them.
+    pub protocol: String,
     /// Optional exact-tokenizer override on the execution host. Empty or unavailable
     /// paths use automatic estimates; retain this legacy field for older installs.
     pub tokenizer_path: String,
@@ -1233,6 +1236,7 @@ impl Default for ModelRoutingConfig {
         Self {
             default_mode: None,
             router_model_id: None,
+            protocol: "openai_logprobs".into(),
             tokenizer_path: String::new(),
             simple_threshold: 0.75,
             timeout_ms: 10_000,
@@ -2564,6 +2568,41 @@ mod tests {
             }
             let round_trip: super::AIConfig = serde_json::from_value(saved).unwrap();
             assert_eq!(round_trip.model_routing.tokenizer_path, path);
+        }
+    }
+
+    #[test]
+    fn model_routing_protocol_reads_legacy_and_round_trips_extension_and_future_profiles() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({"timeout_ms": 10000}),
+        ] {
+            let config: super::ModelRoutingConfig = serde_json::from_value(payload).unwrap();
+            assert_eq!(config.protocol, "openai_logprobs");
+        }
+        for protocol in [
+            "openai_logprobs",
+            "openai_router_extension",
+            "future_classifier",
+        ] {
+            let payload = serde_json::json!({
+                "protocol": protocol, "router_model_id": "router", "timeout_ms": 120000,
+                "tokenizer_path": "/execution-host/tokenizer.json", "summary_enabled": false
+            });
+            let config: super::ModelRoutingConfig =
+                serde_json::from_value(payload.clone()).unwrap();
+            let saved = serde_json::to_value(&config).unwrap();
+            for key in [
+                "protocol",
+                "router_model_id",
+                "timeout_ms",
+                "tokenizer_path",
+                "summary_enabled",
+            ] {
+                assert_eq!(saved[key], payload[key]);
+            }
+            let restored: super::ModelRoutingConfig = serde_json::from_value(saved).unwrap();
+            assert_eq!(restored.protocol, protocol);
         }
     }
 

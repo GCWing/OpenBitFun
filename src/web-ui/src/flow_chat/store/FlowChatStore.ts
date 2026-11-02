@@ -128,6 +128,7 @@ import {
   isProjectedSessionEmpty,
   canonicalSessionTurns,
   lastUserDialogTurn,
+  localTurnCatalogRevision,
   projectedSessionTurnCount,
   resolveDialogTurnIdentity,
   resolveStorageTurnIndex,
@@ -5999,7 +6000,9 @@ export class FlowChatStore {
         ? truncateTurnCatalog(
           currentCatalog,
           clampedIndex,
-          `${currentCatalog.revision}:rollback:${clampedIndex}:${Date.now()}`,
+          localTurnCatalogRevision(
+            `${currentCatalog.revision}:rollback:${clampedIndex}:${Date.now()}`,
+          ),
         )
         : undefined;
       const updatedSession = {
@@ -6164,7 +6167,9 @@ export class FlowChatStore {
       ordinal, storageTurnIndex: turn.storageTurnIndex!, turnId: turn.id,
       preview: turn.userMessage.content, previewTruncated: false,
     }));
-    const revision = `relay:${entries.map(entry => entry.turnId).join('|')}`;
+    // The replica cannot reproduce the host's catalog revision, so mark it as
+    // controller-local rather than letting it pass for a host token.
+    const revision = localTurnCatalogRevision(`relay:${entries.map(entry => entry.turnId).join('|')}`);
     this.updateAuthoritativeSessionTurnCatalog(sessionId, {
       schemaVersion: 1, sessionId, revision, complete: true,
       totalTurnCount: entries.length, entries,

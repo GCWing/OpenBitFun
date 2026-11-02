@@ -1774,7 +1774,12 @@ fn project_account_snapshot(
 fn account_login_status_message(
     result: &openbitfun_core::service::remote_connect::account_runtime::AccountLoginResult,
 ) -> String {
-    if result.routing_connected {
+    if result.routing_standby {
+        format!(
+            "Logged in as user {} on {}. Another OpenBitFun host on this machine serves device routing; this one takes over when it exits.",
+            result.user_id, result.relay_url
+        )
+    } else if result.routing_connected {
         format!(
             "Logged in as user {} on {}. Device routing connected.",
             result.user_id, result.relay_url

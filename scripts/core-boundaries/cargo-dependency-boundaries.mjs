@@ -147,7 +147,8 @@ const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['account-identity', ['rt', 'sync']],
   // Large catalog validation/hash work uses spawn_blocking, outside async IO workers.
   ['models-dev', ['fs', 'rt', 'sync', 'time']],
-  ['browser-control', ['time']],
+  // Browser profile files and process probes use spawn_blocking off async IO workers.
+  ['browser-control', ['rt', 'time']],
   ['canvas-runtime', ['fs']],
   ['deep-research', []],
   ['git', ['fs', 'io-util', 'macros', 'rt', 'time']],
@@ -1468,6 +1469,10 @@ export function findProductEntrypointCoreFeatureViolations(
       ...coreCompatibilityReviewedFeatures,
       'product-search',
       'remote-connect',
+      // The CLI Peer Host answers `start_file_watch` / `stop_file_watch` for an
+      // attached controller, so it consumes the watcher owner directly instead
+      // of inheriting it from `external-sources`.
+      'file-watch',
       'plugin-runtime',
       'opencode-plugin-host',
       'ssh-remote',
