@@ -113,7 +113,10 @@ public object LegacyWorkspaceCompatibility {
         while (index < value.length) {
             if (value[index] == '%') {
                 if (index + 2 >= value.length) return null
-                val hex = value.substring(index + 1, index + 3).toIntOrNull(16) ?: return null
+                // Like `decodeURIComponent`: exactly two hex digits (no sign).
+                val digits = value.substring(index + 1, index + 3)
+                if (!digits.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+                val hex = digits.toInt(16)
                 bytes.add(hex.toByte())
                 index += 3
             } else {
@@ -121,7 +124,11 @@ public object LegacyWorkspaceCompatibility {
                 index += 1
             }
         }
-        return bytes.toByteArray().decodeToString()
+        return try {
+            bytes.toByteArray().decodeToString(throwOnInvalidSequence = true)
+        } catch (_: CharacterCodingException) {
+            null
+        }
     }
 
     private fun normalizedRoot(path: String): String = path.trim().let { it.trimEnd('/').ifEmpty { it } }

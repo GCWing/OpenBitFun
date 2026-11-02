@@ -146,7 +146,11 @@ fn percent_decode(value: &str) -> Option<String> {
     let mut index = 0;
     while index < bytes.len() {
         if bytes[index] == b'%' {
+            // Like `decodeURIComponent`: exactly two hex digits (no sign).
             let hex = value.get(index + 1..index + 3)?;
+            if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return None;
+            }
             out.push(u8::from_str_radix(hex, 16).ok()?);
             index += 3;
         } else {
@@ -728,6 +732,9 @@ mod tests {
             "workspace-host-ssh-root%40cluster-container-web",
             "workspace-host-ssh-root%40cluster%3A2201-container-web",
             "workspace-host-%ZZ",
+            "workspace-host-ssh-root%40cluster%+12201",
+            "workspace-host-ssh-root%40cluster%232201%",
+            "workspace-host-ssh-root%40cluster%232201%C3",
         ] {
             assert_eq!(ssh_connection_id_port_scope(legacy), None, "{legacy}");
         }
@@ -819,6 +826,19 @@ mod tests {
             scoped_id,
             "loading a different legacy record must not move an existing workspace's identity"
         );
+    }
+
+    #[test]
+    fn percent_decoding_rejects_what_decode_uri_component_rejects() {
+        use super::percent_decode;
+        assert_eq!(
+            percent_decode("ssh-u%40h%232201").as_deref(),
+            Some("ssh-u@h#2201")
+        );
+        assert_eq!(percent_decode("%C3%A9").as_deref(), Some("\u{e9}"));
+        for malformed in ["%+1", "%-1", "%1", "%", "%G1", "%C3", "%FF"] {
+            assert_eq!(percent_decode(malformed), None, "{malformed}");
+        }
     }
 
     #[test]

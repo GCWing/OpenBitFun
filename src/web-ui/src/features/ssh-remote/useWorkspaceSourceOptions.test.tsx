@@ -9,6 +9,10 @@ import { activateSurface, resetDeviceSurfaceForTest, surfaceIdForDevice } from '
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const api = vi.hoisted(() => ({ listSavedConnections: vi.fn(), listSSHConfigHosts: vi.fn(), listWslDistributions: vi.fn(), listDockerContainers: vi.fn() }));
 vi.mock('./sshApi', () => ({ sshApi: api }));
+const workspaceRecords = vi.hoisted(() => ({ opened: vi.fn(), recent: vi.fn() }));
+vi.mock('@/infrastructure/api/service-api/GlobalAPI', () => ({
+  globalAPI: { getOpenedWorkspaces: workspaceRecords.opened, getRecentWorkspaces: workspaceRecords.recent },
+}));
 vi.mock('@/infrastructure/i18n', () => {
   const t = (key: string) => key;
   return { useI18n: () => ({ t }) };
@@ -25,6 +29,8 @@ beforeEach(() => {
   vi.resetAllMocks(); resetDeviceSurfaceForTest();
   api.listSavedConnections.mockResolvedValue([]);
   api.listSSHConfigHosts.mockResolvedValue([]);
+  workspaceRecords.opened.mockResolvedValue([]);
+  workspaceRecords.recent.mockResolvedValue([]);
   api.listWslDistributions.mockResolvedValue({ supported: true, distributions: ['Ubuntu'] });
   api.listDockerContainers.mockResolvedValue([{ id: 'dev-id', name: 'dev', image: 'ubuntu', state: 'running' }]);
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
@@ -137,4 +143,18 @@ it('routes ~/.ssh/config entries to the dialog when saved profiles cannot be lis
   expect(preset && 'connectionId' in preset ? preset.connectionId : undefined).toBeUndefined();
   // No connectable profile: the caller opens the connection dialog instead of a one-click connect.
   expect(workspacePresetHost(preset)).toBeUndefined();
+});
+
+it('lists workspace records once per discovery pass, not once per ~/.ssh/config entry', async () => {
+  api.listSSHConfigHosts.mockResolvedValue([
+    { host: 'node-1', hostname: 'cluster', port: 2201, user: 'root', agent: true },
+    { host: 'node-2', hostname: 'cluster', port: 2202, user: 'root', agent: true },
+    { host: 'node-3', hostname: 'cluster', port: 2203, user: 'root', agent: true },
+  ]);
+  await render('ssh');
+  expect(result.options.map(option => option.preset).filter(preset => preset.kind === 'sshConfig')
+    .map(preset => 'connectionId' in preset ? preset.connectionId : undefined))
+    .toEqual(['ssh-root@cluster#2201', 'ssh-root@cluster#2202', 'ssh-root@cluster#2203']);
+  expect(workspaceRecords.opened).toHaveBeenCalledTimes(1);
+  expect(workspaceRecords.recent).toHaveBeenCalledTimes(1);
 });

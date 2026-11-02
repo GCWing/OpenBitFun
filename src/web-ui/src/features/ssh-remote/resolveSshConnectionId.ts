@@ -36,7 +36,8 @@ export async function activeHostSupportsPortScopedSshIds(): Promise<boolean> {
   return peerConnectionManager.get(scope.surfaceId)?.getState().capabilities.sshPortScopedIdentityV1 === true;
 }
 
-async function referencedRemoteConnectionIds(): Promise<string[]> {
+/** Connection ids referenced by workspace records on the active host; fetch once per pass. */
+export async function referencedRemoteConnectionIds(): Promise<string[]> {
   try {
     const [opened, recent] = await Promise.all([globalAPI.getOpenedWorkspaces(), globalAPI.getRecentWorkspaces()]);
     return [...opened, ...recent].flatMap(workspace =>
@@ -56,6 +57,7 @@ export async function resolveNewSshConnectionId(
   endpoint: SshEndpoint,
   isSameTarget: (connection: SavedConnection) => boolean,
   saved?: readonly SavedConnection[],
+  referenced?: readonly string[],
 ): Promise<NewSshConnectionId> {
   const portScopedIds = await activeHostSupportsPortScopedSshIds();
   let connections = saved;
@@ -75,6 +77,8 @@ export async function resolveNewSshConnectionId(
     const conflict = legacySshEndpointConflict(endpoint, connections, isSameTarget);
     return conflict ? { error: 'portScopedIdentityUnsupported', conflict, transientId: id } : { id };
   }
-  const referencedIds = endpoint.port === DEFAULT_SSH_PORT ? [] : await referencedRemoteConnectionIds();
+  // Port 22 already gets the port-less id, which workspace records treat as
+  // equal to its `:22` alias, so only other ports need the record listing.
+  const referencedIds = endpoint.port === DEFAULT_SSH_PORT ? [] : referenced ?? await referencedRemoteConnectionIds();
   return { id: sshConnectionIdForEndpoint(endpoint, connections, isSameTarget, { referencedIds }) };
 }

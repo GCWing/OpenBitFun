@@ -8,7 +8,7 @@ const log = createLogger('WorkspaceSourceOptions');
 import { sameWorkspaceSource, savedConnectionTarget, type WorkspaceSource } from './workspaceSource';
 import type { SavedConnection, SSHConfigEntry, SSHConnectionConfig } from './types';
 import { DEFAULT_SSH_PORT, type SshEndpoint } from './sshConnectionId';
-import { resolveNewSshConnectionId } from './resolveSshConnectionId';
+import { referencedRemoteConnectionIds, resolveNewSshConnectionId } from './resolveSshConnectionId';
 
 export type WorkspaceConnectionPreset = (
   | { kind: 'new'; host?: SavedConnection }
@@ -129,12 +129,18 @@ export function useWorkspaceSourceOptions(source: WorkspaceSource, enabled: bool
             } } });
           }
         } else if (source === 'ssh') {
-          for (const entry of detected.value as SSHConfigEntry[]) {
+          const entries = detected.value as SSHConfigEntry[];
+          // One workspace-record listing per discovery pass, shared by every entry.
+          const referenced = saved.status === 'fulfilled' && entries.length > 0
+            ? await referencedRemoteConnectionIds()
+            : [];
+          if (cancelled || !scope.isCurrent()) return;
+          for (const entry of entries) {
             const endpoint = sshConfigEndpoint(entry);
             if (connections.some(connection => connection.host === endpoint.host && connection.port === endpoint.port && connection.username === endpoint.username)) continue;
             // Without the saved profiles any id could overwrite one, so the dialog resolves it on connect.
             const resolved = saved.status === 'fulfilled'
-              ? await resolveNewSshConnectionId(endpoint, connection => !connection.container && !connection.wsl, saved.value)
+              ? await resolveNewSshConnectionId(endpoint, connection => !connection.container && !connection.wsl, saved.value, referenced)
               : undefined;
             if (cancelled || !scope.isCurrent()) return;
             result.push({ id: `ssh-config:${entry.host}`, label: entry.host,

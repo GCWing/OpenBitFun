@@ -64,6 +64,8 @@ class LegacyWorkspaceCompatibilityTest {
         assertTrue(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("workspace-host-ssh-root%40cluster%232201-container-web"))
         assertFalse(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("ssh-root@cluster:2201"))
         assertFalse(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("workspace-host-%ZZ"))
+        assertFalse(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("workspace-host-ssh-root%40cluster%+12201"))
+        assertFalse(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("workspace-host-ssh-root%40cluster%232201%C3"))
     }
 
     @Test

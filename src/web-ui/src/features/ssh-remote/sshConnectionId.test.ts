@@ -65,9 +65,13 @@ describe('sshConnectionIdForEndpoint', () => {
     expect(sshConnectionIdForEndpoint({ host: 'cluster', port: 22, username: 'root' }, connections)).toBe('ssh-root@cluster#22');
   });
 
-  it('reuses an orphaned legacy id that workspace records still reference', () => {
+  it('reuses an orphaned legacy id only when it names the same port', () => {
     const context = { referencedIds: ['ssh-root@cluster'] };
-    expect(sshConnectionIdForEndpoint({ host: 'cluster', port: 2201, username: 'root' }, [], undefined, context)).toBe('ssh-root@cluster');
+    // A port-less orphan most likely belonged to a port-22 server: never hand its history to another port.
+    expect(sshConnectionIdForEndpoint({ host: 'cluster', port: 2201, username: 'root' }, [], undefined, context)).toBe('ssh-root@cluster#2201');
+    expect(sshConnectionIdForEndpoint({ host: 'cluster', port: 22, username: 'root' }, [], undefined, context)).toBe('ssh-root@cluster');
+    expect(sshConnectionIdForEndpoint({ host: 'cluster', port: 22, username: 'root' }, [], undefined, { referencedIds: ['ssh-root@cluster:22'] }))
+      .toBe('ssh-root@cluster:22');
     // A `:port` alias only reattaches to its own port.
     const alias = { referencedIds: ['ssh-root@cluster:2201'] };
     expect(sshConnectionIdForEndpoint({ host: 'cluster', port: 2201, username: 'root' }, [], undefined, alias)).toBe('ssh-root@cluster:2201');

@@ -22,8 +22,11 @@ export interface SshEndpoint {
 export interface SshConnectionIdContext {
   /**
    * Connection ids referenced by workspace records on the target host. A
-   * legacy port-less id that no saved profile owns any more is reused for a
-   * non-default port, so re-adding a deleted legacy profile finds its sessions.
+   * pre-#710 `ssh-user@host:port` alias that no saved profile owns any more is
+   * reused for exactly that port, so re-adding a deleted legacy profile finds
+   * its sessions. A port-less orphan only says nothing about its port (most
+   * belonged to port 22), so it is reused only for port 22, where it is the
+   * default id anyway, and never for another port.
    */
   referencedIds?: readonly string[];
   /**
@@ -66,9 +69,9 @@ export function sshConnectionIdForEndpoint(
   if (context.portScopedIds === false) return legacy;
 
   const taken = (id: string) => saved.some(connection => canonicalSshConnectionId(connection.id) === id);
-  if (endpoint.port !== DEFAULT_SSH_PORT && !taken(legacy)) {
+  if (!taken(legacy)) {
     const orphan = context.referencedIds?.find(id => canonicalSshConnectionId(id) === legacy
-      && (sshConnectionIdAliasPort(id) ?? endpoint.port) === endpoint.port);
+      && sshConnectionIdAliasPort(id) === endpoint.port);
     if (orphan) return orphan;
   }
 
