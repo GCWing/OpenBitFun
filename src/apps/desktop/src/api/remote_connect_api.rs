@@ -2784,15 +2784,7 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
                     // fills with failures that never resolve on their own.
                     let online_ids: HashSet<String> =
                         devices.iter().map(|d| d.device_id.clone()).collect();
-                    let detached =
-                        crate::api::peer_host_invoke::retain_online_controllers(&online_ids);
-                    if !detached.is_empty() {
-                        let _ = crate::api::peer_host_invoke::fail_closed_permission_requests(
-                            detached,
-                            "Peer controller offline",
-                        )
-                        .await;
-                    }
+                    crate::api::peer_host_invoke::retain_online_controllers(route, &online_ids);
                     // Offline presence does not revoke an account device or its
                     // permission mailbox. Reconnect resumes the same ownership.
                     if !device_routing_owner_is_current(&event_owner).await {
