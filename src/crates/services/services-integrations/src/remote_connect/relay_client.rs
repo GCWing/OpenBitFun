@@ -419,6 +419,23 @@ impl RelayClient {
         encrypted_data: &str,
         nonce: &str,
     ) -> Result<(String, String)> {
+        self.request_device_with_timeout(
+            target,
+            encrypted_data,
+            nonce,
+            super::realtime_client::DEFAULT_RPC_TIMEOUT,
+        )
+        .await
+    }
+    /// Like [`Self::request_device`], with an explicit end-to-end deadline
+    /// carried to the target as the relay RPC `timeoutMs`.
+    pub async fn request_device_with_timeout(
+        &self,
+        target: &str,
+        encrypted_data: &str,
+        nonce: &str,
+        timeout: Duration,
+    ) -> Result<(String, String)> {
         let sender = self
             .owner
             .lock()
@@ -427,9 +444,10 @@ impl RelayClient {
             .clone()
             .ok_or_else(|| anyhow!("Relay is disconnected; request was not submitted"))?;
         let result = sender
-            .call(
+            .call_with_timeout(
                 target,
                 json!({"encrypted_data":encrypted_data,"nonce":nonce}),
+                timeout,
             )
             .await?;
         let data = result["encrypted_data"]

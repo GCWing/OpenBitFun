@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS,
   PEER_MUTATION_REQUEST_TIMEOUT_MS,
   PEER_READ_MAX_RETRIES,
   PEER_READ_REQUEST_TIMEOUT_MS,
@@ -119,6 +120,32 @@ describe('whole-session copy capability', () => {
     adapter.setHostCapabilities({ supportsWholeSessionCopyV1: false });
     await expect(adapter.request('copy_session', params)).rejects.toThrow('whole_session_copy_v1_unsupported');
     expect(deviceRpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('browser control setup deadline', () => {
+  it.each([
+    'browser_control_launch',
+    'browser_control_enable_default_cdp',
+    'browser_control_restart_with_cdp',
+  ])('gives %s the browser consent budget without retrying', async command => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result', ok: true, value: { success: true },
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await adapter.request(command, { request: { port: 9222 } });
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+    expect(deviceRpc.mock.calls[0][2]).toBe(PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS);
+    expect(PEER_BROWSER_CONTROL_SETUP_TIMEOUT_MS).toBeGreaterThan(150_000);
+  });
+
+  it('keeps the ordinary deadline for browser control status reads', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result', ok: true, value: {},
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await adapter.request('browser_control_get_status', { request: { port: 9222 } });
+    expect(deviceRpc.mock.calls[0][2]).toBe(PEER_READ_REQUEST_TIMEOUT_MS);
   });
 });
 

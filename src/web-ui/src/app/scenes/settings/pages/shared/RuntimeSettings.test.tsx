@@ -176,15 +176,31 @@ describe('Browser and desktop control settings', () => {
     expect(container.textContent).toContain('browserControl.readyNotConnected');
     expect(Array.from(container.querySelectorAll('button')).filter(el => el.textContent === 'browserControl.connect')).toHaveLength(1);
     await act(async () => connect.click());
-    expect(mocks.invoke).toHaveBeenCalledWith('browser_control_enable_default_cdp', expect.anything());
+    expect(mocks.invoke).toHaveBeenCalledWith('browser_control_enable_default_cdp', expect.anything(), expect.anything());
+  });
+
+  it('gives browser setup commands a deadline beyond the backend consent budget', async () => {
+    await render();
+    await act(async () => button('browserControl.connect').click());
+    const call = mocks.invoke.mock.calls.find(([name]) => name === 'browser_control_enable_default_cdp');
+    expect(call?.[1]).toEqual({ request: { port: 9222 } });
+    // Backend waits up to 60 s for the setting and 90 s for approval; the
+    // default 30 s deadline used to report "Request timeout" mid-approval.
+    expect((call?.[2] as { timeout: number }).timeout).toBeGreaterThan(150_000);
   });
 
   it('uses the existing launch path when the browser cannot reuse its current profile', async () => {
     status.defaultCdpSupported = false;
     await render();
     await act(async () => button('browserControl.connect').click());
-    expect(mocks.invoke).toHaveBeenCalledWith('browser_control_launch', { request: { port: 9222 } });
-    expect(mocks.invoke).not.toHaveBeenCalledWith('browser_control_enable_default_cdp', expect.anything());
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'browser_control_launch',
+      { request: { port: 9222 } },
+      { timeout: expect.any(Number) },
+    );
+    const call = mocks.invoke.mock.calls.find(([name]) => name === 'browser_control_launch');
+    expect((call?.[2] as { timeout: number }).timeout).toBeGreaterThan(150_000);
+    expect(mocks.invoke).not.toHaveBeenCalledWith('browser_control_enable_default_cdp', expect.anything(), expect.anything());
   });
 
   it.each([false, true])('revokes previous browser access before saving a new choice (disconnect fails: %s)', async (fails) => {
