@@ -2,7 +2,13 @@
 //!
 //! This module manages SSH connections using the pure-Russ SSH implementation
 
+use super::proxy_command::{expand_tokens, ProxyCommandChild};
 use super::sftp_file::ManagedSftpSession;
+#[cfg(feature = "ssh_config")]
+use super::ssh_config_loader::{
+    is_host_pattern, load_merged_config_async, resolve_host_settings, split_directive,
+    strip_trailing_comment, ResolvedHostSettings,
+};
 use crate::remote_ssh::password_vault::SSHPasswordVault;
 use crate::remote_ssh::types::{
     ConnectionTestReport, ConnectionTestStage, ContainerAccess, ContainerWorkspaceConfig,
@@ -19,8 +25,6 @@ use russh_keys::PublicKeyBase64;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{File as SftpFile, StatusCode as SftpStatusCode};
-#[cfg(feature = "ssh_config")]
-use ssh_config::SSHConfig;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,6 +37,9 @@ use tokio::time::{Duration, Instant};
 const SSH_COMMAND_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SSH_COMMAND_INTERRUPT_DRAIN_GRACE: Duration = Duration::from_millis(500);
 const SSH_COMMAND_OWNER_DRAIN_GRACE: Duration = Duration::from_secs(2);
+/// How often a displaced ProxyCommand process checks whether its old transport
+/// has drained after a reconnect.
+const STALE_PROXY_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// The caller owns cancellation, while the spawned transport task owns the
 /// channel until interruption and draining have finished. The caller may stop
@@ -419,24 +426,64 @@ fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
-/// OpenSSH keyword matching is case-insensitive, but `ssh_config` stores keys as written in the file
-/// (e.g. `HostName` vs `Hostname`). Resolve by ASCII case-insensitive compare.
+/// Single-argument value of a resolved directive (see
+/// [`resolve_host_settings`], which keys by lowercase keyword).
 #[cfg(feature = "ssh_config")]
-fn ssh_cfg_get<'a>(
-    settings: &std::collections::HashMap<&'a str, &'a str>,
-    canonical_key: &str,
-) -> Option<&'a str> {
+fn resolved_value<'a>(settings: &'a ResolvedHostSettings, key: &str) -> Option<&'a str> {
     settings
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case(canonical_key))
-        .map(|(_, v)| *v)
+        .get(key)
+        .and_then(|value| parse_ssh_config_value(value))
 }
 
+/// Resolve the competing `ProxyJump` / `ProxyCommand` pair the way OpenSSH
+/// does: whichever is obtained first wins and the later one is dropped
+/// (`none` counts as obtained). Returns `(proxy_jump, proxy_command)`.
 #[cfg(feature = "ssh_config")]
-fn ssh_cfg_has(settings: &std::collections::HashMap<&str, &str>, canonical_key: &str) -> bool {
-    settings
-        .keys()
-        .any(|k| k.eq_ignore_ascii_case(canonical_key))
+fn resolved_proxy_pair(settings: &ResolvedHostSettings) -> (Option<String>, Option<String>) {
+    let jump = settings.first("proxyjump");
+    let command = settings.first("proxycommand");
+    let (jump, command) = match (jump, command) {
+        (Some(jump), Some(command)) if jump.order < command.order => (Some(jump), None),
+        (Some(_), Some(command)) => (None, Some(command)),
+        pair => pair,
+    };
+    let jump = jump
+        .and_then(|jump| parse_ssh_config_value(&jump.value))
+        .filter(|jump| !jump.eq_ignore_ascii_case("none"))
+        .map(ToOwned::to_owned);
+    let command = command
+        .and_then(|command| parse_ssh_config_command_value(&command.value))
+        .filter(|command| !command.eq_ignore_ascii_case("none"));
+    (jump, command)
+}
+
+/// Build an [`SSHConfigEntry`] from resolved settings for `host`.
+#[cfg(feature = "ssh_config")]
+fn ssh_config_entry_from_settings(host: &str, settings: &ResolvedHostSettings) -> SSHConfigEntry {
+    let (proxy_jump, proxy_command) = resolved_proxy_pair(settings);
+    // IdentityFile/CertificateFile accumulate in OpenSSH; the entry carries
+    // one, so prefer the block that names this host over `Host *` defaults.
+    let preferred_file = |key: &str| {
+        settings
+            .preferred(key)
+            .and_then(|value| parse_ssh_config_value(value))
+            .map(|file| shellexpand::tilde(file).to_string())
+    };
+    SSHConfigEntry {
+        host: host.to_string(),
+        hostname: resolved_value(settings, "hostname").map(ToOwned::to_owned),
+        port: resolved_value(settings, "port").and_then(|port| port.parse::<u16>().ok()),
+        user: resolved_value(settings, "user").map(ToOwned::to_owned),
+        identity_file: preferred_file("identityfile"),
+        agent: if proxy_command.is_some() {
+            None
+        } else {
+            Some(true)
+        },
+        certificate_file: preferred_file("certificatefile"),
+        proxy_jump,
+        proxy_command,
+    }
 }
 
 /// Extract the first value from an SSH config directive line, handling double-quoted strings.
@@ -455,25 +502,33 @@ fn parse_ssh_config_value(value: &str) -> Option<&str> {
     value.split_whitespace().next()
 }
 
+/// Extract a whole-line command value such as `ProxyCommand`'s.
+///
+/// Unlike [`parse_ssh_config_value`], the value spans every remaining token of
+/// the line and is kept verbatim, quotes included, as OpenSSH does: stripping
+/// an outer quote pair would corrupt `"a b" ssh "%h"`. POSIX `sh` treats an
+/// inline ` # comment` as a comment itself; `cmd.exe` does not, so it is
+/// removed on Windows.
 #[cfg(feature = "ssh_config")]
-fn strip_utf8_bom(content: String) -> String {
-    content
-        .strip_prefix('\u{feff}')
-        .unwrap_or(&content)
-        .to_string()
+fn parse_ssh_config_command_value(value: &str) -> Option<String> {
+    let value = if cfg!(windows) {
+        super::ssh_config_loader::strip_trailing_comment(value)
+    } else {
+        value
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some(value.to_string())
 }
 
 /// Manually parse `~/.ssh/config` content into Host blocks with their direct settings.
 ///
-/// This is a fallback for when `SSHConfig::parse_str` fails — which happens when the
-/// config contains directives (e.g. `Include`, `Match`) before the first `Host` block,
-/// because `ssh_config` 0.1's `EntryParser` returns `InvalidHostEntry` for any key-value
-/// pair without a preceding `Host` directive, and `parse_str` fails the entire operation
-/// on the first parser error.
-///
-/// Only direct settings within each `Host` block are captured; pattern-matched settings
-/// from wildcard blocks (e.g. `Host *`) are not applied. Use `SSHConfig::query()` as a
-/// supplementary source when `parse_str` succeeds.
+/// This enumerates the connectable aliases (`ssh_config` 0.1 cannot list
+/// hosts). Only direct settings within each `Host` block are captured;
+/// [`resolve_host_settings`] supplies the OpenSSH-resolved values that callers
+/// layer on top. A `Match` line closes the current Host block.
 #[cfg(feature = "ssh_config")]
 fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
     let mut hosts = Vec::new();
@@ -484,6 +539,7 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
     let mut block_identity_file: Option<String> = None;
     let mut block_certificate_file: Option<String> = None;
     let mut block_proxy_jump: Option<String> = None;
+    let mut block_proxy_command: Option<String> = None;
 
     for line in content.lines() {
         let line = line.trim();
@@ -491,12 +547,12 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
             continue;
         }
 
-        let (keyword, value) = match line.split_once(char::is_whitespace) {
-            Some((k, v)) => (k, v.trim()),
+        let (keyword, value) = match split_directive(line) {
+            Some((k, v)) => (k, v),
             None => continue,
         };
 
-        if keyword.eq_ignore_ascii_case("Host") {
+        if keyword.eq_ignore_ascii_case("Host") || keyword.eq_ignore_ascii_case("Match") {
             // Save previous host block
             if let Some(host) = current_host.take() {
                 hosts.push(SSHConfigEntry {
@@ -508,17 +564,29 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
                     agent: Some(true),
                     certificate_file: block_certificate_file.take(),
                     proxy_jump: block_proxy_jump.take(),
+                    proxy_command: block_proxy_command.take(),
                 });
             }
 
-            // Start new host block — take the first alias
-            current_host = value.split_whitespace().next().map(|s| s.to_string());
+            // Start new host block — take the first connectable alias. Pure
+            // pattern blocks (`Host *`, `Host !x *.corp`) and `Match` blocks
+            // name no host, so their settings are not attributed to anyone.
+            current_host = if keyword.eq_ignore_ascii_case("Host") {
+                strip_trailing_comment(value)
+                    .split(|c: char| c.is_whitespace() || c == ',')
+                    .map(|alias| alias.trim_matches('"'))
+                    .find(|alias| !alias.is_empty() && !is_host_pattern(alias))
+                    .map(|s| s.to_string())
+            } else {
+                None
+            };
             block_hostname = None;
             block_port = None;
             block_user = None;
             block_identity_file = None;
             block_certificate_file = None;
             block_proxy_jump = None;
+            block_proxy_command = None;
         } else if current_host.is_some() {
             // Track details within the current Host block
             if keyword.eq_ignore_ascii_case("HostName") {
@@ -535,6 +603,12 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
                     parse_ssh_config_value(value).map(|s| shellexpand::tilde(s).to_string());
             } else if keyword.eq_ignore_ascii_case("ProxyJump") {
                 block_proxy_jump = parse_ssh_config_value(value).map(ToOwned::to_owned);
+            } else if keyword.eq_ignore_ascii_case("ProxyCommand") {
+                // Keep the raw command text: `%h`/`%p`/`%r` tokens are expanded
+                // at connect time, and shell quoting must survive intact —
+                // unlike single-token directives, the whole remainder of the
+                // line is the value.
+                block_proxy_command = parse_ssh_config_command_value(value);
             }
         }
     }
@@ -550,6 +624,7 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
             agent: Some(true),
             certificate_file: block_certificate_file,
             proxy_jump: block_proxy_jump,
+            proxy_command: block_proxy_command,
         });
     }
 
@@ -582,6 +657,9 @@ struct ActiveConnection {
     bounded_sftp_session: Arc<BoundedSftpCache>,
     #[allow(dead_code)]
     server_key: Option<PublicKey>,
+    /// ProxyCommand process carrying the SSH transport; dropping it kills the
+    /// proxy. Absent for every non-proxy transport.
+    proxy_child: Option<ProxyCommandChild>,
     /// Liveness flag; flipped to false from `SSHHandler::disconnected`.
     /// Allows `is_connected` and SFTP/exec entry points to detect a dead session
     /// without waiting for the next failed I/O.
@@ -662,6 +740,9 @@ struct EstablishedSession {
     server_info: Option<ServerInfo>,
     effective_config: SSHConnectionConfig,
     unpublished: UnpublishedSshSession,
+    /// ProxyCommand process carrying the SSH transport, kept alive exactly as
+    /// long as the session. `None` for every non-proxy transport.
+    proxy_child: Option<ProxyCommandChild>,
 }
 
 /// Owns authenticated transports until the complete chain is published. A
@@ -672,6 +753,9 @@ struct UnpublishedSshSession {
     // Creation order is first jump through final target. One guard owns the
     // whole chain so cancellation cannot race independent hop cleanups.
     handles: Vec<Arc<Handle<SSHHandler>>>,
+    // ProxyCommand children spawned for transports that have not been
+    // published yet; the guard's Drop tears them down with the handles.
+    proxy_children: Vec<ProxyCommandChild>,
 }
 
 impl UnpublishedSshSession {
@@ -681,6 +765,11 @@ impl UnpublishedSshSession {
 
     fn disarm(&mut self) {
         self.handles.clear();
+        self.proxy_children.clear();
+    }
+
+    fn take_proxy_child(&mut self) -> Option<ProxyCommandChild> {
+        self.proxy_children.pop()
     }
 }
 
@@ -690,11 +779,18 @@ impl Drop for UnpublishedSshSession {
             return;
         }
         let handles = std::mem::take(&mut self.handles);
+        // The proxy processes carry the transports being told goodbye, so
+        // they move into the task and are torn down only after it; dropping
+        // them here would cut the pipe before the disconnect message is sent.
+        let proxy_children = std::mem::take(&mut self.proxy_children);
         match tokio::runtime::Handle::try_current() {
             Ok(runtime) => {
                 runtime.spawn(async move {
                     let chain = handles.iter().rev().map(Arc::as_ref).collect();
                     SSHConnectionManager::shutdown_handle_chain(chain).await;
+                    for child in proxy_children {
+                        child.shutdown().await;
+                    }
                 });
             }
             Err(error) => log::warn!(
@@ -2410,82 +2506,43 @@ impl SSHConnectionManager {
             .map(|p| p.join(".ssh").join("config"))
             .unwrap_or_default();
 
-        if !ssh_config_path.exists() {
+        // Load the user config merged with its `Include` tree; ecosystem
+        // tooling (Coder, AtomGit, devenv) writes Host blocks into included
+        // files, and `ssh_config` 0.1 cannot expand them itself.
+        let Some(config_content) = load_merged_config_async(ssh_config_path.clone()).await else {
             log::debug!("SSH config not found at {:?}", ssh_config_path);
             return SSHConfigLookupResult {
                 found: false,
                 config: None,
             };
-        }
-
-        let config_content = match tokio::fs::read_to_string(&ssh_config_path).await {
-            Ok(c) => strip_utf8_bom(c),
-            Err(e) => {
-                log::warn!("Failed to read SSH config: {:?}", e);
-                return SSHConfigLookupResult {
-                    found: false,
-                    config: None,
-                };
-            }
         };
+        Self::lookup_ssh_config_in(&config_content, host)
+    }
 
-        // Try to parse with the ssh_config crate for pattern-matching query support.
-        // If parsing fails, fall back to manual parsing.
-        let parsed_config = SSHConfig::parse_str(&config_content).ok();
-        if parsed_config.is_none() {
-            log::debug!("SSHConfig::parse_str failed, using manual fallback");
-        }
-
-        // Try pattern-matched query first (handles Host wildcards like `Host *.example.com`)
-        if let Some(ref config) = parsed_config {
-            let host_settings = config.query(host);
-            if !host_settings.is_empty() {
-                log::debug!(
-                    "Found SSH config for host: {} with {} settings",
-                    host,
-                    host_settings.len()
-                );
-
-                let hostname = ssh_cfg_get(&host_settings, "HostName").map(|s| s.to_string());
-                let user = ssh_cfg_get(&host_settings, "User").map(|s| s.to_string());
-                let port = ssh_cfg_get(&host_settings, "Port").and_then(|s| s.parse::<u16>().ok());
-                let identity_file = ssh_cfg_get(&host_settings, "IdentityFile")
-                    .map(|f| shellexpand::tilde(f).to_string());
-                let certificate_file = ssh_cfg_get(&host_settings, "CertificateFile")
-                    .map(|f| shellexpand::tilde(f).to_string());
-                let has_proxy_command = ssh_cfg_has(&host_settings, "ProxyCommand");
-                let proxy_jump = ssh_cfg_get(&host_settings, "ProxyJump").map(ToOwned::to_owned);
-
-                return SSHConfigLookupResult {
-                    found: true,
-                    config: Some(SSHConfigEntry {
-                        host: host.to_string(),
-                        hostname,
-                        port,
-                        user,
-                        identity_file,
-                        agent: if has_proxy_command { None } else { Some(true) },
-                        certificate_file,
-                        proxy_jump,
-                    }),
-                };
-            }
-        }
-
-        // Fallback: manual lookup for exact host name match
-        let hosts = parse_ssh_config_manually(&config_content);
-        if let Some(entry) = hosts.into_iter().find(|e| e.host == host) {
-            log::debug!("Found SSH config for host: {} (manual fallback)", host);
-            return SSHConfigLookupResult {
+    /// Resolve `host` against already-merged config text with OpenSSH
+    /// semantics (pattern matching, first value wins, whole-line values).
+    #[cfg(feature = "ssh_config")]
+    fn lookup_ssh_config_in(config_content: &str, host: &str) -> SSHConfigLookupResult {
+        let settings = resolve_host_settings(config_content, host);
+        let entry = ssh_config_entry_from_settings(host, &settings);
+        // Any matched setting counts, even only `Host *` defaults such as
+        // `AddKeysToAgent`: callers use `found` to pick agent authentication.
+        if !settings.is_empty() {
+            log::debug!(
+                "Found SSH config for host: {} with {} settings",
+                host,
+                settings.len()
+            );
+            SSHConfigLookupResult {
                 found: true,
                 config: Some(entry),
-            };
-        }
-
-        log::debug!("No SSH config found for host: {}", host);
-        SSHConfigLookupResult {
-            found: false,
-            config: None,
+            }
+        } else {
+            log::debug!("No SSH config found for host: {}", host);
+            SSHConfigLookupResult {
+                found: false,
+                config: None,
+            }
         }
     }
 
@@ -2504,63 +2561,43 @@ impl SSHConnectionManager {
             .map(|p| p.join(".ssh").join("config"))
             .unwrap_or_default();
 
-        if !ssh_config_path.exists() {
+        // Merged view including the `Include` tree; see `get_ssh_config`.
+        let Some(config_content) = load_merged_config_async(ssh_config_path.clone()).await else {
             log::debug!("SSH config not found at {:?}", ssh_config_path);
             return Vec::new();
-        }
-
-        let config_content = match tokio::fs::read_to_string(&ssh_config_path).await {
-            Ok(c) => strip_utf8_bom(c),
-            Err(e) => {
-                log::warn!("Failed to read SSH config: {:?}", e);
-                return Vec::new();
-            }
         };
-
-        // Try to parse with the ssh_config crate for pattern-matching query support.
-        // If parsing fails (e.g. `Include`/`Match` directives before the first `Host`
-        // block cause ssh_config 0.1 to return InvalidHostEntry), fall back to manual
-        // line-by-line parsing.
-        let parsed_config = SSHConfig::parse_str(&config_content).ok();
-        if parsed_config.is_none() {
-            log::debug!("SSHConfig::parse_str failed, using manual fallback");
-        }
-
-        // Always do manual parsing to get the host list (SSHConfig doesn't expose all hosts).
-        let mut hosts = parse_ssh_config_manually(&config_content);
-
-        // When the ssh_config crate parsed successfully, override with pattern-matched
-        // details (e.g. settings from `Host *` blocks that apply to all hosts).
-        if let Some(ref config) = parsed_config {
-            for entry in &mut hosts {
-                let settings = config.query(&entry.host);
-                if !settings.is_empty() {
-                    if let Some(h) = ssh_cfg_get(&settings, "HostName") {
-                        entry.hostname = Some(h.to_string());
-                    }
-                    if let Some(p) =
-                        ssh_cfg_get(&settings, "Port").and_then(|s| s.parse::<u16>().ok())
-                    {
-                        entry.port = Some(p);
-                    }
-                    if let Some(u) = ssh_cfg_get(&settings, "User") {
-                        entry.user = Some(u.to_string());
-                    }
-                    if let Some(f) = ssh_cfg_get(&settings, "IdentityFile") {
-                        entry.identity_file = Some(shellexpand::tilde(f).to_string());
-                    }
-                    if let Some(f) = ssh_cfg_get(&settings, "CertificateFile") {
-                        entry.certificate_file = Some(shellexpand::tilde(f).to_string());
-                    }
-                    if let Some(proxy_jump) = ssh_cfg_get(&settings, "ProxyJump") {
-                        entry.proxy_jump = Some(proxy_jump.to_string());
-                    }
-                }
-            }
-        }
-
+        let hosts = Self::list_ssh_config_hosts_in(&config_content);
         log::debug!("Found {} hosts in SSH config", hosts.len());
         hosts
+    }
+
+    /// Enumerate connectable aliases from merged config text, each resolved
+    /// with OpenSSH semantics. Aliases repeated across blocks (or re-emitted
+    /// after an `Include`) are listed once.
+    #[cfg(feature = "ssh_config")]
+    fn list_ssh_config_hosts_in(config_content: &str) -> Vec<SSHConfigEntry> {
+        let mut seen = std::collections::HashSet::new();
+        parse_ssh_config_manually(config_content)
+            .into_iter()
+            .filter(|entry| seen.insert(entry.host.clone()))
+            .map(|entry| {
+                let settings = resolve_host_settings(config_content, &entry.host);
+                let resolved = ssh_config_entry_from_settings(&entry.host, &settings);
+                SSHConfigEntry {
+                    hostname: resolved.hostname.or(entry.hostname),
+                    port: resolved.port.or(entry.port),
+                    user: resolved.user.or(entry.user),
+                    identity_file: resolved.identity_file.or(entry.identity_file),
+                    certificate_file: resolved.certificate_file.or(entry.certificate_file),
+                    proxy_jump: resolved.proxy_jump,
+                    // The resolver is authoritative for ProxyCommand: it honors
+                    // `ProxyCommand none` and first-value-wins across blocks.
+                    agent: resolved.agent,
+                    proxy_command: resolved.proxy_command,
+                    host: entry.host,
+                }
+            })
+            .collect()
     }
 
     #[cfg(not(feature = "ssh_config"))]
@@ -2959,6 +2996,7 @@ impl SSHConnectionManager {
             default_workspace: config.default_workspace.clone(),
             last_connected: Some(chrono::Utc::now().timestamp() as u64),
             proxy_jump: config.proxy_jump.clone(),
+            proxy_command: config.proxy_command.clone(),
             container: config.container.clone(),
             wsl: config.wsl.clone(),
             options: config.options.clone(),
@@ -3089,6 +3127,7 @@ impl SSHConnectionManager {
                     sftp_session: Arc::new(SftpCache::new()),
                     bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                     server_key: None,
+                    proxy_child: established.proxy_child,
                     alive: established.alive,
                 },
             )
@@ -3120,8 +3159,14 @@ impl SSHConnectionManager {
                     .proxy_jump
                     .as_deref()
                     .is_some_and(|jump| !jump.trim().is_empty())
+                || config
+                    .proxy_command
+                    .as_deref()
+                    .is_some_and(|command| !command.trim().is_empty())
             {
-                anyhow::bail!("WSL cannot be combined with Docker or SSH jump hosts");
+                anyhow::bail!(
+                    "WSL cannot be combined with Docker, SSH jump hosts, or ProxyCommand"
+                );
             }
             let server_info = super::wsl::probe(wsl, Duration::from_secs(timeout_secs)).await?;
             return Ok(EstablishedSession {
@@ -3131,6 +3176,7 @@ impl SSHConnectionManager {
                 server_info: Some(server_info),
                 effective_config: config.clone(),
                 unpublished: UnpublishedSshSession::default(),
+                proxy_child: None,
             });
         }
         if config.uses_local_docker() {
@@ -3158,7 +3204,34 @@ impl SSHConnectionManager {
                 server_info: Some(server_info),
                 effective_config: resolved_container_config(config, ContainerAccess::DockerExec),
                 unpublished: UnpublishedSshSession::default(),
+                proxy_child: None,
             });
+        }
+
+        if let Some(proxy_command) = config
+            .proxy_command
+            .as_deref()
+            .map(str::trim)
+            .filter(|command| !command.is_empty())
+        {
+            // Deliberately exclusive combinations for this release: a proxy
+            // command already owns the transport to the target, so layering a
+            // jump chain or a container target on top has no tested semantics.
+            if config
+                .proxy_jump
+                .as_deref()
+                .is_some_and(|jump| !jump.trim().is_empty())
+            {
+                anyhow::bail!(
+                    "ProxyCommand and ProxyJump cannot be combined; remove one of them from the connection"
+                );
+            }
+            if config.container.is_some() {
+                anyhow::bail!("ProxyCommand cannot be combined with a Docker container target");
+            }
+            return self
+                .establish_proxy_command_session(config, proxy_command, timeout_secs)
+                .await;
         }
 
         let mut unpublished = UnpublishedSshSession::default();
@@ -3167,9 +3240,18 @@ impl SSHConnectionManager {
             .await
             .map_err(|error| tag_failed_stage("configuration", error))?;
         if jumps.is_empty() {
+            let ignored_proxy_command = self.ssh_config_proxy_command_ignored(config).await;
             let (handle, alive, mut server_info) = self
                 .establish_direct_session(config, timeout_secs, &mut unpublished)
                 .await
+                .map_err(|error| match &ignored_proxy_command {
+                    Some(alias) => anyhow!(
+                        "{error} (~/.ssh/config defines a ProxyCommand for '{alias}', but this \
+                         connection dials the host directly; this connection profile does not \
+                         carry the ProxyCommand)"
+                    ),
+                    None => error,
+                })
                 .map_err(|error| tag_failed_stage("target", error))?;
             if config
                 .container
@@ -3192,6 +3274,7 @@ impl SSHConnectionManager {
                         server_info: container_info,
                         effective_config,
                         unpublished,
+                        proxy_child: None,
                     });
                 }
             }
@@ -3217,6 +3300,7 @@ impl SSHConnectionManager {
                     config.clone()
                 },
                 unpublished,
+                proxy_child: None,
             });
         }
 
@@ -3323,6 +3407,7 @@ impl SSHConnectionManager {
                     server_info: container_info,
                     effective_config,
                     unpublished,
+                    proxy_child: None,
                 });
             }
         }
@@ -3348,6 +3433,7 @@ impl SSHConnectionManager {
                 config.clone()
             },
             unpublished,
+            proxy_child: None,
         })
     }
 
@@ -3423,6 +3509,7 @@ impl SSHConnectionManager {
                     server_info,
                     effective_config,
                     unpublished,
+                    proxy_child: None,
                 })
             }
             Err(error) => {
@@ -3580,6 +3667,19 @@ impl SSHConnectionManager {
                     fallback_key_path: Some("~/.ssh/id_rsa".to_string()),
                 }
             };
+            if entry
+                .as_ref()
+                .is_some_and(|entry| entry.proxy_command.is_some())
+            {
+                // Dialing the hop directly would silently bypass the transport
+                // the user configured for it; say so instead.
+                anyhow::bail!(
+                    "ProxyJump entry '{}' uses a ProxyCommand in ~/.ssh/config, which is not \
+                     supported for jump hosts yet; connect to that host directly with its \
+                     ProxyCommand or remove it from the jump chain",
+                    value
+                );
+            }
             result.push(SSHConnectionConfig {
                 id: format!("{}-jump-{}", config.id, index + 1),
                 name: value.to_string(),
@@ -3589,6 +3689,7 @@ impl SSHConnectionManager {
                 auth,
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: config.options.clone(),
@@ -3683,6 +3784,106 @@ impl SSHConnectionManager {
             unpublished,
         )
         .await
+    }
+
+    /// When a connection without `proxy_command` targets a `~/.ssh/config`
+    /// alias that resolves to a ProxyCommand, warn loudly: the profile dials
+    /// directly, which is not what `ssh <alias>` would do. Returns the alias
+    /// so a dial failure can say why. The command text is never logged.
+    async fn ssh_config_proxy_command_ignored(
+        &self,
+        config: &SSHConnectionConfig,
+    ) -> Option<String> {
+        if config
+            .proxy_command
+            .as_deref()
+            .is_some_and(|command| !command.trim().is_empty())
+        {
+            return None;
+        }
+        let lookup = self.get_ssh_config(&config.host).await;
+        lookup.config.as_ref()?.proxy_command.as_ref()?;
+        log::warn!(
+            "SSH connection {} targets host '{}', which has a ProxyCommand in ~/.ssh/config; \
+             the connection profile carries no ProxyCommand, so the host is dialed directly",
+            config.id,
+            config.host
+        );
+        Some(config.host.clone())
+    }
+
+    /// Build a fresh SSH session whose transport is the stdin/stdout of a
+    /// local ProxyCommand process (OpenSSH semantics).
+    ///
+    /// Reusing `establish_stream_session` keeps handshake timeout, known-hosts
+    /// verification, and authentication identical to the direct path. The child
+    /// process is owned by `UnpublishedSshSession` until the session is fully
+    /// established, so every failure path kills it; afterwards the guard moves
+    /// into the returned `EstablishedSession` (and from there into the
+    /// published connection record), so disconnects and app shutdown kill it.
+    async fn establish_proxy_command_session(
+        &self,
+        config: &SSHConnectionConfig,
+        proxy_command: &str,
+        timeout_secs: u64,
+    ) -> anyhow::Result<EstablishedSession> {
+        let stage = format!("proxy command {}", connection_label(config));
+        let mut unpublished = UnpublishedSshSession::default();
+
+        let expanded = expand_tokens(proxy_command, &config.host, config.port, &config.username)
+            .map_err(|error| tag_failed_stage("proxy command", error))?;
+        let mut child = ProxyCommandChild::spawn(&expanded, &stage)
+            .await
+            .map_err(|error| tag_failed_stage("proxy command", error))?;
+        let stream = child
+            .take_stream()
+            .map_err(|error| tag_failed_stage("proxy command", error))?;
+        unpublished.proxy_children.push(child);
+
+        let session = self
+            .establish_stream_session(config, stream, timeout_secs, &stage, &mut unpublished)
+            .await;
+        match session {
+            Ok((handle, alive, server_info)) => {
+                let proxy_child = unpublished
+                    .take_proxy_child()
+                    .expect("proxy child was pushed before the handshake");
+                Ok(EstablishedSession {
+                    handle: Some(handle),
+                    jump_handles: Vec::new(),
+                    alive,
+                    server_info,
+                    effective_config: config.clone(),
+                    unpublished,
+                    proxy_child: Some(proxy_child),
+                })
+            }
+            Err(error) => {
+                let detail = match unpublished.take_proxy_child() {
+                    Some(child) => {
+                        let (exit_code, stderr_tail) = child.finish().await;
+                        let mut parts = Vec::new();
+                        match exit_code {
+                            Some(code) => {
+                                parts.push(format!("proxy command exited with code {code}"))
+                            }
+                            None => parts
+                                .push("proxy command was terminated before completing".to_string()),
+                        }
+                        if !stderr_tail.is_empty() {
+                            parts.push(format!("stderr: {stderr_tail}"));
+                        }
+                        parts.join("; ")
+                    }
+                    None => String::new(),
+                };
+                if detail.is_empty() {
+                    Err(error)
+                } else {
+                    Err(anyhow!("{error} ({detail})"))
+                }
+            }
+        }
     }
 
     async fn probe_remote_container(
@@ -4238,6 +4439,30 @@ impl SSHConnectionManager {
     /// closing hop 1 first would cut the channel the later disconnects still
     /// have to travel over and turn an orderly shutdown back into N abandoned
     /// sessions.
+    /// Keep a displaced ProxyCommand process alive until the old transport it
+    /// carries has no users left (or the proxy exits by itself), then tear the
+    /// process tree down and reap it.
+    fn reap_proxy_after_transport_drains(
+        connection_id: String,
+        transport: std::sync::Weak<Handle<SSHHandler>>,
+        mut child: ProxyCommandChild,
+    ) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(STALE_PROXY_POLL_INTERVAL);
+            loop {
+                interval.tick().await;
+                if transport.strong_count() == 0 || child.has_exited() {
+                    break;
+                }
+            }
+            child.shutdown().await;
+            log::debug!(
+                "SSH session {} released the previous ProxyCommand process",
+                connection_id
+            );
+        });
+    }
+
     async fn shutdown_handle_chain(handles: Vec<&Handle<SSHHandler>>) {
         for handle in handles {
             Self::shutdown_handle(handle).await;
@@ -4409,6 +4634,7 @@ impl SSHConnectionManager {
             auth,
             default_workspace: saved.default_workspace,
             proxy_jump: saved.proxy_jump,
+            proxy_command: saved.proxy_command,
             container: saved.container,
             wsl: saved.wsl,
             options: saved.options,
@@ -4556,23 +4782,25 @@ impl SSHConnectionManager {
         // session is usually dead, but "usually" covers neither config drift
         // (where the old session is perfectly healthy) nor a half-open link the
         // server still counts against its session limit.
-        let (stale_handle, stale_jump_handles) = {
+        let (stale_handle, stale_jump_handles, stale_proxy_child) = {
             let mut guard = self.connections.write().await;
             established.unpublished.disarm();
             if let Some(conn) = guard.get_mut(connection_id) {
                 let stale_handle = conn.handle.take();
                 let stale_jump_handles = std::mem::take(&mut conn.jump_handles);
+                let stale_proxy_child = conn.proxy_child.take();
                 conn.handle = established.handle;
                 conn.jump_handles = established.jump_handles;
                 conn.config = config;
                 conn.effective_config = established.effective_config;
                 conn.alive = established.alive;
+                conn.proxy_child = established.proxy_child;
                 if let Some(si) = server_info.as_ref() {
                     conn.server_info = Some(si.clone());
                 }
                 conn.sftp_session = Arc::new(SftpCache::new());
                 conn.bounded_sftp_session = Arc::new(BoundedSftpCache::new());
-                (stale_handle, stale_jump_handles)
+                (stale_handle, stale_jump_handles, stale_proxy_child)
             } else {
                 let replaced = guard.insert(
                     connection_id.to_string(),
@@ -4585,12 +4813,16 @@ impl SSHConnectionManager {
                         sftp_session: Arc::new(SftpCache::new()),
                         bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                         server_key: None,
+                        proxy_child: established.proxy_child,
                         alive: established.alive,
                     },
                 );
                 match replaced {
-                    Some(previous) => (previous.handle, previous.jump_handles),
-                    None => (None, Vec::new()),
+                    Some(previous) => {
+                        let replaced_child = previous.proxy_child;
+                        (previous.handle, previous.jump_handles, replaced_child)
+                    }
+                    None => (None, Vec::new(), None),
                 }
             }
         };
@@ -4611,6 +4843,29 @@ impl SSHConnectionManager {
                 .map(Arc::as_ref),
         );
         Self::shutdown_handle_chain(stale_chain).await;
+
+        // The stale ProxyCommand process is the old transport's other half:
+        // close it only once that transport was actually unused, and keep it
+        // alive otherwise — the same lease the skipped goodbye grants the old
+        // handle while in-flight work drains.
+        if let Some(child) = stale_proxy_child {
+            match stale_handle {
+                Some(handle) if Arc::strong_count(&handle) > 1 => {
+                    log::info!(
+                        "SSH session {} reconnect keeps the previous ProxyCommand process alive \
+                         while its old transport still serves in-flight work",
+                        connection_id
+                    );
+                    Self::reap_proxy_after_transport_drains(
+                        connection_id.to_string(),
+                        Arc::downgrade(&handle),
+                        child,
+                    );
+                    drop(handle);
+                }
+                _ => child.shutdown().await,
+            }
+        }
 
         log::info!("SSH session {} reconnected successfully", connection_id);
         Ok(())
@@ -7003,6 +7258,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -7503,6 +7759,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: Some(ContainerWorkspaceConfig {
                     name: "fixture".into(),
                     access: ContainerAccess::DockerExec,
@@ -7526,6 +7783,7 @@ mod tests {
                     sftp_session: Arc::new(SftpCache::new()),
                     bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                     server_key: None,
+                    proxy_child: None,
                     alive: Arc::new(AtomicBool::new(true)),
                 },
             );
@@ -7751,6 +8009,7 @@ mod tests {
             },
             default_workspace: None,
             proxy_jump: None,
+            proxy_command: None,
             container: Some(ContainerWorkspaceConfig {
                 name: "fixture".into(),
                 access: ContainerAccess::DockerExec,
@@ -7775,6 +8034,7 @@ mod tests {
                 sftp_session: Arc::new(SftpCache::new()),
                 bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                 server_key: None,
+                proxy_child: None,
                 alive: Arc::new(AtomicBool::new(true)),
             },
         );
@@ -8231,7 +8491,7 @@ mod tests {
     #[test]
     #[cfg(feature = "ssh_config")]
     fn ssh_config_fallback_accepts_utf8_bom_and_defaults_to_agent() {
-        let content = strip_utf8_bom(
+        let content = crate::remote_ssh::ssh_config_loader::strip_utf8_bom(
             "\u{feff}Host 跳板\n  HostName jump.example.com\n  User 构建\n".to_string(),
         );
         let entries = parse_ssh_config_manually(&content);
@@ -8271,6 +8531,7 @@ mod tests {
             },
             default_workspace: Some("/srv/project".to_string()),
             proxy_jump: None,
+            proxy_command: None,
             container: None,
             wsl: None,
             options: Default::default(),
@@ -8292,6 +8553,7 @@ mod tests {
                 sftp_session: Arc::new(SftpCache::new()),
                 bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                 server_key: None,
+                proxy_child: None,
                 alive: alive.clone(),
             },
         );
@@ -8336,6 +8598,277 @@ mod tests {
                 "2001:db8::10".to_string(),
                 Some(2200)
             )
+        );
+    }
+
+    /// Coder's `config-ssh` output: a multi-word ProxyCommand followed by
+    /// more keys in the same block, plus a catch-all block below it. This
+    /// config has a Host before every directive, which is exactly the shape
+    /// the old `ssh_config` 0.1 path parsed "successfully" while pairing
+    /// `ProxyCommand` with `/path/coder` and shifting every later key.
+    #[cfg(feature = "ssh_config")]
+    const CODER_STYLE_CONFIG: &str = "\
+Host coder.*
+  ConnectTimeout 0
+  ProxyCommand /usr/local/bin/coder --global-config \"/Users/me/Library/Application Support/coderv2\" ssh --stdio --ssh-host-prefix coder. %h
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  User coder
+  LogLevel ERROR
+
+Host coder.dev
+  HostName ignored-because-proxy-resolves.example
+
+Host plain
+  HostName plain.example
+  Port 2222
+  ProxyCommand none
+
+Host *
+  User fallback
+  ProxyCommand /usr/bin/nc %h %p
+";
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn get_ssh_config_resolves_multi_word_proxy_command_without_shifting_keys() {
+        let result = SSHConnectionManager::lookup_ssh_config_in(CODER_STYLE_CONFIG, "coder.dev");
+        assert!(result.found);
+        let entry = result.config.unwrap();
+        assert_eq!(
+            entry.proxy_command.as_deref(),
+            Some(
+                "/usr/local/bin/coder --global-config \"/Users/me/Library/Application Support/coderv2\" ssh --stdio --ssh-host-prefix coder. %h"
+            )
+        );
+        // Keys after ProxyCommand keep their own values, and the first
+        // obtained value wins over `Host *`.
+        assert_eq!(entry.user.as_deref(), Some("coder"));
+        assert_eq!(
+            entry.hostname.as_deref(),
+            Some("ignored-because-proxy-resolves.example")
+        );
+        assert_eq!(entry.port, None);
+        assert_eq!(entry.agent, None);
+
+        // `ProxyCommand none` in a specific block disables the catch-all.
+        let plain = SSHConnectionManager::lookup_ssh_config_in(CODER_STYLE_CONFIG, "plain")
+            .config
+            .unwrap();
+        assert_eq!(plain.proxy_command, None);
+        assert_eq!(plain.port, Some(2222));
+        assert_eq!(plain.user.as_deref(), Some("fallback"));
+
+        // Wildcard matching applies to aliases not listed anywhere.
+        let other = SSHConnectionManager::lookup_ssh_config_in(CODER_STYLE_CONFIG, "elsewhere")
+            .config
+            .unwrap();
+        assert_eq!(other.proxy_command.as_deref(), Some("/usr/bin/nc %h %p"));
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn list_ssh_config_hosts_resolves_each_alias_with_openssh_semantics() {
+        let hosts = SSHConnectionManager::list_ssh_config_hosts_in(CODER_STYLE_CONFIG);
+        let names: Vec<_> = hosts.iter().map(|entry| entry.host.as_str()).collect();
+        // Pure pattern blocks name no connectable host.
+        assert_eq!(names, vec!["coder.dev", "plain"]);
+        let coder = &hosts[0];
+        assert!(coder
+            .proxy_command
+            .as_deref()
+            .is_some_and(|command| command.ends_with("--ssh-host-prefix coder. %h")));
+        assert_eq!(coder.user.as_deref(), Some("coder"));
+        assert_eq!(hosts[1].proxy_command, None);
+        assert_eq!(hosts[1].port, Some(2222));
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn identity_file_prefers_the_block_naming_the_host() {
+        let content = "Host *\n  IdentityFile ~/.ssh/default\nHost foo # work box\n  IdentityFile /keys/foo-1\n  IdentityFile /keys/foo-2\n  CertificateFile /keys/foo-cert.pub\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "foo")
+            .config
+            .unwrap();
+        assert_eq!(entry.identity_file.as_deref(), Some("/keys/foo-1"));
+        assert_eq!(
+            entry.certificate_file.as_deref(),
+            Some("/keys/foo-cert.pub")
+        );
+        let settings = resolve_host_settings(content, "foo");
+        let files: Vec<_> = settings
+            .all("identityfile")
+            .iter()
+            .map(|value| value.value.as_str())
+            .collect();
+        assert_eq!(files, vec!["~/.ssh/default", "/keys/foo-1", "/keys/foo-2"]);
+        // Hosts without a specific block still get the default.
+        let other = SSHConnectionManager::lookup_ssh_config_in(content, "bar")
+            .config
+            .unwrap();
+        assert!(other
+            .identity_file
+            .as_deref()
+            .is_some_and(|file| file.ends_with(".ssh/default")));
+        // The trailing comment on the Host line is not a pattern.
+        let hosts = SSHConnectionManager::list_ssh_config_hosts_in(content);
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].host, "foo");
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn proxy_jump_and_proxy_command_first_obtained_wins() {
+        let content = "Host target\n  ProxyJump bastion\nHost *\n  ProxyCommand nc %h %p\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "target")
+            .config
+            .unwrap();
+        assert_eq!(entry.proxy_jump.as_deref(), Some("bastion"));
+        assert_eq!(entry.proxy_command, None);
+
+        let content = "Host target\n  ProxyCommand nc %h %p\nHost *\n  ProxyJump bastion\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "target")
+            .config
+            .unwrap();
+        assert_eq!(entry.proxy_jump, None);
+        assert_eq!(entry.proxy_command.as_deref(), Some("nc %h %p"));
+
+        // `ProxyCommand none` first still suppresses a later ProxyJump.
+        let content = "Host target\n  ProxyCommand none\nHost *\n  ProxyJump bastion\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "target")
+            .config
+            .unwrap();
+        assert_eq!(entry.proxy_jump, None);
+        assert_eq!(entry.proxy_command, None);
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn wildcard_only_settings_still_count_as_found() {
+        let result = SSHConnectionManager::lookup_ssh_config_in(
+            "Host *\n  AddKeysToAgent yes\n",
+            "anything",
+        );
+        assert!(result.found);
+        assert_eq!(result.config.unwrap().agent, Some(true));
+        assert!(
+            !SSHConnectionManager::lookup_ssh_config_in("Host other\n  User x\n", "anything").found
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn list_ssh_config_hosts_deduplicates_repeated_aliases() {
+        let hosts = SSHConnectionManager::list_ssh_config_hosts_in(
+            "Host a\n  User first\nHost a\n  User second\nMatch host a\n  Port 1\n",
+        );
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].user.as_deref(), Some("first"));
+        assert_eq!(hosts[0].port, None);
+    }
+
+    #[test]
+    fn parses_proxy_command_as_a_whole_line_value() {
+        let hosts = parse_ssh_config_manually(
+            "Host coder-x\n  ProxyCommand \"C:\\tools\\coder.exe\" ssh --stdio %h\n  IdentityFile ~/.ssh/id_ed25519\n",
+        );
+        assert_eq!(hosts.len(), 1);
+        // The full remainder of the line survives, inner quotes included.
+        assert_eq!(
+            hosts[0].proxy_command.as_deref(),
+            Some("\"C:\\tools\\coder.exe\" ssh --stdio %h")
+        );
+
+        // Kept verbatim like OpenSSH: stripping the outer quotes of
+        // `"a b" ssh "%h"` would corrupt it.
+        let hosts = parse_ssh_config_manually("Host quoted\n  ProxyCommand \"a b\" ssh \"%h\"\n");
+        assert_eq!(
+            hosts[0].proxy_command.as_deref(),
+            Some("\"a b\" ssh \"%h\"")
+        );
+
+        let hosts = parse_ssh_config_manually("Host plain\n  HostName plain.example\n");
+        assert_eq!(hosts[0].proxy_command, None);
+    }
+
+    fn proxy_command_fixture_config(command: &str) -> SSHConnectionConfig {
+        SSHConnectionConfig {
+            id: "proxy-fixture".to_string(),
+            name: "proxy fixture".to_string(),
+            host: "coder-vscode.coder.sage.org.ai--abc".to_string(),
+            port: 22,
+            username: "coder".to_string(),
+            auth: SSHAuthMethod::PrivateKey {
+                key_path: "/nonexistent/key".to_string(),
+                passphrase: None,
+                certificate_path: None,
+            },
+            default_workspace: None,
+            proxy_jump: None,
+            proxy_command: Some(command.to_string()),
+            container: None,
+            wsl: None,
+            options: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn proxy_command_transport_reports_proxy_exit_code() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SSHConnectionManager::new(temp.path().into());
+        let config = proxy_command_fixture_config(if cfg!(windows) {
+            "exit 7"
+        } else {
+            "sh -c 'exit 7'"
+        });
+
+        let error = manager
+            .establish_session(&config, 10)
+            .await
+            .err()
+            .expect("a proxy that exits immediately cannot complete a handshake");
+        let message = error.to_string();
+        assert!(
+            message.contains("proxy command exited with code 7"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn proxy_command_rejects_jump_and_container_combinations() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SSHConnectionManager::new(temp.path().into());
+
+        let mut config = proxy_command_fixture_config("exit 0");
+        config.proxy_jump = Some("jump.example".to_string());
+        let error = manager
+            .establish_session(&config, 10)
+            .await
+            .err()
+            .expect("ProxyCommand plus ProxyJump is rejected in this release");
+        assert!(
+            error.to_string().contains("ProxyCommand and ProxyJump"),
+            "unexpected error: {error}"
+        );
+
+        let mut config = proxy_command_fixture_config("exit 0");
+        config.container = Some(ContainerWorkspaceConfig {
+            name: "dev".to_string(),
+            access: ContainerAccess::DockerExec,
+            local: false,
+            docker_path: "docker".to_string(),
+            shell: "/bin/sh".to_string(),
+            user: None,
+            interactive: false,
+        });
+        let error = manager
+            .establish_session(&config, 10)
+            .await
+            .err()
+            .expect("ProxyCommand plus a container target is rejected in this release");
+        assert!(
+            error.to_string().contains("Docker container"),
+            "unexpected error: {error}"
         );
     }
 
@@ -8829,6 +9362,7 @@ mod tests {
                 },
                 default_workspace: Some("/tmp/openbitfun-remote-workspace".to_string()),
                 proxy_jump: None,
+                proxy_command: None,
                 container: Some(ContainerWorkspaceConfig {
                     name: container_name,
                     access: ContainerAccess::DockerExec,
@@ -9086,6 +9620,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -9115,6 +9650,7 @@ mod tests {
                 },
                 default_workspace: Some("/root/project".to_string()),
                 proxy_jump: Some("jump-a,jump-b".to_string()),
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -9205,6 +9741,7 @@ mod tests {
                 },
                 default_workspace: Some("/workspace".to_string()),
                 proxy_jump: Some("jump.example.com".to_string()),
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -9250,6 +9787,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),

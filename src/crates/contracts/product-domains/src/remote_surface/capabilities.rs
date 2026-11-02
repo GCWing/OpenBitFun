@@ -69,6 +69,9 @@ pub enum PeerHostCapability {
     MiniappAgentImagesV1,
     /// WSL profiles and discovery are understood; availability is probed on the host.
     WslWorkspacesV1,
+    /// Saved SSH profiles may carry `proxyCommand`; the host runs it as the
+    /// SSH transport. Older hosts drop the field and dial directly.
+    SshProxyCommandV1,
     /// User-selected native window sharing and explicit permission receipts.
     ComputerUseSharingV1,
     /// `product_control_invoke` is implemented (shared config contract).
@@ -133,6 +136,7 @@ impl PeerHostCapability {
         Self::MiniappAgentContextFilesV1,
         Self::MiniappAgentImagesV1,
         Self::WslWorkspacesV1,
+        Self::SshProxyCommandV1,
         Self::ComputerUseSharingV1,
         Self::ProductControlV1,
         Self::RemoteConnectControlV1,
@@ -180,6 +184,7 @@ impl PeerHostCapability {
             Self::MiniappAgentContextFilesV1 => "miniapp_agent_context_files_v1",
             Self::MiniappAgentImagesV1 => "miniapp_agent_images_v1",
             Self::WslWorkspacesV1 => "wsl_workspaces_v1",
+            Self::SshProxyCommandV1 => "ssh_proxy_command_v1",
             Self::ComputerUseSharingV1 => "computer_use_sharing_v1",
             Self::ProductControlV1 => "product_control_v1",
             Self::RemoteConnectControlV1 => "remote_connect_control_v1",
@@ -212,7 +217,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL
     .split_at(PeerHostCapability::ALL.len() - 1)
     .0;
 
-/// The CLI peer host has no MiniApp runtime, WSL connection setup, host-native
+/// The CLI peer host has no MiniApp runtime, WSL or SSH connection setup, host-native
 /// ProductControl providers, or presentation surface.
 const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ModelRoutingV1,
