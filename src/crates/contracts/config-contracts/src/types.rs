@@ -1207,6 +1207,26 @@ impl TaskModelsConfig {
     }
 }
 
+/// Policy for discarding older context without a model-generated summary.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalContextTruncation {
+    /// Fall back only after the model API reports a context overflow.
+    OnContextOverflow,
+    /// Use local truncation for every context compaction.
+    Always,
+    /// Require an explicit force compaction request.
+    #[default]
+    #[serde(other)]
+    ExplicitOnly,
+}
+
+impl LocalContextTruncation {
+    fn is_explicit_only(&self) -> bool {
+        *self == Self::ExplicitOnly
+    }
+}
+
 /// Host-owned classifier configuration. Credentials remain on the referenced model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -1339,6 +1359,13 @@ pub struct AIConfig {
     /// Speculatively summarize context before automatic compression is required.
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub enable_context_compression_prefetch: bool,
+
+    /// Global policy for context truncation without a model request.
+    #[serde(
+        default,
+        skip_serializing_if = "LocalContextTruncation::is_explicit_only"
+    )]
+    pub local_context_truncation: LocalContextTruncation,
 
     /// Enable the evaluation-oriented edit constraint guard.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -2309,6 +2336,7 @@ impl Default for AIConfig {
             user_question_timeout_secs: default_user_question_timeout(),
             enable_deferred_tool_loading: default_enable_deferred_tool_loading(),
             enable_context_compression_prefetch: true,
+            local_context_truncation: LocalContextTruncation::default(),
             enable_edit_constraint_guard: false,
             allow_tool_json_repair: true,
             computer_use_enabled: true,
@@ -2715,9 +2743,10 @@ mod tests {
     use super::{
         AIConfig, AIExperienceConfig, AIModelConfig, AgentModelDefaultsConfig, AgentProfileConfig,
         AgentProfileView, AppConfig, AppLoggingConfig, AuthConfig, ChatInputDefaultModeStrategy,
-        EditorConfig, GlobalConfig, MemoryExternalContextPolicy, ModelExchangeTracingMode,
-        NotificationConfig, OpenCodePlan, SubagentBatchExecutionPolicy, SubagentModelSelection,
-        SubscriptionProvider, UserSkillGroupsConfig, UserToolGroupsConfig, WebSearchConfig,
+        EditorConfig, GlobalConfig, LocalContextTruncation, MemoryExternalContextPolicy,
+        ModelExchangeTracingMode, NotificationConfig, OpenCodePlan, SubagentBatchExecutionPolicy,
+        SubagentModelSelection, SubscriptionProvider, UserSkillGroupsConfig, UserToolGroupsConfig,
+        WebSearchConfig,
     };
     use openbitfun_product_domains::tool_permissions::ToolPermissionConfig;
 
@@ -3843,6 +3872,48 @@ mod tests {
         assert_eq!(payload["enable_context_compression_prefetch"], false);
         let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
         assert!(!reloaded.enable_context_compression_prefetch);
+    }
+
+    #[test]
+    fn local_context_truncation_defaults_to_explicit_and_preserves_saved_choices() {
+        assert_eq!(
+            AIConfig::default().local_context_truncation,
+            LocalContextTruncation::ExplicitOnly
+        );
+        let legacy_payload = serde_json::json!({"max_rounds": 42});
+        let legacy: AIConfig = serde_json::from_value(legacy_payload).unwrap();
+        assert_eq!(
+            legacy.local_context_truncation,
+            LocalContextTruncation::ExplicitOnly
+        );
+        let legacy_round_trip = serde_json::to_value(&legacy).unwrap();
+        assert!(legacy_round_trip.get("local_context_truncation").is_none());
+        let reloaded: AIConfig = serde_json::from_value(legacy_round_trip).unwrap();
+        assert_eq!(reloaded.max_rounds, 42);
+        assert_eq!(
+            reloaded.local_context_truncation,
+            LocalContextTruncation::ExplicitOnly
+        );
+
+        for (stored, expected) in [
+            ("explicit_only", LocalContextTruncation::ExplicitOnly),
+            (
+                "on_context_overflow",
+                LocalContextTruncation::OnContextOverflow,
+            ),
+            ("always", LocalContextTruncation::Always),
+        ] {
+            let config: AIConfig = serde_json::from_value(serde_json::json!({
+                "local_context_truncation": stored,
+                "max_rounds": 42
+            }))
+            .unwrap();
+            assert_eq!(config.local_context_truncation, expected);
+            let reloaded: AIConfig =
+                serde_json::from_value(serde_json::to_value(config).unwrap()).unwrap();
+            assert_eq!(reloaded.local_context_truncation, expected);
+            assert_eq!(reloaded.max_rounds, 42);
+        }
     }
 
     #[test]

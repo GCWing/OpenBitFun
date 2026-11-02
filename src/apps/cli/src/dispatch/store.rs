@@ -154,6 +154,17 @@ struct StoredAppendMessage {
     created_at: String,
 }
 
+/// Persist forced compaction under a distinct kind: older workers must fail
+/// to parse it rather than ignore `force` and call a model after a downgrade.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum StoredTurnKind {
+    #[default]
+    Prompt,
+    Compact,
+    LocalTruncation,
+}
+
 /// One queued follow-up turn.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -171,7 +182,7 @@ pub(crate) struct StoredFollowUpTurn {
     #[serde(default)]
     pub(crate) approval_policy: Option<DispatchApprovalPolicy>,
     #[serde(default)]
-    pub(crate) kind: DispatchTurnKind,
+    pub(crate) kind: StoredTurnKind,
     #[serde(default)]
     pub(crate) attachments: Vec<DispatchAttachment>,
     pub(crate) created_at: String,
@@ -186,10 +197,25 @@ impl StoredFollowUpTurn {
             model: request.model.clone(),
             reasoning_preset: request.reasoning_preset.clone(),
             approval_policy: request.approval_policy,
-            kind: request.kind,
+            kind: match request.kind {
+                DispatchTurnKind::Prompt => StoredTurnKind::Prompt,
+                DispatchTurnKind::Compact if request.force => StoredTurnKind::LocalTruncation,
+                DispatchTurnKind::Compact => StoredTurnKind::Compact,
+            },
             attachments: request.attachments.clone(),
             created_at: chrono::Utc::now().to_rfc3339(),
         }
+    }
+
+    pub(crate) fn runtime_kind(&self) -> DispatchTurnKind {
+        match self.kind {
+            StoredTurnKind::Prompt => DispatchTurnKind::Prompt,
+            StoredTurnKind::Compact | StoredTurnKind::LocalTruncation => DispatchTurnKind::Compact,
+        }
+    }
+
+    pub(crate) fn is_forced(&self) -> bool {
+        self.kind == StoredTurnKind::LocalTruncation
     }
 
     /// A retried turnId must carry the same submission, options included.
@@ -2373,8 +2399,37 @@ mod tests {
             reasoning_preset: None,
             approval_policy: None,
             kind: DispatchTurnKind::Prompt,
+            force: false,
             attachments: Vec::new(),
         }
+    }
+
+    #[test]
+    fn force_compaction_is_persisted_and_part_of_follow_up_idempotency() {
+        let mut request = continue_request("job", "turn", "");
+        request.kind = DispatchTurnKind::Compact;
+        let legacy = serde_json::to_value(StoredFollowUpTurn::from_request(&request)).unwrap();
+        assert!(legacy.get("force").is_none());
+        assert_eq!(legacy["kind"], "compact");
+        let restored: StoredFollowUpTurn = serde_json::from_value(legacy).unwrap();
+        assert!(!restored.is_forced());
+        request.force = true;
+        let forced = StoredFollowUpTurn::from_request(&request);
+        let current = serde_json::to_value(&forced).unwrap();
+        assert!(current.get("force").is_none());
+        assert_eq!(current["kind"], "localTruncation");
+        // The legacy public kind has exactly the old persisted variants.
+        assert!(serde_json::from_value::<DispatchTurnKind>(current["kind"].clone()).is_err());
+        let round_trip: StoredFollowUpTurn = serde_json::from_value(current).unwrap();
+        assert!(forced.same_submission(&round_trip));
+        assert!(round_trip.is_forced());
+        assert_eq!(round_trip.runtime_kind(), DispatchTurnKind::Compact);
+        let mut previously_written = serde_json::to_value(&forced).unwrap();
+        previously_written["force"] = serde_json::json!(true);
+        let previous: StoredFollowUpTurn = serde_json::from_value(previously_written).unwrap();
+        assert!(previous.is_forced());
+        assert!(previous.same_submission(&forced));
+        assert!(!restored.same_submission(&forced));
     }
 
     #[test]

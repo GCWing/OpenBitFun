@@ -304,9 +304,14 @@ stream aggregation, empty summaries, and tool-call responses. Context overflow
 immediately starts a smaller plan with a fresh budget (at most four plans).
 Both summary and ordinary model requests use the provider-neutral policy in
 `openbitfun-agent-stream::retry` and single-attempt adapter entry points.
-Failed compression terminates the turn without replacing context; there is no
-locally reconstructed summary fallback. Historical compression payloads remain
-readable.
+The host-global `ai.local_context_truncation` policy defaults to `explicit_only`:
+only `/compact force` discards older context locally. `on_context_overflow`
+selects local truncation after a classified context overflow from an ordinary or
+summary model request, without retrying smaller summary plans. `always` bypasses
+summary model calls and automatic summary prefetch. Local truncation preserves
+original retained messages and atomic tool units; it does not generate a summary.
+Other compression failures terminate the turn without replacing context.
+Historical compression payloads remain readable.
 
 Automatic compression can opt into `ai.enable_context_compression_prefetch`
 (default true, omitted from persisted config when true; no frontend setting). The lead is 10,000 tokens. Speculation

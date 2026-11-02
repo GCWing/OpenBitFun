@@ -3408,6 +3408,12 @@ async fn handle_chat(
     image_contexts: Vec<crate::agentic::image_analysis::ImageContextData>,
     s: &'static BotStrings,
 ) -> HandleResult {
+    if matches!(
+        message.split_whitespace().next(),
+        Some(command) if command.eq_ignore_ascii_case("/compact") || command.eq_ignore_ascii_case("/summarize")
+    ) {
+        return result_from_menu(state, MenuView::plain(s.context_compaction_unsupported));
+    }
     if message.starts_with("approve-tool:") || message.starts_with("reject-tool:") {
         let matches_pending = state
             .pending_action
@@ -4847,6 +4853,24 @@ mod menu_tests {
 #[cfg(test)]
 mod handle_chat_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn compaction_commands_are_explicitly_unsupported_without_consuming_pending_answers() {
+        for language in [BotLanguage::ZhCN, BotLanguage::ZhTW, BotLanguage::EnUS] {
+            let mut state = BotChatState::new("chat".into());
+            state.set_pending(PendingAction::SelectDevice {
+                options: Vec::new(),
+            });
+            let result =
+                handle_chat(&mut state, "/compact force", vec![], strings_for(language)).await;
+            assert!(result.forward_to_session.is_none());
+            assert_eq!(
+                result.reply,
+                strings_for(language).context_compaction_unsupported
+            );
+            assert!(state.pending_action.is_some());
+        }
+    }
 
     #[tokio::test]
     async fn stale_approval_buttons_do_not_authorize_or_submit_chat_text() {

@@ -291,13 +291,14 @@ export const localSessionDriver: SessionDriver = {
     return { kind: 'queue' };
   },
 
-  async compactSession(context: FlowChatContext, sessionId: string): Promise<void> {
+  async compactSession(context: FlowChatContext, sessionId: string, force?: boolean): Promise<void> {
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session does not exist: ${sessionId}`);
     }
     await agentAPI.compactSession({
       sessionId,
+      ...(force ? { force: true } : {}),
       workspaceId: sessionOwningWorkspaceId(session),
       workspacePath: sessionProjectWorkspacePath(session),
       remoteConnectionId: session.remoteConnectionId,

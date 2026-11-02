@@ -297,7 +297,7 @@ export interface SessionDriver {
    * Manually compact the session's context. Local sessions call the runtime
    * directly; dispatch sessions queue a compact turn on the target.
    */
-  compactSession(context: FlowChatContext, sessionId: string): Promise<void>;
+  compactSession(context: FlowChatContext, sessionId: string, force?: boolean): Promise<void>;
 
   /**
    * Produce the session usage report and show it. `uiParams` carries the

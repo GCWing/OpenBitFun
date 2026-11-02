@@ -145,7 +145,9 @@ fn builtin_arguments_error(
     }
 
     match handler {
-        ActionHandler::CompactSession => Some("Usage: /compact"),
+        ActionHandler::CompactSession if !arguments.trim().eq_ignore_ascii_case("force") => {
+            Some("Usage: /compact [force]")
+        }
         ActionHandler::ForkSession => Some("Usage: /fork"),
         ActionHandler::Timeline => Some("Usage: /timeline"),
         ActionHandler::UndoSession => Some("Usage: /undo"),
@@ -490,6 +492,20 @@ impl ChatMode {
             }
         }
         if let Some(action) = builtin_action {
+            if route == CommandRoute::Builtin && action.handler == ActionHandler::CompactSession {
+                let state = self.action_state(chat_state.is_processing, false);
+                if !action.available(state) {
+                    chat_view.set_status(Some(action.unavailable_message(state)));
+                    return Ok(None);
+                }
+                self.start_session_compaction(
+                    chat_view,
+                    chat_state,
+                    rt_handle,
+                    arguments.trim().eq_ignore_ascii_case("force"),
+                );
+                return Ok(None);
+            }
             if builtin_arguments_route(route, action.handler) {
                 let state = self.action_state(chat_state.is_processing, false);
                 if !action.available(state) {
@@ -1173,7 +1189,7 @@ impl ChatMode {
                 chat_view.set_status(Some("Usage: /goal <objective>. Goal controls are available in the desktop goal menu.".to_string()));
             }
             ActionHandler::CompactSession => {
-                self.start_session_compaction(chat_view, chat_state, rt_handle);
+                self.start_session_compaction(chat_view, chat_state, rt_handle, false);
             }
             ActionHandler::Usage => self.show_usage_report(chat_view, chat_state, rt_handle),
             ActionHandler::Editor => match external_editor::resolve_editor_command() {
@@ -1417,12 +1433,14 @@ impl ChatMode {
         chat_view: &mut ChatView,
         chat_state: &ChatState,
         rt_handle: &tokio::runtime::Handle,
+        force: bool,
     ) {
         let agent = self.agent.clone();
         let session_id = chat_state.core_session_id.clone();
         chat_view.set_status(Some("Compacting context...".to_string()));
         let result = tokio::task::block_in_place(|| {
-            rt_handle.block_on(async move { agent.start_session_compaction(&session_id).await })
+            rt_handle
+                .block_on(async move { agent.start_session_compaction(&session_id, force).await })
         });
         if let Err(error) = result {
             chat_view.set_status(Some(format!("Could not compact context: {error}")));

@@ -65,6 +65,7 @@ import {
   type SlashActionId,
 } from '../utils/slashActionSelection';
 import { parseReloadCommand, supportsLocalReloadContext } from '../utils/reloadCommand';
+import { parseCompactCommand } from '../utils/compactCommand';
 import { reviewPromptCommandShell } from '../utils/promptCommandShellReview';
 import { notificationService } from '@/shared/notification-system';
 import { useI18n } from '@/infrastructure/i18n';
@@ -3735,7 +3736,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     const message = inputState.value.trim();
-    if (!/^\/compact\s*$/i.test(message)) {
+    const command = parseCompactCommand(message);
+    if (command?.kind !== 'compact') {
       notificationService.warning(
         t('chatInput.compactUsage')
       );
@@ -3747,7 +3749,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
     try {
-      await FlowChatManager.getInstance().compactSession(effectiveTargetSessionId);
+      await FlowChatManager.getInstance().compactSession(effectiveTargetSessionId, command.force);
     } catch (error) {
       log.error('Failed to trigger /compact', {
         error,
@@ -5359,7 +5361,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    if (promptSlashCommandsEnabled && caps.ops.has('compact') && /^\/compact\s*$/i.test(message)) {
+    if (promptSlashCommandsEnabled && caps.ops.has('compact') && parseCompactCommand(message)?.kind === 'compact') {
       await submitCompactFromInput();
       return;
     }

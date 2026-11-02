@@ -166,6 +166,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function requiresLocalContextTruncationV1(action: string, params: unknown): boolean {
+  const request = asRecord(asRecord(params)?.request);
+  if (action === 'compact_session') return request?.force === true;
+  if (action !== 'set_config' || !request) return false;
+  if (request.path === 'ai.local_context_truncation') return true;
+  const value = asRecord(request.value);
+  const ai = request.path === 'ai' ? value : request.path === '' ? asRecord(value?.ai) : null;
+  return ai !== null && Object.prototype.hasOwnProperty.call(ai, 'local_context_truncation');
+}
+
 function requiresMiniAppAgentContextFilesV1(params: unknown): boolean {
   return hasMiniAppAgentPayload(params, ['contextFiles', 'context_files']);
 }
@@ -304,6 +314,7 @@ export interface PeerDeviceTransportHooks {
   supportsMiniAppAgentImagesV1?: boolean;
   supportsWslWorkspacesV1?: boolean;
   supportsWholeSessionCopyV1?: boolean;
+  supportsLocalContextTruncationV1?: boolean;
   supportsModelRoutingV1?: boolean;
   supportsModelPoolSelectionV1?: boolean;
   supportsBtwModelPoolSelectionV1?: boolean;
@@ -446,6 +457,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsMiniAppAgentImagesV1'
       | 'supportsWslWorkspacesV1'
       | 'supportsWholeSessionCopyV1'
+      | 'supportsLocalContextTruncationV1'
       | 'supportsModelRoutingV1'
       | 'supportsModelPoolSelectionV1'
       | 'supportsBtwModelPoolSelectionV1'
@@ -528,6 +540,12 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       && (this.hooks.supportsModelPoolSelectionV1 !== true
         || this.hooks.supportsBtwModelPoolSelectionV1 !== true)) {
       throw new Error('This host does not support btw_model_pool_selection_v1');
+    }
+    if (requiresLocalContextTruncationV1(action, params)
+      && this.hooks.supportsLocalContextTruncationV1 !== true) {
+      throw new PeerProductCommandError(
+        'local_context_truncation_v1_unsupported: The connected Peer host does not support local context truncation',
+      );
     }
     if (action === 'copy_session' && this.hooks.supportsWholeSessionCopyV1 !== true) {
       throw new PeerProductCommandError(

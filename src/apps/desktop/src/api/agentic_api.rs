@@ -393,6 +393,8 @@ pub struct StartDialogTurnResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CompactSessionRequest {
     pub session_id: String,
+    #[serde(default)]
+    pub force: bool,
     /// Owning workspace ID; `workspacePath` and SSH fields are an upgrade-only projection.
     #[serde(default)]
     pub workspace_id: Option<String>,
@@ -2695,7 +2697,7 @@ pub async fn compact_session(
     }
 
     coordinator
-        .compact_session_manually(session_id.to_string())
+        .compact_session_manually_with_force(session_id.to_string(), request.force)
         .await
         .map_err(|e| format!("Failed to compact session: {}", e))?;
 

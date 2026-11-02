@@ -976,5 +976,16 @@
     "noCandidates": "暂无可用的备用模型",
     "mode": "使用方式",
     "modeHint": "自动切换会在失败时依次尝试备用渠道；固定使用只走所选渠道，失败时不切换。"
+  },
+  "localContextTruncation": {
+    "title": "上下文压缩",
+    "label": "使用本地截断",
+    "description": "选择何时不调用模型，直接截断较早的上下文。此全局设置对执行主机上的所有模型生效。",
+    "hint": "本地截断保留近期对话并移除较早的上下文，不生成摘要。/compact force 始终使用本地截断。",
+    "explicitOnly": "必须显式调用",
+    "onContextOverflow": "模型超限时",
+    "always": "始终使用本地截断",
+    "saveSuccess": "本地截断设置已保存",
+    "unsupported": "此主机不支持本地截断上下文。请更新主机后修改此设置。"
   }
 }

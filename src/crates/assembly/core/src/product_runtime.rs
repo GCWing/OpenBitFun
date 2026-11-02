@@ -1026,6 +1026,19 @@ impl CoreAgentRuntimeCompatibility {
             .map_err(|error| error.to_string())
     }
 
+    /// Start explicit local truncation using the same audited maintenance turn owner.
+    pub async fn start_manual_compaction_with_force(
+        &self,
+        session_id: String,
+        turn_id: String,
+        force: bool,
+    ) -> Result<(), String> {
+        self.coordinator
+            .start_manual_compaction_turn_with_force(session_id, turn_id, force)
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     /// Cancel a running tool execution on this host.
     ///
     /// The controller renders tool cards (e.g. the Terminal card's Interrupt

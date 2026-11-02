@@ -605,3 +605,20 @@ fn failed_goal_turn_preserves_usage_without_scheduling_more_work() {
     assert!(outcome.plan.is_none());
     assert_eq!(outcome.goal_to_persist.unwrap().tokens_used, 25);
 }
+
+#[test]
+fn local_compaction_commands_do_not_drive_goal_accounting_or_continuation() {
+    for command in [
+        "/compact",
+        "/compact force",
+        "/compact   force",
+        "/summarize force",
+    ] {
+        assert!(should_skip_goal_for_turn(command, None), "{command}");
+        assert!(
+            should_skip_goal_continuation_after_turn(command, None),
+            "{command}"
+        );
+    }
+    assert!(!should_skip_goal_for_turn("/compacter force", None));
+}

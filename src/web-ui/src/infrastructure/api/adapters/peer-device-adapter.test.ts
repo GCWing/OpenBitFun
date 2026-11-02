@@ -1014,3 +1014,26 @@ function captureOutcome<T>(request: Promise<T>) {
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+describe('local context truncation capability', () => {
+  it('keeps ordinary compaction available on old hosts and rejects explicit truncation before RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    await adapter.request('compact_session', { request: { sessionId: 'session' } });
+    await expect(adapter.request('compact_session', { request: { sessionId: 'session', force: true } })).rejects.toThrow('local_context_truncation_v1');
+    for (const request of [
+      { path: 'ai.local_context_truncation', value: 'always' },
+      { path: 'ai', value: { local_context_truncation: 'always' } },
+      { path: '', value: { ai: { local_context_truncation: 'always' } } },
+    ]) {
+      await expect(adapter.request('set_config', { request })).rejects.toThrow('local_context_truncation_v1');
+    }
+    expect(rpc).toHaveBeenCalledTimes(1);
+    adapter.setHostCapabilities({ supportsLocalContextTruncationV1: true });
+    await adapter.request('compact_session', { request: { sessionId: 'session', force: true } });
+    expect(JSON.parse(rpc.mock.calls[1][1])).toMatchObject({ args: { request: { force: true } } });
+    adapter.setHostCapabilities({ supportsLocalContextTruncationV1: false });
+    await expect(adapter.request('compact_session', { request: { sessionId: 'session', force: true } })).rejects.toThrow('local_context_truncation_v1');
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});

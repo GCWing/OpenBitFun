@@ -297,6 +297,12 @@ listener alone recovers an interaction emitted before attachment.
     without querying the host. Overview requests and panel state belong to
     the surface activation even when two devices share a workspace ID/path.
 
+21. **Local context truncation requires explicit peer support.**
+    `local_context_truncation_v1` gates `compact_session` with `force: true`
+    and writes to `ai.local_context_truncation`. Ordinary compaction retains
+    its existing payload for older Desktop peers. A missing capability rejects
+    the new behavior before RPC and never falls back to controller execution.
+
 ### Workspace HTML resources
 
 The controller keeps HTML preview HTTP listeners and native browser views local.

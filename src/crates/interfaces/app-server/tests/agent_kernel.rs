@@ -844,6 +844,30 @@ async fn phase2_mutations_route_through_runtime_owner_ports() {
             let client = openbitfun_app_server_client::connect(client_transport)
                 .await
                 .expect("connect app server client");
+            let unavailable = client
+                .compact_session(protocol_session::CompactSessionRequest(
+                    ports::AgentSessionCompactionRequest {
+                        session_id: "session-1".to_string(),
+                        turn_id: "compact-unnegotiated".to_string(),
+                        force: true,
+                    },
+                ))
+                .await
+                .expect_err("force requires negotiated support");
+            assert!(unavailable
+                .to_string()
+                .contains("does not support local context truncation"));
+            assert!(provider.compactions.lock().unwrap().is_empty());
+            client
+                .initialize(InitializeRequest {
+                    protocol_version: PROTOCOL_VERSION,
+                    client: ClientInfo {
+                        name: "compaction-client".to_string(),
+                        version: "test".to_string(),
+                    },
+                })
+                .await
+                .expect("negotiate local truncation capability");
             let steer = client
                 .steer_turn(protocol_agent::SteerTurnRequest(
                     ports::AgentDialogSteerRequest {
@@ -883,6 +907,7 @@ async fn phase2_mutations_route_through_runtime_owner_ports() {
                     ports::AgentSessionCompactionRequest {
                         session_id: "session-1".to_string(),
                         turn_id: "compact-turn".to_string(),
+                        force: true,
                     },
                 ))
                 .await
@@ -929,6 +954,7 @@ async fn phase2_mutations_route_through_runtime_owner_ports() {
             );
             assert_eq!(provider.answers.lock().unwrap().len(), 1);
             assert_eq!(provider.compactions.lock().unwrap().len(), 1);
+            assert!(provider.compactions.lock().unwrap()[0].force);
             assert_eq!(provider.reloads.lock().unwrap().len(), 1);
             client.shutdown().await;
         })

@@ -152,6 +152,8 @@ pub struct DispatchContinueRequest {
     /// Operation kind understood by the target (`prompt` default, `compact`).
     #[serde(default)]
     pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
     #[serde(default)]
     pub attachments: Vec<DispatchAttachmentPayload>,
 }
@@ -1534,6 +1536,10 @@ pub async fn continue_job(
     let DispatchTarget::Ssh { connection_id, .. } = &record.target else {
         anyhow::bail!("SSH dispatch follow-up requires an SSH target");
     };
+    if request.force {
+        let probe = dispatch_ssh::probe(manager, connection_id, None).await?;
+        validate_force_compaction_capability(probe.protocol.as_ref())?;
+    }
     let response =
         dispatch_ssh::continue_job(manager, connection_id, &continue_payload(&request)).await?;
     record_follow_up_state(store, &record, &request, &response).await;
@@ -1587,6 +1593,9 @@ pub(super) fn continue_payload(request: &DispatchContinueRequest) -> Value {
         .filter(|value| !value.is_empty())
     {
         payload["kind"] = Value::String(kind.to_string());
+    }
+    if request.force {
+        payload["force"] = Value::Bool(true);
     }
     if !request.attachments.is_empty() {
         payload["attachments"] = serde_json::to_value(&request.attachments).unwrap_or(Value::Null);
@@ -1717,7 +1726,29 @@ pub(super) fn validate_append_request(request: &DispatchAppendRequest) -> anyhow
     Ok(())
 }
 
+pub(super) fn validate_force_compaction_capability(protocol: Option<&Value>) -> anyhow::Result<()> {
+    let required =
+        openbitfun_services_core::dispatch_contract::DISPATCH_LOCAL_CONTEXT_TRUNCATION_CAPABILITY;
+    let supported = protocol
+        .and_then(|value| value.get("capabilities"))
+        .and_then(Value::as_array)
+        .is_some_and(|capabilities| {
+            capabilities
+                .iter()
+                .any(|capability| capability.as_str() == Some(required))
+        });
+    if !supported {
+        anyhow::bail!(
+            "The dispatch target does not support local context truncation; update its CLI"
+        );
+    }
+    Ok(())
+}
+
 pub(super) fn validate_continue_request(request: &DispatchContinueRequest) -> anyhow::Result<()> {
+    if request.force && request.kind.as_deref() != Some("compact") {
+        anyhow::bail!("Dispatch force is only supported for compact turns");
+    }
     if request.turn_id.trim().is_empty() || request.turn_id.len() > 128 {
         anyhow::bail!("Dispatch turnId must contain 1-128 bytes");
     }
@@ -2438,6 +2469,19 @@ mod tests {
     }
 
     #[test]
+    fn force_compaction_requires_the_optional_target_capability() {
+        assert!(validate_force_compaction_capability(None).is_err());
+        assert!(validate_force_compaction_capability(Some(
+            &json!({"capabilities":["session_query"]})
+        ))
+        .is_err());
+        assert!(validate_force_compaction_capability(Some(
+            &json!({"capabilities":["local_context_truncation_v1"]})
+        ))
+        .is_ok());
+    }
+
+    #[test]
     fn continue_payload_preserves_explicit_auto_reasoning_preset() {
         let payload = continue_payload(&DispatchContinueRequest {
             job_id: "job-1".to_string(),
@@ -2448,6 +2492,7 @@ mod tests {
             reasoning_preset: Some("auto".to_string()),
             approval_policy: None,
             kind: None,
+            force: false,
             attachments: Vec::new(),
         });
 

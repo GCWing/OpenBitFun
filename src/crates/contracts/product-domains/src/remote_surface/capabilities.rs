@@ -94,6 +94,8 @@ pub enum PeerHostCapability {
     WorkspaceHtmlPreviewV1,
     /// `copy_session` copies a whole session without a caller-selected turn id.
     WholeSessionCopyV1,
+    /// Explicit model-free compaction and the local truncation configuration are understood.
+    LocalContextTruncationV1,
     /// Bounded session trajectory summaries and host-side body search.
     SessionTrajectoryV1,
     /// `submit_user_answers` is implemented for Runtime-owned questions.
@@ -142,6 +144,7 @@ impl PeerHostCapability {
         Self::WorkspaceIdReferencesV1,
         Self::WorkspaceHtmlPreviewV1,
         Self::WholeSessionCopyV1,
+        Self::LocalContextTruncationV1,
         Self::SessionTrajectoryV1,
         Self::UserQuestionResponse,
         Self::UserQuestionInteractionV1,
@@ -188,6 +191,7 @@ impl PeerHostCapability {
             Self::WorkspaceHtmlPreviewV1 => "workspace_html_preview_v1",
             Self::SessionTrajectoryV1 => "session_trajectory_v1",
             Self::WholeSessionCopyV1 => "whole_session_copy_v1",
+            Self::LocalContextTruncationV1 => "local_context_truncation_v1",
             Self::UserQuestionResponse => "user_question_response",
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
         }

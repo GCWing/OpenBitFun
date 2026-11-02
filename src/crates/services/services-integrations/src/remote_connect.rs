@@ -520,6 +520,13 @@ where
         turn_id,
     } = request;
 
+    if matches!(
+        content.split_whitespace().next(),
+        Some(command) if command.eq_ignore_ascii_case("/compact") || command.eq_ignore_ascii_case("/summarize")
+    ) {
+        return Err("Context compaction commands are not supported by Remote Connect; use Desktop or the interactive CLI".to_string());
+    }
+
     host.ensure_tracker(&session_id);
 
     let binding_workspace = host.resolve_binding_workspace(&session_id).await;

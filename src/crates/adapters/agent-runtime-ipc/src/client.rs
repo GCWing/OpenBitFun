@@ -103,6 +103,7 @@ impl RuntimeIpcClient {
         }
         if discovery.protocol_version != PROTOCOL_VERSION
             && discovery.protocol_version != crate::protocol::LEGACY_WORKSPACE_PATH_PROTOCOL_VERSION
+            && discovery.protocol_version != crate::protocol::LEGACY_COMPACTION_PROTOCOL_VERSION
         {
             return Err(RuntimeIpcClientError::IncompatibleProtocol {
                 expected: PROTOCOL_VERSION,
@@ -192,6 +193,14 @@ impl RuntimeIpcClient {
         &self,
         operation: RuntimeIpcOperation,
     ) -> Result<RuntimeIpcOperationResult, RuntimeIpcClientError> {
+        if matches!(&operation, RuntimeIpcOperation::CompactSession { request } if request.force)
+            && !self.capabilities.local_context_truncation
+        {
+            return Err(RuntimeIpcClientError::Remote(RuntimeIpcError {
+                code: crate::RuntimeIpcErrorCode::OperationUnsupported,
+                message: "The Shared Runtime does not support local context truncation".to_string(),
+            }));
+        }
         let request_gate = self.request_gate.clone().lock_owned().await;
         let release_gate_after_write = operation.is_interruptible_lineage_read();
         let request_id = self

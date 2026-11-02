@@ -6063,6 +6063,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         &self,
         session_id: String,
         requested_turn_id: Option<String>,
+        force: bool,
     ) -> OpenBitFunResult<ManualCompactionTask> {
         openbitfun_core_types::validate_session_id(&session_id)
             .map_err(OpenBitFunError::Validation)?;
@@ -6074,6 +6075,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 "Manual compaction turn_id must not be empty".to_string(),
             ));
         }
+        let policy = if force {
+            crate::service::config::types::LocalContextTruncation::Always
+        } else {
+            ExecutionEngine::local_context_truncation_policy().await
+        };
+        let local = policy == crate::service::config::types::LocalContextTruncation::Always;
         let mutation_guard = self
             .session_manager
             .acquire_session_mutation(&session_id)
@@ -6086,6 +6093,9 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             })?;
         match &initial_session.state {
             SessionState::Idle => {}
+            SessionState::Error {
+                recoverable: true, ..
+            } if local => {}
             SessionState::Processing {
                 current_turn_id,
                 phase,
@@ -6125,14 +6135,24 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
         self.commit_session_revert_before_persisted_turn_locked(&session_id, "Manual compaction")
             .await?;
-        let user_message_metadata = Some(Self::manual_compaction_metadata());
+        let command = if force {
+            "/compact force"
+        } else {
+            MANUAL_COMPACTION_COMMAND
+        };
+        let mut metadata = Self::manual_compaction_metadata();
+        if force {
+            metadata["command"] = serde_json::json!(command);
+        }
+        let user_message_metadata = Some(metadata);
         let turn_id = self
             .session_manager
             .start_maintenance_turn_locked(
                 &session_id,
-                MANUAL_COMPACTION_COMMAND.to_string(),
+                command.to_string(),
                 requested_turn_id,
                 user_message_metadata.clone(),
+                local,
             )
             .await?;
         drop(mutation_guard);
@@ -6171,7 +6191,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             session_id: session_id.clone(),
             turn_id: turn_id.clone(),
             turn_index,
-            user_input: MANUAL_COMPACTION_COMMAND.to_string(),
+            user_input: command.to_string(),
             original_user_input: None,
             user_message_metadata: user_message_metadata.clone(),
         })
@@ -6206,6 +6226,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 remote_exec_port,
                 cancellation_token,
                 commit_gate,
+                policy,
             )
             .await;
             let _ = completion_tx.send(result);
@@ -6315,14 +6336,20 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         remote_exec_port: Option<Arc<dyn RemoteExecPort>>,
         cancellation_token: CancellationToken,
         commit_gate: Arc<ManualCompactionCommitGate>,
+        policy: crate::service::config::types::LocalContextTruncation,
     ) -> OpenBitFunResult<()> {
         let compression_id = format!("compression_{}", uuid::Uuid::new_v4());
         let mut context_window = session.config.max_context_tokens;
         let result = async {
             let (manual_execution_context, resolved_context_window) =
                 prepare_compression_cancellable(&cancellation_token, async {
-                    let manual_workspace_services =
-                        Self::build_workspace_services(&manual_workspace).await?;
+                    let local =
+                        policy == crate::service::config::types::LocalContextTruncation::Always;
+                    let manual_workspace_services = if local {
+                        None
+                    } else {
+                        Self::build_workspace_services(&manual_workspace).await?
+                    };
                     let manual_execution_context = ExecutionContext {
                         session_id: session_id.clone(),
                         dialog_turn_id: turn_id.clone(),
@@ -6348,7 +6375,9 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     let session_max_tokens = session.config.max_context_tokens;
 
                     // Unify context_window: min(model capability, session config)
-                    let model_context_window =
+                    let model_context_window = if local {
+                        None
+                    } else {
                         match crate::infrastructure::ai::get_global_ai_client_factory().await {
                             Ok(factory) => {
                                 let model_id =
@@ -6359,7 +6388,8 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                 }
                             }
                             Err(_) => None,
-                        };
+                        }
+                    };
                     let context_window = match model_context_window {
                         Some(mcw) => mcw.min(session_max_tokens),
                         None => session_max_tokens,
@@ -6378,6 +6408,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     "manual",
                     cancellation_token,
                     commit_gate,
+                    policy,
                 )
                 .await
         }
@@ -6460,7 +6491,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     /// task used by Agent Runtime callers, then await its terminal result for
     /// the existing Desktop compatibility API.
     pub async fn compact_session_manually(&self, session_id: String) -> OpenBitFunResult<()> {
-        let task = self.start_manual_compaction_task(session_id, None).await?;
+        self.compact_session_manually_with_force(session_id, false)
+            .await
+    }
+
+    pub async fn compact_session_manually_with_force(
+        &self,
+        session_id: String,
+        force: bool,
+    ) -> OpenBitFunResult<()> {
+        let task = self
+            .start_manual_compaction_task(session_id, None, force)
+            .await?;
         task.completion.await.map_err(|_| {
             OpenBitFunError::Service(format!(
                 "Manual compaction task ended without a terminal result: {}",
@@ -6477,7 +6519,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         session_id: String,
         turn_id: String,
     ) -> OpenBitFunResult<()> {
-        self.start_manual_compaction_task(session_id, Some(turn_id))
+        self.start_manual_compaction_turn_with_force(session_id, turn_id, false)
+            .await
+    }
+
+    pub async fn start_manual_compaction_turn_with_force(
+        &self,
+        session_id: String,
+        turn_id: String,
+        force: bool,
+    ) -> OpenBitFunResult<()> {
+        self.start_manual_compaction_task(session_id, Some(turn_id), force)
             .await
             .map(|_task| ())
     }
@@ -16056,7 +16108,7 @@ impl openbitfun_runtime_ports::AgentSessionCompactionPort for ConversationCoordi
     {
         let session_id = request.session_id;
         let task = self
-            .start_manual_compaction_task(session_id.clone(), Some(request.turn_id))
+            .start_manual_compaction_task(session_id.clone(), Some(request.turn_id), request.force)
             .await
             .map_err(runtime_port_error_preserving_message)?;
         let turn_id = task.turn_id.clone();
@@ -17582,7 +17634,7 @@ pub(crate) mod tests {
             .expect("persist external route owner");
 
         let error = match coordinator
-            .start_manual_compaction_task(session_id.clone(), None)
+            .start_manual_compaction_task(session_id.clone(), None, false)
             .await
         {
             Ok(_) => panic!("manual compaction must not bypass an unavailable external route"),
@@ -18109,6 +18161,117 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn manual_compaction_force_recovers_context_overflow_without_a_model() {
+        let (coordinator, manager) = test_coordinator();
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let session = manager
+            .create_session(
+                "Overflow recovery".into(),
+                "Standard".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    model_id: Some("unconfigured-force-recovery-model".into()),
+                    ..SessionConfig::default()
+                },
+            )
+            .await
+            .unwrap();
+        let id = &session.session_id;
+        let failed_turn = manager
+            .start_dialog_turn(
+                id,
+                "Standard".into(),
+                "Continue this task".into(),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let original = vec![
+            Message::user("Continue this task".into()),
+            Message::assistant("Earlier tool evidence ".repeat(2_000)),
+        ];
+        manager.replace_context_messages(id, original.clone()).await;
+        ConversationCoordinator::persist_failed_dialog_turn(
+            coordinator.event_queue.as_ref(),
+            manager.as_ref(),
+            None,
+            id,
+            &failed_turn,
+            &OpenBitFunError::RecoverableContextOverflow(
+                openbitfun_core_types::errors::AiProviderError::classified(
+                    "Provider context limit exceeded".into(),
+                    openbitfun_core_types::errors::ErrorCategory::ContextOverflow,
+                ),
+            ),
+            true,
+        )
+        .await;
+        assert!(matches!(
+            manager.get_session(id).unwrap().state,
+            SessionState::Error {
+                recoverable: true,
+                ..
+            }
+        ));
+
+        // Local recovery must not become permission to ignore fatal failures.
+        manager
+            .update_session_state(
+                id,
+                SessionState::Error {
+                    error: "Unrecoverable session failure".into(),
+                    recoverable: false,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(coordinator
+            .start_manual_compaction_task(id.clone(), None, true)
+            .await
+            .is_err());
+        assert_eq!(
+            manager.get_session(id).unwrap().dialog_turn_ids,
+            vec![failed_turn.clone()]
+        );
+        assert_eq!(
+            serde_json::to_value(manager.get_context_messages(id).await.unwrap()).unwrap(),
+            serde_json::to_value(&original).unwrap()
+        );
+
+        manager
+            .update_session_state(
+                id,
+                SessionState::Error {
+                    error: "Provider context limit exceeded".into(),
+                    recoverable: true,
+                },
+            )
+            .await
+            .unwrap();
+        let task = coordinator
+            .start_manual_compaction_task(id.clone(), None, true)
+            .await
+            .unwrap();
+        task.completion.await.unwrap().unwrap();
+        let recovered = manager.get_session(id).unwrap();
+        assert!(matches!(recovered.state, SessionState::Idle));
+        assert_eq!(recovered.compression_state.compression_count, 1);
+        assert_eq!(recovered.dialog_turn_ids.len(), 2);
+        assert_eq!(recovered.dialog_turn_ids[0], failed_turn);
+        let context = manager.get_context_messages(id).await.unwrap();
+        assert!(context.iter().any(|message| message.id == original[0].id));
+        assert!(!context.iter().any(|message| message.id == original[1].id));
+        assert!(coordinator.event_queue.dequeue_batch(100).await.iter().any(|event| matches!(
+            &event.event,
+            AgenticEvent::ContextCompressionCompleted { has_summary: false, summary_source, applied: true, .. }
+                if summary_source == "local_truncation"
+        )));
+    }
+
+    #[tokio::test]
     async fn manual_compaction_cancelled_before_setup_preserves_context_and_settles_turn() {
         let (coordinator, session_manager) = test_coordinator();
         let workspace = tempfile::tempdir().unwrap();
@@ -18156,6 +18319,7 @@ pub(crate) mod tests {
             None,
             token,
             Arc::new(ManualCompactionCommitGate::planning()),
+            crate::service::config::types::LocalContextTruncation::ExplicitOnly,
         )
         .await;
         assert!(matches!(result, Err(OpenBitFunError::Cancelled(_))));
@@ -19813,6 +19977,7 @@ pub(crate) mod tests {
             .start_manual_compaction_task(
                 maintenance_session_id.clone(),
                 Some("maintenance-turn".to_string()),
+                false,
             )
             .await
             .expect("start maintenance after staged undo");
