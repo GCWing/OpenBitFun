@@ -349,20 +349,37 @@ export function resolveChatHeaderContext({
   };
 }
 
+function hasRemoteRouting(workspace: {
+  workspace_kind?: string; remote_connection_id?: string; remote_ssh_host?: string;
+}): boolean {
+  const routed = normalizeWorkspaceRouting(workspace);
+  return routed.workspace_kind === 'remote'
+    || Boolean(routed.remote_connection_id)
+    || Boolean(routed.remote_ssh_host);
+}
+
 /**
- * Whether the open session runs on an SSH workspace, which keeps rollback off.
- * The selected workspace only decides when the session has no workspace facts.
+ * Whether the open session may run on an SSH workspace, which keeps rollback off.
+ * Only Claw/assistant or explicit routing facts on the session can decide alone.
+ * A path-only context (for example an old cached row) is unknown, so it stays
+ * remote if the selected workspace is remote or a known workspace with the same
+ * ID or root is remote.
  */
 export function isRemoteSessionWorkspace(
   agentType: string,
   session: SessionWorkspaceContext | undefined,
   currentWorkspace: WorkspaceInfo | null | undefined,
+  knownWorkspaces: readonly RecentWorkspaceEntry[] = [],
 ): boolean {
   if (isClawAgent(agentType) || session?.workspace_kind === 'assistant') return false;
-  const owner = session ?? currentWorkspace;
-  if (!owner) return false;
-  const routed = normalizeWorkspaceRouting(owner);
-  return routed.workspace_kind === 'remote'
-    || Boolean(routed.remote_connection_id)
-    || Boolean(routed.remote_ssh_host);
+  if (session && (session.workspace_kind || session.remote_connection_id || session.remote_ssh_host)) {
+    return hasRemoteRouting(session);
+  }
+  if (currentWorkspace && hasRemoteRouting(currentWorkspace)) return true;
+  if (!session) return false;
+  const root = normalizedLegacyRoot(session.path);
+  return knownWorkspaces.some((workspace) => hasRemoteRouting(workspace) && (
+    (Boolean(session.workspace_id) && workspace.workspace_id === session.workspace_id)
+    || (Boolean(root) && normalizedLegacyRoot(workspace.path) === root)
+  ));
 }

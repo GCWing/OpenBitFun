@@ -97,6 +97,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
     setError,
     currentWorkspace,
     currentAssistant,
+    knownWorkspaces,
     sessions,
     authenticatedUserId,
     controlTarget,
@@ -1173,7 +1174,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
     assistantLabel: t('shared.agents.Claw'),
   });
   const displayName = liveTitle || sessionName || t('chat.session');
-  const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace);
+  const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace, knownWorkspaces);
 
   return (
     <div className={`chat-page${wideLayout ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${composerHeight}px` } as React.CSSProperties}>

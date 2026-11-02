@@ -595,3 +595,31 @@ test('a selection that no longer owns the created session lends it no name or ki
   assert.equal(onHost.name, undefined);
   assert.equal(onHost.remote_ssh_host, 'host-a');
 });
+
+test('a path-only session context cannot open the rollback gate over a possibly remote workspace', () => {
+  const pathOnly = { path: a.path };
+  const selectedSsh = {
+    has_workspace: true, path: '/elsewhere', workspace_kind: 'remote',
+    remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+  };
+  const sshRow = { path: `${a.path}/`, name: 'herdr', last_opened: '', workspace_kind: 'remote', remote_ssh_host: 'host-a' };
+  const localRow = { path: a.path, name: 'herdr', last_opened: '', workspace_kind: 'normal' };
+  // Unknown routing stays remote under a remote selection.
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, selectedSsh), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_id: 'ws', name: 'herdr' }, selectedSsh), true);
+  // Unknown routing stays remote if a known workspace with that root is remote, even beside a local one.
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [sshRow]), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [localRow, sshRow]), true);
+  assert.equal(
+    isRemoteSessionWorkspace('Standard', { workspace_id: 'ws-ssh' }, home, [{ ...sshRow, workspace_id: 'ws-ssh', path: '/other' }]),
+    true,
+  );
+  // Nothing known says remote.
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [localRow]), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, home, [{ ...sshRow, path: '/other' }]), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', pathOnly, null), false);
+  // Explicit local facts and Claw/assistant may still override a remote selection.
+  assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_kind: 'normal' }, selectedSsh, [sshRow]), false);
+  assert.equal(isRemoteSessionWorkspace('Claw', pathOnly, selectedSsh, [sshRow]), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', { ...pathOnly, workspace_kind: 'assistant' }, selectedSsh, [sshRow]), false);
+});

@@ -333,6 +333,9 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
   const [assistantList, setAssistantList] = useState<AssistantEntry[]>([]);
   const [showAssistantPicker, setShowAssistantPicker] = useState(false);
   const [workspaceList, setWorkspaceList] = useState<RecentWorkspaceEntry[]>([]);
+  useEffect(() => {
+    useMobileStore.getState().setKnownWorkspaces(workspaceList);
+  }, [workspaceList]);
   const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
   const [workspaceCatalogSource, setWorkspaceCatalogSource] = useState<'opened' | 'recent' | null>(null);
 
