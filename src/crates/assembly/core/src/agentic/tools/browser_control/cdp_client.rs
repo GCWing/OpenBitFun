@@ -26,7 +26,7 @@ type EventChannels = Arc<RwLock<HashMap<Option<String>, broadcast::Sender<CdpEve
 type SessionStatuses = Arc<RwLock<HashMap<String, Weak<AtomicBool>>>>;
 
 const PAGE_CDP_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
-const USER_PROFILE_APPROVAL_TIMEOUT: Duration = Duration::from_secs(90);
+pub const USER_PROFILE_APPROVAL_TIMEOUT: Duration = Duration::from_secs(90);
 /// Backoff between guarded WebSocket attempts that failed before the upgrade.
 /// All attempts share [`USER_PROFILE_APPROVAL_TIMEOUT`].
 const USER_PROFILE_CONNECT_RETRY_BACKOFF: [Duration; 4] = [
@@ -213,6 +213,26 @@ impl CdpClient {
         browser_kind: &BrowserKind,
         ws_url: &str,
     ) -> Result<CdpBrowserConnection, UserProfileConnectError> {
+        Self::connect_user_profile_browser_within(
+            logical_port,
+            actual_port,
+            browser_kind,
+            ws_url,
+            USER_PROFILE_APPROVAL_TIMEOUT,
+        )
+        .await
+    }
+
+    /// [`Self::connect_user_profile_browser_checked`] whose approval wait is
+    /// capped by the caller's remaining overall deadline. The cap never
+    /// exceeds the default 90 second approval budget.
+    pub async fn connect_user_profile_browser_within(
+        logical_port: u16,
+        actual_port: u16,
+        browser_kind: &BrowserKind,
+        ws_url: &str,
+        approval_budget: Duration,
+    ) -> Result<CdpBrowserConnection, UserProfileConnectError> {
         if Self::browser_connection_suppressed(logical_port).await {
             return Err(UserProfileConnectError::Failed(OpenBitFunError::tool(
                 "Browser control was disconnected in Settings. Reconnect it there before attaching again."
@@ -238,7 +258,7 @@ impl CdpClient {
         let client = Arc::new(
             Self::connect_user_profile_websocket(
                 ws_url,
-                USER_PROFILE_APPROVAL_TIMEOUT,
+                approval_budget.min(USER_PROFILE_APPROVAL_TIMEOUT),
                 &USER_PROFILE_CONNECT_RETRY_BACKOFF,
             )
             .await

@@ -50,10 +50,12 @@ impl BrowserLauncher {
         kind: &BrowserKind,
         port: u16,
         wait_for_user_profile_setup: bool,
+        setup_wait_limit: std::time::Duration,
     ) -> OpenBitFunResult<LaunchResult> {
         let mut options = Self::launch_options(None, true);
         options.wait_for_user_profile_setup = wait_for_user_profile_setup;
         options.skip_guarded_port_fallback = true;
+        options.user_profile_setup_wait = Some(setup_wait_limit);
         Ok(provider::BrowserLauncher::launch_with_cdp_options(kind, port, options).await?)
     }
 
@@ -175,6 +177,7 @@ impl BrowserLauncher {
             wait_for_user_profile_setup: false,
             activate,
             skip_guarded_port_fallback: false,
+            user_profile_setup_wait: None,
         }
     }
 }

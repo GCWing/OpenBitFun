@@ -4,11 +4,13 @@ use openbitfun_core::agentic::tools::browser_control::browser_launcher::{
     BrowserKind, BrowserLauncher, CdpPortProbe, LaunchResult, DEFAULT_CDP_PORT,
 };
 use openbitfun_core::agentic::tools::browser_control::cdp_client::{
-    CdpClient, UserProfileConnectError,
+    CdpClient, UserProfileConnectError, USER_PROFILE_APPROVAL_TIMEOUT,
 };
 use openbitfun_core::agentic::tools::implementations::control_hub_tool::disconnect_external_browser;
 use openbitfun_core::service::config::{get_global_config_service, GlobalConfig};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tokio::time::Instant;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -377,11 +379,45 @@ fn to_launch_response(kind: &BrowserKind, result: LaunchResult) -> BrowserContro
     }
 }
 
+/// Overall budget for one Browser Control setup command, measured from its
+/// start. It stays below the Peer host invoke limit for these commands
+/// (`peer_host_invoke::BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT`, 180 s) so a late
+/// fallback cannot outlive the request that is waiting for it.
+const BROWSER_CONTROL_SETUP_BUDGET: Duration = Duration::from_secs(170);
+/// Approval time kept back when a late 404 sends the flow back to setup.
+const FALLBACK_APPROVAL_RESERVE: Duration = Duration::from_secs(20);
+
+/// Setup wait available to the late-404 fallback, leaving the approval
+/// reserve. `None` means the overall budget cannot fit another round.
+fn fallback_setup_wait(remaining: Duration) -> Option<Duration> {
+    remaining
+        .checked_sub(FALLBACK_APPROVAL_RESERVE)
+        .filter(|wait| !wait.is_zero())
+}
+
+/// Approval wait for the next WebSocket attempt inside the overall deadline.
+fn approval_budget(remaining: Duration) -> Duration {
+    remaining.min(USER_PROFILE_APPROVAL_TIMEOUT)
+}
+
+fn setup_budget_exhausted(kind: &BrowserKind) -> BrowserControlLaunchResponse {
+    BrowserControlLaunchResponse {
+        success: false,
+        status: "user_profile_connection_failed".into(),
+        message: Some(format!(
+            "Browser Control setup for {kind} ran out of time. Connect again from Settings > Browser control."
+        )),
+        browser_kind: kind.to_string(),
+        setup_url: None,
+    }
+}
+
 async fn complete_launch(
     kind: &BrowserKind,
     logical_port: u16,
     result: LaunchResult,
     wait_for_user_profile_setup: bool,
+    deadline: Instant,
 ) -> Result<BrowserControlLaunchResponse, String> {
     let mut result = result;
     // An endpoint inferred from a 404 port probe gets one chance: a 404 on
@@ -396,16 +432,21 @@ async fn complete_launch(
             }
             return Ok(response);
         };
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(setup_budget_exhausted(kind));
+        }
         // Attaching to a guarded real profile makes the browser show its own
         // approval request, and that prompt is only answerable from a
         // visible window. Browser control itself is background work, so
         // this is one of the few flows that must surface the browser.
         BrowserLauncher::activate_browser(kind);
-        let connection = CdpClient::connect_user_profile_browser_checked(
+        let connection = CdpClient::connect_user_profile_browser_within(
             logical_port,
             endpoint.port,
             kind,
             &endpoint.web_socket_url,
+            approval_budget(remaining),
         )
         .await;
         match connection {
@@ -429,10 +470,16 @@ async fn complete_launch(
                     error
                 );
                 inferred_fallback_available = false;
+                let Some(setup_wait) =
+                    fallback_setup_wait(deadline.saturating_duration_since(Instant::now()))
+                else {
+                    return Ok(setup_budget_exhausted(kind));
+                };
                 result = BrowserLauncher::enable_default_cdp_without_port_fallback(
                     kind,
                     logical_port,
                     wait_for_user_profile_setup,
+                    setup_wait,
                 )
                 .await
                 .map_err(|e| e.to_string())?;
@@ -455,6 +502,7 @@ async fn complete_launch(
 pub async fn browser_control_launch(
     request: BrowserControlLaunchRequest,
 ) -> Result<BrowserControlLaunchResponse, String> {
+    let deadline = Instant::now() + BROWSER_CONTROL_SETUP_BUDGET;
     let port = request.port;
     let kind = selected_browser_kind().await?;
     if CdpClient::authorized_browser_kind(port)
@@ -478,7 +526,7 @@ pub async fn browser_control_launch(
         .await
         .map_err(|e| e.to_string())?;
 
-    complete_launch(&kind, port, result, false).await
+    complete_launch(&kind, port, result, false, deadline).await
 }
 
 /// Open the selected browser's persistent guarded-CDP setting and wait for the
@@ -488,6 +536,7 @@ pub async fn browser_control_launch(
 pub async fn browser_control_enable_default_cdp(
     request: BrowserControlLaunchRequest,
 ) -> Result<BrowserControlLaunchResponse, String> {
+    let deadline = Instant::now() + BROWSER_CONTROL_SETUP_BUDGET;
     let port = request.port;
     let kind = selected_browser_kind().await?;
     if CdpClient::authorized_browser_kind(port)
@@ -520,7 +569,7 @@ pub async fn browser_control_enable_default_cdp(
     let result = BrowserLauncher::enable_default_cdp(&kind, port)
         .await
         .map_err(|e| e.to_string())?;
-    complete_launch(&kind, port, result, true).await
+    complete_launch(&kind, port, result, true, deadline).await
 }
 
 /// Restart the user's default browser with CDP debug port enabled.
@@ -528,6 +577,7 @@ pub async fn browser_control_enable_default_cdp(
 pub async fn browser_control_restart_with_cdp(
     request: BrowserControlLaunchRequest,
 ) -> Result<BrowserControlLaunchResponse, String> {
+    let deadline = Instant::now() + BROWSER_CONTROL_SETUP_BUDGET;
     let port = request.port;
     let kind = selected_browser_kind().await?;
     disconnect_external_browser(port).await;
@@ -537,7 +587,7 @@ pub async fn browser_control_restart_with_cdp(
         .await
         .map_err(|e| e.to_string())?;
 
-    complete_launch(&kind, port, result, false).await
+    complete_launch(&kind, port, result, false, deadline).await
 }
 
 #[derive(Debug, Serialize)]
@@ -566,4 +616,63 @@ pub async fn browser_control_disconnect(
         },
         browser_kind: kind.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn setup_budget_fits_inside_the_peer_host_invoke_limit() {
+        assert!(
+            BROWSER_CONTROL_SETUP_BUDGET
+                < super::super::peer_host_invoke::BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn late_404_fallback_is_bounded_by_the_remaining_budget() {
+        // A 404 arriving after the first setup wait leaves 110 s: the
+        // fallback setup may use 90 s and approval keeps the reserve.
+        assert_eq!(
+            fallback_setup_wait(Duration::from_secs(110)),
+            Some(Duration::from_secs(90))
+        );
+        assert_eq!(fallback_setup_wait(FALLBACK_APPROVAL_RESERVE), None);
+        assert_eq!(fallback_setup_wait(Duration::from_secs(5)), None);
+        assert_eq!(
+            approval_budget(Duration::from_secs(30)),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            approval_budget(Duration::from_secs(170)),
+            USER_PROFILE_APPROVAL_TIMEOUT
+        );
+        // Worst case: setup (60 s) + approval (90 s) + late 404 fallback
+        // setup + approval never exceeds the overall budget because every
+        // step is capped by what remains of the same deadline.
+        let after_first_round = BROWSER_CONTROL_SETUP_BUDGET - Duration::from_secs(60);
+        let fallback = fallback_setup_wait(after_first_round).unwrap();
+        assert!(fallback + FALLBACK_APPROVAL_RESERVE <= after_first_round);
+    }
+
+    #[tokio::test]
+    async fn exhausted_budget_reports_a_clear_failure() {
+        let response = complete_launch(
+            &BrowserKind::Chrome,
+            1,
+            LaunchResult::UserProfileReady {
+                endpoint: openbitfun_core::agentic::tools::browser_control::browser_launcher::BrowserDebugEndpoint {
+                    port: 1,
+                    web_socket_url: "ws://127.0.0.1:1/devtools/browser".into(),
+                },
+            },
+            false,
+            Instant::now(),
+        )
+        .await
+        .unwrap();
+        assert!(!response.success);
+        assert!(response.message.unwrap().contains("ran out of time"));
+    }
 }

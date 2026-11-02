@@ -89,6 +89,9 @@ pub struct BrowserLaunchOptions {
     /// waits for a real `DevToolsActivePort` instead of retrying the same
     /// non-browser port.
     pub skip_guarded_port_fallback: bool,
+    /// Upper bound for the setup wait, for callers that must finish inside
+    /// their own overall deadline. `None` keeps the default wait.
+    pub user_profile_setup_wait: Option<Duration>,
 }
 
 /// What a local CDP debug port answers on its HTTP discovery endpoint.
@@ -115,6 +118,8 @@ const USER_PROFILE_SETUP_WAIT: Duration = Duration::from_secs(60);
 /// How long an ordinary connect waits for the normal-start fast path.
 const USER_PROFILE_FAST_PATH_WAIT: Duration = Duration::from_secs(2);
 const USER_PROFILE_SETUP_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// How long one process-listing answer is reused during a setup poll.
+const BROWSER_RUNNING_CACHE_MAX_AGE: Duration = Duration::from_secs(3);
 
 impl BrowserLauncher {
     /// Classify what a local CDP debug port answers. This only performs an
@@ -164,6 +169,19 @@ impl BrowserLauncher {
         kind: &BrowserKind,
         port: u16,
     ) -> Option<BrowserDebugEndpoint> {
+        Self::guarded_port_debug_endpoint_cached(kind, port, &mut BrowserRunningCache::new(kind))
+            .await
+    }
+
+    /// [`Self::guarded_port_debug_endpoint`] that reuses one process-running
+    /// answer across a setup poll. The cheap HTTP probe and the port-claim
+    /// file check run first, so the process listing is only consulted for a
+    /// port that could still belong to the selected browser.
+    async fn guarded_port_debug_endpoint_cached(
+        kind: &BrowserKind,
+        port: u16,
+        running: &mut BrowserRunningCache,
+    ) -> Option<BrowserDebugEndpoint> {
         if !Self::supports_default_cdp(kind) || port == 0 {
             return None;
         }
@@ -172,14 +190,15 @@ impl BrowserLauncher {
             return None;
         }
         let selected = kind.clone();
-        let (claimed_by_other, selected_running) = Self::run_blocking(move || {
-            (
-                Self::port_claimed_by_other_guarded_browser(&selected, port),
-                Self::is_browser_running(&selected),
-            )
+        let claimed_by_other = Self::run_blocking(move || {
+            Self::port_claimed_by_other_guarded_browser(&selected, port)
         })
         .await
-        .unwrap_or((true, false));
+        .unwrap_or(true);
+        if claimed_by_other {
+            return None;
+        }
+        let selected_running = running.is_running().await;
         Self::guarded_port_fallback_decision(port, probe, claimed_by_other, selected_running)
     }
 
@@ -780,12 +799,15 @@ impl BrowserLauncher {
         kind: &BrowserKind,
         port: u16,
         allow_port_fallback: bool,
+        running: &mut BrowserRunningCache,
     ) -> Option<BrowserDebugEndpoint> {
-        if allow_port_fallback {
-            Self::user_profile_debug_endpoint_or_guarded_port(kind, port).await
-        } else {
-            Self::user_profile_debug_endpoint_async(kind).await
+        if let Some(endpoint) = Self::user_profile_debug_endpoint_async(kind).await {
+            return Some(endpoint);
         }
+        if !allow_port_fallback {
+            return None;
+        }
+        Self::guarded_port_debug_endpoint_cached(kind, port, running).await
     }
 
     async fn prepare_user_profile_connection(
@@ -793,9 +815,12 @@ impl BrowserLauncher {
         port: u16,
         wait_for_user_setup: bool,
         allow_port_fallback: bool,
+        setup_wait_override: Option<Duration>,
     ) -> Result<LaunchResult> {
+        let mut running = BrowserRunningCache::new(kind);
         if let Some(endpoint) =
-            Self::discover_user_profile_endpoint(kind, port, allow_port_fallback).await
+            Self::discover_user_profile_endpoint(kind, port, allow_port_fallback, &mut running)
+                .await
         {
             return Ok(LaunchResult::UserProfileReady { endpoint });
         }
@@ -812,17 +837,20 @@ impl BrowserLauncher {
         // An explicit Settings action waits up to one minute so the user can
         // tick the browser-owned consent checkbox; an ordinary agent connect
         // only waits for the normal-start fast path before returning guidance.
-        // The budget is a deadline so slow probes cannot stretch it.
-        let deadline = tokio::time::Instant::now()
-            + if wait_for_user_setup {
-                USER_PROFILE_SETUP_WAIT
-            } else {
-                USER_PROFILE_FAST_PATH_WAIT
-            };
+        // The budget is a deadline so slow probes cannot stretch it, and a
+        // caller with its own overall deadline may shorten it.
+        let default_wait = if wait_for_user_setup {
+            USER_PROFILE_SETUP_WAIT
+        } else {
+            USER_PROFILE_FAST_PATH_WAIT
+        };
+        let wait = setup_wait_override.map_or(default_wait, |limit| limit.min(default_wait));
+        let deadline = tokio::time::Instant::now() + wait;
         while tokio::time::Instant::now() < deadline {
             tokio::time::sleep(USER_PROFILE_SETUP_POLL_INTERVAL).await;
             if let Some(endpoint) =
-                Self::discover_user_profile_endpoint(kind, port, allow_port_fallback).await
+                Self::discover_user_profile_endpoint(kind, port, allow_port_fallback, &mut running)
+                    .await
             {
                 return Ok(LaunchResult::UserProfileReady { endpoint });
             }
@@ -1126,6 +1154,7 @@ impl BrowserLauncher {
                     port,
                     options.wait_for_user_profile_setup,
                     !options.skip_guarded_port_fallback,
+                    options.user_profile_setup_wait,
                 )
                 .await;
             }
@@ -1312,45 +1341,26 @@ impl BrowserLauncher {
     }
 
     /// Check if a browser process is currently running.
+    ///
+    /// Matches the exact process name (`pgrep -x` / `tasklist` image name),
+    /// never a command-line substring: `pgrep -f chrome` also matched helper
+    /// processes such as Electron apps' `chrome_crashpad_handler`.
     #[allow(dead_code)]
     fn is_browser_running(kind: &BrowserKind) -> bool {
-        // Per-platform process names.
-        // macOS / Linux match against the executable filename via `pgrep -f`.
-        // Windows must use the *.exe image name as it appears in `tasklist`.
         #[cfg(target_os = "macos")]
-        let process_names: Vec<&str> = match kind {
-            BrowserKind::Chrome => vec!["Google Chrome"],
-            BrowserKind::Edge => vec!["Microsoft Edge"],
-            BrowserKind::Brave => vec!["Brave Browser"],
-            BrowserKind::Arc => vec!["Arc"],
-            BrowserKind::Chromium => vec!["Chromium"],
-            BrowserKind::Unknown(_) => return false,
-        };
-
+        let process_names = macos_browser_process_names(kind);
         #[cfg(target_os = "linux")]
-        let process_names: Vec<&str> = match kind {
-            BrowserKind::Chrome => vec!["chrome", "google-chrome"],
-            BrowserKind::Edge => vec!["msedge", "microsoft-edge"],
-            BrowserKind::Brave => vec!["brave", "brave-browser"],
-            BrowserKind::Arc => vec!["arc"],
-            BrowserKind::Chromium => vec!["chromium", "chromium-browser"],
-            BrowserKind::Unknown(_) => return false,
-        };
-
+        let process_names = linux_browser_process_names(kind);
         #[cfg(target_os = "windows")]
-        let process_names: Vec<&str> = match kind {
-            BrowserKind::Chrome => vec!["chrome.exe"],
-            BrowserKind::Edge => vec!["msedge.exe"],
-            BrowserKind::Brave => vec!["brave.exe"],
-            BrowserKind::Arc => vec!["arc.exe"],
-            BrowserKind::Chromium => vec!["chrome.exe", "chromium.exe"],
-            BrowserKind::Unknown(_) => return false,
-        };
+        let process_names = windows_browser_process_names(kind);
 
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            for name in &process_names {
-                let output = silent_command("pgrep").args(["-f", name]).output().ok();
+            for name in process_names {
+                let output = silent_command("pgrep")
+                    .args(pgrep_exact_args(name))
+                    .output()
+                    .ok();
                 if let Some(out) = output {
                     if out.status.success() && !out.stdout.is_empty() {
                         return true;
@@ -1362,7 +1372,7 @@ impl BrowserLauncher {
 
         #[cfg(target_os = "windows")]
         {
-            for image in &process_names {
+            for image in process_names {
                 let filter = format!("IMAGENAME eq {}", image);
                 let output = silent_command("tasklist")
                     .args(["/FI", &filter, "/NH", "/FO", "CSV"])
@@ -1382,6 +1392,99 @@ impl BrowserLauncher {
             }
             false
         }
+    }
+}
+
+/// `pgrep` arguments that match one exact process name.
+#[cfg_attr(
+    not(any(test, target_os = "macos", target_os = "linux")),
+    allow(dead_code)
+)]
+fn pgrep_exact_args(name: &str) -> [&str; 2] {
+    ["-x", name]
+}
+
+/// macOS main-process names. Helpers (`Google Chrome Helper`, ...) differ.
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+fn macos_browser_process_names(kind: &BrowserKind) -> &'static [&'static str] {
+    match kind {
+        BrowserKind::Chrome => &["Google Chrome"],
+        BrowserKind::Edge => &["Microsoft Edge"],
+        BrowserKind::Brave => &["Brave Browser"],
+        BrowserKind::Arc => &["Arc"],
+        BrowserKind::Chromium => &["Chromium"],
+        BrowserKind::Unknown(_) => &[],
+    }
+}
+
+/// Linux executable names as `/proc/<pid>/comm` reports them (at most 15
+/// bytes). Launcher wrappers such as `google-chrome` exec these binaries.
+#[cfg_attr(not(any(test, target_os = "linux")), allow(dead_code))]
+fn linux_browser_process_names(kind: &BrowserKind) -> &'static [&'static str] {
+    match kind {
+        BrowserKind::Chrome => &["chrome", "google-chrome"],
+        BrowserKind::Edge => &["msedge", "microsoft-edge"],
+        BrowserKind::Brave => &["brave", "brave-browser"],
+        BrowserKind::Arc => &["arc"],
+        BrowserKind::Chromium => &["chromium", "chromium-browse"],
+        BrowserKind::Unknown(_) => &[],
+    }
+}
+
+/// Windows image names as `tasklist` reports them.
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+fn windows_browser_process_names(kind: &BrowserKind) -> &'static [&'static str] {
+    match kind {
+        BrowserKind::Chrome => &["chrome.exe"],
+        BrowserKind::Edge => &["msedge.exe"],
+        BrowserKind::Brave => &["brave.exe"],
+        BrowserKind::Arc => &["arc.exe"],
+        BrowserKind::Chromium => &["chrome.exe", "chromium.exe"],
+        BrowserKind::Unknown(_) => &[],
+    }
+}
+
+/// Process-running answer cached for one setup call so the 250 ms endpoint
+/// poll does not spawn a process listing every iteration.
+struct BrowserRunningCache {
+    kind: BrowserKind,
+    max_age: Duration,
+    checked: Option<(tokio::time::Instant, bool)>,
+    check: fn(&BrowserKind) -> bool,
+}
+
+impl BrowserRunningCache {
+    fn new(kind: &BrowserKind) -> Self {
+        Self::with_check(
+            kind,
+            BROWSER_RUNNING_CACHE_MAX_AGE,
+            BrowserLauncher::is_browser_running,
+        )
+    }
+
+    fn with_check(kind: &BrowserKind, max_age: Duration, check: fn(&BrowserKind) -> bool) -> Self {
+        Self {
+            kind: kind.clone(),
+            max_age,
+            checked: None,
+            check,
+        }
+    }
+
+    async fn is_running(&mut self) -> bool {
+        let now = tokio::time::Instant::now();
+        if let Some((at, running)) = self.checked {
+            if now.saturating_duration_since(at) < self.max_age {
+                return running;
+            }
+        }
+        let kind = self.kind.clone();
+        let check = self.check;
+        let running = BrowserLauncher::run_blocking(move || check(&kind))
+            .await
+            .unwrap_or(false);
+        self.checked = Some((now, running));
+        running
     }
 }
 
@@ -1718,10 +1821,93 @@ mod tests {
 
         let port = serve_fixed_http("404 Not Found", "").await;
         for kind in [BrowserKind::Chrome, BrowserKind::Edge] {
+            let mut running =
+                BrowserRunningCache::with_check(&kind, Duration::from_secs(3), |_| true);
             let endpoint =
-                BrowserLauncher::discover_user_profile_endpoint(&kind, port, false).await;
+                BrowserLauncher::discover_user_profile_endpoint(&kind, port, false, &mut running)
+                    .await;
             assert!(!endpoint.is_some_and(|endpoint| endpoint.port == port));
+            // The process listing is not consulted without the port fallback.
+            assert!(running.checked.is_none());
         }
+    }
+
+    static RUNNING_CHECKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    fn counting_running_check(_: &BrowserKind) -> bool {
+        RUNNING_CHECKS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        true
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn running_check_is_cached_across_a_setup_poll() {
+        use std::sync::atomic::Ordering;
+
+        let before = RUNNING_CHECKS.load(Ordering::SeqCst);
+        let mut running = BrowserRunningCache::with_check(
+            &BrowserKind::Chrome,
+            Duration::from_secs(3),
+            counting_running_check,
+        );
+        // Twelve 250 ms polls inside one cache window list processes once.
+        for _ in 0..12 {
+            assert!(running.is_running().await);
+            tokio::time::advance(Duration::from_millis(240)).await;
+        }
+        assert_eq!(RUNNING_CHECKS.load(Ordering::SeqCst) - before, 1);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(running.is_running().await);
+        assert_eq!(RUNNING_CHECKS.load(Ordering::SeqCst) - before, 2);
+    }
+
+    #[tokio::test]
+    async fn running_check_is_skipped_for_ports_without_a_guarded_404() {
+        use crate::browser_control::test_support::{closed_port, serve_fixed_http};
+
+        let legacy = serve_fixed_http("200 OK", "{}").await;
+        for port in [legacy, closed_port()] {
+            let mut running = BrowserRunningCache::with_check(
+                &BrowserKind::Chrome,
+                Duration::from_secs(3),
+                |_| true,
+            );
+            assert!(BrowserLauncher::guarded_port_debug_endpoint_cached(
+                &BrowserKind::Chrome,
+                port,
+                &mut running
+            )
+            .await
+            .is_none());
+            assert!(running.checked.is_none());
+        }
+    }
+
+    #[test]
+    fn process_match_uses_exact_names_not_command_lines() {
+        assert_eq!(pgrep_exact_args("chrome"), ["-x", "chrome"]);
+        for kind in [
+            BrowserKind::Chrome,
+            BrowserKind::Edge,
+            BrowserKind::Brave,
+            BrowserKind::Chromium,
+            BrowserKind::Arc,
+        ] {
+            for name in linux_browser_process_names(&kind) {
+                // `/proc/<pid>/comm` holds at most 15 bytes; longer names
+                // could never match exactly.
+                assert!(name.len() <= 15, "{name}");
+                assert!(!name.contains("crashpad"));
+            }
+            assert!(!macos_browser_process_names(&kind).is_empty());
+            assert!(windows_browser_process_names(&kind)
+                .iter()
+                .all(|name| name.ends_with(".exe")));
+        }
+        assert_eq!(
+            linux_browser_process_names(&BrowserKind::Edge),
+            &["msedge", "microsoft-edge"]
+        );
+        assert!(linux_browser_process_names(&BrowserKind::Unknown("x".into())).is_empty());
     }
 
     #[test]
