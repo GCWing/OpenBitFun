@@ -26,6 +26,7 @@ export enum ConversationIntentType {
   OpenFilePreview = 'open_file_preview',
   DownloadFile = 'download_file',
   BuildPlan = 'build_plan',
+  BranchExpanded = 'branch_expanded',
   CommandPalette = 'command_palette',
   RollbackSession = 'rollback_session',
   RollbackResync = 'rollback_resync',
@@ -248,6 +249,14 @@ export class ConversationIntents {
       MessageCopyScope.Plain,
       request
     );
+  }
+
+  /**
+   * The reader opened a delegation card. The branch id is the tool call that
+   * launched the worker, which is what its records are found by.
+   */
+  static branchExpanded(branchId: string): ConversationIntent {
+    return new ConversationIntent(ConversationIntentType.BranchExpanded, '', branchId);
   }
 
   /**

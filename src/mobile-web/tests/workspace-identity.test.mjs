@@ -436,6 +436,15 @@ test('workspace icons reject future formats and external image URLs without loca
   }
 });
 
+test('connection-less legacy references never resolve to port-scoped SSH workspaces', () => {
+  const legacy = { workspace_id: 'ws-legacy', path: '/srv/app', remote_connection_id: 'ssh-root@cluster', remote_ssh_host: 'cluster' };
+  const node = { workspace_id: 'ws-node', path: '/srv/app', remote_connection_id: 'ssh-root@cluster#2201', remote_ssh_host: 'cluster' };
+  // Old cached reference: host and root without a connection id.
+  assert.equal(resolveLegacyWorkspaceReference({ path: '/srv/app', remote_ssh_host: 'cluster' }, [legacy, node]), legacy);
+  assert.equal(resolveLegacyWorkspaceReference(
+    { path: '/srv/app', remote_connection_id: 'ssh-root@cluster#2201', remote_ssh_host: 'cluster' }, [legacy, node]), node);
+});
+
 const home = {
   workspace_id: 'ws-home', has_workspace: true, path: '/Users/me/home',
   project_name: 'home', git_branch: 'master', workspace_kind: 'normal',

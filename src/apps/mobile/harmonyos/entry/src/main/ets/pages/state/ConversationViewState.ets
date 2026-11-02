@@ -22,6 +22,7 @@ import { AppRoute } from '../navigation/AppRouteContract';
 import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
+import { SubagentBranchExpansionState } from './SubagentBranchExpansionState';
 import { CommandPalettePresentation } from './CommandPaletteState';
 import { RollbackEntryFacts } from '../policy/RollbackPresentationPolicy';
 
@@ -55,6 +56,11 @@ export class ConversationViewState {
   selectedImages: ConversationUiSelectedImage[] = [];
   isVoiceListening: boolean = false;
   chatInput: string = '';
+  /**
+   * Disclosure of the conversation's delegation cards; the projection carries the
+   * owner's instance so a card the reader opened stays open across repaints.
+   */
+  subagentBranches: SubagentBranchExpansionState = new SubagentBranchExpansionState();
   /**
    * The composer's command row. Hidden on the general surface and whenever the
    * conversation has no session, so the row can never act on a stale target.
@@ -156,6 +162,7 @@ export class ConversationViewState {
     state.selectedImages = core.selectedImages.map((image) => toConversationUiSelectedImage(image));
     state.isVoiceListening = core.isVoiceListening;
     state.chatInput = core.chatInput;
+    state.subagentBranches = core.subagentBranches;
     state.promptSuggestion = core.promptSuggestion;
     return state;
   }
