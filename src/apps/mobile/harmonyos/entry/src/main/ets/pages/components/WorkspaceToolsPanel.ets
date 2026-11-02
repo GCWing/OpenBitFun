@@ -4,7 +4,7 @@ import { WorkspaceTerminalView } from './WorkspaceTerminalView';
 import { WorkspaceToolsState, WorkspaceToolsIntent, WorkspaceFileEntry, WorkspaceTerminalEntry, WorkspaceToolLocation } from '../state/WorkspaceToolsState';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { CARD, CONTENT_ON_ACTION, INK, MEDIA_BACKGROUND, MUTED, PAGE_BG, LINE, SOFT, TRANSPARENT } from './Theme';
+import { CARD, CONTENT_ON_INK, INK, MEDIA_BACKGROUND, MUTED, PAGE_BG, LINE, SOFT, TRANSPARENT } from './Theme';
 import { SheetCloseButton } from './SheetCloseButton';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
@@ -92,7 +92,7 @@ export struct WorkspaceToolsPanel {
           .onClick(() => this.onIntent({ type: 'file-action-cancel' }))
         Text(this.fileActionTitle()).fontColor(INK).fontSize(MobileDesignTypography.titleMedium.size).fontWeight(FontWeight.Medium).layoutWeight(1).maxLines(2)
         Button(this.fileActionTitle())
-          .fontColor(CONTENT_ON_ACTION).backgroundColor(INK).height(40).borderRadius(8)
+          .fontColor(CONTENT_ON_INK).backgroundColor(INK).height(40).borderRadius(8)
           .enabled(this.state.fileAction === 'delete' || this.state.fileActionName.trim().length > 0)
           .onClick(() => this.onIntent({ type: 'file-action-submit' }))
       }.enabled(!this.state.busy).width('100%')
@@ -233,7 +233,7 @@ export struct WorkspaceToolsPanel {
         Button(RemoteI18n.t('workspaceTools.lineNumbers')).fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size)
           .height(36).backgroundColor(SOFT).borderRadius(8).onClick(() => this.onIntent({ type: 'line-numbers' }))
         if (this.state.editing) {
-          Button(RemoteI18n.t('workspaceTools.save')).fontColor(CONTENT_ON_ACTION).backgroundColor(INK).height(36).borderRadius(8)
+          Button(RemoteI18n.t('workspaceTools.save')).fontColor(CONTENT_ON_INK).backgroundColor(INK).height(36).borderRadius(8)
             .enabled(!this.state.busy).onClick(() => this.onIntent({ type: 'save' }))
         } else {
           Button(RemoteI18n.t('workspaceTools.edit')).fontColor(INK).backgroundColor(SOFT).height(36).borderRadius(8)
@@ -263,7 +263,7 @@ export struct WorkspaceToolsPanel {
             SymbolGlyph($r('sys.symbol.rectangle_stack')).fontColor([MUTED]).fontSize(32)
           }.width(72).height(72).backgroundColor(SOFT).borderRadius(20)
           Button(RemoteI18n.t('workspaceTools.createTerminal'))
-            .fontColor(CONTENT_ON_ACTION).backgroundColor(INK)
+            .fontColor(CONTENT_ON_INK).backgroundColor(INK)
             .borderRadius(8).height(44).padding({ left: 18, right: 18 })
             .enabled(!this.state.busy)
             .onClick(() => this.onIntent({ type: 'terminal-create' }))
