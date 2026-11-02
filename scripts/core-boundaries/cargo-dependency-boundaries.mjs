@@ -147,7 +147,8 @@ const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['account-identity', ['rt', 'sync']],
   // Large catalog validation/hash work uses spawn_blocking, outside async IO workers.
   ['models-dev', ['fs', 'rt', 'sync', 'time']],
-  ['browser-control', ['time']],
+  // Browser profile files and process probes use spawn_blocking off async IO workers.
+  ['browser-control', ['rt', 'time']],
   ['canvas-runtime', ['fs']],
   ['deep-research', []],
   ['git', ['fs', 'io-util', 'macros', 'rt', 'time']],

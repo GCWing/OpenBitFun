@@ -25,6 +25,19 @@ use tokio::sync::oneshot;
 use super::remote_connect_api::{account_app_handle, current_device_id_for_peer, RelayRoute};
 
 const DEFAULT_INVOKE_TIMEOUT: Duration = Duration::from_secs(120);
+/// Browser Control setup waits for browser-owned consent: up to one minute for
+/// the Remote debugging toggle plus up to 90 seconds for the connection
+/// approval prompt. The controller adapter uses the same budget.
+pub(crate) const BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT: Duration = Duration::from_secs(180);
+
+fn invoke_timeout_for(command: &str) -> Duration {
+    match command {
+        "browser_control_launch"
+        | "browser_control_enable_default_cdp"
+        | "browser_control_restart_with_cdp" => BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT,
+        _ => DEFAULT_INVOKE_TIMEOUT,
+    }
+}
 
 static PENDING: OnceLock<Mutex<HashMap<String, oneshot::Sender<HostInvokeBridgeResult>>>> =
     OnceLock::new();
@@ -447,14 +460,15 @@ async fn bridge_via_webview(
         return Err(format!("failed to emit peer host invoke request: {e}"));
     }
 
-    match tokio::time::timeout(DEFAULT_INVOKE_TIMEOUT, rx).await {
+    let invoke_timeout = invoke_timeout_for(command);
+    match tokio::time::timeout(invoke_timeout, rx).await {
         Ok(Ok(result)) => Ok(result),
         Ok(Err(_)) => Err("peer host invoke channel closed".to_string()),
         Err(_) => {
             pending_map().lock().ok().map(|mut map| map.remove(&id));
             Err(format!(
                 "peer host invoke timed out after {}s for '{command}'",
-                DEFAULT_INVOKE_TIMEOUT.as_secs()
+                invoke_timeout.as_secs()
             ))
         }
     }
@@ -472,6 +486,24 @@ mod tests {
                 .collect(),
             permission_request_ids: requests.iter().map(|value| value.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn browser_control_setup_commands_get_the_consent_budget() {
+        for command in [
+            "browser_control_launch",
+            "browser_control_enable_default_cdp",
+            "browser_control_restart_with_cdp",
+        ] {
+            assert_eq!(
+                invoke_timeout_for(command),
+                BROWSER_CONTROL_SETUP_INVOKE_TIMEOUT
+            );
+        }
+        assert_eq!(
+            invoke_timeout_for("browser_control_get_status"),
+            DEFAULT_INVOKE_TIMEOUT
+        );
     }
 
     #[test]

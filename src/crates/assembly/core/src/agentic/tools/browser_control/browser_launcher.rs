@@ -7,8 +7,8 @@
 
 use openbitfun_services_integrations::browser_control::launcher as provider;
 pub use provider::{
-    BrowserDebugEndpoint, BrowserInfo, BrowserKind, BrowserLaunchOptions, LaunchResult,
-    DEFAULT_CDP_PORT,
+    BrowserDebugEndpoint, BrowserInfo, BrowserKind, BrowserLaunchOptions, CdpPortProbe,
+    LaunchResult, DEFAULT_CDP_PORT,
 };
 use std::path::PathBuf;
 
@@ -20,6 +20,43 @@ pub struct BrowserLauncher;
 impl BrowserLauncher {
     pub async fn is_cdp_available(port: u16) -> bool {
         provider::BrowserLauncher::is_cdp_available(port).await
+    }
+
+    /// Classify a local debug port without opening a WebSocket, so a guarded
+    /// endpoint (404 on `/json*`) is distinguished from nothing listening.
+    pub async fn probe_cdp_port(port: u16) -> CdpPortProbe {
+        provider::BrowserLauncher::probe_cdp_port(port).await
+    }
+
+    /// Like [`Self::user_profile_debug_endpoint`], but also accepts a guarded
+    /// remote-debugging port that serves only the browser WebSocket.
+    pub async fn user_profile_debug_endpoint_or_guarded_port(
+        kind: &BrowserKind,
+        port: u16,
+    ) -> Option<BrowserDebugEndpoint> {
+        provider::BrowserLauncher::user_profile_debug_endpoint_or_guarded_port(kind, port).await
+    }
+
+    /// Whether `endpoint` was inferred from a 404 port probe instead of a
+    /// published `DevToolsActivePort` file.
+    pub fn is_inferred_guarded_endpoint(endpoint: &BrowserDebugEndpoint) -> bool {
+        provider::BrowserLauncher::is_inferred_guarded_endpoint(endpoint)
+    }
+
+    /// Settings setup flow used after an inferred guarded endpoint rejected
+    /// the WebSocket upgrade: open the browser's Remote debugging page and
+    /// wait for a real `DevToolsActivePort`, without probing the port again.
+    pub async fn enable_default_cdp_without_port_fallback(
+        kind: &BrowserKind,
+        port: u16,
+        wait_for_user_profile_setup: bool,
+        setup_wait_limit: std::time::Duration,
+    ) -> OpenBitFunResult<LaunchResult> {
+        let mut options = Self::launch_options(None, true);
+        options.wait_for_user_profile_setup = wait_for_user_profile_setup;
+        options.skip_guarded_port_fallback = true;
+        options.user_profile_setup_wait = Some(setup_wait_limit);
+        Ok(provider::BrowserLauncher::launch_with_cdp_options(kind, port, options).await?)
     }
 
     pub fn detect_default_browser() -> OpenBitFunResult<BrowserKind> {
@@ -59,6 +96,16 @@ impl BrowserLauncher {
 
     pub fn is_default_cdp_enabled(kind: &BrowserKind) -> bool {
         provider::BrowserLauncher::is_default_cdp_enabled(kind)
+    }
+
+    pub async fn is_default_cdp_enabled_async(kind: &BrowserKind) -> bool {
+        provider::BrowserLauncher::is_default_cdp_enabled_async(kind).await
+    }
+
+    /// Whether Chrome or Edge other than `kind` is running, so a port inferred
+    /// for `kind` from a 404 probe may belong to that browser.
+    pub async fn other_guarded_browser_running(kind: &BrowserKind) -> bool {
+        provider::BrowserLauncher::other_guarded_browser_running(kind).await
     }
 
     pub fn user_profile_debugging_setup_url(kind: &BrowserKind) -> Option<&'static str> {
@@ -129,6 +176,8 @@ impl BrowserLauncher {
             managed_profile_root: Some(get_path_manager_arc().user_data_dir()),
             wait_for_user_profile_setup: false,
             activate,
+            skip_guarded_port_fallback: false,
+            user_profile_setup_wait: None,
         }
     }
 }
