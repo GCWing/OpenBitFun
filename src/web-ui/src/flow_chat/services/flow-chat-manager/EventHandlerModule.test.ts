@@ -45,6 +45,17 @@ vi.mock('../../../shared/notification-system/services/NotificationService', () =
   },
 }));
 
+describe('relayRecordsBeforeEvent', () => {
+  it('renders received records before the direct event applies', () => {
+    const order: string[] = [];
+    const context = { flowChatStore: {
+      settleRelaySessionRecords: (sessionId: string) => order.push(`settle:${sessionId}`),
+    } } as unknown as FlowChatContext;
+    __test_only__.relayRecordsBeforeEvent(context)(() => order.push('event'))({ sessionId: 'session-1' });
+    expect(order).toEqual(['settle:session-1', 'event']);
+  });
+});
+
 describe('isAppWindowFocused', () => {
   it('returns true when no document is available', () => {
     expect(isAppWindowFocused()).toBe(true);
