@@ -16,6 +16,9 @@ import type { FlowChatState, ModelRound, Session } from '../types/flow-chat';
 import { startupTrace } from '@/shared/utils/startupTrace';
 import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import { SessionRecordReplica } from '../session-stream/SessionRecordReplica';
+import { sessionTurnOrdinalsKnown } from '../utils/flowChatTurnIdentity';
+import { absoluteSessionTurnIndexForId } from '../utils/flowChatTurnOrdinal';
+import { isSessionBindingLocked } from '../utils/sessionLifecycle';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
@@ -167,7 +170,14 @@ vi.mock('../state-machine', () => ({
 const resetStore = () => {
   // A test that rendered another device leaves that surface's container behind.
   activateSurface(LOCAL_SURFACE_ID);
-  const surfaceContainers = (flowChatStore as any).surfaceContainers as Map<string, unknown>;
+  const surfaceContainers = (flowChatStore as any).surfaceContainers as Map<string, {
+    relaySessionHistory: Map<string, { close: () => void }>;
+  }>;
+  // An unclosed subscription would keep its flush timer into the next test.
+  surfaceContainers.forEach(container => {
+    container.relaySessionHistory.forEach(history => history.close());
+    container.relaySessionHistory.clear();
+  });
   Array.from(surfaceContainers.keys())
     .filter(surfaceId => surfaceId !== LOCAL_SURFACE_ID)
     .forEach(surfaceId => {
@@ -7918,6 +7928,8 @@ describe('FlowChatStore device surfaces', () => {
 
     beforeEach(() => {
       stateMachineManagerMock.getOrCreate.mockReturnValue({ acceptRuntimeStatus: vi.fn() });
+      apiMocks.loadSessionMetadata.mockReset();
+      apiMocks.loadSessionMetadata.mockResolvedValue(null);
     });
 
     it('renders a page of one long turn once, before ready reports it', async () => {
@@ -8032,6 +8044,208 @@ describe('FlowChatStore device surfaces', () => {
 
       expect(texts('peer-switch')).toHaveLength(1);
     });
+
+    const seedPartial = (sessionId: string, persistedTurnCount?: number) => {
+      flowChatStore.setState(() => ({
+        sessions: new Map([[sessionId, createSession({
+          sessionId, isHistorical: true, historyState: 'metadata-only', persistedTurnCount,
+        })]]),
+        activeSessionId: sessionId,
+      }));
+    };
+    const openTail = async (sessionId: string, turnIndexes: number[], hasMore = true) => {
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        turnIndexes.forEach((turnIndex, index) => apiMocks.relayRecord?.(itemRecord(sessionId, turnIndex, 0, index + 1)));
+        apiMocks.relayReady?.({ sessionId, hasMore, oldestSeq: 100, cursor: 150 });
+        return `${sessionId}-subscription`;
+      });
+      await flowChatStore.loadRelaySessionHistory(sessionId);
+    };
+    const absolute = (sessionId: string, turnId: string) => (
+      absoluteSessionTurnIndexForId(flowChatStore.getState().sessions.get(sessionId)!, turnId)
+    );
+
+    it('numbers a partial tail from the host count and follows live turns', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedPartial('peer-tail', 20);
+      await openTail('peer-tail', [18, 19]);
+
+      expect(absolute('peer-tail', 'turn-18')).toBe(19);
+      expect(absolute('peer-tail', 'turn-19')).toBe(20);
+
+      apiMocks.relayRecord?.(itemRecord('peer-tail', 20, 0, 9));
+      await vi.waitFor(() => expect(absolute('peer-tail', 'turn-20')).toBe(21));
+      expect(absolute('peer-tail', 'turn-19')).toBe(20);
+    });
+
+    it('does not count an older page as new turns', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedPartial('peer-older', 20);
+      await openTail('peer-older', [18, 19]);
+
+      apiMocks.relayRecord?.(itemRecord('peer-older', 17, 0, 9));
+      apiMocks.relayReady?.({ sessionId: 'peer-older', hasMore: true, oldestSeq: 50, cursor: 150 });
+
+      expect(flowChatStore.getState().sessions.get('peer-older')?.totalTurnCount).toBe(20);
+      expect(absolute('peer-older', 'turn-17')).toBe(18);
+    });
+
+    it('corrects a stale session list from the host', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedPartial('peer-stale', 20);
+      apiMocks.loadSessionMetadata.mockResolvedValue({ turnCount: 25 });
+      await openTail('peer-stale', [23, 24]);
+
+      await vi.waitFor(() => expect(absolute('peer-stale', 'turn-24')).toBe(25));
+    });
+
+    it('withholds ordinals until the count is known, then numbers complete history', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedPartial('peer-unknown');
+      apiMocks.loadSessionMetadata.mockRejectedValue(new Error('Host busy'));
+      await openTail('peer-unknown', [18, 19]);
+
+      const session = () => flowChatStore.getState().sessions.get('peer-unknown')!;
+      expect(session().isPartial).toBe(true);
+      expect(sessionTurnOrdinalsKnown(session())).toBe(false);
+      expect(absolute('peer-unknown', 'turn-19')).toBeUndefined();
+
+      apiMocks.relayReady?.({ sessionId: 'peer-unknown', hasMore: false, oldestSeq: 1, cursor: 150 });
+
+      expect(session().isPartial).toBe(false);
+      expect(absolute('peer-unknown', 'turn-19')).toBe(2);
+    });
+
+    it('renders good turns past a failed one, stays failed, and retries the held turn', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-bad');
+      const store = flowChatStore as any;
+      const convert = store.convertToDialogTurns.bind(store);
+      const spy = vi.spyOn(store, 'convertToDialogTurns').mockImplementation((...args: any[]) => {
+        if (args[0][0].turnId === 'turn-1') throw new Error('Unrenderable turn');
+        return convert(...args);
+      });
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-bad', 0, 0));
+        apiMocks.relayRecord?.(itemRecord('peer-bad', 1, 0, 2));
+        apiMocks.relayReady?.({ sessionId: 'peer-bad', hasMore: false, oldestSeq: 1, cursor: 2 });
+        return 'peer-bad-subscription';
+      });
+
+      await expect(flowChatStore.loadRelaySessionHistory('peer-bad')).rejects.toThrow();
+      const session = () => flowChatStore.getState().sessions.get('peer-bad')!;
+      expect(session().historyState).toBe('failed');
+      expect(session().dialogTurns.map(turn => turn.id)).toEqual(['turn-0']);
+
+      spy.mockRestore();
+      // The replica holds these revisions, so the retry's replay reports nothing new.
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-bad', 1, 0, 2));
+        apiMocks.relayReady?.({ sessionId: 'peer-bad', hasMore: false, oldestSeq: 1, cursor: 2 });
+        return 'peer-bad-retry';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-bad');
+
+      expect(session().historyState).toBe('ready');
+      expect(session().dialogTurns.map(turn => turn.id)).toEqual(['turn-0', 'turn-1']);
+    });
+
+    it('renders at once when a running turn finishes, without a flush per replayed record', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-final');
+      const running = (revision: number, status: string) => {
+        const base = itemRecord('peer-final', 0, 0, revision);
+        return { ...base, turn: { ...base.turn, status } };
+      };
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(running(1, 'inprogress'));
+        apiMocks.relayReady?.({ sessionId: 'peer-final', hasMore: false, oldestSeq: 1, cursor: 1 });
+        return 'peer-final-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-final');
+
+      apiMocks.relayRecord?.(running(2, 'inprogress'));
+      expect((flowChatStore as any).activeSurface.relayPendingRecordTurns.has('peer-final')).toBe(true);
+      apiMocks.relayRecord?.(running(3, 'completed'));
+
+      expect((flowChatStore as any).activeSurface.relayPendingRecordTurns.has('peer-final')).toBe(false);
+      expect(flowChatStore.getState().sessions.get('peer-final')!.dialogTurns[0].status).toBe('completed');
+    });
+
+    it('settles pending records for a direct event and keeps them when rendering fails', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-settle');
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayReady?.({ sessionId: 'peer-settle', hasMore: false, oldestSeq: 1, cursor: 0 });
+        return 'peer-settle-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-settle');
+      apiMocks.relayRecord?.(itemRecord('peer-settle', 0, 0));
+
+      const spy = vi.spyOn(flowChatStore as any, 'convertToDialogTurns').mockImplementationOnce(() => {
+        throw new Error('Unrenderable turn');
+      });
+      flowChatStore.settleRelaySessionRecords('peer-settle');
+      expect(flowChatStore.getState().sessions.get('peer-settle')!.dialogTurns).toHaveLength(0);
+      spy.mockRestore();
+
+      flowChatStore.settleRelaySessionRecords('peer-settle');
+      expect(flowChatStore.getState().sessions.get('peer-settle')!.dialogTurns).toHaveLength(1);
+    });
+  });
+
+  it('never subscribes an unmaterialized draft or marks it as a failed history restore', async () => {
+    activateSurface(PEER_SURFACE_ID);
+    apiMocks.subscribeRelaySession.mockClear();
+    const seedDraft = (phase: 'editing' | 'creating') => flowChatStore.setState(() => ({
+      sessions: new Map([['peer-draft', createSession({
+        sessionId: 'peer-draft',
+        mode: 'Standard',
+        historyState: 'new',
+        draft: { workspaceId: 'workspace-1', phase, turnId: 'turn-draft' },
+      })]]),
+      activeSessionId: 'peer-draft',
+    }));
+
+    for (const phase of ['editing', 'creating'] as const) {
+      seedDraft(phase);
+      await flowChatStore.loadRelaySessionHistory('peer-draft');
+      await flowChatStore.loadSessionHistory('peer-draft');
+      await expect(flowChatStore.ensureSessionFullHistory('peer-draft', 'test')).resolves.toBe(false);
+      await expect(flowChatStore.loadOlderRelaySessionHistory('peer-draft')).resolves.toBe(false);
+      expect(flowChatStore.getState().sessions.get('peer-draft')?.historyState).toBe('new');
+    }
+    expect(apiMocks.subscribeRelaySession).not.toHaveBeenCalled();
+
+    seedDraft('editing');
+    const draft = flowChatStore.getState().sessions.get('peer-draft')!;
+    expect(isSessionBindingLocked(draft)).toBe(false);
+    flowChatStore.updateSessionMode('peer-draft', 'Plan');
+    const applied = flowChatStore.getState();
+    expect(applied.sessions.size).toBe(1);
+    expect(applied.activeSessionId).toBe('peer-draft');
+    expect(applied.sessions.get('peer-draft')).toMatchObject({ mode: 'Plan', historyState: 'new' });
+  });
+
+  it('subscribes a draft once the host accepted it, and a real rejection stays locked', async () => {
+    activateSurface(PEER_SURFACE_ID);
+    apiMocks.subscribeRelaySession.mockClear();
+    flowChatStore.setState(() => ({
+      sessions: new Map([['peer-created', createSession({
+        sessionId: 'peer-created',
+        historyState: 'new',
+        draft: { workspaceId: 'workspace-1', phase: 'ready', turnId: 'turn-draft' },
+      })]]),
+      activeSessionId: 'peer-created',
+    }));
+    apiMocks.subscribeRelaySession.mockRejectedValueOnce(new Error('Session not found'));
+
+    await expect(flowChatStore.loadRelaySessionHistory('peer-created')).rejects.toThrow('Session not found');
+
+    expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(1);
+    const failed = flowChatStore.getState().sessions.get('peer-created')!;
+    expect(failed.historyState).toBe('failed');
+    expect(isSessionBindingLocked(failed)).toBe(true);
   });
 
   it('builds visible turn navigation from canonical records without treating storage gaps as ordinals', async () => {

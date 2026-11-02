@@ -207,6 +207,7 @@ function mergeParamsPartialEventData(
 }
 
 export const __test_only__ = {
+  relayRecordsBeforeEvent,
   handleSessionDeleted,
   resolveDialogTurnDisplayContent,
   mergeParamsPartialEventData,
@@ -834,6 +835,14 @@ export function mapBackendStateToFrontend(backendState: any): SessionExecutionSt
  * Initialize global event listeners
  * Returns a cleanup function that removes all registered listeners
  */
+/** Records render once a frame; a direct event must not apply to an older render. */
+function relayRecordsBeforeEvent(context: FlowChatContext) {
+  return <E extends { sessionId?: string }>(handle: (event: E) => void) => (event: E): void => {
+    if (event.sessionId) context.flowChatStore.settleRelaySessionRecords(event.sessionId);
+    handle(event);
+  };
+}
+
 export async function initializeEventListeners(
   context: FlowChatContext,
   onTodoWriteResult: (sessionId: string, turnId: string, result: any) => void
@@ -860,6 +869,7 @@ export async function initializeEventListeners(
     void handleAcpPermissionRequest((payload as any)?.value || payload);
   });
 
+  const afterRelayRecords = relayRecordsBeforeEvent(context);
   const callbacks: AgenticEventCallbacks = {
     onSessionCreated: (event) => {
       handleSessionCreated(context, event);
@@ -879,45 +889,45 @@ export async function initializeEventListeners(
     onImageAnalysisCompleted: (event) => {
       handleImageAnalysisCompleted(context, event as ImageAnalysisEvent);
     },
-    onDialogTurnStarted: (event) => {
+    onDialogTurnStarted: afterRelayRecords((event) => {
       handleDialogTurnStarted(context, event);
-    },
+    }),
     onTextChunk: (event) => {
       handleTextChunk(context, event);
     },
-    onToolEvent: (event) => {
+    onToolEvent: afterRelayRecords((event) => {
       handleToolEvent(context, event, onTodoWriteResult);
-    },
+    }),
     onSubagentSessionLinked: (event) => {
       handleSubagentSessionLinked(context, event);
     },
     onDeepReviewQueueStateChanged: (event) => {
       handleDeepReviewQueueStateChanged(event);
     },
-    onModelRoundStarted: (event) => {
+    onModelRoundStarted: afterRelayRecords((event) => {
       handleModelRoundStart(context, event);
-    },
-    onModelRoundCompleted: (event) => {
+    }),
+    onModelRoundCompleted: afterRelayRecords((event) => {
       handleModelRoundComplete(context, event);
-    },
-    onModelRoundAttemptSuperseded: (event) => {
+    }),
+    onModelRoundAttemptSuperseded: afterRelayRecords((event) => {
       handleModelRoundAttemptSuperseded(context, event);
-    },
-    onDialogTurnCompleted: (event) => {
+    }),
+    onDialogTurnCompleted: afterRelayRecords((event) => {
       handleDialogTurnComplete(context, event, onTodoWriteResult);
-    },
-    onDialogTurnFailed: (event) => {
+    }),
+    onDialogTurnFailed: afterRelayRecords((event) => {
       handleDialogTurnFailed(context, event);
-    },
-    onDialogTurnCancelled: (event) => {
+    }),
+    onDialogTurnCancelled: afterRelayRecords((event) => {
       handleDialogTurnCancelled(context, event, onTodoWriteResult);
-    },
-    onDialogTurnInterrupted: (event) => {
+    }),
+    onDialogTurnInterrupted: afterRelayRecords((event) => {
       handleDialogTurnInterrupted(context, event);
-    },
-    onDialogTurnRecovered: (event) => {
+    }),
+    onDialogTurnRecovered: afterRelayRecords((event) => {
       handleDialogTurnRecovered(context, event);
-    },
+    }),
     onTokenUsageUpdated: (event) => {
       handleTokenUsageUpdate(context, event);
     },

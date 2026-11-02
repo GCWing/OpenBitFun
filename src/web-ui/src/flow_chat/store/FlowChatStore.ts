@@ -50,6 +50,7 @@ import { stateMachineManager } from '../state-machine';
 import { estimateRetainedBytes, resourceBudget } from '@/shared/utils/resourceBudget';
 import { ProcessingPhase, SessionExecutionState } from '../state-machine/types';
 import { isTurnAwaitingRecovery } from '../utils/interruptedTurnRecovery';
+import { isUnmaterializedSessionDraft } from '../utils/sessionDraft';
 import { sessionActivityStore } from './sessionActivityStore';
 import {
   getActiveSurfaceId,
@@ -1960,6 +1961,17 @@ function createSurfaceStateContainer(surfaceId: DeviceSurfaceId): SurfaceStateCo
     relayPendingRecordTurns: new Map(),
     relaySessionHistory: new Map(),
   };
+}
+
+const isTerminalRelayTurnStatus = (status: DialogTurn['status']): boolean => (
+  status === 'completed' || status === 'cancelled' || status === 'error'
+);
+
+/** Undefined means the count is unknown, which is not the same as the loaded tail. */
+function seedRelayTurnCount(session: Session): number | undefined {
+  const known = session.totalTurnCount ?? session.persistedTurnCount;
+  return known === undefined ? undefined
+    : Math.max(known, session.persistedTurnCount ?? 0, canonicalSessionTurns(session).length);
 }
 
 export class FlowChatStore {
@@ -6061,8 +6073,12 @@ export class FlowChatStore {
     const surface = this.activeSurface;
     if (surface.surfaceId === 'local') throw new Error('Local history is owned by the local runtime');
     if (!surface.state.sessions.has(sessionId)) throw new Error('Relay session shell is not loaded');
+    // The host rejects a reserved ID, and that rejection would falsely mark an
+    // empty composer session as a failed history restore. It has no history yet.
+    if (isUnmaterializedSessionDraft(surface.state.sessions.get(sessionId))) return;
     let history = surface.relaySessionHistory.get(sessionId);
     if (!history) {
+      let turnCountRequested = false;
       history = new RelaySessionHistory(sessionId,
         record => this.applyRelaySessionRecord(record),
         ready => {
@@ -6074,10 +6090,18 @@ export class FlowChatStore {
               // This surface owns presentation only. Execution-context loading
               // remains on the runtime when it accepts the next command.
               contextRestoreState: 'ready',
-              isPartial: ready.hasMore, loadedTurnCount: session.dialogTurns.length });
+              isPartial: ready.hasMore, loadedTurnCount: session.dialogTurns.length,
+              // A partial view is the tail, so its ordinals need the whole count.
+              totalTurnCount: ready.hasMore ? seedRelayTurnCount(session) : undefined });
             return { ...previous, sessions };
           });
           if (!ready.hasMore) this.refreshRelayTurnCatalog(sessionId);
+          else if (!turnCountRequested) {
+            turnCountRequested = true;
+            void this.refreshRelayTurnCount(sessionId).catch(error => {
+              log.warn('Relay session turn count refresh failed', { sessionId, error });
+            });
+          }
         }, error => {
           log.error('Relay session history failed', { sessionId, error });
           this.setSessionHistoryState(sessionId, 'failed');
@@ -6098,6 +6122,28 @@ export class FlowChatStore {
       if (surface.relaySessionHistory.get(sessionId) === history) surface.relaySessionHistory.delete(sessionId);
       throw error;
     }
+  }
+
+  /** The session list can predate the opened stream, so ask the host once per subscription. */
+  private async refreshRelayTurnCount(sessionId: string): Promise<void> {
+    const surface = this.activeSurface;
+    const scope = getActiveSurfaceScope();
+    const shell = surface.state.sessions.get(sessionId);
+    const workspaceId = shell && sessionOwningWorkspaceId(shell);
+    if (!workspaceId) return;
+    const { sessionAPI } = await import('@/infrastructure/api/service-api/SessionAPI');
+    scope.assertCurrent('load relay session turn count');
+    const metadata = await sessionAPI.loadSessionMetadata(sessionId, workspaceId);
+    if (!metadata || !scope.isCurrent() || surface !== this.activeSurface) return;
+    this.setState(previous => {
+      const session = previous.sessions.get(sessionId);
+      if (session?.isPartial !== true) return previous;
+      const sessions = new Map(previous.sessions);
+      sessions.set(sessionId, { ...session,
+        persistedTurnCount: metadata.turnCount,
+        totalTurnCount: Math.max(metadata.turnCount, seedRelayTurnCount(session) ?? 0) });
+      return { ...previous, sessions };
+    });
   }
 
   private refreshRelayInteractionMailbox(sessionId: string): Promise<void> {
@@ -6138,6 +6184,7 @@ export class FlowChatStore {
   }
 
   public async loadOlderRelaySessionHistory(sessionId: string): Promise<boolean> {
+    if (isUnmaterializedSessionDraft(this.state.sessions.get(sessionId))) return false;
     await this.loadRelaySessionHistory(sessionId);
     const history = this.activeSurface.relaySessionHistory.get(sessionId);
     if (!history) throw new Error('Relay session history is no longer active');
@@ -6163,8 +6210,12 @@ export class FlowChatStore {
     this.seedSessionHistoryLoadedRanges(sessionId);
   }
 
-  /** Both realtime delivery and historical pages use the same record owner. */
-  public applyRelaySessionRecord(record: SessionRecord): void {
+  /**
+   * Both realtime delivery and historical pages use the same record owner. This
+   * reduces only; `RelaySessionHistory` owns when the result is rendered, and
+   * true asks it to do so now: a rendered turn just reached a terminal status.
+   */
+  private applyRelaySessionRecord(record: SessionRecord): boolean {
     const surface = this.activeSurface;
     if (surface.surfaceId === 'local') throw new Error('Relay record cannot target the local runtime');
     if (!surface.state.sessions.has(record.sessionId)) throw new Error('Relay session shell is not loaded');
@@ -6175,45 +6226,86 @@ export class FlowChatStore {
     }
     const turnId = replica.ingest(record);
     surface.relayRecordVersions.set(record.sessionId, (surface.relayRecordVersions.get(record.sessionId) ?? 0) + 1);
-    if (turnId === null) return;
+    if (turnId === null) return false;
     const pending = surface.relayPendingRecordTurns.get(record.sessionId);
     if (pending) pending.add(turnId);
     else surface.relayPendingRecordTurns.set(record.sessionId, new Set([turnId]));
+    // A replayed page is full of terminal records for turns not rendered yet;
+    // only a running turn that finished has a reader waiting on this record.
+    return !record.deleted && isTerminalRelayTurnStatus(normalizeLiveTurnStatus(record.turn.status))
+      && !!surface.state.sessions.get(record.sessionId)?.dialogTurns
+        .some(turn => turn.id === turnId && !isTerminalRelayTurnStatus(turn.status));
   }
 
-  /** Render what the replica received since the last flush as one state update. */
+  /** Direct events amend rendered turns, so they must follow the records received before them. */
+  public settleRelaySessionRecords(sessionId: string): void {
+    try { this.flushRelaySessionRecords(sessionId); }
+    catch (error) { log.error('Relay session records could not be rendered', { sessionId, error }); }
+  }
+
+  /**
+   * Render what the replica received since the last flush as one state update.
+   * The replica already holds these revisions and will not report them again, so
+   * a turn stays pending until it was rendered; one that cannot be converted does
+   * not hold back the others and is retried by the next flush.
+   */
   private flushRelaySessionRecords(sessionId: string): void {
     const surface = this.activeSurface;
     const pending = surface.relayPendingRecordTurns.get(sessionId);
     const replica = surface.relaySessionRecords.get(sessionId);
     if (!pending || !replica) return;
-    surface.relayPendingRecordTurns.delete(sessionId);
     // Closing the subscription of a removed session must not recreate its state.
-    if (!surface.state.sessions.has(sessionId)) return;
+    if (!surface.state.sessions.has(sessionId)) {
+      surface.relayPendingRecordTurns.delete(sessionId);
+      return;
+    }
     const previousTurn = surface.state.sessions.get(sessionId)?.dialogTurns;
     // A submission can be painted before the runtime allocates its turn ID.
     // The stable user-message ID joins that optimistic row to its echo.
     const incoming = new Map<string, DialogTurn>();
+    const settled = new Set<string>();
+    const failed = new Map<string, unknown>();
     for (const turnId of pending) {
-      const { turn } = replica.snapshot(turnId);
-      const dialogTurn = turn && this.convertToDialogTurns([turn], { activeTurnId: turn.turnId })[0];
-      if (dialogTurn) incoming.set(dialogTurn.userMessage.id, dialogTurn);
+      try {
+        const { turn } = replica.snapshot(turnId);
+        const dialogTurn = turn && this.convertToDialogTurns([turn], { activeTurnId: turn.turnId })[0];
+        if (dialogTurn) incoming.set(dialogTurn.userMessage.id, dialogTurn);
+        settled.add(turnId);
+      } catch (error) { failed.set(turnId, error); }
     }
     this.setState(previous => {
       const session = previous.sessions.get(sessionId);
       if (!session) return previous;
       const dialogTurns = session.dialogTurns.filter(turn => (
-        !pending.has(turn.id) && !incoming.has(turn.userMessage.id)
+        !settled.has(turn.id) && !incoming.has(turn.userMessage.id)
       ));
+      const newestRetained = dialogTurns.at(-1);
+      const compare = (a: DialogTurn, b: DialogTurn): number => (
+        a.storageTurnIndex !== undefined && b.storageTurnIndex !== undefined
+          ? a.storageTurnIndex - b.storageTurnIndex : a.startTime - b.startTime
+      );
       if (incoming.size > 0) {
         dialogTurns.push(...incoming.values());
-        dialogTurns.sort((a, b) => a.storageTurnIndex !== undefined && b.storageTurnIndex !== undefined
-          ? a.storageTurnIndex - b.storageTurnIndex : a.startTime - b.startTime);
+        dialogTurns.sort(compare);
       }
+      // Live turns move the tail of a partial view; older pages do not.
+      const rendered = new Set(session.dialogTurns.flatMap(turn => [turn.id, turn.userMessage.id]));
+      const appended = [...incoming.values()].filter(turn => (
+        !rendered.has(turn.id) && !rendered.has(turn.userMessage.id)
+        && !!newestRetained && compare(turn, newestRetained) > 0
+      )).length;
+      const removed = session.dialogTurns.filter(turn => (
+        settled.has(turn.id) && !incoming.has(turn.userMessage.id)
+      )).length;
       const sessions = new Map(previous.sessions);
-      sessions.set(sessionId, { ...session, dialogTurns });
+      sessions.set(sessionId, { ...session, dialogTurns,
+        totalTurnCount: session.isPartial === true && session.totalTurnCount !== undefined
+          ? Math.max(session.totalTurnCount + appended - removed, dialogTurns.length)
+          : session.totalTurnCount });
       return { ...previous, sessions };
     });
+    if (failed.size > 0) surface.relayPendingRecordTurns.set(sessionId, new Set(failed.keys()));
+    else surface.relayPendingRecordTurns.delete(sessionId);
     const mailbox = surface.relayQuestionMailboxes.get(sessionId);
     if (mailbox) {
       const turns = this.state.sessions.get(sessionId)?.dialogTurns ?? [];
@@ -6249,6 +6341,8 @@ export class FlowChatStore {
           ? ProcessingPhase.TOOL_CALLING : ProcessingPhase.THINKING,
       pendingTools, error: latest?.error ?? null,
     });
+    const [failure] = failed.values();
+    if (failed.size > 0) throw failure;
   }
 
   public updateDialogTurn(
@@ -8619,6 +8713,7 @@ export class FlowChatStore {
       return;
     }
     if (scope.surfaceId !== 'local') {
+      if (isUnmaterializedSessionDraft(initialSession)) return;
       if (initialSession?.externalHistory?.mode === 'follow') {
         // Relay history has its own cursor/version contract. Until it can pin
         // immutable source snapshots, do not silently project a stale source.

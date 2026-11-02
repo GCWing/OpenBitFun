@@ -194,6 +194,16 @@ function buildCatalogOrdinalMaps(session: TurnIdentitySession): {
   return { ordinalByTurnId, ordinalByStorageIndex };
 }
 
+/**
+ * A partial projection holds the tail of a Session. Its ordinals are anchored to
+ * the total, so without a total or catalog a loaded position is not an ordinal.
+ */
+export function sessionTurnOrdinalsKnown(session: TurnIdentitySession): boolean {
+  return session.isPartial !== true
+    || session.totalTurnCount !== undefined
+    || validSessionTurnCatalog(session) !== undefined;
+}
+
 export function createTurnOrdinalResolver(
   session: TurnIdentitySession,
 ): (localIndex: LocalTurnIndex | number) => TurnOrdinal | undefined {
@@ -203,9 +213,11 @@ export function createTurnOrdinalResolver(
     ? Math.max(0, projectedSessionTurnCount(session) - canonicalTurns.length)
     : 0;
   const fallbackOrdinalByTurnId = new Map<string, TurnOrdinal>();
-  canonicalTurns.forEach((turn, index) => {
-    fallbackOrdinalByTurnId.set(turn.id, asTurnOrdinal(fallbackStartOrdinal + index));
-  });
+  if (sessionTurnOrdinalsKnown(session)) {
+    canonicalTurns.forEach((turn, index) => {
+      fallbackOrdinalByTurnId.set(turn.id, asTurnOrdinal(fallbackStartOrdinal + index));
+    });
+  }
 
   return (localIndex): TurnOrdinal | undefined => {
     const turn = session.dialogTurns[localIndex];

@@ -45,13 +45,14 @@ export class RelaySessionHistory {
   /**
    * `onRecord` must only reduce the record: the host sends each record of a page
    * as its own event, so rendering there is quadratic in the items of a long
-   * turn. `onFlush` renders what was reduced, at most once a frame. Live pages
-   * have no ready event, so the timer is what publishes them; a replayed page
-   * flushes before its ready event so a reader never sees ready without records.
+   * turn. It returns true for a record that cannot wait for the next frame.
+   * `onFlush` renders what was reduced. Live pages have no ready event, so the
+   * timer is what publishes them; a replayed page flushes before its ready event
+   * so a reader never sees ready without records.
    */
   constructor(
     readonly sessionId: string,
-    onRecord: (record: SessionRecord) => void,
+    onRecord: (record: SessionRecord) => boolean | void,
     onReady: (ready: RelayHistoryReady) => void,
     onError: (error: unknown) => void,
     onResumed?: () => Promise<void>,
@@ -63,7 +64,10 @@ export class RelaySessionHistory {
       if (!this.isCurrent()) return;
       const record = value as SessionRecord;
       if (record.sessionId !== this.sessionId) return;
-      try { onRecord(record); this.scheduleFlush(); } catch (error) { this.fail(error); }
+      try {
+        if (onRecord(record) === true) this.flush();
+        else this.scheduleFlush();
+      } catch (error) { this.fail(error); }
     }));
     this.listeners.push(remoteConnectAPI.onSessionSyncError(error => {
       if (!this.isCurrent() || error.sessionId !== this.sessionId || error.targetDeviceId !== this.scope.surfaceId) return;
@@ -90,11 +94,13 @@ export class RelaySessionHistory {
     // A closed subscription may never have had an open() caller.
     void this.firstPage.catch(() => {});
     if (typeof document !== 'undefined') {
-      const resumePrefetch = () => {
+      const onVisibilityChanged = () => {
+        // Hidden windows throttle the flush timer; never leave a returning view stale.
+        if (this.flushTimer !== null) this.flush();
         if (document.visibilityState !== 'hidden') this.scheduleHistoryPrefetch();
       };
-      document.addEventListener('visibilitychange', resumePrefetch);
-      this.listeners.push(() => document.removeEventListener('visibilitychange', resumePrefetch));
+      document.addEventListener('visibilitychange', onVisibilityChanged);
+      this.listeners.push(() => document.removeEventListener('visibilitychange', onVisibilityChanged));
     }
   }
 

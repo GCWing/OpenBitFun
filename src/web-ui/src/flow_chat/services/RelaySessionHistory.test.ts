@@ -24,7 +24,11 @@ import { RelaySessionHistory } from './RelaySessionHistory';
 
 describe('RelaySessionHistory', () => {
   beforeEach(() => { vi.clearAllMocks(); fixture.current = true; });
-  afterEach(() => { vi.useRealTimers(); });
+  afterEach(() => {
+    if (vi.isFakeTimers()) vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it('registers before cache replay, then uses the same subscription for older pages', async () => {
     const apply = vi.fn();
@@ -107,6 +111,52 @@ describe('RelaySessionHistory', () => {
     fixture.record?.({ sessionId: 'session', id: 'item/3' });
     await vi.advanceTimersByTimeAsync(16);
     expect(flush).toHaveBeenCalledTimes(2);
+    history.close();
+  });
+
+  it('flushes at once when a record cannot wait for the next frame', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
+      return 'subscription';
+    });
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', record => (record as any).id === 'item/final',
+      vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    fixture.record?.({ sessionId: 'session', id: 'item/1' });
+    expect(flush).not.toHaveBeenCalled();
+    fixture.record?.({ sessionId: 'session', id: 'item/final' });
+    expect(flush).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(flush).toHaveBeenCalledOnce();
+    history.close();
+  });
+
+  it('flushes on a visibility change instead of waiting for a throttled timer', async () => {
+    vi.useFakeTimers();
+    const listeners: Array<() => void> = [];
+    vi.stubGlobal('document', {
+      visibilityState: 'hidden',
+      addEventListener: (_: string, listener: () => void) => listeners.push(listener),
+      removeEventListener: vi.fn(),
+    });
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 0 });
+      return 'subscription';
+    });
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    flush.mockClear();
+
+    listeners.forEach(listener => listener());
+    expect(flush).not.toHaveBeenCalled();
+    fixture.record?.({ sessionId: 'session', id: 'item/1' });
+    listeners.forEach(listener => listener());
+    expect(flush).toHaveBeenCalledOnce();
     history.close();
   });
 

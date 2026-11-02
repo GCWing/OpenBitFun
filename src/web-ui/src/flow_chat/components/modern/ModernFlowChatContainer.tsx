@@ -124,6 +124,7 @@ import {
   canonicalSessionTurns,
   projectedSessionTurnCount,
   resolveTurnOrdinal,
+  sessionTurnOrdinalsKnown,
 } from '../../utils/flowChatTurnIdentity';
 import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
 import { peekConversationViewTransfer, registerConversationReader, takeConversationViewTransfer } from './flowChatViewHandoff';
@@ -1088,7 +1089,9 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const absoluteRenderedTurnSummaryById = useMemo(() => {
     return new Map(absoluteRenderedTurnSummaries.map(turn => [turn.turnId, turn]));
   }, [absoluteRenderedTurnSummaries]);
+  const turnOrdinalsKnown = !activeSession || sessionTurnOrdinalsKnown(activeSession);
   const turnRailItems = useMemo<FlowChatTurnRailItem[]>(() => {
+    if (!turnOrdinalsKnown) return [];
     const historyView = activeSession?.sessionId
       ? flowChatStore.getSessionHistoryViewState(activeSession.sessionId)
       : undefined;
@@ -1184,6 +1187,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
 
     return items.sort((left, right) => left.turnIndex - right.turnIndex);
   }, [
+    turnOrdinalsKnown,
     absoluteRenderedTurnSummaries,
     activeSession?.dialogTurns,
     activeSession?.sessionId,
