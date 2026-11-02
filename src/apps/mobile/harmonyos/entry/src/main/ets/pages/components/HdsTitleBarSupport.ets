@@ -2,10 +2,10 @@
  * The wiring between the top chrome and the platform's HDS title bar.
  *
  * The compact conversation route hands its header to the platform: the band's
- * title, its back control and its menu are `HdsNavDestination.titleBar` content,
- * and the band's gradient blur and immersive material are its style. This file is
- * the one place that asks the two questions behind that handover and turns the
- * answers into platform values:
+ * title and its menu trigger are `HdsNavDestination.titleBar` content, the return
+ * control is the platform's own, and the band's gradient blur and immersive
+ * material are its style. This file is the one place that asks the two questions
+ * behind that handover and turns the answers into platform values:
  *
  * 1. *What can this device name?* — `HdsTitleBarSupport.decide()`, which resolves
  *    the pure policy (`resolveHdsTitleBar`) against the facts
@@ -23,6 +23,17 @@
  *    is the gradient blur's two ends, and because every colour here is a
  *    `$r('app.color.*')` resource the platform's own colour inversion can act on
  *    it (the plan's note: `colorInvert` follows resource-set colours only).
+ *
+ * The two controls are the platform's, not the app's. The back control is
+ * `HdsNavDestination`'s own — this file configures no `backIcon` at all, so the
+ * platform draws its own glyph in its own circular chip — and the menu trigger is
+ * the system four-dot symbol, which is the one glyph the platform sizes itself
+ * (`HdsNavigationIconOptions.icon` is an `IconType`, and the modifier that carries
+ * a symbol into that slot comes from `SystemSymbolIcon`, the one leaf that names
+ * the platform's own symbol value). The app's own bitmaps are a 38x59 return glyph
+ * and a 64x19 overflow glyph, and a square platform icon slot renders the second
+ * one as a dark blob: an asset that carries its own aspect ratio belongs on a
+ * surface the app sizes, not in a slot the platform sizes.
  *
  * Who reads it: `AppRootPresentation` builds the conversation route's band from
  * `options()`, and the immersive preview's title bar scenario builds the same
@@ -47,28 +58,26 @@ import { ConversationHeaderPresentation } from '../policy/ConversationHeaderPoli
 import { HdsTitleBarMaterialService, HdsTitleBarSnapshot } from '../../services/HdsTitleBarMaterialService';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CONVERSATION_HEADER_MENU_ANCHOR_ID } from './ConversationHeaderMenu';
-import { CARD, INK, MUTED, PAGE_BG_OVERLAY, TRANSPARENT } from './Theme';
+import { SystemSymbolIcon } from './SystemSymbolIcon';
+import { INK, MUTED, PAGE_BG_OVERLAY, TRANSPARENT } from './Theme';
 
 /**
- * What one band says and what its controls do.
+ * What one band says and what its one control does.
  *
  * The content is the caller's — only the call site knows which conversation is
- * open and which chrome owns the drawer — while the style is this file's, so the
- * tier table has one consumer per platform value rather than one per call site.
+ * open — while the style is this file's, so the tier table has one consumer per
+ * platform value rather than one per call site.
+ *
+ * There is no `backIcon` here because the band owns no back control: the platform
+ * draws its own, and the tap reaches the call site's `.onBackPressed`. There is no
+ * `showBack` either, because the platform's control is not optional either way:
+ * the destination shows it and both call sites call `hideBackButton(false)`.
  */
 export interface HdsTitleBarContentParams {
   /** The band's title: the session's name, or the surface's fallback. */
   mainTitle: string;
   /** The band's second line; empty for a surface that has none. */
   subTitle: string;
-  /** True where this band is the top of a pushed page and shows a back control. */
-  showBack: boolean;
-  /** The back control's image — the app's approved return asset. */
-  backIcon: ResourceStr;
-  /** The back control's accessibility label. */
-  backLabel: string;
-  /** The menu trigger's image — the app's approved overflow asset. */
-  menuIcon: ResourceStr;
   /** The menu trigger's accessibility label. */
   menuLabel: string;
   /**
@@ -76,21 +85,17 @@ export interface HdsTitleBarContentParams {
    * trigger's own node, and the conversation opens its menu with it.
    */
   menuAnchorId: string;
-  onBack: () => void;
   onMenu: () => void;
 }
 
 /**
- * What the band's two controls do, which is the only part a call site owns.
+ * What the band's control does, which is the only part a call site owns.
  *
  * The text is the conversation header's own projection, so both the app root and
  * the preview resolve it through `ConversationHeaderPolicy` and the band cannot
  * say something the content area disagrees with.
  */
 export interface HdsTitleBarHooks {
-  /** True where this band is the top of a pushed page and shows a back control. */
-  showBack: boolean;
-  onBack: () => void;
   onMenu: () => void;
 }
 
@@ -107,10 +112,14 @@ export class HdsTitleBarSupport {
   /**
    * The conversation band's content, assembled once for every call site.
    *
-   * The title and the subtitle are the header's own projection and every asset
-   * and label is the app's existing one, so the app root and the immersive
+   * The title and the subtitle are the header's own projection and the menu
+   * label is the app's existing one, so the app root and the immersive
    * preview's title bar scenario cannot describe the same band differently: the
    * preview imports this method rather than restating what a band is made of.
+   *
+   * What is *not* here is as deliberate as what is: the band's two glyphs belong
+   * to the platform, so no call site can hand it an asset of its own — which is
+   * exactly how the 64x19 overflow bitmap ended up in a 24vp square slot.
    */
   static conversationParams(
     presentation: ConversationHeaderPresentation,
@@ -121,13 +130,8 @@ export class HdsTitleBarSupport {
       // back to when it has none, because a policy may not hold translated text.
       mainTitle: presentation.title.length > 0 ? presentation.title : RemoteI18n.t(presentation.fallbackKey),
       subTitle: presentation.subtitle,
-      showBack: hooks.showBack,
-      backIcon: $r('app.media.remote_ref_back'),
-      backLabel: RemoteI18n.t('common.back'),
-      menuIcon: $r('app.media.remote_ref_more'),
       menuLabel: RemoteI18n.t('sidebar.more'),
       menuAnchorId: CONVERSATION_HEADER_MENU_ANCHOR_ID,
-      onBack: hooks.onBack,
       onMenu: hooks.onMenu
     };
   }
@@ -161,20 +165,22 @@ export class HdsTitleBarSupport {
           mainTitle: params.mainTitle,
           subTitle: params.subTitle
         },
-        // The platform's own back control, carrying the app's asset: a pushed
-        // conversation leaves for the home screen, which is where the drawer is.
-        backIcon: {
-          icon: params.backIcon,
-          label: params.backLabel,
-          isEnabled: params.showBack,
-          action: (): void => {
-            params.onBack();
-          }
-        },
+        // No `backIcon` block: the platform's own control is the only one this
+        // band can show, and it is reached by leaving the block out, not by
+        // leaving `icon` out of it (`HdsNavigationIconOptions.icon` is optional
+        // and an unconfigured one draws an empty slot). The tap arrives at the
+        // destination's `.onBackPressed`, which both call sites register, so the
+        // platform's own glyph and its own action stay one control.
         menu: {
           value: [{
             content: {
-              icon: params.menuIcon,
+              // The system four-dot grid, not the app's 64x19 overflow bitmap:
+              // the slot is the platform's (24vp square by default) and it owns
+              // the glyph's size, so a wide three-dot asset cannot survive it.
+              // `SystemSymbolIcon` is the one import of the platform's own symbol
+              // value — the modifier is the whole configuration, with no `width`,
+              // `height` or `fontSize` on it, because HDS sizes its own slot.
+              icon: SystemSymbolIcon.modifier($r('sys.symbol.square_grid_2x2')),
               label: params.menuLabel,
               isEnabled: true,
               // The id, not the trigger: the conversation opens its own menu
@@ -267,6 +273,25 @@ export class HdsTitleBarSupport {
    * already uses for a band a transcript scrolls under — a partial-alpha page
    * colour under the blur, not a replacement for it, so the title stays legible
    * on a build or a device where the blur does not land.
+   *
+   * The floor, the two text lines and the platform's own return glyph's ink are
+   * the whole of it. The two controls keep the platform's own chip — no
+   * `menuStyle` and no `backIconStyle.backgroundColor` — because the chip is what
+   * the platform draws and the app has no business recolouring it.
+   *
+   * The back control's *ink* is the one thing the platform cannot answer for here.
+   * `HdsNavigationIconItemStyle.iconColor` defaults to the immersive pair: while
+   * the floor is `TRANSPARENT` (the band at rest, over the page the app leaves
+   * open) the platform paints the default glyph in `sys.color.icon_on_primary` —
+   * a light, appearance-independent colour — on a chip whose fill *does* follow the
+   * appearance. Measured on the phone: at rest in the light appearance the chip's
+   * interior is uniformly white (luminance min 243), so the platform's own arrow
+   * was invisible and the only way out of a conversation looked like an empty
+   * circle; once the transcript is under the band the same glyph is drawn dark and
+   * legible. The floor stays transparent — that is the immersive band, and the user
+   * owns it — so the ink is stated here, from the theme, and only for the return
+   * glyph: the menu trigger is a symbol modifier and already carries the theme's
+   * ink, which is why it never needed this.
    */
   private static barStyle(scrolledUnder: boolean): HdsNavigationTitleBarStyle {
     return {
@@ -278,15 +303,7 @@ export class HdsTitleBarSupport {
           mainTitleColor: INK,
           subTitleColor: MUTED
         },
-        // The two controls keep the card chrome the conversation's own header
-        // drew them with; the colour is a theme resource, so the platform's
-        // inversion follows the appearance like every other surface here.
-        menuStyle: {
-          backgroundColor: CARD,
-          iconColor: INK
-        },
         backIconStyle: {
-          backgroundColor: CARD,
           iconColor: INK
         }
       }

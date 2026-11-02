@@ -30,6 +30,8 @@ const conversationHeaderMenu = source('entry/src/main/ets/pages/components/Conve
 const composerBar = source('entry/src/main/ets/pages/components/ComposerBar.ets');
 const rollbackStagingBar = source('entry/src/main/ets/pages/components/RollbackStagingBar.ets');
 const immersiveSurfaceSupport = source('entry/src/main/ets/pages/components/ImmersiveSurfaceSupport.ets');
+const navigationBackButton = source('entry/src/main/ets/pages/components/NavigationBackButton.ets');
+const systemSymbolIcon = source('entry/src/main/ets/pages/components/SystemSymbolIcon.ets');
 const hdsTitleBarSupport = source('entry/src/main/ets/pages/components/HdsTitleBarSupport.ets');
 const hdsTitleBarPolicy = source('entry/src/main/ets/pages/policy/HdsTitleBarPolicy.ets');
 const hdsTitleBarMaterialService = source('entry/src/main/ets/services/HdsTitleBarMaterialService.ets');
@@ -1810,18 +1812,41 @@ test('the platform band is themed, and its two ends are two ends of one gradient
     /(?:backgroundColor|mainTitleColor|subTitleColor|iconColor):\s*(?:[A-Za-z0-9_]+ \? )?([A-Za-z0-9_]+)(?: : ([A-Za-z0-9_]+))?/g)]
     .flatMap((match) => [match[1], match[2]].filter((value) => value !== undefined));
   const distinct = [...new Set(values)].sort();
-  assert.deepEqual(distinct, ['CARD', 'INK', 'MUTED', 'PAGE_BG_OVERLAY', 'TRANSPARENT'],
-    'the band states a colour for its floor, its two lines and its two controls, and nothing else');
+  assert.deepEqual(distinct, ['INK', 'MUTED', 'PAGE_BG_OVERLAY', 'TRANSPARENT'],
+    'the band states a colour for its floor, its two lines and the platform return glyph\'s ink, and nothing ' +
+    'else: the chips are the platform\'s, so there is no chip fill or menu colour to state');
   for (const value of distinct) {
     assert.ok(tokens.includes(value),
       `${value} must be a Theme token imported by the support class: a literal colour stops following the appearance`);
   }
+  // The key vocabulary is re-derived from `barStyle`: the return glyph's *ink* is
+  // stated (the platform's own default for it is the immersive pair — light while
+  // the floor is transparent — so at rest in the light appearance the platform drew
+  // a white arrow on a light chip and the way out of a conversation was invisible),
+  // and nothing else about that control is: no `backgroundColor`, because the chip
+  // is the platform's, and no `menuStyle` at all, because the menu trigger is a
+  // symbol modifier that already carries the theme's ink.
   const keys = [...barStyle.matchAll(
     /\b(backgroundStyle|contentStyle|titleStyle|menuStyle|backIconStyle|backgroundColor|iconColor|mainTitleColor|subTitleColor)\b/g)]
     .map((match) => match[1]);
-  assert.deepEqual([...new Set(keys)].sort(), ['backIconStyle', 'backgroundColor', 'contentStyle', 'iconColor',
-    'mainTitleColor', 'menuStyle', 'subTitleColor', 'titleStyle', 'backgroundStyle'].sort(),
-    'the band may only answer the style keys the title bar has, and every one of its parts has to answer its own');
+  assert.deepEqual([...new Set(keys)].sort(), ['backgroundStyle', 'contentStyle', 'titleStyle', 'backIconStyle',
+    'backgroundColor', 'iconColor', 'mainTitleColor', 'subTitleColor'].sort(),
+    'the band answers the floor, the two text lines and the return glyph\'s ink, and every one of its parts ' +
+    'answers its own key');
+  // Each control's block is read *whole*, and asserted as a key set: a block is a set
+  // of keys, so `{ backgroundColor, iconColor }` is the same defect as the same two
+  // keys in the other order, and a guard that read only the first key of a block would
+  // pass one of the two spellings of the very thing it exists to stop. The vocabulary
+  // is one key, and only the return control has a block at all: the chip's fill is the
+  // platform's, and the menu trigger's symbol modifier already carries the theme's ink.
+  const controlBlocks = [...barStyle.matchAll(/(menuStyle|backIconStyle): \{([^}]*)\}/g)]
+    .map((match) => [match[1], [...match[2].matchAll(/(\w+)\s*:/g)].map((key) => key[1])]);
+  assert.deepEqual(controlBlocks.map((block) => block[0]), ['backIconStyle'],
+    'the return control is the only control the band styles at all: a `menuStyle` is a second chip the menu ' +
+    'trigger does not need, and there is no third control to answer for');
+  assert.deepEqual(controlBlocks[0][1].slice().sort(), ['iconColor'],
+    'the return glyph may state its ink and nothing else: a `backgroundColor` there is the app recolouring the ' +
+    'platform\'s own chip, in any key order, and a `menuStyle` is a second chip the menu trigger does not need');
   for (const [name, text] of [['HdsTitleBarSupport', hdsTitleBarSupport], ['HdsTitleBarPolicy', hdsTitleBarPolicy],
     ['HdsTitleBarMaterialService', hdsTitleBarMaterialService], ['ConversationHeaderMenu', conversationHeaderMenu]]) {
     assert.equal(/0x[0-9a-fA-F]|'#/.test(codeOf(text)), false,
@@ -1829,25 +1854,58 @@ test('the platform band is themed, and its two ends are two ends of one gradient
   }
 });
 
-test('the band\'s controls carry the app\'s own assets, and a surface wears one material', () => {
-  // Both controls are the app's approved assets, and the two are the whole list:
-  // a title bar is not a place to introduce a third glyph, and a screenshot cannot
-  // tell a copied icon from an approved one.
+test('the band carries the platform\'s own controls, and a surface wears one material', () => {
+  // Neither control is the app's any more. The band configures no `content.backIcon`
+  // at all, so the platform draws its own return control — an `icon` left out of a
+  // `backIcon` block would be an empty slot, not the platform's arrow — and the menu
+  // trigger is the system four-dot symbol. The assets that used to fill those slots
+  // were a 38x59 return bitmap and a 64x19 overflow bitmap: HDS sizes its icon slot to
+  // a 24vp square, so the wide one was rendered as a dark blob, which is the defect
+  // this pins against. A screenshot cannot tell a squashed bitmap from a symbol.
+  //
+  // What the app still owns about that platform control is its ink, and only its ink:
+  // measured on the phone, the platform's default for the return glyph while the floor
+  // is transparent is a light colour on a chip that follows the appearance, so the
+  // arrow was unreadable in the light appearance at rest. `barStyle()` therefore states
+  // `backIconStyle.iconColor` and nothing else about either control.
   const content = normalize(staticBody(hdsTitleBarSupport, 'static conversationParams('));
-  assert.match(content, /backIcon: \$r\('app\.media\.remote_ref_back'\), backLabel: RemoteI18n\.t\('common\.back'\)/,
-    'the back control must carry the app\'s return asset and a label');
-  assert.match(content, /menuIcon: \$r\('app\.media\.remote_ref_more'\), menuLabel: RemoteI18n\.t\('sidebar\.more'\)/,
-    'the menu trigger must carry the app\'s overflow asset and a label');
+  assert.match(content, /menuLabel: RemoteI18n\.t\('sidebar\.more'\)/,
+    'the menu trigger must keep its label: the platform draws the glyph, the app still owns the words');
   assert.match(content, /menuAnchorId: CONVERSATION_HEADER_MENU_ANCHOR_ID/,
     'the trigger must hand the conversation the id its menu opens against');
-  const assets = [...new Set([...normalize(hdsTitleBarSupport).matchAll(/\$r\('app\.media\.([a-z_]+)'\)/g)]
-    .map((match) => match[1]))].sort();
-  assert.deepEqual(assets, ['remote_ref_back', 'remote_ref_more'],
-    'the band draws the app\'s return and overflow assets and nothing else');
-  for (const asset of assets) {
-    assert.ok(fs.existsSync(path.join(__dirname, '../../entry/src/main/resources/base/media', `${asset}.png`)),
-      `${asset} must exist: the asset is not new, and a missing one is a blank control`);
-  }
+  const body = codeOf(hdsTitleBarSupport);
+  assert.equal(occurrences(body, "$r('sys.symbol.square_grid_2x2')"), 1,
+    'the band must name the system four-dot symbol exactly once: one trigger, one glyph');
+  assert.equal(occurrences(body, 'SystemSymbolIcon.modifier('), 1,
+    'the band must carry that symbol in the platform modifier an HDS icon slot takes: a `ResourceStr` there ' +
+    'is an image slot, and the platform draws its own back control from the same vocabulary');
+  assert.equal(occurrences(codeOf(systemSymbolIcon),
+    "import { SymbolGlyphModifier } from '@kit.ArkUI';"), 1,
+    'the platform symbol value has one home: the design kit is the only API family the band\'s own files read');
+  assert.equal(occurrences(body, "$r('app.media."), 0,
+    'the band must name no app asset at all: `remote_ref_back` and `remote_ref_more` were the two bitmaps ' +
+    'forced into the platform\'s square icon slots, and the platform supplies both controls now');
+  assert.equal(/backIcon\s*:\s*\{/.test(body), false,
+    'the band must configure no `backIcon` content block: the platform\'s own control is reached by omitting the ' +
+    'block, and a block whose `icon` is unset draws an empty slot instead of an arrow');
+  const backInk = /backIconStyle: \{([^}]*)\}/.exec(normalize(staticBody(hdsTitleBarSupport, 'private static barStyle(')));
+  assert.notEqual(backInk, null,
+    'the return glyph\'s ink must be stated once in `barStyle`: the platform\'s own default for it is the ' +
+    'immersive pair, which is invisible on the light chip while the floor is transparent');
+  assert.match(backInk[1], /iconColor: INK/,
+    'that ink must be the theme\'s own, so the platform\'s colour inversion still follows the appearance');
+  // The return asset must stay on disk, because production still draws it: it is the
+  // glyph of the app's own floating return control (`NavigationBackButton`, guarded
+  // below). The overflow asset is deliberately *not* asserted here any more:
+  // `remote_ref_more` is retained as the app's approved overflow glyph, but no
+  // production surface on this platform draws it now — its siblings in the same
+  // reference set (`remote_ref_menu`) are in that state too — so a loop that required
+  // it would pin a file nothing reads and would fail a legitimate later asset pruning
+  // instead of describing what the app does.
+  assert.ok(fs.existsSync(path.join(__dirname, '../../entry/src/main/resources/base/media', 'remote_ref_back.png')),
+    'remote_ref_back must stay on disk: the app\'s own floating return control still draws it');
+  assert.match(normalize(navigationBackButton), /src: \$r\('app\.media\.remote_ref_back'\)/,
+    'the app\'s own floating return control must keep its approved asset: only the platform band gave it up');
 
   // One material channel per surface, and the two bands are on different sides of it.
   // The compact route's band is a navigation bar: its material arrives through the
@@ -1941,12 +1999,16 @@ test('the preview drives the real band rather than a second copy of its paramete
     /import \{ ConversationHeaderPolicy, ConversationHeaderPresentation \} from '\.\.\/policy\/ConversationHeaderPolicy';/,
     'the fixture\'s title must come from the header policy the pane itself reads');
   assert.match(preview, /HdsTitleBarSupport\.conversationParams\(presentation, \{/,
-    'the fixture must let the support class assemble the content, so its assets and labels are the app\'s');
+    'the fixture must let the support class assemble the content: the label is the app\'s and the two controls ' +
+    'are the platform\'s, and a fixture that named either could drift from it');
   assert.match(preview, /options\.platformBar = this\.hdsTitleBar;/,
     'the pane under the bar must be told who owns its top edge');
-  for (const literal of ['GRADIENT_BLUR', 'systemMaterialEffect', 'hdsMaterial', 'remote_ref_']) {
+  // The fixture names the tier table no more than it names the controls: the symbol
+  // and the app's bitmaps both belong to production, and a fixture that restated one
+  // would keep its capture looking right after the app had moved on.
+  for (const literal of ['GRADIENT_BLUR', 'systemMaterialEffect', 'hdsMaterial', 'remote_ref_', 'square_grid_2x2']) {
     assert.equal(preview.includes(literal), false,
-      `the fixture must not restate ${literal}: the tier table and the assets belong to production`);
+      `the fixture must not restate ${literal}: the tier table and the band's controls belong to production`);
   }
   // The trigger's request travels the way the app root's does — as state the pane
   // consumes by sequence — because the pane is not the component that was tapped.

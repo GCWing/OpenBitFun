@@ -14,12 +14,21 @@ import {
 } from './Theme';
 import { CompactMenuButton } from './CompactMenuButton';
 import { NavigationBackButton } from './NavigationBackButton';
-import { TemplateIcon } from './TemplateIcon';
 import { SidebarToggleButton } from './SidebarToggleButton';
 import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
 import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 
 const HEADER_ACTION_SURFACE_SIZE: number = 42;
+
+/**
+ * The overflow trigger's glyph size, in vp.
+ *
+ * The platform's own title-bar chip puts the system four-dot symbol in a 24vp
+ * slot, and this is the same symbol for the same action on the self-drawn band,
+ * so it keeps that size inside the app's larger 42vp circle: the two postures
+ * show one trigger at one optical weight.
+ */
+const HEADER_ACTION_GLYPH_SIZE: number = 24;
 
 @ComponentV2
 export struct ConversationHeader {
@@ -183,11 +192,14 @@ export struct ConversationHeader {
     if (this.showActions) {
       Button() {
         Stack({ alignContent: Alignment.Center }) {
-          TemplateIcon({
-            src: $r('app.media.remote_ref_more'),
-            iconWidth: 23,
-            iconHeight: 7
-          })
+          // The same four-dot system symbol the compact band's trigger carries, so
+          // one action has one glyph on both postures. The glyph is sized by
+          // `fontSize` alone: a `SymbolGlyph` forced to a width by
+          // `.width()`/`.height()` draws its ink left-anchored in the forced box
+          // rather than scaling, and HDS's own slot puts this symbol in 24vp.
+          SymbolGlyph($r('sys.symbol.square_grid_2x2'))
+            .fontSize(HEADER_ACTION_GLYPH_SIZE)
+            .fontColor([INK])
         }
         .width(HEADER_ACTION_SURFACE_SIZE)
         .height(HEADER_ACTION_SURFACE_SIZE)

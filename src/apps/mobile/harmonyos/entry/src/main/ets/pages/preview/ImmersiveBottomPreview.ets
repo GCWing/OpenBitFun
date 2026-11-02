@@ -612,6 +612,9 @@ export struct ImmersiveBottomPreview {
   /**
    * The band's content, from the projection the pane's own header reads: the
    * fixture has one conversation and the bar has to name it the same way.
+   *
+   * There is no return control to configure: the band carries none, the platform
+   * draws its own, and the destination's `onBackPressed` above is its action.
    */
   private titleBarParams(): HdsTitleBarContentParams {
     const presentation: ConversationHeaderPresentation = ConversationHeaderPolicy.present(
@@ -622,10 +625,6 @@ export struct ImmersiveBottomPreview {
       ConversationViewContract.hasRealTimelineItem(this.state.timelineItems)
     );
     return HdsTitleBarSupport.conversationParams(presentation, {
-      showBack: true,
-      onBack: (): void => {
-        this.pageStack.pop();
-      },
       onMenu: (): void => {
         this.requestPreviewMenu();
       }

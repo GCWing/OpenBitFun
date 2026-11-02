@@ -230,9 +230,10 @@ export struct AppRootPresentation {
   NavigationDestination(name: string) {
     if (AppRouteContract.isSessionRoute(name as AppRoute) && !this.isWideLayout()) {
       HdsNavDestination() { this.RouteContent(name as AppRoute) }
-        // The band's own back control: the conversation is a pushed page, and
-        // leaving it is what the app's return asset means. The drawer is on the
-        // home screen this returns to.
+        // The platform's own return control: the conversation is a pushed page,
+        // and the band configures no `backIcon`, so the platform draws its own
+        // glyph in its own chip. The drawer is on the home screen this returns to,
+        // and the tap arrives at the `onBackPressed` below.
         .titleBar(HdsTitleBarSupport.options(this.conversationTitleBarParams(name as AppRoute)))
         .hideBackButton(false)
         .backgroundColor(PAGE_BG)
@@ -244,12 +245,14 @@ export struct AppRootPresentation {
   }
 
   /**
-   * What the compact conversation's title bar says and what its controls do.
+   * What the compact conversation's title bar says and what its control does.
    *
    * The header's text is the same projection the pane's own header used, read
    * through the same policy, so the band cannot name the conversation something
    * the content area disagrees with. The menu trigger only reports the request:
    * the menu's rows belong to the conversation, which is where their state is.
+   * The band has no return control to configure — the platform draws its own, and
+   * the destination's `onBackPressed` above is where its tap lands.
    */
   private conversationTitleBarParams(route: AppRoute): HdsTitleBarContentParams {
     const viewState: ConversationViewState = ConversationViewState.project(
@@ -266,10 +269,6 @@ export struct AppRootPresentation {
       ConversationViewContract.hasRealTimelineItem(viewState.timelineItems)
     );
     return HdsTitleBarSupport.conversationParams(presentation, {
-      showBack: true,
-      onBack: (): void => {
-        this.actions.onNavigationBack(route);
-      },
       onMenu: (): void => {
         this.remotePageState.requestConversationHeaderMenu();
       }
