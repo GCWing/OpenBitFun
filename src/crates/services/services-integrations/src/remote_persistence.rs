@@ -600,6 +600,9 @@ pub enum SavedAuthTypeRecord {
         fallback_key_path: Option<String>,
     },
     KeyboardInteractive,
+    /// Server accepts the connection without credentials; kept in sync with
+    /// `remote_ssh::types::SavedAuthType::None` so migrated profiles survive.
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

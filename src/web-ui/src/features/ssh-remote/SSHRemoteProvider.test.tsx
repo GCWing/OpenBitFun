@@ -381,6 +381,47 @@ describe('SSHRemoteProvider startup restore', () => {
     );
   });
 
+  it('restores a none-authenticated workspace without inventing credentials', async () => {
+    const remoteWorkspace = {
+      id: 'ws-coder-1',
+      name: 'repos',
+      rootPath: '/root/repos',
+      workspaceType: WorkspaceType.SingleProject,
+      workspaceKind: WorkspaceKind.Remote,
+      languages: [] as string[],
+      openedAt: new Date().toISOString(),
+      lastAccessed: new Date().toISOString(),
+      tags: [] as string[],
+      connectionId: 'conn-coder',
+      connectionName: 'coder-agent',
+      sshHost: '127.0.0.1',
+    };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false,
+      openedWorkspaces: new Map([[remoteWorkspace.id, remoteWorkspace]]),
+      activeWorkspaceId: remoteWorkspace.id,
+    });
+    sshApiMock.listSavedConnections.mockResolvedValue([
+      {
+        id: 'conn-coder',
+        name: 'coder-agent',
+        host: '127.0.0.1',
+        port: 2222,
+        username: 'coder',
+        authType: { type: 'None' },
+      },
+    ]);
+    sshApiMock.connect.mockResolvedValue({ success: true, connectionId: 'conn-coder' });
+
+    await renderProvider();
+
+    expect(sshApiMock.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ auth: { type: 'None' } })
+    );
+    expect(sshApiMock.hasStoredPassword).not.toHaveBeenCalled();
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledWith('conn-coder', '/root/repos');
+  });
+
   it('keeps workspace restore metadata when its saved connection is unavailable', async () => {
     const remoteWorkspace = {
       id: 'ws-orphaned-1',

@@ -665,6 +665,27 @@ describe('PeerDeviceTransportAdapter queue', () => {
     expect(JSON.stringify(deviceRpc.mock.calls[0])).toContain('Ubuntu');
   });
 
+  it.each(['ssh_connect', 'ssh_save_connection', 'ssh_test_connection'])(
+    'rejects %s with none authentication before an older peer can fail to parse it', async (command) => {
+      const deviceRpc = vi.fn();
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+      await expect(adapter.request(command, { config: { auth: { type: 'None' } } }))
+        .rejects.toThrow('ssh_none_auth_v1_unsupported');
+      expect(deviceRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it('forwards none authentication to the negotiated host and leaves other methods alone', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { success: true } }));
+    const negotiated = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsSshNoneAuthV1: true });
+    await expect(negotiated.request('ssh_connect', { config: { auth: { type: 'None' } } }))
+      .resolves.toEqual({ success: true });
+    const older = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await expect(older.request('ssh_connect', { config: { auth: { type: 'Agent' } } }))
+      .resolves.toEqual({ success: true });
+    expect(deviceRpc).toHaveBeenCalledTimes(2);
+  });
+
   it('forwards MiniApp Agent context files after version negotiation', async () => {
     const outcome = { sessionId: 'session-1', turnId: 'turn-1' };
     const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
