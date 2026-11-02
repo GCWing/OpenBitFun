@@ -11,6 +11,7 @@ import {
 } from '@/infrastructure/peer-device/deviceSurface';
 import { PEER_CONTROLLER_LOCAL_COMMANDS } from '@/infrastructure/api/generated/remoteSurface';
 import { createLogger } from '@/shared/utils/logger';
+import { sshConnectionIdPortScope } from '@/shared/utils/sshConnectionIdentity';
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
 
 const log = createLogger('PeerDeviceTransport');
@@ -303,6 +304,7 @@ export interface PeerDeviceTransportHooks {
   /** Enables MiniApp Agent turns carrying inline image attachments. */
   supportsMiniAppAgentImagesV1?: boolean;
   supportsWslWorkspacesV1?: boolean;
+  supportsSshPortScopedIdentityV1?: boolean;
   supportsWholeSessionCopyV1?: boolean;
   supportsModelRoutingV1?: boolean;
   supportsModelPoolSelectionV1?: boolean;
@@ -445,6 +447,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsMiniAppAgentContextFilesV1'
       | 'supportsMiniAppAgentImagesV1'
       | 'supportsWslWorkspacesV1'
+      | 'supportsSshPortScopedIdentityV1'
       | 'supportsWholeSessionCopyV1'
       | 'supportsModelRoutingV1'
       | 'supportsModelPoolSelectionV1'
@@ -567,6 +570,18 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     ) {
       throw new PeerProductCommandError(
         'wsl_workspaces_v1_unsupported: The connected Peer host does not support native WSL workspaces',
+      );
+    }
+
+    const sshConfigId = (params as { config?: { id?: unknown } } | undefined)?.config?.id;
+    if (
+      action.startsWith('ssh_') &&
+      typeof sshConfigId === 'string' &&
+      sshConnectionIdPortScope(sshConfigId) !== undefined &&
+      this.hooks.supportsSshPortScopedIdentityV1 !== true
+    ) {
+      throw new PeerProductCommandError(
+        'ssh_port_scoped_identity_v1_unsupported: The connected Peer host does not keep SSH profiles that differ only by port separate; update the executing Desktop host',
       );
     }
 
