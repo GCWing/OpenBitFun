@@ -18,7 +18,7 @@ import {
   useSessionMutationStore,
 } from '../../store/sessionMutationStore';
 import { notificationService } from '../../../shared/notification-system/services/NotificationService';
-import type { DialogTurn, FlowToolItem, FlowUserSteeringItem, ModelRound, Session } from '../../types/flow-chat';
+import type { DialogTurn, FlowThinkingItem, FlowToolItem, FlowUserSteeringItem, ModelRound, Session } from '../../types/flow-chat';
 import type { FlowChatContext } from './types';
 import { markOptimisticDispatchTurnMetadata } from '@/features/dispatch/optimisticDispatchTurn';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
@@ -29,6 +29,7 @@ import { selectInterruptedTurnRecovery } from '../../utils/interruptedTurnRecove
 import { promptSuggestionKey, usePromptSuggestionStore } from '../../store/promptSuggestionStore';
 import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
 
 const {
   buildBuiltInBrowserTabOptions,
@@ -293,6 +294,57 @@ describe('interrupted turn lifecycle', () => {
     resetFlowChatStore();
     stateMachineManager.clear();
     interruptedTurnRecoveryGate.resetForTests();
+  });
+
+  describe.each(['local-stop', 'host-cancel', 'host-interrupt'] as const)('%s thinking settlement', source => {
+    it.each(['streaming', 'cancelled'] as const)('clears streaming flags even when the recorded status is %s', status => {
+      const thinking: FlowThinkingItem = {
+        id: 'thinking-1', type: 'thinking', content: 'Partial reasoning',
+        timestamp: 1, status, isStreaming: true, isCollapsed: false,
+      };
+      const completedThinking: FlowThinkingItem = {
+        ...thinking, id: 'thinking-completed', content: 'Earlier reasoning',
+        status: 'completed', isStreaming: false, isCollapsed: true,
+      };
+      const round: ModelRound = {
+        ...makeRound('round-1'),
+        items: [completedThinking, thinking],
+        attempts: [{ id: 'attempt-1', index: 1, status, items: [completedThinking, thinking] }],
+        status,
+        isStreaming: status === 'streaming',
+        isComplete: status === 'cancelled',
+      };
+      createSessionWithTurn({
+        ...createFinishingTurn(),
+        status: status === 'streaming' ? 'processing' : 'cancelled',
+        endTime: status === 'cancelled' ? 10 : undefined,
+        modelRounds: [round],
+      });
+      const context = createFlowChatContext();
+      if (source === 'local-stop') {
+        markCurrentTurnItemsAsCancelled(context, 'session-1');
+      } else if (source === 'host-cancel') {
+        __test_only__.handleDialogTurnCancelled(context, { sessionId: 'session-1', turnId: 'turn-1' }, vi.fn());
+      } else {
+        __test_only__.handleDialogTurnInterrupted(context, {
+          sessionId: 'session-1', turnId: 'turn-1', executionGeneration: 0,
+        });
+      }
+
+      const settled = FlowChatStore.getInstance().getState().sessions.get('session-1')!.dialogTurns[0];
+      expect(settled.status).toBe('cancelled');
+      expect(settled.modelRounds[0]).toMatchObject({
+        status: 'cancelled', isStreaming: false, isComplete: true,
+      });
+      const settledRound = settled.modelRounds[0];
+      expect(settledRound.attempts?.[0].status).toBe('cancelled');
+      for (const items of [settledRound.items, settledRound.attempts![0].items]) {
+        expect(items[0]).toEqual(completedThinking);
+        expect(items[1]).toMatchObject({
+          content: 'Partial reasoning', status: 'cancelled', isStreaming: false, isCollapsed: true,
+        });
+      }
+    });
   });
 
   it.each(['running', 'restored-interrupted'] as const)(
