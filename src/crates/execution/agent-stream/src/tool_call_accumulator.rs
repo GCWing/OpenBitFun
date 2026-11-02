@@ -361,8 +361,13 @@ impl PendingToolCall {
                 } else if options.allow_normal_tool_json_repair
                     && options.completion.permits_normal_tool_json_repair()
                 {
+                    // Keep Markdown markers and decode model-emitted JSON escapes.
+                    // Literal backslashes must be escaped or inside valid JSON strings.
+                    let repair_options = jsonrepair_rs::RepairOptions::new()
+                        .with_preserve_comment_markers(true)
+                        .with_decode_unquoted_escapes(true);
                     let repaired =
-                        openbitfun_tool_call_jsonrepair::repair_tool_call_json(&raw_arguments)
+                        jsonrepair_rs::jsonrepair_with_options(&raw_arguments, repair_options)
                             .ok()
                             .and_then(|candidate| {
                                 Self::parse_arguments(&tool_name, &candidate).ok()
@@ -1208,6 +1213,111 @@ mod tests {
             finalized.arguments["plan"].as_str(),
             Some("# CreatePlan repair\n\n- Add a regression test")
         );
+    }
+
+    #[test]
+    fn normal_tool_repair_preserves_content_and_escaped_paths() {
+        let cases = [
+            (
+                r##"{"content": # Heading\nSub"}"##,
+                json!({"content": "# Heading\nSub"}),
+            ),
+            (
+                r#"{"content": // Heading\nSub}"#,
+                json!({"content": "// Heading\nSub"}),
+            ),
+            (
+                r#"{"content": /* Heading\nSub */}"#,
+                json!({"content": "/* Heading\nSub */"}),
+            ),
+            (
+                r#"{"content": text // example}"#,
+                json!({"content": "text // example"}),
+            ),
+            (
+                r#"{"content": text /* example */}"#,
+                json!({"content": "text /* example */"}),
+            ),
+            (
+                r#"{"content": prefix\"quote\"suffix}"#,
+                json!({"content": "prefix\"quote\"suffix"}),
+            ),
+            (
+                r#"{"path": C:\\new\\table.txt}"#,
+                json!({"path": r"C:\new\table.txt"}),
+            ),
+            (
+                r#"{"path":"C:\\new\\table.txt" "line_end":4}"#,
+                json!({"path": r"C:\new\table.txt", "line_end": 4}),
+            ),
+            (
+                r#"{"path":"/home/user/project/file.txt" "line_end":4}"#,
+                json!({"path": "/home/user/project/file.txt", "line_end": 4}),
+            ),
+            (r#"{"path": src/main.rs}"#, json!({"path": "src/main.rs"})),
+            (
+                r#"{"content": value\uD83D\uDE00}"#,
+                json!({"content": "value\u{1f600}"}),
+            ),
+            (
+                r##"{"content":"# Heading\nhttps:/"##,
+                json!({"content": "# Heading\nhttps:/"}),
+            ),
+        ];
+
+        for (raw, expected) in cases {
+            let mut pending = PendingToolCall::default();
+            pending.start_new("call_content".to_string(), Some("tool_a".to_string()));
+            pending.append_arguments(raw);
+            let finalized = pending
+                .finalize_with_options(
+                    ToolCallBoundary::FinishReason,
+                    ToolCallFinalizeOptions {
+                        completion: ToolCallCompletion::NormalToolUse,
+                        allow_normal_tool_json_repair: true,
+                    },
+                )
+                .expect("finalized tool");
+
+            assert!(!finalized.is_error, "raw={raw:?}");
+            assert_eq!(finalized.arguments, expected, "raw={raw:?}");
+            assert_eq!(finalized.raw_arguments, raw);
+            assert!(finalized.parse_error.is_some());
+            assert_eq!(
+                finalized.repair_kind,
+                ToolArgumentRepairKind::PermissiveNormalToolJsonRepair
+            );
+        }
+    }
+
+    #[test]
+    fn normal_tool_repair_rejects_invalid_content() {
+        for raw in [
+            r#"{"value":+e1}"#,
+            "{\"items\":[\u{000c}",
+            r#"{"content": value\uD800}"#,
+            r#"{"content": value\uDC00}"#,
+            r#"{"content": value\uD800\u0041}"#,
+            "{\"content\": # Heading\n## Sub\n}",
+        ] {
+            let mut pending = PendingToolCall::default();
+            pending.start_new("call_invalid".to_string(), Some("tool_a".to_string()));
+            pending.append_arguments(raw);
+            let finalized = pending
+                .finalize_with_options(
+                    ToolCallBoundary::FinishReason,
+                    ToolCallFinalizeOptions {
+                        completion: ToolCallCompletion::NormalToolUse,
+                        allow_normal_tool_json_repair: true,
+                    },
+                )
+                .expect("finalized tool");
+
+            assert!(finalized.is_error, "raw={raw:?}");
+            assert_eq!(finalized.arguments, json!({}));
+            assert_eq!(finalized.repair_kind, ToolArgumentRepairKind::None);
+            assert!(finalized.parse_error.is_some());
+        }
     }
 
     #[test]

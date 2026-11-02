@@ -388,3 +388,35 @@ fn imported_project_layers_do_not_depend_on_the_manual_project_file_gate() {
     assert_eq!(overview.files.len(), 1);
     assert!(overview.files[0].loaded);
 }
+
+/// Command hooks spawn their own process, so they do not pass through
+/// `create_tokio_command`. On Linux the host has to hand them the merged
+/// login-shell PATH the rest of the app's children already get.
+#[cfg(target_os = "linux")]
+#[test]
+fn command_hooks_inherit_the_merged_platform_path() {
+    let environment = crate::native_hooks::hook_environment_defaults();
+
+    let path = environment
+        .get("PATH")
+        .expect("Linux command hooks must inherit a PATH");
+    let expected = openbitfun_services_core::process_manager::platform_path_env()
+        .expect("Linux always resolves a platform PATH");
+    assert_eq!(path, &expected.to_string_lossy());
+    // Every directory the app restores for its other children is reachable.
+    let entries: Vec<PathBuf> = std::env::split_paths(path).collect();
+    for platform_entry in openbitfun_services_core::system::platform_path_entries() {
+        assert!(
+            entries.contains(&platform_entry),
+            "hook PATH is missing {}: {path}",
+            platform_entry.display()
+        );
+    }
+}
+
+/// macOS and Windows keep the environment their hooks already inherit.
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn command_hooks_keep_the_inherited_environment_off_linux() {
+    assert!(crate::native_hooks::hook_environment_defaults().is_empty());
+}

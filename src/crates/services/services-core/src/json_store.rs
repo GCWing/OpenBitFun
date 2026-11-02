@@ -108,6 +108,54 @@ impl JsonFileStoreError {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct JsonFileStore;
 
+/// Filesystem revision for rebuildable index caches. Replacement creation time
+/// and (on Unix) inode/change time also detect replacement with preserved mtime.
+/// This is not a content identity for externally edited history bodies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JsonFileRevision {
+    pub len: u64,
+    modified: SystemTime,
+    created: Option<SystemTime>,
+    #[cfg(unix)]
+    identity: (u64, u64, i64, i64),
+}
+
+impl JsonFileStore {
+    pub async fn revision(
+        &self,
+        path: &Path,
+    ) -> Result<Option<JsonFileRevision>, JsonFileStoreError> {
+        let stat = match fs::metadata(path).await {
+            Ok(stat) => stat,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(source) => {
+                return Err(JsonFileStoreError::ReadMetadata {
+                    path: path.to_owned(),
+                    source,
+                })
+            }
+        };
+        let modified = stat
+            .modified()
+            .map_err(|source| JsonFileStoreError::ReadMetadata {
+                path: path.to_owned(),
+                source,
+            })?;
+        #[cfg(unix)]
+        let identity = {
+            use std::os::unix::fs::MetadataExt;
+            (stat.dev(), stat.ino(), stat.ctime(), stat.ctime_nsec())
+        };
+        Ok(Some(JsonFileRevision {
+            len: stat.len(),
+            modified,
+            created: stat.created().ok(),
+            #[cfg(unix)]
+            identity,
+        }))
+    }
+}
+
 /// Held OS advisory lock for a JSON-owned transaction.
 ///
 /// Callers may use this guard when a read/modify/write transaction includes
@@ -274,6 +322,32 @@ impl JsonFileStore {
     ) -> Result<(), JsonFileStoreError> {
         self.write_bytes_atomic_with_policy(path, bytes, AtomicWritePolicy::StrictReplace)
             .await
+    }
+
+    /// Copy an existing file to a strictly atomically published destination
+    /// without loading the file into the process heap.
+    pub async fn copy_file_atomic_strict(
+        &self,
+        source: &Path,
+        path: &Path,
+    ) -> Result<(), JsonFileStoreError> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| JsonFileStoreError::NoParentDirectory {
+                path: path.to_path_buf(),
+            })?;
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|source| JsonFileStoreError::CreateParent { source })?;
+        let lock = Self::get_file_write_lock(path).await;
+        let _lock_guard = lock.lock().await;
+        let tmp_path = Self::build_temp_json_path(path, 0)?;
+        fs::copy(source, &tmp_path)
+            .await
+            .map_err(|source| JsonFileStoreError::WriteTemp { source })?;
+        Self::replace_file_from_temp_strict(path, &tmp_path)
+            .await
+            .map_err(|source| JsonFileStoreError::Replace { source })
     }
 
     /// Atomically publish a new UTF-8 text file, failing without changing the

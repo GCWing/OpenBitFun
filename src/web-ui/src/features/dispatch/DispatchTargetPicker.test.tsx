@@ -217,7 +217,9 @@ describe('DispatchTargetPicker overlay', () => {
     ).find(node => node.textContent?.includes('Old build'));
     expect(option).toBeDefined();
     // The device is visible with its reason but cannot be selected.
-    expect(option?.textContent).toContain('chatInput.dispatch.deviceIncompatible');
+    expect(option?.textContent).toContain('accountLogin.deviceClientIncompatibleTag');
+    expect(option?.querySelector('[data-openbitfun-component="status-pill"]')?.getAttribute('aria-label'))
+      .toBe('chatInput.dispatch.deviceIncompatible');
     expect(option?.disabled).toBe(true);
   });
 });

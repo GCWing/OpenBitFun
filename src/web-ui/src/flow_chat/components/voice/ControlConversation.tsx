@@ -69,6 +69,7 @@ export function ControlConversation({ session, sessionRef, voiceTarget, active, 
   const visibleRows = rows.slice(firstVisibleIndex);
   const entries: VoiceTranscriptEntry[] = [];
   const renderAssistant = (content: string, isStreaming = false) => <MarkdownRenderer content={content}
+    imageThumbnails
     workspaceId={session.workspaceId ?? session.config.workspaceId}
     basePath={session.workspacePath} remoteConnectionId={session.remoteConnectionId} remoteSshHost={session.remoteSshHost}
     isStreaming={isStreaming} />;

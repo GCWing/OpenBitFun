@@ -79,3 +79,11 @@ pnpm run check:web
 以上依次用于 locale 资源、locale contract/shared terms、i18n runtime/namespace loading 和普通 Web UI 代码。
 `check:web` 会执行类型检查，以及 CI 使用的 Appearance contract、主题颜色和主题视觉治理门禁，确保渲染 DOM
 或样式回归能在本地发现。完整 lint、build 与大范围测试由 CI 兜底，除非本地改动确实需要复现。
+
+导航分割线拖拽、弹性反馈、取消操作与键盘调宽使用以下聚焦检查：
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/layout/useNavResize.test.tsx src/app/layout/WorkspaceBody.presentation.test.ts
+```
+
+这些本地 DOM 测试覆盖手势状态和弹簧收敛，不代表原生 WebView 渲染或真实远程场景验证。

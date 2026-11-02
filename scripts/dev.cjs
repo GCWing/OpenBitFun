@@ -59,14 +59,34 @@ function isDesktopMode(mode) {
   return mode === 'desktop' || mode === 'desktop-preview';
 }
 
+function resolveDesktopDevDataMode(args = []) {
+  if (args.includes('--shared-data') && args.includes('--isolated-data')) {
+    throw new Error('Choose only one of --shared-data or --isolated-data');
+  }
+  return args.includes('--isolated-data') ? 'isolated' : 'shared';
+}
+
+function resolveDesktopDevStorageEnvironment(env = process.env, rootDir = ROOT_DIR, dataMode = 'shared') {
+  // Shared mode leaves path selection to the app, including caller overrides.
+  if (dataMode === 'shared') {
+    return { OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development' };
+  }
+  // Keep both user settings and workspace/session storage separate from the
+  // installed app. Each checkout reuses its own persistent development data.
+  const storageDir = path.join(rootDir, '.openbitfun', 'desktop-dev');
+  return {
+    OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development',
+    OPENBITFUN_USER_ROOT: env.OPENBITFUN_USER_ROOT || env.OPENBITFUN_E2E_USER_ROOT || path.join(storageDir, 'user'),
+    OPENBITFUN_HOME: env.OPENBITFUN_HOME || env.OPENBITFUN_E2E_HOME || path.join(storageDir, 'home'),
+  };
+}
+
 function getDesktopBinaryPath() {
   const suffix = process.platform === 'win32' ? '.exe' : '';
   const binaryName = `openbitfun-desktop${suffix}`;
 
-  if (process.platform === 'darwin') {
-    return path.join(ROOT_DIR, 'target', 'debug', 'OpenBitFun.app', 'Contents', 'MacOS', 'OpenBitFun');
-  }
-
+  // Preview rebuilds use cargo build, which emits this executable on macOS
+  // as well; it does not create an application bundle.
   return path.join(ROOT_DIR, 'target', 'debug', binaryName);
 }
 
@@ -387,10 +407,7 @@ function getNewestTrackedInput(entryPath) {
       return null;
     }
 
-    const isEmbeddedMarkdown = entryPath.includes(`${path.sep}prompts${path.sep}`)
-      || entryPath.includes(
-        `${path.sep}service${path.sep}announcement${path.sep}content${path.sep}`,
-      );
+    const isEmbeddedMarkdown = entryPath.includes(`${path.sep}prompts${path.sep}`);
     if (ext === '.md' && !isEmbeddedMarkdown) {
       return null;
     }
@@ -616,6 +633,12 @@ async function main() {
   }
 
   const desktopMode = isDesktopMode(mode);
+  const desktopDataMode = desktopMode ? resolveDesktopDevDataMode(extraArgs) : null;
+  if (desktopMode) {
+    // Set this before spawning any preparation, build, or app process so both
+    // desktop launch paths and their children inherit the same storage scope.
+    Object.assign(process.env, resolveDesktopDevStorageEnvironment(process.env, ROOT_DIR, desktopDataMode));
+  }
   const modeLabelMap = {
     desktop: 'Desktop',
     'desktop-preview': 'Desktop Debug Preview',
@@ -625,6 +648,14 @@ async function main() {
   
   printHeader(`OpenBitFun ${modeLabel} Development`);
   printBlank();
+  if (desktopMode) {
+    printInfo(`Desktop data mode: ${desktopDataMode}`);
+    printInfo(`Desktop user data: ${process.env.OPENBITFUN_USER_ROOT || process.env.OPENBITFUN_E2E_USER_ROOT || '(system default)'}`);
+    printInfo(`Desktop home: ${process.env.OPENBITFUN_HOME || process.env.OPENBITFUN_E2E_HOME || '(system default)'}`);
+    if (desktopDataMode === 'shared') {
+      printInfo('Shared product data with a separate development host; session writer leases remain active');
+    }
+  }
 
   const totalSteps = 2;
   let currentStep = 1;
@@ -669,6 +700,11 @@ async function main() {
   ];
 
   if (desktopMode) {
+    prepTasks.push({
+      name: 'Prepare lightweight MiniApp shell',
+      hint: 'Hint: run `pnpm run prepare:miniapp-shell`',
+      promise: runCommandPrefixed('miniapp-shell', 'node', ['scripts/prepare-miniapp-shell.mjs']),
+    });
     prepTasks.push({
       name: 'Prepare OpenCode extension Host',
       hint: 'Hint: install Bun, then run `pnpm run plugin-host:prepare`',
@@ -823,4 +859,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { resolveCommandInvocation, runCommandPrefixed };
+module.exports = { resolveCommandInvocation, resolveDesktopDevDataMode, resolveDesktopDevStorageEnvironment, runCommandPrefixed };

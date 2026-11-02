@@ -47,6 +47,12 @@ import com.openbitfun.mobile.core.feature.layout.SettingsPlacementMode
  * placement uses a full-window Dialog so back handling, focus containment and
  * accessibility isolation remain native while the surface docks to the
  * physical trailing region selected by the shared policy.
+ *
+ * @param draggable whether the compact sheet follows a pull-down. A page whose
+ * body is itself a scroll should say no: the same pull-down then means both
+ * "scroll the body" and "drag the sheet away", so a gesture the user meant as
+ * scrolling can move the surface or dismiss the page. Such a page still closes
+ * through its own close button, the back action, and a tap on the scrim.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +62,7 @@ internal fun AdaptiveModalSurface(
     onDismissRequest: () -> Unit,
     edgeToEdgeContent: Boolean = false,
     fitContent: Boolean = false,
+    draggable: Boolean = true,
     content: @Composable (Modifier) -> Unit,
 ) {
     if (!visible) return
@@ -137,6 +144,7 @@ internal fun AdaptiveModalSurface(
             topEnd = MobileDesignGeometry.SheetTopRadius,
         ),
         dragHandle = null,
+        sheetGesturesEnabled = draggable,
         contentWindowInsets = { if (edgeToEdgeContent) WindowInsets(0) else BottomSheetDefaults.windowInsets },
     ) {
         val modifier = if (fitContent) {

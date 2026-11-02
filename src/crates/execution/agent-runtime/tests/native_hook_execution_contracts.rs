@@ -12,7 +12,8 @@
 use openbitfun_agent_runtime::native_hooks::{
     AgentHookEngine, AgentHookEventPayload, AgentHookOutcome, AgentHookPayload,
     AgentHookPayloadCommon, AgentHookPermissionMode, AgentHookPermissionOutcome, AgentHookScope,
-    AgentHookSettings, AgentHookSettingsLayer, MAX_HOOK_MODEL_OUTPUT_BYTES,
+    AgentHookSettings, AgentHookSettingsLayer, CommandHookOptions, RuntimeHookRegistry,
+    MAX_HOOK_MODEL_OUTPUT_BYTES,
 };
 use serde_json::json;
 use std::path::Path;
@@ -769,4 +770,150 @@ mod skill_hooks {
             .permission
             .is_none());
     }
+}
+
+/// A host that knows its launch environment (a Linux GUI launch without the
+/// login-shell PATH) hands the engine defaults every handler inherits.
+#[tokio::test]
+async fn host_environment_defaults_reach_the_handler() {
+    let engine = engine(
+        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"printf '%s' \"$OPENBITFUN_HOOK_ENV_PROBE\""}]}]}}"#,
+    )
+    .with_environment_defaults(std::collections::BTreeMap::from([(
+        "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+        "from-host".to_string(),
+    )]));
+
+    let outcome = dispatch(&engine, &session_start_payload()).await;
+
+    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    assert_eq!(outcome.additional_context, vec!["from-host".to_string()]);
+}
+
+/// A handler that sets the same key keeps its own value: host defaults only
+/// fill gaps, so a hook can still pin the environment it needs.
+#[tokio::test]
+async fn handler_environment_overrides_the_host_defaults() {
+    let (settings, issues) = AgentHookSettings::from_layers(&[AgentHookSettingsLayer {
+        scope: AgentHookScope::User,
+        source: "test hooks.json".to_string(),
+        bytes: br#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"printf '%s' \"$OPENBITFUN_HOOK_ENV_PROBE\""}]}]}}"#.to_vec(),
+    }]);
+    assert!(issues.is_empty(), "unexpected settings issues: {issues:?}");
+    let mut registration = settings
+        .registrations()
+        .pop()
+        .expect("one command registration");
+    registration = registration.with_command_options(CommandHookOptions {
+        environment: std::collections::BTreeMap::from([(
+            "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+            "from-handler".to_string(),
+        )]),
+        ..Default::default()
+    });
+    let registry = RuntimeHookRegistry::default();
+    registry
+        .register_batch(vec![registration])
+        .expect("valid registration");
+    let engine = AgentHookEngine::with_registry(registry).with_environment_defaults(
+        std::collections::BTreeMap::from([(
+            "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+            "from-host".to_string(),
+        )]),
+    );
+
+    let outcome = dispatch(&engine, &session_start_payload()).await;
+
+    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    assert_eq!(outcome.additional_context, vec!["from-handler".to_string()]);
+}
+
+/// A timed-out handler must stop the processes it started, not just the shell.
+///
+/// The handler here starts an inner shell that records its pid and sleeps. The
+/// outer `wait` keeps the handler alive past its timeout; the inner shell is a
+/// descendant in the handler's process group. If only the direct child were
+/// killed, the recorded pid would survive as an orphan.
+#[tokio::test]
+async fn timeout_kills_descendants_of_the_handler() {
+    let directory = std::env::temp_dir().join(format!(
+        "openbitfun-hook-tree-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&directory).expect("create hook fixture directory");
+    let pid_file = directory.join("descendant.pid");
+
+    let command = format!(
+        "sh -c 'echo $$ > {pid_file}; sleep 30' & wait",
+        pid_file = pid_file.display()
+    );
+    let hooks = json!({
+        "hooks": {
+            "PreToolUse": [{
+                "hooks": [{"type": "command", "command": command, "timeout": 1}]
+            }]
+        }
+    })
+    .to_string();
+
+    let outcome = dispatch(&engine(&hooks), &pre_tool_use_payload("Bash")).await;
+
+    assert_eq!(outcome.warnings.len(), 1, "{:?}", outcome.warnings);
+    assert!(
+        outcome.warnings[0].contains("timed out"),
+        "{:?}",
+        outcome.warnings
+    );
+
+    let pid = wait_for_descendant_pid(&pid_file);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if !hook_fixture_process_is_alive(pid) {
+            let _ = std::fs::remove_dir_all(&directory);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+
+    let _ = std::fs::remove_dir_all(&directory);
+    panic!("hook descendant {pid} survived the handler timeout");
+}
+
+fn wait_for_descendant_pid(pid_file: &std::path::Path) -> i32 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(pid_file) {
+            if let Ok(pid) = text.trim().parse::<i32>() {
+                return pid;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "handler descendant never recorded its pid"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn hook_fixture_process_is_alive(pid: i32) -> bool {
+    // A killed descendant can linger as a zombie until its reaper runs, so the
+    // process state matters more than mere entry presence.
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    let state = stat
+        .rsplit_once(')')
+        .and_then(|(_, rest)| rest.split_whitespace().next());
+    !matches!(state, Some("Z") | Some("X"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn hook_fixture_process_is_alive(pid: i32) -> bool {
+    // SAFETY: signal 0 only probes whether the pid still exists.
+    unsafe { libc::kill(pid, 0) == 0 }
 }

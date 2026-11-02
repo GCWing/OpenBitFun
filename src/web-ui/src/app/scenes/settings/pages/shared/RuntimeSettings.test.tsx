@@ -18,14 +18,17 @@ vi.mock('@/infrastructure/config/hooks', () => ({ useAIExperienceSettings: () =>
 vi.mock('@/infrastructure/api', () => ({ globalAPI: {}, workspaceAPI: {} }));
 vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({ useCurrentWorkspace: () => ({ workspace: mocks.workspace }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: mocks.t }) }));
-vi.mock('@/infrastructure/i18n', () => ({ i18nService: { formatNumber: String } }));
+vi.mock('@/infrastructure/i18n', () => ({
+  i18nService: { formatNumber: String },
+  useI18n: () => ({ t: mocks.t }),
+}));
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({ api: { invoke: mocks.invoke } }));
 vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({ systemAPI: { getSystemInfo: async () => ({ platform: 'macos' }) } }));
-vi.mock('../../../../../infrastructure/config/services/ConfigManager', () => ({ configManager: {
-  getConfig: mocks.getConfig, getOptionalConfig: async () => true, setConfig: mocks.setConfig,
+vi.mock('../../../../../infrastructure/config/services/ConfigManager', () => ({ configManager: { hasCachedConfig: () => false, getCachedConfig: () => undefined,
+  getConfig: mocks.getConfig, getOptionalConfig: async (path: string) => path === 'ai.agent_model_selections' ? { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } } : true, setConfig: mocks.setConfig,
 } }));
 vi.mock('../../../../../infrastructure/config/hooks/useComputerUseEnabled', () => ({ useComputerUseEnabled: () => ({ computerUseEnabled: false, setComputerUseEnabled: mocks.setEnabled }) }));
-vi.mock('../../../../../infrastructure/config/services/AIExperienceConfigService', () => ({ aiExperienceConfigService: { getSettingsAsync: async () => ({ enable_workspace_search: true }) } }));
+vi.mock('../../../../../infrastructure/config/services/AIExperienceConfigService', () => ({ aiExperienceConfigService: { getCachedSettings: () => null, getSettingsAsync: async () => ({ enable_workspace_search: true }) } }));
 vi.mock('../../../../../infrastructure/config/services/AgentCompanionPetService', () => ({ DEFAULT_AGENT_COMPANION_PET: 'default' }));
 vi.mock('../../../../../infrastructure/config/services/PermissionConfigService', async (original) => ({
   ...await original<typeof import('../../../../../infrastructure/config/services/PermissionConfigService')>(),
@@ -41,8 +44,8 @@ vi.mock('../ai/ReviewCapacitySection', () => ({ default: () => null }));
 vi.mock('../ai/ToolJsonRepairSection', () => ({ default: () => null }));
 vi.mock('@openbitfun/ui', async (original) => ({
   ...await original<typeof import('@openbitfun/ui')>(),
-  Select: ({ value, options, disabled }: { value: string; options: Array<{ value: string; label: string }>; disabled: boolean }) => (
-    <select value={value} disabled={disabled} onChange={() => {}}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+  Select: ({ value, options, disabled, onValueChange }: { value: string; options: Array<{ value: string; label: string }>; disabled: boolean; onValueChange?: (value: string) => void }) => (
+    <select value={value} disabled={disabled} onChange={event => onValueChange?.(event.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
   ),
 }));
 
@@ -121,6 +124,50 @@ describe('Tool execution concurrency settings', () => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); });
 
 describe('Browser and desktop control settings', () => {
+  it('keeps detailed host permissions in the standard compact settings rows', async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, ...args: unknown[]) => command === 'computer_use_get_status'
+      ? { computerUseEnabled: true, accessibilityGranted: true, screenCaptureGranted: true,
+        platformNote: 'Accessibility is available.', permissions: { process_id: 1234,
+          executable: '/private/runtime', permissions: [{ kind: 'input_monitoring', state: 'granted' }] } }
+      : original(command, ...args));
+    await render();
+    for (const label of ['computerUse.enable', 'computerUse.accessibility', 'computerUse.screenCapture']) {
+      expect(Array.from(container.querySelectorAll('[data-openbitfun-part="row"]'))
+        .some(row => row.textContent?.includes(label))).toBe(true);
+    }
+    expect(container.textContent).not.toContain('computerSharing');
+    expect(container.textContent).not.toContain('/private/runtime');
+    expect(container.textContent).not.toContain('input_monitoring');
+    expect(button('computerUse.openSettings')).toBeUndefined();
+    expect(container.textContent).not.toContain('computerUse.platformNotes.macos');
+    expect(mocks.invoke.mock.calls.filter(([name]) => String(name).startsWith('computer_use_share'))).toHaveLength(0);
+  });
+
+  it('offers system setup only for the missing permission without selecting an app', async () => {
+    await render();
+    const setup = button('computerUse.openSettings');
+    expect(setup.closest('[data-openbitfun-part="row"]')?.textContent).toContain('computerUse.screenCapture');
+    expect(Array.from(container.querySelectorAll('button')).filter(el => el.textContent === 'computerUse.openSettings')).toHaveLength(1);
+    await act(async () => setup.click());
+    expect(mocks.invoke).toHaveBeenCalledWith('computer_use_open_system_settings', { request: { pane: 'screen_capture' } });
+    expect(mocks.invoke).not.toHaveBeenCalledWith('computer_use_request_permission', expect.anything());
+  });
+
+  it('registers the missing OS permission from the same setup button on capable hosts', async () => {
+    const original = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command: string, ...args: unknown[]) => command === 'computer_use_get_status'
+      ? { computerUseEnabled: true, accessibilityGranted: true, screenCaptureGranted: false,
+        permissions: { permissions: [{ kind: 'screen_recording', requestable: true }] } }
+      : command === 'computer_use_request_permission' ? { current_granted: false }
+        : original(command, ...args));
+    await render();
+    expect(mocks.invoke).not.toHaveBeenCalledWith('computer_use_request_permission', expect.anything());
+    await act(async () => button('computerUse.openSettings').click());
+    expect(mocks.invoke).toHaveBeenCalledWith('computer_use_request_permission', { request: { kind: 'screen_recording' } });
+    expect(mocks.invoke).toHaveBeenCalledWith('computer_use_open_system_settings', { request: { pane: 'screen_capture' } });
+    expect(mocks.invoke.mock.calls.filter(([name]) => String(name).startsWith('computer_use_share'))).toHaveLength(0);
+  });
   it('localizes the browser choice and puts the single connect action next to connection status', async () => {
     await render();
     expect(container.querySelector('option')?.textContent).toBe('browserControl.defaultBrowser');
@@ -138,6 +185,36 @@ describe('Browser and desktop control settings', () => {
     await act(async () => button('browserControl.connect').click());
     expect(mocks.invoke).toHaveBeenCalledWith('browser_control_launch', { request: { port: 9222 } });
     expect(mocks.invoke).not.toHaveBeenCalledWith('browser_control_enable_default_cdp', expect.anything());
+  });
+
+  it.each([false, true])('revokes previous browser access before saving a new choice (disconnect fails: %s)', async (fails) => {
+    const original = mocks.invoke.getMockImplementation()!;
+    const order: string[] = [];
+    mocks.invoke.mockImplementation(async (command: string, ...args: unknown[]) => {
+      if (command === 'browser_control_list_browsers') return { options: [
+        { value: 'default', label: 'Default browser', installed: true },
+        { value: 'edge', label: 'Edge', installed: true },
+      ] };
+      if (command === 'browser_control_disconnect') {
+        order.push('disconnect');
+        if (fails) throw new Error('Disconnect failed');
+      }
+      return original(command, ...args);
+    });
+    mocks.setConfig.mockImplementation(async () => { order.push('save'); });
+    await render();
+    const select = container.querySelector('select')!;
+    await act(async () => {
+      select.value = 'edge';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(order).toEqual(fails ? ['disconnect'] : ['disconnect', 'save']);
+    if (fails) {
+      expect(mocks.setConfig).not.toHaveBeenCalled();
+      expect(select.value).toBe('default');
+    } else {
+      expect(mocks.setConfig).toHaveBeenCalledWith('ai.browser_control_preferred_browser', 'edge');
+    }
   });
 
   it('keeps the selected browser visible while connected and disconnects through the existing command', async () => {

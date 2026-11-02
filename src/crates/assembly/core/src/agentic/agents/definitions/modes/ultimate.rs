@@ -33,6 +33,7 @@ impl UltimateHarness {
                 "ExecControl",
                 "ListModels",
                 "Skill",
+                "DesktopCard",
             ]
             .into_iter()
             .map(str::to_string)
@@ -65,7 +66,6 @@ impl Agent for UltimateHarness {
         UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
     fn is_readonly(&self) -> bool {
         false

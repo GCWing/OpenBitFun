@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { ExternalSourceCatalogSnapshot } from '@/infrastructure/api/service-api/ExternalSourcesAPI';
+import { getProductBrandIcon } from '@/shared/ui/productBrandIcons';
 import {
   buildEcosystemImportItems,
   buildEcosystemProductRuntimes,
@@ -14,21 +15,20 @@ function source(relativePath: string): string {
 }
 
 describe('ecosystem compatibility scene presentation contract', () => {
-  it('opens as a standalone scene instead of a settings destination', () => {
-    const mainNav = source('../../components/NavPanel/MainNav.tsx');
-    const activator = source('../../global-search/productActionActivator.ts');
+  it('opens inside Settings and removes the standalone menu entry', () => {
+    const footerActions = source('../../components/NavPanel/components/PersistentFooterActions.tsx');
     const navigation = source('./ecosystemCompatibilityStore.ts');
-    const viewport = source('../SceneViewport.tsx');
+    const page = source('../settings/pages/tools/ExternalImportSettingsPage.tsx');
+    const scene = source('./EcosystemCompatibilityScene.tsx');
+    const content = source('./ExternalAgentContent.tsx');
 
-    expect(mainNav).toContain("activateProductAction('surface.ecosystemCompatibility.open')");
-    expect(mainNav).not.toContain("activateProductAction('settings.external-sources.open')");
-    expect(mainNav).toContain('useExternalAppAwareness(');
-    expect(mainNav).toContain('openbitfun-nav-panel__top-action-unseen');
-    expect(activator).toContain("case 'surface.ecosystemCompatibility.open':");
-    expect(activator).toContain('openEcosystemCompatibility();');
-    expect(navigation).toContain("openScene('ecosystem-compatibility')");
-    expect(viewport).toContain("case 'ecosystem-compatibility':");
-    expect(viewport).toContain('<EcosystemCompatibilityScene />');
+    expect(footerActions).not.toContain('data-testid="ecosystem-compatibility-tab"');
+    expect(navigation).toContain("openPage('tools.external-import')");
+    expect(navigation).toContain("openScene('settings')");
+    expect(page).toContain('<SettingsPage pageId="tools.external-import">');
+    expect(scene).not.toContain('ecosystem-compatibility__scroll');
+    expect(scene).toContain('<ConfigPageSection');
+    expect(content).toContain('<FieldGroup appearance="subtle" fieldSurface="ambient" dividers={false}');
   });
 
   it('uses real external-source import and ACP owners while keeping unfinished actions explicit', () => {
@@ -63,7 +63,7 @@ describe('ecosystem compatibility scene presentation contract', () => {
     expect(model).toContain("dsh: ['skill', 'hook', 'mcp']");
   });
 
-  it('retires the duplicate Settings page and redirects legacy management links', () => {
+  it('preserves legacy management links while registering the settings destination', () => {
     const registry = source('../settings/settingsRegistry.ts');
     const settingsTypes = source('../settings/settingsTypes.ts');
     const destination = source('../settings/settingsDestination.ts');
@@ -71,7 +71,7 @@ describe('ecosystem compatibility scene presentation contract', () => {
     const agents = source('../agents/AgentsScene.tsx');
     const externalMcp = source('../../../infrastructure/config/components/ExternalMcpOverview.tsx');
 
-    expect(registry).not.toContain("id: 'tools.integrations'");
+    expect(registry).toContain("id: 'tools.external-import'");
     expect(settingsTypes).not.toContain("| 'tools.integrations'");
     expect(destination).toContain("'external-sources'");
     expect(destination).toContain("'tools.integrations'");
@@ -275,7 +275,7 @@ describe('ecosystem compatibility scene presentation contract', () => {
     expect(importPosition).toBeGreaterThan(runPosition);
     expect(scene).toContain('ecosystem-compatibility__unified-stack');
     expect(scene).not.toContain('renderDiagnostics');
-    expect(scene).toContain('refreshControlRef={externalContentRef}');
+    expect(scene).toContain('actionsRef={externalContentRef}');
     expect(scene).not.toContain('<MoreHorizontal');
     expect(scene).not.toContain("t('diagnostics.refresh')");
     expect(scene).not.toContain('role="tablist"');
@@ -298,6 +298,30 @@ describe('ecosystem compatibility scene presentation contract', () => {
     expect(content).toContain("t('content.prepareImport')");
     expect(content).toContain("t('content.setupRequired')");
     expect(scene).not.toContain('ecosystem-compatibility__import-action-placeholder');
+  });
+
+  it('preserves design-system alert insets and consistent dialog spacing', () => {
+    const styles = source('./EcosystemCompatibilityScene.scss');
+    const block = (name: string) => styles.slice(styles.indexOf(`&__${name} {`)).split('\n  }')[0];
+
+    expect(block('notice')).not.toMatch(/(?:padding|border|background|font):/);
+    expect(block('batch-status')).toContain('var(--openbitfun-overlay-dialog-content-padding-lg)');
+    expect(block('content-expanded')).toContain('padding: 0 var(--openbitfun-space-4) var(--openbitfun-space-4)');
+    expect(block('import-action')).toContain('flex-wrap: wrap');
+    expect(block('metadata')).toContain('align-items: baseline');
+    expect(block('metadata')).toContain('margin: 0');
+    expect(block('content-detail')).not.toContain('margin-block-end:');
+  });
+
+  it('uses heading and action slots for every import dialog header', () => {
+    for (const file of ['ExternalAgentContent.tsx', 'EcosystemPets.tsx', 'EcosystemCompatibilityScene.tsx']) {
+      const headers = [...source(`./${file}`).matchAll(/<DialogHeader>([\s\S]*?)<\/DialogHeader>/g)];
+      expect(headers.length).toBeGreaterThan(0);
+      for (const [, header] of headers) {
+        expect(header).toContain('<DialogHeading>');
+        expect(header).toContain('<DialogHeaderActions>');
+      }
+    }
   });
 
   it('lets the page inherit the surrounding scene surface', () => {
@@ -325,30 +349,34 @@ describe('ecosystem compatibility scene presentation contract', () => {
     expect(runtimes.map((runtime) => runtime.spec.id)).toEqual([
       'claude-code',
       'codex',
+      'zcode',
       'pi',
       'dsh',
       'opencode',
       'cursor',
     ]);
     expect(runtimes.flatMap((runtime) => runtime.acpClients)).toEqual([]);
+    const zcode = runtimes.find((runtime) => runtime.spec.id === 'zcode')!;
+    expect(zcode.spec.sessionImport).toBe('zcode');
+    expect(zcode.spec.acpClientId).toBeUndefined();
+    expect(zcode.capabilityIds).not.toContain('runtime');
   });
 
   it('uses locally cached official product marks instead of generic product glyphs', () => {
     const scene = source('./EcosystemCompatibilityScene.tsx');
-    const assetRoot = '../../../../public/assets/ecosystem-compatibility/';
-
-    for (const file of [
-      'claude-code.svg',
-      'codex.svg',
-      'pi.svg',
-      'deepseek-harness.svg',
-      'opencode.svg',
-    ]) {
-      expect(source(`${assetRoot}${file}`)).toContain('<svg');
-      expect(scene).toContain(`/assets/ecosystem-compatibility/${file}`);
+    for (const productId of ['claude-code', 'codex', 'zcode', 'pi', 'dsh', 'opencode', 'cursor']) {
+      const icon = getProductBrandIcon(productId);
+      expect(icon).toBeDefined();
+      for (const path of [icon!.src, icon!.darkSrc].filter(Boolean)) {
+        expect(path).toMatch(/^\/assets\/ecosystem-compatibility\//);
+        expect(source(`../../../../public${path}`).length).toBeGreaterThan(0);
+      }
     }
-    expect(scene).toContain('<EcosystemProductIcon productId={runtime.spec.id} size={22} />');
-    expect(scene).toContain('<EcosystemProductIcon productId={selectedRuntime.spec.id} size={38} />');
+    expect(getProductBrandIcon('zcode_cn')).toBe(getProductBrandIcon('zcode'));
+    expect(scene).toContain("from '@/shared/ui/ProductBrandIcon'");
+    expect(scene).toContain('<ProductBrandIcon productId={runtime.spec.id} size="100%" />');
+    expect(scene).toContain('<ProductBrandIcon productId={selectedRuntime.spec.id} size={38} />');
+    expect(scene).not.toContain('PRODUCT_ICON_SOURCES');
     expect(scene).not.toContain('PRODUCT_FALLBACK_ICONS');
     expect(scene).not.toContain("'other-acp'");
   });

@@ -17,16 +17,15 @@ const controlledDragMock = vi.hoisted(() => vi.fn());
 const pointerDrag = vi.hoisted(() => ({ prepare: vi.fn(), move: vi.fn(), finish: vi.fn(), cancel: vi.fn() }));
 vi.mock('@/infrastructure/config/services/AgentCompanionDragService', () => ({ startAgentCompanionDrag: controlledDragMock }));
 vi.mock('@/infrastructure/config/services/AgentCompanionPointerDragService', () => ({ prepareAgentCompanionPointerDrag: pointerDrag.prepare }));
-/** Backs the Tauri IPC bridge, so window resize requests are observable. */
-const hostInvokeMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 vi.mock('@tauri-apps/api/event', () => ({
   emit: emitMock,
   listen: listenMock,
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: invokeMock,
+// Mock the component's API boundary before ApiClient initializes a transport.
+vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
+  api: { invoke: invokeMock },
 }));
 
 vi.mock('@tauri-apps/api/window', () => ({
@@ -60,6 +59,7 @@ vi.mock('@/flow_chat/components/AgentCompanionPet', () => ({
 
 const PET_COMMAND_EVENT = 'agent-companion://pet-command';
 const ACTIVITY_EVENT = 'agent-companion://activity-updated';
+const MAIN_WINDOW_STATE_EVENT = 'agent-companion://main-window-state';
 
 let i18n: I18nInstance;
 
@@ -95,13 +95,6 @@ function typeInto(input: HTMLInputElement, value: string): void {
 }
 
 beforeAll(async () => {
-  // The pet resizes its own window through `invoke`; the dynamic import inside
-  // the component reaches the real Tauri core module, so stub the IPC bridge.
-  (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
-    invoke: hostInvokeMock,
-    transformCallback: (callback: unknown) => callback,
-  };
-
   i18n = createInstance();
   await i18n.use(initReactI18next).init({
     lng: 'en-US',
@@ -135,6 +128,7 @@ describe('AgentCompanionDesktopPet', () => {
   let container: HTMLDivElement;
   let root: Root;
   let pushActivity: (payload: AgentCompanionActivityPayload) => void;
+  let pushMainWindowFocus: (focused: boolean) => void;
 
   const query = <T extends Element>(selector: string): T | null =>
     container.querySelector<T>(selector);
@@ -152,9 +146,9 @@ describe('AgentCompanionDesktopPet', () => {
   };
 
   beforeEach(async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     emitMock.mockClear();
     invokeMock.mockClear();
-    hostInvokeMock.mockClear();
     cursorPositionMock.mockReset();
     cursorPositionMock.mockResolvedValue({ x: 0, y: 0 });
     startDraggingMock.mockReset();
@@ -165,15 +159,23 @@ describe('AgentCompanionDesktopPet', () => {
     listenMock.mockReset();
 
     const activityListeners: Array<(event: { payload: AgentCompanionActivityPayload }) => void> = [];
+    const focusListeners: Array<(event: { payload: { focused: boolean } }) => void> = [];
     listenMock.mockImplementation((eventName: string, handler: (event: { payload: unknown }) => void) => {
       if (eventName === ACTIVITY_EVENT) {
         activityListeners.push(handler as (event: { payload: AgentCompanionActivityPayload }) => void);
+      } else if (eventName === MAIN_WINDOW_STATE_EVENT) {
+        focusListeners.push(handler as (event: { payload: { focused: boolean } }) => void);
       }
       return Promise.resolve(() => {});
     });
     pushActivity = payload => {
       act(() => {
         activityListeners.forEach(handler => handler({ payload }));
+      });
+    };
+    pushMainWindowFocus = focused => {
+      act(() => {
+        focusListeners.forEach(handler => handler({ payload: { focused } }));
       });
     };
 
@@ -189,12 +191,61 @@ describe('AgentCompanionDesktopPet', () => {
     });
   });
 
-  afterEach(() => {
-    act(() => {
+  afterEach(async () => {
+    await act(async () => {
       root.unmount();
     });
     container.remove();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it.each(['before activity', 'after activity'])(
+    'shows a new task without dragging when the main window gains focus %s',
+    focusOrder => {
+      if (focusOrder === 'before activity') pushMainWindowFocus(true);
+      pushActivity({ mood: 'working', tasks: [task()], emittedAt: 1, sequence: 1 });
+      if (focusOrder === 'after activity') pushMainWindowFocus(true);
+
+      const bubble = query('.openbitfun-agent-companion-window__bubble');
+      expect(bubble).not.toBeNull();
+      expect(bubble?.textContent).toContain('Refactor login');
+      expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', {
+        width: 288,
+        height: 102,
+      });
+      expect(startDraggingMock).not.toHaveBeenCalled();
+      expect(controlledDragMock).not.toHaveBeenCalled();
+
+      pushMainWindowFocus(false);
+      pushMainWindowFocus(true);
+      pushActivity({
+        mood: 'working', tasks: [task({ latestOutput: 'Still working' })], emittedAt: 2, sequence: 2,
+      });
+      expect(query('.openbitfun-agent-companion-window__bubble-output')?.textContent).toContain('Still workin');
+    },
+  );
+
+  it('preserves manual dismissal while the main window is focused and restores an attention bubble', () => {
+    pushMainWindowFocus(true);
+    pushActivity({ mood: 'working', tasks: [task()], emittedAt: 1, sequence: 1 });
+    const bubble = query('.openbitfun-agent-companion-window__bubble-shell');
+    expect(bubble).not.toBeNull();
+    dispatch(bubble!, 'contextmenu');
+    const closeButton = query('[data-openbitfun-menu-item]');
+    expect(closeButton?.textContent).toBe('Close this bubble');
+    dispatch(closeButton!, 'click');
+    expect(query('.openbitfun-agent-companion-window__bubble')).toBeNull();
+
+    pushMainWindowFocus(false);
+    pushMainWindowFocus(true);
+    pushActivity({ mood: 'working', tasks: [task()], emittedAt: 2, sequence: 2 });
+    expect(query('.openbitfun-agent-companion-window__bubble')).toBeNull();
+
+    pushActivity({
+      mood: 'waiting', tasks: [task({ state: 'attention', mood: 'waiting' })], emittedAt: 3, sequence: 3,
+    });
+    expect(query('.openbitfun-agent-companion-window__bubble--attention')).not.toBeNull();
   });
 
   it('provides the off-window pointer direction to v2 only while idle', async () => {
@@ -394,13 +445,41 @@ describe('AgentCompanionDesktopPet', () => {
     expect(menu!.style.visibility).toBe('visible');
   });
 
+  it('re-requests the dock size when the host leaves the viewport too narrow', async () => {
+    pushActivity({ mood: 'working', tasks: [task()], sequence: 1, emittedAt: 1 });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', {
+      width: 288,
+      height: 102,
+    });
+    invokeMock.mockClear();
+
+    // A full-size viewport needs nothing more.
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    expect(invokeMock).not.toHaveBeenCalledWith('resize_agent_companion_desktop_pet', expect.anything());
+
+    // The bottom-right anchored dock would be clipped on the left at this width.
+    vi.stubGlobal('innerWidth', 96);
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', {
+      width: 288,
+      height: 102,
+    });
+  });
+
   it('does not resize the window for a context menu', async () => {
     pushActivity({ mood: 'working', tasks: [task()], sequence: 1, emittedAt: 1 });
     // Let the bubble's own resize request settle before watching for new ones.
     await act(async () => {
       await Promise.resolve();
     });
-    hostInvokeMock.mockClear();
+    expect(invokeMock).toHaveBeenCalledWith(
+      'resize_agent_companion_desktop_pet',
+      expect.objectContaining({ width: expect.any(Number), height: expect.any(Number) }),
+    );
+    invokeMock.mockClear();
 
     dispatch(query('.openbitfun-agent-companion-window__bubble-shell')!, 'contextmenu');
     dispatch(query('.openbitfun-agent-companion-window__pet-hitbox')!, 'contextmenu');
@@ -410,9 +489,8 @@ describe('AgentCompanionDesktopPet', () => {
 
     // Resizing moves every bottom-right anchored element for a frame, which
     // reads as the pet and bubbles flashing.
-    expect(hostInvokeMock).not.toHaveBeenCalledWith(
+    expect(invokeMock).not.toHaveBeenCalledWith(
       'resize_agent_companion_desktop_pet',
-      expect.anything(),
       expect.anything(),
     );
   });

@@ -1,3 +1,4 @@
+import { formatDuration } from '@/shared/utils/format';
 import { describe, expect, it } from 'vitest';
 import type { DialogTurn, Session, TokenUsage } from '../types/flow-chat';
 import {
@@ -114,6 +115,22 @@ describe('tokenUsageDisplay', () => {
     expect(getCompressionTriggerTokens(1_000_000)).toBe(926_000);
   });
 
+  it('uses the host pool trigger and hides the bound member trigger', () => {
+    const pool = buildModelSelectorTooltipDetails({ configName: '', contextWindow: 128_000,
+      compressionTriggerTokens: 86_000, configuredMaxOutputTokens: 8_000, t });
+    expect(pool.rows).toEqual([
+      { key: 'contextWindow', label: 'Context window', value: '128K' },
+      { key: 'compressionTrigger', label: 'Compression trigger', value: '86K' },
+    ]);
+    const member = buildModelSelectorTooltipDetails({ configName: 'Large member', contextWindow: 160_000,
+      compressionTriggerTokens: null, usage: { current: 64_000, max: 128_000, source: 'agent_prompt' }, t });
+    expect(member.rows).toEqual([
+      { key: 'configName', label: 'Configuration', value: 'Large member' },
+      { key: 'contextWindow', label: 'Context window', value: '160K' },
+      { key: 'contextUsage', label: 'Last request prompt', value: '64K/128K (50%)' },
+    ]);
+  });
+
   it('builds labeled model details and puts the long-context warning last', () => {
     expect(buildModelSelectorTooltipDetails({
       configName: 'OpenAI production',
@@ -171,7 +188,7 @@ describe('tokenUsageDisplay', () => {
       t,
     })).toEqual([
       { key: 'completed', label: 'Completed', value: '12:00:00 PM' },
-      { key: 'duration', label: 'Duration', value: '5m23s' },
+      { key: 'duration', label: 'Duration', value: formatDuration(323000) },
     ]);
   });
 
@@ -184,7 +201,7 @@ describe('tokenUsageDisplay', () => {
       t,
     })).toEqual([
       { key: 'completed', label: 'Stopped', value: '12:00:00' },
-      { key: 'duration', label: 'Duration', value: '12.3s' },
+      { key: 'duration', label: 'Duration', value: formatDuration(12345) },
     ]);
   });
 
@@ -194,7 +211,7 @@ describe('tokenUsageDisplay', () => {
     expect(buildModelRoundCompletionMeta({ completedAt: NaN, durationMs: Infinity, formatTime, t })).toEqual([]);
     expect(buildModelRoundCompletionMeta({ durationMs: -1, formatTime, t })).toEqual([]);
     expect(buildModelRoundCompletionMeta({ durationMs: 0, formatTime, t })).toEqual([
-      { key: 'duration', label: 'Duration', value: '0ms' },
+      { key: 'duration', label: 'Duration', value: formatDuration(0) },
     ]);
   });
 

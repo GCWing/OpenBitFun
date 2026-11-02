@@ -134,6 +134,14 @@ impl WorkspaceProcessControl {
             .send(signal)
             .await
             .map_err(|_| anyhow!("Workspace process has already exited"));
+        if send_result.is_err() && self.signal_hook.is_some() && hook_result.is_ok() {
+            // A target-aware hook delivers the signal itself, and the local
+            // supervisor ends as soon as the target does, which closes this
+            // channel. Reporting a failure here would tell the caller a signal
+            // failed although it arrived: the child this handle refers to is
+            // already gone, which is what a kill or interrupt asks for.
+            return Ok(());
+        }
         hook_result.and(send_result)
     }
 }
@@ -241,6 +249,31 @@ impl WorkspaceStdio {
             control,
             completion,
         })
+    }
+
+    /// Rewrite the stderr stream of an already spawned workspace process.
+    ///
+    /// Targets that interleave transport-level noise into the command's stderr
+    /// use this to hand consumers clean diagnostics without changing stdin,
+    /// stdout, or process lifetime.
+    pub(crate) fn map_stderr(
+        self,
+        filter: impl FnOnce(WorkspaceReader) -> WorkspaceReader,
+    ) -> Self {
+        let Self {
+            stdin,
+            stdout,
+            stderr,
+            control,
+            completion,
+        } = self;
+        Self {
+            stdin,
+            stdout,
+            stderr: filter(stderr),
+            control,
+            completion,
+        }
     }
 
     pub fn into_parts(
@@ -934,6 +967,53 @@ mod tests {
             exit.exit_code,
             Some(7),
             "a hook-handled soft interrupt must not kill the owning transport"
+        );
+    }
+
+    /// A target-aware hook delivers the signal itself, and the local supervisor
+    /// ends as soon as the target does, so it can be gone before the redundant
+    /// control message is queued. That is the WSL and Docker kill ordering: hook
+    /// first, control message second.
+    #[tokio::test]
+    async fn delivered_hook_signal_succeeds_when_the_owner_already_finished() {
+        let hook: WorkspaceSignalHook = Arc::new(|_| Box::pin(async { Ok(()) }));
+        let pipes = WorkspacePipes::new(Some(hook));
+        let control = pipes.control.clone();
+        // Dropping the owner is what `run_local_process` does when the target
+        // exits; only the receiving side of the control channel goes away.
+        drop(pipes);
+
+        control
+            .kill()
+            .await
+            .expect("a delivered kill must not be reported as a missing process");
+    }
+
+    #[tokio::test]
+    async fn closed_control_channel_still_reports_a_missing_process_without_a_hook() {
+        let pipes = WorkspacePipes::new(None);
+        let control = pipes.control.clone();
+        drop(pipes);
+
+        let error = control.kill().await.unwrap_err();
+        assert!(
+            error.to_string().contains("already exited"),
+            "an unhandled signal to a finished process must stay an error, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hook_failure_is_reported_even_when_the_owner_already_finished() {
+        let hook: WorkspaceSignalHook =
+            Arc::new(|_| Box::pin(async { Err(anyhow!("target refused the signal")) }));
+        let pipes = WorkspacePipes::new(Some(hook));
+        let control = pipes.control.clone();
+        drop(pipes);
+
+        let error = control.kill().await.unwrap_err();
+        assert!(
+            error.to_string().contains("target refused the signal"),
+            "the target's own failure must win, got: {error}"
         );
     }
 

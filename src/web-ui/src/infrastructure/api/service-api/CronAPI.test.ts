@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { activateSurface, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/deviceSurface';
 import { cronAPI } from './CronAPI';
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('./ApiClient', () => ({ api: { invoke } }));
 describe('scheduled job workspace identity', () => {
-  beforeEach(() => { invoke.mockReset(); invoke.mockResolvedValue([]); });
+  beforeEach(() => { activateSurface(LOCAL_SURFACE_ID); invoke.mockReset(); invoke.mockResolvedValue([]); });
   it('sends only an ID when filtering jobs', async () => {
     await cronAPI.listJobs({ workspaceId: 'remote-workspace', targetKind: 'workspace' });
     expect(invoke).toHaveBeenCalledExactlyOnceWith('list_cron_jobs', {
@@ -37,4 +38,15 @@ describe('scheduled job workspace identity', () => {
     await cronAPI.updateJob('job-1', { target });
     expect(invoke).toHaveBeenLastCalledWith('update_cron_job', { request: { jobId: 'job-1', target } });
   });
+  it('checks an explicit capability before sending new policy fields to an older peer', async () => {
+    activateSurface('old-host');
+    invoke.mockResolvedValue({ capabilities: {} });
+    await expect(cronAPI.updateJob('job', { reportPolicy: 'always' })).rejects.toThrow('does not support');
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('peer_mode_ping', {});
+    invoke.mockResolvedValue({ capabilities: { background_result_delivery_v1: true } });
+    await cronAPI.updateJob('job', { reportPolicy: 'conditional' });
+    expect(invoke).toHaveBeenLastCalledWith('update_cron_job', { request: { jobId: 'job', reportPolicy: 'conditional' } });
+    activateSurface(LOCAL_SURFACE_ID);
+  });
+
 });

@@ -1,6 +1,9 @@
 import { useSettingsStore } from '@/app/scenes/settings/settingsStore';
 import { useSceneStore } from '@/app/stores/sceneStore';
-import { getInteractiveCapability } from './interactiveCapabilityCatalog';
+import {
+  getInteractiveCapability,
+  isInteractiveCapabilityDestinationAvailable,
+} from './interactiveCapabilityCatalog';
 import { activateProductAction } from './productActionActivator';
 
 export interface InteractiveCapabilityActivationOptions {
@@ -21,6 +24,9 @@ export async function activateInteractiveCapability(
     throw new Error(`Unknown documented item for ${capabilityId}: ${options.itemId}`);
   }
   const destination = item?.destination ?? capability.destination;
+  if (!isInteractiveCapabilityDestinationAvailable(destination)) {
+    throw new Error('The Git panel is no longer available');
+  }
 
   switch (destination.kind) {
     case 'settings':

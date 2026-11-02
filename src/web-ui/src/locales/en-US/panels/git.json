@@ -454,5 +454,17 @@
     "unavailable": "Git ownership trust for \"{{path}}\" could not be granted from here. Grant it on the machine that owns the repository.",
     "unavailableWithCommand": "Git ownership trust for \"{{path}}\" could not be granted from here. Run this command on the machine that holds the repository:\n\n{{command}}",
     "required": "Git will not read \"{{path}}\" until you trust its ownership."
+  },
+  "workingCopy": {
+    "openWorkspace": "Open a workspace to see changes.",
+    "currentHost": "Current host",
+    "clean": "Working tree is clean",
+    "cleanDescription": "There are no uncommitted changes in this repository.",
+    "upstreamComparison": "Compared with upstream: {{ahead}} ahead · {{behind}} behind",
+    "unpushed": "Local commits are waiting to be pushed. Use Push above when you are ready.",
+    "remoteSnapshot": "Check branch tracking and remote synchronization in Branches.",
+    "statusUnavailable": "Git status is unavailable",
+    "selectFile": "Select a file to review its changes",
+    "conflicts": "{{count}} files have unresolved conflicts."
   }
 }

@@ -23,6 +23,7 @@ import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
 import { CommandPalettePresentation } from './CommandPaletteState';
+import { RollbackEntryFacts } from '../policy/RollbackPresentationPolicy';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
@@ -59,6 +60,24 @@ export class ConversationViewState {
    * conversation has no session, so the row can never act on a stale target.
    */
   commandPalette: CommandPalettePresentation = CommandPalettePresentation.hidden();
+  promptSuggestion: string = '';
+  /**
+   * The facts a tap on the rollback entry is judged with.
+   *
+   * Projected, not decided: the entry can be tapped long after the row was drawn,
+   * so the pane resolves these facts into a decision at tap time. `none()` is the
+   * default because a surface with no host behind it — the local General Chat pane
+   * — has nothing to roll back to.
+   */
+  rollbackGate: RollbackEntryFacts = RollbackEntryFacts.none();
+  /** The system hint row a successful rollback left in this session's transcript. */
+  rollbackNotice: string = '';
+  /** Host outcome of a rollback this client asked for, or empty for none. */
+  rollbackOutcome: string = '';
+  /** Monotonic id of that outcome, so two identical failures are two outcomes. */
+  rollbackOutcomeSeq: number = 0;
+  /** Identity generation for a reused pane; a resize alone does not change it. */
+  sessionContextRevision: number = 0;
 
   static project(
     route: AppRoute,
@@ -96,6 +115,19 @@ export class ConversationViewState {
       remote.commandPalette,
       state.activeSession.sessionId.length > 0,
       state.isBusy);
+    // A rollback needs an idle session on a host that serves the capability; a
+    // dispatch session cannot be proven from this controller (see
+    // `RollbackEntryFacts.isDispatchSession`), so the host's own refusal stays the
+    // loud answer rather than a silent "no" invented here.
+    state.rollbackGate = new RollbackEntryFacts(
+      remote.hostCapabilities.slice(),
+      remote.isBusy || state.canStop,
+      false
+    );
+    state.rollbackNotice = remote.rollbackNotice;
+    state.rollbackOutcome = remote.rollbackOutcome;
+    state.rollbackOutcomeSeq = remote.rollbackOutcomeSeq;
+    state.sessionContextRevision = remote.sessionContextRevision;
     return state;
   }
 
@@ -124,6 +156,7 @@ export class ConversationViewState {
     state.selectedImages = core.selectedImages.map((image) => toConversationUiSelectedImage(image));
     state.isVoiceListening = core.isVoiceListening;
     state.chatInput = core.chatInput;
+    state.promptSuggestion = core.promptSuggestion;
     return state;
   }
 

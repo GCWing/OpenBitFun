@@ -75,4 +75,8 @@ describe('getTurnCompletionNotice', () => {
       titleKey: 'turnCompletionNotice.generic.title',
     });
   });
+  it('treats an admitted empty background ending as normal completion', () => {
+    expect(getTurnCompletionNotice({ status: 'completed', finishReason: 'background_quiet', hasFinalResponse: false })).toBeNull();
+  });
+
 });

@@ -24,6 +24,7 @@ struct State {
     fail_close: AtomicBool,
     requested: tokio::sync::Notify,
     release: tokio::sync::Notify,
+    response_delay_ms: std::sync::atomic::AtomicU64,
 }
 
 struct SftpServer {
@@ -249,6 +250,7 @@ impl russh::server::Handler for SshServer {
             let mut stdin = child.stdin.take().unwrap();
             let mut stdout = child.stdout.take().unwrap();
             let (mut reader, mut writer) = tokio::io::split(channel.into_stream());
+            let state = self.state.clone();
             tokio::spawn(async move {
                 use tokio::io::AsyncWriteExt;
                 let input = async {
@@ -256,8 +258,40 @@ impl russh::server::Handler for SshServer {
                     stdin.shutdown().await
                 };
                 let output = async {
-                    tokio::io::copy(&mut stdout, &mut writer).await?;
-                    writer.shutdown().await
+                    // Delay complete SFTP response packets independently. A
+                    // sleeping copy loop would serialize unrelated replies and
+                    // misrepresent a network that supports pipelined requests.
+                    let (send, mut receive) = tokio::sync::mpsc::channel(32);
+                    let read = async move {
+                        loop {
+                            let size = match stdout.read_u32().await {
+                                Ok(size) => size,
+                                Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+                                    break
+                                }
+                                Err(error) => return Err(error),
+                            };
+                            let mut packet = vec![0; size as usize + 4];
+                            packet[..4].copy_from_slice(&size.to_be_bytes());
+                            stdout.read_exact(&mut packet[4..]).await?;
+                            let ready = tokio::time::Instant::now()
+                                + std::time::Duration::from_millis(
+                                    state.response_delay_ms.load(Ordering::SeqCst),
+                                );
+                            if send.send((ready, packet)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok::<_, std::io::Error>(())
+                    };
+                    let write = async {
+                        while let Some((ready, packet)) = receive.recv().await {
+                            tokio::time::sleep_until(ready).await;
+                            writer.write_all(&packet).await?;
+                        }
+                        writer.shutdown().await
+                    };
+                    tokio::try_join!(read, write).map(|_| ())
                 };
                 tokio::select! {
                     _ = async { tokio::try_join!(input, output) } => {},
@@ -763,6 +797,244 @@ async fn openssh_real_files_over_loopback_ssh() {
         bytes
     );
     assert_eq!(f.state.channels.load(Ordering::SeqCst), 2);
+}
+
+#[cfg(feature = "remote-connect")]
+#[tokio::test]
+#[ignore = "Set OPENBITFUN_TEST_SFTP_SERVER to the OpenSSH sftp-server executable"]
+async fn openssh_html_preview_reads_nested_site_resources() {
+    use crate::remote_connect::{
+        file_projection::SessionFileTarget, html_preview::HtmlPreviewSource,
+    };
+    use crate::remote_ssh::workspace_services::RemoteWorkspaceFs;
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+    use openbitfun_product_domains::html_preview::{
+        HtmlPreviewErrorCode, HtmlPreviewResourceRequest, PREVIEW_CHUNK_BYTES,
+    };
+    let executable = std::env::var("OPENBITFUN_TEST_SFTP_SERVER").unwrap();
+    let f = Fixture::with_openssh(Some(executable)).await;
+    let root = f._dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join("website/dist/assets")).unwrap();
+    std::fs::write(
+        root.join("website/dist/index.html"),
+        b"<script src='/assets/app.js'></script>",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("website/dist/assets/app.js"),
+        b"window.sshLoaded=true",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("website/dist/assets/app.css"),
+        b"body{color:green}",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("website/dist/assets/image.png"),
+        [137, 80, 78, 71, 0, 255],
+    )
+    .unwrap();
+    std::fs::write(root.join("website/shared.css"), b"parent-style").unwrap();
+    let large = vec![53; PREVIEW_CHUNK_BYTES + 17];
+    std::fs::write(root.join("website/dist/assets/large.js"), &large).unwrap();
+    let service = crate::remote_ssh::RemoteFileService::new(Arc::new(tokio::sync::RwLock::new(
+        Some(f.manager.as_ref().clone()),
+    )));
+    let entry = root
+        .join("website/dist/index.html")
+        .to_string_lossy()
+        .into_owned();
+    let source = HtmlPreviewSource::new(
+        SessionFileTarget {
+            fs: Arc::new(RemoteWorkspaceFs::new("sftp-test".into(), service)),
+            root: root.to_string_lossy().into_owned(),
+            path: entry.clone(),
+            remote: true,
+        },
+        "ssh-workspace",
+    )
+    .await
+    .unwrap();
+    for (path, expected) in [
+        ("assets/app.js", b"window.sshLoaded=true".as_slice()),
+        (
+            "website/dist/assets/app.css",
+            b"body{color:green}".as_slice(),
+        ),
+        ("assets/image.png", [137, 80, 78, 71, 0, 255].as_slice()),
+        ("website/shared.css", b"parent-style".as_slice()),
+    ] {
+        let file = source
+            .read(&HtmlPreviewResourceRequest {
+                workspace_id: "ssh-workspace".into(),
+                file_path: entry.clone(),
+                resource_path: Some(path.into()),
+                metadata_only: false,
+                offset: 0,
+                expected_source: None,
+                expected_revision: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(BASE64.decode(file.content_base64).unwrap(), expected);
+    }
+    let mut chunk_request = HtmlPreviewResourceRequest {
+        workspace_id: "ssh-workspace".into(),
+        file_path: entry,
+        resource_path: Some("assets/large.js".into()),
+        metadata_only: false,
+        offset: 0,
+        expected_source: None,
+        expected_revision: None,
+    };
+    let first = source.read(&chunk_request).await.unwrap();
+    let mut content = BASE64.decode(first.content_base64).unwrap();
+    assert_eq!(content.len(), PREVIEW_CHUNK_BYTES);
+    chunk_request.offset = content.len() as u64;
+    chunk_request.expected_source = Some(first.source);
+    chunk_request.expected_revision = Some(first.revision);
+    content.extend(
+        BASE64
+            .decode(source.read(&chunk_request).await.unwrap().content_base64)
+            .unwrap(),
+    );
+    assert_eq!(content, large);
+    chunk_request.resource_path = Some("../private-file".into());
+    assert_eq!(
+        source.read(&chunk_request).await.unwrap_err().code,
+        HtmlPreviewErrorCode::InvalidPath
+    );
+    assert!(
+        f.state.channels.load(Ordering::SeqCst) > 0,
+        "Reads must traverse a real SSH/SFTP channel"
+    );
+}
+
+#[cfg(feature = "remote-connect")]
+#[tokio::test]
+#[ignore = "Performance experiment: set OPENBITFUN_TEST_SFTP_SERVER; adds 40 ms to each SFTP reply"]
+async fn openssh_html_preview_loading_benchmark() {
+    use crate::remote_connect::{
+        file_projection::SessionFileTarget,
+        html_preview::{transfer::tests::benchmark_loading, HtmlPreviewSource},
+    };
+    use crate::remote_ssh::workspace_services::RemoteWorkspaceFs;
+    use openbitfun_product_domains::html_preview::HtmlPreviewResourceRequest;
+    let executable = std::env::var("OPENBITFUN_TEST_SFTP_SERVER").unwrap();
+    let f = Fixture::with_openssh(Some(executable)).await;
+    f.state.response_delay_ms.store(40, Ordering::SeqCst);
+    let root = f._dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join("site/assets")).unwrap();
+    let files = vec![
+        ("site/index.html".to_string(), b"<link rel='stylesheet' href='assets/app.css'><script src='assets/app.js'></script><img src='assets/image.png'>".to_vec()),
+        ("site/assets/app.css".to_string(), vec![b'c'; 96 * 1024]),
+        ("site/assets/app.js".to_string(), vec![b'j'; 2 * 1024 * 1024]),
+        ("site/assets/image.png".to_string(), vec![53; 512 * 1024]),
+        ("site/assets/font.woff2".to_string(), vec![19; 128 * 1024]),
+    ];
+    for (path, bytes) in &files {
+        std::fs::write(root.join(path), bytes).unwrap();
+    }
+    let service = crate::remote_ssh::RemoteFileService::new(Arc::new(tokio::sync::RwLock::new(
+        Some(f.manager.as_ref().clone()),
+    )));
+    let entry = root.join("site/index.html").to_string_lossy().into_owned();
+    let source = HtmlPreviewSource::new(
+        SessionFileTarget {
+            fs: Arc::new(RemoteWorkspaceFs::new("sftp-test".into(), service)),
+            root: root.to_string_lossy().into_owned(),
+            path: entry.clone(),
+            remote: true,
+        },
+        "ssh-workspace",
+    )
+    .await
+    .unwrap();
+    benchmark_loading(
+        Arc::new(source),
+        HtmlPreviewResourceRequest {
+            workspace_id: "ssh-workspace".into(),
+            file_path: entry,
+            resource_path: None,
+            metadata_only: false,
+            offset: 0,
+            expected_source: None,
+            expected_revision: None,
+        },
+        files,
+        "ssh-sftp-40ms",
+    )
+    .await;
+    assert!(f.state.channels.load(Ordering::SeqCst) > 0);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[ignore = "Set OPENBITFUN_TEST_SFTP_SERVER to the OpenSSH sftp-server executable"]
+async fn openssh_directory_symlink_browsing() {
+    use std::os::unix::fs::symlink;
+    let executable = std::env::var("OPENBITFUN_TEST_SFTP_SERVER")
+        .expect("OpenSSH sftp-server executable required");
+    let f = Fixture::with_openssh(Some(executable)).await;
+    let service = crate::remote_ssh::RemoteFileService::new(Arc::new(tokio::sync::RwLock::new(
+        Some(f.manager.as_ref().clone()),
+    )));
+    let directory = f._dir.path().join("target directory");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(directory.join("sentinel.txt"), b"keep").unwrap();
+    symlink("..", directory.join("parent-link")).unwrap();
+    symlink(&directory, f._dir.path().join("absolute-link")).unwrap();
+    symlink("target directory", f._dir.path().join("relative-link")).unwrap();
+    symlink("relative-link", f._dir.path().join("chained-link")).unwrap();
+    symlink("missing", f._dir.path().join("broken-link")).unwrap();
+    symlink(
+        "target directory/sentinel.txt",
+        f._dir.path().join("file-link"),
+    )
+    .unwrap();
+    symlink("loop-link", f._dir.path().join("loop-link")).unwrap();
+
+    let entries = service
+        .read_dir("sftp-test", f._dir.path().to_str().unwrap())
+        .await
+        .unwrap();
+    for name in ["absolute-link", "relative-link", "chained-link"] {
+        let entry = entries.iter().find(|entry| entry.name == name).unwrap();
+        assert!(entry.is_symlink);
+        assert!(!entry.is_dir, "listing must retain no-follow metadata");
+        assert!(service.is_dir("sftp-test", &entry.path).await.unwrap());
+        let children = service.read_dir("sftp-test", &entry.path).await.unwrap();
+        assert_eq!(children.len(), 2);
+        let file = children
+            .iter()
+            .find(|child| child.name == "sentinel.txt")
+            .unwrap();
+        assert_eq!(file.path, format!("{}/sentinel.txt", entry.path));
+        let link = children
+            .iter()
+            .find(|child| child.name == "parent-link")
+            .unwrap();
+        assert!(link.is_symlink && !link.is_dir);
+    }
+    for name in ["file-link", "broken-link", "loop-link"] {
+        let path = f._dir.path().join(name);
+        assert!(service
+            .read_dir("sftp-test", path.to_str().unwrap())
+            .await
+            .is_err());
+    }
+    service
+        .remove_dir_all(
+            "sftp-test",
+            f._dir.path().join("relative-link").to_str().unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read(directory.join("sentinel.txt")).unwrap(),
+        b"keep"
+    );
 }
 
 #[tokio::test]

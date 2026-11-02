@@ -4,6 +4,26 @@ use crate::types::{
 };
 use std::collections::HashSet;
 
+/// Custom wire messages bypass the host's image selection and cannot be mixed
+/// with a host-enforced image budget. Other request options remain editable.
+pub(crate) fn validate_image_budget_request_body(
+    max_images_per_request: Option<usize>,
+    body: Option<&serde_json::Value>,
+) -> Result<(), &'static str> {
+    if max_images_per_request.is_some()
+        && body
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|body| {
+                ["messages", "input", "contents"]
+                    .iter()
+                    .any(|key| body.contains_key(*key))
+            })
+    {
+        return Err("custom_request_body cannot override messages, input, or contents when max_images_per_request is configured");
+    }
+    Ok(())
+}
+
 /// Provider-neutral model validation, shared by startup and offline import.
 pub fn validate_model_config(model: &crate::AIModelConfig, index: usize) -> Result<(), String> {
     if !model.supports_text_generation() {
@@ -23,6 +43,20 @@ pub fn validate_model_config(model: &crate::AIModelConfig, index: usize) -> Resu
     }
     if !model.enabled {
         return Ok(());
+    }
+    if model.max_images_per_request == Some(0) {
+        return Err(format!(
+            "Model '{}' max_images_per_request must be greater than 0 at index {index}",
+            model.name
+        ));
+    }
+    if model.max_images_per_request.is_some() {
+        let body = model
+            .custom_request_body
+            .as_deref()
+            .and_then(|body| serde_json::from_str::<serde_json::Value>(body).ok());
+        validate_image_budget_request_body(model.max_images_per_request, body.as_ref())
+            .map_err(|error| format!("Model '{}' {error} at index {index}", model.name))?;
     }
     if model.name.trim().is_empty() {
         return Err(format!("Model name is required at index {index}"));
@@ -55,18 +89,6 @@ pub fn validate_model_config(model: &crate::AIModelConfig, index: usize) -> Resu
                 model.name
             )
         })?;
-        if let Some(preset) = &reasoning.default_preset {
-            if matches!(
-                reasoning.catalog,
-                openbitfun_core_types::ReasoningCatalogBinding::Disabled
-            ) && reasoning.preset(preset).is_none()
-            {
-                return Err(format!(
-                    "Model '{}' reasoning default preset '{}' is not available at index {index}",
-                    model.name, preset
-                ));
-            }
-        }
     }
     Ok(())
 }
@@ -255,118 +277,120 @@ pub fn reconcile_model_references(config: &mut GlobalConfig) -> ModelReferenceRe
         false,
     );
 
-    if !direct_text_reference_is_valid(&config.ai.agent_model_defaults.mode) {
-        invalidated.insert(config.ai.agent_model_defaults.mode.clone());
-        let previous = std::mem::replace(
-            &mut config.ai.agent_model_defaults.mode,
-            "primary".to_string(),
-        );
-        result.agent_model_defaults_changed = true;
-        diagnose_reference_repair(
-            &mut result.diagnostics,
-            "ai.agent_model_defaults.mode",
-            Some(&previous),
-            Some("primary"),
-        );
-    }
+    if config.ai.agent_model_selections.is_none() {
+        if !direct_text_reference_is_valid(&config.ai.agent_model_defaults.mode) {
+            invalidated.insert(config.ai.agent_model_defaults.mode.clone());
+            let previous = std::mem::replace(
+                &mut config.ai.agent_model_defaults.mode,
+                "primary".to_string(),
+            );
+            result.agent_model_defaults_changed = true;
+            diagnose_reference_repair(
+                &mut result.diagnostics,
+                "ai.agent_model_defaults.mode",
+                Some(&previous),
+                Some("primary"),
+            );
+        }
 
-    if config
-        .ai
-        .agent_model_defaults
-        .subagents
-        .default_selection
-        .fixed_model_id()
-        .is_some_and(|model_id| !direct_text_reference_is_valid(model_id))
-    {
-        let previous = config
+        if config
             .ai
             .agent_model_defaults
             .subagents
             .default_selection
             .fixed_model_id()
-            .map(str::to_string);
-        if let Some(previous) = previous.as_ref() {
-            invalidated.insert(previous.clone());
+            .is_some_and(|model_id| !direct_text_reference_is_valid(model_id))
+        {
+            let previous = config
+                .ai
+                .agent_model_defaults
+                .subagents
+                .default_selection
+                .fixed_model_id()
+                .map(str::to_string);
+            if let Some(previous) = previous.as_ref() {
+                invalidated.insert(previous.clone());
+            }
+            config.ai.agent_model_defaults.subagents.default_selection =
+                SubagentModelSelection::fixed("fast");
+            result.agent_model_defaults_changed = true;
+            diagnose_reference_repair(
+                &mut result.diagnostics,
+                "ai.agent_model_defaults.subagents.default",
+                previous.as_deref(),
+                Some("fast"),
+            );
         }
-        config.ai.agent_model_defaults.subagents.default_selection =
-            SubagentModelSelection::fixed("fast");
-        result.agent_model_defaults_changed = true;
-        diagnose_reference_repair(
-            &mut result.diagnostics,
-            "ai.agent_model_defaults.subagents.default",
-            previous.as_deref(),
-            Some("fast"),
-        );
-    }
 
-    if let std::collections::hash_map::Entry::Vacant(entry) = config
-        .ai
-        .agent_model_defaults
-        .subagents
-        .builtin
-        .entry("ResearchSpecialist".to_string())
-    {
-        entry.insert(SubagentModelSelection::Inherit);
-        result.agent_model_defaults_changed = true;
-        result.diagnostics.push(ConfigDiagnostic {
+        if let std::collections::hash_map::Entry::Vacant(entry) = config
+            .ai
+            .agent_model_defaults
+            .subagents
+            .builtin
+            .entry("ResearchSpecialist".to_string())
+        {
+            entry.insert(SubagentModelSelection::Inherit);
+            result.agent_model_defaults_changed = true;
+            result.diagnostics.push(ConfigDiagnostic {
             path: "ai.agent_model_defaults.subagents.builtin.ResearchSpecialist".to_string(),
             message: "Configured ResearchSpecialist to inherit the parent model so DeepResearch does not depend on an unrelated fast-model endpoint".to_string(),
             code: "RESEARCH_SPECIALIST_MODEL_DEFAULT_RESTORED".to_string(),
             severity: ConfigDiagnosticSeverity::Warning,
             recoverability: ConfigDiagnosticRecoverability::AutoFix,
         });
-    }
+        }
 
-    config
-        .ai
-        .agent_model_defaults
-        .subagents
-        .builtin
-        .retain(|subagent_id, selection| {
-            let invalid = selection
-                .fixed_model_id()
-                .is_some_and(|model_id| !direct_text_reference_is_valid(model_id));
-            if invalid {
-                if let Some(model_id) = selection.fixed_model_id() {
-                    invalidated.insert(model_id.to_string());
-                    diagnose_reference_repair(
-                        &mut result.diagnostics,
-                        &format!("ai.agent_model_defaults.subagents.builtin.{subagent_id}"),
-                        Some(model_id),
-                        None,
-                    );
+        config
+            .ai
+            .agent_model_defaults
+            .subagents
+            .builtin
+            .retain(|subagent_id, selection| {
+                let invalid = selection
+                    .fixed_model_id()
+                    .is_some_and(|model_id| !direct_text_reference_is_valid(model_id));
+                if invalid {
+                    if let Some(model_id) = selection.fixed_model_id() {
+                        invalidated.insert(model_id.to_string());
+                        diagnose_reference_repair(
+                            &mut result.diagnostics,
+                            &format!("ai.agent_model_defaults.subagents.builtin.{subagent_id}"),
+                            Some(model_id),
+                            None,
+                        );
+                    }
+                    result.agent_model_defaults_changed = true;
                 }
-                result.agent_model_defaults_changed = true;
-            }
-            !invalid
-        });
+                !invalid
+            });
 
-    if config
-        .ai
-        .agent_model_defaults
-        .subagents
-        .fork
-        .fixed_model_id()
-        .is_some_and(|model_id| !direct_text_reference_is_valid(model_id))
-    {
-        let previous = config
+        if config
             .ai
             .agent_model_defaults
             .subagents
             .fork
             .fixed_model_id()
-            .map(str::to_string);
-        if let Some(previous) = previous.as_ref() {
-            invalidated.insert(previous.clone());
+            .is_some_and(|model_id| !direct_text_reference_is_valid(model_id))
+        {
+            let previous = config
+                .ai
+                .agent_model_defaults
+                .subagents
+                .fork
+                .fixed_model_id()
+                .map(str::to_string);
+            if let Some(previous) = previous.as_ref() {
+                invalidated.insert(previous.clone());
+            }
+            config.ai.agent_model_defaults.subagents.fork = SubagentModelSelection::Inherit;
+            result.agent_model_defaults_changed = true;
+            diagnose_reference_repair(
+                &mut result.diagnostics,
+                "ai.agent_model_defaults.subagents.fork",
+                previous.as_deref(),
+                Some("inherit"),
+            );
         }
-        config.ai.agent_model_defaults.subagents.fork = SubagentModelSelection::Inherit;
-        result.agent_model_defaults_changed = true;
-        diagnose_reference_repair(
-            &mut result.diagnostics,
-            "ai.agent_model_defaults.subagents.fork",
-            previous.as_deref(),
-            Some("inherit"),
-        );
     }
 
     let mut reconcile_slot = |slot: &mut Option<String>,

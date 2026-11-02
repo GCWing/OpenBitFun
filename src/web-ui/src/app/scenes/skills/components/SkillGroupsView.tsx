@@ -164,7 +164,7 @@ export default function SkillGroupsView({ searchQuery, skills, collection, catal
       <header className="skills-content-header" data-openbitfun-scene="skills" data-openbitfun-part="groupsHeader">
         <div className="skills-content-header__identity">
           <div className="skills-content-header__copy">
-            <h1 className="skills-content-header__title"><OverflowText>{t('groups.title')}</OverflowText></h1>
+            <h2 className="skills-content-header__title"><OverflowText>{t('groups.title')}</OverflowText></h2>
             <p className="skills-content-header__description">{t('groups.subtitle')}</p>
           </div>
         </div>
@@ -173,7 +173,7 @@ export default function SkillGroupsView({ searchQuery, skills, collection, catal
           {t('groups.create')}
         </Button>
       </header>
-      <div className="skills-main__toolbar">
+      <div className="skills-main__toolbar" data-openbitfun-scene="skills" data-openbitfun-part="toolbar">
         <IconButton aria-label={t('groups.refresh')} title={t('groups.refresh')} icon={<Icon name="refresh" />}
           size="sm" disabled={collection.saving || collection.loading || catalogLoading} onClick={onRefresh} />
       </div>

@@ -8,6 +8,7 @@
 
 | Crate | 职责 | 本地文档 |
 |---|---|---|
+| `computer-use` | Desktop 与 CLI 共用的原生截图、无障碍、输入、权限和控制会话服务 | [AGENTS.md](computer-use/AGENTS.md) |
 | `services-core` | 不包含产品组装决策的本地 service primitive，包括 session storage、metadata store CRUD/index rebuild、metadata 构造/计数/索引/字段 mutation、lineage 规则和 JSON file IO | [AGENTS.md](services-core/AGENTS.md) |
 | `services-integrations` | MCP、git、remote、file watch、MiniApp runtime、产品领域 port 具体实现，以及平台无关的 Remote Connect primitives | [AGENTS.md](services-integrations/AGENTS.md) |
 | `legacy-migration` | 离线旧产品发现、加锁、一致性 SQLite 快照、暂存、journal 恢复和 owner adapter 编排 | — |

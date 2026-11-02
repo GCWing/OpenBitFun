@@ -20,7 +20,6 @@ delivery form.
 | `runtime-services` | Typed runtime service assembly and service availability facts | [AGENTS.md](runtime-services/AGENTS.md) |
 | `tool-provider-groups` | Tool provider group facts and product-full tool group composition. Cargo package remains `openbitfun-tool-packs`. | [AGENTS.md](tool-provider-groups/AGENTS.md) |
 | `tool-execution` | Low-level file/search/tool IO helpers, ExecCommand presentation facts, Computer Use loop/retry policies, prompt-safe tool context facts, and provider-neutral tool runtime policies. Cargo package remains `tool-runtime`. | [AGENTS.md](tool-execution/AGENTS.md) |
-| `tool-call-jsonrepair` | Guarded JSON repair for streamed tool-call arguments (local fork of `jsonrepair-rs` with a tool-argument profile that does not treat `#`/`//`/`/* */` as comments). Cargo package remains `openbitfun-tool-call-jsonrepair`. | [README.md](tool-call-jsonrepair/README.md) |
 
 ## Placement Rules
 

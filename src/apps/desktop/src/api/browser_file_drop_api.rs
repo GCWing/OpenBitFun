@@ -57,7 +57,7 @@ mod windows {
     }
 
     async fn call_devtools_protocol_method(
-        webview: &tauri::WebviewWindow,
+        webview: &tauri::Webview,
         method: &str,
         parameters: Value,
     ) -> Result<Value, String> {
@@ -139,7 +139,7 @@ mod windows {
     }
 
     pub(super) async fn resolve(
-        webview: &tauri::WebviewWindow,
+        webview: &tauri::Webview,
         request: &ResolveBrowserDroppedFilePathsRequest,
     ) -> Result<Vec<String>, String> {
         let object_group = format!("openbitfun-browser-drop-{}", request.token);
@@ -230,7 +230,7 @@ mod windows {
 
 #[tauri::command]
 pub async fn resolve_browser_dropped_file_paths(
-    webview: tauri::WebviewWindow,
+    webview: tauri::Webview,
     request: ResolveBrowserDroppedFilePathsRequest,
 ) -> Result<Vec<String>, String> {
     validate_request(&request)?;

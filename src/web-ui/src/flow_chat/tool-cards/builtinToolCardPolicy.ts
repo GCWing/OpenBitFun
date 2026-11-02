@@ -3,9 +3,9 @@ import { getRuntimeToolInput, runtimeToolRecord } from './runtimeToolCardModel';
 
 export const SEMANTIC_BUILTIN_TOOL_NAMES = [
   'get_goal', 'create_goal', 'update_goal', 'AgentList', 'AgentDelete', 'SessionHistory',
-  'analyze_image', 'GetTime', 'ListMCPResources', 'ReadMCPResource', 'ListMCPPrompts', 'GetMCPPrompt',
+  'analyze_image', 'generate_image', 'GetTime', 'ListMCPResources', 'ReadMCPResource', 'ListMCPPrompts', 'GetMCPPrompt',
   'Worktree', 'PortForward', 'ReviewPlatform', 'FrontendWorkbench', 'FinalizeMiniApp',
-  'PublishMiniApp', 'PublishAppearance', 'Playbook',
+  'PublishMiniApp', 'PublishAppearance', 'Playbook', 'DesktopCard',
 ] as const;
 export type SemanticBuiltinToolName = typeof SEMANTIC_BUILTIN_TOOL_NAMES[number];
 const names: ReadonlySet<string> = new Set(SEMANTIC_BUILTIN_TOOL_NAMES);
@@ -34,6 +34,7 @@ export function getBuiltinToolAttention(name: SemanticBuiltinToolName, input?: u
     case 'PortForward': return ['targets', 'detect', 'list'].includes(String(request.operation)) ? 'ambient' : 'prominent';
     case 'ReviewPlatform': return REVIEW_READ_ACTIONS.has(String(request.action)) ? 'ambient' : 'prominent';
     case 'FrontendWorkbench': return ['prepare', 'status', 'inspect'].includes(String(request.action)) ? 'ambient' : 'prominent';
+    case 'DesktopCard': return ['presets', 'list', 'get', 'refresh'].includes(String(request.action)) ? 'ambient' : 'prominent';
     default: return 'ambient';
   }
 }

@@ -109,6 +109,26 @@ describe('pet sprite renderer', () => {
     expect(sprite().style.animation).not.toBe('none');
   });
 
+  it('scales an oversized native cell down into the max box, keeping its aspect ratio', async () => {
+    vi.stubGlobal('Image', class {
+      // v2 atlas with 512x512 cells: 256x256 at half scale, wider than the box.
+      naturalWidth = 8 * 512;
+      naturalHeight = 11 * 512;
+      onload: (() => void) | null = null;
+      set src(_value: string) { this.onload?.(); }
+    });
+    const onSize = vi.fn();
+    await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" nativePetdexSize petdexScale={0.5} petdexMaxSize={{ width: 168, height: 234 }} onPetFrameSizeChange={onSize} />));
+    expect(onSize).toHaveBeenLastCalledWith({ width: 168, height: 168 });
+    const petRoot = sprite().parentElement!;
+    expect(petRoot.style.getPropertyValue('--openbitfun-petdex-width')).toBe('168px');
+    expect(petRoot.style.getPropertyValue('--openbitfun-petdex-height')).toBe('168px');
+
+    // A cell that already fits keeps the requested scale.
+    await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" nativePetdexSize petdexScale={0.25} petdexMaxSize={{ width: 168, height: 234 }} onPetFrameSizeChange={onSize} />));
+    expect(onSize).toHaveBeenLastCalledWith({ width: 128, height: 128 });
+  });
+
   it('shows look frames only during idle and restores the action under reduced motion', async () => {
     await act(async () => root.render(<AgentCompanionPet pet={pet} mood="rest" lookDirection={12} />));
     expect(sprite().style.backgroundPositionY).toBe('100%');

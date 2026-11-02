@@ -35,6 +35,8 @@ export interface ChatSessionSnapshot {
   hasMoreMessages?: boolean;
   historyLoading?: boolean;
   historyFailed?: boolean;
+  /** Empty when no valid hint remains; older hosts simply never emit one. */
+  promptSuggestion?: string;
 }
 
 export interface ChatSessionControllerCallbacks {
@@ -106,6 +108,7 @@ export class ChatSessionController {
           if (!this.current(epoch)) return;
           this.historyReplaying = true;
           this.reducer = new DurableSessionReducer(); this.hasMoreMessages = false;
+          if (this.caughtUp) this.publish();
         },
         onCaughtUp: async (): Promise<void> => {
           if (!this.current(epoch)) return;
@@ -174,12 +177,14 @@ export class ChatSessionController {
     const catalog = this.pendingModelCatalog;
     this.pendingModelCatalog = undefined;
     if (catalog) this.cursor.knownModelCatalogVersion = catalog.version || 0;
+    const suggestion = this.reducer.promptSuggestion();
     this.callbacks.onSnapshot({
       sessionId: this.sessionId, cursor: this.cursor, changed: true, title: '', modelCatalog: catalog,
       sessionState: active ? 'active' : this.sessionState, newMessages: [],
       activeTurn: active, messageSnapshot: persisted, shouldSyncAfterTurnEnded: false,
       historyRewritten: false, completedTurnId: this.completedTurnId, hasMoreMessages: this.hasMoreMessages,
-      historyLoading: this.historyLoading, historyFailed: this.historyFailed
+      historyLoading: this.historyLoading, historyFailed: this.historyFailed,
+      promptSuggestion: active ? '' : suggestion
     });
   }
 }

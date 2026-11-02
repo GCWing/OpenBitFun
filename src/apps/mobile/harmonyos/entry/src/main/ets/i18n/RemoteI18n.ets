@@ -94,6 +94,13 @@ export class RemoteI18n {
     return [];
   }
 
+  static formatMessageTime(timestamp: number): string {
+    const locale = RemoteI18n.language() === APP_LOCALE_EN_US ? 'en-US' : 'zh-CN';
+    return new intl.DateTimeFormat(locale, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+    }).format(new Date(timestamp));
+  }
+
   static formatAbsoluteDate(timestamp: number): string {
     const locale = RemoteI18n.language() === APP_LOCALE_EN_US ? 'en-US' : 'zh-CN';
     const formatter = new intl.DateTimeFormat(locale, {

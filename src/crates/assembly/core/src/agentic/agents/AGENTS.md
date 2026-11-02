@@ -25,4 +25,6 @@ Prompt routing and optional delegation are checked in the owning content crate:
 
 ```bash
 cargo test -p openbitfun-agent-content --test prompt_catalog_contracts
+# Verify the assembled mode/subagent prompts as well as their source templates:
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,tools-browser-web,tools-computer-use --lib agentic::agents::
 ```

@@ -25,6 +25,7 @@ openbitfun-core = { path = "../../crates/assembly/core", features = [
     "tools-browser-web",
     "tools-computer-use",
     "tools-image-analysis",
+    "tools-image-generation",
     "tools-agent-control",
 ] }
 openbitfun-sdk-host = { path = "../../crates/interfaces/sdk-host" }

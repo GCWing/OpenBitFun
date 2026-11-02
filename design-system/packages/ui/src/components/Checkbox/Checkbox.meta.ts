@@ -16,5 +16,5 @@ export const checkboxMeta = {
     { name: "size", type: "sm | md | lg", defaultValue: "md" },
   ],
   states: ["default", "hover", "focus-visible", "checked", "indeterminate", "invalid", "disabled"],
-  tokens: ["color.content.primary", "color.content.muted", "color.content.disabled", "color.field.background", "color.field.border", "color.accent.default", "color.focus.ring"],
+  tokens: ["color.content.primary", "color.content.muted", "color.content.disabled", "color.field.background", "color.field.border", "color.control.highlight.background", "color.control.switch.thumb", "color.focus.ring"],
 } as const satisfies ComponentMeta;

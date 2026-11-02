@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 
 
 import '@/app/scenes/settings/pages/development/EditorSettingsPage.scss';
@@ -249,9 +250,10 @@ const EditorSettingsPage: React.FC = () => {
   const renderLineHighlightOptionsTranslated = renderLineHighlightOptions.map(o => ({ ...o, label: t(o.labelKey) }));
 
 
-  const [config, setConfig] = useState<EditorConfigType>({ ...DEFAULT_EDITOR_CONFIG });
-  const [isLoading, setIsLoading] = useState(true);
-  const [supportsIndentDetection, setSupportsIndentDetection] = useState(false);
+  const seed = useConfigSeed(['editor']);
+  const [config, setConfig] = useState<EditorConfigType>(() => ({ ...DEFAULT_EDITOR_CONFIG, ...convertToCamelCase(seed.get('editor', {}) ?? {}) }));
+  const [isLoading, setIsLoading] = useState(!seed.loaded);
+  const [supportsIndentDetection, setSupportsIndentDetection] = useState(typeof seed.get<Record<string, unknown> | null>('editor', null)?.detect_indentation === 'boolean');
   const [loadFailed, setLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
@@ -272,7 +274,7 @@ const EditorSettingsPage: React.FC = () => {
 
   const loadConfig = useCallback(async () => {
     try {
-      setIsLoading(true);
+      setIsLoading(!seed.loaded);
       setLoadFailed(false);
       const backendConfig = await configManager.getConfig<Record<string, any>>('editor');
       if (backendConfig) {
@@ -289,11 +291,11 @@ const EditorSettingsPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [seed.loaded]);
 
   useEffect(() => {
-    loadConfig();
-  }, [loadConfig]);
+    if (!seed.loaded) void loadConfig();
+  }, [loadConfig, seed.loaded]);
 
 
   const doSave = useCallback((
@@ -410,7 +412,6 @@ const EditorSettingsPage: React.FC = () => {
       <ConfigPageLayout className="openbitfun-editor-config" data-openbitfun-component="editor-config" data-openbitfun-part="root" data-openbitfun-state="loading">
         <ConfigPageHeader
           title={t('title')}
-          subtitle={t('subtitle')}
         />
         <ConfigPageContent>
           {isLoading ? (
@@ -431,7 +432,6 @@ const EditorSettingsPage: React.FC = () => {
     <ConfigPageLayout className="openbitfun-editor-config" data-openbitfun-component="editor-config" data-openbitfun-part="root">
       <ConfigPageHeader
         title={t('title')}
-        subtitle={t('subtitle')}
         extra={isSaving || statusMessage ? (
           <ConfigFieldStatus
             status={isSaving
@@ -447,7 +447,6 @@ const EditorSettingsPage: React.FC = () => {
       <ConfigPageContent className="openbitfun-editor-config__content" data-openbitfun-component="editor-config" data-openbitfun-part="content">
         <ConfigPageSection
           title={t('sections.appearance.title')}
-          description={t('sections.appearance.description')}
         >
           <ConfigPageRow label={t('appearance.font')} align="center">
             <Select
@@ -514,7 +513,6 @@ const EditorSettingsPage: React.FC = () => {
 
         <ConfigPageSection
           title={t('sections.behavior.title')}
-          description={t('sections.behavior.description')}
         >
           <ConfigPageRow label={t('behavior.tabSize')} description={t('behavior.tabSizeDesc')} align="center">
             <NumberInput
@@ -580,7 +578,6 @@ const EditorSettingsPage: React.FC = () => {
 
         <ConfigPageSection
           title={t('sections.display.title')}
-          description={t('sections.display.description')}
         >
           <ConfigPageRow label={t('display.minimap')} description={t('display.minimapDesc')} align="center">
             <Switch
@@ -628,7 +625,6 @@ const EditorSettingsPage: React.FC = () => {
 
         <ConfigPageSection
           title={t('sections.advanced.title')}
-          description={t('sections.advanced.description')}
         >
           <ConfigPageRow label={t('advanced.semanticHighlighting')} description={t('advanced.semanticHighlightingDesc')} align="center">
             <Switch

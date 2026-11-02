@@ -20,6 +20,12 @@ describe('global search query grammar', () => {
 });
 
 describe('scoreTextMatch', () => {
+  it('accepts consecutive initials without assembling acronyms from scattered prose', () => {
+    expect(scoreTextMatch('gs', ['Global Search'])).toBeGreaterThan(0);
+    expect(scoreTextMatch('pet', ['Publish the example after completing checks and tests'])).toBe(0);
+    expect(scoreTextMatch('mascot', ['Move an app; select controls only when observed, then operate them'])).toBe(0);
+  });
+
   it('prioritizes exact, prefix, word-prefix, and contains matches', () => {
     expect(scoreTextMatch('term', ['term'])).toBeGreaterThan(scoreTextMatch('term', ['terminal']));
     expect(scoreTextMatch('term', ['open terminal'])).toBeGreaterThan(scoreTextMatch('term', ['preterminal panel']));

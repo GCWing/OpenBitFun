@@ -40,6 +40,7 @@ export {
   renameChatSessionTitle,
   reloadSessionTitle,
   forkChatSession,
+  duplicateChatSession,
 } from './SessionModule';
 
 export {

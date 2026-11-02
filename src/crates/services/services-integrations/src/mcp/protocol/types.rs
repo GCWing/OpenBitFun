@@ -401,7 +401,11 @@ pub struct MCPTool {
 }
 
 /// MCP tool call result.
-/// MCP Apps extension: `structuredContent` is UI-optimized data (not for model context).
+///
+/// MCP Apps extension: `structuredContent` is UI-optimized data and not preferred
+/// model context. The assistant renderer only falls back to it when `content`
+/// carries no usable text, so a completed call or a failed one still reaches the
+/// model with a payload instead of an empty message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MCPToolResult {

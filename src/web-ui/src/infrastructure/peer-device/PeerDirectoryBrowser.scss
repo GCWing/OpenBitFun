@@ -2,6 +2,7 @@
  * Peer directory browser styles (controller-side in-app picker).
  */
 @use '@/shared/styles/surface-recipes' as surfaces;
+@use '@/shared/styles/overlay-layout' as overlay-layout;
 
 .peer-directory-browser-overlay {
   position: fixed;
@@ -24,12 +25,10 @@
 
 .peer-directory-browser {
   @include surfaces.dialog;
+  @include overlay-layout.workspace-dialog-size;
 
   display: flex;
   flex-direction: column;
-  height: 72vh;
-  width: 90vw;
-  max-width: 840px;
   overflow: hidden;
   opacity: 1;
   transform: translateY(0) scale(1);
@@ -40,10 +39,11 @@
 
   &__header {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
     padding-block: 14px;
-    padding-inline: 18px 14px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
     border-bottom: 1px solid var(--openbitfun-color-border-subtle);
   }
 
@@ -79,9 +79,11 @@
 
   &__toolbar {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 6px;
-    padding: 10px 14px;
+    padding-block: 10px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
     border-bottom: 1px solid var(--openbitfun-color-border-subtle);
   }
 
@@ -99,7 +101,8 @@
   &__body {
     flex: 1;
     min-height: 0;
-    padding: 8px;
+    padding-block: 8px;
+    padding-inline: calc(var(--openbitfun-overlay-dialog-header-padding-inline) - var(--openbitfun-space-2));
   }
 
   &__state {
@@ -141,7 +144,7 @@
     background: transparent;
     color: var(--openbitfun-color-content-primary);
     font-size: var(--openbitfun-type-label-md-font-size);
-    padding: 8px 10px;
+    padding: 8px var(--openbitfun-space-2);
     cursor: pointer;
     text-align: left;
 
@@ -156,10 +159,12 @@
 
   &__footer {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 16px;
+    padding-block: 12px;
+    padding-inline: var(--openbitfun-overlay-dialog-header-padding-inline);
     border-top: 1px solid var(--openbitfun-color-border-subtle);
   }
 

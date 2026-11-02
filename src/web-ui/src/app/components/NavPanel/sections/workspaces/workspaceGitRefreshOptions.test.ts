@@ -62,9 +62,11 @@ describe('getWorkspaceGitBasicInfoOptions', () => {
       });
   });
 
-  it('keeps remote workspace rows on the existing default git refresh behavior', () => {
+  it('defers inactive remote workspace rows until activation too', () => {
     expect(getWorkspaceGitBasicInfoOptions(createWorkspace(WorkspaceKind.Remote), false))
-      .toBeUndefined();
+      .toMatchObject({ isActive: false, refreshOnMount: false, refreshOnActive: true });
+    expect(getWorkspaceGitBasicInfoOptions(createWorkspace(WorkspaceKind.Remote), true))
+      .toMatchObject({ isActive: true, refreshOnMount: true, refreshOnActive: true });
   });
 
   it('suppresses only mount refresh during a history session transition', () => {

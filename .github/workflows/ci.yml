@@ -142,6 +142,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libtesseract-dev \
+            libleptonica-dev \
             pkg-config \
             build-essential \
             libxcb1-dev \
@@ -173,6 +177,12 @@ jobs:
       - name: Run Windows CLI terminal contracts
         if: runner.os == 'Windows'
         run: cargo test --locked -p openbitfun-cli --test terminal_process_contracts -- --test-threads=1
+
+      # Windows file replacement and process ownership differ from POSIX. The
+      # terminal process target does not run these daemon and TUI unit tests.
+      - name: Run Windows CLI daemon and QR regressions
+        if: runner.os == 'Windows'
+        run: "cargo test --locked -p openbitfun-cli --bin openbitfun -- daemon:: ui::tool_cards::tests::"
 
       - name: Run SDK Host tests
         if: runner.os == 'Linux'
@@ -322,6 +332,12 @@ jobs:
         if: runner.os != 'Windows'
         run: cargo test --locked -p openbitfun-desktop --lib
 
+      # Native tests moved out of Desktop with the shared provider. Run them
+      # on every OS, independently of Tauri's Windows test-loader limitation.
+      # Interactive delivery fixtures remain explicitly ignored.
+      - name: Run shared Computer Use provider regressions
+        run: cargo test --locked -p openbitfun-computer-use --lib
+
       # Tauri issue #13419 prevents some Windows MSVC lib-test harnesses from
       # entering Rust's test runner at all. Keep probing on every run so the
       # full suite resumes automatically when upstream fixes it. Only the exact
@@ -367,6 +383,27 @@ jobs:
       - name: Run Page Functions runtime tests
         run: cargo test --locked -p openbitfun-page-function-runtime
 
+      # Every clipboard helper is a separate process: PowerShell plus WinForms on
+      # Windows, xclip/xsel or wl-copy on Linux. Parallel test threads starve each
+      # other past the helper timeout on a 2-4 vCPU runner, which is what turned a
+      # single contended process into a whole-suite failure. Keep this
+      # process-spawning suite serial.
+      - name: Run Computer Use clipboard contracts
+        run: cargo test --locked -p openbitfun-services-core --no-default-features --features process-runtime --lib system::local_actions -- --test-threads=1
+
+      # The native round trip needs a disposable clipboard. macOS uses a named
+      # pasteboard and Linux uses disposable X11/Wayland seats (below). Windows has
+      # only the runner's global clipboard, so that step is not a CI gate: the
+      # helper definition is asserted by
+      # windows_helper_matches_the_windows_clipboard_contract, and the real Windows
+      # clipboard is exercised on a Windows desktop.
+      - name: Run Linux clipboard round trips
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb xauth xclip xsel wl-clipboard sway
+          bash scripts/test-linux-clipboard.sh
+
       - name: Run Relay service tests
         run: cargo test --locked -p openbitfun-relay-service
 
@@ -400,6 +437,7 @@ jobs:
         run: |
           cargo test --locked -p openbitfun-services-core --no-default-features --features workspace-runtime --lib workspace::tests::
           cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::manager::tests::workspace_
+          cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::html_preview
           cargo test --locked -p tool-runtime --no-default-features --lib fs::read_file::tests::
           cargo test --locked -p tool-runtime --no-default-features --test tool_io_contracts
 
@@ -672,6 +710,26 @@ jobs:
         if: needs.build-impact.outputs.frontend_required != 'false'
         timeout-minutes: 5
         run: pnpm --dir src/mobile-web run test:account-browser
+
+      - name: Test mobile web conversation and input layouts
+        if: needs.build-impact.outputs.frontend_required != 'false'
+        timeout-minutes: 3
+        run: |
+          pnpm --dir src/mobile-web run test:prompt-suggestion-browser
+          pnpm --dir src/mobile-web run test:rollback-browser
+          pnpm --dir src/mobile-web run test:chat-transcript-browser
+
+      - name: Upload mobile input layout screenshots
+        if: always() && needs.build-impact.outputs.frontend_required != 'false'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mobile-input-layout-screenshots
+          path: |
+            /tmp/mobile-prompt-suggestion-*.png
+            /tmp/mobile-edit-*.png
+            /tmp/mobile-rollback-*.png
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build mobile web
         if: needs.build-impact.outputs.frontend_required != 'false'

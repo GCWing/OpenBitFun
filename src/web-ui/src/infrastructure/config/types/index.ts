@@ -8,6 +8,8 @@ export interface GlobalConfig {
   terminal: TerminalConfig;
   workspace: WorkspaceConfig;
   ai: AIConfig;
+  /** Image/media services. Deliberately a sibling of `ai`, never a chapter of it. */
+  media: MediaConfig;
   tool_permissions: ToolPermissionConfig;
   memories: MemoriesConfig;
   schema_version: 1;
@@ -77,6 +79,8 @@ export interface AppConfig {
   /** Controller-owned end-to-end realtime voice-call settings. */
   voice_call?: VoiceCallSettings;
   user_tool_groups?: UserToolGroupsConfig;
+  /** Absent on hosts that predate assistant entry-session preferences. */
+  assistant_default_sessions?: Record<string, string>;
   user_skill_groups?: UserSkillGroupsConfig;
 }
 
@@ -117,6 +121,7 @@ export interface AppLoggingConfig {
 }
 
 export interface AppFlowChatConfig {
+  send_during_turn?: 'immediate' | 'queue';
   default_mode_strategy?: 'follow_last' | 'fixed' | null;
   default_mode_id?: string | null;
   last_mode_id?: string | null;
@@ -142,8 +147,6 @@ export interface NotificationConfig {
   dialog_completion_notify: boolean;
   /** Whether to show a toast when an approval request arrives while the window is not focused. */
   permission_request_notify: boolean;
-  /** Whether to show built-in tip cards on each startup. Defaults to true. */
-  enable_startup_tips: boolean;
 }
 
 export interface AIExperienceConfig {
@@ -171,6 +174,10 @@ export interface AIExperienceConfig {
   quick_actions?: Array<{ id: string; label: string; prompt: string; enabled: boolean }>;
   /** Absent on older hosts that do not support commit co-author preferences. */
   enable_git_commit_coauthor?: boolean;
+  /** Absent on older hosts that do not offer next-input suggestions. */
+  enable_prompt_suggestion?: boolean;
+  /** Absent on older hosts that have no desktop cards. */
+  enable_desktop_cards?: boolean;
 }
 
 export interface VoiceInputSettings {
@@ -280,6 +287,8 @@ export interface AIModelConfig {
   model_name: string;
   context_window?: number;
   max_tokens?: number;
+  /** Optional image input ceiling across history, attachments, and tool results. */
+  max_images_per_request?: number;
   temperature?: number;
   top_p?: number;
   enabled: boolean;
@@ -300,10 +309,26 @@ export interface AIModelConfig {
   inline_think_in_text?: boolean;
   /** Authentication source. Defaults to inline `api_key`. */
   auth?: AuthConfig;
+  /** Ordered backup channels (other model configs). Absent keeps one channel. */
+  channel_routing?: ModelChannelRouting;
 }
 
-/** Subscription provider for in-app OAuth auth. */
-export type SubscriptionProvider = 'codex' | 'antigravity' | 'opencode' | 'grok' | 'hermes';
+/** Explicit failover route; members are other model configuration IDs. */
+export interface ModelChannelRouting {
+  version: number;
+  fallback_model_ids: string[];
+  /** Fixed member chosen by the user. Absent enables automatic failover. */
+  manual_channel?: string;
+}
+
+/**
+ * Subscription provider for in-app OAuth auth.
+ *
+ * `workbuddy` and `workbuddy_ai` are retired: the vendor stopped allowing
+ * subscription-token access, so no sign-in is offered. They stay in the union
+ * because configuration an earlier release persisted still carries them.
+ */
+export type SubscriptionProvider = 'codex' | 'antigravity' | 'opencode' | 'grok' | 'hermes' | 'workbuddy' | 'workbuddy_ai' | 'zcode' | 'zcode_cn';
 
 /** OpenCode billing/API product. Both plans reuse the same signed-in account. */
 export type OpenCodePlan = 'zen' | 'go';
@@ -316,6 +341,16 @@ export type AuthConfig =
       provider: SubscriptionProvider;
       /** Absent on legacy OpenCode configs, which continue to use Zen. */
       plan?: OpenCodePlan;
+      /** Explicit account slot. Absent keeps the provider's default account. */
+      account_id?: string;
+    }
+  | {
+      /** Ordered accounts of one provider, tried in order on quota/errors. */
+      type: 'subscription_pool';
+      provider: SubscriptionProvider;
+      accounts: string[];
+      /** Host-owned edit generation; send back the value that was read. */
+      revision: number;
     };
 
 export interface ProxyConfig {
@@ -328,8 +363,64 @@ export interface ProxyConfig {
 export interface DefaultModelsConfig {
   primary?: string | null;
   fast?: string | null;
+  economy?: string | null;
   image_understanding?: string | null;
   speech_recognition?: string | null;
+}
+
+/**
+ * Wire request dialect of an image service.
+ *
+ * The dialect decides the endpoint path, body shape and result shape, so it is
+ * chosen explicitly instead of being inferred from the model name.
+ */
+/**
+ * Image request protocol.
+ *
+ * `chatgpt_codex` is the subscription route: it drives a chat model's
+ * `image_generation` tool over the provider's own backend and never touches the
+ * API-key image endpoint.
+ */
+export type ImageDialect = 'openai_images' | 'dashscope_native' | 'chatgpt_codex';
+
+/** Default generation parameters persisted per service. */
+export interface ImageGenerationParams {
+  /** Dialect-native size expression (`1024x1024` for OpenAI, `2048*2048` for DashScope). */
+  size?: string;
+  n?: number;
+  negative_prompt?: string;
+  quality?: string;
+  background?: string;
+  output_format?: string;
+  watermark?: boolean;
+  prompt_extend?: boolean;
+  seed?: number;
+}
+
+/** One independently configured image generation service. */
+export interface ImageServiceConfig {
+  id: string;
+  name: string;
+  dialect: ImageDialect;
+  /** Service root without the dialect endpoint path. */
+  base_url: string;
+  /** Full request URL override; replaces `base_url` + dialect path when set. */
+  request_url?: string;
+  model_name: string;
+  api_key: string;
+  auth?: AuthConfig;
+  enabled: boolean;
+  params: ImageGenerationParams;
+  custom_headers?: Record<string, string>;
+  custom_headers_mode?: CustomHeadersMode;
+  skip_ssl_verify?: boolean;
+}
+
+/** Media service configuration stored beside `ai`, not inside it. */
+export interface MediaConfig {
+  image_services: ImageServiceConfig[];
+  /** Service id used by `generate_image` when a call names no service. */
+  default_image_service?: string | null;
 }
 
 export type SubagentModelSelection =
@@ -345,6 +436,17 @@ export interface TaskModelsConfig {
   git_commit: TaskModelSelection;
 }
 
+export type ModelTargetSelection = { kind: 'model'; model_ref: string } | { kind: 'pool'; pool_id: string };
+export type AgentModelTargetSelection = ModelTargetSelection | { kind: 'inherit' };
+export interface AgentModelSelections {
+  mode: ModelTargetSelection;
+  subagents: {
+    default: AgentModelTargetSelection;
+    builtin: Record<string, AgentModelTargetSelection>;
+    fork: AgentModelTargetSelection;
+  };
+}
+
 export interface AgentModelDefaultsConfig {
   mode: string;
   subagents: {
@@ -354,10 +456,27 @@ export interface AgentModelDefaultsConfig {
   };
 }
 
+export type ModelRoutingMode = 'manual' | 'smart';
+export interface ModelRoutingConfig {
+  default_mode?: ModelRoutingMode | null;
+  /** Smart subagent default role; keep unknown future values intact. */
+  /** Retained legacy data; subagent selection uses its existing configuration. */
+  subagent_model?: string;
+  router_model_id?: string | null;
+  /** Legacy optional override; the GUI preserves it without exposing an input. */
+  tokenizer_path?: string;
+  simple_threshold: number;
+  timeout_ms: number;
+  summary_enabled: boolean;
+}
+
 export interface AIConfig {
   models: AIModelConfig[];
+  tool_presentation_mode?: 'native' | 'ptc' | 'ptc_python';
   default_models: DefaultModelsConfig;
+  model_routing?: ModelRoutingConfig;
   agent_model_defaults: AgentModelDefaultsConfig;
+  agent_model_selections?: AgentModelSelections;
   task_models: TaskModelsConfig;
   agent_profiles: Record<string, StoredAgentProfileConfigItem>;
   proxy: ProxyConfig;
@@ -598,6 +717,9 @@ export interface WorkspaceConfig {
 }
 
 export interface IConfigManager {
+  /** Trusted snapshots for synchronous UI seeding, scoped to the active device. */
+  hasCachedConfig(path: string): boolean;
+  getCachedConfig<T>(path: string): T | undefined;
   getConfig<T = any>(path?: string): Promise<T>;
   getOptionalConfig<T = any>(path: string): Promise<T | undefined>;
   getConfigs(paths: string[]): Promise<Record<string, unknown>>;
@@ -606,7 +728,7 @@ export interface IConfigManager {
   validateConfig(): Promise<ConfigValidationResult>;
   exportConfig(): Promise<ConfigExport>;
   importConfig(config: ConfigExport): Promise<void>;
-  updateConfig<T>(path: string, update: (current: T) => T): Promise<T>;
+  updateConfig<T>(path: string, update: (current: T) => T, options?: { expectedValue: T }): Promise<T>;
   onConfigChange(callback: (path: string, oldValue: any, newValue: any) => void): () => void;
   refreshCache(): Promise<void>;
   clearCache(): void;
@@ -673,7 +795,9 @@ export type ConfigPath =
   | 'app.flow_chat.default_mode_id'
   | 'app.flow_chat.last_mode_id'
   | 'app.flow_chat.show_permission_mode_control'
+  | 'ai.tool_presentation_mode'
   | 'app.flow_chat.auto_show_selection_toolbar'
+  | 'app.flow_chat.send_during_turn'
   | 'app.sidebar'
   | 'app.sidebar.width'
   | 'app.sidebar.collapsed'

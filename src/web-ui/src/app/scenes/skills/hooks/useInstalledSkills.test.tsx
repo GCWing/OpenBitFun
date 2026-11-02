@@ -3,11 +3,13 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SkillInfo, SkillScanDiagnostic } from '@/infrastructure/config/types';
+import type { SkillInfo, SkillLevel, SkillScanDiagnostic } from '@/infrastructure/config/types';
+import { WorkspaceKind, WorkspaceType, type WorkspaceInfo } from '@/shared/types';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { useInstalledSkills } from './useInstalledSkills';
 import type { InstalledFilter } from '../skillsSceneStore';
 
+const workspaceMock = vi.hoisted(() => ({ id: 'workspace-id' }));
 const getSkillConfigsMock = vi.hoisted(() => vi.fn());
 const translateMock = vi.hoisted(() => (key: string, options?: { field?: string }) => options?.field ? `${key}:${options.field}` : key);
 const diagnosticsMock = vi.hoisted(() => ({
@@ -17,6 +19,7 @@ const diagnosticsMock = vi.hoisted(() => ({
 const getGlobalSkillSettingsMock = vi.hoisted(() => vi.fn());
 const setGlobalSkillDisabledMock = vi.hoisted(() => vi.fn());
 const deleteSkillMock = vi.hoisted(() => vi.fn());
+const addSkillMock = vi.hoisted(() => vi.fn());
 const validateSkillPathMock = vi.hoisted(() => vi.fn());
 const notificationMocks = vi.hoisted(() => ({
   success: vi.fn(),
@@ -35,13 +38,13 @@ vi.mock('@/infrastructure/api', () => ({
     getGlobalSkillSettings: getGlobalSkillSettingsMock,
     setGlobalSkillDisabled: setGlobalSkillDisabledMock,
     validateSkillPath: validateSkillPathMock,
-    addSkill: vi.fn(),
+    addSkill: addSkillMock,
     deleteSkill: deleteSkillMock,
   },
 }));
 vi.mock('@/infrastructure/hooks/useWorkspaceManagerSync', () => ({
   useWorkspaceManagerSync: () => ({
-    workspace: { id: 'workspace-id' },
+    workspace: workspaceMock,
     workspacePath: 'D:/workspace/project',
     hasWorkspace: true,
     isRemoteWorkspace: false,
@@ -53,15 +56,19 @@ vi.mock('@/shared/notification-system', () => ({
 
 let currentInstalled: ReturnType<typeof useInstalledSkills> | null = null;
 
-function Harness({ enabled, activeFilter = 'all', searchQuery = '' }: {
+function Harness({ enabled, activeFilter = 'all', searchQuery = '', workspace, initialLevel }: {
   enabled: boolean;
   activeFilter?: InstalledFilter;
   searchQuery?: string;
+  workspace?: WorkspaceInfo;
+  initialLevel?: SkillLevel;
 }) {
   const installed = useInstalledSkills({
     searchQuery,
     activeFilter,
     enabled,
+    workspace,
+    initialLevel,
   });
   currentInstalled = installed;
   return <span>{installed.loading ? 'loading' : 'idle'}</span>;
@@ -83,12 +90,14 @@ describe('useInstalledSkills', () => {
       globallyDisabledUserSkillKeys: [],
     });
     deleteSkillMock.mockReset().mockResolvedValue(undefined);
+    addSkillMock.mockReset().mockResolvedValue(undefined);
     validateSkillPathMock.mockReset().mockResolvedValue({ valid: true, name: 'test' });
     notificationMocks.success.mockReset();
     notificationMocks.warning.mockReset();
     notificationMocks.info.mockReset();
     notificationMocks.error.mockReset();
     currentInstalled = null;
+    workspaceMock.id = 'workspace-id';
     diagnosticsMock.items = [];
     diagnosticsMock.available = true;
   });
@@ -97,6 +106,41 @@ describe('useInstalledSkills', () => {
     await act(async () => root.unmount());
     container.remove();
     vi.useRealTimers();
+  });
+
+  describe('on a CLI peer host', () => {
+    const skills = [{ key: 'user::openbitfun::good', name: 'good', sourceId: 'openbitfun', sourceSlot: 'openbitfun', level: 'user', path: '/skills/good' }];
+
+    it('lists Skills read-only when the host reports no direct management', async () => {
+      getSkillConfigsMock.mockResolvedValue(skills);
+      getGlobalSkillSettingsMock.mockResolvedValue({
+        directSkillManagementVersion: 0,
+        globallyDisabledUserSkillKeys: [],
+        globallyDisabledProjectSkillKeys: [],
+      });
+      await act(async () => root.render(<Harness enabled />));
+      expect(currentInstalled?.skills).toEqual(skills);
+      expect(currentInstalled?.error).toBeNull();
+      expect(currentInstalled?.canToggleSkill(skills[0] as never)).toBe(false);
+    });
+
+    it('still lists Skills when an older host refuses the availability settings', async () => {
+      getSkillConfigsMock.mockResolvedValue(skills);
+      getGlobalSkillSettingsMock.mockRejectedValue(new Error(
+        "command 'get_global_skill_settings' is not supported on CLI peer host: the CLI peer host has no handler for this command",
+      ));
+      await act(async () => root.render(<Harness enabled />));
+      expect(currentInstalled?.skills).toEqual(skills);
+      expect(currentInstalled?.error).toBeNull();
+      expect(currentInstalled?.canToggleSkill(skills[0] as never)).toBe(false);
+    });
+
+    it('keeps reporting other availability failures', async () => {
+      getSkillConfigsMock.mockResolvedValue(skills);
+      getGlobalSkillSettingsMock.mockRejectedValue(new Error('config is unreadable'));
+      await act(async () => root.render(<Harness enabled />));
+      expect(currentInstalled?.error).not.toBeNull();
+    });
   });
 
   it('preserves available skills alongside discovery failures', async () => {
@@ -111,6 +155,33 @@ describe('useInstalledSkills', () => {
       title: 'nav.title',
       metadata: { diagnostics: '/skills/bad/SKILL.md: missing description' },
     });
+  });
+
+  it('clears repaired diagnostics after a forced rescan and keeps healthy skills', async () => {
+    const good = { key: 'good', name: 'good', sourceId: 'openbitfun', level: 'user', path: '/skills/good' };
+    getSkillConfigsMock.mockResolvedValue([good]);
+    diagnosticsMock.items = [{ path: '/skills/bad', sourceId: 'codex', message: 'invalid metadata' }];
+    await act(async () => root.render(<Harness enabled />));
+    diagnosticsMock.items = [];
+    getSkillConfigsMock.mockResolvedValue([good, { ...good, key: 'repaired', name: 'repaired' }]);
+    await act(async () => { await currentInstalled?.loadSkills(true); });
+    expect(getSkillConfigsMock).toHaveBeenLastCalledWith({ forceRefresh: true, workspaceId: 'workspace-id' });
+    expect(currentInstalled?.diagnostics).toEqual([]);
+    expect(currentInstalled?.skills.map(skill => skill.key)).toEqual(['good', 'repaired']);
+  });
+
+  it('hides the previous workspace catalog while the new workspace scan is pending', async () => {
+    getSkillConfigsMock.mockResolvedValue([{ key: 'old', name: 'old', level: 'user', path: '/old/private' }]);
+    diagnosticsMock.items = [{ path: '/old/private/bad', sourceId: 'codex', message: 'invalid metadata' }];
+    await act(async () => root.render(<Harness enabled />));
+    getSkillConfigsMock.mockReturnValue(new Promise(() => {}));
+    workspaceMock.id = 'different-workspace';
+    await act(async () => root.render(<Harness enabled />));
+    expect(currentInstalled?.skills).toEqual([]);
+    expect(currentInstalled?.filteredSkills).toEqual([]);
+    expect(currentInstalled?.diagnostics).toEqual([]);
+    expect(currentInstalled?.catalogReady).toBe(false);
+    expect(currentInstalled?.counts.all).toBe(0);
   });
 
   it('reports unsupported skill capabilities without claiming a scan failure', async () => {
@@ -366,6 +437,42 @@ describe('useInstalledSkills', () => {
     expect(notificationMocks.success).not.toHaveBeenCalled();
     expect(notificationMocks.error).not.toHaveBeenCalled();
     expect(getSkillConfigsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not notify or reload when a standalone form closes during installation', async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    addSkillMock.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    await act(async () => { root.render(<Harness enabled />); });
+    await act(async () => { currentInstalled?.setFormPath('D:/skills/test'); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    let addition: Promise<boolean> | undefined;
+    await act(async () => { addition = currentInstalled?.handleAdd(); });
+    expect(addSkillMock).toHaveBeenCalledOnce();
+    await act(async () => { root.render(null); });
+    await act(async () => { finish(); expect(await addition).toBe(false); });
+    expect(notificationMocks.success).not.toHaveBeenCalled();
+    expect(notificationMocks.error).not.toHaveBeenCalled();
+    expect(getSkillConfigsMock).toHaveBeenCalledOnce();
+  });
+
+  it('installs into the explicitly selected project even when the active workspace changes', async () => {
+    vi.useFakeTimers();
+    const workspace: WorkspaceInfo = { id: 'owned-project', name: 'Owned project', rootPath: '/owned',
+      workspaceKind: WorkspaceKind.Normal, workspaceType: WorkspaceType.SingleProject,
+      languages: [], tags: [], openedAt: '', lastAccessed: '' };
+    await act(async () => { root.render(<Harness enabled workspace={workspace} initialLevel="project" />); });
+    expect(currentInstalled?.formLevel).toBe('project');
+    await act(async () => { currentInstalled?.setFormPath('/skills/test'); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    workspaceMock.id = 'unrelated-project';
+    await act(async () => { root.render(<Harness enabled workspace={workspace} initialLevel="project" />); });
+    await act(async () => { expect(await currentInstalled?.handleAdd()).toBe(true); });
+    expect(addSkillMock).toHaveBeenCalledExactlyOnceWith({
+      sourcePath: '/skills/test', level: 'project', workspaceId: 'owned-project',
+    });
+    expect(getSkillConfigsMock).toHaveBeenLastCalledWith({ forceRefresh: true, workspaceId: 'owned-project' });
+    expect(currentInstalled?.formLevel).toBe('project');
   });
 
   it('ignores path validation that finishes after switching away', async () => {

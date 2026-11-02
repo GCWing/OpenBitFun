@@ -1,6 +1,5 @@
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
-import { readFile } from '@tauri-apps/plugin-fs';
 import type { AgentCompanionPetSelection } from './AIExperienceConfigService';
 import { isTauriRuntime } from '@/infrastructure/runtime';
 import { createLogger } from '@/shared/utils/logger';
@@ -27,13 +26,26 @@ export const DEFAULT_AGENT_COMPANION_PET: AgentCompanionPetSelection = {
 /** Cache: absolute file path → blob URL (prevents re-reading the same file). */
 const blobUrlCache = new Map<string, string>();
 
+/**
+ * Reads a user pet spritesheet through the host. The host confines the read to
+ * the managed companion directory, which keeps the webview independent of the
+ * filesystem-plugin scope: on Linux every XDG directory starts with a dot and
+ * the scope requires literal leading dots, so the plugin could never resolve
+ * these files (`forbidden path`).
+ */
+async function readSpritesheetBuffer(absolutePath: string): Promise<ArrayBuffer> {
+  const response = await api.invoke<ArrayBuffer | Uint8Array>('load_agent_companion_pet_spritesheet', {
+    request: { spritesheetPath: absolutePath },
+  });
+  return response instanceof ArrayBuffer ? response : new Uint8Array(response).buffer;
+}
+
 async function readFileAsBlobUrl(absolutePath: string, mimeType: string): Promise<string> {
   const cached = blobUrlCache.get(absolutePath);
   if (cached) return cached;
 
-  const bytes = await readFile(absolutePath);
-  const blob = new Blob([bytes], { type: mimeType });
-  const url = URL.createObjectURL(blob);
+  const buffer = await readSpritesheetBuffer(absolutePath);
+  const url = URL.createObjectURL(new Blob([buffer], { type: mimeType }));
   blobUrlCache.set(absolutePath, url);
   return url;
 }

@@ -28,6 +28,7 @@ interface MiniAppLibraryRowProps {
   detailsLabel: string;
   downloadCount?: string;
   localMeta?: string;
+  launchActions?: React.ReactNode;
   metaLabel?: string;
   name: string;
   onOpenDetails: () => void;
@@ -53,6 +54,7 @@ const MiniAppLibraryRow: React.FC<MiniAppLibraryRowProps> = ({
   detailsLabel,
   downloadCount,
   localMeta,
+  launchActions,
   metaLabel,
   name,
   onOpenDetails,
@@ -95,7 +97,7 @@ const MiniAppLibraryRow: React.FC<MiniAppLibraryRowProps> = ({
             <MarketImage
               source={showcaseUrl}
               responsive
-              sizes="(min-width: 64rem) 224px, 100vw"
+              sizes="auto, (min-width: 720px) 680px, 100vw"
               width={640}
               height={360}
               alt={showcaseAlt}
@@ -191,17 +193,20 @@ const MiniAppLibraryRow: React.FC<MiniAppLibraryRowProps> = ({
             ))}
           </div>
         ) : null}
-        <Button
-          className="miniapp-library-row__primary"
-          size="sm"
-          variant={action === 'open' ? 'outline' : 'primary'}
-          disabled={actionDisabled}
-          loading={busy}
-          title={actionTitle}
-          onClick={onPrimaryAction}
-        >
-          {actionLabel}
-        </Button>
+        <div className="miniapp-library-row__launch-actions">
+          {launchActions}
+          {action !== 'open' || !launchActions ? <Button
+            className="miniapp-library-row__primary"
+            size="sm"
+            variant={action === 'open' ? 'outline' : 'primary'}
+            disabled={actionDisabled}
+            loading={busy}
+            title={actionTitle}
+            onClick={onPrimaryAction}
+          >
+            {actionLabel}
+          </Button> : null}
+        </div>
       </div>
     </article>
   );

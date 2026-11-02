@@ -1,13 +1,31 @@
 .computer-control-card {
   inline-size: 368px;
   max-inline-size: calc(100vw - var(--openbitfun-space-6));
+  max-block-size: calc(100dvh - var(--openbitfun-space-6));
+  overflow: hidden;
+
+  &__panel { max-block-size: inherit; }
+  &__body { min-block-size: 0; overflow-y: auto; }
 
   &__status { margin: 0; }
+
+  &__sharing, &__permissions, &__permission {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-2);
+  }
+  &__permissions { gap: var(--openbitfun-space-4); }
+  &__row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--openbitfun-space-2); }
+  &__sharing p, &__permissions p { margin: 0; }
+  &__permission { padding-block: var(--openbitfun-space-2); }
+  &__tree { max-block-size: 240px; overflow: auto; white-space: pre-wrap; }
+
 
   &__preview {
     position: relative;
     overflow: hidden;
     border-radius: var(--openbitfun-layout-card-radius-sm);
+    touch-action: none;
 
     img { display: block; inline-size: 100%; block-size: auto; }
   }
@@ -18,15 +36,20 @@
     inline-size: 40px;
     block-size: 40px;
     transform: translate(-8px, -8px);
-    transition: left 100ms ease-out, top 100ms ease-out;
 
     svg {
       display: block;
       inline-size: 100%;
       block-size: 100%;
       // Fixed neutral feedback over captured content, independent of accent color.
-      fill: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 65%, var(--openbitfun-color-content-on-light));
-      filter: drop-shadow(0 2px 3px color-mix(in srgb, var(--openbitfun-color-content-on-light) 45%, transparent));
+      fill: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 25%, var(--openbitfun-color-content-on-light));
+      stroke: var(--openbitfun-color-content-on-dark);
+      stroke-width: 3px;
+      stroke-linejoin: round;
+      // Centered contour shadows: a dark contact edge with a wider soft halo.
+      filter:
+        drop-shadow(0 0 1px color-mix(in srgb, var(--openbitfun-color-content-on-light) 80%, transparent))
+        drop-shadow(0 0 4px color-mix(in srgb, var(--openbitfun-color-content-on-light) 50%, transparent));
     }
 
   }
@@ -40,8 +63,28 @@
     border-radius: 50%;
     transform: translate(-50%, -50%);
   }
+  &__pointer--physical {
+    left: 0;
+    top: 0;
+    inline-size: 24px;
+    block-size: 24px;
+    transform-origin: 4.8px 4.8px;
+    transition: none;
+    will-change: transform;
+  }
+  &__click--shared {
+    inline-size: 24px;
+    block-size: 24px;
+    animation: computer-control-click 550ms linear forwards;
+  }
+}
+
+@keyframes computer-control-click {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(3.5); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .computer-control-card__pointer { transition: none; }
+  .computer-control-card__click--shared { animation: none; }
 }

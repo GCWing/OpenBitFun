@@ -1,6 +1,8 @@
 import { getActiveSurfaceId, getActiveSurfaceScope, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { workspaceAPI } from '@/infrastructure/api';
+import { globalEventBus } from '@/infrastructure/event-bus';
+import { FILE_WATCH_SETTLED_EVENT } from '@/tools/file-system/hooks/useFileWatchStatus';
 import type { ExplorerNodeDto } from '@/infrastructure/api/service-api/tauri-commands';
 import { createLogger } from '@/shared/utils/logger';
 import type { FileSystemChangeEvent, FileSystemNode, FileSystemOptions } from '@/tools/file-system/types';
@@ -186,6 +188,9 @@ function requestBackendWatchSync(key: string, ref: BackendWatchRef): void {
         error,
       });
     } finally {
+      // A registration can fail before the service has an event subscriber, so
+      // the status event is lost. Tell status readers to re-read instead.
+      globalEventBus.emit(FILE_WATCH_SETTLED_EVENT);
       ref.syncInProgress = false;
       if (ref.syncRequested) {
         requestBackendWatchSync(key, ref);

@@ -1,6 +1,6 @@
+import { invokePrepared } from './invokePrepared';
  
 
-import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
 import { createLogger } from '@/shared/utils/logger';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
@@ -239,21 +239,25 @@ export class GitAPI {
 
   async isGitRepository(workspace: GitWorkspaceScope): Promise<boolean> {
     // Host and workspace identity isolate probes even when repository paths match.
+    const surface = getActiveSurfaceScope();
     const key = gitWorkspaceKey(workspace);
+    const inFlightKey = surface.key(surface.epoch, workspace.workspaceId);
     const now = Date.now();
     const cached = this.repositoryProbeCache.get(key);
     if (cached && cached.expiresAt > now) {
       return cached.value;
     }
 
-    const inFlight = this.repositoryProbeInFlight.get(key);
+    const inFlight = this.repositoryProbeInFlight.get(inFlightKey);
     if (inFlight) {
       return inFlight;
     }
 
-    const probe = gitWorkspaceRequest(workspace)
-      .then(request => api.invoke<boolean>('git_is_repository', { request }))
+    const probe = invokePrepared<boolean>('git_is_repository', async () => ({
+      request: await gitWorkspaceRequest(workspace),
+    }))
       .then((value) => {
+        surface.assertCurrent('cache repository probe');
         this.repositoryProbeCache.set(key, {
           value,
           expiresAt: Date.now() + REPOSITORY_PROBE_CACHE_TTL_MS,
@@ -264,19 +268,23 @@ export class GitAPI {
         throw createTauriCommandError('git_is_repository', error, { workspace });
       })
       .finally(() => {
-        this.repositoryProbeInFlight.delete(key);
+        if (this.repositoryProbeInFlight.get(inFlightKey) === probe) {
+          this.repositoryProbeInFlight.delete(inFlightKey);
+        }
       });
 
-    this.repositoryProbeInFlight.set(key, probe);
+    this.repositoryProbeInFlight.set(inFlightKey, probe);
     return probe;
   }
 
   /** Reads whether Git trusts the repository's ownership. Never writes. */
   async getRepositoryTrust(workspace: GitWorkspaceScope): Promise<GitTrustReport> {
+    const surface = getActiveSurfaceScope();
     try {
-      const report: GitTrustReport = await api.invoke('git_get_repository_trust', {
+      const report: GitTrustReport = await invokePrepared('git_get_repository_trust', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) },
-      });
+      }));
+      surface.assertCurrent('update repository trust cache');
       // Trust can be granted outside this product — the user runs the manual
       // command in a terminal, or the repository's owner fixes it. Whoever
       // learns that first has to drop the `false` the probe cached while the
@@ -306,10 +314,12 @@ export class GitAPI {
    * is introduced here.
    */
   async trustRepository(workspace: GitWorkspaceScope): Promise<GitTrustOutcome> {
+    const surface = getActiveSurfaceScope();
     try {
-      const outcome = await api.invoke<GitTrustOutcome>('git_trust_repository', {
+      const outcome = await invokePrepared<GitTrustOutcome>('git_trust_repository', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) },
-      });
+      }));
+      surface.assertCurrent('update repository trust cache');
       // The probe cache may hold the `false` this repository returned while it
       // was still refused; a granted decision must not wait it out.
       if (outcome.state === 'trusted') {
@@ -324,9 +334,9 @@ export class GitAPI {
 
   async getRepository(workspace: GitWorkspaceScope): Promise<GitRepository> {
     try {
-      return await api.invoke('git_get_repository', { 
+      return await invokePrepared('git_get_repository', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_repository', error, { workspace });
     }
@@ -335,9 +345,9 @@ export class GitAPI {
 
   async getRepositoryBasic(workspace: GitWorkspaceScope): Promise<GitRepository> {
     try {
-      return await api.invoke('git_get_repository_basic', {
+      return await invokePrepared('git_get_repository_basic', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_repository_basic', error, { workspace });
     }
@@ -345,9 +355,9 @@ export class GitAPI {
 
   async resolveRevision(workspace: GitWorkspaceScope, revision: string): Promise<string> {
     try {
-      return await api.invoke('git_resolve_revision', {
+      return await invokePrepared('git_resolve_revision', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), revision },
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_resolve_revision', error, {
         workspace,
@@ -362,9 +372,9 @@ export class GitAPI {
       if (globalThis.__OPENBITFUN_PERF_TRACE_ENABLED__ === true) {
         startupTrace.markPhase('git_status_request', { source: traceSource });
       }
-      return await api.invoke('git_get_status', { 
+      return await invokePrepared('git_get_status', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_status', error, { workspace });
     }
@@ -373,9 +383,9 @@ export class GitAPI {
    
   async getBranches(workspace: GitWorkspaceScope, includeRemote: boolean = false): Promise<GitBranch[]> {
     try {
-      return await api.invoke('git_get_branches', { 
+      return await invokePrepared('git_get_branches', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), includeRemote }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_branches', error, { workspace, includeRemote });
     }
@@ -384,9 +394,9 @@ export class GitAPI {
    
   async getEnhancedBranches(workspace: GitWorkspaceScope, includeRemote: boolean = false): Promise<GitBranch[]> {
     try {
-      return await api.invoke('git_get_enhanced_branches', { 
+      return await invokePrepared('git_get_enhanced_branches', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), includeRemote }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_enhanced_branches', error, { workspace, includeRemote });
     }
@@ -395,9 +405,9 @@ export class GitAPI {
    
   async getCommits(workspace: GitWorkspaceScope, params: GitLogParams = {}): Promise<GitCommit[]> {
     try {
-      return await api.invoke('git_get_commits', { 
+      return await invokePrepared('git_get_commits', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), params }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_commits', error, { workspace, params });
     }
@@ -406,9 +416,9 @@ export class GitAPI {
    
   async addFiles(workspace: GitWorkspaceScope, params: GitAddParams): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_add_files', { 
+      return await invokePrepared('git_add_files', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), params }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_add_files', error, { workspace, params });
     }
@@ -417,9 +427,9 @@ export class GitAPI {
    
   async commit(workspace: GitWorkspaceScope, params: GitCommitParams): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_commit', { 
+      return await invokePrepared('git_commit', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), params }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_commit', error, { workspace, params });
     }
@@ -436,9 +446,9 @@ export class GitAPI {
         set_upstream: params.setUpstream
       };
       
-      return await api.invoke('git_push', { 
+      return await invokePrepared('git_push', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), params: backendParams }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_push', error, { workspace, params });
     }
@@ -447,9 +457,9 @@ export class GitAPI {
    
   async pull(workspace: GitWorkspaceScope, params: GitPullParams = {}): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_pull', { 
+      return await invokePrepared('git_pull', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), params }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_pull', error, { workspace, params });
     }
@@ -458,9 +468,9 @@ export class GitAPI {
    
   async checkoutBranch(workspace: GitWorkspaceScope, branchName: string): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_checkout_branch', { 
+      return await invokePrepared('git_checkout_branch', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), branchName }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_checkout_branch', error, { workspace, branchName });
     }
@@ -471,9 +481,9 @@ export class GitAPI {
     try {
       
       const effectiveStartPoint = startPoint && startPoint.trim() ? startPoint : undefined;
-      return await api.invoke('git_create_branch', { 
+      return await invokePrepared('git_create_branch', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), branchName, startPoint: effectiveStartPoint }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_create_branch', error, { workspace, branchName, startPoint });
     }
@@ -482,9 +492,9 @@ export class GitAPI {
    
   async deleteBranch(workspace: GitWorkspaceScope, branchName: string, force: boolean = false): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_delete_branch', { 
+      return await invokePrepared('git_delete_branch', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), branchName, force }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_delete_branch', error, { workspace, branchName, force });
     }
@@ -493,9 +503,9 @@ export class GitAPI {
    
   async resetToCommit(workspace: GitWorkspaceScope, commitHash: string, mode: 'soft' | 'mixed' | 'hard' = 'mixed'): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_reset_to_commit', { 
+      return await invokePrepared('git_reset_to_commit', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), commitHash, mode }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_reset_to_commit', error, { workspace, commitHash, mode });
     }
@@ -504,9 +514,9 @@ export class GitAPI {
    
   async getDiff(workspace: GitWorkspaceScope, params: GitDiffParams): Promise<string> {
     try {
-      return await api.invoke('git_get_diff', { 
+      return await invokePrepared('git_get_diff', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), params }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_diff', error, { workspace, params });
     }
@@ -515,9 +525,9 @@ export class GitAPI {
    
   async getChangedFiles(workspace: GitWorkspaceScope, params: GitChangedFilesParams): Promise<GitChangedFile[]> {
     try {
-      return await api.invoke('git_get_changed_files', {
+      return await invokePrepared('git_get_changed_files', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), params }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_changed_files', error, { workspace, params });
     }
@@ -526,9 +536,9 @@ export class GitAPI {
 
   async resetFiles(workspace: GitWorkspaceScope, files: string[], staged: boolean = false): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_reset_files', { 
+      return await invokePrepared('git_reset_files', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), files, staged }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_reset_files', error, { workspace, files, staged });
     }
@@ -537,9 +547,9 @@ export class GitAPI {
    
   async getFileContent(workspace: GitWorkspaceScope, filePath: string, commit?: string): Promise<string> {
     try {
-      return await api.invoke('git_get_file_content', { 
+      return await invokePrepared('git_get_file_content', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), filePath, commit }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_get_file_content', error, { workspace, filePath, commit });
     }
@@ -547,11 +557,11 @@ export class GitAPI {
    
   async getGraph(workspace: GitWorkspaceScope, maxCount?: number, branchName?: string): Promise<GitGraph> {
     try {
-      const result = await api.invoke<GitGraph>('git_get_graph', { 
+      const result = await invokePrepared<GitGraph>('git_get_graph', async () => ({
         ...await gitWorkspaceRequest(workspace),
         maxCount: maxCount || null,
         branchName: branchName || null
-      });
+      }));
       return result;
     } catch (error) {
       log.error('Failed to get git graph', { workspace, maxCount, branchName, error });
@@ -562,9 +572,9 @@ export class GitAPI {
    
   async cherryPick(workspace: GitWorkspaceScope, commitHash: string, noCommit: boolean = false): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_cherry_pick', { 
+      return await invokePrepared('git_cherry_pick', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), commitHash, noCommit }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_cherry_pick', error, { workspace, commitHash, noCommit });
     }
@@ -573,9 +583,9 @@ export class GitAPI {
    
   async cherryPickAbort(workspace: GitWorkspaceScope): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_cherry_pick_abort', { 
+      return await invokePrepared('git_cherry_pick_abort', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_cherry_pick_abort', error, { workspace });
     }
@@ -584,9 +594,9 @@ export class GitAPI {
    
   async cherryPickContinue(workspace: GitWorkspaceScope): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_cherry_pick_continue', { 
+      return await invokePrepared('git_cherry_pick_continue', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_cherry_pick_continue', error, { workspace });
     }
@@ -597,9 +607,9 @@ export class GitAPI {
    
   async listWorktrees(workspace: GitWorkspaceScope): Promise<GitWorktreeInfo[]> {
     try {
-      return await api.invoke('git_list_worktrees', { 
+      return await invokePrepared('git_list_worktrees', async () => ({
         request: { ...await gitWorkspaceRequest(workspace) }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_list_worktrees', error, { workspace });
     }
@@ -608,9 +618,9 @@ export class GitAPI {
    
   async addWorktree(workspace: GitWorkspaceScope, branch: string, createBranch: boolean = false): Promise<GitWorktreeInfo> {
     try {
-      return await api.invoke('git_add_worktree', { 
+      return await invokePrepared('git_add_worktree', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), branch, createBranch }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_add_worktree', error, { workspace, branch, createBranch });
     }
@@ -619,9 +629,9 @@ export class GitAPI {
    
   async removeWorktree(workspace: GitWorkspaceScope, worktreePath: string, force: boolean = false): Promise<GitOperationResult> {
     try {
-      return await api.invoke('git_remove_worktree', { 
+      return await invokePrepared('git_remove_worktree', async () => ({
         request: { ...await gitWorkspaceRequest(workspace), worktreePath, force }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('git_remove_worktree', error, { workspace, worktreePath, force });
     }

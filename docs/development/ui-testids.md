@@ -132,7 +132,8 @@ Avoid adding IDs to these surfaces unless there is a clear automated workflow.
 | Workspace card | `nav-workspace-card` | Clickable row body. Pair with `data-workspace-id`. |
 | Workspace sessions toggle | `nav-workspace-sessions-toggle` | Expands/collapses session rows. Pair with `data-workspace-id`. |
 | Workspace name button | `nav-workspace-name-btn` | Activates workspace or toggles sessions. Pair with `data-workspace-id`. |
-| Workspace files button | `nav-workspace-files-btn` | Opens file viewer for workspace. Pair with `data-workspace-id`. |
+| Project resources button | `nav-workspace-project-resources-btn` | Opens project resources management. Pair with `data-workspace-id`. |
+| Open directory menu item | `nav-workspace-menu-open-directory` | Opens the project's file viewer from the workspace More menu. |
 | Workspace search index button | `nav-workspace-search-index-btn` | Opens search index status modal when present. Pair with `data-workspace-id`. |
 | Workspace row menu button | `nav-workspace-menu-btn` | Opens row action menu. Pair with `data-workspace-id`. |
 | Workspace row menu | `nav-workspace-item-menu` | Portal menu for one workspace. Pair with `data-workspace-id`. |
@@ -309,10 +310,10 @@ Notes:
 | Browser panel title | `browser-panel-title` | Browser toolbar/form region. |
 | Browser URL input | `browser-url-input` | Real URL input field. Press Enter to open the typed URL. |
 | Browser page frame | `browser-page-frame` | iframe/webview host content area. |
-| Browser loading indicator | `browser-loading-indicator` | Refresh/loading icon while a URL is loading. |
+| Browser loading indicator | `browser-loading-indicator` | Address-field spinner that replaces the browser glyph while a URL is loading. |
 | Browser error message | `browser-error-message` | URL validation/connectivity/webview load failure message. |
 | Browser current URL | `browser-current-url` | Current URL display in the webview placeholder. |
-| Browser refresh button | `browser-refresh-button` | Refreshes the current browser page. |
+| Browser refresh button | `browser-refresh-button` | Refreshes the current browser page, and stops the in-flight load while loading. |
 | Browser back button | `browser-back-button` | Navigates browser history back. |
 | Browser forward button | `browser-forward-button` | Navigates browser history forward. |
 

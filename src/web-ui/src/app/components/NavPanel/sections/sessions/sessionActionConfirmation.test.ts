@@ -17,20 +17,13 @@ function sliceBetween(source: string, startMarker: string, endMarker: string): s
 }
 
 describe('session action confirmation policy', () => {
-  it('archives a single session immediately and confirms permanent deletion', () => {
+  it('archives a single session immediately without delete or batch actions in its menu', () => {
     const source = readSource('./SessionsSection.tsx');
-    const deleteHandler = sliceBetween(source, 'const handleDelete = useCallback(', 'const handleArchive = useCallback(');
-    const archiveHandler = sliceBetween(source, 'const handleArchive = useCallback(', 'const handleCopySessionId = useCallback(');
+    const archiveHandler = sliceBetween(source, 'const handleArchive = useCallback(', 'const handleDuplicateSession = useCallback(');
 
-    expect(source).toContain("import { confirmDanger } from '@/infrastructure/confirm-dialog';");
-    expect(source).not.toContain('confirmWarning');
-    expect(deleteHandler).toContain('await confirmDanger(');
-    expect(deleteHandler).toContain("t('nav.sessions.deleteConfirmTitle')");
-    expect(deleteHandler).toContain("t('nav.sessions.deleteConfirmMessage', {");
-    expect(deleteHandler).toContain("{ confirmText: t('nav.sessions.delete') }");
-    expect(deleteHandler.indexOf('await confirmDanger(')).toBeLessThan(
-      deleteHandler.indexOf('await flowChatManager.deleteChatSession(sessionId)'),
-    );
+    expect(source).not.toContain('data-testid="nav-session-menu-delete"');
+    expect(source).not.toContain('data-testid="nav-session-menu-manage-sessions"');
+    expect(source).not.toContain('flowChatManager.deleteChatSession');
     expect(archiveHandler).not.toMatch(/confirm(?:Danger|Warning)\(/);
     expect(archiveHandler).toContain('await flowChatManager.archiveChatSession(sessionId)');
   });
@@ -46,7 +39,7 @@ describe('session action confirmation policy', () => {
     expect(archiveHandler).toContain('flowChatManager.archiveChatSession(sessionId)');
     expect(deleteHandler).toContain('await confirmDanger(');
     expect(deleteHandler).toContain("t('nav.sessions.bulkDeleteConfirmTitle')");
-    expect(deleteHandler).toContain("{ confirmText: t('nav.sessions.deleteSelected') }");
+    expect(deleteHandler).toContain("{ confirmText: onlySources ? t('nav.sessions.removeSelected') : t('nav.sessions.deleteSelected') }");
     expect(deleteHandler.indexOf('await confirmDanger(')).toBeLessThan(
       deleteHandler.indexOf('await flowChatManager.deleteChatSession(rootId)'),
     );

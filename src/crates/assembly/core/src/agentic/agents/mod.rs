@@ -94,6 +94,7 @@ pub fn standard_harness_tools() -> Vec<String> {
         "Read".to_string(),
         "view_image".to_string(),
         "analyze_image".to_string(),
+        "generate_image".to_string(),
         "Write".to_string(),
         "Edit".to_string(),
         "Delete".to_string(),
@@ -118,13 +119,17 @@ pub fn standard_harness_tools() -> Vec<String> {
         "ReviewPlatform".to_string(),
         "OpenBitFunControl".to_string(),
         "ControlHub".to_string(),
+        // A MiniApp is a Web page this product hosts, so operating one belongs
+        // to the same surface family as ControlHub: the Agent opens the app in
+        // the window the user is watching instead of driving a copy elsewhere.
+        // The tool stays deferred and degrades honestly when no surface exists.
+        "MiniAppBrowser".to_string(),
         // Pairs with ControlHub: its `wait` sends anything repeating, or
         // further out than an hour, to Cron rather than holding the turn open
         // for the interval.
         "Cron".to_string(),
         "PublishAppearance".to_string(),
-        "PageDeploy".to_string(),
-        "PagePublish".to_string(),
+        "PageManage".to_string(),
     ]
 }
 
@@ -323,6 +328,7 @@ mod tests {
 
         let mut expected = shared_tools;
         expected.push("ComputerUse".to_string());
+        expected.push("DesktopCard".to_string());
         assert_eq!(StandardHarness::new().default_tools(), expected);
     }
 

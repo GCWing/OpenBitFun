@@ -35,6 +35,12 @@ Allow agents to operate a browser or local UI while explicitly managing accessib
   - Inspect the current target, mode, and authorized capture preview in the control card
 - **由专用智能体工具控制 / Delegated Agent tool** · `ComputerUse` · 停止当前桌面控制会话并释放捕获与输入资源
   - Stop the current desktop-control session and release capture and input resources
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择 App 窗口并单独授权或撤销控制
+  - Select an App window and separately grant or revoke control
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 在共享预览中点击、拖动、滚动及输入
+  - Click, drag, scroll and type through the shared preview
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 按应用执行文件和控制模式记住或忘记授权
+  - Remember or forget control by application executable and input mode
 
 ## 怎么用 / How to use it
 

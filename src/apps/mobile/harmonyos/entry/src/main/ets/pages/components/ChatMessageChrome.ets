@@ -1,3 +1,4 @@
+import { TimeFormat } from '../../services/TimeFormat';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { MessageCopyScope } from '../actions/ConversationIntent';
@@ -14,6 +15,7 @@ import {
 import { UserMessageTruncationPolicy } from '../policy/UserMessageTruncationPolicy';
 import { ConversationUiMessage } from '../state/ConversationUiModels';
 import { MessageImageGallery } from './ChatMessageContent';
+import { RollbackSelectionMenu } from './RollbackSelectionMenu';
 import {
   ACCENT,
   CARD,
@@ -96,9 +98,34 @@ export struct ChatUserMessageBubble {
     detail: ''
   };
   @Param showRetryAction: boolean = false;
+  /**
+   * Whether this message is part of the staged rollback's local preview.
+   *
+   * The bubble only weakens what it draws — the muted fill and the muted body the
+   * approved artboard specifies for a ghost row. It is told, not asked: which rows
+   * ghost is the timeline's decision, expressed in turn order.
+   */
+  @Param ghost: boolean = false;
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
-  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
+  /**
+   * The reader asked to read this message in full. The turn id travels with the
+   * text because the panel that opens is also a rollback entry, and a rollback
+   * addresses the turn rather than what the message displays.
+   */
+  @Event onOpenFullText: (text: string, turnId: string) => void =
+    (_text: string, _turnId: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
+  /**
+   * The staged rollback was asked for from this message. The turn id travels with
+   * the text because staging addresses the host by turn, not by what it displays.
+   */
+  @Event onRollbackMessage: (turnId: string, text: string) => void =
+    (_turnId: string, _text: string) => {};
+  /**
+   * The bubble's own text controller, so the rollback item can dismiss the system
+   * selection menu it was tapped in (see `RollbackSelectionMenu`).
+   */
+  private readonly selectionController: TextController = new TextController();
 
   build() {
     Row() {
@@ -125,10 +152,11 @@ export struct ChatUserMessageBubble {
             top: MobileDesignGeometry.messageBubbleVerticalPadding,
             bottom: MobileDesignGeometry.messageBubbleVerticalPadding
           })
-          .backgroundColor(SOFT)
+          .backgroundColor(this.ghost ? LINE : SOFT)
           .borderRadius(MobileDesignGeometry.messageBubbleRadius)
           .alignItems(HorizontalAlign.Start)
         }
+        ChatMessageTimestamp({ timestamp: this.item.timestamp || '' })
         if (this.item.status === 'failed' && this.showRetryAction) {
           ChatMessageRetryAction({ retryText: this.item.text, onRetry: this.onRetryMessage })
         }
@@ -140,13 +168,26 @@ export struct ChatUserMessageBubble {
     .padding({ top: 2, bottom: 2 })
   }
 
+  /**
+   * The short message's own Text.
+   *
+   * The rollback entry rides the system selection menu through
+   * `editMenuOptions` — the menu the long press already opens for selection — so
+   * the entry costs the bubble no new affordance and no new layout. The item is
+   * always offered: whether the rollback can run is a fact about the connected
+   * host and the session, which the tap answers with a notice rather than the row
+   * answering with a guess.
+   */
   @Builder
   private PlainText() {
-    Text(this.visibleText())
+    Text(this.visibleText(), { controller: this.selectionController })
       .fontSize(MobileDesignTypography.bodyLarge.size)
       .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
-      .fontColor(INK)
+      .fontColor(this.ghost ? MUTED : INK)
       .copyOption(CopyOptions.LocalDevice)
+      .editMenuOptions(RollbackSelectionMenu.options(this.selectionController, () => {
+        this.requestRollback();
+      }))
   }
 
   /**
@@ -172,13 +213,13 @@ export struct ChatUserMessageBubble {
   private TruncatedText() {
     Text() {
       Span(UserMessageTruncationPolicy.truncatedPreview(this.visibleText()))
-        .fontColor(INK)
+        .fontColor(this.ghost ? MUTED : INK)
       Span(` ${RemoteI18n.t('chat.fullText')}`)
         .fontSize(MobileDesignTypography.bodyMedium.size)
         .fontColor(FILE_LINK)
         .decoration({ type: TextDecorationType.Underline, color: FILE_LINK })
         .onClick(() => {
-          this.onOpenFullText(this.visibleText());
+          this.onOpenFullText(this.visibleText(), this.item.turnId || '');
         })
     }
     .fontSize(MobileDesignTypography.bodyLarge.size)
@@ -201,7 +242,15 @@ export struct ChatUserMessageBubble {
   private runMenuAction(action: UserMessageMenuAction): void {
     if (action === UserMessageMenuAction.CopyFullText) {
       this.onCopyMessage(this.visibleText());
+      return;
     }
+    if (action === UserMessageMenuAction.RollbackToMessage) {
+      this.requestRollback();
+    }
+  }
+
+  private requestRollback(): void {
+    this.onRollbackMessage(this.item.turnId || '', this.visibleText());
   }
 
   private visibleText(): string {
@@ -300,5 +349,19 @@ export struct AssistantMessageCopyAction {
 
   private payloadFor(scope: MessageCopyScope): string {
     return scope === MessageCopyScope.Plain ? MarkdownParser.formatInlineText(this.source) : this.source;
+  }
+}
+
+@ComponentV2
+export struct ChatMessageTimestamp {
+  @Param timestamp: string = '';
+
+  build() {
+    if (TimeFormat.message(this.timestamp).length > 0) {
+      Text(TimeFormat.message(this.timestamp))
+        .fontSize(MobileDesignTypography.labelSmall.size)
+        .fontColor(MUTED)
+        .id('chat-message-timestamp')
+    }
   }
 }

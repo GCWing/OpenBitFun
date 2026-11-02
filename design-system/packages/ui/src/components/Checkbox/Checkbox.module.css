@@ -59,14 +59,14 @@
     block-size: 100%;
     border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border);
     border-radius: var(--openbitfun-radius-sm);
-    color: var(--openbitfun-color-content-inverse);
+    color: var(--openbitfun-color-control-switch-thumb);
     background: var(--openbitfun-color-field-background);
     transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
   .input:is(:checked, :indeterminate) + .box {
-    border-color: var(--openbitfun-color-accent-default);
-    background: var(--openbitfun-color-accent-default);
+    border-color: var(--openbitfun-color-control-highlight-background);
+    background: var(--openbitfun-color-control-highlight-background);
   }
 
   .input:focus-visible + .box {
@@ -99,6 +99,6 @@
   @media (prefers-reduced-motion: reduce) { .box { transition: none; } }
   @media (forced-colors: active) {
     .box { border-color: ButtonText; }
-    .input:is(:checked, :indeterminate) + .box { border-color: Highlight; background: Highlight; }
+    .input:is(:checked, :indeterminate) + .box { border-color: Highlight; color: HighlightText; background: Highlight; }
   }
 }

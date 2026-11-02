@@ -11,12 +11,15 @@ pub struct ReadFileResult {
     pub hit_total_char_limit: bool,
     /// True when the returned view omits characters from selected lines.
     pub content_truncated: bool,
+    /// Selected source lines whose contents were clipped by the per-line limit.
+    pub truncated_lines: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadFilePresentation {
     pub result_for_assistant: String,
     pub lines_read: usize,
+    pub next_offset: Option<usize>,
 }
 
 fn read_file_lines_read(result: &ReadFileResult) -> usize {
@@ -31,12 +34,22 @@ pub fn build_read_file_presentation(
     logical_path: &str,
     result: &ReadFileResult,
 ) -> ReadFilePresentation {
-    let mut result_for_assistant = format!(
-        "Read lines {}-{} from {} ({} total lines)\n<file_content>\n{}\n</file_content>",
-        result.start_line, result.end_line, logical_path, result.total_lines, result.content
-    );
+    let lines_read = read_file_lines_read(result);
+    let mut result_for_assistant = if result.total_lines == 0 {
+        format!("{logical_path} is empty (0 lines).")
+    } else if lines_read == 0 {
+        format!(
+            "No lines from {logical_path} fit within the Read output limit ({} total lines). Use another inspection method; a smaller line window cannot make a single line fit.",
+            result.total_lines,
+        )
+    } else {
+        format!(
+            "Read lines {}-{} from {} ({} total lines)\n<file_content>\n{}\n</file_content>",
+            result.start_line, result.end_line, logical_path, result.total_lines, result.content
+        )
+    };
 
-    let has_more = result.end_line < result.total_lines;
+    let has_more = lines_read > 0 && result.end_line < result.total_lines;
     let next_start_line = has_more.then_some(result.end_line + 1);
     if let Some(next_start) = next_start_line {
         if result.hit_total_char_limit {
@@ -51,10 +64,17 @@ pub fn build_read_file_presentation(
             ));
         }
     }
+    if !result.truncated_lines.is_empty() {
+        result_for_assistant.push_str(&format!(
+            "\n\n[Lines {:?} contain truncated text. offset/limit cannot restore those characters. Use another inspection method before copying source text for Edit.]",
+            result.truncated_lines,
+        ));
+    }
 
     ReadFilePresentation {
         result_for_assistant,
-        lines_read: read_file_lines_read(result),
+        lines_read,
+        next_offset: next_start_line,
     }
 }
 
@@ -398,6 +418,7 @@ struct ReadLineSelection {
     selected_chars: usize,
     hit_total_char_limit: bool,
     content_truncated: bool,
+    truncated_lines: Vec<usize>,
     tail_lines: Option<VecDeque<(usize, String, bool)>>,
 }
 
@@ -432,6 +453,7 @@ impl ReadLineSelection {
             selected_chars: 0,
             hit_total_char_limit: false,
             content_truncated: false,
+            truncated_lines: Vec::new(),
             tail_lines: tail.then(VecDeque::new),
         })
     }
@@ -471,6 +493,9 @@ impl ReadLineSelection {
             self.content_truncated = true;
         } else {
             self.content_truncated |= truncated;
+            if truncated {
+                self.truncated_lines.push(line_number);
+            }
             self.selected_chars = next_chars;
             self.selected_lines.push(rendered);
         }
@@ -485,6 +510,7 @@ impl ReadLineSelection {
                 content: String::new(),
                 hit_total_char_limit: false,
                 content_truncated: false,
+                truncated_lines: Vec::new(),
             });
         }
         if let Some(tail_lines) = self.tail_lines.take() {
@@ -506,7 +532,7 @@ impl ReadLineSelection {
             ));
         }
         let end_line = if self.selected_lines.is_empty() {
-            self.start_line
+            self.start_line - 1
         } else {
             self.start_line
                 .saturating_add(self.selected_lines.len())
@@ -519,6 +545,7 @@ impl ReadLineSelection {
             content: self.selected_lines.join("\n"),
             hit_total_char_limit: self.hit_total_char_limit,
             content_truncated: self.content_truncated,
+            truncated_lines: self.truncated_lines,
         })
     }
 }
@@ -539,6 +566,7 @@ mod tests {
         let text = "abcdef\nlast\n";
         let truncated = read_text(text, 1, 2, 4, 100).unwrap();
         assert!(truncated.content_truncated);
+        assert_eq!(truncated.truncated_lines, vec![1]);
         assert!(!truncated.hit_total_char_limit);
         let tail = read_text_tail(text, 1, 4, 100).unwrap();
         assert!(
@@ -547,9 +575,12 @@ mod tests {
         );
         let offset = read_text(text, 2, 1, 4, 100).unwrap();
         assert!(!offset.content_truncated);
+        assert!(offset.truncated_lines.is_empty());
+        assert!(tail.truncated_lines.is_empty());
         let budget = read_text(text, 1, 2, 50, 14).unwrap();
         assert!(budget.hit_total_char_limit);
         assert!(budget.content_truncated);
+        assert!(budget.truncated_lines.is_empty());
         assert!(
             !read_text("literal [truncated]", 1, 1, 100, 100)
                 .unwrap()
@@ -809,11 +840,13 @@ mod tests {
             content: "     1\tone\n     2\ttwo".to_string(),
             hit_total_char_limit: false,
             content_truncated: false,
+            truncated_lines: Vec::new(),
         };
 
         let presentation = build_read_file_presentation("src/lib.rs", &result);
 
         assert_eq!(presentation.lines_read, 2);
+        assert_eq!(presentation.next_offset, Some(3));
         assert!(presentation
             .result_for_assistant
             .contains("Read lines 1-2 from src/lib.rs (4 total lines)"));
@@ -846,8 +879,36 @@ mod tests {
             content: String::new(),
             hit_total_char_limit: false,
             content_truncated: false,
+            truncated_lines: Vec::new(),
         };
 
         assert_eq!(read_file_lines_read(&result), 0);
+        let presentation = build_read_file_presentation("empty.txt", &result);
+        assert_eq!(presentation.next_offset, None);
+        assert!(presentation.result_for_assistant.contains("is empty"));
+    }
+
+    #[test]
+    fn a_line_that_cannot_fit_does_not_skip_to_the_next_line() {
+        let result = read_text("abcdefghij\nnext\n", 1, 2, 100, 10).unwrap();
+        let presentation = build_read_file_presentation("long.txt", &result);
+        assert!(result.content.is_empty());
+        assert_eq!(presentation.lines_read, 0);
+        assert_eq!(presentation.next_offset, None);
+        assert!(presentation.result_for_assistant.contains("No lines"));
+        assert!(!presentation.result_for_assistant.contains("offset=2"));
+    }
+
+    #[test]
+    fn clipped_line_guidance_does_not_promise_paging_can_restore_characters() {
+        let result = read_text("abcdefghij\nnext\n", 1, 1, 4, 100).unwrap();
+        let presentation = build_read_file_presentation("long.txt", &result);
+        assert_eq!(presentation.next_offset, Some(2));
+        assert!(presentation
+            .result_for_assistant
+            .contains("Lines [1] contain truncated text"));
+        assert!(presentation
+            .result_for_assistant
+            .contains("cannot restore those characters"));
     }
 }

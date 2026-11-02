@@ -5,6 +5,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import AssistantAvatar from './AssistantAvatar';
 import { resolveAssistantAvatarPreset } from './assistantAvatarPresets';
+import { parseIdentityDocument, serializeIdentityDocument } from '@/app/scenes/my-agent/identityDocument';
+import inkMintAvatar from '@/flow_chat/assets/subagent-avatars/robot-04.svg';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -23,17 +25,26 @@ describe('AssistantAvatar', () => {
     container.remove();
   });
 
-  it('maps a retired SVG preset id to the new Claw artwork', () => {
+  it.each([
+    'claw', 'claw-orbit', 'signal-pulse', 'signal-wave', 'orbit-nova',
+    'orbit-loop', 'mosaic-grid', 'mosaic-stack', 'companion-spark', 'companion-calm',
+  ])('renders the black IP for legacy %s identities and preserves their document', (presetId) => {
+    const identity = parseIdentityDocument([
+      '---', 'name: Existing assistant', `avatar: ${presetId}`, 'emoji: 🧭',
+      '---', '', 'Existing persona', '',
+    ].join('\n'));
     act(() => {
-      root.render(<AssistantAvatar presetId="orbit-nova" emoji="🧭" size={28} />);
+      root.render(<AssistantAvatar presetId={identity.avatar} emoji={identity.emoji} size={28} />);
     });
 
     const avatar = container.querySelector('[data-openbitfun-component="assistant-avatar"]');
     const image = container.querySelector('.assistant-avatar__image') as HTMLImageElement;
-    expect(avatar?.getAttribute('data-openbitfun-preset')).toBe('claw-orbit');
-    expect(avatar?.getAttribute('data-openbitfun-family')).toBe('clawOrbit');
+    expect(avatar?.getAttribute('data-openbitfun-preset')).toBe('joystick-ink-mint');
+    expect(avatar?.getAttribute('data-openbitfun-family')).toBe('joystick');
     expect(avatar?.getAttribute('style')).toContain('28px');
-    expect(image.getAttribute('src')).toBe('/assets/assistant/claw-avatar-alt.webp');
+    expect(image.getAttribute('src')).toBe(inkMintAvatar);
+    expect(parseIdentityDocument(serializeIdentityDocument(identity))).toEqual(identity);
+    expect(identity.avatar).toBe(presetId);
   });
 
   it('keeps the legacy emoji when a preset id is missing or unknown', () => {
@@ -46,15 +57,13 @@ describe('AssistantAvatar', () => {
     expect(avatar?.textContent).toContain('🧭');
   });
 
-  it('uses a deterministic new Claw fallback when no identity marker exists', () => {
-    expect(resolveAssistantAvatarPreset(undefined, 'assistant-1').id)
-      .toBe(resolveAssistantAvatarPreset(undefined, 'assistant-1').id);
-    expect(resolveAssistantAvatarPreset(undefined).id).toBe('claw');
+  it.each([undefined, 'assistant-1', 'assistant-2'])('defaults to the black IP for identity %s', (stableKey) => {
+    expect(resolveAssistantAvatarPreset(undefined, stableKey).id).toBe('joystick-ink-mint');
   });
 
   it('maps semantic sizes to shared control-height tokens', () => {
     act(() => {
-      root.render(<AssistantAvatar presetId="claw" size="lg" />);
+      root.render(<AssistantAvatar presetId="joystick-ink-mint" size="lg" />);
     });
 
     const avatar = container.querySelector<HTMLElement>(
@@ -76,9 +85,9 @@ describe('AssistantAvatar', () => {
 
     const avatar = container.querySelector('[data-openbitfun-component="assistant-avatar"]');
     const image = container.querySelector('.assistant-avatar__image') as HTMLImageElement;
-    expect(avatar?.getAttribute('data-openbitfun-family')).toBe('claw');
-    expect(avatar?.getAttribute('data-openbitfun-preset')).toBe('claw');
+    expect(avatar?.getAttribute('data-openbitfun-family')).toBe('joystick');
+    expect(avatar?.getAttribute('data-openbitfun-preset')).toBe('joystick-ink-mint');
     expect(avatar?.getAttribute('aria-label')).toBe('Claw avatar');
-    expect(image.getAttribute('src')).toBe('/assets/assistant/claw-avatar.webp');
+    expect(image.getAttribute('src')).toBe(inkMintAvatar);
   });
 });

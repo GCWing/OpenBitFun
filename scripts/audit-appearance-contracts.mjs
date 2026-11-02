@@ -10,6 +10,7 @@ const registryFile = path.join(sourceRoot, 'infrastructure', 'appearance', 'regi
 const retiredOwnershipFile = path.join(sourceRoot, 'infrastructure', 'appearance', 'registry', 'appearanceSourceOwnership.ts');
 const externalAppearanceContractFiles = [
   path.join(repoRoot, 'design-system', 'packages', 'ui', 'src', 'components', 'SplitView', 'SplitView.tsx'),
+  path.join(repoRoot, 'design-system', 'packages', 'ui', 'src', 'components', 'SetupWizard', 'SetupWizard.tsx'),
   path.join(repoRoot, 'design-system', 'packages', 'ui', 'src', 'components', 'ConfirmDialog', 'ConfirmDialog.tsx'),
   ...Object.values(flowChatAppearanceSources).map(file => path.join(repoRoot, file)),
   path.join(repoRoot, 'packages/flow-chat-presentation/src/terminal/TerminalOutputRenderer.tsx'),

@@ -11,13 +11,13 @@ import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
 import { processingStatusManager } from './ProcessingStatusManager';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { useModernFlowChatStore } from '../store/modernFlowChatStore';
+import { usePromptSuggestionStore } from '../store/promptSuggestionStore';
 import { ACPClientAPI } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { stateMachineManager } from '../state-machine';
 import { EventBatcher } from './EventBatcher';
 import { createLogger } from '@/shared/utils/logger';
 import { installSessionNavStatusService, sessionNavStatusService } from './sessionNavStatusService';
 import {
-  getActiveSurfaceId,
   getActiveSurfaceScope,
   isSurfaceChangedError,
   onSurfaceActivated,
@@ -51,6 +51,7 @@ import {
   renameChatSessionTitle as renameChatSessionTitleModule,
   reloadSessionTitle as reloadSessionTitleModule,
   forkChatSession as forkChatSessionModule,
+  duplicateChatSession as duplicateChatSessionModule,
   cleanupSaveState,
   cleanupSessionBuffers,
   sendMessage as sendMessageModule,
@@ -91,6 +92,7 @@ type FlowChatSendMessageOptions = Pick<
   | 'preserveTurnOnStartError'
   | 'onSessionConflictRetryStart'
   | 'onSessionConflictRetrySuccess'
+  | 'onSessionForked'
   | 'sessionMutationLeaseId'
 >;
 
@@ -187,7 +189,8 @@ export class FlowChatManager {
       return false;
     }
 
-    const requestKey = JSON.stringify([getActiveSurfaceId(), workspace.id, preferredMode ?? '']);
+    const scope = getActiveSurfaceScope();
+    const requestKey = scope.key(scope.epoch, workspace.id, preferredMode ?? '');
     const existingRequest = this.initializationRequests.get(requestKey);
     this.latestInitializationRequestKey = requestKey;
     if (existingRequest) {
@@ -220,6 +223,8 @@ export class FlowChatManager {
       if (this.disposed) {
         return false;
       }
+
+      scope.assertCurrent('initialize workspace listeners');
 
       const initialMetadataPage = await this.context.flowChatStore.loadSessionMetadataPage(
         workspaceId, 5, undefined,
@@ -556,6 +561,7 @@ export class FlowChatManager {
 
   /** Permanently forget a peer that was explicitly detached or became lost. */
   public discardDeviceSurface(surfaceId: DeviceSurfaceId): void {
+    usePromptSuggestionStore.getState().removeSurfaceSuggestions(surfaceId);
     this.context.flowChatStore.discardSurfaceState(surfaceId);
     sessionNavStatusService.clearSurface(surfaceId);
     stateMachineManager.clearSurface(surfaceId);
@@ -696,7 +702,7 @@ export class FlowChatManager {
   }
 
   public discardLocalSession(sessionId: string): string[] {
-    const removedSessionIds = this.context.flowChatStore.removeSession(sessionId);
+    const removedSessionIds = this.context.flowChatStore.removeDeletedSession(sessionId);
     removedSessionIds.forEach(id => {
       stateMachineManager.delete(id);
       this.context.processingManager.clearSessionStatus(id);
@@ -742,6 +748,12 @@ export class FlowChatManager {
 
   async forkChatSession(sourceSessionId: string, sourceTurnId: string): Promise<string> {
     return forkChatSessionModule(this.context, sourceSessionId, sourceTurnId);
+  }
+
+  async duplicateChatSession(
+    sourceSessionId: string,
+  ): Promise<{ sessionId: string; sessionName: string; metadataProjected: boolean }> {
+    return duplicateChatSessionModule(this.context, sourceSessionId);
   }
 
   async resetWorkspaceSessions(

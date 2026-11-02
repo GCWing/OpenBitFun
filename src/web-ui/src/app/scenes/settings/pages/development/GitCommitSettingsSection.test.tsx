@@ -6,7 +6,7 @@ import GitCommitSettingsSection from './GitCommitSettingsSection';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn(), error: vi.fn(), success: vi.fn() }));
 vi.mock('@/infrastructure/config/services/AIExperienceConfigService', () => ({
-  aiExperienceConfigService: { getSettingsAsync: mocks.get, saveSettings: mocks.save },
+  aiExperienceConfigService: { getCachedSettings: () => null, getSettingsAsync: mocks.get, saveSettings: mocks.save },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@/shared/notification-system', () => ({ useNotification: () => ({ error: mocks.error, success: mocks.success }) }));

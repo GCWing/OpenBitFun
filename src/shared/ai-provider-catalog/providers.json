@@ -12,10 +12,10 @@
       "catalog_provider_ids": [],
       "endpoints": [
         {
-          "id": "default",
-          "base_url": "https://api.openbitfun.com",
-          "api_format": "anthropic",
-          "label": "default",
+          "id": "openai",
+          "base_url": "https://api.openbitfun.com/v1",
+          "api_format": "openai",
+          "label": "openai",
           "is_default": true,
           "trusted_for_auto_detection": true,
           "catalog_provider_ids": [],
@@ -26,10 +26,10 @@
           ]
         },
         {
-          "id": "openai",
-          "base_url": "https://api.openbitfun.com/v1",
-          "api_format": "openai",
-          "label": "openai",
+          "id": "default",
+          "base_url": "https://api.openbitfun.com",
+          "api_format": "anthropic",
+          "label": "default",
           "trusted_for_auto_detection": true,
           "catalog_provider_ids": [],
           "reasoning_catalog_bindings": [
@@ -164,7 +164,8 @@
         { "id": "anthropic", "base_url": "https://api.moonshot.cn/anthropic", "api_format": "anthropic", "label": "anthropic", "trusted_for_auto_detection": true, "catalog_provider_ids": ["moonshotai-cn"] },
         { "id": "international", "base_url": "https://api.moonshot.ai/v1", "api_format": "openai", "label": "intl", "trusted_for_auto_detection": true, "catalog_provider_ids": ["moonshotai"] },
         { "id": "international-anthropic", "base_url": "https://api.moonshot.ai/anthropic", "api_format": "anthropic", "label": "intlAnthropic", "trusted_for_auto_detection": true, "catalog_provider_ids": ["moonshotai"] },
-        { "id": "kimi-for-coding", "base_url": "https://api.kimi.com/coding", "api_format": "anthropic", "label": "kimiForCoding", "trusted_for_auto_detection": true, "catalog_provider_ids": ["kimi-for-coding"] }
+        { "id": "kimi-for-coding-openai", "base_url": "https://api.kimi.com/coding/v1", "api_format": "openai", "label": "kimiForCoding", "trusted_for_auto_detection": true, "catalog_provider_ids": ["kimi-for-coding"] },
+        { "id": "kimi-for-coding", "base_url": "https://api.kimi.com/coding", "api_format": "anthropic", "label": "kimiForCodingAnthropic", "trusted_for_auto_detection": true, "catalog_provider_ids": ["kimi-for-coding"] }
       ],
       "model_policy": {
         "mode": "catalog_with_fallback",
@@ -191,6 +192,25 @@
       "model_policy": {
         "mode": "curated",
         "curated_models": ["mimo-v2.6-pro", "mimo-v2.6-flash", "mimo-v2.6-pro-ultraspeed", "mimo-v2.5-pro", "mimo-v2.5"],
+        "additional_models": []
+      }
+    },
+    {
+      "id": "openai",
+      "display_order": 66,
+      "region": "global",
+      "name": "OpenAI",
+      "description": "OpenAI GPT and reasoning models",
+      "help_url": "https://platform.openai.com/api-keys",
+      "requires_api_key": true,
+      "catalog_provider_ids": ["openai"],
+      "endpoints": [
+        { "id": "default", "base_url": "https://api.openai.com/v1/responses", "api_format": "responses", "label": "default", "is_default": true, "trusted_for_auto_detection": true, "catalog_provider_ids": ["openai"] },
+        { "id": "chat-completions", "base_url": "https://api.openai.com/v1", "api_format": "openai", "label": "chatCompletions", "trusted_for_auto_detection": true, "catalog_provider_ids": ["openai"] }
+      ],
+      "model_policy": {
+        "mode": "catalog_with_fallback",
+        "curated_models": ["gpt-6-astra", "gpt-5.4", "gpt-5.4-mini"],
         "additional_models": []
       }
     },
@@ -316,6 +336,28 @@
         "curated_models": ["glm-5.2", "deepseek-v4-flash", "deepseek-v4-pro"],
         "additional_models": []
       }
+    },
+    {
+      "id": "opencode-zen",
+      "display_order": 130,
+      "region": "global",
+      "name": "OpenCode Zen",
+      "description": "OpenCode models with free access and pay-as-you-go API keys.",
+      "help_url": "https://opencode.ai/console",
+      "requires_api_key": false,
+      "catalog_provider_ids": [],
+      "endpoints": [
+        {
+          "id": "default",
+          "base_url": "https://opencode.ai/zen/v1",
+          "api_format": "openai",
+          "label": "default",
+          "is_default": true,
+          "trusted_for_auto_detection": true,
+          "catalog_provider_ids": []
+        }
+      ],
+      "model_policy": { "mode": "curated", "curated_models": [], "additional_models": [] }
     },
     {
       "region": "any",

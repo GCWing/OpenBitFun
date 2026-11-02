@@ -11,14 +11,16 @@ title_en: "Companion settings"
 
 > 设置 / Setting
 
-启用桌面智能体伙伴并管理当前角色。
+启用桌面智能体伙伴并管理当前角色，以及开启或关闭桌面小卡片。
 
-Enable the desktop agent companion and manage the active character.
+Enable the desktop agent companion, manage the active character, and turn desktop cards on or off.
 
 ## 完整功能清单 / Everything included
 
 - **智能体可直接控制 / Direct Agent control** · 整体启用或停用智能体伙伴
   - Enable or disable the agent companion
+- **智能体可直接控制 / Direct Agent control** · 开启或关闭桌面小卡片；关闭后隐藏所有卡片，智能体也不再看到小卡片工具
+  - Turn desktop cards on or off; when off, all cards are hidden and agents no longer see the desktop card tool
 - **智能体可直接控制 / Direct Agent control** · 从内置与已导入角色中选择当前伙伴
   - Choose the active companion from built-in and imported characters
 - **智能体可直接控制 / Direct Agent control** · 导入本地 Petdex 角色包
@@ -50,6 +52,7 @@ Enable the desktop agent companion and manage the active character.
 | 选项 / Option | 可用值 / Values | 中文说明 | English description |
 | --- | --- | --- | --- |
 | 启用桌面伙伴 / Enable companion | `boolean` | 显示或隐藏智能体伙伴。 | Show or hide the agent companion. |
+| 启用桌面小卡片 / Enable desktop cards | `boolean` | 显示或隐藏全部桌面小卡片，并控制智能体是否可以使用小卡片工具；关闭不会删除已有卡片。 | Show or hide all desktop cards and control whether agents can use the desktop card tool; turning it off keeps existing cards. |
 
 ## 可以直接对智能体说 / Try saying
 
@@ -57,6 +60,8 @@ Enable the desktop agent companion and manage the active character.
   - “Turn off the desktop companion”
 - “让 OpenBitFun 使用 /path/to/pet 里的萌宠”
   - “Make OpenBitFun use the pet at /path/to/pet”
+- “关闭小卡片功能”
+  - “Turn off desktop cards”
 
 智能体会先查找相关功能或设置，确认目标后再替你打开、执行或修改。完整能力目录不会预先塞进对话上下文。
 

@@ -27,7 +27,7 @@ describe('L1 Task Board', () => {
     await taskBoard.deleteTask(taskName);
   });
 
-  it('keeps the reference hierarchy while running a real scheduled-task flow', async () => {
+  it('keeps a centered single-column layout while running a real scheduled-task flow', async () => {
     expect(await $('[data-testid="todos-overview"]').isDisplayed()).toBe(true);
     expect(await $('[data-testid="todos-calendar-month"]').isDisplayed()).toBe(true);
     expect(await $('[data-testid="todos-new"]').isDisplayed()).toBe(true);
@@ -38,20 +38,21 @@ describe('L1 Task Board', () => {
     expect(layout).not.toBeNull();
     expect(layout?.rootWidth).toBeGreaterThan(1_000);
     expect(layout?.rootScrollOverflow).toBeLessThanOrEqual(1);
-    expect(layout?.headerHeight).toBeGreaterThanOrEqual(64);
-    expect(layout?.headerHeight).toBeLessThanOrEqual(80);
+    expect(layout?.contentWidth).toBeCloseTo(680, 0);
+    expect(layout?.contentCenterDelta).toBeLessThanOrEqual(1);
+    expect(layout?.headerHeight).toBeGreaterThanOrEqual(96);
     expect(layout?.newButtonHeight).toBe(32);
     expect(layout?.todayButtonHeight).toBe(32);
     expect(layout?.navigationButtonHeight).toBe(24);
-    expect(layout?.listWidthRatio).toBeGreaterThanOrEqual(0.28);
-    expect(layout?.listWidthRatio).toBeLessThanOrEqual(0.42);
+    expect(layout?.listWidthRatio).toBeCloseTo(1, 2);
     expect(layout?.panesTopDelta).toBeLessThanOrEqual(1);
-    expect(layout?.panesBottomDelta).toBeLessThanOrEqual(1);
-    expect(layout?.listBottomDelta).toBeLessThanOrEqual(1);
+    expect(layout?.calendarAfterListGap).toBeCloseTo(48, 0);
+    expect(layout?.moduleWidthDelta).toBeLessThanOrEqual(1);
+    expect(layout?.nestedScrollAreas).toBe(0);
     expect(layout?.calendarCellAspectRatio).toBeGreaterThanOrEqual(1);
     expect(layout?.calendarCellAspectRatio).toBeLessThanOrEqual(1.12);
-    expect(layout?.overviewInsideList).toBe(true);
-    expect(layout?.calendarInsideRoot).toBe(true);
+    expect(layout?.overviewBeforeList).toBe(true);
+    expect(layout?.calendarInsideContent).toBe(true);
     expect(layout?.weekdayColumns).toBe(7);
     expect(layout?.calendarCells).toBe(42);
 

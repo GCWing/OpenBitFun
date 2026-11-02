@@ -110,13 +110,15 @@ describe('floating mini chat bubble MiniApp registration', () => {
   });
 
   it('registers a token-scoped submit route without replacing ChatInput', () => {
-    expect(source).toContain('postMiniAppComposerMessage');
+    expect(source).toContain('requestMiniAppComposerMessage');
     // Routing is keyed by claim token, never by app id: one app can have two
     // live runners (installed app + draft preview) and only one owns the input.
     expect(source).toContain('registrationId: entry.claimToken!');
     expect(source).toContain('live?.token !== entry.claimToken');
     expect(source).toContain('live.sessionId !== entry.sessionId');
-    expect(source).toContain('postMiniAppComposerMessage({ ...submission, token: entry.claimToken!, sessionId: entry.sessionId })');
+    expect(source).toContain('await requestMiniAppComposerMessage(');
+    expect(source).toContain('{ ...submission, token: entry.claimToken!, sessionId: entry.sessionId }');
+    expect(source).toContain('{ resolveOnAgentRun: true }');
   });
 
   it('routes realtime voice through the claimed MiniApp conversation', () => {

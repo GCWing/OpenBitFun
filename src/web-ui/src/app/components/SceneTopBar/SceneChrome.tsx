@@ -17,7 +17,7 @@ interface SceneChromeContributionRecord {
   content: ReactNode;
 }
 
-const SceneChromeContentContext = createContext<ReactNode>(null);
+const SceneChromeContentContext = createContext(new Map<SceneTabId, SceneChromeContributionRecord>());
 
 interface SceneChromeProviderProps {
   activeSceneId: SceneTabId | null;
@@ -63,23 +63,23 @@ export const SceneChromeProvider: React.FC<SceneChromeProviderProps> = ({
     setContribution,
     removeContribution,
   }), [activeSceneId, removeContribution, setContribution]);
-  const activeContent = activeSceneId
-    ? contributions.get(activeSceneId)?.content ?? null
-    : null;
 
   return (
     <SceneChromeContext.Provider value={registrationValue}>
-      <SceneChromeContentContext.Provider value={activeContent}>
+      <SceneChromeContentContext.Provider value={contributions}>
         {children}
       </SceneChromeContentContext.Provider>
     </SceneChromeContext.Provider>
   );
 };
 
-type SceneChromeHostProps = Omit<HTMLAttributes<HTMLDivElement>, 'children'>;
+type SceneChromeHostProps = Omit<HTMLAttributes<HTMLDivElement>, 'children'> & { sceneId?: SceneTabId | null };
 
-export const SceneChromeHost: React.FC<SceneChromeHostProps> = (props) => {
-  const activeContent = useContext(SceneChromeContentContext);
+export const SceneChromeHost: React.FC<SceneChromeHostProps> = ({ sceneId, ...props }) => {
+  const entries = useContext(SceneChromeContentContext);
+  const focused = useContext(SceneChromeContext)?.activeSceneId;
+  const id = sceneId === undefined ? focused : sceneId;
+  const activeContent = id ? entries.get(id)?.content : null;
   return <div {...props}>{activeContent}</div>;
 };
 

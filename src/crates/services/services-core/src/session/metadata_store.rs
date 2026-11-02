@@ -9,7 +9,7 @@ use super::metadata::{
     build_session_index_snapshot, remove_session_index_entry, upsert_session_index_entry,
 };
 use super::ordinal;
-use super::page::{build_session_metadata_page, empty_session_metadata_page};
+use super::page::{build_session_metadata_page_with_query, SessionCatalogQuery};
 use super::types::{SessionMetadata, StoredSessionIndexFile, StoredSessionMetadataFile};
 use super::SessionMetadataPage;
 use crate::file_lock::{FileLock, FileLockError, FileLockMode};
@@ -344,6 +344,43 @@ impl SessionMetadataStore {
         self.write_json_atomic(&self.index_path(), &index).await
     }
 
+    /// Snapshot of the native navigation index without a directory scan. This
+    /// is also the source for merging lightweight external history references.
+    pub async fn list_indexed_metadata(
+        &self,
+    ) -> Result<Vec<SessionMetadata>, SessionMetadataStoreError> {
+        self.indexed_metadata_snapshot()
+            .await
+            .map(|(metadata, _)| metadata)
+    }
+
+    /// Capture the index revision under the same cross-process lock as its
+    /// contents, including a missing/corrupt index rebuilt during this read.
+    pub async fn indexed_metadata_snapshot(
+        &self,
+    ) -> Result<
+        (
+            Vec<SessionMetadata>,
+            Option<crate::json_store::JsonFileRevision>,
+        ),
+        SessionMetadataStoreError,
+    > {
+        if !self.sessions_root().exists() {
+            return Ok((Vec::new(), None));
+        }
+        let lock = self.get_index_lock().await;
+        let _guard = lock.lock().await;
+        let _file_guard = self.lock_index_file().await?;
+        let (index, _) = self.read_or_rebuild_index_locked().await?;
+        let metadata = if index.metadata_file_count < index.sessions.len() {
+            self.rebuild_index_locked().await?
+        } else {
+            index.sessions
+        };
+        let revision = self.json_store.revision(&self.index_path()).await?;
+        Ok((compatible_metadata_list(metadata), revision))
+    }
+
     pub async fn list_metadata(&self) -> Result<Vec<SessionMetadata>, SessionMetadataStoreError> {
         if !self.sessions_root().exists() {
             return Ok(Vec::new());
@@ -414,8 +451,23 @@ impl SessionMetadataStore {
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<SessionMetadataPage, SessionMetadataStoreError> {
+        self.list_metadata_page_with_query(cursor, limit, None)
+            .await
+    }
+
+    pub async fn list_metadata_page_with_query(
+        &self,
+        cursor: Option<&str>,
+        limit: usize,
+        query: Option<&SessionCatalogQuery>,
+    ) -> Result<SessionMetadataPage, SessionMetadataStoreError> {
         if !self.sessions_root().exists() {
-            return Ok(empty_session_metadata_page());
+            return Ok(build_session_metadata_page_with_query(
+                Vec::new(),
+                cursor,
+                limit,
+                query,
+            ));
         }
 
         let limit = limit.max(1);
@@ -436,7 +488,8 @@ impl SessionMetadataStore {
             index.sessions
         };
 
-        let mut page = build_session_metadata_page(indexed_sessions, cursor, limit);
+        let mut page =
+            build_session_metadata_page_with_query(indexed_sessions, cursor, limit, query);
         let has_stale_page_entry = page
             .sessions
             .iter()
@@ -451,7 +504,8 @@ impl SessionMetadataStore {
             index_path.display()
         );
         let rebuilt_sessions = self.rebuild_index_locked().await?;
-        let mut page = build_session_metadata_page(rebuilt_sessions, cursor, limit);
+        let mut page =
+            build_session_metadata_page_with_query(rebuilt_sessions, cursor, limit, query);
         page.sessions = compatible_metadata_list(page.sessions);
         Ok(page)
     }
@@ -483,7 +537,8 @@ impl SessionMetadataStore {
         let _guard = lock.lock().await;
         let _file_guard = self.lock_index_file().await?;
         let metadata_file_created = !metadata_path.exists();
-        let mut metadata = metadata.clone();
+        // Read projections must not mutate an offline bundle or repair journal.
+        let mut metadata = compatible_stored_metadata(metadata.clone());
         self.assign_workspace_session_number_locked(&mut metadata)
             .await?;
         let file = StoredSessionMetadataFile::new(metadata.clone());
@@ -602,13 +657,21 @@ impl SessionMetadataStore {
 }
 
 fn compatible_metadata(mut metadata: SessionMetadata) -> SessionMetadata {
+    metadata.normalize_legacy_imported_agent_type();
+    compatible_stored_metadata(metadata)
+}
+
+fn compatible_stored_metadata(mut metadata: SessionMetadata) -> SessionMetadata {
     metadata.normalize_legacy_model_selector();
+    super::naming::migrate_legacy_default_title(&mut metadata);
     metadata
 }
 
 fn compatible_metadata_list(mut metadata: Vec<SessionMetadata>) -> Vec<SessionMetadata> {
     for entry in &mut metadata {
+        entry.normalize_legacy_imported_agent_type();
         entry.normalize_legacy_model_selector();
+        super::naming::migrate_legacy_default_title(entry);
     }
     metadata
 }
@@ -624,6 +687,64 @@ fn current_unix_ms() -> u64 {
 mod tests {
     use super::*;
     use crate::session::{SessionStatus, StoredSessionIndexFile};
+
+    #[tokio::test]
+    async fn catalog_first_page_does_not_open_unselected_metadata_or_history() {
+        let root = tempfile::tempdir().unwrap();
+        let store = SessionMetadataStore::new(root.path());
+        let sessions = (0..655)
+            .map(|index| {
+                let mut record = metadata(&format!("session-{index:04}"), 10_000 - index);
+                record.workspace_id = Some("main".into());
+                record.created_at = index;
+                record
+            })
+            .collect::<Vec<_>>();
+        // Only the selected five metadata paths exist. Reading or validating
+        // every directory would rebuild the index and lose the expected total.
+        for record in &sessions[650..] {
+            store.ensure_session_dir(&record.session_id).await.unwrap();
+            store
+                .write_json_atomic(
+                    &store.metadata_path(&record.session_id),
+                    &StoredSessionMetadataFile::new(record.clone()),
+                )
+                .await
+                .unwrap();
+            fs::write(
+                store.session_dir(&record.session_id).join("turns.json"),
+                b"unreadable history",
+            )
+            .await
+            .unwrap();
+        }
+        let index = StoredSessionIndexFile {
+            schema_version: super::super::types::SESSION_STORAGE_SCHEMA_VERSION,
+            metadata_file_count: 655,
+            updated_at: 1,
+            sessions,
+        };
+        store
+            .write_json_atomic(&store.index_path(), &index)
+            .await
+            .unwrap();
+        let before = fs::read(store.index_path()).await.unwrap();
+        let query = SessionCatalogQuery {
+            workspace_id: "main".into(),
+            ordering: super::super::page::SessionCatalogOrdering::Updated,
+            source: "all".into(),
+            sort_timestamps: HashMap::new(),
+        };
+        let page = store
+            .list_metadata_page_with_query(None, 5, Some(&query))
+            .await
+            .unwrap();
+        assert_eq!(page.catalog_query, Some(query));
+        assert_eq!(page.total_top_level_count, 655);
+        assert_eq!(page.sessions.len(), 5);
+        assert_eq!(page.sessions[0].session_id, "session-0654");
+        assert_eq!(fs::read(store.index_path()).await.unwrap(), before);
+    }
 
     #[tokio::test]
     async fn legacy_auto_metadata_reads_are_compatible_without_rewriting_files() {
@@ -670,6 +791,101 @@ mod tests {
             )
             .unwrap();
             assert_eq!(round_trip.metadata.model_name, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_imported_primary_mode_reads_preserve_files_and_unrelated_agents() {
+        for (id, agent, custom, expected) in [
+            (
+                "codex",
+                "primary",
+                serde_json::json!({"importedFrom": "codex", "sourceSessionId": "source", "externalHistoryMode": "follow"}),
+                "Standard",
+            ),
+            (
+                "zcode",
+                "primary",
+                serde_json::json!({"importedFrom": "zcode", "sourceSessionId": "source", "continuationMode": "openbitfun_local"}),
+                "Standard",
+            ),
+            (
+                "branch",
+                "primary",
+                serde_json::json!({"externalBranchOf": {"ecosystemId": "codex", "sourceSessionId": "source", "contentVersion": "retained"}}),
+                "Standard",
+            ),
+            (
+                "zcode-branch",
+                "primary",
+                serde_json::json!({"externalBranchOf": {"ecosystemId": "zcode", "sourceSessionId": "source"}}),
+                "Standard",
+            ),
+            ("native", "primary", serde_json::json!({}), "primary"),
+            (
+                "other-source",
+                "primary",
+                serde_json::json!({"importedFrom": "custom", "sourceSessionId": "source"}),
+                "primary",
+            ),
+            (
+                "missing-identity",
+                "primary",
+                serde_json::json!({"importedFrom": "codex"}),
+                "primary",
+            ),
+            (
+                "external-provider",
+                "primary",
+                serde_json::json!({"provider": "acp", "importedFrom": "codex", "sourceSessionId": "source"}),
+                "primary",
+            ),
+            (
+                "selected-mode",
+                "Creative",
+                serde_json::json!({"externalBranchOf": {"ecosystemId": "codex", "sourceSessionId": "source"}}),
+                "Creative",
+            ),
+            (
+                "custom-mode",
+                "custom-primary",
+                serde_json::json!({"importedFrom": "codex", "sourceSessionId": "source"}),
+                "custom-primary",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let store = SessionMetadataStore::new(root.path());
+            // Old snake-case payload with absent optional fields must remain readable.
+            let record: SessionMetadata = serde_json::from_value(serde_json::json!({
+                "session_id": id, "session_name": "Kept title", "agent_type": agent,
+                "model_name": "primary", "created_at": 1, "last_active_at": 2,
+                "turn_count": 0, "message_count": 0, "tool_call_count": 0,
+                "status": "completed", "workspace_id": "main", "custom_metadata": custom,
+            }))
+            .unwrap();
+            store.save_metadata(&record).await.unwrap();
+            let original = fs::read(store.metadata_path(id)).await.unwrap();
+            let stored: StoredSessionMetadataFile = serde_json::from_slice(&original).unwrap();
+            assert_eq!(stored.metadata.agent_type, agent);
+            let index = fs::read(store.index_path()).await.unwrap();
+            for records in [
+                vec![store.load_metadata(id).await.unwrap().unwrap()],
+                store.list_metadata().await.unwrap(),
+                store.list_metadata_page(None, 5).await.unwrap().sessions,
+                store.metadata_by_ids(&[id.to_string()]).await.unwrap(),
+                store.list_metadata_including_internal().await.unwrap(),
+            ] {
+                let returned = records.iter().find(|entry| entry.session_id == id).unwrap();
+                assert_eq!(returned.agent_type, expected, "{id}");
+                assert_eq!(returned.model_name, "primary");
+                assert_eq!(returned.custom_metadata, record.custom_metadata);
+                let round_trip: SessionMetadata =
+                    serde_json::from_slice(&serde_json::to_vec(returned).unwrap()).unwrap();
+                assert_eq!(round_trip.agent_type, expected);
+                assert_eq!(round_trip.custom_metadata, record.custom_metadata);
+            }
+            assert_eq!(fs::read(store.metadata_path(id)).await.unwrap(), original);
+            assert_eq!(fs::read(store.index_path()).await.unwrap(), index);
         }
     }
 
@@ -883,7 +1099,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_text_metadata_is_not_numbered_or_rewritten_as_a_default() {
+    async fn legacy_tagged_empty_default_is_migrated_and_assigned_a_slot() {
         let dir = tempfile::tempdir().unwrap();
         let store = SessionMetadataStore::new(dir.path());
         let mut legacy = metadata("legacy-number", 1);
@@ -899,15 +1115,37 @@ mod tests {
             )
             .await
             .unwrap();
+        let old_bytes = fs::read(store.metadata_path(&legacy.session_id))
+            .await
+            .unwrap();
+        let projected = store
+            .load_metadata(&legacy.session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(projected.session_name, "New Session");
+        assert_eq!(
+            store.list_metadata().await.unwrap()[0].session_name,
+            "New Session"
+        );
+        assert_eq!(
+            fs::read(store.metadata_path(&legacy.session_id))
+                .await
+                .unwrap(),
+            old_bytes
+        );
         store.save_metadata(&legacy).await.unwrap();
         let restored = store
             .load_metadata(&legacy.session_id)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(restored.session_name, legacy.session_name);
-        assert_eq!(restored.custom_metadata, legacy.custom_metadata);
-        assert_eq!(ordinal::number(&restored), None);
+        assert_eq!(restored.session_name, "New Session");
+        assert_eq!(
+            restored.custom_metadata.as_ref().unwrap()["titleKey"],
+            "flow-chat:session.new"
+        );
+        assert_eq!(ordinal::number(&restored), Some(1));
     }
 
     #[tokio::test]

@@ -2,7 +2,8 @@
 
 use openbitfun_services_core::workspace_instructions::{
     read_workspace_conditional_instruction_sources, read_workspace_instruction_files,
-    read_workspace_instruction_sources, WorkspaceInstructionPathMatcher,
+    read_workspace_instruction_source_catalog, read_workspace_instruction_sources,
+    WorkspaceInstructionPathMatcher,
 };
 use std::fs;
 
@@ -13,31 +14,46 @@ fn instruction_names(
 }
 
 #[tokio::test]
-async fn workspace_instruction_files_reads_agents_then_claude_and_skips_empty_files() {
+async fn workspace_instruction_families_select_agents_then_claude_then_opencode() {
     let temp = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".claude")).expect("claude directory");
     fs::write(temp.path().join("AGENTS.md"), "agent rules\n").expect("agents");
     fs::write(temp.path().join("CLAUDE.md"), "claude rules\n").expect("claude");
+    fs::write(temp.path().join(".claude/CLAUDE.md"), "claude fallback\n").expect("fallback");
+    fs::write(
+        temp.path().join("opencode.json"),
+        r#"{"instructions":["guide.md"]}"#,
+    )
+    .expect("OpenCode config");
+    fs::write(temp.path().join("guide.md"), "OpenCode rules\n").expect("OpenCode rules");
 
     let files = read_workspace_instruction_files(temp.path())
         .await
         .expect("instruction files");
 
-    assert_eq!(files.len(), 2);
+    assert_eq!(files.len(), 1);
     assert_eq!(files[0].name, "AGENTS.md");
     assert_eq!(files[0].content, "agent rules\n");
-    assert_eq!(files[1].name, "CLAUDE.md");
-    assert_eq!(files[1].content, "claude rules\n");
 
-    fs::write(temp.path().join("AGENTS.md"), "").expect("empty agents");
+    fs::write(temp.path().join("AGENTS.md"), " \n\t").expect("blank agents");
     let files = read_workspace_instruction_files(temp.path())
         .await
         .expect("instruction files");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].name, "CLAUDE.md");
+
+    fs::write(temp.path().join("CLAUDE.md"), "").expect("empty claude");
+    let files = read_workspace_instruction_files(temp.path()).await.unwrap();
+    assert_eq!(instruction_names(&files), [".claude/CLAUDE.md"]);
+
+    fs::write(temp.path().join(".claude/CLAUDE.md"), " \n\t").expect("blank fallback");
+    let files = read_workspace_instruction_files(temp.path()).await.unwrap();
+    assert_eq!(instruction_names(&files), ["guide.md"]);
+    assert_eq!(files[0].content, "OpenCode rules\n");
 }
 
 #[tokio::test]
-async fn workspace_instruction_override_replaces_agents_without_hiding_claude() {
+async fn workspace_instruction_override_skips_empty_files_and_suppresses_claude() {
     let temp = tempfile::tempdir().expect("tempdir");
     fs::write(temp.path().join("AGENTS.override.md"), "override rules\n").expect("override");
     fs::write(temp.path().join("AGENTS.md"), "base rules\n").expect("agents");
@@ -47,24 +63,25 @@ async fn workspace_instruction_override_replaces_agents_without_hiding_claude() 
         .await
         .expect("instruction files");
 
-    assert_eq!(files.len(), 2);
+    assert_eq!(files.len(), 1);
     assert_eq!(files[0].name, "AGENTS.override.md");
     assert_eq!(files[0].content, "override rules\n");
-    assert_eq!(files[1].name, "CLAUDE.md");
 
-    fs::write(temp.path().join("AGENTS.override.md"), "").expect("empty override");
-    let files = read_workspace_instruction_files(temp.path())
-        .await
-        .expect("instruction files");
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].name, "CLAUDE.md");
+    for empty in ["", " \n\t"] {
+        fs::write(temp.path().join("AGENTS.override.md"), empty).expect("blank override");
+        let files = read_workspace_instruction_files(temp.path())
+            .await
+            .expect("instruction files");
+        assert_eq!(instruction_names(&files), ["AGENTS.md"]);
+        assert_eq!(files[0].content, "base rules\n");
+    }
 }
 
 #[tokio::test]
 async fn claude_project_files_and_unconditional_rules_have_deterministic_order() {
     let temp = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(temp.path().join(".claude/rules/nested")).expect("rules dir");
-    fs::write(temp.path().join("AGENTS.md"), "openbitfun rules\n").expect("agents");
+    fs::write(temp.path().join("AGENTS.md"), " \n\t").expect("blank agents");
     fs::write(temp.path().join("CLAUDE.md"), "root claude\n").expect("root claude");
     fs::write(temp.path().join(".claude/CLAUDE.md"), "fallback claude\n").expect("fallback claude");
     fs::write(temp.path().join("CLAUDE.local.md"), "local claude\n").expect("local claude");
@@ -87,14 +104,13 @@ async fn claude_project_files_and_unconditional_rules_have_deterministic_order()
     assert_eq!(
         instruction_names(&files),
         vec![
-            "AGENTS.md",
             "CLAUDE.md",
             "CLAUDE.local.md",
             ".claude/rules/nested/a-first.md",
             ".claude/rules/z-last.md",
         ]
     );
-    assert_eq!(files[1].content, "root claude\n");
+    assert_eq!(files[0].content, "root claude\n");
     assert!(!files.iter().any(|file| file.name == ".claude/CLAUDE.md"));
     assert!(!files.iter().any(|file| file.name.contains("path-scoped")));
 }
@@ -181,13 +197,13 @@ async fn path_scoped_project_rule_imports_inherit_the_parent_scope() {
 }
 
 #[tokio::test]
-async fn conditional_discovery_skips_unconditional_and_opencode_sources() {
+async fn agents_family_suppresses_claude_rules_and_skips_invalid_lower_sources() {
     let temp = tempfile::tempdir().expect("tempdir");
     fs::create_dir_all(temp.path().join(".claude/rules")).expect("rules dir");
     fs::write(temp.path().join("AGENTS.md"), "startup instructions\n").expect("agents");
     fs::write(
         temp.path().join("opencode.json"),
-        r#"{"instructions":["missing.md"]}"#,
+        "{ invalid OpenCode config",
     )
     .expect("OpenCode config");
     fs::write(
@@ -201,11 +217,77 @@ async fn conditional_discovery_skips_unconditional_and_opencode_sources() {
     )
     .expect("scoped rule");
 
+    let sources = read_workspace_instruction_sources(temp.path())
+        .await
+        .expect("selected AGENTS sources");
+    assert_eq!(instruction_names(&sources), ["AGENTS.md"]);
+    let catalog = read_workspace_instruction_source_catalog(temp.path())
+        .await
+        .expect("selected source catalog");
+    assert!(catalog.incomplete_ecosystems.is_empty());
+    assert_eq!(catalog.sources.len(), 1);
+    assert_eq!(catalog.sources[0].ecosystem_id, "shared");
+
     let files = read_workspace_conditional_instruction_sources(temp.path())
         .await
         .expect("conditional sources");
 
-    assert_eq!(instruction_names(&files), vec![".claude/rules/rust.md"]);
+    assert!(files.is_empty());
+
+    fs::write(temp.path().join("AGENTS.md"), "").expect("empty agents");
+    let files = read_workspace_conditional_instruction_sources(temp.path())
+        .await
+        .expect("Claude conditional sources");
+    assert_eq!(instruction_names(&files), [".claude/rules/rust.md"]);
+}
+
+#[tokio::test]
+async fn claude_local_and_rules_only_families_suppress_opencode() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(temp.path().join(".claude/rules")).unwrap();
+    fs::write(
+        temp.path().join("opencode.json"),
+        r#"{"instructions":["guide.md"]}"#,
+    )
+    .unwrap();
+    fs::write(temp.path().join("guide.md"), "OpenCode rules\n").unwrap();
+    fs::write(temp.path().join("CLAUDE.local.md"), "Claude local\n").unwrap();
+
+    let files = read_workspace_instruction_files(temp.path()).await.unwrap();
+    assert_eq!(instruction_names(&files), ["CLAUDE.local.md"]);
+
+    fs::write(temp.path().join("CLAUDE.local.md"), " \n\t").unwrap();
+    fs::write(
+        temp.path().join(".claude/rules/general.md"),
+        "Claude general\n",
+    )
+    .unwrap();
+    let files = read_workspace_instruction_files(temp.path()).await.unwrap();
+    assert_eq!(instruction_names(&files), [".claude/rules/general.md"]);
+
+    fs::write(temp.path().join(".claude/rules/general.md"), "").unwrap();
+    fs::write(
+        temp.path().join(".claude/rules/rust.md"),
+        "---\npaths: [\"src/**/*.rs\"]\n---\nClaude Rust\n",
+    )
+    .unwrap();
+    assert!(read_workspace_instruction_files(temp.path())
+        .await
+        .unwrap()
+        .is_empty());
+    let conditional = read_workspace_conditional_instruction_sources(temp.path())
+        .await
+        .unwrap();
+    assert_eq!(instruction_names(&conditional), [".claude/rules/rust.md"]);
+    let catalog = read_workspace_instruction_source_catalog(temp.path())
+        .await
+        .unwrap();
+    assert_eq!(catalog.sources.len(), 1);
+    assert_eq!(catalog.sources[0].ecosystem_id, "claude-code");
+
+    fs::write(temp.path().join(".claude/rules/rust.md"), " \n\t").unwrap();
+    let files = read_workspace_instruction_files(temp.path()).await.unwrap();
+    assert_eq!(instruction_names(&files), ["guide.md"]);
 }
 
 #[test]

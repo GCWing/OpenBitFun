@@ -1,5 +1,6 @@
 //! MCP configuration data contracts.
 
+mod control;
 mod cursor_format;
 mod import;
 mod json_config;
@@ -7,6 +8,7 @@ mod location;
 mod service;
 mod service_helpers;
 
+pub use control::{MCPControlConfigSnapshot, MCPControlServerSummary};
 pub use cursor_format::{config_to_cursor_format, parse_cursor_format};
 pub use import::{
     MCPImportError, MCPImportServer, MCPImportTransport, MCPImportedServerSummary,

@@ -9,6 +9,42 @@ This directory contains OpenBitFun’s **Web UI** (React + TypeScript). The same
 - **Desktop**: loaded via **Tauri**
 - **Server/Web**: built into static assets and served by the backend
 
+## Creating a project
+
+The sidebar's add button opens two clickable cards without footer actions.
+The assistant card creates an assistant immediately, then opens its identity,
+tool, and personality setup. The project card opens the folder form; Back returns to the
+choice while preserving the project draft. Closing the dialog resets the flow.
+Add one folder and leave
+its name empty to use the folder name, or add several folders and give the group
+one name. The first folder is the primary workspace; the others become associated
+folders. Reusing an existing workspace preserves its previous associations.
+Removing a folder from the draft never deletes it from disk.
+
+With no source folders, enter a name to create the empty project automatically in
+`~/OpenBitFun/Projects/<project-name>`. The home directory belongs to the target
+host or environment, including a controlled peer, SSH host, container, or WSL
+distribution. Creating in another environment may ask for a connection, but never
+a save location. Hosts that do not provide their home directory report an error
+without falling back to the controller.
+
+Choose the work location (**This computer** or **Remote host**), then the
+environment (**Host system**, **Container**, or **WSL**). Each label shares a row with its left-aligned switch;
+the environment row appears after selecting a remote host, and source-folder controls stay disabled until an environment instance is selected. Create and refresh icon buttons sit on the right, with configured or detected
+choices shown below as capsules. Click a capsule to select it; its separate edit
+icon opens a configuration dialog. Remote host choices remain available when
+the environment is a container, and discovery uses the selected host.
+The current device name and the same system icon used in the device switcher are centered below **Work location** when **This computer**
+is selected. Click a selected capsule again to clear it; clearing a host also clears its container selection. Native WSL requires the current Windows work host.
+Choose a host before adding a remote container connection. Its dialog selects only existing SSH hosts and container settings; it does not repeat the host address or authentication form. Legacy direct-container SSH profiles remain supported. New and edit dialogs do not repeat the source or saved/new chooser. The connection dialog includes the selected environment in its title. Reuse a selected connection without filling another form. Docker runtime
+options and the optional WSL user live in **Advanced settings**; direct container
+SSH needs no Docker container ID. Authentication prompts include the target in the title and request missing credentials,
+with saved authentication settings available only when explicitly expanded.
+Folder addition uses the system picker on this computer and an environment-scoped directory dialog for SSH, Docker, or WSL. A selected instance goes directly to that directory dialog.
+All folders in one project must belong to the same connection/environment; remove
+the selected folders before changing either source dimension.
+The form does not show recent projects.
+
 ## MCP configuration
 
 In Desktop, open **Settings → Tools → MCP** to add or edit a user-level server
@@ -28,6 +64,47 @@ are retained, unsupported form shapes stay editable in JSON, and concurrent
 configuration changes cannot silently overwrite one another. This management
 surface edits the local Desktop user's configuration; project-scoped editing,
 Peer Device management, and standalone Web management are not exposed by it.
+
+## Sending follow-up messages
+
+In **Settings → Input & interaction → Message sending**, choose how follow-up
+messages are sent during a native conversation. **Send immediately** is the
+default, including after upgrading: it delivers instructions to the running task
+through the existing send-now action. **Queue messages** waits for the current
+turn to finish. Buttons and keyboard submission share this preference.
+Already queued messages retain their individual send-now action. ACP sessions
+still wait for the current turn; Detached Dispatch sessions keep appending
+messages to the target task. In Peer Device Mode, the preference belongs to the
+active host, as do the other conversation settings.
+
+## Sidebar customization
+
+Open **Settings → Appearance → Left sidebar** to pin Agents,
+assistants, MiniApps, installed/discoverable Skills, or Insights. Available pages
+use capsules; select one to pin it. Move pinned pages up/down, remove
+them, or restore the default Home + Task Board layout. Home remains available.
+The selected pinned subpage gets its own highlight instead of also highlighting Home.
+
+Changes apply immediately and persist on this controller across workspaces and
+device switches. An unsupported or temporarily missing destination keeps its
+position with an unavailable state; returning to a supported device or restoring
+the contribution makes it usable again. This layout preference does not enable
+host capabilities. Skill management/discovery currently requires the local Desktop.
+
+## MiniApp navigation shortcuts
+
+In **MiniApps → Installed**, open an app's **More actions** menu and choose
+**Add to left navigation**. The same action is available on installed-app detail
+pages. Shortcuts appear after the customized page entries, in the order added, and open the
+app in a tab. Each shortcut shows only the app icon and name. Its remove button
+appears on hover or keyboard focus within the same navigation row. Use that
+button or the app's navigation action to remove it without uninstalling the app.
+
+Shortcuts survive restarts and are saved separately for each selected device on
+this controller. Switching devices uses that device's installed catalog; failed
+catalog reads retain the saved shortcuts. Apps requiring workspace filesystem
+access remain disabled in unsupported remote workspaces. Launching an app that
+is already open in a native window uses the existing transfer confirmation.
 
 ## Floating conversations
 
@@ -71,6 +148,15 @@ and device. ACP and Detached Dispatch conversations retain text interaction;
 shared voice history requires a host advertising `control_conversation_v1`.
 The standalone web server does not yet expose this control-conversation contract;
 use Desktop or a capable peer host.
+
+## Personal assistants
+
+The left navigation shows each assistant as a static joystick avatar. Select it to open its default session, or its most recently active session when no default is set (starting one if it has none). Use the history button to browse sessions in a separate dialog, or the plus button to start a new session. Assistant sessions do not appear inline, including in the all-sessions view; assistant rows have no resource-area shortcut. In history, use the pin button to set or clear a default. Defaults are stored per assistant on the serving host; older hosts keep latest-session navigation and disable default selection. The assistant menu opens the selected assistant’s management page and hides assistants without deleting their data and omits project permissions, filesystem reveal, session storage, and batch session management.
+
+New assistants start with the existing default configuration. The assistant
+gallery provides creation, identity and persona editing, conversations, and
+scheduled tasks; it does not expose an editor for shared assistant defaults.
+Existing assistant data and saved configuration remain intact.
 
 ## Tech stack
 
@@ -151,6 +237,58 @@ pnpm --dir src/web-ui run build
 VITE_BUILD_TARGET=web pnpm --dir src/web-ui run build
 # output: dist/
 ```
+
+## Model selection and smart mode
+
+Smart mode is not released in the current build. Its existing entry stays
+disabled, and configuration, probes and activation require an execution host
+that explicitly reports release availability. Older hosts without that field
+remain unavailable. Saved selections are retained, while the effective mode is
+manual; neither configuration files nor environment variables unlock routing.
+The details below describe the retained implementation for future release.
+
+The compact chat model picker keeps the context limit, reasoning effort and
+selected model together. Its model list retains search, provider filters and the
+primary/fast, pool and smart shortcuts. Manual model choices use the existing
+session and future-default saving rules. Delegated subagents keep their original
+explicit, default, inherited and Fork model configuration.
+
+Smart mode adds primary/economy bindings and Router status as items
+inside that mode. Before configuration, it shows a centered **Configure smart
+mode** action, matching the model-pool empty state. Its configuration dialog
+contains the primary/economy bindings in one row and the Router service.
+**Save and test connection** checks the primary model, economy model and Router
+independently, with a separate result for each. Ordinary models use the same
+connection test as model settings; the Router also validates its classifier
+protocol. Changing a selection clears previous results.
+Smart mode automatically maintains Router history summaries with the economy
+model. Pending summaries do not prevent routing while complete history fits;
+only an input that cannot fit completely falls back to the primary model.
+Older conversations prepare Router history from the execution host's original
+visible turns in bounded chunks. Accepted progress is stored per conversation;
+once ready, routing resumes automatically without replacing the main transcript.
+Auxiliary requests choose the economy model's independent lowest supported effort.
+No tokenizer file is required: the execution host estimates
+input locally and tightens its budget using complete Router prompt usage.
+Legacy tokenizer paths remain optional overrides. Older hosts without
+`estimatedTokenBudgetSupported` may retain an already configured path; without
+one, saving is blocked with an execution-host upgrade message.
+Pricing, economy threshold and timeout
+controls are no longer exposed; existing saved values remain intact. The default-models
+section has no separate Router or billing entry. Settings → Models → Smart mode
+opens the same configuration dialog. Once configured, a centered switch
+controls activation. Opening smart mode only shows this switch and configuration
+action until enabled; primary/economy and Router items appear after the
+host confirms activation. Turning it off hides those items and keeps the switch
+available. Select a role to search text models within the same popover; Back or
+Escape returns to the smart items. Editing roles leaves the session model unchanged.
+
+A ready host activates smart routing for the current session or draft through
+its existing API, without changing the strategy default or subagent policy.
+Before a session or draft exists, the host strategy default owns the selection.
+There is no additional remember-selection control. Older hosts show an explicit
+unsupported state. Model pools use the named pools advertised by the execution
+host. Remote surfaces read and save the selected host's models and configuration.
 
 ## Subscription models
 
@@ -241,17 +379,101 @@ the visible local Desktop; they are unavailable on remote/Peer/headless surfaces
 MiniApp source operations use the installed product's lifecycle owner and
 preserve omitted source fields and existing app storage when updating.
 
+Agents operate MiniApps through `MiniAppBrowser` first: connect the current
+instance, use its declared state/actions when available, then its DOM/input
+controls. A missing semantic bridge does not by itself require desktop control.
+Readable frames advertising `element-position-click-v1` also accept clicks at
+normalized positions inside an observed element, including SVG/Canvas surfaces;
+older hosts retain ordinary element clicks. ComputerUse remains a fallback for
+a specific unsupported operation on the authorized host. Ordinary web pages use
+ControlHub, while native apps and OS dialogs use ComputerUse.
+
 1. **Don’t call Tauri APIs directly** in UI components; use the adapter layer.
 2. **Keep Web compatibility** in mind (some capabilities may not exist in browsers).
 3. **Prefer CSS variables** over hard-coded colors/sizes.
 
-## Ecosystem compatibility status checks
+## External Import status checks
 
-Open a disposable local workspace in Desktop and select an agent under Ecosystem Compatibility.
+Open a disposable local workspace in Desktop and select an app under **Settings → Tools & integrations → External import**.
+The page retains application selection and import tables inside the settings layout; it no longer has a separate menu entry.
 Use test content or reversible imported copies. Category discovery coverage is independent of copy import and execution support.
+
+For Codex, Zcode, Claude Code, OpenCode, Pi, DeepSeek Harness and Cursor, enable **Automatically discover sessions** in Ecosystem
+Compatibility. Opening a local workspace adds a lightweight index of all matching
+source sessions to its regular list, including startup-restored workspace lists. A
+small source label identifies imported history. Use **Session source** in the
+workspace menu to show all agents or a selected source. Filtering
+searches the complete metadata catalog, including sessions beyond the first page,
+while the workspace list initially shows five sessions. Use its existing expand
+controls to see more; switching sources starts folded again.
+Preferences are stored on the serving host; workspace filters are scoped by device
+and workspace. Older hosts display an unavailable switch. SSH workspace discovery
+is explicitly unsupported and never reads controller-side history.
+Cursor reads CLI snapshots under `CURSOR_CONFIG_DIR/chats` (otherwise
+`XDG_CONFIG_HOME/cursor/chats` or `~/.cursor/chats`) and Desktop's local
+`Cursor/User/globalStorage/state.vscdb`. Set `OPENBITFUN_CURSOR_USER_DATA_DIR` on
+the OpenBitFun host for a custom Desktop profile. CLI JSONL transcripts under
+`CURSOR_DATA_DIR/projects` (default `~/.cursor/projects`) are a fallback and can
+lack tool results. Desktop can also omit saved file contents. These gaps are shown
+as source warnings; missing snapshot references fail explicitly. Workspace paths
+come from stored metadata, never reconstructed from lossy directory names.
+Plaintext-only `.txt` transcripts report an unsupported-format warning.
+Cursor's Read, Write, StrReplace and Shell records use existing read-only cards;
+unmatched tool contracts retain their full data in the generic card.
+Claude Code reads `CLAUDE_CONFIG_DIR` (default `~/.claude`), preserves the selected
+conversation branch and available pre-compaction history, and excludes subagent
+transcripts. Its imported tool records use the existing read-only tool cards.
+OpenCode reads its SQLite history from `XDG_DATA_HOME/opencode/opencode.db`
+(default `~/.local/share/opencode/opencode.db`), including committed WAL data and
+pending undo boundaries. Pi reads `PI_CODING_AGENT_DIR` (default `~/.pi/agent`)
+and absolute configured session directories, preserving the active branch and saved
+context edits in v1/v2/v3 logs. DeepSeek Harness reads v0 raw or Zstandard logs under
+`DSH_HOME/sessions` (default `~/.dsh/sessions`); custom Cordis persistence roots are
+not discovered. Unknown formats report a diagnostic. No external Agent runs during import.
+Opening a source session caches its history and keeps following the original Agent.
+The source refreshes once each time it is opened. Staying on the page, typing,
+returning to the window or viewing a native branch does not refresh it.
+The first send creates an independent OpenBitFun branch from the version you have
+viewed. The source keeps updating separately; later source messages are never merged
+into that branch. Edit or roll back source history after explicitly forking it.
+Startup and list operations do not copy transcript bodies. A missing source keeps
+its last cache, or reports a retryable error if it has never been opened. Renames,
+archives and deletions survive rediscovery. Turning discovery off keeps existing
+entries and copies. Old automatic imports keep their original row and ID. Opening
+validates their retained local history: untouched copies follow the source, while
+local continuations or edits remain independent. Manual imports remain independent.
+Permission choices in a source composer apply to the branch created on first send.
+Use **Remove from OpenBitFun** to hide a source without deleting its original history
+or any continuation branch. It stays removed across scans. In the source's ecosystem
+compatibility settings, **Removed source sessions → Add again** restores the same
+entry and its saved name. A branch whose source was removed also offers this action
+when you choose **Open source session**. Re-adding reads history only when opened.
+Source and branch archives/deletions are independent. Restore archived entries from
+the existing archived sessions page; new source messages do not unarchive them.
+Failed delete requests retain the affected session and its draft for retry.
+Peer mode explicitly disables following source views until its history stream can
+pin their versions; existing native branches retain their normal Peer behavior.
+Removed source management is also gated in Peer mode; use the source's owning host.
+Other clients without automatic source forking receive a read-only error on direct submission.
+Names use the original Agent's saved title. Codex reads its name index and local
+state database; Zcode uses the saved task title. Rediscovery corrects old prompt-preview
+names and refreshes source names while preserving names edited in OpenBitFun.
+Source views are excluded from workspace full-text search with a diagnostic;
+native branches can be searched. New branches use the host's configured model.
+Zcode reads saved top-level tasks from `~/.zcode/cli/db/db.sqlite`, including committed
+WAL data. Hidden inherited context and nested side/subagent tasks are excluded.
+Source data stays intact; attachment names are retained but attachment files are not copied.
+History discovery does not enable Zcode runtime, configuration, or plugin compatibility.
+
+Imported tool history reuses OpenBitFun's existing tool cards by matching names
+and equivalent operations. Programs, commands, file operations, searches and plans
+use their native cards; unmatched tools use the standard generic card. Existing
+imports receive this display when reopened. Original records remain unchanged,
+and imported cards cannot approve tools or act on current-workspace snapshots.
 
 | Check | Action | Expected result |
 |---|---|---|
+| Automatic session discovery | Enable session discovery for each supported Agent, reopen a matching workspace, then continue its source in both apps | Discovery indexes metadata only; opening caches a followed view. First send forks the viewed version; later source changes stay separate. Drafts, rename/archive/delete, old native copies and missing-source caches remain intact |
 | Command discovery | Put `Reply with STATUS_OK.` in `.claude/commands/status-check.md`, then refresh the catalog | The category shows the discovered count and the category dialog lists the discovered commands. Viewing it neither enables execution nor offers unsupported copy import; runtime activation stays with its existing owner |
 | MCP copy versus connection | Review and import an existing supported MCP declaration, leaving the native copy disabled | The row says Imported and connection not confirmed. Check and enable the copy in MCP settings, which owns the actual connection result |
 | Read-only hooks | Select Pi or DSH with a configured extension and open the Hook category dialog | Static declarations are viewable without execution. Single and category import actions are absent |
@@ -270,3 +492,34 @@ pnpm run capabilities:test
 
 Fixtures cover scan failures, legacy hosts with missing facts, and conflicts without damaging real configuration.
 Remote/Peer frontend fixtures verify presentation and import gates; actual SSH, cross-device, IM remote control and Detached Dispatch require separate environment testing.
+
+### Session trajectory
+
+The chart icon in the conversation header opens a three-lane trajectory for user
+input, model rounds and tool calls. Search, previous/next result and close controls
+share the session's top tab bar. Blank clicks clear selections while keeping the
+trajectory and search open; the close button or Escape dismisses them.
+Hover or keyboard focus previews one node while dimming the others; clicking or
+pressing Enter locates its FlowChat item and opens the reusable details panel.
+The reference line highlights the crossed node without dimming its neighbors.
+Selected nodes retain their emphasis until another selection or a blank click.
+Details use the shared PageHeader, FieldGroup, Disclosure and ScrollArea components.
+Timing appears in the header, followed by parameter and result chapters without
+inner tabs. Search reveals its matched chapter within the panel. Large output is
+disclosed incrementally, and missing timing remains unknown rather than a measured zero.
+Read-only fields align labels and values, stack on narrow panels, and give long
+values the full row width. Nested data expands within its field group.
+
+Drag across the rail, Shift-select, or adjust the range handles with the arrow
+keys to select an inclusive range. Search navigation stays within that range;
+the details panel shows counts, recorded cumulative durations and endpoint actions.
+Parallel model/tool durations are sums, not elapsed wall time.
+
+Only visible trajectory markers are mounted. History summaries are read in
+bounded pages without materializing the whole transcript; selected bodies use
+existing scoped history readers. SSH workspace requests retain the owning workspace
+identity. Peer hosts negotiate `session_trajectory_v1`; older hosts expose an explicit
+partial view of available events. Peer detail bodies remain owned by the canonical
+record replica. This observer UI adds no runtime or filesystem dependency for
+Remote Control or Detached Dispatch jobs. Automated fixtures simulate these routing
+and device-switch contracts; live remote and native visual checks remain manual.

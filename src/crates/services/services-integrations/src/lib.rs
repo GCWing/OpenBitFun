@@ -22,7 +22,6 @@ pub(crate) fn reqwest_client_builder() -> reqwest::ClientBuilder {
 }
 
 #[cfg(any(
-    feature = "announcement",
     feature = "browser-control",
     feature = "mcp",
     feature = "remote-connect",
@@ -31,9 +30,6 @@ pub(crate) fn reqwest_client() -> reqwest::Client {
     openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
     reqwest::Client::new()
 }
-
-#[cfg(feature = "announcement")]
-pub mod announcement;
 
 #[cfg(feature = "miniapp-market")]
 pub mod appearance_market;
@@ -105,6 +101,11 @@ pub(crate) mod review_platform_http;
 
 #[cfg(feature = "script-tool-runtime")]
 pub mod script_tool;
+
+#[cfg(feature = "ptc-runtime")]
+pub mod ptc_runtime;
+#[cfg(feature = "ptc-runtime")]
+pub mod python_ptc_runtime;
 #[cfg(feature = "speech")]
 pub mod speech;
 

@@ -24,6 +24,7 @@ impl CreativeHarness {
         default_tools.push("ComputerUse".to_string());
         default_tools.extend(
             [
+                "DesktopCard",
                 "InitMiniApp",
                 "FinalizeMiniApp",
                 "PublishMiniApp",
@@ -51,7 +52,7 @@ impl Agent for CreativeHarness {
     }
 
     fn description(&self) -> &str {
-        "Creative Harness for building MiniApps and customizing the OpenBitFun interface"
+        "Creative Harness for videos, decks, prototypes, and web design with on-demand creative skills, building MiniApps, and customizing the OpenBitFun interface"
     }
 
     fn prompt_template_name(&self, _model_name: Option<&str>) -> &str {
@@ -90,6 +91,15 @@ mod tests {
     }
 
     #[test]
+    fn creative_mode_can_operate_the_app_it_built() {
+        // Building a MiniApp without being able to open and use it leaves the
+        // Agent driving a copy in a headless browser instead of the app the
+        // user is watching.
+        let tools = CreativeHarness::new().default_tools();
+        assert!(tools.contains(&"MiniAppBrowser".to_string()));
+    }
+
+    #[test]
     fn creative_prompt_has_its_own_persistent_cache_identity() {
         let mode = CreativeHarness::new();
         assert_eq!(mode.prompt_template_name(None), "creative_mode");
@@ -101,5 +111,22 @@ mod tests {
             .join(" ")
             .contains("installed client"));
         assert!(prompt.contains("FrontendWorkbench"));
+    }
+
+    #[test]
+    fn creative_prompt_routes_remote_creative_skills_without_bundling_them() {
+        let prompt = crate::agentic::agents::get_embedded_prompt("creative_mode").unwrap();
+        for repository in [
+            "https://github.com/feitangyuan/onetake",
+            "https://github.com/heygen-com/hyperframes",
+            "https://github.com/alchaincyf/huashu-design",
+            "https://github.com/leonxlnx/taste-skill",
+            "https://github.com/emilkowalski/skills",
+        ] {
+            assert!(prompt.contains(repository), "missing {repository}");
+        }
+        assert!(prompt.contains("not bundled"));
+        assert!(prompt.contains("`WebFetch`"));
+        assert!(prompt.contains("`ExecCommand`"));
     }
 }

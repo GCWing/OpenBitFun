@@ -398,6 +398,23 @@ describe('FlowChatManager initialization', () => {
     expect(storeMocks.store.loadSessionMetadataPage).not.toHaveBeenCalled();
   });
 
+  it('does not initiate old-workspace history reads after a device switch during listener setup', async () => {
+    const listenerInitialization = createDeferred<() => void>();
+    storeMocks.initializeEventListeners.mockReturnValue(listenerInitialization.promise);
+    storeMocks.store = {
+      registerPersistUnreadCompletionCallback: vi.fn(),
+      getSurfaceGeneration: vi.fn(() => 0),
+      loadSessionMetadataPage: vi.fn(),
+    };
+    const manager = FlowChatManager.getInstance();
+    const pending = manager.initialize(workspaceFixture('/same/repo', undefined, undefined), undefined);
+    await flushAsyncWork();
+    activateSurface('other-device');
+    listenerInitialization.resolve(vi.fn());
+    await expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    expect(storeMocks.store.loadSessionMetadataPage).not.toHaveBeenCalled();
+  });
+
   it('reuses concurrent initialization for the same workspace history restore', async () => {
     const metadataLoad = createDeferred<{
       sessions: unknown[];
@@ -683,7 +700,7 @@ describe('FlowChatManager initialization', () => {
   // The same repository is routinely open at the same path on two devices, so a
   // request key without the surface handed device A's bootstrap the in-flight
   // initialization of device B — and A then read back B's session list.
-  it('does not deduplicate initialization for the same path across devices', async () => {
+  it.each(['device-b', 'local'])('does not reuse an earlier activation when initializing the same path on %s', async (destination) => {
     const metadataLoads = [
       createDeferred<Record<string, unknown>>(),
       createDeferred<Record<string, unknown>>(),
@@ -710,6 +727,7 @@ describe('FlowChatManager initialization', () => {
     expect(storeMocks.store.loadSessionMetadataPage).toHaveBeenCalledTimes(1);
 
     activateSurface('device-b');
+    activateSurface(destination);
     const peerInitialize = manager.initialize(workspaceFixture('D:/workspace/OpenBitFun', undefined, undefined), undefined);
     await flushAsyncWork();
     // A shared key would have handed this bootstrap the local device's request.

@@ -612,6 +612,16 @@ impl Tool for CodeReviewTool {
         Self::input_schema_value()
     }
 
+    fn output_schema(&self) -> Value {
+        // The normalized review packet is an internal/UI payload and the
+        // assistant-facing result is a fixed acknowledgement, so no
+        // canonical fields are projected into the PTC SDK here.
+        json!({
+            "type": "object",
+            "additionalProperties": true
+        })
+    }
+
     async fn input_schema_for_model(&self) -> Value {
         let lang = get_app_language_code().await;
         Self::input_schema_value_for_language(lang.as_str())

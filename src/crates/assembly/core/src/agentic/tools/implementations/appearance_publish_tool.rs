@@ -90,6 +90,22 @@ This is an outward-facing publication action. Use it only when the user explicit
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["sign_in_required", "pending_review", "submitted"]},
+                "authorization_url": {"type": "string"},
+                "slug": {"type": "string"},
+                "submission_id": {"type": "string"},
+                "release_number": {"type": "integer"},
+                "name": {"type": "string"}
+            },
+            "required": ["status"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

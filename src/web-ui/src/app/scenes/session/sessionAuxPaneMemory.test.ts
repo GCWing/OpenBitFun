@@ -5,6 +5,7 @@ import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { appManager } from '../../services/AppManager';
 import { clearSessionAuxPaneMemory, startSessionAuxPaneMemory } from './sessionAuxPaneMemory';
+import { clearAgentCanvasForPeerSwitch } from '../../components/panels/content-canvas/stores';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 function session(sessionId: string): Session {
@@ -47,7 +48,7 @@ describe('session aux pane memory', () => {
     activateSurface('local');
   });
 
-  it('restores a remembered session and uses the collapsed default for an unseen one', () => {
+  it('keeps the pane closed when switching to a session that never opened it', () => {
     stop = startSessionAuxPaneMemory();
 
     flowChatStore.switchSession('a');
@@ -58,32 +59,35 @@ describe('session aux pane memory', () => {
     expect(collapsed()).toBe(false);
   });
 
-  it('keeps an independent state per session', () => {
+  it('remembers the pane state of each session independently', () => {
     stop = startSessionAuxPaneMemory();
 
     flowChatStore.switchSession('a');
     setCollapsed(false);
     flowChatStore.switchSession('b');
+    expect(collapsed()).toBe(true);
     setCollapsed(false);
     flowChatStore.switchSession('a');
+    expect(collapsed()).toBe(false);
     setCollapsed(true);
     expect(collapsed()).toBe(true);
-
     flowChatStore.switchSession('b');
     expect(collapsed()).toBe(false);
     flowChatStore.switchSession('a');
     expect(collapsed()).toBe(true);
   });
 
-  it('restores fullscreen only when returning to the session that requested it', () => {
+  it('keeps workbench fullscreen per session instead of projecting it onto another session', () => {
     stop = startSessionAuxPaneMemory();
 
     flowChatStore.switchSession('a');
     appManager.updateLayout({ chatCollapsed: true, rightPanelCollapsed: false });
-    flowChatStore.switchSession('b');
+    expect(appManager.getState().layout.chatCollapsed).toBe(true);
 
+    flowChatStore.switchSession('b');
     expect(collapsed()).toBe(true);
     expect(appManager.getState().layout.chatCollapsed).toBe(false);
+
     flowChatStore.switchSession('a');
     expect(collapsed()).toBe(false);
     expect(appManager.getState().layout.chatCollapsed).toBe(true);
@@ -105,23 +109,38 @@ describe('session aux pane memory', () => {
     expect(collapsed()).toBe(false);
   });
 
-  it('does not attribute an active session when there is none', () => {
+  it('does not project the empty workbench pane state onto the first session', () => {
     stop = startSessionAuxPaneMemory();
 
     setCollapsed(false);
     flowChatStore.switchSession('a');
 
     expect(collapsed()).toBe(true);
+    flowChatStore.setState(state => ({ ...state, activeSessionId: null }));
+    expect(collapsed()).toBe(false);
   });
 
-  it('stops tracking sessions after the shell unmounts', () => {
+  it('drops remembered pane state when a device surface switch clears the canvas', () => {
+    stop = startSessionAuxPaneMemory();
+    flowChatStore.switchSession('a');
+    setCollapsed(false);
+
+    clearAgentCanvasForPeerSwitch();
+
+    flowChatStore.switchSession('b');
+    expect(collapsed()).toBe(true);
+    flowChatStore.switchSession('a');
+    expect(collapsed()).toBe(true);
+  });
+
+  it('stops tracking device surface changes after the shell unmounts', () => {
     stop = startSessionAuxPaneMemory();
     flowChatStore.switchSession('a');
     setCollapsed(false);
     stop();
     stop = undefined;
 
-    flowChatStore.switchSession('b');
+    activateSurface('pane-test-peer');
 
     expect(collapsed()).toBe(false);
   });

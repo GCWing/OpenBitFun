@@ -5,6 +5,8 @@ export interface SessionDraft {
   workspaceId: string;
   phase: 'editing' | 'creating' | 'ready' | 'submitting';
   permissionMode?: SessionPermissionMode | null;
+  /** Applied on the execution host before the first turn, without creating early. */
+  modelRouting?: 'manual' | 'smart';
   /** Stable across retries, including an ambiguous first-turn acknowledgement. */
   turnId: string;
 }

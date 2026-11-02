@@ -18,5 +18,638 @@
   "serverType": "Type",
   "clickToCopy": "Click to copy path",
   "pathCopied": "Path copied",
-  "pathCopyFailed": "Failed to copy path"
+  "pathCopyFailed": "Failed to copy path",
+  "search": {
+    "categories": {
+      "assistant": "AI & collaboration",
+      "workspace": "Projects & development",
+      "automation": "Extensions & automation",
+      "connect": "Connect & publish",
+      "application": "Application settings",
+      "data": "Data & diagnostics"
+    },
+    "kinds": {
+      "feature": "Feature",
+      "setting": "$t(shared:features.settings)"
+    },
+    "capabilities": {
+      "feature": {
+        "ai-assistant": {
+          "title": "AI assistant & sessions",
+          "summary": "Work with AI in project context, create sessions, continue tasks, answer permission requests, and keep a durable work record.",
+          "items": {
+            "create-session": "Open and create a new AI session",
+            "session-lifecycle": "Rename, archive, restore, delete, copy, fork, and export sessions",
+            "model-mode-permissions": "Choose the model, work mode, memory mode, and permission mode per session",
+            "creative-frontend-authoring": "Extend client UI and runtime capabilities in Creative mode",
+            "image-generation": "Generate images with the configured default image model",
+            "turn-control": "Start, steer, interrupt, cancel, or recover an agent turn",
+            "permission-mailbox": "Review and answer pending permission requests individually or in a batch",
+            "history-search": "Page through, search, and backfill historical turns and session content",
+            "session-storage-directory": "Open session storage from workspace or session menus for backups and manual troubleshooting",
+            "agent-session-coordination": "Let an agent create, list, cancel, or delete sessions and send messages to another session",
+            "mcp-mentions": "Use @ in chat to select MCP servers available to the current mode",
+            "tool-activity": "Inspect tool calls and background commands, read output, send input, or stop them",
+            "goals": "Inspect, create, complete, or block the current session goal",
+            "goal-maintenance": "Edit the goal objective or clear the current session goal",
+            "working-plan": "Let an agent maintain a task list, produce an implementation plan, and ask the user when needed",
+            "usage": "View request, token, and cost usage for an individual session",
+            "context-memory": "Reload session context, initialize AGENTS.md, and manage long-term memory",
+            "btw-editor-ai": "Use lightweight BTW questions and inline editor AI, with cancellation"
+          }
+        },
+        "agents": {
+          "title": "Agents",
+          "summary": "Manage built-in, custom, and subagents so specialized roles can handle research, coding, review, and more.",
+          "items": {
+            "browse-agents": "Browse built-in, user, project, and currently visible agents",
+            "custom-agent-create": "Create custom agents with a name, description, and role",
+            "custom-agent-manage": "Inspect, edit, reload, or delete custom agents",
+            "subagent-manage": "Create, configure, inspect, and delete delegatable subagents",
+            "capability-summary": "Inspect each agent's tools, Skills, read-only state, and capability summary",
+            "tools-skills": "Choose tool groups, individual tools, skill groups, and Skills per agent",
+            "delegation": "Let the primary agent delegate parallel research, coding, and review work and coordinate their lifecycle"
+          }
+        },
+        "personal-assistants": {
+          "title": "Personal assistants",
+          "summary": "Create and manage persistent AI assistants, define their identity and persona, and start chats or scheduled work from one place.",
+          "items": {
+            "assistant-gallery": "Browse existing assistants, create a new one, and review each assistant's identity and capability summary",
+            "assistant-open-close": "Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery",
+            "primary-delete-reset": "Set the primary assistant, delete non-primary assistants, or reset an assistant workspace to defaults",
+            "identity-avatar": "Edit an assistant's name, creature type, and vibe, then choose an official avatar, emoji, or custom avatar character",
+            "persona-documents": "Read and edit IDENTITY.md, SOUL.md, and USER.md with autosaved Markdown body and frontmatter",
+            "assistant-sessions": "Choose a model, send a message, and browse an assistant's sessions from its detail page",
+            "assistant-schedules": "Review and manage scheduled sessions and automated jobs scoped to the current assistant workspace"
+          }
+        },
+        "projects": {
+          "title": "Projects & workspaces",
+          "summary": "Open a local directory or create a project so files, sessions, terminals, and agents share one workspace.",
+          "items": {
+            "open-create": "Open an existing project or enter the new-project flow",
+            "close-switch-reorder": "Close, switch, and reorder multiple open workspaces",
+            "recent-workspaces": "Review, clean up, and reopen recently used projects",
+            "workspace-metadata": "Scan and maintain workspace names, metadata, related directories, and persona files",
+            "workspace-icon": "Choose project icon shapes and colors, or use a custom image",
+            "file-watch": "Watch project file changes, inspect watch status, and recover a stopped watcher",
+            "workspace-search": "Search local workspaces by filename, path, or file content",
+            "remote-open": "Open SSH and other remote workspaces from the project flow",
+            "project-health": "Inspect the current workspace, app state, health, and statistics"
+          }
+        },
+        "files-editor": {
+          "title": "Files & code editing",
+          "summary": "Browse, search, and edit project files while inspecting diffs, language-aware editor actions, and agent changes.",
+          "items": {
+            "file-tree": "Browse, create, read, edit, rename, and delete files and directories",
+            "reveal-in-system": "Reveal a file or directory in the operating-system file manager",
+            "indexed-search": "Search the active workspace by filename pattern and full-text content",
+            "search-index-management": "Build or rebuild the UI search index",
+            "edit-save": "Read, edit, and save files while synchronizing editor state",
+            "diffs": "Inspect diffs and statistics by file, session, turn, or operation",
+            "accept-reject": "Accept or reject agent changes by file, operation, or whole session",
+            "snapshots-rollback": "Review file history and snapshots, then roll back a session or selected turn",
+            "language-actions": "Show formatting, definition and type navigation, references, rename, quick fixes, and symbol navigation only when supported by the active language provider",
+            "attachments": "Paste or drop local files, folders, and images into Desktop local sessions",
+            "image-analysis": "View and analyze images from the workspace or session context"
+          }
+        },
+        "terminal": {
+          "title": "Terminal",
+          "summary": "Run a shell in the current project, inspect output, keep command history, and share the same terminal context with agents.",
+          "items": {
+            "create-terminal": "Open the terminal panel and create a terminal session",
+            "terminal-session-management": "List, switch, and close multiple terminal sessions",
+            "shells": "Detect available shells and choose a default or explicit shell",
+            "working-directory": "Create terminals in the current project or a chosen starting directory",
+            "command-control": "Execute commands, write input, and send interrupt or other signals",
+            "resize": "Synchronize terminal rows and columns as the panel resizes",
+            "history-integration": "Review command history and detect shell-integration support",
+            "shutdown": "Acknowledge output and safely shut down one or all terminals"
+          }
+        },
+        "git": {
+          "title": "Git version control",
+          "summary": "Inspect changes, branches, and commits; stage, commit, merge, cherry-pick, and work with Git worktrees.",
+          "items": {
+            "status-diff": "Inspect repository status, changed files, and per-file diffs",
+            "stage-reset": "Stage files, unstage changes, and reset to a selected commit",
+            "commit": "Preview or generate a commit message and create the commit",
+            "sync": "Pull from and push to remotes",
+            "branches": "Browse, create, check out, and delete local branches",
+            "graph-history": "Browse the commit graph and repository history, including recent-history persistence",
+            "revision-content": "Resolve revisions and inspect file content from any commit",
+            "cherry-pick": "Start, continue, or abort a cherry-pick",
+            "trust-worktrees": "Manage repository trust and create, bind, promote, recreate, or remove worktrees"
+          }
+        },
+        "code-review": {
+          "title": "Code review & pull requests",
+          "summary": "Review changes and pull-request context, inspect CI logs, generate commit messages, and run deeper code reviews.",
+          "items": {
+            "workspace-context": "Load repository, branch, workspace snapshot, and review-target context",
+            "pull-request": "Inspect pull-request details, paged content, and related changes",
+            "ci-logs": "Read CI run logs for a pull request",
+            "issues": "Read the title, body, and context of linked issues",
+            "authentication": "Store or clear review-platform access tokens",
+            "commit-message": "Preview, generate, or quickly apply a commit message",
+            "deep-review": "Run Deep Review against a workspace, commit, or pull request and consolidate a structured review"
+          }
+        },
+        "browser": {
+          "title": "Built-in browser",
+          "summary": "Open webpages and local services inside OpenBitFun, where an agent can inspect the page and select, click, fill, scroll, or capture elements directly.",
+          "items": {
+            "open-urls": "Open full URLs, local hostnames, or development-service ports inside OpenBitFun",
+            "agent-web-research": "Let an agent search the web and fetch selected page content on demand",
+            "history-navigation": "Navigate page history with Back, Forward, and the address bar",
+            "reload-status": "Reload pages and synchronize the current URL, loading state, and errors",
+            "scene-and-panel": "Use the browser as a standalone scene or an auxiliary panel beside a session",
+            "element-picker": "Start the element picker to highlight hovered elements and show tag, ID, and class details",
+            "element-context": "Click an element to capture its CSS path, attributes, text, and HTML into the current session context",
+            "element-picker-cancel": "Click the picker again or press Escape to cancel selection and remove overlays",
+            "agent-page-automation": "Let an agent snapshot, read, click, hover, fill, press keys, scroll, wait, evaluate scripts, and capture the built-in page",
+            "shared-browser-action-contract": "Use one BrowserActions parameter, element-ref, result, and error contract across the built-in WebView and external CDP browsers",
+            "browser-target-selection": "Choose the built-in or external browser with target and locate a page by session_id, URL, or title",
+            "embedded-webview": "Use a native WebView on desktop, a sandboxed iframe on web, and open new-window links in place"
+          }
+        },
+        "computer-use": {
+          "title": "Browser & desktop control",
+          "summary": "Allow agents to operate a browser or local UI while explicitly managing accessibility, screen-recording, and browser connection access.",
+          "items": {
+            "status": "Check Computer Use availability plus accessibility and screen-recording permission status",
+            "request-permissions": "Request the operating-system permissions required for desktop control",
+            "system-settings": "Open the matching operating-system privacy and security settings",
+            "browser-discovery": "Discover supported browsers and inspect the current CDP connection state",
+            "launch-connect": "Launch browser control, or connect to and disconnect from a browser configured for CDP",
+            "default-cdp": "Enable the default CDP setup and restart the browser when required",
+            "agent-actions": "After authorization, let agents capture, click, type, scroll, and inspect the visible interface",
+            "control-session-preview": "Inspect the current target, mode, and authorized capture preview in the control card",
+            "stop-control-session": "Stop the current desktop-control session and release capture and input resources",
+            "app-sharing": "Select an App window and separately grant or revoke control",
+            "preview-input": "Click, drag, scroll and type through the shared preview",
+            "remembered-control": "Remember or forget control by application executable and input mode"
+          }
+        },
+        "skills": {
+          "title": "Skills",
+          "summary": "Install and manage reusable expert workflows for agents, and control which modes can use them.",
+          "items": {
+            "installed-catalog": "Browse installed Skills from user, project, local, and remote sources in one catalog",
+            "market": "Browse, search, and refresh the Skill market",
+            "market-install": "Download a market Skill for the user or current project",
+            "local-add": "Validate a local Skill path and add it at user or project scope",
+            "remove": "Remove an installed user-level or project-level Skill",
+            "global-enable": "Enable or disable an individual Skill globally",
+            "mode-selection": "Choose Skills and skill groups per agent mode and restore defaults",
+            "shadowing": "Understand user-versus-project shadowing precedence for same-named Skills",
+            "invoke": "Load and execute a Skill visible to the current agent on demand"
+          }
+        },
+        "miniapps": {
+          "title": "Mini Apps",
+          "summary": "Install, create, and run lightweight apps inside OpenBitFun, combining UI, data, and agent workflows.",
+          "items": {
+            "gallery-lifecycle": "Inspect, create, update, and delete installed MiniApps",
+            "market": "Browse the market, inspect listings, and install or update releases",
+            "market-account": "Sign in to the market, favorite and rate apps, and inspect installed origins",
+            "permissions": "Grant path or workspace access and review permission changes before customization",
+            "runtime": "Run Mini App host and worker calls, inspect status, and stop background workers",
+            "storage": "Read and save persistent state separately for installed apps and customization drafts",
+            "agent-ai": "Use model completion, chat, and dedicated agent sessions inside Mini Apps",
+            "customization": "Create customization drafts, preview them live, and apply, sync, or discard changes",
+            "versions": "Inspect version history and roll back to an earlier release",
+            "agent-authoring": "Let an agent initialize, author, and validate a Mini App",
+            "agent-operate-app": "Let an agent control a Mini App using its source and live interface",
+            "agent-market-submit": "Let an agent submit a completed Mini App for market review when explicitly requested",
+            "publishing": "Withdraw and review market releases, and render slide pages"
+          }
+        },
+        "canvas": {
+          "title": "Canvas & interactive artifacts",
+          "summary": "Display and save visualizations, interactive pages, and structured artifacts generated beside a session.",
+          "items": {
+            "artifact-open": "Load and open persistent Canvas artifacts from session tool results",
+            "html-react": "Render and iteratively edit HTML or React interfaces, charts, and interactive visualizations",
+            "inline-generative-ui": "Generate compact HTML/SVG charts, explainers, or interactive widgets inline in a session",
+            "state": "Load and save interactive state when a Canvas is reopened or refreshed",
+            "source-inspection": "Inspect Canvas source, compiled revisions, and the last known good revision",
+            "element-context": "Select an element inside Canvas and add its reference to session context",
+            "runtime-errors": "Capture runtime errors, report diagnostics, and ask the agent to repair them",
+            "export-html": "Export the current Canvas as a standalone HTML file"
+          }
+        },
+        "tasks-automation": {
+          "title": "Task board & scheduled jobs",
+          "summary": "Track work in one task board and let scheduled jobs run at a chosen time or host.",
+          "items": {
+            "board-views": "Browse tasks in Pending, Calendar, and Inactive views",
+            "create-edit": "Create, edit, enable, disable, and delete scheduled jobs",
+            "schedule-types": "Choose one-time, daily, weekly, or custom cron schedules",
+            "calendar-occurrences": "Preview the next and future job occurrences on a calendar",
+            "agent-workspace": "Choose the agent, model, work mode, and workspace for a job",
+            "local-remote-target": "Schedule jobs to run on the current host or a connected remote target",
+            "host-readiness": "List jobs and wait for desktop-host readiness before reliable execution"
+          }
+        },
+        "insights": {
+          "title": "Insights",
+          "summary": "Turn session and project activity into readable insights about working patterns, usage, and progress.",
+          "items": {
+            "availability": "Check whether the current account and sessions contain analyzable insight data",
+            "generate": "Generate a work-insights report for a selected date range and model",
+            "cancel": "Cancel an in-progress insights generation job",
+            "latest-report": "Open the latest report or load a selected historical report",
+            "usage-statistics": "Relate work activity to model, token, and cache-usage statistics",
+            "patterns": "Review project distribution, working hours, task types, and collaboration patterns"
+          }
+        },
+        "ecosystem-compatibility": {
+          "title": "External Import",
+          "summary": "Inspect external AI content and status, import supported Skills, MCP, Hooks, and Codex or Zcode sessions, and continue conversations in OpenBitFun.",
+          "items": {
+            "source-discovery": "Discover OpenCode, Claude Code, Codex, and other external AI sources and content",
+            "source-policy": "Enable or disable each source and choose managed, preview, or read-only policy",
+            "codex-session-import": "Discover, remove and restore Codex source sessions, then continue in OpenBitFun branches",
+            "zcode-session-import": "Discover, remove and restore Zcode source sessions, then continue in OpenBitFun branches",
+            "prompts-commands": "Expand external prompt/command content and resolve conflicts with native commands",
+            "subagents": "Enable external agents, resolve naming conflicts, and bind models",
+            "mcp-import": "Preview MCP import plans, resolve server conflicts individually, and apply them",
+            "tool-targets": "Choose external tool targets, resolve conflicts, and control activation",
+            "hooks": "Inspect external hook catalogs, plan imports, edit selections, and apply",
+            "security-review": "Review conflicts, security impact, and source-control snapshots before migration",
+            "reveal-source": "Reveal external configuration sources in the file manager or remote environment"
+          }
+        },
+        "remote-workspaces": {
+          "title": "Remote workspaces",
+          "summary": "Open projects over SSH or in containers so files, search, terminal, and agents all execute in the target environment.",
+          "items": {
+            "ssh-profiles": "Save, list, test, and delete SSH connection profiles",
+            "ssh-auth": "Connect with passwords, private keys, certificates, SSH config hosts, and jump hosts",
+            "docker": "Discover remote Docker containers and use a container as the work environment",
+            "wsl": "Choose a WSL distribution on the Windows host as a workspace",
+            "remote-open": "Open, close, and remove remote workspaces, and inspect server information",
+            "remote-files": "Browse, read, write, create, rename, and remove remote files and directories",
+            "transfer": "Upload local files, download remote files, and cancel active transfers",
+            "remote-execution": "Execute commands on the target so terminals, search, and agents use the remote data plane",
+            "port-forwarding": "Discover remote listening ports and start, inspect, or stop port forwarding",
+            "connection-lifecycle": "Inspect connection status and disconnect one or all SSH sessions"
+          }
+        },
+        "remote-connect": {
+          "title": "Remote Connect & devices",
+          "summary": "Connect to this host from mobile, a bot, or another OpenBitFun device to inspect sessions, answer permissions, and continue work remotely.",
+          "items": {
+            "connection-methods": "Choose LAN or the official Relay",
+            "start-stop-status": "Start or stop Remote Connect and inspect live status and device information",
+            "network": "Inspect LAN IP, network details, and shareable connection configuration",
+            "bots": "Configure Feishu, Telegram, WeChat, and other bots, and stop a bot independently",
+            "account": "Sign in with GitHub, sign out, and inspect identity status",
+            "devices": "List, connect, inspect model and OS, set aliases, and remove same-account devices",
+            "peer-device": "Enter Peer Device Mode and use another OpenBitFun device as the command and event data plane"
+          }
+        },
+        "detached-dispatch": {
+          "title": "Detached Dispatch",
+          "summary": "Dispatch durable work to another OpenBitFun host; the controller may disconnect while the target continues and keeps the record.",
+          "items": {
+            "targets": "List same-account devices and saved SSH targets",
+            "provision": "Provision the target runtime and install or update the OpenBitFun CLI",
+            "model-sync": "Synchronize required model configuration before submitting a job",
+            "submit": "Submit a durable job from the current Git workspace to a same-account device or SSH target",
+            "status-list": "List dispatched jobs and query their status, result, and errors",
+            "transcript": "Save, append, and reload reconnectable execution transcripts",
+            "permission-continuation": "Answer permission requests remotely and continue target-side work",
+            "cancel": "Cancel a job submitted from this host",
+            "result-sync": "Synchronize target-side results back without treating the controller as a remote-filesystem proxy"
+          }
+        },
+        "pages": {
+          "title": "Pages publishing",
+          "summary": "Save page versions and publish them to public or private URLs while managing titles, visibility, history, and share links.",
+          "items": {
+            "pages-list": "List account Pages and inspect each page's current publishing state",
+            "immutable-versions": "Save immutable page versions and browse version history",
+            "publish": "Publish or redeploy a selected page version",
+            "visibility": "Update titles, public/private visibility, and access settings",
+            "share-open": "Create an openable, shareable link for a page",
+            "unpublish": "Unpublish a page while retaining versions for later publication",
+            "delete": "Delete an individual version or an entire Page"
+          }
+        },
+        "voice-input": {
+          "title": "Voice input and realtime calls",
+          "summary": "Transcribe recordings or hold a client-wide realtime voice call that can enter projects, run tasks, and speak concise progress updates.",
+          "items": {
+            "composer-recording": "Start, finish, or cancel a recording from the chat composer",
+            "stream-audio": "Stream audio chunks during recording and show recognition progress",
+            "realtime-assistant-call": "Start or end a client-wide realtime voice call, hear replies, and ask the assistant to run or stop project tasks",
+            "realtime-assistant-config": "Read or save realtime voice service settings",
+            "local-models": "Browse local speech models and their install, download, verify, repair, and delete states",
+            "cancel-download": "Cancel an in-progress speech-model download",
+            "language-microphone": "Use automatic language detection or choose a language and system microphone",
+            "diagnostic-test": "Test the microphone and speech recognition in Settings, including timing and errors",
+            "edit-transcript": "Return the transcript to the composer for editing before sending"
+          }
+        },
+        "desktop-pet": {
+          "title": "Agent desktop companion",
+          "summary": "Show an agent companion on the desktop, and choose, import, or manage Petdex character packs.",
+          "items": {
+            "enable": "Enable or disable the agent desktop companion globally",
+            "presets": "Browse and switch among built-in or imported Petdex characters",
+            "petdex-import": "Import and use a new character and animations from a local Petdex package",
+            "petdex-delete": "Delete an imported Petdex package and fall back to an available character",
+            "desktop-window": "Show, hide, and resize the desktop companion window, and return to the main window"
+          }
+        },
+        "desktop-cards": {
+          "title": "Desktop cards",
+          "summary": "Let agents place draggable cards outside the main window for glanceable information such as countdowns, checklists, PR status, weather, or stock prices, restored after the app reopens.",
+          "items": {
+            "agent-cards": "Create countdown, checklist, note, progress, metrics, chart, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
+            "home-management": "See every card in the Home Desktop cards section, and show, hide, or delete individual cards",
+            "card-actions": "Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card",
+            "drag-restore": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens"
+          }
+        }
+      },
+      "setting": {
+        "application": {
+          "general": {
+            "title": "General settings",
+            "summary": "Manage app-level preferences for startup, updates, close behavior, notifications, and sleep prevention.",
+            "items": {
+              "automatic-updates": "Enable or disable automatic update checks",
+              "manual-update": "Check and download updates in the background, then confirm installation and restart or install later from About",
+              "launch-at-login": "Choose whether OpenBitFun launches automatically after system sign-in",
+              "prevent-sleep": "Choose whether OpenBitFun prevents the computer from sleeping while it runs",
+              "close-behavior": "Choose whether closing the main window quits, minimizes to tray, or asks each time",
+              "notifications": "Control completion and permission-request notifications independently"
+            }
+          },
+          "appearance": {
+            "title": "Appearance & language",
+            "summary": "Switch themes and languages, tune typography, and install or import appearance packs.",
+            "items": {
+              "built-in-appearance": "Choose system, light, dark, monochrome, Midnight, China, Cyber, Slate, Tokyo Night, and other built-in appearances",
+              "language": "Switch among Simplified Chinese, Traditional Chinese, English, and other supported UI languages",
+              "ui-font-size": "Adjust the global UI font size, including custom pixel values",
+              "local-packages": "Import, preview, apply, export, and delete local appearance packages",
+              "appearance-market": "Browse, search, filter, install, and update appearances from the Skin market",
+              "agent-market-submit": "Let an agent submit a local Appearance package for Skin-market review when explicitly requested",
+              "market-submissions": "Review and withdraw your appearance-market submissions",
+              "market-review": "When authorized, inspect and approve or reject appearance submissions"
+            }
+          },
+          "pet": {
+            "title": "Companion settings",
+            "summary": "Enable the desktop agent companion, manage the active character, and turn desktop cards on or off.",
+            "items": {
+              "enabled": "Enable or disable the agent companion",
+              "desktop-cards-enabled": "Turn desktop cards on or off; when off, all cards are hidden and agents no longer see the desktop card tool",
+              "preset-selection": "Choose the active companion from built-in and imported characters",
+              "import": "Import a local Petdex character package",
+              "delete-refresh": "Refresh the character list and delete imported packages you no longer need"
+            }
+          },
+          "input": {
+            "title": "Input & interaction",
+            "summary": "Configure conversation text selection actions, voice input, microphones, recognition language, and local models.",
+            "items": {
+              "auto-show-selection-toolbar": "Enable or disable automatic actions after selecting conversation text",
+              "voice-enabled": "Enable or disable voice input in the chat composer",
+              "language": "Choose automatic detection or Chinese, Cantonese, English, Japanese, and other recognition languages",
+              "microphone-test": "Choose a microphone and run a speech-recognition test",
+              "local-models": "Download, select, verify, repair, or delete local speech models",
+              "recording-limit": "Set the maximum duration of one voice-input recording"
+            }
+          },
+          "shortcuts": {
+            "title": "Keyboard shortcuts",
+            "summary": "Search, browse, customize, and reset app, scene, editor, and terminal shortcuts.",
+            "items": {
+              "shortcut-browser": "Search and browse all app, scene, editor, and terminal shortcuts",
+              "shortcut-remap": "Record new shortcuts, detect conflicts, revert one binding, or reset all custom bindings"
+            }
+          },
+          "development": {
+            "title": "Editor",
+            "summary": "Tune code editor font, indentation, wrapping, formatting, and minimap behavior.",
+            "items": {
+              "editor-appearance": "Configure editor font, weight, size, line height, and cursor behavior",
+              "indent-wrap": "Configure tab size, space indentation, word wrapping, line numbers, and smooth scrolling",
+              "editor-display": "Control the minimap, whitespace rendering, current-line highlight, and scroll bounds",
+              "editor-advanced": "Control autosave, semantic highlighting, bracket colors, formatting, and whitespace trimming"
+            }
+          },
+          "terminal": {
+            "title": "Terminal",
+            "summary": "Choose the default terminal shell and where new terminal panels open in a session.",
+            "items": {
+              "default-shell": "Auto-detect or choose the default terminal shell",
+              "terminal-position": "Place the terminal panel on the right or at the bottom"
+            }
+          }
+        },
+        "ai": {
+          "models": {
+            "title": "Models & providers",
+            "summary": "Add AI providers and models, choose defaults, and configure proxy, subscription, and streaming timeouts.",
+            "items": {
+              "providers": "Add, edit, and remove built-in or custom AI providers",
+              "credentials-endpoint": "Configure API keys, base URLs, request formats, and model lists",
+              "subscription-auth": "Sign in, refresh, and sign out of Codex, Antigravity, OpenCode Console (Zen), Grok, Hermes, and other accounts",
+              "default-models": "Choose primary, fast, image-understanding, image-generation, and speech-recognition models",
+              "reasoning": "Choose reasoning presets or a custom reasoning effort per model",
+              "proxy": "Configure network proxies and bypass rules for AI requests",
+              "stream-timeouts": "Set or disable time-to-first-token and streaming idle timeouts",
+              "available-models": "Let an agent inspect models available under the current configuration",
+              "model-catalog": "Inspect models.dev catalog status, refresh it manually, and reveal its local cache",
+              "advanced-request": "Add custom headers, request-body fields, and SSL behavior per provider",
+              "smart-routing": "View smart-mode availability (not available yet)",
+              "connection-test": "Test model connections or image generation and refresh the runtime client",
+              "model-pools": "Manage model pools, routing strategies, and session model selection",
+              "smart-routing": "View smart-mode availability (not released)"
+            }
+          },
+          "memory": {
+            "title": "Memory settings",
+            "summary": "Control whether OpenBitFun extracts and uses long-term memory from sessions, including retention, consolidation, and model policy.",
+            "items": {
+              "generation-recall": "Enable or disable long-term memory generation and session recall together",
+              "btw": "Choose whether lightweight BTW sessions contribute memories",
+              "external-context": "When external tool context exists, clear tool results, allow it, or skip the session",
+              "rollout-policy": "Set idle time, maximum age, startup rollout limit, and scan limit",
+              "extraction": "Set memory-extraction concurrency and the raw-candidate limit",
+              "extraction-model": "Choose the memory-extraction model from currently available models or follow the primary model",
+              "retention": "Set how long unused memories are retained",
+              "consolidation": "Choose the consolidation model or make it follow the primary or extraction model",
+              "maintenance": "Open the memory directory, restore defaults, or explicitly erase all memories"
+            }
+          }
+        },
+        "workspace": {
+          "session": {
+            "title": "Session & workspace settings",
+            "summary": "Control the default Agent Harness, session-title generation, accelerated workspace search, and project-context behavior.",
+            "items": {
+              "default-agent-harness": "Make regular new sessions follow the last ChatInput selection or use a fixed Harness",
+              "automatic-titles": "Enable or disable automatic titles generated from session content",
+              "title-model": "Make title generation inherit the primary or fast model, or use a selected model",
+              "next-input-suggestion": "Enable or disable the one-sentence next input suggested in the input box after an Agent reply",
+              "accelerated-search": "Enable Flashgrep-backed accelerated search for local workspaces",
+              "search-index": "Inspect index status and rebuild the workspace index when needed",
+              "remote-behavior": "Use an explicit remote-workspace search path without silently falling back to local files"
+            }
+          },
+          "worktrees": {
+            "title": "Worktree settings",
+            "summary": "Configure the root, branch prefix, and cleanup rules for Git worktrees, and inspect existing isolated workspaces.",
+            "items": {
+              "isolation": "Understand isolated worktrees and configure their creation and cleanup defaults",
+              "root-path": "Set the common root directory for managed worktrees",
+              "branch-prefix": "Set the branch-name prefix used for automatically created branches",
+              "copy-changes": "Choose whether current uncommitted changes are copied into a new isolated workspace",
+              "auto-cleanup": "Enable automatic cleanup and set the maximum number of managed worktrees to retain",
+              "management": "Inspect worktree lifecycle, dirty state, unpublished commits, and linked sessions",
+              "open-restore-delete": "Open or restore linked sessions and delete or force-delete a worktree after protection checks"
+            }
+          }
+        },
+        "tools": {
+          "execution": {
+            "title": "Execution & permissions",
+            "summary": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
+            "items": {
+              "permission-mode": "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
+              "permission-selector": "Choose whether the permission-mode selector appears below the chat composer",
+              "global-project-rules": "Create, reorder, and save global or project-level Allow, Ask, and Deny rules",
+              "remembered-grants": "Review, revoke, or clear remembered project permission grants and audit records",
+              "deferred-tools": "Deferred tool loading on demand to reduce initial agent context",
+              "tool-presentation": "Choose native mode or PTC TypeScript mode for the model",
+              "parallelism": "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
+              "timeouts": "Set or disable the per-tool execution timeout",
+              "review-capacity": "Set the maximum parallel Deep Review workers and queue wait time",
+              "computer-use": "Enable or disable Computer Use after operating-system authorization",
+              "computer-use-permissions": "Inspect and request accessibility and screen-recording permissions",
+              "browser-auto-connect": "Choose whether OpenBitFun reconnects browser control at startup",
+              "browser-setup": "Discover and choose a browser, configure default CDP, or restart it when needed",
+              "json-repair": "Choose whether malformed model-generated tool-argument JSON may be repaired within safety boundaries"
+            }
+          },
+          "desktop-control": {
+            "title": "Desktop control",
+            "summary": "Manage Computer Use and inspect accessibility and screen-recording permissions.",
+            "items": {
+              "permissions": "Inspect Computer Use, accessibility, and screen-recording status and complete system authorization"
+            }
+          },
+          "browser-control": {
+            "title": "Browser control",
+            "summary": "Choose a browser, inspect connection status, and configure CDP and startup connection behavior.",
+            "items": {
+              "connection": "Choose a browser and inspect, establish, or disconnect its CDP connection"
+            }
+          },
+          "automation": {
+            "title": "Quick actions & hooks",
+            "summary": "Customize post-coding quick actions and configure hooks that run on agent lifecycle events.",
+            "items": {
+              "built-in-actions": "Enable and tune the built-in Commit and Create Pull Request quick actions",
+              "custom-actions": "Add, edit, and delete custom post-coding quick actions and prompts",
+              "hooks-enabled": "Enable or disable agent lifecycle hooks globally",
+              "project-hooks": "Enable project-level .openbitfun/config/hooks.json separately for trusted repositories",
+              "hook-files": "Locate user and project hook configuration files and apply edits without restarting",
+              "hook-events": "Run handlers on Codex hook events for sessions, agents, tools, permissions, and user input",
+              "external-hooks": "Inspect read-only external-AI hook catalogs and choose entries to import",
+              "hook-import": "Preview, edit, and apply hook import plans while retaining conflict diagnostics"
+            }
+          },
+          "web-search": {
+            "title": "Web Search",
+            "summary": "Choose the search provider used by the WebSearch tool at runtime and configure custom HTTP endpoints and credentials on the current execution host.",
+            "items": {
+              "provider": "Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, or OpenBitFun Search HTTP Protocol as the runtime provider",
+              "http-endpoint": "Configure the endpoint, authentication mode, and restricted credential header for OpenBitFun Search HTTP Protocol",
+              "device-credential": "Inspect credential status on the current execution host and save, replace, or clear an API key or secret",
+              "http-protocol": "Inspect and copy the request, response, and transport limits for OpenBitFun Search HTTP Protocol v1"
+            }
+          },
+          "mcp": {
+            "title": "MCP servers",
+            "summary": "Add and manage Model Context Protocol servers, including tools, resources, prompts, and remote authorization state.",
+            "items": {
+              "json-config": "View and save all MCP server configuration through forms or JSON",
+              "server-types": "Add local-process, remote HTTP/SSE, or container MCP servers",
+              "lifecycle": "Start, stop, restart, and delete individual MCP servers",
+              "status": "Inspect initialization, connection, health, reconnecting, authentication, and failure states",
+              "remote-auth": "Configure remote header/environment authentication or clear stored credentials",
+              "oauth": "Start, poll, cancel, or reconnect remote MCP OAuth",
+              "tools-prompts": "List MCP prompts and load a selected prompt with arguments",
+              "mcp-tool-ui": "Inspect MCP tool catalogs and open tool-provided App/UI surfaces",
+              "resources": "List and read MCP resources",
+              "mcp-apps": "Open MCP App/UI surfaces, exchange messages, and answer interaction requests"
+            }
+          },
+          "acp": {
+            "title": "ACP external agents",
+            "summary": "Configure external agents connected through Agent Client Protocol and inspect adapters, commands, and session options.",
+            "items": {
+              "presets": "Use presets for OpenCode, dsh, OMP, Claude Code, Codex, and others",
+              "json-config": "View, add, and save ACP agent configuration through JSON",
+              "probe": "Probe CLI, adapter, path, version, connection, and permission requirements",
+              "install": "Install external-agent CLIs and predownload ACP client adapters",
+              "remote-detection": "Detect available external agents in SSH workspaces and show explicit unsupported reasons",
+              "session-model-options": "Choose an ACP session model and edit client-declared configuration options",
+              "session-commands": "Browse and run session commands exposed by an external agent",
+              "dialog-permissions": "Start or cancel ACP turns and answer external-agent permission requests remotely"
+            }
+          }
+        },
+        "data": {
+          "usage": {
+            "title": "Token usage",
+            "summary": "Inspect request counts, input and output tokens, cache hits, and estimated cost statistics.",
+            "items": {
+              "time-range": "Review usage for the last 24 hours, today, this week, this month, or all time",
+              "granularity": "Switch trend granularity between hourly and daily views",
+              "filter": "Filter usage by provider, model, or search text",
+              "summary": "View request count, total tokens, cached tokens, and cache-hit rate",
+              "distribution": "Compare distributions by model, provider group, and request endpoint",
+              "trend": "Track input, output, cache creation, cache read, and hit-rate trends separately"
+            }
+          },
+          "archived": {
+            "title": "Archived sessions",
+            "summary": "Find, restore, or permanently delete archived sessions and manage long-term conversation history.",
+            "items": {
+              "browse": "Browse paged archived sessions and metadata by workspace",
+              "search": "Search archived sessions by title, content, and workspace",
+              "restore": "Restore a session, its turns, and original workspace view, then unarchive it",
+              "delete-selected": "Permanently delete a selected archived session after explicit confirmation",
+              "delete-all": "Permanently delete all archived sessions after explicit confirmation"
+            }
+          },
+          "diagnostics": {
+            "title": "Logs & diagnostics",
+            "summary": "Adjust logging level, inspect runtime log locations, and export diagnostic bundles for troubleshooting.",
+            "items": {
+              "log-level": "Set backend logging to Trace, Debug, Info, Warn, Error, or Off",
+              "sensitive-diagnostics": "Choose whether diagnostics may include sensitive context, with an explicit warning before export",
+              "log-path": "Inspect the log path and open the log folder",
+              "export-bundle": "Export a diagnostics bundle containing system, configuration-health, and log information",
+              "crash-recovery": "Inspect previous crashes, unclean shutdowns, startup recovery, and configuration recovery",
+              "devtools": "In development builds, check DevTools availability and open or close them",
+              "element-inspector": "In development builds, inspect main-window elements and report the selected element"
+            }
+          }
+        }
+      }
+    }
+  }
 }

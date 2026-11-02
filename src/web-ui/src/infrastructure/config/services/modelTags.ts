@@ -1,4 +1,5 @@
 import type { AIModelConfig } from '../types';
+import { MODEL_BILLING_KEY, getModelBilling, modelBillingBinding } from './modelBilling';
 
 const USER_TAGS_KEY = 'user_tags';
 export const MAX_MODEL_USER_TAGS = 3;
@@ -53,9 +54,20 @@ export function preserveModelAnnotations(
 ): AIModelConfig {
   const metadata = { ...checkedMetadata(next) };
   delete metadata[USER_TAGS_KEY];
+  // Prices belong to one configured channel, not to every model in a provider.
+  delete metadata[MODEL_BILLING_KEY];
   const currentMetadata = current ? checkedMetadata(current) : {};
   if (Object.prototype.hasOwnProperty.call(currentMetadata, USER_TAGS_KEY)) {
     metadata[USER_TAGS_KEY] = currentMetadata[USER_TAGS_KEY];
+  }
+  if (Object.prototype.hasOwnProperty.call(currentMetadata, MODEL_BILLING_KEY)) {
+    const billing = current && getModelBilling(current);
+    metadata[MODEL_BILLING_KEY] = billing && current
+      && (modelBillingBinding(current) !== modelBillingBinding(next)
+        || (current.api_key ?? '') !== (next.api_key ?? '')
+        || JSON.stringify(current.custom_headers ?? {}) !== JSON.stringify(next.custom_headers ?? {}))
+      ? { ...billing, needsReview: true }
+      : currentMetadata[MODEL_BILLING_KEY];
   }
   const preserved = {
     ...next,

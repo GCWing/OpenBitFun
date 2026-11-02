@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-static INCLUDE_SENSITIVE_DIAGNOSTICS: AtomicBool = AtomicBool::new(true);
+static INCLUDE_SENSITIVE_DIAGNOSTICS: AtomicBool = AtomicBool::new(false);
 
 pub fn set_include_sensitive_diagnostics(enabled: bool) {
     INCLUDE_SENSITIVE_DIAGNOSTICS.store(enabled, Ordering::Relaxed);

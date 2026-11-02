@@ -479,7 +479,7 @@ function hasUsableDeckForRevision() {
  * floating session bubble (`app.chat.onUserMessage`) — PPT Live has no
  * composer of its own; this is the single entry point either way.
  */
-async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction) {
+async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction, imageContexts) {
   if (topicChangeInFlight || promptSubmitGuard || backendRunInFlight) {
     setStatus(t('bubbleBusy'));
     throw new Error(t('bubbleBusy'));
@@ -501,6 +501,7 @@ async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction
       includeTopic: !reviseExistingDeck,
       persistBeforeRun: true,
       displayText,
+      imageContexts,
     });
     return;
   } catch (error) {
@@ -1132,6 +1133,7 @@ async function runPptLiveBackend(operation, instruction, options = {}) {
     }
     await runCoworkDeckGeneration(operation, instruction, {
       displayText: options.displayText,
+      imageContexts: options.imageContexts,
     });
   } finally {
     backendRunInFlight = false;
@@ -1178,6 +1180,7 @@ async function executeBackendTurn(requestInput, hooks = {}, options = {}) {
       sessionId: options.sessionId || undefined,
       appDataWorkspace: options.appDataWorkspace || undefined,
       displayText: options.displayText || requestInput.instruction,
+      imageContexts: options.imageContexts,
     });
     sessionId = result?.sessionId || null;
     turnId = result?.turnId || result?.actionRunId || null;
@@ -1744,6 +1747,9 @@ async function runCoworkDeckGeneration(operation, instruction, options = {}) {
           sessionId: retrySession?.id || undefined,
           appDataWorkspace: retrySession?.project?.workspaceSubdir,
           resultKind: project ? 'text' : undefined,
+          // Keep the same references during recovery; the Runtime persists
+          // them by content so a retry cannot lose or duplicate stored files.
+          imageContexts: options.imageContexts,
           displayText: attempt === 1
             ? (options.displayText || instruction)
             : t('generationRetryDisplayText', { attempt, max: maxAttempts }),
@@ -3836,6 +3842,6 @@ runtime().chat?.onUserMessage?.((payload) => {
   }
   // The returned Promise is part of the host completion contract used by
   // realtime voice. It spans Agent retries, file verification, and persistence.
-  return submitInstruction(text, displayText);
+  return submitInstruction(text, displayText, payload?.imageContexts);
 });
 init();

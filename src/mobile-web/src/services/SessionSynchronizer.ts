@@ -15,7 +15,8 @@ export class SessionSynchronizer {
   private revision = 0;
   private replica: SessionRecordReplica;
   private readonly controls = new Map<string,{turnId:string;tool:RemoteToolStatus}>();
-  private readonly turns = new Map<string, {index:number;messages:ChatMessage[]}>();
+  private readonly turns = new Map<string, {index:number;status:string;messages:ChatMessage[]}>();
+  private promptSuggestion: {turnId:string;text:string}|null = null;
   constructor(private readonly sessionMgr: RemoteSessionManager, private readonly sessionId: string,
     private readonly onUpdate: (state: PollResponse) => void, _knownModelCatalogVersion = 0, private readonly onHistoryState?: (state: SessionHistoryState) => void, private readonly onControlInvalidated?: () => void, private readonly onError?: (error: unknown) => void) { this.replica = new SessionRecordReplica(sessionId); }
   start(_initialMsgCount=0): void {this.stopped=false;void this.connect();}
@@ -35,12 +36,26 @@ export class SessionSynchronizer {
     for(const control of controls)if(!items.some(item=>item.tool?.id===control.id))items.push({type:'tool',tool:control});
     this.onUpdate({resp:'session_update',changed:true,version:++this.revision,
       message_snapshot:active?messages.slice(0,-1):messages,
-      active_turn:active?{turn_id:active.turn_id!,status:'active',text:active.content,thinking:active.thinking??'',items,tools,round_index:0}:null});
+      active_turn:active?{turn_id:active.turn_id!,status:'active',text:active.content,thinking:active.thinking??'',items,tools,round_index:0}:null,
+      prompt_suggestion:this.currentPromptSuggestion()});
+  }
+  private latestTurn():{id:string;index:number;status:string}|null {
+    let latest:{id:string;index:number;status:string}|null=null;
+    for(const [id,turn] of this.turns)if(!latest||turn.index>latest.index)latest={id,index:turn.index,status:turn.status};
+    return latest;
+  }
+  /** A suggestion only answers the turn it was produced for; any newer turn retires it. */
+  private currentPromptSuggestion():string|null {
+    const suggestion=this.promptSuggestion;
+    if(!suggestion)return null;
+    const latest=this.latestTurn();
+    if(latest?.id!==suggestion.turnId||latest.status!=='completed'){this.promptSuggestion=null;return null;}
+    return suggestion.text;
   }
   /** Host restarts renumber records; derived state is rebuilt from the replayed page. */
   private resetDerivedState():void {
     this.replica=new SessionRecordReplica(this.sessionId);
-    this.turns.clear();this.controls.clear();
+    this.turns.clear();this.controls.clear();this.promptSuggestion=null;
   }
   private async connect():Promise<void> {
     if(this.stopped||this.connecting||this.unsubscribe)return;
@@ -55,7 +70,7 @@ export class SessionSynchronizer {
           if(change.turn) {
             const turn=change.turn as unknown as MobileStoredTurn;
             const messages=presentSessionTurn(turn);
-            this.turns.set(change.turnId,{index:turn.turnIndex,messages});
+            this.turns.set(change.turnId,{index:turn.turnIndex,status:turn.status,messages});
             for(const message of messages)for(const tool of message.tools??[])if(['completed','failed','cancelled','rejected','skipped'].includes(tool.status))this.controls.delete(tool.id);
             if(turn.status!=='inprogress')for(const [id,control] of this.controls)if(control.turnId===change.turnId)this.controls.delete(id);
           } else this.turns.delete(change.turnId);
@@ -71,13 +86,25 @@ export class SessionSynchronizer {
             else if(['Confirmed','Completed','Failed','Cancelled','Rejected'].includes(tool.event_type??''))this.controls.delete(tool.tool_id);
             if(this.ready)this.publish();
           }
+        } else if(event.event==='agentic://prompt-suggestion') {
+          const payload=event.payload as {sessionId?:unknown;sourceTurnId?:unknown;suggestion?:unknown}|null;
+          const text=typeof payload?.suggestion==='string'?payload.suggestion:'';
+          const latest=this.latestTurn();
+          if(payload&&(payload.sessionId===undefined||payload.sessionId===this.sessionId)&&
+            typeof payload.sourceTurnId==='string'&&payload.sourceTurnId&&text&&
+            (!latest||latest.id===payload.sourceTurnId)){
+            this.promptSuggestion={turnId:payload.sourceTurnId,text};
+            if(this.ready)this.publish();
+          }
         } else if(event.event==='session_title_generated') {
           this.onUpdate({resp:'session_update',changed:true,version:++this.revision,title:String((event.payload as {title?:string}).title??'')});
         }
       },onError:error=>{console.error('[SessionSync] recovery failed',error);if(!this.stopped)this.onError?.(error);},onCaughtUp:()=>{
         if(!this.stopped){this.ready=true;this.publish();}
       },onHistoryState:this.onHistoryState,onResumed:this.onControlInvalidated,
-      onGap:()=>{if(!this.stopped){this.resetDerivedState();this.onControlInvalidated?.();}}});
+      onGap:()=>{if(!this.stopped){this.resetDerivedState();
+        this.onUpdate({resp:'session_update',changed:true,version:++this.revision,prompt_suggestion:null});
+        this.onControlInvalidated?.();}}});
       if(this.stopped)unsubscribe.close();else{this.unsubscribe=unsubscribe;this.retryDelay=1000;}
     }catch(error){
       if(this.stopped)return;

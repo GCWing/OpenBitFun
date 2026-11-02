@@ -1,6 +1,7 @@
  
 
 import type { MouseEvent as ReactMouseEvent } from 'react';
+import { writeNativeClipboardText } from '@/shared/utils/nativeClipboard';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('TextSelection');
@@ -80,6 +81,10 @@ export const clearSelection = (): void => {
 
  
 export const copyTextToClipboard = async (text: string): Promise<boolean> => {
+  if (await writeNativeClipboardText(text)) {
+    return true;
+  }
+
   if (navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text);

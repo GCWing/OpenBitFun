@@ -36,11 +36,14 @@ export default function ChatMessageActions({
   onRollback,
 }: ChatMessageActionsProps) {
   const { t } = useI18n();
-  const hasTurnId = rollbackSupported && message?.role === 'user' && Boolean(message.turn_id);
+  const hasTurnId = rollbackSupported
+    && message?.role === 'user'
+    && Boolean(message.turn_id)
+    && typeof message.turn_index === 'number';
 
   const actions: MobileActionSheetItem[] = message ? [
     { id: 'copy', label: t('chat.copyMessage'), leading: <CopyIcon /> },
-    ...(message.role === 'user' ? [{ id: 'resend', label: t('chat.resendMessage'), leading: <ResendIcon /> }] : []),
+    ...(message.role === 'user' && !hasTurnId ? [{ id: 'resend', label: t('chat.resendMessage'), leading: <ResendIcon /> }] : []),
     ...(hasTurnId ? [
       {
         id: 'edit',

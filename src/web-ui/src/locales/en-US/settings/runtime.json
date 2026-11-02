@@ -1,16 +1,16 @@
 {
   "defaultHarness": {
-    "title": "Default Agent Harness",
+    "title": "Default agent execution mode",
     "description": "Applies to new standard sessions; assistants, ACP, and sessions with an explicit mode are unaffected",
     "strategy": "Default behavior",
     "followLast": "Follow last selection",
     "fixed": "Use a fixed default",
-    "followLastDescription": "New sessions use the runtime last selected in the message input: {{name}}",
-    "followLastEmptyDescription": "No selection recorded yet; new sessions use {{name}} until you choose a runtime in the message input",
-    "fixedDescription": "New sessions always use the selected Harness; existing sessions are unchanged.",
-    "fixedMode": "Default Harness",
+    "followLastDescription": "New sessions use the execution mode last selected in the message input: {{name}}",
+    "followLastEmptyDescription": "No selection recorded yet; new sessions use {{name}} until you choose an execution mode in the message input",
+    "fixedDescription": "New sessions always use the selected execution mode; existing sessions are unchanged.",
+    "fixedMode": "Default execution mode",
     "compatibilityMode": "{{id}} (compatibility setting)",
-    "loadFailed": "Default Harness settings could not be read. This setting is locked to avoid overwriting the existing configuration."
+    "loadFailed": "Default execution mode settings could not be read. This setting is locked to avoid overwriting the existing configuration."
   },
   "features": {
     "pet": {
@@ -40,6 +40,13 @@
         }
       },
       "subtitle": "Turning display off hides the pet and keeps your selected and imported appearances"
+    },
+    "desktopCards": {
+      "title": "Desktop cards",
+      "subtitle": "Small cards outside the main window for reminders, PR status, progress, weather, and other things worth a glance",
+      "enable": "Enable desktop cards",
+      "description": "When off, cards are hidden and the agent can no longer create or update them. Existing cards are kept.",
+      "unsupported": "Update this host to manage desktop cards."
     },
     "workspaceSearch": {
       "title": "Accelerated workspace search",
@@ -87,7 +94,30 @@
     "globalRulesEffects": { "allow": "Allow", "ask": "Ask", "deny": "Deny" },
     "modeDescription": "Used for new sessions and can be changed temporarily from the chat input."
   },
+  "toolPresentation": {
+    "sectionTitle": "Tool presentation",
+    "sectionDescription": "Choose how the model accesses tools.",
+    "mode": "Tool presentation",
+    "description": "Choose how tools are exposed to the model. This setting applies only to sessions created after it changes.",
+    "native": "Native tools",
+    "ptc": "PTC (TypeScript)",
+    "ptcTooltip": "PTC executes TypeScript through RunCode.",
+    "ptcPython": "PTC (Python)",
+    "ptcPythonTooltip": "PTC executes Python through RunCode."
+  },
   "projectPermissions": {
+    "title": "Tool and command permissions",
+    "entryCount": "Permission entries",
+    "summary": "{{allow}} allow · {{ask}} ask · {{deny}} deny",
+    "incomplete": "Some permissions are not available yet",
+    "listTitle": "Permissions",
+    "empty": "No permissions configured",
+    "unsaved": "Unsaved changes",
+    "addAuthorization": "Add permission",
+    "editAuthorization": "Edit permission",
+    "clearRemembered": "Clear remembered grants",
+    "source": "Source",
+    "actions": "Actions",
     "description": "Always allow decisions are saved as remembered grants for the current project; static project rules apply before a tool runs.",
     "grantsTitle": "Remembered grants",
     "grantsEmpty": "No remembered grants for the current project.",
@@ -119,7 +149,7 @@
     "saveRules": "Save rules",
     "rulesSaveSuccess": "Static project rules saved",
     "rulesSaveFailed": "Failed to save static project rules",
-    "rulesConflict": "The rules file changed outside OpenBitFun. Reopen project permissions before saving.",
+    "rulesConflict": "The rules file changed outside OpenBitFun. Discard local edits and refresh before trying again.",
     "cancel": "Cancel",
     "effects": { "allow": "Allow", "ask": "Ask", "deny": "Deny" }
   },

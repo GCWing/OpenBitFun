@@ -22,6 +22,14 @@ export type VirtualItem = VirtualContent & { timeline?: TimelineBlock };
 
 type VirtualContent =
   | {
+      type: 'background-run';
+      data: DialogTurn['userMessage'];
+      turn: DialogTurn;
+      turnId: string;
+      absoluteTurnIndex?: number;
+      turnStatus?: DialogTurn['status'];
+    }
+  | {
       type: 'user-message';
       data: DialogTurn['userMessage'];
       turnId: string;
@@ -30,6 +38,10 @@ type VirtualContent =
       /** Display-only state for a foreground send before its Turn is projected. */
       submissionPhase?: 'forming' | 'failed';
       submissionError?: string;
+      /** Host queue preview only; canonical history is never mutated. */
+      hostQueueStatus?: 'pending' | 'failed';
+      hostQueueAttachmentCount?: number;
+      presentationKey?: string;
     }
   | {
       type: 'user-steering-message';
@@ -52,6 +64,9 @@ type VirtualContent =
       turnStartedAt?: number;
       turnEndedAt?: number;
       turnDurationMs?: number;
+      /** Streaming window only; the throughput denominator, not turn wall time. */
+      turnOutputDurationMs?: number;
+      turnTtftMs?: number;
       turnTokenUsage?: TokenUsage;
       canvasArtifactItems?: FlowToolItem[];
     }

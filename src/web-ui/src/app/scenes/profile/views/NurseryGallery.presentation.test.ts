@@ -28,7 +28,6 @@ describe('Nursery gallery presentation', () => {
     expect(gallerySection).toMatch(
       /\.nursery-gallery \{\s+background: var\(--openbitfun-color-surface-scene\);/,
     );
-    expect(readSibling('./NurseryGallery.tsx')).toContain('appearance="subtle"');
     expect(readSibling('./AssistantCard.tsx')).toContain('appearance="subtle"');
     expect(gallerySection).toContain('background: var(--openbitfun-color-surface-tertiary);');
     expect(gallerySection).toContain('color: var(--openbitfun-color-content-primary);');
@@ -39,18 +38,9 @@ describe('Nursery gallery presentation', () => {
     expect(gallerySection).not.toContain('--openbitfun-color-overlay-scrim');
   });
 
-  it('uses the shared button for default configuration', () => {
-    const source = readSibling('./NurseryGallery.tsx');
-    const end = source.indexOf('className="nursery-defaults__action"');
-    const action = source.slice(source.lastIndexOf('<Button', end), source.indexOf('</Button>', end));
-    expect(action).toContain('variant="outline"');
-    expect(action).toContain('size="sm"');
-    expect(action).toContain('onClick={openDefaults}');
-  });
-
   it('keeps assistant identity metadata close to its title', () => {
     const stylesheet = readSibling('./NurseryView.scss');
-    const headerStart = stylesheet.indexOf('.acp-left-header {');
+    const headerStart = stylesheet.indexOf('.acp-identity {');
     const headerEnd = stylesheet.indexOf('.acp-avatar-picker {', headerStart);
     const headerSection = stylesheet.slice(headerStart, headerEnd);
 
@@ -65,10 +55,10 @@ describe('Nursery gallery presentation', () => {
     const cardSection = stylesheet.slice(cardStart, cardEnd);
 
     expect(cardSection).toContain('&__main {');
-    expect(cardSection).toContain('align-self: start;');
+    expect(cardSection).toContain('align-self: stretch;');
     expect(cardSection).not.toContain('min-height: 148px;');
     expect(cardSection).toContain('background: var(--openbitfun-color-action-neutral-surface-hover);');
-    expect(cardSection).toContain('&__session-actions {');
+    expect(cardSection).toContain('&__workspace-actions {');
     expect(cardSection).not.toContain('border-color: var(--openbitfun-color-border-subtle);');
     expect(cardSection).not.toContain('border-top: 1px solid var(--openbitfun-color-border-subtle);');
     expect(cardSection).not.toContain('min-height: clamp(310px, 23.8vw, 366px);');
@@ -77,12 +67,11 @@ describe('Nursery gallery presentation', () => {
     expect(cardSection).not.toContain('&__new-session-btn {');
     expect(cardSection).not.toContain('&__set-primary-btn {');
     expect(cardSection).not.toContain('&__delete-btn {');
-    expect(source).toMatch(/import \{[^}]*\bButton\b[^}]*} from '@openbitfun\/ui';/);
+    expect(source).toMatch(/import \{[^}]*\bIconButton\b[^}]*} from '@openbitfun\/ui';/);
     expect(source).toContain('<CardHeader');
     expect(source).toContain('<CardFooter');
-    expect(source).toContain('leadingIcon={<Icon name="side-chat" size="sm" />}');
     expect(source).not.toContain('className="assistant-card__configure"');
-    expect(source).toContain('className="assistant-card__session-actions"');
+    expect(source).toContain('className="assistant-card__workspace-actions"');
     expect(source).not.toContain('className="assistant-card__body"');
   });
 });

@@ -177,6 +177,12 @@ export default defineConfig(({ mode, command }) => {
     resolve: {
       dedupe: ['react', 'react-dom', 'lucide-react'],
       alias: [
+        // The browser export uses document at module load and crashes Markdown workers.
+        // Use the package's portable decoder in both the page and its workers.
+        {
+          find: /^decode-named-character-reference$/,
+          replacement: requireFromWebUi.resolve('decode-named-character-reference'),
+        },
         // @xterm/headless 6.1.0-beta.141 advertises a missing lib/xterm.mjs.
         // Resolve its published ESM entry for both dev optimization and builds.
         {

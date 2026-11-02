@@ -3,6 +3,7 @@ import {
   ChatMessage,
   RemoteImageContext,
   SelectedImageAttachment,
+  SessionRolledBackResult,
   SteerTurnResult,
   SessionSummary
 } from '../model/RemoteModels';
@@ -30,6 +31,7 @@ export interface RemoteChatCommandClient {
   buildPlan(sessionId: string, planFilePath: string, planName: string, agentType: string): Promise<string>;
   cancelTask(sessionId: string, turnId?: string): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
+  rollbackSessionToTurn(sessionId: string, targetTurnId: string): Promise<SessionRolledBackResult>;
 }
 
 export interface RemoteChatCommandCallbacks {
@@ -253,6 +255,30 @@ export class RemoteChatCommandController {
       this.callbacks.onStatusText(errorText);
       this.callbacks.onToast(errorText);
     }
+  }
+
+  /**
+   * Runs one rollback and hands the decoded answer back to its caller.
+   *
+   * Deliberately thin, and deliberately not swallowing anything: unlike a stop or
+   * a rename, a refused rollback is not the end of the interaction. The caller
+   * owns the staged preview, so it is the one that knows whether a refusal means
+   * "this view moved on, resync quietly" or "say it failed", and it can only make
+   * that call if the refusal arrives as a thrown error instead of a status line.
+   */
+  async rollbackSessionToTurn(sessionId: string, targetTurnId: string): Promise<SessionRolledBackResult> {
+    const startedAt = Date.now();
+    RemoteLogger.info(
+      `rollback request session=${RemoteChatCommandController.shortId(sessionId)} ` +
+        `target=${RemoteChatCommandController.shortId(targetTurnId)}`
+    );
+    const result = await this.client.rollbackSessionToTurn(sessionId, targetTurnId);
+    RemoteLogger.info(
+      `rollback accepted session=${RemoteChatCommandController.shortId(sessionId)} ` +
+        `retired=${result.retiredTurnIds.length} restored=${result.restoredFiles.length} ` +
+        `changed=${result.changed ? '1' : '0'} ms=${Date.now() - startedAt}`
+    );
+    return result;
   }
 
   async renameActiveSession(

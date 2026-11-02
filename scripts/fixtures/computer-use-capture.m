@@ -19,7 +19,7 @@ extern void obf_capture_free(void *);
 extern void obf_capture_stop(void *);
 extern void obf_pointer_show(uint32_t, double, double, bool);
 extern void obf_pointer_hide(void);
-void obf_control_native_stopped(uint64_t generation, int32_t pid, uint32_t windowID, const char *reason) {
+void obf_control_native_stopped(uint64_t generation, uint64_t revision, int32_t pid, uint32_t windowID, const char *reason) {
     atomic_fetch_add(&stopCount, 1);
     if(generation == expectedGeneration && pid == getpid() && windowID == expectedWindow) atomic_store(&stoppedWithIdentity, true);
     fprintf(stderr, "Stopped: %s\n", reason);

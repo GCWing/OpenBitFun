@@ -53,6 +53,18 @@ function readOutput(result: unknown): string {
   return formatSessionViewPreviewText(asText(record.output) || combined);
 }
 
+function readLanguage(input: unknown, result: unknown): string {
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const language = asText((input as Record<string, unknown>).language);
+    if (language) return language;
+  }
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    const language = asText((result as Record<string, unknown>).__ptc_language);
+    if (language) return language;
+  }
+  return 'typescript';
+}
+
 export const RunCodeToolCard: React.FC<ToolCardProps> = ({
   toolItem,
   config,
@@ -71,6 +83,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
   const code = asText(toolCall?.input?.code);
   const description = asText(toolCall?.input?.description).trim();
   const output = useMemo(() => readOutput(toolResult?.result), [toolResult?.result]);
+  const language = readLanguage(toolCall?.input, toolResult?.result);
   const errorMessage = status === 'error'
     ? toolResult?.error || t('toolCards.runCode.failed')
     : null;
@@ -113,7 +126,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
         program={code ? (
           <CodePreview
             content={code}
-            language="typescript"
+            language={language}
             showLineNumbers={false}
             maxHeight={320}
             autoScrollToBottom={false}

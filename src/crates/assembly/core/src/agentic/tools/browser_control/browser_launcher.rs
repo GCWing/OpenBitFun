@@ -76,7 +76,7 @@ impl BrowserLauncher {
         Ok(provider::BrowserLauncher::launch_with_cdp_options(
             kind,
             port,
-            Self::launch_options(None),
+            Self::launch_options(None, false),
         )
         .await?)
     }
@@ -89,13 +89,20 @@ impl BrowserLauncher {
         Ok(provider::BrowserLauncher::launch_with_cdp_options(
             kind,
             port,
-            Self::launch_options(user_data_dir),
+            Self::launch_options(user_data_dir, false),
         )
         .await?)
     }
 
+    /// Restarting the user's browser is an explicit, user-initiated action, so
+    /// the relaunched browser is brought forward instead of staying hidden.
     pub async fn restart_with_cdp(kind: &BrowserKind, port: u16) -> OpenBitFunResult<LaunchResult> {
-        Self::launch_with_cdp(kind, port).await
+        Ok(provider::BrowserLauncher::launch_with_cdp_options(
+            kind,
+            port,
+            Self::launch_options(None, true),
+        )
+        .await?)
     }
 
     /// Explicit Settings flow: keep the browser settings page open long enough
@@ -105,16 +112,23 @@ impl BrowserLauncher {
         kind: &BrowserKind,
         port: u16,
     ) -> OpenBitFunResult<LaunchResult> {
-        let mut options = Self::launch_options(None);
+        let mut options = Self::launch_options(None, true);
         options.wait_for_user_profile_setup = true;
         Ok(provider::BrowserLauncher::launch_with_cdp_options(kind, port, options).await?)
     }
 
-    fn launch_options(user_data_dir: Option<&str>) -> BrowserLaunchOptions {
+    /// Surface an already-running browser so the user can answer a
+    /// browser-owned prompt. Returns whether the platform accepted the request.
+    pub fn activate_browser(kind: &BrowserKind) -> bool {
+        provider::BrowserLauncher::activate_browser(kind)
+    }
+
+    fn launch_options(user_data_dir: Option<&str>, activate: bool) -> BrowserLaunchOptions {
         BrowserLaunchOptions {
             user_data_dir: user_data_dir.map(PathBuf::from),
             managed_profile_root: Some(get_path_manager_arc().user_data_dir()),
             wait_for_user_profile_setup: false,
+            activate,
         }
     }
 }
@@ -127,9 +141,22 @@ mod tests {
 
     #[test]
     fn launch_options_injects_openbitfun_managed_profile_root() {
-        let options = BrowserLauncher::launch_options(None);
+        let options = BrowserLauncher::launch_options(None, false);
 
         assert_eq!(options.user_data_dir, None);
+        assert_eq!(
+            options.managed_profile_root,
+            Some(get_path_manager_arc().user_data_dir())
+        );
+        assert!(!options.activate);
+    }
+
+    #[test]
+    fn launch_options_preserves_explicit_user_data_dir() {
+        let explicit_profile = "custom-browser-profile";
+        let options = BrowserLauncher::launch_options(Some(explicit_profile), false);
+
+        assert_eq!(options.user_data_dir, Some(PathBuf::from(explicit_profile)));
         assert_eq!(
             options.managed_profile_root,
             Some(get_path_manager_arc().user_data_dir())
@@ -137,14 +164,8 @@ mod tests {
     }
 
     #[test]
-    fn launch_options_preserves_explicit_user_data_dir() {
-        let explicit_profile = "custom-browser-profile";
-        let options = BrowserLauncher::launch_options(Some(explicit_profile));
-
-        assert_eq!(options.user_data_dir, Some(PathBuf::from(explicit_profile)));
-        assert_eq!(
-            options.managed_profile_root,
-            Some(get_path_manager_arc().user_data_dir())
-        );
+    fn only_user_visible_launch_flows_activate_the_browser() {
+        assert!(!BrowserLauncher::launch_options(None, false).activate);
+        assert!(BrowserLauncher::launch_options(None, true).activate);
     }
 }

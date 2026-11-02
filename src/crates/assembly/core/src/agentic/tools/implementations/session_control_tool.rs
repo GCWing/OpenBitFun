@@ -473,6 +473,51 @@ Arguments:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["create", "cancel", "delete", "rename", "list"]},
+                "workspace": {"type": "string"},
+                "session_id": {"type": "string"},
+                "session_name": {"type": "string"},
+                "had_active_turn": {"type": "boolean"},
+                "cancelled_turn_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "status": {"type": "string"},
+                "current_session_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "count": {"type": "integer"},
+                "session": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "session_name": {"type": "string"},
+                        "agent_type": {"type": "string"}
+                    },
+                    "required": ["session_id", "session_name", "agent_type"],
+                    "additionalProperties": false
+                },
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "session_id": {"type": "string"},
+                            "session_name": {"type": "string"},
+                            "agent_type": {"type": "string"},
+                            "created_at_ms": {"type": "integer"},
+                            "last_active_at_ms": {"type": "integer"}
+                        },
+                        "required": ["session_id", "session_name", "agent_type"],
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "required": ["success", "action"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

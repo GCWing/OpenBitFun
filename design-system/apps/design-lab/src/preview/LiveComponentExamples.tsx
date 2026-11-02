@@ -29,7 +29,7 @@ export function NavigationExample({ name, state, size = "sm" }: { name: string; 
 export function MobileDisclosureExample({ state }: { state: string }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(state === "open");
-  return <MobileDisclosure disabled={state === "disabled"} onToggle={() => setOpen(value => !value)} open={open} title={t("components.preview.appearance")}>
+  return <MobileDisclosure data-openbitfun-preview-state={state === "hover" ? "hover" : undefined} disabled={state === "disabled"} onToggle={() => setOpen(value => !value)} open={open} title={t("components.preview.appearance")}>
     {t("components.preview.appearanceDescription")}
   </MobileDisclosure>;
 }

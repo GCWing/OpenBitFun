@@ -1,11 +1,13 @@
 import { contentUsageState, type ContentUsageState } from './ecosystemContentPresentation';
 import type { AcpClientInfo } from '@/infrastructure/api/service-api/ACPClientAPI';
 import type { ExternalSourceCatalogSnapshot } from '@/infrastructure/api/service-api/ExternalSourcesAPI';
+import type { ExternalSessionEcosystem } from '@/infrastructure/api/service-api/ExternalSessionImportAPI';
 
 export type EcosystemProductId =
   | 'cursor'
   | 'claude-code'
   | 'codex'
+  | 'zcode'
   | 'pi'
   | 'dsh'
   | 'opencode';
@@ -24,6 +26,7 @@ export interface EcosystemProductSpec {
   name: string;
   ecosystemId: string;
   acpClientId?: string;
+  sessionImport?: ExternalSessionEcosystem;
   development?: boolean;
   searchTerms: readonly string[];
 }
@@ -116,6 +119,7 @@ const PRODUCT_DISCOVERY_KINDS = {
   cursor: ['skill'],
   'claude-code': ['command', 'subagent', 'skill', 'mcp', 'hook'],
   codex: ['subagent', 'skill', 'mcp', 'hook', 'pet'],
+  zcode: [],
   pi: ['skill', 'hook'],
   dsh: ['skill', 'hook', 'mcp'],
   opencode: ['command', 'tool', 'subagent', 'skill', 'mcp', 'hook'],
@@ -125,6 +129,7 @@ const PRODUCT_NOT_APPLICABLE_KINDS = {
   cursor: ECOSYSTEM_IMPORT_ITEM_KINDS.filter((kind) => kind !== 'skill'),
   'claude-code': ['tool', 'pet'],
   codex: ['command', 'tool'],
+  zcode: ['tool', 'pet'],
   pi: ['pet'],
   dsh: ['pet'],
   opencode: ['pet'],
@@ -146,8 +151,8 @@ export function ecosystemDiscoverySupport(
 }
 
 /**
- * Presentation catalog for product families already represented by a shipped
- * adapter or ACP preset. Skill and Hook discovery does not imply ACP execution.
+ * Presentation catalog for product families represented by a shipped adapter or
+ * ACP preset. Session import and static discovery do not imply ACP execution.
  */
 export const ECOSYSTEM_PRODUCT_SPECS: readonly EcosystemProductSpec[] = [
   {
@@ -155,6 +160,7 @@ export const ECOSYSTEM_PRODUCT_SPECS: readonly EcosystemProductSpec[] = [
     name: 'Claude Code',
     ecosystemId: 'claude-code',
     acpClientId: 'claude-code',
+    sessionImport: 'claude-code',
     searchTerms: ['claude', 'anthropic', 'agent', 'mcp', 'command', 'acp'],
   },
   {
@@ -162,18 +168,28 @@ export const ECOSYSTEM_PRODUCT_SPECS: readonly EcosystemProductSpec[] = [
     name: 'Codex',
     ecosystemId: 'codex',
     acpClientId: 'codex',
+    sessionImport: 'codex',
     searchTerms: ['openai', 'agent', 'mcp', 'acp'],
+  },
+  {
+    id: 'zcode',
+    name: 'Zcode',
+    ecosystemId: 'zcode',
+    sessionImport: 'zcode',
+    searchTerms: ['z.ai', 'zhipu', 'glm', 'agent', 'session'],
   },
   {
     id: 'pi',
     name: 'Pi',
     ecosystemId: 'pi',
+    sessionImport: 'pi',
     searchTerms: ['pi', 'agent'],
   },
   {
     id: 'dsh',
     name: 'DeepSeek Harness',
     ecosystemId: 'deepseek-harness',
+    sessionImport: 'deepseek-harness',
     acpClientId: 'dsh',
     searchTerms: ['deepseek', 'harness', 'dsh', 'agent', 'acp'],
   },
@@ -182,9 +198,10 @@ export const ECOSYSTEM_PRODUCT_SPECS: readonly EcosystemProductSpec[] = [
     name: 'OpenCode',
     ecosystemId: 'opencode',
     acpClientId: 'opencode',
+    sessionImport: 'opencode',
     searchTerms: ['open code', 'agent', 'command', 'tool', 'mcp', 'acp'],
   },
-  { id: 'cursor', name: 'Cursor', ecosystemId: 'cursor', searchTerms: ['.cursor', 'skills'] },
+  { id: 'cursor', name: 'Cursor', ecosystemId: 'cursor', sessionImport: 'cursor', searchTerms: ['.cursor', 'skills', 'sessions', 'history'] },
 ] as const;
 
 function sourcePairKey(providerId: string, sourceId: string): string {

@@ -492,6 +492,9 @@ function appChain() {
     openFilePreview: (route, request) => controller.open(route, request),
     downloadFile: () => {},
     buildPlan: async () => {},
+    rollback: async () => {},
+    rollbackResync: async () => {},
+    rollbackNotice: () => {},
     send: async () => {},
     voiceInput: async () => {},
     inputChanged: () => {}

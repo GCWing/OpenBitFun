@@ -22,6 +22,7 @@ export type SettingsPageId =
   | 'tools.web-search'
   | 'tools.mcp'
   | 'tools.external-agents'
+  | 'tools.external-import'
   | 'data.usage'
   | 'data.archived'
   | 'data.diagnostics';
@@ -33,8 +34,11 @@ export type SettingsViewId =
 
 /** Anchors in a single settings page, not nested pages or tab panels. */
 export type SettingsSectionId =
+  | 'sidebar-navigation'
+  | 'message-sending'
   | 'text-selection'
   | 'pet'
+  | 'desktop-cards'
   | 'voice-call'
   | 'voice'
   | 'shortcuts'

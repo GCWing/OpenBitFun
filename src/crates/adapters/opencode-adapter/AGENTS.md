@@ -122,6 +122,10 @@ Product-source boundary:
 - This crate must not depend on Codex, Claude Code, or another ecosystem adapter.
   New ecosystems are sibling adapters registered by Product Assembly, not modes of
   this adapter.
+- `OpenCodeInstructionSourceOptions::include_project_config` lets Product Assembly
+  suppress automatic project config discovery after selecting another instruction
+  family. Keep user-configured relative paths resolved against the workspace;
+  this switch must not change `OPENCODE_DISABLE_PROJECT_CONFIG` path semantics.
 - Production crates must not depend on `openbitfun_opencode_adapter` internals.
   Unsupported capabilities must return diagnostics or typed unsupported states
   instead of failing at runtime on external plugin content.
@@ -134,8 +138,31 @@ explicitly. Keep valid V1 servers named `servers` discoverable. Source disableme
 blocks direct activation, but valid declarations remain eligible for explicit
 native import; OpenBitFun source suppression and revision fencing still apply.
 
+## Session history
+
+- `session` owns the bounded, read-only OpenCode `session/message/part` SQLite
+  protocol. Discovery uses the XDG data directory (`~/.local/share/opencode`
+  by default); no CLI, provider credentials, or plugins are loaded.
+- Zcode consumes this same persisted protocol through `compatible_store` and
+  keeps its path and provenance in its own adapter. This narrow dependency avoids
+  duplicating transaction, ordering, visibility and tool-state parsing. It does
+  not make OpenCode responsible for Zcode configuration or runtime behavior.
+- Product Assembly consumes only external session DTOs. Native persistence,
+  following, removal and continuation stay in the existing session owners.
+- Pending source undo is projected without changing the source. Committed WAL
+  records are read in a single read-only transaction; optional legacy columns
+  remain optional. Unsupported schemas fail explicitly.
+
 ## Verification
 
+- `cargo test -p openbitfun-opencode-adapter --lib session::tests`
+- `cargo test -p openbitfun-zcode-adapter --lib session::tests`
+- Optional real source check: set `OPENBITFUN_TEST_OPENCODE_DATA` to the OpenCode
+  data directory, then run `cargo test -p openbitfun-opencode-adapter --lib
+  inspect_installed_opencode -- --ignored --nocapture`. A selected
+  `OPENBITFUN_TEST_OPENCODE_SESSION` checks the two-turn verification session.
+
+- `cargo test --locked -p openbitfun-opencode-adapter --lib instruction_source::tests::`
 - `cargo test -p openbitfun-opencode-adapter --test opencode_source_adapter`
 - `cargo test -p openbitfun-opencode-adapter --test opencode_mcp_adapter`
 - `cargo test -p openbitfun-opencode-adapter --test opencode_static_source_contracts opencode_command_adapter::`

@@ -357,12 +357,14 @@ impl RemoteFileService {
         }
     }
 
-    /// Check if a remote path is a directory
+    /// Check if a remote path resolves to a directory, including shell workspaces.
     pub async fn is_dir(&self, connection_id: &str, path: &str) -> anyhow::Result<bool> {
-        match self.stat(connection_id, path).await? {
-            Some(entry) => Ok(entry.is_dir),
-            None => Ok(false),
-        }
+        Ok(self
+            .workspace_metadata(connection_id, path, true)
+            .await?
+            .is_some_and(|metadata| {
+                metadata.kind == openbitfun_runtime_ports::WorkspacePathKind::Directory
+            }))
     }
 
     /// Read directory contents via SFTP

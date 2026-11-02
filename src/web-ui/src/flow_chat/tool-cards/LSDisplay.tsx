@@ -82,7 +82,8 @@ export const LSDisplay: React.FC<ToolCardProps> = ({
   }, [entries]);
 
   const directoryPath = getDirectoryPath();
-  const hasDetails = status === 'completed' && entries.length > 0;
+  const textOutput = entries.length === 0 && typeof toolResult?.result?.content === 'string' ? toolResult.result.content : '';
+  const hasDetails = (status === 'completed' || Boolean(toolItem.importedSource)) && (entries.length > 0 || textOutput.length > 0);
   const hasResultData = Array.isArray(toolResult?.result?.entries);
 
   const handleClick = useCallback(() => {
@@ -109,13 +110,15 @@ export const LSDisplay: React.FC<ToolCardProps> = ({
         statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
         details={hasDetails ? [
           { label: `${t('toolCards.ls.labelPath')}:`, value: directoryPath },
-          {
+          ...(hasResultData ? [{
             label: `${t('toolCards.ls.labelStats')}:`,
             value: stats.directories > 0
               ? t('toolCards.ls.filesAndDirs', { files: stats.files, directories: stats.directories })
               : t('toolCards.ls.filesCount', { count: stats.files }),
           },
           { label: `${t('toolCards.ls.labelSort')}:`, value: t('toolCards.ls.sortByModifiedTime') },
+          ] : []),
+          ...(textOutput ? [{ label: t('toolCards.common.executionResult'), value: textOutput }] : []),
         ] : undefined}
         results={hasDetails ? entries.slice(0, 50).map((entry, index) => ({
           icon: entry.is_dir ? 'directory' as const : 'file' as const,

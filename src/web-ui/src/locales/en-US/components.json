@@ -584,7 +584,15 @@
     "dropRight": "Right",
     "dropTop": "Top",
     "dropBottom": "Bottom",
-    "dropCenter": "Drop"
+    "dropCenter": "Drop",
+    "empty": {
+      "title": "Nothing open",
+      "workspaceUnavailable": "Workspace disconnected. Please reconnect.",
+      "selectWorkspace": "Select a workspace first.",
+      "browseFiles": "Browse files",
+      "newTerminal": "New terminal",
+      "reopen": "Reopen {{title}}"
+    }
   },
   "flexiblePanel": {
     "empty": {
@@ -654,5 +662,60 @@
     "unsavedMessage": "Save changes to “{{title}}” before closing?",
     "closeOtherContent": "Close other content tabs",
     "closeAllContent": "Close all content tabs"
+  },
+  "desktopCard": {
+    "loading": "Loading…",
+    "loadFailed": "This card could not be loaded.",
+    "unsupportedTemplate": "This card needs a newer version of OpenBitFun.",
+    "updated": "Updated {{time}}",
+    "updatedWithWarning": "Updated {{time}}, some data may be missing",
+    "refreshFailed": "Refresh failed: {{error}}",
+    "menu": {
+      "more": "More actions",
+      "refresh": "Refresh",
+      "openLink": "Open link",
+      "openSession": "Open source session",
+      "alwaysOnTop": "Keep on top",
+      "hide": "Hide card",
+      "delete": "Delete card"
+    },
+    "deleteConfirm": {
+      "title": "Delete card",
+      "message": "Delete this card? This cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "countdown": {
+      "due": "Time's up",
+      "days": "{{count}}d",
+      "dismiss": "Dismiss"
+    },
+    "checklist": {
+      "empty": "No items"
+    },
+    "chart": {
+      "empty": "No data to chart yet",
+      "other": "Other",
+      "remaining": "Remaining",
+      "ofTotal": "of {{total}}",
+      "changeSince": "{{change}} since {{label}}",
+      "range": "{{min}} – {{max}}"
+    },
+    "cron": {
+      "failed": "Could not load the scheduled job.",
+      "missing": "This scheduled job no longer exists.",
+      "enabled": "Active",
+      "paused": "Paused",
+      "nextRun": "Next run",
+      "lastRun": "Last run",
+      "neverRun": "Not run yet",
+      "status": {
+        "ok": "Succeeded",
+        "error": "$t(shared:statuses.failed)",
+        "running": "$t(shared:statuses.running)",
+        "queued": "Queued",
+        "cancelled": "$t(shared:statuses.cancelled)"
+      }
+    }
   }
 }

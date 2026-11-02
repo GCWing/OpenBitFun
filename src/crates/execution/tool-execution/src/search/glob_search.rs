@@ -1,19 +1,13 @@
 use super::workspace_walk::{add_directory_ignores, WorkspaceFileWalker};
 use crate::util::string::shell_single_quote;
 use globset::GlobBuilder;
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkState};
 use log::{info, warn};
 use openbitfun_runtime_ports::{WorkspaceFileSystem, WorkspacePathKind};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalGlobRequest {
@@ -124,6 +118,7 @@ impl PartialOrd for GlobCandidate {
 
 /// The matcher consumes provider-relative paths, not host `Path` candidates.
 /// This keeps a POSIX backslash filename intact on a Windows controller.
+#[derive(Clone)]
 struct WorkspaceGlobMatcher {
     matcher: regex::bytes::Regex,
     match_basename: bool,
@@ -174,18 +169,29 @@ impl GlobCollector {
             return;
         }
         self.total += 1;
-        if self.limit == 0 {
-            return;
-        }
         let candidate = GlobCandidate {
             depth: path.split('/').count(),
             path,
         };
+        self.retain(candidate);
+    }
+
+    fn retain(&mut self, candidate: GlobCandidate) {
+        if self.limit == 0 {
+            return;
+        }
         if self.best.len() < self.limit {
             self.best.push(candidate);
         } else if self.best.peek().is_some_and(|worst| candidate < *worst) {
             self.best.pop();
             self.best.push(candidate);
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.total += other.total;
+        for candidate in other.best {
+            self.retain(candidate);
         }
     }
 
@@ -275,52 +281,6 @@ pub fn resolve_glob_config(pattern: &str) -> (bool, bool) {
     (apply_gitignore, ignore_hidden_files)
 }
 
-fn build_rg_args(
-    relative_pattern: &str,
-    apply_gitignore: bool,
-    ignore_hidden_files: bool,
-) -> Vec<String> {
-    let mut args = vec![
-        "--files".to_string(),
-        "--glob".to_string(),
-        relative_pattern.to_string(),
-    ];
-
-    if !apply_gitignore {
-        args.push("--no-ignore".to_string());
-    }
-
-    if !ignore_hidden_files {
-        args.push("--hidden".to_string());
-    }
-
-    args
-}
-
-#[cfg(windows)]
-fn create_command(program: &str) -> Command {
-    let mut command = Command::new(program);
-    command.creation_flags(CREATE_NO_WINDOW);
-    command
-}
-
-#[cfg(not(windows))]
-fn create_command(program: &str) -> Command {
-    Command::new(program)
-}
-
-fn build_fallback_matcher(relative_pattern: &str) -> Result<WorkspaceGlobMatcher, String> {
-    WorkspaceGlobMatcher::new(relative_pattern)
-}
-
-fn match_relative_path(
-    matcher: &WorkspaceGlobMatcher,
-    _pattern: &str,
-    relative_path: &str,
-) -> bool {
-    matcher.is_match(relative_path)
-}
-
 fn native_glob_relative_path(path: &Path) -> String {
     #[cfg(windows)]
     {
@@ -330,12 +290,6 @@ fn native_glob_relative_path(path: &Path) -> String {
     {
         path.to_string_lossy().into_owned()
     }
-}
-
-fn strip_current_dir_prefix(path: &str) -> &str {
-    path.strip_prefix("./")
-        .or_else(|| path.strip_prefix(".\\"))
-        .unwrap_or(path)
 }
 
 fn relativize_remote_stdout_path(search_dir: &str, path: &str) -> String {
@@ -352,46 +306,83 @@ fn relativize_remote_stdout_path(search_dir: &str, path: &str) -> String {
     normalized_path.to_string()
 }
 
-fn collect_with_walk_fallback(
+struct LocalGlobWorker<'a> {
+    collector: Option<GlobCollector>,
+    merged: &'a Mutex<GlobCollector>,
+}
+
+impl Drop for LocalGlobWorker<'_> {
+    fn drop(&mut self) {
+        // Each worker only locks once, after its complete traversal. A global
+        // top-N candidate must also belong to its worker's top-N candidates.
+        if let Some(collector) = self.collector.take() {
+            self.merged
+                .lock()
+                .expect("glob collector lock poisoned")
+                .merge(collector);
+        }
+    }
+}
+
+fn collect_local_glob(
     walk_root: &Path,
     relative_pattern: &str,
     apply_gitignore: bool,
     ignore_hidden_files: bool,
     limit: usize,
 ) -> Result<LocalGlobResult, String> {
-    let matcher = build_fallback_matcher(relative_pattern)?;
-    let walker = WalkBuilder::new(walk_root)
+    let matcher = WorkspaceGlobMatcher::new(relative_pattern)?;
+    let worker_count = std::thread::available_parallelism().map_or(1, |count| count.get().min(12));
+    let mut builder = WalkBuilder::new(walk_root);
+    builder
         .ignore(apply_gitignore)
         .git_ignore(apply_gitignore)
         .git_global(apply_gitignore)
         .git_exclude(apply_gitignore)
         .hidden(ignore_hidden_files)
-        .build();
-
-    let mut collector = GlobCollector::new(limit);
-    for entry in walker {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(error) => {
-                warn!("Glob walker fallback entry error (skipped): {}", error);
-                continue;
-            }
-        };
-        if entry
-            .file_type()
-            .is_some_and(|file_type| file_type.is_dir())
-        {
-            continue;
-        }
-        let relative_path = match entry.path().strip_prefix(walk_root) {
-            Ok(relative) => native_glob_relative_path(relative),
-            Err(_) => continue,
-        };
-        if match_relative_path(&matcher, relative_pattern, &relative_path) {
-            collector.push(relative_path);
-        }
+        .threads(worker_count);
+    if apply_gitignore {
+        builder.add_custom_ignore_filename(".rgignore");
     }
-    let (matches, total) = collector.finish();
+
+    let merged = Mutex::new(GlobCollector::new(limit));
+    builder.build_parallel().run(|| {
+        // Regex clones share the compiled pattern but have independent scratch
+        // caches, avoiding contention between traversal workers.
+        let matcher = matcher.clone();
+        let mut worker = LocalGlobWorker {
+            collector: Some(GlobCollector::new(limit)),
+            merged: &merged,
+        };
+        Box::new(move |entry| {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    warn!("Glob walker entry error (skipped): {}", error);
+                    return WalkState::Continue;
+                }
+            };
+            if entry.file_type().is_some_and(|kind| kind.is_dir()) {
+                return WalkState::Continue;
+            }
+            let relative_path = match entry.path().strip_prefix(walk_root) {
+                Ok(relative) => native_glob_relative_path(relative),
+                Err(_) => return WalkState::Continue,
+            };
+            if matcher.is_match(&relative_path) {
+                worker
+                    .collector
+                    .as_mut()
+                    .expect("glob worker collector available during traversal")
+                    .push(relative_path);
+            }
+            WalkState::Continue
+        })
+    });
+    let (matches, total) = merged
+        .into_inner()
+        .expect("glob collector lock poisoned")
+        .finish();
     Ok(LocalGlobResult {
         matches,
         walk_root: walk_root.to_path_buf(),
@@ -592,95 +583,18 @@ pub fn execute_local_glob(request: LocalGlobRequest) -> Result<LocalGlobResult, 
         });
     }
 
-    let args = build_rg_args(&relative_pattern, apply_gitignore, ignore_hidden_files);
-    let output = create_command("rg")
-        .current_dir(&walk_root)
-        .args(&args)
-        .arg(".")
-        .output()
-        .map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                "ripgrep (rg) is required for Glob tool execution but was not found".to_string()
-            } else {
-                format!("Failed to execute rg for Glob tool: {}", error)
-            }
-        });
-
-    let output = match output {
-        Ok(output) => {
-            info!(
-                "Glob backend selected: backend=rg, search_root={}, pattern={}",
-                walk_root.display(),
-                relative_pattern
-            );
-            output
-        }
-        Err(error) if error.contains("ripgrep (rg) is required") => {
-            info!(
-                "Glob backend selected: backend=fallback_walk, reason=rg_not_found, search_root={}, pattern={}",
-                walk_root.display(),
-                relative_pattern
-            );
-            return collect_with_walk_fallback(
-                &walk_root,
-                &relative_pattern,
-                apply_gitignore,
-                ignore_hidden_files,
-                request.limit,
-            );
-        }
-        Err(error) => return Err(error),
-    };
-
-    if !output.status.success() {
-        if output.status.code() == Some(1) {
-            return Ok(LocalGlobResult {
-                matches: Vec::new(),
-                walk_root,
-                total_matches: Some(0),
-                truncated: false,
-            });
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let message = if stderr.is_empty() {
-            format!("rg --files failed with status {}", output.status)
-        } else {
-            format!("rg --files failed: {}", stderr)
-        };
-        if stderr.contains("No such file or directory") || stderr.contains("not found") {
-            info!(
-                "Glob backend selected: backend=fallback_walk, reason=rg_execution_failed, search_root={}, pattern={}",
-                walk_root.display(),
-                relative_pattern
-            );
-            return collect_with_walk_fallback(
-                &walk_root,
-                &relative_pattern,
-                apply_gitignore,
-                ignore_hidden_files,
-                request.limit,
-            );
-        }
-        return Err(message);
-    }
-
-    let all_paths = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let relative_path = strip_current_dir_prefix(line);
-            PathBuf::from(relative_path)
-        })
-        .collect::<Vec<_>>();
-
-    let total_matches = all_paths.len();
-    Ok(LocalGlobResult {
-        matches: limit_paths(&all_paths, request.limit),
-        walk_root,
-        total_matches: Some(total_matches),
-        truncated: total_matches > request.limit,
-    })
+    info!(
+        "Glob backend selected: backend=native_walk, search_root={}, pattern={}",
+        walk_root.display(),
+        relative_pattern
+    );
+    collect_local_glob(
+        &walk_root,
+        &relative_pattern,
+        apply_gitignore,
+        ignore_hidden_files,
+        request.limit,
+    )
 }
 
 pub fn build_remote_rg_command(search_dir: &str, pattern: &str) -> String {
@@ -715,8 +629,8 @@ pub fn build_remote_rg_command(search_dir: &str, pattern: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_with_walk_fallback, derive_remote_walk_root, extract_glob_base_directory,
-        normalize_path, WorkspaceGlobMatcher,
+        collect_local_glob, derive_remote_walk_root, execute_local_glob,
+        extract_glob_base_directory, normalize_path, LocalGlobRequest, WorkspaceGlobMatcher,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -752,16 +666,161 @@ mod tests {
         normalize_path(path)
     }
 
+    fn search(root: &Path, pattern: &str, limit: usize) -> super::LocalGlobResult {
+        execute_local_glob(LocalGlobRequest {
+            search_path: root.to_path_buf(),
+            pattern: pattern.to_string(),
+            limit,
+        })
+        .expect("local glob should succeed")
+    }
+
     #[test]
-    fn walk_fallback_returns_files_only_and_matches_rg_basename_globs() {
+    fn local_glob_applies_ignore_precedence_before_pattern_matching() {
+        let temp = make_temp_dir("ignore-precedence");
+        let root = temp.path();
+        for directory in [".git/info", "src/nested", "ignored", ".hidden"] {
+            fs::create_dir_all(root.join(directory)).unwrap();
+        }
+        fs::write(root.join(".gitignore"), "git.rs\nrestored.rs\nignored/\n").unwrap();
+        fs::write(root.join(".ignore"), "dot.rs\nrestored.rs\n").unwrap();
+        fs::write(root.join(".rgignore"), "rg.rs\n!restored.rs\n").unwrap();
+        fs::write(root.join(".git/info/exclude"), "excluded.rs\n").unwrap();
+        fs::write(root.join("src/.gitignore"), "private.rs\n").unwrap();
+        fs::write(root.join("src/.rgignore"), "nested-rg.rs\n").unwrap();
+        for name in [
+            "visible.rs",
+            "git.rs",
+            "dot.rs",
+            "rg.rs",
+            "restored.rs",
+            "excluded.rs",
+            ".hidden.rs",
+            "ignored/file.rs",
+            ".hidden/file.rs",
+            "src/lib.rs",
+            "src/nested/private.rs",
+            "src/nested/nested-rg.rs",
+            "src/nested/public.rs",
+        ] {
+            fs::write(root.join(name), "").unwrap();
+        }
+        let expected = [
+            "restored.rs",
+            "src/lib.rs",
+            "src/nested/public.rs",
+            "visible.rs",
+        ]
+        .map(PathBuf::from)
+        .to_vec();
+        for pattern in ["**/*.rs", "*.rs", "*", "**/*"] {
+            let result = search(root, pattern, 100);
+            assert_eq!(result.matches, expected, "pattern: {pattern}");
+            assert_eq!(result.total_matches, Some(4));
+            assert!(!result.truncated);
+        }
+        // Static scopes still read ignore files from their ancestors.
+        let scoped = search(root, "src/**/*.rs", 100);
+        assert_eq!(
+            scoped.matches,
+            ["lib.rs", "nested/public.rs"].map(PathBuf::from)
+        );
+    }
+
+    #[test]
+    fn local_glob_preserves_explicit_hidden_root_and_product_directory_exception() {
+        let temp = make_temp_dir("hidden-roots");
+        let root = temp.path();
+        fs::create_dir(root.join(".hidden")).unwrap();
+        fs::write(root.join(".hidden/public.rs"), "").unwrap();
+        fs::write(root.join(".hidden/.secret.rs"), "").unwrap();
+        fs::write(root.join(".hidden/.rgignore"), "ignored.rs\n").unwrap();
+        fs::write(root.join(".hidden/ignored.rs"), "").unwrap();
+        assert!(search(root, "**/*.rs", 100).matches.is_empty());
+        assert_eq!(
+            search(root, ".hidden/**/*.rs", 100).matches,
+            vec![PathBuf::from("public.rs")]
+        );
+
+        let product_directory = openbitfun_core_types::product_identity::hidden_data_directory();
+        fs::create_dir(root.join(product_directory)).unwrap();
+        fs::write(root.join(product_directory).join(".rgignore"), "*.rs\n").unwrap();
+        fs::write(root.join(product_directory).join(".secret.rs"), "").unwrap();
+        fs::write(root.join(product_directory).join("public.rs"), "").unwrap();
+        let result = search(root, &format!("{product_directory}/**/*.rs"), 100);
+        assert_eq!(
+            result.matches,
+            [".secret.rs", "public.rs"].map(PathBuf::from)
+        );
+        assert_eq!(result.total_matches, Some(2));
+    }
+
+    #[test]
+    fn parallel_local_glob_keeps_stable_top_results_and_exact_totals() {
+        let temp = make_temp_dir("parallel-top-results");
+        let root = temp.path();
+        for directory in 0..16 {
+            let path = root.join(format!("dir{directory:02}/deep"));
+            fs::create_dir_all(&path).unwrap();
+            for file in 0..20 {
+                fs::write(path.join(format!("file{file:02}.rs")), "").unwrap();
+            }
+            fs::write(root.join(format!("top{directory:02}.rs")), "").unwrap();
+        }
+        let complete = search(root, "**/*.rs", 1000);
+        assert_eq!(complete.total_matches, Some(336));
+        assert!(!complete.truncated);
+        // Compute expected depth/path selection independently of worker grouping.
+        let mut expected = complete.matches.clone();
+        expected.sort_by_key(|path| (normalized(path).split('/').count(), normalized(path)));
+        expected.truncate(100);
+        expected.sort();
+        for _ in 0..5 {
+            let limited = search(root, "**/*.rs", 100);
+            assert_eq!(limited.matches, expected);
+            assert_eq!(limited.total_matches, Some(336));
+            assert!(limited.truncated);
+        }
+        let exact = search(root, "**/*.rs", 336);
+        assert_eq!(exact.matches, complete.matches);
+        assert!(!exact.truncated);
+        let zero = search(root, "**/*.rs", 0);
+        assert!(zero.matches.is_empty());
+        assert_eq!(zero.total_matches, Some(0));
+    }
+
+    #[test]
+    fn local_glob_rejects_invalid_patterns_and_missing_search_roots() {
+        let temp = make_temp_dir("invalid-pattern");
+        let request = |path: PathBuf, pattern: &str| LocalGlobRequest {
+            search_path: path,
+            pattern: pattern.to_string(),
+            limit: 100,
+        };
+        assert!(execute_local_glob(request(temp.path().to_path_buf(), "[")).is_err());
+        assert!(
+            execute_local_glob(request(temp.path().join("missing"), "*"))
+                .unwrap_err()
+                .contains("does not exist")
+        );
+        let file = temp.path().join("file.rs");
+        fs::write(&file, "").unwrap();
+        assert!(execute_local_glob(request(file, "*"))
+            .unwrap_err()
+            .contains("not a directory"));
+        assert!(search(temp.path(), "missing/*.rs", 100).matches.is_empty());
+    }
+
+    #[test]
+    fn local_walk_returns_files_only_and_matches_basename_globs() {
         let temp = make_temp_dir("files-only");
         let root = temp.path();
         fs::create_dir_all(root.join("src").join("nested")).expect("dirs should be created");
         fs::write(root.join("src").join("nested").join("lib.rs"), "")
             .expect("file should be written");
 
-        let wildcard_matches = collect_with_walk_fallback(root, "*", false, false, 10)
-            .expect("fallback glob should succeed")
+        let wildcard_matches = collect_local_glob(root, "*", false, false, 10)
+            .expect("local glob should succeed")
             .matches
             .into_iter()
             .map(|path| normalized(&path))
@@ -774,8 +833,8 @@ mod tests {
             .iter()
             .any(|path| path == "src/nested/lib.rs"));
 
-        let rust_matches = collect_with_walk_fallback(root, "*.rs", false, false, 10)
-            .expect("fallback rust glob should succeed")
+        let rust_matches = collect_local_glob(root, "*.rs", false, false, 10)
+            .expect("local rust glob should succeed")
             .matches
             .into_iter()
             .map(|path| normalized(&path))
@@ -783,8 +842,8 @@ mod tests {
         assert_eq!(rust_matches.len(), 1);
         assert_eq!(rust_matches[0], "src/nested/lib.rs");
 
-        let directory_name_matches = collect_with_walk_fallback(root, "src", false, false, 10)
-            .expect("fallback directory-name glob should succeed");
+        let directory_name_matches = collect_local_glob(root, "src", false, false, 10)
+            .expect("local directory-name glob should succeed");
         assert!(directory_name_matches.matches.is_empty());
         assert_eq!(directory_name_matches.total_matches, Some(0));
         assert!(!directory_name_matches.truncated);
@@ -845,11 +904,21 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn native_fallback_uses_the_shared_posix_matcher_for_backslash_names() {
+    fn local_walk_uses_the_shared_posix_matcher_for_backslash_names() {
         let temp = make_temp_dir("posix-names");
         fs::write(temp.path().join(r"a\b.rs"), "").unwrap();
-        let result = collect_with_walk_fallback(temp.path(), r"a\\b.rs", false, false, 10).unwrap();
+        let result = collect_local_glob(temp.path(), r"a\\b.rs", false, false, 10).unwrap();
         assert_eq!(result.matches, vec![PathBuf::from(r"a\b.rs")]);
+        assert_eq!(result.total_matches, Some(1));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_glob_preserves_newline_file_names_without_a_stdout_protocol() {
+        let temp = make_temp_dir("newline-name");
+        fs::write(temp.path().join("line\nname.rs"), "").unwrap();
+        let result = search(temp.path(), "*.rs", 100);
+        assert_eq!(result.matches, vec![PathBuf::from("line\nname.rs")]);
         assert_eq!(result.total_matches, Some(1));
     }
 }

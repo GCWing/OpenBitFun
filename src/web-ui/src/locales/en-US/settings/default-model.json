@@ -22,6 +22,12 @@
       "hint": "When not configured, all tasks use the primary model",
       "placeholder": "Select fast model",
       "notSet": "Use primary model"
+    },
+    "economy": {
+      "label": "Economy model",
+      "description": "Handles lightweight steps in smart mode, independently of the fast subagent model",
+      "placeholder": "Select economy model",
+      "notSet": "Not configured"
     }
   },
   "optional": {
@@ -32,7 +38,7 @@
         "description": "Analyze images and screenshots, support mixed image-text conversations"
       },
       "image_generation": {
-        "label": "Image Generation",
+        "label": "Image generation model",
         "description": "Generate images from text descriptions"
       },
       "speech_recognition": {
@@ -52,7 +58,7 @@
     "notConfigured": "Not configured, will use primary model"
   },
   "empty": {
-    "noModels": "No models available. Add API models or import a subscription first."
+    "noModels": "No models available"
   },
   "messages": {
     "loadFailed": "Failed to load configuration",
@@ -61,5 +67,7 @@
     "modelCleared": "{{slot}} is no longer set",
     "fastModelCleared": "Fast model cleared; the primary model will be used",
     "capabilityUpdated": "Capability model updated"
-  }
+  },
+  "router": "Smart routing",
+  "routerConfigure": "Configure service"
 }

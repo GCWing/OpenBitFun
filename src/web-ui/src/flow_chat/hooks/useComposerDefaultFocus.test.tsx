@@ -207,6 +207,9 @@ describe('useComposerDefaultFocus', () => {
       ['k', { altKey: true }],
       ['Enter', {}],
       ['ArrowDown', {}],
+      ['\uF700', {}],
+      ['\uF703', {}],
+      ['\u001B', {}],
     ] satisfies Array<[string, KeyboardEventInit]>) {
       button.focus();
       pressKey(key, init);

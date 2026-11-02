@@ -576,6 +576,39 @@ fn remote_chat_history_assembly_preserves_message_shape_and_item_order() {
 }
 
 #[test]
+fn background_delivery_crosses_remote_history_without_rewriting_the_execution() {
+    use openbitfun_core_types::background_delivery::{
+        BackgroundDelivery, BackgroundReportDisposition, BackgroundReportPolicy,
+    };
+    let mut turn = remote_history_contract_turn(false);
+    let mut delivery = BackgroundDelivery::pending(
+        "monitor".into(),
+        turn.turn_id.clone(),
+        BackgroundReportPolicy::Conditional,
+    );
+    delivery.disposition = BackgroundReportDisposition::Quiet;
+    delivery.resolved_at_ms = Some(2);
+    turn.background_delivery = Some(delivery.clone());
+    let messages = build_remote_chat_messages(vec![turn.clone()]);
+    assert_eq!(messages[1].content, "visible text");
+    for message in &messages {
+        assert_eq!(
+            message.metadata.as_ref().unwrap()["backgroundDelivery"]["disposition"],
+            "quiet"
+        );
+        assert_eq!(message.turn_id.as_deref(), Some("turn-1"));
+    }
+    turn.rounds.clear();
+    let empty = build_remote_chat_messages(vec![turn]);
+    assert_eq!(empty.len(), 1);
+    assert_eq!(empty[0].status.as_deref(), Some("done"));
+    assert_eq!(
+        empty[0].metadata.as_ref().unwrap()["backgroundDelivery"]["runId"],
+        "turn-1"
+    );
+}
+
+#[test]
 fn remote_chat_history_assembly_preserves_in_progress_assistant_history() {
     let turn = remote_history_contract_turn(true);
 
@@ -667,6 +700,7 @@ fn remote_connect_cancel_and_restore_policy_preserve_runtime_decisions() {
 
 fn remote_history_contract_turn(is_in_progress: bool) -> RemoteChatHistoryTurn {
     RemoteChatHistoryTurn {
+        background_delivery: None,
         turn_id: "turn-1".to_string(),
         turn_index: 4,
         user_message_id: "user-1".to_string(),
@@ -975,6 +1009,7 @@ impl RemoteCancelRuntimeHost for RecordingCancelHost {
 
 #[derive(Default)]
 struct RecordingCommandHost {
+    plan_language: Option<String>,
     events: Mutex<Vec<String>>,
     submitted_dialog: Mutex<Option<RemoteDialogSubmissionRequest<String>>>,
     steered_dialog: Mutex<Option<RemoteDialogSteerRequest<String>>>,
@@ -1016,6 +1051,10 @@ impl RecordingCommandHost {
 #[async_trait::async_trait]
 impl RemoteCommandRuntimeHost for RecordingCommandHost {
     type ImageContext = String;
+
+    async fn plan_build_language(&self) -> Option<String> {
+        self.plan_language.clone()
+    }
 
     async fn handle_workspace_command(&self, _command: &RemoteCommand) -> RemoteResponse {
         self.events.lock().unwrap().push("workspace".to_string());
@@ -1186,7 +1225,10 @@ async fn remote_connect_command_owner_routes_send_message_and_prefers_explicit_i
 
 #[tokio::test]
 async fn remote_connect_command_owner_builds_a_projected_plan_with_hidden_execution_copy() {
-    let host = RecordingCommandHost::default();
+    let host = RecordingCommandHost {
+        plan_language: Some("Simplified Chinese (zh-CN)".into()),
+        ..Default::default()
+    };
     let response = handle_remote_command(
         &host,
         &RemoteCommand::BuildPlan {
@@ -1209,13 +1251,31 @@ async fn remote_connect_command_owner_builds_a_projected_plan_with_hidden_execut
     let submitted = host.submitted_dialog();
     assert_eq!(
         submitted.content,
-        remote_plan_build_content("/repo/.openbitfun/plans/mobile.plan.md")
+        remote_plan_build_content(
+            "/repo/.openbitfun/plans/mobile.plan.md",
+            host.plan_language.as_deref(),
+        )
     );
+    assert!(submitted
+        .content
+        .contains("Language Preference: Use Simplified Chinese (zh-CN)"));
+    assert!(!submitted.content.contains("TodoWrite"));
+    assert!(!submitted.content.contains("todo IDs"));
     assert_eq!(
         submitted.display_content.as_deref(),
         Some("Build Plan: Mobile plan")
     );
     assert!(submitted.image_contexts.is_empty());
+}
+
+#[test]
+fn remote_plan_build_without_host_language_defers_to_system_preference() {
+    let prompt = remote_plan_build_content("/repo/example.plan.md", None);
+    assert!(
+        prompt.contains("Use the language specified by the system prompt's Language Preference")
+    );
+    assert!(prompt.contains("unless the user explicitly requests another language"));
+    assert!(prompt.is_ascii());
 }
 
 #[test]
@@ -2227,6 +2287,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
             "user_question_interaction_v1",
+            "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1
         ])
     );
@@ -2474,6 +2535,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
             "user_question_interaction_v1",
+            "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1
         ])
     );
@@ -3170,6 +3232,7 @@ fn remote_connect_tracker_preserves_streaming_snapshot_contract() {
         round_index: 3,
         model_config_id: "model-config".to_string(),
         effective_model_name: "provider-model".to_string(),
+        routing: None,
     });
     tracker.handle_agentic_event(&AgenticEvent::ThinkingChunk {
         session_id: "session-1".to_string(),
@@ -3379,6 +3442,7 @@ fn remote_connect_tracker_keeps_finished_turn_snapshot_until_persistence_finaliz
         success: Some(true),
         finish_reason: Some("stop".to_string()),
         has_final_response: Some(true),
+        background_delivery: None,
     });
 
     assert_eq!(tracker.session_state(), "idle");
@@ -3535,6 +3599,7 @@ fn remote_connect_poll_helpers_preserve_delta_and_completion_policy() {
         success: Some(true),
         finish_reason: Some("stop".to_string()),
         has_final_response: Some(true),
+        background_delivery: None,
     });
 
     let waiting_for_persistence = serde_json::to_value(remote_persisted_poll_response(

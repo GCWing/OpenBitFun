@@ -14,11 +14,22 @@ use serde_json::Value;
 use crate::peer_host::args::request_value;
 use crate::peer_host::state::PeerHostState;
 
-pub(crate) async fn invoke(state: &PeerHostState, args: &Value) -> Result<Value, String> {
+pub(crate) async fn invoke(_state: &PeerHostState, args: &Value) -> Result<Value, String> {
     let mut request: ProductControlRequest = serde_json::from_value(request_value(args).clone())
         .map_err(|error| format!("Invalid ProductControl request: {error}"))?;
     // Source is trusted transport metadata, never caller-controlled behavior.
     request.source = ProductControlSource::Peer;
+
+    if request.capability_id.as_deref() == Some("feature.remote-connect") {
+        if request.action == ProductControlAction::Execute {
+            openbitfun_product_domains::remote_control::RemoteControlRequest::from_operation(
+                request.operation_id.as_deref().unwrap_or_default(),
+                request.arguments.as_ref(),
+            )?
+            .ensure_direct_peer_safe()?;
+        }
+        return openbitfun_core::agentic::tools::openbitfun_control_host::invoke_openbitfun_control(request).await;
+    }
 
     match request.action {
         ProductControlAction::List | ProductControlAction::Search => discover(&request),

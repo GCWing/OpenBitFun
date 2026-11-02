@@ -18,18 +18,17 @@ services:
     ports:
       - "127.0.0.1:9710:9710"
     env_file:
-      - /etc/openbitfun-miniapp-market/market.env
-      - path: /etc/openbitfun-miniapp-market/smtp.env
+      - ${MINIAPP_MARKET_ENV_DIR:-/etc/openbitfun-miniapp-market}/market.env
+      - path: ${MINIAPP_MARKET_ENV_DIR:-/etc/openbitfun-miniapp-market}/smtp.env
         required: false
     environment:
-      MARKET_GITHUB_CALLBACK_URL: https://auth.openbitfun.com/api/v1/auth/github/callback
       MARKET_BIND: 0.0.0.0:9710
       MARKET_DATABASE_PATH: /app/data/market.sqlite
       MARKET_ARTIFACT_DIR: /app/artifacts
       MARKET_WEB_DIR: /app/web
     volumes:
-      - /srv/openbitfun-miniapp-market/data:/app/data
-      - /srv/openbitfun-miniapp-market/artifacts:/app/artifacts
+      - ${MINIAPP_MARKET_ROOT:-/srv/openbitfun-miniapp-market}/data:/app/data
+      - ${MINIAPP_MARKET_ROOT:-/srv/openbitfun-miniapp-market}/artifacts:/app/artifacts
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
     healthcheck:

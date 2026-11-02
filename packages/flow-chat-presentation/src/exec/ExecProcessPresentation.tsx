@@ -118,7 +118,7 @@ function ExecCommandPresentation({
     ? toolItem.toolCall.input.yield_time_ms
     : undefined;
 
-  const getOutputText = useCallback(() => {
+  const outputText = useMemo(() => {
     if (status === 'completed') {
       return formatSessionViewPreviewText(model.resultOutput);
     }
@@ -134,7 +134,7 @@ function ExecCommandPresentation({
     return '';
   }, [isRunning, liveOutput, model.resultOutput, status]);
 
-  const outputText = getOutputText();
+  const getOutputText = useCallback(() => outputText, [outputText]);
   const waitingText = (() => {
     if (outputText || rejectedOrCancelled) {
       return undefined;

@@ -13,6 +13,7 @@ import { OverflowText } from '@openbitfun/ui';
 import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, Suspense } from 'react';
 import { useWorkspaceContext } from '../../infrastructure/contexts/WorkspaceContext';
 import { useWindowControls } from '../hooks/useWindowControls';
+import { useFullscreenChrome } from '../hooks/useFullscreenChrome';
 import { isWindowFullscreenShortcut } from '../hooks/windowFullscreenShortcut';
 import { usePermissionRequestNotify } from '../hooks/usePermissionRequestNotify';
 import { useApp } from '../hooks/useApp';
@@ -23,7 +24,6 @@ import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurfac
 import WorkspaceBody from './WorkspaceBody';
 import { useToolbarModeContext } from '../../flow_chat/components/toolbar-mode/ToolbarModeContext';
 import { MCPInteractionDialog } from '../components/MCPInteractionDialog/MCPInteractionDialog';
-import { workspaceAPI } from '@/infrastructure/api';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import type { CloseBehavior } from '@/infrastructure/api/service-api/SystemAPI';
 import { RetainedMountBoundary } from '@/shared/presence';
@@ -47,9 +47,6 @@ import './AppLayout.scss';
 type TransitionDirection = 'entering' | 'returning' | null;
 
 const log = createLogger('AppLayout');
-const NewProjectDialog = lazyWithRecovery(() =>
-  import('../components/NewProjectDialog').then(module => ({ default: module.NewProjectDialog }))
-);
 const ToolbarMode = lazyWithRecovery(() =>
   import('../../flow_chat/components/toolbar-mode/ToolbarMode').then(module => ({
     default: module.ToolbarMode,
@@ -118,6 +115,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     canUseNativeWindowControls,
   } =
     useWindowControls({ isToolbarMode });
+  const { isFullscreenChrome } = useFullscreenChrome(isFullscreen);
 
   const { state, switchLeftPanelTab, toggleLeftPanel, toggleRightPanel } = useApp();
   const [windowModeHint, setWindowModeHint] = useState<WindowModeHint | null>(null);
@@ -215,7 +213,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   }, [hasWorkspace, loading, recentWorkspaces, switchWorkspace]);
 
   // Dialog state (previously in TitleBar)
-  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const closeAboutDialog = useCallback(() => setShowAboutDialog(false), []);
   const [showWorkspaceStatus, setShowWorkspaceStatus] = useState(false);
@@ -235,34 +232,19 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
       log.error('Failed to open project', error);
     }
   }, [openWorkspace, t]);
-  const handleNewProject = useCallback(() => setShowNewProjectDialog(true), []);
+  const handleNewProject = useCallback(() => window.dispatchEvent(new Event('nav:new-project')), []);
   const handleShowAbout = useCallback(() => setShowAboutDialog(true), []);
-
-  const handleConfirmNewProject = useCallback(async (parentPath: string, projectName: string) => {
-    const normalized = parentPath.replace(/\\/g, '/');
-    const newProjectPath = `${normalized}/${projectName}`;
-    try {
-      await workspaceAPI.createDirectory(newProjectPath);
-      await openWorkspace(newProjectPath);
-    } catch (error) {
-      log.error('Failed to create project', error);
-      throw error;
-    }
-  }, [openWorkspace]);
 
   // Listen for nav-panel events dispatched by the workspace area
   useEffect(() => {
     const onOpenProject = () => { void handleOpenProject(); };
-    const onNewProject = () => handleNewProject();
     window.addEventListener('nav:open-project', onOpenProject);
-    window.addEventListener('nav:new-project', onNewProject);
     window.addEventListener('nav:show-about', handleShowAbout);
     return () => {
       window.removeEventListener('nav:open-project', onOpenProject);
-      window.removeEventListener('nav:new-project', onNewProject);
       window.removeEventListener('nav:show-about', handleShowAbout);
     };
-  }, [handleNewProject, handleOpenProject, handleShowAbout]);
+  }, [handleOpenProject, handleShowAbout]);
 
   // macOS native menubar events (previously in TitleBar)
   useEffect(() => {
@@ -672,6 +654,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     isMacOS ? 'openbitfun-app-layout--macos' : '',
     className,
     isFullscreen ? 'openbitfun-app-layout--window-fullscreen' : '',
+    isFullscreenChrome ? 'openbitfun-app-layout--fullscreen-chrome' : '',
     isTransitioning ? 'openbitfun-app-layout--transitioning' : '',
   ].filter(Boolean).join(' ');
 
@@ -762,16 +745,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
       </div>
 
       {/* Dialogs (previously owned by TitleBar) */}
-      <RetainedMountBoundary present={showNewProjectDialog}>
-        <Suspense fallback={null}>
-          <NewProjectDialog
-            isOpen={showNewProjectDialog}
-            onClose={() => setShowNewProjectDialog(false)}
-            onConfirm={handleConfirmNewProject}
-            defaultParentPath={hasWorkspace ? currentWorkspace?.rootPath : undefined}
-          />
-        </Suspense>
-      </RetainedMountBoundary>
       {aboutDialog}
       <RetainedMountBoundary present={showWorkspaceStatus}>
         <Suspense fallback={null}>

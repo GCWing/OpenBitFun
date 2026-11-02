@@ -5,14 +5,18 @@ import { useI18n } from '@/infrastructure/i18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { useSubmenuIntent } from '@/shared/utils/useSubmenuIntent';
+import { EXTERNAL_SESSION_NAMES, type ExternalSessionEcosystem } from '@/shared/types/external-session';
 import { subscribeOverlayInteraction, createOverlayPortal, Icon, IconButton, Menu, MenuItem, MenuSection, MenuSeparator, Tooltip } from '@openbitfun/ui';
 import {
   DEFAULT_WORKSPACE_SESSION_VIEW,
   hasWorkspaceSessionFilters,
+  sessionSourceAgentLabel,
   type WorkspaceSessionEnvironment,
+  type WorkspaceSessionFilterKey,
   type WorkspaceSessionOrdering,
   type WorkspaceSessionShow,
   type WorkspaceSessionSource,
+  type WorkspaceSessionSourceAgent,
   type WorkspaceSessionStatus,
   type WorkspaceSessionWorktree,
   useWorkspaceSessionViewStore,
@@ -29,9 +33,11 @@ interface SingleChoiceMenu<T extends string> {
 
 interface MultiChoiceMenu<T extends string> {
   kind: 'multi';
+  filter: WorkspaceSessionFilterKey;
   hidden: readonly T[];
   options: readonly T[];
-  toggle: (value: T) => void;
+  setHidden: (values: T[]) => void;
+  selectAll: () => void;
 }
 
 type MenuDefinition = SingleChoiceMenu<string> | MultiChoiceMenu<string>;
@@ -40,6 +46,9 @@ const MAIN_MENU_WIDTH = 220;
 const SUBMENU_WIDTH = 220;
 const MENU_GAP = 5;
 const VIEWPORT_PADDING = 8;
+const SOURCE_AGENTS: readonly WorkspaceSessionSourceAgent[] = [
+  'all', 'openbitfun', ...Object.keys(EXTERNAL_SESSION_NAMES) as ExternalSessionEcosystem[],
+];
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), Math.max(min, max));
 
@@ -68,6 +77,7 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
 
   const isCustomized = view.ordering !== DEFAULT_WORKSPACE_SESSION_VIEW.ordering
     || view.show !== DEFAULT_WORKSPACE_SESSION_VIEW.show
+    || view.sourceAgent !== DEFAULT_WORKSPACE_SESSION_VIEW.sourceAgent
     || hasWorkspaceSessionFilters(view.filters);
 
   const updatePosition = useCallback(() => {
@@ -119,23 +129,34 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
       kind: 'single', value: view.ordering, options: ['updated', 'status', 'created', 'name'] as WorkspaceSessionOrdering[], choose: value => view.setOrdering(value as WorkspaceSessionOrdering),
     },
     show: {
-      kind: 'single', value: view.show, options: ['all', 'unread', 'attention'] as WorkspaceSessionShow[], choose: value => view.setShow(value as WorkspaceSessionShow),
+      kind: 'single', value: view.show, options: ['all', 'unread', 'attention', 'archived'] as WorkspaceSessionShow[], choose: value => view.setShow(value as WorkspaceSessionShow),
     },
     status: {
-      kind: 'multi', hidden: view.filters.hiddenStatuses, options: ['running', 'attention', 'error', 'completed', 'idle'] as WorkspaceSessionStatus[], toggle: value => view.toggleHiddenStatus(value as WorkspaceSessionStatus),
+      filter: 'hiddenStatuses',
+      kind: 'multi', hidden: view.filters.hiddenStatuses, options: ['running', 'attention', 'error', 'completed', 'idle'] as WorkspaceSessionStatus[], setHidden: values => view.setHiddenFilterOptions('hiddenStatuses', values as WorkspaceSessionStatus[]),
+      selectAll: () => view.selectAllFilterOptions('hiddenStatuses'),
     },
     worktree: {
-      kind: 'multi', hidden: view.filters.hiddenWorktrees, options: ['main', 'worktree'] as WorkspaceSessionWorktree[], toggle: value => view.toggleHiddenWorktree(value as WorkspaceSessionWorktree),
+      filter: 'hiddenWorktrees',
+      kind: 'multi', hidden: view.filters.hiddenWorktrees, options: ['main', 'worktree'] as WorkspaceSessionWorktree[], setHidden: values => view.setHiddenFilterOptions('hiddenWorktrees', values as WorkspaceSessionWorktree[]),
+      selectAll: () => view.selectAllFilterOptions('hiddenWorktrees'),
     },
     environment: {
-      kind: 'multi', hidden: view.filters.hiddenEnvironments, options: ['local', 'remote', 'detached'] as WorkspaceSessionEnvironment[], toggle: value => view.toggleHiddenEnvironment(value as WorkspaceSessionEnvironment),
+      filter: 'hiddenEnvironments',
+      kind: 'multi', hidden: view.filters.hiddenEnvironments, options: ['local', 'remote', 'detached'] as WorkspaceSessionEnvironment[], setHidden: values => view.setHiddenFilterOptions('hiddenEnvironments', values as WorkspaceSessionEnvironment[]),
+      selectAll: () => view.selectAllFilterOptions('hiddenEnvironments'),
     },
     source: {
-      kind: 'multi', hidden: view.filters.hiddenSources, options: ['openbitfun', 'external'] as WorkspaceSessionSource[], toggle: value => view.toggleHiddenSource(value as WorkspaceSessionSource),
+      filter: 'hiddenSources',
+      kind: 'multi', hidden: view.filters.hiddenSources, options: ['openbitfun', 'external'] as WorkspaceSessionSource[], setHidden: values => view.setHiddenFilterOptions('hiddenSources', values as WorkspaceSessionSource[]),
+      selectAll: () => view.selectAllFilterOptions('hiddenSources'),
     },
   }), [view]);
 
   const definition = activeSubmenu ? definitions[activeSubmenu] : null;
+  const isSelectAllActive = definition?.kind === 'multi'
+    && view.explicitAllFilters.includes(definition.filter) && definition.hidden.length === 0
+    && (activeSubmenu !== 'source' || view.sourceAgent === 'all');
 
   useLayoutEffect(() => {
     if (!activeSubmenu) {
@@ -260,7 +281,7 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
           {row('status', undefined, view.filters.hiddenStatuses.length > 0)}
           {row('worktree', undefined, view.filters.hiddenWorktrees.length > 0)}
           {row('environment', undefined, view.filters.hiddenEnvironments.length > 0)}
-          {row('source', undefined, view.filters.hiddenSources.length > 0)}
+          {row('source', undefined, view.filters.hiddenSources.length > 0 || view.sourceAgent !== 'all')}
         </MenuSection>
         <MenuSeparator />
         {view.grouping === 'grouped' ? (
@@ -302,10 +323,25 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
             closeSubmenu();
           }}
         >
+          {definition.kind === 'multi' ? (
+            <>
+              <MenuItem
+                role="menuitemradio"
+                checked={isSelectAllActive}
+                reserveLeadingSpace
+                leading={isSelectAllActive ? <Icon name="check-line" size="sm" /> : null}
+                data-testid={`nav-session-filter-${activeSubmenu}-select-all`}
+                onClick={definition.selectAll}
+              >
+                {t('actions.selectAll')}
+              </MenuItem>
+              <MenuSeparator />
+            </>
+          ) : null}
           {definition.options.map(option => {
             const selected = definition.kind === 'single'
               ? option === definition.value
-              : !definition.hidden.includes(option);
+              : !isSelectAllActive && !definition.hidden.includes(option);
             return (
               <MenuItem
                 key={option}
@@ -318,7 +354,11 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
                     definition.choose(option);
                     close();
                   } else {
-                    definition.toggle(option);
+                    definition.setHidden(isSelectAllActive
+                      ? definition.options.filter(value => value !== option)
+                      : definition.hidden.includes(option)
+                        ? definition.hidden.filter(value => value !== option)
+                        : [...definition.hidden, option]);
                   }
                 }}
               >
@@ -326,6 +366,29 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
               </MenuItem>
             );
           })}
+          {activeSubmenu === 'source' ? (
+            <>
+              <MenuSeparator />
+              <MenuSection title={t('nav.sessions.sourceAgentFilter')}>
+                {SOURCE_AGENTS.map(source => (
+                  <MenuItem
+                    key={source}
+                    role="menuitemradio"
+                    checked={!isSelectAllActive && view.sourceAgent === source}
+                    reserveLeadingSpace
+                    leading={!isSelectAllActive && view.sourceAgent === source ? <Icon name="check-line" size="sm" /> : null}
+                    data-testid={`nav-session-source-${source}`}
+                    onClick={() => {
+                      view.setSourceAgent(source);
+                      close();
+                    }}
+                  >
+                    {source === 'all' ? t('nav.sessions.allSourceAgents') : sessionSourceAgentLabel(source)}
+                  </MenuItem>
+                ))}
+              </MenuSection>
+            </>
+          ) : null}
         </Menu>
       ) : null}
     </>,

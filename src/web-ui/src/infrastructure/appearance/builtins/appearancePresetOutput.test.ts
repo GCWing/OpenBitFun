@@ -465,7 +465,7 @@ describe('builtin appearance preset output', () => {
           "type": "dark",
         },
         {
-          "hash": "44d681ba137355f1db61559e01e190cb805b25f1e62fc396e7ebe834a429cf3a",
+          "hash": "c1fe8c49368e8ff96debaeba117ce40b22b2f9c48e2e5d86f372b8fd032380fe",
           "id": "openbitfun-dark",
           "type": "dark",
         },

@@ -33,19 +33,36 @@
       "updateFailed": "Update failed"
     }
   },
+  "promptSuggestion": {
+    "title": "Next Input Suggestion",
+    "subtitle": "After the Agent finishes a reply, suggest a one-sentence next message in the input box",
+    "label": "Enable",
+    "description": "Press Tab or → in an empty input box to accept. The suggestion reuses the finished turn's prompt cache.",
+    "unsupported": "The connected host does not support next input suggestions.",
+    "loading": "Loading settings...",
+    "loadFailedLocked": "Next input suggestion settings could not be read. The switch is locked.",
+    "retry": "Reload",
+    "messages": {
+      "saveSuccess": "Settings saved",
+      "saveFailed": "Save failed"
+    }
+  },
   "subscriptionAuth": {
     "sectionTitle": "Subscription accounts",
-    "sectionDescription": "Connect Codex, Antigravity, OpenCode Console (Zen), xAI, or Hermes accounts",
+    "sectionDescription": "Connect Codex, Antigravity, OpenCode, xAI, Hermes, or ZCode subscriptions",
     "rescan": "Refresh status",
     "import": "Use as model",
     "login": "Sign in",
+    "loginTitle": "{{provider}} sign-in",
+    "backToProviders": "Back to providers",
+    "cancelAndBack": "Cancel sign-in and go back",
     "browserLogin": "Browser sign-in",
     "deviceLogin": "Device-code sign-in",
     "cancel": "Cancel",
     "loginCancelled": "Sign-in cancelled",
     "logout": "Sign out",
-    "refresh": "Refresh token",
-    "refreshSuccess": "Token refreshed",
+    "refresh": "Refresh status",
+    "refreshSuccess": "Status updated",
     "refreshFailed": "Refresh failed: {{error}}",
     "loginSuccess": "Signed in",
     "loginFailed": "Sign-in failed: {{error}}",
@@ -55,17 +72,53 @@
     "logoutFailed": "Sign-out failed: {{error}}",
     "userCodeHint": "Enter this code in the browser: {{code}}",
     "openUrlManually": "Could not open the browser automatically. Open this URL manually: {{url}}",
-    "expiresAt": "Token valid until {{time}}",
-    "tokenValid": "Token ready",
+    "expiresAt": "Authorization valid until {{time}}",
+    "expiresIn": "Authorization expires in {{time}}",
+    "authorizationExpired": "Authorization expired",
+    "tokenValid": "Connected",
     "notSignedIn": "Not signed in",
     "label": "Authentication",
+    "chooseRegion": "Choose region",
+    "chooseRegionHint": "Select the platform where you have a Coding Plan subscription.",
+    "products": {
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "opencode": "OpenCode",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy (removed)",
+      "workbuddy_ai": "WorkBuddy AI (removed)",
+      "zcode": "ZCode"
+    },
+    "details": {
+      "codex": "ChatGPT",
+      "antigravity": "Google",
+      "opencode": "Zen",
+      "grok": "SuperGrok",
+      "hermes": "Nous Portal",
+      "workbuddy": "Removed · vendor no longer supports sign-in",
+      "workbuddy_ai": "Removed · international",
+      "zcode": "GLM Coding"
+    },
+    "regions": {
+      "zai": "Z.ai (International)",
+      "bigmodel": "BigModel (China)"
+    },
+    "regionsShort": {
+      "zai": "Global",
+      "bigmodel": "China"
+    },
     "options": {
-      "opencode": "OpenCode Console (Zen)",
+      "opencode": "OpenCode",
       "apiKey": "API Key",
-      "codex": "Codex (ChatGPT subscription)",
-      "antigravity": "Antigravity (Google subscription)",
-      "grok": "xAI (SuperGrok subscription)",
-      "hermes": "Hermes (Nous Portal subscription)"
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy (removed)",
+      "workbuddy_ai": "WorkBuddy AI (removed)",
+      "zcode": "ZCode",
+      "zcode_cn": "ZCode · BigModel (China)"
     },
     "useFormat": "Use {{format}}",
     "useFormatWithCount": "Use {{format}} ({{modelCount}})",
@@ -95,6 +148,7 @@
     "logoutConsequence": "Model configurations will not be deleted. Sign in to the same subscription account again to resume using them.",
     "confirmLogout": "Sign out",
     "openCodeRemoved": "OpenCode Console OAuth supports Zen only. Select API key and enter a Go key. Your existing model configuration is preserved.",
+    "retiredProvider": "WorkBuddy subscriptions were removed because the vendor no longer allows subscription access. Your configuration and credentials are preserved; create an API key provider to keep using these models.",
     "editorDescription": "Models from this service share the signed-in subscription account",
     "accountLabel": "Account",
     "accountAuthentication": "Subscription account",
@@ -116,7 +170,21 @@
       "reauthenticationRequired": "Sign-in required",
       "refreshRequired": "Refresh required",
       "connected": "Signed in"
-    }
+    },
+    "pool": {
+      "label": "Accounts",
+      "defaultAccount": "Default account",
+      "disabled": "Disabled",
+      "missing": "Account removed",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "addAccount": "Add account",
+      "rotationHint": "Used in order; when an account runs out of quota or fails, the next one is used.",
+      "singleHint": "Select several accounts to switch automatically in order when one runs out of quota or fails."
+    },
+    "accountMarker": "Account · {{marker}}",
+    "accountsCount": "{{count}} accounts",
+    "newAccount": "New account"
   },
   "providerSelection": {
     "modelRoutingPending": "Refresh the model list to show protocols and endpoints. Models outside the catalog can be configured manually.",
@@ -170,6 +238,10 @@
     "formatHint": "Automatically selected based on provider, usually no need to change"
   },
   "providers": {
+    "opencode-zen": {
+      "name": "OpenCode Zen",
+      "description": "OpenCode models with free access and pay-as-you-go API keys."
+    },
     "opencode-go": {
       "name": "OpenCode Go",
       "description": "A model subscription plan from OpenCode."
@@ -178,8 +250,16 @@
       "name": "OpenBitFun Service",
       "description": "OpenBitFun Model Platform",
       "urlOptions": {
-        "default": "Anthropic Format - Default",
-        "openai": "OpenAI Compatible Format"
+        "default": "Official API",
+        "openai": "Official API"
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "description": "OpenAI GPT and reasoning models",
+      "urlOptions": {
+        "default": "Official API",
+        "chatCompletions": "Official API"
       }
     },
     "gemini": {
@@ -194,51 +274,52 @@
       "name": "MiniMax",
       "description": "MiniMax series models",
       "urlOptions": {
-        "default": "China - Anthropic Format - Default",
-        "openai": "China - OpenAI Compatible",
-        "intl": "Global - Anthropic Format",
-        "intlOpenai": "Global - OpenAI Compatible"
+        "default": "China - Default",
+        "openai": "China",
+        "intl": "Global",
+        "intlOpenai": "Global"
       }
     },
     "xiaomi": {
       "name": "Xiaomi MiMo",
       "description": "Xiaomi MiMo models. API and Token Plan keys are separate.",
       "urlOptions": {
-        "default": "API - OpenAI Chat Completions - Default",
-        "responses": "API - OpenAI Responses",
-        "anthropic": "API - Anthropic Messages",
-        "tokenPlan": "China - Token Plan - OpenAI",
-        "tokenPlanAnthropic": "China - Token Plan - Anthropic"
+        "default": "API - Default",
+        "responses": "API",
+        "anthropic": "API",
+        "tokenPlan": "China - Token Plan",
+        "tokenPlanAnthropic": "China - Token Plan"
       }
     },
     "moonshot": {
       "name": "Moonshot AI",
       "description": "Moonshot Kimi series models",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
-        "intl": "Global - OpenAI Format",
-        "intlAnthropic": "Global - Anthropic Format",
-        "kimiForCoding": "Kimi For Coding plan (models: k3 / kimi-for-coding)"
+        "default": "China - Default",
+        "anthropic": "China",
+        "intl": "Global",
+        "intlAnthropic": "Global",
+        "kimiForCoding": "Kimi For Coding plan (models: k3 / kimi-for-coding)",
+        "kimiForCodingAnthropic": "Kimi For Coding plan"
       }
     },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek series models",
       "urlOptions": {
-        "default": "OpenAI Format - Default",
-        "anthropic": "Anthropic Format"
+        "default": "Official API - Default",
+        "anthropic": "Official API"
       }
     },
     "zhipu": {
       "name": "Zhipu AI",
       "description": "Zhipu AI GLM series models",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
+        "default": "China - Default",
+        "anthropic": "China",
         "codingPlan": "China - Coding Plan",
-        "intl": "Global (Z.AI) - OpenAI Format",
-        "intlAnthropic": "Global (Z.AI) - Anthropic Format",
+        "intl": "Global (Z.AI)",
+        "intlAnthropic": "Global (Z.AI)",
         "intlCodingPlan": "Global (Z.AI) - Coding Plan"
       }
     },
@@ -246,10 +327,10 @@
       "name": "Qwen",
       "description": "Alibaba Cloud Bailian Model Platform",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "intl": "Global (International) - OpenAI Format",
+        "default": "China - Default",
+        "intl": "Global (International)",
         "codingPlan": "China - Coding Plan",
-        "codingPlanAnthropic": "China - Coding Plan - Anthropic Format",
+        "codingPlanAnthropic": "China - Coding Plan",
         "intlCodingPlan": "Global - Coding Plan"
       }
     },
@@ -266,9 +347,9 @@
       "name": "SiliconFlow",
       "description": "SiliconFlow Model Platform",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
-        "intl": "Global - OpenAI Format"
+        "default": "China - Default",
+        "anthropic": "China",
+        "intl": "Global"
       }
     },
     "nvidia": {
@@ -321,13 +402,17 @@
     "modelSelection": "Select Models",
     "modelNameHint": "GLM-ASR uses glm-asr, other speech models use their corresponding model names",
     "baseUrl": "API URL",
+    "baseUrlPlaceholder": "https://api.example.com/v1",
     "resolvedUrlLabel": "Request URL: ",
     "forceUrlHint": "Append # to force use the exact URL you entered",
     "apiKey": "API Key",
+    "openCodeZenApiKeyPlaceholder": "Optional for free models; enter your Zen API key for paid models",
     "apiKeyPlaceholder": "Enter your API Key",
     "provider": "Request Format",
     "providerPlaceholder": "Select request format",
     "contextWindow": "Context Window Size",
+    "maxImagesPerRequest": "Images per request",
+    "maxImagesPerRequestHint": "Optional limit on the number of images sent in one request, including conversation history and tool results. Leave blank to apply no additional limit.",
     "contextWindowHint": "Determines when context is compacted; may be lower than the model's supported limit",
     "contextWindowLongWarning": "Context above 400K may reduce quality. Around 300K is recommended.",
     "maxTokens": "Max Output Tokens",
@@ -360,14 +445,14 @@
     "configTitle": "Reasoning settings",
     "dialogTitle": "Reasoning settings · {{provider}} · {{model}}",
     "catalogSource": "Reasoning preset source",
-    "catalogAuto": "Auto-detect",
+    "catalogAuto": "Match presets automatically",
     "catalogModelsDev": "Use explicit models.dev model",
     "catalogDisabled": "Custom presets only",
-    "catalogAutoTooltip": "Uses precise presets for recognized models, then offers manual generic on, off, and low/medium/high controls when no projection matches. Custom presets are also included.",
+    "catalogAutoTooltip": "Matches presets by the configured provider and model without probing the server. Generic options for unrecognized services are manual and unverified; they do not establish server support. Custom presets remain available",
     "catalogModelsDevTooltip": "Uses the reasoning presets of a specific models.dev provider and model. Choose this when the configured model name is an alias or a compatible gateway requires an explicit binding.",
-    "catalogDisabledTooltip": "Disables generated presets from models.dev and adapter fallbacks. Only your custom presets remain available.",
+    "catalogDisabledTooltip": "Stops automatic preset generation. Custom presets and the custom request body still apply. Choosing Follow server default does not clear explicit fields in the request body",
     "catalogSummary": {
-      "auto": "Auto-detect",
+      "auto": "Match presets automatically",
       "modelsDev": "Explicit models.dev",
       "disabled": "Custom only"
     },
@@ -384,8 +469,8 @@
     "catalogModelCustomValueHint": "Use custom model ID",
     "defaultBehavior": "Default reasoning",
     "defaultPreset": "Default preset",
-    "auto": "Auto (model default)",
-    "autoShort": "Auto",
+    "auto": "Follow server default",
+    "autoShort": "Server default",
     "generatedTitle": "Generated presets",
     "unavailableTitle": "Some models.dev presets are unavailable",
     "unavailableDescription": "The current API format, {{format}}, cannot reliably apply these presets: {{presets}}. Refer to your provider's official documentation and configure the required fields with Request body patch (JSON Merge Patch) in a custom preset.",
@@ -434,7 +519,7 @@
   },
   "proxy": {
     "enable": "Enable Proxy",
-    "enableHint": "When enabled, all AI requests are sent through the proxy (requires a OpenBitFun restart)",
+    "enableHint": "With the address left empty, requests follow the operating system proxy, such as the system proxy a local proxy agent sets. With an address and the switch on, every AI request uses that proxy; an address with the switch off forces a direct connection.",
     "url": "Proxy URL",
     "urlPlaceholder": "http://127.0.0.1:7890 or socks5://127.0.0.1:1080",
     "urlHint": "Supports HTTP/HTTPS/SOCKS5 proxy, format: protocol://address:port",
@@ -512,9 +597,9 @@
   "draftClose": {
     "title": "Keep this editing draft?",
     "message": "These changes have not been written to the model configuration. Keeping the draft will not run a connection test, and you can resume it when you reopen this editor.",
-    "keepAndClose": "Keep draft and close",
-    "discard": "Discard changes",
-    "continueEditing": "Continue editing",
+    "keepAndClose": "Keep draft",
+    "discard": "Discard",
+    "continueEditing": "Keep editing",
     "discardDraft": "Discard draft",
     "retainedHint": "The model editing draft is retained and has not been written to the active configuration."
   },
@@ -562,6 +647,9 @@
     "connectionTestMessages": {
       "toolCallsNotDetected": "This test did not detect any tool calls, so tool calling could not be verified this time.",
       "imageInputCheckFailed": "The connection succeeded, but the image input check failed.",
+      "reasoningEffortRejected": "The provider rejected the reasoning-effort setting; check this model's Reasoning settings or custom request body, use a supported value or remove explicit reasoning parameters to follow server default",
+      "reasoningEffortValueRejected": "The provider rejected reasoning_effort={{value}}; check this model's Reasoning settings or custom request body, use a supported value or remove explicit reasoning parameters to follow server default",
+      "reasoningEffortValueRejectedWithSupported": "The provider rejected reasoning_effort={{value}}; reported supported values: {{supported}}; check this model's Reasoning settings or custom request body, use a supported value or remove explicit reasoning parameters to follow server default",
       "tlsOrCertificateIssue": "The connection failure may be related to SSL/TLS certificate verification. Check corporate proxies, self-signed certificates, system root certificates, or network interception. If you trust this network environment, you can enable \"Skip SSL Certificate Verification\" in this model's Advanced Settings, but it reduces HTTPS security.",
       "proxyIssue": "The connection failure may be related to proxy or tunnel configuration. Check global proxy settings, proxy authentication, HTTPS CONNECT support, and whether the current network can reach this model API endpoint.",
       "networkIssue": "The request failed while being sent, before any HTTP response was received. Check network connectivity, DNS, proxy, firewall, and certificate settings. In corporate proxy or self-signed certificate environments, you may also need to review \"Skip SSL Certificate Verification\" in Advanced Settings."
@@ -571,6 +659,7 @@
     "cloneName": "{{name}} - Copy",
     "templateName": "{{provider}} - {{modelName}}",
     "templateDescription": "{{description}} - {{modelName}}",
+    "configChanged": "The model configuration changed elsewhere. Your draft has been kept. Refresh model settings and reopen the editor before saving.",
     "providerRemoved": "This provider was removed. Close the editor and reopen model settings."
   },
   "modelsDevCatalog": {
@@ -607,6 +696,10 @@
   },
   "advancedSettings": {
     "title": "Advanced Settings",
+    "maxImagesPerRequest": {
+      "label": "Images per request",
+      "hint": "Optional limit on the number of images sent in one request, including conversation history and tool results. Leave blank to apply no additional limit."
+    },
     "inlineThinkInText": {
       "label": "Parse <think> Tags In Text",
       "hint": "Display content inside <think>...</think> tags as reasoning"
@@ -649,8 +742,8 @@
   "editProviderSettingsTitle": "Service connection",
   "sections": {
     "acquisition": "Add or import models",
-    "selectionModes": "Model selection modes",
-    "pool": "Model pool",
+    "selectionModes": "Smart mode",
+    "pool": "All models",
     "more": "More settings"
   },
   "acquisition": {
@@ -662,17 +755,20 @@
     "subscriptions": "Subscriptions",
     "importedSummary": "{{models}} models imported from {{providers}} services",
     "noneImported": "No subscriptions imported yet",
-    "import": "Import",
+    "addSubscription": "Add subscription",
     "importTitle": "Import subscriptions",
     "loadFailed": "Could not load subscriptions. Retry to refresh; existing model configurations are retained.",
-    "noServices": "No subscriptions are available to import on this host"
+    "noServices": "No subscriptions are available to import on this host",
+    "more": "More",
+    "noSignedInAccounts": "No signed-in accounts"
   },
   "selectionModes": {
+    "unavailable": "Not available yet",
     "smart": "Smart mode",
     "smartHint": "Powered by OpenBitFun adaptive routing and collaborative multi-model reasoning to improve cost efficiency and task performance.",
     "battery": "Battery mode",
     "batteryHint": "Multi-source model pooling and failover automatically hand off when quota is exhausted or a connection fails.",
-    "unavailable": "Not available yet"
+    "configure": "Configure smart mode"
   },
   "pool": {
     "manageConnections": "Manage connections",
@@ -703,5 +799,182 @@
     "allProviders": "All providers",
     "acknowledge": "Got it"
   },
-  "editConfiguredProviderSubtitle": "Update the API address, key, and models for this provider"
+  "editConfiguredProviderSubtitle": "Update the API address, key, and models for this provider",
+  "billing": {
+    "title": "Billing",
+    "details": "Billing details",
+    "unknown": "Unknown",
+    "api": "API · pay per token",
+    "subscription": "Subscription / Coding Plan",
+    "method": "Billing method",
+    "account": "Account or plan label",
+    "accountPlaceholder": "For your reference; do not enter credentials",
+    "currency": "Currency",
+    "rateUnit": "Price per 1 million tokens. Leave unknown prices blank; zero means free.",
+    "input": "Uncached input",
+    "output": "Output",
+    "cacheRead": "Cached input",
+    "source": "Source / plan terms",
+    "sourcePlaceholder": "Your provider’s price page, invoice or plan description",
+    "quoteHint": "These are rates you enter for this provider configuration, not a verified bill. A model name does not establish your account’s price.",
+    "routingScopeHint": "Quotes and comparisons cover this configuration's base channel only. Backup channels and other pooled accounts may have different rates; their actual charges remain unknown.",
+    "subscriptionAuthHint": "This configuration uses account sign-in. Sign-in alone does not establish its plan, quota or overage terms.",
+    "apiAuthHint": "This configuration uses an API key. API keys may also use a Coding Plan; confirm the billing method with your provider.",
+    "quotaUnknown": "Remaining quota, renewal time and overage charges are unknown. Subscription fees are not converted to per-token prices.",
+    "stale": "The provider, model or credentials changed. Check these rates before confirming them again.",
+    "reviewRequired": "Needs review",
+    "updated": "User-entered rates updated: {{date}}",
+    "saveFailed": "Could not save. The connection, model or billing details may have changed. Close and reopen to load the latest configuration.",
+    "save": "Save billing details",
+    "cancel": "Cancel",
+    "edit": "Edit rates",
+    "fastHigher": "For this example, the fast model costs more than the primary model. It may still be faster, but will not necessarily save money.",
+    "currencyMismatch": "The currencies differ. Costs are not compared without a confirmed exchange rate.",
+    "comparable": "Prices are compared at the same example usage. Actual charges depend on the request and your account.",
+    "incomplete": "Actual prices are not fully known. Primary and fast describe roles, not which costs less.",
+    "estimate": "Primary {{primary}} · Fast {{fast}}",
+    "noPolicy": "These details are advisory. They do not enforce a budget or authorize paid fallback.",
+    "unsupported": "This saved billing format is not supported. The original record is preserved; update the app before editing it.",
+    "compactHigher": "Fast costs more · Estimate",
+    "compactCurrency": "Different currencies",
+    "compactComparable": "View cost estimates",
+    "compactUnknown": "Pricing unconfirmed",
+    "economyHigher": "For this example, the economy model costs more than the primary model. Check the channel rates or choose another economy model.",
+    "economyIncomplete": "Actual prices are not yet confirmed. Economy describes the goal of reducing cost; savings depend on channel rates and your account’s charges.",
+    "economyEstimate": "Primary {{primary}} · Economy {{fast}}",
+    "compactEconomyHigher": "Economy costs more · Estimate"
+  },
+  "router": {
+    "notOpen": "Not available yet",
+    "title": "Smart mode settings",
+    "service": "Router service model",
+    "serviceHint": "Add an API service supporting the classifier protocol in model settings, then select it here; ordinary chat models and Coding Plans may not support it",
+    "summary": "Auxiliary summaries",
+    "summaryHint": "Uses the economy model to summarize routing history and incurs additional model calls",
+    "on": "On",
+    "off": "Off",
+    "unconfigured": "Not configured",
+    "status": "Status",
+    "connected": "Router service connected",
+    "connectionChecks": {
+      "router": "Router service",
+      "checking": "Checking…",
+      "connected": "Connected",
+      "failed": "Connection failed",
+      "unconfigured": "No available model configured"
+    },
+    "connectionFailures": {
+      "protocol": "Choose an OpenAI Chat Completions classifier service that returns token IDs and logprobs",
+      "authentication": "Router authentication failed; check the API key and service permissions",
+      "addressOrModel": "Check the Router service address and model name; the endpoint or model may not exist",
+      "rateLimited": "Router requests are rate limited; wait and retry",
+      "serviceUnavailable": "The Router service is temporarily unavailable; wait and retry",
+      "http": "The Router returned an unsuccessful HTTP response; check service settings and retry",
+      "network": "The Router could not be reached or timed out; check the service, network, and timeout settings"
+    },
+    "notReady": "Router not ready",
+    "unsupported": "This execution host does not support smart routing",
+    "tokenBudgetUnsupported": "This execution host still requires a tokenizer file; upgrade it before configuring smart routing",
+    "checkFailed": "Smart mode could not be checked; check the Router service and try again",
+    "loadFailed": "Could not load smart-mode settings; close and retry",
+    "saveFailed": "Could not save smart-mode settings; please retry",
+    "configurationChanged": "Model selections changed elsewhere; reopen this window to review them before saving or checking",
+    "manageModels": "Manage services and models",
+    "test": "Save and test connection",
+    "save": "Save"
+  },
+  "pools": {
+    "empty": "No model pools yet",
+    "title": "Model pools",
+    "unsupported": "This host does not support model pools.",
+    "error": "The operation failed. Your edits have been kept. Refresh and reopen the pool after a revision conflict.",
+    "refresh": "Refresh",
+    "ordered": "Ordered failover",
+    "orderedHint": "Choose the first available model in list order when assigning or switching models.",
+    "balanced": "Balanced assignment",
+    "balancedHint": "Rotate new chat assignments across available models to spread them evenly.",
+    "delete": "Delete",
+    "confirmDelete": "Confirm deletion",
+    "deleteTitle": "Delete model pool “{{name}}”?",
+    "deleteHint": "Chats referencing a deleted pool will require a new model selection.",
+    "create": "Create pool",
+    "editTitle": "Edit model pool",
+    "name": "Pool name",
+    "strategy": "Routing strategy",
+    "stickyHint": "Healthy chats keep their model. The strategy applies to new assignments and failover.",
+    "up": "Move up",
+    "down": "Move down",
+    "remove": "Remove",
+    "add": "Add model",
+    "addHint": "The pool uses the smallest context window among its member models. Choose models with similar capabilities and context capacities for a more consistent experience when switching.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "health": {
+      "unverified": "Not yet verified",
+      "available": "Available",
+      "cooling_down": "Cooling down",
+      "probing": "Probing",
+      "needs_attention": "Configuration needs attention",
+      "disabled": "Disabled",
+      "missing": "Model configuration missing"
+    },
+    "retry": "Allow retry",
+    "invalidRecords": "Some pool records cannot be read by this version. They have been preserved."
+  },
+  "quota": {
+    "title": "Subscription allowance",
+    "hostUnsupported": "This host does not support allowance queries.",
+    "unsupported": "This channel does not provide allowance information yet.",
+    "refreshFailedRetained": "Could not refresh. The last observation is shown below.",
+    "queryFailed": "Could not read the allowance. Check account authorization and the connection, then retry.",
+    "loading": "Reading allowance…",
+    "unknown": "The provider has not reported an allowance.",
+    "stale": "Last observation",
+    "refresh": "Refresh allowance",
+    "mcp": "MCP calls",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "hours": "{{count}}h window",
+    "days": "{{count}}d window",
+    "credits": "Credits",
+    "allowance": "Allowance",
+    "remaining": "Remaining",
+    "unlimited": "Unlimited",
+    "noValue": "—",
+    "creditsUnit": "credits",
+    "requestsUnit": "calls",
+    "remainingFor": "{{name}} remaining",
+    "usedOf": "{{used}} used of {{total}}",
+    "usedPercent": "{{value}} used",
+    "resetsAt": "Resets {{time}}",
+    "expiresAt": "Credits expire {{time}}",
+    "unlimitedCredits": "Additional credits are unlimited.",
+    "updatedAt": "Updated {{time}}",
+    "planUntil": "Plan renews or ends {{time}}",
+    "minutes": "{{count}}min window",
+    "opencodePublic": "Free model access. OpenCode does not expose remaining free usage or its reset time.",
+    "opencodeBalanceUnavailable": "OpenCode has no public balance API yet. View your workspace balance in the console.",
+    "opencodeGoKeyRequired": "Use an API key belonging to your OpenCode Go subscription to query allowance.",
+    "opencodeKeyRejected": "OpenCode rejected this API key. Check the saved key and workspace.",
+    "opencodeGoRequired": "This key has no Go subscription. Use a key created by the subscribing member in that workspace.",
+    "opencodeCustomAuth": "Allowance lookup does not support custom authentication headers. View usage in the console.",
+    "openConsole": "Open console",
+    "saveBeforeQuery": "Save this connection to query its OpenCode Go allowance.",
+    "onDemand": "On-demand usage",
+    "usageUnreported": "Grok has returned the billing period but has not reported a usage percentage. The reset time is still available."
+  },
+  "channelRouting": {
+    "label": "Backup channels",
+    "hint": "Used in order when this channel runs out of quota or fails. Only models with at least this context window and these capabilities are listed.",
+    "isBackupOf": "Already a backup channel of {{names}}, so it cannot have backups of its own.",
+    "missing": "Model deleted",
+    "auto": "Switch automatically",
+    "fixedSelf": "Always use: this channel",
+    "fixed": "Always use: {{name}}",
+    "remove": "Remove",
+    "add": "Add backup channel",
+    "noCandidates": "No eligible backup models",
+    "mode": "Routing",
+    "modeHint": "Automatic switching tries the backups in order after a failure; a fixed choice only uses that channel and never switches."
+  }
 }

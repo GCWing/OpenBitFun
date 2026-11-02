@@ -48,6 +48,7 @@ test("tab presentation props reach the button without replacing its owned semant
       className: "product-tab", "data-openbitfun-product-component": "product",
       "data-openbitfun-product-part": "tab", title: "Full title",
       "aria-describedby": "help", style: { opacity: 0.8 },
+      "aria-haspopup": "menu", "aria-expanded": true,
       // Untyped callers must not override component-owned interaction/identity.
       role: "button", type: "submit", tabIndex: 8, id: "wrong-id",
       "aria-selected": false, "aria-controls": "wrong-panel", "data-openbitfun-part": "wrong-part",
@@ -58,6 +59,8 @@ test("tab presentation props reach the button without replacing its owned semant
   assert.match(button, /data-openbitfun-product-component="product"/);
   assert.match(button, /data-openbitfun-product-part="tab"/);
   assert.match(button, /aria-describedby="help"/);
+  assert.match(button, /aria-haspopup="menu"/);
+  assert.match(button, /aria-expanded="true"/);
   assert.match(button, /style="opacity:0.8"/);
   assert.match(button, /title="Full title"/);
   assert.match(button, /id="product-tab"/);
@@ -102,7 +105,7 @@ test("product wrappers preserve the standard tablist, selection and end-action a
   assert.equal((markup.match(/role="tab"/g) ?? []).length, 2);
   assert.equal((markup.match(/aria-selected="true"/g) ?? []).length, 1);
   assert.match(markup, /data-document="settings" data-index="1" draggable="true"/);
-  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"><button/);
+  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"[^>]*><button/);
 });
 
 test("label metadata remains inside the accessible tab and outside rolling text", () => {
@@ -163,24 +166,20 @@ test("end actions are rendered beside tabs instead of nesting interactive contro
   assert.equal((markup.match(/data-has-icon="true"/g) ?? []).length, 1);
   assert.equal((markup.match(/data-has-icon="false"/g) ?? []).length, 1);
   assert.match(markup, /data-openbitfun-part="endAction"/);
-  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"><button/);
+  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"[^>]*><button/);
   assert.equal((markup.match(/type="button"/g) ?? []).length, 3);
 });
 
-test("text-only tabs mirror the end-action reserve to keep labels centered", async () => {
-  const styles = await readFile(
-    new URL("../src/components/TabGroup/TabGroup.module.css", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(
-    styles,
-    /\.item\[data-has-end-action="true"\] \.tab\s*\{[^}]*padding-inline-end:\s*var\(--_tab-group-item-action-reserve\);/s,
-  );
-  assert.match(
-    styles,
-    /\.item\[data-has-end-action="true"\]\[data-has-icon="false"\] \.tab\s*\{[^}]*padding-inline-start:\s*var\(--_tab-group-item-action-reserve\);/s,
-  );
+test("end actions grow the capsule outside the centered content before appearing", async () => {
+  const styles = await readFile(new URL("../src/components/TabGroup/TabGroup.module.css", import.meta.url), "utf8");
+  assert.match(styles, /\.item\s*\{[^}]*box-sizing:\s*content-box;/s);
+  assert.match(styles, /\.tab\s*\{[^}]*padding-inline:\s*var\(--_tab-group-item-padding-inline\);/s);
+  assert.match(styles, /\.tab::before\s*\{[^}]*inset:\s*0;/s);
+  assert.match(styles, /\.item\[data-has-end-action="true"\]\s*\{\s*padding-inline-end:\s*0;/);
+  assert.match(styles, /transition:\s*padding-inline-end\s+var\(--openbitfun-motion-duration-fast\)/);
+  assert.match(styles, /\.item:hover > \.endAction,[^{]*\{[^}]*visibility:\s*visible;[^}]*transition-delay:\s*var\(--openbitfun-motion-duration-fast\);/s);
+  assert.doesNotMatch(styles, /clip-path|mask-image/);
+  assert.doesNotMatch(styles, /translateX/);
 });
 
 test("TabGroup styling uses its geometry contract and Button semantic colors", async () => {
@@ -195,7 +194,6 @@ test("TabGroup styling uses its geometry contract and Button semantic colors", a
   assert.match(styles, /--openbitfun-control-tab-group-item-padding-block-sm/);
   assert.match(styles, /--openbitfun-control-tab-group-item-padding-inline-sm/);
   assert.match(styles, /--openbitfun-control-tab-group-item-action-size/);
-  assert.match(styles, /--openbitfun-control-tab-group-item-action-inset/);
   assert.match(styles, /--openbitfun-control-tab-group-item-radius/);
   assert.match(styles, /--openbitfun-color-action-neutral-border/);
   assert.match(styles, /--openbitfun-color-action-neutral-content/);

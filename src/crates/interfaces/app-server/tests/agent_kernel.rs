@@ -955,6 +955,8 @@ async fn phase2_read_models_cover_usage_settlement_references_lineage_and_diff()
                         workspace_path: Some("/workspace".to_string()),
                         remote_connection_id: None,
                         remote_ssh_host: None,
+                        include_system_prompt_preview: false,
+                        context_preview_category: None,
                         include_hidden_subagents: false,
                     },
                 ))

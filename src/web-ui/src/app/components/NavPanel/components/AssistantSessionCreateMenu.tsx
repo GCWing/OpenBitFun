@@ -1,3 +1,4 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, Menu, MenuItem, Tooltip } from '@openbitfun/ui';
 
@@ -13,9 +14,6 @@ interface AssistantSessionCreateMenuProps {
   onCreatePrimary: () => void | Promise<void>;
   onCreateAssistant: (workspace: WorkspaceInfo) => void | Promise<void>;
 }
-
-const getAssistantDisplayName = (workspace: WorkspaceInfo): string =>
-  workspace.identity?.name?.trim() || workspace.name;
 
 const AssistantSessionCreateMenu: React.FC<AssistantSessionCreateMenuProps> = ({
   assistants,
@@ -133,7 +131,7 @@ const AssistantSessionCreateMenu: React.FC<AssistantSessionCreateMenuProps> = ({
           }}
         >
           {orderedAssistants.map(workspace => {
-            const assistantName = getAssistantDisplayName(workspace);
+            const assistantName = resolveAssistantName(workspace, t('shared:agents.Claw'));
             return (
               <MenuItem data-overflow-trigger
                 key={workspace.id}

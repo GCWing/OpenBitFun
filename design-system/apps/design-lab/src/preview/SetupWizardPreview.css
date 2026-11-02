@@ -1,0 +1,35 @@
+.setup-wizard-preview { inline-size: 100%; min-inline-size: 0; }
+.setup-wizard-preview[data-narrow="true"] { max-inline-size: 420px; }
+.setup-wizard-preview__surface {
+  block-size: 600px;
+  border-radius: var(--openbitfun-overlay-dialog-surface-radius);
+  box-shadow: var(--openbitfun-shadow-sm);
+}
+.setup-wizard-preview__form {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: var(--openbitfun-space-5);
+}
+.setup-wizard-preview__form[data-contained="true"] { min-block-size: 0; flex: 1; }
+.setup-wizard-preview__editor {
+  min-block-size: 0;
+  flex: 1;
+  inline-size: 100%;
+  border: 0;
+  padding: 0;
+  resize: none;
+  color: var(--openbitfun-color-content-primary);
+  background: transparent;
+  font: inherit;
+}
+.setup-wizard-preview__editor:focus-visible { outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-focus-ring); }
+.setup-wizard-preview__note {
+  margin-block: var(--openbitfun-space-4) 0;
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+}

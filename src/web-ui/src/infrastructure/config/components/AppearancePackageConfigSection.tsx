@@ -6,6 +6,8 @@ import { OverflowText, Button, Icon, IconButton, Select, Tooltip } from '@openbi
 
 import { confirmDialog } from '@/infrastructure/confirm-dialog';
 import {
+  DEFAULT_DARK_APPEARANCE_ID,
+  DEFAULT_LIGHT_APPEARANCE_ID,
   SYSTEM_APPEARANCE_ID,
   getAppearancePackageValidationError,
   useAppearance,
@@ -22,6 +24,7 @@ import {
 import { ConfigPageSection, formatStandaloneUiText } from './common';
 
 const DEFAULT_APPEARANCE_PREVIEW_SRC = '/assets/appearance/openbitfun-default-preview@4x.png';
+const DEFAULT_THEME_IDS: readonly string[] = [DEFAULT_LIGHT_APPEARANCE_ID, DEFAULT_DARK_APPEARANCE_ID];
 
 function downloadArchive(bytes: ArrayBuffer, filename: string): void {
   const url = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
@@ -304,22 +307,28 @@ export function AppearancePackageConfigSection() {
   );
   const defaultPackageSelected = selectedAppearanceId === SYSTEM_APPEARANCE_ID
     || builtinAppearances.some(appearance => appearance.id === selectedAppearanceId);
-  const builtinThemeOptions = useMemo(() => [
-    {
-      value: SYSTEM_APPEARANCE_ID,
-      label: tApplication('appearance.systemAppearance'),
-      group: t('package.builtinTheme'),
-      testId: 'appearance-builtin-theme-option',
-      testAttributes: { 'data-appearance-id': SYSTEM_APPEARANCE_ID },
-    },
-    ...builtinAppearances.map(appearance => ({
-      value: appearance.id,
-      label: builtinAppearanceDisplayName(appearance, tApplication),
-      group: t('package.builtinTheme'),
-      testId: 'appearance-builtin-theme-option',
-      testAttributes: { 'data-appearance-id': appearance.id },
-    })),
-  ], [builtinAppearances, t, tApplication]);
+  const builtinThemeOptions = useMemo(() => {
+    const orderedAppearances = [
+      ...DEFAULT_THEME_IDS.flatMap(id => builtinAppearances.filter(appearance => appearance.id === id)),
+      ...builtinAppearances.filter(appearance => !DEFAULT_THEME_IDS.includes(appearance.id)),
+    ];
+    return [
+      {
+        value: SYSTEM_APPEARANCE_ID,
+        label: tApplication('appearance.systemAppearance'),
+        group: 'default',
+        testId: 'appearance-builtin-theme-option',
+        testAttributes: { 'data-appearance-id': SYSTEM_APPEARANCE_ID },
+      },
+      ...orderedAppearances.map(appearance => ({
+        value: appearance.id,
+        label: builtinAppearanceDisplayName(appearance, tApplication),
+        group: DEFAULT_THEME_IDS.includes(appearance.id) ? 'default' : 'presets',
+        testId: 'appearance-builtin-theme-option',
+        testAttributes: { 'data-appearance-id': appearance.id },
+      })),
+    ];
+  }, [builtinAppearances, tApplication]);
   const selectedBuiltinThemeId = defaultPackageSelected ? selectedAppearanceId : '';
   const busy = loading || !initialized || status === 'applying';
   const hasPackageActions = APPEARANCE_MARKET_ENTRY_VISIBLE
@@ -409,7 +418,6 @@ export function AppearancePackageConfigSection() {
     <ConfigPageSection
       className="appearance-package-config"
       title={t('package.title')}
-      description={t('package.description')}
       bodySurface={false}
       fieldSurface="ambient"
       extra={hasPackageActions ? (
@@ -496,6 +504,8 @@ export function AppearancePackageConfigSection() {
               value={selectedBuiltinThemeId}
               placeholder={t('package.builtinTheme')}
               options={builtinThemeOptions}
+              showGroupLabels={false}
+              showGroupDividers
               onValueChange={(value) => void handleAppearanceSelection(String(value))}
               disabled={busy}
               aria-label={t('package.builtinTheme')}

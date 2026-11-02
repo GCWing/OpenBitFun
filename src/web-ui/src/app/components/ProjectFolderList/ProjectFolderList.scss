@@ -1,0 +1,61 @@
+.project-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-2);
+  inline-size: 100%;
+  min-inline-size: 0;
+  margin: 0;
+  padding: var(--openbitfun-space-3) 0 0;
+  border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  list-style: none;
+  text-align: start;
+
+  &[data-scrollable='true'] {
+    max-block-size: 240px;
+    overflow-y: auto;
+  }
+
+  &__item {
+    min-inline-size: 0;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-3);
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-control-height-lg);
+  }
+
+  &__info {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-1);
+  }
+
+  &__name {
+    color: var(--openbitfun-color-content-primary);
+  }
+
+  &__path {
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-meta-font-size);
+    line-height: var(--openbitfun-type-meta-line-height);
+  }
+
+  &__actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+  }
+
+  &__editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+    padding-block: var(--openbitfun-space-2) var(--openbitfun-space-3);
+  }
+}

@@ -223,12 +223,16 @@ test('every product Agent tool is mapped to a user capability or explicitly clas
     productTools,
     'new Agent tools must be mapped in the shared manual or receive a reviewed framework-only exclusion',
   );
-  assert.deepEqual(excludedTools, new Set(['Task', 'GetToolSpec', 'CallDeferredTool']));
+  assert.deepEqual(excludedTools, new Set(['Task', 'GetToolSpec', 'CallDeferredTool', 'PagePublish', 'PageDeploy']));
   assert.equal([...delegatedTools].filter((tool) => excludedTools.has(tool)).length, 0);
 
   const byId = new Map(source.capabilities.map((capability) => [capability.id, capability]));
   const item = (capabilityId, itemId) => byId.get(capabilityId)?.items
     .find(({ id }) => id === itemId);
+  for (const itemId of ['pages-list', 'immutable-versions', 'publish', 'visibility', 'unpublish', 'delete']) {
+    assert.deepEqual(item('feature.pages', itemId).control.tools, ['PageManage']);
+  }
+  assert.deepEqual(item('feature.ai-assistant', 'image-generation').control.tools, ['generate_image']);
   assert.ok(item('feature.remote-workspaces', 'remote-files').control.tools.includes('Read'));
   assert.deepEqual(item('feature.remote-workspaces', 'port-forwarding').control.tools, ['PortForward']);
   assert.ok(item('setting.tools.mcp', 'resources').control.tools.includes('ReadMCPResource'));
@@ -281,7 +285,9 @@ test('built-in and external browsers share one agent action contract', async () 
   assert.ok(browser.searchTerms.some((term) => /智能体.*内置网页/u.test(term)));
   assert.ok(browser.searchTerms.some((term) => /one BrowserActions/iu.test(term)));
   assert.equal(browser.agentControl.tool, 'ControlHub');
-  assert.ok(browser.agentControl.workflowZh.some((step) => step.includes('browser.open_builtin')));
+  assert.ok(browser.agentControl.workflowZh.some((step) => step.includes('browser.navigate') && step.includes('observe')));
+  assert.ok(browser.agentControl.workflowEn.some((step) => step.includes('browser.navigate') && step.includes('observe')));
+  assert.ok(browser.agentControl.workflowEn.some((step) => /user authorized in Settings/iu.test(step)));
   assert.ok(browser.agentControl.workflowZh.some((step) => step.includes('OpenBitFunControl') && step.includes('about:blank')));
   assert.ok(browser.agentControl.workflowEn.some((step) => /share.*contract/iu.test(step)));
   assert.ok(browser.agentControl.workflowEn.some((step) => /OpenBitFunControl/iu.test(step) && /about:blank/iu.test(step)));
@@ -371,7 +377,7 @@ test('docs, runtime, and technical views are generated projections of one semant
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
     sourceFile.endsWith('/BrowserPanel.tsx')));
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
-    sourceFile.endsWith('/AssistantDefaultsPage.tsx')));
+    sourceFile.endsWith('/AssistantConfigPage.tsx')));
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
     sourceFile.endsWith('/LanguageSettingsSection.tsx')));
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>

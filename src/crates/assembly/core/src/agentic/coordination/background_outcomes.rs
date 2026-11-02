@@ -3,6 +3,7 @@ use super::coordination_store::{
     DirectChildAgentRecord, RegisteredBackgroundTask,
 };
 use super::coordinator::{SubagentResult, SubagentResultStatus};
+use crate::agentic::core::SessionState;
 use crate::agentic::session::SessionManager;
 use crate::service::session::TurnStatus;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
@@ -43,7 +44,6 @@ pub(crate) enum BackgroundSubagentWaitStatus {
     Completed,
     TimedOut,
     Steered,
-    NoMatchingTasks,
 }
 
 impl BackgroundSubagentWaitStatus {
@@ -52,7 +52,6 @@ impl BackgroundSubagentWaitStatus {
             Self::Completed => "completed",
             Self::TimedOut => "timed_out",
             Self::Steered => "steered",
-            Self::NoMatchingTasks => "no_matching_tasks",
         }
     }
 }
@@ -68,6 +67,14 @@ pub(crate) struct BackgroundSubagentWaitResult {
     pub status: BackgroundSubagentWaitStatus,
     pub outcomes: Vec<BackgroundSubagentOutcome>,
     pub pending_bg_task_ids: Vec<String>,
+    pub missing_bg_task_ids: Vec<String>,
+    pub already_delivered_bg_task_ids: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct WaitSelectionDiagnostics {
+    missing_bg_task_ids: Vec<String>,
+    already_delivered_bg_task_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +217,7 @@ impl BackgroundSubagentOutcomeStore {
         &self,
         parent_session_id: &str,
         requested_bg_task_ids: &[String],
+        select_all_when_empty: bool,
         wait_mode: BackgroundSubagentWaitMode,
         timeout: Duration,
         delivered_parent_dialog_turn_id: &str,
@@ -218,18 +226,28 @@ impl BackgroundSubagentOutcomeStore {
     ) -> OpenBitFunResult<BackgroundSubagentWaitResult> {
         self.reconcile_stale_running_tasks(parent_session_id)
             .await?;
-        let selected = self
+        let selection = self
             .coordination_store
-            .wait_candidates(parent_session_id, requested_bg_task_ids)
+            .wait_candidates(
+                parent_session_id,
+                requested_bg_task_ids,
+                select_all_when_empty,
+            )
             .await?;
-        if selected.is_empty() {
+        let diagnostics = WaitSelectionDiagnostics {
+            missing_bg_task_ids: selection.missing_bg_task_ids,
+            already_delivered_bg_task_ids: selection.already_delivered_bg_task_ids,
+        };
+        if selection.records.is_empty() {
             return Ok(wait_result(
-                BackgroundSubagentWaitStatus::NoMatchingTasks,
+                BackgroundSubagentWaitStatus::Completed,
                 Vec::new(),
                 Vec::new(),
+                &diagnostics,
             ));
         }
-        let selected_task_pks = selected
+        let selected_task_pks = selection
+            .records
             .iter()
             .map(|record| record.task_pk)
             .collect::<Vec<_>>();
@@ -253,6 +271,7 @@ impl BackgroundSubagentOutcomeStore {
                         BackgroundSubagentWaitStatus::Steered,
                         Vec::new(),
                         available.pending_bg_task_ids,
+                        &diagnostics,
                     ));
                 }
                 if let Some(result) = self
@@ -261,6 +280,7 @@ impl BackgroundSubagentOutcomeStore {
                         delivered_parent_dialog_turn_id,
                         BackgroundSubagentWaitStatus::Steered,
                         available,
+                        &diagnostics,
                     )
                     .await?
                 {
@@ -276,6 +296,7 @@ impl BackgroundSubagentOutcomeStore {
                         delivered_parent_dialog_turn_id,
                         BackgroundSubagentWaitStatus::Completed,
                         available,
+                        &diagnostics,
                     )
                     .await?
                 {
@@ -298,6 +319,7 @@ impl BackgroundSubagentOutcomeStore {
                         BackgroundSubagentWaitStatus::TimedOut,
                         Vec::new(),
                         available.pending_bg_task_ids,
+                        &diagnostics,
                     ));
                 }
                 if let Some(result) = self
@@ -310,6 +332,7 @@ impl BackgroundSubagentOutcomeStore {
                             BackgroundSubagentWaitStatus::Completed
                         },
                         available,
+                        &diagnostics,
                     )
                     .await?
                 {
@@ -368,6 +391,7 @@ impl BackgroundSubagentOutcomeStore {
         delivered_parent_dialog_turn_id: &str,
         status: BackgroundSubagentWaitStatus,
         available: AvailableOutcomes,
+        diagnostics: &WaitSelectionDiagnostics,
     ) -> OpenBitFunResult<Option<BackgroundSubagentWaitResult>> {
         let task_pks = available
             .outcomes
@@ -392,7 +416,7 @@ impl BackgroundSubagentOutcomeStore {
             .filter(|outcome| claimed_task_pks.contains(&outcome.task_pk))
             .collect::<Vec<_>>();
         Ok((!outcomes.is_empty())
-            .then(|| wait_result(status, outcomes, available.pending_bg_task_ids)))
+            .then(|| wait_result(status, outcomes, available.pending_bg_task_ids, diagnostics)))
     }
 
     async fn outcome_from_record(
@@ -539,8 +563,61 @@ impl BackgroundSubagentOutcomeStore {
     ) -> OpenBitFunResult<Vec<DirectChildAgentRecord>> {
         self.reconcile_stale_running_tasks(parent_session_id)
             .await?;
-        self.coordination_store
+        let mut agents = self
+            .coordination_store
             .direct_child_agents(parent_session_id)
+            .await?;
+        let parent_storage_path = self
+            .session_manager
+            .effective_session_storage_path(parent_session_id)
+            .await;
+        for agent in &mut agents {
+            if let Some(session) = self.session_manager.get_session(&agent.child_session_id) {
+                match session.state {
+                    SessionState::Processing { .. } => {
+                        agent.status = BackgroundTaskStatus::Running;
+                        continue;
+                    }
+                    SessionState::Error { .. } => {
+                        agent.status = BackgroundTaskStatus::Failed;
+                        continue;
+                    }
+                    SessionState::Idle => {}
+                }
+            }
+            // A queued background run can precede creation of its child turn.
+            if agent.background_turn_id.is_some() && agent.status == BackgroundTaskStatus::Running {
+                continue;
+            }
+            if let Some((turn_id, status)) = self
+                .session_manager
+                .latest_turn_for_agent_listing(
+                    &agent.child_session_id,
+                    parent_storage_path.as_deref(),
+                )
+                .await?
+            {
+                // Retain task-specific outcomes such as partial_timeout for the
+                // same turn, but let a newer direct user turn replace them.
+                if agent.background_turn_id.as_deref() != Some(turn_id.as_str()) {
+                    agent.status = match status {
+                        TurnStatus::InProgress => BackgroundTaskStatus::Running,
+                        TurnStatus::Completed => BackgroundTaskStatus::Completed,
+                        TurnStatus::Error => BackgroundTaskStatus::Failed,
+                        TurnStatus::Cancelled => BackgroundTaskStatus::Cancelled,
+                    };
+                }
+            }
+        }
+        Ok(agents)
+    }
+
+    pub(crate) async fn reserved_agent_ids(
+        &self,
+        parent_session_id: &str,
+    ) -> OpenBitFunResult<Vec<String>> {
+        self.coordination_store
+            .reserved_agent_ids(parent_session_id)
             .await
     }
 
@@ -561,6 +638,7 @@ impl BackgroundSubagentOutcomeStore {
         parent_agent_type: &str,
         child_agent_type: &str,
         child_depth: u8,
+        parent_can_delegate: bool,
     ) -> OpenBitFunResult<()> {
         self.coordination_store
             .reserve_swarm_child(
@@ -569,6 +647,7 @@ impl BackgroundSubagentOutcomeStore {
                 parent_agent_type,
                 child_agent_type,
                 child_depth,
+                parent_can_delegate,
             )
             .await
     }
@@ -591,21 +670,12 @@ impl BackgroundSubagentOutcomeStore {
             .await
     }
 
-    pub(crate) async fn swarm_descendant_session_ids(
+    pub(crate) async fn agent_subtree_session_ids_postorder(
         &self,
         session_id: &str,
     ) -> OpenBitFunResult<Vec<String>> {
         self.coordination_store
-            .swarm_descendant_session_ids(session_id)
-            .await
-    }
-
-    pub(crate) async fn swarm_subtree_session_ids_postorder(
-        &self,
-        session_id: &str,
-    ) -> OpenBitFunResult<Vec<String>> {
-        self.coordination_store
-            .swarm_subtree_session_ids_postorder(session_id)
+            .agent_subtree_session_ids_postorder(session_id)
             .await
     }
 
@@ -652,11 +722,14 @@ fn wait_result(
     status: BackgroundSubagentWaitStatus,
     outcomes: Vec<BackgroundSubagentOutcome>,
     pending_bg_task_ids: Vec<String>,
+    diagnostics: &WaitSelectionDiagnostics,
 ) -> BackgroundSubagentWaitResult {
     BackgroundSubagentWaitResult {
         status,
         outcomes,
         pending_bg_task_ids,
+        missing_bg_task_ids: diagnostics.missing_bg_task_ids.clone(),
+        already_delivered_bg_task_ids: diagnostics.already_delivered_bg_task_ids.clone(),
     }
 }
 
@@ -689,6 +762,7 @@ mod tests {
             },
         ));
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some(workspace.to_string_lossy().into_owned()),
             ..Default::default()
         };
@@ -754,6 +828,7 @@ mod tests {
         .wait_for(
             "parent-session",
             &[],
+            true,
             BackgroundSubagentWaitMode::All,
             Duration::from_millis(50),
             "wait-turn",

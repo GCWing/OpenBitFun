@@ -3,16 +3,15 @@
 
 .openbitfun-config-page-header {
   flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: var(--openbitfun-space-5) 0 0;
   margin-bottom: 36px;
 }
 
 .openbitfun-config-page-header__inner {
-  width: min(
-    calc(100% - (2 * #{configLayout.$config-page-content-inline-padding})),
-    #{configLayout.$config-page-content-max-width}
-  );
-  margin-inline: auto;
+  @include configLayout.content-frame;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -74,29 +73,13 @@
 
 
 .openbitfun-config-page-header-divider {
+  @include configLayout.content-frame;
   flex-shrink: 0;
   height: 1px;
   background: var(--openbitfun-color-border-subtle);
-  width: min(
-    calc(100% - (2 * #{configLayout.$config-page-content-inline-padding})),
-    #{configLayout.$config-page-content-max-width}
-  );
   margin: var(--openbitfun-space-4) auto;
   display: none;
 }
-
-@container config-panel (max-width: 900px) {
-  .openbitfun-config-page-header__inner,
-  .openbitfun-config-page-header-divider {
-    width: min(
-      calc(100% - (2 * #{configLayout.$config-page-content-inline-padding})),
-      #{configLayout.$config-page-content-max-width}
-    );
-  }
-}
-
-
-
 
 @container config-panel (max-width: 520px) {
   .openbitfun-config-page-header {

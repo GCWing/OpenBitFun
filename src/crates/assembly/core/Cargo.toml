@@ -123,6 +123,8 @@ openbitfun-dsh-adapter = { path = "../../adapters/dsh-adapter", optional = true 
 openbitfun-opencode-plugin-host = { path = "../../adapters/opencode-plugin-host", optional = true }
 openbitfun-claude-code-adapter = { path = "../../adapters/claude-code-adapter", optional = true }
 openbitfun-codex-adapter = { path = "../../adapters/codex-adapter", optional = true }
+openbitfun-cursor-adapter = { path = "../../adapters/cursor-adapter", optional = true }
+openbitfun-zcode-adapter = { path = "../../adapters/zcode-adapter", optional = true }
 openbitfun-plugin-runtime-client = { path = "../../execution/plugin-runtime-client", optional = true }
 
 [features]
@@ -168,6 +170,7 @@ product-full = [
     "tools-browser-web",
     "tools-computer-use",
     "tools-image-analysis",
+    "tools-image-generation",
     "tools-miniapp",
     "tools-pages",
     "tools-creation",
@@ -178,11 +181,12 @@ product-full = [
     "external-sources",
     "plugin-runtime",
     "opencode-plugin-host",
-    "announcement",
     "file-watch",
     "workspace-watch",
+    "workspace-icons",
     "ssh-remote",
     "dispatch-store",
+    "ptc-runtime",
     "filesystem",
     "git",
     "local-storage",
@@ -208,6 +212,7 @@ agent-runtime = [
     "openbitfun-services-core/coordination-store",
     "openbitfun-services-core/session-event-format",
     "ai-adapter-runtime",
+    "openbitfun-ai-adapters/local-tokenizer",
     "dep:openbitfun-agent-runtime",
     "openbitfun-agent-runtime/agent-runtime",
     "dep:openbitfun-agent-content",
@@ -279,6 +284,8 @@ external-sources = [
     "dep:openbitfun-pi-adapter",
     "dep:openbitfun-claude-code-adapter",
     "dep:openbitfun-codex-adapter",
+    "dep:openbitfun-cursor-adapter",
+    "dep:openbitfun-zcode-adapter",
     "dep:openbitfun-external-sources",
     "openbitfun-services-integrations/hook-import",
     "plugin-source",
@@ -333,6 +340,12 @@ script-tool-runtime = [
     "openbitfun-runtime-ports/script-tool-runtime",
     "openbitfun-services-integrations/script-tool-runtime",
 ]
+ptc-runtime = [
+    "agent-runtime",
+    "git",
+    "openbitfun-runtime-ports/ptc-runtime",
+    "openbitfun-services-integrations/ptc-runtime",
+]
 scheduled-jobs = [
     "dep:chrono-tz",
     "dep:cron",
@@ -367,6 +380,11 @@ tools-computer-use = [
 ]
 tools-image-analysis = [
     "openbitfun-tool-packs/image-analysis",
+]
+tools-image-generation = [
+    "openbitfun-tool-packs/image-generation",
+    "ai-adapter-runtime",
+    "openbitfun-ai-adapters/image-generation",
 ]
 tools-miniapp = [
     "dep:openbitfun-product-domains",
@@ -410,6 +428,9 @@ opencode-plugin-host = [
 ]
 ai-adapter-runtime = [
     "dep:openbitfun-ai-adapters",
+    "dep:openbitfun-agent-runtime",
+    "openbitfun-agent-runtime/account-routing",
+    "openbitfun-services-core/routing-state",
 ]
 product-capabilities = ["dep:openbitfun-product-capabilities"]
 plugin-source = [
@@ -430,11 +451,10 @@ canvas-runtime = [
 ]
 runtime-services = ["dep:openbitfun-runtime-services"]
 legacy-migration = ["dep:openbitfun-legacy-migration-adapters"]
-announcement = ["openbitfun-services-integrations/announcement"]
 file-watch = ["openbitfun-services-integrations/file-watch"]
 git = ["openbitfun-services-integrations/git"]
 review-platform = ["openbitfun-services-integrations/review-platform"]
-service-integrations = ["announcement", "file-watch", "git", "review-platform"]
+service-integrations = ["file-watch", "git", "review-platform"]
 diagnostics = ["openbitfun-services-core/diagnostics"]
 diff = ["openbitfun-services-core/diff"]
 dispatch-store = ["dep:base64", "local-storage", "openbitfun-services-core/dispatch-workspace"]
@@ -442,6 +462,7 @@ filesystem = ["openbitfun-services-core/filesystem"]
 local-storage = ["dep:openbitfun-agent-tools", "openbitfun-services-core/local-storage"]
 process-runtime = ["openbitfun-services-core/process-runtime"]
 terminal = ["dep:terminal-core"]
+workspace-icons = ["workspace-runtime", "openbitfun-services-core/workspace-icons"]
 workspace-runtime = [
     "openbitfun-services-core/workspace-persistence",
     "dep:serde_yaml",

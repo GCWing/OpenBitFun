@@ -166,7 +166,7 @@ impl ChatMode {
 
         let mut new_state = ChatState::new(
             new_session_id.clone(),
-            "CLI Session".to_string(),
+            "New Session".to_string(),
             agent_type,
             Some(workspace_binding.workspace_path.clone()),
         );

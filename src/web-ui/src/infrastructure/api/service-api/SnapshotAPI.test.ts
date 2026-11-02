@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SnapshotAPI } from './SnapshotAPI';
-import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { activateSurface, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const peerCapabilities = vi.hoisted(() => ({ workspaceIdReferencesV1: true }));
@@ -88,13 +88,14 @@ describe('SnapshotAPI workspace identity', () => {
     invokeMock.mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve; }));
     invokeMock.mockResolvedValueOnce({ linesAdded: 2 });
     const first = snapshotAPI.getOperationSummary('same-session', 'operation-1', 'same-id');
+    const firstRejection = expect(first).rejects.toSatisfy(isSurfaceChangedError);
     await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
     activateSurface('peer-b');
     const second = snapshotAPI.getOperationSummary('same-session', 'operation-1', 'same-id');
     await expect(second).resolves.toMatchObject({ linesAdded: 2 });
     expect(invokeMock).toHaveBeenCalledTimes(2);
     resolveFirst({ linesAdded: 1 });
-    await expect(first).resolves.toMatchObject({ linesAdded: 1 });
+    await firstRejection;
   });
 
   it('does not dispatch after the driving host changes during serialization', async () => {
@@ -118,6 +119,23 @@ describe('SnapshotAPI workspace identity', () => {
       request: { sessionId: 'session', operationId: 'operation', workspacePath: '/same/root',
         remoteConnectionId: 'ssh-id', remoteSshHost: 'host' },
     });
+  });
+
+  it('stops a multi-turn snapshot read when the device changes during a turn read', async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'get_session_turns') return [0, 1];
+      if (command === 'get_turn_files') {
+        activateSurface('other-device');
+        return ['old-device.txt'];
+      }
+      return [];
+    });
+
+    await expect(snapshotAPI.getSessionTurnSnapshots('same-session', 'same-workspace'))
+      .rejects.toSatisfy(isSurfaceChangedError);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'get_session_turns', 'get_turn_files',
+    ]);
   });
 
 });

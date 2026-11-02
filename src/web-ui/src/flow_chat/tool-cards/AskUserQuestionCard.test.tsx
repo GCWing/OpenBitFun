@@ -265,13 +265,18 @@ describe('AskUserQuestionCard', () => {
       render();
       expect(container.querySelector('[role="timer"]')).toBeNull();
       expect(container.querySelector('button[aria-label="toolCards.askUser.cancelCountdown"]')).toBeNull();
+      expect(container.querySelector('[data-openbitfun-part="wait-settled"]')?.textContent)
+        .toBe('toolCards.askUser.unlimitedWait');
       tool.userQuestionWait.interactionStarted = true;
       render();
       expect(container.querySelector('[role="timer"]')).toBeNull();
+      expect(container.querySelector('[data-openbitfun-part="wait-settled"]')).toBeNull();
       tool.userQuestionWait.interactionStarted = false;
       delete tool.userQuestionWait.deadlineMs;
       render();
       expect(container.querySelector('[role="timer"]')).toBeNull();
+      expect(container.querySelector('[data-openbitfun-part="wait-settled"]')?.textContent)
+        .toBe('toolCards.askUser.unlimitedWait');
     } finally {
       vi.useRealTimers();
     }

@@ -7,6 +7,7 @@ vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({ getActiveSurfaceI
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({ agentAPI: {
   onTextChunk: (listener: (event: any) => void) => { fixture.text = listener; return () => {}; },
   onToolEvent: (listener: (event: any) => void) => { fixture.tool = listener; return () => {}; },
+  onPromptSuggestion: () => () => {},
 } }));
 import { agenticEventListener } from './AgenticEventListener';
 afterEach(async () => { await agenticEventListener.stopListening(); fixture.surface = 'local'; });
@@ -27,4 +28,11 @@ it('uses records for remote content while local content and remote approvals kee
   expect(onToolEvent).toHaveBeenCalledOnce();
   fixture.tool?.({ toolEvent: { event_type: 'ConfirmationNeeded' } });
   expect(onToolEvent).toHaveBeenCalledTimes(2);
+});
+it('routes peer prompt suggestions to the registered handler', async () => {
+  const onPromptSuggestion = vi.fn();
+  await agenticEventListener.startListening({ onPromptSuggestion });
+  const payload = { sessionId: 'peer-session', sourceTurnId: 'turn-1', suggestion: 'Run the tests' };
+  expect(agenticEventListener.dispatchExternal('agentic://prompt-suggestion', payload)).toBe(true);
+  expect(onPromptSuggestion).toHaveBeenCalledExactlyOnceWith(payload);
 });

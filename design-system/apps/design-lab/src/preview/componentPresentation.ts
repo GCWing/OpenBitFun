@@ -7,7 +7,7 @@ export type ComponentPresentation =
 // These are website presentation choices. The public registry still owns the
 // component inventory, properties and supported states.
 const presentations: Record<string, ComponentPresentation> = {
-  Button: "matrix", IconButton: "matrix",
+  Button: "matrix", IconButton: "matrix", Capsule: "compact",
   Avatar: "compact", Checkbox: "compact", Radio: "compact", Switch: "compact",
   StatusPill: "compact", Spinner: "compact", LoadingState: "compact",
   LauncherButton: "compact", NumberBadge: "compact", KeyHint: "compact",
@@ -19,20 +19,27 @@ const presentations: Record<string, ComponentPresentation> = {
   Disclosure: "composition", Composer: "composition", Listbox: "composition", Menu: "composition",
   NavigationPanel: "composition", PageHeader: "composition", ScrollArea: "composition", SplitView: "composition",
   SegmentedControl: "composition", TabGroup: "composition",
+  SetupWizard: "composition",
+  ColorPicker: "composition",
   Icon: "icons", RollingText: "motion", ShimmerText: "motion", VoiceCallPanel: "motion",
   ThinkingIndicator: "motion",
   MobileBadge: "compact", MobileButton: "compact", MobileIconButton: "compact",
   MobileFileButton: "compact", MobileLink: "compact",
+  MobileAvatar: "compact", MobileCheckbox: "compact", MobileSwitch: "compact", MobileTag: "compact",
   MobileTextField: "fields", MobileTextarea: "fields",
+  MobileSelect: "fields", MobileStepper: "fields",
   MobileCard: "cards", MobileStatus: "cards",
   MobileBanner: "stack", MobilePageHeader: "stack", MobileSection: "stack", MobileListRow: "stack",
+  MobileRadioGroup: "stack", MobileToolbar: "stack",
   MobileActionSheet: "interactive", MobileChoiceSheet: "interactive",
   MobileConfirmSheet: "interactive", MobileSheet: "interactive",
   MobileDisclosure: "composition", MobileComposer: "composition", MobileFloatingActions: "composition",
   MobileMessage: "composition", MobileScrim: "composition", MobileSegmentedControl: "composition",
+  MobileTabBar: "composition",
 };
 
 const initialStates: Record<string, string> = {
+  ColorPicker: "expanded",
   Card: "raised", Disclosure: "open", Composer: "with-context", Switch: "off",
   StatusPill: "success", Toolbar: "with-center", TabGroup: "selected", SegmentedControl: "selected",
   Listbox: "selected-option", NavigationPanel: "selected-item", ScrollArea: "auto",

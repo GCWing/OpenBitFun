@@ -3,53 +3,32 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 describe('navigation icon integration', () => {
-  it('uses the standard extension icon in the expandable entry', () => {
+  it('uses each MiniApp icon and the standard Skill discovery icon in the overview', () => {
     const source = readFileSync(
-      fileURLToPath(new URL('./MainNav.tsx', import.meta.url)),
+      fileURLToPath(new URL('../../scenes/personal-overview/PersonalOverviewScene.tsx', import.meta.url)),
       'utf8',
     );
-    const entryStart = source.indexOf('data-testid="agent-skill-entry"');
-    const entryEnd = source.indexOf('</NavigationPanelItem>', entryStart);
-    const entryMarkup = source.slice(entryStart, entryEnd);
-
-    expect(entryStart).toBeGreaterThanOrEqual(0);
-    expect(entryEnd).toBeGreaterThan(entryStart);
-    expect(entryMarkup).toContain(
-      'className="openbitfun-nav-panel__top-action-icon-slot openbitfun-nav-panel__top-action-expand-icons"',
-    );
-    expect(entryMarkup).toContain('name="extension"');
-    expect(entryMarkup).toContain('size="sm"');
-  });
-
-  it('keeps extension subnavigation icons at one optical weight', () => {
-    const source = readFileSync(
-      fileURLToPath(new URL('./MainNav.tsx', import.meta.url)),
+    const miniAppLogosSource = readFileSync(
+      fileURLToPath(new URL('../../scenes/personal-overview/OverviewMiniAppLogos.tsx', import.meta.url)),
       'utf8',
     );
-    const sublistStart = source.indexOf('data-testid="agent-skill-tabs"');
-    const sublistEnd = source.indexOf('</div>', sublistStart);
-    const sublistMarkup = source.slice(sublistStart, sublistEnd);
-
-    expect(sublistStart).toBeGreaterThanOrEqual(0);
-    expect(sublistEnd).toBeGreaterThan(sublistStart);
-    expect(sublistMarkup).toContain('<Icon glyph={Users} size="sm" />');
-    expect(sublistMarkup).toContain('<Icon name="book-open" size="sm" />');
-    expect(sublistMarkup).toContain('<Icon glyph={Network} size="sm" />');
-    expect(sublistMarkup).not.toContain('strokeWidth');
+    expect(source).toContain('<OverviewMiniAppLogos apps={miniAppItems}');
+    expect(miniAppLogosSource).toContain("icon={renderMiniAppIcon(app.icon || 'box', 'lg')}");
+    const discoveryEnd = source.indexOf('data-testid="personal-overview-discover-skills"');
+    const discoveryStart = source.lastIndexOf('<OverviewSplitCardAction', discoveryEnd);
+    expect(discoveryStart).toBeGreaterThanOrEqual(0);
+    expect(discoveryEnd).toBeGreaterThan(discoveryStart);
+    expect(source.slice(discoveryStart, discoveryEnd)).toContain('<Icon name="search" size="lg" />');
+    expect(source).not.toContain('strokeWidth');
+    expect(miniAppLogosSource).not.toContain('strokeWidth');
   });
 
   it('uses the reference clock icon for Task Board', () => {
     const source = readFileSync(
-      fileURLToPath(new URL('./MainNav.tsx', import.meta.url)),
+      fileURLToPath(new URL('../../navigation/sidebarContributions.ts', import.meta.url)),
       'utf8',
     );
-    const entryStart = source.indexOf('data-testid="nav-todos-btn"');
-    const entryEnd = source.indexOf('</NavigationPanelItem>', entryStart);
-    const entryMarkup = source.slice(entryStart, entryEnd);
-
-    expect(entryStart).toBeGreaterThanOrEqual(0);
-    expect(entryEnd).toBeGreaterThan(entryStart);
-    expect(entryMarkup).toContain('<Icon name="clock" size="sm" />');
+    expect(source).toContain("productPage('builtin.todos', 'common:nav.items.todos', 'clock'");
     expect(source).not.toContain('CalendarClock');
   });
 
@@ -108,24 +87,26 @@ describe('navigation icon integration', () => {
     }
   });
 
-  it('uses stable standard icons for every session-group type', () => {
+  it('uses assistant avatars and standard local/remote project icons', () => {
     const source = readFileSync(
       fileURLToPath(new URL('./sections/workspaces/WorkspaceItem.tsx', import.meta.url)),
       'utf8',
     );
-    const assistantStart = source.indexOf('openbitfun-nav-panel__assistant-item-group-icon');
+    const assistantStart = source.indexOf('openbitfun-nav-panel__assistant-item-avatar');
     const assistantEnd = source.indexOf('</span>', assistantStart);
     const assistantMarkup = source.slice(assistantStart, assistantEnd);
     const workspaceStart = source.indexOf('openbitfun-nav-panel__workspace-item-icon-default');
     const workspaceEnd = source.indexOf('</span>', workspaceStart);
     const workspaceMarkup = source.slice(workspaceStart, workspaceEnd);
 
-    expect(assistantMarkup).toContain('<Icon name="user" size="sm" />');
+    expect(assistantStart).toBeGreaterThanOrEqual(0);
+    expect(assistantEnd).toBeGreaterThan(assistantStart);
+    expect(assistantMarkup).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
     expect(assistantMarkup).not.toContain('SessionGroupAssistant');
 
-    expect(workspaceMarkup).toContain('workspaceIsRemote');
-    expect(workspaceMarkup).toContain('<Icon glyph={Server} size="sm" />');
-    expect(workspaceMarkup).toContain('<Icon name="folder" size="sm" />');
+    expect(workspaceMarkup).toContain('<WorkspaceIcon workspace={workspace} />');
+    const renderer = readFileSync(fileURLToPath(new URL('../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
+    expect(renderer).toContain('remote ? Server : Folder');
     expect(workspaceMarkup).not.toContain('SessionGroup');
   });
 });

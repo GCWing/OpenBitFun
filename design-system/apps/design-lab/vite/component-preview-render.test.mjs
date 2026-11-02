@@ -11,6 +11,7 @@ let server;
 let render;
 let presentation;
 let renderPage;
+let renderDirectory;
 
 before(async () => {
   // Load actual Lab modules without a browser, generated inspector, or mock components.
@@ -23,6 +24,7 @@ before(async () => {
     appType: "custom",
   });
   const { ComponentsPage } = await server.ssrLoadModule("/src/pages/ComponentsPage.tsx");
+  const { LabComponentIndex } = await server.ssrLoadModule("/src/components/LabComponentIndex.tsx");
   const { I18nContext } = await server.ssrLoadModule("/src/i18n/I18nProvider.tsx");
   const { messages } = await server.ssrLoadModule("/src/i18n/messages.ts");
   const { translateFromCatalog } = await server.ssrLoadModule("/src/i18n/core.mjs");
@@ -35,6 +37,10 @@ before(async () => {
     colorScheme: "light", contrast: "standard", density: "compact", mode: "light",
     tokenOverrides: {}, onModeChange() {}, onDensityChange() {},
   })));
+  // The directory is the rail's tree now, so it is rendered the way the rail renders it.
+  renderDirectory = (selected) => renderToStaticMarkup(createElement(I18nContext.Provider, {
+    value: { locale: "zh-CN", setLocale() {}, t: (key, params) => translateFromCatalog(messages, "zh-CN", key, params) },
+  }, createElement(LabComponentIndex, { selected })));
   render = (name) => {
     const component = componentRegistry.find(item => item.name === name) ?? { name, states: ["default"], props: [], tokens: [], category: "form", description: "", maturity: "stable" };
     const html = renderToStaticMarkup(createElement(I18nContext.Provider, {
@@ -48,7 +54,9 @@ before(async () => {
     assert.ok(preview, `Missing preview panel: ${name}`);
     assert.equal((html.match(/<main\b/g) ?? []).length, 1, "The preview must be embedded in the library page");
     if (componentRegistry.some(item => item.name === name)) {
-      assert.ok(html.includes(`href="#component/${name.toLowerCase()}" aria-current="page"`), `Missing selected navigation entry: ${name}`);
+      const directory = renderDirectory(component.name);
+      assert.ok(directory.includes(`href="#component/${name.toLowerCase()}" aria-current="page"`), `Missing selected navigation entry: ${name}`);
+      assert.ok(!html.includes('class="design-library-sidebar"'), "The directory must not be drawn twice");
     }
     return { html, preview };
   };
@@ -75,6 +83,16 @@ test("color and pattern directories expose one labelled panel while retaining ot
   }
 });
 
+test("Capsule previews publish the glass action composition in every supported state", () => {
+  const { html, preview } = render("Capsule");
+  assert.match(preview, /data-openbitfun-component="capsule"/);
+  assert.match(preview, /data-openbitfun-variant="glass"/);
+  assert.match(preview, /data-openbitfun-shape="circle"/);
+  assert.match(preview, /data-openbitfun-preview-state="disabled"/);
+  assert.match(html, /import \{ Button, Capsule, Icon, IconButton \}/);
+  assert.doesNotMatch(html, />component\.Capsule\.description</);
+});
+
 test("Textarea opens with its editable, validation and disabled examples visible", () => {
   const { html, preview } = render("Textarea");
   assert.equal((preview.match(/data-openbitfun-component="textarea"/g) ?? []).length, 5);
@@ -98,6 +116,16 @@ test("other components formerly using the fallback render their own state specim
   }
   assert.match(render("Alert").preview, /data-state="error"/);
   assert.match(render("Avatar").preview, /<img/);
+});
+
+test("ColorPicker opens its registered flower palette in the Design Lab", () => {
+  const { preview, html } = render("ColorPicker");
+  assert.match(preview, /data-openbitfun-component="color-picker"/);
+  assert.match(preview, /aria-expanded="true"/);
+  assert.equal((preview.match(/data-openbitfun-part="petal"/g) ?? []).length, 19);
+  assert.match(preview, /role="slider"[^>]*aria-label="明度"/);
+  assert.match(html, /import \{ ColorPicker \}/);
+  assert.doesNotMatch(preview, /type="color"/);
 });
 
 test("LauncherButton exposes its interaction states with the catalog mic", () => {

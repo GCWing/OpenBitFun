@@ -384,6 +384,7 @@ impl GeminiSSEData {
                         tool_call_completion: None,
                         finish_reason: None,
                         provider_metadata: None,
+                        response_model: None,
                         model_response_replay: None,
                     });
                     continue;
@@ -401,6 +402,7 @@ impl GeminiSSEData {
                             tool_call_completion: None,
                             finish_reason: None,
                             provider_metadata: None,
+                            response_model: None,
                             model_response_replay: None,
                         });
                         continue;
@@ -421,6 +423,7 @@ impl GeminiSSEData {
                             tool_call_completion: None,
                             finish_reason: None,
                             provider_metadata: None,
+                            response_model: None,
                             model_response_replay: None,
                         });
                         continue;
@@ -438,6 +441,7 @@ impl GeminiSSEData {
                         tool_call_completion: None,
                         finish_reason: None,
                         provider_metadata: None,
+                        response_model: None,
                         model_response_replay: None,
                     });
                     continue;
@@ -454,6 +458,7 @@ impl GeminiSSEData {
                         tool_call_completion: None,
                         finish_reason: None,
                         provider_metadata: None,
+                        response_model: None,
                         model_response_replay: None,
                     });
                 }
@@ -491,6 +496,7 @@ impl GeminiSSEData {
                 tool_call_completion: None,
                 finish_reason: None,
                 provider_metadata: Some(provider_metadata),
+                response_model: None,
                 model_response_replay: None,
             });
         }

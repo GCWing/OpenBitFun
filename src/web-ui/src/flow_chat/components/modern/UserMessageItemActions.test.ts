@@ -53,7 +53,7 @@ describe('UserMessageItem metadata visibility', () => {
     expect(stylesheet).not.toContain('min-height: 5.5rem;');
   });
 
-  it('reveals the copy, edit, and rollback actions as one hover or focus cluster', () => {
+  it('reveals copy and the edit/rollback menu on hover, focus, or an open menu', () => {
     const stylesheet = readFileSync(
       fileURLToPath(new URL('./UserMessageItem.scss', import.meta.url)),
       'utf8',
@@ -66,14 +66,14 @@ describe('UserMessageItem metadata visibility', () => {
     expect(actions).not.toContain('visibility: hidden;');
     expect(shell).not.toContain('.user-message-item__actions');
     expect(stylesheet).toContain('.user-message-item-shell:hover .user-message-item__actions,');
+    expect(stylesheet).toContain('.user-message-item__actions[data-menu-open],');
     expect(stylesheet).toContain('.user-message-item-shell:focus-within .user-message-item__actions {\n  opacity: 1;\n  pointer-events: auto;');
 
     expect(stylesheet).toContain([
       '.user-message-item__copy-btn,',
-      '.user-message-item__edit-btn,',
-      '.user-message-item__rollback-btn {',
+      '.user-message-item__edit-rollback-btn {',
     ].join('\n'));
-    expect(stylesheet).not.toContain('.user-message-item__edit-btn {\n  opacity: 1;');
+    expect(stylesheet).not.toContain('.user-message-item__edit-rollback-btn {\n  opacity: 1;');
   });
 
   it('reveals the timestamp beside the actions without shifting the action cluster', () => {

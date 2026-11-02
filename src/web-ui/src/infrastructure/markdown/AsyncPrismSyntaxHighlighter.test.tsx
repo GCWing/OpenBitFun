@@ -3,13 +3,9 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getLoadedPrismSyntaxHighlighter, loadPrismSyntaxHighlighter } from '@/shared/utils/syntaxHighlighterLoader';
 
 import { AsyncPrismSyntaxHighlighter } from './AsyncPrismSyntaxHighlighter';
-
-vi.mock('@/shared/utils/syntaxHighlighterLoader', () => ({
-  getLoadedPrismSyntaxHighlighter: () => null,
-  loadPrismSyntaxHighlighter: () => new Promise(() => {}),
-}));
 
 vi.mock('@/shared/utils/startupTaskScheduling', () => ({
   scheduleAfterStartupPaint: () => () => {},
@@ -48,5 +44,23 @@ describe('AsyncPrismSyntaxHighlighter appearance contract', () => {
 
     expect(container.querySelector('pre[data-openbitfun-part="codePre"]')).not.toBeNull();
     expect(container.querySelector('code[data-openbitfun-part="codeContent"]')).not.toBeNull();
+  });
+
+  it('highlights Cangjie when another consumer has already loaded Prism', async () => {
+    const highlighter = await loadPrismSyntaxHighlighter();
+    expect(getLoadedPrismSyntaxHighlighter()).toBe(highlighter);
+
+    await act(async () => {
+      root.render(
+        <AsyncPrismSyntaxHighlighter language="cangjie" style={{}}>
+          {'func add(a: Int64): Int64 { return a + 1 }'}
+        </AsyncPrismSyntaxHighlighter>,
+      );
+    });
+
+    expect(container.querySelector('.code-block-fallback')).toBeNull();
+    expect(container.querySelector('code .token.keyword')?.textContent).toBe('func');
+    expect(container.querySelector('code .token.function')?.textContent).toBe('add');
+    expect(container.querySelector('code .token.builtin')?.textContent).toBe('Int64');
   });
 });

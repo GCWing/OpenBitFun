@@ -2,13 +2,13 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const iconButtonMeta = {
   category: "action",
-  description: "A labeled icon-only action with annotation, quiet, outlined, filled, and primary variants. Annotation pairs a muted 12px mark with the existing 22px xs target for supplemental label help.",
+  description: "A labeled icon-only action with annotation, quiet, glass, outlined, filled, and primary variants. Glass floats over intact content; capsule and tab action slots select it automatically.",
   maturity: "stable",
   name: "IconButton",
   props: [
     { name: "aria-label", type: "string" },
     { name: "icon", type: "ReactNode" },
-    { defaultValue: "quiet", name: "variant", type: "annotation | quiet | outline | fill | primary" },
+    { defaultValue: "quiet", name: "variant", type: "annotation | quiet | glass | outline | fill | primary" },
     { defaultValue: "square", name: "shape", type: "square | circle" },
     { defaultValue: "sm", name: "size", type: "xs | standard | sm | md | lg" },
     { defaultValue: "neutral", name: "tone", type: "neutral | danger" },
@@ -16,6 +16,9 @@ export const iconButtonMeta = {
   ],
   states: ["default", "hover", "active", "focus-visible", "disabled", "loading"],
   tokens: [
+    "color.surface.raised",
+    "color.border.subtle",
+    "effect.blur.subtle",
     "opacity.iconArtwork",
     "color.content.primary",
     "color.content.secondary",

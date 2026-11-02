@@ -7,6 +7,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.runtime.mutableStateOf
 import com.openbitfun.mobile.app.ui.chat.COMPOSER_INPUT_TEST_TAG
 import com.openbitfun.mobile.app.ui.chat.ComposerBar
 import com.openbitfun.mobile.app.ui.chat.MODEL_CONTROL_TEST_TAG
@@ -24,6 +26,34 @@ import org.junit.Test
 class ComposerModelSelectorTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun suggestionFillsTheEmptyDraftExactlyWithoutSending() {
+        val draft = mutableStateOf("")
+        val streaming = mutableStateOf(false)
+        var sends = 0
+        val suggestion = "  Run the tests  "
+        composeRule.setContent {
+            OpenBitFunTheme(dark = false) {
+                ComposerBar(draft = draft.value, images = emptyList(), busy = false,
+                    streaming = streaming.value, phase = ConnectionPhase.CONNECTED,
+                    model = null, capabilities = ChatComposerCapabilities.RemoteChat, placeholder = "Message",
+                    promptSuggestion = suggestion, onDraftChange = {draft.value = it},
+                    onRemoveImage = {}, onAttach = {}, onVoice = {}, onSend = {sends++},
+                    onStop = {}, onOpenModels = {}, modifier = androidx.compose.ui.Modifier)
+            }
+        }
+        composeRule.onNodeWithTag("composer-prompt-suggestion").assertIsDisplayed()
+        capture("prompt-suggestion-before.png")
+        composeRule.onNodeWithTag("composer-prompt-suggestion").performClick()
+        composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).assertTextEquals(suggestion)
+        composeRule.onNodeWithTag("composer-prompt-suggestion").assertDoesNotExist()
+        capture("prompt-suggestion-accepted.png")
+        composeRule.runOnIdle { assertEquals(0, sends); draft.value = ""; streaming.value = true }
+        composeRule.onNodeWithTag("composer-prompt-suggestion").assertDoesNotExist()
+        composeRule.runOnIdle { streaming.value = false }
+        composeRule.onNodeWithTag("composer-prompt-suggestion").assertIsDisplayed()
+    }
 
     private fun capture(name: String) {
         composeRule.waitForIdle()

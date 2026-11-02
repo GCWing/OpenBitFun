@@ -2,8 +2,10 @@
 
 import { BaseCommand } from '../BaseCommand';
 import { CommandResult } from '../../types/command.types';
-import { MenuContext, ContextType, EditorContext } from '../../types/context.types';
+import { MenuContext, ContextType, EditorContext, TextInputContext } from '../../types/context.types';
 import { MonacoHelper } from '@/shared/helpers/MonacoHelper';
+import { executeNativeEditAction } from '@/shared/utils/nativeTextEditing';
+import { focusTextInputTarget } from '../../utils/textInputActions';
 import { createLogger } from '@/shared/utils/logger';
 import { i18nService } from '@/infrastructure/i18n';
 
@@ -26,7 +28,8 @@ export class SelectAllCommand extends BaseCommand {
     
     return [
       ContextType.EDITOR,
-      ContextType.SELECTION
+      ContextType.SELECTION,
+      ContextType.TEXT_INPUT
     ].includes(context.type);
   }
 
@@ -36,6 +39,10 @@ export class SelectAllCommand extends BaseCommand {
       
       if (context.type === ContextType.EDITOR) {
         return await this.executeForEditor(context as EditorContext);
+      }
+
+      if (context.type === ContextType.TEXT_INPUT) {
+        return await this.executeForTextInput(context as TextInputContext);
       }
       
       
@@ -59,6 +66,17 @@ export class SelectAllCommand extends BaseCommand {
     }
   }
   
+  private async executeForTextInput(context: TextInputContext): Promise<CommandResult> {
+    const t = i18nService.getT();
+    const element = focusTextInputTarget(context);
+
+    if (!element || !executeNativeEditAction(element, 'selectAll')) {
+      return this.failure(t('errors:contextMenu.selectAllFailed'));
+    }
+
+    return this.success(t('common:contextMenu.status.selectAllSuccess'));
+  }
+
    
   private async executeForEditor(context: EditorContext): Promise<CommandResult> {
     try {

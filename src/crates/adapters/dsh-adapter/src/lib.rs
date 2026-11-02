@@ -8,6 +8,7 @@
 
 mod hook_source;
 mod mcp_source;
+pub mod session;
 mod source_adapter;
 pub use hook_source::{DshHookProvider, DshHookProviderOptions};
 pub use mcp_source::{DshMcpProvider, DshMcpProviderOptions};

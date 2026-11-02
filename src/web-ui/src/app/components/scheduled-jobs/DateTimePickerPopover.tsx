@@ -11,7 +11,7 @@
  * and the text field already accepts it.
  */
 
-import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton } from '@openbitfun/ui';
+import { useDismissibleLayer, createOverlayPortal, Button, Icon, IconButton } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -46,6 +46,7 @@ export interface DateTimePickerPopoverProps {
   anchorRef: React.RefObject<HTMLElement | null>;
   /** Currently selected day, or null when the field is empty. */
   selected: Date | null;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
   onSelect: (day: Date) => void;
   onClose: () => void;
 }
@@ -53,11 +54,19 @@ export interface DateTimePickerPopoverProps {
 const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
   anchorRef,
   selected,
+  triggerRef,
   onSelect,
   onClose,
 }) => {
-  const { t, formatDate } = useI18n('common');
+  const { t, formatDate, formatNumber } = useI18n('common');
   const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  const [focusedDayMs, setFocusedDayMs] = useState(() => {
+    const day = selected ?? new Date();
+    return new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  });
+  const pendingDayFocus = useRef(true);
+  const branches = useMemo(() => [anchorRef], [anchorRef]);
 
   const [monthAnchorMs, setMonthAnchorMs] = useState(() => {
     const base = selected ?? new Date();
@@ -93,25 +102,53 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
     };
   }, [anchorRef]);
 
-  useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (popoverRef.current?.contains(target)) return;
-      if (anchorRef.current?.contains(target)) return;
+  useDismissibleLayer({
+    enabled: true,
+    layerRef: popoverRef,
+    branchRefs: branches,
+    onDismiss: reason => {
       onClose();
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
+      if (reason === 'escape-key') triggerRef.current?.focus();
+    },
+  });
 
-    const removeOverlayMousedown0 = subscribeOverlayInteraction(popoverRef, 'mousedown', handlePointerDown);
-    const removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKeyDown);
-    return () => {
-      removeOverlayMousedown0?.();
-      removeOverlayKeydown1?.();
-    };
-  }, [anchorRef, onClose]);
+  useEffect(() => {
+    if (!pendingDayFocus.current) return;
+    pendingDayFocus.current = false;
+    popoverRef.current?.querySelector<HTMLButtonElement>(`[data-day="${focusedDayMs}"]`)?.focus();
+  }, [focusedDayMs]);
+
+  const selectDay = (day: Date) => {
+    onSelect(day);
+    triggerRef.current?.focus();
+  };
+
+  const handleDayKeyDown = (event: React.KeyboardEvent, day: Date) => {
+    const next = new Date(day);
+    switch (event.key) {
+      case 'ArrowLeft': next.setDate(next.getDate() - 1); break;
+      case 'ArrowRight': next.setDate(next.getDate() + 1); break;
+      case 'ArrowUp': next.setDate(next.getDate() - 7); break;
+      case 'ArrowDown': next.setDate(next.getDate() + 7); break;
+      case 'Home': next.setDate(next.getDate() - next.getDay()); break;
+      case 'End': next.setDate(next.getDate() + 6 - next.getDay()); break;
+      case 'PageUp':
+      case 'PageDown': {
+        const offset = (event.key === 'PageUp' ? -1 : 1) * (event.shiftKey ? 12 : 1);
+        next.setDate(1);
+        next.setMonth(next.getMonth() + offset);
+        const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+        next.setDate(Math.min(day.getDate(), lastDay));
+        break;
+      }
+      default: return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    pendingDayFocus.current = true;
+    setMonthAnchorMs(new Date(next.getFullYear(), next.getMonth(), 1).getTime());
+    setFocusedDayMs(next.getTime());
+  };
 
   const grid = useMemo(() => buildMonthGrid(monthAnchorMs), [monthAnchorMs]);
   const anchorDate = useMemo(() => new Date(monthAnchorMs), [monthAnchorMs]);
@@ -125,7 +162,9 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
   const shiftMonth = useCallback((delta: number) => {
     setMonthAnchorMs(current => {
       const date = new Date(current);
-      return new Date(date.getFullYear(), date.getMonth() + delta, 1).getTime();
+      const next = new Date(date.getFullYear(), date.getMonth() + delta, 1).getTime();
+      setFocusedDayMs(next);
+      return next;
     });
   }, []);
 
@@ -138,6 +177,10 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
       data-testid="datetime-picker"
       role="dialog"
       aria-label={t('dateTimeField.pickerLabel')}
+      onBlur={event => {
+        const next = event.relatedTarget as Node | null;
+        if (next && !event.currentTarget.contains(next) && !anchorRef.current?.contains(next)) onClose();
+      }}
       style={{ top: position.top, left: position.left }}
     >
       <header className="openbitfun-datetime-picker__head" data-openbitfun-component="datetime-picker" data-openbitfun-part="head">
@@ -148,7 +191,7 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
           icon={<Icon name="chevron-left" size="lg" />}
           onClick={() => shiftMonth(-1)}
         />
-        <span className="openbitfun-datetime-picker__month">
+        <span className="openbitfun-datetime-picker__month" aria-live="polite">
           {formatDate(anchorDate, { year: 'numeric', month: 'long' })}
         </span>
         <IconButton
@@ -166,17 +209,20 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
         ))}
       </div>
 
-      <div className="openbitfun-datetime-picker__grid" role="grid" data-openbitfun-component="datetime-picker" data-openbitfun-part="grid">
-        {grid.map(day => {
+      <div className="openbitfun-datetime-picker__grid" role="grid" aria-label={formatDate(anchorDate, { year: 'numeric', month: 'long' })} data-openbitfun-component="datetime-picker" data-openbitfun-part="grid">
+        {Array.from({ length: 6 }, (_, week) => (
+          <div role="row" className="openbitfun-datetime-picker__week" key={week}>
+          {grid.slice(week * 7, week * 7 + 7).map(day => {
           const isCurrentMonth = day.getMonth() === anchorDate.getMonth();
           const isSelected = selected != null && isSameDay(day, selected);
           const isToday = isSameDay(day, today);
 
           return (
+            <div role="gridcell" aria-selected={isSelected} key={day.getTime()}>
             <button
-              key={day.getTime()}
+              data-day={day.getTime()}
+              tabIndex={day.getTime() === focusedDayMs ? 0 : -1}
               type="button"
-              role="gridcell"
               className={[
                 'openbitfun-datetime-picker__day',
                 isCurrentMonth ? '' : 'openbitfun-datetime-picker__day--outside',
@@ -187,25 +233,33 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
               data-openbitfun-part="day"
               data-openbitfun-state={isSelected ? 'selected' : isToday ? 'today' : undefined}
               aria-pressed={isSelected}
+              aria-current={isToday ? 'date' : undefined}
               aria-label={formatDate(day, { year: 'numeric', month: 'long', day: 'numeric' })}
-              onClick={() => onSelect(day)}
+              onKeyDown={event => handleDayKeyDown(event, day)}
+              onFocus={() => setFocusedDayMs(day.getTime())}
+              onClick={() => selectDay(day)}
             >
-              {day.getDate()}
+              {formatNumber(day.getDate(), { useGrouping: false })}
             </button>
+            </div>
           );
-        })}
+          })}
+          </div>
+        ))}
       </div>
 
       <footer className="openbitfun-datetime-picker__foot" data-openbitfun-component="datetime-picker" data-openbitfun-part="foot">
-        <Button size="sm" variant="outline" onClick={() => onSelect(new Date())}>
+        <Button size="sm" variant="outline" onClick={() => selectDay(new Date())}>
           {t('dateTimeField.now')}
         </Button>
-        <Button size="sm" variant="fill" onClick={onClose}>
+        <Button size="sm" variant="fill" onClick={() => { onClose(); triggerRef.current?.focus(); }}>
           {t('dateTimeField.close')}
         </Button>
       </footer>
     </div>,
     getAppearanceOverlayHost(),
+    undefined,
+    { ownerRef: anchorRef },
   );
 };
 

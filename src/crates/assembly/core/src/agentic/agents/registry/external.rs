@@ -594,6 +594,27 @@ impl AgentRegistry {
             .map(|entry| local_binding(logical_id, entry.agent.id()))
     }
 
+    /// Resolve the saved local identity of an existing reusable child. The
+    /// coordinator checks session kind and continuation policy before using
+    /// this path; it does not make subagents available as new session modes.
+    /// Workspace route changes must not replace this identity with an external
+    /// generation, and a saved source key must still match the local entry.
+    pub(crate) fn resolve_local_agent_for_subagent_turn(
+        &self,
+        agent_type: &str,
+        workspace_id: Option<&str>,
+        expected_route_key: Option<&str>,
+    ) -> Option<ExternalPrimaryAgentTurnBinding> {
+        let entry = self.find_agent_entry(agent_type, workspace_id)?;
+        if entry.source == AgentSource::External {
+            return None;
+        }
+        let binding = local_primary_binding(&entry);
+        expected_route_key
+            .is_none_or(|key| binding.route_key.as_deref() == Some(key))
+            .then_some(binding)
+    }
+
     /// Resolve a user-facing main-agent id to the exact generation that owns
     /// the next turn. The returned lease keeps prompt, tools, permissions, and
     /// model metadata stable until that turn settles.

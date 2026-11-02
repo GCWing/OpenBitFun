@@ -106,6 +106,12 @@ impl GlobalConfigManager {
             crate::service::web_search::refresh_global_web_search_runtime(&ai_config).await;
         }
 
+        #[cfg(feature = "model-catalog")]
+        crate::infrastructure::ai::reasoning_catalog::prepare_model_catalog();
+
+        #[cfg(feature = "agent-runtime")]
+        spawn_config_file_reload_poller();
+
         info!("Global config service initialized");
 
         Ok(())
@@ -209,6 +215,50 @@ impl GlobalConfigManager {
     pub fn is_initialized() -> bool {
         GLOBAL_CONFIG_SERVICE.get().is_some()
     }
+}
+
+/// Interval between checks of the persisted config file for edits made by
+/// another writer (a hand edit, or another OpenBitFun process on this host).
+#[cfg(feature = "agent-runtime")]
+const CONFIG_FILE_RELOAD_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Long-running hosts (CLI daemon, desktop, server) otherwise keep serving the
+/// configuration they loaded at startup until something reloads in-process.
+/// Polling instead of a file-system watch keeps this working for atomic
+/// replacement, network home directories, and platforms without inotify.
+#[cfg(feature = "agent-runtime")]
+fn spawn_config_file_reload_poller() {
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        log::warn!("No async runtime available; config file reload polling is disabled");
+        return;
+    };
+    runtime.spawn(async move {
+        let mut interval = tokio::time::interval(CONFIG_FILE_RELOAD_POLL_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        interval.tick().await;
+        let mut last_error: Option<String> = None;
+        loop {
+            interval.tick().await;
+            // Resolve each tick so a replaced global service is followed.
+            let Ok(service) = GlobalConfigManager::get_service().await else {
+                continue;
+            };
+            match service.reload_if_changed_on_disk().await {
+                Ok(_) => last_error = None,
+                Err(error) => {
+                    // An editor may be mid-write; keep the current config and
+                    // report each distinct failure once.
+                    let message = error.to_string();
+                    if last_error.as_deref() != Some(message.as_str()) {
+                        log::warn!(
+                            "Config file changed on disk but could not be loaded: {message}"
+                        );
+                        last_error = Some(message);
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// Convenience helper: get the global configuration service.

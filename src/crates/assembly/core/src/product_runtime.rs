@@ -919,6 +919,16 @@ pub struct CoreAgentRuntimeCompatibility {
 }
 
 impl CoreAgentRuntimeCompatibility {
+    pub async fn retry_model_pool_member(&self, model_id: &str) -> OpenBitFunResult<()> {
+        self.coordinator.retry_model_pool_member(model_id).await
+    }
+
+    pub async fn model_pool_statuses(
+        &self,
+        pool_id: &str,
+    ) -> OpenBitFunResult<Vec<openbitfun_core_types::model_pool::ModelPoolMemberStatus>> {
+        self.coordinator.model_pool_statuses(pool_id).await
+    }
     pub async fn ensure_control_conversation(
         &self,
     ) -> OpenBitFunResult<crate::agentic::coordination::ControlConversation> {
@@ -1253,6 +1263,15 @@ impl CoreAgentRuntimeCompatibility {
         &self,
         workspace_path: &Path,
     ) -> OpenBitFunResult<Vec<SessionMetadata>> {
+        #[cfg(feature = "external-sources")]
+        for warning in crate::external_session_import::auto_discovery::discover_for_storage_path(
+            workspace_path,
+        )
+        .await
+        .warnings
+        {
+            log::warn!("External session discovery: {warning}");
+        }
         self.persistence.list_session_metadata(workspace_path).await
     }
 
@@ -1262,9 +1281,34 @@ impl CoreAgentRuntimeCompatibility {
         cursor: Option<&str>,
         limit: usize,
     ) -> OpenBitFunResult<SessionMetadataPage> {
-        self.persistence
-            .list_session_metadata_page(workspace_path, cursor, limit)
+        self.list_persisted_session_catalog_page(workspace_path, cursor, limit, None)
             .await
+    }
+
+    async fn list_persisted_session_catalog_page(
+        &self,
+        workspace_path: &Path,
+        cursor: Option<&str>,
+        limit: usize,
+        query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+    ) -> OpenBitFunResult<SessionMetadataPage> {
+        #[cfg(feature = "external-sources")]
+        let warnings = crate::external_session_import::auto_discovery::discover_for_storage_path(
+            workspace_path,
+        )
+        .await;
+        #[allow(unused_mut)]
+        let mut page = self
+            .persistence
+            .list_session_metadata_page_with_query(workspace_path, cursor, limit, query)
+            .await?;
+        #[cfg(feature = "external-sources")]
+        {
+            page.discovery_warnings.extend(warnings.warnings);
+            page.discovery_diagnostics.extend(warnings.diagnostics);
+            page.discovery_pending = warnings.pending;
+        }
+        Ok(page)
     }
 
     /// A bounded navigation read over metadata + current runtime owners. Initial
@@ -1277,6 +1321,26 @@ impl CoreAgentRuntimeCompatibility {
         cursor: Option<&str>,
         limit: usize,
         session_ids: Option<&[String]>,
+    ) -> OpenBitFunResult<SessionMetadataPage> {
+        self.list_persisted_sessions_page_with_activity_and_query(
+            runtime,
+            workspace_path,
+            cursor,
+            limit,
+            session_ids,
+            None,
+        )
+        .await
+    }
+
+    pub async fn list_persisted_sessions_page_with_activity_and_query(
+        &self,
+        runtime: &AgentRuntime,
+        workspace_path: &Path,
+        cursor: Option<&str>,
+        limit: usize,
+        session_ids: Option<&[String]>,
+        query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
     ) -> OpenBitFunResult<SessionMetadataPage> {
         use futures::StreamExt;
         use openbitfun_agent_runtime::session_state::SessionState;
@@ -1297,7 +1361,7 @@ impl CoreAgentRuntimeCompatibility {
         let mut page = if session_ids.is_some() {
             empty_session_metadata_page()
         } else {
-            self.list_persisted_sessions_page(workspace_path, cursor, limit)
+            self.list_persisted_session_catalog_page(workspace_path, cursor, limit, query)
                 .await?
         };
         let selected = match session_ids {
@@ -1395,6 +1459,8 @@ impl CoreAgentRuntimeCompatibility {
                         }
                         _ => ("idle", None),
                     };
+                    let unread_turn =
+                        openbitfun_services_core::session::unread_completion_target(&metadata);
                     SessionActivitySummary {
                         pending_approvals: approvals
                             .get(&metadata.session_id)
@@ -1409,6 +1475,7 @@ impl CoreAgentRuntimeCompatibility {
                         active_turn_id,
                         last_turn: metadata.last_turn,
                         unread_completion: metadata.unread_completion,
+                        unread_turn,
                     }
                 })
                 .collect(),
@@ -1436,6 +1503,19 @@ impl CoreAgentRuntimeCompatibility {
         }
 
         let metadata = self.list_persisted_sessions(storage_path).await?;
+        #[cfg(feature = "external-sources")]
+        let has_deferred_history = metadata.iter().any(|metadata| {
+            crate::external_session_import::deferred::is_deferred(metadata)
+                || crate::external_session_import::deferred::tracking::is_followed(metadata)
+        });
+        #[cfg(feature = "external-sources")]
+        let metadata = metadata
+            .into_iter()
+            .filter(|metadata| {
+                !crate::external_session_import::deferred::is_deferred(metadata)
+                    && !crate::external_session_import::deferred::tracking::is_followed(metadata)
+            })
+            .collect::<Vec<_>>();
         let documents = metadata
             .iter()
             .map(session_search_document)
@@ -1455,6 +1535,15 @@ impl CoreAgentRuntimeCompatibility {
             .await
             .map_err(session_search_index_error)?;
         let mut diagnostics = Vec::new();
+
+        #[cfg(feature = "external-sources")]
+        if has_deferred_history {
+            diagnostics.push(SessionSearchDiagnostic {
+                code: SessionSearchDiagnosticCode::SessionIndexStale,
+                session_id: None,
+                message: "Followed external history is excluded from workspace content search; fork it into a native session to include it".into(),
+            });
+        }
 
         for session_id in reconciliation.stale_session_ids {
             let Some(source_revision) = revisions.get(&session_id) else {
@@ -1631,6 +1720,46 @@ impl CoreAgentRuntimeCompatibility {
                 .await?;
         }
         Ok(())
+    }
+
+    pub async fn update_session_model_selection_from_storage_path(
+        &self,
+        storage_path: &Path,
+        session_id: &str,
+        model_id: &str,
+        reasoning_preset: Option<&str>,
+        include_internal: bool,
+    ) -> OpenBitFunResult<Session> {
+        self.coordinator
+            .update_session_model_selection_from_storage_path(
+                storage_path,
+                session_id,
+                model_id,
+                reasoning_preset,
+                include_internal,
+            )
+            .await
+    }
+
+    pub async fn update_session_model_selection_from_storage_path_with_routing(
+        &self,
+        storage_path: &Path,
+        session_id: &str,
+        model_id: &str,
+        reasoning_preset: Option<&str>,
+        routing_mode: Option<&str>,
+        include_internal: bool,
+    ) -> OpenBitFunResult<Session> {
+        self.coordinator
+            .update_session_model_selection_from_storage_path_with_routing(
+                storage_path,
+                session_id,
+                model_id,
+                reasoning_preset,
+                routing_mode,
+                include_internal,
+            )
+            .await
     }
 
     pub async fn begin_persisted_session_mutation(
@@ -2148,6 +2277,44 @@ impl CoreSessionOperationsPort {
         .await
     }
 
+    #[cfg(feature = "external-sources")]
+    async fn fork_external_history_at_turn(
+        &self,
+        storage_path: &Path,
+        source_session_id: &str,
+        source_turn_id: Option<&str>,
+        boundary: SessionBranchBoundary,
+    ) -> PortResult<Option<AgentSessionForkResult>> {
+        let Some(source) = self
+            .persistence
+            .external_history_branch_source(storage_path, source_session_id, source_turn_id)
+            .await
+            .map_err(runtime_port_error)?
+        else {
+            return Ok(None);
+        };
+        let source_turn_id = match source_turn_id {
+            Some(id) => id.to_owned(),
+            None => latest_persisted_turn_id(&source.turns).map_err(runtime_port_error)?,
+        };
+        let result = self
+            .persistence
+            .branch_transient_session(
+                storage_path,
+                &SessionBranchRequest {
+                    source_session_id: source_session_id.to_owned(),
+                    source_turn_id,
+                    boundary,
+                },
+                source,
+            )
+            .await
+            .map_err(runtime_port_error)?;
+        self.finish_session_fork(storage_path, source_session_id, result)
+            .await
+            .map(Some)
+    }
+
     async fn fork_at_persisted_turn(
         &self,
         storage_path: &Path,
@@ -2208,6 +2375,18 @@ impl CoreSessionOperationsPort {
                 .map_err(runtime_port_error)?;
             (execution_id.to_owned(), is_transient)
         };
+        // Keep the optional source decoding/fork state out of native restore futures.
+        #[cfg(feature = "external-sources")]
+        if let Some(result) = Box::pin(self.fork_external_history_at_turn(
+            storage_path,
+            &source_session_id,
+            source_turn_id.as_deref(),
+            boundary,
+        ))
+        .await?
+        {
+            return Ok(result);
+        }
         if is_transient {
             let _guard = session_manager
                 .acquire_session_mutation(&source_session_id)
@@ -3637,6 +3816,7 @@ mod tests {
                 "Reload test".to_string(),
                 "Standard".to_string(),
                 crate::agentic::core::SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -3950,6 +4130,7 @@ mod tests {
                 format!("Remote fork {host}"),
                 "Standard".to_string(),
                 crate::agentic::core::SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(remote_path.clone()),
                     remote_connection_id: Some(connection_id.to_string()),
                     remote_ssh_host: Some(host.to_string()),
@@ -4258,6 +4439,7 @@ mod tests {
                     "Temporary question".to_string(),
                     "Standard".to_string(),
                     crate::agentic::core::SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_id: Some(record.id.clone()),
                         workspace_path: Some(remote_path.clone()),
                         remote_connection_id: Some(connection_id.to_string()),
@@ -4457,6 +4639,7 @@ mod tests {
             "Source".into(),
             "Standard".into(),
             crate::agentic::core::SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_id: Some(local.id.clone()),
                 workspace_path: Some("/stale/controller/mirror/sessions".into()),
                 remote_connection_id: Some("stale-ssh".into()),
@@ -4658,6 +4841,7 @@ mod tests {
                 "Transient settlement".to_string(),
                 "Standard".to_string(),
                 crate::agentic::core::SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_root.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4867,6 +5051,8 @@ mod tests {
                     workspace_path: Some(usage_workspace_path),
                     remote_connection_id: None,
                     remote_ssh_host: None,
+                    include_system_prompt_preview: false,
+                    context_preview_category: None,
                     include_hidden_subagents: false,
                 })
                 .await
@@ -4917,6 +5103,8 @@ mod tests {
                 workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                 remote_connection_id: None,
                 remote_ssh_host: None,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
                 include_hidden_subagents: false,
             },
         )
@@ -4981,6 +5169,8 @@ mod tests {
                 workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                 remote_connection_id: None,
                 remote_ssh_host: None,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
                 include_hidden_subagents: false,
             },
         )

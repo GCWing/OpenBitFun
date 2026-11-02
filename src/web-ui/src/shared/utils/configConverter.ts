@@ -15,6 +15,7 @@ export interface RustModelConfig {
   api_key?: string;        
   context_window: number;  
   max_tokens?: number;     
+  max_images_per_request?: number;
 }
 
  
@@ -28,6 +29,7 @@ export function convertToRustConfig(config: ModelConfig): RustModelConfig {
     api_key: config.apiKey,            
     context_window: config.contextWindow || 128128,  
     max_tokens: config.maxTokens,      
+    max_images_per_request: config.maxImagesPerRequest,
   };
 }
 

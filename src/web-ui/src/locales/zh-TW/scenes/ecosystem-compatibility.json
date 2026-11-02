@@ -1,5 +1,8 @@
 {
-  "title": "生態兼容",
+  "title": "外部匯入",
+  "applications": {
+    "title": "外部應用"
+  },
   "loading": "正在檢查兼容狀態…",
   "partialLoad": "部分狀態未能讀取：{{sources}} {{acp}}。已保留其餘可用內容。",
   "retry": "重試",
@@ -52,7 +55,7 @@
     "notice": "「{{name}}」正在開發中。"
   },
   "capabilities": {
-    "account": "帳號",
+    "account": "帳號訂閱",
     "settings": "設定與偏好",
     "command": "命令",
     "tool": "工具",
@@ -64,6 +67,28 @@
     "plugin": "外掛",
     "pet": "寵物",
     "instruction": "指令與規則"
+  },
+  "sessions": {
+    "removed": {
+      "title": "已移除的來源對話",
+      "description": "將來源對話重新新增至對話清單。既有的 OpenBitFun 續聊分支保持獨立，來源對話在開啟時更新歷史。",
+      "empty": "沒有已移除的來源對話。",
+      "restore": "重新新增",
+      "restoreNamed": "重新新增「{{name}}」",
+      "retry": "重試",
+      "loadFailed": "無法讀取已移除的來源對話，請在主機可用後重試。",
+      "restoreFailed": "無法重新新增此來源對話。移除記錄已保留，請稍後重試。",
+      "refreshFailed": "來源對話已重新新增，但清單重新整理失敗。請重新開啟工作區查看。",
+      "unsupportedHost": "目前主機不支援重新新增已移除的來源對話，請更新執行對話的主機後重試。",
+      "unsupportedSurface": "請在對話所屬主機管理已移除的來源對話，Peer 模式暫不支援此操作。"
+    },
+    "autoDiscovery": {
+      "label": "自動探索 {{name}} 工作階段",
+      "description": "開啟工作區時，只建立 {{name}} 工作階段的輕量索引並顯示於清單。首次開啟或繼續對話時才儲存完整歷史；尚未開啟的工作階段仍依賴原始來源。關閉開關後立即隱藏該來源的跟隨項目，已分支的本機副本繼續保留。暫不支援 SSH 工作區探索。",
+      "unsupported": "目前主機不支援工作階段自動探索，請更新工作階段所在主機後啟用。",
+      "loadFailed": "無法載入工作階段自動探索設定。",
+      "saveFailed": "無法儲存工作階段自動探索設定。"
+    }
   },
   "import": {
     "title": "匯入與複用",
@@ -149,7 +174,7 @@
         "failed": "儲存 {{name}} 的子智能體設定失敗"
       }
     },
-    "openManager": "管理 ACP 智能體",
+    "openManager": "ACP連線",
     "managerLabel": "ACP 智能體管理",
     "managerScope": "安裝、啟用或調整目前生態的 ACP 智能體。",
     "loadingManager": "正在載入 ACP 智能體管理…",
@@ -253,7 +278,7 @@
     },
     "repairSource": "補齊來源",
     "nativeUserTarget": "OpenBitFun · 使用者設定",
-    "undoAll": "一鍵復原",
+    "undoAll": "復原",
     "importSelected": "匯入所選",
     "undoSelected": "復原所選",
     "selectedCount": "已選 {{count}} 項",

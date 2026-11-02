@@ -3,7 +3,8 @@ members = [
     "src/apps/cli",
     "src/apps/sdk-host",
     "src/apps/desktop",
-    "src/apps/data-migrator",
+    "src/apps/miniapp-shell",
+    "src/apps/data-tools",
     "src/apps/server",
     "src/apps/relay-server",
     "src/apps/miniapp-market-server",
@@ -14,6 +15,7 @@ members = [
     "src/crates/interfaces/app-server-protocol",
     "src/crates/interfaces/sdk-host",
     "src/crates/adapters/agent-runtime-ipc",
+    "src/crates/adapters/miniapp-ipc",
     "src/crates/assembly/agent-content",
     "src/crates/assembly/core",
     "src/crates/assembly/external-sources",
@@ -24,10 +26,13 @@ members = [
     "src/crates/adapters/opencode-plugin-host",
     "src/crates/adapters/claude-code-adapter",
     "src/crates/adapters/codex-adapter",
+    "src/crates/adapters/cursor-adapter",
+    "src/crates/adapters/zcode-adapter",
     "src/crates/adapters/static-hook-support",
     "src/crates/adapters/webdriver",
     "src/crates/adapters/transport",
     "src/crates/services/services-core",
+    "src/crates/services/computer-use",
     "src/crates/services/services-integrations",
     "src/crates/services/legacy-migration",
     "src/crates/services/legacy-migration-adapters",
@@ -41,7 +46,6 @@ members = [
     "src/crates/execution/agent-runtime",
     "src/crates/execution/agent-workflows",
     "src/crates/execution/agent-stream",
-    "src/crates/execution/tool-call-jsonrepair",
     "src/crates/execution/tool-contracts",
     "src/crates/execution/plugin-runtime-client",
     "src/crates/execution/runtime-services",
@@ -56,13 +60,15 @@ members = [
 exclude = [
     "OpenBitFun-Installer/src-tauri",
     "third_party/eioc",
+    "third_party/tao",
+    "third_party/wry",
 ]
 
 resolver = "2"
 
 # Shared package metadata — single source of truth for version
 [workspace.package]
-version = "1.0.5" # x-release-please-version
+version = "1.0.8" # x-release-please-version
 authors = ["OpenBitFun Team"]
 edition = "2021"
 
@@ -85,6 +91,8 @@ undocumented_unsafe_blocks = "warn"
 
 # Shared dependency versions to keep all crates aligned
 [workspace.dependencies]
+pkg-config = "0.3"
+x11rb = { version = "0.13", default-features = false }
 # Async runtime
 tokio = { version = "1.52", default-features = false }
 tokio-stream = { version = "0.1.18", default-features = false }
@@ -96,10 +104,13 @@ futures-util = "0.3.31"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+jsonrepair-rs = { version = "0.2.6", default-features = false }
 serde_yaml = "0.9"
 
 # Document conversion
-anydoc = "=0.1.6"
+anydoc = "=0.2.4"
+pdf-inspector = { version = "1.17.0", default-features = false }
+roxmltree = { version = "0.21.1", default-features = false }
 
 # TypeScript binding generation (schema-first; gated by per-crate `ts` features)
 ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
@@ -125,6 +136,7 @@ brotli-decompressor = "=5.0.0"
 alloc-no-stdlib = "=2.0.4"
 alloc-stdlib = "=0.2.2"
 regex = "1"
+tokenizers = { version = "0.22.2", default-features = false }
 base64 = "0.22"
 # Keep macOS Tauri's dispatch2/bitflags expansion on the known-good bitflags release.
 bitflags = "=2.11.1"
@@ -208,6 +220,7 @@ rusqlite = { version = "0.32", default-features = false }
 
 # Tauri (desktop only)
 tauri = { version = "2.11" }
+wry = { version = "0.56.0", default-features = false }
 tauri-plugin-opener = "2.5"
 tauri-plugin-dialog = "2.7"
 tauri-plugin-fs = "2.5"
@@ -216,19 +229,19 @@ tauri-plugin-autostart = "2.5"
 tauri-plugin-notification = "2.3"
 tauri-plugin-updater = "2.10"
 tauri-plugin-single-instance = "2.4"
+# 2.4+ requires tauri 2.12, which pulls webview2-com 0.39 and breaks the
+# webview2-com 0.38 COM types openbitfun-webdriver is built against.
+tauri-plugin-clipboard-manager = "~2.3.3"
 notify-rust = { version = "4.18", default-features = false }
 tauri-build = { version = "2.6", features = [] }
 keepawake = "0.6.0"
 
 # Desktop support
 screenshots = "0.8"
-enigo = "0.2"
+enigo = { version = "0.2", default-features = false }
 resvg = { version = "0.47", default-features = false }
 atspi = "0.29"
-gstreamer = { version = "0.24", default-features = false }
-gstreamer-app = { version = "0.24", default-features = false }
 cc = { version = "1", default-features = false }
-leptess = "0.14"
 core-foundation = "0.9"
 core-graphics = { version = "0.23", features = ["elcapitan", "highsierra"] }
 foreign-types = "0.5"
@@ -302,6 +315,12 @@ rustls = { version = "0.23", default-features = false }
 [patch.crates-io]
 # Keep Socket.IO on the product-owned ring provider; see the patch note.
 eioc = { path = "third_party/eioc" }
+# Restore macOS traffic-light geometry after the queued native style reset.
+# See third_party/tao/OPENBITFUN-PATCH.md for the upstream source and removal condition.
+tao = { path = "third_party/tao" }
+# Keep macOS HTML drags in WebKit while preserving native file-drop paths.
+# See third_party/wry/OPENBITFUN-PATCH.md for source and removal conditions.
+wry = { path = "third_party/wry" }
 # Tauri 2.11 loses keyboard focus for child webviews after Windows reactivates
 # an `unstable` multi-webview window. Use the upstream fix until released;
 # this revision also adopts tao 0.36, which includes the Windows input deadlock fix.
@@ -324,11 +343,9 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
-# NOTE: do not set `panic = "abort"` here. Several production paths rely on
-# `catch_unwind` to contain third-party panics instead of taking down the app:
-# `browser_api::browser_get_url` (known wry bug where WKWebView URL is nil) and
-# the relay client's TLS connector construction. Aborting would turn those
-# recoverable failures into process crashes.
+# Keep unwinding enabled for scoped `catch_unwind` recovery, such as the relay
+# client's TLS connector construction. Aborting would turn those recoverable
+# failures into process crashes.
 
 [profile.release-fast]
 inherits = "release"
@@ -336,3 +353,12 @@ lto = false
 codegen-units = 16
 strip = false
 incremental = true
+
+# Build the window-only sidecar independently, including during Desktop dev.
+# Never inherit Desktop's large debug artifact or its unified dependency features.
+[profile.miniapp-shell]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+debug = false
+strip = true

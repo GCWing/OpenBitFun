@@ -73,6 +73,9 @@ function flowItemSearchSources(
 }
 
 function getVirtualItemSearchSources(item: VirtualItem): SearchableSource[] {
+  if (item.type === 'background-run') {
+    return [{ content: item.turn.userMessage.content }, ...flowItemSearchSources(item.turn.modelRounds.flatMap(round => round.items))];
+  }
   if (item.type === 'user-message' || item.type === 'user-steering-message') {
     return [{ content: item.data?.content ?? '' }];
   }

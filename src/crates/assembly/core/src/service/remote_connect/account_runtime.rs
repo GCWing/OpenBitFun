@@ -223,7 +223,7 @@ impl AccountRuntime {
 
     pub async fn try_restore_session(self: &Arc<Self>) -> Option<String> {
         if let Ok(Some(loaded)) = session_store::load_session_detailed() {
-            if openbitfun_services_integrations::remote_connect::account::is_retired_official_relay(
+            if openbitfun_services_integrations::remote_connect::account::persisted_relay_requires_migration(
                 &loaded.relay_url,
             ) {
                 if let Some(device_id) = loaded.device_id.as_deref() {
@@ -398,7 +398,7 @@ impl AccountRuntime {
                 log::warn!("Failed to clean up retired account uploads: {error}");
             }
         }
-        session_store::clear_session();
+        // Atomic replacement preserves the previous credential if saving fails.
 
         let user_id = session.user_id.clone();
         let token = session.token.clone();

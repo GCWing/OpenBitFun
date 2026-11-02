@@ -1,0 +1,38 @@
+import type { ComponentMeta } from "../../registry.types";
+
+export const mobileSwitchMeta = {
+  category: "mobile",
+  description: "A touch-sized settings row that pairs a label and its explanation with the product switch.",
+  maturity: "stable",
+  name: "MobileSwitch",
+  props: [
+    { name: "label", type: "ReactNode" },
+    { name: "description", type: "ReactNode" },
+    { name: "checked", type: "boolean" },
+    { defaultValue: "false", name: "defaultChecked", type: "boolean" },
+    { name: "onCheckedChange", type: "(checked: boolean) => void" },
+    { defaultValue: "plain", name: "appearance", type: '"plain" | "surface"' },
+  ],
+  states: ["off", "on", "hover", "active", "focus-visible", "disabled"],
+  tokens: [
+    "color.action.neutral.surface.hover",
+    "color.action.neutral.surface.pressed",
+    "color.border.subtle",
+    "color.content.disabled",
+    "color.content.muted",
+    "color.content.primary",
+    "color.control.switch.thumb",
+    "color.control.switch.track",
+    "color.control.switch.track.checked",
+    "color.focus.ring",
+    "radius.md",
+    "radius.pill",
+    "shadow.xs",
+    "space.1",
+    "space.2",
+    "space.3",
+    "type.body.md.fontSize",
+    "type.body.xs.fontSize",
+    "type.label.lg.fontWeight",
+  ],
+} as const satisfies ComponentMeta;

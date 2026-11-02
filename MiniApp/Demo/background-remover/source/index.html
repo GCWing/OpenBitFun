@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>轻抠 · Background Remover</title>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1 data-i18n="title"></h1>
+        <p data-i18n="subtitle"></p>
+      </div>
+      <div class="header-actions">
+        <span class="local-badge" data-i18n="local"></span>
+        <button id="locale" class="quiet" type="button" data-i18n-aria="switchLanguage">EN</button>
+        <button id="theme" class="quiet" type="button" data-i18n="theme" hidden></button>
+      </div>
+    </header>
+
+    <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+    <section id="upload" class="upload">
+      <button id="choose" class="upload-button" type="button">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5" /></svg>
+        <strong data-i18n="upload"></strong>
+        <span data-i18n="uploadHint"></span>
+      </button>
+      <p class="formats" data-i18n="formats"></p>
+    </section>
+
+    <section id="editor" class="editor" hidden>
+      <div class="filebar">
+        <div class="file-info"><strong id="filename"></strong><span id="dimensions"></span></div>
+        <button id="replace" type="button" data-i18n="replace"></button>
+      </div>
+      <div class="workspace">
+        <div class="previews">
+          <figure class="preview-panel">
+            <figcaption><span data-i18n="original"></span><span id="pick-hint" class="muted" data-i18n="pickHint"></span></figcaption>
+            <div class="canvas-stage checker">
+              <canvas id="original" tabindex="0" role="img" data-i18n-aria="originalCanvas"></canvas>
+            </div>
+          </figure>
+          <figure class="preview-panel">
+            <figcaption><span data-i18n="result"></span><span class="muted">PNG</span></figcaption>
+            <div id="result-stage" class="canvas-stage checker">
+              <canvas id="result" role="img" data-i18n-aria="resultCanvas"></canvas>
+            </div>
+          </figure>
+        </div>
+        <aside class="settings" aria-labelledby="settings-title">
+          <h2 id="settings-title" data-i18n="settings"></h2>
+          <fieldset id="controls">
+            <div class="control-group">
+              <label for="background" data-i18n="background"></label>
+              <div class="color-row">
+                <input id="background" type="color" data-i18n-aria="background" />
+                <output id="color-value"></output>
+                <button id="auto" type="button" data-i18n="auto"></button>
+              </div>
+              <button id="eyedropper" type="button" class="wide" aria-pressed="false" data-i18n="pick"></button>
+            </div>
+            <div class="control-group">
+              <div class="label-row"><label for="tolerance" data-i18n="tolerance"></label><output id="tolerance-value" for="tolerance">24</output></div>
+              <input id="tolerance" type="range" min="0" max="160" step="1" value="24" />
+              <p class="hint" data-i18n="toleranceHint"></p>
+            </div>
+            <div class="control-group">
+              <div class="label-row"><label for="feather" data-i18n="feather"></label><output id="feather-value" for="feather">16</output></div>
+              <input id="feather" type="range" min="0" max="64" step="1" value="16" />
+              <p class="hint" data-i18n="featherHint"></p>
+            </div>
+            <label class="check-row"><input id="connected" type="checkbox" checked /><span data-i18n="connected"></span></label>
+            <p class="hint" data-i18n="connectedHint"></p>
+            <label class="check-row"><input id="decontaminate" type="checkbox" checked /><span data-i18n="decontaminate"></span></label>
+            <button id="reset" type="button" class="wide" data-i18n="reset"></button>
+          </fieldset>
+          <div class="export-group">
+            <label class="check-row"><input id="contrast" type="checkbox" /><span data-i18n="contrast"></span></label>
+            <button id="download" type="button" class="primary wide" data-i18n="download" disabled></button>
+            <p class="hint" data-i18n="exportHint"></p>
+          </div>
+        </aside>
+      </div>
+    </section>
+    <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>
+    <footer data-i18n="scope"></footer>
+  </main>
+</body>
+</html>

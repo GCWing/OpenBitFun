@@ -60,7 +60,7 @@ SessionManager -> Session -> DialogTurn -> ModelRound
   package/module 归属；不得用互斥 Cargo `cfg` 隐藏未评审的 Core 能力。
 - 保持轻量兼容 feature 可独立编译。本地服务 profile 为 `dispatch-store`、`terminal`、
   `workspace-runtime` 和 `workspace-watch`；`remote-workspace` 只增加远程工作区 facade，
-  `ssh-remote` 才增加具体 SSH transport。`announcement`、`file-watch`、`git`、
+  `ssh-remote` 才增加具体 SSH transport。`file-watch`、`git`、
   `review-platform` 也保持独立，`service-integrations` 只是其兼容聚合。任何窄 feature 都不得直接或间接启用 `product-full`。
 - `product-full` 必须显式组合自身消费的每个能力，包括 `permission`、`session-git`、
   `runtime-ownership` 等产品专属 `services-core` feature。不得把这些 feature 写在依赖声明上，

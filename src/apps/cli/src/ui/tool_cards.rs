@@ -131,6 +131,8 @@ fn tool_display_mode(tool_name: &str, tool_state: &ToolDisplayState) -> ToolDisp
         // Always block tools
         "TodoWrite" | "AskUserQuestion" | "CreatePlan" => ToolDisplayMode::Block,
 
+        "OpenBitFunControl" if login_qr_result(tool_state).is_some() => ToolDisplayMode::Block,
+
         // MCP tools: inline when pending, block when has output
         _ if tool_name.starts_with("mcp_") => {
             if tool_state.result.is_some() {
@@ -635,6 +637,9 @@ fn render_block_dispatch(
             available_width,
         ),
         "Delete" => render_delete_block(tool_state, theme, focused, spinner_frame, available_width),
+        "OpenBitFunControl" if login_qr_result(tool_state).is_some() => {
+            render_login_qr_block(tool_state, theme, focused, spinner_frame, available_width)
+        }
         "Task" | "AgentSpawn" => {
             render_task_block(tool_state, theme, focused, spinner_frame, available_width)
         }
@@ -664,6 +669,79 @@ fn render_block_dispatch(
             available_width,
         ),
     }
+}
+
+fn login_qr_result(tool_state: &ToolDisplayState) -> Option<&serde_json::Value> {
+    let result = tool_state.metadata.as_ref()?;
+    (tool_state.status == ToolDisplayStatus::Success
+        && result
+            .get("loginStatus")
+            .and_then(|value| value.as_str())
+            .is_some()
+        && (result
+            .get("qrTerminal")
+            .and_then(|value| value.as_str())
+            .is_some()
+            || result
+                .get("qrImageUrl")
+                .and_then(|value| value.as_str())
+                .is_some()))
+    .then_some(result)
+}
+
+fn render_login_qr_block(
+    tool_state: &ToolDisplayState,
+    theme: &Theme,
+    focused: bool,
+    spinner_frame: &str,
+    available_width: u16,
+) -> ToolCardRenderOutput {
+    let result = login_qr_result(tool_state).expect("QR display mode requires login metadata");
+    let max_width = block_content_max_width(available_width);
+    let mut content_lines = Vec::new();
+    let qr = result.get("qrTerminal").and_then(|value| value.as_str());
+    let rows: Vec<&str> = qr.unwrap_or_default().lines().collect();
+    let qr_width = rows.first().map_or(0, |line| line.chars().count());
+    // QR versions are at most 177 modules, plus the 4-module quiet zone.
+    // Never wrap, trim, collapse, or interpret escape sequences in QR data.
+    let valid = (1..=185).contains(&qr_width)
+        && !rows.is_empty()
+        && rows.len() <= 93
+        && rows.iter().all(|line| {
+            line.chars().count() == qr_width
+                && line.chars().all(|ch| matches!(ch, ' ' | '▀' | '▄' | '█'))
+        });
+    let message = if valid && qr_width <= max_width {
+        "Scan with WeChat, then confirm on your phone. Use the latest QR shown.".to_string()
+    } else if valid {
+        format!(
+            "Widen the terminal to at least {} columns to show the QR without wrapping.",
+            qr_width + 8
+        )
+    } else {
+        "This login QR cannot be rendered in the terminal. Display qrImageUrl in a graphical client.".to_string()
+    };
+    for line in wrap_display_lines(&message, max_width) {
+        content_lines.push(Line::from(Span::styled(line, theme.style(StyleKind::Info))));
+    }
+    if valid && qr_width <= max_width {
+        content_lines.extend(
+            rows.into_iter().map(|line| {
+                Line::from(Span::styled(line.to_owned(), super::theme::qr_code_style()))
+            }),
+        );
+    }
+    assemble_block(BlockAssembly {
+        title: "WeChat login",
+        content_lines,
+        theme,
+        is_running: false,
+        error: None,
+        focused,
+        tool_state,
+        spinner_frame,
+        available_width,
+    })
 }
 
 fn filter_hmos_errors(stderr: &str) -> Vec<&str> {
@@ -2119,7 +2197,103 @@ fn capitalize_first(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::skill_display_name;
+    use super::*;
+    use ratatui::{backend::TestBackend, style::Color, widgets::List, Terminal};
+
+    fn login_qr_state() -> ToolDisplayState {
+        let qr = openbitfun_core::service::remote_connect::QrGenerator::present_content(
+            "https://example.test/wechat-login?code=terminal-fixture",
+        )
+        .unwrap();
+        ToolDisplayState {
+            tool_id: "login-qr-fixture".into(),
+            tool_name: "OpenBitFunControl".into(),
+            // History replay does not retain the original tool parameters.
+            parameters: serde_json::Value::Null,
+            status: ToolDisplayStatus::Success,
+            result: Some("Model summary without the QR".into()),
+            progress_message: None,
+            duration_ms: None,
+            metadata: Some(serde_json::json!({
+                "loginStatus": "awaiting_scan", "qrTerminal": qr.terminal,
+                "qrImageUrl": qr.image_url, "sessionKey": "private-login-session"
+            })),
+            subagent_progress: None,
+        }
+    }
+
+    #[test]
+    fn login_qr_is_complete_and_scannable_without_expanding_or_model_transcription() {
+        let state = login_qr_state();
+        let qr = state.metadata.as_ref().unwrap()["qrTerminal"]
+            .as_str()
+            .unwrap();
+        let expected: Vec<_> = qr.lines().collect();
+        for theme in [Theme::dark(), Theme::light(), Theme::monochrome()] {
+            for expanded in [false, true] {
+                let rendered = render_tool_card_inner(&state, &theme, expanded, true, "", 80);
+                assert!(!rendered
+                    .plain_lines
+                    .join("\n")
+                    .contains("private-login-session"));
+                let height = rendered.items.len() as u16;
+                let mut terminal = Terminal::new(TestBackend::new(80, height)).unwrap();
+                terminal
+                    .draw(|frame| frame.render_widget(List::new(rendered.items), frame.area()))
+                    .unwrap();
+                let buffer = terminal.backend().buffer();
+                let mut actual = Vec::new();
+                for y in 0..height {
+                    // The actual List renderer must preserve foreground/background,
+                    // including all-space rows in the QR's light quiet zone.
+                    if buffer[(7, y)].fg == Color::Black && buffer[(7, y)].bg == Color::White {
+                        let mut row = String::new();
+                        for x in 7..7 + expected[0].chars().count() as u16 {
+                            let cell = &buffer[(x, y)];
+                            assert_eq!((cell.fg, cell.bg), (Color::Black, Color::White));
+                            row.push_str(cell.symbol());
+                        }
+                        actual.push(row);
+                    }
+                }
+                assert_eq!(actual, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn narrow_terminal_hides_qr_until_resize_instead_of_corrupting_modules() {
+        clear_tool_card_cache();
+        let state = login_qr_state();
+        let qr = state.metadata.as_ref().unwrap()["qrTerminal"]
+            .as_str()
+            .unwrap();
+        let width = qr.lines().next().unwrap().chars().count() as u16;
+        let narrow = render_tool_card(&state, &Theme::dark(), false, false, "", width + 7);
+        let text = narrow.plain_lines.join("\n");
+        assert!(text.contains("Widen the terminal"));
+        assert!(!text.contains('█'));
+        let resized = render_tool_card(&state, &Theme::dark(), false, false, "", width + 8);
+        assert!(resized.plain_lines.join("\n").contains('█'));
+        clear_tool_card_cache();
+    }
+
+    #[test]
+    fn image_only_and_invalid_qr_data_have_explicit_fallbacks() {
+        let mut state = login_qr_state();
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!("█\u{1b}[2J"),
+            serde_json::json!("█\n██"),
+        ] {
+            state.metadata.as_mut().unwrap()["qrTerminal"] = value;
+            let rendered = render_tool_card_inner(&state, &Theme::dark(), false, false, "", 80);
+            let text = rendered.plain_lines.join("\n");
+            assert!(text.contains("graphical client"));
+            assert!(!text.contains('\u{1b}'));
+            assert!(!text.contains('█'));
+        }
+    }
 
     #[test]
     fn skill_name_is_read_from_command_parameter() {

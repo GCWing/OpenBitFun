@@ -4,6 +4,19 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
 
+const preparation = vi.hoisted(() => ({
+  ready: vi.fn(() => true),
+  preload: vi.fn(async (_pageId: string) => undefined),
+  loading: vi.fn(),
+}));
+vi.mock('./pages/shared/SettingsPage', () => ({
+  SettingsPage: ({ pageId, children }: { pageId: string; children: React.ReactNode }) => <section><h2>{pageId}</h2>{children}</section>,
+}));
+vi.mock('@/infrastructure/config/components/common', () => ({
+  ConfigLoadingState: () => { preparation.loading(); return <div data-testid="pending-page" />; },
+  ConfigRetryState: ({ onRetry }: { onRetry: () => void }) => <button data-testid="retry-page" onClick={onRetry}>Retry</button>,
+}));
+
 vi.mock('./settingsRegistry', () => {
   const pages = {
     'application.general': {
@@ -33,12 +46,13 @@ vi.mock('./settingsRegistry', () => {
     DEFAULT_SETTINGS_PAGE_ID: 'application.general',
     getSettingsPageManifest: (pageId: keyof typeof pages) => pages[pageId] ?? pages['application.general'],
     isSettingsPageId: (value: string) => value in pages,
-    isSettingsPageReady: () => true,
-    preloadSettingsPage: vi.fn(async () => undefined),
+    isSettingsPageReady: preparation.ready,
+    preloadSettingsPage: preparation.preload,
   };
 });
 
 import SettingsScene from './SettingsScene';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { useSettingsStore } from './settingsStore';
 import {
   registerSettingsDraft,
@@ -50,6 +64,9 @@ describe('SettingsScene canonical page routing', () => {
   let root: Root;
 
   beforeEach(() => {
+    preparation.ready.mockReset().mockReturnValue(true);
+    preparation.preload.mockReset().mockResolvedValue(undefined);
+    preparation.loading.mockClear();
     resetSettingsDraftRegistryForTests();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -135,4 +152,49 @@ describe('SettingsScene canonical page routing', () => {
     expect(save).toHaveBeenCalledOnce();
     expect(useSettingsStore.getState().activePageId).toBe('application.appearance');
   });
+  it('never mounts loading UI while switching between prepared pages', async () => {
+    await act(async () => root.render(<SettingsScene />));
+    const frame = container.querySelector('.openbitfun-settings-scene__content-wrapper');
+    await act(async () => useSettingsStore.getState().openPage('application.appearance', 'pointer'));
+    await act(async () => useSettingsStore.getState().openPage('application.general', 'pointer'));
+    expect(preparation.loading).not.toHaveBeenCalled();
+    expect(container.querySelector('.openbitfun-settings-scene__content-wrapper')).toBe(frame);
+    expect(container.querySelectorAll('[data-testid="settings-scene-content"]')).toHaveLength(1);
+  });
+
+  it('keeps the latest destination when cold imports complete out of order', async () => {
+    let finishAppearance!: () => void;
+    let finishAutomation!: () => void;
+    preparation.ready.mockReturnValue(false);
+    preparation.preload.mockImplementation(pageId => new Promise<void>(resolve => {
+      if (pageId === 'application.appearance') finishAppearance = resolve;
+      else finishAutomation = resolve;
+    }));
+    useSettingsStore.getState().openPage('application.appearance');
+    await act(async () => root.render(<SettingsScene />));
+    await act(async () => useSettingsStore.getState().openPage('tools.automation'));
+    await act(async () => finishAppearance());
+    expect(container.querySelector('h2')?.textContent).toBe('tools.automation');
+    expect(container.querySelector('[data-testid="appearance-page"]')).toBeNull();
+    await act(async () => finishAutomation());
+    expect(container.querySelector('[data-testid="automation-page"]')).not.toBeNull();
+  });
+
+  it('shows an in-place retry when preparation fails and recovers without leaving settings', async () => {
+    preparation.ready.mockReturnValue(false);
+    preparation.preload.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => root.render(<SettingsScene />));
+    expect(container.querySelector('[data-testid="retry-page"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="general-page"]')).toBeNull();
+    await act(async () => (container.querySelector('[data-testid="retry-page"]') as HTMLButtonElement).click());
+    expect(container.querySelector('[data-testid="general-page"]')).not.toBeNull();
+  });
+
+  it('replaces page-local state synchronously on device activation', async () => {
+    await act(async () => root.render(<SettingsScene />));
+    const oldPage = container.querySelector('[data-testid="general-page"]');
+    await act(async () => activateSurface('peer-settings-test'));
+    expect(container.querySelector('[data-testid="general-page"]')).not.toBe(oldPage);
+  });
+
 });

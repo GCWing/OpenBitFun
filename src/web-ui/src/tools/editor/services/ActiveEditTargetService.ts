@@ -1,6 +1,13 @@
 import type * as monaco from 'monaco-editor';
 import { createLogger } from '@/shared/utils/logger';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
+import {
+  executeNativeEditAction,
+  insertTextIntoElement,
+  isMacOSDesktop,
+  isWritableTextInput,
+  readClipboardText,
+} from '@/shared/utils/nativeTextEditing';
 
 const log = createLogger('ActiveEditTargetService');
 
@@ -34,165 +41,6 @@ const MENU_EVENT_ACTIONS: Array<{ eventName: string; action: EditMenuAction }> =
 ];
 
 let monacoTargetCounter = 0;
-
-function isMacOSDesktop(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  const isTauri = '__TAURI__' in window;
-  return isTauri && typeof navigator.platform === 'string' && navigator.platform.toUpperCase().includes('MAC');
-}
-
-function isEditableInput(element: Element | null): element is HTMLInputElement | HTMLTextAreaElement {
-  if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) {
-    return false;
-  }
-
-  if (element instanceof HTMLTextAreaElement) {
-    return true;
-  }
-
-  const nonTextInputTypes = new Set([
-    'button',
-    'checkbox',
-    'color',
-    'file',
-    'hidden',
-    'image',
-    'radio',
-    'range',
-    'reset',
-    'submit',
-  ]);
-
-  return !nonTextInputTypes.has((element.type || 'text').toLowerCase());
-}
-
-function isNativeTextInput(element: Element | null): element is HTMLElement {
-  if (!element) {
-    return false;
-  }
-
-  if (isEditableInput(element)) {
-    return !element.readOnly && !element.disabled;
-  }
-
-  return element instanceof HTMLElement && element.isContentEditable;
-}
-
-function executeNativeEditActionOnElement(
-  element: Element | null,
-  action: EditMenuAction,
-): boolean {
-  if (!(element instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (!isNativeTextInput(element)) {
-    return false;
-  }
-
-  element.focus();
-
-  if (action === 'selectAll') {
-    if (isEditableInput(element)) {
-      element.select();
-      return true;
-    }
-
-    return document.execCommand('selectAll');
-  }
-
-  const commandMap: Record<Exclude<EditMenuAction, 'selectAll'>, string> = {
-    undo: 'undo',
-    redo: 'redo',
-    cut: 'cut',
-    copy: 'copy',
-    paste: 'paste',
-  };
-
-  return document.execCommand(commandMap[action]);
-}
-
-async function readClipboardText(): Promise<string | null> {
-  try {
-    if (navigator.clipboard?.readText) {
-      return await navigator.clipboard.readText();
-    }
-  } catch (error) {
-    log.warn('Failed to read clipboard via navigator.clipboard', { error });
-  }
-
-  if (!isMacOSDesktop()) {
-    return null;
-  }
-
-  try {
-    return await systemAPI.getClipboard();
-  } catch (error) {
-    log.warn('Failed to read clipboard via system API', { error });
-    return null;
-  }
-}
-
-function insertTextIntoElement(element: Element | null, text: string): boolean {
-  if (!text) {
-    return false;
-  }
-
-  if (isEditableInput(element)) {
-    if (element.readOnly || element.disabled) {
-      return false;
-    }
-
-    element.focus();
-    const start = element.selectionStart ?? element.value.length;
-    const end = element.selectionEnd ?? start;
-
-    element.setRangeText(text, start, end, 'end');
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    return true;
-  }
-
-  if (!(element instanceof HTMLElement) || !element.isContentEditable) {
-    return false;
-  }
-
-  element.focus();
-
-  const selection = window.getSelection();
-  if (!selection) {
-    return false;
-  }
-
-  if (document.execCommand('insertText', false, text)) {
-    return true;
-  }
-
-  if (selection.rangeCount === 0) {
-    return false;
-  }
-
-  const range = selection.getRangeAt(0);
-  range.deleteContents();
-  const textNode = document.createTextNode(text);
-  range.insertNode(textNode);
-  range.setStartAfter(textNode);
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  element.dispatchEvent(new Event('input', { bubbles: true }));
-  return true;
-}
-
-function canPasteIntoElement(element: Element | null): boolean {
-  if (isEditableInput(element)) {
-    return !element.readOnly && !element.disabled;
-  }
-
-  return element instanceof HTMLElement && element.isContentEditable;
-}
 
 export function createMonacoEditTarget(editor: monaco.editor.IStandaloneCodeEditor): EditTarget {
   const id = `monaco-${++monacoTargetCounter}`;
@@ -317,7 +165,7 @@ export class ActiveEditTargetService {
 
       if (action === 'cut' || action === 'copy' || action === 'selectAll') {
         const activeElement = document.activeElement;
-        if (focusedTarget.containsElement?.(activeElement) && executeNativeEditActionOnElement(activeElement, action)) {
+        if (focusedTarget.containsElement?.(activeElement) && executeNativeEditAction(activeElement, action)) {
           return true;
         }
       }
@@ -329,7 +177,7 @@ export class ActiveEditTargetService {
       return true;
     }
 
-    if (executeNativeEditActionOnElement(nativeElement, action)) {
+    if (executeNativeEditAction(nativeElement, action)) {
       void this.setMenuMode('system');
       return true;
     }
@@ -351,7 +199,7 @@ export class ActiveEditTargetService {
 
       if (action === 'cut' || action === 'copy' || action === 'selectAll') {
         const activeElement = document.activeElement;
-        if (target.containsElement?.(activeElement) && executeNativeEditActionOnElement(activeElement, action)) {
+        if (target.containsElement?.(activeElement) && executeNativeEditAction(activeElement, action)) {
           return true;
         }
       }
@@ -362,7 +210,7 @@ export class ActiveEditTargetService {
   }
 
   private pasteIntoElement(element: Element | null): boolean {
-    if (!canPasteIntoElement(element)) {
+    if (!isWritableTextInput(element)) {
       return false;
     }
 
@@ -447,7 +295,7 @@ export class ActiveEditTargetService {
       return null;
     }
 
-    return isNativeTextInput(activeElement) ? activeElement : null;
+    return isWritableTextInput(activeElement) ? activeElement : null;
   }
 
   private isInsideRegisteredTarget(element: Element | null): boolean {

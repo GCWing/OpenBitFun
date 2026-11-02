@@ -150,16 +150,49 @@
       }
     },
     {
-      "id": "data-migrator",
-      "label": "Offline Data Migrator",
+      "id": "data-tools",
+      "label": "Offline Data Tools",
       "kind": "canonical-web",
       "owner": "@openbitfun/design-tokens and @openbitfun/theme-openbitfun public CSS exports",
-      "root": "src/apps/data-migrator/ui",
+      "root": "src/apps/data-tools/ui",
       "audit": {
         "engine": "theme",
         "policy": "canonical-ui-zero",
         "packageContracts": ["@openbitfun/design-tokens", "@openbitfun/theme-openbitfun"],
         "excludePaths": ["generated"]
+      }
+    },
+    {
+      "id": "miniapp-chrome",
+      "label": "Shared MiniApp titlebar",
+      "kind": "canonical-web",
+      "owner": "MiniApp host chrome using canonical design tokens",
+      "root": "src/shared/miniapp-chrome",
+      "audit": {
+        "engine": "theme",
+        "policy": "canonical-ui-zero",
+        "packageContracts": [
+          "@openbitfun/design-tokens",
+          "@openbitfun/theme-openbitfun"
+        ],
+        "excludePaths": [
+          "generated"
+        ]
+      }
+    },
+    {
+      "id": "miniapp-shell",
+      "label": "Standalone MiniApp Shell",
+      "kind": "canonical-web",
+      "owner": "MiniApp host chrome using canonical design tokens",
+      "root": "src/apps/miniapp-shell",
+      "audit": {
+        "engine": "theme",
+        "policy": "canonical-ui-zero",
+        "packageContracts": [
+          "@openbitfun/design-tokens",
+          "@openbitfun/theme-openbitfun"
+        ]
       }
     },
     {
@@ -373,6 +406,41 @@
       }
     },
     {
+      "id": "miniapp-background-remover",
+      "label": "Background Remover MiniApp",
+      "kind": "miniapp",
+      "owner": "MiniApp public appearance contract",
+      "root": "MiniApp/Demo/background-remover",
+      "audit": {
+        "engine": "miniapp",
+        "generatedBundles": [
+          {
+            "output": "source/ui.js",
+            "inputs": ["source/ui/core.js", "source/ui/i18n.js", "source/ui/main.js"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "miniapp-icon-studio-v2",
+      "label": "Icon Studio V2.0.2 MiniApp",
+      "kind": "miniapp",
+      "owner": "MiniApp public appearance contract",
+      "root": "MiniApp/Demo/icon-studio-v2",
+      "audit": {
+        "engine": "miniapp",
+        "generatedBundles": [
+          {
+            "output": "source/ui.js",
+            "inputs": [
+              "source/ui/geometry.js", "source/ui/trace.js", "source/ui/i18n.js", "source/ui/state.js",
+              "source/ui/render.js", "source/ui/interactions.js", "source/ui/io.js", "source/ui/boot.js"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "miniapp-icon-design-system",
       "label": "Icon Design System MiniApp",
       "kind": "miniapp",
@@ -416,14 +484,24 @@
       "command": ["node", "scripts/check-subagent-avatar-assets.mjs"]
     },
     {
-      "id": "data-migrator-design-system",
-      "surfaceIds": ["data-migrator"],
-      "command": ["node", "scripts/generate-data-migrator-theme.mjs", "--check"]
+      "id": "data-tools-design-system",
+      "surfaceIds": ["data-tools"],
+      "command": ["node", "scripts/generate-data-tools-theme.mjs", "--check"]
     },
     {
       "id": "desktop-appearance-projection",
       "surfaceIds": ["web-ui", "desktop-bootstrap"],
       "command": ["node", "scripts/generate-startup-appearance-bootstrap.mjs", "--check"]
+    },
+    {
+      "id": "miniapp-chat-styles",
+      "surfaceIds": ["miniapp-shell"],
+      "command": ["node", "scripts/generate-miniapp-chat-styles.mjs", "--check"]
+    },
+    {
+      "id": "miniapp-chrome-theme",
+      "surfaceIds": ["miniapp-chrome", "miniapp-shell"],
+      "command": ["node", "scripts/generate-miniapp-chrome-theme.mjs", "--check"]
     },
     {
       "id": "miniapp-appearance-projection",
@@ -536,10 +614,10 @@
       "reason": "Preview data is generated from the native mobile token contract and checked for drift."
     },
     {
-      "id": "data-migrator-generated",
-      "path": "src/apps/data-migrator/ui/generated",
+      "id": "data-tools-generated",
+      "path": "src/apps/data-tools/ui/generated",
       "kind": "generated-output",
-      "owner": "scripts/generate-data-migrator-theme.mjs",
+      "owner": "scripts/generate-data-tools-theme.mjs",
       "reason": "Offline CSS is bundled from public design-system exports and checked for drift."
     },
     {

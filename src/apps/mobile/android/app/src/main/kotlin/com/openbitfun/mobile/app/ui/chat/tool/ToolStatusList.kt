@@ -231,7 +231,7 @@ internal fun ToolStatusRow(
             (if (ToolAction.ANSWER in tool.actions) setOf(ToolAction.CANCEL) else emptySet())
     } else tool.actions
     val blocking = transcriptActions.isNotEmpty()
-    val emphasized = expanded || blocking || tool.phase == ToolPhase.FAILED
+    val emphasized = expanded || blocking
     val canExpand = tool.expandable
     val openable = tool.filePath.isNotEmpty()
 
@@ -268,7 +268,6 @@ internal fun ToolStatusRow(
                 toolLineLabel(tool),
                 style = MaterialTheme.typography.bodySmall,
                 color = when {
-                    tool.phase == ToolPhase.FAILED -> MaterialTheme.colorScheme.error
                     openable -> MaterialTheme.colorScheme.primary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -442,8 +441,8 @@ private fun TodoToolCard(tool: ToolCard, enabled: Boolean, modifier: Modifier) {
  * The row's one line, ported from `toolLineLabel`.
  *
  * What it leads with is what the reader wants first, and that changes with the
- * state: a running tool leads with the thing it is working on, a failed one with
- * the failure, and anything waiting on the user with the fact that it is.
+ * state: a running tool leads with the thing it is working on, and anything
+ * waiting on the user with the fact that it is. Failures remain in the details.
  */
 @Composable
 private fun toolLineLabel(tool: ToolCard): String {
@@ -452,9 +451,6 @@ private fun toolLineLabel(tool: ToolCard): String {
     return when {
         tool.phase == ToolPhase.RUNNING ->
             stringResource(R.string.tool_line_running, target.ifEmpty { operation })
-
-        tool.phase == ToolPhase.FAILED ->
-            join(stringResource(R.string.tool_line_failed, operation), target)
 
         tool.phase == ToolPhase.PENDING_CONFIRMATION || ToolAction.ANSWER in tool.actions ->
             join(stringResource(R.string.tool_phase_pending), operation)

@@ -5,6 +5,7 @@ import type {
   WorkspaceInfo,
   ActiveTurnSnapshot,
   AssistantEntry,
+  RecentWorkspaceEntry,
 } from './RemoteSessionManager';
 
 export type ConnectionStatus = 'idle' | 'pairing' | 'paired' | 'error';
@@ -21,6 +22,10 @@ interface MobileStore {
 
   currentAssistant: AssistantEntry | null;
   setCurrentAssistant: (a: AssistantEntry | null) => void;
+
+  /** The host's workspace catalog, loaded by the session list. Used for conservative routing checks. */
+  knownWorkspaces: RecentWorkspaceEntry[];
+  setKnownWorkspaces: (workspaces: RecentWorkspaceEntry[]) => void;
 
   /** One-shot hint after pairing so SessionList matches desktop assistant vs project workspace. */
   pairedDisplayMode: 'pro' | 'assistant' | null;
@@ -80,6 +85,9 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
 
   currentAssistant: null,
   setCurrentAssistant: (currentAssistant) => set({ currentAssistant }),
+
+  knownWorkspaces: [],
+  setKnownWorkspaces: (knownWorkspaces) => set({ knownWorkspaces }),
 
   pairedDisplayMode: null,
   setPairedDisplayMode: (pairedDisplayMode) => set({ pairedDisplayMode }),
@@ -166,6 +174,7 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
       connectionStatus: 'idle',
       currentWorkspace: null,
       currentAssistant: null,
+      knownWorkspaces: [],
       pairedDisplayMode: null,
       authenticatedUserId: null,
       authenticatedUserLabel: null,
@@ -182,6 +191,7 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
     set({
       currentWorkspace: null,
       currentAssistant: null,
+      knownWorkspaces: [],
       pairedDisplayMode: null,
       sessions: [],
       activeSessionId: null,

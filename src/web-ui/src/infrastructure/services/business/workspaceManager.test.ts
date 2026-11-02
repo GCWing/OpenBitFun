@@ -766,6 +766,27 @@ describe('WorkspaceManager project rename', () => {
     expect(state.openedWorkspaces.get('project-1')?.name).toBe('Renamed project');
     expect(state.recentWorkspaces[0]?.name).toBe('Renamed project');
   });
+
+  it('publishes a project name and folder associations in the same record update', async () => {
+    const workspace = { id: 'project-1', name: 'frontend', rootPath: '/srv/frontend', workspaceKind: 'normal' };
+    const relatedPaths = [{ path: '/srv/backend' }];
+    const updated = { ...workspace, name: 'Product', relatedPaths };
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: workspace,
+      openedWorkspaces: [workspace], recentWorkspaces: [workspace], legacyRemoteWorkspace: null,
+    });
+    globalStateMocks.updateWorkspaceInfo.mockResolvedValue(updated);
+    listenMock.mockResolvedValue(() => undefined);
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    await manager.updateWorkspaceInfo(workspace.id, { name: 'Product', relatedPaths });
+    expect(globalStateMocks.updateWorkspaceInfo).toHaveBeenCalledOnce();
+    expect(globalStateMocks.updateWorkspaceInfo).toHaveBeenCalledWith(workspace.id, { name: 'Product', relatedPaths });
+    expect(manager.getState().currentWorkspace).toMatchObject(updated);
+    expect(manager.getState().openedWorkspaces.get(workspace.id)).toMatchObject(updated);
+    expect(manager.getState().recentWorkspaces[0]).toMatchObject(updated);
+  });
+
 });
 
 describe('WorkspaceManager host catalog hints', () => {

@@ -66,6 +66,7 @@ export default function conversationPresentationUnitTest() {
       expect(HarnessProfilePolicy.agentType('minimal')).assertEqual('minimal');
       expect(HarnessProfilePolicy.agentType('standard')).assertEqual('agentic');
       expect(HarnessProfilePolicy.agentType('ultimate')).assertEqual('Ultra');
+      expect(HarnessProfilePolicy.agentType('creative')).assertEqual('Creative');
     });
   });
 
@@ -580,6 +581,15 @@ export default function conversationPresentationUnitTest() {
   });
 
   describe('ToolCollapsePolicy', () => {
+    it('folds failed calls with completed work and retains error details', 0, () => {
+      const failed = toolStatus('failed', 'WebFetch', 'failed');
+      failed.error_preview = 'HTTP 404';
+      const groups = ToolCollapsePolicy.collapsedGroups([toolStatus('read', 'Read', 'completed'), failed]);
+      expect(groups.length).assertEqual(1);
+      expect(groups[0].type).assertEqual('summary');
+      expect(groups[0].tools[1].error_preview).assertEqual('HTTP 404');
+    });
+
     it('folds consecutive completed tools of any kind into one summary', 0, () => {
       const groups = ToolCollapsePolicy.collapsedGroups([
         toolStatus('1', 'Grep', 'completed'),
@@ -617,7 +627,7 @@ export default function conversationPresentationUnitTest() {
       expect(PlanToolPolicy.canBuild(planTool)).assertTrue();
     });
 
-    it('does not fold running, failed, or blocking tools into the summary', 0, () => {
+    it('does not fold running or blocking tools into the summary', 0, () => {
       const groups = ToolCollapsePolicy.collapsedGroups([
         toolStatus('1', 'Grep', 'completed'),
         toolStatus('2', 'Read', 'completed'),

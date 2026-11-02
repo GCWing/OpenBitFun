@@ -324,14 +324,16 @@ describe('L0 Appearance', () => {
     );
     await navBack.click();
 
-    const miniAppsEntry = await waitForDisplayed('[data-testid="nav-miniapps-entry"]');
+    const overviewEntry = await waitForDisplayed('[data-testid="nav-personal-overview"]');
+    await overviewEntry.click();
+    const miniAppsEntry = await waitForDisplayed('[data-testid="personal-overview-more-miniapps"]');
     await miniAppsEntry.click();
     await waitForDisplayed('[data-openbitfun-scene="miniapp-gallery"]');
     await waitForDisplayed('.miniapp-gallery-scene__tabs .openbitfun-tabs__tab--active');
     await waitForDisplayed('[data-openbitfun-component="mini-app-card"]', 20000);
 
     const miniAppPresentation = await browser.execute(() => {
-      const selectedNavigation = document.querySelector<HTMLElement>('[data-testid="nav-miniapps-entry"]');
+      const selectedNavigation = document.querySelector<HTMLElement>('[data-testid="nav-personal-overview"]');
       const selectedTab = document.querySelector<HTMLElement>(
         '.miniapp-gallery-scene__tabs .openbitfun-tabs__tab--active',
       );

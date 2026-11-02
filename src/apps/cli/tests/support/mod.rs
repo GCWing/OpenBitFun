@@ -158,18 +158,31 @@ impl CliTestEnvironment {
     }
 
     pub(crate) fn configure_product_control_mock_model(&self, server_base_url: &str) {
+        self.configure_tool_loop_mock_model(server_base_url);
+    }
+
+    pub(crate) fn configure_tool_loop_mock_model(&self, server_base_url: &str) {
         self.configure_mock_model(server_base_url);
+        self.allow_tool_loop_rounds();
+    }
+
+    pub(crate) fn configure_tool_loop_image_model(&self, server_base_url: &str) {
+        self.configure_mock_image_model(server_base_url);
+        self.allow_tool_loop_rounds();
+    }
+
+    fn allow_tool_loop_rounds(&self) {
         let config_path = self.user_root.join("config/app.json");
         let mut config: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(&config_path).expect("read product-control model config"),
+            &std::fs::read(&config_path).expect("read tool-loop model config"),
         )
-        .expect("parse product-control model config");
+        .expect("parse tool-loop model config");
         config["ai"]["max_rounds"] = json!(8);
         std::fs::write(
             config_path,
-            serde_json::to_vec_pretty(&config).expect("serialize product-control model config"),
+            serde_json::to_vec_pretty(&config).expect("serialize tool-loop model config"),
         )
-        .expect("write product-control model config");
+        .expect("write tool-loop model config");
     }
 
     pub(crate) fn app_config(&self) -> serde_json::Value {
@@ -177,6 +190,15 @@ impl CliTestEnvironment {
             &std::fs::read(self.user_root.join("config/app.json")).expect("read CLI app config"),
         )
         .expect("parse CLI app config")
+    }
+
+    pub(crate) fn cron_jobs_path(&self) -> PathBuf {
+        self.user_root.join("data/cron/jobs.json")
+    }
+
+    pub(crate) fn cron_jobs(&self) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(self.cron_jobs_path()).expect("read scheduled jobs"))
+            .expect("parse scheduled jobs")
     }
 
     pub(crate) fn configure_mock_image_model(&self, server_base_url: &str) {
@@ -317,6 +339,7 @@ enum MockModelResponse {
     Immediate,
     Gated,
     ProductControlLoop,
+    ToolSequence(Vec<(String, serde_json::Value)>),
     Http403 { reason: String },
     DisconnectThenHttp403,
     MalformedSseThenImmediate,
@@ -334,6 +357,10 @@ impl MockOpenAiServer {
 
     pub(crate) fn product_control_loop() -> Self {
         Self::spawn(MockModelResponse::ProductControlLoop)
+    }
+
+    pub(crate) fn tool_sequence(calls: Vec<(String, serde_json::Value)>) -> Self {
+        Self::spawn(MockModelResponse::ToolSequence(calls))
     }
 
     pub(crate) fn http_403(reason: impl Into<String>) -> Self {
@@ -437,19 +464,21 @@ impl MockOpenAiServer {
                             &disconnect_tx,
                         );
                         attempt += 1;
-                        let accepts_more_requests =
-                            matches!(
+                        let accepts_more_requests = matches!(
+                            response,
+                            MockModelResponse::Http403 { .. }
+                                | MockModelResponse::DisconnectThenHttp403
+                        ) || (matches!(
+                            response,
+                            MockModelResponse::MalformedSseThenImmediate
+                        ) && attempt < 2)
+                            || (matches!(
                                 response,
-                                MockModelResponse::Http403 { .. }
-                                    | MockModelResponse::DisconnectThenHttp403
-                            ) || (matches!(response, MockModelResponse::MalformedSseThenImmediate)
-                                && attempt < 2)
-                                || (matches!(
-                                    response,
-                                    MockModelResponse::ContextOverflowThenImmediate
-                                ) && attempt < 3)
-                                || (matches!(response, MockModelResponse::ProductControlLoop)
-                                    && attempt < 5);
+                                MockModelResponse::ContextOverflowThenImmediate
+                            ) && attempt < 3)
+                            || (matches!(response, MockModelResponse::ProductControlLoop)
+                                && attempt < 5)
+                            || matches!(&response, MockModelResponse::ToolSequence(calls) if attempt <= calls.len());
                         if accepts_more_requests {
                             continue;
                         }
@@ -525,6 +554,41 @@ fn serve_model_response(
 
     if matches!(response, MockModelResponse::ProductControlLoop) {
         serve_product_control_response(stream, attempt);
+        return;
+    }
+
+    if let MockModelResponse::ToolSequence(calls) = response {
+        let (delta, finish_reason) = match calls.get(attempt) {
+            Some((name, arguments)) => (
+                json!({"role":"assistant", "tool_calls":[{
+                    "index":0, "id":format!("call_sequence_{attempt}"), "type":"function",
+                    "function":{"name":name,"arguments":arguments.to_string()}
+                }]}),
+                "tool_calls",
+            ),
+            None => (
+                json!({"role":"assistant", "content":STREAM_COMPLETED_MARKER}),
+                "stop",
+            ),
+        };
+        write_sse_chunk(
+            stream,
+            &json!({
+                "id":format!("chatcmpl_sequence_{attempt}"), "object":"chat.completion.chunk",
+                "created":attempt, "model":"cli-e2e-model",
+                "choices":[{"index":0,"delta":delta,"finish_reason":finish_reason}]
+            })
+            .to_string(),
+        )
+        .expect("write scripted tool response");
+        // The client may close as soon as it consumes the finish reason. A Windows
+        // ConnectionAborted here must not kill the server for the next tool
+        // response; all required SSE data was already written successfully.
+        if write_chunk(stream, b"data: [DONE]\n\n").is_err() {
+            return;
+        }
+        let _ = stream.write_all(b"0\r\n\r\n");
+        let _ = stream.flush();
         return;
     }
 
@@ -718,11 +782,12 @@ fn serve_product_control_response(stream: &mut TcpStream, attempt: usize) {
         .expect("write product-control completion chunk");
     }
 
-    write_chunk(stream, b"data: [DONE]\n\n").expect("finish product-control SSE");
-    stream
-        .write_all(b"0\r\n\r\n")
-        .expect("finish product-control chunked response");
-    stream.flush().expect("flush product-control response");
+    // Match the ordinary streaming response: EOF after completion is normal.
+    if write_chunk(stream, b"data: [DONE]\n\n").is_err() {
+        return;
+    }
+    let _ = stream.write_all(b"0\r\n\r\n");
+    let _ = stream.flush();
 }
 
 fn write_http_403(stream: &mut TcpStream, reason: &str) -> std::io::Result<()> {

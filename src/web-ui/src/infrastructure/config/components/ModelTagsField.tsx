@@ -1,4 +1,4 @@
-import { Button, Field, Icon, IconButton, Input, StatusPill, Tooltip } from '@openbitfun/ui';
+import { Button, Capsule, Field, Icon, IconButton, Input, StatusPill, Tooltip } from '@openbitfun/ui';
 import { useRef, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { MAX_MODEL_USER_TAGS, normalizeModelTags } from '../services/modelTags';
@@ -90,46 +90,46 @@ export default function ModelTagsField({ tags, recommendedTags, disabled, layout
     <div className="openbitfun-model-settings__tag-editor" role="group" aria-label={t('pool.tagsLabel')}>
       <div className="openbitfun-model-settings__tag-list">
         {tags.map(tag => (
-          <div className="openbitfun-model-settings__model-capsule" key={tag}>
-            {tagDraft?.originalTag === tag ? tagInput : (
-              <>
-                <Button
-                  ref={element => {
-                    if (element) tagButtonRefs.current.set(tag, element);
-                    else tagButtonRefs.current.delete(tag);
-                  }}
-                  variant="outline"
+          <Capsule size="xs" className="openbitfun-model-settings__model-capsule" key={tag}
+            action={tagDraft?.originalTag === tag ? undefined : (
+              <Tooltip content={t('pool.removeTag', { tag })}>
+                <IconButton
+                  className="openbitfun-model-settings__model-capsule-dismiss"
                   size="xs"
-                  className="openbitfun-model-settings__model-capsule-edit"
-                  aria-label={t('pool.editTag', { tag })}
-                  disabled={disabled || tags.length > MAX_MODEL_USER_TAGS}
-                  onClick={() => updateTagDraft({ originalTag: tag, value: tag })}
-                >
-                  {tag}
-                </Button>
-                <Tooltip content={t('pool.removeTag', { tag })}>
-                  <IconButton
-                    className="openbitfun-model-settings__model-capsule-dismiss"
-                    size="xs"
-                    shape="circle"
-                    variant="quiet"
-                    aria-label={t('pool.removeTag', { tag })}
-                    disabled={disabled}
-                    onClick={() => {
-                      onChange(tags.filter(value => value !== tag));
-                      restoreTagFocus(tags.find(value => value !== tag));
-                    }}
-                    icon={<Icon name="xmark" size="sm" />}
-                  />
-                </Tooltip>
-              </>
+                  shape="circle"
+                  variant="quiet"
+                  aria-label={t('pool.removeTag', { tag })}
+                  disabled={disabled}
+                  onClick={() => {
+                    onChange(tags.filter(value => value !== tag));
+                    restoreTagFocus(tags.find(value => value !== tag));
+                  }}
+                  icon={<Icon name="xmark" size="sm" />}
+                />
+              </Tooltip>
+            )}>
+            {tagDraft?.originalTag === tag ? tagInput : (
+              <Button
+                ref={element => {
+                  if (element) tagButtonRefs.current.set(tag, element);
+                  else tagButtonRefs.current.delete(tag);
+                }}
+                variant="outline"
+                size="xs"
+                className="openbitfun-model-settings__model-capsule-edit"
+                aria-label={t('pool.editTag', { tag })}
+                disabled={disabled || tags.length > MAX_MODEL_USER_TAGS}
+                onClick={() => updateTagDraft({ originalTag: tag, value: tag })}
+              >
+                {tag}
+              </Button>
             )}
-          </div>
+          </Capsule>
         ))}
         {tagDraft?.originalTag === null && (
-          <div className="openbitfun-model-settings__model-capsule">
+          <Capsule size="xs" className="openbitfun-model-settings__model-capsule">
             {tagInput}
-          </div>
+          </Capsule>
         )}
       </div>
       <Tooltip content={atTagLimit ? t('pool.tagsLimitReached', { max: MAX_MODEL_USER_TAGS }) : t('pool.addTags')}>

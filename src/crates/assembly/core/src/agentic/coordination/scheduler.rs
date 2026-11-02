@@ -15,9 +15,9 @@ mod host_message_queue;
 use host_message_queue::HostQueueState;
 
 use super::coordinator::{
-    ensure_session_accepts_conversation, session_storage_workspace_locator,
-    ConversationCoordinator, DialogTriggerSource, DialogTurnStopDisposition,
-    HiddenSubagentExecutionRequest, SubagentResult,
+    ensure_session_accepts_conversation, resolve_loaded_session_storage_by_id,
+    session_storage_workspace_locator, ConversationCoordinator, DialogTriggerSource,
+    DialogTurnStopDisposition, HiddenSubagentExecutionRequest, SubagentResult,
 };
 use super::turn_outcome::TurnOutcome;
 use super::turn_settlement::TurnSettlementRegistration;
@@ -553,16 +553,17 @@ impl DialogScheduler {
         display_content: Option<String>,
         mut attachments: Vec<AgentInputAttachment>,
         metadata: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<DialogSteerOutcome, String> {
+    ) -> PortResult<DialogSteerOutcome> {
         if content.trim().is_empty() && attachments.is_empty() {
-            return Err("Steering content cannot be empty".to_string());
+            return Err(PortError::new(
+                PortErrorKind::InvalidRequest,
+                "Steering content cannot be empty",
+            ));
         }
         // Reject a malformed attachment here rather than at the round boundary:
         // the caller is still holding the user's message and can surface the
         // failure, whereas the injection consumer would have to drop it.
-        let mut images = agent_dialog_turn_image_contexts(&attachments)
-            .map_err(|error| error.to_string())?
-            .unwrap_or_default();
+        let mut images = agent_dialog_turn_image_contexts(&attachments)?.unwrap_or_default();
         let _operation_guard = self.lock_session_operation(&session_id).await;
         let active_turn_id = match self
             .session_manager
@@ -584,7 +585,7 @@ impl DialogScheduler {
             self.coordinator
                 .prepare_input_images(&session_id, &mut images)
                 .await
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| SchedulerSubmitError::Core(error).into_port_error())?;
             for (attachment, image) in attachments.iter_mut().zip(&images) {
                 if let Some(path) = &image.image_path {
                     attachment
@@ -614,14 +615,15 @@ impl DialogScheduler {
                     "Steering rejected: target turn is not running: session_id={}, turn_id={}",
                     session_id, turn_id
                 );
-                Err(error)
+                Err(PortError::new(PortErrorKind::SessionInUse, error))
             }
             DialogSteeringAction::Buffer {
                 mut injection,
                 outcome,
             } => {
                 self.prepare_goal_steering(&session_id, &turn_id, &mut injection)
-                    .await?;
+                    .await
+                    .map_err(|error| PortError::new(PortErrorKind::SessionInUse, error))?;
                 self.round_injection_buffer.push(&session_id, injection);
                 let DialogSteerOutcome::Buffered { steering_id, .. } = &outcome;
                 info!(
@@ -900,7 +902,10 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type: delivery.agent_type,
             workspace_path: delivery.workspace_path,
-            workspace_id: None,
+            workspace_id: self
+                .session_manager
+                .get_session(&delivery.session_id)
+                .and_then(|session| session.config.workspace_id),
             remote_connection_id: delivery.remote_connection_id,
             remote_ssh_host: delivery.remote_ssh_host,
             policy: DialogSubmissionPolicy::new(DialogTriggerSource::AgentSession, queue_priority),
@@ -1000,13 +1005,14 @@ impl DialogScheduler {
         user_message_metadata: Option<serde_json::Value>,
         image_contexts: Option<Vec<ImageContextData>>,
     ) -> Result<DialogSubmitOutcome, String> {
-        self.submit_with_prepended_messages(
+        self.submit_with_workspace_reference(
             session_id,
             user_input,
             original_user_input,
             turn_id,
             agent_type,
             workspace_path,
+            None,
             remote_connection_id,
             remote_ssh_host,
             policy,
@@ -1035,6 +1041,47 @@ impl DialogScheduler {
         prepended_messages: Vec<Message>,
         image_contexts: Option<Vec<ImageContextData>>,
     ) -> Result<DialogSubmitOutcome, String> {
+        let workspace_id = self
+            .session_manager
+            .get_session(&session_id)
+            .and_then(|session| session.config.workspace_id);
+        self.submit_with_workspace_reference(
+            session_id,
+            user_input,
+            original_user_input,
+            turn_id,
+            agent_type,
+            workspace_path,
+            workspace_id,
+            remote_connection_id,
+            remote_ssh_host,
+            policy,
+            reply_route,
+            user_message_metadata,
+            prepended_messages,
+            image_contexts,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_with_workspace_reference(
+        &self,
+        session_id: String,
+        user_input: String,
+        original_user_input: Option<String>,
+        turn_id: Option<String>,
+        agent_type: String,
+        workspace_path: Option<String>,
+        workspace_id: Option<String>,
+        remote_connection_id: Option<String>,
+        remote_ssh_host: Option<String>,
+        policy: DialogSubmissionPolicy,
+        reply_route: Option<AgentSessionReplyRoute>,
+        user_message_metadata: Option<serde_json::Value>,
+        prepended_messages: Vec<Message>,
+        image_contexts: Option<Vec<ImageContextData>>,
+    ) -> Result<DialogSubmitOutcome, String> {
         let resolved_turn_id = turn_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let queued_turn = QueuedTurn {
             user_input,
@@ -1043,7 +1090,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type,
             workspace_path,
-            workspace_id: None,
+            workspace_id,
             remote_connection_id,
             remote_ssh_host,
             policy,
@@ -1092,7 +1139,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type,
             workspace_path: session.config.workspace_path.clone(),
-            workspace_id: None,
+            workspace_id: session.config.workspace_id.clone(),
             remote_connection_id: session.config.remote_connection_id.clone(),
             remote_ssh_host: session.config.remote_ssh_host.clone(),
             policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::AgentSession),
@@ -1170,19 +1217,28 @@ impl DialogScheduler {
         let session = match self.session_manager.get_session(session_id) {
             Some(session) => session,
             None => {
-                let workspace_path = workspace_path.ok_or_else(|| {
-                    format!(
-                        "workspace_path is required when restoring session: {}",
-                        session_id
-                    )
-                })?;
-                let restore_path = Self::resolve_session_restore_path(
-                    workspace_path,
-                    remote_connection_id,
-                    remote_ssh_host,
-                )
-                .await
-                .map_err(|error| error.to_string())?;
+                let restore_path = match self
+                    .session_manager
+                    .require_session_storage_path(session_id)
+                    .await
+                {
+                    Ok(path) => path,
+                    Err(OpenBitFunError::NotFound(_)) => {
+                        let workspace_path = workspace_path.ok_or_else(|| {
+                            format!(
+                                "workspace_path is required when restoring session: {session_id}"
+                            )
+                        })?;
+                        self.resolve_session_restore_path(
+                            workspace_path,
+                            remote_connection_id,
+                            remote_ssh_host,
+                        )
+                        .await
+                        .map_err(|error| error.to_string())?
+                    }
+                    Err(error) => return Err(error.to_string()),
+                };
                 self.coordinator
                     .restore_session_from_storage_path(&restore_path, session_id)
                     .await
@@ -1198,6 +1254,7 @@ impl DialogScheduler {
     }
 
     async fn resolve_session_restore_path(
+        &self,
         workspace_path: &str,
         remote_connection_id: Option<&str>,
         remote_ssh_host: Option<&str>,
@@ -1208,7 +1265,7 @@ impl DialogScheduler {
             remote_ssh_host: remote_ssh_host.map(ToOwned::to_owned),
         };
 
-        CoreSessionStorePort::default()
+        CoreSessionStorePort::with_path_manager(self.session_manager.path_manager())
             .resolve_session_storage_path(request)
             .await
             .map(|resolution| resolution.effective_storage_path)
@@ -1266,7 +1323,8 @@ impl DialogScheduler {
                 "queue_scope_expired: session maintenance retired this submission".into(),
             ));
         }
-        if let Some(session) = self.session_manager.get_session(&session_id) {
+        let loaded_session = self.session_manager.get_session(&session_id);
+        if let Some(session) = loaded_session.as_ref() {
             queued_turn.workspace_path = session_storage_workspace_locator(
                 queued_turn.workspace_path.as_deref(),
                 session.config.workspace_path.as_deref(),
@@ -1284,32 +1342,56 @@ impl DialogScheduler {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .contains(&session_id, &resolved_turn_id);
+        // Pre-ID senders (older mobile/IM clients, Remote Connect peers, legacy
+        // app-server callers) only carry a path. When that path re-states the
+        // loaded session's own root, its workspace ID is authoritative; a bare
+        // path could be ambiguous with a same-root SSH record (#3275).
+        let loaded_session_storage = match (
+            host_owned || requested_workspace_id.is_some(),
+            loaded_session.as_ref(),
+            queued_turn.workspace_path.as_deref(),
+        ) {
+            (false, Some(session), Some(workspace_path)) => {
+                resolve_loaded_session_storage_by_id(
+                    &CoreSessionStorePort::with_path_manager(self.session_manager.path_manager()),
+                    &session.config,
+                    workspace_path,
+                    queued_turn.remote_connection_id.as_deref(),
+                    queued_turn.remote_ssh_host.as_deref(),
+                )
+                .await
+            }
+            _ => None,
+        };
+        let resolved_by_loaded_session_id = loaded_session_storage.is_some();
         let requested_storage_path = if host_owned {
             // Queue commands carry no controller filesystem locator. Preserve
             // the loaded session's authoritative local/remote storage binding.
             Some(
                 self.session_manager
-                    .effective_session_storage_path(&session_id)
+                    .require_session_storage_path(&session_id)
                     .await
-                    .ok_or_else(|| {
-                        SchedulerSubmitError::Message(
-                            "Host session storage binding unavailable".into(),
-                        )
-                    })?,
+                    .map_err(SchedulerSubmitError::Core)?,
             )
         } else if let Some(workspace_id) = requested_workspace_id.as_deref() {
             // ID-aware callers locate the session by its owning workspace; the
             // path on the request is only an execution-root projection.
             Some(
-                CoreSessionStorePort::default()
+                CoreSessionStorePort::with_path_manager(self.session_manager.path_manager())
                     .resolve_workspace_storage(workspace_id)
                     .await
                     .map(|resolution| resolution.effective_storage_path)
                     .map_err(SchedulerSubmitError::Port)?,
             )
+        } else if let Some(resolution) = loaded_session_storage {
+            Some(
+                resolution
+                    .map(|resolution| resolution.effective_storage_path)
+                    .map_err(SchedulerSubmitError::Port)?,
+            )
         } else if let Some(workspace_path) = queued_turn.workspace_path.as_deref() {
             Some(
-                Self::resolve_session_restore_path(
+                self.resolve_session_restore_path(
                     workspace_path,
                     queued_turn.remote_connection_id.as_deref(),
                     queued_turn.remote_ssh_host.as_deref(),
@@ -1333,7 +1415,7 @@ impl DialogScheduler {
             self.session_manager
                 .validate_session_storage_path_binding(&session_id, &requested_storage_path)
                 .map_err(SchedulerSubmitError::Core)?;
-            if host_owned || requested_workspace_id.is_some() {
+            if host_owned || requested_workspace_id.is_some() || resolved_by_loaded_session_id {
                 // The session is loaded and bound by ID; an omitted locator makes
                 // the coordinator reuse that binding instead of re-resolving a path.
                 queued_turn.workspace_path = None;
@@ -1848,7 +1930,7 @@ impl DialogScheduler {
             .await
     }
 
-    async fn cancel_active_turn_for_session_with_descendant_policy(
+    pub(crate) async fn cancel_active_turn_for_session_with_descendant_policy(
         &self,
         session_id: &str,
         wait_timeout: Duration,
@@ -2220,7 +2302,9 @@ impl DialogScheduler {
         session_id: &str,
         queued_turn: &QueuedTurn,
     ) -> Result<String, SchedulerSubmitError> {
-        let result = self.start_turn_inner(session_id, queued_turn).await;
+        // Startup crosses restore, history and context owners. Keep its state
+        // off the nested queue and background-result admission futures.
+        let result = Box::pin(self.start_turn_inner(session_id, queued_turn)).await;
         if let Ok(id) = &result {
             self.host_queue
                 .lock()
@@ -3221,10 +3305,6 @@ impl AgentDialogTurnPort for DialogScheduler {
         &self,
         request: AgentDialogSteerRequest,
     ) -> PortResult<DialogSteerOutcome> {
-        // An empty-but-attachment-free message and a malformed attachment are
-        // both bad requests; only a live-turn mismatch means "session in use".
-        let invalid_request = request.content.trim().is_empty() && request.attachments.is_empty()
-            || agent_dialog_turn_image_contexts(&request.attachments).is_err();
         DialogScheduler::buffer_steering(
             self,
             request.session_id,
@@ -3235,16 +3315,6 @@ impl AgentDialogTurnPort for DialogScheduler {
             request.metadata,
         )
         .await
-        .map_err(|error| {
-            PortError::new(
-                if invalid_request {
-                    PortErrorKind::InvalidRequest
-                } else {
-                    PortErrorKind::SessionInUse
-                },
-                error,
-            )
-        })
     }
 
     async fn recover_interrupted_turn(
@@ -3755,6 +3825,7 @@ mod tests {
                 "Reverted".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -3816,6 +3887,7 @@ mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -3875,8 +3947,10 @@ mod tests {
                 "External parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     model_id: Some("model-original".to_string()),
+                    enable_tools: false,
                     ..Default::default()
                 },
             )
@@ -3930,6 +4004,7 @@ mod tests {
                 "Interrupted".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4006,6 +4081,7 @@ mod tests {
                 "Goal parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4137,6 +4213,7 @@ mod tests {
                 "Interrupted queue hold".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4192,6 +4269,7 @@ mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4255,6 +4333,162 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn internal_follow_up_keeps_workspace_id_when_a_remote_root_collides() {
+        let (scheduler, manager, _, root) = test_scheduler();
+        let workspace = fixture_workspace_dir(root.path().join("same-name"));
+        let session = manager
+            .create_session(
+                "Owner".into(),
+                "Standard".into(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &workspace.to_string_lossy(),
+            "other-connection",
+            "localhost",
+        )
+        .await;
+        manager
+            .update_session_state(
+                &session.session_id,
+                SessionState::Processing {
+                    current_turn_id: "running".into(),
+                    phase: ProcessingPhase::Thinking,
+                },
+            )
+            .await
+            .unwrap();
+        let outcome = scheduler
+            .submit_with_prepended_messages(
+                session.session_id.clone(),
+                "follow-up".into(),
+                None,
+                Some("next-turn".into()),
+                "Standard".into(),
+                Some(workspace.to_string_lossy().into_owned()),
+                None,
+                None,
+                DialogSubmissionPolicy::for_source(DialogTriggerSource::AgentSession),
+                None,
+                None,
+                Vec::new(),
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(outcome, DialogSubmitOutcome::Queued { .. }));
+        let queued =
+            remove_queued_turn_by_id(&scheduler.queues, &session.session_id, "next-turn").unwrap();
+        assert_eq!(queued.workspace_id, session.config.workspace_id);
+        assert_eq!(queued.workspace_path, None);
+    }
+
+    #[tokio::test]
+    async fn pre_id_submission_for_loaded_session_resolves_by_id_when_a_remote_root_collides() {
+        // Issue #3275: an older mobile/IM/Remote Connect sender only carries a
+        // path. An inactive SSH record with the same root must not make the
+        // loaded local session ambiguous.
+        let (scheduler, manager, _, root) = test_scheduler();
+        let workspace = fixture_workspace_dir(root.path().join("pre-id-collision"));
+        let session = manager
+            .create_session(
+                "Owner".into(),
+                "Standard".into(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let local_storage = manager
+            .require_session_storage_path(&session.session_id)
+            .await
+            .unwrap();
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &workspace.to_string_lossy(),
+            "inactive-remote-connection",
+            "remote.example",
+        )
+        .await;
+        assert!(scheduler
+            .resolve_session_restore_path(&workspace.to_string_lossy(), None, Some("localhost"))
+            .await
+            .is_err());
+        manager
+            .update_session_state(
+                &session.session_id,
+                SessionState::Processing {
+                    current_turn_id: "running".into(),
+                    phase: ProcessingPhase::Thinking,
+                },
+            )
+            .await
+            .unwrap();
+        for (source, turn_id) in [
+            (DialogTriggerSource::RemoteRelay, "relay-turn"),
+            (DialogTriggerSource::Bot, "bot-turn"),
+        ] {
+            let outcome = scheduler
+                .submit(
+                    session.session_id.clone(),
+                    "hello".into(),
+                    None,
+                    Some(turn_id.into()),
+                    "Standard".into(),
+                    Some(workspace.to_string_lossy().into_owned()),
+                    None,
+                    Some("localhost".into()),
+                    DialogSubmissionPolicy::for_source(source),
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .expect("pre-ID submission must resolve the loaded session by its workspace ID");
+            assert!(matches!(outcome, DialogSubmitOutcome::Queued { .. }));
+            let queued =
+                remove_queued_turn_by_id(&scheduler.queues, &session.session_id, turn_id).unwrap();
+            // The coordinator reuses the ID-bound storage instead of the path.
+            assert_eq!(queued.workspace_path, None);
+        }
+        assert_eq!(
+            manager
+                .require_session_storage_path(&session.session_id)
+                .await
+                .unwrap(),
+            local_storage
+        );
+
+        // A sender that explicitly selects the SSH connection is not adopted.
+        let error = scheduler
+            .submit(
+                session.session_id.clone(),
+                "hello".into(),
+                None,
+                Some("remote-turn".into()),
+                "Standard".into(),
+                Some(workspace.to_string_lossy().into_owned()),
+                Some("inactive-remote-connection".into()),
+                Some("remote.example".into()),
+                DialogSubmissionPolicy::for_source(DialogTriggerSource::RemoteRelay),
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect_err("an explicit SSH selector must not adopt the local binding");
+        assert!(!error.is_empty());
+    }
+
+    #[tokio::test]
     async fn dialog_port_preserves_not_found_for_a_missing_session() {
         let (scheduler, _, _, root) = test_scheduler();
         let workspace = fixture_workspace_dir(root.path().join("workspace"));
@@ -4308,6 +4542,7 @@ mod tests {
                 "Queued".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4384,6 +4619,7 @@ mod tests {
                 "Delegated".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4443,6 +4679,7 @@ mod tests {
                 "Delegated".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4538,6 +4775,7 @@ mod tests {
                 "ACP".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4608,6 +4846,7 @@ mod tests {
                 "Duplicate".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4666,6 +4905,7 @@ mod tests {
                 "Workspace".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_a.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4716,6 +4956,7 @@ mod tests {
                 "Invalid agent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4760,6 +5001,7 @@ mod tests {
                 "Known turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4825,6 +5067,7 @@ mod tests {
                 "Steering".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4862,7 +5105,7 @@ mod tests {
             .await
             .expect_err("stale processing state must not accept steering");
 
-        assert!(error.contains("no longer running"), "{error}");
+        assert!(error.message.contains("no longer running"), "{error}");
         assert!(scheduler
             .round_injection_monitor()
             .take_pending(session_id, turn_id)
@@ -4888,6 +5131,136 @@ mod tests {
         .expect_err("empty steering must fail");
 
         assert_eq!(error.kind, PortErrorKind::InvalidRequest);
+    }
+
+    #[tokio::test]
+    async fn input_image_count_rejection_preserves_context_and_allows_plain_continuation() {
+        use crate::service::config::types::ModelCapability;
+
+        for steer in [false, true] {
+            let (scheduler, sessions, _, root) = test_scheduler();
+            let session_id = "limited-image-input";
+            let workspace = fixture_workspace_dir(root.path().join("limited-image-input"));
+            sessions
+                .create_session_with_id(
+                    Some(session_id.into()),
+                    "Limited image input".into(),
+                    "Standard".into(),
+                    SessionConfig {
+                        workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                        model_id: Some("limited-vision".into()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            sessions
+                .update_session_state(
+                    session_id,
+                    SessionState::Processing {
+                        current_turn_id: "active-turn".into(),
+                        phase: ProcessingPhase::Thinking,
+                    },
+                )
+                .await
+                .unwrap();
+            scheduler
+                .active_turns
+                .insert(session_id, desktop_active_turn("active-turn"));
+            let context_before =
+                serde_json::to_value(sessions.get_context_messages(session_id).await.unwrap())
+                    .unwrap();
+            let attachments = (0..4)
+                .map(|index| {
+                    AgentInputAttachment::image_context(
+                        format!("image-{index}"),
+                        Some(format!("/runtime/image-{index}.png")),
+                        None,
+                        "image/png",
+                        None,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let config = AIConfig {
+                models: vec![AIModelConfig {
+                    id: "limited-vision".into(),
+                    name: "Limited vision".into(),
+                    enabled: true,
+                    capabilities: vec![
+                        ModelCapability::TextChat,
+                        ModelCapability::ImageUnderstanding,
+                    ],
+                    max_images_per_request: Some(3),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let turn_request = |attachments| AgentDialogTurnRequest {
+                session_id: session_id.into(),
+                message: "Continue".into(),
+                original_message: None,
+                turn_id: Some("next-turn".into()),
+                agent_type: "Standard".into(),
+                workspace_path: None,
+                workspace_id: None,
+                remote_connection_id: None,
+                remote_ssh_host: None,
+                policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
+                execution: Default::default(),
+                output_schema: None,
+                reply_route: None,
+                prepended_reminders: Vec::new(),
+                attachments,
+                metadata: Default::default(),
+            };
+            let error = TEST_MODEL_RESOLUTION_AI_CONFIG
+                .scope(config, async {
+                    if steer {
+                        scheduler
+                            .steer_dialog_turn(AgentDialogSteerRequest {
+                                session_id: session_id.into(),
+                                turn_id: "active-turn".into(),
+                                content: "Compare these images".into(),
+                                display_content: None,
+                                attachments,
+                                metadata: Default::default(),
+                            })
+                            .await
+                            .expect_err("oversized steering must stay with its sender")
+                    } else {
+                        scheduler
+                            .submit_dialog_turn(turn_request(attachments))
+                            .await
+                            .expect_err("oversized input must not enter the queue")
+                    }
+                })
+                .await;
+            assert_eq!(error.kind, PortErrorKind::InvalidRequest);
+            assert!(error.message.contains("4 > 3"), "{error}");
+            assert_eq!(scheduler.queue_depth(session_id), 0);
+            assert_eq!(
+                scheduler.round_injection_buffer.pending_count(session_id),
+                0
+            );
+            assert_eq!(
+                serde_json::to_value(sessions.get_context_messages(session_id).await.unwrap())
+                    .unwrap(),
+                context_before,
+                "rejecting attachments must leave model history intact"
+            );
+            assert!(sessions
+                .get_session(session_id)
+                .unwrap()
+                .dialog_turn_ids
+                .is_empty());
+
+            let outcome = scheduler
+                .submit_dialog_turn(turn_request(Vec::new()))
+                .await
+                .expect("a plain continuation must remain admissible after rejection");
+            assert!(matches!(outcome, DialogSubmitOutcome::Queued { .. }));
+            assert_eq!(scheduler.queue_depth(session_id), 1);
+        }
     }
 
     #[tokio::test]
@@ -5439,6 +5812,7 @@ mod tests {
                 "Maintenance retire".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },

@@ -4,6 +4,7 @@ type DispatchTargetKind = 'local' | 'ssh' | 'device';
 
 interface SessionNavSignature {
   sessionId: string;
+  importedSource: string | undefined;
   isTransient: boolean | undefined;
   sessionKind: Session['sessionKind'];
   parentSessionId: string | undefined;
@@ -29,6 +30,7 @@ function readSessionNavSignature(session: Session): SessionNavSignature {
 
   return {
     sessionId: session.sessionId,
+    importedSource: session.importedSource,
     isTransient: session.isTransient,
     sessionKind: session.sessionKind,
     parentSessionId: session.parentSessionId,
@@ -55,6 +57,7 @@ function sameSessionNavSignature(previous: SessionNavSignature, session: Session
   const latestTurn = session.dialogTurns[session.dialogTurns.length - 1];
 
   return previous.sessionId === session.sessionId
+    && previous.importedSource === session.importedSource
     && previous.isTransient === session.isTransient
     && previous.sessionKind === session.sessionKind
     && previous.parentSessionId === session.parentSessionId

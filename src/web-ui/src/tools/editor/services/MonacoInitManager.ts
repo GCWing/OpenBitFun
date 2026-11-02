@@ -2,8 +2,8 @@
  * Monaco initialization manager (singleton).
  *
  * Handles Monaco library initialization (once), TypeScript/JavaScript language
- * configuration, custom language registration (TOML), and EditorOpener registration
- * for cross-file navigation.
+ * configuration, custom language registration (TOML, Mermaid, Cangjie), and
+ * EditorOpener registration for cross-file navigation.
  *
  * Visual settings are attached by MonacoAppearanceAdapter.
  */
@@ -12,6 +12,7 @@ import { loader } from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import { registerMermaidLanguage } from '../languages/mermaid.language';
 import { registerTomlLanguage } from '../languages/toml.language';
+import { registerCangjieLanguage } from '../languages/cangjie.language';
 import { getMonacoPath, getMonacoWorkerPath, logMonacoResourceCheck } from '../utils/monacoPathHelper';
 import { setMonacoRuntime } from './monacoRuntime';
 import { createLogger } from '@/shared/utils/logger';
@@ -193,8 +194,10 @@ class MonacoInitManager {
     try {
       registerTomlLanguage(monaco);
       registerMermaidLanguage(monaco);
+      registerCangjieLanguage(monaco);
       log.debug('TOML language registered');
       log.debug('Mermaid language registered');
+      log.debug('Cangjie language registered');
     } catch (error) {
       log.error('Failed to register custom Monaco languages', error);
     }

@@ -42,8 +42,7 @@
 }
 
 .subagent-motion-character[aria-pressed="true"] {
-  border-color: var(--openbitfun-color-border-strong);
-  background: var(--openbitfun-color-action-quiet-pressed);
+  background: var(--openbitfun-color-selection-surface);
   color: var(--openbitfun-color-content-primary);
 }
 
@@ -210,8 +209,7 @@
 }
 
 .subagent-motion-action[aria-pressed="true"] {
-  border-color: var(--openbitfun-color-border-strong);
-  background: var(--openbitfun-color-action-quiet-pressed);
+  background: var(--openbitfun-color-selection-surface);
 }
 
 .subagent-motion-action:disabled {

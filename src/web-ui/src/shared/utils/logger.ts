@@ -34,7 +34,7 @@ const isTauri = typeof window !== 'undefined' && '__TAURI__' in window;
 const isDev = import.meta.env?.DEV ?? process.env.NODE_ENV === 'development';
 
 const CONSOLE_FORWARD_INSTALLED = '__openbitfun_console_forward_installed__';
-let includeSensitiveDiagnostics = true;
+let includeSensitiveDiagnostics = false;
 
 declare global {
   // Injected by the desktop WebView initialization script before the frontend bundle runs.

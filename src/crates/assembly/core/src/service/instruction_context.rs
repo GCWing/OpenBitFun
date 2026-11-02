@@ -298,6 +298,211 @@ mod tests {
 
     #[cfg(feature = "external-sources")]
     #[tokio::test]
+    async fn workspace_instruction_family_priority_applies_to_context_and_conditional_sources() {
+        let _environment = lock_environment();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workspace = temp.path().join("workspace");
+        let xdg = temp.path().join("xdg");
+        let codex = temp.path().join("codex");
+        let claude = temp.path().join("claude");
+        std::fs::create_dir_all(workspace.join(".claude/rules")).unwrap();
+        std::fs::write(workspace.join("AGENTS.override.md"), " \n\t").unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "Project AGENTS rules\n").unwrap();
+        std::fs::write(workspace.join("CLAUDE.md"), "Project Claude rules\n").unwrap();
+        std::fs::write(
+            workspace.join(".claude/rules/rust.md"),
+            "---\npaths: [\"src/**/*.rs\"]\n---\nProject conditional rules\n",
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("opencode.json"),
+            r#"{"instructions":["opencode-guide.md"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("opencode-guide.md"),
+            "Project OpenCode rules",
+        )
+        .unwrap();
+        let _guard = EnvironmentGuard::set(&[
+            ("XDG_CONFIG_HOME", &xdg),
+            ("CODEX_HOME", &codex),
+            ("CLAUDE_CONFIG_DIR", &claude),
+        ]);
+
+        let context = build_workspace_instruction_files_context_detailed(&workspace)
+            .await
+            .unwrap();
+        assert!(context.cacheable);
+        let rendered = context.content.unwrap();
+        assert!(rendered.contains("Project AGENTS rules"));
+        assert!(!rendered.contains("Project Claude rules"));
+        assert!(!rendered.contains("Project conditional rules"));
+        assert!(!rendered.contains("Project OpenCode rules"));
+        assert!(load_local_conditional_instruction_files(&workspace)
+            .await
+            .unwrap()
+            .is_empty());
+
+        std::fs::write(workspace.join("opencode.json"), "{ invalid config").unwrap();
+        assert!(
+            build_workspace_instruction_files_context_detailed(&workspace)
+                .await
+                .unwrap()
+                .cacheable
+        );
+        std::fs::write(workspace.join("AGENTS.md"), "").unwrap();
+        let context = build_workspace_instruction_files_context(&workspace)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(context.contains("Project Claude rules"));
+        assert!(!context.contains("Project conditional rules"));
+        let conditional = load_local_conditional_instruction_files(&workspace)
+            .await
+            .unwrap();
+        assert_eq!(conditional.len(), 1);
+        assert_eq!(conditional[0].name, ".claude/rules/rust.md");
+    }
+
+    #[cfg(feature = "external-sources")]
+    #[tokio::test]
+    async fn openbitfun_user_instructions_replace_codex_with_missing_and_blank_fallbacks() {
+        let _environment = lock_environment();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workspace = temp.path().join("workspace");
+        let native = temp.path().join("openbitfun");
+        let codex = temp.path().join("codex");
+        let claude = temp.path().join("claude");
+        let xdg = temp.path().join("xdg");
+        for directory in [&workspace, &native, &codex, &claude, &xdg.join("opencode")] {
+            std::fs::create_dir_all(directory).expect("instruction directory");
+        }
+        std::fs::write(native.join("AGENTS.md"), "Native user instructions\n").unwrap();
+        std::fs::write(codex.join("AGENTS.md"), "Codex base instructions\n").unwrap();
+        // An invalid override proves that the Codex reader is never called
+        // while a non-empty native file is selected.
+        std::fs::write(codex.join("AGENTS.override.md"), [0xff]).unwrap();
+        std::fs::write(claude.join("CLAUDE.md"), "Claude user instructions\n").unwrap();
+        std::fs::write(
+            xdg.join("opencode/AGENTS.md"),
+            "OpenCode user instructions\n",
+        )
+        .unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "Workspace instructions\n").unwrap();
+        let _guard = EnvironmentGuard::set(&[
+            ("OPENBITFUN_HOME", &native),
+            ("CODEX_HOME", &codex),
+            ("CLAUDE_CONFIG_DIR", &claude),
+            ("XDG_CONFIG_HOME", &xdg),
+        ]);
+
+        let build = build_workspace_instruction_files_context_detailed(&workspace)
+            .await
+            .expect("native instruction context");
+        assert!(build.cacheable);
+        let rendered = build.content.expect("rendered instructions");
+        assert!(rendered.contains("<document name=\"$OPENBITFUN_HOME/AGENTS.md\">"));
+        assert!(!rendered.contains("Codex base instructions"));
+        let positions = [
+            "OpenCode user instructions",
+            "Native user instructions",
+            "Claude user instructions",
+            "Workspace instructions",
+        ]
+        .map(|content| rendered.find(content).expect(content));
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+        let catalog =
+            crate::instruction_sources::instruction_source_catalog(Some(&workspace)).await;
+        assert!(catalog.failed_ecosystems.is_empty());
+        assert!(catalog.entries.iter().any(|entry| {
+            entry.ecosystem_id == "openbitfun"
+                && entry.name == "$OPENBITFUN_HOME/AGENTS.md"
+                && entry.scope == "user"
+        }));
+        assert!(!catalog
+            .entries
+            .iter()
+            .any(|entry| entry.ecosystem_id == "codex"));
+
+        std::fs::write(
+            codex.join("AGENTS.override.md"),
+            "Codex override instructions\n",
+        )
+        .unwrap();
+        for content in [None, Some(""), Some(" \n\t")] {
+            if let Some(content) = content {
+                std::fs::write(native.join("AGENTS.md"), content).unwrap();
+            } else {
+                std::fs::remove_file(native.join("AGENTS.md")).unwrap();
+            }
+            let rendered = build_workspace_instruction_files_context(&workspace)
+                .await
+                .expect("legacy Codex fallback")
+                .expect("rendered fallback");
+            assert!(rendered.contains("Codex override instructions"));
+            assert!(!rendered.contains("Native user instructions"));
+            let catalog =
+                crate::instruction_sources::instruction_source_catalog(Some(&workspace)).await;
+            assert!(catalog.failed_ecosystems.is_empty());
+            assert!(catalog
+                .entries
+                .iter()
+                .any(|entry| entry.ecosystem_id == "codex"));
+            assert!(!catalog
+                .entries
+                .iter()
+                .any(|entry| entry.ecosystem_id == "openbitfun"));
+        }
+    }
+
+    #[cfg(feature = "external-sources")]
+    #[tokio::test]
+    async fn invalid_openbitfun_user_instructions_preserve_workspace_and_retry_without_codex() {
+        let _environment = lock_environment();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workspace = temp.path().join("workspace");
+        let native = temp.path().join("openbitfun");
+        let codex = temp.path().join("codex");
+        let claude = temp.path().join("claude");
+        let xdg = temp.path().join("xdg");
+        for directory in [&workspace, &native, &codex, &claude, &xdg] {
+            std::fs::create_dir_all(directory).expect("instruction directory");
+        }
+        std::fs::write(native.join("AGENTS.md"), [0xff]).unwrap();
+        std::fs::write(codex.join("AGENTS.md"), "Codex must stay absent\n").unwrap();
+        std::fs::write(workspace.join("AGENTS.md"), "Workspace survives\n").unwrap();
+        let _guard = EnvironmentGuard::set(&[
+            ("OPENBITFUN_HOME", &native),
+            ("CODEX_HOME", &codex),
+            ("CLAUDE_CONFIG_DIR", &claude),
+            ("XDG_CONFIG_HOME", &xdg),
+        ]);
+
+        let build = build_workspace_instruction_files_context_detailed(&workspace)
+            .await
+            .expect("workspace survives native failure");
+        assert!(!build.cacheable);
+        let rendered = build.content.expect("workspace instructions");
+        assert!(rendered.contains("Workspace survives"));
+        assert!(!rendered.contains("Codex must stay absent"));
+        let catalog =
+            crate::instruction_sources::instruction_source_catalog(Some(&workspace)).await;
+        assert_eq!(catalog.failed_ecosystems, ["openbitfun"]);
+
+        std::fs::write(native.join("AGENTS.md"), "Repaired native instructions\n").unwrap();
+        let retry = build_workspace_instruction_files_context_detailed(&workspace)
+            .await
+            .expect("native instructions retried");
+        assert!(retry.cacheable);
+        assert!(retry
+            .content
+            .unwrap()
+            .contains("Repaired native instructions"));
+    }
+
+    #[cfg(feature = "external-sources")]
+    #[tokio::test]
     async fn conditional_instructions_keep_user_then_workspace_precedence() {
         let _environment = lock_environment();
         let temp = tempfile::tempdir().expect("tempdir");
@@ -500,9 +705,13 @@ mod tests {
         let xdg = temp.path().join("xdg");
         let codex = temp.path().join("codex");
         let claude = temp.path().join("claude");
+        let native = temp.path().join("openbitfun");
         std::fs::create_dir_all(xdg.join("opencode")).expect("OpenCode config directory");
         std::fs::create_dir_all(&codex).expect("Codex config directory");
         std::fs::create_dir_all(&claude).expect("Claude config directory");
+        std::fs::create_dir_all(&native).expect("OpenBitFun home directory");
+        std::fs::write(native.join("AGENTS.md"), "Local native must stay absent\n")
+            .expect("native instructions");
         std::fs::create_dir_all(&workspace).expect("workspace directory");
         std::fs::write(
             xdg.join("opencode/AGENTS.md"),
@@ -512,6 +721,7 @@ mod tests {
         std::fs::write(workspace.join("AGENTS.md"), "Port project instructions\n")
             .expect("workspace instructions");
         let _guard = EnvironmentGuard::set(&[
+            ("OPENBITFUN_HOME", &native),
             ("XDG_CONFIG_HOME", &xdg),
             ("CODEX_HOME", &codex),
             ("CLAUDE_CONFIG_DIR", &claude),
@@ -525,6 +735,7 @@ mod tests {
 
         assert!(rendered.contains("Port project instructions"));
         assert!(!rendered.contains("Local user must stay absent"));
+        assert!(!rendered.contains("Local native must stay absent"));
     }
 
     #[test]

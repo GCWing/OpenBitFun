@@ -16,7 +16,6 @@ static void publish(void) {
 @interface OBFRoundtripEditor : NSView
 @end
 @implementation OBFRoundtripEditor
-- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)isAccessibilityElement { return YES; }
 - (NSString *)accessibilityRole { return NSAccessibilityTextAreaRole; }
@@ -62,6 +61,13 @@ int main(int argc, const char **argv) { @autoreleasepool {
     [window orderFront:nil];
     [window makeKeyWindow];
     [window makeFirstResponder:editor];
+    // A second, larger window deliberately wins legacy PID-only capture.
+    // The tool must discover and explicitly select the smaller task window.
+    NSWindow *mainWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(700,100,760,500) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    mainWindow.title = @"Computer Use Large Main Fixture";
+    mainWindow.releasedWhenClosed = NO;
+    mainWindow.backgroundColor = NSColor.purpleColor;
+    [mainWindow orderFront:nil];
     publish();
     double y = CGDisplayBounds(CGMainDisplayID()).size.height - 170;
     printf("READY %d 170 %.0f\n",getpid(),y); fflush(stdout);

@@ -7,6 +7,8 @@
 use crate::process_manager;
 use std::path::Path;
 
+mod clipboard;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocalSystemActionErrorKind {
     InvalidParams,
@@ -283,15 +285,15 @@ impl LocalSystemProvider {
     }
 
     pub async fn clipboard_read_text(&self) -> Result<String, LocalSystemActionError> {
-        clipboard_read()
+        clipboard::read_text()
             .await
-            .map_err(|e| clipboard_error(format!("Clipboard read failed: {}", e)))
+            .map_err(|error| error.with_hints(clipboard_install_hints()))
     }
 
     pub async fn clipboard_write_text(&self, text: &str) -> Result<(), LocalSystemActionError> {
-        clipboard_write(text)
+        clipboard::write_text(text)
             .await
-            .map_err(|e| clipboard_error(format!("Clipboard write failed: {}", e)))
+            .map_err(|error| error.with_hints(clipboard_install_hints()))
     }
 
     pub fn open_url(&self, url: &str) -> Result<LocalOpenOutcome, LocalSystemActionError> {
@@ -624,11 +626,6 @@ fn powershell_invocation(script: &str) -> (String, Vec<String>) {
     )
 }
 
-fn clipboard_error(message: String) -> LocalSystemActionError {
-    LocalSystemActionError::new(LocalSystemActionErrorKind::NotAvailable, message)
-        .with_hints(clipboard_install_hints())
-}
-
 fn clipboard_install_hints() -> Vec<String> {
     match std::env::consts::OS {
         "linux" => {
@@ -638,9 +635,9 @@ fn clipboard_install_hints() -> Vec<String> {
                 match server.as_deref() {
                     Some("wayland") => vec![
                         "Wayland session detected - install wl-clipboard (e.g. `sudo apt install wl-clipboard` / `sudo dnf install wl-clipboard`)".to_string(),
-                        "Fallback for XWayland apps: also install xclip or xsel".to_string(),
+                        "Run OpenBitFun inside the intended Wayland session; X11 fallback would address a different clipboard".to_string(),
                     ],
-                    Some("x11") | Some("tty") => vec![
+                    Some("x11") => vec![
                         "X11 session detected - install xclip (`sudo apt install xclip`) or xsel (`sudo apt install xsel`)".to_string(),
                     ],
                     _ => vec![
@@ -746,145 +743,6 @@ fn hostname() -> std::io::Result<String> {
     }
     let out = process_manager::create_command("hostname").output()?;
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-async fn clipboard_read() -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let out = process_manager::create_tokio_command("pbpaste")
-            .output()
-            .await
-            .map_err(|e| format!("spawn pbpaste: {}", e))?;
-        if !out.status.success() {
-            return Err(format!("pbpaste exit={:?}", out.status.code()));
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).to_string())
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let (program, args) = powershell_invocation("Get-Clipboard -Raw");
-        let out = process_manager::create_tokio_command(&program)
-            .args(&args)
-            .output()
-            .await
-            .map_err(|e| format!("spawn {}: {}", program, e))?;
-        if !out.status.success() {
-            return Err(format!("Get-Clipboard exit={:?}", out.status.code()));
-        }
-        let mut s = String::from_utf8_lossy(&out.stdout).to_string();
-        if s.ends_with("\r\n") {
-            s.truncate(s.len() - 2);
-        } else if s.ends_with('\n') {
-            s.truncate(s.len() - 1);
-        }
-        Ok(s)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let candidates: &[(&str, &[&str])] = if std::env::var("WAYLAND_DISPLAY").is_ok() {
-            &[
-                ("wl-paste", &["--no-newline"]),
-                ("xclip", &["-selection", "clipboard", "-o"]),
-                ("xsel", &["--clipboard", "--output"]),
-            ]
-        } else {
-            &[
-                ("xclip", &["-selection", "clipboard", "-o"]),
-                ("xsel", &["--clipboard", "--output"]),
-                ("wl-paste", &["--no-newline"]),
-            ]
-        };
-        for (bin, args) in candidates {
-            if let Ok(out) = process_manager::create_tokio_command(bin)
-                .args(*args)
-                .output()
-                .await
-            {
-                if out.status.success() {
-                    return Ok(String::from_utf8_lossy(&out.stdout).to_string());
-                }
-            }
-        }
-        Err("no clipboard helper found (install wl-clipboard, xclip, or xsel)".to_string())
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        Err("clipboard not implemented for this OS".to_string())
-    }
-}
-
-async fn clipboard_write(text: &str) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
-
-    async fn pipe(bin: &str, args: &[&str], text: &str) -> Result<(), String> {
-        let mut child = process_manager::create_tokio_command(bin)
-            .args(args)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("spawn {}: {}", bin, e))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(text.as_bytes())
-                .await
-                .map_err(|e| format!("write {} stdin: {}", bin, e))?;
-        }
-        let out = child
-            .wait_with_output()
-            .await
-            .map_err(|e| format!("wait {}: {}", bin, e))?;
-        if !out.status.success() {
-            return Err(format!("{} exit={:?}", bin, out.status.code()));
-        }
-        Ok(())
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        pipe("pbcopy", &[], text).await
-    }
-    #[cfg(target_os = "windows")]
-    {
-        pipe(
-            "powershell",
-            &["-NoProfile", "-Command", "$input | Set-Clipboard"],
-            text,
-        )
-        .await
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let candidates: &[(&str, &[&str])] = if std::env::var("WAYLAND_DISPLAY").is_ok() {
-            &[
-                ("wl-copy", &[]),
-                ("xclip", &["-selection", "clipboard"]),
-                ("xsel", &["--clipboard", "--input"]),
-            ]
-        } else {
-            &[
-                ("xclip", &["-selection", "clipboard"]),
-                ("xsel", &["--clipboard", "--input"]),
-                ("wl-copy", &[]),
-            ]
-        };
-        let mut last_err = String::new();
-        for (bin, args) in candidates {
-            match pipe(bin, args, text).await {
-                Ok(()) => return Ok(()),
-                Err(e) => last_err = e,
-            }
-        }
-        Err(format!(
-            "no clipboard helper succeeded (install wl-clipboard, xclip, or xsel): {}",
-            last_err
-        ))
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        let _ = text;
-        Err("clipboard not implemented for this OS".to_string())
-    }
 }
 
 #[cfg(test)]

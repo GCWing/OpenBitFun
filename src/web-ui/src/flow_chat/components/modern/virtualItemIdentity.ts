@@ -4,7 +4,10 @@ import type { VirtualItem } from '../../store/modernFlowChatStore';
 export function getVirtualItemStableKey(item: VirtualItem): string {
   if (item.timeline) return `block:${item.timeline.key}`;
   switch (item.type) {
+    case 'background-run':
+      return `${item.type}:${item.turnId}`;
     case 'user-message':
+      return item.presentationKey ?? `${item.type}:${item.turnId}:${item.data.id}`;
     case 'user-steering-message':
       return `${item.type}:${item.turnId}:${item.data.id}`;
     case 'model-round':

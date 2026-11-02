@@ -76,6 +76,14 @@ describe('openMainSession resource activation', () => {
     expect(mocks.sceneState.openScene).toHaveBeenCalledWith('session');
   });
 
+  it('refreshes a cached source when it is explicitly opened again', async () => {
+    mocks.flowChatState.activeSessionId = 'source';
+    mocks.flowChatState.sessions.set('source', { sessionId: 'source', historyState: 'ready', isHistorical: false, externalHistory: { mode: 'follow' } });
+    await openMainSession('source');
+    expect(mocks.switchChatSession).toHaveBeenCalledOnce();
+    expect(mocks.sceneState.openScene).toHaveBeenCalledWith('session');
+  });
+
   it('waits for successful activation before opening the scene', async () => {
     mocks.flowChatState.sessions.set('target', { sessionId: 'target' });
     mocks.switchChatSession.mockImplementation(async () => {

@@ -1,4 +1,5 @@
-/** Account content inherits the Remote Connect surface's spacing and typography. */
+@use './remote-connect-surface' as surface;
+
 .account-panel {
   position: relative;
   display: flex;
@@ -6,124 +7,109 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  font-family: var(--openbitfun-type-body-sm-font-family);
 
   &__scroll {
+    display: flex;
     flex: 1;
     min-height: 0;
-    padding: var(--openbitfun-space-6) var(--openbitfun-space-8) var(--openbitfun-space-8);
+    flex-direction: column;
+    gap: surface.$section-gap;
+    padding: surface.$page-content-gap surface.$page-inline surface.$page-block-start;
+
+    > * {
+      flex-shrink: 0;
+    }
   }
 
   &__error-banner {
     display: flex;
+    flex-shrink: 0;
     flex-direction: column;
     align-items: stretch;
     gap: var(--openbitfun-space-2);
-    flex-shrink: 0;
-    padding: var(--openbitfun-space-3) var(--openbitfun-space-8) 0;
+    padding: var(--openbitfun-space-4) surface.$page-inline 0;
+  }
+
+  &__section &__error-banner {
+    padding: 0;
   }
 
   &__error-action {
     align-self: flex-start;
   }
 
-  &__login-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--openbitfun-space-3);
-    padding: var(--openbitfun-space-6);
-    border-radius: var(--openbitfun-layout-field-group-radius);
-    background: var(--openbitfun-color-surface-tertiary);
-  }
-
-  &__login-icon {
-    display: inline-flex;
-    margin-bottom: var(--openbitfun-space-2);
-    color: var(--openbitfun-color-content-secondary);
-  }
-
-  &__value-prop {
-    margin: 0;
-    color: var(--openbitfun-color-content-primary);
-    font-size: var(--openbitfun-type-body-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-body-md-line-height);
-  }
-
-  &__security-note {
-    max-width: 48ch;
-    margin: 0;
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-  }
-
-  &__actions {
-    display: flex;
-    gap: var(--openbitfun-space-2);
-    flex-wrap: wrap;
-    margin-top: var(--openbitfun-space-3);
-  }
-
-  [data-openbitfun-component='button'][data-openbitfun-variant='text'] { color: var(--openbitfun-color-content-secondary); }
-
-  &__identity-line {
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-3);
-    padding-bottom: var(--openbitfun-space-6);
-    color: var(--openbitfun-color-content-secondary);
-
-    > :first-child { flex-shrink: 0; }
-  }
-
-  &__identity-copy {
-    display: flex;
-    flex: 1;
-    min-width: 0;
-    flex-direction: column;
-    gap: var(--openbitfun-space-1);
-  }
-
-  &__identity-label {
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-  }
-
-  &__identity-name {
-    min-width: 0;
-    color: var(--openbitfun-color-content-primary);
-    font-size: var(--openbitfun-type-body-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-body-md-line-height);
-    user-select: text;
+  &__section {
+    @include surface.section;
   }
 
   &__section-heading {
-    display: flex;
+    @include surface.section-heading;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--openbitfun-space-3);
-    margin-bottom: var(--openbitfun-space-3);
+  }
 
-    h3 {
-      margin: 0;
-      color: var(--openbitfun-color-content-secondary);
-      font-size: var(--openbitfun-type-body-sm-font-size);
-      font-weight: var(--openbitfun-type-label-selected-font-weight);
-      line-height: var(--openbitfun-type-body-sm-line-height);
+  &__section-title {
+    @include surface.section-title;
+  }
+
+  &__card {
+    @include surface.card;
+  }
+
+  // ---------- Account ----------
+
+  &__identity-line {
+    @include surface.card-row;
+    flex-direction: row;
+
+    > :first-child {
+      flex-shrink: 0;
     }
   }
 
-  &__devices-card {
-    overflow: hidden;
-    border-radius: var(--openbitfun-layout-field-group-radius);
-    background: var(--openbitfun-color-surface-tertiary);
-
-    .account-panel__error-banner { padding: var(--openbitfun-space-4); }
+  &__identity-copy {
+    @include surface.row-copy;
   }
+
+  &__identity-name {
+    @include surface.row-title;
+    user-select: text;
+  }
+
+  &__identity-label {
+    @include surface.supporting-text;
+  }
+
+  &__login-card {
+    @include surface.card-row;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  &__login-icon {
+    @include surface.icon-slot;
+    align-self: flex-start;
+  }
+
+  &__login-copy {
+    @include surface.row-copy;
+    flex-basis: 240px;
+  }
+
+  &__value-prop {
+    @include surface.row-title;
+  }
+
+  &__security-note {
+    @include surface.supporting-text;
+    max-width: 52ch;
+  }
+
+  &__actions {
+    @include surface.row-trailing;
+    margin-inline-start: auto;
+  }
+
+  // ---------- Devices ----------
 
   &__device-list {
     display: flex;
@@ -131,10 +117,8 @@
   }
 
   &__empty {
-    padding: var(--openbitfun-space-8) var(--openbitfun-space-4);
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
+    @include surface.supporting-text;
+    padding: var(--openbitfun-space-6) surface.$row-inline;
     text-align: center;
 
     &--loading {
@@ -146,16 +130,27 @@
   }
 
   &__device-card {
+    position: relative;
     display: flex;
+    min-width: 0;
+    min-height: 64px;
     align-items: center;
-    gap: var(--openbitfun-space-3);
-    min-height: 72px;
-    padding: var(--openbitfun-space-4);
+    gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-3) surface.$row-inline;
     transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
-    & + & { border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); }
-    &.selectable:has(> .account-panel__device-select:hover) { background: var(--openbitfun-color-action-neutral-surface); }
-    &.selectable:has(> .account-panel__device-select:active) { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+    & + & {
+      @include surface.card-divider;
+    }
+
+    &.selectable:has(> .account-panel__device-select:hover) {
+      background: var(--openbitfun-color-action-neutral-surface);
+    }
+
+    &.selectable:has(> .account-panel__device-select:active) {
+      background: var(--openbitfun-color-action-neutral-surface-pressed);
+    }
+
     &.selectable:has(> .account-panel__device-select:focus-visible) {
       outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
       outline-offset: calc(0px - var(--openbitfun-focus-width));
@@ -167,71 +162,120 @@
     min-width: 0;
     flex: 1;
     align-items: center;
-    gap: var(--openbitfun-space-3);
+    gap: surface.$row-gap;
     padding: 0;
     border: 0;
     background: transparent;
     color: var(--openbitfun-color-content-secondary);
     font: inherit;
-    text-align: left;
+    text-align: start;
     cursor: default;
 
-    > svg { flex-shrink: 0; }
-    &:is(button):not(:disabled) { cursor: pointer; }
-    &:focus-visible { outline: 0; }
+    &:is(button) {
+      cursor: pointer;
+
+      // The whole row opens the device; row actions sit above this layer.
+      &::after {
+        position: absolute;
+        inset: 0;
+        content: '';
+      }
+    }
+
+    &:is(button):disabled {
+      cursor: default;
+    }
+
+    &:focus-visible {
+      outline: 0;
+    }
+  }
+
+  &__device-glyph {
+    @include surface.icon-slot;
   }
 
   &__device-info {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    flex-direction: column;
-    gap: var(--openbitfun-space-1);
+    @include surface.row-copy;
   }
 
   &__device-name {
+    @include surface.row-title;
     display: flex;
     align-items: center;
     gap: var(--openbitfun-space-2);
-    min-width: 0;
-    color: var(--openbitfun-color-content-primary);
-    font-size: var(--openbitfun-type-body-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-body-md-line-height);
 
-    > span:not([data-overflow-content]):first-child { min-width: 0; overflow: hidden; }
-    > .account-panel__device-badge { flex-shrink: 0; }
+    > span:not([data-overflow-content]):first-child {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    > .account-panel__device-badge {
+      flex-shrink: 0;
+    }
   }
 
   &__device-meta {
-    /* Plain inline flow: the model/OS text must wrap inside the row instead of
-       overflowing it, which a wrapping flex row cannot guarantee for a
-       max-content child. */
+    // Inline flow lets the model and OS text wrap inside the row.
+    @include surface.supporting-text;
     display: block;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
     overflow-wrap: break-word;
   }
 
   &__device-status {
     color: var(--openbitfun-color-content-secondary);
+
+    &::before {
+      display: inline-block;
+      inline-size: 6px;
+      block-size: 6px;
+      margin-inline-end: var(--openbitfun-space-1);
+      border-radius: var(--openbitfun-radius-pill);
+      background: var(--openbitfun-color-content-muted);
+      content: '';
+      vertical-align: middle;
+    }
+
+    &[data-openbitfun-state='online']::before {
+      background: var(--openbitfun-color-status-success-content);
+    }
   }
 
   &__device-incompatible {
     color: var(--openbitfun-color-status-warning-content);
+    font-family: var(--openbitfun-type-body-sm-font-family);
     font-size: var(--openbitfun-type-body-sm-font-size);
     line-height: var(--openbitfun-type-body-sm-line-height);
     overflow-wrap: break-word;
   }
 
-  &__device-alias-editor {
+  &__device-actions {
+    position: relative;
+    z-index: 1;
     display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+  }
+
+  &__device-chevron {
+    @include surface.chevron;
+    display: inline-flex;
+    inline-size: 16px;
+    justify-content: center;
+  }
+
+  &__device-alias-editor {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    min-width: 0;
     align-items: center;
     gap: var(--openbitfun-space-2);
-    min-width: 0;
 
-    > [data-openbitfun-component='icon-button'] { flex-shrink: 0; }
+    > [data-openbitfun-component='icon-button'] {
+      flex-shrink: 0;
+    }
   }
 
   &__device-alias-input {
@@ -251,11 +295,14 @@
     border-radius: inherit;
     background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 92%, transparent);
     color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-body-sm-font-family);
     font-size: var(--openbitfun-type-body-sm-font-size);
     backdrop-filter: var(--openbitfun-effect-blur-subtle);
   }
 
-  .spinning { animation: openbitfun-account-panel-spin var(--openbitfun-motion-duration-lazy) linear infinite; }
+  .spinning {
+    animation: openbitfun-account-panel-spin var(--openbitfun-motion-duration-lazy) linear infinite;
+  }
 }
 
 @keyframes openbitfun-account-panel-spin {
@@ -264,17 +311,37 @@
 }
 
 @media (max-width: 760px) {
-  .account-panel__scroll { padding: var(--openbitfun-space-5); }
-  .account-panel__error-banner { padding-inline: var(--openbitfun-space-5); }
-  .account-panel__login-card { padding: var(--openbitfun-space-5); }
+  .account-panel__scroll {
+    padding: var(--openbitfun-space-5) surface.$page-inline-compact;
+  }
+
+  .account-panel__error-banner {
+    padding-inline: surface.$page-inline-compact;
+  }
 }
 
 @media (max-width: 380px) {
-  .account-panel__scroll { padding-inline: var(--openbitfun-space-4); }
-  .account-panel__device-card { padding-inline: var(--openbitfun-space-3); gap: var(--openbitfun-space-2); }
+  .account-panel__scroll {
+    padding-inline: surface.$page-inline-narrow;
+  }
+
+  .account-panel__error-banner {
+    padding-inline: surface.$page-inline-narrow;
+  }
+
+  .account-panel__identity-line,
+  .account-panel__login-card,
+  .account-panel__device-card {
+    padding-inline: var(--openbitfun-space-4);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .account-panel__device-card { transition: none; }
-  .account-panel .spinning { animation: none; }
+  .account-panel__device-card {
+    transition: none;
+  }
+
+  .account-panel .spinning {
+    animation: none;
+  }
 }

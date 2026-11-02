@@ -22,7 +22,7 @@
       },
       "pet": {
         "label": "Pet & assistant",
-        "description": "Choose your pet and configure real-time voice calls with the assistant"
+        "description": "Choose your pet, configure real-time voice calls with the assistant, and manage desktop cards"
       },
       "terminal": {
         "label": "Terminal",
@@ -57,7 +57,7 @@
         "description": "Connect MCP servers to give agents access to external tools and data"
       },
       "acp": {
-        "label": "External Agents",
+        "label": "ACP",
         "description": "Connect external agents on this host or an SSH host through ACP"
       },
       "usage": {
@@ -78,7 +78,7 @@
       },
       "sessionMemory": {
         "label": "Sessions & Memory",
-        "description": "Configure default harnesses, session titles, and memory behavior"
+        "description": "Configure default execution modes, session titles, and memory behavior"
       },
       "permissions": {
         "label": "Permission Rules",
@@ -87,6 +87,10 @@
       "workspaceGit": {
         "label": "Workspace & Git",
         "description": "Configure file search, commit attribution, and worktrees, and manage isolated working directories"
+      },
+      "externalImport": {
+        "label": "External import",
+        "description": "Import and manage content from other AI applications"
       }
     },
     "views": {
@@ -96,6 +100,7 @@
     },
     "sections": {
       "text-selection": "Text selection",
+      "message-sending": "Message sending",
       "voice": "Voice",
       "shortcuts": "Keyboard Shortcuts",
       "session": "Session Defaults",
@@ -106,7 +111,9 @@
       "quick-actions": "Quick Actions",
       "hooks": "Event Hooks",
       "pet": "Pet",
-      "voice-call": "Real-time voice calls"
+      "voice-call": "Real-time voice calls",
+      "desktop-cards": "Desktop cards",
+      "sidebar-navigation": "Left sidebar"
     }
   },
   "changeGuard": {
@@ -279,7 +286,7 @@
         "toggleBoth": "Collapse All Panels"
       },
       "nav": {
-        "toggleSearch": "Open navigation search"
+        "toggleSearch": "Open global search"
       },
       "scene": {
         "focusMerged": "Switch scene",
@@ -309,8 +316,9 @@
         "btwFill": "Start side-thread session",
         "stopGeneration": "Stop Generation",
         "activateInput": "Activate Input",
-        "newSession": "New Session",
-        "insertNewline": "Insert Newline in Chat Input"
+        "newSession": "$t(shared:sessions.new)",
+        "insertNewline": "Insert Newline in Chat Input",
+        "search": "Search this conversation"
       },
       "filetree": {
         "rename": "Rename",
@@ -338,6 +346,12 @@
       "canvas": "Active when the editor canvas or a code editor inside it has focus",
       "filetree": "Active when the file tree has focus",
       "git": "Active when the Git panel has focus"
+    },
+    "reserved": {
+      "appSwitch": "Reserved for switching applications. Choose another shortcut.",
+      "systemSearch": "Reserved for system search. Choose another shortcut.",
+      "secureAttention": "Reserved for Windows security. Choose another shortcut.",
+      "systemKey": "Uses the Windows system key. Choose another shortcut."
     }
   },
   "advanced": {

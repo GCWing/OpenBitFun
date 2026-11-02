@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import React from 'react';
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createInstance } from 'i18next';
 import { I18nextProvider } from 'react-i18next';
@@ -17,9 +18,11 @@ import { LSDisplay } from './LSDisplay';
 import { ReadFileDisplay } from './ReadFileDisplay';
 import { ContextCompressionDisplay } from './ContextCompressionDisplay';
 import { getToolCapsuleSummary } from './toolCapsuleModel';
+import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 
 const translations = createInstance();
 beforeAll(async () => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   await translations.init({ lng: 'en-US', resources: { 'en-US': { 'flow-chat': en } },
     interpolation: { escapeValue: false } });
 });
@@ -36,6 +39,31 @@ function render(Component: React.ComponentType<ToolCardProps>, toolItem: FlowToo
 }
 
 describe('collapsed tool information', () => {
+  it.each([
+    ['Grep', GrepSearchDisplay, { pattern: 'needle' }, 'src/a.ts:3:needle', '0 matches'],
+    ['Glob', GlobSearchDisplay, { pattern: '*.ts' }, '/remote/src/a.ts', '0 files'],
+    ['LS', LSDisplay, { path: '/remote' }, 'src/\nREADME.md', '0 entries'],
+  ] as const)('shows imported plain-text %s results in its existing native card without invented counts', (name, Component, input, output, emptyLabel) => {
+    const toolItem = projectEffectiveToolItem({ ...item(name, input, output), importedSource: 'zcode' });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => root.render(<I18nextProvider i18n={translations}>
+        <Component toolItem={toolItem} config={getToolItemCardConfig(toolItem)} />
+      </I18nextProvider>));
+      expect(container.textContent).not.toContain(emptyLabel);
+      const surface = container.querySelector<HTMLElement>('[data-openbitfun-part="surface"]');
+      expect(surface).not.toBeNull();
+      act(() => surface!.click());
+      expect(container.textContent).toContain(name === 'Grep' ? 'needle' : output);
+      expect(container.textContent).not.toContain(emptyLabel);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
   it('keeps the computer action, target and application without generic success prose', () => {
     const call = item('ComputerUse', { action: 'type_text', text: 'Release notes' },
       JSON.stringify({ computer_use_context: { foreground_application: { name: 'Editor' } } }));

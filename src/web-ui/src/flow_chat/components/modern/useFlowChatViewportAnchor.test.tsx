@@ -15,20 +15,6 @@ import {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-/*
- * The one trace here that is asserted on rather than merely tolerated. The rest
- * of the trail is coalesced and reports whatever the last of a series happened
- * to hold; this one fires once per wait and its numbers are the whole point of
- * it, so it is worth pinning that it fires exactly once and says the truth.
- */
-const mocks = vi.hoisted(() => ({ traceViewport: vi.fn(), traceViewportRepeating: vi.fn() }));
-vi.mock('@/infrastructure/diagnostics/flowChatViewportDiagnostics', async () => {
-  const actual = await vi.importActual<
-    typeof import('@/infrastructure/diagnostics/flowChatViewportDiagnostics')
-  >('@/infrastructure/diagnostics/flowChatViewportDiagnostics');
-  return { ...actual, traceViewport: mocks.traceViewport, traceViewportRepeating: mocks.traceViewportRepeating };
-});
-
 const VIEWPORT_HEIGHT = 500;
 const TURN_HEIGHT = 40;
 
@@ -105,8 +91,6 @@ describe('useFlowChatViewportAnchor', () => {
   }
 
   beforeEach(() => {
-    mocks.traceViewport.mockReset();
-    mocks.traceViewportRepeating.mockReset();
     container = document.createElement('div');
     scroller = document.createElement('div');
     document.body.append(container, scroller);
@@ -264,45 +248,6 @@ describe('useFlowChatViewportAnchor', () => {
     layoutTurns({ 'turn-3': 1120, 'turn-9': 3140 });
     expect(api.restoreAnchor()).toBe(true);
     expect(scroller.scrollTop).toBe(940);
-  });
-
-  it('reports what a wait for the anchored Turn cost, once, when it ends', async () => {
-    /*
-     * The wait is what decides whether a junction is seen: a correction that
-     * shares the prepend's frame costs nothing, and one a frame later is a
-     * visible jump. `attempts` cannot answer how long a wait ran — its trace is
-     * coalesced, so only the first of a series is ever emitted — so the whole
-     * of it is reported at the one moment it exists.
-     */
-    scroller.scrollTop = 1000;
-    layoutTurns({ 'turn-3': 980 });
-    api.captureAnchor();
-
-    layoutTurns({ 'turn-9': 980 });
-    api.openSettleWindow();
-    runFrame();
-    runFrame();
-    now += 48;
-
-    layoutTurns({ 'turn-3': 1100, 'turn-9': 980 });
-    runFrame();
-
-    const waits = mocks.traceViewport.mock.calls
-      .map(([probe]) => probe)
-      .filter(probe => probe.location === 'anchor.turnReturned');
-    expect(waits).toHaveLength(1);
-    expect(waits[0].data()).toMatchObject({
-      turnId: 'turn-3',
-      outcome: 'returned',
-      waitedForMs: 48,
-      // Two settle frames ran and still did not find it; the third did.
-      waitedFrames: 2,
-    });
-
-    // Ended, not merely reported: a second answered frame says nothing more.
-    runFrame();
-    expect(mocks.traceViewport.mock.calls
-      .filter(([probe]) => probe.location === 'anchor.turnReturned')).toHaveLength(1);
   });
 
   it('re-anchors on a scroll the user drove, and not on one they did not', () => {
@@ -635,7 +580,7 @@ describe('useFlowChatViewportAnchor', () => {
     expect(Math.abs(scroller.scrollTop - 8)).toBeLessThan(0.5);
   });
 
-  it('reports reversals without suppressing valid late layout corrections', () => {
+  it('does not suppress valid late layout corrections that reverse direction', () => {
     layoutTurns({ 'turn-3': 100 });
     api.captureAnchor();
     api.openSettleWindow('items');
@@ -644,13 +589,6 @@ describe('useFlowChatViewportAnchor', () => {
       runFrame();
     }
     expect(scroller.scrollTop).toBe(0);
-    const results = mocks.traceViewportRepeating.mock.calls
-      .map(([, probe]) => probe).filter(probe => probe.location === 'anchor.correctionResult');
-    expect(results).toHaveLength(30);
-    expect(results.at(-1)?.data()).toMatchObject({
-      source: 'items', requestedPx: -8, appliedPx: -8, residualPx: 0,
-      improved: true, correctionCount: 30, reversalCount: 29, cumulativeTravelPx: 240,
-    });
     for (let i = 0; i < ANCHOR_SETTLE_FRAMES; i += 1) runFrame();
     expect(frames).toHaveLength(0);
   });
@@ -689,35 +627,6 @@ describe('useFlowChatViewportAnchor', () => {
     // carry that depends on this count still has to work when the owner lets
     // go and the transcript moves again.
     expect(scroller.scrollTop).toBe(1000);
-  });
-
-  it('does not count a frame it stood down on as a frame spent waiting', () => {
-    /*
-     * `waitedFrames` is read as painted frames the reader spent in the wrong
-     * place. Frames the anchor never looked on are not that, and counting them
-     * reported a 6609-frame wait for a reading position that was correct
-     * throughout.
-     */
-    scroller.scrollTop = 1000;
-    layoutTurns({ 'turn-3': 980 });
-    api.captureAnchor();
-
-    layoutTurns({ 'turn-9': 980 });
-    api.openSettleWindow();
-    runFrame();
-
-    isOwnedElsewhere = true;
-    for (let index = 0; index < 5; index += 1) runFrame();
-
-    isOwnedElsewhere = false;
-    layoutTurns({ 'turn-3': 1100, 'turn-9': 980 });
-    runFrame();
-
-    const waits = mocks.traceViewport.mock.calls
-      .map(([probe]) => probe)
-      .filter(probe => probe.location === 'anchor.turnReturned');
-    expect(waits).toHaveLength(1);
-    expect(waits[0].data()).toMatchObject({ waitedFrames: 1 });
   });
 
   it('stops re-asserting after the component goes away', () => {

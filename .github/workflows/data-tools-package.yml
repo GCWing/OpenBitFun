@@ -1,0 +1,116 @@
+name: Data Tools Package
+
+on:
+  push:
+    tags: ['data-tools-v*', 'data-migrator-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-tools-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Data Tools (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: --no-bundle
+          - platform: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+            bundles: --bundles dmg
+          - platform: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: --bundles dmg
+          - platform: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: --bundles appimage
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.18.0'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          shared-key: data-tools-${{ matrix.platform }}
+          cache-bin: false
+      - name: Install Linux WebView build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify independent version and packaging contract
+        run: |
+          node scripts/data-tools-release.mjs --check-version
+          node --test scripts/data-tools-tauri-build.test.mjs
+      - name: Check offline data compatibility
+        run: |
+          cargo test --locked -p openbitfun-services-core --no-default-features --features session-recovery --lib session_recovery
+          cargo test --locked -p openbitfun-data-tools -p openbitfun-legacy-migration-adapters -p openbitfun-legacy-migration -p openbitfun-config-contracts --lib --test migration_engine_contracts
+      - name: Build independent package
+        run: pnpm run data-tools:build -- --target ${{ matrix.target }} ${{ matrix.bundles }}
+      - name: Stage package and checksum
+        run: node scripts/data-tools-release.mjs ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: data-tools-${{ matrix.platform }}
+          path: target/data-tools-release/${{ matrix.platform }}/*
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/data-tools-v') || startsWith(github.ref, 'refs/tags/data-migrator-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.18.0'
+          # Signing uses Node built-ins only; pnpm is not installed in this job.
+          package-manager-cache: false
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: data-tools-*
+          path: data-tools-release-assets
+          merge-multiple: true
+      - name: Sign and verify with the independent Data Tools release key
+        shell: bash
+        env:
+          OPENBITFUN_SIGNING_KEY: ${{ secrets.DATA_TOOLS_SIGNING_PRIVATE_KEY }}
+          OPENBITFUN_SIGNING_PASSWORD: ${{ secrets.DATA_TOOLS_SIGNING_PRIVATE_KEY_PASSWORD }}
+          OPENBITFUN_SIGNING_PUBKEY: ${{ secrets.DATA_TOOLS_SIGNING_PUBKEY }}
+        run: |
+          set -euo pipefail
+          test -n "$OPENBITFUN_SIGNING_KEY"
+          test -n "$OPENBITFUN_SIGNING_PUBKEY"
+          cat data-tools-release-assets/*.sha256 | sort -k2 > data-tools-release-assets/SHA256SUMS
+          (cd data-tools-release-assets && sha256sum --check SHA256SUMS)
+          bash scripts/sign-release-assets.sh data-tools-release-assets/*
+          node scripts/write-minisign-public-key.mjs --out data-tools-release-assets/data-tools.minisign.pub
+      - name: Create a separately reviewed release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: OpenBitFun Data Tools ${{ github.ref_name }}
+          draft: true
+          make_latest: false
+          files: data-tools-release-assets/*
+          body_path: src/apps/data-tools/RELEASE.md

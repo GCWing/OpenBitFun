@@ -4,6 +4,18 @@
   "common": {
     "retry": "Retry"
   },
+  "messageSending": {
+    "title": "Message sending",
+    "duringTurn": "Send messages while a conversation is running",
+    "description": "Native sessions send follow-up instructions to the current task immediately by default. Choose queue to wait for the current turn to finish. ACP sessions still wait for the current turn; dispatched sessions continue appending messages to the target task.",
+    "immediate": "Send immediately (default)",
+    "queue": "Queue messages",
+    "immediateDescription": "Native sessions add new messages to the current task immediately.",
+    "queueDescription": "Native sessions send queued messages after the current turn finishes.",
+    "loading": "Loading message sending preferences…",
+    "loadFailed": "Failed to load message sending preferences",
+    "saveFailed": "Failed to save message sending preferences"
+  },
   "textSelection": {
     "title": "Text selection",
     "autoShowToolbar": "Automatically show text selection actions",
@@ -126,7 +138,7 @@
       "hint": "Computer sleep behavior while OpenBitFun is running"
     },
     "toggleLabel": "Prevent sleep",
-    "toggleDescription": "Keep the computer awake while OpenBitFun is running, even without a task. The display may turn off; the system controls manual sleep and lid-close behavior",
+    "toggleDescription": "Prevent automatic sleep while running. Display, manual sleep, and lid behavior are unchanged.",
     "messages": {
       "loading": "Loading…",
       "loadFailed": "Failed to read the prevent-sleep setting",
@@ -195,6 +207,7 @@
       "loadFailed": "Failed to load logging configuration",
       "saveFailed": "Failed to save logging level",
       "levelUpdated": "Logging level updated",
+      "levelSavedNotApplied": "Logging level saved, but that device is still logging at {{level}}.",
       "sensitiveDiagnosticsUpdated": "Sensitive diagnostic logging preference updated",
       "refreshed": "Runtime status refreshed",
       "openedFolder": "Log folder opened",
@@ -265,10 +278,6 @@
     "permissionRequest": {
       "label": "Permission request notification",
       "description": "Notify you when an action needs approval while the window is in the background"
-    },
-    "startupTips": {
-      "label": "Show tips on startup",
-      "description": "Show a random tip at startup"
     },
     "messages": {
       "loading": "Loading…",

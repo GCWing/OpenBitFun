@@ -194,11 +194,28 @@ pub struct ComputerUseImageGlobalBounds {
     pub height: f64,
 }
 
+/// A rectangle of an earlier observation to capture again at higher detail,
+/// in that screenshot's image pixels. The zoomed image is an observation of
+/// the same bound window with its own screenshot_id and coordinate mapping.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ComputerUseZoomRegion {
+    pub screenshot_id: String,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Screenshot payload for the model and for pointer coordinate mapping.
 /// The `ComputerUse` tool embeds these fields in tool-result JSON and adds **`hierarchical_navigation`**
 /// (`full_display` vs `region_crop`, plus **`shortcut_policy`**).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ComputerScreenshot {
+    /// Recency of a retained native frame. Missing on older/other providers;
+    /// a reused frame is not evidence that the latest input was processed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_frame: Option<CaptureFrameInfo>,
     /// Stable id for this exact screenshot coordinate basis. Follow-up
     /// `ClickTarget::ImageXy` / `ImageGrid` calls should pass this id so the
     /// host maps image pixels against the same frame the model saw.
@@ -248,6 +265,40 @@ pub struct ComputerScreenshot {
     /// Desktop: this JPEG was produced by implicit 500×500 confirmation crop (mouse or text focus center).
     #[serde(default, skip_serializing_if = "is_false")]
     pub implicit_confirmation_crop_applied: bool,
+    /// Same-process menus, popups and suggestion lists above the captured
+    /// window, front to back. Composited ones are drawn into this image.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_windows: Vec<ComputerUseAuxiliaryWindow>,
+}
+
+/// A transient window owned by the captured application that covers part of
+/// its window (menu, popup, dropdown, tooltip). Pointer input inside its
+/// `image_rect` is delivered to this window, as a physical click would be.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ComputerUseAuxiliaryWindow {
+    pub window_id: u64,
+    /// Visible part of the window in this image's pixel coordinates.
+    pub image_rect: ComputerUseImageContentRect,
+    /// Full global frame, which may extend beyond the captured window.
+    pub global_bounds: ComputerUseImageGlobalBounds,
+    /// Whether its pixels are drawn into the attached image.
+    pub composited: bool,
+    /// Whether part of the window lies outside the captured window's image.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub clipped: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Why the pixels are missing when `composited` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CaptureFrameInfo {
+    pub age_ms: u64,
+    pub reused: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -391,6 +442,10 @@ pub struct AppSelector {
     pub bundle_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<i32>,
+    /// Exact native window from `list_windows`. Requires its owning PID and a
+    /// host advertising `window-target-v1`; never silently ignore this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_id: Option<u64>,
 }
 
 impl AppSelector {
@@ -400,6 +455,7 @@ impl AppSelector {
             name: Some(name.into()),
             bundle_id: None,
             pid: None,
+            window_id: None,
         }
     }
 
@@ -409,6 +465,7 @@ impl AppSelector {
             name: None,
             bundle_id: None,
             pid: Some(pid),
+            window_id: None,
         }
     }
 
@@ -418,12 +475,78 @@ impl AppSelector {
             name: None,
             bundle_id: Some(bundle_id.into()),
             pid: None,
+            window_id: None,
         }
     }
 
     /// True when no selector field is populated.
     pub fn is_empty(&self) -> bool {
-        self.name.is_none() && self.bundle_id.is_none() && self.pid.is_none()
+        self.name.is_none()
+            && self.bundle_id.is_none()
+            && self.pid.is_none()
+            && self.window_id.is_none()
+    }
+
+    pub fn validate_window_target(&self) -> Result<(), &'static str> {
+        if self.window_id.is_some()
+            && (self.window_id == Some(0) || self.pid.is_none_or(|pid| pid <= 0))
+        {
+            return Err("[INVALID_PARAMS] window_id requires a positive owning pid and a positive window_id from list_windows");
+        }
+        Ok(())
+    }
+}
+
+/// Read-only native window discovery, independent of AX content and of the
+/// application launcher's identity. Discovery does not select or activate it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AppWindowInfo {
+    pub pid: i32,
+    pub window_id: u64,
+    pub application: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
+    /// Native visibility fact, not a guarantee that capture or input works.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_on_screen: Option<bool>,
+    /// Global window frame in the host's input coordinate space, so a tiny
+    /// system badge is distinguishable from an application's content window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<ComputerUseImageGlobalBounds>,
+}
+
+impl AppWindowInfo {
+    /// Present visible, titled and larger windows first. Inventory order is
+    /// otherwise preserved, so this never hides or drops a window.
+    pub fn sort_for_discovery(windows: &mut [AppWindowInfo]) {
+        windows.sort_by_key(|window| {
+            let area = window
+                .bounds
+                .as_ref()
+                .map(|bounds| (bounds.width.max(0.0) * bounds.height.max(0.0)) as u64)
+                .unwrap_or(0);
+            (
+                window.is_on_screen != Some(true),
+                window.title.trim().is_empty(),
+                std::cmp::Reverse(area),
+            )
+        });
+    }
+
+    /// Case-insensitive substring match on the application name, bundle
+    /// identifier or title, so one query reaches an app's helper processes.
+    pub fn matches_query(&self, query: &str) -> bool {
+        let query = query.trim().to_lowercase();
+        !query.is_empty()
+            && [
+                Some(self.application.as_str()),
+                self.bundle_id.as_deref(),
+                Some(self.title.as_str()),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|field| field.to_lowercase().contains(&query))
     }
 }
 
@@ -620,6 +743,10 @@ fn normalize_windows_key(token: &str) -> String {
 /// `app_*` mutation so the model can verify changes in one round-trip.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppStateSnapshot {
+    /// Opaque node address-space identity. Echo on subsequent input; unlike the
+    /// content digest this changes even when two observations look identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observation_id: Option<String>,
     /// Identity of the captured application.
     pub app: AppInfo,
     /// Title of the focused window when `focus_window_only=true`, else
@@ -639,13 +766,10 @@ pub struct AppStateSnapshot {
     pub digest: String,
     /// Unix-epoch milliseconds when the snapshot was captured.
     pub captured_at_ms: u64,
-    /// **Auto-attached** focused-window screenshot (Codex parity). The host
-    /// captures the visible pixels of the target app's frontmost window
-    /// every time `get_app_state` (or any `app_*` mutation) returns, so
-    /// the model is never blind on canvas / WebView / WebGL surfaces that
-    /// the AX tree cannot describe (e.g. the Gobang board). `None` only
-    /// when the host explicitly opted out (e.g. inner `app_wait_for`
-    /// polls) or the capture itself failed.
+    /// Optional focused-window screenshot. Existing observations include pixels
+    /// by default; explicit AX-only reads and internal polling omit them. Capture
+    /// failure can also leave this absent. Canvas and visual decisions need a
+    /// fresh image-bearing observation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub screenshot: Option<ComputerScreenshot>,
     /// Optional per-snapshot warning emitted by the host when it detects
@@ -758,6 +882,9 @@ fn default_true() -> bool {
 /// `ComputerUseHost::build_interactive_view`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InteractiveView {
+    /// Node/view address space from the underlying application observation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observation_id: Option<String>,
     /// Identity of the captured application.
     pub app: AppInfo,
     /// Title of the focused window (or `None` when the host could not
@@ -946,6 +1073,9 @@ pub struct VisualMark {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VisualMarkView {
+    /// Node/view address space from the underlying application observation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observation_id: Option<String>,
     pub app: AppInfo,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_title: Option<String>,
@@ -1125,6 +1255,112 @@ pub enum AppInputAction {
     #[serde(rename = "wait")]
     Wait { ms: u64 },
 }
+
+/// Outcome of waiting for the input target to stop repainting before the
+/// post-input observation. Settling is evidence about pixels only; it never
+/// proves that asynchronous application work has finished.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AppInputSettleStatus {
+    /// The target produced no new frame for the host's quiet interval.
+    Stable,
+    /// The target was still repainting when the host's bound elapsed.
+    StillChanging,
+    /// This host or target has no live frame stream to measure.
+    Unavailable,
+    /// No input step was submitted, so nothing needed to settle.
+    Skipped,
+    /// Stop, cancellation or a changed control scope ended the wait early.
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AppInputSettle {
+    pub status: AppInputSettleStatus,
+    #[serde(default)]
+    pub waited_ms: u64,
+    /// Whether at least one repaint was observed after the input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl AppInputSettle {
+    pub fn unavailable(reason: impl Into<String>) -> Self {
+        Self {
+            status: AppInputSettleStatus::Unavailable,
+            waited_ms: 0,
+            changed: None,
+            reason: Some(reason.into()),
+        }
+    }
+    pub fn skipped() -> Self {
+        Self {
+            status: AppInputSettleStatus::Skipped,
+            waited_ms: 0,
+            changed: None,
+            reason: None,
+        }
+    }
+}
+
+/// Bounds for one post-input settle. `quiet_ms` is the repaint-free interval
+/// that counts as settled; `first_change_ms` is how long an input that has not
+/// repainted yet may take to start; `max_ms` caps the whole wait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppInputSettlePolicy {
+    pub quiet_ms: u32,
+    pub first_change_ms: u32,
+    pub max_ms: u32,
+}
+
+impl Default for AppInputSettlePolicy {
+    fn default() -> Self {
+        Self {
+            quiet_ms: 250,
+            first_change_ms: 400,
+            max_ms: 2000,
+        }
+    }
+}
+
+/// Pure decision shared by native frame trackers. Times are milliseconds since
+/// the settle anchor (the input barrier). `last_change_ms` is the newest
+/// repaint at or after the anchor.
+pub fn app_input_settle_decision(
+    policy: AppInputSettlePolicy,
+    elapsed_ms: u64,
+    last_change_ms: Option<u64>,
+) -> Option<AppInputSettleStatus> {
+    let settled = match last_change_ms {
+        Some(changed) => elapsed_ms.saturating_sub(changed) >= u64::from(policy.quiet_ms),
+        None => elapsed_ms >= u64::from(policy.first_change_ms),
+    };
+    if settled {
+        Some(AppInputSettleStatus::Stable)
+    } else if elapsed_ms >= u64::from(policy.max_ms) {
+        Some(AppInputSettleStatus::StillChanging)
+    } else {
+        None
+    }
+}
+
+/// How long a frame tracker may block before the decision can change. A new
+/// repaint should wake it sooner; short slices keep Stop checks responsive.
+pub fn app_input_settle_next_wait_ms(
+    policy: AppInputSettlePolicy,
+    elapsed_ms: u64,
+    last_change_ms: Option<u64>,
+) -> u32 {
+    let due = match last_change_ms {
+        Some(changed) => changed.saturating_add(u64::from(policy.quiet_ms)),
+        None => u64::from(policy.first_change_ms),
+    }
+    .min(u64::from(policy.max_ms));
+    due.saturating_sub(elapsed_ms).clamp(1, 100) as u32
+}
+
 fn default_app_drag_ms() -> u64 {
     400
 }
@@ -1141,15 +1377,140 @@ impl AppInputAction {
     }
     pub fn validate(&self) -> Result<(), String> {
         match self {
-            Self::Click {click_count, mouse_button, ..} if !(1..=3).contains(click_count) || !matches!(mouse_button.as_str(), "left"|"right"|"middle") => Err("click_count must be 1..3 and mouse_button must be left/right/middle".into()),
-            Self::KeyChord {keys, ..} if keys.is_empty() || keys.iter().any(|key| key.trim().is_empty()) => Err("keys must contain non-empty key names".into()),
-            Self::Drag {from, to, ..} if !matches!((from, to), (
-                ClickTarget::ImageXy {x:x0,y:y0,screenshot_id:Some(a)},
-                ClickTarget::ImageXy {x:x1,y:y1,screenshot_id:Some(b)}
-            ) if *x0 >= 0 && *y0 >= 0 && *x1 >= 0 && *y1 >= 0 && !a.is_empty() && a == b) => Err("drag endpoints must use nonnegative image_xy coordinates from the same screenshot_id".into()),
-            Self::Drag {mouse_button, duration_ms, ..} if !matches!(mouse_button.as_str(), "left"|"right"|"middle") || *duration_ms == 0 => Err("drag requires a valid button and positive duration_ms".into()),
+            Self::Click {
+                click_count,
+                mouse_button,
+                ..
+            } if !(1..=3).contains(click_count)
+                || !matches!(mouse_button.as_str(), "left" | "right" | "middle") =>
+            {
+                return Err(
+                    "click_count must be 1..3 and mouse_button must be left/right/middle".into(),
+                );
+            }
+            Self::KeyChord { keys, .. }
+                if keys.is_empty() || keys.iter().any(|key| key.trim().is_empty()) =>
+            {
+                return Err("keys must contain non-empty key names".into());
+            }
+            Self::Drag {
+                from,
+                to,
+                mouse_button,
+                duration_ms,
+            } => {
+                if !matches!((from, to), (
+                    ClickTarget::ImageXy { screenshot_id: Some(a), .. },
+                    ClickTarget::ImageXy { screenshot_id: Some(b), .. }
+                ) if a == b)
+                {
+                    return Err(
+                        "drag endpoints must use image_xy coordinates from the same screenshot_id"
+                            .into(),
+                    );
+                }
+                if !matches!(mouse_button.as_str(), "left" | "right" | "middle")
+                    || *duration_ms == 0
+                {
+                    return Err("drag requires a valid button and positive duration_ms".into());
+                }
+            }
+            _ => {}
+        }
+        match self {
+            Self::Click { target, .. } => target.validate(),
+            Self::TypeText {
+                focus: Some(target),
+                ..
+            }
+            | Self::Scroll {
+                focus: Some(target),
+                ..
+            } => target.validate(),
+            Self::Drag { from, to, .. } => {
+                from.validate()?;
+                to.validate()
+            }
             _ => Ok(()),
         }
+    }
+}
+
+impl ClickTarget {
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            ClickTarget::ImageXy {
+                x,
+                y,
+                screenshot_id,
+            } => {
+                if *x < 0
+                    || *y < 0
+                    || screenshot_id
+                        .as_deref()
+                        .is_none_or(|id| id.trim().is_empty())
+                {
+                    return Err("image_xy requires nonnegative image coordinates and the observed screenshot_id".into());
+                }
+            }
+            ClickTarget::ImageGrid {
+                x0,
+                y0,
+                width,
+                height,
+                rows,
+                cols,
+                row,
+                col,
+                intersections,
+                screenshot_id,
+            } => {
+                if *x0 < 0
+                    || *y0 < 0
+                    || *width == 0
+                    || *height == 0
+                    || i64::from(*x0) + i64::from(*width) > i64::from(i32::MAX) + 1
+                    || i64::from(*y0) + i64::from(*height) > i64::from(i32::MAX) + 1
+                    || *rows == 0
+                    || *cols == 0
+                    || row >= rows
+                    || col >= cols
+                    || (*intersections && (*rows < 2 || *cols < 2))
+                    || screenshot_id
+                        .as_deref()
+                        .is_none_or(|id| id.trim().is_empty())
+                {
+                    return Err("image_grid requires a nonempty observed screenshot_id, positive rectangle/grid dimensions and an in-range row/col".into());
+                }
+            }
+            ClickTarget::VisualGrid {
+                rows,
+                cols,
+                row,
+                col,
+                intersections,
+                ..
+            } => {
+                if *rows == 0
+                    || *cols == 0
+                    || row >= rows
+                    || col >= cols
+                    || (*intersections && (*rows < 2 || *cols < 2))
+                {
+                    return Err(
+                        "visual_grid requires positive dimensions and an in-range row/col".into(),
+                    );
+                }
+            }
+            ClickTarget::OcrText { needle } if needle.trim().is_empty() => {
+                return Err("ocr_text requires non-empty observed text".into())
+            }
+            ClickTarget::ScreenXy { x, y } if !x.is_finite() || !y.is_finite() => {
+                return Err("screen_xy coordinates must be finite".into())
+            }
+            _ => {}
+        }
+        Ok(())
     }
 }
 
@@ -1557,6 +1918,44 @@ mod input_tests {
     }
 }
 
+#[cfg(test)]
+mod window_selector_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_app_selectors_round_trip_without_new_fields() {
+        for value in [
+            json!({"pid":421}),
+            json!({"name":"Example"}),
+            json!({"bundle_id":"example.app"}),
+        ] {
+            let selector: AppSelector = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(selector.window_id, None);
+            assert!(selector.validate_window_target().is_ok());
+            assert_eq!(serde_json::to_value(selector).unwrap(), value);
+        }
+    }
+
+    #[test]
+    fn exact_window_requires_its_owning_process() {
+        for value in [
+            json!({"window_id":42}),
+            json!({"name":"Example","window_id":42}),
+            json!({"pid":0,"window_id":42}),
+            json!({"pid":421,"window_id":0}),
+        ] {
+            let selector: AppSelector = serde_json::from_value(value).unwrap();
+            assert!(!selector.is_empty());
+            assert!(selector.validate_window_target().is_err());
+        }
+        let value = json!({"pid":421,"window_id":42});
+        let selector: AppSelector = serde_json::from_value(value.clone()).unwrap();
+        assert!(selector.validate_window_target().is_ok());
+        assert_eq!(serde_json::to_value(selector).unwrap(), value);
+    }
+}
+
 pub fn build_screenshot_tool_body_and_hint(
     shot: &ComputerScreenshot,
     debug_rel: Option<String>,
@@ -1570,6 +1969,7 @@ pub fn build_screenshot_tool_body_and_hint(
     let mut data = json!({
         "success": true,
         "screenshot_id": shot.screenshot_id,
+        "capture_frame": shot.capture_frame,
         "mime_type": shot.mime_type,
         "image_width": shot.image_width,
         "image_height": shot.image_height,
@@ -1593,6 +1993,9 @@ pub fn build_screenshot_tool_body_and_hint(
         "debug_screenshot_path": debug_rel,
         "ui_tree_text": shot.ui_tree_text,
     });
+    if !shot.auxiliary_windows.is_empty() {
+        data["auxiliary_windows"] = json!(shot.auxiliary_windows);
+    }
     // Preserve legacy result fields, but never instruct the model to send
     // crop/quadrant parameters that parse_screenshot_params now ignores.
     let cropped = !screenshot_covers_full_display(shot);
@@ -1718,6 +2121,7 @@ mod tool_body_tests {
 
     fn screenshot() -> ComputerScreenshot {
         ComputerScreenshot {
+            capture_frame: None,
             screenshot_id: Some("test-shot".to_string()),
             bytes: vec![1, 2, 3],
             mime_type: "image/jpeg".to_string(),
@@ -1743,6 +2147,7 @@ mod tool_body_tests {
             image_global_bounds: None,
             implicit_confirmation_crop_applied: false,
             ui_tree_text: None,
+            auxiliary_windows: Vec::new(),
         }
     }
 
@@ -1812,9 +2217,26 @@ mod tool_body_tests {
         payload["future_field"] = json!({"version":2});
         let old: ComputerScreenshot = serde_json::from_value(payload).unwrap();
         assert_eq!(old.screenshot_id, None);
+        assert_eq!(old.capture_frame, None);
         let restored: ComputerScreenshot =
             serde_json::from_value(serde_json::to_value(&old).unwrap()).unwrap();
         assert_eq!(old, restored);
+    }
+
+    #[test]
+    fn retained_frame_recency_round_trips_and_reaches_tool_output() {
+        let mut shot = screenshot();
+        shot.capture_frame = Some(CaptureFrameInfo {
+            age_ms: 1234,
+            reused: true,
+        });
+        let payload = serde_json::to_value(&shot).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ComputerScreenshot>(payload).unwrap(),
+            shot
+        );
+        let (body, _) = build_screenshot_tool_body_and_hint(&shot, None);
+        assert_eq!(body["capture_frame"], json!({"age_ms":1234,"reused":true}));
     }
 
     #[test]
@@ -1832,6 +2254,28 @@ mod tool_body_tests {
 
 #[cfg(test)]
 mod app_input_program_tests {
+    #[test]
+    fn legacy_app_observation_omits_identity_without_losing_content() {
+        let old = serde_json::json!({"app":{"name":"Editor","pid":7,"running":true},"tree_text":"[0] Button","digest":"same-content","captured_at_ms":1});
+        let snapshot: super::AppStateSnapshot = serde_json::from_value(old).unwrap();
+        assert!(snapshot.observation_id.is_none());
+        let round: super::AppStateSnapshot =
+            serde_json::from_value(serde_json::to_value(&snapshot).unwrap()).unwrap();
+        assert_eq!(snapshot, round);
+    }
+
+    #[test]
+    fn all_program_targets_are_validated_before_native_dispatch() {
+        for value in [
+            serde_json::json!({"action":"app_click","target":{"kind":"image_xy","x":1,"y":1}}),
+            serde_json::json!({"action":"app_type_text","text":"x","focus":{"kind":"ocr_text","needle":" "}}),
+            serde_json::json!({"action":"app_scroll","dx":0,"dy":1,"focus":{"kind":"image_grid","x0":2147483647,"y0":0,"width":2,"height":1,"rows":1,"cols":1,"row":0,"col":0,"screenshot_id":"shot"}}),
+        ] {
+            let input: super::AppInputAction = serde_json::from_value(value).unwrap();
+            assert!(input.validate().is_err());
+        }
+    }
+
     use super::*;
     use serde_json::json;
 
@@ -1884,5 +2328,169 @@ mod app_input_program_tests {
             .unwrap()
             .validate()
             .is_err());
+    }
+}
+
+#[cfg(test)]
+mod settle_and_overlay_tests {
+    use super::*;
+    use serde_json::json;
+
+    const POLICY: AppInputSettlePolicy = AppInputSettlePolicy {
+        quiet_ms: 250,
+        first_change_ms: 400,
+        max_ms: 2000,
+    };
+
+    #[test]
+    fn settles_after_quiet_interval_once_a_change_was_seen() {
+        assert_eq!(app_input_settle_decision(POLICY, 300, Some(100)), None);
+        assert_eq!(
+            app_input_settle_decision(POLICY, 350, Some(100)),
+            Some(AppInputSettleStatus::Stable)
+        );
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 300, Some(100)), 50);
+    }
+
+    #[test]
+    fn unchanged_window_settles_after_first_change_window() {
+        assert_eq!(app_input_settle_decision(POLICY, 399, None), None);
+        assert_eq!(
+            app_input_settle_decision(POLICY, 400, None),
+            Some(AppInputSettleStatus::Stable)
+        );
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 390, None), 10);
+    }
+
+    #[test]
+    fn continuous_repaint_reports_still_changing_at_the_cap() {
+        assert_eq!(app_input_settle_decision(POLICY, 1990, Some(1900)), None);
+        assert_eq!(
+            app_input_settle_decision(POLICY, 2000, Some(1950)),
+            Some(AppInputSettleStatus::StillChanging)
+        );
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 1990, Some(1900)), 10);
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 0, None), 100);
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 5000, Some(10)), 1);
+    }
+
+    #[test]
+    fn settle_receipt_uses_snake_case_and_omits_unknown_fields() {
+        let settle = AppInputSettle::skipped();
+        let value = serde_json::to_value(&settle).unwrap();
+        assert_eq!(value["status"], "skipped");
+        let unavailable = AppInputSettle::unavailable("no stream");
+        let value = serde_json::to_value(&unavailable).unwrap();
+        assert_eq!(value["status"], "unavailable");
+        assert_eq!(value["reason"], "no stream");
+        let stable: AppInputSettle =
+            serde_json::from_value(json!({"status":"still_changing","waited_ms":2000})).unwrap();
+        assert_eq!(stable.status, AppInputSettleStatus::StillChanging);
+        assert_eq!(stable.changed, None);
+    }
+
+    #[test]
+    fn legacy_window_inventory_without_bounds_round_trips() {
+        let old = json!({"pid":7,"window_id":11,"application":"Editor","title":"Doc"});
+        let window: AppWindowInfo = serde_json::from_value(old.clone()).unwrap();
+        assert!(window.bounds.is_none());
+        assert_eq!(serde_json::to_value(&window).unwrap(), old);
+    }
+
+    #[test]
+    fn window_query_matches_application_bundle_or_title_case_insensitively() {
+        let window = |application: &str, bundle_id: Option<&str>, title: &str| AppWindowInfo {
+            pid: 1,
+            window_id: 1,
+            application: application.into(),
+            title: title.into(),
+            bundle_id: bundle_id.map(Into::into),
+            is_on_screen: Some(true),
+            bounds: None,
+        };
+        let helper = window("WeChatAppEx", Some("com.tencent.flue.WeChatAppEx"), "");
+        let host = window("WeChat", Some("com.tencent.xinWeChat"), "羊了个羊：星球");
+        assert!(helper.matches_query("wechat"));
+        assert!(host.matches_query(" WECHAT "));
+        assert!(host.matches_query("羊了个羊"));
+        assert!(helper.matches_query("flue"));
+        assert!(!helper.matches_query("羊了个羊"));
+        assert!(!host.matches_query("   "));
+        assert!(!window("Finder", None, "").matches_query("wechat"));
+    }
+
+    #[test]
+    fn discovery_order_puts_visible_titled_large_windows_first_without_dropping() {
+        let window = |id: u64, title: &str, on_screen: Option<bool>, size: f64| AppWindowInfo {
+            pid: 1,
+            window_id: id,
+            application: "App".into(),
+            title: title.into(),
+            bundle_id: None,
+            is_on_screen: on_screen,
+            bounds: Some(ComputerUseImageGlobalBounds {
+                left: 0.0,
+                top: 0.0,
+                width: size,
+                height: size,
+            }),
+        };
+        let mut windows = vec![
+            window(1, "", Some(true), 20.0),
+            window(2, "Hidden", Some(false), 900.0),
+            window(3, "Small", Some(true), 100.0),
+            window(4, "Main", Some(true), 800.0),
+            window(5, "Unknown", None, 500.0),
+        ];
+        AppWindowInfo::sort_for_discovery(&mut windows);
+        let order: Vec<u64> = windows.iter().map(|window| window.window_id).collect();
+        assert_eq!(order, [4, 3, 1, 2, 5]);
+    }
+
+    #[test]
+    fn legacy_screenshot_without_auxiliary_windows_round_trips() {
+        let old = json!({
+            "bytes": [], "mime_type": "image/jpeg", "image_width": 10, "image_height": 10,
+            "native_width": 10, "native_height": 10, "display_origin_x": 0, "display_origin_y": 0,
+            "vision_scale": 1.0
+        });
+        let shot: ComputerScreenshot = serde_json::from_value(old).unwrap();
+        assert!(shot.auxiliary_windows.is_empty());
+        let value = serde_json::to_value(&shot).unwrap();
+        assert!(value.get("auxiliary_windows").is_none());
+        let round: ComputerScreenshot = serde_json::from_value(value).unwrap();
+        assert_eq!(shot, round);
+    }
+
+    #[test]
+    fn auxiliary_window_metadata_serializes_minimal_shape() {
+        let window = ComputerUseAuxiliaryWindow {
+            window_id: 9,
+            image_rect: ComputerUseImageContentRect {
+                left: 1,
+                top: 2,
+                width: 3,
+                height: 4,
+            },
+            global_bounds: ComputerUseImageGlobalBounds {
+                left: 10.0,
+                top: 20.0,
+                width: 3.0,
+                height: 4.0,
+            },
+            composited: true,
+            clipped: false,
+            layer: None,
+            title: None,
+            unavailable_reason: None,
+        };
+        let value = serde_json::to_value(&window).unwrap();
+        assert_eq!(
+            value,
+            json!({"window_id":9,"image_rect":{"left":1,"top":2,"width":3,"height":4},
+                "global_bounds":{"left":10.0,"top":20.0,"width":3.0,"height":4.0},"composited":true})
+        );
+        let round: ComputerUseAuxiliaryWindow = serde_json::from_value(value).unwrap();
+        assert_eq!(round, window);
     }
 }

@@ -1,0 +1,37 @@
+[package]
+name = "openbitfun-miniapp-shell"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+publish = false
+description = "Lightweight native MiniApp window; execution remains in the shared Desktop host"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+openbitfun-miniapp-ipc = { path = "../../crates/adapters/miniapp-ipc" }
+openbitfun-services-core = { path = "../../crates/services/services-core", features = ["process-runtime"] }
+# The shell always serves its bundled HTML, even beside a development host.
+# Tauri's dev mode otherwise replaces each macOS bundle's Dock icon with the
+# compile-time OpenBitFun icon when the native event loop becomes ready.
+tauri = { workspace = true, features = ["custom-protocol"] }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-notification = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "sync", "time"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+image = { workspace = true, features = ["png"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { workspace = true }
+objc2-app-kit = { workspace = true, features = ["std", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow"] }
+objc2-foundation = { workspace = true, features = ["std", "NSGeometry", "NSString", "NSUserDefaults"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[lints]
+workspace = true

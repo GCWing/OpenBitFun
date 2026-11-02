@@ -1,4 +1,3 @@
-import { NavigationTransitionBoundary } from '@/app/navigation/NavigationTransitionBoundary';
 import {
   cancelPendingSettingsNavigation,
   discardAndContinueSettingsNavigation,
@@ -6,7 +5,11 @@ import {
   useSettingsDraftSnapshot,
 } from '@/infrastructure/config/settingsDraftRegistry';
 import { ConfirmDialog } from '@openbitfun/ui';
-import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { ConfigLoadingState, ConfigRetryState } from '@/infrastructure/config/components/common';
+import { SettingsPage } from './pages/shared/SettingsPage';
+import { useSettingsScrollRestoration } from './useSettingsScrollRestoration';
 import { useTranslation } from 'react-i18next';
 import {
   getSettingsPageManifest,
@@ -17,20 +20,12 @@ import './SettingsScene.scss';
 import { useSettingsStore } from './settingsStore';
 import type { SettingsPageId } from './settingsTypes';
 
-function SettingsSceneLoading() {
+function SettingsSceneLoading({ pageId }: { pageId: SettingsPageId }) {
+  const { t } = useTranslation('common');
   return (
-    <div
-      className="openbitfun-settings-scene__loading"
-      aria-busy="true"
-      aria-hidden="true"
-      data-openbitfun-scene="settings"
-      data-openbitfun-part="loading"
-    >
-      <div className="openbitfun-settings-scene__loading-line openbitfun-settings-scene__loading-line--title" />
-      <div className="openbitfun-settings-scene__loading-line" />
-      <div className="openbitfun-settings-scene__loading-line" />
-      <div className="openbitfun-settings-scene__loading-block" />
-    </div>
+    <SettingsPage pageId={pageId} data-openbitfun-scene="settings" data-openbitfun-part="loading">
+      <ConfigLoadingState label={t('app.loading')} rows={5} />
+    </SettingsPage>
   );
 }
 
@@ -44,42 +39,29 @@ const SettingsScene: React.FC<SettingsSceneProps> = ({ isActive = true }) => {
   const activeViewId = useSettingsStore((state) => state.activeViewId);
   const activeSectionId = useSettingsStore((state) => state.activeSectionId);
   const navigationRequestId = useSettingsStore((state) => state.navigationRequestId);
-  const pageTransitionTarget = useSettingsStore((state) => state.pageTransitionTarget);
-  const pageTransitionMotion = useSettingsStore((state) => state.pageTransitionMotion);
-  const pageTransitionSequence = useSettingsStore((state) => state.pageTransitionSequence);
   const { pendingNavigation } = useSettingsDraftSnapshot();
-  const appliedTransitionSequenceRef = useRef(pageTransitionSequence);
-  const [preparedPageId, setPreparedPageId] = useState<SettingsPageId | null>(() => (
-    isSettingsPageReady(activePageId) ? activePageId : null
-  ));
+  const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [preparation, setPreparation] = useState<{ pageId: SettingsPageId; error: boolean } | null>(null);
+  const [retry, setRetry] = useState(0);
+  const { t: tErrors } = useTranslation('errors');
+  const ready = isSettingsPageReady(activePageId)
+    || (preparation?.pageId === activePageId && !preparation.error);
+  const failed = !ready && preparation?.pageId === activePageId && preparation.error;
 
   useEffect(() => {
-    if (isSettingsPageReady(activePageId)) {
-      setPreparedPageId(activePageId);
-      return;
-    }
+    if (isSettingsPageReady(activePageId)) return;
     let cancelled = false;
-    const commit = () => {
-      if (!cancelled) setPreparedPageId(activePageId);
-    };
-    void preloadSettingsPage(activePageId).then(commit, commit);
-    return () => {
-      cancelled = true;
-    };
-  }, [activePageId]);
+    void preloadSettingsPage(activePageId).then(
+      () => { if (!cancelled) setPreparation({ pageId: activePageId, error: false }); },
+      () => { if (!cancelled) setPreparation({ pageId: activePageId, error: true }); },
+    );
+    return () => { cancelled = true; };
+  }, [activePageId, retry]);
 
-  const shouldAnimatePageTransition = (
-    appliedTransitionSequenceRef.current !== pageTransitionSequence
-    && pageTransitionTarget === activePageId
-    && pageTransitionMotion === 'pointer'
-  );
-
-  useLayoutEffect(() => {
-    appliedTransitionSequenceRef.current = pageTransitionSequence;
-  }, [pageTransitionSequence]);
-
+  useSettingsScrollRestoration(contentRef, activePageId, scope.epoch, ready, activeSectionId, navigationRequestId);
   const manifest = getSettingsPageManifest(activePageId);
-  const Content = preparedPageId === activePageId ? manifest.component : null;
+  const Content = manifest.resolvedComponent ?? manifest.component;
 
   return (
     <div
@@ -90,20 +72,24 @@ const SettingsScene: React.FC<SettingsSceneProps> = ({ isActive = true }) => {
       data-openbitfun-part="root"
       data-openbitfun-page={activePageId}
     >
-      {Content ? (
-        <NavigationTransitionBoundary
-          transitionKey={activePageId}
-          motion={shouldAnimatePageTransition ? 'pointer' : 'none'}
-          className="openbitfun-settings-scene__content-transition"
-          layerClassName="openbitfun-settings-scene__content-wrapper"
+      <div ref={contentRef} className="openbitfun-settings-scene__content-wrapper">
+        <div
+          key={`${scope.epoch}:${activePageId}`}
+          data-testid="settings-scene-content"
+          data-openbitfun-scene="settings"
+          data-openbitfun-part="content"
+          data-openbitfun-page={activePageId}
         >
-          <div
-            data-testid="settings-scene-content"
-            data-openbitfun-scene="settings"
-            data-openbitfun-part="content"
-            data-openbitfun-page={activePageId}
-          >
-            <Suspense fallback={<SettingsSceneLoading />}>
+          {failed ? (
+            <SettingsPage pageId={activePageId}>
+              <ConfigRetryState
+                message={tErrors('moduleLoad.description')}
+                retryLabel={tErrors('moduleLoad.retry')}
+                onRetry={() => { setPreparation(null); setRetry(value => value + 1); }}
+              />
+            </SettingsPage>
+          ) : ready ? (
+            <Suspense fallback={<SettingsSceneLoading pageId={activePageId} />}>
               <Content
                 isActive={isActive}
                 viewId={activeViewId ?? undefined}
@@ -111,9 +97,9 @@ const SettingsScene: React.FC<SettingsSceneProps> = ({ isActive = true }) => {
                 navigationRequestId={navigationRequestId}
               />
             </Suspense>
-          </div>
-        </NavigationTransitionBoundary>
-      ) : <SettingsSceneLoading />}
+          ) : <SettingsSceneLoading pageId={activePageId} />}
+        </div>
+      </div>
       <ConfirmDialog
         open={pendingNavigation !== null}
         testId="settings-unsaved-navigation-dialog"

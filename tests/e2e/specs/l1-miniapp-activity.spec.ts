@@ -24,11 +24,11 @@ describe('L1 MiniApp activity projection', () => {
     await miniApps.ensureAppStopped(SECOND_NODELESS_BUILTIN_APP_ID);
   });
 
-  it('shows an open node-less MiniApp in the navigation and Running zone', async () => {
+  it('shows an open node-less MiniApp in the overview and Running zone', async () => {
     await miniApps.startApp(NODELESS_BUILTIN_APP_ID);
 
-    const navActivity = await miniApps.waitForNavActivity(NODELESS_BUILTIN_APP_ID);
-    expect(await navActivity.isDisplayed()).toBe(true);
+    const overviewActivity = await miniApps.waitForOverviewActivity(NODELESS_BUILTIN_APP_ID);
+    expect(await overviewActivity.isDisplayed()).toBe(true);
 
     await miniApps.returnToGallery();
     const runningCard = await miniApps.waitForRunningCard(NODELESS_BUILTIN_APP_ID);
@@ -44,23 +44,24 @@ describe('L1 MiniApp activity projection', () => {
     await miniApps.returnToGallery();
     await miniApps.startApp(SECOND_NODELESS_BUILTIN_APP_ID);
 
-    await miniApps.waitForNavActivity(NODELESS_BUILTIN_APP_ID);
-    await miniApps.waitForNavActivity(SECOND_NODELESS_BUILTIN_APP_ID);
-    expect((await miniApps.getNavActivityIds()).sort()).toEqual([
+    await miniApps.waitForOverviewActivity(NODELESS_BUILTIN_APP_ID);
+    await miniApps.waitForOverviewActivity(SECOND_NODELESS_BUILTIN_APP_ID);
+    expect((await miniApps.getOverviewActivityIds()).sort()).toEqual([
       NODELESS_BUILTIN_APP_ID,
       SECOND_NODELESS_BUILTIN_APP_ID,
     ].sort());
 
-    const bounds = (await miniApps.getNavActivityHorizontalBounds()).sort((a, b) => a.x - b.x);
+    const bounds = (await miniApps.getOverviewActivityHorizontalBounds()).sort((a, b) => a.x - b.x);
     expect(bounds).toHaveLength(2);
     expect(bounds[0].x + bounds[0].width).toBeLessThan(bounds[1].x);
-    await saveStepScreenshot('l1-miniapp-two-nav-activities');
+    await saveStepScreenshot('l1-miniapp-two-overview-activities');
 
     await miniApps.returnToGallery();
-    expect((await miniApps.getNavActivityIds()).sort()).toEqual([
+    expect((await miniApps.getOverviewActivityIds()).sort()).toEqual([
       NODELESS_BUILTIN_APP_ID,
       SECOND_NODELESS_BUILTIN_APP_ID,
     ].sort());
+    await miniApps.returnToGallery();
     expect((await miniApps.getRunningCardIds()).sort()).toEqual([
       NODELESS_BUILTIN_APP_ID,
       SECOND_NODELESS_BUILTIN_APP_ID,

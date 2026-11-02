@@ -1,10 +1,10 @@
 /**
  * MiniAppScene — standalone scene tab for a single MiniApp.
- * Mounts MiniAppRunner; closing its scene stops the app through the shared lifecycle.
+ * Mounts MiniAppRunner; transfers keep work, closing the final view stops the app.
  */
-import { OverflowText, Button, Icon, IconButton, Tooltip } from '@openbitfun/ui';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Button, ConfirmDialog, Icon, IconButton, Tooltip } from '@openbitfun/ui';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2, AlertTriangle, SquareArrowOutUpRight, MessageSquare } from 'lucide-react';
 import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import type { MiniApp, MiniAppDraft } from '@/infrastructure/api/service-api/MiniAppAPI';
@@ -25,6 +25,17 @@ import MiniAppDraftPreview from './customization/MiniAppDraftPreview';
 import { useMiniAppCustomizeHotspot } from './customization/useMiniAppCustomizeHotspot';
 import MiniAppRunner from './components/MiniAppRunner';
 import './MiniAppScene.scss';
+import { hasLocalMiniAppPresentation, miniAppPresentationAPI } from '@/infrastructure/api/service-api/MiniAppPresentationAPI';
+import { ensureMiniAppTab, useMiniAppPresentationStore } from './miniAppPresentationStore';
+import { isRemoteWorkspace } from '@/shared/types';
+import { MiniAppSystemAppActions } from './components/MiniAppSystemAppActions';
+import { isMiniAppClosing } from './miniAppLifecycle';
+import { useSceneStore } from '@/app/stores/sceneStore';
+import { renderMiniAppSystemIcon } from './utils/miniAppSystemIcon';
+
+import { SceneChromeContribution } from '@/app/components/SceneTopBar/SceneChrome';
+import { MiniAppChromeActions } from './components/MiniAppChromeActions';
+import { MiniAppActionTooltip } from './components/MiniAppActionTooltip';
 
 const log = createLogger('MiniAppScene');
 const MINIAPP_REFRESH_EVENTS = [
@@ -45,15 +56,35 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
   const { current: appearance } = useAppearance();
   const appearanceMode = appearance?.mode ?? 'dark';
   const { workspace, workspacePath } = useCurrentWorkspace();
+  const initialTicket = useMiniAppPresentationStore.getState().tabs[appId];
+  const initialPath = useRef(initialTicket ? initialTicket.instance.workspacePath : workspacePath || null).current;
+  const presentationSupported = hasLocalMiniAppPresentation() && (Boolean(initialTicket) || !(workspace && isRemoteWorkspace(workspace)));
+  const viewId = useMiniAppPresentationStore(state => state.tabs[appId]?.view.viewId);
+  const hostEpoch = useMiniAppPresentationStore(state => state.snapshot?.hostEpoch);
   const { closeScene } = useSceneManager();
   const { t, currentLanguage } = useI18n('scenes/miniapp');
 
+  const chromeActionRef = useRef<((actionId: string) => void) | null>(null);
+  const [contentReady, setContentReady] = useState(false);
   const [app, setApp] = useState<MiniApp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [strictRuntime, setStrictRuntime] = useState(false);
   const [key, setKey] = useState(0);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [windowConfirm, setWindowConfirm] = useState(false);
+  const [presentationNotice, setPresentationNotice] = useState<string | null>(null);
+  const [presentationBusy, setPresentationBusy] = useState(false);
+  const pendingTransfer = useRef<string | null>(null);
+  const observedInstance = useMiniAppPresentationStore(state => state.snapshot?.instances.find(instance => instance.appId === appId));
+  useEffect(() => {
+    if (observedInstance?.pendingView?.kind === 'window') {
+      pendingTransfer.current = observedInstance.pendingView.viewId;
+    } else if (pendingTransfer.current) {
+      pendingTransfer.current = null;
+      if (observedInstance?.primaryView?.kind === 'tab') setPresentationNotice(t('presentation.transferFailed'));
+    }
+  }, [observedInstance, t]);
   const [customizeNotice, setCustomizeNotice] = useState<string | null>(null);
   const [customizePreview, setCustomizePreview] = useState<{
     draft: MiniAppDraft;
@@ -79,11 +110,14 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
 
   const load = useCallback(async (id: string) => {
     const scope = getActiveSurfaceScope();
+    if (isMiniAppClosing(id, scope) || !useSceneStore.getState().openTabs.some(tab => tab.id === `miniapp:${id}`)) return;
     setLoading(true);
+    setContentReady(false);
     setError(null);
     try {
-      const loaded = await miniAppAPI.getMiniApp(id, appearanceMode, workspacePath || undefined);
-      if (!scope.isCurrent()) return;
+      const ticket = presentationSupported ? await ensureMiniAppTab(id, initialPath) : undefined;
+      const loaded = await miniAppAPI.getMiniApp(id, appearanceMode, (ticket?.instance.workspacePath ?? initialPath) || undefined);
+      if (!scope.isCurrent() || isMiniAppClosing(id, scope)) return;
       // An app opened directly may finish loading before the catalog. Shutdown
       // still needs its actual permissions and worker policy.
       useMiniAppStore.getState().upsertApp(loaded);
@@ -101,13 +135,31 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
     } finally {
       setLoading(false);
     }
-  }, [appearanceMode, workspacePath]);
+  }, [appearanceMode, initialPath, presentationSupported]);
+
+  const markReady = useCallback(() => {
+    setContentReady(true);
+    const ticket = useMiniAppPresentationStore.getState().tabs[appId];
+    if (ticket && hasLocalMiniAppPresentation()) {
+      void miniAppPresentationAPI.ready(ticket).catch(error => setPresentationNotice(String(error)));
+    }
+  }, [appId]);
+
+  const openWindow = async () => {
+    setWindowConfirm(false);
+    setPresentationBusy(true);
+    try {
+      await miniAppPresentationAPI.open(appId, 'window', initialPath, app ? renderMiniAppSystemIcon(app.icon) : undefined);
+      setPresentationNotice(t('presentation.transferring'));
+    } catch (error) { setPresentationNotice(String(error)); }
+    finally { setPresentationBusy(false); }
+  };
 
   useEffect(() => {
     if (appId) {
       void load(appId);
     }
-  }, [appId, load]);
+  }, [appId, load, hostEpoch, viewId]);
 
   useEffect(() => {
     const tabId = `miniapp:${appId}` as SceneTabId;
@@ -138,13 +190,6 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
     };
   }, [appId, closeScene, load]);
 
-  const handleReload = () => {
-    if (appId) {
-      setKey((value) => value + 1);
-      void load(appId);
-    }
-  };
-
   const handleOpenCustomize = useCallback(() => {
     setCustomizeNotice(null);
     setCustomizeOpen(true);
@@ -158,6 +203,8 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
   const appName = app ? pickLocalizedString(app, currentLanguage, 'name') : 'Mini App';
   const hasConversation = Boolean(composerClaim || app?.permissions?.agent?.enabled
     && (!strictRuntime || app.permissions.host?.chat_composer));
+  const windowPending = presentationBusy || observedInstance?.pendingView?.kind === 'window';
+  const windowDisabled = !app || !presentationSupported || windowPending;
 
   return (
     <div
@@ -167,35 +214,28 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
       data-openbitfun-part="root"
       data-openbitfun-state={customizeOpen ? 'customizing' : undefined}
     >
-      <div className="miniapp-scene__header" data-openbitfun-scene="miniapp" data-openbitfun-part="header">
-        <div className="miniapp-scene__header-center">
-          {app ? (
-            <OverflowText className="miniapp-scene__title">{appName}</OverflowText>
-          ) : (
-            <OverflowText className="miniapp-scene__title miniapp-scene__title--loading">Mini App</OverflowText>
-          )}
+      <SceneChromeContribution sceneId={`miniapp:${appId}`}>
+        <div className="miniapp-scene__header-actions" data-openbitfun-scene="miniapp" data-openbitfun-part="header">
+          <MiniAppChromeActions actions={app?.chrome?.titlebar?.actions ?? []} locale={currentLanguage}
+            disabled={!contentReady || loading} onAction={actionId => chromeActionRef.current?.(actionId)} />
+          {hasConversation && <MiniAppActionTooltip content={t('scene.conversation')} disabled={!composerClaim?.sessionId}>
+            <IconButton size="xs" disabled={!composerClaim?.sessionId} aria-label={t('scene.conversation')}
+              icon={<Icon glyph={MessageSquare} size="sm" />} onClick={() => openMiniAppConversation(appId)} />
+          </MiniAppActionTooltip>}
+          <MiniAppCustomizeEntry size="xs" disabled={!app || loading} onOpen={handleOpenCustomize} />
+          <MiniAppActionTooltip content={presentationSupported ? t('presentation.openWindow') : t('presentation.unsupported')} disabled={windowDisabled}>
+            <IconButton size="xs" disabled={windowDisabled}
+              loading={windowPending}
+              onClick={() => setWindowConfirm(true)} aria-label={t('presentation.openWindow')}
+              icon={<Icon glyph={SquareArrowOutUpRight} size="sm" />} />
+          </MiniAppActionTooltip>
+          {app && <MiniAppSystemAppActions compact key={app.id} app={app} workspacePath={initialPath} supported={presentationSupported} />}
         </div>
-        <div className="miniapp-scene__header-actions">
-          {hasConversation && <Button variant="text" size="sm" disabled={!composerClaim?.sessionId}
-            onClick={() => openMiniAppConversation(appId)}>
-            {t('scene.conversation')}
-          </Button>}
-          <MiniAppCustomizeEntry
-            disabled={!app || loading}
-            onOpen={handleOpenCustomize}
-          />
-          <Tooltip content={t('scene.reload')} disabled={loading}>
-            <IconButton
-              size="sm"
-              onClick={handleReload}
-              disabled={loading}
-              loading={loading}
-              aria-label={t('scene.reload')}
-              icon={<Icon name="refresh" size="lg" />}
-            />
-          </Tooltip>
-        </div>
-      </div>
+      </SceneChromeContribution>
+      {presentationNotice && <div role="status">{presentationNotice}</div>}
+      <ConfirmDialog open={windowConfirm} onOpenChange={setWindowConfirm} onConfirm={() => void openWindow()}
+        title={t('presentation.openWindow')} message={t('presentation.transferWarning')}
+        confirmText={t('presentation.openWindow')} cancelText={t('confirmDelete.cancel')} />
       <div className={[
         'miniapp-scene__content',
         customizeOpen && app && 'miniapp-scene__content--customizing',
@@ -223,9 +263,12 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
               </div>
             )}
             <MiniAppRunner
-              key={`${app.id}-${key}`}
+              key={`${app.id}-${key}-${viewId ?? 'embedded'}`}
               app={app}
               strictRuntime={strictRuntime}
+              workspacePath={presentationSupported ? initialPath : undefined}
+              onReady={markReady}
+              chromeActionRef={chromeActionRef}
             />
             {customizePreview && (
               <div className="miniapp-scene__preview-stage" role="region" aria-label={t('customize.previewTitle')} data-openbitfun-scene="miniapp" data-openbitfun-part="preview">

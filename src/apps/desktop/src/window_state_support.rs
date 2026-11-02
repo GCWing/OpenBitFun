@@ -227,10 +227,7 @@ pub(crate) fn remember_normal(window: &tauri::Window) {
 }
 
 pub(crate) fn save(app: &tauri::AppHandle, reason: &str) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or("Main window not found")?;
-    let window = window.as_ref().window();
+    let window = app.get_window("main").ok_or("Main window not found")?;
     let snapshot = capture(&window)?;
     let desktop = Desktop::read(&window)?;
     let state = app.state::<MainWindowState>();
@@ -281,16 +278,15 @@ fn persist_snapshot(
     write_document(path, &document, original.as_deref().filter(|_| plan.repair))
 }
 
-pub(crate) fn repair_for_activation(window: &tauri::WebviewWindow) -> Result<(), String> {
+pub(crate) fn repair_for_activation(window: &tauri::Window) -> Result<(), String> {
     if crate::MAIN_WINDOW_USES_TRANSIENT_GEOMETRY.load(Ordering::SeqCst) {
         return Ok(());
     }
-    let window = window.as_ref().window();
-    let snapshot = capture(&window)?;
+    let snapshot = capture(window)?;
     if snapshot.minimized || snapshot.maximized || snapshot.fullscreen {
         return Ok(());
     }
-    let desktop = Desktop::read(&window)?;
+    let desktop = Desktop::read(window)?;
     if desktop.valid(snapshot.geometry) {
         return Ok(());
     }
@@ -301,7 +297,7 @@ pub(crate) fn repair_for_activation(window: &tauri::WebviewWindow) -> Result<(),
         .filter(|geometry| desktop.valid(*geometry))
         .unwrap_or_else(|| desktop.default_geometry(Some(snapshot.geometry)));
     state.ready.store(false, Ordering::Release);
-    let result = apply_geometry(&window, geometry, &desktop);
+    let result = apply_geometry(window, geometry, &desktop);
     state.ready.store(true, Ordering::Release);
     result?;
     *state.normal.lock().map_err(|error| error.to_string())? = Some(geometry);

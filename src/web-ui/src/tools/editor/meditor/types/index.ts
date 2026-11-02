@@ -59,6 +59,8 @@ export interface EditorOptions {
   plugins?: Plugin[]
   upload?: UploadConfig
   placeholder?: string
+  /** Overrides contextual hints while the whole document is empty, including when focused. */
+  emptyDocumentPlaceholder?: string
   readonly?: boolean
   autofocus?: boolean
   onChange?: (value: string) => void

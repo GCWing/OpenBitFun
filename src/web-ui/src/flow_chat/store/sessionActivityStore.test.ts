@@ -8,6 +8,24 @@ const summary = (execution = 'idle', id = 'session'): SessionActivitySummary => 
 });
 
 describe('session activity read projection', () => {
+  it('keeps a prior unread result across a newer quiet run and acknowledges its original identity', () => {
+    activateSurface('local');
+    const store = new SessionActivityStore();
+    store.observe('local', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'nine' });
+    store.observe('local', 'agentic://dialog-turn-started', { sessionId: 'session', turnId: 'eleven' });
+    store.observe('local', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'eleven', backgroundDelivery: {
+      schemaVersion: 1, source: 'scheduled_job', taskId: 'monitor', runId: 'eleven', policy: 'conditional', disposition: 'quiet', resolvedAtMs: 1,
+    } });
+    expect(store.get('session')?.summary).toMatchObject({ unreadCompletion: 'completed', unreadTurn: { turnId: 'nine' }, lastTurn: { turnId: 'eleven' } });
+    store.acknowledge('session', 'nine');
+    expect(store.get('session')?.summary?.unreadCompletion).toBeUndefined();
+    store.applyRead(store.beginRead(), [{ ...summary(), unreadCompletion: 'completed', unreadTurn: { turnId: 'nine', turnIndex: 0, status: 'completed' }, lastTurn: { turnId: 'eleven', turnIndex: 1, status: 'completed' } }]);
+    expect(store.get('session')?.summary?.unreadCompletion).toBeUndefined();
+    store.observe('local', 'agentic://dialog-turn-completed', { sessionId: 'session', turnId: 'thirteen' });
+    store.acknowledge('session', 'nine');
+    expect(store.get('session')?.summary?.unreadTurn?.turnId).toBe('thirteen');
+    expect(store.get('session')?.summary?.unreadCompletion).toBe('completed');
+  });
   it('can bootstrap an unopened session without constructing transcript state', () => {
     const store = new SessionActivityStore();
     store.applyRead(store.beginRead('host'), [summary('running')]);
@@ -177,4 +195,17 @@ describe('session activity read projection', () => {
     expect(store.get('session')?.summary?.unreadCompletion).toBeUndefined();
     expect(store.get('session')?.summary?.lastTurn?.recoveryPending).toBe(false);
   });
+  it('ignores an earlier quiet generation after recovery and accepts legacy zero-generation receipts', () => {
+    activateSurface('local');
+    const store = new SessionActivityStore();
+    store.observe('local', 'agentic://dialog-turn-started', { sessionId: 's', turnId: 'run' });
+    store.observe('local', 'agentic://dialog-turn-recovered', { sessionId: 's', turnId: 'run', executionGeneration: 1 });
+    store.observe('local', 'agentic://dialog-turn-completed', { sessionId: 's', turnId: 'run', backgroundDelivery: { schemaVersion: 1, source: 'scheduled_job', taskId: 'task', runId: 'run', policy: 'conditional', disposition: 'quiet', executionGeneration: 0, resolvedAtMs: 1 } });
+    expect(store.get('s', 'local')?.summary?.execution).toBe('running');
+    expect(store.get('s', 'local')?.summary?.lastTurn?.executionGeneration).toBe(1);
+    store.observe('local', 'agentic://dialog-turn-completed', { sessionId: 'legacy', turnId: 'zero', executionGeneration: 0 });
+    store.acknowledge('legacy', 'zero');
+    expect(store.get('legacy', 'local')?.summary?.unreadCompletion).toBeUndefined();
+  });
+
 });

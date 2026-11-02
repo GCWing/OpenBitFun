@@ -105,6 +105,13 @@ export interface ConnectionResult {
 }
 
 export interface RemoteConnectStatus {
+  /** Present only when the host supports independently managed Relay routes. */
+  connections?: Array<{
+    method: 'lan' | 'openbitfun_server';
+    relay_connected: boolean;
+    relay_url: string | null;
+    clients: Array<{ id: string; name: string }>;
+  }>;
   relay_connected: boolean;
   relay_url: string | null;
   active_method: RemoteConnectionMethod | null;
@@ -235,9 +242,9 @@ class RemoteConnectAPIService {
     }
   }
 
-  async stopConnection(): Promise<void> {
+  async stopConnection(method?: 'lan' | 'openbitfun_server'): Promise<void> {
     try {
-      await this.adapter.request<void>('remote_connect_stop');
+      await this.adapter.request<void>('remote_connect_stop', method ? { request: { method } } : undefined);
     } catch (e) {
       log.error('stopConnection failed', e);
       throw e;

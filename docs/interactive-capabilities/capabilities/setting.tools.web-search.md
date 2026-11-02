@@ -17,8 +17,8 @@ Choose the search provider used by the WebSearch tool at runtime and configure c
 
 ## 完整功能清单 / Everything included
 
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 在免费 Exa MCP、Exa Search API、Tavily 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务
-  - Choose free Exa MCP, Exa Search API, Tavily, or OpenBitFun Search HTTP Protocol as the runtime provider
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 在免费 Exa MCP、Exa Search API、Tavily、DeepSeek 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务
+  - Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, or OpenBitFun Search HTTP Protocol as the runtime provider
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 为 OpenBitFun Search HTTP Protocol 配置端点、认证方式和受限凭据 Header
   - Configure the endpoint, authentication mode, and restricted credential header for OpenBitFun Search HTTP Protocol
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看当前执行主机的凭据状态，并保存、替换或清除 API Key/Secret

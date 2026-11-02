@@ -8,10 +8,18 @@ import {
 import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { i18nService } from '@/infrastructure/i18n';
 import { createLogger } from '@/shared/utils/logger';
+import { getActiveSurfaceScope, isSurfaceChangedError, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { extractProviderSegmentFromBaseUrl, matchProviderCatalogItemByBaseUrl, normalizeProviderBaseUrl } from './providerCatalog';
 
 const log = createLogger('ConfigManager');
 const PROVIDER_INSTANCE_METADATA_KEY = 'provider_instance_id';
+
+export class ConfigConflictError extends Error {
+  constructor() {
+    super('Configuration changed while it was being edited');
+    this.name = 'ConfigConflictError';
+  }
+}
 
 declare global {
   // Injected by the desktop webview initialization script before the frontend
@@ -80,6 +88,9 @@ function configValuesEqual(a: unknown, b: unknown): boolean {
 class ConfigManagerImpl implements IConfigManager {
   
   private configCache: Map<string, any> = new Map();
+  // Optional reads keep their fresh-read semantics and never satisfy a strict read.
+  private optionalSnapshots = new Map<string, unknown>();
+  private cacheEpoch = getActiveSurfaceScope().epoch;
   private inFlightReads: Map<string, Promise<unknown>> = new Map();
   private inFlightMutations: Map<string, Promise<void>> = new Map();
   private pathMutationVersions: Map<string, number> = new Map();
@@ -89,6 +100,22 @@ class ConfigManagerImpl implements IConfigManager {
 
   constructor() {
     log.info('Initializing config manager (proxy mode)');
+    // Invalidate before React renders the newly activated device, not after its hydrate RPC.
+    onSurfaceActivated(() => {
+      this.clearCache();
+      this.inFlightMutations.clear();
+    });
+  }
+
+  /** A missing optional value is a loaded snapshot too; defaults alone are not. */
+  hasCachedConfig(path: string): boolean {
+    if (this.cacheEpoch !== getActiveSurfaceScope().epoch) return false;
+    return this.configCache.has(path) || this.optionalSnapshots.has(path);
+  }
+
+  getCachedConfig<T>(path: string): T | undefined {
+    if (this.cacheEpoch !== getActiveSurfaceScope().epoch) return undefined;
+    return (this.configCache.has(path) ? this.configCache.get(path) : this.optionalSnapshots.get(path)) as T | undefined;
   }
 
   private async resolveLegacyAiModels(config: unknown): Promise<unknown> {
@@ -218,6 +245,7 @@ class ConfigManagerImpl implements IConfigManager {
     value: T,
     retry: () => Promise<T>,
   ): Promise<T> {
+    const scope = getActiveSurfaceScope();
     if (readVersion === this.getPathMutationVersion(path)) {
       this.configCache.set(path, value);
       return value;
@@ -227,6 +255,7 @@ class ConfigManagerImpl implements IConfigManager {
     if (pendingMutations) {
       await pendingMutations;
     }
+    scope.assertCurrent('resolve configuration');
     if (this.configCache.has(path)) {
       return this.configCache.get(path) as T;
     }
@@ -240,6 +269,9 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   private invalidateOverlappingLocalState(path?: string): void {
+    for (const cachedPath of this.optionalSnapshots.keys()) {
+      if (this.configPathsOverlap(cachedPath, path)) this.optionalSnapshots.delete(cachedPath);
+    }
     for (const cachedPath of Array.from(this.configCache.keys())) {
       if (this.configPathsOverlap(cachedPath, path)) {
         this.configCache.delete(cachedPath);
@@ -262,15 +294,18 @@ class ConfigManagerImpl implements IConfigManager {
     mutate: () => Promise<void>,
     onSuccess?: () => void,
   ): Promise<void> {
+    const scope = getActiveSurfaceScope();
     const mutationKey = this.getMutationKey(path);
     const previousMutations = this.relatedMutationPromises([path]);
     const operation = (async () => {
       if (previousMutations.length > 0) {
         await Promise.allSettled(previousMutations);
       }
+      scope.assertCurrent('write configuration');
       this.bumpOverlappingMutationVersions(path);
       this.invalidateOverlappingLocalState(path);
       await mutate();
+      scope.assertCurrent('commit configuration');
       onSuccess?.();
     })();
 
@@ -309,12 +344,16 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   private async readConfig<T = any>(path?: string): Promise<T> {
+    const scope = getActiveSurfaceScope();
     const rootReadVersion = this.rootMutationVersion;
     const readVersion = path ? this.getPathMutationVersion(path) : 0;
     const config = await configAPI.getConfig(path);
+    scope.assertCurrent('read configuration');
     const resolvedConfig = path === 'ai.models'
       ? await this.resolveLegacyAiModels(config)
       : config;
+
+    scope.assertCurrent('cache configuration');
 
     if (path) {
       return this.resolveReadValue(
@@ -330,6 +369,7 @@ class ConfigManagerImpl implements IConfigManager {
       if (pendingMutations) {
         await pendingMutations;
       }
+      scope.assertCurrent('reload configuration');
       return this.readConfig<T>();
     }
 
@@ -337,8 +377,10 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   private async readOptionalConfig<T = any>(path: string): Promise<T | undefined> {
+    const scope = getActiveSurfaceScope();
     const readVersion = this.getPathMutationVersion(path);
     const config = await configAPI.getConfig(path, { skipRetryOnNotFound: true });
+    scope.assertCurrent('read optional configuration');
     const resolvedConfig = path === 'ai.models'
       ? await this.resolveLegacyAiModels(config)
       : config;
@@ -348,26 +390,32 @@ class ConfigManagerImpl implements IConfigManager {
       if (pendingMutations) {
         await pendingMutations;
       }
+      scope.assertCurrent('reload optional configuration');
       if (this.configCache.has(path)) {
         return this.configCache.get(path) as T;
       }
       return this.readOptionalConfig<T>(path);
     }
 
+    scope.assertCurrent('cache optional configuration');
+    this.optionalSnapshots.set(path, resolvedConfig);
     return resolvedConfig as T | undefined;
   }
 
   private async readConfigs(paths: string[]): Promise<Record<string, unknown>> {
+    const scope = getActiveSurfaceScope();
     const readVersions = new Map(
       paths.map(path => [path, this.getPathMutationVersion(path)] as const),
     );
     const configs = await configAPI.getConfigs(paths);
+    scope.assertCurrent('read configuration batch');
     const resolvedConfigs: Record<string, unknown> = {};
 
     for (const path of paths) {
       const resolvedConfig = path === 'ai.models'
         ? await this.resolveLegacyAiModels(configs[path])
         : configs[path];
+      scope.assertCurrent('cache configuration batch');
 
       resolvedConfigs[path] = await this.resolveReadValue(
         path,
@@ -403,9 +451,7 @@ class ConfigManagerImpl implements IConfigManager {
           mode: 'primary',
           subagents: {
             default: { kind: 'fixed', model_id: 'fast' },
-            builtin: {
-              GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
-            },
+            builtin: {},
             fork: { kind: 'inherit' },
           },
         },
@@ -415,6 +461,7 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   private fallbackOrThrow(path: string | undefined, error: unknown): unknown {
+    if (isSurfaceChangedError(error)) throw error;
     const fallback = this.getFallbackConfigValue(path);
     if (fallback.hasFallback) {
       return fallback.value;
@@ -423,11 +470,14 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   async getConfig<T = any>(path?: string): Promise<T> {
+    const scope = getActiveSurfaceScope();
     try {
       const pendingMutations = this.waitForRelatedMutations([path]);
       if (pendingMutations) {
         await pendingMutations;
       }
+
+      scope.assertCurrent('get configuration');
 
       if (path && this.configCache.has(path)) {
         return this.configCache.get(path);
@@ -449,6 +499,7 @@ class ConfigManagerImpl implements IConfigManager {
         }
       }
     } catch (error) {
+      if (isSurfaceChangedError(error)) throw error;
       log.error('Failed to get config', { path, error });
       // Return defaults to avoid breaking the UI.
       if (path === 'ai.models') {
@@ -468,9 +519,7 @@ class ConfigManagerImpl implements IConfigManager {
           mode: 'primary',
           subagents: {
             default: { kind: 'fixed', model_id: 'fast' },
-            builtin: {
-              GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
-            },
+            builtin: {},
             fork: { kind: 'inherit' },
           },
         } as T;
@@ -480,11 +529,14 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   async getOptionalConfig<T = any>(path: string): Promise<T | undefined> {
+    const scope = getActiveSurfaceScope();
     try {
       const pendingMutations = this.waitForRelatedMutations([path]);
       if (pendingMutations) {
         await pendingMutations;
       }
+
+      scope.assertCurrent('get optional configuration');
 
       if (this.configCache.has(path)) {
         return this.configCache.get(path);
@@ -517,11 +569,13 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   async getConfigs(paths: string[]): Promise<Record<string, unknown>> {
+    const scope = getActiveSurfaceScope();
     const uniquePaths = Array.from(new Set(paths));
     const pendingMutations = this.waitForRelatedMutations(uniquePaths);
     if (pendingMutations) {
       await pendingMutations;
     }
+    scope.assertCurrent('get configuration batch');
     const results: Record<string, unknown> = {};
     const pendingReads: Array<[string, Promise<unknown>]> = [];
     const missingPaths: string[] = [];
@@ -618,24 +672,55 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   /** Apply an edit to a fresh host value inside the client mutation queue. */
-  async updateConfig<T>(path: string, update: (current: T) => T): Promise<T> {
+  async updateConfig<T>(path: string, update: (current: T) => T, options?: { expectedValue: T }): Promise<T> {
+    const scope = getActiveSurfaceScope();
     // Model writes also reconcile default selectors on the host. Invalidate
     // their cached siblings and serialize edits to the whole AI section.
     const mutationPath = path === 'ai.models' ? 'ai' : path;
     let previous!: T;
     let next!: T;
+    let confirmed = true;
     await this.runMutation(mutationPath, async () => {
       // Deliberately bypass cached/read-failure defaults: an unavailable host
       // must not turn a partial edit into replacement of its config with [].
       const value = await configAPI.getConfig(path);
       previous = (path === 'ai.models' ? await this.resolveLegacyAiModels(value) : value) as T;
+      scope.assertCurrent('update configuration');
       if (previous === undefined || previous === null) {
         throw new Error(`Cannot update unavailable config: ${path}`);
       }
+      if (options && !configValuesEqual(previous, options.expectedValue)) {
+        throw new ConfigConflictError();
+      }
+      // Preserve the raw host shape, before compatibility projection or an
+      // in-place edit. The host compares it under its configuration lock.
+      const expectedModels = path === 'ai.models' ? structuredClone(value) : undefined;
       next = update(previous);
-      await configAPI.setConfig(path, next);
+      if (path === 'ai.models') {
+        try {
+          await configAPI.setConfig(path, next, { expectedModels });
+        } catch (error) {
+          if (String(error).includes('SUBSCRIPTION_ACCOUNT_POOL_CONFLICT')) throw new ConfigConflictError();
+          throw error;
+        }
+        scope.assertCurrent('read committed configuration');
+        // Pool epochs and normalized fields belong to the host. Reopening an
+        // editor must start from the committed value, not our pre-commit draft.
+        try {
+          const committed = await configAPI.getConfig(path);
+          if (!Array.isArray(committed)) throw new Error('Committed model configuration is unavailable');
+          next = await this.resolveLegacyAiModels(committed) as T;
+        } catch (error) {
+          // The write was acknowledged. Do not report it as a failed mutation
+          // or cache an unconfirmed revision if the host disconnected afterward.
+          confirmed = false;
+          log.warn('Failed to read committed model configuration', { error });
+        }
+      } else {
+        await configAPI.setConfig(path, next);
+      }
     }, () => {
-      this.configCache.set(path, next);
+      if (confirmed) this.configCache.set(path, next);
       if (mutationPath === path) {
         this.notifyConfigChange(path, previous, next);
       } else {
@@ -721,6 +806,7 @@ class ConfigManagerImpl implements IConfigManager {
   }
 
   clearCache(): void {
+    this.cacheEpoch = getActiveSurfaceScope().epoch;
     this.bumpOverlappingMutationVersions(undefined);
     this.invalidateOverlappingLocalState(undefined);
   }
@@ -789,9 +875,10 @@ class ConfigManagerImpl implements IConfigManager {
     try {
       this.clearCache();
 
+      const { modelSelectionsConfigPath } = await import('./modelSelections');
       await this.getConfigs([
         'ai.models',
-        'ai.agent_model_defaults',
+        modelSelectionsConfigPath(),
         'ai.task_models',
         'ai.default_models',
       ]);
@@ -810,6 +897,7 @@ class ConfigManagerImpl implements IConfigManager {
   async applyExternalReload(): Promise<void> {
     const trackedPaths = new Set<string>([
       ...this.configCache.keys(),
+      ...this.optionalSnapshots.keys(),
       ...this.pathListeners.keys(),
     ]);
 

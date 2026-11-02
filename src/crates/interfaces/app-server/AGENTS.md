@@ -79,6 +79,11 @@ failures use helpers such as `OpenBitFunAppRuntime::runtime_error` and
 
 ## Verification
 
+Legacy model edits must preserve account/channel selection and write-only
+credentials. Merge against the current model under the existing config owner
+write lock. Focused compatibility check:
+`cargo test --locked -p openbitfun-app-server --offline --lib model_mutation_preserves_and_replaces_write_only_values`.
+
 ```bash
 cargo check --locked -p openbitfun-app-server --offline
 cargo test --locked -p openbitfun-app-server --offline --lib server::wire::tests

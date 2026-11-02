@@ -37,6 +37,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -51,6 +52,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -149,6 +152,7 @@ internal fun ComposerBar(
      */
     placeholder: String,
     onDraftChange: (String) -> Unit,
+    promptSuggestion: String? = null,
     onRemoveImage: (String) -> Unit,
     onAttach: () -> Unit,
     onVoice: () -> Unit,
@@ -158,6 +162,7 @@ internal fun ComposerBar(
     onSelectModel: (String) -> Unit = {},
     modifier: Modifier,
 ) {
+    val inputFocusRequester = remember { FocusRequester() }
     var modelSelectorOpen by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     val expanded = ChatComposerPolicy.isExpanded(
@@ -232,6 +237,24 @@ internal fun ComposerBar(
             )
             .testTag(COMPOSER_TEST_TAG),
     ) {
+        if (!promptSuggestion.isNullOrEmpty() && draft.isEmpty() && !busy && !streaming && inputEnabled &&
+            phase == ConnectionPhase.CONNECTED) {
+            val acceptLabel = stringResource(R.string.prompt_suggestion_accept)
+            TextButton(
+                onClick = {
+                    onDraftChange(promptSuggestion)
+                    inputFocusRequester.requestFocus()
+                },
+                modifier = Modifier.fillMaxWidth()
+                    .heightIn(min = MobileDesignGeometry.ControlTouchSize)
+                    .testTag("composer-prompt-suggestion")
+                    .semantics { contentDescription = "$acceptLabel: $promptSuggestion" },
+            ) {
+                Text(promptSuggestion, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth())
+            }
+        }
         Surface(
             shape = RoundedCornerShape(radius),
             color = MaterialTheme.colorScheme.surface,
@@ -283,7 +306,7 @@ internal fun ComposerBar(
                         placeholder = placeholder,
                         onDraftChange = onDraftChange,
                         onFocusChange = { focused = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).focusRequester(inputFocusRequester),
                     )
                     AnimatedVisibility(
                         visible = !expanded,

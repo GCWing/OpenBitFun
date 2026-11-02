@@ -2,6 +2,7 @@ export {
   GoalToolCard, AgentRosterToolCard, SessionHistoryToolCard, ImageAnalysisToolCard, TimeToolCard,
   McpResourceToolCard, WorktreeToolCard, PortForwardToolCard, ReviewPlatformToolCard,
   FrontendWorkbenchToolCard, MiniAppFinalizeToolCard, MarketplacePublishToolCard, PlaybookToolCard,
+  DesktopCardToolCard,
   type SemanticToolCardProps, type SemanticToolCardAction, type SemanticToolCardRecord, type SemanticToolCardSection, type SemanticToolCardField,
 } from "./SemanticToolCards";
 export {

@@ -232,21 +232,20 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
     [displayToolInput, hasToolInput, isExpanded, isInputExpanded],
   );
 
-  const getResultData = (): MCPToolResult | null => {
-    if (!toolResult?.result) return null;
+  const rawResult = toolResult?.result;
+  const resultData = useMemo((): MCPToolResult | null => {
+    if (!rawResult) return null;
     
     try {
-      if (typeof toolResult.result === 'string') {
-        return JSON.parse(toolResult.result);
+      if (typeof rawResult === 'string') {
+        return JSON.parse(rawResult);
       }
-      return toolResult.result as MCPToolResult;
+      return rawResult as MCPToolResult;
     } catch (e) {
       log.error('Failed to parse MCP tool result', e);
       return null;
     }
-  };
-
-  const resultData = getResultData();
+  }, [rawResult]);
   const status = getToolCardStatus(toolItem, resultData?.is_error === true || resultData?.isError === true);
 
   useEffect(() => {

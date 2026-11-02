@@ -171,6 +171,15 @@ impl<'a> CoreRemoteCommandRuntimeHost<'a> {
 impl RemoteCommandRuntimeHost for CoreRemoteCommandRuntimeHost<'_> {
     type ImageContext = crate::agentic::image_analysis::ImageContextData;
 
+    async fn plan_build_language(&self) -> Option<String> {
+        let locale = crate::service::config::get_app_language().await;
+        Some(format!(
+            "{} ({})",
+            locale.model_language_name(),
+            locale.as_str()
+        ))
+    }
+
     async fn handle_workspace_command(&self, command: &RemoteCommand) -> RemoteResponse {
         let host = CoreServiceAgentRuntime::remote_workspace_host();
         handle_remote_workspace_command(&host, command).await

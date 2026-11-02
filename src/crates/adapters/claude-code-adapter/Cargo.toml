@@ -15,6 +15,7 @@ openbitfun-product-domains = { path = "../../contracts/product-domains", feature
 openbitfun-services-core = { path = "../../services/services-core", features = ["markdown"] }
 openbitfun-static-hook-support = { path = "../static-hook-support" }
 dirs = { workspace = true }
+chrono = { workspace = true }
 dunce = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
