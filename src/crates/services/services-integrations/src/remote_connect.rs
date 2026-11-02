@@ -27,6 +27,7 @@ mod realtime_payload;
 pub mod relay_client;
 pub mod relay_failure;
 mod relay_http;
+pub mod routing_lease;
 pub mod rpc_execution;
 pub mod session_records;
 pub mod session_store;
@@ -70,6 +71,7 @@ pub use page_upload::{
 pub use pairing::PairingState;
 pub use qr_generator::QrGenerator;
 pub use relay_client::{ensure_rustls_crypto_provider, ConnectionState, RelayClient, RelayEvent};
+pub use routing_lease::DeviceRoutingPriority;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

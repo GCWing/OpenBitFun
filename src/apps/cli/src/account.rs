@@ -18,8 +18,9 @@ use openbitfun_core::service::remote_connect::account_runtime::{
     BackgroundRoutingOwnerRetirementError,
 };
 use openbitfun_core::service::remote_connect::{
-    self, encryption, relay_client::RelayClient, relay_client::RelayEvent, session_store,
-    DeviceIdentity, RemoteServer,
+    self, encryption,
+    relay_client::{ConnectionState, DeviceRoutingPriority, RelayClient, RelayEvent},
+    session_store, DeviceIdentity, RemoteServer,
 };
 
 pub(crate) struct CliAccountRuntimeParts {
@@ -72,7 +73,12 @@ pub(crate) fn account_snapshot_projection(
 pub(crate) fn account_login_status_message(
     result: &openbitfun_core::service::remote_connect::account_runtime::AccountLoginResult,
 ) -> String {
-    if result.routing_connected {
+    if result.routing_standby {
+        format!(
+            "Logged in as user {} on {}. Another OpenBitFun host on this machine serves device routing; this one takes over when it exits.",
+            result.user_id, result.relay_url
+        )
+    } else if result.routing_connected {
         format!(
             "Logged in as user {} on {}. Device routing connected.",
             result.user_id, result.relay_url
@@ -173,11 +179,18 @@ impl CliAccountRoutingHost {
         }
         self.stop_routing().await;
 
-        let (client, mut event_rx) = RelayClient::new();
+        // A Desktop host on this machine serves the shared device first; this
+        // client stands by and takes over once that host exits.
+        let (client, mut event_rx) = RelayClient::new_device_host(DeviceRoutingPriority::Secondary);
         client.connect(&request.relay_url).await?;
         client
             .connect_authenticated(&request.session.token, &request.device_name)
             .await?;
+        if client.connection_state().await == ConnectionState::Standby {
+            tracing::info!(
+                "Another OpenBitFun host on this machine serves this device; device routing is standing by"
+            );
+        }
         let client = Arc::new(client);
         {
             let _routing_guard = self.lifecycle.write().await;
@@ -706,6 +719,10 @@ impl AccountRuntimeHost for CliAccountRoutingHost {
         crate::remote_control::retire_daemon_account().await;
         self.stop_routing().await;
     }
+
+    async fn device_routing_is_standby(&self) -> bool {
+        self.connection_state().await == ConnectionState::Standby
+    }
 }
 
 fn same_routing_client<T>(current: Option<&Arc<T>>, expected: &Arc<T>) -> bool {
@@ -882,6 +899,22 @@ pub(crate) fn acquire_peer_fanout_lease(owner: &PeerFanoutOwner) -> Result<PeerF
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn standby_login_does_not_claim_connected_routing() {
+        let result =
+            openbitfun_core::service::remote_connect::account_runtime::AccountLoginResult {
+                user_id: "user".into(),
+                relay_url: "https://relay.example.test".into(),
+                routing_owner_replaced: false,
+                routing_connected: false,
+                routing_standby: true,
+                routing_error: None,
+            };
+        let message = account_login_status_message(&result);
+        assert!(message.contains("takes over when it exits"), "{message}");
+        assert!(!message.contains("Device routing connected"), "{message}");
+    }
 
     #[test]
     fn stale_routing_loop_cannot_clear_replacement_client() {

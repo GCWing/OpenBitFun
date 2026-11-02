@@ -60,6 +60,12 @@ pub trait AccountRuntimeHost: Send + Sync {
     async fn start_device_routing(&self, request: AccountRoutingStartRequest) -> Result<()>;
 
     async fn stop_device_routing(&self);
+
+    /// Whether started routing is standing by because another host on this
+    /// machine serves the shared device on the Relay.
+    async fn device_routing_is_standby(&self) -> bool {
+        false
+    }
 }
 
 pub enum AccountLoginProgress {
@@ -74,6 +80,8 @@ pub struct AccountLoginResult {
     pub relay_url: String,
     pub routing_owner_replaced: bool,
     pub routing_connected: bool,
+    /// Routing started but waits for another local host to release the device.
+    pub routing_standby: bool,
     pub routing_error: Option<String>,
 }
 
@@ -431,12 +439,14 @@ impl AccountRuntime {
             .await;
         revoke_replaced_account_context(&client, previous_account_context, &relay_url, &token)
             .await;
+        let routing_standby = routing.is_ok() && self.host.device_routing_is_standby().await;
 
         Ok(AccountLoginResult {
             user_id,
             relay_url,
             routing_owner_replaced: retired_background_owner,
-            routing_connected: routing.is_ok(),
+            routing_connected: routing.is_ok() && !routing_standby,
+            routing_standby,
             routing_error: routing.err().map(|error| error.to_string()),
         })
     }

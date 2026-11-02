@@ -2674,6 +2674,8 @@ async fn connect_route_devices(route: RelayRoute) -> Result<Vec<OnlineDeviceInfo
             &relay_url,
             &session.token,
             &device_name,
+            // Desktop serves the device ahead of a CLI/daemon on this machine.
+            openbitfun_core::service::remote_connect::relay_client::DeviceRoutingPriority::Primary,
             Arc::new(DesktopHostStreamNotifier(route)),
         )
         .await
