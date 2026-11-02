@@ -5408,9 +5408,9 @@ export class FlowChatStore {
         scope.assertCurrent('delete session');
         const sess = this.state.sessions.get(id);
         if (sess?.draft?.phase !== 'editing') {
-          if (!sess || !sessionProjectWorkspacePath(sess)) {
-            throw new Error(`Workspace path not found for session ${id}`);
-          }
+          // Session storage is resolved by workspace ID, so a session whose
+          // workspace directory is gone must still reach the backend. Pre-ID
+          // sessions fail loudly in sessionHistoryWorkspaceId.
           await agentAPI.deleteSession(id, this.sessionHistoryWorkspaceId(id));
           scope.assertCurrent('complete session deletion');
         }
