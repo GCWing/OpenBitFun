@@ -214,18 +214,18 @@ describe('WorkspaceListSection layout styles', () => {
     expect(remoteNameButton).toContain('flex: 1 1 0;');
     expect(remoteNameButton).toContain('max-width: none;');
     expect(remoteChip).toContain('gap: var(--openbitfun-space-2);');
-    expect(remoteChip).toContain('flex: 0 0 auto;');
+    // The folder name owns the row; the chip shrinks and stays bounded (#3517).
+    expect(remoteChip).toContain('flex: 0 1 auto;');
+    expect(remoteChip).toContain('min-width: 0;');
+    expect(remoteChip).toContain('max-width: 45%;');
     expect(remoteChip).toContain('margin-left: auto;');
     expect(remoteChip).toContain('padding: 0 var(--openbitfun-space-2);');
     expect(remoteChip).toContain('border-radius: var(--openbitfun-radius-base);');
-    expect(stylesheet).toContain(
-      '&.is-connected {\n' +
-      '      background: var(--openbitfun-color-status-success-surface);\n' +
-      '      color: var(--openbitfun-color-status-success-content);',
-    );
-    expect(remoteHost).toContain('flex: 0 0 auto;');
+    // A connected chip stays neutral; the green status dot already reports it.
+    expect(remoteChip).not.toContain('status-success-surface');
+    expect(remoteHost).toContain('flex: 0 1 auto;');
     expect(remoteHost).toContain('white-space: nowrap;');
-    expect(remoteHost).not.toContain('text-overflow: ellipsis;');
+    expect(remoteHost).toContain('text-overflow: ellipsis;');
 
     const source = readWorkspaceItemSource();
     const remoteNameStart = source.indexOf('behavior="marquee"');
@@ -236,12 +236,12 @@ describe('WorkspaceListSection layout styles', () => {
 
     expect(remoteMetaStart).toBeGreaterThanOrEqual(0);
     expect(remoteMetaEnd).toBeGreaterThan(remoteMetaStart);
-    expect(source).toContain('const hostLabel = workspace.sshHost?.trim() || connectionLabel;');
+    expect(source).toContain('const badge = remoteBadge ?? remoteWorkspaceBadge(workspace);');
     expect(source).toContain('<OverflowText');
     expect(source).toContain('behavior="marquee"');
     expect(searchIndicatorStart).toBeGreaterThan(remoteNameStart);
     expect(remoteMetaStart).toBeGreaterThan(searchIndicatorStart);
-    expect(remoteMetaMarkup).toContain('remoteMeta.connectionLabel');
+    expect(remoteMetaMarkup).toContain('remoteMeta.badgeLabel');
     expect(remoteMetaMarkup.indexOf('workspace-item-status-dot'))
       .toBeLessThan(remoteMetaMarkup.indexOf('workspace-item-remote-host'));
     expect(source).not.toContain('workspace-item-subtitle');
