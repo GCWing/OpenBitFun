@@ -1396,7 +1396,7 @@ pub async fn open_remote_workspace(
     request: OpenRemoteWorkspaceRequest,
 ) -> Result<WorkspaceInfoDto, String> {
     use openbitfun_core::service::remote_ssh::normalize_remote_workspace_path;
-    use openbitfun_core::service::remote_ssh::workspace_state::remote_workspace_stable_id;
+    use openbitfun_core::service::remote_ssh::workspace_state::remote_workspace_stable_id_for_connection;
     use openbitfun_core::service::workspace::{
         remote_workspace_connection_conflict_message, RemoteConnectionRebind,
         WorkspaceCreateOptions,
@@ -1465,7 +1465,11 @@ pub async fn open_remote_workspace(
         request.connection_name.clone()
     });
 
-    let stable_workspace_id = remote_workspace_stable_id(&ssh_host, &remote_path);
+    let stable_workspace_id = remote_workspace_stable_id_for_connection(
+        &ssh_host,
+        Some(&request.connection_id),
+        &remote_path,
+    );
 
     let display_name = remote_path
         .split('/')

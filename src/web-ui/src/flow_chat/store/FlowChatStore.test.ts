@@ -8043,6 +8043,55 @@ describe('FlowChatStore device surfaces', () => {
       expect(texts('peer-switch')).toHaveLength(1);
     });
 
+    it('fails an overdue first page as retryable, keeps known history, and recovers on the late page', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-overdue');
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-overdue', 0, 0));
+        apiMocks.relayReady?.({ sessionId: 'peer-overdue', hasMore: true, oldestSeq: 5, cursor: 7 });
+        return 'peer-overdue-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-overdue');
+      const session = () => flowChatStore.getState().sessions.get('peer-overdue')!;
+      expect(texts('peer-overdue')).toHaveLength(1);
+      expect(session()).toMatchObject({ historyState: 'ready', isPartial: true });
+
+      // A reopen whose first page stalls: a record arrives, the page does not.
+      activateSurface(LOCAL_SURFACE_ID);
+      activateSurface(PEER_SURFACE_ID);
+      vi.useFakeTimers();
+      try {
+        apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+          apiMocks.relayRecord?.(itemRecord('peer-overdue', 0, 1));
+          return 'peer-overdue-stalled';
+        });
+        const opening = flowChatStore.loadRelaySessionHistory('peer-overdue');
+        const failed = expect(opening).rejects.toMatchObject({
+          name: 'RelayHistoryFirstPageOverdueError', retryable: true,
+        });
+        await vi.advanceTimersByTimeAsync(15_000);
+        await failed;
+      } finally {
+        vi.useRealTimers();
+      }
+      // Known history and paging state survive; nothing claims a complete empty transcript.
+      expect(session().historyState).toBe('failed');
+      expect(session().isPartial).toBe(true);
+      expect(texts('peer-overdue')).toHaveLength(2);
+      // The stalled read is closed, so its late page cannot mark it ready.
+      expect(apiMocks.relayReady).toBeNull();
+
+      // The retry receives the late page from the host cache and recovers.
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-overdue', 0, 2));
+        apiMocks.relayReady?.({ sessionId: 'peer-overdue', hasMore: false, oldestSeq: 1, cursor: 9 });
+        return 'peer-overdue-retry';
+      });
+      await flowChatStore.loadRelaySessionHistory('peer-overdue');
+      expect(session()).toMatchObject({ historyState: 'ready', isPartial: false });
+      expect(texts('peer-overdue')).toHaveLength(3);
+    });
+
     it('applies each drained page in one pass', async () => {
       activateSurface(PEER_SURFACE_ID);
       seedSession('peer-drain');
