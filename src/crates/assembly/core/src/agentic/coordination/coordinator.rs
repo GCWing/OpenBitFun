@@ -134,7 +134,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, RwLock, Semaphore};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, timeout, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 const MANUAL_COMPACTION_COMMAND: &str = "/compact";
@@ -144,6 +144,10 @@ const DEFAULT_SUBAGENT_MAX_CONCURRENCY: usize = 5;
 const DEFAULT_SWARM_MAX_CONCURRENCY: usize = 16;
 const MAX_SUBAGENT_MAX_CONCURRENCY: usize = 64;
 const SUBAGENT_TIMEOUT_GRACE_PERIOD: Duration = Duration::from_secs(10);
+/// How long an observer read waits for the Session's mutation lease before it
+/// projects persisted records without one. Kept small: the lease owner may be a
+/// Turn that is itself waiting for the reader's answer.
+const RELAY_HISTORY_OBSERVER_LEASE_WAIT: Duration = Duration::from_millis(1500);
 const SESSION_REFERENCES_METADATA_KEY: &str = "sessionReferences";
 const MAX_SESSION_REFERENCES_PER_TURN: usize = 5;
 const SESSION_REFERENCE_ARTIFACT_STEM_LENGTH: usize = 8;
@@ -9633,6 +9637,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await
     }
 
+    fn relay_history_writer_busy(session_id: &str) -> OpenBitFunError {
+        OpenBitFunError::OutcomeUnknown(format!(
+            "Session history is unavailable while its writer changes the undo state: session_id={session_id}"
+        ))
+    }
+
     async fn load_relay_session_selection(
         &self,
         storage: &Path,
@@ -9645,12 +9655,48 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .persistence_manager()
             .assert_relay_history_supported(storage, session_id)
             .await?;
-        let _mutation = self
-            .session_manager
-            .acquire_session_mutation(session_id)
-            .await?;
-        self.prepare_persisted_session_read_locked(storage, session_id)
-            .await?;
+        // A reader here observes persisted history; it is not the Session's
+        // writer. Its owning Turn holds the mutation lease for the Turn's whole
+        // life, so an unbounded acquire would make a controller's first read
+        // depend on that Turn finishing. A Turn blocked on an unanswered
+        // question would then block the very read that lets a controller answer
+        // it. Wait briefly for the consistent window, then fall back to the
+        // persisted records so a reader is never parked behind live execution.
+        let mutation = match timeout(
+            RELAY_HISTORY_OBSERVER_LEASE_WAIT,
+            self.session_manager.acquire_session_mutation(session_id),
+        )
+        .await
+        {
+            Ok(lease) => Some(lease?),
+            Err(_) => None,
+        };
+        let revert_fence = if mutation.is_some() {
+            self.prepare_persisted_session_read_locked(storage, session_id)
+                .await?;
+            None
+        } else {
+            openbitfun_core_types::validate_session_id(session_id)
+                .map_err(OpenBitFunError::Validation)?;
+            self.session_manager
+                .validate_session_storage_path_binding(session_id, storage)?;
+            let state = self
+                .session_manager
+                .persistence_manager()
+                .load_session_revert_state(storage, session_id)
+                .await?;
+            // Without the lease an unfinished undo transition cannot be
+            // reconciled. Report that instead of projecting records that the
+            // transition is about to replace.
+            if state
+                .as_ref()
+                .is_some_and(|state| state.phase != SessionRevertPhase::Staged)
+            {
+                return Err(Self::relay_history_writer_busy(session_id));
+            }
+            Some(state)
+        };
+        let _mutation = mutation;
 
         // Persisted InProgress is not proof of a live executor after restart.
         // A loaded owner supplies runtime state; for an unloaded session an
@@ -9711,6 +9757,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 "full",
             )
         };
+        // A lease-less read is only consistent if no undo transition started
+        // or finished while it ran; otherwise it may mix both versions.
+        if let Some(before) = revert_fence {
+            let after = self
+                .session_manager
+                .persistence_manager()
+                .load_session_revert_state(storage, session_id)
+                .await?;
+            if after != before {
+                return Err(Self::relay_history_writer_busy(session_id));
+            }
+        }
         debug!(
             "Loaded relay session turns: session_id={} requested_turn_id={} read_mode={} turn_count={}",
             session_id,
@@ -19444,6 +19502,168 @@ pub(crate) mod tests {
             .delete_session_by_id(&session.session_id)
             .await
             .expect("clean up persisted test session");
+    }
+
+    async fn relay_observer_fixture(
+        label: &str,
+    ) -> (
+        tempfile::TempDir,
+        ConversationCoordinator,
+        Arc<SessionManager>,
+        String,
+        PathBuf,
+        String,
+    ) {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let session = session_manager
+            .create_session(
+                label.to_string(),
+                "Standard".to_string(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create session");
+        let storage = session_manager
+            .effective_session_storage_path(&session.session_id)
+            .await
+            .expect("session storage path");
+        let turn_id = session_manager
+            .start_dialog_turn(
+                &session.session_id,
+                "Standard".to_string(),
+                "observe".to_string(),
+                Some(format!("turn-{label}")),
+                None,
+                None,
+            )
+            .await
+            .expect("start turn");
+        let message = Message::assistant("observer history".to_string())
+            .with_turn_id(turn_id.clone())
+            .with_round_id("round-observer".to_string());
+        ConversationCoordinator::persist_completed_dialog_turn(
+            coordinator.event_queue.as_ref(),
+            session_manager.as_ref(),
+            None,
+            &session.session_id,
+            &turn_id,
+            &ExecutionResult {
+                final_message: message.clone(),
+                total_rounds: 1,
+                success: true,
+                new_messages: vec![message],
+                finish_reason: FinishReason::Complete,
+                total_tools: 0,
+                duration_ms: 1,
+                partial_recovery_reason: None,
+                effective_finish_reason: "complete".to_string(),
+                has_final_response: true,
+            },
+            None,
+        )
+        .await;
+        (
+            workspace,
+            coordinator,
+            session_manager,
+            session.session_id,
+            storage,
+            turn_id,
+        )
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_projects_history_while_a_turn_holds_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, turn_id) =
+            relay_observer_fixture("lease-held-observer").await;
+        // A Turn waiting on an unanswered question keeps this lease for its
+        // whole life; the observer read must not wait for it to finish.
+        let _turn_lease = session_manager
+            .acquire_session_mutation(&session_id)
+            .await
+            .expect("turn lease");
+        let turns = tokio::time::timeout(
+            super::RELAY_HISTORY_OBSERVER_LEASE_WAIT + Duration::from_secs(10),
+            coordinator.load_relay_session_turns(&storage, &session_id, None),
+        )
+        .await
+        .expect("observer read must not wait for the lease owner")
+        .expect("observer read projects persisted history");
+        assert_eq!(
+            turns
+                .iter()
+                .map(|turn| turn.turn_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![turn_id.as_str()]
+        );
+
+        // A staged undo is a stable visible projection and stays readable.
+        session_manager
+            .persistence_manager()
+            .save_session_revert_state(
+                &storage,
+                &session_id,
+                &crate::agentic::session::revert::SessionRevertState {
+                    schema_version: crate::agentic::session::revert::SESSION_REVERT_SCHEMA_VERSION,
+                    boundary_turn: 0,
+                    original_turn_end: 1,
+                    phase: crate::agentic::session::revert::SessionRevertPhase::Staged,
+                    workspace_checkpoint: Vec::new(),
+                },
+            )
+            .await
+            .expect("stage revert");
+        let staged = coordinator
+            .load_relay_session_turns(&storage, &session_id, None)
+            .await
+            .expect("staged undo remains readable without the lease");
+        assert!(staged.is_empty(), "staged undo hides the reverted suffix");
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_refuses_unfinished_undo_without_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, _turn_id) =
+            relay_observer_fixture("lease-held-undo").await;
+        for phase in [
+            crate::agentic::session::revert::SessionRevertPhase::Applying,
+            crate::agentic::session::revert::SessionRevertPhase::Clearing,
+            crate::agentic::session::revert::SessionRevertPhase::Committing,
+        ] {
+            session_manager
+                .persistence_manager()
+                .save_session_revert_state(
+                    &storage,
+                    &session_id,
+                    &crate::agentic::session::revert::SessionRevertState {
+                        schema_version:
+                            crate::agentic::session::revert::SESSION_REVERT_SCHEMA_VERSION,
+                        boundary_turn: 0,
+                        original_turn_end: 1,
+                        phase,
+                        workspace_checkpoint: Vec::new(),
+                    },
+                )
+                .await
+                .expect("persist unfinished undo");
+            let _writer = session_manager
+                .acquire_session_mutation(&session_id)
+                .await
+                .expect("undo writer lease");
+            let error = coordinator
+                .load_relay_session_turns(&storage, &session_id, None)
+                .await
+                .expect_err("an unfinished undo must not be projected without the lease");
+            assert!(
+                matches!(error, OpenBitFunError::OutcomeUnknown(_)),
+                "unexpected error for {phase:?}: {error:?}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -18,6 +18,21 @@ const RECORD_FLUSH_DELAY_MS = 16;
  */
 const PAGE_RECORD_FLUSH_DELAY_MS = 250;
 
+/**
+ * How long opening may wait for the host's first page. Past it, opening fails
+ * with a retryable error instead of parking the surface in hydration.
+ */
+const FIRST_PAGE_TIMEOUT_MS = 15_000;
+
+/** The host did not deliver the first page in time; retrying opens a fresh read. */
+export class RelayHistoryFirstPageOverdueError extends Error {
+  readonly retryable = true;
+  constructor(readonly sessionId: string) {
+    super(`Relay session first page overdue: ${sessionId}`);
+    this.name = 'RelayHistoryFirstPageOverdueError';
+  }
+}
+
 export interface RelayHistoryReady {
   sessionId: string;
   hasMore: boolean;
@@ -47,6 +62,7 @@ export class RelaySessionHistory {
   private prefetchCredit = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly fail: (error: unknown) => void;
+  private readonly resumeInteraction: (() => Promise<void>) | undefined;
 
   /**
    * `onRecord` must only reduce the record: the host sends each record of a page
@@ -65,6 +81,7 @@ export class RelaySessionHistory {
     private readonly onFlush?: () => void,
   ) {
     this.fail = error => { this.rejectReady(error); this.rejectPage?.(error); onError(error); };
+    this.resumeInteraction = onResumed;
     // Register before asking Rust to replay its cache or fetch the first page.
     this.listeners.push(remoteConnectAPI.onSessionRecord(value => {
       if (!this.isCurrent()) return;
@@ -152,13 +169,43 @@ export class RelaySessionHistory {
         throw new Error('Session subscription is closed');
       }
       this.subscriptionId = id;
-      await this.firstPage;
+      await this.waitForFirstPage();
       this.scheduleHistoryPrefetch();
     } catch (error) {
       this.rejectReady(error);
       this.close();
       throw error;
     }
+  }
+
+  /**
+   * A stalled host stream must not park the surface in hydration, and must not
+   * be reported as a complete empty history either. Records already received
+   * stay rendered, the interaction mailbox is read directly so a blocking
+   * question stays answerable, and opening fails with a retryable error.
+   */
+  private async waitForFirstPage(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const overdue = new Promise<'overdue'>(resolve => {
+      timer = setTimeout(() => resolve('overdue'), FIRST_PAGE_TIMEOUT_MS);
+    });
+    try {
+      const outcome = await Promise.race([this.firstPage.then(() => 'ready' as const), overdue]);
+      if (outcome === 'ready') return;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
+    const error = new RelayHistoryFirstPageOverdueError(this.sessionId);
+    if (!this.isCurrent()) throw error;
+    log.warn('Relay session first page overdue; failing the open as retryable', { sessionId: this.sessionId });
+    this.flush();
+    if (this.resumeInteraction) {
+      void this.resumeInteraction().catch(mailboxError => {
+        log.warn('Session interaction mailbox refresh failed', { sessionId: this.sessionId, error: mailboxError });
+      });
+    }
+    this.fail(error);
+    throw error;
   }
 
   // Warm one adjacent page after a visible open or reader request. Never drain
