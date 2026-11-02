@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex, Weak};
+use std::sync::{Arc, Weak};
 
+use dashmap::DashMap;
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
 pub(crate) struct KeyedAsyncLockGuard {
     guard: Option<OwnedMutexGuard<()>>,
-    registry: Arc<StdMutex<HashMap<String, Weak<AsyncMutex<()>>>>>,
+    registry: Arc<DashMap<String, Weak<AsyncMutex<()>>>>,
     key: String,
     generation: Weak<AsyncMutex<()>>,
 }
@@ -16,44 +16,44 @@ impl Drop for KeyedAsyncLockGuard {
         // waiter either upgrades this generation first or creates the next one
         // after removal; two live generations cannot overlap.
         drop(self.guard.take());
-        let mut registry = self
-            .registry
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if registry
-            .get(&self.key)
-            .is_some_and(|current| current.ptr_eq(&self.generation) && current.upgrade().is_none())
-        {
-            registry.remove(&self.key);
-        }
+        self.registry.remove_if(&self.key, |_, current| {
+            current.ptr_eq(&self.generation) && current.upgrade().is_none()
+        });
     }
 }
 
 /// Race-safe keyed async lock registry.
 ///
-/// The registry owns only weak references. Waiters keep the lock generation
-/// alive through their strong references, while dead keys are reclaimed on the
-/// next acquisition without allowing two live generations for one key.
+/// The registry owns only weak references backed by a sharded concurrent map (DashMap).
+/// Waiters keep the lock generation alive through their strong references, while dead
+/// keys are reclaimed atomically without holding a process-wide mutex.
 #[derive(Clone, Default)]
 pub(crate) struct KeyedAsyncLock {
-    registry: Arc<StdMutex<HashMap<String, Weak<AsyncMutex<()>>>>>,
+    registry: Arc<DashMap<String, Weak<AsyncMutex<()>>>>,
 }
 
 impl KeyedAsyncLock {
     pub(crate) async fn lock(&self, key: &str) -> KeyedAsyncLockGuard {
         let (lock, generation) = {
-            let mut registry = self
-                .registry
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            if let Some(lock) = registry.get(key).and_then(Weak::upgrade) {
-                let generation = Arc::downgrade(&lock);
-                (lock, generation)
-            } else {
-                let lock = Arc::new(AsyncMutex::new(()));
-                let generation = Arc::downgrade(&lock);
-                registry.insert(key.to_string(), generation.clone());
-                (lock, generation)
+            let mut entry = self.registry.entry(key.to_string());
+            match entry {
+                dashmap::mapref::entry::Entry::Occupied(ref mut occupied) => {
+                    if let Some(lock) = occupied.get().upgrade() {
+                        let generation = Arc::downgrade(&lock);
+                        (lock, generation)
+                    } else {
+                        let lock = Arc::new(AsyncMutex::new(()));
+                        let generation = Arc::downgrade(&lock);
+                        occupied.insert(generation.clone());
+                        (lock, generation)
+                    }
+                }
+                dashmap::mapref::entry::Entry::Vacant(vacant) => {
+                    let lock = Arc::new(AsyncMutex::new(()));
+                    let generation = Arc::downgrade(&lock);
+                    vacant.insert(generation.clone());
+                    (lock, generation)
+                }
             }
         };
         let guard = lock.lock_owned().await;
@@ -67,10 +67,7 @@ impl KeyedAsyncLock {
 
     #[cfg(test)]
     fn registry_len(&self) -> usize {
-        self.registry
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .len()
+        self.registry.len()
     }
 }
 

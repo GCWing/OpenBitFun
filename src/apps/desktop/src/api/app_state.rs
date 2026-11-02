@@ -169,9 +169,12 @@ impl AppState {
                 log::warn!("Failed to mark stale miniapp drafts for cleanup: {}", e);
             }
         }
-        if let Err(e) = seed_builtin_miniapps(&miniapp_manager).await {
-            log::warn!("Failed to seed built-in miniapps: {}", e);
-        }
+        let seed_manager = miniapp_manager.clone();
+        tokio::spawn(async move {
+            if let Err(e) = seed_builtin_miniapps(&seed_manager).await {
+                log::warn!("Failed to seed built-in miniapps: {}", e);
+            }
+        });
 
         let worker_host_path = match resolve_worker_host_path() {
             Some(p) => {

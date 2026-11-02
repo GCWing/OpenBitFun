@@ -14,4 +14,15 @@ pub trait TransportAdapter: Send + Sync + Debug {
         event_name: &str,
         payload: serde_json::Value,
     ) -> anyhow::Result<()>;
+
+    /// Emit an event directed to a specific target window/webview (e.g. "main").
+    async fn emit_to(
+        &self,
+        target: &str,
+        event_name: &str,
+        payload: serde_json::Value,
+    ) -> anyhow::Result<()> {
+        let _ = target;
+        self.emit_generic(event_name, payload).await
+    }
 }

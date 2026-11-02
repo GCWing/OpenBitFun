@@ -346,6 +346,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
 
     try {
       await setAgentTargetState(target.label, false).catch(() => {});
+      await api.invoke('browser_webview_close', { request: { label: target.label } }).catch(() => {});
       await target.close();
     } catch (closeError) {
       if (!isWebviewNotFoundError(closeError)) {

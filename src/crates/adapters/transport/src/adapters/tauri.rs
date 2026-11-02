@@ -42,9 +42,8 @@ impl TransportAdapter for TauriTransportAdapter {
             warn!("Unhandled AgenticEvent type in TauriAdapter");
             return Ok(());
         };
-        self.app_handle
-            .emit(projected.event_name.as_str(), projected.payload)?;
-        Ok(())
+        self.emit_to("main", projected.event_name.as_str(), projected.payload)
+            .await
     }
 
     async fn emit_generic(
@@ -52,7 +51,21 @@ impl TransportAdapter for TauriTransportAdapter {
         event_name: &str,
         payload: serde_json::Value,
     ) -> anyhow::Result<()> {
-        self.app_handle.emit(event_name, payload)?;
+        if event_name.starts_with("agentic://") {
+            self.emit_to("main", event_name, payload).await
+        } else {
+            self.app_handle.emit(event_name, payload)?;
+            Ok(())
+        }
+    }
+
+    async fn emit_to(
+        &self,
+        target: &str,
+        event_name: &str,
+        payload: serde_json::Value,
+    ) -> anyhow::Result<()> {
+        self.app_handle.emit_to(target, event_name, payload)?;
         Ok(())
     }
 }
