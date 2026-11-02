@@ -80,6 +80,10 @@ pub(crate) async fn ensure_peer_host_ready(runtime: &CliRuntimeContext) -> Resul
     // A mobile controller or IM bot that opens a workspace on this host changes
     // the catalog an attached Desktop controller renders; mirror the hint.
     workspace::start_workspace_catalog_publication(Arc::new(PeerControllerEventEmitter));
+    // The file explorer on an attached controller refreshes from
+    // `file-system-changed`, so this host must publish its own watch events
+    // instead of leaving the tree stale after the first read.
+    openbitfun_core::service::initialize_file_watch_service(Arc::new(PeerControllerEventEmitter));
     tracing::info!("CLI peer host services ready");
     Ok(())
 }

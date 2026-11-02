@@ -361,6 +361,37 @@ mod tests {
         }
     }
 
+    /// The file explorer controller reads the workspace through the
+    /// `explorer_*` aliases, while the editor reads metadata, sync hashes and
+    /// watch state. These rows used to be refused as "no remote-workspace UI
+    /// surface", which broke the file tree, the `@` reference picker and the
+    /// editor breadcrumb in every CLI Peer session even though this host
+    /// already served the same reads under the historical names.
+    #[test]
+    fn file_explorer_surface_is_not_refused_before_dispatch() {
+        for command in [
+            "explorer_get_children",
+            "explorer_get_children_paginated",
+            "explorer_get_file_tree",
+            "get_file_tree",
+            "get_file_metadata",
+            "get_file_editor_sync_hash",
+            "create_file",
+            "start_file_watch",
+            "stop_file_watch",
+            "get_watched_paths",
+        ] {
+            assert!(
+                !is_local_only_command(command),
+                "{command} must be routable to the peer host"
+            );
+            assert!(
+                !is_cli_unsupported_command(command),
+                "{command} must reach its implemented handler, not the unsupported gate"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn attach_detach_only_updates_delivery_subscribers() {
         let _ = handle_host_invoke(

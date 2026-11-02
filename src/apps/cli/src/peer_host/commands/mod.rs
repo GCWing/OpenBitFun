@@ -123,6 +123,14 @@ pub(crate) fn dispatch<'a>(
         "get_file_tree" | "explorer_get_file_tree" => {
             Box::pin(filesystem::get_file_tree(&state.filesystem_service, &state.workspace_service, args))
         }
+        "get_file_metadata" => Box::pin(filesystem::get_file_metadata(state, args)),
+        "get_file_editor_sync_hash" => {
+            Box::pin(filesystem::get_file_editor_sync_hash(state, args))
+        }
+        "create_file" => Box::pin(filesystem::create_file(state, args)),
+        "start_file_watch" => Box::pin(filesystem::start_file_watch(state, args)),
+        "stop_file_watch" => Box::pin(filesystem::stop_file_watch(state, args)),
+        "get_watched_paths" => Box::pin(filesystem::get_watched_paths()),
         "check_path_exists" => Box::pin(filesystem::check_path_exists(state, args)),
         "create_directory" => Box::pin(filesystem::create_directory(state, args)),
         "read_file_content" => Box::pin(filesystem::read_file_content(state, args)),
@@ -212,6 +220,15 @@ pub(crate) fn dispatch<'a>(
         // Git (local workspace only)
         "git_is_repository" => Box::pin(git::git_is_repository(args)),
         "git_get_repository_trust" => Box::pin(git::git_get_repository_trust(args)),
+        "git_get_repository"
+        | "git_get_repository_basic"
+        | "git_get_status"
+        | "git_get_branches"
+        | "git_get_enhanced_branches"
+        | "git_get_commits"
+        | "git_get_diff"
+        | "git_get_changed_files"
+        | "git_resolve_revision" => Box::pin(git::read(command, args)),
 
         // Soft empty / no-op for Desktop-only subsystems
         "notify_cron_host_ready" => Box::pin(soft::notify_cron_host_ready()),
@@ -272,6 +289,16 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "delete_file",
     "delete_directory",
     "list_directory_files",
+    "create_file",
+    "explorer_get_children",
+    "explorer_get_children_paginated",
+    "explorer_get_file_tree",
+    "get_file_tree",
+    "get_file_metadata",
+    "get_file_editor_sync_hash",
+    "get_watched_paths",
+    "start_file_watch",
+    "stop_file_watch",
     "list_subagents",
     "list_manageable_subagents",
     "test_ai_config_connection",
@@ -342,6 +369,15 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_workspace_info",
     "git_get_repository_trust",
     "git_is_repository",
+    "git_get_repository",
+    "git_get_repository_basic",
+    "git_get_status",
+    "git_get_branches",
+    "git_get_enhanced_branches",
+    "git_get_commits",
+    "git_get_diff",
+    "git_get_changed_files",
+    "git_resolve_revision",
     "initialize_workspace_startup_state",
     "list_files",
     "get_session_interaction_mailbox",
