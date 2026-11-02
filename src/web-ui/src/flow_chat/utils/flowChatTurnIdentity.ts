@@ -17,6 +17,21 @@ type TurnIdentitySession = Pick<
   'sessionId' | 'dialogTurns' | 'isPartial' | 'totalTurnCount' | 'turnCatalog'
 >;
 
+/**
+ * Catalog revisions minted by this client for catalogs it derived itself
+ * (relay replicas, optimistic truncation). The host never issues them, so they
+ * must not be sent back as optimistic-concurrency tokens.
+ */
+const LOCAL_TURN_CATALOG_REVISION_PREFIX = 'local:';
+
+export function localTurnCatalogRevision(source: string): string {
+  return `${LOCAL_TURN_CATALOG_REVISION_PREFIX}${source}`;
+}
+
+export function isHostIssuedTurnCatalogRevision(revision: string): boolean {
+  return !revision.startsWith(LOCAL_TURN_CATALOG_REVISION_PREFIX);
+}
+
 export function asLocalTurnIndex(value: number): LocalTurnIndex {
   return value as LocalTurnIndex;
 }

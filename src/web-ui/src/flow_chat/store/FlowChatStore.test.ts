@@ -17,6 +17,7 @@ import { startupTrace } from '@/shared/utils/startupTrace';
 import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import { SessionRecordReplica } from '../session-stream/SessionRecordReplica';
 import { isSessionBindingLocked } from '../utils/sessionLifecycle';
+import { isHostIssuedTurnCatalogRevision } from '../utils/flowChatTurnIdentity';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
@@ -8107,6 +8108,24 @@ describe('FlowChatStore device surfaces', () => {
       await vi.waitFor(() => expect(texts('peer-live', 2)).toHaveLength(2));
       expect(flowChatStore.getState().sessions.get('peer-live')!.dialogTurns.map(turn => turn.id))
         .toEqual(['turn-0', 'turn-2']);
+    });
+
+    it('marks the replica-derived Turn catalog revision as controller-local', async () => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession('peer-catalog');
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord('peer-catalog', 0, 0));
+        apiMocks.relayRecord?.(itemRecord('peer-catalog', 1, 0, 2));
+        apiMocks.relayReady?.({ sessionId: 'peer-catalog', hasMore: false, oldestSeq: 1, cursor: 2 });
+        return 'peer-catalog-subscription';
+      });
+
+      await flowChatStore.loadRelaySessionHistory('peer-catalog');
+
+      const catalog = flowChatStore.getState().sessions.get('peer-catalog')!.turnCatalog!;
+      expect(catalog.entries.map(entry => entry.turnId)).toEqual(['turn-0', 'turn-1']);
+      // Rollback must not echo this as the host's optimistic-concurrency token.
+      expect(isHostIssuedTurnCatalogRevision(catalog.revision)).toBe(false);
     });
 
     it('applies a tombstone that lands in the same batch as the turn', async () => {
