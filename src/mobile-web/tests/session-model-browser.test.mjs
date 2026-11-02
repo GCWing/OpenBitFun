@@ -233,25 +233,20 @@ test('a fenced read rejects a timed-out request that has not started executing',
 });
 
 for (const options of [{ legacy: true }, { fencing: false }]) {
-  test(`an unfenced host cannot clear an unknown write with an ordinary snapshot (${JSON.stringify(options)})`, { timeout: 30_000 }, async t => {
+  test(`an unfenced host stays usable after a timed-out write (${JSON.stringify(options)})`, { timeout: 30_000 }, async t => {
     const page = await fixture(t, options);
     await page.evaluate(() => window.modelFixture.holdNext('set_session_model', 'execution'));
     await choose(page, 'Model C');
     await page.waitForFunction(() => window.modelFixture.pending.length === 1);
     await page.evaluate(() => window.modelFixture.expirePending());
-    await page.waitForFunction(() => window.modelFixture.error() === 'Model update not confirmed. Update and restart the host, then reopen this page.');
-    assert.equal(await page.$(trigger), null);
-    await page.evaluate(() => window.modelFixture.release());
-    await page.waitForFunction(() => window.modelFixture.hosts['host-a'].A.modelId === 'model-c');
-    await page.click('.chat-model-selector__retry');
-    await page.waitForFunction(() => !document.querySelector('.chat-model-selector__retry')?.disabled);
-    assert.equal(await page.$(trigger), null, 'a legacy snapshot must not be advertised as proof that the request can no longer execute');
-    await page.type('.chat-page__input', 'keep this draft');
+    await page.waitForFunction(() => !!window.modelFixture.error());
+    // No token exists to settle the outcome, so the session must not stay locked.
+    await page.waitForFunction(selector => document.querySelector(selector)?.disabled === false, {}, trigger);
+    await page.type('.chat-page__input', 'still works');
     await page.click('.chat-page__send-btn');
-    await page.waitForFunction(() => !document.querySelector('.chat-page__send-btn')?.disabled);
-    assert.deepEqual(await page.evaluate(() => window.modelFixture.sent), []);
-    assert.equal(await page.$eval('.chat-page__input', node => node.value), 'keep this draft');
-    assert.equal(await page.evaluate(() => window.modelFixture.commands.some(command => command.cmd === 'set_session_model' && 'model_write_token' in command)), false, 'old hosts must not receive unnegotiated fields');
+    await page.waitForFunction(() => window.modelFixture.sent.length === 1);
+    assert.equal(await page.evaluate(() => window.modelFixture.sent[0].content), 'still works');
+    assert.equal(await page.evaluate(() => window.modelFixture.commands.some(command => command.cmd === 'set_session_model' && 'model_write_token' in command)), false, 'old hosts must not receive unneeded fields');
   });
 }
 

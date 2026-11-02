@@ -375,14 +375,11 @@ interface SessionModelWrite {
 }
 
 export class RemoteSessionModelWriteUnconfirmedError extends Error {
-  readonly messageKey: 'chat.modelWriteUnconfirmed' | 'chat.modelWriteUnconfirmedLegacy';
+  readonly messageKey = 'chat.modelWriteUnconfirmed';
 
-  constructor(legacy = false) {
-    super(legacy
-      ? 'The host cannot confirm a timed-out model update; update and reconnect the host before continuing'
-      : 'The model update outcome is unknown; reconnect and reload the session model before continuing');
+  constructor() {
+    super('The model update outcome is unknown; reconnect and reload the session model before continuing');
     this.name = 'RemoteSessionModelWriteUnconfirmedError';
-    this.messageKey = legacy ? 'chat.modelWriteUnconfirmedLegacy' : 'chat.modelWriteUnconfirmed';
   }
 }
 
@@ -856,9 +853,6 @@ export class RemoteSessionManager {
       const results = await Promise.allSettled(writes.map(write => write.promise));
       this.ensureControlTargetCurrent(target);
       if (writes.some(write => write.uncertain)) {
-        if (writes.some(write => write.uncertain && !write.token)) {
-          throw new RemoteSessionModelWriteUnconfirmedError(true);
-        }
         try {
           for (const write of writes.filter(write => write.uncertain)) {
             const catalog = await this.readModelCatalog(sessionId, target, { model_write_fence: write.token });
@@ -935,7 +929,10 @@ export class RemoteSessionManager {
         });
         return { model_id: response.model_id, reasoning_preset: response.reasoning_preset ?? null };
       } catch (error) {
-        pending.uncertain = !hostSettled && !(error instanceof RemoteHostCommandError);
+        // A host without fencing cannot settle an unknown outcome, so holding the
+        // write would block this session until reload. It stays on the earlier
+        // last-write-wins path: report the failure and let the next read reconcile.
+        pending.uncertain = !!pending.token && !hostSettled && !(error instanceof RemoteHostCommandError);
         throw error;
       }
     });
