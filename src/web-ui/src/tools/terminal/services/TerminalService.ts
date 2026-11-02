@@ -33,6 +33,7 @@ import type {
 import { TerminalOriginCache } from './terminalWorkspaceScope';
 import { PeerTerminalReplay } from './PeerTerminalReplay';
 import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
+import { usesTerminalCursorReplay } from '@/infrastructure/peer-device/peerCapabilityResolution';
 
 const log = createLogger('TerminalService');
 
@@ -62,6 +63,11 @@ export class TerminalService {
   /** Where `getHistory` stopped, so the replay that follows neither repeats nor skips output. */
   private readonly replayOffsets = new Map<string, number>();
 
+  /** Sessions the tab list knows about; their exit must be seen without a mounted view. */
+  private trackedSessions = new Set<string>();
+
+  private unsubscribePeers: (() => void) | null = null;
+
   private constructor() {
   }
 
@@ -88,6 +94,8 @@ export class TerminalService {
       });
       this.streamScope = scope;
       this.connected = true;
+      this.unsubscribePeers = peerConnectionManager.subscribe(() => this.reconcilePeerReplays());
+      this.reconcilePeerReplays();
       log.debug('Connected to terminal event stream');
     })();
 
@@ -126,34 +134,55 @@ export class TerminalService {
     }
     this.streamScope = null;
     this.connected = false;
-    this.peerReplays.forEach(replay => replay.close());
-    this.peerReplays.clear();
+    this.unsubscribePeers?.();
+    this.unsubscribePeers = null;
+    this.trackedSessions.clear();
     this.replayOffsets.clear();
+    this.reconcilePeerReplays();
+  }
+
+  private usesPeerReplay(): boolean {
+    const { surfaceId } = getActiveSurfaceScope();
+    return usesTerminalCursorReplay(peerConnectionManager.get(surfaceId)?.getState().capabilities);
   }
 
   /**
-   * Host kind is the negotiated fact here: every CLI host publishes cursor hints
-   * and only Desktop hosts fan out `terminal_event`, so old hosts of both kinds
-   * keep working without a new capability key.
+   * Derive replays from who is listening. Runs again when the host's kind and
+   * capabilities resolve, because a view can subscribe before they do.
    */
-  private usesPeerReplay(): boolean {
-    const { surfaceId } = getActiveSurfaceScope();
-    return peerConnectionManager.get(surfaceId)?.getState().capabilities.hostKind === 'cli';
+  private reconcilePeerReplays(): void {
+    const active = this.isConnected() && this.usesPeerReplay();
+    const wanted = new Set(!active ? [] : [
+      ...this.eventListeners.keys(),
+      ...(this.globalListeners.size > 0 ? this.trackedSessions : []),
+    ]);
+    this.peerReplays.forEach((replay, sessionId) => {
+      if (wanted.has(sessionId)) return;
+      replay.close();
+      this.peerReplays.delete(sessionId);
+    });
+    wanted.forEach(sessionId => {
+      let replay = this.peerReplays.get(sessionId);
+      if (!replay) {
+        replay = new PeerTerminalReplay(sessionId, event => this.handleTerminalEvent(event));
+        this.peerReplays.set(sessionId, replay);
+        replay.start();
+      }
+      if (this.eventListeners.has(sessionId)) {
+        if (!replay.isFollowing()) replay.follow(this.replayOffsets.get(sessionId) ?? 0);
+        // Consumed or superseded: a second view must not leave this behind.
+        this.replayOffsets.delete(sessionId);
+      } else {
+        replay.unfollow();
+      }
+    });
   }
 
-  private ensurePeerReplay(sessionId: string): void {
-    if (this.peerReplays.has(sessionId) || !this.isConnected() || !this.usesPeerReplay()) return;
-    const offset = this.replayOffsets.get(sessionId) ?? 0;
+  private forgetSession(sessionId: string): void {
+    this.eventListeners.delete(sessionId);
+    this.trackedSessions.delete(sessionId);
     this.replayOffsets.delete(sessionId);
-    const replay = new PeerTerminalReplay(sessionId, offset, event => this.handleTerminalEvent(event));
-    this.peerReplays.set(sessionId, replay);
-    replay.start();
-  }
-
-  private stopPeerReplay(sessionId: string): void {
-    this.peerReplays.get(sessionId)?.close();
-    this.peerReplays.delete(sessionId);
-    this.replayOffsets.delete(sessionId);
+    this.reconcilePeerReplays();
   }
 
   private isStreamCurrent(): boolean {
@@ -245,8 +274,7 @@ export class TerminalService {
           new CustomEvent('terminal-session-destroyed', { detail: { sessionId, surfaceId: getActiveSurfaceId() } })
         );
       }
-      this.eventListeners.delete(sessionId);
-      this.stopPeerReplay(sessionId);
+      this.forgetSession(sessionId);
     }
   }
 
@@ -257,21 +285,24 @@ export class TerminalService {
       this.eventListeners.set(sessionId, listeners);
     }
     listeners.add(callback);
-    this.ensurePeerReplay(sessionId);
+    this.reconcilePeerReplays();
 
     return () => {
       listeners?.delete(callback);
       if (listeners?.size === 0) {
         this.eventListeners.delete(sessionId);
-        this.stopPeerReplay(sessionId);
+        this.reconcilePeerReplays();
       }
     };
   }
 
   onEvent(callback: TerminalEventCallback): UnsubscribeFunction {
     this.globalListeners.add(callback);
+    // A tab list has to see exits before any terminal view has connected.
+    void this.connect().catch(error => log.warn('Failed to connect terminal events', error));
     return () => {
       this.globalListeners.delete(callback);
+      this.reconcilePeerReplays();
     };
   }
 
@@ -332,6 +363,8 @@ export class TerminalService {
     try {
       const sessions = await api.invoke<SessionResponse[]>('terminal_list');
       scope.assertCurrent('terminal_list');
+      this.trackedSessions = new Set(sessions.map(session => session.id));
+      this.reconcilePeerReplays();
       return sessions.map(session => this.projectSession(scope.surfaceId, session));
     } catch (error) {
       log.error('Failed to list sessions', error);
@@ -345,8 +378,7 @@ export class TerminalService {
       await api.invoke('terminal_close', { request });
       log.debug('Session closed', { sessionId });
       
-      this.eventListeners.delete(sessionId);
-      this.stopPeerReplay(sessionId);
+      this.forgetSession(sessionId);
     } catch (error) {
       log.error('Failed to close session', error);
       throw error;
@@ -362,9 +394,9 @@ export class TerminalService {
       await api.invoke('terminal_shutdown_all');
       log.debug('All sessions closed');
       this.eventListeners.clear();
-      this.peerReplays.forEach(replay => replay.close());
-      this.peerReplays.clear();
+      this.trackedSessions.clear();
       this.replayOffsets.clear();
+      this.reconcilePeerReplays();
     } catch (error) {
       log.error('Failed to shutdown all sessions', error);
       throw error;
@@ -374,7 +406,8 @@ export class TerminalService {
   async getHistory(sessionId: string): Promise<GetHistoryResponse> {
     try {
       const history = await api.invoke<GetHistoryResponse>('terminal_get_history', { sessionId });
-      if (this.usesPeerReplay() && typeof history.nextOffset === 'number') {
+      // Kept even while the host kind is unknown: the replay decision can come later.
+      if (typeof history.nextOffset === 'number') {
         this.replayOffsets.set(sessionId, history.nextOffset);
       }
       return history;

@@ -189,7 +189,7 @@ pub(crate) fn dispatch<'a>(
         // coordinator via the compatibility surface both CLI and Desktop Peer
         // Hosts share.
         "cancel_tool" => Box::pin(dialog::cancel_tool(state, args)),
-        "btw_ask_stream" => Box::pin(btw::btw_ask_stream(args)),
+        "btw_ask_stream" => Box::pin(btw::btw_ask_stream(state, args)),
         "btw_cancel" => Box::pin(btw::btw_cancel(args)),
         "get_session_interaction_mailbox" => Box::pin(std::future::ready(permission::get_session_interaction_mailbox(state, args))),
         "list_pending_permission_requests" => Box::pin(std::future::ready(permission::list_pending_permission_requests(state))),
@@ -223,6 +223,7 @@ pub(crate) fn dispatch<'a>(
         // Skills
         "get_skill_configs" => Box::pin(skills::get_skill_configs(args)),
         "get_mode_skill_configs" => Box::pin(skills::get_mode_skill_configs(args)),
+        "get_global_skill_settings" => Box::pin(skills::get_global_skill_settings(args)),
 
         // System
         "get_system_info" => Box::pin(system::get_system_info()),
@@ -247,6 +248,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "btw_cancel",
     "get_skill_configs",
     "get_mode_skill_configs",
+    "get_global_skill_settings",
     "get_runtime_logging_info",
     "terminal_execute",
     "terminal_get",

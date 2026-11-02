@@ -13,20 +13,39 @@ vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
   },
 }));
 
-const hostKindMock = vi.hoisted(() => ({ current: null as string | null }));
+const hostMock = vi.hoisted(() => ({
+  capabilities: null as Record<string, unknown> | null,
+  listeners: new Set<() => void>(),
+}));
 const replayMock = vi.hoisted(() => ({
-  created: [] as Array<{ sessionId: string; offset: number; deliver: (event: unknown) => void; start: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }>,
+  created: [] as Array<{
+    sessionId: string;
+    deliver: (event: unknown) => void;
+    start: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    follow: ReturnType<typeof vi.fn>;
+    unfollow: ReturnType<typeof vi.fn>;
+    isFollowing: () => boolean;
+  }>,
 }));
 vi.mock('@/infrastructure/peer-device/PeerConnectionManager', () => ({
   peerConnectionManager: {
-    get: () => ({ getState: () => ({ capabilities: { hostKind: hostKindMock.current } }) }),
+    get: () => ({ getState: () => ({ capabilities: hostMock.capabilities }) }),
+    subscribe: (listener: () => void) => {
+      hostMock.listeners.add(listener);
+      return () => hostMock.listeners.delete(listener);
+    },
   },
 }));
 vi.mock('./PeerTerminalReplay', () => ({
   PeerTerminalReplay: class {
+    following = false;
     start = vi.fn();
     close = vi.fn();
-    constructor(public sessionId: string, public offset: number, public deliver: (event: unknown) => void) {
+    follow = vi.fn(() => { this.following = true; });
+    unfollow = vi.fn(() => { this.following = false; });
+    isFollowing = () => this.following;
+    constructor(public sessionId: string, public deliver: (event: unknown) => void) {
       replayMock.created.push(this);
     }
   },
@@ -59,7 +78,8 @@ describe('TerminalService device surface switching', () => {
     listenMock.mockReset();
     listenMock.mockReturnValue(() => {});
     resetDeviceSurfaceForTest();
-    hostKindMock.current = null;
+    hostMock.capabilities = null;
+    hostMock.listeners.clear();
     replayMock.created.length = 0;
   });
 
@@ -122,28 +142,56 @@ describe('TerminalService device surface switching', () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
-  describe('CLI peer host output', () => {
-    async function connectToCliHost(): Promise<TerminalService> {
-      hostKindMock.current = 'cli';
-      activateSurface('peer-cli');
+  describe('terminal cursor replay', () => {
+    async function connectToHost(capabilities: Record<string, unknown> | null = { terminalCursorReplayV1: true }): Promise<TerminalService> {
+      hostMock.capabilities = capabilities;
+      activateSurface('peer-host');
       const service = freshTerminalService();
       await service.connect();
       return service;
     }
 
     it('follows replay pages from where the history ended', async () => {
-      const service = await connectToCliHost();
+      const service = await connectToHost();
       invokeMock.mockResolvedValueOnce({ data: 'old', nextOffset: 3 });
       await service.getHistory('t1');
       service.onSessionEvent('t1', vi.fn());
 
       expect(replayMock.created).toHaveLength(1);
-      expect(replayMock.created[0]).toMatchObject({ sessionId: 't1', offset: 3 });
       expect(replayMock.created[0].start).toHaveBeenCalledTimes(1);
+      expect(replayMock.created[0].follow).toHaveBeenCalledWith(3);
+    });
+
+    it('falls back to host kind for a CLI host that predates the capability', async () => {
+      const service = await connectToHost({ hostKind: 'cli' });
+      service.onSessionEvent('t1', vi.fn());
+      expect(replayMock.created).toHaveLength(1);
+    });
+
+    it('keeps Desktop hosts on terminal_event', async () => {
+      const service = await connectToHost({ hostKind: 'desktop' });
+      invokeMock.mockResolvedValueOnce({ data: 'old', nextOffset: 3 });
+      await service.getHistory('t1');
+      service.onSessionEvent('t1', vi.fn());
+      expect(replayMock.created).toHaveLength(0);
+    });
+
+    it('decides again when capabilities resolve after the view subscribed', async () => {
+      const service = await connectToHost({ hostKind: null });
+      invokeMock.mockResolvedValueOnce({ data: 'old', nextOffset: 7 });
+      await service.getHistory('t1');
+      service.onSessionEvent('t1', vi.fn());
+      expect(replayMock.created).toHaveLength(0);
+
+      hostMock.capabilities = { hostKind: 'cli' };
+      hostMock.listeners.forEach(listener => listener());
+
+      expect(replayMock.created).toHaveLength(1);
+      expect(replayMock.created[0].follow).toHaveBeenCalledWith(7);
     });
 
     it('routes replayed output through the same terminal event path', async () => {
-      const service = await connectToCliHost();
+      const service = await connectToHost();
       const listener = vi.fn();
       service.onSessionEvent('t1', listener);
 
@@ -153,7 +201,7 @@ describe('TerminalService device surface switching', () => {
     });
 
     it('shares one replay per session and stops it with the last listener', async () => {
-      const service = await connectToCliHost();
+      const service = await connectToHost();
       const first = service.onSessionEvent('t1', vi.fn());
       const second = service.onSessionEvent('t1', vi.fn());
       expect(replayMock.created).toHaveLength(1);
@@ -164,8 +212,49 @@ describe('TerminalService device surface switching', () => {
       expect(replayMock.created[0].close).toHaveBeenCalledTimes(1);
     });
 
+    it('does not leave a second view offset behind for the next replay', async () => {
+      const service = await connectToHost();
+      invokeMock.mockResolvedValueOnce({ data: 'a', nextOffset: 1 });
+      await service.getHistory('t1');
+      const first = service.onSessionEvent('t1', vi.fn());
+      invokeMock.mockResolvedValueOnce({ data: 'ab', nextOffset: 2 });
+      await service.getHistory('t1');
+      const second = service.onSessionEvent('t1', vi.fn());
+      first();
+      second();
+
+      service.onSessionEvent('t1', vi.fn());
+      expect(replayMock.created[1].follow).toHaveBeenCalledWith(0);
+    });
+
+    it('tracks listed tabs without a view and reports their exit to the tab list', async () => {
+      const service = await connectToHost();
+      const events = vi.fn();
+      service.onEvent(events);
+      invokeMock.mockResolvedValueOnce([{ id: 't1', workspaceId: 'w', name: 'Shell' }]);
+      await service.listSessions();
+
+      expect(replayMock.created).toHaveLength(1);
+      expect(replayMock.created[0].follow).not.toHaveBeenCalled();
+      replayMock.created[0].deliver({ type: 'Exit', payload: { session_id: 't1', exit_code: 2 } });
+      expect(events).toHaveBeenCalledWith({ type: 'exit', sessionId: 't1', exitCode: 2 });
+    });
+
+    it('returns a tab to lifecycle tracking when its view unmounts', async () => {
+      const service = await connectToHost();
+      service.onEvent(vi.fn());
+      invokeMock.mockResolvedValueOnce([{ id: 't1', workspaceId: 'w', name: 'Shell' }]);
+      await service.listSessions();
+      const view = service.onSessionEvent('t1', vi.fn());
+      view();
+
+      expect(replayMock.created).toHaveLength(1);
+      expect(replayMock.created[0].unfollow).toHaveBeenCalled();
+      expect(replayMock.created[0].close).not.toHaveBeenCalled();
+    });
+
     it('stops replaying when the session is destroyed or the surface is left', async () => {
-      const service = await connectToCliHost();
+      const service = await connectToHost();
       service.onSessionEvent('t1', vi.fn());
       service.onSessionEvent('t2', vi.fn());
 
@@ -174,18 +263,6 @@ describe('TerminalService device surface switching', () => {
 
       await service.disconnect();
       expect(replayMock.created[1].close).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps Desktop hosts on terminal_event', async () => {
-      hostKindMock.current = 'desktop';
-      activateSurface('peer-desktop');
-      const service = freshTerminalService();
-      await service.connect();
-      invokeMock.mockResolvedValueOnce({ data: 'old', nextOffset: 3 });
-      await service.getHistory('t1');
-      service.onSessionEvent('t1', vi.fn());
-
-      expect(replayMock.created).toHaveLength(0);
     });
   });
 });

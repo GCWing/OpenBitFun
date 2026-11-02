@@ -73,7 +73,8 @@ describe('PeerTerminalReplay', () => {
     mocks.subscribeSession.mockReset().mockResolvedValue('subscription-1');
     mocks.unsubscribeSession.mockReset().mockResolvedValue(undefined);
     mocks.current = true;
-    replay = new PeerTerminalReplay('t1', 10, event => events.push(event));
+    replay = new PeerTerminalReplay('t1', event => events.push(event));
+    replay.follow(10);
   });
 
   afterEach(() => {
@@ -150,17 +151,31 @@ describe('PeerTerminalReplay', () => {
     expect(events.at(-1)?.type).toBe('SessionDestroyed');
   });
 
-  it('reports a vanished session from a host without lifecycle events', async () => {
-    mocks.invoke.mockRejectedValueOnce(new Error('Terminal is unavailable'));
+  it('reports a vanished session from the session list, not the error text', async () => {
+    mocks.invoke.mockRejectedValueOnce(new Error('any host wording')).mockResolvedValueOnce([{ id: 'other' }]);
     replay.start();
     ready();
     await flush();
+    await flush();
+    expect(mocks.invoke).toHaveBeenLastCalledWith('terminal_list');
     expect(events).toEqual([{ type: 'SessionDestroyed', payload: { session_id: 't1' } }]);
+  });
+
+  it('keeps a listed session after a failed read', async () => {
+    vi.useFakeTimers();
+    mocks.invoke.mockRejectedValueOnce(new Error('relay timeout')).mockResolvedValueOnce([{ id: 't1' }]);
+    replay.start();
+    ready();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events).toEqual([]);
   });
 
   it('retries a failed read from the same offset without losing output', async () => {
     vi.useFakeTimers();
-    mocks.invoke.mockRejectedValueOnce(new Error('relay timeout')).mockResolvedValueOnce(page('late', 14));
+    mocks.invoke
+      .mockRejectedValueOnce(new Error('relay timeout'))
+      .mockResolvedValueOnce([{ id: 't1' }])
+      .mockResolvedValueOnce(page('late', 14));
     replay.start();
     ready();
     await vi.advanceTimersByTimeAsync(0);
@@ -198,5 +213,63 @@ describe('PeerTerminalReplay', () => {
     replay.close();
     expect(mocks.unsubscribeSession).toHaveBeenCalledWith('subscription-1');
     expect(mocks.listeners.get('terminal-output')?.size).toBe(0);
+  });
+
+  describe('without a mounted view', () => {
+    let tracked: PeerTerminalReplay;
+
+    beforeEach(() => {
+      tracked = new PeerTerminalReplay('t1', event => events.push(event));
+    });
+
+    afterEach(() => tracked.close());
+
+    it('reports the lifecycle without reading output', async () => {
+      tracked.start();
+      ready();
+      emit('terminal-output', { terminal_id: 't1', cursor: 50 });
+      await flush();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+
+      emit('terminal-exit', { terminal_id: 't1', exit_code: 0 });
+      expect(events).toEqual([{ type: 'Exit', payload: { session_id: 't1', exit_code: 0 } }]);
+    });
+
+    it('starts reading when a view follows and stops when it leaves', async () => {
+      mocks.invoke.mockResolvedValue(page('x', 21));
+      tracked.start();
+      ready();
+      tracked.follow(20);
+      await flush();
+      expect(mocks.invoke).toHaveBeenLastCalledWith('terminal_get_history', { sessionId: 't1', afterOffset: 20 });
+
+      mocks.invoke.mockClear();
+      tracked.unfollow();
+      emit('terminal-output', { terminal_id: 't1', cursor: 30 });
+      await flush();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+    });
+
+    it('drops a page read for a view that left', async () => {
+      let finish!: (value: unknown) => void;
+      mocks.invoke.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+      tracked.start();
+      tracked.follow(20);
+      ready();
+      await flush();
+      tracked.unfollow();
+      finish(page('stale', 25));
+      await flush();
+      expect(events).toEqual([]);
+    });
+
+    it('shows a stream failure to the view that arrives later', async () => {
+      mocks.subscribeSession.mockRejectedValueOnce(new Error('older OpenBitFun version'));
+      tracked.start();
+      await flush();
+      expect(events).toEqual([]);
+      tracked.follow(0);
+      expect(events).toEqual([{ type: 'Error', payload: { session_id: 't1', message: 'older OpenBitFun version' } }]);
+    });
   });
 });

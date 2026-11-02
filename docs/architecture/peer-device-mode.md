@@ -389,8 +389,9 @@ FS) and must not be mixed with Peer Device Mode.
   notification observers without terminating the PTY. `terminal-exit` and
   `terminal-closed` on the same stream report the PTY lifecycle; an older CLI
   host omits them and the controller learns of a removed session from the
-  replay read. The Desktop controller selects this path by `host_type`
-  (`PeerTerminalReplay`); Desktop hosts keep fanning out `terminal_event`.
+  session list. Hosts advertise this path as `terminal_cursor_replay_v1`; the
+  Desktop controller (`PeerTerminalReplay`) falls back to `host_type` for older
+  CLI hosts. Desktop hosts keep fanning out `terminal_event`.
 - During Peer Mode, controller-local SSH maintenance and selected background
   editor/Git/search refreshes retain their existing noise-reduction policy.
   These UI refresh policies are separate from durable session synchronization.

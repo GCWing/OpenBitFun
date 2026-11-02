@@ -207,6 +207,7 @@
       "loadFailed": "加载日志配置失败",
       "saveFailed": "保存日志级别失败",
       "levelUpdated": "日志级别已更新",
+      "levelSavedNotApplied": "日志级别已保存，但该设备仍按 {{level}} 级别记录日志。",
       "sensitiveDiagnosticsUpdated": "敏感调试信息日志偏好已更新",
       "refreshed": "运行时状态已刷新",
       "openedFolder": "日志文件夹已打开",

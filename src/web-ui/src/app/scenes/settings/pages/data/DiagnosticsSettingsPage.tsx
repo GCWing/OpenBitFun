@@ -8,22 +8,18 @@ import type {
   BackendLogLevel,
   RuntimeLoggingInfo
 } from '@/infrastructure/config/types';
-import { peerHostRefusalReason } from '@/infrastructure/peer-device/peerHostRefusal';
+import { peerHostRefusalMessage } from '@/infrastructure/peer-device/peerHostRefusal';
 import { createLogger } from '@/shared/utils/logger';
 import { Alert, Button, ConfirmDialog, IconButton, Input, Select, Switch, Tooltip } from '@openbitfun/ui';
 import { Archive, FolderOpen } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SettingsPage } from '../shared/SettingsPage';
+import { loggingLevelSavedMessageKey } from './loggingLevelMessage';
 const loggingRuntime = createSettingsReadCache<RuntimeLoggingInfo>();
 
 const log = createLogger('DiagnosticsSettingsPage');
 
-/** A peer host's explicit refusal says more than the generic failure copy. */
-function withHostReason(failure: string, error: unknown): string {
-  const reason = peerHostRefusalReason(error);
-  return reason ? `${failure}: ${reason}` : failure;
-}
 
 function LoggingSection() {
   const { t } = useTranslation('settings/application');
@@ -103,7 +99,10 @@ function LoggingSection() {
 
         const info = await configAPI.getRuntimeLoggingInfo();
         setRuntimeInfo(info);
-        showMessage('success', t('logging.messages.levelUpdated'));
+        showMessage(
+          info.effectiveLevel === nextLevel ? 'success' : 'info',
+          t(loggingLevelSavedMessageKey(info.effectiveLevel, nextLevel), { level: info.effectiveLevel }),
+        );
       } catch (error) {
         setConfigLevel(previousLevel);
         log.error('Failed to update logging level', { nextLevel, error });
@@ -148,7 +147,7 @@ function LoggingSection() {
       await workspaceAPI.revealInExplorer(folder);
     } catch (error) {
       log.error('Failed to open log folder', { folder, error });
-      showMessage('error', withHostReason(t('logging.messages.openFailed'), error));
+      showMessage('error', peerHostRefusalMessage(error, t) ?? t('logging.messages.openFailed'));
     } finally {
       setOpeningFolder(false);
     }
@@ -163,7 +162,7 @@ function LoggingSection() {
       await workspaceAPI.revealInExplorer(result.bundlePath);
     } catch (error) {
       log.error('Failed to export diagnostics bundle', { error });
-      showMessage('error', withHostReason(t('logging.messages.diagnosticsExportFailed'), error));
+      showMessage('error', peerHostRefusalMessage(error, t) ?? t('logging.messages.diagnosticsExportFailed'));
     } finally {
       setExportingDiagnostics(false);
     }

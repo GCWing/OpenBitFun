@@ -7,8 +7,8 @@ use openbitfun_core::service::{
     remote_connect::host_stream::HostStreamHub,
     remote_ssh::{get_remote_workspace_manager, RemoteTerminalManager},
     terminal::{
-        session::{SessionStatus, TerminalSession},
-        CloseSessionRequest, CreateSessionRequest, ResizeRequest, TerminalApi, WriteRequest,
+        session::SessionStatus, CloseSessionRequest, CreateSessionRequest, ResizeRequest,
+        TerminalApi, WriteRequest,
     },
 };
 use serde::de::DeserializeOwned;
@@ -33,9 +33,9 @@ async fn publish_lifecycle(hub: &HostStreamHub, id: &str, event: &str, mut paylo
 }
 
 /// `Some(code)` once the PTY has exited; the code itself may be unknown.
-fn exited_code(session: Option<&TerminalSession>) -> Option<Option<i32>> {
-    match session?.status {
-        SessionStatus::Exited { exit_code } => Some(exit_code),
+fn exited_code(status: Option<&SessionStatus>) -> Option<Option<i32>> {
+    match status? {
+        SessionStatus::Exited { exit_code } => Some(*exit_code),
         _ => None,
     }
 }
@@ -165,7 +165,34 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
                 match output {
                     Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                     Err(_) => {
-                        publish_lifecycle(&hub, &id, TERMINAL_CLOSED_EVENT, json!({})).await;
+                        // The SSH channel ended, so the shell is gone. The channel
+                        // does not report an exit code.
+                        publish_lifecycle(
+                            &hub,
+                            &id,
+                            TERMINAL_EXIT_EVENT,
+                            json!({"exit_code":Value::Null}),
+                        )
+                        .await;
+                        // The record, and its replay, outlive the channel until the
+                        // tab is closed.
+                        let mut removal_check = tokio::time::interval(TERMINAL_EXIT_CHECK_INTERVAL);
+                        removal_check
+                            .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                        loop {
+                            if *closed.borrow() {
+                                break;
+                            }
+                            tokio::select! {
+                                _ = removal_check.tick() => {
+                                    if manager.replay_cursor(&id).await.is_none() {
+                                        publish_lifecycle(&hub, &id, TERMINAL_CLOSED_EVENT, json!({})).await;
+                                        break;
+                                    }
+                                }
+                                _ = closed.changed() => break,
+                            }
+                        }
                         break;
                     }
                 }
@@ -247,7 +274,7 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
                     }
                 }
                 _ = exit_check.tick(), if !exit_published => {
-                    if let Some(exit_code) = exited_code(manager.get_session(&id).await.as_ref()) {
+                    if let Some(exit_code) = exited_code(manager.session_status(&id).await.as_ref()) {
                         exit_published = true;
                         publish_lifecycle(&hub, &id, TERMINAL_EXIT_EVENT, json!({"exit_code":exit_code})).await;
                     }
@@ -472,24 +499,18 @@ pub(crate) async fn execute(args: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openbitfun_core::service::terminal::{SessionSource, ShellType};
 
     #[test]
     fn exit_is_reported_only_for_an_exited_session() {
-        let mut session = TerminalSession::new(
-            "t1".into(),
-            "Shell".into(),
-            ShellType::Bash,
-            "/repo".into(),
-            80,
-            24,
-            SessionSource::Manual,
-        );
         assert_eq!(exited_code(None), None);
-        assert_eq!(exited_code(Some(&session)), None);
-        session.set_exited(Some(7));
-        assert_eq!(exited_code(Some(&session)), Some(Some(7)));
-        session.set_exited(None);
-        assert_eq!(exited_code(Some(&session)), Some(None));
+        assert_eq!(exited_code(Some(&SessionStatus::Active)), None);
+        assert_eq!(
+            exited_code(Some(&SessionStatus::Exited { exit_code: Some(7) })),
+            Some(Some(7))
+        );
+        assert_eq!(
+            exited_code(Some(&SessionStatus::Exited { exit_code: None })),
+            Some(None)
+        );
     }
 }

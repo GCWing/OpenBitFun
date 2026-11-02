@@ -11948,7 +11948,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 .await?;
         }
 
-        let turn_id = format!("btw-turn-{}", request_id.trim());
+        let turn_id = btw_turn_id(request_id);
         let mut user_message_metadata = user_message_metadata
             .filter(serde_json::Value::is_object)
             .unwrap_or_else(|| serde_json::json!({}));
@@ -16360,6 +16360,12 @@ async fn new_btw_session_memory_mode_from_global_config() -> SessionMemoryMode {
 
 // Global coordinator singleton
 static GLOBAL_COORDINATOR: OnceLock<Arc<ConversationCoordinator>> = OnceLock::new();
+
+/// The dialog turn id `start_btw_turn` assigns to a side question. Hosts that
+/// track turn ownership register this id before submitting the turn.
+pub fn btw_turn_id(request_id: &str) -> String {
+    format!("btw-turn-{}", request_id.trim())
+}
 
 /// Get global coordinator
 ///

@@ -18,7 +18,7 @@ import { OverflowText,
 } from '@openbitfun/ui';
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
-import { peerHostRefusalReason } from '@/infrastructure/peer-device/peerHostRefusal';
+import { peerHostRefusalMessage } from '@/infrastructure/peer-device/peerHostRefusal';
 import { CircleAlert, EyeOff, FileJson, Save, Server } from 'lucide-react';
 import {
   ConfigPageContent,
@@ -777,7 +777,7 @@ const AcpAgentsConfig = forwardRef<AcpAgentsConfigHandle, AcpAgentsConfigProps>(
       log.error('Failed to load ACP agent config', error);
       if (showLoading) {
         setLoadFailed(true);
-        setLoadRefusal(peerHostRefusalReason(error));
+        setLoadRefusal(peerHostRefusalMessage(error, t));
       } else {
         notifyError(error instanceof Error ? error.message : String(error), {
           title: t('notifications.loadFailed'),

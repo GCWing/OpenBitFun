@@ -7,12 +7,16 @@
 
 use std::time::Duration;
 
-use openbitfun_core::agentic::tools::implementations::skills::mode_overrides::SkillPolicyWorkspace;
+use openbitfun_core::agentic::tools::implementations::skills::mode_overrides::{
+    load_globally_disabled_project_skills, load_globally_disabled_user_skills, SkillPolicyWorkspace,
+};
 use openbitfun_core::agentic::tools::implementations::skills::{SkillRegistry, SkillScanReport};
 use openbitfun_core::agentic::workspace::RemoteWorkspaceFs;
-use openbitfun_core::service::workspace::{get_global_workspace_service, WorkspaceInfo};
+use openbitfun_core::service::workspace::{
+    get_global_workspace_service, WorkspaceInfo, WorkspaceKind,
+};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::peer_host::args::{get_string, optional_bool, optional_string, request_value};
 
@@ -148,6 +152,32 @@ pub(crate) async fn get_mode_skill_configs(args: &Value) -> Result<Value, String
     )
 }
 
+/// Read-only availability settings. Version 0 tells the controller that direct
+/// Skill management is not offered here; the mutation commands stay refused.
+pub(crate) async fn get_global_skill_settings(args: &Value) -> Result<Value, String> {
+    let workspace = resolve_workspace(request_value(args)).await?;
+    let user_keys = load_globally_disabled_user_skills()
+        .await
+        .map_err(|error| error.to_string())?;
+    let project_keys = match workspace.as_ref() {
+        Some(record) if record.workspace_kind != WorkspaceKind::Remote => {
+            load_globally_disabled_project_skills(SkillPolicyWorkspace::from_record(record))
+                .await
+                .map_err(|error| error.to_string())?
+        }
+        _ => Vec::new(),
+    };
+    Ok(global_settings_value(user_keys, project_keys))
+}
+
+fn global_settings_value(user_keys: Vec<String>, project_keys: Vec<String>) -> Value {
+    json!({
+        "globallyDisabledUserSkillKeys": user_keys,
+        "globallyDisabledProjectSkillKeys": project_keys,
+        "directSkillManagementVersion": 0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +187,17 @@ mod tests {
     async fn mode_skill_configs_require_a_mode() {
         let error = get_mode_skill_configs(&json!({})).await.unwrap_err();
         assert!(error.contains("modeId"), "{error}");
+    }
+
+    #[test]
+    fn global_settings_are_read_only_on_this_host() {
+        let settings = global_settings_value(vec!["user::a".into()], Vec::new());
+        assert_eq!(settings["directSkillManagementVersion"], 0);
+        assert_eq!(
+            settings["globallyDisabledUserSkillKeys"],
+            json!(["user::a"])
+        );
+        assert_eq!(settings["globallyDisabledProjectSkillKeys"], json!([]));
     }
 
     #[tokio::test]

@@ -2336,5 +2336,10 @@
     "createProject": "Create project",
     "assistantError": "Unable to create the assistant. Please try again.",
     "back": "Back to selection"
+  },
+  "peerHost": {
+    "unavailable": "This feature is not available on that device.",
+    "updateRequired": "The OpenBitFun version on that device does not support this feature. Try updating OpenBitFun on that device.",
+    "withDetail": "{{message}} ({{detail}})"
   }
 }

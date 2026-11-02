@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:6c9684d5e2394817",
+  "digest": "fnv1a64:6af8cd66ba85f89e",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -48,7 +48,8 @@
       "whole_session_copy_v1",
       "session_trajectory_v1",
       "user_question_response",
-      "user_question_interaction_v1"
+      "user_question_interaction_v1",
+      "terminal_cursor_replay_v1"
     ],
     "desktop": [
       "model_routing_v1",
@@ -116,7 +117,8 @@
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
       "user_question_response",
-      "user_question_interaction_v1"
+      "user_question_interaction_v1",
+      "terminal_cursor_replay_v1"
     ]
   },
   "operations": [
@@ -2870,8 +2872,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {
