@@ -79,6 +79,11 @@ export class SessionStream {
     return this.ownership.executingTurnIds();
   }
 
+  /** Hand a Turn the Host reports settled to the persisted record. */
+  adoptSettledTurn(turnId: string): void {
+    this.ownership.settle(turnId);
+  }
+
   /** Whether the persisted record may write this Turn (contract 2). */
   persistedMayWrite(turnId: string): boolean {
     return this.ownership.persistedMayWrite(turnId);
@@ -331,4 +336,16 @@ export function persistedMayWriteTurn(
   }
   const stream = peekSessionStream(getActiveSurfaceScope().surfaceId, sessionId);
   return stream ? stream.persistedMayWrite(turnId) : true;
+}
+
+/**
+ * Record that the Host settled a Turn this stream still believes is executing.
+ *
+ * Its terminal event was dropped while another device surface was rendered,
+ * so ownership never transferred through the order. Without this the stream
+ * keeps vetoing the persisted record and admitting stragglers for a Turn the
+ * Host already finished.
+ */
+export function adoptHostSettledTurn(sessionId: string, turnId: string): void {
+  peekSessionStream(getActiveSurfaceScope().surfaceId, sessionId)?.adoptSettledTurn(turnId);
 }

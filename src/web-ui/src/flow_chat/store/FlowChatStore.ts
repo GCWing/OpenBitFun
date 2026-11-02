@@ -43,7 +43,7 @@ import {
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
 import { normalizeRemoteSessionScope } from '@/shared/utils/remoteSessionScope';
 import { isSurfaceReconcileEnabled } from '@/infrastructure/peer-device/deviceSurfaceReconcile';
-import { persistedMayWriteTurn } from '@/flow_chat/session-stream/SessionStream';
+import { adoptHostSettledTurn, persistedMayWriteTurn } from '@/flow_chat/session-stream/SessionStream';
 import { SessionRecordReplica, type SessionRecord } from '@/flow_chat/session-stream/SessionRecordReplica';
 import { RelaySessionHistory } from '../services/RelaySessionHistory';
 import { stateMachineManager } from '../state-machine';
@@ -729,6 +729,106 @@ function snapshotDropsProjectedTurnContent(
   return false;
 }
 
+const SETTLED_TURN_STATUSES: ReadonlySet<string> = new Set(['completed', 'cancelled', 'error']);
+
+function isSettledTurnStatus(status: string | undefined): boolean {
+  return status !== undefined && SETTLED_TURN_STATUSES.has(status);
+}
+
+/** Representation-neutral text: live chunks coalesce newlines, the record does not. */
+function comparableStreamText(content: string | undefined): string {
+  return (content ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function supersededAttemptKeys(round: ModelRound): Set<string> {
+  const keys = new Set<string>();
+  for (const attempt of round.attempts ?? []) {
+    if (attempt.status === 'superseded') {
+      keys.add(`id:${attempt.id}`);
+      keys.add(`index:${attempt.index}`);
+    }
+  }
+  return keys;
+}
+
+function belongsToSupersededAttempt(item: AnyFlowItem, superseded: Set<string>): boolean {
+  if (superseded.size === 0) {
+    return false;
+  }
+  return (item.attemptId !== undefined && superseded.has(`id:${item.attemptId}`))
+    || (typeof item.attemptIndex === 'number' && superseded.has(`index:${item.attemptIndex}`));
+}
+
+/**
+ * Whether a settled persisted Turn carries everything the projection painted.
+ *
+ * The persisted record of a settled Turn is built by the Runtime, while the
+ * projection was built by this client from live chunks. The two describe the
+ * same content in different shapes: attempt metadata is only partially
+ * persisted, live text coalesces newlines, and segment boundaries can differ.
+ * Comparing by `(type, attempt, ordinal)` keys therefore rejected complete
+ * records, which left a Turn truncated forever once its live tail was missed
+ * (regression: 2026-11-02, surface switch during a running Turn).
+ *
+ * This check is deliberately shape-neutral. It still refuses a read that names
+ * the Turn without its work: a missing round, a missing tool or tool result, or
+ * painted text the record does not contain.
+ */
+function settledReadCoversProjectedTurn(
+  current: DialogTurn,
+  settled: DialogTurn,
+): boolean {
+  if (settled.modelRounds.length < current.modelRounds.length) {
+    return false;
+  }
+
+  for (const currentRound of current.modelRounds) {
+    const settledRound = settled.modelRounds.find(round => round.id === currentRound.id);
+    if (!settledRound) {
+      return false;
+    }
+
+    const superseded = supersededAttemptKeys(currentRound);
+    const settledItems = settledRound.items;
+    const settledText: Record<'text' | 'thinking', string> = {
+      text: comparableStreamText(
+        settledItems.filter(item => item.type === 'text')
+          .map(item => (item as RunningStreamItem).content).join(' '),
+      ),
+      thinking: comparableStreamText(
+        settledItems.filter(item => item.type === 'thinking')
+          .map(item => (item as RunningStreamItem).content).join(' '),
+      ),
+    };
+    const settledTools = toolProgressEntries(settledRound);
+
+    for (const item of currentRound.items) {
+      if (belongsToSupersededAttempt(item, superseded)) {
+        continue;
+      }
+      if (item.type === 'text' || item.type === 'thinking') {
+        const painted = comparableStreamText((item as RunningStreamItem).content);
+        if (painted && !settledText[item.type].includes(painted)) {
+          return false;
+        }
+        continue;
+      }
+      if (item.type === 'tool') {
+        const tool = item as FlowToolItem;
+        if (tool.id.startsWith('plan-display-')) {
+          continue;
+        }
+        const settledTool = settledTools.get(tool.toolCall?.id || tool.id);
+        if (!settledTool || (tool.toolResult && !settledTool.toolResult)) {
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 function preserveClientDerivedDisplayItems(
   current: DialogTurn,
   persisted: DialogTurn,
@@ -783,6 +883,14 @@ function preserveClientDerivedDisplayItems(
  *   A history read carries no position for content it omitted, so "does this
  *   write lose content" is still the only question available. This guard is
  *   deletable once a read reports its own completeness.
+ *
+ * A Host that reports its own state settles the ownership question for a Turn
+ * it is not executing: the Runtime commits the terminal record before it leaves
+ * the processing state, so a terminal record read alongside that state is the
+ * settled Turn. Local stream ownership cannot veto it — a stream that missed the
+ * terminal event (the window was rendering another device) still believes the
+ * Turn is executing, and deferring to that belief froze the Turn at whatever
+ * the last delivered chunk painted.
  */
 function persistedReadMayReplaceTurn(
   sessionId: string,
@@ -790,7 +898,19 @@ function persistedReadMayReplaceTurn(
   incoming: DialogTurn,
   hostExecutingTurnId: string | undefined,
   hostServesRuntimeProjection: boolean,
+  hostStateKnown = false,
 ): boolean {
+  if (
+    hostStateKnown &&
+    incoming.id !== hostExecutingTurnId &&
+    isSettledTurnStatus(incoming.status)
+  ) {
+    if (!settledReadCoversProjectedTurn(projected, incoming)) {
+      return false;
+    }
+    adoptHostSettledTurn(sessionId, incoming.id);
+    return true;
+  }
   if (!persistedMayWriteTurn(sessionId, incoming.id, hostExecutingTurnId)) {
     return (
       !hostServesRuntimeProjection &&
@@ -8294,6 +8414,7 @@ export class FlowChatStore {
                 snapshotTurn,
                 activeTurnId,
                 Boolean(runtimeEventSnapshot),
+                true,
               )
         ) {
           mergedTurns[existingIndex] = snapshotTurn;
@@ -8491,6 +8612,7 @@ export class FlowChatStore {
           reconciled,
           hostExecutingTurnId,
           Boolean(runtimeSnapshot),
+          true,
         )
       ) {
         return prev;
@@ -8985,6 +9107,7 @@ export class FlowChatStore {
               loaded,
               activeTurnId,
               Boolean(restoredRuntimeEventSnapshot),
+              Boolean(restoredSessionInfo?.state),
             )
           ) {
             return existing;
