@@ -53,4 +53,21 @@ describe('workspace session view persistence', () => {
       expect(useWorkspaceSessionViewStore.getState().explicitAllFilters).toContain(filter);
     },
   );
+
+  it('round-trips the archived view without changing the legacy archive visibility preference', async () => {
+    const view = useWorkspaceSessionViewStore.getState();
+    view.setShow('archived');
+    const saved = localStorage.getItem(STORAGE_KEY)!;
+    view.setShow('all');
+    localStorage.setItem(STORAGE_KEY, saved);
+
+    await useWorkspaceSessionViewStore.persist.rehydrate();
+    expect(useWorkspaceSessionViewStore.getState()).toMatchObject({
+      show: 'archived', filters: { hideArchived: true },
+    });
+    useWorkspaceSessionViewStore.getState().setShow('all');
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).state).toMatchObject({
+      show: 'all', filters: { hideArchived: true },
+    });
+  });
 });

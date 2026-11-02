@@ -69,6 +69,7 @@ import { openAgentCanvasTabForSession } from '@/app/components/panels/content-ca
 import { workbenchPaneLayoutStore } from '@/app/workbench/workbenchPaneLayoutStore';
 import type { TabCreationOptions } from '@/shared/utils/tabUtils';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
+import { settleDialogTurnToTerminalStatus } from '../../utils/dialogTurnStability';
 import {
   clearHistorySessionOpenTransition,
   clearRecentHistorySessionOpenIntent,
@@ -3072,29 +3073,13 @@ function handleDialogTurnCancelled(
     session.dialogTurns.find(turn => turn.id === turnId)?.recovery,
   );
   
-  context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => {
-    const updatedModelRounds = turn.modelRounds.map((round) => {
-      if (round.isStreaming) {
-        return {
-          ...round,
-          isStreaming: false,
-          isComplete: true,
-          status: 'cancelled' as const,
-          endTime: Date.now()
-        };
-      }
-      return round;
-    });
-    
-    return {
-      ...turn,
-      modelRounds: updatedModelRounds,
-      status: 'cancelled' as const,
-      endTime: Date.now(),
-      recoveryEpoch: turn.recovery?.executionGeneration ?? turn.recoveryEpoch,
-      recovery: undefined,
-    };
-  });
+  context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => ({
+    ...settleDialogTurnToTerminalStatus(turn, 'cancelled', Date.now(), undefined, {
+      preserveTerminalOutcome: false,
+    }),
+    recoveryEpoch: turn.recovery?.executionGeneration ?? turn.recoveryEpoch,
+    recovery: undefined,
+  }));
   reconcileBackgroundSubagentSession(sessionId);
    
   if (!runtimeOwnsTurnPersistence) {
@@ -3185,15 +3170,9 @@ function handleDialogTurnInterrupted(context: FlowChatContext, event: any): void
     context.flowChatStore.markSessionFinished(sessionId);
   }
   context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => ({
-    ...turn,
-    modelRounds: turn.modelRounds.map(round => ({
-      ...round,
-      isStreaming: false,
-      isComplete: true,
-      status: round.isStreaming ? 'cancelled' as const : round.status,
-      endTime: round.isStreaming ? Date.now() : round.endTime,
-    })),
-    status: 'cancelled' as const,
+    ...settleDialogTurnToTerminalStatus(turn, 'cancelled', Date.now(), undefined, {
+      preserveTerminalOutcome: false,
+    }),
     finishReason: 'interrupted',
     endTime: Date.now(),
     recovery: {
