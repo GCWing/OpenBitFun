@@ -353,7 +353,6 @@ export const optionalDependencyFeatureOwnerRules = [
       { depName: 'sherpa-onnx', ownerFeatures: ['speech'] },
       { depName: 'shellexpand', ownerFeatures: ['remote-ssh-concrete'] },
       { depName: 'sse-stream', ownerFeatures: ['mcp'] },
-      { depName: 'ssh_config', ownerFeatures: ['remote-ssh-concrete', 'ssh_config'] },
       { depName: 'terminal-core', ownerFeatures: ['remote-ssh', 'remote-ssh-concrete'] },
       { depName: 'tar', ownerFeatures: ['speech'] },
       { depName: 'thiserror', ownerFeatures: ['account-identity', 'browser-control', 'git', 'hook-import', 'miniapp-market', 'plugin-source', 'remote-connect', 'remote-ssh', 'remote-ssh-concrete', 'review-platform', 'speech', 'web-tools', 'workspace-search'] },

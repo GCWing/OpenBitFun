@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:25b4a44f55b7022a",
+  "digest": "fnv1a64:feb182159a7e227e",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -34,6 +34,7 @@
       "miniapp_agent_images_v1",
       "wsl_workspaces_v1",
       "ssh_port_scoped_identity_v1",
+      "ssh_proxy_command_v1",
       "computer_use_sharing_v1",
       "product_control_v1",
       "remote_connect_control_v1",
@@ -78,6 +79,7 @@
       "miniapp_agent_images_v1",
       "wsl_workspaces_v1",
       "ssh_port_scoped_identity_v1",
+      "ssh_proxy_command_v1",
       "computer_use_sharing_v1",
       "product_control_v1",
       "remote_connect_control_v1",

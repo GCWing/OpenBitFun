@@ -63,8 +63,8 @@ export class TerminalService {
   /** Where `getHistory` stopped, so the replay that follows neither repeats nor skips output. */
   private readonly replayOffsets = new Map<string, number>();
 
-  /** Sessions the tab list knows about; their exit must be seen without a mounted view. */
-  private trackedSessions = new Set<string>();
+  /** Sessions each tab list shows; their exit must be seen without a mounted view. */
+  private readonly trackedSessions = new Map<object, Set<string>>();
 
   private unsubscribePeers: (() => void) | null = null;
 
@@ -154,7 +154,7 @@ export class TerminalService {
     const active = this.isConnected() && this.usesPeerReplay();
     const wanted = new Set(!active ? [] : [
       ...this.eventListeners.keys(),
-      ...(this.globalListeners.size > 0 ? this.trackedSessions : []),
+      ...(this.globalListeners.size > 0 ? [...this.trackedSessions.values()].flatMap(ids => [...ids]) : []),
     ]);
     this.peerReplays.forEach((replay, sessionId) => {
       if (wanted.has(sessionId)) return;
@@ -180,7 +180,7 @@ export class TerminalService {
 
   private forgetSession(sessionId: string): void {
     this.eventListeners.delete(sessionId);
-    this.trackedSessions.delete(sessionId);
+    this.trackedSessions.forEach(ids => ids.delete(sessionId));
     this.replayOffsets.delete(sessionId);
     this.reconcilePeerReplays();
   }
@@ -307,6 +307,19 @@ export class TerminalService {
     };
   }
 
+  /**
+   * Declare what one tab list shows. `terminal_list` spans every workspace on the
+   * host, so only the caller can say which sessions deserve a stream subscription.
+   */
+  setTrackedSessions(owner: object, sessionIds: Iterable<string>): void {
+    this.trackedSessions.set(owner, new Set(sessionIds));
+    this.reconcilePeerReplays();
+  }
+
+  clearTrackedSessions(owner: object): void {
+    if (this.trackedSessions.delete(owner)) this.reconcilePeerReplays();
+  }
+
   async getAvailableShells(): Promise<ShellInfo[]> {
     try {
       const shells = await api.invoke<ShellInfo[]>('terminal_get_shells');
@@ -364,8 +377,6 @@ export class TerminalService {
     try {
       const sessions = await api.invoke<SessionResponse[]>('terminal_list');
       scope.assertCurrent('terminal_list');
-      this.trackedSessions = new Set(sessions.map(session => session.id));
-      this.reconcilePeerReplays();
       return sessions.map(session => this.projectSession(scope.surfaceId, session));
     } catch (error) {
       log.error('Failed to list sessions', error);
