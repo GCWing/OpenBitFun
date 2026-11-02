@@ -265,6 +265,23 @@ cargo test --locked -p openbitfun-ai-adapters --lib round_router
 facts. Core retains thresholds, model-slot selection, context lifecycle, traces,
 and fallback; the adapter must not depend on Core config or Agent sessions.
 
+The explicit `OpenAiRouterExtension` profile reads classifier probabilities from
+`router.probabilities.simple_type`, validates them against the content prediction,
+and sends only the supported non-streaming classification request. Legacy
+`OpenAiLogprobs` requests remain unchanged. Loopback extension services connect
+directly; other endpoints retain the configured proxy policy.
+
+For an opt-in live classifier check, set `ROUTER_EXTENSION_TEST_URL`,
+`ROUTER_EXTENSION_TEST_MODEL`, and `ROUTER_EXTENSION_TEST_SYSTEM_PROMPT` (the path
+to the complete classifier system prompt), then run:
+
+```bash
+cargo test --locked -p openbitfun-ai-adapters --lib live_router_extension_profile_returns_real_classifier_usage -- --ignored
+```
+
+The normal fixtures exercise loopback HTTP and proxy behavior, not a deployed
+provider, SSH, Peer Device Mode, relay, or detached dispatch.
+
 Local Router token counting (optional `local-tokenizer`, no model downloads):
 
 ```bash

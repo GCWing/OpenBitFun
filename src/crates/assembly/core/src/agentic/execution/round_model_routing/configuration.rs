@@ -7,6 +7,9 @@ use crate::service::config::{
 };
 use std::sync::Arc;
 
+mod model_probe;
+pub use model_probe::test_configured_router_connection;
+
 const SYSTEM_PROMPT: &str = include_str!("system_prompt.txt");
 
 // Release policy, deliberately independent of user configuration and environment.
@@ -46,6 +49,7 @@ fn unavailable_status() -> ModelRoutingStatus {
         connection_issue: None,
         summary_enabled: false,
         estimated_token_budget_supported: true,
+        router_protocols: supported_router_protocols(),
         subagent_model: None,
     }
 }
@@ -97,6 +101,17 @@ fn product_config(config: &AIConfig) -> OpenBitFunResult<HttpRoundModelRouterCon
     // current runtime's history preparation.
     let summary_model_id = Some(economy_model_id(config, false)?);
     let mut router = product_service_config(config)?;
+    if router.protocol == RouterProtocol::OpenAiRouterExtension {
+        let classifier_id = config.model_routing.router_model_id.as_deref();
+        if classifier_id == summary_model_id.as_deref()
+            || classifier_id == config.resolve_model_selection("primary").as_deref()
+        {
+            return Err(OpenBitFunError::Configuration(
+                "Classifier Router service cannot be used as a primary or economy execution model"
+                    .into(),
+            ));
+        }
+    }
     router.context.summary_model_id = summary_model_id;
     Ok(router)
 }
@@ -104,6 +119,15 @@ fn product_config(config: &AIConfig) -> OpenBitFunResult<HttpRoundModelRouterCon
 /// Service checks do not depend on the execution models used after classification.
 fn product_service_config(config: &AIConfig) -> OpenBitFunResult<HttpRoundModelRouterConfig> {
     let setup = &config.model_routing;
+    let protocol =
+        match setup.protocol.as_str() {
+            "openai_logprobs" => RouterProtocol::OpenAiLogprobs,
+            "openai_router_extension" => RouterProtocol::OpenAiRouterExtension,
+            _ => return Err(OpenBitFunError::Configuration(
+                "Unsupported Router protocol; select a protocol supported by the execution host"
+                    .into(),
+            )),
+        };
     let model = setup
         .router_model_id
         .as_deref()
@@ -163,13 +187,19 @@ fn product_service_config(config: &AIConfig) -> OpenBitFunResult<HttpRoundModelR
         .context_window
         .map(|tokens| tokens as usize)
         .unwrap_or(context_defaults.context_window);
+    let mut admission = RouterAdmissionLimits::from_env()?;
+    if protocol == RouterProtocol::OpenAiRouterExtension {
+        // Classifier services expose one shared inference slot across sessions.
+        admission.max_concurrent = 1;
+    }
     Ok(HttpRoundModelRouterConfig {
         endpoint,
+        protocol,
         model: model.model_name.clone(),
         system_prompt: SYSTEM_PROMPT.into(),
         api_key: (!model.api_key.is_empty()).then(|| model.api_key.clone()),
         timeout: Duration::from_millis(setup.timeout_ms),
-        admission: RouterAdmissionLimits::from_env()?,
+        admission,
         recent_rounds: 3,
         simple_threshold: setup.simple_threshold,
         trace_path: None,
@@ -206,6 +236,11 @@ fn service_config(config: &AIConfig) -> OpenBitFunResult<HttpRoundModelRouterCon
     if config.model_routing.router_model_id.is_some() {
         product_service_config(config)
     } else {
+        if config.model_routing.protocol != "openai_logprobs" {
+            return Err(OpenBitFunError::Configuration(
+                "Select a Router service model for the configured classifier protocol".into(),
+            ));
+        }
         HttpRoundModelRouterConfig::from_env()?.ok_or_else(|| {
             OpenBitFunError::Configuration("Configure a Router service in model settings".into())
         })
@@ -220,9 +255,17 @@ async fn cached_router(
     // This private in-memory identity includes credential/proxy revisions. Never log it.
     let key = format!("{router_config:?}");
     let cache = CACHE.get_or_init(|| tokio::sync::Mutex::new(None));
-    if let Some((saved, router)) = cache.lock().await.as_ref() {
-        if *saved == key {
-            return Ok(router.clone());
+    {
+        let mut cached = cache.lock().await;
+        if let Some((saved, router)) = cached.as_ref() {
+            if *saved == key {
+                return Ok(router.clone());
+            }
+            // Release an idle transport before rebuilding capacity for a new
+            // protocol. Active turns retain their immutable client and permits.
+            if Arc::strong_count(router) == 1 {
+                *cached = None;
+            }
         }
     }
     let router = Arc::new(
@@ -272,9 +315,17 @@ pub struct ModelRoutingStatus {
     pub summary_enabled: bool,
     /// Older hosts may still require a locally configured tokenizer file.
     pub estimated_token_budget_supported: bool,
+    /// Capability negotiation for clients configuring a different host version.
+    pub router_protocols: Vec<String>,
     /// Older clients use presence as a feature gate; current hosts no longer expose this control.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagent_model: Option<String>,
+}
+
+fn supported_router_protocols() -> Vec<String> {
+    ["openai_logprobs", "openai_router_extension"]
+        .map(str::to_string)
+        .into()
 }
 
 pub async fn session_status(
@@ -348,6 +399,7 @@ async fn status_for_config(
         connection_issue: None,
         summary_enabled: true,
         estimated_token_budget_supported: true,
+        router_protocols: supported_router_protocols(),
         subagent_model: None,
     };
     let check = async {
@@ -615,6 +667,149 @@ mod tests {
             assert_eq!(request["return_token_ids"], true);
             assert_eq!(request["messages"][0]["content"], SYSTEM_PROMPT);
         }
+    }
+
+    fn extension_response(probability: f64) -> Value {
+        let prediction =
+            json!({"phase":"planning", "phase_detail":"plan_created", "simple_type":"simple"});
+        json!({
+            "choices":[{"message":{"content":prediction.to_string()}, "logprobs":null}],
+            "router":{"prediction":prediction, "probabilities":{"simple_type":{
+                "simple":probability, "non_simple":1.0-probability
+            }}},
+            "usage":{"prompt_tokens":2000,"completion_tokens":0,"total_tokens":2000}
+        })
+    }
+
+    #[tokio::test]
+    async fn router_probe_classifier_extension_uses_the_execution_protocol() {
+        let (endpoint, server) = connection_server(extension_response(0.9)).await;
+        let mut config = connection_fixture(&endpoint);
+        config.model_routing.protocol = "openai_router_extension".into();
+        config.model_routing.timeout_ms = 120_000;
+        config.models[2].context_window = Some(32_768);
+        let selected = product_config(&config).unwrap();
+        assert_eq!(selected.protocol, RouterProtocol::OpenAiRouterExtension);
+        assert_eq!(selected.admission.max_concurrent, 1);
+        assert_eq!(selected.context.context_window, 32_768);
+        assert_eq!(selected.timeout, Duration::from_secs(120));
+        let result = status_for_config(&config, Some("smart"), true, true).await;
+        assert!(result.ready);
+        assert_eq!(result.connected, Some(true));
+        assert!(result
+            .router_protocols
+            .contains(&"openai_router_extension".into()));
+        let request = server.await.unwrap();
+        assert_eq!(request["model"], "router-fixture");
+        assert_eq!(request["stream"], false);
+        assert_eq!(request["messages"][0]["content"], SYSTEM_PROMPT);
+        assert!(request.get("logprobs").is_none());
+        assert!(request.get("chat_template_kwargs").is_none());
+    }
+
+    #[tokio::test]
+    async fn router_classifier_extension_retains_the_configured_routing_threshold() {
+        for (probability, expected) in [
+            (0.7, RoundModelRoute::Primary),
+            (0.75, RoundModelRoute::Primary),
+            (0.9, RoundModelRoute::Economy),
+        ] {
+            let (endpoint, server) = connection_server(extension_response(probability)).await;
+            let mut config = connection_fixture(&endpoint);
+            config.model_routing.protocol = "openai_router_extension".into();
+            let router = HttpRoundModelRouter::new(product_config(&config).unwrap()).unwrap();
+            let selected = router
+                .select_model(RoundModelRouteRequest {
+                    root_session_id: "fixture-root".into(),
+                    parent_session_id: None,
+                    session_id: "fixture-session".into(),
+                    dialog_turn_id: "fixture-turn".into(),
+                    turn_index: 0,
+                    round_index: 0,
+                    agent_type: "Standard".into(),
+                    original_user_input: "Inspect a file".into(),
+                    messages: vec![],
+                    prepared_context: None,
+                })
+                .await
+                .unwrap();
+            assert_eq!(selected, expected);
+            server.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn router_classifier_extension_is_not_an_execution_model_but_still_probes() {
+        for role in ["primary", "economy"] {
+            let (endpoint, server) = connection_server(extension_response(0.9)).await;
+            let mut config = connection_fixture(&endpoint);
+            config.model_routing.protocol = "openai_router_extension".into();
+            if role == "primary" {
+                config.default_models.primary = Some("router-service".into());
+            } else {
+                config.default_models.economy = Some("router-service".into());
+            }
+            let status = status_for_config(&config, Some("smart"), true, true).await;
+            assert!(!status.ready);
+            assert!(status
+                .issue
+                .unwrap()
+                .contains("cannot be used as a primary or economy"));
+            assert_eq!(status.connected, Some(true));
+            server.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn router_classifier_extension_replaces_an_idle_cached_transport() {
+        let (endpoint, server) = connection_server(extension_response(0.9)).await;
+        let mut config = connection_fixture(&endpoint);
+        let previous = cached_router(product_config(&config).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            previous.config.admission.max_concurrent,
+            RouterAdmissionLimits::default().max_concurrent
+        );
+        drop(previous);
+        config.model_routing.protocol = "openai_router_extension".into();
+        let updated = cached_router(product_config(&config).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(updated.config.admission.max_concurrent, 1);
+        assert_eq!(
+            updated
+                .predict("Inspect a file", None)
+                .await
+                .unwrap()
+                .simple_probability,
+            Some(0.9)
+        );
+        assert_eq!(server.await.unwrap()["stream"], false);
+    }
+
+    #[tokio::test]
+    async fn router_classifier_extension_rejects_unknown_profiles_before_network_io() {
+        let mut config = connection_fixture("http://127.0.0.1:1/v1");
+        config.model_routing.protocol = "future-classifier".into();
+        let result = status_for_config(&config, Some("smart"), true, true).await;
+        assert!(!result.ready);
+        assert_eq!(result.connected, Some(false));
+        assert!(result
+            .connection_issue
+            .unwrap()
+            .contains("Unsupported Router protocol"));
+        assert_eq!(config.model_routing.protocol, "future-classifier");
+    }
+
+    #[test]
+    fn router_classifier_extension_never_uses_an_implicit_legacy_service() {
+        let mut config = AIConfig::default();
+        config.model_routing.protocol = "openai_router_extension".into();
+        assert!(service_config(&config)
+            .unwrap_err()
+            .to_string()
+            .contains("Select a Router service model"));
     }
 
     #[tokio::test]

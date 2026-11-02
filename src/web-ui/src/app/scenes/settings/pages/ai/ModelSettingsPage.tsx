@@ -667,6 +667,28 @@ const ModelSettingsPage: React.FC = () => {
   const editorSavingRef = React.useRef(false);
   const pendingEditorOpenRef = React.useRef<PendingEditorOpen | null>(null);
   const activeConnectionTestsRef = React.useRef<Record<string, ActiveConnectionTest>>({});
+  const connectionTestEpochRef = React.useRef(accountSurface.epoch);
+  useEffect(() => {
+    const invalidate = () => {
+      activeConnectionTestsRef.current = {};
+      setTestingConfigs({});
+      setTestResults({});
+    };
+    connectionTestEpochRef.current = accountSurface.epoch;
+    invalidate();
+    const unsubscribe = configManager.onConfigChange(path => {
+      if (!accountSurface.isCurrent()) return;
+      if (!path || path === 'ai' || [
+        'ai.model_routing', 'ai.proxy', 'ai.stream_idle_timeout_secs', 'ai.stream_ttft_timeout_secs',
+      ].some(owner => path === owner || path.startsWith(`${owner}.`))) invalidate();
+    });
+    accountSurface.signal.addEventListener('abort', invalidate);
+    return () => {
+      unsubscribe();
+      accountSurface.signal.removeEventListener('abort', invalidate);
+      activeConnectionTestsRef.current = {};
+    };
+  }, [accountSurface]);
 
   const requestFormatOptions = useMemo(
     () => [
@@ -2020,7 +2042,8 @@ const ModelSettingsPage: React.FC = () => {
     const configId = config.id;
     if (!configId || !connectionTestSupported) return;
 
-    const signature = stableJson(config);
+    const scope = getActiveSurfaceScope();
+    const signature = stableJson([scope.key('model-connection-test'), config]);
     const activeTest = activeConnectionTestsRef.current[configId];
     if (activeTest?.signature === signature) return;
 
@@ -2031,7 +2054,7 @@ const ModelSettingsPage: React.FC = () => {
 
     try {
       const result = await aiApi.testAIConfigConnection(config);
-      if (activeConnectionTestsRef.current[configId]?.token !== token) return;
+      if (!scope.isCurrent() || activeConnectionTestsRef.current[configId]?.token !== token) return;
 
       const baseMessage = result.success ? t('messages.testSuccess') : t('messages.testFailed');
       let message = baseMessage + (result.response_time_ms ? ` (${result.response_time_ms}ms)` : '');
@@ -2051,7 +2074,7 @@ const ModelSettingsPage: React.FC = () => {
         [configId]: { success: result.success, message },
       }));
     } catch (error) {
-      if (activeConnectionTestsRef.current[configId]?.token !== token) return;
+      if (!scope.isCurrent() || activeConnectionTestsRef.current[configId]?.token !== token) return;
       const message = `${t('messages.testFailed')}\n${t('messages.errorDetails')}: ${error}`;
       setTestResults(previous => ({
         ...previous,
@@ -2059,7 +2082,7 @@ const ModelSettingsPage: React.FC = () => {
       }));
       log.warn('Model connection test failed', { configId, error });
     } finally {
-      if (activeConnectionTestsRef.current[configId]?.token === token) {
+      if (scope.isCurrent() && activeConnectionTestsRef.current[configId]?.token === token) {
         delete activeConnectionTestsRef.current[configId];
         setTestingConfigs(previous => ({ ...previous, [configId]: false }));
       }
@@ -4450,8 +4473,9 @@ const ModelSettingsPage: React.FC = () => {
 
   const renderModelCollectionItem = (config: AIModelConfigType, presentation: 'row' | 'card' = 'row') => {
     const isExpanded = expandedIds.has(config.id || '');
-    const testResult = config.id ? testResults[config.id] : null;
-    const isTesting = config.id ? !!testingConfigs[config.id] : false;
+    const currentActivation = connectionTestEpochRef.current === accountSurface.epoch;
+    const testResult = currentActivation && config.id ? testResults[config.id] : null;
+    const isTesting = currentActivation && config.id ? !!testingConfigs[config.id] : false;
     const providerDisplayName = getProviderDisplayName(config);
     const modelDisplayName = getModelDisplayName(config);
     const modelLabel = config.model_name || modelDisplayName;

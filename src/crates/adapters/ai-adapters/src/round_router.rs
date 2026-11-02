@@ -53,8 +53,17 @@ impl RouterPrediction {
     }
 }
 
+/// Explicit wire contract; never infer classifier semantics from an endpoint or model name.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RouterProtocol {
+    #[default]
+    OpenAiLogprobs,
+    OpenAiRouterExtension,
+}
+
 pub struct RouterHttpClient {
     client: reqwest::Client,
+    protocol: RouterProtocol,
     endpoint: String,
     service_identity: String,
     model: String,
@@ -93,6 +102,30 @@ impl RouterHttpClient {
         custom_headers: std::collections::HashMap<String, String>,
         skip_ssl_verify: bool,
     ) -> Result<Self, RouterClientError> {
+        Self::with_transport_and_protocol(
+            endpoint,
+            model,
+            system_prompt,
+            api_key,
+            timeout,
+            proxy,
+            custom_headers,
+            skip_ssl_verify,
+            RouterProtocol::OpenAiLogprobs,
+        )
+    }
+
+    pub fn with_transport_and_protocol(
+        endpoint: String,
+        model: String,
+        system_prompt: String,
+        api_key: Option<String>,
+        timeout: Duration,
+        proxy: Option<crate::types::ProxyConfig>,
+        custom_headers: std::collections::HashMap<String, String>,
+        skip_ssl_verify: bool,
+        protocol: RouterProtocol,
+    ) -> Result<Self, RouterClientError> {
         let mut url = reqwest::Url::parse(&endpoint)
             .map_err(|_| RouterClientError::Http("Invalid Router URL".into()))?;
         if !matches!(url.scheme(), "http" | "https")
@@ -103,9 +136,21 @@ impl RouterHttpClient {
                 "Router URL must use HTTP(S) without embedded credentials".into(),
             ));
         }
-        let client =
+        // A local classifier must not leak local history to a configured proxy.
+        // This changes only the explicit extension profile and loopback destinations.
+        let direct =
+            protocol == RouterProtocol::OpenAiRouterExtension && is_loopback_endpoint(&url);
+        let client = if direct {
+            crate::client::http::create_router_http_client_with_connection_mode(
+                timeout,
+                proxy,
+                skip_ssl_verify,
+                true,
+            )
+        } else {
             crate::client::http::create_router_http_client(timeout, proxy, skip_ssl_verify)
-                .map_err(|error| RouterClientError::Http(error.to_string()))?;
+        }
+        .map_err(|error| RouterClientError::Http(error.to_string()))?;
         // Query authentication, fragments, model names and credential revisions must
         // not create independent capacity pools for the same service endpoint.
         url.set_query(None);
@@ -113,6 +158,7 @@ impl RouterHttpClient {
         let service_identity = url.as_str().trim_end_matches('/').to_string();
         Ok(Self {
             client,
+            protocol,
             endpoint,
             service_identity,
             model,
@@ -130,29 +176,40 @@ impl RouterHttpClient {
 
     /// Make one bounded request. The runtime owns retries and fallback.
     pub async fn predict(&self, input: &str) -> Result<RouterPrediction, RouterClientError> {
-        let body = OpenAiChatRequest {
-            model: &self.model,
-            messages: [
-                OpenAiChatMessage {
-                    role: "system",
-                    content: &self.system_prompt,
-                },
-                OpenAiChatMessage {
-                    role: "user",
-                    content: input,
-                },
-            ],
-            temperature: 0.0,
-            top_p: 1.0,
-            max_tokens: 128,
-            stop: ["\n"],
-            logprobs: true,
-            top_logprobs: ROUTER_TOP_LOGPROBS,
-            return_token_ids: true,
-            return_tokens_as_token_ids: true,
-            chat_template_kwargs: json!({"enable_thinking": false}),
+        let messages = [
+            OpenAiChatMessage {
+                role: "system",
+                content: &self.system_prompt,
+            },
+            OpenAiChatMessage {
+                role: "user",
+                content: input,
+            },
+        ];
+        let request = self.client.post(&self.endpoint);
+        let mut request = match self.protocol {
+            RouterProtocol::OpenAiLogprobs => request.json(&OpenAiChatRequest {
+                model: &self.model,
+                messages,
+                temperature: 0.0,
+                top_p: 1.0,
+                max_tokens: 128,
+                stop: ["\n"],
+                logprobs: true,
+                top_logprobs: ROUTER_TOP_LOGPROBS,
+                return_token_ids: true,
+                return_tokens_as_token_ids: true,
+                chat_template_kwargs: json!({"enable_thinking": false}),
+            }),
+            RouterProtocol::OpenAiRouterExtension => request.json(&RouterExtensionRequest {
+                model: &self.model,
+                messages,
+                temperature: 0.0,
+                top_p: 1.0,
+                max_tokens: 128,
+                stream: false,
+            }),
         };
-        let mut request = self.client.post(&self.endpoint).json(&body);
         if let Some(api_key) = self.api_key.as_deref() {
             request = request.bearer_auth(api_key);
         }
@@ -163,7 +220,7 @@ impl RouterHttpClient {
             RouterClientError::Http(format!("Router request failed: {}", error.without_url()))
         })?;
         if !response.status().is_success() {
-            return Err(classify_http_failure(response).await);
+            return Err(classify_http_failure(response, self.protocol).await);
         }
         let response = response
             .json::<OpenAiChatResponse>()
@@ -184,10 +241,24 @@ impl RouterHttpClient {
                 "Router response did not contain assistant content".to_string(),
             )
         })?;
-        let (generated_simple, recovered) = parse_router_route(raw_output)?;
+        let (generated_simple, simple_probability, recovered) = match self.protocol {
+            RouterProtocol::OpenAiLogprobs => {
+                let (simple, recovered) = parse_router_route(raw_output)?;
+                (
+                    simple,
+                    extract_simple_probability(choice, raw_output, simple),
+                    recovered,
+                )
+            }
+            RouterProtocol::OpenAiRouterExtension => {
+                let (simple, probability) =
+                    parse_router_extension(raw_output, response.router.as_ref())?;
+                (simple, Some(probability), false)
+            }
+        };
         Ok(RouterPrediction {
             generated_simple,
-            simple_probability: extract_simple_probability(choice, raw_output, generated_simple),
+            simple_probability,
             recovered,
             raw_output: raw_output.to_string(),
             usage: response.usage,
@@ -195,7 +266,20 @@ impl RouterHttpClient {
     }
 }
 
-async fn classify_http_failure(mut response: reqwest::Response) -> RouterClientError {
+fn is_loopback_endpoint(url: &reqwest::Url) -> bool {
+    url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    })
+}
+
+async fn classify_http_failure(
+    mut response: reqwest::Response,
+    protocol: RouterProtocol,
+) -> RouterClientError {
     let status = response.status().as_u16();
     // Authentication, throttling and service failures take precedence over any
     // provider text. A generic oversized HTTP payload is not a model context error.
@@ -209,7 +293,10 @@ async fn classify_http_failure(mut response: reqwest::Response) -> RouterClientE
                     body.extend_from_slice(&chunk);
                 }
                 Ok(None) => {
-                    if is_context_overflow_body(&body) {
+                    if is_context_overflow_body(&body)
+                        || (protocol == RouterProtocol::OpenAiRouterExtension
+                            && is_extension_context_overflow_body(&body))
+                    {
                         // Do not include provider messages, request echoes, URLs or credentials.
                         return RouterClientError::ContextOverflow(format!(
                             "Router input exceeds the model context window (HTTP {status})"
@@ -257,6 +344,88 @@ fn is_context_overflow_body(body: &[u8]) -> bool {
             || message.contains("but the prompt contains "))
 }
 
+fn is_extension_context_overflow_body(body: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return false;
+    };
+    let Some(error) = value.get("error") else {
+        return false;
+    };
+    if error.get("type").and_then(Value::as_str) != Some("invalid_request_error")
+        || error.get("code").and_then(Value::as_str) != Some("invalid_request")
+    {
+        return false;
+    }
+    let Some(message) = error.get("message").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some((count, rest)) = message
+        .strip_prefix("Prompt has ")
+        .and_then(|value| value.split_once(" tokens; max_length="))
+    else {
+        return false;
+    };
+    let Some(maximum) = rest.strip_suffix("; no truncation is performed") else {
+        return false;
+    };
+    match (count.parse::<usize>(), maximum.parse::<usize>()) {
+        (Ok(count), Ok(maximum)) => maximum > 0 && count > maximum,
+        _ => false,
+    }
+}
+
+/// Classifier heads report class probabilities directly, not generated-token logprobs.
+fn parse_router_extension(
+    raw_output: &str,
+    router: Option<&Value>,
+) -> Result<(bool, f64), RouterClientError> {
+    let invalid = || {
+        RouterClientError::Deserialization(
+            "Router classification extension is missing or invalid".into(),
+        )
+    };
+    let prediction: Value = serde_json::from_str(raw_output).map_err(|_| invalid())?;
+    let router = router.and_then(Value::as_object).ok_or_else(invalid)?;
+    if !prediction.is_object() || router.get("prediction") != Some(&prediction) {
+        return Err(RouterClientError::Deserialization(
+            "Router content and classification prediction disagree".into(),
+        ));
+    }
+    let generated_simple = match prediction.get("simple_type").and_then(Value::as_str) {
+        Some("simple") => true,
+        Some("non_simple") => false,
+        _ => return Err(invalid()),
+    };
+    let probabilities = router
+        .get("probabilities")
+        .and_then(|value| value.get("simple_type"))
+        .and_then(Value::as_object)
+        .filter(|value| value.len() == 2)
+        .ok_or_else(invalid)?;
+    let probability = |label| {
+        probabilities
+            .get(label)
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+    };
+    let simple = probability("simple").ok_or_else(invalid)?;
+    let non_simple = probability("non_simple").ok_or_else(invalid)?;
+    if (simple + non_simple - 1.0).abs() > 1e-5 {
+        return Err(invalid());
+    }
+    Ok((generated_simple, simple))
+}
+
+#[derive(Debug, Serialize)]
+struct RouterExtensionRequest<'a> {
+    model: &'a str,
+    messages: [OpenAiChatMessage<'a>; 2],
+    temperature: f32,
+    top_p: f32,
+    max_tokens: usize,
+    stream: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct OpenAiChatRequest<'a> {
     model: &'a str,
@@ -281,6 +450,8 @@ struct OpenAiChatMessage<'a> {
 #[derive(Debug, Deserialize)]
 struct OpenAiChatResponse {
     choices: Vec<OpenAiChatChoice>,
+    #[serde(default)]
+    router: Option<Value>,
     #[serde(default)]
     usage: Option<Value>,
 }
@@ -897,3 +1068,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod extension_tests;

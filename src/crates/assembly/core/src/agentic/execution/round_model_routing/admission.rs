@@ -348,6 +348,7 @@ mod tests {
         let tokenizer_path = directory.join("tokenizer.json");
         std::fs::write(&tokenizer_path, r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":{"type":"Whitespace"},"post_processor":null,"decoder":null,"model":{"type":"WordLevel","vocab":{"[UNK]":0},"unk_token":"[UNK]"}}"#).unwrap();
         super::super::HttpRoundModelRouterConfig {
+            protocol: Default::default(),
             endpoint,
             model: "fixture".into(),
             system_prompt: "fixed system".into(),

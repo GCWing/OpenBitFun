@@ -16,7 +16,9 @@ use admission::RouterAdmission;
 use context::{RoundRouterContext, RouterContextConfig, RouterContextFactory};
 use log::{debug, info, warn};
 use openbitfun_agent_runtime::router_context::PreparedRouterContext;
-use openbitfun_ai_adapters::round_router::{RouterClientError, RouterHttpClient, RouterPrediction};
+use openbitfun_ai_adapters::round_router::{
+    RouterClientError, RouterHttpClient, RouterPrediction, RouterProtocol,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs::OpenOptions;
@@ -102,6 +104,7 @@ pub struct RoundModelExecutionRecord {
 #[derive(Debug, Clone)]
 pub struct HttpRoundModelRouterConfig {
     pub endpoint: String,
+    pub protocol: RouterProtocol,
     pub model: String,
     pub system_prompt: String,
     pub api_key: Option<String>,
@@ -167,6 +170,7 @@ impl HttpRoundModelRouterConfig {
 
         Ok(Some(Self {
             endpoint,
+            protocol: RouterProtocol::OpenAiLogprobs,
             model: std::env::var("OPENBITFUN_ROUND_ROUTER_MODEL")
                 .ok()
                 .filter(|value| !value.trim().is_empty())
@@ -226,7 +230,7 @@ pub struct HttpRoundModelRouter {
 
 impl HttpRoundModelRouter {
     pub fn new(config: HttpRoundModelRouterConfig) -> OpenBitFunResult<Self> {
-        let client = RouterHttpClient::with_transport(
+        let client = RouterHttpClient::with_transport_and_protocol(
             config.endpoint.clone(),
             config.model.clone(),
             config.system_prompt.clone(),
@@ -235,6 +239,7 @@ impl HttpRoundModelRouter {
             config.proxy.clone(),
             config.custom_headers.clone(),
             config.skip_ssl_verify,
+            config.protocol,
         )
         .map_err(map_router_error)?;
         let admission = RouterAdmission::shared(client.service_identity(), config.admission)?;
@@ -749,6 +754,7 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let router = HttpRoundModelRouter::new(HttpRoundModelRouterConfig {
+            protocol: Default::default(),
             endpoint: format!(
                 "http://{}/v1/chat/completions",
                 listener.local_addr().unwrap()
@@ -849,6 +855,7 @@ mod tests {
         use std::time::Duration;
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let router = HttpRoundModelRouter::new(HttpRoundModelRouterConfig {
+            protocol: Default::default(),
             endpoint: format!(
                 "http://{}/v1/chat/completions",
                 listener.local_addr().unwrap()
@@ -974,6 +981,7 @@ mod tests {
         let trace_path = tokenizer_dir.path().join("router.jsonl");
         std::fs::write(&tokenizer_path, r#"{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":{"type":"Whitespace"},"post_processor":null,"decoder":null,"model":{"type":"WordLevel","vocab":{"[UNK]":0},"unk_token":"[UNK]"}}"#).unwrap();
         let router = HttpRoundModelRouter::new(HttpRoundModelRouterConfig {
+            protocol: Default::default(),
             endpoint,
             model: "router-fixture".into(),
             system_prompt: "EXACT_FIXED_SYSTEM".into(),
