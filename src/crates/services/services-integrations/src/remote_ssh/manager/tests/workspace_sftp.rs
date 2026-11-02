@@ -369,6 +369,7 @@ impl Fixture {
             },
             default_workspace: None,
             proxy_jump: None,
+            proxy_command: None,
             container: None,
             wsl: None,
             options: Default::default(),
@@ -384,6 +385,7 @@ impl Fixture {
                 sftp_session: Arc::new(SftpCache::new()),
                 bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                 server_key: None,
+                proxy_child: None,
                 alive: Arc::new(AtomicBool::new(true)),
             },
         );

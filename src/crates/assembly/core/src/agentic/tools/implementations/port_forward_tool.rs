@@ -234,7 +234,10 @@ impl PortForwardTool {
                 username,
                 auth,
                 default_workspace: None,
-                proxy_jump: config_entry.and_then(|entry| entry.proxy_jump),
+                proxy_jump: config_entry
+                    .as_ref()
+                    .and_then(|entry| entry.proxy_jump.clone()),
+                proxy_command: config_entry.and_then(|entry| entry.proxy_command),
                 container: None,
                 wsl: None,
                 options: SSHConnectionOptions::default(),

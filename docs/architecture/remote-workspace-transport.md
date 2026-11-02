@@ -115,6 +115,45 @@ unsupported by the Product Operation Registry. Existing Remote Control sessions
 reuse the bound workspace providers, and Detached Dispatch does not create WSL
 profiles. Native WSL has no SSH transport for port forwarding.
 
+## ProxyCommand
+
+The additive `proxyCommand` profile field carries the SSH transport over a
+local process's stdin/stdout, as OpenSSH does (for example
+`coder ssh --stdio %h`). The Services layer and the port-forward tool's
+`~/.ssh/config` path honor it; the desktop connection dialog does not send
+`proxyCommand` yet, so profiles created there still dial directly. When such a
+profile targets a `~/.ssh/config` alias that has a ProxyCommand, the host logs
+a warning and a failed dial names the ignored ProxyCommand instead of
+reporting only a network error. Missing `proxyCommand` preserves direct
+dialing; connection drift includes the field.
+
+`%h`, `%p`, `%r`, and `%%` are expanded first, and a host or user that would be
+substituted must match `[A-Za-z0-9._\-@:%\[\]]` (OpenSSH 9.6, CVE-2023-51385)
+or the connection fails before anything runs. Unix runs `sh -c "exec …"` in its
+own process group; Windows runs `cmd.exe /d /v:off /s /c "…"` inside a
+kill-on-close Job. Disconnect, failed handshakes, and reconnect tear the whole
+process tree down; a reconnect keeps a displaced proxy only until its old
+transport has no users left.
+
+A saved profile with both ProxyCommand and ProxyJump, or with a container or
+WSL target, is rejected. A ProxyJump hop whose `~/.ssh/config` alias resolves
+to a ProxyCommand fails with an explicit unsupported error instead of dialing
+the hop directly.
+
+`~/.ssh/config` values come from a line-based resolver over the
+`Include`-merged text. Include runs inside the includer's `Host`/`Match`
+context, which is restored afterwards. Host patterns support `*`, `?`, `!`,
+and inline `#` comments. The first value wins, except that `IdentityFile` and
+`CertificateFile` accumulate; single-key consumers take the first value from a
+block that names the host exactly. `ProxyCommand` is kept verbatim (`none`
+disables it), and ProxyJump and ProxyCommand compete: whichever is obtained
+first wins.
+
+The host advertises `ssh_proxy_command_v1`. Older hosts ignore the unknown
+field and would dial directly, so a future controller UI must not send
+`proxyCommand` to a peer that lacks the capability. CLI peer setup is
+unsupported, as for WSL.
+
 ## ProxyJump
 
 The comma-separated jump chain is resolved left to right. Each token can be a
