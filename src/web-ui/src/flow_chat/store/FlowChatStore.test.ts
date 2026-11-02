@@ -15,6 +15,7 @@ import {
 import type { FlowChatState, ModelRound, Session } from '../types/flow-chat';
 import { startupTrace } from '@/shared/utils/startupTrace';
 import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
+import { isSessionBindingLocked } from '../utils/sessionLifecycle';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
@@ -7899,6 +7900,60 @@ describe('FlowChatStore device surfaces', () => {
     expect(apiMocks.restoreSessionView).toHaveBeenCalledOnce();
     expect(apiMocks.restoreSessionWithTurns).not.toHaveBeenCalled();
     expect(flowChatStore.getState().sessions.get('local-1')?.historyState).toBe('ready');
+  });
+
+  it('never subscribes an unmaterialized draft or marks it as a failed history restore', async () => {
+    activateSurface(PEER_SURFACE_ID);
+    apiMocks.subscribeRelaySession.mockClear();
+    const seedDraft = (phase: 'editing' | 'creating') => flowChatStore.setState(() => ({
+      sessions: new Map([['peer-draft', createSession({
+        sessionId: 'peer-draft',
+        mode: 'Standard',
+        historyState: 'new',
+        draft: { workspaceId: 'workspace-1', phase, turnId: 'turn-draft' },
+      })]]),
+      activeSessionId: 'peer-draft',
+    }));
+
+    for (const phase of ['editing', 'creating'] as const) {
+      seedDraft(phase);
+      await flowChatStore.loadRelaySessionHistory('peer-draft');
+      await flowChatStore.loadSessionHistory('peer-draft');
+      await expect(flowChatStore.ensureSessionFullHistory('peer-draft', 'test')).resolves.toBe(false);
+      await expect(flowChatStore.loadOlderRelaySessionHistory('peer-draft')).resolves.toBe(false);
+      expect(flowChatStore.getState().sessions.get('peer-draft')?.historyState).toBe('new');
+    }
+    expect(apiMocks.subscribeRelaySession).not.toHaveBeenCalled();
+
+    seedDraft('editing');
+    const draft = flowChatStore.getState().sessions.get('peer-draft')!;
+    expect(isSessionBindingLocked(draft)).toBe(false);
+    flowChatStore.updateSessionMode('peer-draft', 'Plan');
+    const applied = flowChatStore.getState();
+    expect(applied.sessions.size).toBe(1);
+    expect(applied.activeSessionId).toBe('peer-draft');
+    expect(applied.sessions.get('peer-draft')).toMatchObject({ mode: 'Plan', historyState: 'new' });
+  });
+
+  it('subscribes a draft once the host accepted it, and a real rejection stays locked', async () => {
+    activateSurface(PEER_SURFACE_ID);
+    apiMocks.subscribeRelaySession.mockClear();
+    flowChatStore.setState(() => ({
+      sessions: new Map([['peer-created', createSession({
+        sessionId: 'peer-created',
+        historyState: 'new',
+        draft: { workspaceId: 'workspace-1', phase: 'ready', turnId: 'turn-draft' },
+      })]]),
+      activeSessionId: 'peer-created',
+    }));
+    apiMocks.subscribeRelaySession.mockRejectedValueOnce(new Error('Session not found'));
+
+    await expect(flowChatStore.loadRelaySessionHistory('peer-created')).rejects.toThrow('Session not found');
+
+    expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(1);
+    const failed = flowChatStore.getState().sessions.get('peer-created')!;
+    expect(failed.historyState).toBe('failed');
+    expect(isSessionBindingLocked(failed)).toBe(true);
   });
 
   it('builds visible turn navigation from canonical records without treating storage gaps as ordinals', async () => {

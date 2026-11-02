@@ -9,6 +9,11 @@ The selected Desktop or CLI owns execution, persisted records, workspaces, PTYs,
 and blocking interactions. A controller owns presentation and drafts. Its lifetime
 never determines whether an accepted turn continues running.
 
+An unmaterialized draft (`editing`/`creating`) has only a reserved ID the host has
+never seen, so it opens no subscription and reads no history; a host rejection
+there would falsely lock an empty session as a failed restore. The subscription
+starts when the host accepts the draft.
+
 `RelaySessionHistory` owns one subscription per visible surface/session.
 `SessionRecordReplica` applies both replayed pages and live canonical records
 using stable IDs, revisions and tombstones; every page comes from the online
