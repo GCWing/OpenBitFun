@@ -36,6 +36,8 @@ impl CatalogRevision {
     }
 
     fn cursor_revision(&self, root: &Path, query: &SessionCatalogQuery) -> String {
+        let mut sources = query.sources.iter().collect::<Vec<_>>();
+        sources.sort_unstable();
         let mut sort_timestamps = query.sort_timestamps.iter().collect::<Vec<_>>();
         sort_timestamps.sort_unstable_by(|left, right| left.0.cmp(right.0));
         let mut hash = Sha256::new();
@@ -45,6 +47,7 @@ impl CatalogRevision {
                 &query.workspace_id,
                 query.ordering,
                 &query.source,
+                sources,
                 sort_timestamps,
             ))
             .expect("catalog query is serializable"),

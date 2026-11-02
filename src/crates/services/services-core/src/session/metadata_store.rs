@@ -733,6 +733,7 @@ mod tests {
             workspace_id: "main".into(),
             ordering: super::super::page::SessionCatalogOrdering::Updated,
             source: "all".into(),
+            sources: Vec::new(),
             sort_timestamps: HashMap::new(),
         };
         let page = store

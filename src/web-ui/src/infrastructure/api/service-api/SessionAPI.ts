@@ -31,6 +31,8 @@ export interface SessionCatalogQuery {
   workspaceId: string;
   ordering: 'created' | 'updated';
   source: string;
+  /** New hosts may acknowledge a mixed native/external source allowlist. */
+  sources?: string[];
   sortTimestamps?: Record<string, number>;
 }
 

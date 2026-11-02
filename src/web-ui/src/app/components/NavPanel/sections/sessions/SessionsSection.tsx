@@ -64,7 +64,7 @@ import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
 import { useWorkspaceSessionCatalog } from './useWorkspaceSessionCatalog';
 import { useArchivedSessionMetadata } from './useArchivedSessionMetadata';
 import ArchivedSessionMenuItems from './ArchivedSessionMenuItems';
-import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, resolveWorkspaceSessionCatalogSource, workspaceSessionCatalogQuery, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
+import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, resolveWorkspaceSessionCatalogSource, workspaceSessionCatalogQuery, workspaceSessionCatalogSources, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
 import { useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
 import { useSessionNavExpansion } from './useSessionNavExpansion';
 import { isSessionNavRowActive } from './sessionNavSelection';
@@ -372,17 +372,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     return new Set([...flowChatState.sessions.keys()].filter(sessionNavStatusService.isRunning));
   }, [flowChatState.sessions, orderingRevision]);
   const discoveryEnabledSources = discovery.enabledSources;
-  const discoveryFilterActive = discoveryEnabledSources !== undefined
-    && Object.keys(EXTERNAL_SESSION_NAMES).some(source => !discoveryEnabledSources.has(source));
   const catalogSource = resolveWorkspaceSessionCatalogSource(sourceAgent, discoveryEnabledSources);
+  const catalogSources = workspaceSessionCatalogSources(sourceAgent, discoveryEnabledSources);
   const catalogQueryJson = useMemo(() => {
-    // A host query can express the native-only projection directly. Keep the
-    // legacy traversal only when a mixed enabled/disabled source set still
-    // needs client-side filtering.
-    if (discoveryFilterActive && discoveryEnabledSources?.size !== 0) return JSON.stringify(null);
+    // New hosts can express a mixed native/external projection with an
+    // allowlist. Older hosts will omit it from catalogQuery and the catalog
+    // hook will retain its complete traversal fallback.
     return JSON.stringify(workspaceSessionCatalogQuery(workspaceId, sessionOrdering, sessionShow,
-      sessionFilters, catalogSource) ?? null);
-  }, [catalogSource, discoveryEnabledSources, discoveryFilterActive, workspaceId, sessionOrdering, sessionShow, sessionFilters]);
+      sessionFilters, catalogSource, catalogSources) ?? null);
+  }, [catalogSources, catalogSource, workspaceId, sessionOrdering, sessionShow, sessionFilters]);
   const captureCatalogQuery = useCallback((query: SessionCatalogQuery) => captureWorkspaceSessionCatalogQuery(
     query, flowChatStore.getState().sessions.values(), sessionNavStatusService.getSortTimestamp,
   ), []);

@@ -12,6 +12,10 @@ pub struct SessionCatalogQuery {
     pub workspace_id: String,
     pub ordering: SessionCatalogOrdering,
     pub source: String,
+    /// Optional source allowlist for mixed native/external views. Older hosts
+    /// ignore this additive field and therefore do not echo the full query.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
     /// The view freezes recency on hydration and advances it on a new run.
     /// Preserve those already-observed timestamps when selecting older rows.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -189,13 +193,13 @@ impl PreparedSessionCatalog {
         }
 
         if let Some(query) = query {
-            top_level_sessions.retain(|metadata| catalog_source_matches(metadata, &query.source));
+            top_level_sessions.retain(|metadata| catalog_source_matches(metadata, query));
             top_level_sessions.sort_by(|left, right| catalog_order(left, right, query));
         }
 
         for children in children_by_parent.values_mut() {
             if let Some(query) = query {
-                children.retain(|metadata| catalog_source_matches(metadata, &query.source));
+                children.retain(|metadata| catalog_source_matches(metadata, query));
                 children.sort_by(|left, right| catalog_order(left, right, query));
             } else {
                 children.sort_by_key(|metadata| std::cmp::Reverse(metadata.last_active_at));
@@ -309,16 +313,18 @@ fn catalog_workspace_id(metadata: &SessionMetadata) -> Option<&str> {
     }
 }
 
-fn catalog_source_matches(metadata: &SessionMetadata, source: &str) -> bool {
-    source == "all"
-        || metadata
-            .custom_metadata
-            .as_ref()
-            .and_then(|custom| custom.get("importedFrom"))
-            .and_then(serde_json::Value::as_str)
-            .filter(|value| !value.is_empty())
-            .unwrap_or("openbitfun")
-            == source
+fn catalog_source_matches(metadata: &SessionMetadata, query: &SessionCatalogQuery) -> bool {
+    let metadata_source = metadata
+        .custom_metadata
+        .as_ref()
+        .and_then(|custom| custom.get("importedFrom"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("openbitfun");
+    if !query.sources.is_empty() {
+        return query.sources.iter().any(|source| source == metadata_source);
+    }
+    query.source == "all" || metadata_source == query.source
 }
 
 fn catalog_parent_id(metadata: &SessionMetadata) -> Option<String> {
@@ -511,6 +517,7 @@ mod tests {
             workspace_id: "main".into(),
             ordering: SessionCatalogOrdering::Updated,
             source: source.into(),
+            sources: Vec::new(),
             sort_timestamps: HashMap::new(),
         }
     }
@@ -637,6 +644,62 @@ mod tests {
     }
 
     #[test]
+    fn catalog_mixed_source_allowlist_filters_parents_and_children_across_pages() {
+        let native_parent = entry("native-parent", "main", 100);
+        let mut codex_child = entry("codex-child", "main", 90);
+        codex_child.custom_metadata = Some(serde_json::json!({
+            "kind": "review",
+            "parentSessionId": "native-parent",
+            "importedFrom": "codex"
+        }));
+        let mut cursor_child = entry("cursor-child", "main", 80);
+        cursor_child.custom_metadata = Some(serde_json::json!({
+            "kind": "review",
+            "parentSessionId": "native-parent",
+            "importedFrom": "cursor"
+        }));
+        let mut codex_parent = entry("codex-parent", "main", 70);
+        codex_parent.custom_metadata = Some(serde_json::json!({"importedFrom": "codex"}));
+        let mut cursor_parent = entry("cursor-parent", "main", 60);
+        cursor_parent.custom_metadata = Some(serde_json::json!({"importedFrom": "cursor"}));
+
+        let mut mixed_query = query("all");
+        mixed_query.sources = vec!["codex".into(), "openbitfun".into()];
+        let entries = vec![
+            native_parent,
+            codex_child,
+            cursor_child,
+            codex_parent,
+            cursor_parent,
+        ];
+
+        let first =
+            build_session_metadata_page_with_query(entries.clone(), None, 1, Some(&mixed_query));
+        assert_eq!(first.total_top_level_count, 2);
+        assert_eq!(first.loaded_top_level_count, 1);
+        assert!(first.has_more);
+        assert_eq!(
+            first
+                .sessions
+                .iter()
+                .map(|metadata| metadata.session_id.as_str())
+                .collect::<Vec<_>>(),
+            ["native-parent", "codex-child"]
+        );
+
+        let second = build_session_metadata_page_with_query(
+            entries,
+            first.next_cursor.as_deref(),
+            1,
+            Some(&mixed_query),
+        );
+        assert_eq!(second.total_top_level_count, 2);
+        assert_eq!(second.loaded_top_level_count, 1);
+        assert!(!second.has_more);
+        assert_eq!(second.sessions[0].session_id, "codex-parent");
+    }
+
+    #[test]
     fn catalog_worktrees_use_execution_kind_and_legacy_ownership_remains_unscoped() {
         let mut isolated = entry("isolated", "worktree", 1);
         isolated.project_workspace_id = Some("main".into());
@@ -671,6 +734,7 @@ mod tests {
         assert_eq!(page.total_top_level_count, 0);
         assert!(!page.has_more);
         let wire = serde_json::to_value(page).unwrap();
+        assert!(wire["catalogQuery"].get("sources").is_none());
         let restored: SessionMetadataPage = serde_json::from_value(wire).unwrap();
         assert_eq!(restored.catalog_query, Some(query));
     }
