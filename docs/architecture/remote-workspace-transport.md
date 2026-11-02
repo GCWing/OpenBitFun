@@ -115,6 +115,30 @@ unsupported by the Product Operation Registry. Existing Remote Control sessions
 reuse the bound workspace providers, and Detached Dispatch does not create WSL
 profiles. Native WSL has no SSH transport for port forwarding.
 
+## ProxyCommand
+
+The additive `proxyCommand` profile field (and `~/.ssh/config` `ProxyCommand`)
+carries the SSH transport over a local process's stdin/stdout, as OpenSSH does
+(for example `coder ssh --stdio %h`). Missing `proxyCommand` preserves direct
+dialing; connection drift includes the field. `%h`, `%p`, `%r`, and `%%` are
+expanded first, and a host or user that would be substituted must match
+`[A-Za-z0-9._\-@:%\[\]]` (OpenSSH 9.6, CVE-2023-51385) or the connection fails
+before anything runs. Unix runs `sh -c "exec …"` in its own process group;
+Windows runs `cmd.exe /C` inside a kill-on-close Job. Disconnect, failed
+handshakes, and reconnect tear the whole process tree down; a reconnect keeps a
+displaced proxy only until its old transport has no users left.
+
+ProxyCommand is exclusive with ProxyJump, containers, and WSL. A ProxyJump hop
+whose `~/.ssh/config` alias resolves to a ProxyCommand fails with an explicit
+unsupported error instead of dialing the hop directly. `~/.ssh/config` values
+come from a line-based resolver over the `Include`-merged text (Host patterns
+with `*`, `?`, and `!`, first value wins, whole-line `ProxyCommand`, `none`
+disables).
+
+The host advertises `ssh_proxy_command_v1`. Older hosts ignore the unknown
+field and would dial directly, so controllers must not send `proxyCommand` to a
+peer that lacks the capability. CLI peer setup is unsupported, as for WSL.
+
 ## ProxyJump
 
 The comma-separated jump chain is resolved left to right. Each token can be a

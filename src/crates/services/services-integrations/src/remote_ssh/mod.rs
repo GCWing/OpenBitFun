@@ -33,7 +33,6 @@ mod port_forward;
 #[cfg(feature = "remote-ssh-concrete")]
 mod proxy_command;
 #[cfg(feature = "remote-ssh-concrete")]
-#[cfg(feature = "remote-ssh-concrete")]
 mod release_verify;
 #[cfg(feature = "remote-ssh-concrete")]
 mod remote_exec;
