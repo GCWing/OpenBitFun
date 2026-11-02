@@ -10,8 +10,8 @@ vi.mock('@/infrastructure/api/service-api/AIApi', () => ({ aiApi: { getSubscript
 
 let root: Root;
 let container: HTMLDivElement;
-function Probe({ supported = true, active = true, accountId = 'zcode', modelId }: { supported?: boolean; active?: boolean; accountId?: string; modelId?: string }) {
-  const observation = useSubscriptionQuota(modelId ? 'opencode' : 'zcode', accountId, active, supported, 'fixture-account', 0, modelId);
+function Probe({ supported = true, active = true, accountId = 'zcode', modelId, forceOnActivate = false }: { supported?: boolean; active?: boolean; accountId?: string; modelId?: string; forceOnActivate?: boolean }) {
+  const observation = useSubscriptionQuota(modelId ? 'opencode' : 'zcode', accountId, active, supported, 'fixture-account', 0, modelId, forceOnActivate);
   return <button data-loading={observation.loading} data-failed={observation.failed} data-host-unsupported={observation.unsupportedHost}
     onClick={() => void observation.refresh()}>{observation.value?.plan || 'empty'}</button>;
 }
@@ -59,6 +59,23 @@ it('retains a successful observation on refresh failure without claiming it was 
   expect(query).toHaveBeenLastCalledWith('zcode', 'zcode', true);
   expect(container.textContent).toBe('last successful plan');
   expect(container.querySelector('button')?.dataset.failed).toBe('true');
+});
+
+it.each(['local', 'peer-a'])('forces a fresh account observation on every panel opening on %s', async surface => {
+  activateSurface(surface);
+  query.mockResolvedValueOnce({ account_id: 'selected-slot', provider: 'zcode', state: 'known', plan: 'first observation', windows: [] })
+    .mockResolvedValueOnce({ account_id: 'selected-slot', provider: 'zcode', state: 'known', plan: 'fresh observation', windows: [] });
+  await act(async () => root.render(<Probe accountId="selected-slot" active={false} forceOnActivate />));
+  expect(query).not.toHaveBeenCalled();
+  await act(async () => root.render(<Probe accountId="selected-slot" forceOnActivate />));
+  expect(query).toHaveBeenLastCalledWith('zcode', 'selected-slot', true);
+  expect(container.textContent).toBe('first observation');
+  await act(async () => root.render(<Probe accountId="selected-slot" active={false} forceOnActivate />));
+  expect(query).toHaveBeenCalledTimes(1);
+  await act(async () => root.render(<Probe accountId="selected-slot" forceOnActivate />));
+  expect(query).toHaveBeenCalledTimes(2);
+  expect(query).toHaveBeenLastCalledWith('zcode', 'selected-slot', true);
+  expect(container.textContent).toBe('fresh observation');
 });
 
 it('retains the last observation when a refresh returns a provider HTTP failure state', async () => {

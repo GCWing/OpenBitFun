@@ -31,6 +31,7 @@ interface WorkbenchPaneLayoutState {
   preferredRightPaneWidth: number;
   activate: (surfaceId: string, sessionId: string | null) => void;
   showContent: () => void;
+  showContentForSession: (surfaceId: string, sessionId: string) => void;
   hideContent: () => void;
   collapseEmptyContent: () => void;
   maximizeContent: () => void;
@@ -131,6 +132,13 @@ export function createWorkbenchPaneLayoutStore(storage = localPreferenceStorage(
       showContent: () => {
         if (selectWorkbenchPaneMode(get()) === 'chat-only') setMode('split');
       },
+      showContentForSession: (surfaceId, sessionId) => set(state => {
+        const key = scopeKey(surfaceId, sessionId);
+        if ((state.modes.get(key) ?? 'chat-only') !== 'chat-only') return state;
+        const modes = new Map(state.modes);
+        modes.set(key, 'split');
+        return { modes };
+      }),
       hideContent: () => setMode('chat-only'),
       collapseEmptyContent: () => {
         if (selectWorkbenchPaneMode(get()) === 'split') setMode('chat-only');

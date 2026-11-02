@@ -22,6 +22,16 @@ where
     }
 }
 
+/// Observable selection facts for one logical round; not a billing estimate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRoutingDecision {
+    pub route: String,
+    pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AgenticEventPriority {
     Critical = 0, // Immediately send (error, cancellation)
@@ -313,6 +323,8 @@ pub enum AgenticEvent {
         model_config_id: String,
         /// Provider model name sent on the request.
         effective_model_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        routing: Option<ModelRoutingDecision>,
     },
 
     /// Emitted as soon as an automatic retry supersedes one model attempt.

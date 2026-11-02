@@ -8,6 +8,19 @@ function preferences(values: Record<string, string> = {}) {
 }
 
 describe('workbench pane layout compatibility', () => {
+  it('reveals background output only when its owning session is activated', () => {
+    const store = createSessionPaneLayoutStore(preferences());
+    const pane = store.getState();
+    pane.activate('local', 'b');
+    const activeKey = store.getState().activeKey;
+    pane.showContentForSession('local', 'a');
+    expect(store.getState().activeKey).toBe(activeKey);
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    pane.activate('local', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('split');
+    pane.activate('peer', 'a');
+    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+  });
   it('applies the local display preference immediately, retaining device modes and separate widths', () => {
     const storage = preferences({ [STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH]: '640' });
     const store = createSessionPaneLayoutStore(storage);

@@ -170,6 +170,7 @@ product-full = [
     "tools-browser-web",
     "tools-computer-use",
     "tools-image-analysis",
+    "tools-image-generation",
     "tools-miniapp",
     "tools-pages",
     "tools-creation",
@@ -182,8 +183,10 @@ product-full = [
     "opencode-plugin-host",
     "file-watch",
     "workspace-watch",
+    "workspace-icons",
     "ssh-remote",
     "dispatch-store",
+    "ptc-runtime",
     "filesystem",
     "git",
     "local-storage",
@@ -209,6 +212,7 @@ agent-runtime = [
     "openbitfun-services-core/coordination-store",
     "openbitfun-services-core/session-event-format",
     "ai-adapter-runtime",
+    "openbitfun-ai-adapters/local-tokenizer",
     "dep:openbitfun-agent-runtime",
     "openbitfun-agent-runtime/agent-runtime",
     "dep:openbitfun-agent-content",
@@ -336,6 +340,12 @@ script-tool-runtime = [
     "openbitfun-runtime-ports/script-tool-runtime",
     "openbitfun-services-integrations/script-tool-runtime",
 ]
+ptc-runtime = [
+    "agent-runtime",
+    "git",
+    "openbitfun-runtime-ports/ptc-runtime",
+    "openbitfun-services-integrations/ptc-runtime",
+]
 scheduled-jobs = [
     "dep:chrono-tz",
     "dep:cron",
@@ -370,6 +380,11 @@ tools-computer-use = [
 ]
 tools-image-analysis = [
     "openbitfun-tool-packs/image-analysis",
+]
+tools-image-generation = [
+    "openbitfun-tool-packs/image-generation",
+    "ai-adapter-runtime",
+    "openbitfun-ai-adapters/image-generation",
 ]
 tools-miniapp = [
     "dep:openbitfun-product-domains",
@@ -447,6 +462,7 @@ filesystem = ["openbitfun-services-core/filesystem"]
 local-storage = ["dep:openbitfun-agent-tools", "openbitfun-services-core/local-storage"]
 process-runtime = ["openbitfun-services-core/process-runtime"]
 terminal = ["dep:terminal-core"]
+workspace-icons = ["workspace-runtime", "openbitfun-services-core/workspace-icons"]
 workspace-runtime = [
     "openbitfun-services-core/workspace-persistence",
     "dep:serde_yaml",

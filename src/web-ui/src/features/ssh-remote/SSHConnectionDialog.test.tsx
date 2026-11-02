@@ -253,6 +253,8 @@ describe('SSHConnectionDialog', () => {
       if (target === 'wsl') {
         expect(sshApiMock.listWslDistributions).toHaveBeenCalled();
         expect(container.querySelector('input[aria-label="ssh.remote.host"]')).toBeNull();
+      } else if (target === 'localDocker') {
+        expect(sshApiMock.listWslDistributions).toHaveBeenCalled();
       } else {
         expect(sshApiMock.listWslDistributions).not.toHaveBeenCalled();
       }
@@ -480,8 +482,8 @@ describe('SSHConnectionDialog', () => {
     },
   );
   async function selectWsl(): Promise<void> {
-    selectTarget('wsl');
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => sourceOption(0, 'current').click());
+    await act(async () => sourceOption(1, 'wsl').click());
     openAdvanced();
   }
 
@@ -524,7 +526,8 @@ describe('SSHConnectionDialog', () => {
     sshApiMock.listWslDistributions.mockResolvedValue(result);
     await renderDialog();
     await selectWsl();
-    expect(container.textContent).toContain(hint);
+    if (result.supported) expect(container.textContent).toContain(hint);
+    else expect(container.textContent).not.toContain(hint);
     expect(findConnectButton()?.disabled).toBe(true);
     expect(remoteContextMock.connect).not.toHaveBeenCalled();
   });
@@ -535,8 +538,11 @@ describe('SSHConnectionDialog', () => {
     await selectWsl();
     expect(container.textContent).toContain('ssh.remote.wslDiscoveryFailed');
     expect(findConnectButton()?.disabled).toBe(true);
-    const refresh = container.querySelector<HTMLButtonElement>('button[aria-label="ssh.remote.wslRefresh"]');
-    await act(async () => { refresh?.click(); });
+    expect(sourceOption(1, 'wsl').disabled).toBe(true);
+    const refresh = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'workspaceSource.refreshOptions')!;
+    await act(async () => refresh.click());
+    expect(sourceOption(1, 'wsl').disabled).toBe(false);
+    await selectWsl();
     expect(findConnectButton()?.disabled).toBe(false);
   });
 

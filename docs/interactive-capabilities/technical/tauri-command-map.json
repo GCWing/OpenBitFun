@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "4b3baea602820774739229ba5788a734a95d60de43775214a9359d4b2f4f5225",
-  "commandCount": 701,
+  "catalogDigest": "6ae2eeaa19e6342f9dcf7ff33b7c0fa94547ee1c02fc1835f6f4471caab6fbb3",
+  "commandCount": 709,
   "coverage": {
-    "commandCount": 701,
-    "documentedCommandCount": 644,
-    "implementationCommandCount": 57,
-    "implementationDigest": "503b48eebc37750e50e0427d861e884dfa353a81aae32236e4bc2d7e0f5310e2"
+    "commandCount": 709,
+    "documentedCommandCount": 649,
+    "implementationCommandCount": 60,
+    "implementationDigest": "5047b674e890f899e65baf9235e9df4bd912fa28f44eb10a656e079a1b89974d"
   },
   "commands": [
     {
@@ -193,11 +193,13 @@
     {
       "id": "account_list_devices",
       "moduleId": "remote_connect",
-      "capabilityId": "feature.remote-connect",
+      "capabilityId": null,
       "capabilityIds": [
+        "feature.detached-dispatch",
         "feature.remote-connect"
       ],
       "documentedItemIds": [
+        "feature.detached-dispatch:targets",
         "feature.remote-connect:devices"
       ],
       "visibility": "documented",
@@ -2277,7 +2279,7 @@
         "feature.detached-dispatch"
       ],
       "documentedItemIds": [
-        "feature.detached-dispatch:permission-continuation"
+        "feature.detached-dispatch:cancel"
       ],
       "visibility": "documented",
       "rustPath": "api::dispatch_api::dispatch_cancel",
@@ -3817,6 +3819,22 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
+      "id": "get_model_routing_status",
+      "moduleId": "agentic",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:smart-routing"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::agentic_api::get_model_routing_status",
+      "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
+      "signature": "fn get_model_routing_status( runtime: State<'_, DesktopRuntimeContext>, coordinator: State<'_, Arc<ConversationCoordinator>>, request: ModelRoutingStatusRequest, ) -> Result< openbitfun_core::agentic::execution::round_model_routing::configuration::ModelRoutingStatus, String, >",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "get_models_dev_catalog_status",
       "moduleId": "commands",
       "capabilityId": "setting.ai.models",
@@ -4423,6 +4441,22 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
+      "id": "get_workspace_icon",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [
+        "feature.projects:workspace-icon"
+      ],
+      "visibility": "documented",
+      "rustPath": "get_workspace_icon",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn get_workspace_icon( state: State<'_, AppState>, request: openbitfun_core::service::workspace::WorkspaceIconRequest, ) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "get_workspace_reference_snapshot",
       "moduleId": "external_sources",
       "capabilityId": "feature.ecosystem-compatibility",
@@ -4994,6 +5028,20 @@
       "rustPath": "api::html_preview_api::html_preview_create",
       "sourceFile": "src/apps/desktop/src/api/html_preview_api.rs",
       "signature": "fn html_preview_create( app_state: tauri::State<'_, AppState>, request: HtmlPreviewCreateRequest, ) -> Result<HtmlPreviewCreateResponse, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "html_preview_read_resource",
+      "moduleId": "html_preview",
+      "capabilityId": "feature.files-editor",
+      "capabilityIds": [
+        "feature.files-editor"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::html_preview_api::html_preview_read_resource",
+      "sourceFile": "src/apps/desktop/src/api/html_preview_api.rs",
+      "signature": "fn html_preview_read_resource( request: HtmlPreviewResourceRequest, ) -> HtmlPreviewResourceReply",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -5787,6 +5835,22 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
+      "id": "load_session_trajectory",
+      "moduleId": "agentic",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [
+        "feature.ai-assistant:history-search"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::agentic_api::load_session_trajectory",
+      "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
+      "signature": "fn load_session_trajectory( runtime: State<'_, DesktopRuntimeContext>, request: LoadSessionTrajectoryRequest, ) -> Result<openbitfun_services_core::session::trajectory::SessionTrajectoryPage, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
       "id": "load_session_turn_window",
       "moduleId": "agentic",
       "capabilityId": "feature.ai-assistant",
@@ -5877,6 +5941,20 @@
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn manage_dialog_queue( runtime: State<'_, DesktopRuntimeContext>, request: openbitfun_runtime_ports::DialogQueueRequest, ) -> Result<openbitfun_runtime_ports::DialogQueueSnapshot, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "mark_miniapp_web_surface_ready",
+      "moduleId": "miniapp_web_host",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "miniapp_web_host::mark_miniapp_web_surface_ready",
+      "sourceFile": "src/apps/desktop/src/miniapp_web_host.rs",
+      "signature": "fn mark_miniapp_web_surface_ready(request: Option<MiniAppWebSurfaceReadyRequest>)",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "mark_openbitfun_control_surface_ready",
@@ -8008,6 +8086,20 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "report_miniapp_web_result",
+      "moduleId": "miniapp_web_host",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "miniapp_web_host::report_miniapp_web_result",
+      "sourceFile": "src/apps/desktop/src/miniapp_web_host.rs",
+      "signature": "fn report_miniapp_web_result( request: ReportMiniAppWebResultRequest, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "report_openbitfun_control_result",
       "moduleId": "openbitfun_control_host",
       "capabilityId": null,
@@ -9487,6 +9579,22 @@
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
+      "id": "set_workspace_icon",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [
+        "feature.projects:workspace-icon"
+      ],
+      "visibility": "documented",
+      "rustPath": "set_workspace_icon",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn set_workspace_icon( state: State<'_, AppState>, request: openbitfun_core::service::workspace::SetWorkspaceIconRequest, ) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "show_agent_companion_desktop_pet",
       "moduleId": "appearance",
       "capabilityId": "feature.desktop-pet",
@@ -10661,6 +10769,22 @@
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn test_ai_connection(state: State<'_, AppState>) -> Result<bool, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "test_image_generation_service",
+      "moduleId": "commands",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:connection-test"
+      ],
+      "visibility": "documented",
+      "rustPath": "test_image_generation_service",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn test_image_generation_service( request: TestImageGenerationServiceRequest, ) -> Result<openbitfun_core::agentic::image_generation::ImageServiceTestOutcome, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "toggle_main_window_fullscreen",

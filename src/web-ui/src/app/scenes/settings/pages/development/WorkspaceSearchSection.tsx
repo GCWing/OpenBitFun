@@ -36,7 +36,7 @@ function WorkspaceSearchSettings() {
   };
 
   return (
-    <ConfigPageSection id={sectionAnchor} title={t('features.workspaceSearch.title')} description={t('features.workspaceSearch.subtitle')}>
+    <ConfigPageSection id={sectionAnchor} title={t('features.workspaceSearch.title')}>
       {isLoading ? <ConfigLoadingState label={t('loading.text')} /> : !settings ? (
         <ConfigRetryState message={t('loading.failed')} retryLabel={t('loading.retry')} onRetry={() => void reload()} />
       ) : (

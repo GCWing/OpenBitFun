@@ -87,7 +87,8 @@
       "terminal": "Shell",
       "git": "Git",
       "miniApps": "小应用",
-      "insights": "洞察"
+      "insights": "洞察",
+      "discoverSkills": "发现技能"
     },
     "tooltips": {
       "persona": "智能成员 — 展开查看基于角色和记忆的成员会话",
@@ -192,7 +193,9 @@
         "activationFailed": "无法打开该结果",
         "remoteFileSearchUnavailable": "远程项目 {{workspace}} 暂不支持文件搜索",
         "sessionUnavailable": "该会话已不可用"
-      }
+      },
+      "diagnosticTarget": "搜索设备：{{host}}",
+      "retrySource": "重试此来源"
     },
     "displayModes": {
       "pro": "专业模式",
@@ -215,7 +218,7 @@
       "files": "文件",
       "terminals": "终端",
       "local": "本地",
-      "remote": "远程工作区",
+      "remote": "连接环境",
       "peer": "对端设备",
       "switchWorkspace": "切换工作区",
       "chooseShell": "选择 Shell",
@@ -330,7 +333,8 @@
           "label": "显示",
           "all": "全部会话",
           "unread": "未读会话",
-          "attention": "需要处理"
+          "attention": "需要处理",
+          "archived": "已归档会话"
         },
         "filters": {
           "label": "筛选",
@@ -352,7 +356,7 @@
         "environment": {
           "label": "环境",
           "local": "本地",
-          "remote": "远程工作区",
+          "remote": "连接环境",
           "detached": "分离执行"
         },
         "source": {
@@ -367,10 +371,7 @@
       },
       "rename": "重命名",
       "renameOutcomeUnknown": "重命名结果尚不确定。请刷新或重新打开会话列表，确认当前名称后再重试。",
-      "copySessionId": "复制 ID",
-      "copySessionIdSuccess": "已复制会话 ID",
-      "copySessionIdFailed": "复制会话 ID 失败",
-      "duplicate": "复制会话",
+      "duplicate": "创建副本",
       "duplicateSuccess": "已复制为「{{name}}」",
       "duplicateFailed": "复制会话失败",
       "duplicateCreatedRefreshFailed": "已复制为「{{name}}」。请刷新会话列表查看，再次复制会创建另一个副本。",
@@ -385,9 +386,6 @@
       "exportMarkdown": "导出为 Markdown",
       "exportMarkdownFull": "导出完整过程",
       "exportMarkdownResult": "导出结果",
-      "delete": "删除",
-      "deleteConfirmTitle": "永久删除会话？",
-      "deleteConfirmMessage": "“{{name}}”及其子会话将被永久删除。此操作无法撤销。",
       "confirmEdit": "确认",
       "cancelEdit": "取消",
       "loading": "加载中...",
@@ -453,6 +451,7 @@
       "batchChildSession": "子会话",
       "batchTurnsLabel": "{{count}} 轮",
       "archive": "归档",
+      "archivedBadge": "已归档",
       "assistantBootstrapDraft": "请按照 BOOTSTRAP.md 的说明，和我一起完成助理初始化。",
       "archiveAll": "归档所有会话",
       "archiveSelected": "归档所选",
@@ -480,7 +479,7 @@
       "restore": "恢复",
       "restoreSucceeded": "已恢复“{{name}}”（{{workspace}}）。",
       "restoreRefreshFailed": "会话已恢复，但会话列表刷新失败；请手动刷新工作区。",
-      "archivedAll": "已归档 {{count}} 个会话，可在设置 → 已归档会话中查看。",
+      "archivedAll": "已归档 {{count}} 个会话，可在设置 → 已归档会话中查看或删除。",
       "restoreFailed": "恢复会话失败",
       "deleteArchivedFailed": "删除会话失败",
       "deleteAllArchivedFailed": "删除全部已归档会话失败",
@@ -491,6 +490,9 @@
       "allSourceAgents": "全部 Agent",
       "sourceAgentLabel": "来自 {{name}} 的会话",
       "discoveryPartial": "部分外部会话无法发现，已有会话仍可使用。",
+      "discoveryWarningTitle": "外部会话发现",
+      "discoveryReadFailed": "部分 {{source}} 会话记录无法读取，已有会话仍可使用。",
+      "discoveryWorkspaceUnresolved": "部分 {{source}} 会话无法匹配到工作区，已有会话仍可使用。",
       "discoveringExternal": "正在发现外部会话…"
     },
     "scheduledJobs": {
@@ -523,7 +525,7 @@
         "workspacePath": "请输入工作区路径",
         "session": "请选择或输入会话 ID",
         "optionalSession": "留空则创建新会话后执行",
-        "agentType": "例如：Standard、Cowork 或 Claw",
+        "agentType": "例如：$t(shared:agents.Standard)、$t(shared:agents.Cowork) 或 $t(shared:agents.Claw)",
         "name": "例如：每日全球新闻简报",
         "anchorMs": "留空则使用创建时刻",
         "timezone": "例如：Asia/Shanghai",
@@ -607,6 +609,10 @@
         "minute": "分钟",
         "hour": "小时",
         "day": "天"
+      },
+      "columns": {
+        "status": "状态",
+        "actions": "操作"
       }
     },
     "workspaces": {
@@ -657,8 +663,8 @@
         "manageAssistant": "管理助理",
         "closeAssistant": "隐藏助理",
         "resetWorkspace": "重置工作区",
-        "manageRelatedPaths": "关联目录",
-        "manageProjectPermissions": "项目权限",
+        "projectResources": "项目资源",
+        "openDirectory": "打开目录",
         "rename": "重命名项目",
         "copyPath": "复制路径",
         "reveal": "在资源管理器中打开",
@@ -688,7 +694,12 @@
           "add": "添加目录",
           "selectDirectoryTitle": "选择关联目录",
           "pathPlaceholder": "目录路径",
-          "descriptionLabel": "说明（选填）"
+          "descriptionLabel": "说明（选填）",
+          "columns": {
+            "directory": "目录",
+            "description": "说明",
+            "actions": "操作"
+          }
         },
         "messages": {
           "externalLoadFailed": "无法加载 OpenCode 引用",
@@ -708,6 +719,56 @@
         "title": "重置 {{name}}？",
         "message": "此操作会清空该工作区目录下的所有内容，并恢复默认 persona 文件；不会删除工作区目录本身。",
         "pathLabel": "工作区路径"
+      },
+      "icon": {
+        "title": "更改图标",
+        "description": "自定义 {{name}} 的图标，设置保存在工作区所属主机上。",
+        "default": "内置图标",
+        "chooseIcon": "选择图标",
+        "builtinIcons": "图标",
+        "glyphsUnsupported": "当前主机暂不支持切换内置图标。",
+        "workIcons": "工作与学习",
+        "lifeIcons": "生活与兴趣",
+        "chooseLightImage": "选择浅色图片",
+        "chooseDarkImage": "选择深色图片",
+        "themedImagesUnsupported": "当前主机仅支持两种主题共用一张图片，升级主机后可单独设置深色图片。",
+        "glyphs": {
+          "default": "默认", "code": "代码", "learning": "学习", "design": "设计",
+          "documents": "文档", "research": "研究", "web": "网站", "mobile": "移动应用",
+          "games": "游戏", "data": "数据", "business": "业务", "tools": "工具",
+          "travel": "旅行", "food": "美食", "fitness": "运动", "music": "音乐", "reading": "阅读", "home": "家庭", "finance": "理财", "photography": "摄影", "pets": "宠物", "nature": "自然", "shopping": "购物", "movies": "电影"
+        },
+        "image": "自定义图片",
+        "preview": "图标预览",
+        "colors": "图标颜色",
+        "customColor": "自定义颜色",
+        "colorValue": "颜色值",
+        "lightness": "明度",
+        "presetColors": "预设颜色",
+        "chooseImage": "选择图片",
+        "imageHint": "支持 PNG、JPEG、WebP，最大 5 MB。图片随工作区保存，无需保留原文件。",
+        "crop": "裁剪填满正方形",
+        "zoom": "缩放",
+        "reset": "恢复默认",
+        "retry": "重试",
+        "loading": "正在加载图标…",
+        "unsupported": "当前主机不支持工作区图标定制，请升级主机或使用支持此功能的桌面端、CLI 主机。",
+        "loadFailed": "自定义图标暂时无法加载，已显示默认图标，原设置仍然保留。",
+        "invalidImage": "请选择不超过 5 MB、2000 万像素的 PNG、JPEG 或 WebP 图片。",
+        "saveFailed": "无法保存图标：{{reason}}",
+        "palette": {
+          "default": "默认",
+          "blue": "蓝色",
+          "cyan": "青色",
+          "green": "绿色",
+          "yellow": "黄色",
+          "orange": "橙色",
+          "red": "红色",
+          "purple": "紫色",
+          "pink": "粉色"
+        },
+        "light": "浅色预览",
+        "dark": "深色预览"
       }
     },
     "agents": {
@@ -732,11 +793,16 @@
     "notifications": "通知",
     "settingsMenu": {
       "floatingWindow": "悬浮窗",
-      "theme": "主题",
-      "themeConfiguration": "主题配置",
-      "appearanceSwitchFailed": "主题切换失败，请重试。",
+      "feedback": "用户反馈",
+      "feedbackUnavailable": "用户反馈尚未配置。",
+      "feedbackOpenFailed": "无法打开用户反馈。",
       "openSettings": "$t(shared:features.settings)",
       "about": "关于"
+    },
+    "customization": {
+      "localDesktopOnly": "仅支持本机桌面。切换设备时会保留固定设置。",
+      "unavailableEntry": "暂不可用的入口（{{id}}）",
+      "openFailed": "无法打开{{name}}，请重试。"
     }
   },
   "window": {
@@ -798,7 +864,8 @@
     "hostDiscoveryFailed": "无法加载主机，请重试。",
     "existingHostRequired": "请选择已有的 SSH 主机。",
     "sshHost": "SSH 主机",
-    "sourceUnsupported": "当前主机不支持此环境。"
+    "sourceUnsupported": "当前主机不支持此环境。",
+    "checkingWsl": "正在检查当前主机的 WSL 支持…"
   },
   "newProject": {
     "title": "创建项目",
@@ -828,6 +895,7 @@
     "emptyProjectHint": "保存到当前设备：",
     "invalidDirectoryName": "请输入单个文件夹名称，不能包含斜杠，也不能为 . 或 ..",
     "sameHostRequired": "同一项目的文件夹必须位于同一台主机。",
+    "assistantFolderUnavailable": "此文件夹属于助理工作区，不能添加为项目。请选择其他文件夹，或移除此文件夹并输入名称以创建新项目。",
     "remoteUnavailable": "当前界面不支持选择远程文件夹。",
     "remoteConnectionChanged": "远程连接已改变，请重新选择项目文件夹。",
     "defaultDirectoryUnavailable": "目标设备未提供用户目录，请更新或重新连接该设备后重试。",
@@ -1680,6 +1748,7 @@
     "panelView": "面板视图"
   },
   "sceneBar": {
+    "recentSessions": "最近打开的会话",
     "tabsLabel": "场景标签页",
     "scrollPrevious": "向左滚动标签页",
     "scrollNext": "向右滚动标签页",
@@ -1864,7 +1933,7 @@
   "ssh": {
     "remote": {
       "title": "远程 SSH",
-      "connect": "连接远程项目",
+      "connect": "连接",
       "connecting": "连接中...",
       "connected": "已连接",
       "disconnect": "断开连接",
@@ -1994,7 +2063,7 @@
     "portForward": {
       "menuEntry": "端口映射",
       "title": "端口映射",
-      "intro": "把远程主机上正在监听的端口映射到本机访问。映射不会自动建立，只有你在这里添加的才会生效。",
+      "intro": "把远程主机上正在监听的端口映射到本机访问。只有你在这里添加，或在远程终端中打开 localhost 链接时，才会建立映射。",
       "detectedTitle": "远程正在监听",
       "detecting": "正在检测远程端口…",
       "detect": "重新检测",
@@ -2063,6 +2132,7 @@
       "targetIsPullRequest": "此条目是拉取请求，请按拉取请求打开，而不是按问题打开。"
     },
     "messages": {
+      "hostUnsupported": "当前设备不支持内置 PR 查看，请使用系统浏览器打开 PR 链接。",
       "noWorkspace": "没有可用的活动工作区。",
       "unsupportedLink": "此链接不是受支持的拉取请求链接。",
       "detailsFailed": "加载拉取请求详情失败。",
@@ -2262,5 +2332,10 @@
     "createProject": "创建工程",
     "assistantError": "无法创建助理，请稍后重试。",
     "back": "返回选择"
+  },
+  "peerHost": {
+    "unavailable": "此功能在该设备上不可用。",
+    "updateRequired": "该设备上的 OpenBitFun 版本不支持此功能。请尝试在该设备上更新 OpenBitFun。",
+    "withDetail": "{{message}}（{{detail}}）"
   }
 }

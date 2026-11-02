@@ -37,8 +37,10 @@ Add AI providers and models, choose defaults, and configure proxy, subscription,
   - Inspect models.dev catalog status, refresh it manually, and reveal its local cache
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 为供应商添加自定义 Header、请求体字段与 SSL 行为
   - Add custom headers, request-body fields, and SSL behavior per provider
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 保存前测试供应商或模型连接并刷新运行时客户端
-  - Test provider or model connectivity before saving and refresh the runtime client
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看智能模式可用状态（暂未开放）
+  - View smart-mode availability (not released)
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 测试模型连接或图像生成，并刷新运行时客户端
+  - Test model connections or image generation and refresh the runtime client
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 管理模型池、路由策略与会话模型选择
   - Manage model pools, routing strategies, and session model selection
 

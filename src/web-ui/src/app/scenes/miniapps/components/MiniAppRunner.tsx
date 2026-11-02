@@ -3,10 +3,16 @@
  * Injects the bridge script (already in compiledHtml from Rust compiler)
  * and handles all postMessage RPC via useMiniAppBridge.
  */
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MiniApp } from '@/infrastructure/api/service-api/MiniAppAPI';
+import { createMiniAppDocumentId } from '../agent/miniAppAgentProtocol';
 import { useMiniAppBridge } from '../hooks/useMiniAppBridge';
 import type { MiniAppRunScope } from '../customization/miniAppCustomizationTypes';
+import { useMiniAppPresentationStore } from '../miniAppPresentationStore';
+import {
+  registerMiniAppAgentSurface,
+  updateMiniAppAgentSurfaceStatus,
+} from '../agent/miniAppAgentSurfaceRegistry';
 
 interface MiniAppRunnerProps {
   app: MiniApp;
@@ -18,7 +24,24 @@ interface MiniAppRunnerProps {
 }
 
 const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, strictRuntime = false, workspacePath, onReady, chromeActionRef }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Content replacement ends the old document's bridge and pending requests,
+  // including in the ordinary same-origin runtime. A new Window identity also
+  // prevents queued messages from the old document answering for the new one.
+  const documentKey = useMemo(() => app.compiled_html?.trim()
+    ? `${app.id}:${createMiniAppDocumentId()}`
+    : `${app.id}:empty`, [app.id, app.compiled_html]);
+  // The strict runtime replaces the frame element when its blob URL changes, so
+  // Agent registration must follow the mounted element instead of the first
+  // render; otherwise the registry keeps a detached frame that answers nothing.
+  const [surfaceFrame, setSurfaceFrame] = useState<HTMLIFrameElement | null>(null);
+  const [loadedFrame, setLoadedFrame] = useState<HTMLIFrameElement | null>(null);
+  const attachFrame = useCallback((node: HTMLIFrameElement | null) => {
+    iframeRef.current = node;
+    setSurfaceFrame(node);
+  }, []);
+  const runKind = runScope?.kind ?? 'active';
+  const agentInstanceId = useMiniAppPresentationStore(state => state.tabs[app.id]?.instance.instanceId);
   const bridgeReady = useMiniAppBridge(
     iframeRef,
     app,
@@ -26,6 +49,29 @@ const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, strictRunt
     strictRuntime,
     workspacePath,
   );
+
+  // Only the user-visible installed runner is Agent-controllable. A draft
+  // preview shares the app id but is a different surface, and unmounting must
+  // remove the surface so no stale handle answers for a closed tab.
+  useEffect(() => {
+    if (runKind !== 'active' || !surfaceFrame) return undefined;
+    return registerMiniAppAgentSurface({
+      appId: app.id,
+      iframe: surfaceFrame,
+      strictRuntime,
+      instanceId: agentInstanceId,
+      ready: false,
+    });
+  }, [agentInstanceId, app.id, runKind, strictRuntime, surfaceFrame]);
+
+  useEffect(() => {
+    if (runKind !== 'active') return;
+    updateMiniAppAgentSurfaceStatus(app.id, {
+      ready: bridgeReady && surfaceFrame !== null && loadedFrame === surfaceFrame,
+      instanceId: agentInstanceId,
+    });
+  }, [agentInstanceId, app.id, bridgeReady, loadedFrame, runKind, surfaceFrame]);
+
   useEffect(() => {
     if (!chromeActionRef) return;
     const invoke = (actionId: string) => {
@@ -39,6 +85,7 @@ const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, strictRunt
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const notifyReady = useCallback(() => {
+    setLoadedFrame(iframeRef.current);
     if (!notified.current) { notified.current = true; onReadyRef.current?.(); }
   }, []);
   const [strictDocumentUrl, setStrictDocumentUrl] = useState<string>();
@@ -65,7 +112,7 @@ const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, strictRunt
 
   useEffect(() => {
     const iframe = iframeRef.current;
-    if (strictRuntime || !iframe) {
+    if (strictRuntime || !iframe || iframe !== surfaceFrame) {
       return undefined;
     }
 
@@ -90,7 +137,7 @@ const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, strictRunt
     return () => {
       iframe.removeEventListener('load', handleLoad);
     };
-  }, [app.id, app.compiled_html, strictRuntime, writeCompiledHtml]);
+  }, [app.id, app.compiled_html, strictRuntime, surfaceFrame, writeCompiledHtml]);
 
   // A fast document may finish before the asynchronous bridge becomes ready.
   useEffect(() => {
@@ -123,7 +170,7 @@ const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, strictRunt
     return (
       <iframe
         key={strictDocumentUrl ?? 'empty'}
-        ref={iframeRef}
+        ref={attachFrame}
         src={strictDocumentUrl ?? 'about:blank'}
         onLoad={() => { if (strictDocumentUrl && bridgeReady) notifyReady(); }}
         data-app-id={app.id}
@@ -139,7 +186,8 @@ const MiniAppRunner: React.FC<MiniAppRunnerProps> = ({ app, runScope, strictRunt
 
   return (
     <iframe
-      ref={iframeRef}
+      key={documentKey}
+      ref={attachFrame}
       src="about:blank"
       onLoad={() => {
         if (bridgeReady && iframeRef.current?.contentDocument?.documentElement.dataset.openbitfunMiniappRendered === app.id) notifyReady();

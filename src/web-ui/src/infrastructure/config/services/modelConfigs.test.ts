@@ -130,6 +130,7 @@ describe('modelConfigs', () => {
         provider: 'openai',
         category: 'multimodal',
         capabilities: ['text_chat', 'image_understanding', 'function_calling'],
+        max_images_per_request: 3,
       },
     ]);
 
@@ -145,6 +146,7 @@ describe('modelConfigs', () => {
         id: 'kimi-1',
         category: 'multimodal',
         capabilities: expect.arrayContaining(['image_understanding']),
+        maxImagesPerRequest: 3,
       }),
     ]);
 
@@ -162,6 +164,7 @@ describe('modelConfigs', () => {
           id: 'kimi-1',
           category: 'multimodal',
           capabilities: expect.arrayContaining(['image_understanding']),
+          max_images_per_request: 3,
         }),
       ])
     );

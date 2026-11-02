@@ -20,6 +20,7 @@ use super::registry::{RuntimeHookErrorPolicy, RuntimeHookRegistry};
 use super::settings::{AgentHookEvent, AgentHookHandler, AgentHookSettings};
 use log::{debug, warn};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -40,6 +41,10 @@ pub struct AgentHookEngine {
     registry: RuntimeHookRegistry,
     settings: Option<Arc<AgentHookSettings>>,
     project_hooks_disabled: bool,
+    /// Environment every command handler inherits. The host supplies what its
+    /// own launch environment lost (a GUI launch starts without the login
+    /// shell PATH); a handler's own options always win.
+    environment_defaults: Arc<BTreeMap<String, String>>,
 }
 
 impl AgentHookEngine {
@@ -52,6 +57,7 @@ impl AgentHookEngine {
             registry,
             settings: Some(Arc::new(settings)),
             project_hooks_disabled: false,
+            environment_defaults: Arc::default(),
         }
     }
 
@@ -60,7 +66,31 @@ impl AgentHookEngine {
             registry,
             settings: None,
             project_hooks_disabled: false,
+            environment_defaults: Arc::default(),
         }
+    }
+
+    /// Environment entries every command handler inherits unless its own
+    /// options define the same key.
+    pub fn with_environment_defaults(mut self, defaults: BTreeMap<String, String>) -> Self {
+        self.environment_defaults = Arc::new(defaults);
+        self
+    }
+
+    /// Environment for one command handler: the host's defaults first, then the
+    /// handler's own entries, which win on a shared key.
+    fn handler_environment(&self, options: &CommandHookOptions) -> BTreeMap<String, String> {
+        if self.environment_defaults.is_empty() {
+            return options.environment.clone();
+        }
+        let mut environment = (*self.environment_defaults).clone();
+        environment.extend(
+            options
+                .environment
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+        environment
     }
 
     pub fn with_project_hooks_enabled(mut self, enabled: bool) -> Self {
@@ -410,7 +440,14 @@ impl AgentHookEngine {
             command,
             timeout.as_millis()
         );
-        let run = run_hook_command(command, payload_json, cwd, timeout, &options.environment).await;
+        let run = run_hook_command(
+            command,
+            payload_json,
+            cwd,
+            timeout,
+            &self.handler_environment(options),
+        )
+        .await;
         let mut succeeded = false;
         let finalized = match run {
             HookCommandRun::SpawnFailed(error) => {
@@ -638,7 +675,7 @@ async fn run_hook_command(
     payload_json: &str,
     cwd: &Path,
     timeout: Duration,
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
 ) -> HookCommandRun {
     let mut process = hook_command(command);
     process.envs(environment);

@@ -5,7 +5,8 @@ use crate::agentic::tools::desktop_card_host::{
     invoke_desktop_card_host, validate_data, validate_data_source, validate_icon, validate_size,
     validate_subtitle, validate_template, validate_title, validate_tone, validate_web_url,
     DesktopCardDataSourceKind, DesktopCardDraft, DesktopCardHostRequest, DesktopCardOrigin,
-    DesktopCardPatch, DesktopCardSize, DesktopCardTemplateKind, DESKTOP_CARD_ICONS,
+    DesktopCardPatch, DesktopCardSize, DesktopCardTemplateKind, DESKTOP_CARD_CHART_STYLES,
+    DESKTOP_CARD_ICONS,
 };
 use crate::agentic::tools::framework::{PermissionIntent, Tool, ToolResult, ToolUseContext};
 use crate::agentic::tools::implementations::ExecCommandTool;
@@ -39,6 +40,10 @@ const TEMPLATE_SHAPES: &[(&str, &str)] = &[
         r#"{"kind":"metrics","layout":"grid","items":[{"label":"Stars","path":"/stars","format":"number"}]}"#,
     ),
     (
+        "chart",
+        r#"{"kind":"chart","chart":"bar","suffix":" GB","items":[{"label":"npm cache","value":4.12,"hint":"npm cache clean --force"}]} (chart: bar|column|line|donut|stacked; or itemsPath into the card data instead of items)"#,
+    ),
+    (
         "cronJob",
         r#"{"kind":"cronJob","jobId":"<id returned by Cron>"}"#,
     ),
@@ -60,6 +65,12 @@ const MISPLACEABLE_TEMPLATE_FIELDS: &[&str] = &[
     "valuePath",
     "maxPath",
     "statusPath",
+    "chart",
+    "itemsPath",
+    "labelsPath",
+    "totalPath",
+    "remainderLabel",
+    "caption",
     "jobId",
     "html",
 ];
@@ -122,6 +133,18 @@ fn pull_request_status_command() -> &'static str {
     } else {
         PULL_REQUEST_STATUS_COMMAND_SH
     }
+}
+
+/// For example `bar up to 12 items | line up to 120 points`.
+fn chart_style_summary() -> String {
+    DESKTOP_CARD_CHART_STYLES
+        .iter()
+        .map(|(style, max)| {
+            let unit = if *style == "line" { "points" } else { "items" };
+            format!("{style} up to {max} {unit}")
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 fn template_shape(kind: &str) -> Option<&'static str> {
@@ -486,6 +509,76 @@ fn presets() -> Value {
             "notes": "When it reaches zero the card highlights and a system notification is sent. Use targetAt with an ISO-8601 offset for wall-clock times."
         },
         {
+            "id": "usage-breakdown",
+            "useWhen": "You measured how a whole splits into parts and the user benefits from seeing the proportions: disk or quota usage after a scan, a budget, time spent per activity.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "C: drive usage",
+                    "icon": "hard-drive",
+                    "template": {
+                        "kind": "chart",
+                        "chart": "stacked",
+                        "suffix": " GB",
+                        "total": 906,
+                        "remainderLabel": "Free",
+                        "items": [
+                            { "label": "WeChat data", "value": 62.7, "tone": "warning", "hint": "Clean up inside WeChat; do not delete the folder" },
+                            { "label": "BlueStacks", "value": 20.5, "hint": "Remove unused instances in its multi-instance manager" },
+                            { "label": "Caches and temp files", "value": 10.25, "hint": "Temp 4.44 + npm 4.12 + uv/pip 1.69" },
+                            { "label": "Other used", "value": 218.55 }
+                        ],
+                        "caption": "Nothing was deleted. Review the highlighted items first."
+                    }
+                }
+            },
+            "notes": "Set total to the capacity and list only the used parts: the uncovered rest is drawn as remainderLabel and the header shows used of total. At most 6 items, so merge small parts into one item and keep their detail in its hint. Write labels, hints, and the caption in the user's language."
+        },
+        {
+            "id": "ranked-breakdown",
+            "useWhen": "Several comparable amounts the user will compare or act on: largest folders or caches, cleanup candidates, slowest tests, cost per service, errors per endpoint.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "Cleanup candidates",
+                    "icon": "chart",
+                    "template": {
+                        "kind": "chart",
+                        "chart": "bar",
+                        "suffix": " GB",
+                        "items": [
+                            { "label": "Temp files", "value": 4.44, "hint": "Safe to clear with Disk Cleanup" },
+                            { "label": "npm cache", "value": 4.12, "hint": "npm cache clean --force" },
+                            { "label": "uv / pip cache", "value": 1.69, "hint": "uv cache clean; pip cache purge" }
+                        ],
+                        "caption": "Review each item before deleting anything."
+                    }
+                }
+            },
+            "notes": "Order items from largest to smallest. Put one short action per item in hint and one sentence that applies to all in caption; this replaces a note full of numbers. Set total to draw each bar as a share of a whole, such as the disk capacity."
+        },
+        {
+            "id": "result-split",
+            "useWhen": "A count splits into a few outcomes or categories: test results, issue states, traffic by source, votes.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "Test run",
+                    "icon": "pie-chart",
+                    "template": {
+                        "kind": "chart",
+                        "chart": "donut",
+                        "items": [
+                            { "label": "Passed", "value": 182, "tone": "success" },
+                            { "label": "Failed", "value": 3, "tone": "danger" },
+                            { "label": "Skipped", "value": 12, "tone": "neutral" }
+                        ]
+                    }
+                }
+            },
+            "notes": "Donut and stacked charts take at most 6 items. Use tone only where it carries meaning (success, warning, danger); without tone the parts use shades of the card accent."
+        },
+        {
             "id": "scheduled-job",
             "useWhen": "You created a Cron job and the user benefits from seeing the next run and last result at a glance.",
             "call": {
@@ -524,7 +617,7 @@ fn presets() -> Value {
                     }
                 }
             },
-            "notes": "Command sources run locally with existing CLI auth (gh) and require user approval. This command is already written for the shell on this computer; keep its quoting style when you change the PR number or repository."
+            "notes": "Command sources run locally with existing CLI auth (gh) and require user approval only in Ask mode. This command is already written for the shell on this computer; keep its quoting style when you change the PR number or repository."
         },
         {
             "id": "repository-stats",
@@ -581,7 +674,35 @@ fn presets() -> Value {
                         ]
                     }
                 }
-            }
+            },
+            "notes": "For the coming days or hours, use the weather-week chart preset instead of listing each value."
+        },
+        {
+            "id": "weather-week",
+            "useWhen": "The user plans around the weather over the next days, or another value per day or period should be compared side by side.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "Shanghai highs this week",
+                    "icon": "sun",
+                    "dataSource": {
+                        "kind": "http",
+                        "url": "https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47&daily=temperature_2m_max&timezone=auto&forecast_days=7",
+                        "intervalSeconds": 3600
+                    },
+                    "template": {
+                        "kind": "chart",
+                        "chart": "column",
+                        "itemsPath": "/daily/temperature_2m_max",
+                        "labelsPath": "/daily/time",
+                        "labelFormat": "weekday",
+                        "format": "number",
+                        "digits": 0,
+                        "suffix": "°"
+                    }
+                }
+            },
+            "notes": "itemsPath may point at an array of numbers (with labelsPath at a parallel array of labels), an array of [label, value] pairs, or an array of objects read with labelKey, valueKey, and hintKey (default label, value, hint)."
         },
         {
             "id": "stock-quote",
@@ -609,7 +730,35 @@ fn presets() -> Value {
                     }
                 }
             },
-            "notes": "For derived values such as percent change, use a command source that prints the computed JSON, then bind with signTone: true."
+            "notes": "For derived values such as percent change, use a command source that prints the computed JSON, then bind with signTone: true. For the price history, use the stock-trend chart preset."
+        },
+        {
+            "id": "stock-trend",
+            "useWhen": "The user follows how a value moves over time: a price history, response times, build durations, daily signups.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "AAPL · 1 month",
+                    "icon": "trending-up",
+                    "link": "https://finance.yahoo.com/quote/AAPL",
+                    "dataSource": {
+                        "kind": "http",
+                        "url": "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=1mo",
+                        "headers": { "User-Agent": "Mozilla/5.0" },
+                        "intervalSeconds": 900
+                    },
+                    "template": {
+                        "kind": "chart",
+                        "chart": "line",
+                        "itemsPath": "/chart/result/0/indicators/quote/0/close",
+                        "labelsPath": "/chart/result/0/timestamp",
+                        "labelFormat": "date",
+                        "format": "currency",
+                        "currency": "USD"
+                    }
+                }
+            },
+            "notes": "A line chart shows the latest value, the change since the first point, and the range. Points whose value is null are skipped; Unix timestamps and ISO-8601 strings both work with labelFormat."
         },
         {
             "id": "task-progress",
@@ -644,11 +793,12 @@ fn presets() -> Value {
         },
         {
             "id": "note",
-            "useWhen": "Short reference info the user will need again soon (credentials location, port, command to run).",
+            "useWhen": "Short non-numeric reference info the user will need again soon (credentials location, URL, command to run).",
             "call": {
                 "action": "create",
                 "card": { "title": "Local dev URLs", "icon": "note", "template": { "kind": "note", "text": "Web: http://localhost:5173\nAPI: http://localhost:8080" } }
-            }
+            },
+            "notes": "Not for summaries of measured amounts: when the text would list sizes, counts, shares, or prices, use a chart (breakdowns, proportions, trends) or metrics (a few separate values) instead."
         },
         {
             "id": "pull-request-list",
@@ -698,10 +848,16 @@ impl Tool for DesktopCardTool {
         Ok(format!(
             r#"Show small persistent cards on the user's desktop, outside the OpenBitFun window (like OS widgets). Cards survive app restarts, keep their position, and can be dragged, hidden, or deleted by the user.
 
-Use a card whenever the user would otherwise have to come back and check on something: a reminder after some time, a scheduled job, a pull request's review/CI state, a deployment or long task's progress, weather, a stock price, a checklist of manual steps, or reference info needed again soon. Create one when the user asks, and also proactively when a task naturally produces something worth glancing at later. Prefer updating an existing card (list first) over creating near-duplicates, and delete cards that are no longer useful.
+Use a card whenever the user would otherwise have to come back and check on something: a reminder after some time, a scheduled job, a pull request's review/CI state, a deployment or long task's progress, weather, a stock price, a checklist of manual steps, the result of a scan or analysis (disk usage, cleanup candidates, test results, costs), or reference info needed again soon. Create one when the user asks, and also proactively when a task naturally produces something worth glancing at later. Prefer updating an existing card (list first) over creating near-duplicates, and delete cards that are no longer useful.
+
+Choosing a template. A card is read in a second, so let the shape of the information pick the template and show numbers visually instead of as prose:
+- Several amounts that compare or add up (sizes, counts, durations, costs, shares, scores): chart. bar ranks a breakdown; stacked or donut shows parts of a whole (set total to the capacity to show used against free); column compares a few periods or categories; line shows a trend over time.
+- A few separate values read individually (state, price, temperature, counts of different things): metrics. One value moving toward a goal: progress.
+- note only for text without measured amounts (a URL, a command, where something is). Never write a summary of numbers into a note. Put the numbers in a chart or metrics, and keep advice to one short hint per item or one caption sentence.
+- When a result has both a whole and its parts (for example disk usage and the largest folders), one stacked chart with total usually covers both.
 
 Actions:
-- presets: return ready-to-use recipes (countdown, scheduled job, PR status, PR list, repository stats, weather, stock, progress, checklist, note, custom HTML). Call it when unsure how to build a card; preset commands are already written for the shell on this computer.
+- presets: return ready-to-use recipes (countdown, usage breakdown, ranked breakdown, result split, scheduled job, PR status, PR list, repository stats, weather, weekly forecast chart, stock, price trend, progress, checklist, note, custom HTML). Call it when unsure how to build a card; preset commands are already written for the shell on this computer.
 - create: requires card. Shows the card and returns its cardId. With a dataSource, the result already contains the first fetch: the value, any fetch error, stderr output, and template paths that resolved to nothing. Read it instead of calling get or refresh again.
 - update: requires cardId and patch. Only provided fields change; null clears optional fields. patch.dataMerge shallow-merges into data (null removes a key). A changed dataSource is fetched before the result returns.
 - list / get: inspect cards, including the latest fetched data or fetch error and checklist state.
@@ -714,16 +870,17 @@ Card fields: title (required), subtitle, icon ({icons}), accent (neutral|accent|
 Templates (template.kind). Every template field, including items and layout, goes inside the template object; data and dataSource only supply the values that paths read:
 - countdown: durationSeconds | targetAt (ISO-8601 with offset) | targetAtMs, optional message, notify (default true: system notification when due).
 - checklist: items [{{id, text, done}}]. The user can tick items.
-- note: text (plain text, newlines kept).
+- note: text (plain text, newlines kept). Not for measured amounts; see Choosing a template.
 - progress: value/max or valuePath/maxPath, optional status/statusPath.
 - metrics: items (1-12) [{{label, value | path, format (text|number|percent|currency|datetime|relativeTime), digits, currency, prefix, suffix, tone, toneMap {{"VALUE": tone}}, signTone, hint | hintPath, emphasis}}], layout list|grid.
+- chart: chart ({chart_styles}), then either items [{{label, value, tone, hint}}] or itemsPath (JSON Pointer to an array in the card data: numbers with labelsPath at a parallel label array, [label, value] pairs, or objects read with labelKey/valueKey/hintKey, default label/value/hint). Optional total | totalPath (the whole the items belong to; the uncovered rest is drawn as remainderLabel), format (number|percent|currency), digits, currency, prefix, suffix (units such as " GB"), labelFormat (text|date|time|weekday|datetime) and caption (one short sentence under the chart). Values are non-negative except on line charts. Order bar items largest first. Longer bound arrays keep their first items, except that line charts keep the latest points and donut or stacked charts merge the rest into one Other part.
 - cronJob: jobId of a Cron job; shows next run and last result live.
-- custom: html (body markup with inline <style> and <script>) for a sandboxed widget; openbitfunCard.onData(cb) receives {{data, card, error}} and openbitfunCard.openLink(url) opens an http(s) link. Use it only when no template above fits (lists of links, small tables, mini charts): the other templates follow the app theme by themselves. {custom_widget_guidance}
+- custom: html (body markup with inline <style> and <script>) for a sandboxed widget; openbitfunCard.onData(cb) receives {{data, card, error}} and openbitfunCard.openLink(url) opens an http(s) link. Use it only when no template above fits (lists of links, small tables): the other templates follow the app theme by themselves, and chart already draws bar, column, line, donut, and stacked charts. {custom_widget_guidance}
 Paths are JSON Pointers (e.g. /current/temperature_2m) into the card data. With a dataSource, data is the latest fetched value.
 
 Data sources (dataSource.kind):
 - http: url, optional headers, intervalSeconds (30-86400), parse json|text. Fetched from this computer.
-- command: shell command run locally on this computer with {shell}, intervalSeconds (30-86400), optional cwd (defaults to the local workspace) and timeoutSeconds (default 20, max 120), parse json|text. Requires user approval; not allowed for remote workspaces. Prefer CLIs that already hold credentials (gh, kubectl) over putting secrets in http headers. {command_guidance}
+- command: shell command run locally on this computer with {shell}, intervalSeconds (30-86400), optional cwd (defaults to the local workspace) and timeoutSeconds (default 20, max 120), parse json|text. The permission system requests approval only in Ask mode; Auto Approve and Full Access need no additional confirmation. Not allowed for remote workspaces. Prefer CLIs that already hold credentials (gh, kubectl) over putting secrets in http headers. {command_guidance}
 
 Workflow for command sources:
 1. Run the exact command once with ExecCommand and confirm it prints the JSON you plan to bind (card commands additionally skip shell profiles). {command_test_guidance}
@@ -733,6 +890,7 @@ Workflow for command sources:
 
 Cards are shown only on this desktop. They are unavailable for remote mobile or bot control turns because that user cannot see them."#,
             icons = DESKTOP_CARD_ICONS.join(", "),
+            chart_styles = chart_style_summary(),
             shell = desktop_card_command_shell_label(),
             command_test_guidance = command_test_guidance().await,
             custom_widget_guidance = CUSTOM_WIDGET_STYLE_GUIDANCE,
@@ -745,7 +903,7 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
     }
 
     fn short_description(&self) -> String {
-        "Show persistent desktop cards (reminders, PR/CI status, progress, weather, prices, checklists) the user can glance at."
+        "Show persistent desktop cards (reminders, PR/CI status, progress, charts of usage or results, weather, prices, checklists) the user can glance at."
             .to_string()
     }
 
@@ -753,23 +911,23 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
         let tones = json!(["neutral", "accent", "info", "success", "warning", "danger"]);
         let template_item = json!({
             "type": "object",
-            "description": "checklist item {id, text, done} or metrics item {label, value | path, ...}.",
+            "description": "checklist item {id, text, done}, metrics item {label, value | path, ...}, or chart item {label, value, tone, hint}.",
             "properties": {
                 "id": { "type": "string", "description": "checklist: stable item id." },
                 "text": { "type": "string", "description": "checklist: item text." },
                 "done": { "type": "boolean", "description": "checklist: ticked state." },
-                "label": { "type": "string", "description": "metrics: row label." },
-                "value": { "description": "metrics: static value; use path for fetched data." },
+                "label": { "type": "string", "description": "metrics: row label. chart: bar, segment, or point label." },
+                "value": { "description": "metrics: static value; use path for fetched data. chart: the number to plot (non-negative except on line charts)." },
                 "path": { "type": "string", "description": "metrics: JSON Pointer into the card data, such as /stars." },
                 "format": { "type": "string", "enum": ["text", "number", "percent", "currency", "datetime", "relativeTime"] },
                 "digits": { "type": "integer", "minimum": 0, "maximum": 8 },
                 "currency": { "type": "string", "description": "ISO 4217 code for format currency, such as USD." },
                 "prefix": { "type": "string" },
                 "suffix": { "type": "string" },
-                "tone": { "type": "string", "enum": tones },
+                "tone": { "type": "string", "enum": tones, "description": "metrics: value color. chart: bar or segment color; omit for neutral categories." },
                 "toneMap": { "type": "object", "description": "Tone by displayed raw value, such as {\"OPEN\": \"info\", \"0\": \"success\"}.", "additionalProperties": { "type": "string", "enum": tones } },
                 "signTone": { "type": "boolean", "description": "Positive numbers success, negative danger." },
-                "hint": { "type": "string" },
+                "hint": { "type": "string", "description": "metrics: tooltip. chart: one short line under the bar or legend row, such as the action to take." },
                 "hintPath": { "type": "string", "description": "JSON Pointer for a secondary line." },
                 "emphasis": { "type": "boolean" }
             }
@@ -778,15 +936,31 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
             "type": "object",
             "description": "Template object. All template fields, including items and layout, go here (not in data).",
             "properties": {
-                "kind": { "type": "string", "enum": ["countdown", "checklist", "note", "progress", "metrics", "cronJob", "custom"] },
+                "kind": { "type": "string", "enum": ["countdown", "checklist", "note", "progress", "metrics", "chart", "cronJob", "custom"], "description": "Pick by the shape of the information: chart for amounts that compare, add up, or change over time; metrics for a few separate values; note only for text without measured amounts." },
+                "chart": { "type": "string", "enum": DESKTOP_CARD_CHART_STYLES.iter().map(|(style, _)| *style).collect::<Vec<_>>(), "description": format!("chart: bar ranks a breakdown, stacked or donut shows parts of a whole, column compares periods or categories, line shows a trend. Limits: {}.", chart_style_summary()) },
+                "itemsPath": { "type": "string", "description": "chart: JSON Pointer to an array in the card data (numbers, [label, value] pairs, or objects); use instead of items for fetched data." },
+                "labelsPath": { "type": "string", "description": "chart: JSON Pointer to labels parallel to a numeric itemsPath array." },
+                "labelKey": { "type": "string", "description": "chart: label property of each itemsPath object (default label)." },
+                "valueKey": { "type": "string", "description": "chart: value property of each itemsPath object (default value)." },
+                "hintKey": { "type": "string", "description": "chart: hint property of each itemsPath object (default hint)." },
+                "total": { "type": "number", "description": "chart (not line): the whole the items are part of, such as disk capacity; the uncovered rest is drawn as the remainder." },
+                "totalPath": { "type": "string", "description": "chart (not line): JSON Pointer to the total." },
+                "remainderLabel": { "type": "string", "description": "chart: label of the uncovered rest when total is set, such as Free." },
+                "format": { "type": "string", "enum": ["number", "percent", "currency"], "description": "chart: value format; percent expects 0-100." },
+                "digits": { "type": "integer", "minimum": 0, "maximum": 8, "description": "chart: fraction digits." },
+                "currency": { "type": "string", "description": "chart: ISO 4217 code for format currency." },
+                "prefix": { "type": "string", "description": "chart: text before each value." },
+                "suffix": { "type": "string", "description": "chart: unit after each value, such as \" GB\" or \" ms\"." },
+                "labelFormat": { "type": "string", "enum": ["text", "date", "time", "weekday", "datetime"], "description": "chart: show timestamp labels (ISO-8601 or Unix time) as a date, time, or weekday." },
+                "caption": { "type": "string", "description": "chart: one short sentence under the chart, such as the advice that applies to every item." },
                 "durationSeconds": { "type": "number", "description": "countdown: seconds from now." },
                 "targetAt": { "type": "string", "description": "countdown: ISO-8601 time with offset, such as 2026-03-17T15:30:00+08:00." },
                 "targetAtMs": { "type": "integer", "description": "countdown: epoch milliseconds." },
                 "message": { "type": "string", "description": "countdown: shown when due." },
                 "notify": { "type": "boolean", "description": "countdown: system notification when due (default true)." },
-                "items": { "type": "array", "description": "checklist or metrics (1-12) items.", "items": template_item },
+                "items": { "type": "array", "description": "checklist, metrics (1-12), or static chart items.", "items": template_item },
                 "layout": { "type": "string", "enum": ["list", "grid"], "description": "metrics layout." },
-                "text": { "type": "string", "description": "note: plain text." },
+                "text": { "type": "string", "description": "note: plain text without measured amounts; put sizes, counts, shares, or prices in a chart or metrics instead." },
                 "value": { "type": "number", "description": "progress: static value." },
                 "max": { "type": "number", "description": "progress: static maximum." },
                 "valuePath": { "type": "string", "description": "progress: JSON Pointer to the value." },
@@ -858,6 +1032,23 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["create", "update", "list", "get", "show", "hide", "delete", "refresh", "presets"]},
+                "card": {"type": "object", "additionalProperties": true},
+                "cards": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "presets": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "card_id": {"type": "string"},
+                "visible": {"type": "boolean"},
+                "data": {"type": "object", "additionalProperties": true}
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }
@@ -892,7 +1083,7 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
     fn permission_intents(
         &self,
         input: &Value,
-        _context: &ToolUseContext,
+        context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<PermissionIntent>> {
         let Some(command) = command_source(input) else {
             return Ok(Vec::new());
@@ -902,9 +1093,10 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
             vec![format!("desktop-card:command:{command}")],
         );
         intent.save_resources.clear();
-        intent
-            .display_metadata
-            .insert("requiresFreshApproval".to_string(), Value::Bool(true));
+        intent.display_metadata.insert(
+            "requiresFreshApproval".to_string(),
+            Value::Bool(context.requires_fresh_approval()),
+        );
         intent.display_metadata.insert(
             "description".to_string(),
             Value::String(
@@ -1346,8 +1538,24 @@ mod tests {
             parse_draft(&json!({"title": "N", "template": {"kind": "note"}}), 0).unwrap_err();
         assert!(error.contains(r#"{"kind":"note","text""#), "{error}");
         let error =
-            parse_draft(&json!({"title": "N", "template": {"kind": "chart"}}), 0).unwrap_err();
+            parse_draft(&json!({"title": "N", "template": {"kind": "hologram"}}), 0).unwrap_err();
         assert!(error.contains("must be one of: countdown"), "{error}");
+        assert!(error.contains("chart"), "{error}");
+        let error =
+            parse_draft(&json!({"title": "N", "template": {"kind": "chart"}}), 0).unwrap_err();
+        assert!(
+            error.contains(r#"{"kind":"chart","chart":"bar""#),
+            "{error}"
+        );
+        let error = parse_draft(
+            &json!({"title": "N", "template": {"kind": "chart", "chart": "pie", "items": [{"label": "a", "value": 1}]}}),
+            0,
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("bar, column, line, donut, stacked"),
+            "{error}"
+        );
         let error = parse_draft(
             &json!({
                 "title": "N",
@@ -1399,6 +1607,127 @@ mod tests {
         let patch = &schema["properties"]["patch"]["properties"];
         assert!(patch["template"]["properties"].get("items").is_some());
         assert!(patch.get("dataMerge").is_some());
+    }
+
+    #[test]
+    fn schema_describes_chart_templates() {
+        let schema = DesktopCardTool::new().input_schema();
+        let template = &schema["properties"]["card"]["properties"]["template"]["properties"];
+        assert!(template["kind"]["enum"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("chart")));
+        assert_eq!(
+            template["chart"]["enum"],
+            json!(["bar", "column", "line", "donut", "stacked"])
+        );
+        for field in [
+            "itemsPath",
+            "labelsPath",
+            "labelKey",
+            "valueKey",
+            "hintKey",
+            "total",
+            "totalPath",
+            "remainderLabel",
+            "format",
+            "digits",
+            "suffix",
+            "labelFormat",
+            "caption",
+        ] {
+            assert!(template.get(field).is_some(), "{field}");
+        }
+        let note = template["text"]["description"].as_str().unwrap();
+        assert!(note.contains("chart or metrics"), "{note}");
+        let kind = template["kind"]["description"].as_str().unwrap();
+        assert!(kind.contains("note only for text"), "{kind}");
+    }
+
+    #[tokio::test]
+    async fn description_steers_measured_amounts_into_charts() {
+        let description = DesktopCardTool::new().description().await.unwrap();
+        assert!(description.contains("Choosing a template"), "{description}");
+        assert!(
+            description.contains("Never write a summary of numbers into a note"),
+            "{description}"
+        );
+        assert!(
+            description.contains("chart: chart (bar up to 12 items"),
+            "{description}"
+        );
+        assert!(
+            description.contains("line up to 120 points"),
+            "{description}"
+        );
+        assert!(description.contains("usage breakdown"), "{description}");
+        assert!(DesktopCardTool::new()
+            .short_description()
+            .contains("charts"));
+    }
+
+    #[test]
+    fn chart_presets_cover_every_style() {
+        let presets = presets();
+        let styles = presets
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|preset| preset.pointer("/call/card/template/chart"))
+            .filter_map(Value::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            styles.into_iter().collect::<Vec<_>>(),
+            ["bar", "column", "donut", "line", "stacked"]
+        );
+        let note = presets
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|preset| preset["id"] == "note")
+            .unwrap();
+        assert!(note["notes"].as_str().unwrap().contains("use a chart"));
+    }
+
+    #[test]
+    fn misplaced_chart_fields_get_an_actionable_hint() {
+        let error = parse_draft(
+            &json!({
+                "title": "Disk",
+                "itemsPath": "/rows",
+                "template": {"kind": "chart", "chart": "bar", "items": [{"label": "a", "value": 1}]}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.itemsPath would be ignored"), "{error}");
+        let error = parse_draft(
+            &json!({
+                "title": "Disk",
+                "template": {"kind": "chart", "chart": "bar"},
+                "data": {"items": [{"label": "a", "value": 1}]}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.data.items"), "{error}");
+    }
+
+    #[test]
+    fn chart_cards_report_unresolved_data_paths() {
+        let result = json!({
+            "card": {
+                "id": "card-3",
+                "title": "Highs",
+                "visible": true,
+                "template": {"kind": "chart", "chart": "column", "itemsPath": "/daily/max", "labelsPath": "/daily/time"},
+                "dataSource": {"kind": "http", "url": "https://example.com", "intervalSeconds": 600},
+                "lastData": {"fetchedAtMs": 1, "value": {"daily": {"max": [1, 2]}}}
+            }
+        });
+        let text = render_result_for_assistant("create", &result);
+        assert!(text.contains("/daily/time (labelsPath)"), "{text}");
+        assert!(!text.contains("/daily/max ("), "{text}");
     }
 
     #[test]
@@ -1590,7 +1919,7 @@ mod tests {
     }
 
     #[test]
-    fn command_sources_always_require_fresh_approval() {
+    fn command_sources_require_fresh_approval_in_ask_mode() {
         let input = json!({
             "action": "create",
             "card": {

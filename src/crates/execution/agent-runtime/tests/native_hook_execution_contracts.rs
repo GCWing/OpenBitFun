@@ -12,7 +12,8 @@
 use openbitfun_agent_runtime::native_hooks::{
     AgentHookEngine, AgentHookEventPayload, AgentHookOutcome, AgentHookPayload,
     AgentHookPayloadCommon, AgentHookPermissionMode, AgentHookPermissionOutcome, AgentHookScope,
-    AgentHookSettings, AgentHookSettingsLayer, MAX_HOOK_MODEL_OUTPUT_BYTES,
+    AgentHookSettings, AgentHookSettingsLayer, CommandHookOptions, RuntimeHookRegistry,
+    MAX_HOOK_MODEL_OUTPUT_BYTES,
 };
 use serde_json::json;
 use std::path::Path;
@@ -769,6 +770,62 @@ mod skill_hooks {
             .permission
             .is_none());
     }
+}
+
+/// A host that knows its launch environment (a Linux GUI launch without the
+/// login-shell PATH) hands the engine defaults every handler inherits.
+#[tokio::test]
+async fn host_environment_defaults_reach_the_handler() {
+    let engine = engine(
+        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"printf '%s' \"$OPENBITFUN_HOOK_ENV_PROBE\""}]}]}}"#,
+    )
+    .with_environment_defaults(std::collections::BTreeMap::from([(
+        "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+        "from-host".to_string(),
+    )]));
+
+    let outcome = dispatch(&engine, &session_start_payload()).await;
+
+    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    assert_eq!(outcome.additional_context, vec!["from-host".to_string()]);
+}
+
+/// A handler that sets the same key keeps its own value: host defaults only
+/// fill gaps, so a hook can still pin the environment it needs.
+#[tokio::test]
+async fn handler_environment_overrides_the_host_defaults() {
+    let (settings, issues) = AgentHookSettings::from_layers(&[AgentHookSettingsLayer {
+        scope: AgentHookScope::User,
+        source: "test hooks.json".to_string(),
+        bytes: br#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"printf '%s' \"$OPENBITFUN_HOOK_ENV_PROBE\""}]}]}}"#.to_vec(),
+    }]);
+    assert!(issues.is_empty(), "unexpected settings issues: {issues:?}");
+    let mut registration = settings
+        .registrations()
+        .pop()
+        .expect("one command registration");
+    registration = registration.with_command_options(CommandHookOptions {
+        environment: std::collections::BTreeMap::from([(
+            "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+            "from-handler".to_string(),
+        )]),
+        ..Default::default()
+    });
+    let registry = RuntimeHookRegistry::default();
+    registry
+        .register_batch(vec![registration])
+        .expect("valid registration");
+    let engine = AgentHookEngine::with_registry(registry).with_environment_defaults(
+        std::collections::BTreeMap::from([(
+            "OPENBITFUN_HOOK_ENV_PROBE".to_string(),
+            "from-host".to_string(),
+        )]),
+    );
+
+    let outcome = dispatch(&engine, &session_start_payload()).await;
+
+    assert!(outcome.warnings.is_empty(), "{:?}", outcome.warnings);
+    assert_eq!(outcome.additional_context, vec!["from-handler".to_string()]);
 }
 
 /// A timed-out handler must stop the processes it started, not just the shell.

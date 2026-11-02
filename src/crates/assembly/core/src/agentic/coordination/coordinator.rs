@@ -103,6 +103,9 @@ use openbitfun_agent_runtime::remote_file_delivery::{
 };
 use openbitfun_agent_runtime::sdk::PermissionReply;
 use openbitfun_agent_runtime::user_questions::USER_INPUT_AVAILABLE_CONTEXT_KEY;
+use openbitfun_agent_tools::{
+    PTC_LANGUAGE_CONTEXT_KEY, PTC_TOOL_PRESENTATION_CONTEXT_KEY, PTC_TOOL_PRESENTATION_MODE,
+};
 use openbitfun_config_contracts::model_pool::AgentModelSelection;
 use openbitfun_config_contracts::model_pool::AgentModelSelections;
 use openbitfun_core_types::model_pool::ModelSelection;
@@ -201,6 +204,136 @@ pub(super) fn session_storage_workspace_locator(
     }
 }
 
+/// The workspace ID of a loaded session when `requested_workspace_path` only
+/// re-states that session's own execution or project root and the request does
+/// not select a different SSH connection. Returns `None` when the request must
+/// still go through legacy path resolution.
+fn loaded_session_workspace_id_for_locator<'a>(
+    config: &'a SessionConfig,
+    requested_workspace_path: &str,
+    requested_connection_id: Option<&str>,
+    requested_ssh_host: Option<&str>,
+) -> Option<&'a str> {
+    let workspace_id = config
+        .workspace_id
+        .as_deref()
+        .or(config.project_workspace_id.as_deref())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())?;
+    let requested_connection_id = requested_connection_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    let session_connection_id = config
+        .remote_connection_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if requested_connection_id.is_some() && requested_connection_id != session_connection_id {
+        return None;
+    }
+    // A non-loopback host selector names a specific SSH owner; only adopt the
+    // session's ID when it is that same owner. "localhost" without a connection
+    // is the historical local-session marker and carries no remote selection.
+    let requested_ssh_host = requested_ssh_host
+        .map(str::trim)
+        .filter(|host| !host.is_empty() && *host != "localhost");
+    if requested_ssh_host.is_some()
+        && requested_connection_id.is_none()
+        && requested_ssh_host
+            != config
+                .remote_ssh_host
+                .as_deref()
+                .map(str::trim)
+                .filter(|host| !host.is_empty())
+    {
+        return None;
+    }
+    let requested = requested_workspace_path.trim();
+    if requested.is_empty() {
+        return None;
+    }
+    // Remote roots are POSIX paths on the SSH host: never canonicalize or
+    // case-fold them with controller (for example Windows) path semantics.
+    let is_remote = config.is_remote_workspace();
+    let comparable = |path: &str| {
+        if is_remote {
+            openbitfun_services_core::workspace_identity::normalize_remote_workspace_path(path)
+        } else {
+            comparable_workspace_path(path)
+        }
+    };
+    let requested = comparable(requested);
+    let names_session_root = [
+        config.workspace_path.as_deref(),
+        config.project_workspace_path.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .filter(|path| !path.is_empty())
+    .any(|path| comparable(path) == requested);
+    names_session_root.then_some(workspace_id)
+}
+
+/// ID-first storage resolution for a request that targets a loaded session.
+///
+/// Returns `None` when the request locator does not merely re-state the
+/// session's own root (see [`loaded_session_workspace_id_for_locator`]); the
+/// caller must then keep its legacy path resolution and binding checks.
+///
+/// When a local worktree session's own workspace record is gone, storage is
+/// retried through the session's `project_workspace_id`. This is safe because
+/// local worktree history is always stored under the project workspace, and
+/// the retry is by ID only: it never falls back to a path, never applies to
+/// remote sessions (whose workspace and project IDs are the same record), and
+/// only accepts a local storage owner.
+pub(super) async fn resolve_loaded_session_storage_by_id(
+    port: &CoreSessionStorePort,
+    config: &SessionConfig,
+    requested_workspace_path: &str,
+    requested_connection_id: Option<&str>,
+    requested_ssh_host: Option<&str>,
+) -> Option<openbitfun_runtime_ports::PortResult<SessionStoragePathResolution>> {
+    let workspace_id = loaded_session_workspace_id_for_locator(
+        config,
+        requested_workspace_path,
+        requested_connection_id,
+        requested_ssh_host,
+    )?;
+    let resolved = match port.resolve_workspace_storage(workspace_id).await {
+        Ok(resolution) => Ok(resolution),
+        Err(error) => {
+            let project_id = config
+                .project_workspace_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && *id != workspace_id);
+            match project_id {
+                Some(project_id) if !config.is_remote_workspace() => {
+                    match port.resolve_workspace_storage(project_id).await {
+                        Ok(resolution)
+                            if resolution.storage_kind
+                                == openbitfun_runtime_ports::SessionStorageKind::Local =>
+                        {
+                            warn!(
+                                "Session workspace record is unavailable; using its project workspace storage: workspace_id={}, project_workspace_id={}",
+                                workspace_id, project_id
+                            );
+                            Ok(resolution)
+                        }
+                        _ => Err(error),
+                    }
+                }
+                _ => Err(error),
+            }
+        }
+    };
+    Some(resolved.map(|mut resolution| {
+        resolution.requested_workspace_path = PathBuf::from(requested_workspace_path);
+        resolution
+    }))
+}
+
 fn trimmed_model_id(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -283,6 +416,19 @@ async fn normalize_model_selection(model_id: &str) -> OpenBitFunResult<String> {
         "" | "auto" | "default" => Ok("primary".to_string()),
         "primary" | "fast" => Ok(requested_model_id.to_string()),
         model_config_id => {
+            #[cfg(test)]
+            if let Ok(ai_config) =
+                crate::agentic::session::session_manager::TEST_MODEL_RESOLUTION_AI_CONFIG
+                    .try_with(Clone::clone)
+            {
+                return ai_config
+                    .resolve_model_reference(model_config_id)
+                    .ok_or_else(|| {
+                        OpenBitFunError::Validation(format!(
+                            "Unknown or disabled model configuration ID: {model_config_id}"
+                        ))
+                    });
+            }
             let config_service = get_global_config_service().await.map_err(|error| {
                 OpenBitFunError::AIClient(format!(
                     "Failed to load AI configuration for model update: {error}"
@@ -1428,6 +1574,7 @@ impl ConversationCoordinator {
         model_id: Option<String>,
     ) -> OpenBitFunResult<SessionConfig> {
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_id: Some(workspace_id),
             model_id,
             ..Default::default()
@@ -2095,6 +2242,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             provider_id: None,
             model_config_id: None,
             effective_model_name: None,
+            routing: None,
             first_chunk_ms: None,
             first_visible_output_ms: None,
             stream_duration_ms: None,
@@ -2173,6 +2321,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             provider_id: None,
             model_config_id: None,
             effective_model_name: None,
+            routing: None,
             first_chunk_ms: None,
             first_visible_output_ms: None,
             stream_duration_ms: None,
@@ -2709,11 +2858,32 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         model_id: &str,
         reasoning_preset: Option<&str>,
     ) -> OpenBitFunResult<()> {
+        self.update_session_model_selection_with_routing(
+            session_id,
+            model_id,
+            reasoning_preset,
+            None,
+        )
+        .await
+    }
+
+    pub async fn update_session_model_selection_with_routing(
+        &self,
+        session_id: &str,
+        model_id: &str,
+        reasoning_preset: Option<&str>,
+        routing_mode: Option<&str>,
+    ) -> OpenBitFunResult<()> {
         self.ensure_session_runtime_ownership(session_id, None)?;
         let normalized_model_id = normalize_model_selection(model_id).await?;
 
         self.session_manager
-            .update_session_model_selection(session_id, &normalized_model_id, reasoning_preset)
+            .update_session_model_selection_with_routing(
+                session_id,
+                &normalized_model_id,
+                reasoning_preset,
+                routing_mode,
+            )
             .await?;
 
         info!(
@@ -2735,13 +2905,34 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         reasoning_preset: Option<&str>,
         include_internal: bool,
     ) -> OpenBitFunResult<Session> {
+        self.update_session_model_selection_from_storage_path_with_routing(
+            storage_path,
+            session_id,
+            model_id,
+            reasoning_preset,
+            None,
+            include_internal,
+        )
+        .await
+    }
+
+    pub(crate) async fn update_session_model_selection_from_storage_path_with_routing(
+        &self,
+        storage_path: &Path,
+        session_id: &str,
+        model_id: &str,
+        reasoning_preset: Option<&str>,
+        routing_mode: Option<&str>,
+        include_internal: bool,
+    ) -> OpenBitFunResult<Session> {
         let model_id = normalize_model_selection(model_id).await?;
         self.session_manager
-            .update_session_model_selection_in_storage(
+            .update_session_model_selection_in_storage_with_routing(
                 Some(storage_path),
                 session_id,
                 &model_id,
                 reasoning_preset,
+                routing_mode,
                 include_internal,
                 |session| {
                     let workspace = session.config.workspace_path.as_deref().ok_or_else(|| {
@@ -4472,6 +4663,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 round_index: 0,
                 model_config_id: String::new(),
                 effective_model_name: String::new(),
+                routing: None,
             })
             .await;
             self.emit_event(AgenticEvent::ToolEvent {
@@ -4983,15 +5175,40 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .map_err(|error| OpenBitFunError::Session(error.to_string()))
     }
 
-    async fn resolve_session_restore_path(
+    /// Storage scope for a request that targets an already loaded session.
+    ///
+    /// A loaded session carries the workspace ID it was admitted with, so a
+    /// locator that merely re-states that session's own execution or project
+    /// root is resolved by ID. Re-resolving the bare path would hit the legacy
+    /// path adapter, which correctly refuses to choose between a local record
+    /// and an (inactive) SSH record that share the same root string.
+    ///
+    /// The legacy path adapter remains the fallback when the session has no
+    /// workspace ID, when the locator names some other root, or when the
+    /// request explicitly selects a different SSH connection, so mismatched
+    /// requests keep failing the storage-binding check instead of silently
+    /// adopting the session's binding.
+    async fn resolve_loaded_session_restore_scope(
         &self,
+        session_config: &SessionConfig,
         workspace_path: &str,
         remote_connection_id: Option<&str>,
         remote_ssh_host: Option<&str>,
-    ) -> OpenBitFunResult<PathBuf> {
+    ) -> OpenBitFunResult<SessionStoragePathResolution> {
+        let port = CoreSessionStorePort::with_path_manager(self.session_manager.path_manager());
+        if let Some(resolution) = resolve_loaded_session_storage_by_id(
+            &port,
+            session_config,
+            workspace_path,
+            remote_connection_id,
+            remote_ssh_host,
+        )
+        .await
+        {
+            return resolution.map_err(|error| OpenBitFunError::Session(error.to_string()));
+        }
         self.resolve_session_restore_scope(workspace_path, remote_connection_id, remote_ssh_host)
             .await
-            .map(|resolution| resolution.effective_storage_path)
     }
 
     fn require_main_session_workspace(&self, session_id: &str) -> OpenBitFunResult<PathBuf> {
@@ -6277,6 +6494,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .session_manager
             .get_session(session_id)
             .ok_or_else(|| OpenBitFunError::NotFound(format!("Session not found: {session_id}")))?;
+        // Queueing and live steering must reject an oversized user attachment
+        // batch while the sender still owns it. Do not guess unresolved defaults;
+        // a selected pool has a common limit independent of its current member.
+        if let Some(ai_config) = SessionManager::load_ai_config_for_model_resolution().await {
+            Self::validate_input_image_count(
+                &ai_config,
+                session.config.model_id.as_deref(),
+                Self::input_image_pool_id(&session.config),
+                images.len(),
+            )?;
+        }
         let workspace = Self::build_workspace_binding(&session.config).await;
         let context =
             crate::agentic::tools::framework::ToolUseContext::for_tool_listing(workspace, None);
@@ -6286,8 +6514,122 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         .await
     }
 
+    fn input_image_pool_id(config: &SessionConfig) -> Option<&str> {
+        if config.model_binding_policy != SessionModelBindingPolicy::Pool {
+            return None;
+        }
+        config.model_pool_id.as_deref().or_else(|| {
+            config
+                .model_pool_binding
+                .as_ref()
+                .map(|binding| binding.pool_id.as_str())
+        })
+    }
+
+    fn validate_input_image_count(
+        ai_config: &AIConfig,
+        resolved_model_id: Option<&str>,
+        pool_id: Option<&str>,
+        image_count: usize,
+    ) -> OpenBitFunResult<()> {
+        let roots: Vec<_> = if let Some(pool_id) = pool_id {
+            let pool = ai_config
+                .model_pools
+                .get(pool_id)
+                .map_err(OpenBitFunError::validation)?;
+            ai_config
+                .models
+                .iter()
+                .filter(|model| pool.member_model_ids.contains(&model.id))
+                .collect()
+        } else {
+            ai_config
+                .models
+                .iter()
+                .filter(|model| Some(model.id.as_str()) == resolved_model_id)
+                .collect()
+        };
+        // The complete new user batch must fit every native-image destination
+        // that the turn may use. Health and cooldown never widen this budget.
+        let mut limiting_model = None;
+        for root in roots
+            .into_iter()
+            .filter(|model| model.enabled && model.supports_text_generation())
+        {
+            let route = root.channel_routing.as_ref();
+            for candidate in ai_config.models.iter().filter(|candidate| {
+                candidate.enabled
+                    && candidate.supports_text_generation()
+                    && candidate.supports_image_understanding()
+            }) {
+                let selected = match route.and_then(|route| route.manual_channel.as_deref()) {
+                    Some(manual) => candidate.id == manual,
+                    None => {
+                        candidate.id == root.id
+                            || route.is_some_and(|route| {
+                                route.fallback_model_ids.contains(&candidate.id)
+                            })
+                    }
+                };
+                if selected {
+                    if let Some(limit) = candidate.max_images_per_request {
+                        if limiting_model.is_none_or(|(_, current)| limit < current) {
+                            limiting_model = Some((candidate, limit));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((model, limit)) = limiting_model {
+            if image_count > limit {
+                return Err(OpenBitFunError::validation(format!(
+                    "Too many images attached for model '{}': {} > {}. Send no more than {} images at a time.",
+                    model.name, image_count, limit, limit
+                )));
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
-    async fn start_dialog_turn_internal(
+    fn start_dialog_turn_internal(
+        &self,
+        session_id: String,
+        user_input: String,
+        original_user_input: Option<String>,
+        image_contexts: Option<Vec<ImageContextData>>,
+        turn_id: Option<String>,
+        agent_type: String,
+        workspace_path: Option<String>,
+        remote_connection_id: Option<String>,
+        remote_ssh_host: Option<String>,
+        submission_policy: DialogSubmissionPolicy,
+        extra_user_message_metadata: Option<serde_json::Value>,
+        additional_prepended_messages: Vec<Message>,
+        suppress_session_title_generation: bool,
+    ) -> futures::future::BoxFuture<'_, OpenBitFunResult<()>> {
+        // All admission surfaces share this allocation boundary. Keeping the
+        // startup state inline multiplies debug poll temporaries in the public
+        // wrappers and scheduler, exhausting the stack during cold skill initialization.
+        Box::pin(self.start_dialog_turn_internal_impl(
+            session_id,
+            user_input,
+            original_user_input,
+            image_contexts,
+            turn_id,
+            agent_type,
+            workspace_path,
+            remote_connection_id,
+            remote_ssh_host,
+            submission_policy,
+            extra_user_message_metadata,
+            additional_prepended_messages,
+            suppress_session_title_generation,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn start_dialog_turn_internal_impl(
         &self,
         session_id: String,
         user_input: String,
@@ -6313,8 +6655,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 .as_ref()
                 .and_then(|session| session.config.project_workspace_path.as_deref()),
         );
-        let requested_restore = match storage_workspace_path.as_deref() {
-            Some(workspace_path) => Some(
+        let requested_restore = match (storage_workspace_path.as_deref(), loaded_session.as_ref()) {
+            (Some(workspace_path), Some(session)) => Some(
+                self.resolve_loaded_session_restore_scope(
+                    &session.config,
+                    workspace_path,
+                    remote_connection_id.as_deref(),
+                    remote_ssh_host.as_deref(),
+                )
+                .await?,
+            ),
+            (Some(workspace_path), None) => Some(
                 self.resolve_session_restore_scope(
                     workspace_path,
                     remote_connection_id.as_deref(),
@@ -6322,7 +6673,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 )
                 .await?,
             ),
-            None => None,
+            (None, _) => None,
         };
 
         #[cfg(feature = "external-sources")]
@@ -6800,6 +7151,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             let ai_config: crate::service::config::types::AIConfig =
                 config_service.get_config(Some("ai")).await?;
             image_requirement.validate(&ai_config, &resolved_model_id)?;
+            Self::validate_input_image_count(
+                &ai_config,
+                Some(&resolved_model_id),
+                Self::input_image_pool_id(&session.config),
+                image_contexts.as_ref().map_or(0, Vec::len),
+            )?;
         }
         let reasoning_preset = self
             .session_manager
@@ -7143,6 +7500,21 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
         // Pass turn_index (for operation history/rollback)
         context_vars.insert("turn_index".to_string(), turn_index.to_string());
+        if session.config.tool_presentation_mode.is_ptc() {
+            context_vars.insert(
+                PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+                PTC_TOOL_PRESENTATION_MODE.to_string(),
+            );
+            context_vars.insert(
+                PTC_LANGUAGE_CONTEXT_KEY.to_string(),
+                session
+                    .config
+                    .tool_presentation_mode
+                    .language()
+                    .as_str()
+                    .to_string(),
+            );
+        }
         let review_agent = is_review_agent_type(&effective_agent_type);
         let turn_review_manifest =
             turn_review_manifest_for_agent(user_message_metadata.as_ref(), &effective_agent_type);
@@ -7748,6 +8120,21 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         }
         if let Some(snapshot_id) = &session.snapshot_session_id {
             context_vars.insert("snapshot_session_id".to_string(), snapshot_id.clone());
+        }
+        if session.config.tool_presentation_mode.is_ptc() {
+            context_vars.insert(
+                PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+                PTC_TOOL_PRESENTATION_MODE.to_string(),
+            );
+            context_vars.insert(
+                PTC_LANGUAGE_CONTEXT_KEY.to_string(),
+                session
+                    .config
+                    .tool_presentation_mode
+                    .language()
+                    .as_str()
+                    .to_string(),
+            );
         }
         if let Some(user_input_available) = metadata_bool(
             plan.user_message_metadata.as_ref(),
@@ -11725,7 +12112,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 .await?;
         }
 
-        let turn_id = format!("btw-turn-{}", request_id.trim());
+        let turn_id = btw_turn_id(request_id);
         let mut user_message_metadata = user_message_metadata
             .filter(serde_json::Value::is_object)
             .unwrap_or_else(|| serde_json::json!({}));
@@ -12317,13 +12704,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         let session_id = session.session_id.clone();
                         match &target {
                             ModelSelection::Model { model_ref }
-                                if session.config.model_pool_id.is_none() =>
+                                if session.config.model_pool_id.is_none()
+                                    && session.config.model_routing.as_deref() != Some("smart") =>
                             {
                                 self.session_manager
                                     .update_session_model_id(&session_id, model_ref)
                                     .await?;
                             }
                             _ => {
+                                // Old smart children keep their saved target on resume.
+                                // An explicit replacement uses the typed transaction so
+                                // the retired child strategy cannot block the update.
                                 self.session_manager
                                     .update_session_model_target(&session_id, &target)
                                     .await?;
@@ -12516,6 +12907,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 let target = Self::normalize_model_target(target).await?;
                 let mut session_config = snapshot.build_child_session_config(None);
                 apply_session_model_target(&mut session_config, target);
+                session_config.model_routing = None;
                 let mut initial_messages = snapshot.messages.clone();
                 initial_messages.push(Message::internal_reminder(
                     InternalReminderKind::ForkSubagent,
@@ -14031,6 +14423,7 @@ async fn create_agent_session_from_runtime_request(
             session_name,
             request.agent_type,
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 agent_route_key: request.agent_route_key,
                 workspace_path: Some(workspace_path.clone()),
                 project_workspace_path: request.project_workspace_path,
@@ -14957,10 +15350,11 @@ impl openbitfun_runtime_ports::AgentSessionModelPort for ConversationCoordinator
         &self,
         request: openbitfun_runtime_ports::AgentSessionModelSelectionUpdateRequest,
     ) -> openbitfun_runtime_ports::PortResult<()> {
-        self.update_session_model_selection(
+        self.update_session_model_selection_with_routing(
             &request.session_id,
             &request.selection.model_id,
             request.selection.reasoning_preset.as_deref(),
+            request.selection.routing_mode.as_deref(),
         )
         .await
         .map_err(runtime_port_error_preserving_message)
@@ -15566,27 +15960,40 @@ impl openbitfun_runtime_ports::AgentThreadGoalManagementPort for ConversationCoo
         let uses_default_workspace = request.workspace_path == "."
             && request.remote_connection_id.is_none()
             && request.remote_ssh_host.is_none();
-        let session_is_loaded = self
-            .get_session_manager()
-            .get_session(&request.session_id)
-            .is_some();
+        let loaded_session = self.get_session_manager().get_session(&request.session_id);
+        let session_is_loaded = loaded_session.is_some();
         let effective_storage_path = if uses_default_workspace && session_is_loaded {
             self.require_main_session_storage_path(&request.session_id)
                 .await
                 .map_err(runtime_port_error_preserving_message)?
         } else {
-            self.resolve_session_restore_path(
-                &request.workspace_path,
-                request.remote_connection_id.as_deref(),
-                request.remote_ssh_host.as_deref(),
-            )
-            .await
-            .map_err(|error| {
-                let message = format!("Failed to resolve session storage path: {error}");
-                let mut port_error = runtime_port_error_preserving_message(error);
-                port_error.message = message;
-                port_error
-            })?
+            let resolution = match loaded_session.as_ref() {
+                Some(session) => {
+                    self.resolve_loaded_session_restore_scope(
+                        &session.config,
+                        &request.workspace_path,
+                        request.remote_connection_id.as_deref(),
+                        request.remote_ssh_host.as_deref(),
+                    )
+                    .await
+                }
+                None => {
+                    self.resolve_session_restore_scope(
+                        &request.workspace_path,
+                        request.remote_connection_id.as_deref(),
+                        request.remote_ssh_host.as_deref(),
+                    )
+                    .await
+                }
+            };
+            resolution
+                .map(|resolution| resolution.effective_storage_path)
+                .map_err(|error| {
+                    let message = format!("Failed to resolve session storage path: {error}");
+                    let mut port_error = runtime_port_error_preserving_message(error);
+                    port_error.message = message;
+                    port_error
+                })?
         };
         if !uses_default_workspace || session_is_loaded {
             self.get_session_manager()
@@ -16131,6 +16538,12 @@ async fn new_btw_session_memory_mode_from_global_config() -> SessionMemoryMode {
 // Global coordinator singleton
 static GLOBAL_COORDINATOR: OnceLock<Arc<ConversationCoordinator>> = OnceLock::new();
 
+/// The dialog turn id `start_btw_turn` assigns to a side question. Hosts that
+/// track turn ownership register this id before submitting the turn.
+pub fn btw_turn_id(request_id: &str) -> String {
+    format!("btw-turn-{}", request_id.trim())
+}
+
 /// Get global coordinator
 ///
 /// Returns `None` if coordinator hasn't been initialized
@@ -16253,18 +16666,19 @@ pub(crate) mod tests {
         commit_interrupted_turn_intent, delegation_policy_for_agent_turn,
         external_delegation_agent_id, lineage_active_turn_after_transcript,
         lineage_post_admission_cancellation_error,
-        lineage_session_is_settling_without_active_state, logical_subagent_type_or_runtime,
-        merge_prepended_messages_for_turn, normalize_model_selection,
-        normalize_subagent_max_concurrency, permission_mode_from_metadata,
-        plan_skill_agent_listing_update, resolve_agent_session_create_created_by,
-        resolve_agent_submission_turn_id, resolve_subagent_model_selection,
-        resolve_submission_permission_mode, revoke_interrupted_turn_intent_or_observe_commit,
-        runtime_port_error_preserving_message, runtime_session_summary,
-        runtime_tool_restrictions_for_session_lifetime, runtime_transcript_messages_from_turns,
-        session_storage_workspace_locator, snapshot_normal_session_model,
-        turn_review_manifest_for_agent, validate_required_lineage_turns_settled,
-        ActiveSubagentExecution, BackgroundSubagentWaitMode, ContextCompactionOutcome,
-        ConversationCoordinator, DialogSubmissionPolicy, DialogTriggerSource,
+        lineage_session_is_settling_without_active_state, loaded_session_workspace_id_for_locator,
+        logical_subagent_type_or_runtime, merge_prepended_messages_for_turn,
+        normalize_model_selection, normalize_subagent_max_concurrency,
+        permission_mode_from_metadata, plan_skill_agent_listing_update,
+        resolve_agent_session_create_created_by, resolve_agent_submission_turn_id,
+        resolve_subagent_model_selection, resolve_submission_permission_mode,
+        revoke_interrupted_turn_intent_or_observe_commit, runtime_port_error_preserving_message,
+        runtime_session_summary, runtime_tool_restrictions_for_session_lifetime,
+        runtime_transcript_messages_from_turns, session_storage_workspace_locator,
+        snapshot_normal_session_model, turn_review_manifest_for_agent,
+        validate_required_lineage_turns_settled, ActiveSubagentExecution,
+        BackgroundSubagentWaitMode, ContextCompactionOutcome, ConversationCoordinator,
+        CoreSessionStorePort, DialogSubmissionPolicy, DialogTriggerSource,
         InterruptedTurnIntentState, ManualCompactionCommitGate, SessionMemoryMode,
         SessionReferenceLocator, SessionRelationshipKind, SubagentExecutionRequest,
         TEST_AGENT_MODEL_DEFAULTS,
@@ -16314,6 +16728,229 @@ pub(crate) mod tests {
     use std::path::Path;
 
     #[test]
+    fn input_image_count_admission_ignores_stale_pool_pointers_for_fixed_models() {
+        let mut config = SessionConfig {
+            model_id: Some("fixed-vision".into()),
+            model_pool_id: Some("stale-pool".into()),
+            model_pool_binding: Some(openbitfun_core_types::model_pool::ModelPoolBinding {
+                pool_id: "bound-pool".into(),
+                model_id: "previous-member".into(),
+                configuration_fingerprint: String::new(),
+                generation: 0,
+            }),
+            ..Default::default()
+        };
+        for policy in [
+            SessionModelBindingPolicy::Mutable,
+            SessionModelBindingPolicy::ApprovedImmutable,
+        ] {
+            config.model_binding_policy = policy;
+            assert_eq!(ConversationCoordinator::input_image_pool_id(&config), None);
+        }
+        config.model_binding_policy = SessionModelBindingPolicy::Pool;
+        assert_eq!(
+            ConversationCoordinator::input_image_pool_id(&config),
+            Some("stale-pool")
+        );
+        config.model_pool_id = None;
+        assert_eq!(
+            ConversationCoordinator::input_image_pool_id(&config),
+            Some("bound-pool")
+        );
+    }
+
+    #[test]
+    fn input_image_count_admission_uses_the_resolved_native_model_limit() {
+        use crate::service::config::types::{AIConfig, AIModelConfig, ModelCapability};
+
+        let mut config = AIConfig {
+            models: vec![AIModelConfig {
+                id: "limited-vision".into(),
+                name: "Limited vision".into(),
+                enabled: true,
+                capabilities: vec![
+                    ModelCapability::TextChat,
+                    ModelCapability::ImageUnderstanding,
+                ],
+                max_images_per_request: Some(3),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            3,
+        )
+        .expect("the entire user batch fits");
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            4,
+        )
+        .expect_err("a user batch must not be silently truncated");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("4 > 3")));
+
+        config.models[0].max_images_per_request = None;
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            20,
+        )
+        .expect("legacy models retain their existing behavior");
+        config.models[0].max_images_per_request = Some(3);
+        config.models[0].capabilities = vec![ModelCapability::TextChat];
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            4,
+        )
+        .expect("text-only models receive analyze_image paths instead of a pixel batch");
+    }
+
+    fn image_admission_model(
+        id: &str,
+        limit: Option<usize>,
+    ) -> crate::service::config::types::AIModelConfig {
+        use crate::service::config::types::{AIModelConfig, ModelCapability};
+        AIModelConfig {
+            id: id.into(),
+            name: id.into(),
+            enabled: true,
+            capabilities: vec![
+                ModelCapability::TextChat,
+                ModelCapability::ImageUnderstanding,
+            ],
+            max_images_per_request: limit,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn input_image_count_admission_uses_all_automatic_channels_but_only_the_manual_channel() {
+        use crate::service::config::types::AIConfig;
+        use openbitfun_config_contracts::channel_routing::ModelChannelRouting;
+        let mut primary = image_admission_model("primary-vision", Some(5));
+        primary.channel_routing = Some(ModelChannelRouting {
+            fallback_model_ids: vec!["backup-vision".into(), "legacy-vision".into()],
+            ..Default::default()
+        });
+        let mut config = AIConfig {
+            models: vec![
+                primary,
+                image_admission_model("backup-vision", Some(3)),
+                image_admission_model("legacy-vision", None),
+            ],
+            ..Default::default()
+        };
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            5,
+        )
+        .expect_err("new user pixels must survive a later fallback");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("5 > 3")));
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            3,
+        )
+        .unwrap();
+
+        config.models[0]
+            .channel_routing
+            .as_mut()
+            .unwrap()
+            .manual_channel = Some("primary-vision".into());
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            5,
+        )
+        .expect("manual channels do not spill to the smaller backup");
+        config.models[1].max_images_per_request = Some(6);
+        config.models[0]
+            .channel_routing
+            .as_mut()
+            .unwrap()
+            .manual_channel = Some("backup-vision".into());
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            6,
+        )
+        .expect("an unselected primary cannot restrict the manual backup");
+    }
+
+    #[test]
+    fn input_image_count_admission_uses_the_pool_and_member_channel_common_budget() {
+        use crate::service::config::types::{AIConfig, ModelCapability};
+        use openbitfun_config_contracts::channel_routing::ModelChannelRouting;
+        let mut disabled = image_admission_model("disabled", Some(1));
+        disabled.enabled = false;
+        disabled.channel_routing = Some(ModelChannelRouting {
+            fallback_model_ids: vec!["unrelated-vision".into()],
+            ..Default::default()
+        });
+        let mut text_only = image_admission_model("text-only", Some(1));
+        text_only.capabilities = vec![ModelCapability::TextChat];
+        let mut config = AIConfig {
+            models: vec![
+                image_admission_model("large-vision", Some(5)),
+                image_admission_model("small-vision", Some(3)),
+                image_admission_model("legacy-vision", None),
+                disabled,
+                text_only,
+                image_admission_model("unrelated-vision", Some(1)),
+                image_admission_model("member-backup", Some(2)),
+            ],
+            ..Default::default()
+        };
+        config.model_pools.pools.push(serde_json::json!({
+            "id": "vision-pool", "name": "Vision pool", "strategy": "balanced",
+            "member_model_ids": ["large-vision", "small-vision", "legacy-vision", "disabled", "text-only"]
+        }));
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("large-vision"),
+            Some("vision-pool"),
+            5,
+        )
+        .expect_err("the first selected member cannot widen the pool budget");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("5 > 3")));
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("large-vision"),
+            Some("vision-pool"),
+            3,
+        )
+        .expect("disabled, unrelated, text-only and unspecified limits do not tighten the pool");
+        ConversationCoordinator::validate_input_image_count(&config, None, Some("vision-pool"), 3)
+            .expect("queue and steering admission need no current pool member");
+
+        config.models[0].channel_routing = Some(ModelChannelRouting {
+            fallback_model_ids: vec!["member-backup".into()],
+            ..Default::default()
+        });
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("small-vision"),
+            Some("vision-pool"),
+            3,
+        )
+        .expect_err("every enabled member's fallback also participates in the common budget");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("3 > 2")));
+    }
+
+    #[test]
     fn interrupted_turn_intent_commit_wins_over_timeout_revocation() {
         let intents = dashmap::DashMap::new();
         intents.insert(
@@ -16357,11 +16994,21 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(not(feature = "remote-workspace"))]
     #[tokio::test]
     async fn remote_session_metadata_never_falls_back_to_a_local_workspace_binding() {
+        // A remote binding is built from the registered SSH workspace record;
+        // register it here instead of depending on another test's fixture.
+        let registered_root = format!("/srv/remote-project-{}", uuid::Uuid::new_v4());
+        let unregistered_root = format!("/srv/unregistered-project-{}", uuid::Uuid::new_v4());
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &registered_root,
+            "ssh-user@example.test:22",
+            "example.test",
+        )
+        .await;
         let binding = ConversationCoordinator::build_workspace_binding(&SessionConfig {
-            workspace_path: Some("/srv/remote-project".to_string()),
+            tool_presentation_mode: Default::default(),
+            workspace_path: Some(registered_root.clone()),
             remote_connection_id: Some("ssh-user@example.test:22".to_string()),
             remote_ssh_host: Some("example.test".to_string()),
             ..SessionConfig::default()
@@ -16378,14 +17025,18 @@ pub(crate) mod tests {
             "a remote binding without a reachable provider must be an error, never local services"
         );
 
+        // Partial remote metadata for a root no workspace record owns must
+        // fail closed instead of becoming a local binding.
         for incomplete in [
             SessionConfig {
-                workspace_path: Some("/srv/remote-project".to_string()),
+                tool_presentation_mode: Default::default(),
+                workspace_path: Some(unregistered_root.clone()),
                 remote_connection_id: Some("ssh-user@example.test:22".to_string()),
                 ..SessionConfig::default()
             },
             SessionConfig {
-                workspace_path: Some("/srv/remote-project".to_string()),
+                tool_presentation_mode: Default::default(),
+                workspace_path: Some(unregistered_root.clone()),
                 remote_ssh_host: Some("example.test".to_string()),
                 ..SessionConfig::default()
             },
@@ -16408,6 +17059,7 @@ pub(crate) mod tests {
         )
         .await;
         let binding = ConversationCoordinator::build_workspace_binding(&SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some("/srv/remote-project".to_string()),
             remote_connection_id: Some("ssh-user@example.test:22".to_string()),
             remote_ssh_host: Some("example.test".to_string()),
@@ -16475,6 +17127,7 @@ pub(crate) mod tests {
         assert_eq!(omitted.model_id.as_deref(), Some("provider/profile-model"));
 
         let mut defaulted = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("default".to_string()),
             ..SessionConfig::default()
         };
@@ -16485,6 +17138,7 @@ pub(crate) mod tests {
         );
 
         let mut legacy_auto = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("auto".to_string()),
             ..SessionConfig::default()
         };
@@ -16495,6 +17149,7 @@ pub(crate) mod tests {
         );
 
         let mut explicit = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("provider/user-model".to_string()),
             ..SessionConfig::default()
         };
@@ -16560,6 +17215,7 @@ pub(crate) mod tests {
     #[test]
     fn retired_auto_model_input_is_not_snapshotted_into_new_sessions() {
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("auto".to_string()),
             ..SessionConfig::default()
         };
@@ -16721,6 +17377,7 @@ pub(crate) mod tests {
                 "Cancellation fault".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -16855,7 +17512,8 @@ pub(crate) mod tests {
     #[cfg(feature = "remote-workspace")]
     use crate::service::workspace::WorkspaceKind;
     use openbitfun_agent_runtime::permission::AUTO_APPROVE_ASK_CONTEXT_KEY;
-    use openbitfun_config_contracts::model_pool::AgentModelSelections;
+    use openbitfun_config_contracts::model_pool::{AgentModelSelection, AgentModelSelections};
+    use openbitfun_core_types::model_pool::ModelSelection;
     use openbitfun_core_types::{
         SessionExecutionTarget, SessionExecutionTargetKind, WorktreeLifecycle,
     };
@@ -16912,6 +17570,7 @@ pub(crate) mod tests {
                 "External compaction".to_string(),
                 external_agent_id.clone(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -16958,6 +17617,7 @@ pub(crate) mod tests {
                 "External to local".to_string(),
                 external_agent_id.clone(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -17206,6 +17866,7 @@ pub(crate) mod tests {
                         "Delegated child".to_string(),
                         agent_type.to_string(),
                         SessionConfig {
+                            tool_presentation_mode: Default::default(),
                             workspace_path: Some(workspace_path.clone()),
                             model_id: Some("child-model".to_string()),
                             continuation_policy: policy,
@@ -17463,6 +18124,7 @@ pub(crate) mod tests {
                 "Cancelled compaction".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..SessionConfig::default()
                 },
@@ -17543,6 +18205,7 @@ pub(crate) mod tests {
                 "Persistence failure".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18010,6 +18673,7 @@ pub(crate) mod tests {
                     "Runtime mode validation".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -18057,6 +18721,7 @@ pub(crate) mod tests {
                     "Runtime mode validation".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -18105,6 +18770,7 @@ pub(crate) mod tests {
                     "Runtime mode update".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -18159,6 +18825,7 @@ pub(crate) mod tests {
                     "Runtime model update".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         model_id: Some("primary".to_string()),
                         ..Default::default()
@@ -18531,6 +19198,7 @@ pub(crate) mod tests {
                 "Durable completion".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18605,6 +19273,7 @@ pub(crate) mod tests {
                 "Durable completion".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18686,6 +19355,7 @@ pub(crate) mod tests {
                 "Host stream observer".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18787,6 +19457,7 @@ pub(crate) mod tests {
                 "Transient completion".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18912,6 +19583,7 @@ pub(crate) mod tests {
                 "Reverted".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -19384,6 +20056,7 @@ pub(crate) mod tests {
                 "Transient transcript".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -19451,6 +20124,7 @@ pub(crate) mod tests {
                 "blocked".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -19477,6 +20151,7 @@ pub(crate) mod tests {
                     format!("Review child: {agent_type}"),
                     agent_type.to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                         ..Default::default()
                     },
@@ -19501,6 +20176,7 @@ pub(crate) mod tests {
                 "Deep review remediation".to_string(),
                 "DeepReview".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_path.clone()),
                     model_id: Some("review-model".to_string()),
                     enable_tools: true,
@@ -19944,6 +20620,7 @@ pub(crate) mod tests {
                 "Lifecycle child".into(),
                 "GeneralPurpose".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     continuation_policy: policy,
                     ..Default::default()
@@ -20240,6 +20917,7 @@ pub(crate) mod tests {
                 "Parent".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20310,6 +20988,7 @@ pub(crate) mod tests {
                 "Parent".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20495,6 +21174,7 @@ pub(crate) mod tests {
                 "Shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20592,6 +21272,7 @@ pub(crate) mod tests {
                 "Denied shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20651,6 +21332,7 @@ pub(crate) mod tests {
                 "Failed shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20707,6 +21389,7 @@ pub(crate) mod tests {
                 "Cancelled shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -21728,6 +22411,346 @@ pub(crate) mod tests {
         assert_eq!(error.kind, openbitfun_runtime_ports::PortErrorKind::Backend);
     }
 
+    /// Registers a remote SSH record whose root string equals `root`, the
+    /// shape from issue #3275 (inactive SSH workspace sharing a local path).
+    async fn register_same_path_remote(root: &Path) -> crate::service::workspace::WorkspaceInfo {
+        // Workspace records store canonical local roots; mirror that string.
+        let root = dunce::canonicalize(root).expect("canonical root");
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &root.to_string_lossy(),
+            &format!("ssh-collision-{}@remote.example", uuid::Uuid::new_v4()),
+            "remote.example",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn loaded_local_session_resolves_storage_by_id_despite_same_path_remote_record() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let session = session_manager
+            .create_session(
+                "Local collision".to_string(),
+                "Standard".to_string(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create local session before the SSH record exists");
+        let local_storage = session_manager
+            .require_session_storage_path(&session.session_id)
+            .await
+            .expect("local storage");
+        let remote = register_same_path_remote(workspace.path()).await;
+        let locator = session
+            .config
+            .workspace_path
+            .clone()
+            .expect("normalized workspace path");
+
+        // The legacy path adapter keeps refusing to guess between owners.
+        let legacy = coordinator
+            .resolve_session_restore_scope(&locator, None, Some("localhost"))
+            .await
+            .expect_err("bare path must stay ambiguous at the legacy boundary");
+        assert!(legacy.to_string().contains("ambiguous"), "{legacy}");
+
+        // A send for the loaded local session resolves through its workspace ID.
+        let resolution = coordinator
+            .resolve_loaded_session_restore_scope(
+                &session.config,
+                &locator,
+                None,
+                Some("localhost"),
+            )
+            .await
+            .expect("loaded local session must resolve by workspace ID");
+        assert_eq!(resolution.effective_storage_path, local_storage);
+        assert!(!resolution.is_remote_storage());
+        assert_eq!(resolution.requested_workspace_path, PathBuf::from(&locator));
+        session_manager
+            .ensure_session_storage_path(&session.session_id, &resolution.effective_storage_path)
+            .expect("storage binding must stay on the local owner");
+
+        // A loaded-session thread goal read carries the same path-only locator.
+        let goal = AgentThreadGoalManagementPort::get_thread_goal(
+            &coordinator,
+            AgentThreadGoalGetRequest {
+                session_id: session.session_id.clone(),
+                workspace_path: locator.clone(),
+                remote_connection_id: None,
+                remote_ssh_host: Some("localhost".to_string()),
+            },
+        )
+        .await
+        .expect("thread goal read must resolve the loaded session by workspace ID");
+        assert_eq!(goal, None);
+
+        // A request that explicitly selects the SSH connection does not adopt
+        // the local binding; it resolves the remote owner and fails the binding check.
+        let remote_connection = remote.remote_ssh_connection_id().map(ToOwned::to_owned);
+        let explicit_remote = coordinator
+            .resolve_loaded_session_restore_scope(
+                &session.config,
+                &locator,
+                remote_connection.as_deref(),
+                Some("remote.example"),
+            )
+            .await
+            .expect("explicit SSH selector resolves the remote record");
+        assert!(explicit_remote.is_remote_storage());
+        assert_ne!(explicit_remote.effective_storage_path, local_storage);
+        assert!(session_manager
+            .validate_session_storage_path_binding(
+                &session.session_id,
+                &explicit_remote.effective_storage_path,
+            )
+            .is_err());
+
+        // Unloaded then restored: the restored config keeps its workspace ID,
+        // so the next send still resolves to the local owner.
+        assert!(session_manager
+            .unload_session_from_memory(&session.session_id)
+            .await
+            .expect("unload session"));
+        let restored = coordinator
+            .restore_session_from_storage_path(&local_storage, &session.session_id)
+            .await
+            .expect("restore local session by its storage binding");
+        assert_eq!(restored.config.workspace_id, session.config.workspace_id);
+        let restored_resolution = coordinator
+            .resolve_loaded_session_restore_scope(&restored.config, &locator, None, None)
+            .await
+            .expect("restored local session must resolve by workspace ID");
+        assert_eq!(restored_resolution.effective_storage_path, local_storage);
+
+        session_manager
+            .delete_session_by_id(&session.session_id)
+            .await
+            .expect("clean up persisted test session");
+    }
+
+    #[tokio::test]
+    async fn loaded_remote_session_resolves_its_remote_record_despite_same_path_local_record() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let local = crate::service::workspace::legacy_compat::register_local_fixture(
+            workspace.path(),
+            None,
+        )
+        .await;
+        let remote = register_same_path_remote(workspace.path()).await;
+        let (coordinator, _) = test_coordinator();
+        let locator = workspace.path().to_string_lossy().into_owned();
+        let remote_config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some(remote.id.clone()),
+            workspace_path: Some(locator.clone()),
+            remote_connection_id: remote.remote_ssh_connection_id().map(ToOwned::to_owned),
+            remote_ssh_host: Some("remote.example".to_string()),
+            ..Default::default()
+        };
+        let resolution = coordinator
+            .resolve_loaded_session_restore_scope(&remote_config, &locator, None, None)
+            .await
+            .expect("remote session resolves by its workspace ID");
+        assert!(resolution.is_remote_storage());
+        assert_eq!(
+            resolution.remote_connection_id.as_deref(),
+            remote.remote_ssh_connection_id()
+        );
+        let local_storage =
+            CoreSessionStorePort::with_path_manager(coordinator.session_manager.path_manager())
+                .resolve_storage_for_reference(Some(&local.id), &locator, None, None)
+                .await
+                .expect("local storage");
+        assert_ne!(
+            resolution.effective_storage_path,
+            local_storage.effective_storage_path
+        );
+
+        // A locator that names some other root, or an explicit different SSH
+        // connection, keeps the legacy path behavior instead of silently
+        // adopting the loaded session's binding.
+        let other = tempfile::tempdir().expect("other root");
+        assert!(loaded_session_workspace_id_for_locator(
+            &remote_config,
+            &other.path().to_string_lossy(),
+            None,
+            None,
+        )
+        .is_none());
+        assert!(loaded_session_workspace_id_for_locator(
+            &remote_config,
+            &locator,
+            Some("another-connection"),
+            None,
+        )
+        .is_none());
+        assert!(loaded_session_workspace_id_for_locator(
+            &remote_config,
+            &locator,
+            None,
+            Some("another.example"),
+        )
+        .is_none());
+        assert_eq!(
+            loaded_session_workspace_id_for_locator(
+                &remote_config,
+                &locator,
+                None,
+                Some("remote.example"),
+            ),
+            Some(remote.id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn loaded_worktree_session_resolves_project_storage_despite_same_path_remote_record() {
+        let project_dir = tempfile::tempdir().expect("project");
+        let project = dunce::canonicalize(project_dir.path()).expect("canonical project");
+        let worktree = project.join("worktree");
+        std::fs::create_dir_all(&worktree).expect("worktree dir");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(
+            project.as_path(),
+        );
+        let record = crate::service::workspace::legacy_compat::register_local_fixture(
+            &worktree,
+            Some(project.as_path()),
+        )
+        .await;
+        register_same_path_remote(&worktree).await;
+        register_same_path_remote(project.as_path()).await;
+        let (coordinator, _) = test_coordinator();
+        let port =
+            CoreSessionStorePort::with_path_manager(coordinator.session_manager.path_manager());
+        let expected = port
+            .resolve_storage_for_reference(Some(&record.id), "", None, None)
+            .await
+            .expect("worktree storage by ID");
+        let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some(record.id.clone()),
+            workspace_path: Some(worktree.to_string_lossy().into_owned()),
+            project_workspace_path: Some(project.as_path().to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        for locator in [
+            worktree.to_string_lossy().into_owned(),
+            project.as_path().to_string_lossy().into_owned(),
+        ] {
+            let legacy = coordinator
+                .resolve_session_restore_scope(&locator, None, None)
+                .await
+                .expect_err("bare path must stay ambiguous at the legacy boundary");
+            assert!(legacy.to_string().contains("ambiguous"), "{legacy}");
+            let resolution = coordinator
+                .resolve_loaded_session_restore_scope(&config, &locator, None, None)
+                .await
+                .expect("worktree session resolves by workspace ID");
+            assert_eq!(
+                resolution.effective_storage_path,
+                expected.effective_storage_path
+            );
+            assert!(!resolution.is_remote_storage());
+        }
+    }
+
+    #[tokio::test]
+    async fn loaded_worktree_session_with_missing_record_retries_project_id_only() {
+        let project_dir = tempfile::tempdir().expect("project");
+        let project = dunce::canonicalize(project_dir.path()).expect("canonical project");
+        let worktree = project.join("removed-worktree");
+        std::fs::create_dir_all(&worktree).expect("worktree dir");
+        let project_record =
+            crate::service::workspace::legacy_compat::register_local_fixture(&project, None).await;
+        register_same_path_remote(&project).await;
+        let (coordinator, _) = test_coordinator();
+        let port =
+            CoreSessionStorePort::with_path_manager(coordinator.session_manager.path_manager());
+        let project_storage = port
+            .resolve_storage_for_reference(Some(&project_record.id), "", None, None)
+            .await
+            .expect("project storage by ID");
+        let missing_worktree_id = format!("removed-worktree-{}", uuid::Uuid::new_v4());
+        let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some(missing_worktree_id.clone()),
+            project_workspace_id: Some(project_record.id.clone()),
+            workspace_path: Some(worktree.to_string_lossy().into_owned()),
+            project_workspace_path: Some(project.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        let resolution = coordinator
+            .resolve_loaded_session_restore_scope(&config, &project.to_string_lossy(), None, None)
+            .await
+            .expect("a removed worktree record retries the project workspace ID");
+        assert_eq!(
+            resolution.effective_storage_path,
+            project_storage.effective_storage_path
+        );
+        assert!(!resolution.is_remote_storage());
+
+        // Without a project ID there is nothing ID-based to retry: fail loudly.
+        let without_project = SessionConfig {
+            project_workspace_id: None,
+            ..config.clone()
+        };
+        let error = coordinator
+            .resolve_loaded_session_restore_scope(
+                &without_project,
+                &project.to_string_lossy(),
+                None,
+                None,
+            )
+            .await
+            .expect_err("a missing workspace record must not fall back to a path");
+        assert!(error.to_string().contains(&missing_worktree_id), "{error}");
+
+        // Remote sessions never retry through another record.
+        let remote = SessionConfig {
+            remote_connection_id: Some("ssh-missing".to_string()),
+            remote_ssh_host: Some("remote.example".to_string()),
+            workspace_kind: Some(openbitfun_core_types::WorkspaceKind::Remote),
+            ..config
+        };
+        assert!(coordinator
+            .resolve_loaded_session_restore_scope(
+                &remote,
+                &project.to_string_lossy(),
+                Some("ssh-missing"),
+                None,
+            )
+            .await
+            .is_err());
+    }
+
+    #[test]
+    fn loaded_remote_session_locator_uses_posix_comparison() {
+        let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some("remote-id".to_string()),
+            workspace_path: Some("/srv/Project".to_string()),
+            remote_connection_id: Some("ssh-a".to_string()),
+            remote_ssh_host: Some("remote.example".to_string()),
+            workspace_kind: Some(openbitfun_core_types::WorkspaceKind::Remote),
+            ..Default::default()
+        };
+        assert_eq!(
+            loaded_session_workspace_id_for_locator(&config, "/srv/Project/", None, None),
+            Some("remote-id")
+        );
+        // POSIX remote roots are case-sensitive on every controller OS.
+        assert_eq!(
+            loaded_session_workspace_id_for_locator(&config, "/srv/project", None, None),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn agent_submission_create_session_preserves_requested_session_id() {
         let (coordinator, session_manager) = test_coordinator();
@@ -21883,12 +22906,13 @@ pub(crate) mod tests {
             )
             .await;
             let storage_path = coordinator
-                .resolve_session_restore_path(
+                .resolve_session_restore_scope(
                     logical_workspace_path,
                     Some(connection_id),
                     Some(ssh_host),
                 )
                 .await
+                .map(|resolution| resolution.effective_storage_path)
                 .expect("remote storage path should resolve");
             let goal = ThreadGoal {
                 goal_id: format!("goal-{index}"),
@@ -21951,6 +22975,7 @@ pub(crate) mod tests {
                 "Loaded remote A".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(logical_workspace_path.to_string()),
                     remote_connection_id: Some(remote_identities[0].0.clone()),
                     remote_ssh_host: Some(remote_identities[0].1.clone()),
@@ -22072,6 +23097,7 @@ pub(crate) mod tests {
                 "Remote goal mutation".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(logical_workspace_path.clone()),
                     remote_connection_id: Some(remote_connection_id),
                     remote_ssh_host: Some(remote_ssh_host),
@@ -22202,6 +23228,7 @@ pub(crate) mod tests {
                     "First".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -22224,6 +23251,7 @@ pub(crate) mod tests {
                     "Second".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -22261,6 +23289,7 @@ pub(crate) mod tests {
                     "Explicit".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         model_id: Some("explicit-model".to_string()),
                         ..Default::default()
@@ -22406,6 +23435,7 @@ pub(crate) mod tests {
                 "Transient child".to_string(),
                 "Explore".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.clone()),
                     ..Default::default()
                 },
@@ -22420,6 +23450,7 @@ pub(crate) mod tests {
                 "Transient grandchild".to_string(),
                 "Explore".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.clone()),
                     ..Default::default()
                 },
@@ -22552,6 +23583,193 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn subagent_model_policy_is_unchanged_by_smart_routing_or_legacy_role_settings() {
+        let (coordinator, manager) = test_coordinator();
+        let workspace = tempfile::tempdir().unwrap();
+        let record = crate::service::workspace::legacy_compat::register_local_fixture(
+            workspace.path(),
+            None,
+        )
+        .await;
+        let parent = manager
+            .create_session(
+                "Parent".into(),
+                "Standard".into(),
+                SessionConfig {
+                    model_id: Some("primary".into()),
+                    model_routing: Some("smart".into()),
+                    workspace_id: Some(record.id),
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        manager
+            .replace_context_messages(
+                &parent.session_id,
+                vec![Message::user("Inspect the workspace".into())],
+            )
+            .await;
+        let request = |parent_id: &str, fork: bool| SubagentExecutionRequest {
+            task_description: "Inspect files".into(),
+            requested_agent_id: None,
+            context_mode: if fork {
+                SubagentContextMode::Fork
+            } else {
+                SubagentContextMode::Fresh
+            },
+            target_session_id: None,
+            subagent_type: if fork { None } else { Some("Explore".into()) },
+            logical_subagent_type: None,
+            continuation_policy: SessionContinuationPolicy::Reusable,
+            model_binding_policy: SessionModelBindingPolicy::Mutable,
+            workspace_path: None,
+            model_id: None,
+            inherit_parent_model: false,
+            subagent_parent_info: SubagentParentInfo {
+                session_id: parent_id.into(),
+                dialog_turn_id: "turn".into(),
+                tool_call_id: "task".into(),
+            },
+            context: HashMap::new(),
+            permission_runtime_ceiling: PermissionRuntimeCeiling::default(),
+            delegation_policy: DelegationPolicy::top_level().spawn_child(),
+            external_generation_lease: None,
+        };
+        let mut manual_config = parent.config.clone();
+        manual_config.model_routing = Some("manual".into());
+        let manual = manager
+            .create_session("Manual".into(), "Standard".into(), manual_config)
+            .await
+            .unwrap();
+        manager
+            .replace_context_messages(
+                &manual.session_id,
+                vec![Message::user("Inspect the workspace".into())],
+            )
+            .await;
+        let mut ai = AIConfig::default();
+        // Previously saved smart-role values must not override existing defaults,
+        // require an economy model, or change fresh/fork/nested delegation.
+        ai.model_routing.subagent_model = "economy".into();
+        TEST_MODEL_RESOLUTION_AI_CONFIG
+            .scope(ai, async {
+                for parent in [&parent, &manual] {
+                    TEST_AGENT_MODEL_DEFAULTS
+                        .scope(AgentModelSelections::default(), async {
+                            let fresh = coordinator
+                                .resolve_hidden_subagent_execution_request(request(
+                                    &parent.session_id,
+                                    false,
+                                ))
+                                .await
+                                .unwrap();
+                            assert_eq!(fresh.session_config.model_id.as_deref(), Some("fast"));
+                            let forked = coordinator
+                                .resolve_hidden_subagent_execution_request(request(
+                                    &parent.session_id,
+                                    true,
+                                ))
+                                .await
+                                .unwrap();
+                            assert_eq!(forked.session_config.model_id.as_deref(), Some("primary"));
+                            let mut nested_config = fresh.session_config;
+                            nested_config.delegation_model_routing = Some("smart".into());
+                            let nested_parent = manager
+                                .create_transient_session_with_id_and_details(
+                                    None,
+                                    "Nested parent".into(),
+                                    "Explore".into(),
+                                    nested_config,
+                                    Some(format!("session-{}", parent.session_id)),
+                                    SessionKind::Subagent,
+                                )
+                                .await
+                                .unwrap();
+                            let nested = coordinator
+                                .resolve_hidden_subagent_execution_request(request(
+                                    &nested_parent.session_id,
+                                    false,
+                                ))
+                                .await
+                                .unwrap();
+                            assert_eq!(nested.session_config.model_id.as_deref(), Some("fast"));
+                        })
+                        .await;
+                    let mut defaults = AgentModelSelections::default();
+                    defaults.subagents.builtin.insert(
+                        "Explore".into(),
+                        AgentModelSelection::Model {
+                            model_ref: "primary".into(),
+                        },
+                    );
+                    defaults.subagents.fork = AgentModelSelection::Model {
+                        model_ref: "fast".into(),
+                    };
+                    TEST_AGENT_MODEL_DEFAULTS
+                        .scope(defaults, async {
+                            let configured = coordinator
+                                .resolve_fresh_subagent_model_target(
+                                    None,
+                                    false,
+                                    "Explore",
+                                    &parent.session_id,
+                                )
+                                .await
+                                .unwrap();
+                            assert_eq!(
+                                configured,
+                                ModelSelection::Model {
+                                    model_ref: "primary".into()
+                                }
+                            );
+                            let explicit = coordinator
+                                .resolve_fresh_subagent_model_target(
+                                    Some("fast"),
+                                    false,
+                                    "Explore",
+                                    &parent.session_id,
+                                )
+                                .await
+                                .unwrap();
+                            assert_eq!(
+                                explicit,
+                                ModelSelection::Model {
+                                    model_ref: "fast".into()
+                                }
+                            );
+                            let inherited = coordinator
+                                .resolve_fresh_subagent_model_target(
+                                    None,
+                                    true,
+                                    "Explore",
+                                    &parent.session_id,
+                                )
+                                .await
+                                .unwrap();
+                            assert_eq!(
+                                inherited,
+                                ModelSelection::Model {
+                                    model_ref: "primary".into()
+                                }
+                            );
+                            let forked = coordinator
+                                .resolve_hidden_subagent_execution_request(request(
+                                    &parent.session_id,
+                                    true,
+                                ))
+                                .await
+                                .unwrap();
+                            assert_eq!(forked.session_config.model_id.as_deref(), Some("fast"));
+                        })
+                        .await;
+                }
+            })
+            .await;
+    }
+
+    #[tokio::test]
     async fn fresh_subagent_request_can_explicitly_inherit_parent_model() {
         let (coordinator, session_manager) = test_coordinator();
         let workspace_path = std::env::temp_dir().join(format!(
@@ -22572,6 +23790,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
@@ -22693,6 +23912,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.clone()),
                     project_workspace_path: Some(project_workspace_path.clone()),
@@ -22777,6 +23997,7 @@ pub(crate) mod tests {
                 "Transient parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace.clone()),
                     workspace_id: Some(workspace_record.id.clone()),
@@ -22906,6 +24127,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&workspace).unwrap();
         crate::service::workspace::legacy_compat::register_local_fixture_blocking(&workspace);
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("primary".into()),
             workspace_path: Some(workspace.to_string_lossy().into_owned()),
             ..Default::default()
@@ -22989,6 +24211,33 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn reused_subagent_send_input_updates_requested_and_inherited_model() {
+        assert_reused_subagent_model_selection(None).await;
+    }
+
+    #[tokio::test]
+    async fn reused_subagent_legacy_smart_keeps_target_until_explicit_model_replacement() {
+        // Typed target replacement validates the selected configured model.
+        // Supply the same host-owned configuration a real runtime has loaded.
+        let mut config = AIConfig::default();
+        config.models = ["main-model", "worker-model", "parent-model"]
+            .into_iter()
+            .map(|id| AIModelConfig {
+                id: id.into(),
+                enabled: true,
+                ..Default::default()
+            })
+            .collect();
+        config.default_models.primary = Some("main-model".into());
+        config.default_models.fast = Some("worker-model".into());
+        TEST_MODEL_RESOLUTION_AI_CONFIG
+            .scope(
+                config,
+                assert_reused_subagent_model_selection(Some("smart")),
+            )
+            .await;
+    }
+
+    async fn assert_reused_subagent_model_selection(legacy_routing: Option<&str>) {
         let (coordinator, session_manager) = test_persistent_coordinator();
         let workspace_path = std::env::temp_dir().join(format!(
             "openbitfun-reused-subagent-model-test-{}",
@@ -23009,6 +24258,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
@@ -23023,7 +24273,10 @@ pub(crate) mod tests {
                 "Reusable subagent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("parent-model".to_string()),
+                    model_routing: legacy_routing.map(str::to_owned),
+                    delegation_model_routing: legacy_routing.map(str::to_owned),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -23077,12 +24330,49 @@ pub(crate) mod tests {
             external_generation_lease: None,
         };
 
+        let mut unchanged_request = request.clone();
+        unchanged_request.model_id = None;
+        let unchanged = coordinator
+            .resolve_hidden_subagent_execution_request(unchanged_request)
+            .await
+            .expect("restored child should retain its saved target without a model override");
+        assert_eq!(
+            unchanged.session_config.model_id.as_deref(),
+            Some("parent-model")
+        );
+        assert_eq!(
+            unchanged.session_config.model_routing.as_deref(),
+            legacy_routing
+        );
+        assert_eq!(
+            unchanged.session_config.delegation_model_routing.as_deref(),
+            legacy_routing
+        );
+        let restored = session_manager
+            .get_session(&subagent_session.session_id)
+            .unwrap();
+        assert!(
+            !crate::agentic::execution::round_model_routing::configuration::session_eligible(
+                &restored
+            )
+        );
+
         let prepared = coordinator
             .prepare_subagent_execution_request(request)
             .await
             .expect("send_input request should prepare with a requested model");
 
         assert_eq!(prepared.session_config.model_id.as_deref(), Some("fast"));
+        if legacy_routing.is_some() {
+            assert_eq!(
+                prepared.session_config.model_routing.as_deref(),
+                Some("manual")
+            );
+            assert_eq!(
+                prepared.session_config.delegation_model_routing.as_deref(),
+                legacy_routing
+            );
+        }
         assert_eq!(
             prepared
                 .context
@@ -23174,6 +24464,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
@@ -23286,6 +24577,7 @@ pub(crate) mod tests {
                 "Internal worker".to_string(),
                 "MemoryPhase2".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -23328,6 +24620,7 @@ pub(crate) mod tests {
                 "Reusable subagent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -23402,6 +24695,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_id: Some(remote_workspace.id.clone()),
                     workspace_path: Some(remote_workspace.root_path.to_string_lossy().into_owned()),
                     remote_connection_id: Some("ssh-user@example.test:22".to_string()),

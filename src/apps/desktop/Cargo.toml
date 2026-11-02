@@ -14,13 +14,13 @@ name = "openbitfun-desktop"
 path = "src/main.rs"
 
 [build-dependencies]
-cc = { workspace = true }
 tauri-build = { workspace = true }
 serde_json = { workspace = true }
 
 [dependencies]
+openbitfun-computer-use = { path = "../../crates/services/computer-use" }
 openbitfun-miniapp-ipc = { path = "../../crates/adapters/miniapp-ipc" }
-openbitfun-services-core = { path = "../../crates/services/services-core", features = ["pet-packages"] }
+openbitfun-services-core = { path = "../../crates/services/services-core", features = ["pet-packages", "local-storage"] }
 # Internal crates
 openbitfun-core = { path = "../../crates/assembly/core", features = ["product-full"] }
 openbitfun-relay-service = { path = "../../crates/services/relay-service" }
@@ -86,7 +86,6 @@ sha1 = { workspace = true }
 sha2 = { workspace = true }
 minisign-verify = { workspace = true }
 screenshots = { workspace = true }
-enigo = { workspace = true }
 # Controller-local drag thumbnails decode these formats; other files use UI icons.
 image = { workspace = true, features = ["bmp", "gif", "jpeg", "png", "webp"] }
 resvg = { workspace = true }
@@ -96,36 +95,23 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# Observe the native navigation delegate retained by the existing Tauri runtime.
+wry = { workspace = true }
 bitflags = { workspace = true }
 core-foundation = { workspace = true }
 core-graphics = { workspace = true }
 dispatch = { workspace = true }
-foreign-types = { workspace = true }
 libc = { workspace = true }
 objc2 = { workspace = true, features = ["exception"] }
 block2 = { workspace = true }
 objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSNotification", "NSOperation", "NSString", "block2"] }
 objc2-app-kit = { workspace = true, features = ["std", "libc", "NSAnimationContext", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSRunningApplication"] }
-objc2-vision = { workspace = true, features = ["std", "VNRecognizeTextRequest", "VNRequest", "VNObservation", "VNRequestHandler", "VNUtils", "VNTypes", "objc2-core-foundation"] }
 
 [target.'cfg(windows)'.dependencies]
 notify-rust = { workspace = true }
 win32job = { workspace = true }
 windows = { workspace = true, features = [
-  "Foundation",
-  "Globalization",
-  "Graphics_Capture",
-  "Graphics_DirectX",
-  "Graphics_DirectX_Direct3D11",
-  "Graphics_Imaging",
-  "Media_Ocr",
-  "Storage_Streams",
   "Win32_Foundation",
-  "Win32_Graphics_Direct3D",
-  "Win32_Graphics_Direct3D11",
-  "Win32_Graphics_Dwm",
-  "Win32_Graphics_Dxgi",
-  "Win32_Graphics_Dxgi_Common",
   "Win32_Graphics_Gdi",
   "Win32_Security",
   "Win32_Storage_FileSystem",
@@ -136,11 +122,6 @@ windows = { workspace = true, features = [
   "Win32_System_Com_StructuredStorage",
   "Win32_System_Ole",
   "Win32_System_Variant",
-  "Win32_System_WinRT",
-  "Win32_System_WinRT_Direct3D11",
-  "Win32_System_WinRT_Graphics",
-  "Win32_System_WinRT_Graphics_Capture",
-  "Win32_UI_Accessibility",
   "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
@@ -159,15 +140,11 @@ default = []
 # Enable webview devtools and element inspector for development builds.
 # Only active in debug builds or when explicitly requested via --features devtools.
 # Never enabled in release profile intended for end users.
-devtools = ["tauri/devtools", "openbitfun-webdriver/embedded"]
+devtools = ["openbitfun-computer-use/test-support", "tauri/devtools", "openbitfun-webdriver/embedded"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { workspace = true }
 gtk = { workspace = true }
-atspi = { workspace = true, features = ["zbus"] }
-gstreamer = { workspace = true }
-gstreamer-app = { workspace = true }
-leptess = { workspace = true }
 
 [lints]
 workspace = true

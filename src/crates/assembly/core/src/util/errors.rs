@@ -407,3 +407,14 @@ mod tests {
         );
     }
 }
+
+#[cfg(feature = "agent-runtime")]
+impl From<openbitfun_agent_tools::computer_use_host::error::ComputerUseError> for OpenBitFunError {
+    fn from(error: openbitfun_agent_tools::computer_use_host::error::ComputerUseError) -> Self {
+        use openbitfun_agent_tools::computer_use_host::error::ComputerUseError;
+        match error {
+            ComputerUseError::Tool(message) => Self::Tool(message),
+            ComputerUseError::Service(message) => Self::Service(message),
+        }
+    }
+}

@@ -7,6 +7,24 @@ use openbitfun_runtime_ports::{WorkspaceFileSystem, WorkspaceMetadata, Workspace
 use std::{path::Path, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
+/// Explicit controller reads may address any file on the selected provider.
+/// Automatic output delivery and runtime artifact URIs retain their root boundary.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FileReadScope {
+    Workspace,
+    Provider,
+}
+
+pub fn controller_file_read_scope(reference: &str) -> Result<FileReadScope, String> {
+    Ok(
+        if normalize_file_reference(reference)?.starts_with("openbitfun://") {
+            FileReadScope::Workspace
+        } else {
+            FileReadScope::Provider
+        },
+    )
+}
+
 /// Assembly selects the provider and allowed root. This layer owns IO and confinement.
 pub struct SessionFileTarget {
     pub fs: Arc<dyn WorkspaceFileSystem>,
@@ -62,22 +80,27 @@ fn posix_path(path: &str) -> Result<String, String> {
 }
 
 impl SessionFileTarget {
-    async fn checked_path(&self) -> Result<String, String> {
+    async fn checked_path(&self, scope: FileReadScope) -> Result<String, String> {
         if !self.remote {
-            let root = tokio::fs::canonicalize(&self.root)
-                .await
-                .map_err(|e| format!("Cannot resolve file workspace: {e}"))?;
             let path = tokio::fs::canonicalize(&self.path)
                 .await
                 .map_err(|e| format!("Cannot resolve output file: {e}"))?;
-            if !path.starts_with(root) {
-                return Err("Output file is outside its session workspace".to_string());
+            if scope == FileReadScope::Workspace {
+                let root = tokio::fs::canonicalize(&self.root)
+                    .await
+                    .map_err(|e| format!("Cannot resolve file workspace: {e}"))?;
+                if !path.starts_with(root) {
+                    return Err("Output file is outside its session workspace".to_string());
+                }
             }
             return Ok(path.to_string_lossy().into_owned());
         }
         // Remote syntax stays POSIX even on Windows. Never probe controller paths.
-        let root = posix_path(&self.root)?;
         let path = posix_path(&self.path)?;
+        if scope == FileReadScope::Provider {
+            return Ok(path);
+        }
+        let root = posix_path(&self.root)?;
         if root != "/" && path != root && !path.starts_with(&format!("{root}/")) {
             return Err("Output file is outside its session workspace".to_string());
         }
@@ -96,10 +119,14 @@ impl SessionFileTarget {
         Ok(path)
     }
 
-    async fn metadata_at(&self, path: &str) -> Result<WorkspaceMetadata, String> {
+    async fn metadata_at(
+        &self,
+        path: &str,
+        scope: FileReadScope,
+    ) -> Result<WorkspaceMetadata, String> {
         let metadata = self
             .fs
-            .metadata(path, false)
+            .metadata(path, scope == FileReadScope::Provider)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Output file not found".to_string())?;
@@ -112,8 +139,13 @@ impl SessionFileTarget {
         Ok(metadata)
     }
 
-    async fn unchanged(&self, path: &str, before: &WorkspaceMetadata) -> Result<(), String> {
-        let after = self.metadata_at(path).await?;
+    async fn unchanged(
+        &self,
+        path: &str,
+        before: &WorkspaceMetadata,
+        scope: FileReadScope,
+    ) -> Result<(), String> {
+        let after = self.metadata_at(path, scope).await?;
         if after.size != before.size || after.modified != before.modified {
             return Err(
                 "Output file changed during transfer; retry when generation finishes".to_string(),
@@ -123,8 +155,15 @@ impl SessionFileTarget {
     }
 
     pub async fn info(&self) -> Result<RemoteWorkspaceFileInfo, String> {
-        let path = self.checked_path().await?;
-        let metadata = self.metadata_at(&path).await?;
+        self.info_with_scope(FileReadScope::Workspace).await
+    }
+
+    pub async fn info_with_scope(
+        &self,
+        scope: FileReadScope,
+    ) -> Result<RemoteWorkspaceFileInfo, String> {
+        let path = self.checked_path(scope).await?;
+        let metadata = self.metadata_at(&path, scope).await?;
         // A POSIX basename is independent of the controller OS.
         let name = path
             .rsplit(if self.remote {
@@ -143,8 +182,17 @@ impl SessionFileTarget {
     }
 
     pub async fn read(&self, max_bytes: u64) -> Result<RemoteWorkspaceFileContent, String> {
-        let path = self.checked_path().await?;
-        let before = self.metadata_at(&path).await?;
+        self.read_with_scope(max_bytes, FileReadScope::Workspace)
+            .await
+    }
+
+    pub async fn read_with_scope(
+        &self,
+        max_bytes: u64,
+        scope: FileReadScope,
+    ) -> Result<RemoteWorkspaceFileContent, String> {
+        let path = self.checked_path(scope).await?;
+        let before = self.metadata_at(&path, scope).await?;
         let size = before.size.unwrap();
         if size > max_bytes {
             return Err(format!(
@@ -159,7 +207,7 @@ impl SessionFileTarget {
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Output file grew beyond the transfer limit".to_string())?;
-        self.unchanged(&path, &before).await?;
+        self.unchanged(&path, &before, scope).await?;
         if bytes.len() as u64 != size {
             return Err("Output file transfer was truncated".to_string());
         }
@@ -190,6 +238,17 @@ impl SessionFileTarget {
             .map(|(chunk, _)| chunk)
     }
 
+    pub async fn read_chunk_with_scope(
+        &self,
+        offset: u64,
+        limit: u64,
+        scope: FileReadScope,
+    ) -> Result<RemoteWorkspaceFileChunk, String> {
+        self.read_chunk_with_revision_and_scope(offset, limit, None, scope)
+            .await
+            .map(|(chunk, _)| chunk)
+    }
+
     /// Binds separate chunk requests to one file revision without retaining a
     /// stream or requiring the observer to stay connected between requests.
     pub async fn read_chunk_with_revision(
@@ -198,8 +257,24 @@ impl SessionFileTarget {
         limit: u64,
         expected_revision: Option<&str>,
     ) -> Result<(RemoteWorkspaceFileChunk, String), String> {
-        let path = self.checked_path().await?;
-        let before = self.metadata_at(&path).await?;
+        self.read_chunk_with_revision_and_scope(
+            offset,
+            limit,
+            expected_revision,
+            FileReadScope::Workspace,
+        )
+        .await
+    }
+
+    async fn read_chunk_with_revision_and_scope(
+        &self,
+        offset: u64,
+        limit: u64,
+        expected_revision: Option<&str>,
+        scope: FileReadScope,
+    ) -> Result<(RemoteWorkspaceFileChunk, String), String> {
+        let path = self.checked_path(scope).await?;
+        let before = self.metadata_at(&path, scope).await?;
         let total_size = before.size.unwrap();
         let modified = before
             .modified
@@ -232,7 +307,7 @@ impl SessionFileTarget {
             .read_to_end(&mut bytes)
             .await
             .map_err(|e| e.to_string())?;
-        self.unchanged(&path, &before).await?;
+        self.unchanged(&path, &before, scope).await?;
         if bytes.len() as u64 != count {
             return Err("Output file chunk was truncated".to_string());
         }
@@ -406,6 +481,61 @@ mod tests {
             .await
             .unwrap_err()
             .contains("truncated"));
+    }
+
+    #[tokio::test]
+    async fn explicit_reads_outside_workspace_keep_the_selected_remote_provider() {
+        let local = tempfile::tempdir().unwrap();
+        let path = local.path().join("qr.png");
+        std::fs::write(&path, b"controller-private").unwrap();
+        let (target, fs) = fixture("/workspace", path.to_str().unwrap(), false, false);
+        assert!(target.read(100).await.is_err());
+        let info = target
+            .info_with_scope(FileReadScope::Provider)
+            .await
+            .unwrap();
+        assert_eq!(info.name, "qr.png");
+        let file = target
+            .read_with_scope(100, FileReadScope::Provider)
+            .await
+            .unwrap();
+        assert_eq!(file.bytes, b"remote-image");
+        let chunk = target
+            .read_chunk_with_scope(7, 100, FileReadScope::Provider)
+            .await
+            .unwrap();
+        assert_eq!(chunk.bytes, b"image");
+        assert!(fs
+            .reads
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|read| read == path.to_str().unwrap()));
+        assert!(target
+            .read_with_scope(2, FileReadScope::Provider)
+            .await
+            .is_err());
+        assert!(
+            target.read(100).await.is_err(),
+            "explicit reads must not widen automatic delivery"
+        );
+    }
+
+    #[test]
+    fn controller_scope_preserves_runtime_uri_confinement() {
+        for reference in [
+            "/tmp/wxqr/qr.png",
+            "computer:///tmp/wxqr/qr.png",
+            "../output.png",
+        ] {
+            assert!(controller_file_read_scope(reference).unwrap() == FileReadScope::Provider);
+        }
+        for reference in [
+            "openbitfun://current-session/artifacts/qr.png",
+            "computer://openbitfun%3A%2F%2Fcurrent-session%2Fartifacts%2Fqr.png",
+        ] {
+            assert!(controller_file_read_scope(reference).unwrap() == FileReadScope::Workspace);
+        }
     }
 
     #[test]

@@ -45,6 +45,7 @@ pub(super) fn ai_config_from_installer_model(m: &ModelConfig) -> Result<AIConfig
         format: format_key.to_string(),
         context_window: 128_128,
         max_tokens: None,
+        max_images_per_request: None,
         temperature: None,
         top_p: None,
         inline_think_in_text: false,

@@ -8,7 +8,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.compact { margin: var(--openbitfun-space-2) 0; }
 .header, .title, .actions, .meterHeading, .footer {
   display: flex;
   align-items: center;
@@ -17,7 +16,6 @@
 .header { justify-content: space-between; gap: var(--openbitfun-space-3); min-block-size: var(--openbitfun-space-6); }
 .title { flex-wrap: wrap; min-inline-size: 0; color: var(--openbitfun-color-content-muted); }
 .title > strong { font-size: var(--openbitfun-type-meta-font-size); font-weight: var(--openbitfun-type-label-md-font-weight); }
-.plan { color: var(--openbitfun-color-content-secondary); font-weight: var(--openbitfun-type-label-selected-font-weight); overflow-wrap: anywhere; }
 .actions { flex-shrink: 0; }
 .meters, .skeletons {
   display: grid;
@@ -26,30 +24,31 @@
   margin-block-start: var(--openbitfun-space-2);
 }
 .meter {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  align-items: baseline;
+  gap: var(--openbitfun-space-2) var(--openbitfun-space-3);
   min-inline-size: 0;
-  padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
-  border: 1px solid var(--openbitfun-color-border-subtle);
-  border-radius: var(--openbitfun-radius-base);
-  background: var(--openbitfun-color-surface-subtle);
+  padding-block: var(--openbitfun-space-2);
 }
+.meter > .track, .meter > .meterDetails { grid-column: 1 / -1; }
 .meterHeading { color: var(--openbitfun-color-content-secondary); font-weight: var(--openbitfun-type-label-selected-font-weight); overflow-wrap: anywhere; }
 .value {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: var(--openbitfun-space-1);
-  margin-block: var(--openbitfun-space-2) var(--openbitfun-space-3);
+  justify-content: flex-end;
+  margin: 0;
 }
 .value > strong {
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  font-family: var(--openbitfun-type-heading-compact-page-font-family);
-  font-size: var(--openbitfun-type-heading-compact-page-font-size);
-  line-height: var(--openbitfun-type-heading-compact-page-line-height);
-  font-weight: var(--openbitfun-type-heading-compact-page-font-weight);
-  letter-spacing: var(--openbitfun-type-heading-compact-page-letter-spacing);
+  font-family: var(--openbitfun-type-label-lg-font-family);
+  font-size: var(--openbitfun-type-label-lg-font-size);
+  line-height: var(--openbitfun-type-label-lg-line-height);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  letter-spacing: var(--openbitfun-type-label-lg-letter-spacing);
 }
 .unit, .remainingLabel { font-size: var(--openbitfun-type-meta-font-size); font-weight: var(--openbitfun-type-label-md-font-weight); color: var(--openbitfun-color-content-muted); }
 .remainingLabel { margin-inline-start: auto; }
@@ -116,6 +115,136 @@
 .skeleton > span { block-size: var(--openbitfun-space-2); inline-size: 40%; border-radius: var(--openbitfun-radius-base); background: var(--openbitfun-color-surface-subtle); }
 .skeleton > span:nth-child(2) { block-size: var(--openbitfun-space-5); inline-size: 55%; }
 .skeleton > span:last-child { block-size: var(--openbitfun-space-1); inline-size: 100%; }
+
+// Inline editor summaries share the form surface, not nested quota cards.
+.compact {
+  margin: 0;
+
+  .header { min-block-size: var(--openbitfun-control-height-sm); }
+  .title { flex: 1; }
+  .accountLabel { min-inline-size: 0; max-inline-size: 100%; }
+  .title > [data-openbitfun-component='status-pill'] { flex: none; max-inline-size: 100%; }
+  .meters { grid-template-columns: minmax(0, 1fr); }
+
+  .meter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    align-items: baseline;
+    gap: var(--openbitfun-space-2) var(--openbitfun-space-3);
+    padding: var(--openbitfun-space-2) 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .meterHeading { font-weight: var(--openbitfun-type-body-sm-font-weight); }
+  .value { justify-content: flex-end; margin: 0; }
+  .value > strong {
+    font-family: var(--openbitfun-type-label-md-font-family);
+    font-size: var(--openbitfun-type-label-md-font-size);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: var(--openbitfun-type-label-md-line-height);
+    letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+  }
+  .remainingLabel { margin-inline-start: var(--openbitfun-space-1); }
+  .track, .meterDetails { grid-column: 1 / -1; }
+  .meterDetails { flex-direction: row; flex-wrap: wrap; padding: 0; gap: var(--openbitfun-space-1) var(--openbitfun-space-3); }
+  .meterDetails:empty { display: none; }
+  .secondaryMeters { margin-block-start: var(--openbitfun-space-2); }
+  .skeleton { border: 0; padding: var(--openbitfun-space-2) 0; }
+}
+
+.inline {
+  container-type: normal;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--openbitfun-space-2) var(--openbitfun-space-3);
+  margin: 0;
+
+  .header { display: contents; }
+  &.compact .header { display: flex; flex-basis: 100%; }
+  .title:empty { display: none; }
+  .actions { order: 1; margin-inline-start: auto; }
+  .actions:empty { display: none; }
+  .meters, .secondaryMeters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2) var(--openbitfun-space-4);
+    margin: 0;
+  }
+  .meter {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .meter:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+    border-radius: var(--openbitfun-radius-sm);
+  }
+  .meterHeading, .meter[data-secondary] .meterHeading { font-size: var(--openbitfun-type-meta-font-size); font-weight: var(--openbitfun-type-body-sm-font-weight); }
+  .value { order: 2; }
+  .value > strong, .meter[data-secondary] .value > strong {
+    font-family: var(--openbitfun-type-label-sm-font-family);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: var(--openbitfun-type-label-sm-line-height);
+    letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
+  }
+  .track {
+    order: 1;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: calc(var(--openbitfun-space-1) / 2);
+    flex: none;
+    gap: calc(var(--openbitfun-space-1) / 2);
+    inline-size: max-content;
+    block-size: var(--openbitfun-space-3);
+    border-radius: 0;
+    background: transparent;
+  }
+  .track > span { inline-size: 100%; border-radius: 0; background: var(--openbitfun-color-status-success-emphasis); }
+  .track > span[data-filled='false'] { background: var(--openbitfun-color-border-subtle); }
+  .meter[data-tone='danger'] .track > span[data-filled='false'] { background: var(--openbitfun-color-status-danger-border); }
+  .notice { flex-basis: 100%; margin: 0; }
+
+  .inlineSkeleton { min-block-size: var(--openbitfun-control-icon-button-xs-size); }
+  .skeletonLabel, .skeletonValue {
+    display: block;
+    flex: none;
+    border-radius: var(--openbitfun-radius-sm);
+  }
+  .skeletonLabel { inline-size: 5ch; block-size: var(--openbitfun-space-3); }
+  .skeletonValue { order: 2; inline-size: 4ch; block-size: var(--openbitfun-space-3); }
+}
+
+.skeletonPlan {
+  display: block;
+  flex: none;
+  inline-size: var(--openbitfun-space-8);
+  block-size: var(--openbitfun-space-5);
+  border-radius: var(--openbitfun-control-status-pill-radius);
+}
+
+.skeletonPlan, .inline .skeletonLabel, .inline .skeletonValue, .inline .skeletonTrack > span {
+  background: var(--openbitfun-color-border-subtle);
+  animation: quota-skeleton-pulse calc(var(--openbitfun-motion-duration-loop) * 2) var(--openbitfun-motion-easing-standard) infinite;
+}
+
+@keyframes quota-skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .skeletonPlan, .inline .skeletonLabel, .inline .skeletonValue, .inline .skeletonTrack > span { animation: none; }
+}
 
 @container (max-width: 300px) {
   .header { align-items: flex-start; }

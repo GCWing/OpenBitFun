@@ -245,6 +245,13 @@ const createCanvasStoreHook = () => create<CanvasStore>()(
           }
           
           const newTab = createTab(content, state);
+          if (content.type === 'browser' && !content.data?.targetId
+            && draft.scopeKey && draft.scopeKey !== '__none__') {
+            newTab.content = { ...content, data: { ...content.data,
+              targetId: `embedded-browser-panel-view-${newTab.id}`,
+              conversationId: draft.scopeKey,
+            } };
+          }
           insertTabRespectingPinnedBoundary(group, newTab);
           group.activeTabId = newTab.id;
           draft.activeGroupId = targetGroupId;
@@ -1212,13 +1219,87 @@ function rememberAgentSnapshot(key: string, snapshot: CanvasStoreState): void {
     const evictIndex = agentSnapshotLruOrder.findIndex(scope => {
       const state = agentScopeSnapshots.get(scope);
       return !state || ![state.primaryGroup, state.secondaryGroup, state.tertiaryGroup]
-        .some(group => group.tabs.some(tab => tab.content.metadata?.discardSessionOnClose));
+        .some(group => group.tabs.some(tab => tab.content.metadata?.discardSessionOnClose
+          || (tab.content.type === 'browser' && tab.content.data?.targetId)));
     });
     if (evictIndex < 0) break;
     const [evict] = agentSnapshotLruOrder.splice(evictIndex, 1);
     if (!evict) break;
     agentScopeSnapshots.delete(evict);
   }
+}
+
+/** Commit background output to its owner's snapshot without changing UI selection. */
+export function openAgentCanvasTabForSession(sessionId: string, content: PanelContent): void {
+  const key = normalizeAgentScopeKey(sessionId);
+  const live = useAgentCanvasStore.getState();
+  const target = live.scopeKey === key ? useAgentCanvasStore : createCanvasStoreHook();
+  if (target !== useAgentCanvasStore) {
+    const snapshot = agentScopeSnapshots.get(key);
+    if (snapshot) target.setState(structuredClone(snapshot));
+    target.setState({ scopeKey: key });
+  }
+  const state = target.getState();
+  const duplicateKey = content.metadata?.duplicateCheckKey;
+  for (const groupId of ['primary', 'secondary', 'tertiary'] as const) {
+    const tab = state[`${groupId}Group`].tabs.find(candidate => duplicateKey
+      && candidate.content.metadata?.duplicateCheckKey === duplicateKey);
+    if (tab) {
+      state.updateTabContent(tab.id, groupId, content);
+      state.switchToTab(tab.id, groupId);
+      if (target !== useAgentCanvasStore) rememberAgentSnapshot(key, extractAgentPersistableState(target.getState()));
+      return;
+    }
+  }
+  state.addTab(content, 'active');
+  if (target !== useAgentCanvasStore) rememberAgentSnapshot(key, extractAgentPersistableState(target.getState()));
+}
+
+/** Update retained output without reopening a closed tab or changing the selected tab. */
+export function updateAgentCanvasTabsForSession(
+  sessionId: string,
+  update: (content: PanelContent) => PanelContent | undefined,
+): boolean {
+  const key = normalizeAgentScopeKey(sessionId);
+  const target = useAgentCanvasStore.getState().scopeKey === key
+    ? useAgentCanvasStore : createCanvasStoreHook();
+  if (target !== useAgentCanvasStore) {
+    const snapshot = agentScopeSnapshots.get(key);
+    if (!snapshot) return false;
+    target.setState(structuredClone(snapshot));
+  }
+  const state = target.getState();
+  let updated = false;
+  for (const groupId of ['primary', 'secondary', 'tertiary'] as const) {
+    for (const tab of state[`${groupId}Group`].tabs) {
+      const content = update(tab.content);
+      if (!content) continue;
+      state.updateTabContent(tab.id, groupId, content);
+      updated = true;
+    }
+  }
+  // A later explicit Reopen Closed Tab must not restore an endless loading state.
+  let updatedHistory = false;
+  const closedTabs = state.closedTabs.map(record => {
+    const content = update(record.tab.content);
+    if (!content) return record;
+    updatedHistory = true;
+    return { ...record, tab: { ...record.tab, content } };
+  });
+  if (updatedHistory) target.setState({ closedTabs });
+  if ((updated || updatedHistory) && target !== useAgentCanvasStore) {
+    rememberAgentSnapshot(key, extractAgentPersistableState(target.getState()));
+  }
+  return updated;
+}
+
+/** Session deletion also releases snapshots exempted from ordinary LRU eviction. */
+export function forgetAgentCanvasSession(sessionId: string): void {
+  const key = normalizeAgentScopeKey(sessionId);
+  agentScopeSnapshots.delete(key);
+  const index = agentSnapshotLruOrder.indexOf(key);
+  if (index >= 0) agentSnapshotLruOrder.splice(index, 1);
+  if (useAgentCanvasStore.getState().scopeKey === key) applyEmptyAgentCanvas(key);
 }
 
 /** Discard all views of an explicitly closed side conversation, including suspended canvases. */

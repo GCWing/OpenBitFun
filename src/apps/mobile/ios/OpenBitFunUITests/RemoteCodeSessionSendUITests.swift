@@ -948,6 +948,25 @@ private extension XCUIApplication {
 }
 
 final class StreamingPresentationUITests: XCTestCase {
+    func testMessageTimesAndQuietFailures() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--streaming-regression", "--message-metadata-regression"]
+        app.launch()
+        let timestamps = app.staticTexts.matching(identifier: "chat.messageTimestamp")
+        XCTAssertTrue(timestamps.firstMatch.waitForExistence(timeout: 15))
+        XCTAssertEqual(timestamps.count, 2)
+        let summary = app.buttons["tool.summary.read"]
+        XCTAssertTrue(summary.exists)
+        XCTAssertFalse(app.buttons["tool.toggle.fetch"].exists)
+        summary.tap()
+        app.buttons["tool.toggle.fetch"].tap()
+        XCTAssertTrue(app.staticTexts["HTTP 404"].waitForExistence(timeout: 3))
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "Message times and expandable tool failure"
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
     func testCollapsedDraftKeepsTextAndShowsVoiceOnlyWhenExpanded() {
         let app = XCUIApplication()
         app.launchArguments = ["--composer-draft-preview"]

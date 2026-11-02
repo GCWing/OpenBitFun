@@ -3,6 +3,96 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Model selection and smart routing
+
+**Release availability:** smart mode is not available in this release. The GUI
+keeps its entry disabled, and the shared runtime rejects activation, including
+from older clients. Saved smart-mode configuration and history are retained;
+ordinary conversation execution does not invoke the Router or its summaries.
+Configuration files and legacy Router environment variables cannot enable it.
+The implementation details below document the retained experimental path.
+
+Smart mode chooses between the primary model and an independently configured
+economy model for each main conversation step. Switching smart mode on or off
+changes the current conversation or draft, without changing the strategy default
+for future conversations. There is no remember-selection or scope control.
+Before a conversation or draft exists, the host strategy default owns the
+selection. Manual model and pool choices retain their existing session and
+future-default saving rules. Primary/economy role bindings remain shared model
+configuration.
+
+Subagents keep their independent explicit model or pool selection, agent/default
+settings, inheritance and Fork rules. Ordinary fresh subagents retain the fast
+model fallback; enabling smart mode does not replace it with the primary or economy
+model. Existing subagents retain their own binding when resumed. They do not
+participate in Router classification or Router summaries. The legacy
+`ai.model_routing.subagent_model` field remains readable for compatibility but
+does not control subagent selection, and the GUI exposes no smart-subagent setting.
+Choices made in a new conversation draft are applied on its execution host
+before the first message is sent.
+
+In **Settings → AI → Models**, add the Router as an API-key model, then open
+**Router service** to select it. No tokenizer file or remote tokenization endpoint
+is required. OpenBitFun estimates the input locally and uses the service's full
+prompt usage to tighten the budget independently for each execution.
+The Router must support the classifier protocol
+described in [the deployment guide](../../../deploy/model-router/README.md).
+Configure the primary and economy models, then save and test the connections
+before enabling smart mode in the composer. The dialog shows independent
+connection results for the primary model, economy model and Router service;
+the Router check also validates the classifier protocol. Saving configuration
+alone does not prove connectivity. Router
+request failures fall back to the primary model; each response records its
+actual model and fallback status. Smart mode automatically maintains Router
+context summaries with the economy model before input fills the budget. If the
+complete context still fits, pending or failed summaries do not interrupt routing;
+otherwise the current round uses the primary model until complete context is available.
+When an older conversation first enters smart mode, the execution host reads its
+visible persisted turns incrementally and builds a separate Router summary. Each
+accepted chunk saves its source cursor, so interrupted preparation resumes rather
+than losing the prefix. Preparation can continue between turns; the next routing
+boundary adopts the completed history together with new observations. Summary
+requests use the economy model's own lowest supported effort, independently of
+its chat default, and are bounded by that model's input window.
+Billing hints do not establish actual charges.
+
+Older execution hosts without `estimatedTokenBudgetSupported` can continue saving
+Router settings when a tokenizer path is already configured; the GUI preserves
+that path. Without an existing path, the GUI asks you to upgrade the execution
+host and blocks saving those settings. Upgrading only the controller does not
+add this capability to the host.
+
+Persisted conversations carry their independent Router summary into the next
+smart turn. Recovery validates the visible conversation history; reverting or
+forking never imports an abandoned or another conversation's summary. Legacy
+checkpoints without history proof or following a manual turn rebuild from the
+execution host's visible original turn records instead of the main context
+compression summary.
+
+The execution host bounds Router requests per service (two running and up to
+32 waiting by default). Root conversation groups take turns receiving capacity,
+with FIFO ordering within each group; one group can have at most eight
+waiting requests at the default limits. Idle slots can be borrowed. Queue time
+counts toward the routing timeout. Cancellation removes the waiter; overload
+and timeout retain the primary-model fallback. Optional
+background summaries use a separate fair queue, merge pending observations per
+conversation, and do not block model selection. These queues serve eligible main
+conversations; subagents and model-pool conversations do not enter the Router.
+Traces retain root, parent, session, turn and round IDs for isolation.
+A route that would discard images readable by the primary model falls back to
+primary; retries retain the model chosen for that logical round. Host startup
+overrides and persistence details are in the deployment guide linked above.
+
+Peer Device Mode applies configuration on the execution host and requires a host
+advertising smart-routing support. SSH/Docker workspaces also use their owning
+OpenBitFun runtime's Router configuration, not configuration or local files on the
+controller. Mobile and bot model editors explicitly reject changes to smart
+sessions; use the GUI to change the strategy. External agents and approved
+immutable dispatch jobs retain their existing model bindings.
+Local fixture tests do not establish live remote execution or classifier quality.
+Before production evaluation, compare fixed-primary and routed main conversations for
+completion quality, total latency, model/cache usage and auxiliary request cost.
+
 ## Remote Connect
 
 Sign in once with the shared GitHub account. The official Relay and **Same
@@ -579,20 +669,27 @@ main Git checkout's target cache. If absent, curl downloads the version-specific
 archive, supporting HTTP and SOCKS proxies; Cargo handles extraction and linking.
 Explicit `SHERPA_ONNX_LIB_DIR` and `SHERPA_ONNX_ARCHIVE_DIR` overrides are preserved.
 
-Development uses separate data by default. Add `--shared-data` to run alongside
-the installed app and share its data:
+Development shares the installed app's existing settings, workspaces and sessions
+by default. Both launchers keep a separate development host channel and retain
+the existing session writer and scheduler leases:
 
 ```sh
-pnpm run desktop:dev -- --shared-data
-pnpm run desktop:preview:debug -- --shared-data
+pnpm run desktop:dev
+pnpm run desktop:preview:debug
 ```
 
-Use `--isolated-data` for separate development data (the default).
+Use `--isolated-data` for separate development data under the current checkout's
+`.openbitfun/desktop-dev/{user,home}` directories. Existing isolated data stays in
+place and remains accessible with this flag; switching modes does not move or
+delete sessions. Explicit storage environment overrides remain authoritative,
+and `--shared-data` is still accepted as an explicit alias for the default.
 
-When another worktree uses the default ports, start a separate dev server:
+To run an independent instance in another worktree, isolate its data and choose
+different ports. Changing ports alone does not separate the development host
+that owns the shared product data:
 
 ```sh
-OPENBITFUN_DEV_PORT=1432 pnpm run desktop:dev
+OPENBITFUN_DEV_PORT=1432 pnpm run desktop:dev -- --isolated-data
 ```
 
 HMR uses port 1431 in this example; `OPENBITFUN_DEV_HMR_PORT` can override it.
@@ -683,6 +780,39 @@ project installation remains unsupported; choose user scope to install on the
 serving host. Mobile/bot controls, CLI peers and Detached Dispatch do not gain a
 marketplace configuration or installation entry point.
 
+## Files sent through WeChat
+
+Send an ordinary file or a native video in the paired WeChat chat to make it available to the
+selected Agent session. OpenBitFun downloads and decrypts the file, saves it in
+a unique `.openbitfun-inbound-<id>` directory inside that session's workspace,
+and supplies its path to the Agent. Existing files are not overwritten. File
+contents stay out of the message text; the Agent can read the saved file using
+its tools. Files remain available for later turns and can be removed manually
+when no longer needed. On POSIX filesystems, directories use `0700` and files
+use `0600` permissions.
+
+A message accepts up to five files totaling 30 MiB. Missing download information,
+failed downloads, and unavailable workspaces produce an explicit error instead
+of submitting an empty message. Complete pending menu selections or approvals
+before sending a file.
+
+SSH workspaces use the session's remote filesystem and never fall back to the
+host's local filesystem. Cross-device bot sessions negotiate `session_attachments_v1`,
+transfer the bytes through encrypted device RPC, and use the path returned by the
+execution host. Upgrade an older target host when prompted; file input is never
+silently omitted. Accepted writes finish on the target even if the controller
+disconnects. Retries with the same attachment identity reuse identical saved bytes
+and reject changed or incomplete content. This input path does not submit
+attachments to Detached Dispatch jobs.
+
+Messages from one WeChat peer finish attachment preparation and turn admission in
+receive order. Model replies run independently, so approvals and follow-up input
+remain available. Failed image downloads also reject the message with a visible
+error instead of silently submitting empty or partial media input. Native videos
+are delivered as unchanged `.mp4` files through the same local/remote path;
+video analysis depends on the Agent's available tools. Voice messages without
+transcripts currently return an unsupported notice.
+
 ## WeChat session result notifications
 
 While the WeChat bot is running, completed turns in its currently selected local
@@ -713,6 +843,24 @@ account device, the existing reply includes an explicit notice that proactive
 scheduled-job and desktop-result notifications are unavailable there. Ordinary
 WeChat-initiated requests keep their existing cross-device reply path. This feature
 does not add cross-host Peer Device or Detached Dispatch result delivery.
+
+## Image input limits
+
+For a vision model that accepts only a limited number of images, set **Images
+per request** in its model settings (for example, `3`). Leave it empty to
+keep the existing image-history behavior. The saved model field is
+`max_images_per_request`; it limits input images, including user attachments,
+retained history, and tool results, rather than generated images.
+
+User submissions above the configured limit are rejected before entering the
+conversation. Pools and channel routes use the smallest configured limit among
+their enabled vision models when admitting new attachments, so fallback models
+can accept the same batch. Each model request keeps the newest image-bearing
+messages within that limit and includes an omission notice for pixels left out. The Agent can
+read omitted files again in smaller batches; the original conversation is retained.
+Plain text continuation also applies the limit, including to old tool-image history.
+Each selected model or fallback channel uses its own limit at the executing host;
+older hosts must be upgraded to enforce this optional setting.
 
 ## Model pools
 
@@ -830,3 +978,46 @@ model slots and externally approved immutable model bindings keep their rules.
 Validation uses local unit tests, mock HTTP streams, transport capability tests,
 and host compilation. These do not establish live SSH/Docker, relay/mobile/IM,
 Peer Device or detached-dispatch behavior. No interactive UI validation was run.
+
+### Workspace icons
+
+Open **Project resources** and click the large project icon in the header to edit it.
+Choose a built-in Lucide icon for code, learning, design, documents, research, websites,
+mobile apps, games, data, business or tools. The **Life & hobbies** group includes travel, food,
+fitness, music, reading, home, finance, photography, pets, nature, shopping and movies.
+Apply a preset or custom HEX color to any built-in icon.
+The default shape remains a folder for local projects and a server for remote projects.
+Alternatively, upload a PNG/JPEG/WebP (up to 5 MB and
+20 megapixels). The square editor centers light/dark previews below a fixed mode switch. Click
+either preview to open the built-in icon picker; choosing a glyph closes the picker. Custom colors
+also open separately, keeping the editor size stable. Image mode supports centered square
+cropping and zoom independently for each theme. Click the light or dark preview to upload
+its image; the emphasized **Choose image** button always sets the default image, preserving
+any separately selected dark variant. An existing single
+image works in both themes until a separate dark image is set. Uploading a dark image first
+also supplies the light/legacy fallback, which can then be replaced independently.
+To return to the original icon, select **Built-in icons**, choose the
+**Default** glyph and color swatch, and save. Closing the editor cancels its draft.
+
+Icons belong to the workspace catalog on the selected OpenBitFun host. Desktop and CLI
+Peer Hosts support reading/editing them; mobile Remote Control displays them read-only.
+Older peers and the retired standalone Web Server explicitly do not offer editing. SSH/Docker
+projects store this presentation metadata on their catalog host, so an offline execution
+filesystem does not need to be opened. Worktrees inherit their main project's icon. Separate
+hosts opening the same Git repository do not automatically synchronize their catalogs.
+
+Glyph choices are advertised by `supportedGlyphs` in the icon snapshot. Hosts without
+that offer retain color/image editing; glyph writes re-check the offer before submitting.
+Legacy color-only edits preserve the stored glyph. Unknown future glyphs retain their
+saved identity and display the default artwork with an availability hint. Separate theme
+uploads similarly require the `supportsThemedImages` snapshot capability. Older controllers
+keep working with the base image, and their image edits preserve the stored dark variant.
+When one image asset is unavailable, current controllers use the available variant with
+a load warning and keep both saved references intact.
+
+Uploaded images are normalized and stored under the host's user data `workspace-icons/`
+directory; moving/deleting the source image does not change the saved icon. Include that
+directory together with `workspace_data.json` in a full backup. A workspace metadata-only
+export does not embed image bytes; missing assets display the default icon with a load warning
+and preserve the saved reference. Unreferenced assets are retained; resetting an icon does
+not delete another record's shared image. Unknown icon versions remain intact.

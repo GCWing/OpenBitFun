@@ -10,6 +10,11 @@ describe('model round memoization', () => {
       isStreaming: false, isComplete: true, items: [] },
   };
 
+  it('refreshes routing facts restored independently of message items', () => {
+    expect(areModelRoundItemPropsEqual(props, { ...props, round: { ...props.round,
+      effectiveModelName: 'economy', routing: { route: 'economy', latencyMs: 11 } } })).toBe(false);
+  });
+
   it('refreshes completed metrics when host timing arrives without new content', () => {
     expect(areModelRoundItemPropsEqual(props, { ...props, turnTtftMs: 0 })).toBe(false);
     expect(areModelRoundItemPropsEqual(props, { ...props, turnOutputDurationMs: 1_000 })).toBe(false);

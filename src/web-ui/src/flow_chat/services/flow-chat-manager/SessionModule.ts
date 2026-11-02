@@ -326,6 +326,16 @@ function shouldHydrateHistoricalSessionBeforeSwitch(session: Session | undefined
   return !hasRenderableSessionContent(session);
 }
 
+function shouldCompletePartialHistoryAfterSwitch(session: Session | undefined): boolean {
+  // A live session can retain only its restored tail while still being marked
+  // non-historical. Completing it after an explicit switch restores the
+  // assistant rounds that cannot come from the user-only turn catalog.
+  return session?.isHistorical !== true
+    && session?.historyState === 'ready'
+    && session.isPartial === true
+    && session.externalHistory?.mode !== 'follow';
+}
+
 function shouldRetryActiveStaleHydrate(context: FlowChatContext, sessionId: string): boolean {
   const state = context.flowChatStore.getState();
   if (state.activeSessionId !== sessionId) {
@@ -550,6 +560,7 @@ export async function switchChatSession(
     const isRemoteSession = isRemoteTraceContext(session?.remoteConnectionId, session?.remoteSshHost);
     const shouldHydrateBeforeSwitch = session?.externalHistory?.mode === 'follow'
       || shouldHydrateHistoricalSessionBeforeSwitch(session);
+    const shouldCompletePartialHistory = shouldCompletePartialHistoryAfterSwitch(session);
     const shouldActivateBeforeHydrate =
       shouldHydrateBeforeSwitch &&
       consumeRecentHistorySessionOpenIntent(sessionId);
@@ -560,6 +571,7 @@ export async function switchChatSession(
       historyState: session?.historyState,
       hasRenderableContent: session ? hasRenderableSessionContent(session) : false,
       shouldHydrateBeforeSwitch,
+      shouldCompletePartialHistory,
       shouldActivateBeforeHydrate,
     });
 
@@ -663,6 +675,27 @@ export async function switchChatSession(
           log.debug('Historical session background hydrate failed', { sessionId, error });
         }
       });
+    }
+
+    if (shouldCompletePartialHistory) {
+      recordHistorySessionDiagnosticEvent(sessionId, 'switch_partial_history_completion_started', {
+        switchRequestId,
+      });
+      void context.flowChatStore.ensureSessionFullHistory(sessionId, 'session-switch')
+        .then(ready => {
+          recordHistorySessionDiagnosticEvent(sessionId, 'switch_partial_history_completion_finished', {
+            switchRequestId,
+            ready,
+          });
+        })
+        .catch(error => {
+          if (!isSurfaceChangedError(error)) {
+            log.debug('Partial session history completion after switch failed', { sessionId, error });
+            recordHistorySessionDiagnosticEvent(sessionId, 'switch_partial_history_completion_failed', {
+              switchRequestId,
+            });
+          }
+        });
     }
   } catch (error) {
     if (isSurfaceChangedError(error)) {

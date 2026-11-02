@@ -40,7 +40,11 @@ const PLACEHOLDER_READ_TERMINAL: &str = "{READ_TERMINAL}";
 const PLACEHOLDER_COMPUTER_USE_GUIDANCE: &str = "{COMPUTER_USE_GUIDANCE}";
 const PLACEHOLDER_FILE_REFERENCES: &str = "{FILE_REFERENCES}";
 
-const COMPUTER_USE_GUIDANCE: &str = r#"# Browser work
+const COMPUTER_USE_GUIDANCE: &str = r#"# Choose the interaction surface
+
+For an OpenBitFun MiniApp, prefer `MiniAppBrowser`: load its spec with `GetToolSpec` if deferred, discover the app, and open its current instance. Use declared bridge state/actions when available; otherwise inspect its DOM and use its supported element/input controls. Missing semantic actions alone do not justify desktop automation. Use `ControlHub` for ordinary web pages, and `ComputerUse` for native desktop apps, browser chrome and OS dialogs. Use only tools available to this session. Consider authorized ComputerUse for a MiniApp only after establishing a specific MiniAppBrowser capability gap; explain that gap and preserve the user's target and interaction constraints. An unavailable remote surface must be reported without falling back to another device's desktop.
+
+# Browser work
 
 Use WebSearch to discover URLs and WebFetch for public HTTP content. For a rendered page, preview or interaction, use ControlHub `domain: "browser"`, `action: "navigate"`, `params: { url, observe: "snapshot" }`; choose `observe: "article"` for reading or omit observe when only showing the page. Navigation opens a page when needed. No connect/open/list preflight is required. Reuse the returned observation and session_id; refresh only when the next decision needs new page state.
 
@@ -478,6 +482,11 @@ impl PromptBuilder {
     ) -> PrependedPromptReminders {
         PrependedPromptReminders {
             deferred_tool_listing: self.build_deferred_tool_listing_reminder(),
+            ptc_tool_calling_guide: self
+                .context
+                .tool_listing_sections
+                .ptc_tool_calling_guide
+                .clone(),
             skill_listing: self.build_skill_listing_reminder(),
             agent_listing: self.build_agent_listing_reminder(),
             runtime_context: self.build_runtime_context_reminder().await,
@@ -680,6 +689,7 @@ mod tests {
             deferred_tool_listing: Some(
                 "<deferred_tools>\n- WebFetch\n</deferred_tools>".to_string(),
             ),
+            ptc_tool_calling_guide: None,
         };
         let context = PromptBuilderContext::new(r"workspace\root", None, None)
             .with_tool_listing_sections(tool_sections)
@@ -853,6 +863,22 @@ mod tests {
         assert_eq!(prompt, "Base system prompt");
         assert!(!prompt.contains("Computer Use Input Strategy"));
         assert!(!prompt.contains("primary model does not accept image inputs"));
+    }
+
+    #[tokio::test]
+    async fn interaction_guidance_routes_miniapps_before_desktop_automation() {
+        let prompt = PromptBuilder::new(PromptBuilderContext::new("workspace", None, None))
+            .build_prompt_from_template("{COMPUTER_USE_GUIDANCE}")
+            .await
+            .expect("assembled guidance");
+        assert!(prompt.contains("For an OpenBitFun MiniApp, prefer `MiniAppBrowser`"));
+        assert!(prompt.contains("Missing semantic actions alone do not justify desktop automation"));
+        assert!(prompt.contains("Use `ControlHub` for ordinary web pages"));
+        assert!(prompt.contains("without falling back to another device's desktop"));
+        assert!(
+            prompt.find("# Choose the interaction surface").unwrap()
+                < prompt.find("# Direct desktop work").unwrap()
+        );
     }
 
     #[tokio::test]

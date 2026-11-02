@@ -30,6 +30,7 @@ describe('PeerConnectionManager attach', () => {
         targetedSessionRollback: false,
         tokenUsageStatistics: true,
         miniAppAgentContextFilesV1: true,
+        miniAppAgentImagesV1: true,
         productControlV1: true,
         productControlNativeV1: false,
         productControlPresentationV1: false,
@@ -86,12 +87,15 @@ describe('PeerConnectionManager attach', () => {
           capabilities: {
             cancel_tool: true,
             tool_catalog: true,
+            review_platform_v1: true,
             chat_mcp_catalog_v1: true,
             user_question_response: true,
             user_question_interaction_v1: true,
             miniapp_agent_context_files_v1: true,
+            miniapp_agent_images_v1: true,
             wsl_workspaces_v1: true,
             whole_session_copy_v1: true,
+            session_trajectory_v1: true,
             btw_initial_model_selection_v1: true,
             btw_model_pool_selection_v1: true,
           },
@@ -104,10 +108,13 @@ describe('PeerConnectionManager attach', () => {
     const caps = connection.getState().capabilities;
     expect(caps.cancelTool).toBe(true);
     expect(caps.toolCatalog).toBe(true);
+    expect(caps.reviewPlatformV1).toBe(true);
     expect(caps.chatMcpCatalogV1).toBe(true);
     expect(caps.miniAppAgentContextFilesV1).toBe(true);
+    expect(caps.miniAppAgentImagesV1).toBe(true);
     expect(caps.wslWorkspacesV1).toBe(true);
     expect(caps.wholeSessionCopyV1).toBe(true);
+    expect(caps.sessionTrajectoryV1).toBe(true);
     expect(caps.btwInitialModelSelectionV1).toBe(true);
     expect(caps.btwModelPoolSelectionV1).toBe(true);
   });
@@ -136,14 +143,17 @@ describe('PeerConnectionManager attach', () => {
 
     const desktop = await makeManager('desktop').connect('peer-1', 'Studio');
     expect(desktop.getState().capabilities.hostKind).toBe('desktop');
+    expect(desktop.getState().capabilities.reviewPlatformV1).toBeNull();
     expect(desktop.getState().capabilities.inlineImageAttachmentsV1).toBe(false);
     expect(desktop.getState().capabilities.wholeSessionCopyV1).toBe(false);
+    expect(desktop.getState().capabilities.sessionTrajectoryV1).toBe(false);
     expect(desktop.getState().capabilities.btwInitialModelSelectionV1).toBe(false);
     expect(desktop.getState().capabilities.btwModelPoolSelectionV1).toBe(false);
     expect(desktop.getState().capabilities.chatMcpCatalogV1).toBe(false);
 
     const cli = await makeManager('cli').connect('peer-2', 'Studio');
     expect(cli.getState().capabilities.hostKind).toBe('cli');
+    expect(cli.getState().capabilities.reviewPlatformV1).toBeNull();
 
     const unknown = await makeManager(undefined).connect('peer-3', 'Studio');
     expect(unknown.getState().capabilities.hostKind).toBeNull();
@@ -515,6 +525,31 @@ describe('PeerConnectionManager disposal', () => {
     expect(snapshots.length).toBeGreaterThan(0);
   });
 
+  it('publishes PR capability changes and preserves missing legacy fields', async () => {
+    let capabilities: Record<string, boolean> = { review_platform_v1: true };
+    const manager = createManager(async (_target: string, commandJson: string) => {
+      const parsed = JSON.parse(commandJson) as { command?: string };
+      return JSON.stringify({ resp: 'host_invoke_result', ok: true, value:
+        parsed.command === 'peer_mode_ping' ? { host_type: 'desktop', capabilities } : null,
+      });
+    });
+    const connection = await manager.connect('peer-1', 'Studio');
+    expect(connection.getState().capabilities.reviewPlatformV1).toBe(true);
+    const listener = vi.fn();
+    manager.subscribe(listener);
+
+    capabilities = { review_platform_v1: false };
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(connection.getState().capabilities.reviewPlatformV1).toBe(false);
+    expect(listener).toHaveBeenCalled();
+
+    listener.mockClear();
+    capabilities = {};
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(connection.getState().capabilities.reviewPlatformV1).toBeNull();
+    expect(listener).toHaveBeenCalled();
+  });
+
   it('withdraws session copying from UI and transport when a ready host downgrades', async () => {
     let capabilities: Record<string, boolean> = { whole_session_copy_v1: true, tool_catalog: true };
     const deviceRpc = vi.fn(async (_target: string, commandJson: string) => {
@@ -658,6 +693,7 @@ function createRpc(options: { failCommands?: Set<string> } = {}) {
             inline_image_attachments_v1: true,
             token_usage_statistics: true,
             miniapp_agent_context_files_v1: true,
+            miniapp_agent_images_v1: true,
             wsl_workspaces_v1: true,
             product_control_v1: true,
             cancel_tool: true,

@@ -234,6 +234,16 @@ fn cached_platform_path_env() -> Option<&'static std::ffi::OsString> {
         .as_ref()
 }
 
+/// Merged `PATH` that [`create_tokio_command`] applies to its children.
+///
+/// Callers that spawn a process themselves (hook handlers, non-interactive
+/// shells built outside this module) use this so their children resolve the
+/// same executables a terminal does.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn platform_path_env() -> Option<std::ffi::OsString> {
+    cached_platform_path_env().cloned()
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn build_platform_path_env() -> Option<std::ffi::OsString> {
     merge_path_env(

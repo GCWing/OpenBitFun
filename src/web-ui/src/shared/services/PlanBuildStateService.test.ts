@@ -1,236 +1,76 @@
 // @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-const mocks = vi.hoisted(() => ({
-  readFileContent: vi.fn(),
-  writeFileContent: vi.fn(),
-  readWorkspaceFile: vi.fn(),
-  writeWorkspaceFile: vi.fn(),
-  onDialogTurnCompleted: vi.fn(),
-  onDialogTurnFailed: vi.fn(),
-  onDialogTurnCancelled: vi.fn(),
-  onDialogTurnInterrupted: vi.fn(),
-  dialogTurnCompleted: undefined as ((event: { sessionId: string; turnId: string }) => void) | undefined,
-  dialogTurnFailed: undefined as ((event: { sessionId: string; turnId: string }) => void) | undefined,
-  dialogTurnCancelled: undefined as ((event: { sessionId: string; turnId: string }) => void) | undefined,
-  dialogTurnInterrupted: undefined as ((event: { sessionId: string; turnId: string }) => void) | undefined,
-}));
-
+const listeners = vi.hoisted(() => new Map<string, (event: any) => void>());
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
-  agentAPI: {
-    onDialogTurnCompleted: mocks.onDialogTurnCompleted.mockImplementation((callback) => {
-      mocks.dialogTurnCompleted = callback;
-      return vi.fn();
-    }),
-    onDialogTurnFailed: mocks.onDialogTurnFailed.mockImplementation((callback) => {
-      mocks.dialogTurnFailed = callback;
-      return vi.fn();
-    }),
-    onDialogTurnCancelled: mocks.onDialogTurnCancelled.mockImplementation((callback) => {
-      mocks.dialogTurnCancelled = callback;
-      return vi.fn();
-    }),
-    onDialogTurnInterrupted: mocks.onDialogTurnInterrupted.mockImplementation((callback) => {
-      mocks.dialogTurnInterrupted = callback;
-      return vi.fn();
-    }),
-  },
+  agentAPI: Object.fromEntries(['Completed', 'Failed', 'Cancelled', 'Interrupted'].map(name => [
+    `onDialogTurn${name}`, (callback: (event: any) => void) => { listeners.set(name, callback); return vi.fn(); },
+  ])),
 }));
 
-vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({
-  workspaceAPI: {
-    readFileContent: mocks.readFileContent,
-    writeFileContent: mocks.writeFileContent,
-    readWorkspaceFile: mocks.readWorkspaceFile,
-    writeWorkspaceFile: mocks.writeWorkspaceFile,
-  },
-}));
+import { planBuildStateService as service, type PlanFileRef } from './PlanBuildStateService';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { routeSurfaceEvent } from '@/infrastructure/peer-device/deviceSurfaceRouting';
 
-import {
-  planBuildStateService,
-  type PlanFileRef,
-} from './PlanBuildStateService';
-
-const PLAN_CONTENT = `---
-name: Example Plan
-overview: Verify session-scoped build tracking.
-todos:
-  - id: shared-todo
-    content: Update the implementation
-    status: pending
----
-
-Plan body.`;
-
-describe('PlanBuildStateService', () => {
-  const trackedTargets: PlanFileRef[] = [];
-
-  function target(name: string): PlanFileRef {
-    const value = {
-      planFilePath: `/workspace/.openbitfun/plans/${name}.plan.md`,
-      workspacePath: '/workspace',
-    };
-    trackedTargets.push(value);
-    return value;
+const plan: PlanFileRef = { planFilePath: '/workspace/example.plan.md', workspaceId: 'workspace' };
+afterEach(() => {
+  for (const surface of ['local', 'peer']) {
+    activateSurface(surface);
+    service.cancelBuild(plan);
+    service.cancelBuild({ ...plan, workspaceId: 'other' });
   }
+  activateSurface('local');
+});
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.readFileContent.mockResolvedValue(PLAN_CONTENT);
-    mocks.writeFileContent.mockResolvedValue(undefined);
-    mocks.readWorkspaceFile.mockResolvedValue(PLAN_CONTENT);
-    mocks.writeWorkspaceFile.mockResolvedValue(undefined);
+describe('turn-owned plan builds without todos', () => {
+  it.each(['Completed', 'Failed', 'Cancelled', 'Interrupted'])('settles only the owning turn on %s', name => {
+    const card = vi.fn();
+    const viewer = vi.fn();
+    const offCard = service.subscribe(plan, card);
+    const offViewer = service.subscribe(plan, viewer);
+    const turnId = service.startBuild({ ...plan, sessionId: 'session' });
+    const other = { ...plan, workspaceId: 'other' };
+    service.startBuild({ ...other, sessionId: 'session' });
+    expect(service.startBuild({ ...plan, sessionId: 'session' })).toBeNull();
+    listeners.get(name)!({ sessionId: 'unrelated', turnId });
+    listeners.get(name)!({ sessionId: 'session', turnId: 'previous-turn' });
+    expect(service.getBuildStatus(plan)).toBe('building');
+    listeners.get(name)!({ sessionId: 'session', turnId });
+    const expected = name === 'Completed' ? 'built' : 'build';
+    expect(service.getBuildStatus(plan)).toBe(expected);
+    expect(service.getBuildStatus(other)).toBe('building');
+    expect(card.mock.calls).toEqual([['building'], [expected]]);
+    expect(viewer.mock.calls).toEqual(card.mock.calls);
+    // Duplicate delivery cannot undo completion, including routed + API fan-out.
+    listeners.get('Cancelled')!({ sessionId: 'session', turnId });
+    expect(service.getBuildStatus(plan)).toBe(expected);
+    offCard(); offViewer();
+    expect(service.getBuildStatus(plan)).toBe(expected);
   });
 
-  afterEach(() => {
-    for (const value of trackedTargets.splice(0)) {
-      planBuildStateService.cancelBuild(value);
-    }
+  it('treats unsuccessful completion as retryable and ignores a late prior turn', () => {
+    const turnId = service.startBuild({ ...plan, sessionId: 'session', turnId: 'draft-turn' });
+    expect(turnId).toBe('draft-turn');
+    listeners.get('Completed')!({ session_id: 'session', turn_id: turnId, success: false });
+    expect(service.getBuildStatus(plan)).toBe('build');
+    service.startBuild({ ...plan, sessionId: 'session' });
+    listeners.get('Completed')!({ sessionId: 'session', turnId });
+    expect(service.getBuildStatus(plan)).toBe('building');
+    service.cancelBuild(plan);
+    expect(service.getBuildStatus(plan)).toBe('build');
   });
 
-  it('cancels only builds owned by the cancelled session', () => {
-    const first = target('first');
-    const second = target('second');
-    planBuildStateService.startBuild({
-      ...first,
-      sessionId: 'session-a',
-      todoIds: ['shared-todo'],
+  it('keeps equal workspace paths and turn IDs isolated across devices and settles background peers', () => {
+    service.startBuild({ ...plan, sessionId: 'session', turnId: 'turn' });
+    activateSurface('peer');
+    expect(service.getBuildStatus(plan)).toBe('build');
+    service.startBuild({ ...plan, sessionId: 'session', turnId: 'turn' });
+    activateSurface('local');
+    routeSurfaceEvent('agentic://dialog-turn-completed', {
+      __openbitfunSourceDeviceId: 'peer', sessionId: 'session', turnId: 'turn', success: true,
     });
-    planBuildStateService.startBuild({
-      ...second,
-      sessionId: 'session-b',
-      todoIds: ['shared-todo'],
-    });
-
-    window.dispatchEvent(new CustomEvent('openbitfun:dialog-cancelled', {
-      detail: { sessionId: 'session-a' },
-    }));
-
-    expect(planBuildStateService.isBuildActive(first)).toBe(false);
-    expect(planBuildStateService.isBuildActive(second)).toBe(true);
-  });
-
-  it('applies TodoWrite updates only to builds owned by that session', async () => {
-    const first = target('todo-first');
-    const second = target('todo-second');
-    const firstTurnId = planBuildStateService.startBuild({
-      ...first,
-      sessionId: 'session-a',
-      todoIds: ['shared-todo'],
-    });
-    planBuildStateService.startBuild({
-      ...second,
-      sessionId: 'session-b',
-      todoIds: ['shared-todo'],
-    });
-
-    window.dispatchEvent(new CustomEvent('openbitfun:todowrite-update', {
-      detail: {
-        sessionId: 'session-a',
-        turnId: firstTurnId,
-        todos: [{
-          id: 'shared-todo',
-          content: 'Update the implementation',
-          status: 'completed',
-        }],
-        merge: false,
-      },
-    }));
-
-    await vi.waitFor(() => {
-      expect(mocks.writeFileContent).toHaveBeenCalledOnce();
-    });
-    expect(mocks.readFileContent).toHaveBeenCalledWith(
-      first.planFilePath,
-      undefined,
-      undefined,
-    );
-    expect(mocks.writeFileContent).toHaveBeenCalledWith(
-      first.workspacePath,
-      first.planFilePath,
-      expect.stringContaining('status: completed'),
-      undefined,
-    );
-    expect(planBuildStateService.isBuildActive(first)).toBe(false);
-    expect(planBuildStateService.isBuildActive(second)).toBe(true);
-  });
-
-  it('keys build state by workspace ID and routes file IO through the workspace', async () => {
-    const planFilePath = '/workspace/.openbitfun/plans/shared-path.plan.md';
-    const inWorkspaceA: PlanFileRef = { planFilePath, workspaceId: 'workspace-a', workspacePath: '/workspace' };
-    const inWorkspaceB: PlanFileRef = { planFilePath, workspaceId: 'workspace-b', workspacePath: '/workspace' };
-    trackedTargets.push(inWorkspaceA, inWorkspaceB);
-
-    const turnId = planBuildStateService.startBuild({
-      ...inWorkspaceA,
-      sessionId: 'session-a',
-      todoIds: ['shared-todo'],
-    });
-
-    expect(planBuildStateService.isBuildActive(inWorkspaceA)).toBe(true);
-    expect(planBuildStateService.isBuildActive(inWorkspaceB)).toBe(false);
-    // A pre-ID locator for the same file does not alias the ID-keyed build.
-    expect(planBuildStateService.isBuildActive({ planFilePath, workspacePath: '/workspace' })).toBe(false);
-
-    window.dispatchEvent(new CustomEvent('openbitfun:todowrite-update', {
-      detail: {
-        sessionId: 'session-a',
-        turnId,
-        todos: [{ id: 'shared-todo', content: 'Update the implementation', status: 'completed' }],
-        merge: false,
-      },
-    }));
-
-    await vi.waitFor(() => {
-      expect(mocks.writeWorkspaceFile).toHaveBeenCalledOnce();
-    });
-    expect(mocks.readWorkspaceFile).toHaveBeenCalledWith('workspace-a', planFilePath);
-    expect(mocks.writeWorkspaceFile).toHaveBeenCalledWith(
-      'workspace-a',
-      planFilePath,
-      expect.stringContaining('status: completed'),
-    );
-    expect(mocks.readFileContent).not.toHaveBeenCalled();
-    expect(mocks.writeFileContent).not.toHaveBeenCalled();
-  });
-
-  it('does not register a build without valid todo IDs', () => {
-    const plan = target('empty-todos');
-
-    const turnId = planBuildStateService.startBuild({
-      ...plan,
-      sessionId: 'session-a',
-      todoIds: ['', '   '],
-    });
-
-    expect(turnId).toBeNull();
-    expect(planBuildStateService.isBuildActive(plan)).toBe(false);
-  });
-
-  it.each([
-    ['completed', () => mocks.dialogTurnCompleted],
-    ['failed', () => mocks.dialogTurnFailed],
-    ['cancelled', () => mocks.dialogTurnCancelled],
-    ['interrupted', () => mocks.dialogTurnInterrupted],
-  ])('stops only the owning build when its turn is %s', (_status, getListener) => {
-    const first = target(`settled-${_status}`);
-    const second = target(`other-${_status}`);
-    const firstTurnId = planBuildStateService.startBuild({
-      ...first,
-      sessionId: 'session-a',
-      todoIds: ['shared-todo'],
-    });
-    planBuildStateService.startBuild({
-      ...second,
-      sessionId: 'session-a',
-      todoIds: ['shared-todo'],
-    });
-
-    expect(firstTurnId).not.toBeNull();
-    getListener()?.({ sessionId: 'session-a', turnId: firstTurnId! });
-
-    expect(planBuildStateService.isBuildActive(first)).toBe(false);
-    expect(planBuildStateService.isBuildActive(second)).toBe(true);
+    expect(service.getBuildStatus(plan)).toBe('building');
+    activateSurface('peer');
+    expect(service.getBuildStatus(plan)).toBe('built');
   });
 });

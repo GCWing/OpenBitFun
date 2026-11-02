@@ -239,7 +239,7 @@ impl ComputerUseActions {
     ) -> OpenBitFunResult<Vec<ToolResult>> {
         let host = context.computer_use_host.as_ref().ok_or_else(|| {
             OpenBitFunError::tool(
-                "Desktop control is only available in the OpenBitFun desktop app".to_string(),
+                "Computer Use requires a native provider on the executing host".to_string(),
             )
         })?;
 
@@ -1786,12 +1786,12 @@ fn error_code_from_local(code: &str) -> ErrorCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComputerUseActions, OpenBitFunError, ToolResult};
+    use super::{ComputerUseActions, ToolResult};
     use super::{OPEN_FILE_ROUTING_NOTE, OPEN_URL_ROUTING_NOTE};
+    use openbitfun_agent_tools::computer_use_host::error::{OpenBitFunError, OpenBitFunResult};
     use serde_json::json;
 
     use crate::agentic::tools::computer_use_host as h;
-    use crate::util::errors::OpenBitFunResult;
     use std::sync::{Arc, Mutex};
 
     #[test]

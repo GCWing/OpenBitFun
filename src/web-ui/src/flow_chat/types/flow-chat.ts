@@ -221,6 +221,7 @@ export interface ModelRound {
   providerId?: string;
   modelConfigId?: string;
   effectiveModelName?: string;
+  routing?: import('@/shared/types/session-history').ModelRoutingDecision;
   firstChunkMs?: number;
   firstVisibleOutputMs?: number;
   streamDurationMs?: number;
@@ -708,6 +709,8 @@ export interface QueuedComposerDraft {
 }
 
 export interface QueuedMessage {
+  /** Reserved execution identity; absent in older persisted queues. */
+  turnId?: string;
   id: string;
   sessionId: string;
   /** Rendered content sent to the model (may equal `displayMessage`). */

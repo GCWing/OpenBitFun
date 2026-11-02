@@ -10,7 +10,7 @@ export interface WorkspaceChoice {
   action?: ReactNode;
 }
 
-/** Uses the same public composition as the model provider's selected models. */
+/** Keeps connection selection and editing in separate hit areas. */
 export function WorkspaceChoiceCapsules({ choices, value, disabled, label, onValueChange, onEdit }: {
   choices: readonly WorkspaceChoice[];
   value?: string;
@@ -22,7 +22,7 @@ export function WorkspaceChoiceCapsules({ choices, value, disabled, label, onVal
   const { t } = useI18n('common');
   return <div className="workspace-choice-capsules" role="group" aria-label={label}
     data-openbitfun-component="ssh-remote" data-openbitfun-part="sourceOptions">
-    {choices.map(choice => <Capsule size="xs" key={choice.id} data-workspace-choice={choice.id}
+    {choices.map(choice => <Capsule size="xs" actionPlacement="reserved" key={choice.id} data-workspace-choice={choice.id}
       action={onEdit ? <Tooltip content={t('actions.edit')}><IconButton size="xs" shape="circle" variant="quiet"
         disabled={disabled} icon={<Icon name="edit" size="xs" />} aria-label={`${t('actions.edit')} · ${choice.label}`}
         onClick={() => onEdit(choice.id)} /></Tooltip> : choice.action}>

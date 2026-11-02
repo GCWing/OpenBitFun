@@ -28,6 +28,7 @@ import SectionHeader from './components/SectionHeader';
 import StickySectionHeader from './components/StickySectionHeader';
 import WorkspaceSessionGroupingToggle from './components/WorkspaceSessionGroupingToggle';
 import WorkspaceSessionFilterMenu from './components/WorkspaceSessionFilterMenu';
+import { useMiniAppNavigation } from '@/app/scenes/miniapps/miniAppNavigationStore';
 import WorkspaceListSection from './sections/workspaces/WorkspaceListSection';
 import { useSceneStore } from '../../stores/sceneStore';
 import { useMiniAppCatalogSync } from '../../scenes/miniapps/hooks/useMiniAppCatalogSync';
@@ -41,8 +42,10 @@ import { workspacePresetHost } from '@/features/ssh-remote/useWorkspaceSourceOpt
 import { isSshAuthenticationError, workspaceSourceErrorKey } from '@/features/ssh-remote/workspaceSourceError';
 import type { WorkspaceConnectionTarget } from '@/features/ssh-remote/types';
 import { openGlobalSearch } from '@/app/global-search/globalSearchStore';
-import { activateProductAction } from '@/app/global-search/productActionActivator';
+import { useSidebarNavigation } from '@/app/navigation/useSidebarNavigation';
+import PinnedNavigationItems from './components/PinnedNavigationItems';
 import { createProject, type ProjectDraft, type ProjectFolder } from '@/app/services/createProject';
+import { useWorkspaceSessionViewStore } from './workspaceSessionView';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { useNurseryStore } from '@/app/scenes/profile/nurseryStore';
 import { RetainedMountBoundary } from '@/shared/presence';
@@ -60,6 +63,7 @@ const log = createLogger('MainNav');
 const NewProjectDialog = lazyWithRecovery(() =>
   import('../NewProjectDialog').then(module => ({ default: module.NewProjectDialog }))
 );
+const MiniAppShortcuts = lazyWithRecovery(() => import('./components/MiniAppShortcuts'));
 
 const MainNav: React.FC = () => {
   const sshRemote = useSSHRemoteContext();
@@ -72,9 +76,11 @@ const MainNav: React.FC = () => {
 
   const { openScene } = useSceneManager();
   const activeTabId = useSceneStore(s => s.activeTabId);
-  const isOverviewActive = typeof activeTabId === 'string' && (
+  const { pinnedAppIds } = useMiniAppNavigation();
+  const sidebarNavigation = useSidebarNavigation();
+  const isOverviewActive = !sidebarNavigation.selectedId && typeof activeTabId === 'string' && (
     ['personal-overview', 'assistant', 'profile', 'agents', 'skills', 'miniapps'].includes(activeTabId)
-    || activeTabId.startsWith('miniapp:')
+    || (activeTabId.startsWith('miniapp:') && !pinnedAppIds.includes(activeTabId.slice('miniapp:'.length)))
   );
   const { t } = useI18n('common');
   const searchShortcutLabel = useSyncExternalStore(
@@ -143,20 +149,27 @@ const MainNav: React.FC = () => {
     });
   }, [handleSelectRemoteHost]);
 
-  const handleConfirmProject = useCallback((draft: ProjectDraft) => createProject(draft, async folder => {
-    const remote = sshRemoteRef.current;
-    if (folder.remote?.connectionId !== remote.connectionId) {
-      throw new Error(t('newProject.remoteConnectionChanged'));
-    }
-    if (!(await remote.openWorkspace(folder.path))) {
-      // A cancelled rebind returns to this draft, not the provider's standalone picker.
-      remote.setShowFileBrowser(false);
-      return null;
-    }
-    const workspace = workspaceManager.getState().currentWorkspace;
-    if (!workspace) throw new Error(t('newProject.errorCreateFailed'));
-    return workspace;
-  }), [t]);
+  const handleConfirmProject = useCallback(async (draft: ProjectDraft) => {
+    const scope = getActiveSurfaceScope();
+    const succeeded = await createProject(draft, async folder => {
+      const remote = sshRemoteRef.current;
+      if (folder.remote?.connectionId !== remote.connectionId) {
+        throw new Error(t('newProject.remoteConnectionChanged'));
+      }
+      if (!(await remote.openWorkspace(folder.path))) {
+        // A cancelled rebind returns to this draft, not the provider's standalone picker.
+        remote.setShowFileBrowser(false);
+        return null;
+      }
+      const workspace = workspaceManager.getState().currentWorkspace;
+      if (!workspace) throw new Error(t('newProject.errorCreateFailed'));
+      return workspace;
+    });
+    scope.assertCurrent('reveal created project');
+    // The flat session view has no row for a new project without sessions.
+    if (succeeded) useWorkspaceSessionViewStore.getState().setGrouping('grouped');
+    return succeeded;
+  }, [t]);
 
   const closeWorkspaceDialog = useCallback(() => {
     setWorkspaceDialogOpen(false);
@@ -201,13 +214,7 @@ const MainNav: React.FC = () => {
     }
   }, [sshRemote, remoteFolderTarget, finishRemoteFolderPick]);
 
-  const handleOpenTodos = useCallback(() => {
-    void activateProductAction('surface.todos.open');
-  }, []);
-
   const addSessionGroupTooltip = t('nav.tooltips.addSessionGroup');
-  const taskBoardLabel = t('nav.items.todos');
-  const isTaskBoardActive = activeTabId === 'todos';
   return (
     <>
     <NavigationPanel
@@ -270,30 +277,8 @@ const MainNav: React.FC = () => {
             </NavigationPanelItem>
           </Tooltip>
 
-          <Tooltip content={t('nav.tooltips.todos')} placement="right" followCursor>
-            <NavigationPanelItem
-              className="openbitfun-nav-panel__top-action-item openbitfun-nav-panel__top-action-item--root"
-              triggerClassName={[
-                'openbitfun-nav-panel__top-action-btn',
-                isTaskBoardActive ? 'is-active' : '',
-              ].filter(Boolean).join(' ')}
-              data-openbitfun-component="nav-panel"
-              data-openbitfun-part="todoEntry"
-              data-openbitfun-action="todos"
-              data-openbitfun-state={isTaskBoardActive ? 'active' : ''}
-              onClick={handleOpenTodos}
-              aria-label={taskBoardLabel}
-              data-testid="nav-todos-btn"
-              leading={(
-                <span className="openbitfun-nav-panel__top-action-icon-slot">
-                  <Icon name="clock" size="sm" />
-                </span>
-              )}
-              selected={isTaskBoardActive}
-            >
-              {taskBoardLabel}
-            </NavigationPanelItem>
-          </Tooltip>
+          <PinnedNavigationItems navigation={sidebarNavigation} />
+          {pinnedAppIds.length > 0 && <Suspense fallback={null}><MiniAppShortcuts /></Suspense>}
         </div>
 
         {/* Unified sessions */}
@@ -325,7 +310,7 @@ const MainNav: React.FC = () => {
             />
           </StickySectionHeader>
           <div ref={sessionContentRef} className="openbitfun-nav-panel__items" data-openbitfun-component="nav-panel" data-openbitfun-part="sectionContent">
-            <WorkspaceListSection variant="all" />
+            <WorkspaceListSection variant="all" scrollRootRef={sectionsScrollRef} />
           </div>
         </div>
         </div>

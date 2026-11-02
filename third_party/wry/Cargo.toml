@@ -73,6 +73,11 @@ x11 = [
 name = "wry"
 path = "src/lib.rs"
 
+[[test]]
+name = "wkwebview_url"
+path = "tests/wkwebview_url.rs"
+harness = false
+
 [[example]]
 name = "async_custom_protocol"
 path = "examples/async_custom_protocol.rs"
@@ -357,6 +362,8 @@ features = [
     "block2",
     "objc2-core-foundation",
     "NSURLRequest",
+    "NSError",
+    "NSURLError",
     "NSURL",
     "NSString",
     "NSKeyValueCoding",

@@ -41,7 +41,7 @@ Call this after every successful Read/Write/Edit pass under a MiniApp root retur
 Input: app_id and optional theme ('dark' or 'light').
 Do not call this for a customization draft root; the customization host owns draft sync and apply.
 Do not edit meta.json version fields manually; this tool owns version transitions.
-Returns app_id, version, changed, content_hash, and source_revision."#
+Returns app_id, version, changed, and source_revision."#
             .to_string())
     }
 
@@ -65,6 +65,19 @@ Returns app_id, version, changed, content_hash, and source_revision."#
                     "description": "Theme used for the persisted compiled preview. Defaults to dark."
                 }
             }
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "app_id": {"type": "string"},
+                "version": {"type": "string"},
+                "changed": {"type": "boolean"}
+            },
+            "required": ["app_id", "version", "changed"],
+            "additionalProperties": false
         })
     }
 
@@ -150,7 +163,6 @@ Returns app_id, version, changed, content_hash, and source_revision."#
                 "app_id": app.id,
                 "version": app.version,
                 "changed": changed,
-                "content_hash": app.runtime.content_hash,
                 "source_revision": app.runtime.source_revision,
             }),
             result_for_assistant: Some(result_text),

@@ -102,7 +102,7 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | --- | --- |
 | `TodoWrite` | Create and update the session's todo list. |
 | `Cron` | Manage scheduled jobs. |
-| `DesktopCard` | Show glanceable cards (countdowns, checklists, metrics, status) on the user's desktop outside the main window; desktop host only. |
+| `DesktopCard` | Show glanceable cards (countdowns, checklists, metrics, charts, status) on the user's desktop outside the main window; desktop host only. |
 | `Worktree` | List worktrees and manage isolated sessions, branches, and worktree removal. |
 | `GetFileDiff` | Show a file's diff against its baseline snapshot or Git HEAD. |
 | `ReviewPlatform` | Inspect and operate on hosted pull requests or merge requests. |
@@ -115,6 +115,5 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | `SessionMessage` | Send a message to another agent session and receive its result asynchronously. |
 | `SessionHistory` | Export an agent session transcript and index for targeted history reads. |
 | `PortForward` | Forward a port from an SSH host to the user's machine. |
-| `PagePublish` | Upload, save a version of, and deploy an OpenBitFun Page. |
-| `PageDeploy` | Deploy a saved OpenBitFun Page version to production. |
+| `PageManage` | List, publish, update, delete, manage visibility, and deploy saved OpenBitFun Page versions. |
 | `GetTime` | Return the current time, weekday, and Unix timestamp. |

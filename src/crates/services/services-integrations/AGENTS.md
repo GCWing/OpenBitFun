@@ -50,7 +50,9 @@ slices that are outside pure product logic but still platform-neutral.
   session-selected `WorkspaceFileSystem`; `remote-connect` therefore selects
   `runtime-ports/workspace-ports` without enabling an SSH implementation. Core
   supplies the session root and provider. IM adapters consume authorized bytes
-  and must not re-resolve paths on the bot host.
+  and must not re-resolve paths on the bot host. Explicit controller file reads may use
+  provider scope outside the workspace; automatic output delivery and runtime
+  artifact URIs retain workspace/root confinement.
 - Remote workspace facts, session metadata, file projection DTOs, and
   workspace/projection host traits belong in `openbitfun-runtime-ports`.
 - Workspace-root source selection, persistence/workspace service reads,
@@ -205,3 +207,44 @@ For models.dev snapshot reuse, last-valid recovery, and background refresh:
 ```bash
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features models-dev --lib models_dev::tests
 ```
+
+For workspace-confined HTML resources, revision-checked chunk reads, bounded
+prefetch, cache invalidation and cancellation, run:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::html_preview
+```
+
+To use a real OpenSSH SFTP executable over loopback SSH, set
+`OPENBITFUN_TEST_SFTP_SERVER` and run the same package with
+`--features remote-connect,remote-ssh-concrete --lib openssh_html_preview_reads_nested_site_resources -- --ignored`.
+This checks the production remote filesystem provider, root-relative assets,
+parent-relative resources and workspace boundaries; it does not establish
+multi-device relay or physical-host coverage.
+
+For the reproducible resource-loading experiment, use the same OpenSSH fixture
+with `--lib openssh_html_preview_loading_benchmark -- --ignored --nocapture`.
+It adds 40 ms to each complete SFTP response without serializing replies, loads
+HTML followed by four assets (about 2.72 MiB), checks every byte, and reports
+three serial-baseline / prefetched-cold / revalidated-warm samples. The baseline
+retains the previous serial chunk algorithm with the same filesystem provider;
+browser rendering and public-network variability are outside this measurement.
+Do not turn timing ratios into CI assertions.
+
+For workspace icon RemoteCommand reads, capability negotiation and explicit
+mobile/IM editing rejection:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::tests::workspace_icon_
+```
+
+For WeChat inbound CDN files, attachment storage, and provider-neutral bot contracts:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::bot::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib session_attachment_contract_tests
+```
+
+The attachment fixtures exercise real local file IO and a simulated POSIX remote
+filesystem, including offline rejection. They do not establish live WeChat, SSH,
+Peer Device, or Detached Dispatch coverage.

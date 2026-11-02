@@ -594,9 +594,15 @@ fn runtime_ownership_policy_is_assembled_once_in_core() {
             && !CLI_RUNTIME.contains("_runtime_ownership"),
         "Coordinator must retain the Core owner; CliRuntimeContext must not keep a second guard"
     );
+    let assembly_call: String = AGENTIC_SYSTEM
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
     assert!(
         CLI_MAIN.contains("CoreRuntimeOwnership")
-            && AGENTIC_SYSTEM.contains("init_agentic_system_for_profile_with_runtime_ownership"),
+            && assembly_call.contains(
+                "init_agentic_system_with_computer_use_host(profile,runtime_ownership,computer_use_host,)"
+            ),
         "CLI must select a deployment and inject the single Core owner"
     );
 }

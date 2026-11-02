@@ -16,22 +16,27 @@ const state = vi.hoisted(() => ({
   createProject: vi.fn(),
   pickDirectory: vi.fn(),
   options: {} as Record<string, WorkspaceSourceOption[]>,
+  activeTabId: 'personal-overview',
 }));
 const t = (key: string) => key;
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({ useI18n: () => ({ t }) }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t }) }));
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
+vi.mock('@/shared/notification-system', () => ({ notificationService: { error: vi.fn() } }));
 vi.mock('@/infrastructure/peer-device/pickWorkspaceDirectory', () => ({ pickWorkspaceDirectory: state.pickDirectory }));
 vi.mock('@/infrastructure/api', () => ({ globalAPI: {}, workspaceAPI: {} }));
 vi.mock('@/app/services/createProject', () => ({ createProject: state.createProject }));
+vi.mock('@/features/ssh-remote/sshApi', () => ({
+  sshApi: { listWslDistributions: async () => ({ supported: true, distributions: [] }) },
+}));
 vi.mock('@/features/ssh-remote/useWorkspaceSourceOptions', () => ({
   workspacePresetHost: (preset?: { kind: string; connection?: unknown }) => preset?.kind === 'saved' ? preset.connection : undefined,
   useWorkspaceSourceOptions: (source: string) => ({ options: state.options[source] || [], loading: false, error: '', refresh: vi.fn() }),
 }));
 vi.mock('@/app/hooks/useSceneManager', () => ({ useSceneManager: () => ({ openScene: vi.fn() }) }));
 vi.mock('@/app/stores/sceneStore', () => ({
-  useSceneStore: (select: (value: { activeTabId: string }) => unknown) => select({ activeTabId: 'personal-overview' }),
+  useSceneStore: (select: (value: { activeTabId: string }) => unknown) => select(state),
 }));
 vi.mock('@/app/scenes/miniapps/hooks/useMiniAppCatalogSync', () => ({ useMiniAppCatalogSync: () => {} }));
 vi.mock('@/app/scenes/profile/nurseryStore', () => ({ useNurseryStore: { getState: vi.fn() } }));
@@ -51,6 +56,7 @@ vi.mock('./components/StickySectionHeader', () => ({ default: ({ children }: Rea
 vi.mock('./components/WorkspaceSessionGroupingToggle', () => ({ default: () => null }));
 vi.mock('./components/WorkspaceSessionFilterMenu', () => ({ default: () => null }));
 vi.mock('./sections/workspaces/WorkspaceListSection', () => ({ default: () => null }));
+vi.mock('./components/MiniAppShortcuts', () => ({ default: () => <button data-testid="miniapp-shortcut">Notes</button> }));
 vi.mock('@/features/ssh-remote', () => ({
   useSSHRemoteContext: () => state.remote,
   SSHConnectionDialog: ({ open, initialTargetType, fixedSource, confirmLabel, onClose, onConnected }: { open: boolean; initialTargetType: string; fixedSource: boolean; confirmLabel: string; onClose: () => void; onConnected: (config: unknown, id: string) => void }) => (
@@ -65,6 +71,9 @@ vi.mock('@/features/ssh-remote', () => ({
 }));
 
 import MainNav from './MainNav';
+import { useWorkspaceSessionViewStore } from './workspaceSessionView';
+import { useMiniAppNavigationStore } from '@/app/scenes/miniapps/miniAppNavigationStore';
+import { sidebarPreferences } from '@/app/navigation/sidebarPreferences';
 
 describe('project creation entry points', () => {
   let root: Root;
@@ -102,6 +111,9 @@ describe('project creation entry points', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     resetDeviceSurfaceForTest();
+    useMiniAppNavigationStore.setState({ pinnedAppIdsBySurface: {} });
+    state.activeTabId = 'personal-overview';
+    sidebarPreferences.setState({ pinnedIds: ['builtin.todos'], storageIssue: null });
     state.createProject.mockResolvedValue(true);
     state.options = {};
     for (const source of ['ssh', 'wsl', 'localDocker', 'remoteDocker']) {
@@ -129,6 +141,36 @@ describe('project creation entry points', () => {
     resetDeviceSurfaceForTest();
   });
 
+  it('places MiniApp shortcuts immediately after Task Board and gives the selected app its own highlight', async () => {
+    state.activeTabId = 'miniapp:notes';
+    await act(async () => { useMiniAppNavigationStore.getState().setPinned('local', 'notes', true); });
+    await render();
+    const topActions = host.querySelector('[data-openbitfun-part="topActions"]')!;
+    expect([...topActions.querySelectorAll('button')].map(button => button.getAttribute('data-testid')))
+      .toEqual(['nav-personal-overview', 'nav-todos-btn', 'miniapp-shortcut']);
+    expect(host.querySelector('[data-testid="nav-personal-overview"]')!.getAttribute('data-openbitfun-state')).toBe('');
+  });
+
+  it('highlights a pinned Home child instead of Home, and falls back after unpinning', async () => {
+    state.activeTabId = 'agents';
+    act(() => sidebarPreferences.getState().setPinned('builtin.agents', true));
+    await render();
+    expect(host.querySelector('[data-testid="nav-personal-overview"]')!.getAttribute('data-openbitfun-state')).toBe('');
+    expect(host.querySelector('[data-testid="nav-builtin.agents"]')!.getAttribute('data-openbitfun-state')).toBe('active');
+    act(() => sidebarPreferences.getState().setPinned('builtin.agents', false));
+    expect(host.querySelector('[data-testid="nav-personal-overview"]')!.getAttribute('data-openbitfun-state')).toBe('active');
+  });
+
+  it.each([true, false])('reveals project groups only after successful creation (success=%s)', async succeeded => {
+    useWorkspaceSessionViewStore.getState().setGrouping('all');
+    state.createProject.mockResolvedValueOnce(succeeded);
+    state.pickDirectory.mockResolvedValueOnce('/srv/project');
+    await act(async () => window.dispatchEvent(new Event('nav:new-project')));
+    await click('actions.add');
+    await click('newProject.create');
+    expect(useWorkspaceSessionViewStore.getState().grouping).toBe(succeeded ? 'grouped' : 'all');
+  });
+
   it.each(['sidebar', 'global'] as const)('%s opens the full source picker and adds a WSL folder', async entry => {
     if (entry === 'sidebar') {
       await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="nav-workspace-add-btn"]')!.click());
@@ -138,6 +180,7 @@ describe('project creation entry points', () => {
       expect(document.querySelector('[data-testid="nav-session-group-add-project"]')).toBeNull();
     }
     expect(sourceOption(1, 'wsl')).not.toBeNull();
+    expect(sourceOption(1, 'wsl').disabled).toBe(false);
     setSource('wsl');
     await click('actions.add');
     expect(document.querySelector('[data-testid="connection-dialog"]')).toBeNull();
@@ -171,6 +214,7 @@ describe('project creation entry points', () => {
 
   it('opens new configuration from the header and preserves the chosen source when it is cancelled', async () => {
     await act(async () => window.dispatchEvent(new Event('nav:new-project')));
+    expect(sourceOption(1, 'wsl').disabled).toBe(false);
     setSource('wsl');
     await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="ssh.remote.newConnection"]')!.click());
     expect(document.querySelector('[data-testid="connection-dialog"]')?.getAttribute('data-target')).toBe('wsl');

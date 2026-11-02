@@ -149,3 +149,12 @@ pnpm run desktop:dev
 使用微信扫描下方二维码，添加好友后申请加入 OpenBitFun 社区群。
 
 <img src="./png/openbitfun-community-wechat.png" alt="OpenBitFun 社区微信二维码" width="360" />
+
+## Star 历史
+
+<a href="https://www.star-history.com/?repos=gcwing%2Fopenbitfun&amp;type=date&amp;legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=gcwing/openbitfun&amp;type=date&amp;legend=top-left&amp;theme=dark" />
+    <img alt="OpenBitFun Star 历史图" src="https://api.star-history.com/chart?repos=gcwing/openbitfun&amp;type=date&amp;legend=top-left" />
+  </picture>
+</a>

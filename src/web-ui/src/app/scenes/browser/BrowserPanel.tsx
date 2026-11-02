@@ -36,9 +36,12 @@ export interface BrowserPanelProps {
   initialUrl?: string;
   /** Correlates a host open request with this exact native WebView target. */
   openRequestId?: string;
+  /** Native target retained by the session while this panel is unmounted. */
+  targetId?: string;
+  conversationId?: string;
 }
 
-const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openRequestId }) => {
+const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openRequestId, targetId, conversationId }) => {
   const { t } = useTranslation('common');
   const addContext = useContextStore((s) => s.addContext);
   const inspectorUnlistenRef = useRef<(() => void) | null>(null);
@@ -51,6 +54,8 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
     labelPrefix: 'embedded-browser-panel-view',
     log,
     openRequestId,
+    targetId,
+    conversationId,
   });
 
   const {

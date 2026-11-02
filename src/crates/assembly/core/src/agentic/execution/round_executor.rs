@@ -37,7 +37,7 @@ use crate::util::elapsed_ms_u64;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use crate::util::types::Message as AIMessage;
 use crate::util::types::ToolDefinition;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use openbitfun_agent_runtime::turn_cancellation::DialogTurnCancellationTokenStore;
 use openbitfun_agent_tools::{parse_call_deferred_tool_input, CALL_DEFERRED_TOOL_NAME};
 use openbitfun_ai_adapters::{
@@ -46,6 +46,7 @@ use openbitfun_ai_adapters::{
 use openbitfun_core_types::errors::{AiProviderError, ErrorCategory};
 use openbitfun_core_types::ModelResponseReplay;
 use openbitfun_runtime_ports::PermissionRule;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
@@ -102,6 +103,7 @@ pub(super) struct ModelRoundLifecycle {
     round_id: String,
     started_at: Instant,
     started_event_emitted: bool,
+    pub(super) routing: Option<openbitfun_events::agentic::ModelRoutingDecision>,
     attempts_started: u32,
     pub(super) safe_to_switch_model: bool,
     observed_effective_output: bool,
@@ -113,6 +115,7 @@ impl ModelRoundLifecycle {
             round_id: uuid::Uuid::new_v4().to_string(),
             started_at: Instant::now(),
             started_event_emitted: false,
+            routing: None,
             attempts_started: 0,
             safe_to_switch_model: false,
             observed_effective_output: false,
@@ -761,7 +764,8 @@ impl RoundExecutor {
         // Routed rounds may switch account or channel, so signed reasoning is
         // a cache preference, not a binding: keep the latest producer's state
         // and degrade it to portable history whenever that producer is not
-        // available. Fixed rounds keep the original replay contract.
+        // available. Fixed rounds select the configured destination first;
+        // all attempts project private replay state before sending.
         let routed = channels.is_some()
             || account_source.as_ref().is_some_and(|source| {
                 matches!(
@@ -778,8 +782,13 @@ impl RoundExecutor {
                 ai_messages = crate::infrastructure::ai::channel_client_source::ChannelClientSource::portable_history(&ai_messages);
             }
         }
-        let mut replay_origin =
-            crate::infrastructure::ai::account_client_source::opaque_replay_origin(&ai_messages);
+        let mut replay_origin = if routed {
+            crate::infrastructure::ai::account_client_source::opaque_replay_origin(&ai_messages)
+        } else {
+            // A manual model/account selection must not be pinned back to the
+            // producer of old history. Its private state is projected below.
+            Ok(None)
+        };
         let mut has_opaque_replay = crate::infrastructure::ai::channel_client_source::ChannelClientSource::has_nonportable_history(&ai_messages);
         if let Some(channels) = &channels {
             tokio::select! {
@@ -850,6 +859,7 @@ impl RoundExecutor {
                     round_index: context.round_number,
                     model_config_id: context.model_config_id.clone(),
                     effective_model_name: context.effective_model_name.clone(),
+                    routing: lifecycle.routing.clone(),
                 },
                 EventPriority::High,
             )
@@ -989,15 +999,29 @@ impl RoundExecutor {
                 }
             }
 
-            crate::infrastructure::ai::channel_client_source::ChannelClientSource::validate_replay_binding(&ai_messages, &context.model_config_id, &ai_client, channels.is_some())
-                .map_err(|error| OpenBitFunError::AIClient(error.to_string()).with_channel_bound_replay())?;
             let account = selected_origin.clone().or_else(|| {
                 ai_client
                     .subscription_provider_key()
                     .and_then(|provider| ai_client.subscription_account_origin(provider))
             });
+            let stripped = crate::infrastructure::ai::channel_client_source::ChannelClientSource::project_replay_for_target(
+                &mut ai_messages, &context.model_config_id, &ai_client, account.as_ref(),
+            );
+            if stripped > 0 {
+                has_opaque_replay = crate::infrastructure::ai::channel_client_source::ChannelClientSource::has_nonportable_history(&ai_messages);
+                replay_origin =
+                    crate::infrastructure::ai::account_client_source::opaque_replay_origin(
+                        &ai_messages,
+                    )
+                    .ok()
+                    .flatten();
+                info!("Projected incompatible model history: session_id={}, model_config_id={}, stripped_messages={}, reason=unproven_or_changed_replay_identity", context.session_id, context.model_config_id, stripped);
+            }
+            crate::infrastructure::ai::channel_client_source::ChannelClientSource::validate_replay_binding(&ai_messages, &context.model_config_id, &ai_client, channels.is_some())
+                .map_err(|error| OpenBitFunError::AIClient(error.to_string()).with_channel_bound_replay())?;
             let mut usage_context =
                 openbitfun_services_core::token_usage::types::ModelRequestUsageContext {
+                    context_composition: context.context_composition.clone(),
                     version: 1,
                     round_id: round_id.clone(),
                     attempt_id: attempt_id.clone(),
@@ -1866,7 +1890,7 @@ impl RoundExecutor {
                 ai_client.channel_replay_fingerprint(),
             );
             let (clean_text, _) = strip_openbitfun_memory_citations(&stream_result.full_text);
-            let assistant_message =
+            let mut assistant_message =
                 Message::assistant_with_reasoning(reasoning, clean_text, vec![])
                     .with_turn_id(context.dialog_turn_id.clone())
                     .with_round_id(round_id.clone())
@@ -1881,6 +1905,12 @@ impl RoundExecutor {
                             .configuration_fingerprint
                             .clone()
                     }));
+            assistant_message.metadata.model_execution =
+                Some(crate::agentic::core::message::ModelExecutionMetadata {
+                    model_config_id: context.model_config_id.clone(),
+                    effective_model_name: context.effective_model_name.clone(),
+                    routing: lifecycle.routing.clone(),
+                });
 
             debug!("Returning RoundResult: has_more_rounds=false");
             debug!(
@@ -1936,7 +1966,7 @@ impl RoundExecutor {
             ai_client.channel_replay_fingerprint(),
         );
         let (clean_text, _) = strip_openbitfun_memory_citations(&stream_result.full_text);
-        let assistant_message =
+        let mut assistant_message =
             Message::assistant_with_reasoning(reasoning, clean_text, tool_calls.clone())
                 .with_turn_id(context.dialog_turn_id.clone())
                 .with_round_id(round_id.clone())
@@ -1951,6 +1981,12 @@ impl RoundExecutor {
                         .configuration_fingerprint
                         .clone()
                 }));
+        assistant_message.metadata.model_execution =
+            Some(crate::agentic::core::message::ModelExecutionMetadata {
+                model_config_id: context.model_config_id.clone(),
+                effective_model_name: context.effective_model_name.clone(),
+                routing: lifecycle.routing.clone(),
+            });
 
         // Publish the semantic assistant response before tool execution so
         // readers can observe the active tool call while it is running. Fork
@@ -1983,6 +2019,7 @@ impl RoundExecutor {
         );
 
         let tool_phase_started_at = Instant::now();
+        let mut ptc_loaded_deferred_tool_specs_by_tool_id = HashMap::new();
         let tool_results = if let Some(tool_pipeline) = &self.tool_pipeline {
             // Create tool execution context
             let allowed_tools = context.available_tools.clone();
@@ -2114,16 +2151,26 @@ impl RoundExecutor {
                                 duration_ms: None,
                                 image_attachments: None,
                             },
+                            ptc_loaded_deferred_tool_specs: Vec::new(),
                             execution_time_ms: 0,
                         })
                         .collect()
                 }
             };
 
+            // Keep PTC's loaded-definition receipt alongside the model result. It is
+            // projected onto the persisted outer RunCode message below, while the
+            // assistant-facing result remains unchanged.
             // Convert to ToolResult, then enforce the aggregate budget for this model round.
             let tool_results = execution_results
                 .into_iter()
                 .map(|mut execution_result| {
+                    if !execution_result.ptc_loaded_deferred_tool_specs.is_empty() {
+                        ptc_loaded_deferred_tool_specs_by_tool_id.insert(
+                            execution_result.tool_id.clone(),
+                            execution_result.ptc_loaded_deferred_tool_specs.clone(),
+                        );
+                    }
                     execution_result.result.effective_tool_name = (execution_result.tool_name
                         != execution_result.effective_tool_name)
                         .then_some(execution_result.effective_tool_name);
@@ -2153,9 +2200,15 @@ impl RoundExecutor {
         let tool_result_messages: Vec<Message> = tool_results
             .iter()
             .map(|result| {
-                Message::tool_result(result.clone())
+                let mut message = Message::tool_result(result.clone())
                     .with_turn_id(dialog_turn_id.clone())
-                    .with_round_id(round_id_clone.clone())
+                    .with_round_id(round_id_clone.clone());
+                if let Some(loaded_specs) =
+                    ptc_loaded_deferred_tool_specs_by_tool_id.get(&result.tool_id)
+                {
+                    message.metadata.ptc_loaded_deferred_tool_specs = loaded_specs.clone();
+                }
+                message
             })
             .collect();
 
@@ -2697,8 +2750,9 @@ pub(super) mod tests {
         }
     }
 
-    fn test_round_context() -> RoundContext {
+    pub(in crate::agentic::execution) fn test_round_context() -> RoundContext {
         RoundContext {
+            context_composition: None,
             session_id: "session-1".to_string(),
             subagent_parent_info: None,
             permission_delegation: None,
@@ -2910,6 +2964,7 @@ pub(super) mod tests {
                     format: "openai".to_string(),
                     context_window: 4096,
                     max_tokens: Some(128),
+                    max_images_per_request: None,
                     temperature: None,
                     top_p: None,
                     inline_think_in_text: false,
@@ -4704,6 +4759,7 @@ pub(super) mod tests {
                     "Restart subscription session".into(),
                     "Standard".into(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace.to_string_lossy().into_owned()),
                         workspace_id: Some(workspace_record.id.clone()),
                         model_id: Some(model.id.clone()),
@@ -6419,6 +6475,12 @@ pub(super) mod tests {
             let source = test_account_source(vec![primary.client(), backup.client()], false);
             let mut context = test_round_context();
             context.account_client_source = Some(source);
+            let composition = openbitfun_core_types::UsageContextBreakdown {
+                system_prompt: 3,
+                conversation: 7,
+                ..Default::default()
+            };
+            context.context_composition = Some(composition.clone());
             let mut executor = test_round_executor();
             executor.usage_service = Some(service.clone());
             let result = executor
@@ -6443,6 +6505,11 @@ pub(super) mod tests {
             };
             let records = service.query_records(query()).await.unwrap();
             assert_eq!(records.len(), 2);
+            assert!(records.iter().all(|record| record
+                .request_context()
+                .unwrap()
+                .context_composition
+                == Some(composition.clone())));
             let failed = records
                 .iter()
                 .find(|record| record.request_context().unwrap().attempt_index == 1)
@@ -6795,6 +6862,171 @@ pub(super) mod tests {
                 assert!(result.unwrap().had_assistant_text);
             }
             assert_eq!(primary.requests.lock().unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn manual_model_switch_projects_history_before_sending() {
+        for format in ["responses", "anthropic", "gemini", "fixed-account"] {
+            let events = match format {
+                "anthropic" => vec![
+                    json!({"type":"message_start","message":{"id":"continued","type":"message","role":"assistant","model":"target","usage":{"input_tokens":20,"output_tokens":0}}}),
+                    json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+                    json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Continued"}}),
+                    json!({"type":"content_block_stop","index":0}),
+                    json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}),
+                    json!({"type":"message_stop"}),
+                ],
+                "gemini" => vec![
+                    json!({"candidates":[{"content":{"role":"model","parts":[{"text":"Continued"}]},"finishReason":"STOP"}]}),
+                ],
+                _ => vec![
+                    json!({"type":"response.output_text.delta","delta":"Continued"}),
+                    json!({"type":"response.completed","response":{"id":"continued","output":[]}}),
+                ],
+            };
+            let reply = (
+                200,
+                events
+                    .iter()
+                    .map(|event| {
+                        format!(
+                            "event: {}\ndata: {event}\n\n",
+                            event["type"].as_str().unwrap_or("message")
+                        )
+                    })
+                    .collect::<String>(),
+            );
+            let server =
+                RetryTestServer::new(vec![reply; if format == "responses" { 2 } else { 1 }]);
+            let mut client = (*server.client()).clone();
+            client.config.format = if format == "fixed-account" {
+                "responses"
+            } else {
+                format
+            }
+            .into();
+            client.config.model = if format == "gemini" {
+                "gemini-3-pro"
+            } else {
+                "target-model"
+            }
+            .into();
+            let client = Arc::new(client);
+            let mut context = test_round_context();
+            let mut original_client = (*client).clone();
+            original_client.config.format = "responses".into();
+            original_client.config.model = "original-model".into();
+            let mut previous =
+                super::AIMessage::assistant_with_tools(vec![openbitfun_core_types::ToolCall {
+                    id: "already-executed".into(),
+                    name: "write_file".into(),
+                    arguments: json!({"path":"result.txt", "content":"saved once"}),
+                    raw_arguments: None,
+                }]);
+            previous.content = Some("Saved the requested file".into());
+            previous.reasoning_content = Some("Original private reasoning".into());
+            previous.thinking_signature = Some("original-signature".into());
+            previous.model_response_replay = Some(openbitfun_core_types::ModelResponseReplay {
+                protocol: "openai_responses".into(),
+                channel_origin: Some(context.model_config_id.clone()),
+                channel_fingerprint: Some(original_client.channel_replay_fingerprint()),
+                account_origin: None,
+                items: vec![
+                    openbitfun_core_types::ModelResponseReplayItem::OpaqueReasoning {
+                        item_id: Some("original-reasoning".into()),
+                        summary: vec![],
+                        opaque_state: "original-encrypted-state".into(),
+                    },
+                    openbitfun_core_types::ModelResponseReplayItem::AssistantMessage,
+                    openbitfun_core_types::ModelResponseReplayItem::FunctionCall {
+                        call_id: "already-executed".into(),
+                    },
+                ],
+            });
+            if format == "fixed-account" {
+                let source = test_account_source(vec![client.clone()], true);
+                let mut old_account = source.clients[0].0.clone();
+                old_account.account_id = "previous-account".into();
+                old_account.upstream_account_id = Some("previous-seat".into());
+                previous
+                    .model_response_replay
+                    .as_mut()
+                    .unwrap()
+                    .account_origin = Some(old_account);
+                context.account_client_source = Some(source);
+            }
+            let mut result =
+                super::AIMessage::user("Saved result.txt; checksum=manual-switch".into());
+            result.role = "tool".into();
+            result.name = Some("write_file".into());
+            result.tool_call_id = Some("already-executed".into());
+            let history = vec![
+                super::AIMessage::user("Save the file".into()),
+                previous,
+                result,
+                super::AIMessage::user("Continue".into()),
+            ];
+            // Exercise the persisted shape without changing the original record.
+            let before = serde_json::to_value(&history).unwrap();
+            let restored = serde_json::from_value(before.clone()).unwrap();
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                test_round_executor().execute_round(client, context, restored, None, None),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(result.had_assistant_text, "{format}");
+            assert!(
+                result.tool_result_messages.is_empty(),
+                "completed tools must not execute again"
+            );
+            assert_eq!(serde_json::to_value(&history).unwrap(), before);
+            let requests = server.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1, "{format}");
+            let sent = requests[0].to_string();
+            for secret in [
+                "original-signature",
+                "original-encrypted-state",
+                "Original private reasoning",
+            ] {
+                assert!(!sent.contains(secret), "{format}: {secret}");
+            }
+            for retained in [
+                "Saved the requested file",
+                "write_file",
+                "saved once",
+                "checksum=manual-switch",
+            ] {
+                assert!(sent.contains(retained), "{format}: {retained}");
+            }
+            if format == "gemini" {
+                assert!(sent.contains("skip_thought_signature_validator"));
+            }
+            drop(requests);
+            if format == "responses" {
+                // Switching back projects the original durable history again;
+                // compatible encrypted reasoning must still reach its producer.
+                let result = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    test_round_executor().execute_round(
+                        Arc::new(original_client),
+                        test_round_context(),
+                        history.clone(),
+                        None,
+                        None,
+                    ),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+                assert!(result.had_assistant_text);
+                let requests = server.requests.lock().unwrap();
+                assert_eq!(requests.len(), 2);
+                assert!(requests[1].to_string().contains("original-encrypted-state"));
+                assert_eq!(serde_json::to_value(&history).unwrap(), before);
+            }
         }
     }
 

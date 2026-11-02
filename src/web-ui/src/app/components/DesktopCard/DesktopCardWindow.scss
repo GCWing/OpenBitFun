@@ -259,6 +259,281 @@ body.openbitfun-desktop-card-window-body #root {
     &[data-tone='danger'] dd { color: var(--openbitfun-color-status-danger-content); }
   }
 
+  &__chart {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+  }
+
+  // One color source for HTML bars (background) and SVG marks (stroke).
+  &__chart-mark {
+    color: var(--openbitfun-desktop-card-tone);
+    background: currentColor;
+    stroke: currentColor;
+    transition: stroke-dasharray 300ms ease, stroke-dashoffset 300ms ease;
+
+    &[data-shade='1'] { color: color-mix(in srgb, var(--openbitfun-desktop-card-tone) 78%, var(--openbitfun-color-surface-raised)); }
+    &[data-shade='2'] { color: color-mix(in srgb, var(--openbitfun-desktop-card-tone) 58%, var(--openbitfun-color-surface-raised)); }
+    &[data-shade='3'] { color: color-mix(in srgb, var(--openbitfun-desktop-card-tone) 42%, var(--openbitfun-color-surface-raised)); }
+    &[data-shade='4'] { color: color-mix(in srgb, var(--openbitfun-desktop-card-tone) 30%, var(--openbitfun-color-surface-raised)); }
+    &[data-shade='5'] { color: color-mix(in srgb, var(--openbitfun-desktop-card-tone) 20%, var(--openbitfun-color-surface-raised)); }
+    &[data-tone='neutral'] { color: var(--openbitfun-color-content-muted); }
+    &[data-tone='accent'] { color: var(--openbitfun-color-accent-default); }
+    &[data-tone='info'] { color: var(--openbitfun-color-status-info-emphasis); }
+    &[data-tone='success'] { color: var(--openbitfun-color-status-success-emphasis); }
+    &[data-tone='warning'] { color: var(--openbitfun-color-status-warning-emphasis); }
+    &[data-tone='danger'] { color: var(--openbitfun-color-status-danger-emphasis); }
+    &[data-remainder='true'] { color: var(--openbitfun-color-surface-tertiary); }
+  }
+
+  &__chart-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+  }
+
+  &__chart-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__chart-value {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    user-select: text;
+  }
+
+  &__chart-share {
+    flex: 0 0 auto;
+    min-inline-size: 3ch;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+
+  &__chart-hint {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-micro-font-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    user-select: text;
+  }
+
+  &__chart-caption {
+    margin-top: auto;
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+
+  &__chart-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    min-width: 0;
+  }
+
+  &__chart-total {
+    font-family: var(--openbitfun-type-heading-page-font-family);
+    font-size: var(--openbitfun-type-heading-page-font-size);
+    font-weight: var(--openbitfun-type-heading-page-font-weight);
+    line-height: var(--openbitfun-type-heading-page-line-height);
+    font-variant-numeric: tabular-nums;
+    user-select: text;
+  }
+
+  &__chart-bars,
+  &__chart-legend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__chart-legend { gap: var(--openbitfun-space-1); }
+
+  &__chart-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__chart-track {
+    block-size: 6px;
+    overflow: hidden;
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--openbitfun-color-surface-tertiary);
+
+    > .openbitfun-desktop-card__chart-mark {
+      display: block;
+      block-size: 100%;
+      border-radius: inherit;
+      transition: inline-size 300ms ease;
+    }
+  }
+
+  &__chart-stack {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    block-size: 10px;
+    overflow: hidden;
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--openbitfun-color-surface-tertiary);
+
+    > .openbitfun-desktop-card__chart-mark {
+      flex: 0 0 auto;
+      block-size: 100%;
+      transition: inline-size 300ms ease;
+    }
+  }
+
+  &__chart-swatch {
+    flex: 0 0 auto;
+    align-self: center;
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: var(--openbitfun-radius-sm);
+  }
+
+  &__chart-donut-layout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--openbitfun-space-3);
+    min-width: 0;
+
+    > .openbitfun-desktop-card__chart-legend {
+      flex: 1 1 140px;
+    }
+  }
+
+  &__chart-donut {
+    position: relative;
+    flex: 0 0 auto;
+    inline-size: 88px;
+    block-size: 88px;
+
+    > svg {
+      display: block;
+      inline-size: 100%;
+      block-size: 100%;
+    }
+  }
+
+  &__chart-donut-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--openbitfun-space-3);
+    overflow: hidden;
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  &__chart-columns {
+    display: grid;
+    flex: 1;
+    gap: 3px;
+    min-height: 72px;
+  }
+
+  &__chart-column {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  &__chart-column-value,
+  &__chart-column-label {
+    overflow: hidden;
+    font-size: var(--openbitfun-type-micro-font-size);
+    text-align: center;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  &__chart-column-value { font-variant-numeric: tabular-nums; }
+
+  &__chart-column-label {
+    min-block-size: 1lh;
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  &__chart-column-track {
+    display: flex;
+    flex: 1;
+    align-items: flex-end;
+    min-height: 24px;
+
+    > .openbitfun-desktop-card__chart-mark {
+      inline-size: 100%;
+      min-block-size: 1px;
+      border-radius: var(--openbitfun-radius-sm) var(--openbitfun-radius-sm) 0 0;
+      transition: block-size 300ms ease;
+    }
+  }
+
+  &__chart-line {
+    display: block;
+    flex: 1;
+    inline-size: 100%;
+    min-block-size: 48px;
+    overflow: visible;
+  }
+
+  &__chart-stroke {
+    stroke: var(--openbitfun-desktop-card-tone);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &__chart-area {
+    fill: color-mix(in srgb, var(--openbitfun-desktop-card-tone) 16%, transparent);
+  }
+
+  &__chart-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--openbitfun-space-2);
+    font-size: var(--openbitfun-type-micro-font-size);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+
   &__cron {
     display: flex;
     flex-direction: column;
@@ -350,5 +625,6 @@ body.openbitfun-desktop-card-window-body #root {
 
 @media (prefers-reduced-motion: reduce) {
   .openbitfun-desktop-card__actions,
-  .openbitfun-desktop-card__bar > span { transition: none; }
+  .openbitfun-desktop-card__bar > span,
+  .openbitfun-desktop-card__chart-mark { transition: none; }
 }

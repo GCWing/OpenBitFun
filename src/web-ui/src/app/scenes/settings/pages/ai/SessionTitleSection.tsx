@@ -166,7 +166,6 @@ export const SessionTitleSection: React.FC = () => {
         data-openbitfun-component="session-title-config"
         data-openbitfun-part="root"
         title={t('sessionTitle.title')}
-        description={t('sessionTitle.subtitle')}
       >
         <ConfigRetryState
           message={t('sessionTitle.loadFailedLocked')}
@@ -184,7 +183,6 @@ export const SessionTitleSection: React.FC = () => {
         data-openbitfun-component="session-title-config"
         data-openbitfun-part="root"
         title={t('sessionTitle.title')}
-        description={t('sessionTitle.subtitle')}
       >
         <ConfigPageRow
           label={t('sessionTitle.enable')}

@@ -49,6 +49,7 @@ use openbitfun_agent_runtime::user_questions::{
 };
 use openbitfun_agent_tools::{
     LoadedDeferredToolSpec, PortableToolContextProvider, ToolContextFacts, ToolWorkspaceKind,
+    PTC_LANGUAGE_CONTEXT_KEY, PTC_TOOL_PRESENTATION_CONTEXT_KEY,
 };
 #[cfg(feature = "canvas-runtime")]
 use openbitfun_product_domains::canvas::CanvasStoragePort;
@@ -90,6 +91,24 @@ pub struct ToolUseContext {
 }
 
 impl ToolUseContext {
+    /// Whether a tool's per-call approval should be raised in the resolved turn mode.
+    /// Missing mode context keeps the interactive default for older callers.
+    pub(crate) fn requires_fresh_approval(&self) -> bool {
+        if let Some(mode) = self
+            .custom_data
+            .get(PERMISSION_MODE_CONTEXT_KEY)
+            .and_then(Value::as_str)
+            .and_then(PermissionMode::parse)
+        {
+            return mode == PermissionMode::Ask;
+        }
+        !self
+            .custom_data
+            .get(AUTO_APPROVE_ASK_CONTEXT_KEY)
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     pub(crate) fn delegation_policy(&self) -> DelegationPolicy {
         delegation_policy_from_custom_data(&self.custom_data)
     }
@@ -152,6 +171,25 @@ impl ToolUseContext {
 
     pub fn primary_model_facts(&self) -> &PrimaryModelFacts {
         &self.primary_model_facts
+    }
+
+    /// Why an image result cannot reach the model in this session, or `None`
+    /// when images are usable.
+    ///
+    /// Every capture-style tool (browser page screenshots, MiniApp frames, …)
+    /// asks this before spending a round trip: returning base64 the model never
+    /// sees is not an observation, and it invites endless parameter retries.
+    pub fn image_observation_unavailable_reason(&self) -> Option<&'static str> {
+        if !self.primary_model_supports_image_understanding() {
+            return Some("primary_model_is_text_only");
+        }
+        if !self
+            .primary_model_facts()
+            .multimodal_tool_output_supported()
+        {
+            return Some("provider_no_multimodal_tool_output");
+        }
+        None
     }
 
     pub fn cancellation_token(&self) -> Option<&CancellationToken> {
@@ -413,6 +451,18 @@ fn build_tool_context_custom_data(context: &ToolExecutionContext) -> HashMap<Str
         extension_custom_data.insert(
             PERMISSION_MODE_CONTEXT_KEY.to_string(),
             Value::String(mode.as_str().to_string()),
+        );
+    }
+    if let Some(mode) = context.context_vars.get(PTC_TOOL_PRESENTATION_CONTEXT_KEY) {
+        extension_custom_data.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            Value::String(mode.clone()),
+        );
+    }
+    if let Some(language) = context.context_vars.get(PTC_LANGUAGE_CONTEXT_KEY) {
+        extension_custom_data.insert(
+            PTC_LANGUAGE_CONTEXT_KEY.to_string(),
+            Value::String(language.clone()),
         );
     }
     for key in [
@@ -1634,7 +1684,7 @@ mod context_builder_tests {
 
 #[cfg(test)]
 mod task_context_tests {
-    use super::build_tool_use_context_for_task;
+    use super::{build_tool_use_context_for_task, ToolUseContext};
     use crate::agentic::core::ToolCall;
     use crate::agentic::tools::pipeline::{
         SubagentParentInfo, ToolExecutionContext, ToolExecutionOptions, ToolTask,
@@ -1646,11 +1696,43 @@ mod task_context_tests {
         USER_INPUT_AVAILABLE_CONTEXT_KEY, USER_INPUT_MODEL_ROUND_CONTEXT_KEY,
     };
     use openbitfun_agent_tools::LoadedDeferredToolSpec;
+    use openbitfun_agent_tools::PTC_TOOL_PRESENTATION_CONTEXT_KEY;
     use openbitfun_runtime_ports::DelegationPolicy;
     use serde_json::json;
     use std::collections::{BTreeSet, HashMap};
     use tokio_util::sync::CancellationToken;
     use tool_runtime::context::PrimaryModelFacts;
+
+    #[test]
+    fn fresh_approval_uses_the_turn_mode_and_supports_legacy_context() {
+        let mut context = ToolUseContext::for_tool_listing(None, None);
+        assert!(context.requires_fresh_approval());
+        context
+            .custom_data
+            .insert(AUTO_APPROVE_ASK_CONTEXT_KEY.into(), json!(true));
+        assert!(!context.requires_fresh_approval());
+        for (mode, requires_approval) in [
+            ("ask", true),
+            ("auto_approve", false),
+            ("auto", false),
+            ("full_access", false),
+            ("full", false),
+        ] {
+            context
+                .custom_data
+                .insert(PERMISSION_MODE_CONTEXT_KEY.into(), json!(mode));
+            assert_eq!(
+                context.requires_fresh_approval(),
+                requires_approval,
+                "{mode}"
+            );
+        }
+        context.custom_data.remove(AUTO_APPROVE_ASK_CONTEXT_KEY);
+        context
+            .custom_data
+            .insert(PERMISSION_MODE_CONTEXT_KEY.into(), json!("future-mode"));
+        assert!(context.requires_fresh_approval());
+    }
 
     fn loaded_spec(tool_name: &str) -> LoadedDeferredToolSpec {
         LoadedDeferredToolSpec {
@@ -1674,6 +1756,10 @@ mod task_context_tests {
         context_vars.insert(
             PERMISSION_MODE_CONTEXT_KEY.to_string(),
             "auto_approve".to_string(),
+        );
+        context_vars.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            "ptc".to_string(),
         );
         context_vars.insert(
             "deep_review_run_manifest".to_string(),
@@ -1806,6 +1892,10 @@ mod task_context_tests {
         assert_eq!(
             context.custom_data[PERMISSION_MODE_CONTEXT_KEY],
             json!("auto_approve")
+        );
+        assert_eq!(
+            context.custom_data[PTC_TOOL_PRESENTATION_CONTEXT_KEY],
+            json!("ptc")
         );
         assert_eq!(
             context.custom_data["deep_review_run_manifest"],

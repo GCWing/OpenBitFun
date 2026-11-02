@@ -162,7 +162,7 @@ pub(crate) async fn miniapp_shell_call(
             let value = ipc::call(
                 &endpoint,
                 "open",
-                json!({"launchId":state.record.launch_id,"nonce":state.nonce,"shellCapabilities":[ipc::MINIAPP_CUSTOM_CHROME_CAPABILITY,ipc::MINIAPP_CHAT_SNAPSHOT_CAPABILITY]}),
+                json!({"launchId":state.record.launch_id,"nonce":state.nonce,"shellCapabilities":[ipc::MINIAPP_CUSTOM_CHROME_CAPABILITY,ipc::MINIAPP_CHAT_SNAPSHOT_CAPABILITY,ipc::MINIAPP_AGENT_BRIDGE_CAPABILITY]}),
             )
             .await?;
             if value["reused"] == true {
@@ -189,9 +189,8 @@ pub(crate) async fn miniapp_shell_call(
             window.show().map_err(|e| e.to_string())?;
             Ok(value)
         }
-        "ready" | "tab" | "poll" | "permissions" | "chatSnapshot" => {
-            host_call(&state, &request.operation, params).await
-        }
+        "ready" | "tab" | "poll" | "permissions" | "chatSnapshot" | "agentResponse"
+        | "agentClaim" => host_call(&state, &request.operation, params).await,
         "close" => {
             let _ = tokio::time::timeout(
                 std::time::Duration::from_secs(1),

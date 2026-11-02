@@ -695,6 +695,13 @@ mod tests {
         }
         .message("terminal_list");
         assert!(cli.starts_with("command 'terminal_list' is not supported on CLI peer host"));
+        // The Web UI asks for a host update when it sees this reason.
+        assert_eq!(
+            table::CLI_NOT_IMPLEMENTED,
+            HostSupport::Unsupported {
+                reason: "the CLI peer host has no handler for this command"
+            }
+        );
         assert!(!PeerRefusal::UnknownToHost {
             host: PeerHostKind::Cli
         }

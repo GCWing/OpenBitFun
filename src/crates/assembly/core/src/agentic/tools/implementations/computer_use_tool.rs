@@ -2,7 +2,7 @@
 
 use super::computer_use_locate::execute_computer_use_locate;
 use super::control_hub::{coded_tool_error, ErrorCode};
-use crate::agentic::tools::computer_use_capability::computer_use_desktop_available;
+use crate::agentic::tools::computer_use_capability::computer_use_host_available;
 use crate::agentic::tools::computer_use_host::{
     AppSelector, ComputerScreenshot, ComputerUseHost, OcrRegionNative, UiElementLocateQuery,
 };
@@ -238,7 +238,7 @@ impl ComputerUseTool {
         let os = Self::host_os_label();
         let keys = Self::key_chord_os_hint();
         format!(
-            "Desktop application control on {}. {} \
+            "Desktop application control on {}. {} For OpenBitFun settings and product operations (including MCP configuration), use OpenBitFunControl discovery and its supported operations first; opening settings is not configuration success. For OpenBitFun MiniApps, prefer MiniAppBrowser and its bridge/DOM/input controls; missing semantic actions alone do not justify desktop fallback. Ordinary web pages use ControlHub when available. \
 Text-only model: observe the selected app through get_app_state or describe_screen and read AX/OCR facts; do not call screenshot or guess unseen pixels. \
 Begin each new user GUI task with start_control once (background by default); keep that session through verification. Use list_apps for application identity and list_windows for window titles and exact {{pid,window_id}} selection. After a missing/wrong window, inspect list_windows across processes (query matches application names, bundle ids and titles) before concluding the task is unavailable; app input results list opened_windows that appeared in any process. Reuse the selector or omit app to follow the bound window. \
 Use app_batch by default for already-decided app_click/app_type_text/app_key_chord/app_scroll steps. Focus and exact Unicode text fit in one app_type_text step. Batch known search input and its submit key, or several observed fields. \
@@ -1106,8 +1106,10 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
         }
         if coordinate_mode(input) == "normalized" {
             host.map_normalized_coords_to_pointer_f64(x, y)
+                .map_err(Into::into)
         } else {
             host.map_image_coords_to_pointer_f64(x, y)
+                .map_err(Into::into)
         }
     }
 
@@ -1594,7 +1596,7 @@ impl Tool for ComputerUseTool {
         let os = Self::host_os_label();
         let keys = Self::key_chord_os_hint();
         Ok(format!(
-            "Desktop application control on {}. {} \
+            "Desktop application control on {}. {} For OpenBitFun settings and product operations (including MCP configuration), use OpenBitFunControl discovery and its supported operations first; opening settings is not configuration success. For OpenBitFun MiniApps, prefer MiniAppBrowser and its bridge/DOM/input controls; missing semantic actions alone do not justify desktop fallback. Ordinary web pages use ControlHub when available. \
 Observe a known app with get_app_state. Use list_apps for application identity and list_windows for exact window titles and {{pid,window_id}}. A helper with no window or a screenshot of the wrong window calls for window discovery (list_windows query matches application names, bundle ids and titles across processes), not a conclusion that the task is closed; app input results list opened_windows that appeared in any process. On app-zoom-v1 hosts, get_app_state zoom re-captures an unclear region of a screenshot at higher detail. Begin each new user GUI task with start_control once (background by default); keep that session through verification. Reuse the selector or omit app to keep the bound window. \
 Use app_batch by default for already-decided app_click/app_type_text/app_key_chord/app_scroll/app_drag steps. Focus and Unicode input fit in one app_type_text step. Batch known search input plus its submit key, or several observed form fields; end the batch when new information is needed. \
 One batch returns ordered receipts and one final observation. Use that result for the next decision, without a duplicate screenshot or routine delay; finish when the requested outcome is verified. \
@@ -1608,7 +1610,7 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
     }
 
     fn short_description(&self) -> String {
-        "Inspect the screen and control desktop input for computer-use tasks.".to_string()
+        "Control native desktop apps and OS dialogs. Prefer OpenBitFunControl for OpenBitFun settings, MiniAppBrowser for MiniApps and ControlHub for web pages.".to_string()
     }
 
     fn default_exposure(&self) -> ToolExposure {
@@ -1671,6 +1673,30 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string"},
+                "status": {"type": "string"},
+                "observation": {"type": "object", "additionalProperties": true},
+                "screenshot": {"type": "object", "additionalProperties": true},
+                "screenshot_meta": {"type": "object", "additionalProperties": true},
+                "screenshot_id": {"type": "string"},
+                "windows": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "apps": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "steps": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "partial": {"type": "boolean"},
+                "warning": {"type": "string"},
+                "error": {"type": "string"},
+                "control_guidance": {"type": "string"},
+                "suggested_next_action": {"type": "object", "additionalProperties": true}
+            },
+            "additionalProperties": true
+        })
+    }
+
     async fn input_schema_for_model_with_context(&self, context: Option<&ToolUseContext>) -> Value {
         let vision = context
             .map(|c| c.primary_model_supports_image_understanding())
@@ -1702,15 +1728,18 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
     }
 
     async fn is_enabled(&self) -> bool {
-        if !computer_use_desktop_available() {
+        if !computer_use_host_available() {
             return false;
         }
         let Ok(service) = GlobalConfigManager::get_service().await else {
             return false;
         };
-        let ai: crate::service::config::types::AIConfig =
-            service.get_config(Some("ai")).await.unwrap_or_default();
-        ai.computer_use_enabled
+        // Missing legacy fields are defaulted by the config owner. A failed
+        // read must not turn that default into authorization.
+        service
+            .get_config::<bool>(Some("ai.computer_use_enabled"))
+            .await
+            .unwrap_or(false)
     }
 
     async fn is_available_in_context(&self, context: Option<&ToolUseContext>) -> bool {
@@ -1801,7 +1830,11 @@ impl ComputerUseTool {
         {
             return Err((error, SurfaceRecovery::NotAttempted));
         }
-        match host.restore_window(app.clone()).await {
+        match host
+            .restore_window(app.clone())
+            .await
+            .map_err(OpenBitFunError::from)
+        {
             Ok(true) => {}
             Ok(false) => return Err((error, SurfaceRecovery::NothingToRestore)),
             Err(restore_error) => {
@@ -1838,7 +1871,7 @@ impl ComputerUseTool {
                 )),
                 _ = tokio::time::sleep(std::time::Duration::from_millis(150)) => {}
             }
-            match host.prepare_control_target(app.clone()).await {
+            match host.prepare_control_target(app.clone()).await.map_err(OpenBitFunError::from) {
                 Ok(()) => return Ok(true),
                 Err(error)
                     if Self::surface_unavailable(&error)
@@ -1979,10 +2012,9 @@ impl ComputerUseTool {
                     "[CONTROL_ACTION_INVALID] Unknown ComputerUse action: {action}"
                 ))
             })?;
-        let host = context
-            .computer_use_host
-            .as_ref()
-            .ok_or_else(|| OpenBitFunError::tool("Desktop control provider unavailable"))?;
+        let host = context.computer_use_host.as_ref().ok_or_else(|| {
+            OpenBitFunError::tool("Native Computer Use provider unavailable on the executing host")
+        })?;
         if action == "activate_app"
             && !host
                 .control_snapshot()
@@ -2062,7 +2094,7 @@ impl ComputerUseTool {
                 };
                 let explicit_target = !app.is_empty();
                 let exact_window = app.window_id.is_some();
-                let prepared = match host.prepare_control_target(app.clone()).await {
+                let prepared = match host.prepare_control_target(app.clone()).await.map_err(OpenBitFunError::from) {
                     Err(error) if action == "activate_app" => {
                         Self::restore_and_prepare(host, &app, error, context).await
                     }
@@ -2265,7 +2297,7 @@ impl ComputerUseTool {
 
         let host = context.computer_use_host.as_ref().ok_or_else(|| {
             OpenBitFunError::tool(
-                "Computer use is only available in the OpenBitFun desktop app.".to_string(),
+                "Computer Use requires a native provider on the executing host.".to_string(),
             )
         })?;
 
@@ -3173,7 +3205,7 @@ mod tests {
         ComputerUsePermissionSnapshot, ComputerUseScreenshotParams, ComputerUseSessionSnapshot,
     };
     use crate::agentic::tools::framework::{Tool, ToolExposure, ToolResult, ToolUseContext};
-    use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
+    use openbitfun_agent_tools::computer_use_host::error::{OpenBitFunError, OpenBitFunResult};
     use serde_json::{json, Value};
 
     #[test]
@@ -4391,7 +4423,8 @@ mod tests {
                     "image_rect":{"left":320,"top":0,"width":320,"height":240},
                     "global_bounds":{"left":50.0,"top":0.0,"width":60.0,"height":50.0}
                 }]
-            }))?)
+            }))
+            .expect("valid fixture"))
         }
         async fn restore_window(&self, app: AppSelector) -> OpenBitFunResult<bool> {
             self.events
@@ -4432,14 +4465,18 @@ mod tests {
                 serde_json::from_value(json!({
                     "app":{"name":"Requested target","pid":421,"running":true},
                     "tree_text":"AXMenuBar target menu", "digest":"target-ax", "captured_at_ms":1
-                }))?;
+                }))
+                .expect("valid fixture");
             if self.observation_image {
                 snapshot.observation_id = Some("fixture-current".into());
-                snapshot.screenshot = Some(serde_json::from_value(json!({
-                    "screenshot_id":"fixture-image", "bytes":[1,2,3], "mime_type":"image/jpeg",
-                    "image_width":16,"image_height":12,"native_width":16,"native_height":12,
-                    "display_origin_x":0,"display_origin_y":0,"vision_scale":1.0
-                }))?);
+                snapshot.screenshot = Some(
+                    serde_json::from_value(json!({
+                        "screenshot_id":"fixture-image", "bytes":[1,2,3], "mime_type":"image/jpeg",
+                        "image_width":16,"image_height":12,"native_width":16,"native_height":12,
+                        "display_origin_x":0,"display_origin_y":0,"vision_scale":1.0
+                    }))
+                    .expect("valid fixture"),
+                );
             }
             Ok(snapshot)
         }
@@ -4456,7 +4493,8 @@ mod tests {
             Ok(serde_json::from_value(json!({
                 "app":{"name":"Requested target","pid":421,"running":true},
                 "shortcuts":[],"captured_at_ms":1
-            }))?)
+            }))
+            .expect("valid fixture"))
         }
         fn control_snapshot(&self) -> ControlSnapshot {
             self.state.lock().unwrap().clone()
@@ -5672,11 +5710,13 @@ mod tests {
             "SCREEN_CAPTURE_PERMISSION_REQUIRED",
         ] {
             assert!(ComputerUseTool::capture_failure_allows_ax_observation(
-                &OpenBitFunError::tool(format!("{code}: details"))
+                &crate::util::errors::OpenBitFunError::tool(format!("{code}: details"))
             ));
         }
         assert!(!ComputerUseTool::capture_failure_allows_ax_observation(
-            &OpenBitFunError::tool("LOCAL_AUTHORIZATION_REQUIRED: approve access")
+            &crate::util::errors::OpenBitFunError::tool(
+                "LOCAL_AUTHORIZATION_REQUIRED: approve access"
+            )
         ));
     }
     #[tokio::test]

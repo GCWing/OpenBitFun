@@ -178,7 +178,6 @@ const PermissionsSettingsPage: React.FC = () => {
       ) : <>
         <ConfigPageSection
           title={t('permissionPolicy.sectionTitle')}
-          description={t('permissionPolicy.sectionDescription')}
         >
           <ConfigPageRow
             label={t('permissionPolicy.mode')}

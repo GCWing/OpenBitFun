@@ -52,6 +52,23 @@ export interface UseInstallerReturn {
 
 const STEPS: InstallStep[] = ['lang', 'options', 'progress', 'model', 'theme'];
 
+function normalizeInstallPath(path: string): string {
+  return path.trim().replace(/[\\/]+$/, '');
+}
+
+function isSameInstallPath(left: string, right: string): boolean {
+  const normalizedLeft = normalizeInstallPath(left);
+  const normalizedRight = normalizeInstallPath(right);
+  if (normalizedLeft === normalizedRight) return true;
+
+  // Windows registry paths are case-insensitive. Keep POSIX paths case-sensitive.
+  const isWindowsPath = /^[A-Za-z]:[\\/]/.test(normalizedLeft)
+    || /^[A-Za-z]:[\\/]/.test(normalizedRight)
+    || normalizedLeft.includes('\\')
+    || normalizedRight.includes('\\');
+  return isWindowsPath && normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+}
+
 export function useInstaller(): UseInstallerReturn {
   const [previewOnly, setPreviewOnly] = useState(false);
   const [step, setStep] = useState<InstallStep>('lang');
@@ -243,9 +260,16 @@ export function useInstaller(): UseInstallerReturn {
     setInstallationCompleted(false);
     setCanConfirmProgress(false);
     try {
+      const detectedInstall = await refreshExistingInstall();
       const validated = await invoke<InstallPathValidation>('validate_install_path', {
         path: options.installPath,
       });
+      const isUpdate = Boolean(
+        detectedInstall.detected
+        && detectedInstall.mainBinaryPresent
+        && detectedInstall.installLocation
+        && isSameInstallPath(detectedInstall.installLocation, validated.installPath),
+      );
       const effectiveOptions = {
         ...options,
         installPath: validated.installPath,
@@ -257,6 +281,13 @@ export function useInstaller(): UseInstallerReturn {
       setProgress({ step: 'prepare', percent: 0, message: '' });
       await invoke('start_installation', { options: effectiveOptions });
       setInstallationCompleted(true);
+      if (isUpdate) {
+        if (options.launchAfterInstall) {
+          await invoke('launch_application', { installPath: effectiveOptions.installPath });
+        }
+        await invoke('close_installer');
+        return;
+      }
       setStep('model');
       try {
         const info = await readExistingInstall();
@@ -270,7 +301,7 @@ export function useInstaller(): UseInstallerReturn {
     } finally {
       setIsInstalling(false);
     }
-  }, [options, readExistingInstall]);
+  }, [options, readExistingInstall, refreshExistingInstall]);
 
   const confirmProgress = useCallback(() => {
     if (!canConfirmProgress) return;

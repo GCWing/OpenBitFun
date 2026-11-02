@@ -584,7 +584,15 @@
     "dropRight": "右",
     "dropTop": "上",
     "dropBottom": "下",
-    "dropCenter": "放置"
+    "dropCenter": "放置",
+    "empty": {
+      "title": "尚未開啟內容",
+      "workspaceUnavailable": "工作區已中斷，請重新連線。",
+      "selectWorkspace": "請先選擇工作區。",
+      "browseFiles": "瀏覽檔案",
+      "newTerminal": "新增終端機",
+      "reopen": "重新開啟 {{title}}"
+    }
   },
   "flexiblePanel": {
     "empty": {
@@ -686,6 +694,14 @@
     },
     "checklist": {
       "empty": "暫無事項"
+    },
+    "chart": {
+      "empty": "暫無可繪製的資料",
+      "other": "其他",
+      "remaining": "剩餘",
+      "ofTotal": "共 {{total}}",
+      "changeSince": "較 {{label}} {{change}}",
+      "range": "{{min}} – {{max}}"
     },
     "cron": {
       "failed": "無法載入定時任務。",

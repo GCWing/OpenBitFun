@@ -152,7 +152,7 @@ export interface BuiltinCardContext {
 
 const FAMILIES: Record<SemanticBuiltinToolName, BuiltinCardFamily> = {
   get_goal: 'goal', create_goal: 'goal', update_goal: 'goal', AgentList: 'agent-roster', AgentDelete: 'agent-roster',
-  SessionHistory: 'session-history', analyze_image: 'image-analysis', GetTime: 'time',
+  SessionHistory: 'session-history', analyze_image: 'image-analysis', generate_image: 'image-analysis', GetTime: 'time',
   ListMCPResources: 'mcp-resource', ReadMCPResource: 'mcp-resource', ListMCPPrompts: 'mcp-resource', GetMCPPrompt: 'mcp-resource',
   Worktree: 'worktree', PortForward: 'port-forward', ReviewPlatform: 'review-platform', FrontendWorkbench: 'frontend-workbench',
   FinalizeMiniApp: 'miniapp-finalize', PublishMiniApp: 'marketplace-publish', PublishAppearance: 'marketplace-publish', Playbook: 'playbook',

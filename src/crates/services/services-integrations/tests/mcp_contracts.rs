@@ -94,6 +94,302 @@ struct InMemoryMCPConfigStore {
     values: tokio::sync::Mutex<HashMap<String, serde_json::Value>>,
 }
 
+#[tokio::test]
+async fn mcp_control_patch_preserves_secrets_future_fields_and_other_servers() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    let original = json!({
+        "futureRoot": {"version": 2},
+        "mcpServers": {
+            "docs": {"url": "https://example.test/mcp?token=url-secret", "autoStart": false,
+                "headers": {"Authorization": "header-secret"}, "env": {"KEY": "env-secret"},
+                "futureField": {"key": "extension-secret"}},
+            "local": {"command": "command-secret", "args": ["argument-secret"], "enabled": false}
+        }
+    });
+    store
+        .set_config_value("mcp_servers", original.clone())
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    let visible = serde_json::to_string(&snapshot).unwrap();
+    for secret in [
+        "url-secret",
+        "header-secret",
+        "env-secret",
+        "extension-secret",
+        "command-secret",
+        "argument-secret",
+    ] {
+        assert!(!visible.contains(secret), "discovery leaked {secret}");
+    }
+    let patch = json!({"enabled": false});
+    service
+        .edit_user_server(&snapshot.fingerprint, "docs", patch.as_object())
+        .await
+        .unwrap();
+    let mut expected = original.clone();
+    expected["mcpServers"]["docs"]["enabled"] = json!(false);
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(expected.clone())
+    );
+
+    assert!(matches!(
+        service
+            .edit_user_server(&snapshot.fingerprint, "local", None)
+            .await,
+        Err(MCPImportError::StaleConfiguration)
+    ));
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(expected)
+    );
+    let fresh = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(&fresh.fingerprint, "local", None)
+        .await
+        .unwrap();
+    let after = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after["mcpServers"].get("local").is_none());
+    assert_eq!(
+        after["mcpServers"]["docs"]["headers"],
+        original["mcpServers"]["docs"]["headers"]
+    );
+}
+
+#[tokio::test]
+async fn mcp_control_legacy_array_round_trip_preserves_unknown_data() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    let legacy = json!({"id": "legacy", "name": "Legacy", "type": "local", "command": "old-server",
+        "location": "user", "autoStart": false, "env": {"TOKEN": "keep-me"}, "future": [1, 2],
+        "transport":null, "oauth":null, "capabilities":["legacy-capability"],
+        "settings":{"_openbitfunImport":{"sourceCandidateId":"codex:mcp:legacy"}, "futureSetting":{"v":2}}});
+    store
+        .set_config_value("mcp_servers", json!([legacy.clone()]))
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    assert_eq!(snapshot.servers.len(), 1);
+    assert!(snapshot.servers[0].config_valid);
+    service
+        .edit_user_server(
+            &snapshot.fingerprint,
+            "legacy",
+            json!({"enabled": false}).as_object(),
+        )
+        .await
+        .unwrap();
+    let after = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after.is_array());
+    assert_eq!(after[0]["future"], legacy["future"]);
+    assert_eq!(after[0]["settings"], legacy["settings"]);
+    let old_reader: Vec<MCPServerConfig> = serde_json::from_value(after).unwrap();
+    let mut expected: MCPServerConfig = serde_json::from_value(legacy).unwrap();
+    expected.enabled = false;
+    assert_eq!(
+        serde_json::to_value(&old_reader[0]).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
+    assert_eq!(old_reader[0].command.as_deref(), Some("old-server"));
+    assert_eq!(old_reader[0].env["TOKEN"], "keep-me");
+    assert!(!old_reader[0].enabled);
+}
+
+#[tokio::test]
+async fn mcp_control_legacy_array_add_transport_change_and_delete_stay_readable() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    store
+        .set_config_value("mcp_servers", json!([]))
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let empty = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(
+            &empty.fingerprint,
+            "new",
+            json!({"command":"old-server", "autoStart":false}).as_object(),
+        )
+        .await
+        .unwrap();
+    let before = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(
+            &before.fingerprint,
+            "new",
+            json!({"command":null, "type":null, "url":"https://example.test/mcp"}).as_object(),
+        )
+        .await
+        .unwrap();
+    let saved = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    let old_reader: Vec<MCPServerConfig> = serde_json::from_value(saved).unwrap();
+    assert_eq!(old_reader[0].server_type, MCPServerType::Remote);
+    assert!(old_reader[0].command.is_none());
+    assert_eq!(
+        old_reader[0].url.as_deref(),
+        Some("https://example.test/mcp")
+    );
+    let refreshed = service.user_control_snapshot().await.unwrap();
+    service
+        .edit_user_server(&refreshed.fingerprint, "new", None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(json!([]))
+    );
+}
+
+#[tokio::test]
+async fn mcp_control_invalid_records_and_edits_never_reset_configuration() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    let service = MCPConfigService::new(store.clone());
+    for original in [
+        json!("unreadable"),
+        json!([{"command": "missing-id"}]),
+        json!([{"id":"same"}, {"id":"same"}]),
+    ] {
+        store
+            .set_config_value("mcp_servers", original.clone())
+            .await
+            .unwrap();
+        assert!(service.user_control_snapshot().await.is_err());
+        let fingerprint = service
+            .user_json_config_snapshot()
+            .await
+            .unwrap()
+            .fingerprint;
+        assert!(service
+            .edit_user_server(&fingerprint, "new", json!({"command":"new"}).as_object())
+            .await
+            .is_err());
+        assert_eq!(
+            store.get_config_value("mcp_servers").await.unwrap(),
+            Some(original)
+        );
+    }
+    let original = json!({"mcpServers": {"unknown": {"type":"future-transport", "url":"https://example.test"}}});
+    store
+        .set_config_value("mcp_servers", original.clone())
+        .await
+        .unwrap();
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    assert!(!snapshot.servers[0].config_valid);
+    let error = service
+        .edit_user_server(
+            &snapshot.fingerprint,
+            "new",
+            json!({"type":"secret-invalid", "command":"x"}).as_object(),
+        )
+        .await
+        .unwrap_err();
+    assert!(!error.to_string().contains("secret-invalid"));
+    assert_eq!(
+        store.get_config_value("mcp_servers").await.unwrap(),
+        Some(original.clone())
+    );
+    service
+        .edit_user_server(
+            &snapshot.fingerprint,
+            "new",
+            json!({"command":"new", "autoStart":false}).as_object(),
+        )
+        .await
+        .unwrap();
+    let after = store
+        .get_config_value("mcp_servers")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after["mcpServers"]["unknown"],
+        original["mcpServers"]["unknown"]
+    );
+}
+
+#[tokio::test]
+async fn mcp_control_oauth_toggle_respects_legacy_shorthand_and_preserves_options() {
+    use serde_json::json;
+    for oauth in [json!(false), json!({"clientId":"keep-client"})] {
+        let store = Arc::new(InMemoryMCPConfigStore::default());
+        store
+            .set_config_value(
+                "mcp_servers",
+                json!({"mcpServers":{"docs":{
+                    "url":"https://example.test/mcp", "oauth":oauth, "oauthEnabled":false
+                }}}),
+            )
+            .await
+            .unwrap();
+        let service = MCPConfigService::new(store.clone());
+        let before = service.user_control_snapshot().await.unwrap();
+        service
+            .edit_user_server(
+                &before.fingerprint,
+                "docs",
+                json!({"oauthEnabled":true}).as_object(),
+            )
+            .await
+            .unwrap();
+        let after = store
+            .get_config_value("mcp_servers")
+            .await
+            .unwrap()
+            .unwrap();
+        let loaded = parse_cursor_format(&after);
+        assert!(loaded[0].remote_oauth_enabled());
+        assert_eq!(
+            after["mcpServers"]["docs"]["oauth"],
+            if oauth.is_boolean() {
+                json!(true)
+            } else {
+                oauth
+            }
+        );
+    }
+}
+
+#[tokio::test]
+async fn mcp_control_concurrent_edits_use_compare_and_set() {
+    use serde_json::json;
+    let store = Arc::new(InMemoryMCPConfigStore::default());
+    store
+        .set_config_value("mcp_servers", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let service = MCPConfigService::new(store.clone());
+    let snapshot = service.user_control_snapshot().await.unwrap();
+    assert!(snapshot.servers.is_empty());
+    let patch = json!({"command":"server", "autoStart":false});
+    let (first, second) = tokio::join!(
+        service.edit_user_server(&snapshot.fingerprint, "first", patch.as_object()),
+        service.edit_user_server(&snapshot.fingerprint, "second", patch.as_object())
+    );
+    assert_ne!(first.is_ok(), second.is_ok());
+    assert_eq!(
+        service.user_control_snapshot().await.unwrap().servers.len(),
+        1
+    );
+}
+
 #[async_trait]
 impl MCPConfigStore for InMemoryMCPConfigStore {
     async fn get_config_value(&self, key: &str) -> MCPRuntimeResult<Option<serde_json::Value>> {

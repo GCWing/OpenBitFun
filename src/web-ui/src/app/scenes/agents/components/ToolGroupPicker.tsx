@@ -456,7 +456,14 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
   const groups = useMemo(() => resolveToolGroups(tools, userGroups, t), [t, tools, userGroups]);
   const selectedCount = new Set(selectedToolNames).size;
   const sections = useMemo<Array<[string, ResolvedToolGroup[]]>>(() => {
-    if (!grouped) return [['', flattenToolGroups(groups)]];
+    if (!grouped) {
+      const selected = new Set(selectedToolNames);
+      const flatGroups = flattenToolGroups(groups);
+      for (const group of flatGroups) {
+        group.tools.sort((left, right) => Number(selected.has(right.name)) - Number(selected.has(left.name)));
+      }
+      return [['', flatGroups]];
+    }
     const sectionsByLabel = new Map<string, ResolvedToolGroup[]>();
     for (const group of groups) {
       const label = groupSectionLabel(group, t);
@@ -465,11 +472,11 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
       sectionsByLabel.set(label, entries);
     }
     return [...sectionsByLabel.entries()];
-  }, [grouped, groups, t]);
+  }, [grouped, groups, selectedToolNames, t]);
 
   return (
-    <div data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="root" className="tool-group-picker" data-testid={testId}>
-      <Toolbar
+    <div data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="root" className={`tool-group-picker${grouped ? '' : ' tool-group-picker--flat'}`} data-testid={testId}>
+      {grouped && <Toolbar
         data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="head"
         bordered={false}
         leading={(
@@ -480,7 +487,7 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
             {t('agentsOverview.selectionSaveHint')}
           </span>
         )}
-        trailing={grouped && (
+        trailing={(
           <Button
             variant="text"
             size="sm"
@@ -491,7 +498,7 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
             {t('agentsOverview.toolGroups.manageGroups')}
           </Button>
         )}
-      />
+      />}
       <div className="tool-group-picker__sections" data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="sections">
         {sections.map(([sectionLabel, sectionGroups]) => (
           <FormSection
@@ -556,18 +563,38 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
                             titleMonospace
                             placement="top"
                           >
-                            <AgentCapabilityOption
-                              className="tool-group-picker__token"
-                              data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="token"
-                              data-openbitfun-state={selected ? 'selected' : undefined}
-                              checked={selected}
-                              label={tool.name}
-                              onCheckedChange={(checked) => onSelectionChange(
-                                setToolGroupSelection(selectedToolNames, [tool.name], checked),
-                              )}
-                              disabled={disabled}
-                              inputAriaLabel={capabilityTooltipAriaLabel(tool.name, tool.description, tooltipFields)}
-                            />
+                            {grouped ? (
+                              <AgentCapabilityOption
+                                className="tool-group-picker__token"
+                                data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="token"
+                                data-openbitfun-state={selected ? 'selected' : undefined}
+                                checked={selected}
+                                label={tool.name}
+                                onCheckedChange={(checked) => onSelectionChange(
+                                  setToolGroupSelection(selectedToolNames, [tool.name], checked),
+                                )}
+                                disabled={disabled}
+                                inputAriaLabel={capabilityTooltipAriaLabel(tool.name, tool.description, tooltipFields)}
+                              />
+                            ) : (
+                              <Button
+                                className="tool-group-picker__token tool-group-picker__pill"
+                                data-openbitfun-product-component="tool-group-picker"
+                                data-openbitfun-product-part="token"
+                                data-openbitfun-state={selected ? 'selected' : undefined}
+                                size="xs"
+                                variant={selected ? 'fill' : 'outline'}
+                                aria-pressed={selected}
+                                aria-label={capabilityTooltipAriaLabel(tool.name, tool.description, tooltipFields)}
+                                trailingIcon={selected ? <Icon name="check-line" size="xs" tone="success" /> : undefined}
+                                onClick={() => onSelectionChange(
+                                  setToolGroupSelection(selectedToolNames, [tool.name], !selected),
+                                )}
+                                disabled={disabled}
+                              >
+                                {tool.name.replace(/_/g, ' ')}
+                              </Button>
+                            )}
                           </AgentCapabilityTooltip>
                         );
                       })}

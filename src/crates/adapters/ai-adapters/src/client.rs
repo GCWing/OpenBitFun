@@ -7,6 +7,9 @@
 pub(crate) mod format;
 pub(crate) mod healthcheck;
 pub(crate) mod http;
+mod image_budget;
+#[cfg(feature = "image-generation")]
+pub mod image_generation;
 pub(crate) mod quirks;
 mod request_capacity;
 pub(crate) mod response_aggregator;
@@ -399,22 +402,6 @@ impl AIClient {
         trace: Option<ModelExchangeTraceConfig>,
     ) -> Result<StreamResponse> {
         let custom_body = self.config.custom_request_body.clone();
-        if matches!(
-            ApiFormat::parse(&self.config.format)?,
-            ApiFormat::OpenAIResponses
-        ) {
-            return openai::responses::send_stream(
-                self,
-                messages,
-                tools,
-                custom_body,
-                1,
-                trace,
-                request_context,
-            )
-            .await;
-        }
-
         self.send_message_stream_with_extra_body_and_max_attempts(
             messages,
             tools,
@@ -609,6 +596,10 @@ impl AIClient {
         trace: Option<ModelExchangeTraceConfig>,
         request_context: Option<ModelRequestContext>,
     ) -> Result<StreamResponse> {
+        // Project only the outgoing copy, against the actual selected client.
+        // Account/channel failover and direct analysis calls share this boundary.
+        let messages = image_budget::project(messages, self.config.max_images_per_request)?;
+        image_budget::validate_extra_body(self.config.max_images_per_request, extra_body.as_ref())?;
         match ApiFormat::parse(&self.config.format)? {
             ApiFormat::OpenAIChat => {
                 openai::chat::send_stream(
@@ -869,6 +860,7 @@ mod tests {
             format: format.to_string(),
             context_window: 128000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1333,6 +1325,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1366,6 +1359,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1398,6 +1392,7 @@ mod tests {
             format: "gemini".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: Some(0.2),
             top_p: Some(0.8),
             inline_think_in_text: false,
@@ -1480,6 +1475,7 @@ mod tests {
             format: "gemini".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1517,7 +1513,7 @@ mod tests {
     }
 
     #[test]
-    fn openai_chat_rejects_unmapped_model_config_toggle_for_an_unverified_endpoint() {
+    fn openai_chat_uses_format_fallback_for_an_unverified_endpoint() {
         let client = AIClient::new(AIConfig {
             name: "openai-compatible".to_string(),
             base_url: "https://example.com/v1".to_string(),
@@ -1527,6 +1523,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1541,16 +1538,16 @@ mod tests {
             vec![ReasoningPresetAction::Toggle { enabled: true }],
         ));
 
-        let error = openai::chat::try_build_request_body(
+        let body = openai::chat::try_build_request_body(
             &client,
             &client.config.request_url,
             vec![json!({ "role": "user", "content": "hello" })],
             None,
             None,
         )
-        .expect_err("an unverified compatible endpoint must reject generic toggle");
+        .expect("an unverified compatible endpoint should use the format fallback");
 
-        assert!(error.to_string().contains("unsupported"));
+        assert_eq!(body["reasoning_effort"], "medium");
     }
 
     #[test]
@@ -1564,6 +1561,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1589,7 +1587,7 @@ mod tests {
         );
 
         assert_eq!(request_body["thinking"]["type"], "enabled");
-        assert_eq!(request_body["reasoning_effort"], "max");
+        assert_eq!(request_body["reasoning_effort"], "high");
     }
 
     #[test]
@@ -1603,6 +1601,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1640,6 +1639,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1681,6 +1681,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1794,7 +1795,7 @@ mod tests {
     }
 
     #[test]
-    fn build_openbitfun_openai_request_body_maps_deepseek_pro_xhigh_to_max() {
+    fn build_openbitfun_openai_request_body_maps_deepseek_pro_xhigh_to_high() {
         let mut client = make_test_client("openai", None);
         client.config.name = "openbitfun".to_string();
         client.config.base_url = "https://api.openbitfun.com/v1".to_string();
@@ -1818,7 +1819,7 @@ mod tests {
         );
 
         assert_eq!(request_body["thinking"]["type"], "enabled");
-        assert_eq!(request_body["reasoning_effort"], "max");
+        assert_eq!(request_body["reasoning_effort"], "high");
     }
 
     #[test]
@@ -1858,6 +1859,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128_000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1897,6 +1899,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1924,6 +1927,60 @@ mod tests {
     }
 
     #[test]
+    fn siliconflow_effort_and_budget_use_documented_fields() {
+        let base_config = || AIConfig {
+            name: "siliconflow".to_string(),
+            base_url: "https://api.siliconflow.cn/v1".to_string(),
+            request_url: "https://api.siliconflow.cn/v1/chat/completions".to_string(),
+            api_key: "test-key".to_string(),
+            model: "Pro/zai-org/GLM-5.2".to_string(),
+            format: "openai".to_string(),
+            context_window: 128000,
+            max_tokens: Some(4096),
+            max_images_per_request: None,
+            temperature: None,
+            top_p: None,
+            inline_think_in_text: false,
+            custom_headers: None,
+            custom_headers_mode: None,
+            skip_ssl_verify: false,
+            custom_request_body: None,
+            custom_request_body_mode: None,
+        };
+
+        let effort_client = AIClient::new(base_config()).with_reasoning_preset(&reasoning_preset(
+            "high",
+            vec![ReasoningPresetAction::Effort {
+                value: "xhigh".to_string(),
+            }],
+        ));
+        let effort_body = openai::chat::build_request_body(
+            &effort_client,
+            &effort_client.config.request_url,
+            vec![json!({ "role": "user", "content": "hello" })],
+            None,
+            None,
+        );
+        assert_eq!(effort_body["enable_thinking"], true);
+        assert_eq!(effort_body["reasoning_effort"], "max");
+        assert!(effort_body.get("thinking_budget").is_none());
+
+        let budget_client = AIClient::new(base_config()).with_reasoning_preset(&reasoning_preset(
+            "budget",
+            vec![ReasoningPresetAction::BudgetTokens { value: 4096 }],
+        ));
+        let budget_body = openai::chat::build_request_body(
+            &budget_client,
+            &budget_client.config.request_url,
+            vec![json!({ "role": "user", "content": "hello" })],
+            None,
+            None,
+        );
+        assert_eq!(budget_body["enable_thinking"], true);
+        assert_eq!(budget_body["thinking_budget"], 4096);
+    }
+
+    #[test]
     fn build_responses_request_body_applies_explicit_none_effort() {
         let client = AIClient::new(AIConfig {
             name: "responses".to_string(),
@@ -1934,6 +1991,7 @@ mod tests {
             format: "responses".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1975,6 +2033,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2015,6 +2074,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2054,6 +2114,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2093,6 +2154,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2134,6 +2196,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2168,6 +2231,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2195,7 +2259,7 @@ mod tests {
 
         assert_eq!(request_body["thinking"]["type"], "enabled");
         assert!(request_body["thinking"].get("budget_tokens").is_none());
-        assert_eq!(request_body["output_config"]["effort"], "max");
+        assert_eq!(request_body["output_config"]["effort"], "high");
     }
 
     #[test]
@@ -2209,6 +2273,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2251,6 +2316,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2291,6 +2357,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2329,6 +2396,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2369,6 +2437,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2411,6 +2480,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(4000),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2449,6 +2519,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2483,6 +2554,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2521,6 +2593,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

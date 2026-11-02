@@ -14,7 +14,7 @@
     "subtitle": "新對話時 AI 自動生成簡潔標題",
     "enable": "啟用",
     "loadFailed": "載入會話標題設定失敗",
-    "loadFailedLocked": "無法讀取會話標題設定。目前開關和模型選擇已鎖定。",
+    "loadFailedLocked": "無法讀取會話標題設定，目前開關和模型選擇已鎖定",
     "retry": "重新載入",
     "model": {
       "label": "會話標題生成模型",
@@ -37,10 +37,10 @@
     "title": "候選輸入建議",
     "subtitle": "Agent 回覆完成後，在輸入框中提供一句話的下一步輸入建議",
     "label": "啟用",
-    "description": "輸入框為空時按 Tab 或 → 採納。建議沿用本輪對話的提示快取產生。",
-    "unsupported": "目前連線的主機不支援候選輸入建議。",
+    "description": "輸入框為空時按 Tab 或 → 採納；建議沿用本輪對話的提示快取產生",
+    "unsupported": "目前連線的主機不支援候選輸入建議",
     "loading": "正在載入設定...",
-    "loadFailedLocked": "無法讀取候選輸入建議設定，開關已鎖定。",
+    "loadFailedLocked": "無法讀取候選輸入建議設定，開關已鎖定",
     "retry": "重新載入",
     "messages": {
       "saveSuccess": "設定已儲存",
@@ -53,6 +53,9 @@
     "rescan": "重新整理狀態",
     "import": "匯入使用",
     "login": "登入",
+    "loginTitle": "{{provider}} 登入",
+    "backToProviders": "返回服務商清單",
+    "cancelAndBack": "取消登入並返回",
     "browserLogin": "瀏覽器登入",
     "deviceLogin": "裝置碼登入",
     "cancel": "取消",
@@ -63,13 +66,15 @@
     "refreshFailed": "重新整理失敗：{{error}}",
     "loginSuccess": "登入成功",
     "loginFailed": "登入失敗：{{error}}",
-    "peerLoginRequiresLocalDevice": "Antigravity 登入必須在執行 OpenBitFun 的裝置上完成，請切換到該裝置後再登入。",
+    "peerLoginRequiresLocalDevice": "Antigravity 登入必須在執行 OpenBitFun 的裝置上完成，請切換到該裝置後再登入",
     "logoutSuccess": "已登出",
-    "logoutCleanupPending": "已登出，憑據清理仍在等待中，稍後會自動重試。",
+    "logoutCleanupPending": "已登出，憑據清理仍在等待中，稍後會自動重試",
     "logoutFailed": "登出失敗：{{error}}",
     "userCodeHint": "請在瀏覽器中輸入驗證碼：{{code}}",
     "openUrlManually": "無法自動開啟瀏覽器，請手動造訪：{{url}}",
     "expiresAt": "授權有效期至 {{time}}",
+    "expiresIn": "授權有效期：{{time}}",
+    "authorizationExpired": "授權已過期",
     "tokenValid": "已連接",
     "notSignedIn": "未登入",
     "label": "認證方式",
@@ -86,18 +91,22 @@
       "zcode": "ZCode"
     },
     "details": {
-      "codex": "ChatGPT 訂閱",
-      "antigravity": "Google 訂閱",
-      "opencode": "Console · Zen",
-      "grok": "SuperGrok 訂閱",
-      "hermes": "Nous Portal 訂閱",
+      "codex": "ChatGPT",
+      "antigravity": "Google",
+      "opencode": "Zen",
+      "grok": "SuperGrok",
+      "hermes": "Nous Portal",
       "workbuddy": "已下線 · 廠商不再支援訂閱授權",
       "workbuddy_ai": "已下線 · 國際版",
-      "zcode": "GLM Coding Plan"
+      "zcode": "GLM Coding"
     },
     "regions": {
-      "zai": "Z.ai",
-      "bigmodel": "智譜"
+      "zai": "Z.ai（國際版）",
+      "bigmodel": "智譜 BigModel（中國版）"
+    },
+    "regionsShort": {
+      "zai": "國際",
+      "bigmodel": "國內"
     },
     "options": {
       "opencode": "OpenCode",
@@ -120,8 +129,8 @@
     "vaultUnavailable": "憑據儲存暫時無法使用，請重試；你的登入資訊並未被移除",
     "retryVault": "重試憑據庫",
     "loginPending": "正在進行登入授權",
-    "browserInstructions": "請在 OpenBitFun 開啟的瀏覽器頁面中完成登入，並保持此頁面開啟；授權後會自動完成。",
-    "deviceInstructions": "請在任意裝置開啟授權頁面，輸入下方驗證碼，然後返回此處。",
+    "browserInstructions": "請在 OpenBitFun 開啟的瀏覽器頁面中完成登入，並保持此頁面開啟；授權後會自動完成",
+    "deviceInstructions": "請在任意裝置開啟授權頁面，輸入下方驗證碼，然後返回此處",
     "loginCancelling": "正在取消登入並關閉授權工作階段",
     "loginCompletedBeforeCancel": "授權已在取消前完成，因此該帳號仍保持登入狀態",
     "timeRemaining": "剩餘時間 {{time}}",
@@ -135,8 +144,8 @@
     "loginFailedInline": "{{error}}",
     "logoutConfirmTitle": "確認登出訂閱賬號",
     "logoutAffectedModels": "登出後，目前使用該賬號的 {{count}} 個模型設定將無法請求模型：",
-    "logoutNoAffectedModels": "目前沒有模型設定使用此訂閱賬號。",
-    "logoutConsequence": "模型設定不會被刪除；重新登入同一訂閱賬號後可以繼續使用。",
+    "logoutNoAffectedModels": "目前沒有模型設定使用此訂閱賬號",
+    "logoutConsequence": "模型設定不會被刪除；重新登入同一訂閱賬號後可以繼續使用",
     "confirmLogout": "確認登出",
     "openCodeRemoved": "OpenCode Console OAuth 僅支援 Zen。Go 模型請選擇 API key 並填寫金鑰，既有模型設定保留。",
     "retiredProvider": "WorkBuddy 訂閱已下線：廠商不再支援訂閱授權。現有模型設定與憑證均保留，如需繼續使用這些模型請新增 API Key 服務。",
@@ -147,11 +156,11 @@
     "loadingAccount": "正在讀取帳號…",
     "accountIdentityUnavailable": "服務未提供帳號識別資訊",
     "accountUnavailable": "暫無帳號資訊",
-    "serviceUnavailable": "目前主機未提供此訂閱服務，請重新整理狀態或檢查主機版本。",
-    "signInToUse": "登入此服務的訂閱帳號後即可使用，既有模型設定會保留。",
-    "sharedAccountHint": "此服務的模型共用目前登入帳號。",
+    "serviceUnavailable": "目前主機未提供此訂閱服務，請重新整理狀態或檢查主機版本",
+    "signInToUse": "登入此服務的訂閱帳號後即可使用，既有模型設定會保留",
+    "sharedAccountHint": "此服務的模型共用目前登入帳號",
     "credentialExpiresAt": "憑據有效期至 {{time}}",
-    "credentialExpired": "目前授權憑據已過期，請在管理帳號中重新整理憑據後重試。",
+    "credentialExpired": "目前授權憑據已過期，請在管理帳號中重新整理憑據後重試",
     "openCodeLegacyConnection": "此舊版連線使用 OpenCode Go，既有模型設定會保留。如需繼續使用 Go，請新增 API Key 服務；訂閱授權請重新匯入 Zen。",
     "accountState": {
       "loading": "正在讀取狀態",
@@ -178,8 +187,8 @@
     "newAccount": "新帳號"
   },
   "providerSelection": {
-    "modelRoutingPending": "重新整理模型清單後顯示協定和端點；目錄外模型可手動設定。",
-    "modelRoutingUnavailable": "主機未傳回此模型的有效介面資訊，請更新主機後重新整理模型清單。",
+    "modelRoutingPending": "重新整理模型清單後顯示協定和端點；目錄外模型可手動設定",
+    "modelRoutingUnavailable": "主機未傳回此模型的有效介面資訊，請更新主機後重新整理模型清單",
     "title": "選擇模型提供商",
     "subtitle": "預設會填入常用連線參數；私有部署或未列出的服務可選擇自訂",
     "or": "或者",
@@ -202,8 +211,8 @@
     "fetchFailedFallback": "拉取模型列表失敗，已回退到常用預設模型",
     "fetchEmptyFallback": "供應商未返回可用模型，已回退到常用預設模型",
     "refreshModels": "重新整理模型清單",
-    "subscriptionFetchFailed": "無法取得訂閱帳號的模型。請重新整理再試，或手動填入該帳號支援的模型 ID。",
-    "subscriptionFetchEmpty": "該帳號未傳回適用於目前介面的模型。請重新整理再試，或手動填入支援的模型 ID。",
+    "subscriptionFetchFailed": "無法取得訂閱帳號的模型，請重新整理再試，或手動填入該帳號支援的模型 ID",
+    "subscriptionFetchEmpty": "該帳號未傳回適用於目前介面的模型，請重新整理再試，或手動填入支援的模型 ID",
     "fillApiKeyBeforeFetch": "請先填寫 API Key 再獲取模型列表",
     "usingPresetModels": "目前顯示的是常用預設模型",
     "noPresetModels": "暫無可用模型，請獲取模型列表或手動輸入模型名",
@@ -235,14 +244,22 @@
     },
     "opencode-go": {
       "name": "OpenCode Go",
-      "description": "OpenCode 推出的模型訂閱方案。"
+      "description": "OpenCode 推出的模型訂閱方案"
     },
     "openbitfun": {
       "name": "OpenBitFun 服務",
       "description": "OpenBitFun 大模型平臺",
       "urlOptions": {
-        "default": "Anthropic格式-默認",
-        "openai": "OpenAI兼容格式"
+        "default": "官方介面",
+        "openai": "官方介面"
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "description": "OpenAI GPT 與推理模型",
+      "urlOptions": {
+        "default": "官方介面",
+        "chatCompletions": "官方介面"
       }
     },
     "gemini": {
@@ -257,51 +274,52 @@
       "name": "MiniMax",
       "description": "MiniMax 系列模型",
       "urlOptions": {
-        "default": "國內-Anthropic格式-默認",
-        "openai": "國內-OpenAI兼容格式",
-        "intl": "海外-Anthropic格式",
-        "intlOpenai": "海外-OpenAI兼容格式"
+        "default": "國內-默認",
+        "openai": "國內",
+        "intl": "海外",
+        "intlOpenai": "海外"
       }
     },
     "xiaomi": {
       "name": "Xiaomi MiMo",
-      "description": "小米 MiMo 系列模型，API 與 Token Plan 金鑰不可混用。",
+      "description": "小米 MiMo 系列模型，API 與 Token Plan 金鑰不可混用",
       "urlOptions": {
-        "default": "API - OpenAI Chat Completions（預設）",
-        "responses": "API - OpenAI Responses",
-        "anthropic": "API - Anthropic Messages",
-        "tokenPlan": "中國 - Token Plan - OpenAI",
-        "tokenPlanAnthropic": "中國 - Token Plan - Anthropic"
+        "default": "API-默認",
+        "responses": "API",
+        "anthropic": "API",
+        "tokenPlan": "中國 - Token Plan",
+        "tokenPlanAnthropic": "中國 - Token Plan"
       }
     },
     "moonshot": {
       "name": "月之暗面",
       "description": "月之暗面 Kimi 系列模型",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "anthropic": "國內-Anthropic格式",
-        "intl": "海外-OpenAI格式",
-        "intlAnthropic": "海外-Anthropic格式",
-        "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）"
+        "default": "國內-默認",
+        "anthropic": "國內",
+        "intl": "海外",
+        "intlAnthropic": "海外",
+        "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）",
+        "kimiForCodingAnthropic": "Kimi For Coding 套餐"
       }
     },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek 系列模型",
       "urlOptions": {
-        "default": "OpenAI格式-默認",
-        "anthropic": "Anthropic格式"
+        "default": "官方介面-默認",
+        "anthropic": "官方介面"
       }
     },
     "zhipu": {
       "name": "智譜AI",
       "description": "智譜AI GLM 系列模型",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "anthropic": "國內-Anthropic格式",
+        "default": "國內-默認",
+        "anthropic": "國內",
         "codingPlan": "國內-Coding Plan",
-        "intl": "海外(Z.AI)-OpenAI格式",
-        "intlAnthropic": "海外(Z.AI)-Anthropic格式",
+        "intl": "海外(Z.AI)",
+        "intlAnthropic": "海外(Z.AI)",
         "intlCodingPlan": "海外(Z.AI)-Coding Plan"
       }
     },
@@ -309,10 +327,10 @@
       "name": "通義千問",
       "description": "阿里雲百鍊大模型平臺",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "intl": "海外(國際站)-OpenAI格式",
+        "default": "國內-默認",
+        "intl": "海外(國際站)",
         "codingPlan": "國內-Coding Plan",
-        "codingPlanAnthropic": "國內-Coding Plan-Anthropic格式",
+        "codingPlanAnthropic": "國內-Coding Plan",
         "intlCodingPlan": "海外-Coding Plan"
       }
     },
@@ -329,9 +347,9 @@
       "name": "硅基流動",
       "description": "硅基流動大模型平臺",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "anthropic": "國內-Anthropic格式",
-        "intl": "海外-OpenAI格式"
+        "default": "國內-默認",
+        "anthropic": "國內",
+        "intl": "海外"
       }
     },
     "nvidia": {
@@ -384,6 +402,7 @@
     "modelSelection": "選擇模型",
     "modelNameHint": "智譜 GLM-ASR 使用 glm-asr，其他語音模型填寫對應的模型名稱",
     "baseUrl": "API地址",
+    "baseUrlPlaceholder": "https://api.example.com/v1",
     "resolvedUrlLabel": "實際請求地址：",
     "forceUrlHint": "以 # 結尾可強制使用輸入地址",
     "apiKey": "API密鑰",
@@ -392,8 +411,10 @@
     "provider": "請求格式",
     "providerPlaceholder": "選擇請求格式",
     "contextWindow": "上下文視窗大小",
+    "maxImagesPerRequest": "每次請求圖片上限",
+    "maxImagesPerRequestHint": "可選：限制單次請求中傳送的圖片數量，包括對話歷史和工具結果；留空表示不設定額外上限。",
     "contextWindowHint": "用於判斷何時壓縮上下文，可小於模型實際支援的上限",
-    "contextWindowLongWarning": "上下文超過 400K，可能影響效果，建議約 300K。",
+    "contextWindowLongWarning": "上下文超過 400K，可能影響效果，建議約 300K",
     "maxTokens": "最大輸出Tokens",
     "maxTokensHint": "限制單次回應的最大 Token 數，影響輸出長度",
     "description": "描述",
@@ -424,14 +445,14 @@
     "configTitle": "思考設定",
     "dialogTitle": "思考設定 · {{provider}} · {{model}}",
     "catalogSource": "思考預設來源",
-    "catalogAuto": "自動偵測",
+    "catalogAuto": "自動比對預設",
     "catalogModelsDev": "指定 models.dev 模型",
     "catalogDisabled": "僅使用自定義預設",
-    "catalogAutoTooltip": "優先使用已識別模型的精確思考預設；未命中時提供可手動選擇的通用開啟、關閉和低／中／高強度，同時保留自定義預設。",
+    "catalogAutoTooltip": "依設定的供應商和模型比對預設，不會探測伺服器。未識別服務的通用選項僅供手動選擇、尚未驗證，不代表伺服器支援；同時保留自訂預設",
     "catalogModelsDevTooltip": "使用指定 models.dev 供應商和模型的思考預設。模型名稱是別名，或相容閘道需要明確綁定時使用。",
-    "catalogDisabledTooltip": "不生成 models.dev 和適配器預設，僅保留你設定的自定義預設。",
+    "catalogDisabledTooltip": "不自動產生預設；自訂預設和自訂請求主體仍生效。選擇「跟隨伺服器預設」不會清除請求主體中的明確參數",
     "catalogSummary": {
-      "auto": "自動偵測",
+      "auto": "自動比對預設",
       "modelsDev": "指定 models.dev",
       "disabled": "僅自定義"
     },
@@ -448,8 +469,8 @@
     "catalogModelCustomValueHint": "使用自訂模型 ID",
     "defaultBehavior": "預設思考",
     "defaultPreset": "預設選項",
-    "auto": "自動（模型預設值）",
-    "autoShort": "自動",
+    "auto": "跟隨伺服器預設",
+    "autoShort": "伺服器預設",
     "generatedTitle": "自動生成的預設",
     "unavailableTitle": "部分 models.dev 預設無法使用",
     "unavailableDescription": "目前的 API 格式「{{format}}」無法可靠套用以下預設：{{presets}}。請參考服務供應商的官方文件，並在自訂預設中使用「請求內容補丁」設定所需欄位。",
@@ -479,11 +500,11 @@
     "actionSummaryBudget": "Token 預算：{{value}}",
     "actionSummaryPatches": "{{count}} 個請求內容補丁",
     "noActions": "未設定操作",
-    "invalidJson": "請求內容補丁需要 JSON 物件。",
+    "invalidJson": "請求內容補丁需要 JSON 物件",
     "summary": "{{source}} · 預設：{{default}}",
     "summaryWithCustom": "{{source}} · 預設：{{default}} · {{count}} 個自定義預設",
     "apply": "應用",
-    "validationError": "請先修正預設來源、預設選項、操作或 JSON。"
+    "validationError": "請先修正預設來源、預設選項、操作或 JSON"
   },
   "details": {
     "basicInfo": "基本資訊",
@@ -498,7 +519,7 @@
   },
   "proxy": {
     "enable": "啟用代理",
-    "enableHint": "啟用後所有 AI 請求將透過代理傳送（需重新啟動 OpenBitFun 生效）",
+    "enableHint": "留空代理位址時，請求會跟隨作業系統代理（例如本機代理軟體設定的系統代理）。填寫位址並啟用後，所有 AI 請求都會透過該代理傳送；填寫位址但關閉開關表示強制直連。",
     "url": "代理地址",
     "urlPlaceholder": "http://127.0.0.1:7890 或 socks5://127.0.0.1:1080",
     "urlHint": "支持 HTTP/HTTPS/SOCKS5 代理，格式：協議://地址:端口",
@@ -515,7 +536,7 @@
     "label": "回應間隔逾時（秒）",
     "hint": "回應開始後，等待下一段資料的最長時間；留空表示不限時",
     "placeholder": "留空表示不設超時",
-    "invalid": "請輸入正整數秒數，或留空。",
+    "invalid": "請輸入正整數秒數，或留空",
     "save": "儲存回應逾時",
     "saveSuccess": "流式超時已儲存"
   },
@@ -524,7 +545,7 @@
     "label": "首次回應逾時（秒）",
     "hint": "送出請求後，等待首段有效回應的最長時間；留空表示不限時",
     "placeholder": "留空表示不設超時",
-    "invalid": "請輸入正整數秒數，或留空。",
+    "invalid": "請輸入正整數秒數，或留空",
     "save": "儲存首次回應逾時",
     "saveSuccess": "首 Token 超時已儲存"
   },
@@ -576,7 +597,7 @@
   "draftClose": {
     "title": "保留這次編輯草稿？",
     "message": "這些修改尚未寫入模型設定。保留草稿不會觸發連接測試，再次開啟此編輯器時可以繼續。",
-    "keepAndClose": "保留草稿並關閉",
+    "keepAndClose": "保留草稿",
     "discard": "放棄修改",
     "continueEditing": "繼續編輯",
     "discardDraft": "放棄草稿",
@@ -584,7 +605,7 @@
   },
   "draftConflict": {
     "title": "先處理未完成的模型草稿",
-    "message": "開啟另一個模型或服務商前，請繼續處理目前草稿，或放棄草稿後開啟所選設定。",
+    "message": "開啟另一個模型或服務商前，請繼續處理目前草稿，或放棄草稿後開啟所選設定",
     "continueDraft": "繼續目前草稿",
     "discardAndContinue": "放棄草稿並繼續",
     "cancel": "取消"
@@ -598,18 +619,18 @@
   },
   "messages": {
     "loading": "正在載入模型設定…",
-    "loadFailedLocked": "無法讀取此處的設定。為避免覆蓋現有設定，相關操作已鎖定，請重新載入。",
+    "loadFailedLocked": "無法讀取此處的設定，為避免覆蓋現有設定，相關操作已鎖定，請重新載入",
     "retry": "重新載入",
     "unsaved": "未儲存",
     "fillRequired": "請填寫必要字段",
-    "missingFields": "請補齊以下資訊：{{fields}}。",
+    "missingFields": "請補齊以下資訊：{{fields}}",
     "fieldSeparator": "、",
     "lastFieldSeparator": "和",
     "fillModelName": "請填寫模型名稱",
     "duplicateModelNameUnderProvider": "該服務商下已有同名模型，請改用其他名稱或編輯已有條目",
     "invalidBaseUrlScheme": "API地址必須以 http:// 或 https:// 開頭",
     "contextWindowTooSmall": "上下文視窗大小不能小於 32K Tokens",
-    "invalidReasoningPresets": "請先修正思考預設的 ID、設置、預設項或 JSON。",
+    "invalidReasoningPresets": "請先修正思考預設的 ID、設置、預設項或 JSON",
     "saveFailed": "儲存失敗",
     "deleteFailed": "刪除設定失敗",
     "deleteSuccess": "模型設定已刪除",
@@ -624,8 +645,11 @@
     "testUnsupportedOnHost": "設定已儲存，目前 CLI 裝置不支援模型連接測試",
     "errorDetails": "詳細錯誤",
     "connectionTestMessages": {
-      "toolCallsNotDetected": "本次測試未檢測到工具調用，因此暫時無法驗證工具調用能力。",
-      "imageInputCheckFailed": "連接已成功，但圖片輸入測試未通過。",
+      "toolCallsNotDetected": "本次測試未檢測到工具調用，因此暫時無法驗證工具調用能力",
+      "imageInputCheckFailed": "連接已成功，但圖片輸入測試未通過",
+      "reasoningEffortRejected": "供應商拒絕了推理強度參數；請在模型「思考設定」或自訂請求主體中改用支援值，或移除明確的推理參數後跟隨伺服器預設",
+      "reasoningEffortValueRejected": "供應商不支援 reasoning_effort={{value}}；請在模型「思考設定」或自訂請求主體中改用支援值，或移除明確的推理參數後跟隨伺服器預設",
+      "reasoningEffortValueRejectedWithSupported": "供應商不支援 reasoning_effort={{value}}，回傳的支援值為 {{supported}}；請在模型「思考設定」或自訂請求主體中改用支援值，或移除明確的推理參數後跟隨伺服器預設",
       "tlsOrCertificateIssue": "連接失敗可能與 SSL/TLS 證書校驗有關。請檢查公司代理、自簽證書、系統根證書或網路攔截設定；如果確認網路環境可信，可在該模型的高級設置中開啟「跳過SSL證書驗證」，但這會降低 HTTPS 安全性。",
       "proxyIssue": "連接失敗可能與代理或隧道設定有關。請檢查全局代理設定、代理認證、代理是否支援 HTTPS CONNECT，以及目前網路是否允許訪問該模型 API 地址。",
       "networkIssue": "連接失敗發生在發送請求階段，尚未收到服務端 HTTP 回應。請檢查網路連通性、DNS、代理、防火牆和證書環境；如果處在公司代理或自簽證書環境，也可能需要檢查高級設置中的「跳過SSL證書驗證」。"
@@ -672,6 +696,10 @@
   },
   "advancedSettings": {
     "title": "高級設置",
+    "maxImagesPerRequest": {
+      "label": "每次請求圖片上限",
+      "hint": "可選：限制單次請求中傳送的圖片數量，包括對話歷史和工具結果；留空表示不設定額外上限。"
+    },
     "inlineThinkInText": {
       "label": "解析文字中的 <think> 標籤",
       "hint": "將回應中的 <think>...</think> 內容顯示為思考過程"
@@ -698,10 +726,10 @@
       "modeMerge": "合併",
       "modeTrim": "精簡",
       "modeMergeHint": "在默認請求體基礎上合併自定義字段，可覆蓋已有字段",
-      "trimHintOpenAI": "發送前僅保留 model、messages、max_tokens，以及 stream / tools 等運行必需字段，再應用自定義請求體。",
-      "trimHintResponses": "發送前僅保留 model、input、instructions、max_output_tokens，以及 stream / tools 等運行必需字段，再應用自定義請求體。",
-      "trimHintAnthropic": "發送前僅保留 model、messages、system、max_tokens，以及 stream / tools 等運行必需字段，再應用自定義請求體。",
-      "trimHintGemini": "發送前僅保留 contents、systemInstruction、generationConfig.maxOutputTokens，以及 tools / toolConfig；Gemini 的 model 由請求 URL 決定。",
+      "trimHintOpenAI": "發送前僅保留 model、messages、max_tokens，以及 stream / tools 等運行必需字段，再應用自定義請求體",
+      "trimHintResponses": "發送前僅保留 model、input、instructions、max_output_tokens，以及 stream / tools 等運行必需字段，再應用自定義請求體",
+      "trimHintAnthropic": "發送前僅保留 model、messages、system、max_tokens，以及 stream / tools 等運行必需字段，再應用自定義請求體",
+      "trimHintGemini": "發送前僅保留 contents、systemInstruction、generationConfig.maxOutputTokens，以及 tools / toolConfig；Gemini 的 model 由請求 URL 決定",
       "placeholder": "例如：\n{\n  \"temperature\": 0.8,\n  \"top_p\": 0.9\n}",
       "invalidJson": "JSON格式錯誤，請檢查語法",
       "validJson": "JSON格式有效",
@@ -714,7 +742,7 @@
   "editProviderSettingsTitle": "服務連線",
   "sections": {
     "acquisition": "新增或匯入模型",
-    "selectionModes": "模型選用模式",
+    "selectionModes": "智慧模式",
     "pool": "全部模型",
     "more": "更多設定"
   },
@@ -727,36 +755,39 @@
     "subscriptions": "訂閱服務",
     "importedSummary": "已匯入 {{providers}} 個服務，共 {{models}} 個模型",
     "noneImported": "尚未匯入訂閱服務",
-    "import": "匯入",
+    "addSubscription": "新增訂閱",
     "importTitle": "匯入訂閱服務",
-    "loadFailed": "無法讀取訂閱服務，請重試。既有模型設定仍會保留。",
-    "noServices": "目前主機沒有可匯入的訂閱服務"
+    "loadFailed": "無法讀取訂閱服務，請重試；既有模型設定仍會保留",
+    "noServices": "目前主機沒有可匯入的訂閱服務",
+    "more": "更多",
+    "noSignedInAccounts": "暫無已登入帳號"
   },
   "selectionModes": {
+    "unavailable": "暫未開放",
     "smart": "智慧模式",
-    "smartHint": "基於 OpenBitFun 自適應路由與多模型協同推理技術，提升經濟效益和任務表現。",
+    "smartHint": "基於 OpenBitFun 自適應路由與多模型協同推理技術，提升經濟效益和任務表現",
     "battery": "電池模式",
-    "batteryHint": "基於多源模型池化與故障轉移技術，額度耗盡或連線失效時自動接力。",
-    "unavailable": "尚未開放"
+    "batteryHint": "基於多源模型池化與故障轉移技術，額度耗盡或連線失效時自動接力",
+    "configure": "設定智慧模式"
   },
   "pool": {
     "manageConnections": "管理連線",
     "search": "搜尋模型、來源或標籤",
     "capabilityFilter": "篩選模型能力",
     "allCapabilities": "全部能力",
-    "recommendationsUnavailable": "推薦標籤服務尚未上線，目前尚未接入同步。你可以先手動為模型新增標籤。",
+    "recommendationsUnavailable": "推薦標籤服務尚未上線，目前尚未接入同步，你可以先手動為模型新增標籤",
     "syncTags": "同步推薦標籤",
     "clearFilter": "清除篩選",
     "noMatches": "沒有符合條件的模型",
-    "empty": "先新增 API 模型或匯入訂閱服務，模型會集中在這裡。",
+    "empty": "先新增 API 模型或匯入訂閱服務，模型會集中在這裡",
     "editTags": "為 {{model}} 新增標籤",
     "tagsLabel": "自訂標籤",
-    "tagsHint": "輸入標籤後按 Enter 新增，最多 {{max}} 個。主力、快速等欄位標籤不占名額。",
+    "tagsHint": "輸入標籤後按 Enter 新增，最多 {{max}} 個；主力、快速等欄位標籤不占名額",
     "tagsPlaceholder": "新增標籤",
     "tagsCount": "{{count}} / {{max}}",
-    "tagsLimitReached": "最多新增 {{max}} 個自訂標籤，移除一個後可繼續新增。",
+    "tagsLimitReached": "最多新增 {{max}} 個自訂標籤，移除一個後可繼續新增",
     "recommendedTags": "既有推薦標籤",
-    "tagsSaveFailed": "標籤儲存失敗，修改已保留，請重試。",
+    "tagsSaveFailed": "標籤儲存失敗，修改已保留，請重試",
     "addTags": "新增標籤",
     "editTag": "編輯標籤「{{tag}}」",
     "removeTag": "移除標籤「{{tag}}」",
@@ -769,6 +800,89 @@
     "acknowledge": "知道了"
   },
   "editConfiguredProviderSubtitle": "更新此服務的 API 位址、金鑰與模型",
+  "billing": {
+    "title": "計費提示",
+    "details": "費用詳情",
+    "unknown": "未知",
+    "api": "API · 按量計費",
+    "subscription": "訂閱 / Coding Plan",
+    "method": "計費方式",
+    "account": "帳號或方案備註",
+    "accountPlaceholder": "僅供辨認，請勿填寫金鑰",
+    "currency": "幣別",
+    "rateUnit": "每百萬 token 的價格；未知請留空，填 0 表示免費",
+    "input": "未命中快取的輸入",
+    "output": "輸出",
+    "cacheRead": "命中快取的輸入",
+    "source": "價格來源 / 方案說明",
+    "sourcePlaceholder": "供應商報價頁、帳單或方案說明",
+    "quoteHint": "以下為你填寫的此供應商設定的報價，並非已核實的帳單；不能僅憑模型名稱確定你的實際價格",
+    "routingScopeHint": "報價和比較僅適用於此設定的基準通道；備援通道和帳戶池中的其他帳戶可能採用不同價格，其實際費用仍未知",
+    "subscriptionAuthHint": "此設定使用帳號登入；登入方式本身不能確定方案、剩餘額度或超額收費規則",
+    "apiAuthHint": "此設定使用 API Key；API Key 也可能對應 Coding Plan，請以供應商的實際計費方式為準",
+    "quotaUnknown": "剩餘額度、重設時間與超額收費未知；方案月費不會換算成 token 單價",
+    "stale": "供應商、模型或憑證已變更，請核對後重新確認價格",
+    "reviewRequired": "待核對",
+    "updated": "手動更新於：{{date}}",
+    "saveFailed": "儲存失敗，連線、模型或計費資訊可能已變更，請關閉後重新開啟，讀取最新設定",
+    "save": "儲存計費資訊",
+    "cancel": "取消",
+    "edit": "編輯價格",
+    "fastHigher": "依此範例用量，快速模型比主力模型更貴，仍可用於提速，但不一定節省費用",
+    "currencyMismatch": "兩者幣別不同；沒有確認匯率時不比較價格",
+    "comparable": "依相同範例用量比較價格，實際費用以請求用量和帳號帳單為準",
+    "incomplete": "實際價格資訊尚不完整；主力、快速表示用途，不代表價格高低",
+    "estimate": "主力 {{primary}} · 快速 {{fast}}",
+    "noPolicy": "此處僅提供計費提示，不執行預算限制，也不授權額外付費備援",
+    "unsupported": "此計費資訊格式暫不支援，原始記錄已保留，請升級應用程式後再編輯",
+    "compactHigher": "快速模型較貴 · 估算",
+    "compactCurrency": "幣別不同",
+    "compactComparable": "查看費用估算",
+    "compactUnknown": "價格待確認",
+    "economyHigher": "依此範例用量，經濟模型比主力模型更貴，建議核對管道價格或更換經濟模型",
+    "economyIncomplete": "實際價格尚未確認；「經濟」表示節省費用的目標，是否更便宜需以管道價格與帳號帳單為準",
+    "economyEstimate": "主力 {{primary}} · 經濟 {{fast}}",
+    "compactEconomyHigher": "經濟模型較貴 · 估算"
+  },
+  "router": {
+    "notOpen": "暫未開放",
+    "title": "智慧模式設定",
+    "service": "Router 服務模型",
+    "serviceHint": "先在模型設定中新增支援分類協定的 API 服務，再於此選擇；一般聊天模型和 Coding Plan 不一定支援",
+    "summary": "輔助摘要",
+    "summaryHint": "開啟後使用經濟模型整理路由歷史，會產生額外模型呼叫",
+    "on": "開啟",
+    "off": "關閉",
+    "unconfigured": "尚未設定",
+    "status": "狀態",
+    "connected": "路由服務連線正常",
+    "connectionChecks": {
+      "router": "路由服務",
+      "checking": "檢查中…",
+      "connected": "連線正常",
+      "failed": "連線失敗",
+      "unconfigured": "尚未設定可用模型"
+    },
+    "connectionFailures": {
+      "protocol": "請選擇支援 OpenAI Chat Completions 且回傳 token IDs 和 logprobs 的分類服務",
+      "authentication": "Router 驗證失敗，請檢查 API Key 和服務存取權限",
+      "addressOrModel": "請檢查 Router 服務位址和模型名稱，介面或模型可能不存在",
+      "rateLimited": "Router 請求受到速率限制，請稍後重試",
+      "serviceUnavailable": "Router 服務暫時無法使用，請稍後重試",
+      "http": "Router 回傳非成功的 HTTP 回應，請檢查服務設定後重試",
+      "network": "無法連線至 Router 或請求逾時，請檢查服務、網路和逾時設定"
+    },
+    "notReady": "路由未就緒",
+    "unsupported": "目前執行端不支援智慧路由",
+    "tokenBudgetUnsupported": "目前執行主機仍需要分詞表檔案，請升級後再設定智慧路由",
+    "checkFailed": "智慧模式設定檢查失敗，請檢查路由服務後重試",
+    "loadFailed": "讀取智慧模式設定失敗，請關閉後重試",
+    "saveFailed": "儲存智慧模式設定失敗，請重試",
+    "configurationChanged": "模型選擇已在其他地方更新，請重新開啟此視窗核對後再儲存或檢查",
+    "manageModels": "管理服務與模型",
+    "test": "儲存並檢查連線",
+    "save": "儲存"
+  },
   "pools": {
     "empty": "暫無模型池",
     "title": "模型池",

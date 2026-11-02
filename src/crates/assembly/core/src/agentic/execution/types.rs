@@ -56,6 +56,7 @@ pub struct ExecutionContext {
 /// Round context
 #[derive(Debug, Clone)]
 pub struct RoundContext {
+    pub context_composition: Option<openbitfun_core_types::UsageContextBreakdown>,
     pub session_id: String,
     pub subagent_parent_info: Option<SubagentParentInfo>,
     pub permission_delegation: Option<PermissionDelegationContext>,

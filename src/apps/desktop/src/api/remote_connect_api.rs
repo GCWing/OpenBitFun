@@ -4,6 +4,7 @@ use crate::embedded_relay_host::DesktopEmbeddedRelayHost;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use openbitfun_core::agentic::tools::account_login_capability::set_account_login_available;
 use openbitfun_core::agentic::tools::page_deploy_host::set_page_deploy_handler;
+use openbitfun_core::agentic::tools::page_manage_host::set_page_manage_handler;
 use openbitfun_core::agentic::tools::page_publish_host::set_page_publish_handler;
 use openbitfun_core::service::dispatch::{
     DispatchAccountDaemonIdentity, DispatchAccountDaemonProvisionRequest,
@@ -34,6 +35,8 @@ use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
+#[cfg(test)]
+mod page_tool_tests;
 mod relay_routes;
 #[cfg(test)]
 mod relay_routes_tests;
@@ -754,6 +757,25 @@ fn sync_account_login_capability(logged_in: bool) {
     set_account_login_available(logged_in);
 }
 
+fn register_page_manage_host() {
+    set_page_manage_handler(Arc::new(|request| {
+        Box::pin(async move {
+            if TOKEN_EXPIRED.load(Ordering::Relaxed) {
+                return Err("Pages account session expired; sign in again".into());
+            }
+            let generation = account_context_generation();
+            let (session, relay_url) = read_account_context_for_generation(generation).await?;
+            openbitfun_core::product_runtime::account_pages::manage_with_account_context(
+                &relay_url,
+                &session.token,
+                request,
+                || account_context_is_current(generation),
+            )
+            .await
+        })
+    }));
+}
+
 fn register_page_deploy_host() {
     set_page_deploy_handler(Arc::new(|slug, version_id| {
         Box::pin(async move {
@@ -1329,6 +1351,96 @@ fn get_service_holder() -> &'static Arc<RwLock<Option<RemoteConnectService>>> {
     RelayRoute::Official.service()
 }
 
+fn bot_control() -> &'static openbitfun_core::service::remote_connect::control::RemoteBotControl {
+    static CONTROL: OnceLock<openbitfun_core::service::remote_connect::control::RemoteBotControl> =
+        OnceLock::new();
+    CONTROL.get_or_init(|| {
+        openbitfun_core::service::remote_connect::control::RemoteBotControl::new(
+            get_service_holder().clone(),
+        )
+    })
+}
+
+/// ProductControl adapter: all mutations execute on this host without requiring
+/// a visible window. Account login remains a separate user-owned flow.
+pub(crate) async fn execute_remote_control(
+    request: openbitfun_product_domains::remote_control::RemoteControlRequest,
+) -> Result<serde_json::Value, String> {
+    use openbitfun_product_domains::remote_control::{
+        RemoteControlMethod as Method, RemoteControlRequest as Request,
+    };
+    use serde_json::json;
+    ensure_service().await?;
+    if matches!(request, Request::Status) {
+        let mut status = bot_control()
+            .status()
+            .await
+            .map_err(|error| error.to_string())?;
+        status["host"] = json!({"kind":"desktop"});
+        status["connections"] = serde_json::to_value(remote_connect_status().await?)
+            .map_err(|error| error.to_string())?;
+        return Ok(status);
+    }
+    // Do not open an unanswerable host-only login dialog from a remote Agent.
+    read_account_context().await.map_err(|_| {
+        "account_required: Sign in to OpenBitFun on the executing Desktop host first".to_string()
+    })?;
+    match request {
+        Request::Start {
+            method: Method::MobileWeb,
+            ..
+        } => {
+            let result = remote_connect_start(StartRemoteConnectRequest {
+                method: "openbitfun_server".into(),
+                lan_ip: None,
+            })
+            .await?;
+            serde_json::to_value(result).map_err(|error| error.to_string())
+        }
+        Request::Start {
+            method: Method::Lan,
+            lan_ip,
+        } => {
+            let result = remote_connect_start(StartRemoteConnectRequest {
+                method: "lan".into(),
+                lan_ip,
+            })
+            .await?;
+            serde_json::to_value(result).map_err(|error| error.to_string())
+        }
+        Request::Stop {
+            method: Method::MobileWeb,
+        } => {
+            remote_connect_stop(Some(StopRemoteConnectRequest {
+                method: "openbitfun_server".into(),
+            }))
+            .await?;
+            Ok(json!({"stopped":true,"method":"mobile_web"}))
+        }
+        Request::Stop {
+            method: Method::Lan,
+        } => {
+            remote_connect_stop(Some(StopRemoteConnectRequest {
+                method: "lan".into(),
+            }))
+            .await?;
+            Ok(json!({"stopped":true,"method":"lan"}))
+        }
+        other => {
+            let generation = account_context_generation();
+            let _account_guard = lock_account_operation(generation).await?;
+            let (session, _) = read_account_context_for_generation(generation).await?;
+            if let Some(service) = get_service_holder().read().await.as_ref() {
+                service.set_bot_account(Some(session.user_id)).await;
+            }
+            bot_control()
+                .execute(other)
+                .await
+                .map_err(|error| error.to_string())
+        }
+    }
+}
+
 /// Called from Tauri setup to register the resolved resource directory path
 /// for the bundled mobile-web files.
 pub fn set_mobile_web_resource_path(path: PathBuf) {
@@ -1375,9 +1487,14 @@ async fn register_delegated_identity_providers() {
     });
 }
 
-pub fn init_on_startup() {
+fn register_page_tool_hosts() {
+    register_page_manage_host();
     register_page_deploy_host();
     register_page_publish_host();
+}
+
+pub fn init_on_startup() {
+    register_page_tool_hosts();
     tokio::spawn(async {
         let startup_generation = account_context_generation();
         // Restore persisted account session (if any) before anything else
@@ -1523,8 +1640,6 @@ fn new_remote_connect_service(config: RemoteConnectConfig) -> anyhow::Result<Rem
 
 /// Restore any bot connections that were previously saved to disk.
 async fn restore_saved_bots() {
-    use openbitfun_core::service::remote_connect::bot;
-
     let generation = account_context_generation();
     let Ok(_account_guard) = lock_account_operation(generation).await else {
         return;
@@ -1532,31 +1647,8 @@ async fn restore_saved_bots() {
     let Ok((session, _)) = read_account_context_for_generation(generation).await else {
         return;
     };
-    let data = bot::load_bot_persistence();
-    if data.connections.is_empty() {
-        return;
-    }
-
-    let holder = get_service_holder();
-    let guard = holder.read().await;
-    let Some(service) = guard.as_ref() else {
-        return;
-    };
-
-    service.set_bot_account(Some(session.user_id.clone())).await;
-    for conn in &data.connections {
-        if !conn.chat_state.paired || conn.account_user_id != session.user_id {
-            continue;
-        }
-        log::info!(
-            "Restoring {} bot connection for chat_id={}",
-            conn.bot_type,
-            conn.chat_id
-        );
-        let result = service.restore_bot(conn).await;
-        if let Err(e) = result {
-            log::warn!("Failed to restore {} bot: {e}", conn.bot_type);
-        }
+    if let Err(error) = bot_control().restore(&session.user_id).await {
+        log::warn!("Failed to restore saved bot state: {error}");
     }
 }
 
@@ -1994,13 +2086,18 @@ pub async fn remote_connect_start(
         let generation = account_context_generation();
         let _account_guard = lock_account_operation(generation).await?;
         let (session, _) = read_account_context_for_generation(generation).await?;
-        let holder = get_service_holder().read().await;
-        let service = holder.as_ref().ok_or("service not initialized")?;
-        service.set_bot_account(Some(session.user_id)).await;
-        return service
-            .start(method)
+        if let Some(service) = get_service_holder().read().await.as_ref() {
+            service.set_bot_account(Some(session.user_id)).await;
+        }
+        let bot_type = match method {
+            ConnectionMethod::BotFeishu => "feishu",
+            ConnectionMethod::BotTelegram => "telegram",
+            _ => "weixin",
+        };
+        return bot_control()
+            .start_connection(bot_type)
             .await
-            .map_err(|e| format!("start remote connect: {e}"));
+            .map_err(|error| error.to_string());
     }
     if matches!(method, ConnectionMethod::Lan { .. }) {
         return relay_routes::start_lan(method).await;
@@ -2069,13 +2166,12 @@ pub async fn remote_connect_stop(request: Option<StopRemoteConnectRequest>) -> R
 
 #[tauri::command]
 pub async fn remote_connect_stop_bot() -> Result<(), String> {
-    let holder = get_service_holder();
-    let guard = holder.read().await;
-    if let Some(service) = guard.as_ref() {
-        service.stop_bots().await;
+    for method in ["weixin", "telegram", "feishu"] {
+        bot_control()
+            .stop(method)
+            .await
+            .map_err(|error| error.to_string())?;
     }
-    // Remove persistence so the bot is not auto-restored
-    bot::update_bot_persistence(|data| data.connections.clear());
     Ok(())
 }
 
@@ -2172,9 +2268,7 @@ pub struct WeixinQrPollRequest {
 
 #[tauri::command]
 pub async fn remote_connect_configure_bot(request: ConfigureBotRequest) -> Result<(), String> {
-    let holder = get_service_holder();
-    let mut guard = holder.write().await;
-
+    ensure_service().await?;
     let bot_config = match request.bot_type.as_str() {
         "feishu" => BotConfig::Feishu {
             app_id: request.app_id.unwrap_or_default(),
@@ -2191,31 +2285,10 @@ pub async fn remote_connect_configure_bot(request: ConfigureBotRequest) -> Resul
         _ => return Err(format!("unknown bot type: {}", request.bot_type)),
     };
 
-    if guard.is_none() {
-        let config = match bot_config {
-            BotConfig::Feishu { .. } => RemoteConnectConfig {
-                mobile_web_dir: detect_mobile_web_dir(),
-                bot_feishu: Some(bot_config),
-                ..RemoteConnectConfig::default()
-            },
-            BotConfig::Telegram { .. } => RemoteConnectConfig {
-                mobile_web_dir: detect_mobile_web_dir(),
-                bot_telegram: Some(bot_config),
-                ..RemoteConnectConfig::default()
-            },
-            BotConfig::Weixin { .. } => RemoteConnectConfig {
-                mobile_web_dir: detect_mobile_web_dir(),
-                bot_weixin: Some(bot_config),
-                ..RemoteConnectConfig::default()
-            },
-        };
-        let service = new_remote_connect_service(config).map_err(|e| format!("init: {e}"))?;
-        *guard = Some(service);
-    } else if let Some(service) = guard.as_mut() {
-        service.update_bot_config(bot_config);
-    }
-
-    Ok(())
+    bot_control()
+        .configure(bot_config)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

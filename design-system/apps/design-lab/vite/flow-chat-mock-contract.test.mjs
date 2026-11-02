@@ -30,9 +30,11 @@ test('conversation bubble geometry and color stay aligned with production', asyn
   ]);
   const preview = block(lab, '.flow-chat-mock__user-bubble');
   const actual = block(product, '.user-message-item');
-  for (const name of ['width', 'max-width', 'padding', 'background', 'border', 'border-radius', 'margin-block', 'margin-inline', 'box-shadow']) {
+  for (const name of ['width', 'max-width', 'padding', 'border', 'border-radius', 'margin-block', 'margin-inline', 'box-shadow']) {
     assert.equal(property(preview, name), property(actual, name), name);
   }
+  // Production paints the fill on its separate submission-motion surface.
+  assert.equal(property(preview, 'background'), property(block(product, '.user-message-item__surface'), 'background'), 'background');
   for (const name of ['--_user-message-radius', '--_user-message-padding-inline', 'margin']) {
     assert.equal(property(block(lab, '.flow-chat-mock__user'), name), property(block(product, '.user-message-item-shell'), name), name);
   }

@@ -51,7 +51,6 @@ const ToolJsonRepairSection: React.FC = () => {
   return (
     <ConfigPageSection
       title={t('toolArgumentJsonRepair.title')}
-      description={t('toolArgumentJsonRepair.description')}
     >
       <ConfigPageRow
         label={t('toolArgumentJsonRepair.label')}

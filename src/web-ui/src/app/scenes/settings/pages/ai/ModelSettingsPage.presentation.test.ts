@@ -19,12 +19,44 @@ describe('ModelSettingsPage presentation', () => {
   it('declares required model fields structurally instead of embedding asterisks in label copy', () => {
     expect(source).not.toMatch(/label=\{`[^`]*\*[^`]*`\}/);
     expect(source.match(/<ConfigPageRow label=\{t\('form\.configName'\)\} required=\{!providerIdentityLocked\}/g)).toHaveLength(1);
-    expect(source.match(/<ConfigPageRow label=\{t\('form\.modelSelection'\)\} required/g)).toHaveLength(1);
+    expect(source).not.toContain("<ConfigPageRow label={t('form.modelSelection')}");
     // Template and custom-provider editors share the required API URL row.
     expect(source.match(/<ConfigPageRow label=\{t\('form\.baseUrl'\)\} required/g)).toHaveLength(1);
     expect(source).toContain('const apiKeyRequired = !isOpenCodeZenApiKeyConfig(editingConfig);');
     expect(source).toContain('<ConfigPageRow label={label} required={apiKeyRequired} align="center" wide>');
     expect(source.match(/required=\{apiKeyRequired\}/g)).toHaveLength(2);
+  });
+
+  it('does not add a second background around the editor account selection and quota', () => {
+    const start = source.indexOf('data-testid="settings-model-account-pool"');
+    const accountPool = source.slice(start, source.indexOf('</FieldGroup>', start));
+
+    expect(start).toBeGreaterThan(-1);
+    expect(accountPool).toContain('<FieldGroup appearance="plain">');
+    expect(accountPool).toContain('settings-model-account-pool-item');
+    expect(accountPool).toContain('<SubscriptionQuotaPanel');
+    expect(accountPool).toContain('<Checkbox');
+    expect(accountPool).not.toContain('<input');
+    expect(accountPool).toContain('account-pool-entry');
+    expect(accountPool).toContain('accountLabel={accountLabel} headerLeading={accountSelection} headerActions={orderActions}');
+    expect(accountPool).toContain("state !== 'connected'");
+    expect(styles).not.toMatch(/&__account-pool-entry\s*{\s*display: grid;/);
+    expect(styles).toMatch(/&__account-pool-choice\s*{\s*flex: none;\s*align-self: center;/);
+    const poolRow = source.slice(start, source.indexOf('const renderSubscriptionAccountRow', start));
+    expect(poolRow).not.toContain('variant="text"');
+    expect(poolRow).not.toContain('subscriptionAuth.pool.singleHint');
+    expect(poolRow).toContain('{selectedAccounts.length > 1 && (');
+  });
+
+  it('keeps inline quota values on the label baseline without nested card surfaces', () => {
+    const quotaStyles = readFileSync(fileURLToPath(new URL('./SubscriptionQuotaPanel.module.scss', import.meta.url)), 'utf8');
+    const compact = quotaStyles.slice(quotaStyles.indexOf('.compact {'), quotaStyles.indexOf('@container'));
+    expect(compact).toContain('align-items: baseline');
+    expect(compact).toContain('background: transparent');
+    expect(compact).toContain('border: 0');
+    expect(compact).toContain('grid-column: 1 / -1');
+    expect(compact).toContain('var(--openbitfun-type-label-md-font-size)');
+    expect(styles).toMatch(/&__account-pool-item\s*{[\s\S]*?flex-wrap: wrap;[\s\S]*?align-items: center;/);
   });
 
   it('preserves the intrinsic width of design-system switches in edit rows', () => {
@@ -38,6 +70,14 @@ describe('ModelSettingsPage presentation', () => {
       /&__custom-headers-row,\s*&__custom-request-body-row\s*\{\s*> \.openbitfun-config-page-row__meta\s*\{\s*width: 100%;\s*max-width: none;/,
     );
     expect(styles).toMatch(/&__inline-header-actions\s*\{[\s\S]*?margin-left: auto;/);
+  });
+
+  it('keeps the per-request image limit inside advanced settings', () => {
+    const advancedStart = source.indexOf('const renderAdvancedSettings = () =>');
+    const imageLimit = source.indexOf('data-testid="settings-model-image-limit"');
+
+    expect(advancedStart).toBeGreaterThan(-1);
+    expect(imageLimit).toBeGreaterThan(advancedStart);
   });
 
   it('keeps subscription actions right-aligned through the shared compact breakpoint', () => {

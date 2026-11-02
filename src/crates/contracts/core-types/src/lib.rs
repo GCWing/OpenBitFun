@@ -18,22 +18,23 @@ pub mod speech;
 pub mod subscription;
 pub mod surface;
 pub mod tool_image_attachment;
+pub mod tool_presentation;
 pub mod worktree;
 
 pub use ai::{
-    AIConfig, ConnectionTestMessageCode, ConnectionTestResult, Message, ModelAccountOrigin,
-    ModelReasoningSummaryPart, ModelRequestContext, ModelResponseReplay, ModelResponseReplayItem,
-    ModelsDevCatalogSource, ModelsDevCatalogStatus, ModelsDevReasoningCatalog,
-    ModelsDevReasoningModel, ModelsDevReasoningProvider, ModelsDevRefreshResult,
-    ModelsDevRefreshStatus, ProviderCatalog, ProviderCatalogEndpoint, ProviderCatalogModel,
-    ProviderCatalogModelCapabilities, ProviderCatalogModelLimits, ProviderCatalogModelPricing,
-    ProviderCatalogModelSource, ProviderCatalogProvider, ProviderCatalogSource,
-    ProviderCatalogUpstreamProvider, ProxyConfig, ReasoningCapabilityStatus,
+    AIConfig, ConnectionTestMessageCode, ConnectionTestResult, ImageDialect, Message,
+    ModelAccountOrigin, ModelReasoningSummaryPart, ModelRequestContext, ModelResponseReplay,
+    ModelResponseReplayItem, ModelsDevCatalogSource, ModelsDevCatalogStatus,
+    ModelsDevReasoningCatalog, ModelsDevReasoningModel, ModelsDevReasoningProvider,
+    ModelsDevRefreshResult, ModelsDevRefreshStatus, ProviderCatalog, ProviderCatalogEndpoint,
+    ProviderCatalogModel, ProviderCatalogModelCapabilities, ProviderCatalogModelLimits,
+    ProviderCatalogModelPricing, ProviderCatalogModelSource, ProviderCatalogProvider,
+    ProviderCatalogSource, ProviderCatalogUpstreamProvider, ProxyConfig, ReasoningCapabilityStatus,
     ReasoningCatalogBinding, ReasoningCatalogProjection, ReasoningCatalogProjectionRequest,
     ReasoningConfig, ReasoningContentKind, ReasoningPreset, ReasoningPresetAction,
     ReasoningPresetDescriptor, ReasoningPresetSource, RemoteModelInfo, RemoteModelRouting,
     ToolCall, ToolCallConfirmationDetails, ToolCallRequestInfo, ToolCallResponseInfo,
-    ToolDefinition,
+    ToolDefinition, MAX_IMAGES_PER_GENERATION_REQUEST,
 };
 pub use errors::{AiErrorDetail, ErrorCategory};
 pub use model::{
@@ -51,6 +52,7 @@ pub use surface::{
     RuntimeArtifactKind, RuntimeArtifactRef, SurfaceKind, ThreadEnvironment, ThreadEnvironmentKind,
 };
 pub use tool_image_attachment::ToolImageAttachment;
+pub use tool_presentation::{PtcLanguage, ToolPresentationMode};
 pub use worktree::{
     SessionExecutionTarget, SessionExecutionTargetKind, SessionExecutionTargetRequest,
     WorktreeError, WorktreeErrorCode, WorktreeLifecycle, WorktreeSessionSummary, WorktreeSettings,
@@ -58,4 +60,5 @@ pub use worktree::{
 };
 
 pub mod workspace;
+pub mod workspace_icon;
 pub use workspace::WorkspaceKind;

@@ -1,6 +1,7 @@
 use super::{common, OpenAIMessageConverter};
 use crate::client::sse::execute_sse_request;
 use crate::client::{AIClient, StreamResponse};
+use crate::providers::reasoning::{self, ReasoningApiFormat};
 use crate::providers::shared;
 use crate::stream::handle_responses_stream;
 use crate::trace::ModelExchangeTraceConfig;
@@ -79,7 +80,7 @@ fn ensure_reasoning_summary_opt_in(request_body: &mut serde_json::Value) {
 }
 
 fn compile_reasoning_action(
-    preset: &ReasoningPresetDescriptor,
+    _preset: &ReasoningPresetDescriptor,
     action: &ReasoningPresetAction,
     body: &mut serde_json::Value,
 ) -> Result<bool> {
@@ -91,18 +92,18 @@ fn compile_reasoning_action(
             body["reasoning"] = serde_json::json!({ "effort": value, "summary": "auto" });
             Ok(true)
         }
-        ReasoningPresetAction::Toggle { enabled }
-            if shared::is_generic_reasoning_preset(preset) =>
-        {
-            body["reasoning"] = serde_json::json!({
-                "effort": if *enabled { "medium" } else { "none" },
-                "summary": "auto"
-            });
-            Ok(true)
-        }
-        ReasoningPresetAction::Toggle { .. } | ReasoningPresetAction::BudgetTokens { .. } => {
-            Ok(false)
-        }
+        ReasoningPresetAction::Toggle { enabled } => reasoning::compile_format_fallback(
+            ReasoningApiFormat::OpenAiResponses,
+            &ReasoningPresetAction::Toggle { enabled: *enabled },
+            body,
+            None,
+        ),
+        ReasoningPresetAction::BudgetTokens { value } => reasoning::compile_format_fallback(
+            ReasoningApiFormat::OpenAiResponses,
+            &ReasoningPresetAction::BudgetTokens { value: *value },
+            body,
+            None,
+        ),
         ReasoningPresetAction::RequestPatch { .. } => {
             unreachable!("patches are compiled by shared code")
         }
@@ -386,6 +387,7 @@ mod tests {
             format: "responses".to_string(),
             context_window: 128_000,
             max_tokens: None,
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

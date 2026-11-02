@@ -54,6 +54,7 @@ async fn host_queue_subagent_conversation_admission_precedes_receipts_and_queue_
                 "Child".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     continuation_policy: policy,
                     ..Default::default()
@@ -738,6 +739,7 @@ fn host_queue_new_prompt_after_stop_supersedes_interruption() {
                                 "Stopped".into(),
                                 "Standard".into(),
                                 SessionConfig {
+                                    tool_presentation_mode: Default::default(),
                                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                                     ..Default::default()
                                 },
@@ -935,6 +937,7 @@ async fn stopped_host_queue_fixture(
             "Stopped".into(),
             "Standard".into(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some(workspace.to_string_lossy().into_owned()),
                 ..Default::default()
             },
@@ -1298,6 +1301,7 @@ fn steering_creates_persisted_user_turns_in_order_without_a_connected_caller() {
                 "Steering history".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },

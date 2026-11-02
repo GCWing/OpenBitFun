@@ -1,0 +1,7 @@
+.browser {
+  display: grid;
+  gap: var(--openbitfun-space-4);
+  min-inline-size: 0;
+}
+
+.filters { flex-wrap: wrap; max-inline-size: 100%; }

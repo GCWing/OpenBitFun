@@ -12,6 +12,7 @@ vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({ api: { invoke: mo
 vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({
   getActiveSurfaceScope: () => ({ surfaceId: mocks.surfaceId, assertCurrent: mocks.assertCurrent }),
   isLocalSurface: (id: string) => id === 'local',
+  isSurfaceChangedError: () => false,
 }));
 vi.mock('@/infrastructure/peer-device/PeerConnectionManager', () => ({
   peerConnectionManager: { get: () => ({ getState: () => ({ capabilities: { inlineImageAttachmentsV1: mocks.advertised } }) }) },
@@ -87,5 +88,19 @@ describe('image payload host ownership', () => {
     expect(mocks.invoke).not.toHaveBeenCalled();
     expect(result?.imageContexts[0].image_path).toBe(dropped.imagePath);
     expect(result?.imageContexts[0].data_url).toBeUndefined();
+  });
+
+  it('requires inline pixels for MiniApps even above the optional history-preview budget', async () => {
+    mocks.invoke.mockResolvedValue('YQ==');
+    const result = await buildImagePayload([{ ...dropped, fileSize: 9 * 1024 * 1024 }], { requireInline: true });
+    expect(result?.imageContexts[0].image_path).toBeUndefined();
+    expect(result?.imageContexts[0].data_url).toBe('data:image/png;base64,YQ==');
+  });
+
+  it('rejects unreadable MiniApp images instead of falling back to path authority', async () => {
+    mocks.invoke.mockRejectedValue(new Error('gone'));
+    await expect(buildImagePayload([dropped], { requireInline: true })).rejects.toThrow('gone');
+    mocks.invoke.mockResolvedValue('');
+    await expect(buildImagePayload([dropped], { requireInline: true })).rejects.toThrow('could not be read');
   });
 });

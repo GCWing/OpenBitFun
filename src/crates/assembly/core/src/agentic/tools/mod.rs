@@ -19,10 +19,14 @@ mod integer_parser;
 pub mod manifest_resolver;
 #[cfg(feature = "tools-miniapp")]
 pub(crate) mod miniapp_context_runtime;
+#[cfg(feature = "tools-miniapp")]
+pub mod miniapp_surface;
 pub mod openbitfun_control_config;
 pub mod openbitfun_control_host;
 #[cfg(feature = "tools-pages")]
 pub mod page_deploy_host;
+#[cfg(feature = "tools-pages")]
+pub mod page_manage_host;
 #[cfg(feature = "tools-pages")]
 pub mod page_publish_host;
 pub mod pipeline;

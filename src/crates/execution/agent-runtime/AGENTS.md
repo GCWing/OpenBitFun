@@ -162,8 +162,8 @@ so `autotests = false` cannot silently omit a new contract.
 
 ## Verification
 
-For next-input suggestion eligibility, plain-text output without text
-post-processing, and cancellation:
+For next-input suggestion eligibility, surrounding whitespace trimming with
+message content preservation, and cancellation:
 
 ```bash
 cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib prompt_suggestion::tests
@@ -173,6 +173,18 @@ Background report decisions and clean empty completion contracts:
 
 ```bash
 cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib scheduler::result_delivery
+```
+
+Router-only incremental context, budgeting, and summary fencing:
+
+```bash
+cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib router_context
+```
+
+Router summary admission, per-session coalescing, cancellation and fairness:
+
+```bash
+cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib router_summary_queue
 ```
 
 Use the focused contract form by default. Run the package-wide form only when a

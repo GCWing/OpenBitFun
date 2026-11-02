@@ -355,14 +355,9 @@ export async function disconnect(page) {
 
 export async function signOut(page) {
   await page.bringToFront();
-  // Open the device directory from the UI if this tab is controlling a host.
+  // Disconnect through settings to reach the account device directory.
   if (!await page.$('.devices-page') && await page.$('.harmony-sidebar__settings')) {
-    await page.click('button[aria-label="Settings"]');
-    await page.waitForSelector('button[aria-label="Devices"]', { visible: true });
-    await page.$eval('button[aria-label="Devices"]', async button => {
-      const sheet = button.closest('[role="dialog"]');
-      if (sheet) await Promise.all(sheet.getAnimations().map(animation => animation.finished));
-    });
+    await disconnect(page);
   }
   const button = await page.$('button[aria-label="Devices"]');
   if (button) { await button.click(); await page.waitForSelector('.devices-page'); }

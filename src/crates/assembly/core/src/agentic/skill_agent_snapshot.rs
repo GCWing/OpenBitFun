@@ -107,7 +107,13 @@ async fn build_skill_agent_snapshot(
     let mut snapshot = TurnSkillAgentSnapshot::default();
 
     if has_tool("Skill") {
-        snapshot.skills = load_skill_entries(workspace, workspace_services, Some(agent_type)).await;
+        snapshot.skills = load_skill_entries(
+            workspace,
+            workspace_services,
+            Some(agent_type),
+            has_tool("generate_image"),
+        )
+        .await;
     }
 
     if has_tool("Task") || has_tool("AgentSpawn") {
@@ -166,6 +172,16 @@ fn build_tool_listing_sections(
         } else {
             None
         },
+        ptc_tool_calling_guide: {
+            #[cfg(feature = "ptc-runtime")]
+            {
+                manifest.ptc_tool_calling_guide.clone()
+            }
+            #[cfg(not(feature = "ptc-runtime"))]
+            {
+                None
+            }
+        },
     }
 }
 
@@ -173,6 +189,7 @@ async fn load_skill_entries(
     workspace: Option<&WorkspaceBinding>,
     workspace_services: Option<&WorkspaceServices>,
     agent_type: Option<&str>,
+    image_generation_available: bool,
 ) -> Vec<SkillSnapshotEntry> {
     let registry = get_skill_registry();
     let skills = match workspace {
@@ -201,10 +218,13 @@ async fn load_skill_entries(
         }
     };
 
-    skills
-        .into_iter()
-        .map(skill_snapshot_entry_from_skill_info)
-        .collect()
+    openbitfun_agent_runtime::skills::filter_implicit_image_skills(
+        skills,
+        image_generation_available,
+    )
+    .into_iter()
+    .map(skill_snapshot_entry_from_skill_info)
+    .collect()
 }
 
 fn skill_snapshot_entry_from_skill_info(skill: SkillInfo) -> SkillSnapshotEntry {
@@ -301,6 +321,8 @@ mod tests {
                 name: "WebFetch".to_string(),
                 short_description: Some("Fetch a web page".to_string()),
             }],
+            #[cfg(feature = "ptc-runtime")]
+            ptc_tool_calling_guide: None,
             catalog_generation: 7,
         };
 

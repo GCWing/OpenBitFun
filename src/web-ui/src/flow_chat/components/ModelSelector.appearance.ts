@@ -4,6 +4,9 @@ export const modelSelectorAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'model-selector',
   parts: [
     { id: 'root' },
+    { id: 'nativePanel' },
+    { id: 'modelInfo' },
+    { id: 'rolePickerList' },
     { id: 'trigger' },
     { id: 'name' },
     { id: 'selectionSummary' },
@@ -11,6 +14,7 @@ export const modelSelectorAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'modeChoices' },
     { id: 'reasoningSummary' },
     { id: 'reasoningSlider' },
+    // Retired decoration hooks remain valid for saved appearance overrides.
     { id: 'reasoningSliderSky' },
     { id: 'reasoningSliderNebula' },
     { id: 'reasoningSliderAurora' },

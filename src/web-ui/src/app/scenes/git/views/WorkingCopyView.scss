@@ -190,3 +190,12 @@
   opacity: 0.7;
   pointer-events: none;
 }
+
+.openbitfun-git-scene-working-copy__overview {
+  margin: auto;
+  padding: var(--openbitfun-space-6);
+  max-inline-size: 640px;
+}
+.openbitfun-git-scene-working-copy__repository-path {
+  overflow-wrap: anywhere;
+}

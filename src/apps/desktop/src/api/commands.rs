@@ -475,6 +475,14 @@ pub struct ListAIModelsByConfigRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TestImageGenerationServiceRequest {
+    /// Draft service, not necessarily saved yet.
+    pub service: openbitfun_core::service::config::types::ImageServiceConfig,
+    /// Optional subject override for the check prompt.
+    pub prompt: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateAppStatusRequest {
     pub status: String,
     pub message: Option<String>,
@@ -1108,6 +1116,7 @@ async fn create_transient_ai_client_for_config(
     );
 
     let mut ai_config: openbitfun_core::util::types::AIConfig = model_config
+        .clone()
         .try_into()
         .map_err(|e| format!("Failed to convert configuration: {}", e))?;
     let skip_ssl_verify = ai_config.skip_ssl_verify;
@@ -1131,7 +1140,7 @@ async fn create_transient_ai_client_for_config(
     .await
     .map_err(|e| format!("Failed to resolve subscription auth: {}", e))?;
 
-    Ok(
+    let client =
         openbitfun_core::infrastructure::ai::client_factory::apply_subscription_request_profile(
             &auth,
             openbitfun_core::infrastructure::ai::AIClient::new_with_runtime_options(
@@ -1139,7 +1148,13 @@ async fn create_transient_ai_client_for_config(
                 proxy_config,
                 stream_options,
             ),
-        ),
+        );
+    Ok(
+        openbitfun_core::infrastructure::ai::client_factory::apply_model_default_reasoning(
+            client,
+            &model_config,
+        )
+        .await,
     )
 }
 
@@ -1236,6 +1251,35 @@ pub async fn test_ai_config_connection(
             Err(format!("Connection test failed: {}", e))
         }
     }
+}
+
+/// Runs one real generation against an image service draft so the settings page
+/// can confirm the dialect, credentials and endpoint actually work together.
+#[tauri::command]
+pub async fn test_image_generation_service(
+    request: TestImageGenerationServiceRequest,
+) -> Result<openbitfun_core::agentic::image_generation::ImageServiceTestOutcome, String> {
+    const DEFAULT_PROMPT: &str =
+        "A cute minimalist mascot icon with a rounded-rectangle body, two small friendly oval eyes, and a short top antenna ending in a round joystick knob. Use a playful, harmonious color palette selected randomly for each generation, with no fixed colors. Centered composition, clean uncluttered background, polished product illustration.";
+
+    let prompt = request
+        .prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
+        .unwrap_or(DEFAULT_PROMPT);
+    let dialect = request.service.dialect;
+    let service_id = request.service.id.clone();
+
+    let outcome =
+        openbitfun_core::agentic::image_generation::test_service(&request.service, prompt).await;
+
+    info!(
+        "Image generation service test completed: service={}, dialect={:?}, success={}, elapsed={}ms",
+        service_id, dialect, outcome.success, outcome.elapsed_ms
+    );
+
+    Ok(outcome)
 }
 
 #[tauri::command]
@@ -6213,4 +6257,23 @@ mod quota_request_compatibility_tests {
         assert_eq!(request.model_id.as_deref(), Some("fixture"));
         assert_eq!(request.account_id, "model:fixture");
     }
+}
+
+#[tauri::command]
+pub async fn get_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::WorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state
+        .workspace_service
+        .get_workspace_icon(&request.workspace_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn set_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::SetWorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state.workspace_service.set_workspace_icon(request).await
 }

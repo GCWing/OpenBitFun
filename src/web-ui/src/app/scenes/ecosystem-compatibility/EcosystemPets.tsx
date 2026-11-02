@@ -140,8 +140,11 @@ export default function EcosystemPets({ supported, refreshVersion, open, onOpenC
         </ScrollArea>
       </DialogBody>
     </Dialog>
-    <Dialog open={supported && !!review} onOpenChange={(open) => { if (!open && !busy) setReview(null); }}>
-      <DialogHeader><DialogTitle>{t('content.pets.reviewTitle')}</DialogTitle></DialogHeader>
+    <Dialog open={supported && !!review} onOpenChange={(open) => { if (!open && !busy) setReview(null); }} closeOnEscape={!busy} closeOnPointerOutside={!busy}>
+      <DialogHeader>
+        <DialogHeading><DialogTitle>{t('content.pets.reviewTitle')}</DialogTitle></DialogHeading>
+        <DialogHeaderActions>{!busy ? <DialogClose /> : null}</DialogHeaderActions>
+      </DialogHeader>
       <DialogBody>{review && supported ? <div className="ecosystem-compatibility__content-detail">
         <img className="ecosystem-compatibility__pet-preview" src={review.previewDataUrl} alt={review.pet.displayName} />
         <strong>{review.pet.displayName}</strong><p>{t(review.builtinId ? 'content.pets.builtinSource' : 'content.pets.customSource')}</p><p>{review.pet.packagePath}</p><p>{t('content.pets.reviewDescription')}</p>

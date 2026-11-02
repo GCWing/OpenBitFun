@@ -1,6 +1,9 @@
 @layer openbitfun.components {
   .root {
-    --_floating-action-host-height: var(--openbitfun-control-height-sm);
+    --_capsule-height: var(--openbitfun-control-height-sm);
+    --_capsule-padding-inline: var(--openbitfun-space-4);
+    --_capsule-inline-direction: 1;
+    --_floating-action-host-height: var(--_capsule-height);
     display: inline-flex;
     flex: 0 1 auto;
     align-items: center;
@@ -8,7 +11,101 @@
     max-inline-size: 100%;
   }
 
-  .root[data-size="xs"] { --_floating-action-host-height: var(--openbitfun-control-button-xs-height); }
-  .root[data-size="md"] { --_floating-action-host-height: var(--openbitfun-control-height-md); }
-  .root[data-size="lg"] { --_floating-action-host-height: var(--openbitfun-control-height-lg); }
+  .root[data-size="xs"] {
+    --_capsule-height: var(--openbitfun-control-button-xs-height);
+    --_capsule-padding-inline: var(--openbitfun-control-button-xs-padding-inline);
+  }
+
+  .root[data-size="md"] {
+    --_capsule-height: var(--openbitfun-control-height-md);
+    --_capsule-padding-inline: var(--openbitfun-space-5);
+  }
+
+  .root[data-size="lg"] {
+    --_capsule-height: var(--openbitfun-control-height-lg);
+    --_capsule-padding-inline: var(--openbitfun-space-6);
+  }
+
+  .root:dir(rtl) { --_capsule-inline-direction: -1; }
+
+  .root[data-layout="split"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    inline-size: 100%;
+  }
+
+  .root[data-layout="split"][data-split-sizing="content"] {
+    grid-template-columns: repeat(2, max-content);
+    inline-size: max-content;
+  }
+
+  .root[data-layout="split"] > [data-openbitfun-component="select"],
+  .root[data-layout="split"] > [data-openbitfun-component="button"] {
+    min-inline-size: 0;
+    inline-size: 100%;
+  }
+
+  .root[data-layout="split"][data-split-sizing="content"] > [data-openbitfun-component="select"],
+  .root[data-layout="split"][data-split-sizing="content"] > [data-openbitfun-component="button"] {
+    inline-size: max-content;
+    max-inline-size: 100%;
+  }
+
+  /* Match the Select fill to Button's inset fill without changing control size. */
+  .root[data-layout="split"] > [data-openbitfun-component="select"] > [data-openbitfun-part="trigger"] {
+    border-color: transparent;
+    background-clip: padding-box;
+  }
+
+  .root[data-layout="split"] > :first-child,
+  .root[data-layout="split"] > :first-child > [data-openbitfun-part="trigger"] {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+    border-inline-end-width: 0;
+  }
+
+  .root[data-layout="split"] > :last-child,
+  .root[data-layout="split"] > :last-child > [data-openbitfun-part="trigger"] {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    border-inline-start-width: 0;
+  }
+
+  /* Reserve space inside the Button's surface, leaving inter-capsule gaps intact. */
+  .root[data-action-placement="reserved"] {
+    --_capsule-action-padding: calc(
+      (var(--_capsule-height) + var(--openbitfun-control-icon-button-xs-size)) / 2
+      + var(--openbitfun-space-1)
+    );
+  }
+
+  .root[data-action-placement="reserved"] > [data-openbitfun-component="button"] {
+    padding-inline: var(--_capsule-padding-inline) var(--_capsule-action-padding);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    /* Only the content moves; the pill and its action keep fixed hit areas. */
+    .root[data-action-placement="reserved"] > [data-openbitfun-component="button"] > [data-openbitfun-part="content"] {
+      transform: translateX(calc(
+        (var(--_capsule-action-padding) - var(--_capsule-padding-inline)) / 2
+        * var(--_capsule-inline-direction)
+      ));
+      transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+    }
+
+    .root[data-action-placement="reserved"]:is(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) > [data-openbitfun-component="button"] > [data-openbitfun-part="content"] {
+      transform: none;
+    }
+  }
+
+  .root[data-action-placement="reserved"]:is(:focus-visible, :has(:focus-visible), [data-openbitfun-preview-state="focus-visible"]) > [data-openbitfun-component="button"] > [data-openbitfun-part="content"],
+  .root:is(:focus-visible, :has(:focus-visible), [data-openbitfun-preview-state="focus-visible"]) > .reservedAction > button {
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .root[data-action-placement="reserved"] > [data-openbitfun-component="button"] > [data-openbitfun-part="content"] {
+      transition: none;
+    }
+  }
 }

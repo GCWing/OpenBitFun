@@ -30,6 +30,8 @@ const MAX_NOTE_CHARS: usize = 4_000;
 const MAX_CHECKLIST_ITEMS: usize = 50;
 const MAX_CHECKLIST_ITEM_CHARS: usize = 300;
 const MAX_METRIC_ITEMS: usize = 12;
+const MAX_CHART_CAPTION_CHARS: usize = 300;
+const MAX_CHART_KEY_CHARS: usize = 64;
 const MAX_CUSTOM_HTML_BYTES: usize = 96 * 1024;
 const MAX_DATA_BYTES: usize = 64 * 1024;
 const MAX_URL_CHARS: usize = 2_048;
@@ -41,6 +43,7 @@ pub const DESKTOP_CARD_ICONS: &[&str] = &[
     "alarm",
     "bell",
     "calendar",
+    "chart",
     "check",
     "clock",
     "cloud",
@@ -49,10 +52,12 @@ pub const DESKTOP_CARD_ICONS: &[&str] = &[
     "flag",
     "git-pull-request",
     "globe",
+    "hard-drive",
     "info",
     "list",
     "note",
     "package",
+    "pie-chart",
     "rocket",
     "server",
     "star",
@@ -74,6 +79,19 @@ const METRIC_FORMATS: &[&str] = &[
     "datetime",
     "relativeTime",
 ];
+
+/// Chart styles with the most static items each accepts. Bound data arrays
+/// are trimmed to the same limits when the card renders.
+pub const DESKTOP_CARD_CHART_STYLES: &[(&str, usize)] = &[
+    ("bar", 12),
+    ("column", 24),
+    ("line", 120),
+    ("donut", 6),
+    ("stacked", 6),
+];
+
+const CHART_VALUE_FORMATS: &[&str] = &["number", "percent", "currency"];
+const CHART_LABEL_FORMATS: &[&str] = &["text", "date", "time", "weekday", "datetime"];
 
 fn default_true() -> bool {
     true
@@ -147,6 +165,65 @@ pub struct DesktopCardMetricItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopCardChartItem {
+    pub label: String,
+    pub value: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopCardChart {
+    /// Style such as `bar` or `donut`; see [`DESKTOP_CARD_CHART_STYLES`]. Stored
+    /// records may carry a style from a newer build, which the renderer reports
+    /// as unsupported.
+    pub chart: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<DesktopCardChartItem>,
+    /// JSON Pointer to an array in the card data: numbers, `[label, value]`
+    /// pairs, or objects read through `labelKey` / `valueKey` / `hintKey`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items_path: Option<String>,
+    /// JSON Pointer to labels parallel to a numeric `itemsPath` array.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labels_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint_key: Option<String>,
+    /// Whole that the items are part of; the uncovered rest is drawn as the remainder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remainder_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digits: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    /// Chart fields written by newer builds survive a rewrite by this build.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum DesktopCardTemplateKind {
     #[serde(rename_all = "camelCase")]
@@ -167,7 +244,9 @@ pub enum DesktopCardTemplateKind {
         items: Vec<DesktopCardChecklistItem>,
     },
     #[serde(rename_all = "camelCase")]
-    Note { text: String },
+    Note {
+        text: String,
+    },
     #[serde(rename_all = "camelCase")]
     Progress {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,10 +269,15 @@ pub enum DesktopCardTemplateKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         layout: Option<String>,
     },
+    Chart(Box<DesktopCardChart>),
     #[serde(rename_all = "camelCase")]
-    CronJob { job_id: String },
+    CronJob {
+        job_id: String,
+    },
     #[serde(rename_all = "camelCase")]
-    Custom { html: String },
+    Custom {
+        html: String,
+    },
 }
 
 impl DesktopCardTemplateKind {
@@ -204,6 +288,7 @@ impl DesktopCardTemplateKind {
             Self::Note { .. } => "note",
             Self::Progress { .. } => "progress",
             Self::Metrics { .. } => "metrics",
+            Self::Chart(_) => "chart",
             Self::CronJob { .. } => "cronJob",
             Self::Custom { .. } => "custom",
         }
@@ -216,6 +301,12 @@ impl DesktopCardTemplateKind {
             Self::Note { .. } => (280.0, 200.0),
             Self::Progress { .. } => (280.0, 150.0),
             Self::Metrics { .. } => (300.0, 210.0),
+            Self::Chart(chart) => match chart.chart.as_str() {
+                "bar" => (320.0, 280.0),
+                "donut" => (320.0, 220.0),
+                "stacked" => (320.0, 240.0),
+                _ => (320.0, 210.0),
+            },
             Self::CronJob { .. } => (280.0, 170.0),
             Self::Custom { .. } => (320.0, 240.0),
         };
@@ -580,6 +671,17 @@ pub fn desktop_card_template_paths(template: &DesktopCardTemplateKind) -> Vec<(S
                 }
             }
         }
+        DesktopCardTemplateKind::Chart(chart) => {
+            for (field, path) in [
+                ("itemsPath", &chart.items_path),
+                ("labelsPath", &chart.labels_path),
+                ("totalPath", &chart.total_path),
+            ] {
+                if let Some(path) = path {
+                    paths.push((field.to_string(), path.clone()));
+                }
+            }
+        }
         _ => {}
     }
     paths
@@ -845,6 +947,9 @@ pub fn validate_template(
                 layout,
             })
         }
+        DesktopCardTemplateKind::Chart(chart) => Ok(DesktopCardTemplateKind::Chart(Box::new(
+            validate_chart(*chart)?,
+        ))),
         DesktopCardTemplateKind::CronJob { job_id } => Ok(DesktopCardTemplateKind::CronJob {
             job_id: required_text("cronJob jobId", &job_id, 200)?,
         }),
@@ -861,6 +966,157 @@ pub fn validate_template(
             Ok(DesktopCardTemplateKind::Custom { html })
         }
     }
+}
+
+fn validate_chart_key(field: &str, key: Option<&str>) -> Result<Option<String>, String> {
+    match key.map(str::trim) {
+        None => Ok(None),
+        Some("") => Err(format!("chart {field} must not be empty")),
+        Some(key) if key.starts_with('/') => Err(format!(
+            "chart {field} `{key}` is a property name inside each array element, not a JSON Pointer; drop the leading /"
+        )),
+        Some(key) if char_len(key) > MAX_CHART_KEY_CHARS => Err(format!(
+            "chart {field} must be at most {MAX_CHART_KEY_CHARS} characters"
+        )),
+        Some(key) => Ok(Some(key.to_string())),
+    }
+}
+
+fn validate_chart(chart: DesktopCardChart) -> Result<DesktopCardChart, String> {
+    let style = chart.chart.trim().to_string();
+    let Some((_, max_items)) = DESKTOP_CARD_CHART_STYLES
+        .iter()
+        .find(|(candidate, _)| *candidate == style)
+    else {
+        return Err(format!(
+            "chart `{style}` is not supported; template.chart must be one of: {}",
+            DESKTOP_CARD_CHART_STYLES
+                .iter()
+                .map(|(style, _)| *style)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    };
+    let max_items = *max_items;
+    let is_line = style == "line";
+    let part_of_whole = matches!(style.as_str(), "donut" | "stacked");
+
+    match (chart.items.is_empty(), chart.items_path.is_some()) {
+        (true, false) => {
+            return Err(format!(
+                "chart requires template.items (static [{{label, value}}]) or template.itemsPath (JSON Pointer to an array in the card data), for example {{\"kind\":\"chart\",\"chart\":\"{style}\",\"items\":[{{\"label\":\"Cache\",\"value\":4.4}}]}}"
+            ))
+        }
+        (false, true) => {
+            return Err(
+                "chart takes either template.items or template.itemsPath, not both".to_string(),
+            )
+        }
+        _ => {}
+    }
+    if chart.items.len() > max_items {
+        let advice = if part_of_whole {
+            " Merge the smallest parts into one \"Other\" item, or set total so the uncovered rest is drawn automatically."
+        } else {
+            " Keep the largest items, or use another chart style."
+        };
+        return Err(format!(
+            "{style} charts take at most {max_items} items.{advice}"
+        ));
+    }
+    if is_line && chart.items.len() == 1 {
+        return Err(
+            "line charts need at least 2 points; use metrics for a single value".to_string(),
+        );
+    }
+    if chart.labels_path.is_some() && chart.items_path.is_none() {
+        return Err("chart labelsPath requires itemsPath".to_string());
+    }
+
+    let mut items = Vec::with_capacity(chart.items.len());
+    for item in chart.items {
+        let label = required_text("chart item label", &item.label, MAX_TITLE_CHARS)?;
+        if !item.value.is_finite() {
+            return Err(format!(
+                "chart item `{label}` value must be a finite number"
+            ));
+        }
+        if item.value < 0.0 && !is_line {
+            return Err(format!(
+                "chart item `{label}` value must not be negative for {style} charts; only line charts plot negative values"
+            ));
+        }
+        items.push(DesktopCardChartItem {
+            tone: validate_tone("chart item tone", item.tone.as_deref())?,
+            hint: optional_text("chart item hint", item.hint.as_deref(), MAX_SUBTITLE_CHARS)?,
+            label,
+            value: item.value,
+        });
+    }
+
+    if chart
+        .total
+        .is_some_and(|total| !total.is_finite() || total <= 0.0)
+    {
+        return Err("chart total must be a positive number".to_string());
+    }
+    if chart.total.is_some() && chart.total_path.is_some() {
+        return Err("chart takes either total or totalPath, not both".to_string());
+    }
+    if (chart.total.is_some() || chart.total_path.is_some()) && is_line {
+        return Err(
+            "line charts do not use total; it applies to bar, column, donut, and stacked charts"
+                .to_string(),
+        );
+    }
+    if let Some(format) = chart.format.as_deref() {
+        if !CHART_VALUE_FORMATS.contains(&format) {
+            return Err(format!(
+                "chart format `{format}` is not supported; use one of: {}",
+                CHART_VALUE_FORMATS.join(", ")
+            ));
+        }
+    }
+    if let Some(format) = chart.label_format.as_deref() {
+        if !CHART_LABEL_FORMATS.contains(&format) {
+            return Err(format!(
+                "chart labelFormat `{format}` is not supported; use one of: {}",
+                CHART_LABEL_FORMATS.join(", ")
+            ));
+        }
+    }
+    if chart.digits.is_some_and(|digits| digits > 8) {
+        return Err("chart digits must be at most 8".to_string());
+    }
+
+    Ok(DesktopCardChart {
+        chart: style,
+        items,
+        items_path: validate_pointer("chart itemsPath", chart.items_path.as_deref())?,
+        labels_path: validate_pointer("chart labelsPath", chart.labels_path.as_deref())?,
+        label_key: validate_chart_key("labelKey", chart.label_key.as_deref())?,
+        value_key: validate_chart_key("valueKey", chart.value_key.as_deref())?,
+        hint_key: validate_chart_key("hintKey", chart.hint_key.as_deref())?,
+        total: chart.total,
+        total_path: validate_pointer("chart totalPath", chart.total_path.as_deref())?,
+        remainder_label: optional_text(
+            "chart remainderLabel",
+            chart.remainder_label.as_deref(),
+            MAX_TITLE_CHARS,
+        )?,
+        format: chart.format,
+        digits: chart.digits,
+        currency: optional_text("chart currency", chart.currency.as_deref(), 8)?,
+        prefix: chart.prefix,
+        suffix: chart.suffix,
+        label_format: chart.label_format,
+        caption: optional_text(
+            "chart caption",
+            chart.caption.as_deref(),
+            MAX_CHART_CAPTION_CHARS,
+        )?,
+        extra: Map::new(),
+    })
 }
 
 pub fn validate_data_source(
@@ -1132,6 +1388,197 @@ mod tests {
             text: "x".to_string()
         })
         .is_empty());
+    }
+
+    fn chart(value: Value) -> Result<DesktopCardTemplateKind, String> {
+        serde_json::from_value::<DesktopCardTemplateKind>(value)
+            .map_err(|error| error.to_string())
+            .and_then(validate_template)
+    }
+
+    #[test]
+    fn chart_templates_validate_and_normalize() {
+        let template = chart(json!({
+            "kind": "chart",
+            "chart": " stacked ",
+            "total": 906,
+            "remainderLabel": " Free ",
+            "suffix": " GB",
+            "items": [
+                { "label": " WeChat ", "value": 62.7, "tone": "warning", "hint": " Clean inside WeChat " },
+                { "label": "Other", "value": 249.3 }
+            ],
+            "caption": " Nothing was deleted. "
+        }))
+        .unwrap();
+        let DesktopCardTemplateKind::Chart(chart_template) = &template else {
+            panic!("chart expected");
+        };
+        assert_eq!(chart_template.chart, "stacked");
+        assert_eq!(chart_template.items[0].label, "WeChat");
+        assert_eq!(
+            chart_template.items[0].hint.as_deref(),
+            Some("Clean inside WeChat")
+        );
+        assert_eq!(chart_template.remainder_label.as_deref(), Some("Free"));
+        assert_eq!(chart_template.suffix.as_deref(), Some(" GB"));
+        assert_eq!(
+            chart_template.caption.as_deref(),
+            Some("Nothing was deleted.")
+        );
+        assert_eq!(template.kind(), "chart");
+        assert_eq!(
+            template.default_size(),
+            DesktopCardSize {
+                width: 320.0,
+                height: 240.0
+            }
+        );
+
+        let bound = chart(json!({
+            "kind": "chart",
+            "chart": "line",
+            "itemsPath": "/close",
+            "labelsPath": "/timestamp",
+            "labelFormat": "date",
+            "format": "currency",
+            "currency": "USD"
+        }))
+        .unwrap();
+        let paths = desktop_card_template_paths(&bound)
+            .into_iter()
+            .map(|(field, path)| format!("{field}={path}"))
+            .collect::<Vec<_>>();
+        assert_eq!(paths, ["itemsPath=/close", "labelsPath=/timestamp"]);
+        assert!(chart(json!({
+            "kind": "chart",
+            "chart": "line",
+            "items": [{ "label": "Mon", "value": -2.5 }, { "label": "Tue", "value": 1 }]
+        }))
+        .is_ok());
+    }
+
+    #[test]
+    fn chart_templates_reject_unusable_shapes() {
+        let item = json!({ "label": "a", "value": 1 });
+        let cases = [
+            (
+                json!({ "kind": "chart", "chart": "radar", "items": [item] }),
+                "must be one of: bar, column, line, donut, stacked",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar" }),
+                "requires template.items",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [item], "itemsPath": "/rows" }),
+                "not both",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "donut", "items": [{ "label": "a", "value": -1 }] }),
+                "must not be negative",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "stacked", "items": vec![item.clone(); 7] }),
+                "Merge the smallest parts",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": vec![item.clone(); 13] }),
+                "at most 12 items",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "line", "items": [item] }),
+                "at least 2 points",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [item], "total": 0 }),
+                "total must be a positive number",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [item], "total": 5, "totalPath": "/t" }),
+                "either total or totalPath",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "line", "itemsPath": "/v", "total": 5 }),
+                "line charts do not use total",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "itemsPath": "/rows", "labelKey": "/name" }),
+                "drop the leading /",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [item], "labelsPath": "/l" }),
+                "labelsPath requires itemsPath",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "itemsPath": "rows" }),
+                "must be a JSON Pointer",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [item], "format": "datetime" }),
+                "chart format `datetime` is not supported",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [item], "labelFormat": "month" }),
+                "chart labelFormat `month` is not supported",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [{ "label": "a", "value": 1, "tone": "pink" }] }),
+                "chart item tone `pink`",
+            ),
+            (
+                json!({ "kind": "chart", "chart": "bar", "items": [{ "label": " ", "value": 1 }] }),
+                "chart item label must not be empty",
+            ),
+        ];
+        for (template, expected) in cases {
+            let error = chart(template.clone()).unwrap_err();
+            assert!(error.contains(expected), "{template}: {error}");
+        }
+    }
+
+    #[test]
+    fn chart_records_round_trip_and_tolerate_newer_styles() {
+        let mut value = record_json();
+        value["template"] = json!({
+            "kind": "chart",
+            "chart": "bar",
+            "items": [{ "label": "npm", "value": 4.12, "hint": "npm cache clean --force" }],
+            "suffix": " GB"
+        });
+        let record: DesktopCardRecord = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(record.template.kind(), "chart");
+        assert!(record.template.known().is_some());
+        assert_eq!(
+            serde_json::to_value(&record).unwrap()["template"],
+            value["template"]
+        );
+
+        value["template"] = json!({
+            "kind": "chart",
+            "chart": "radar",
+            "axes": [{ "label": "speed", "max": 10 }],
+            "items": [{ "label": "a", "value": 3.5 }]
+        });
+        let record: DesktopCardRecord = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(record.template.kind(), "chart");
+        assert_eq!(
+            serde_json::to_value(&record).unwrap()["template"],
+            value["template"]
+        );
+        assert!(validate_template(record.template.known().unwrap().clone()).is_err());
+
+        let template = chart(json!({
+            "kind": "chart",
+            "chart": "bar",
+            "items": [{ "label": "a", "value": 1 }],
+            "sort": "desc"
+        }))
+        .unwrap();
+        assert!(serde_json::to_value(&template)
+            .unwrap()
+            .get("sort")
+            .is_none());
     }
 
     #[test]

@@ -171,7 +171,8 @@ extension MobileAppModel {
                     directoryExpanded: directory?.expanded ?? false,
                     directoryStatus: directory?.status.name ?? "IDLE",
                     remoteConnectionId: workspace.remoteConnectionId,
-                    remoteSshHost: workspace.remoteSshHost
+                    remoteSshHost: workspace.remoteSshHost,
+                    kind: workspace.kind
                 )
             }
             return MobileDeviceDirectoryEntry(
@@ -186,7 +187,7 @@ extension MobileAppModel {
                 recentWorkspaces: entry.recentWorkspaces.map { workspace in
                     MobileWorkspaceGroup(workspaceId: workspace.workspaceId, path: workspace.path, name: workspace.displayName,
                         selected: false, sessions: [], deviceKey: deviceKey,
-                        remoteConnectionId: workspace.remoteConnectionId, remoteSshHost: workspace.remoteSshHost)
+                        remoteConnectionId: workspace.remoteConnectionId, remoteSshHost: workspace.remoteSshHost, kind: workspace.kind)
                 }
             )
         }
@@ -811,7 +812,8 @@ extension MobileAppModel {
                         directoryExpanded: workspace.directoryExpanded,
                         directoryStatus: workspace.directoryStatus,
                         remoteConnectionId: workspace.remoteConnectionId,
-                        remoteSshHost: workspace.remoteSshHost
+                        remoteSshHost: workspace.remoteSshHost,
+                        kind: workspace.kind
                     )
                 },
                 sessions: device.sessions.filter { !succeeded.contains($0.id) },
@@ -1371,7 +1373,8 @@ extension MobileAppModel {
                 selected: workspace.selected,
                 sessions: remoteSessions.filter { ownedIDs.contains($0.id) },
                 remoteConnectionId: workspace.remoteConnectionId,
-                remoteSshHost: workspace.remoteSshHost
+                remoteSshHost: workspace.remoteSshHost,
+                kind: workspace.kind
             )
         }
         setPublishedIfChanged(\.remoteWorkspaces, to: projectedWorkspaces)

@@ -9,6 +9,12 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const MINIAPP_CUSTOM_CHROME_CAPABILITY: &str = "miniapp_custom_chrome_v1";
 pub const MINIAPP_CHAT_SNAPSHOT_CAPABILITY: &str = "miniapp_chat_snapshot_v1";
+/// The Shell can relay the Agent's bridge requests into the MiniApp frame it is
+/// presenting. Advertised at `open` so an older Shell never receives a request it
+/// cannot answer, and so the host only routes to windows that can take them.
+pub const MINIAPP_AGENT_BRIDGE_CAPABILITY: &str = "miniapp_agent_bridge_v1";
+/// One relayed request or answer, bounded like every other host frame.
+pub const MINIAPP_AGENT_MESSAGE_MAX_BYTES: usize = 32 * 1024;
 
 const MAX_FRAME: usize = 16 * 1024 * 1024;
 

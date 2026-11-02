@@ -445,6 +445,30 @@ describe('AgentCompanionDesktopPet', () => {
     expect(menu!.style.visibility).toBe('visible');
   });
 
+  it('re-requests the dock size when the host leaves the viewport too narrow', async () => {
+    pushActivity({ mood: 'working', tasks: [task()], sequence: 1, emittedAt: 1 });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', {
+      width: 288,
+      height: 102,
+    });
+    invokeMock.mockClear();
+
+    // A full-size viewport needs nothing more.
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    expect(invokeMock).not.toHaveBeenCalledWith('resize_agent_companion_desktop_pet', expect.anything());
+
+    // The bottom-right anchored dock would be clipped on the left at this width.
+    vi.stubGlobal('innerWidth', 96);
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    expect(invokeMock).toHaveBeenLastCalledWith('resize_agent_companion_desktop_pet', {
+      width: 288,
+      height: 102,
+    });
+  });
+
   it('does not resize the window for a context menu', async () => {
     pushActivity({ mood: 'working', tasks: [task()], sequence: 1, emittedAt: 1 });
     // Let the bubble's own resize request settle before watching for new ones.

@@ -230,6 +230,7 @@ function createContext(
       state = { ...state, activeSessionId: sessionId };
     }),
     loadSessionHistory: vi.fn(),
+    ensureSessionFullHistory: vi.fn(async () => true),
     ensurePersistedSessionMetadata: vi.fn(async () => true),
     getCascadeSessionIds: vi.fn((sessionId: string) => (
       options?.getCascadeSessionIdsImpl?.(sessionId) ?? [sessionId]
@@ -994,6 +995,32 @@ describe('SessionModule historical session coordination', () => {
 
     load.resolve();
     await load.promise;
+  });
+
+  it('completes a ready partial session after switching back to its in-memory tail', async () => {
+    const session = createSession({
+      isHistorical: false,
+      historyState: 'ready',
+      isPartial: true,
+      dialogTurns: [{
+        id: 'turn-tail',
+        userMessage: { id: 'user-turn-tail', content: 'Latest prompt', timestamp: 1 },
+        modelRounds: [{ items: [{ type: 'text', text: 'Latest answer' }] }],
+        status: 'completed',
+      } as any],
+      loadedTurnCount: 1,
+      totalTurnCount: 20,
+    });
+    const { context, flowChatStore } = createContext(session, { activeSessionId: 'other-session' });
+    persistenceMocks.touchSessionActivity.mockResolvedValue(undefined);
+
+    await switchChatSession(context, session.sessionId);
+
+    expect(flowChatStore.switchSession).toHaveBeenCalledWith(session.sessionId);
+    expect(flowChatStore.ensureSessionFullHistory).toHaveBeenCalledWith(
+      session.sessionId,
+      'session-switch',
+    );
   });
 
   it('touches only the latest active session during rapid switches', async () => {

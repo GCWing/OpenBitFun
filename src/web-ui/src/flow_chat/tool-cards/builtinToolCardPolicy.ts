@@ -3,7 +3,7 @@ import { getRuntimeToolInput, runtimeToolRecord } from './runtimeToolCardModel';
 
 export const SEMANTIC_BUILTIN_TOOL_NAMES = [
   'get_goal', 'create_goal', 'update_goal', 'AgentList', 'AgentDelete', 'SessionHistory',
-  'analyze_image', 'GetTime', 'ListMCPResources', 'ReadMCPResource', 'ListMCPPrompts', 'GetMCPPrompt',
+  'analyze_image', 'generate_image', 'GetTime', 'ListMCPResources', 'ReadMCPResource', 'ListMCPPrompts', 'GetMCPPrompt',
   'Worktree', 'PortForward', 'ReviewPlatform', 'FrontendWorkbench', 'FinalizeMiniApp',
   'PublishMiniApp', 'PublishAppearance', 'Playbook', 'DesktopCard',
 ] as const;

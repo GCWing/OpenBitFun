@@ -5,22 +5,20 @@
 
 import { createLogger } from '@/shared/utils/logger';
 import { isMcpToolName } from '@/infrastructure/mcp/toolName';
-import type { ToolNameForOwner } from '@openbitfun/flow-chat-presentation/registry';
+import type { CompatibilityToolNameForOwner, ToolNameForOwner } from '@openbitfun/flow-chat-presentation/registry';
 import type { JSXElementConstructor } from 'react';
 import type { ToolCardProps } from '../types/flow-chat';
 
-type CompatibilityStandardToolName = 'AgentInterrupt' | 'AgentDelete';
-type CompatibilityProductToolName = 'Task';
 type StandardToolCardRegistry = Record<
   ToolNameForOwner<'standard'>,
   JSXElementConstructor<ToolCardProps>
 > &
-  Partial<Record<CompatibilityStandardToolName, JSXElementConstructor<ToolCardProps>>>;
+  Record<CompatibilityToolNameForOwner<'standard'>, JSXElementConstructor<ToolCardProps>>;
 type ProductToolCardRegistry = Record<
   ToolNameForOwner<'product'>,
   JSXElementConstructor<ToolCardProps>
 > &
-  Partial<Record<CompatibilityProductToolName, JSXElementConstructor<ToolCardProps>>>;
+  Record<CompatibilityToolNameForOwner<'product'>, JSXElementConstructor<ToolCardProps>>;
 
 export {
   TOOL_CARD_CONFIGS,
@@ -70,6 +68,7 @@ import { ExecControlToolCard } from './ExecControlToolCard';
 import { InitMiniAppDisplay } from './MiniAppToolDisplay';
 import { PageDeployDisplay } from './PageDeployToolDisplay';
 import { PagePublishDisplay } from './PagePublishToolDisplay';
+import { PageManageDisplay } from './PageManageToolDisplay';
 import { GenerativeWidgetToolCard } from './GenerativeWidgetToolCard';
 import { CanvasToolCard } from './CanvasToolCard';
 import { ReviewSessionSummaryCard } from './ReviewSessionSummaryCard';
@@ -82,6 +81,7 @@ import { OpenBitFunControlToolCard } from './OpenBitFunControlToolCard';
 import { ListModelsToolCard } from './ListModelsToolCard';
 import { ControlHubToolCard } from './ControlHubToolCard';
 import { BuiltinToolCard } from './BuiltinToolCard';
+import { GenerateImageToolCard } from './GenerateImageToolCard';
 
 /**
  * Standard tool adapters backed by concrete `@openbitfun/ui/flow-chat` views.
@@ -142,6 +142,7 @@ export const STANDARD_TOOL_CARD_ADAPTERS = {
   'ExecControl': ExecControlToolCard,
 
   // OpenBitFun Page (session-only publish)
+  'PageManage': PageManageDisplay,
   'PageDeploy': PageDeployDisplay,
   'PagePublish': PagePublishDisplay,
 
@@ -154,6 +155,7 @@ export const STANDARD_TOOL_CARD_ADAPTERS = {
   'AgentDelete': AgentDeleteToolCard,
   'SessionHistory': BuiltinToolCard,
   'analyze_image': BuiltinToolCard,
+  'generate_image': GenerateImageToolCard,
   'GetTime': BuiltinToolCard,
   'ListMCPResources': BuiltinToolCard,
   'ReadMCPResource': BuiltinToolCard,

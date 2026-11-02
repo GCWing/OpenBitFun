@@ -13,7 +13,7 @@ interface Observation {
 }
 
 /** Host/activation/account-scoped observations; never reuse a controller's balance on a peer. */
-export function useSubscriptionQuota(provider: SubscriptionProvider, accountId: string, active: boolean, supported: boolean, identity: string, refreshVersion = 0, modelId?: string) {
+export function useSubscriptionQuota(provider: SubscriptionProvider, accountId: string, active: boolean, supported: boolean, identity: string, refreshVersion = 0, modelId?: string, forceOnActivate = false) {
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const key = scope.key('subscription-quota', provider, accountId, identity);
   const [observation, setObservation] = useState<Observation>({ key, loading: false, value: null, failed: false, unsupportedHost: !supported });
@@ -45,9 +45,9 @@ export function useSubscriptionQuota(provider: SubscriptionProvider, accountId: 
   useEffect(() => {
     last.current = null;
     pending.current = false;
-    if (active && supported) void load(refreshVersion > 0);
+    if (active && supported) void load(forceOnActivate || refreshVersion > 0);
     return () => { generation.current += 1; pending.current = false; };
-  }, [active, supported, load, refreshVersion]);
+  }, [active, supported, load, refreshVersion, forceOnActivate]);
 
   useEffect(() => {
     if (!active || !supported) return;

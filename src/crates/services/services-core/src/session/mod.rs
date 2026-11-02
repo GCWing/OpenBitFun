@@ -8,6 +8,7 @@ pub mod naming;
 mod offline_import;
 mod ordinal;
 pub mod page;
+pub mod trajectory;
 pub mod types;
 mod write_lock;
 
@@ -38,6 +39,9 @@ pub use offline_import::{
     OfflineSessionBundle, OfflineSessionImportError, OfflineSessionImportStore,
 };
 pub use openbitfun_core_types::{SessionKind, SESSION_PROVIDER_ACP, SESSION_PROVIDER_METADATA_KEY};
-pub use page::{build_session_metadata_page, empty_session_metadata_page, SessionMetadataPage};
+pub use page::{
+    build_session_metadata_page, empty_session_metadata_page, SessionDiscoveryDiagnostic,
+    SessionMetadataPage,
+};
 pub use types::*;
 pub use write_lock::{SessionWriteLock, SessionWriteLockError};

@@ -65,8 +65,11 @@ import { useBackgroundCommandActivityStore } from '../../store/backgroundCommand
 import { useBackgroundSubagentActivityStore } from '../../store/backgroundSubagentActivityStore';
 import { clearPromptSuggestion, usePromptSuggestionStore } from '../../store/promptSuggestionStore';
 import { createTab } from '@/shared/utils/tabUtils';
+import { openAgentCanvasTabForSession } from '@/app/components/panels/content-canvas/stores/canvasStore';
+import { workbenchPaneLayoutStore } from '@/app/workbench/workbenchPaneLayoutStore';
 import type { TabCreationOptions } from '@/shared/utils/tabUtils';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
+import { settleDialogTurnToTerminalStatus } from '../../utils/dialogTurnStability';
 import {
   clearHistorySessionOpenTransition,
   clearRecentHistorySessionOpenIntent,
@@ -205,6 +208,7 @@ function mergeParamsPartialEventData(
 }
 
 export const __test_only__ = {
+  relayRecordsBeforeEvent,
   handleSessionDeleted,
   resolveDialogTurnDisplayContent,
   mergeParamsPartialEventData,
@@ -220,6 +224,7 @@ export const __test_only__ = {
   handleDialogTurnRecovered,
   handleDialogTurnCancelled,
   buildBuiltInBrowserTabOptions,
+  handleOpenBuiltInBrowser,
 };
 
 function eventOwnsLatestSessionTurn(
@@ -831,6 +836,14 @@ export function mapBackendStateToFrontend(backendState: any): SessionExecutionSt
  * Initialize global event listeners
  * Returns a cleanup function that removes all registered listeners
  */
+/** Records render once a frame; a direct event must not apply to an older render. */
+function relayRecordsBeforeEvent(context: FlowChatContext) {
+  return <E extends { sessionId?: string }>(handle: (event: E) => void) => (event: E): void => {
+    if (event.sessionId) context.flowChatStore.settleRelaySessionRecords(event.sessionId);
+    handle(event);
+  };
+}
+
 export async function initializeEventListeners(
   context: FlowChatContext,
   onTodoWriteResult: (sessionId: string, turnId: string, result: any) => void
@@ -857,6 +870,7 @@ export async function initializeEventListeners(
     void handleAcpPermissionRequest((payload as any)?.value || payload);
   });
 
+  const afterRelayRecords = relayRecordsBeforeEvent(context);
   const callbacks: AgenticEventCallbacks = {
     onSessionCreated: (event) => {
       handleSessionCreated(context, event);
@@ -876,45 +890,45 @@ export async function initializeEventListeners(
     onImageAnalysisCompleted: (event) => {
       handleImageAnalysisCompleted(context, event as ImageAnalysisEvent);
     },
-    onDialogTurnStarted: (event) => {
+    onDialogTurnStarted: afterRelayRecords((event) => {
       handleDialogTurnStarted(context, event);
-    },
+    }),
     onTextChunk: (event) => {
       handleTextChunk(context, event);
     },
-    onToolEvent: (event) => {
+    onToolEvent: afterRelayRecords((event) => {
       handleToolEvent(context, event, onTodoWriteResult);
-    },
+    }),
     onSubagentSessionLinked: (event) => {
       handleSubagentSessionLinked(context, event);
     },
     onDeepReviewQueueStateChanged: (event) => {
       handleDeepReviewQueueStateChanged(event);
     },
-    onModelRoundStarted: (event) => {
+    onModelRoundStarted: afterRelayRecords((event) => {
       handleModelRoundStart(context, event);
-    },
-    onModelRoundCompleted: (event) => {
+    }),
+    onModelRoundCompleted: afterRelayRecords((event) => {
       handleModelRoundComplete(context, event);
-    },
-    onModelRoundAttemptSuperseded: (event) => {
+    }),
+    onModelRoundAttemptSuperseded: afterRelayRecords((event) => {
       handleModelRoundAttemptSuperseded(context, event);
-    },
-    onDialogTurnCompleted: (event) => {
+    }),
+    onDialogTurnCompleted: afterRelayRecords((event) => {
       handleDialogTurnComplete(context, event, onTodoWriteResult);
-    },
-    onDialogTurnFailed: (event) => {
+    }),
+    onDialogTurnFailed: afterRelayRecords((event) => {
       handleDialogTurnFailed(context, event);
-    },
-    onDialogTurnCancelled: (event) => {
+    }),
+    onDialogTurnCancelled: afterRelayRecords((event) => {
       handleDialogTurnCancelled(context, event, onTodoWriteResult);
-    },
-    onDialogTurnInterrupted: (event) => {
+    }),
+    onDialogTurnInterrupted: afterRelayRecords((event) => {
       handleDialogTurnInterrupted(context, event);
-    },
-    onDialogTurnRecovered: (event) => {
+    }),
+    onDialogTurnRecovered: afterRelayRecords((event) => {
       handleDialogTurnRecovered(context, event);
-    },
+    }),
     onTokenUsageUpdated: (event) => {
       handleTokenUsageUpdate(context, event);
     },
@@ -2353,6 +2367,7 @@ function handleModelRoundStart(context: FlowChatContext, event: ModelRoundStarte
     // Model identity is optional: external ACP agents carry none.
     ...(event.modelConfigId ? { modelConfigId: event.modelConfigId.trim() } : {}),
     ...(event.effectiveModelName ? { effectiveModelName: event.effectiveModelName.trim() } : {}),
+    ...(event.routing ? { routing: event.routing } : {}),
     ...(disableExploreGrouping
       ? { renderHints: { disableExploreGrouping: true, disableExploreGroupingSource: 'host' } }
       : {}),
@@ -2768,14 +2783,14 @@ function buildBuiltInBrowserTabOptions(
   const replaceExisting = event?.replaceExisting !== false;
   // Replacing uses one stable product surface. A true new-tab request gets a
   // request-scoped key so identical URLs can still open as distinct targets.
-  const duplicateCheckKey = replaceExisting
+  const duplicateCheckKey = event.targetId ? `browser-panel:${event.targetId}` : replaceExisting
     ? 'browser-panel'
     : `browser-panel:${requestId ?? url}`;
 
   return {
     type: 'browser',
     title,
-    data: { url, openRequestId: requestId },
+    data: { url, openRequestId: requestId, targetId: event.targetId, conversationId: event.sessionId },
     metadata: { duplicateCheckKey },
     checkDuplicate: true,
     duplicateCheckKey,
@@ -2785,12 +2800,22 @@ function buildBuiltInBrowserTabOptions(
 }
 
 function handleOpenBuiltInBrowser(event: OpenBuiltInBrowserEvent): void {
+  // These are native pages on the executing Desktop. A peer's target id must
+  // never be treated as a controller-local WebView (even if labels collide).
+  if (getActiveSurfaceScope().surfaceId !== 'local') return;
   const options = buildBuiltInBrowserTabOptions(event);
   if (!options) {
     log.warn('OpenBuiltInBrowser missing url', { event });
     return;
   }
-  createTab(options);
+  if (event.sessionId) {
+    openAgentCanvasTabForSession(event.sessionId, {
+      type: 'browser', title: options.title, data: options.data, metadata: options.metadata,
+    });
+    workbenchPaneLayoutStore.getState().showContentForSession('local', event.sessionId);
+  } else {
+    createTab(options);
+  }
 }
 
 export function handleDialogTurnComplete(
@@ -3058,29 +3083,13 @@ function handleDialogTurnCancelled(
     session.dialogTurns.find(turn => turn.id === turnId)?.recovery,
   );
   
-  context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => {
-    const updatedModelRounds = turn.modelRounds.map((round) => {
-      if (round.isStreaming) {
-        return {
-          ...round,
-          isStreaming: false,
-          isComplete: true,
-          status: 'cancelled' as const,
-          endTime: Date.now()
-        };
-      }
-      return round;
-    });
-    
-    return {
-      ...turn,
-      modelRounds: updatedModelRounds,
-      status: 'cancelled' as const,
-      endTime: Date.now(),
-      recoveryEpoch: turn.recovery?.executionGeneration ?? turn.recoveryEpoch,
-      recovery: undefined,
-    };
-  });
+  context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => ({
+    ...settleDialogTurnToTerminalStatus(turn, 'cancelled', Date.now(), undefined, {
+      preserveTerminalOutcome: false,
+    }),
+    recoveryEpoch: turn.recovery?.executionGeneration ?? turn.recoveryEpoch,
+    recovery: undefined,
+  }));
   reconcileBackgroundSubagentSession(sessionId);
    
   if (!runtimeOwnsTurnPersistence) {
@@ -3171,15 +3180,9 @@ function handleDialogTurnInterrupted(context: FlowChatContext, event: any): void
     context.flowChatStore.markSessionFinished(sessionId);
   }
   context.flowChatStore.updateDialogTurn(sessionId, turnId, turn => ({
-    ...turn,
-    modelRounds: turn.modelRounds.map(round => ({
-      ...round,
-      isStreaming: false,
-      isComplete: true,
-      status: round.isStreaming ? 'cancelled' as const : round.status,
-      endTime: round.isStreaming ? Date.now() : round.endTime,
-    })),
-    status: 'cancelled' as const,
+    ...settleDialogTurnToTerminalStatus(turn, 'cancelled', Date.now(), undefined, {
+      preserveTerminalOutcome: false,
+    }),
     finishReason: 'interrupted',
     endTime: Date.now(),
     recovery: {

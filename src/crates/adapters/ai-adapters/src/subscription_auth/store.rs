@@ -1848,6 +1848,7 @@ async fn upsert_internal(
 }
 
 /// Removes one provider from both the credential vault and metadata index.
+#[cfg(test)]
 pub(crate) async fn remove(provider: &str) -> Result<RemoveOutcome> {
     remove_internal(provider, false).await
 }

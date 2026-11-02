@@ -8,8 +8,17 @@ import {
   SceneChromeProvider,
 } from '@/app/components/SceneTopBar/SceneChrome';
 import { FlowChatHeader, type FlowChatHeaderProps } from './FlowChatHeader';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import type { PeerHostCapabilities } from '@/infrastructure/peer-device/PeerConnectionManager';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const peer = vi.hoisted(() => ({ active: false, capabilities: null as Partial<PeerHostCapabilities> | null }));
+vi.mock('@/infrastructure/peer-device/peerDeviceContextState', () => ({
+  usePeerDeviceModeOptional: () => peer.active
+    ? { peerMode: { active: true }, currentPeerCapabilities: peer.capabilities }
+    : null,
+}));
 
 const {
   createReviewPlatformPullRequestDetailTabMock,
@@ -114,6 +123,9 @@ describe('FlowChatHeader', () => {
   let root: Root;
 
   beforeEach(() => {
+    activateSurface('local');
+    peer.active = false;
+    peer.capabilities = null;
     isGitRepositoryMock.mockReset();
     isGitRepositoryMock.mockResolvedValue(true);
     getWorkspaceSnapshotMock.mockReset();
@@ -194,6 +206,31 @@ describe('FlowChatHeader', () => {
     expect(container.querySelector('[data-testid="flowchat-header-turn-list"]')).toBeNull();
     expect(container.querySelector('[data-testid="flowchat-header-turn-prev"]')).toBeNull();
     expect(container.querySelector('[data-testid="flowchat-header-turn-next"]')).toBeNull();
+  });
+
+  it('hosts trajectory search and its navigation in the shared scene top bar', () => {
+    const onTrajectoryOpen = vi.fn(); const onSearchNext = vi.fn(); const onSearchClose = vi.fn();
+    const render = (trajectoryOpen: boolean) => root.render(
+      <SceneChromeProvider activeSceneId="session">
+        <SceneChromeHost data-testid="scene-actions-host" />
+        <FlowChatHeader {...createProps({ onTrajectoryOpen, trajectoryOpen, searchQuery: 'needle',
+          searchMatchCount: 3, searchCurrentMatch: 1, onSearchNext, onSearchClose })} />
+      </SceneChromeProvider>,
+    );
+    act(() => render(false));
+    const host = container.querySelector('[data-testid="scene-actions-host"]')!;
+    expect(host.querySelector('[data-openbitfun-name="chart-spline"]')).not.toBeNull();
+    act(() => host.querySelector<HTMLButtonElement>('[data-testid="flowchat-header-search"]')!.click());
+    expect(onTrajectoryOpen).toHaveBeenCalledTimes(1);
+    act(() => render(true));
+    const search = host.querySelector('[data-testid="flowchat-header-search-bar"]')!;
+    expect(search.querySelector('input')?.value).toBe('needle');
+    act(() => search.querySelector<HTMLButtonElement>('[aria-label="flowChatHeader.searchNext"]')!.click());
+    expect(onSearchNext).toHaveBeenCalledTimes(1);
+    act(() => search.querySelector<HTMLButtonElement>('.flowchat-header__search-close')!.click());
+    expect(onSearchClose).toHaveBeenCalledTimes(1);
+    act(() => render(false));
+    expect(host.querySelector('[data-testid="flowchat-header-search-bar"]')).toBeNull();
   });
 
   it('toggles the host-owned right panel from the session header', () => {
@@ -634,6 +671,70 @@ describe('FlowChatHeader', () => {
 
     expect(createReviewPlatformTabMock).toHaveBeenCalledWith('workspace-1', '/workspace');
     expect(document.querySelector('[data-testid="flowchat-header-session-overview-panel"]')).toBeNull();
+  });
+
+  it.each([null, { hostKind: 'cli' }, { hostKind: 'desktop', reviewPlatformV1: false }] as const)(
+    'disables unsupported peer PR overview without querying its workspace: %j', async capabilities => {
+      peer.active = true;
+      peer.capabilities = capabilities;
+      act(() => root.render(<FlowChatHeader {...createProps()} />));
+      await act(async () => container.querySelector<HTMLButtonElement>(
+        '[data-testid="flowchat-header-session-overview"]',
+      )?.click());
+
+      const section = document.querySelector('[data-testid="flowchat-header-pull-requests"]');
+      expect(section?.textContent).toContain('common:reviewPlatform.messages.hostUnsupported');
+      expect(section?.querySelector<HTMLButtonElement>('button')?.disabled).toBe(true);
+      expect(isGitRepositoryMock).not.toHaveBeenCalled();
+      expect(getWorkspaceSnapshotMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('stops an old workspace probe before sending a PR request to a newly selected CLI peer', async () => {
+    let resolveGit!: (value: boolean) => void;
+    isGitRepositoryMock.mockReturnValueOnce(new Promise<boolean>(resolve => { resolveGit = resolve; }));
+    act(() => root.render(<FlowChatHeader {...createProps()} />));
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '[data-testid="flowchat-header-session-overview"]',
+    )?.click());
+
+    await act(async () => {
+      peer.active = true;
+      peer.capabilities = { hostKind: 'cli' };
+      activateSurface('cli-peer');
+      root.render(<FlowChatHeader {...createProps()} />);
+      resolveGit(true);
+    });
+    expect(getWorkspaceSnapshotMock).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="flowchat-header-pull-requests"]')?.textContent)
+      .toContain('common:reviewPlatform.messages.hostUnsupported');
+  });
+
+  it('reloads the same workspace ID on a device switch and ignores the previous device response', async () => {
+    let resolveOld!: (value: unknown) => void;
+    getWorkspaceSnapshotMock.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+    act(() => root.render(<FlowChatHeader {...createProps()} />));
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      '[data-testid="flowchat-header-session-overview"]',
+    )?.click());
+    expect(getWorkspaceSnapshotMock).toHaveBeenCalledTimes(1);
+
+    getWorkspaceSnapshotMock.mockResolvedValueOnce({
+      pullRequests: [{ id: '52', number: 52, title: 'Selected device PR' }], pagination: { total: 1 },
+    });
+    await act(async () => {
+      peer.active = true;
+      peer.capabilities = { hostKind: 'desktop' };
+      activateSurface('desktop-peer');
+      root.render(<FlowChatHeader {...createProps()} />);
+    });
+    await act(async () => resolveOld({
+      pullRequests: [{ id: '42', number: 42, title: 'Departed device PR' }], pagination: { total: 1 },
+    }));
+    expect(getWorkspaceSnapshotMock).toHaveBeenCalledTimes(2);
+    const section = document.querySelector('[data-testid="flowchat-header-pull-requests"]');
+    expect(section?.textContent).toContain('Selected device PR');
+    expect(section?.textContent).not.toContain('Departed device PR');
   });
 
   it('shows compact pull request rows and opens the selected request', async () => {
