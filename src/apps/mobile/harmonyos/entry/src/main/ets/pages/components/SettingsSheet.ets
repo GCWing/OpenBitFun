@@ -1,15 +1,18 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { SettingsSheetState } from '../state/SettingsSheetState';
+import { DeviceModelDefaultsRequestPath } from '../state/DeviceModelDefaultsSheetState';
 import { CARD, INK, LINE, MUTED, PAGE_BG } from './Theme';
 import { CurrentControlSection } from './CurrentControlSection';
 import { AccountProfilePanel } from './AccountProfilePanel';
+import { DeviceModelDefaultsPanel } from './DeviceModelDefaultsPanel';
+import { ModelRolePickerPanel } from './ModelRolePickerPanel';
 import { LanguageSettingsPanel } from './LanguageSettingsPanel';
 import { SheetCloseHeader } from './SheetCloseHeader';
 import { SHEET_HORIZONTAL_PADDING, SHEET_TOP_RADIUS } from './SheetLayout';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
-import { RemotePermissionMode } from '../../model/RemoteModels';
+import { RemoteDefaultModels, RemoteModelCatalog, RemotePermissionMode } from '../../model/RemoteModels';
 import { RemotePermissionSection } from './RemotePermissionSection';
 
 @ComponentV2
@@ -25,6 +28,8 @@ export struct SettingsSheet {
   @Param controlTargetType: string = 'none';
   @Param controlTargetDeviceId: string = '';
   @Param connectionState: string = 'idle';
+  /** The connected desktop advertises `device_model_defaults_v1`. */
+  @Param supportsDeviceModelDefaults: boolean = false;
   @Param statusText: string = '';
   @Event onClose: () => void = () => {};
   @Event onOpenAccount: () => void = () => {};
@@ -39,6 +44,25 @@ export struct SettingsSheet {
   @Event getPermissionMode: () => Promise<RemotePermissionMode> = async (): Promise<RemotePermissionMode> => 'ask';
   @Event setPermissionMode: (mode: RemotePermissionMode) => Promise<RemotePermissionMode> =
     async (mode: RemotePermissionMode): Promise<RemotePermissionMode> => mode;
+  /** Device-level model catalog of the connected desktop (no session id). */
+  @Event getDeviceModelCatalog: () => Promise<RemoteModelCatalog> =
+    async (): Promise<RemoteModelCatalog> => ({ version: 0, models: [], default_models: {} });
+  /** Whole-object write of the three phone-managed model slots. */
+  @Event setDeviceModelDefaults: (
+    primary: string | null,
+    fast: string | null,
+    imageUnderstanding: string | null
+  ) => Promise<RemoteDefaultModels> = async (
+    primary: string | null,
+    fast: string | null,
+    imageUnderstanding: string | null
+  ): Promise<RemoteDefaultModels> => {
+    return {
+      primary,
+      fast,
+      image_understanding: imageUnderstanding
+    };
+  };
   @Event onSetLanguage: (language: string) => Promise<void> = async (_language: string) => {};
   /** The sheet's own bottom edge, so its scrolling rows can run under the bar and still rest above it. */
   @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
@@ -48,16 +72,66 @@ export struct SettingsSheet {
     if (context) {
       this.insets.bind(this.getUIContext(), context);
     }
+    // The device model pages are answered by the sheet, not by themselves: the
+    // desktop they read and write is whichever one this sheet is open on, so the
+    // request path is bound here before either page can mount.
+    const modelDefaultsClient: DeviceModelDefaultsRequestPath = {
+      getModelCatalog: (): Promise<RemoteModelCatalog> => this.getDeviceModelCatalog(),
+      setModelDefaults: (
+        primary: string | null,
+        fast: string | null,
+        imageUnderstanding: string | null
+      ): Promise<RemoteDefaultModels> => {
+        return this.setDeviceModelDefaults(primary, fast, imageUnderstanding);
+      }
+    };
+    this.sheetState.deviceModels.bind(modelDefaultsClient);
+    this.applyDeviceModelGate();
   }
 
   aboutToDisappear(): void {
     this.insets.unbind();
   }
 
+  /**
+   * Re-gates the device model pages whenever the desktop, the link or its
+   * capability set changes.
+   *
+   * Arming the gate is not reading: the page spends the read when it opens, so a
+   * sheet that is opened for the language setting does not ask the desktop about
+   * its models. A gate that changes while one of the two pages is already open is
+   * the other case — what is on screen belongs to the previous desktop — so that
+   * one is read again immediately.
+   */
+  private applyDeviceModelGate(): void {
+    const needsRead = this.sheetState.deviceModels.setGate({
+      supported: this.supportsDeviceModelDefaults,
+      connected: this.connectionState === 'connected',
+      deviceId: this.controlTargetDeviceId
+    });
+    if (needsRead && this.onDeviceModelPage()) {
+      void this.sheetState.deviceModels.load();
+    }
+  }
+
+  private onDeviceModelPage(): boolean {
+    const page = this.sheetState.page;
+    return page === 'deviceModels' || page === 'modelPick';
+  }
+
+  @Monitor('connectionState', 'supportsDeviceModelDefaults', 'controlTargetDeviceId')
+  private onDeviceModelTargetChanged(): void {
+    this.applyDeviceModelGate();
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       if (this.sheetState.page === 'language') {
         this.LanguagePanel()
+      } else if (this.sheetState.page === 'deviceModels') {
+        this.DeviceModelSettingsPage()
+      } else if (this.sheetState.page === 'modelPick') {
+        this.ModelRolePickerPage()
       } else {
         this.SettingsHome()
       }
@@ -96,11 +170,15 @@ export struct SettingsSheet {
             controlTargetType: this.controlTargetType,
             controlTargetDeviceId: this.controlTargetDeviceId,
             connectionState: this.connectionState,
+            supportsDeviceModelDefaults: this.supportsDeviceModelDefaults,
             cloudLogout: this.cloudLogout,
             cloudListDevices: this.cloudListDevices,
             cloudSelectDevice: this.cloudSelectDevice,
             onReconnect: this.onReconnect,
             onOpenAccount: this.onOpenAccount,
+            onOpenDeviceModelSettings: () => {
+              this.sheetState.setPage('deviceModels');
+            },
             onLoggedOut: this.onClose,
             connection: () => {
               this.CurrentConnectionSection()
@@ -274,6 +352,35 @@ export struct SettingsSheet {
       onSelect: (language: string) => {
         return this.onSetLanguage(language);
       }
+    })
+  }
+
+  /**
+   * Device model role settings, reached from the connected device row: the second
+   * level of the sheet's own page stack.
+   */
+  @Builder
+  DeviceModelSettingsPage() {
+    DeviceModelDefaultsPanel({
+      sheetState: this.sheetState,
+      deviceModels: this.sheetState.deviceModels,
+      desktopName: this.desktopName,
+      desktopId: this.desktopId,
+      controlTargetType: this.controlTargetType,
+      connectionState: this.connectionState,
+      onClose: this.onClose
+    })
+  }
+
+  /** The role picker pushed above it; both pages share the sheet's controller. */
+  @Builder
+  ModelRolePickerPage() {
+    ModelRolePickerPanel({
+      sheetState: this.sheetState,
+      deviceModels: this.sheetState.deviceModels,
+      desktopName: this.desktopName,
+      desktopId: this.desktopId,
+      onClose: this.onClose
     })
   }
 }
