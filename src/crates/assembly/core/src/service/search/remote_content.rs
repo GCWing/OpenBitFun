@@ -66,22 +66,85 @@ pub async fn search_remote_workspace_contents(
 #[cfg(all(feature = "ssh-remote", feature = "agent-runtime"))]
 mod enabled {
     use super::RemoteContentSearch;
-    use openbitfun_runtime_ports::{WorkspaceFileSystem, WorkspaceShell};
+    use openbitfun_runtime_ports::{
+        WorkspaceCommandOptions, WorkspaceFileSystem, WorkspacePathKind, WorkspaceShell,
+    };
     use openbitfun_services_core::filesystem::{
         compile_content_search_regex, ContentMatchPreviewBuilder, FileSearchOutcome,
-        FileSearchResult, SearchMatchType,
+        FileSearchResult, SearchMatchType, CONTENT_SEARCH_BINARY_SUFFIXES,
+        CONTENT_SEARCH_MAX_FILE_BYTES, CONTENT_SEARCH_SKIPPED_DIRECTORIES,
+        CONTENT_SEARCH_SKIPPED_FILE_NAMES,
     };
     use std::sync::atomic::Ordering;
     use std::time::Duration;
     use tool_runtime::search::grep_search::{
-        content_search_candidate_literal, grep_search_workspace, GrepOptions, OutputMode,
-        SearchCancellation, WorkspaceGrepLineMatch,
+        content_search_candidate_literal, grep_search_workspace, GrepOptions,
+        InteractiveSearchPolicy, OutputMode, SearchCancellation, WorkspaceGrepLineMatch,
     };
 
     /// A provider scan over a slow link must end in a visible state instead of a
     /// spinner: the person can narrow the query, and cancelling stays available.
     const SEARCH_TIMEOUT: Duration = Duration::from_secs(120);
     const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+    fn local_search_policy() -> InteractiveSearchPolicy {
+        let owned = |values: &[&str]| values.iter().map(|value| value.to_string()).collect();
+        InteractiveSearchPolicy {
+            excluded_directories: owned(CONTENT_SEARCH_SKIPPED_DIRECTORIES),
+            excluded_file_names: owned(CONTENT_SEARCH_SKIPPED_FILE_NAMES),
+            excluded_file_suffixes: owned(CONTENT_SEARCH_BINARY_SUFFIXES),
+            max_file_size_bytes: Some(CONTENT_SEARCH_MAX_FILE_BYTES),
+        }
+    }
+
+    /// The walker does not traverse a symlinked directory root, and a relative root would
+    /// mean something different after the shell's own `cd` into it. The workspace shell
+    /// already runs inside the root, so it can report the physical directory.
+    async fn resolve_search_root(
+        fs: &dyn WorkspaceFileSystem,
+        shell: &dyn WorkspaceShell,
+        root: &str,
+    ) -> Result<String, String> {
+        let is_symlink = root.starts_with('/')
+            && fs
+                .metadata(root, false)
+                .await
+                .map_err(|error| format!("Failed to inspect {root}: {error:#}"))?
+                .is_some_and(|metadata| metadata.kind == WorkspacePathKind::Symlink);
+        if root.starts_with('/') && !is_symlink {
+            return Ok(root.to_string());
+        }
+        let result = shell
+            .exec_with_options(
+                "pwd -P",
+                WorkspaceCommandOptions {
+                    timeout_ms: Some(30_000),
+                    cancellation_token: None,
+                },
+            )
+            .await
+            .map_err(|error| format!("Failed to resolve workspace root {root}: {error:#}"))?;
+        let resolved = result.stdout.trim_end_matches(['\r', '\n']);
+        if result.exit_code != 0 || !resolved.starts_with('/') {
+            return Err(format!(
+                "Failed to resolve workspace root {root}: {}",
+                result.stderr.trim()
+            ));
+        }
+        Ok(resolved.to_string())
+    }
+
+    /// Callers know the workspace by its logical root, so a symlinked root keeps that
+    /// spelling in results. A relative root stays physical: it could not be opened anyway.
+    fn rebase_result_path(path: String, resolved_root: &str, root: &str) -> String {
+        if resolved_root == root || !root.starts_with('/') {
+            return path;
+        }
+        match path.strip_prefix(&format!("{}/", resolved_root.trim_end_matches('/'))) {
+            Some(relative) => format!("{}/{relative}", root.trim_end_matches('/')),
+            None => path,
+        }
+    }
 
     pub(super) async fn search_through_providers(
         fs: &dyn WorkspaceFileSystem,
@@ -103,8 +166,9 @@ mod enabled {
         )
         .map_err(|error| error.to_string())?;
 
+        let resolved_root = resolve_search_root(fs, shell, &search.root_path).await?;
         let cancellation = SearchCancellation::new();
-        let options = GrepOptions::new(matcher.as_str(), search.root_path.clone())
+        let options = GrepOptions::new(matcher.as_str(), resolved_root.clone())
             .case_insensitive(!search.case_sensitive)
             .output_mode(OutputMode::Content)
             .show_line_numbers(true)
@@ -114,7 +178,7 @@ mod enabled {
                 search.case_sensitive,
                 search.use_regex,
             ))
-            .collect_line_matches(true)
+            .interactive(local_search_policy())
             .cancellation(cancellation.clone());
 
         let found = tokio::select! {
@@ -131,7 +195,22 @@ mod enabled {
             )
         })??;
 
-        Ok(build_outcome(found.line_matches, search.limit, &preview))
+        if found.skipped_path_count > 0 {
+            log::warn!(
+                "Remote content search skipped {} unreadable paths under {}",
+                found.skipped_path_count,
+                search.root_path
+            );
+        }
+        let mut outcome = build_outcome(found.line_matches, search.limit, &preview);
+        for result in &mut outcome.results {
+            result.path = rebase_result_path(
+                std::mem::take(&mut result.path),
+                &resolved_root,
+                &search.root_path,
+            );
+        }
+        Ok(outcome)
     }
 
     /// Bridges the Tauri cancel flag to the search token, then waits for the search
@@ -154,11 +233,8 @@ mod enabled {
         limit: usize,
         preview: &ContentMatchPreviewBuilder,
     ) -> FileSearchOutcome {
-        // The shared matcher reads binary files as text, which suits an agent asking
-        // about bytes but only renders garbage in a result list.
         let mut results: Vec<_> = line_matches
             .into_iter()
-            .filter(|line| !line.text.contains('\0'))
             .map(|line| content_result(line, preview))
             .collect();
         let truncated = results.len() > limit;
@@ -522,7 +598,7 @@ mod enabled {
         }
 
         #[tokio::test]
-        async fn binary_lines_are_left_out_of_the_result_list() {
+        async fn binary_files_are_left_out_of_the_result_list() {
             let dir = tempfile::tempdir().unwrap();
             let root = root_of(&dir);
             std::fs::write(dir.path().join("blob"), b"\0needle\0\n").unwrap();
@@ -536,6 +612,270 @@ mod enabled {
 
             assert_eq!(outcome.results.len(), 1);
             assert_eq!(outcome.results[0].name, "text");
+        }
+
+        #[tokio::test]
+        async fn binary_files_do_not_consume_the_result_budget() {
+            let dir = tempfile::tempdir().unwrap();
+            let root = root_of(&dir);
+            std::fs::write(dir.path().join("a-blob"), b"\0needle\nneedle\nneedle\n").unwrap();
+            std::fs::write(dir.path().join("b-text"), "needle\n").unwrap();
+            let fs = TargetFs::default();
+            let shell = TargetShell::new(&root, true);
+            let mut search = request(&root, "needle");
+            search.limit = 1;
+
+            let outcome = search_through_providers(&fs, &shell, &search)
+                .await
+                .unwrap();
+
+            assert_eq!(outcome.results.len(), 1);
+            assert_eq!(outcome.results[0].name, "b-text");
+            assert!(!outcome.truncated);
+        }
+
+        #[tokio::test]
+        async fn utf16_file_with_bom_is_text_not_binary() {
+            let dir = tempfile::tempdir().unwrap();
+            let root = root_of(&dir);
+            let mut bytes = vec![0xFF, 0xFE];
+            bytes.extend("a needle\n".encode_utf16().flat_map(u16::to_le_bytes));
+            std::fs::write(dir.path().join("wide.txt"), bytes).unwrap();
+            let fs = TargetFs::default();
+            let shell = TargetShell::new(&root, true);
+
+            let outcome = search_through_providers(&fs, &shell, &request(&root, "needle"))
+                .await
+                .unwrap();
+
+            assert_eq!(outcome.results.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn local_exclusions_apply_to_size_suffix_and_directories() {
+            let dir = tempfile::tempdir().unwrap();
+            let root = root_of(&dir);
+            std::fs::create_dir_all(dir.path().join("node_modules/pkg")).unwrap();
+            std::fs::write(dir.path().join("node_modules/pkg/a.js"), "needle\n").unwrap();
+            std::fs::write(dir.path().join("image.PNG"), "needle\n").unwrap();
+            std::fs::write(dir.path().join(".DS_Store"), "needle\n").unwrap();
+            let oversized = "needle\n".repeat(CONTENT_SEARCH_MAX_FILE_BYTES as usize / 7 + 1);
+            std::fs::write(dir.path().join("huge.txt"), oversized).unwrap();
+            std::fs::write(dir.path().join("kept.txt"), "needle\n").unwrap();
+            for has_grep in [true, false] {
+                let fs = TargetFs::default();
+                let shell = TargetShell::new(&root, has_grep);
+
+                let outcome = search_through_providers(&fs, &shell, &request(&root, "needle"))
+                    .await
+                    .unwrap();
+
+                assert_eq!(outcome.results.len(), 1, "has_grep={has_grep}");
+                assert_eq!(outcome.results[0].name, "kept.txt");
+            }
+        }
+
+        #[tokio::test]
+        async fn repository_exclude_file_applies_at_the_workspace_root() {
+            let dir = fixture();
+            let root = root_of(&dir);
+            std::fs::create_dir_all(dir.path().join(".git/info")).unwrap();
+            std::fs::write(dir.path().join(".git/info/exclude"), "*.local\n").unwrap();
+            std::fs::write(dir.path().join("settings.local"), "needle\n").unwrap();
+            let fs = TargetFs::default();
+            let shell = TargetShell::new(&root, true);
+
+            let outcome = search_through_providers(&fs, &shell, &request(&root, "needle"))
+                .await
+                .unwrap();
+
+            assert_eq!(outcome.results.len(), 1);
+            assert_eq!(outcome.results[0].name, "a:1:b.txt");
+        }
+
+        #[tokio::test]
+        async fn match_past_the_agent_column_cap_still_renders() {
+            let dir = tempfile::tempdir().unwrap();
+            let root = root_of(&dir);
+            let line = format!("{}needle tail", "x".repeat(800));
+            std::fs::write(dir.path().join("min.js"), format!("{line}\n")).unwrap();
+            let fs = TargetFs::default();
+            let shell = TargetShell::new(&root, true);
+
+            let outcome = search_through_providers(&fs, &shell, &request(&root, "needle"))
+                .await
+                .unwrap();
+
+            let hit = &outcome.results[0];
+            assert_eq!(hit.matched_content.as_deref(), Some(line.as_str()));
+            assert_eq!(hit.preview_inside.as_deref(), Some("needle"));
+        }
+
+        #[tokio::test]
+        async fn crlf_lines_match_end_anchors_and_lose_the_carriage_return() {
+            let dir = tempfile::tempdir().unwrap();
+            let root = root_of(&dir);
+            std::fs::write(dir.path().join("dos.txt"), "foo\r\nbar foo tail\r\n").unwrap();
+            let fs = TargetFs::default();
+            let shell = TargetShell::new(&root, true);
+            let mut search = request(&root, "foo$");
+            search.use_regex = true;
+
+            let outcome = search_through_providers(&fs, &shell, &search)
+                .await
+                .unwrap();
+
+            assert_eq!(outcome.results.len(), 1);
+            assert_eq!(outcome.results[0].line_number, Some(1));
+            assert_eq!(outcome.results[0].matched_content.as_deref(), Some("foo"));
+            assert_eq!(outcome.results[0].preview_inside.as_deref(), Some("foo"));
+        }
+
+        #[tokio::test]
+        async fn symlinked_root_is_searched_and_keeps_its_logical_paths() {
+            let dir = fixture();
+            let real = root_of(&dir);
+            let links = tempfile::tempdir().unwrap();
+            let link = links.path().join("workspace");
+            std::os::unix::fs::symlink(&real, &link).unwrap();
+            let root = link.to_string_lossy().into_owned();
+            let fs = TargetFs::default();
+            let shell = TargetShell::new(&root, true);
+
+            let outcome = search_through_providers(&fs, &shell, &request(&root, "needle"))
+                .await
+                .unwrap();
+
+            assert_eq!(outcome.results.len(), 1);
+            assert_eq!(outcome.results[0].path, format!("{root}/src/a:1:b.txt"));
+        }
+
+        /// Answers every candidate command with one fixed status and no candidates.
+        struct FailingCandidateShell {
+            exit_code: i32,
+        }
+
+        #[async_trait]
+        impl WorkspaceShell for FailingCandidateShell {
+            async fn exec_with_options(
+                &self,
+                _command: &str,
+                _options: WorkspaceCommandOptions,
+            ) -> anyhow::Result<WorkspaceCommandResult> {
+                Ok(WorkspaceCommandResult {
+                    stdout: "OPENBITFUN_RG_CANDIDATES_BEGIN\0OPENBITFUN_RG_CANDIDATES_END\0"
+                        .to_string(),
+                    stderr: "rg: repo: No such file or directory".to_string(),
+                    exit_code: self.exit_code,
+                    interrupted: false,
+                    timed_out: false,
+                })
+            }
+        }
+
+        #[tokio::test]
+        async fn failed_candidate_command_scans_instead_of_reporting_no_results() {
+            let dir = fixture();
+            let root = root_of(&dir);
+            let fs = TargetFs::default();
+
+            let outcome = search_through_providers(
+                &fs,
+                &FailingCandidateShell { exit_code: 2 },
+                &request(&root, "needle"),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(outcome.results.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn unreadable_and_vanished_files_are_skipped_but_transport_errors_are_not() {
+            let dir = fixture();
+            let root = root_of(&dir);
+            std::fs::write(dir.path().join("src/locked.txt"), "needle\n").unwrap();
+            std::fs::write(dir.path().join("src/gone.txt"), "needle\n").unwrap();
+
+            let fs = RefusingFs {
+                inner: TargetFs::default(),
+                message: |path| match path {
+                    path if path.ends_with("locked.txt") => Some("Permission denied"),
+                    path if path.ends_with("gone.txt") => Some("No such file"),
+                    _ => None,
+                },
+            };
+            // Regex mode has no candidate literal, so it reaches every file.
+            let mut search = request(&root, "needle");
+            search.use_regex = true;
+            let outcome = search_through_providers(&fs, &TargetShell::new(&root, false), &search)
+                .await
+                .unwrap();
+            assert_eq!(outcome.results.len(), 1);
+            assert_eq!(outcome.results[0].name, "a:1:b.txt");
+
+            let fs = RefusingFs {
+                inner: TargetFs::default(),
+                message: |path| path.ends_with("locked.txt").then_some("connection lost"),
+            };
+            let error = search_through_providers(&fs, &TargetShell::new(&root, false), &search)
+                .await
+                .unwrap_err();
+            assert!(error.contains("connection lost"), "{error}");
+        }
+
+        /// Fails opening selected files, as a target would for that path.
+        struct RefusingFs {
+            inner: TargetFs,
+            message: fn(&str) -> Option<&'static str>,
+        }
+
+        #[async_trait]
+        impl WorkspaceFileSystem for RefusingFs {
+            async fn read_file(&self, path: &str) -> anyhow::Result<Vec<u8>> {
+                self.inner.read_file(path).await
+            }
+            async fn read_file_text(&self, path: &str) -> anyhow::Result<String> {
+                self.inner.read_file_text(path).await
+            }
+            async fn read_file_text_bounded(
+                &self,
+                path: &str,
+                max_bytes: usize,
+            ) -> anyhow::Result<Option<String>> {
+                self.inner.read_file_text_bounded(path, max_bytes).await
+            }
+            async fn write_file(&self, path: &str, contents: &[u8]) -> anyhow::Result<()> {
+                self.inner.write_file(path, contents).await
+            }
+            async fn exists(&self, path: &str) -> anyhow::Result<bool> {
+                self.inner.exists(path).await
+            }
+            async fn is_file(&self, path: &str) -> anyhow::Result<bool> {
+                self.inner.is_file(path).await
+            }
+            async fn is_dir(&self, path: &str) -> anyhow::Result<bool> {
+                self.inner.is_dir(path).await
+            }
+            async fn read_dir(&self, path: &str) -> anyhow::Result<Vec<WorkspaceDirEntry>> {
+                self.inner.read_dir(path).await
+            }
+            async fn metadata(
+                &self,
+                path: &str,
+                follow_symlinks: bool,
+            ) -> anyhow::Result<Option<openbitfun_runtime_ports::WorkspaceMetadata>> {
+                self.inner.metadata(path, follow_symlinks).await
+            }
+            async fn open_read(
+                &self,
+                path: &str,
+            ) -> anyhow::Result<openbitfun_runtime_ports::WorkspaceReader> {
+                if let Some(message) = (self.message)(path) {
+                    anyhow::bail!("{message}");
+                }
+                self.inner.open_read(path).await
+            }
         }
 
         #[tokio::test]

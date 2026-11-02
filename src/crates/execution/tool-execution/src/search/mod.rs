@@ -11,6 +11,6 @@ pub use glob_search::{
 };
 pub use grep_search::{
     apply_offset_and_limit, content_search_candidate_literal, grep_search, grep_search_workspace,
-    relativize_result_text, GrepOptions, OutputMode, ProgressCallback, SearchCancellation,
-    WorkspaceGrepLineMatch,
+    relativize_result_text, GrepOptions, InteractiveSearchPolicy, OutputMode, ProgressCallback,
+    SearchCancellation, WorkspaceGrepLineMatch,
 };

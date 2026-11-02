@@ -182,7 +182,7 @@ openbitfun_search_bom_be=$(printf '\376\377') || exit 127
 openbitfun_search_probe=$(printf 'prefix\000ignored\nLiteral.Marker\n' | LC_ALL=C GREP_OPTIONS= command grep {flags}{excludes} -e '{probe_literal}' 2>/dev/null | tr '\000' '#')
 case "$openbitfun_search_probe" in *'#') ;; *) exit 127 ;; esac
 printf 'OPENBITFUN_RG_CANDIDATES_BEGIN\000'
-if LC_ALL=C GREP_OPTIONS= command grep -r {flags}{excludes}{patterns} -e "$openbitfun_search_bom_le" -e "$openbitfun_search_bom_be" -- {path} 2>/dev/null; then openbitfun_search_status=0; else openbitfun_search_status=$?; fi
+if LC_ALL=C GREP_OPTIONS= command grep -r {flags}{excludes}{patterns} -e "$openbitfun_search_bom_le" -e "$openbitfun_search_bom_be" -- {path}; then openbitfun_search_status=0; else openbitfun_search_status=$?; fi
 printf 'OPENBITFUN_RG_CANDIDATES_END\000'
 exit "$openbitfun_search_status""#
     )

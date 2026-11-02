@@ -11,9 +11,10 @@ use super::workspace_grep_prefilter::{
     grep_batch_command, grep_probe_command, literal_alternatives, parse_grep_batch_output,
     recursive_grep_candidate_command, MAX_GREP_BATCH_COMMAND_BYTES, MAX_GREP_BATCH_PATHS,
 };
+use super::workspace_walk::is_per_path_read_failure;
 use globset::GlobBuilder;
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
-use grep_searcher::{Searcher, SearcherBuilder, Sink, SinkContext, SinkMatch};
+use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkContext, SinkMatch};
 use ignore::types::TypesBuilder;
 use ignore::{DirEntry, WalkBuilder, WalkState};
 use openbitfun_runtime_ports::{WorkspaceFileSystem, WorkspacePathKind, WorkspaceShell};
@@ -71,6 +72,9 @@ struct GrepSink {
     current_file: PathBuf,
     display_base: Option<String>,
     display_path: Option<String>,
+    /// Keep the whole line: a match can sit past any column cap, and the caller builds
+    /// its own preview window. Only the line terminator is removed.
+    full_lines: bool,
     output: Arc<Mutex<Vec<String>>>,
     line_count: Arc<Mutex<usize>>,
     match_count: Arc<Mutex<usize>>,
@@ -108,6 +112,7 @@ impl GrepSink {
             current_file,
             display_base,
             display_path: None,
+            full_lines: false,
             output: Arc::new(Mutex::new(Vec::new())),
             line_count: Arc::new(Mutex::new(0)),
             match_count: Arc::new(Mutex::new(0)),
@@ -117,6 +122,11 @@ impl GrepSink {
 
     fn with_display_path(mut self, display_path: String) -> Self {
         self.display_path = Some(display_path);
+        self
+    }
+
+    fn with_full_lines(mut self, full_lines: bool) -> Self {
+        self.full_lines = full_lines;
         self
     }
 
@@ -215,8 +225,13 @@ impl GrepSink {
 
     /// Format output line (rg style: only show line number and content, no path)
     fn format_line(&self, line_number: u64, line: &[u8], is_match: bool) -> String {
-        let mut line_str = String::from_utf8_lossy(line).trim_end().to_string();
-        if line_str.chars().count() > MAX_DISPLAY_COLUMNS {
+        let text = String::from_utf8_lossy(line);
+        let mut line_str = if self.full_lines {
+            text.trim_end_matches(['\r', '\n']).to_string()
+        } else {
+            text.trim_end().to_string()
+        };
+        if !self.full_lines && line_str.chars().count() > MAX_DISPLAY_COLUMNS {
             line_str = format!(
                 "{} [truncated]",
                 line_str
@@ -379,10 +394,35 @@ pub struct GrepOptions {
     /// an escaped or case-folded literal looks like complex regex to the prefilter.
     /// Only workspace-stream search reads this, and only to select candidates.
     pub candidate_literal: Option<String>,
-    /// Interactive workspace-stream search: keep structured [`WorkspaceGrepLineMatch`]es
-    /// and stop scanning once `head_limit` is known to be exceeded, because a person
-    /// waiting on a result list wants the first page rather than exact totals.
-    pub collect_line_matches: bool,
+    /// Search for a person waiting on a result list rather than an agent. See
+    /// [`InteractiveSearchPolicy`].
+    pub interactive: Option<InteractiveSearchPolicy>,
+}
+
+/// Workspace-stream search that behaves like the local search box instead of agent
+/// Grep: structured [`WorkspaceGrepLineMatch`]es with whole line text, binary content
+/// and CRLF handled as text search expects, the first page rather than exact totals
+/// once `head_limit` is exceeded, and a file or directory the target refuses to read
+/// skipped and counted rather than failing the whole search. Transport errors stay fatal.
+#[derive(Debug, Clone, Default)]
+pub struct InteractiveSearchPolicy {
+    /// Directory names pruned at any depth, in addition to VCS metadata.
+    pub excluded_directories: Vec<String>,
+    pub excluded_file_names: Vec<String>,
+    /// Lowercase file-name suffixes that are not read at all.
+    pub excluded_file_suffixes: Vec<String>,
+    pub max_file_size_bytes: Option<u64>,
+}
+
+impl InteractiveSearchPolicy {
+    fn excludes_file(&self, name: &str) -> bool {
+        let lower = name.to_lowercase();
+        self.excluded_file_names.iter().any(|skip| skip == name)
+            || self
+                .excluded_file_suffixes
+                .iter()
+                .any(|suffix| lower.ends_with(suffix.as_str()))
+    }
 }
 
 impl Default for GrepOptions {
@@ -406,7 +446,7 @@ impl Default for GrepOptions {
             reject_linked_files: false,
             cancellation: None,
             candidate_literal: None,
-            collect_line_matches: false,
+            interactive: None,
         }
     }
 }
@@ -479,9 +519,9 @@ impl GrepOptions {
         self
     }
 
-    /// Return structured line matches and stop scanning once the limit is exceeded.
-    pub fn collect_line_matches(mut self, value: bool) -> Self {
-        self.collect_line_matches = value;
+    /// Apply interactive-search behavior.
+    pub fn interactive(mut self, policy: InteractiveSearchPolicy) -> Self {
+        self.interactive = Some(policy);
         self
     }
 
@@ -716,11 +756,15 @@ impl GrepResultCollector {
         }
     }
 
-    /// The retained prefix already proves truncation, so further matches cannot
-    /// change what a caller that accepts unsorted first results will show.
-    fn budget_exhausted(&self) -> bool {
+    /// Output units a further file can still contribute. Reaching zero proves
+    /// truncation, so a caller that accepts unsorted first results can stop reading.
+    fn remaining_budget(&self) -> Option<usize> {
         self.budget
-            .is_some_and(|budget| self.retained_units >= budget)
+            .map(|budget| budget.saturating_sub(self.retained_units))
+    }
+
+    fn budget_exhausted(&self) -> bool {
+        self.remaining_budget() == Some(0)
     }
 
     /// Recover structured matches from the sink's `path:line:text` rendering. The
@@ -814,7 +858,12 @@ fn grep_globs_match(globs: &[regex::bytes::Regex], path: &str, search_root: &str
 fn build_grep_matcher(options: &GrepOptions) -> Result<RegexMatcher, String> {
     RegexMatcherBuilder::new()
         .case_insensitive(options.case_insensitive)
-        .multi_line(options.multiline)
+        .crlf(options.interactive.is_some())
+        // `crlf` also claims a line terminator the LF searcher would reject. Only `$` matters.
+        .line_terminator(None)
+        // CRLF mode only changes `$` under the multi-line flag. The searcher still feeds one
+        // line at a time, so this does not make a pattern span lines.
+        .multi_line(options.multiline || options.interactive.is_some())
         .dot_matches_new_line(options.multiline)
         .build(&options.pattern)
         .map_err(|error| format!("Invalid regex pattern: {error}"))
@@ -867,6 +916,15 @@ fn build_grep_searcher(before_context: usize, after_context: usize, multiline: b
         builder.multi_line(true);
     }
     builder.build()
+}
+
+/// Like local search, never reports binary files. Local search also matches line text with
+/// the `\r` removed, which the matcher's CRLF mode reproduces for `$`.
+fn build_interactive_searcher() -> Searcher {
+    SearcherBuilder::new()
+        .line_number(true)
+        .binary_detection(BinaryDetection::quit(0))
+        .build()
 }
 
 fn search_entry(
@@ -1313,7 +1371,7 @@ pub fn build_grep_candidate_command(options: &GrepOptions) -> String {
     for literal in literals {
         command.push_str(&format!(" -e {}", shell_single_quote(literal)));
     }
-    for directory in VCS_DIRECTORIES_TO_EXCLUDE {
+    for directory in candidate_excluded_directories(options) {
         command.push_str(&format!(
             " --glob {}",
             shell_single_quote(&format!("!**/{directory}/**"))
@@ -1350,9 +1408,23 @@ pub struct WorkspaceGrepResult {
     pub used_grep_candidates: bool,
     pub scanned_file_count: usize,
     pub scanned_bytes: u64,
-    /// Filled only when [`GrepOptions::collect_line_matches`] is set. Holds one entry
-    /// beyond `head_limit` when more matches exist, which is how callers see truncation.
+    /// Filled only for interactive search. Holds one entry beyond `head_limit` when
+    /// more matches exist, which is how callers see truncation.
     pub line_matches: Vec<WorkspaceGrepLineMatch>,
+    /// Interactive search only: files and directories the target refused to read.
+    pub skipped_path_count: usize,
+}
+
+fn candidate_excluded_directories(options: &GrepOptions) -> Vec<&str> {
+    let mut directories = VCS_DIRECTORIES_TO_EXCLUDE.to_vec();
+    if let Some(policy) = options.interactive.as_ref() {
+        for directory in &policy.excluded_directories {
+            if !directories.contains(&directory.as_str()) {
+                directories.push(directory);
+            }
+        }
+    }
+    directories
 }
 
 fn candidate_literals(options: &GrepOptions) -> Option<Vec<&str>> {
@@ -1362,14 +1434,22 @@ fn candidate_literals(options: &GrepOptions) -> Option<Vec<&str>> {
     }
 }
 
-/// Exit status 2 means some files could not be read, not that the search failed:
-/// `rg` and `grep` still report everything they could read. Those unreadable files
-/// could not be opened through the workspace provider either. Interactive search
-/// accepts this, while agent Grep keeps treating any failure as an error.
-fn parse_partial_candidates(stdout: &str, root: &str) -> Result<HashSet<String>, String> {
-    let empty = stdout == "OPENBITFUN_RG_CANDIDATES_BEGIN\0OPENBITFUN_RG_CANDIDATES_END\0";
-    warn!("Workspace search candidate command could not read some files under {root}");
-    parse_rg_candidates(stdout, i32::from(empty), root)
+/// Exit status 2 usually means some files could not be read: `rg` and `grep` still
+/// report everything they could read, and the workspace provider could not open those
+/// files either. With nothing reported it may equally be a failed command, so an empty
+/// result proves nothing and the caller must scan through the provider instead.
+fn parse_partial_candidates(
+    stdout: &str,
+    stderr: &str,
+    root: &str,
+) -> Result<Option<HashSet<String>>, String> {
+    let stderr: String = stderr.trim().chars().take(300).collect();
+    if stdout == "OPENBITFUN_RG_CANDIDATES_BEGIN\0OPENBITFUN_RG_CANDIDATES_END\0" {
+        warn!("Workspace search candidate command failed under {root}, scanning through the provider: {stderr}");
+        return Ok(None);
+    }
+    warn!("Workspace search candidate command could not read some files under {root}: {stderr}");
+    parse_rg_candidates(stdout, 0, root).map(Some)
 }
 
 /// One-shot candidate selection through system grep. Unlike the per-file batch
@@ -1387,7 +1467,7 @@ async fn recursive_grep_candidates(
                 literals,
                 &options.path,
                 options.case_insensitive,
-                VCS_DIRECTORIES_TO_EXCLUDE,
+                &candidate_excluded_directories(options),
             ),
             openbitfun_runtime_ports::WorkspaceCommandOptions {
                 timeout_ms: Some(INTERACTIVE_CANDIDATE_COMMAND_TIMEOUT_MS),
@@ -1401,7 +1481,7 @@ async fn recursive_grep_candidates(
     }
     match result.exit_code {
         0 | 1 => parse_rg_candidates(&result.stdout, result.exit_code, &options.path).map(Some),
-        2 => parse_partial_candidates(&result.stdout, &options.path).map(Some),
+        2 => parse_partial_candidates(&result.stdout, &result.stderr, &options.path),
         127 => Ok(None),
         status => Err(format!(
             "Workspace grep candidate command failed with exit code {status}: {}",
@@ -1606,6 +1686,7 @@ pub async fn grep_search_workspace(
                 scanned_file_count: 0,
                 scanned_bytes: 0,
                 line_matches: Vec::new(),
+                skipped_path_count: 0,
             })
         },
         result = grep_search_workspace_inner(options.clone(), fs, shell, workers.clone()) => result,
@@ -1618,11 +1699,21 @@ struct WorkspaceGrepCollector<'a> {
     matcher: RegexMatcher,
     file_results: GrepResultCollector,
     scanned_file_count: usize,
+    skipped_file_count: usize,
     bytes_read: Arc<std::sync::atomic::AtomicU64>,
     workers: Arc<WorkspaceSearchWorkers>,
 }
 
 impl WorkspaceGrepCollector<'_> {
+    fn skip_refused_path(&mut self, message: &str) -> bool {
+        let skip = self.options.interactive.is_some() && is_per_path_read_failure(message);
+        if skip {
+            warn!("Workspace search skipped a file: {message}");
+            self.skipped_file_count += 1;
+        }
+        skip
+    }
+
     async fn scan_batch(
         &mut self,
         files: &mut Vec<(String, openbitfun_runtime_ports::WorkspaceMetadata)>,
@@ -1636,32 +1727,45 @@ impl WorkspaceGrepCollector<'_> {
             .cancellation
             .as_ref()
             .expect("search cancellation bound");
-        let selected =
-            if let Some((shell, literals)) = grep_prefilter {
-                let paths = files
-                    .iter()
-                    .map(|(path, _)| path.clone())
-                    .collect::<Vec<_>>();
-                let result = shell
-                    .exec_with_options(
-                        &grep_batch_command(literals, &paths),
-                        openbitfun_runtime_ports::WorkspaceCommandOptions {
-                            timeout_ms: Some(30_000),
-                            cancellation_token: Some(cancellation.token.clone()),
-                        },
-                    )
-                    .await
-                    .map_err(|error| format!("Workspace grep prefilter failed: {error}"))?;
-                if result.timed_out || result.interrupted || result.exit_code != 0 {
-                    return Err(format!(
-                    "Workspace grep prefilter failed (exit {}, timed_out={}, interrupted={}): {}",
-                    result.exit_code, result.timed_out, result.interrupted, result.stderr.trim()
-                ));
-                }
-                parse_grep_batch_output(&result.stdout, files.len())?
-            } else {
+        let interactive = self.options.interactive.is_some();
+        let selected = if let Some((shell, literals)) = grep_prefilter {
+            let paths = files
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect::<Vec<_>>();
+            let result = shell
+                .exec_with_options(
+                    &grep_batch_command(literals, &paths),
+                    openbitfun_runtime_ports::WorkspaceCommandOptions {
+                        timeout_ms: Some(30_000),
+                        cancellation_token: Some(cancellation.token.clone()),
+                    },
+                )
+                .await
+                .map_err(|error| format!("Workspace grep prefilter failed: {error}"))?;
+            if interactive && !result.timed_out && !result.interrupted && result.exit_code != 0 {
+                // A file grep cannot read ends the batch early. Selecting the whole
+                // batch only costs reads, and each path then succeeds or skips alone.
+                warn!(
+                        "Workspace grep prefilter failed (exit {}), reading the batch through the provider: {}",
+                        result.exit_code,
+                        result.stderr.trim()
+                    );
                 vec![true; files.len()]
-            };
+            } else if result.timed_out || result.interrupted || result.exit_code != 0 {
+                return Err(format!(
+                    "Workspace grep prefilter failed (exit {}, timed_out={}, interrupted={}): {}",
+                    result.exit_code,
+                    result.timed_out,
+                    result.interrupted,
+                    result.stderr.trim()
+                ));
+            } else {
+                parse_grep_batch_output(&result.stdout, files.len())?
+            }
+        } else {
+            vec![true; files.len()]
+        };
         let before = self
             .options
             .before_context
@@ -1671,14 +1775,19 @@ impl WorkspaceGrepCollector<'_> {
             .after_context
             .unwrap_or(self.options.context.unwrap_or(0));
         for ((path, metadata), selected) in files.drain(..).zip(selected) {
-            if !selected {
+            if !selected || (interactive && self.file_results.budget_exhausted()) {
                 continue;
             }
-            let reader = self
-                .fs
-                .open_read(&path)
-                .await
-                .map_err(|error| format!("Failed to open {path}: {error}"))?;
+            let reader = match self.fs.open_read(&path).await {
+                Ok(reader) => reader,
+                Err(error) => {
+                    let message = format!("Failed to open {path}: {error:#}");
+                    if self.skip_refused_path(&message) {
+                        continue;
+                    }
+                    return Err(message);
+                }
+            };
             self.scanned_file_count += 1;
             let reader = tokio_util::io::SyncIoBridge::new(CancellableWorkspaceReader {
                 reader,
@@ -1686,32 +1795,46 @@ impl WorkspaceGrepCollector<'_> {
                 bytes_read: self.bytes_read.clone(),
             });
             let display_path = workspace_display_path(&path, self.options.display_base.as_deref());
+            // An interactive search stops reading this file once its budget is spent.
+            let stop_limit = if interactive {
+                self.file_results.remaining_budget()
+            } else {
+                None
+            };
             let sink = GrepSink::new(
                 self.options.output_mode,
                 self.options.show_line_numbers,
                 before,
                 after,
-                None,
+                stop_limit,
                 PathBuf::from(&path),
                 None,
             )
             .with_display_path(display_path.clone())
-            .with_output_budget(grep_output_budget(self.options));
+            .with_output_budget(grep_output_budget(self.options))
+            .with_full_lines(interactive);
             let worker_sink = sink.clone();
             let worker_matcher = self.matcher.clone();
             let multiline = self.options.multiline;
             let worker_guard = self.workers.start();
-            tokio::task::spawn_blocking(move || {
+            let searched = tokio::task::spawn_blocking(move || {
                 let _worker_guard = worker_guard;
-                build_grep_searcher(before, after, multiline).search_reader(
-                    &worker_matcher,
-                    reader,
-                    worker_sink,
-                )
+                let mut searcher = if interactive {
+                    build_interactive_searcher()
+                } else {
+                    build_grep_searcher(before, after, multiline)
+                };
+                searcher.search_reader(&worker_matcher, reader, worker_sink)
             })
             .await
-            .map_err(|error| format!("Workspace search reader task failed: {error}"))?
-            .map_err(|error| format!("Error searching file {path}: {error}"))?;
+            .map_err(|error| format!("Workspace search reader task failed: {error}"))?;
+            if let Err(error) = searched {
+                let message = format!("Error searching file {path}: {error}");
+                if self.skip_refused_path(&message) {
+                    continue;
+                }
+                return Err(message);
+            }
             let file_matches = sink.get_match_count();
             if file_matches > 0 {
                 self.file_results.push(GrepFileResult {
@@ -1801,7 +1924,7 @@ async fn grep_search_workspace_inner(
     let mut candidates = None;
     let mut used_grep_candidates = false;
     let mut used_recursive_grep = false;
-    let candidate_timeout_ms = if options.candidate_literal.is_some() {
+    let candidate_timeout_ms = if options.interactive.is_some() {
         INTERACTIVE_CANDIDATE_COMMAND_TIMEOUT_MS
     } else {
         CANDIDATE_COMMAND_TIMEOUT_MS
@@ -1830,14 +1953,15 @@ async fn grep_search_workspace_inner(
                     &options.path,
                 )?);
             }
-            2 if options.candidate_literal.is_some() => {
-                candidates = Some(parse_partial_candidates(
+            2 if options.interactive.is_some() => {
+                candidates = parse_partial_candidates(
                     &command_result.stdout,
+                    &command_result.stderr,
                     &options.path,
-                )?);
+                )?;
             }
             127 => {
-                if options.candidate_literal.is_some() {
+                if options.interactive.is_some() {
                     candidates =
                         recursive_grep_candidates(shell, literals, &options, cancellation).await?;
                     used_recursive_grep = candidates.is_some();
@@ -1905,6 +2029,7 @@ async fn grep_search_workspace_inner(
         matcher,
         file_results: GrepResultCollector::new(&options),
         scanned_file_count: 0,
+        skipped_file_count: 0,
         bytes_read: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         workers,
     };
@@ -1913,15 +2038,32 @@ async fn grep_search_workspace_inner(
         .map(|(_, literals)| grep_batch_command(literals, &[]).len())
         .unwrap_or(0);
     let mut command_bytes = command_overhead;
+    let root_ignores = match options.interactive.as_ref() {
+        Some(_) if root_metadata.kind == WorkspacePathKind::Directory => {
+            super::workspace_walk::git_info_exclude_ignores(fs, &options.path).await
+        }
+        _ => Vec::new(),
+    };
     let mut walker = (root_metadata.kind == WorkspacePathKind::Directory).then(|| {
-        super::workspace_walk::WorkspaceFileWalker::new(fs, options.path.clone(), false, true)
-            .with_symlink_entries()
+        let walker = super::workspace_walk::WorkspaceFileWalker::with_scope(
+            fs,
+            options.path.clone(),
+            Vec::new(),
+            root_ignores,
+            false,
+            true,
+        )
+        .with_symlink_entries();
+        match options.interactive.as_ref() {
+            Some(policy) => walker.with_interactive_policy(policy.excluded_directories.clone()),
+            None => walker,
+        }
     });
     let mut single_file =
         (root_metadata.kind == WorkspacePathKind::File).then(|| options.path.clone());
     loop {
         if cancellation.is_cancelled()
-            || (options.collect_line_matches && collector.file_results.budget_exhausted())
+            || (options.interactive.is_some() && collector.file_results.budget_exhausted())
         {
             break;
         }
@@ -1966,6 +2108,14 @@ async fn grep_search_workspace_inner(
             continue;
         }
         let name = file_name.as_deref().unwrap_or(&path);
+        if root_metadata.kind == WorkspacePathKind::Directory
+            && options
+                .interactive
+                .as_ref()
+                .is_some_and(|policy| policy.excludes_file(name))
+        {
+            continue;
+        }
         // Explicit files bypass the walker's type filters in the native path.
         if root_metadata.kind == WorkspacePathKind::Directory
             && options.file_type.is_some()
@@ -1973,18 +2123,35 @@ async fn grep_search_workspace_inner(
         {
             continue;
         }
-        let metadata = fs
-            .metadata(&path, is_symlink)
-            .await
-            .map_err(|error| format!("Failed to inspect {path}: {error}"))?;
-        // A dangling link is ordinary workspace content, and it must not fail a
-        // whole-workspace search that the person never scoped around it.
-        if metadata.is_none() && is_symlink && options.collect_line_matches {
+        let metadata = match fs.metadata(&path, is_symlink).await {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                let message = format!("Failed to inspect {path}: {error:#}");
+                if collector.skip_refused_path(&message) {
+                    continue;
+                }
+                return Err(message);
+            }
+        };
+        let Some(metadata) = metadata else {
+            // A dangling link or a file deleted mid-search is ordinary workspace churn.
+            let message = format!("No such file while searching: {path}");
+            if collector.skip_refused_path(&message) {
+                continue;
+            }
+            return Err(format!("File disappeared while searching: {path}"));
+        };
+        if metadata.kind != WorkspacePathKind::File {
             continue;
         }
-        let metadata =
-            metadata.ok_or_else(|| format!("File disappeared while searching: {path}"))?;
-        if metadata.kind != WorkspacePathKind::File {
+        if root_metadata.kind == WorkspacePathKind::Directory
+            && options
+                .interactive
+                .as_ref()
+                .and_then(|policy| policy.max_file_size_bytes)
+                .zip(metadata.size)
+                .is_some_and(|(limit, size)| size > limit)
+        {
             continue;
         }
         if options.reject_linked_files {
@@ -2011,13 +2178,18 @@ async fn grep_search_workspace_inner(
         }
     }
     collector.scan_batch(&mut pending, grep_prefilter).await?;
-    let line_matches = if options.collect_line_matches {
+    let line_matches = if options.interactive.is_some() {
         collector.file_results.line_matches()
     } else {
         Vec::new()
     };
+    let skipped_path_count = collector.skipped_file_count
+        + walker
+            .as_ref()
+            .map_or(0, |walker| walker.skipped_directories());
     Ok(WorkspaceGrepResult {
         line_matches,
+        skipped_path_count,
         result: collector
             .file_results
             .finish(&options, cancellation.is_cancelled())?,

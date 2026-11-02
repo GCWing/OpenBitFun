@@ -4,10 +4,16 @@ Flashgrep accelerated search is currently unavailable for remote workspaces, so
 index controls are hidden. Content search still works: it runs through the
 workspace's own file and shell providers, using `rg` or a capable `grep` on the
 target to select candidate files when available and otherwise reading the files
-through the remote provider, which can be slow on large trees. A search that
+through the remote provider, which can be slow on large trees. It follows the
+local search defaults (ignore rules at the search root and below, default
+excluded directories, binary and over-10 MB files skipped), except that global
+Git excludes and the exclude file of a parent repository are not applied. Files
+and directories the target refuses to read are skipped and logged. A search that
 fails or times out reports an explicit error. Remote file-name search remains
-available. OpenBitFun never falls back to searching the controller filesystem for
-a remote path.
+available. Global search (the command palette) stays local-only and reports remote
+projects as unsupported, because each keystroke would hold its file results behind
+a remote scan. OpenBitFun never falls back to searching the controller filesystem
+for a remote path.
 
 OpenBitFun remote workspaces use one saved target for the file explorer, terminal,
 Agent commands, and workspace tools. The target can be:
