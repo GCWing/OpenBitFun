@@ -162,6 +162,18 @@ describe('TerminalService device surface switching', () => {
       expect(replayMock.created[0].follow).toHaveBeenCalledWith(3);
     });
 
+    it('starts lifecycle tracking when a tab list subscribes after sessions were loaded', async () => {
+      const service = await connectToHost();
+      invokeMock.mockResolvedValueOnce([{ id: 't1', workspaceId: 'w', name: 'Shell' }]);
+      await service.listSessions();
+      expect(replayMock.created).toHaveLength(0);
+
+      service.onEvent(vi.fn());
+      await Promise.resolve();
+      expect(replayMock.created).toHaveLength(1);
+      expect(replayMock.created[0].follow).not.toHaveBeenCalled();
+    });
+
     it('falls back to host kind for a CLI host that predates the capability', async () => {
       const service = await connectToHost({ hostKind: 'cli' });
       service.onSessionEvent('t1', vi.fn());

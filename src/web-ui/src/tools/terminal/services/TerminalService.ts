@@ -300,6 +300,7 @@ export class TerminalService {
     this.globalListeners.add(callback);
     // A tab list has to see exits before any terminal view has connected.
     void this.connect().catch(error => log.warn('Failed to connect terminal events', error));
+    this.reconcilePeerReplays();
     return () => {
       this.globalListeners.delete(callback);
       this.reconcilePeerReplays();
