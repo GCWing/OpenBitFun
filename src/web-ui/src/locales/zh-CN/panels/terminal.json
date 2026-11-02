@@ -1,10 +1,7 @@
 {
   "title": "终端",
   "emptyState": "当前没有打开的终端",
-  "actions": {
-    "closeView": "关闭终端视图",
-    "stopTerminal": "停止终端"
-  },
+  "actions": { "closeView": "关闭终端视图", "stopTerminal": "停止终端" },
   "dialog": {
     "editTerminal": {
       "title": "编辑终端",
@@ -24,7 +21,8 @@
     "label": "终端链接",
     "created": "已将远程端口 {{remotePort}} 映射到 {{localAddress}}。",
     "failed": "无法映射远程端口 {{port}}：{{error}}",
-    "peerUnsupported": "控制其他设备时无法映射远程端口 {{port}}。该链接指向远程主机，而不是本机。",
-    "openAnyway": "仍然打开链接"
+    "peerUnsupported": "控制其他设备时无法映射端口。该链接指向远程主机，而不是本机。",
+    "openAnyway": "仍然打开链接",
+    "noPort": "该链接指向远程主机而不是本机，且没有可映射的端口。"
   }
 }

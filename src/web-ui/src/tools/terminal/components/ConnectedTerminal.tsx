@@ -441,8 +441,10 @@ const ConnectedTerminal: React.FC<ConnectedTerminalProps> = memo(({
   const connectionId = session?.connectionId ?? initialSession?.connectionId;
   const handleLinkActivate = useCallback((uri: string) => {
     void openTerminalLink(uri, { connectionId }, {
+      listSavedConnections: () => sshApi.listSavedConnections(),
       listPortForwards: (id) => sshApi.listPortForwards(id),
       startPortForward: (request) => sshApi.startPortForward(request),
+      stopPortForward: (forwardId) => sshApi.stopPortForward(forwardId),
       openExternal: (url) => systemAPI.openExternal(url),
       isPeerDeviceModeActive,
       notifyInfo: (message) => {

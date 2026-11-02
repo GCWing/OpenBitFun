@@ -10,37 +10,38 @@
 export interface LoopbackLink {
   /** Parsed link. */
   url: URL;
-  /** Port the service listens on, as seen from the remote host. */
-  remotePort: number;
+  /**
+   * Port the service listens on, as seen from the remote host. `null` when the
+   * link carries no explicit port: it still names the remote machine, but there
+   * is no dev-server port worth forwarding.
+   */
+  remotePort: number | null;
   /** Host the forward should dial on the remote side. */
   remoteHost: string;
 }
 
-/** Remote-side hosts considered equivalent when reusing an existing forward. */
-const LOOPBACK_REMOTE_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+/** Lower-case, drop a trailing root dot (`localhost.`) and IPv6 brackets. */
+function canonicalHost(hostname: string): string {
+  let host = hostname.toLowerCase();
+  if (host.endsWith('.')) host = host.slice(0, -1);
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  return host;
+}
 
-function isLoopbackHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase();
+function isLoopbackHostname(host: string): boolean {
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
-  if (host === '0.0.0.0') return true;
-  if (host === '[::1]' || host === '::1') return true;
+  if (host === '0.0.0.0' || host === '::1') return true;
   return /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 
 /** Map the link host to the address the forward should dial remotely. */
-function remoteDialHost(hostname: string): string {
-  const host = hostname.toLowerCase();
+function remoteDialHost(host: string): string {
   if (host === '0.0.0.0') return '127.0.0.1';
-  if (host === '[::1]' || host === '::1') return '::1';
   if (host === 'localhost' || host.endsWith('.localhost')) return 'localhost';
   return host;
 }
 
-/**
- * Recognize an http(s) link to a loopback address with an explicit port.
- * Links without an explicit port are left alone: a scheme-default port on the
- * remote is rarely a dev server and usually needs privileges to forward.
- */
+/** Recognize an http(s) link whose host is a loopback address. */
 export function parseLoopbackLink(uri: string): LoopbackLink | null {
   let url: URL;
   try {
@@ -49,33 +50,39 @@ export function parseLoopbackLink(uri: string): LoopbackLink | null {
     return null;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  if (!isLoopbackHostname(url.hostname)) return null;
-  if (!url.port) return null;
-  const remotePort = Number(url.port);
-  if (!Number.isInteger(remotePort) || remotePort <= 0 || remotePort > 65535) return null;
-  return { url, remotePort, remoteHost: remoteDialHost(url.hostname) };
+  const host = canonicalHost(url.hostname);
+  if (!isLoopbackHostname(host)) return null;
+  let remotePort: number | null = null;
+  if (url.port) {
+    const port = Number(url.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
+    remotePort = port;
+  }
+  return { url, remotePort, remoteHost: remoteDialHost(host) };
 }
 
-/** Whether an existing forward's remote host reaches the same loopback service. */
-export function isLoopbackRemoteHost(remoteHost: string): boolean {
-  return LOOPBACK_REMOTE_HOSTS.has(remoteHost.toLowerCase());
+/** Remote hosts that name the same service: exact, plus `localhost` <-> `127.0.0.1`. */
+export function sameRemoteHost(left: string, right: string): boolean {
+  const a = canonicalHost(left);
+  const b = canonicalHost(right);
+  if (a === b) return true;
+  const ipv4Localhost = new Set(['localhost', '127.0.0.1']);
+  return ipv4Localhost.has(a) && ipv4Localhost.has(b);
 }
 
 /**
  * Point a loopback link at a local forward, keeping path, query and hash.
  *
- * `localhost` and `*.localhost` names are kept so cookies and OAuth callback
- * origins still match; other loopback spellings (`0.0.0.0`, `[::1]`, `127.x`)
- * become the forward's bound address, since the forward may not listen on them.
+ * The host is always replaced with the forward's bound address. Keeping a
+ * `localhost` name would let the browser try `::1` first and reach a local
+ * server on the same port, which is the bug this rewrite exists to avoid.
  */
 export function rewriteLoopbackLink(link: LoopbackLink, localHost: string, localPort: number): string {
   const url = new URL(link.url.href);
-  const hostname = url.hostname.toLowerCase();
-  const keepName = hostname === 'localhost' || hostname.endsWith('.localhost');
-  if (!keepName) {
-    const bound = localHost === '0.0.0.0' || localHost === '::' || !localHost ? '127.0.0.1' : localHost;
-    url.hostname = bound.includes(':') && !bound.startsWith('[') ? `[${bound}]` : bound;
-  }
+  let bound = canonicalHost(localHost || '127.0.0.1');
+  if (bound === '0.0.0.0') bound = '127.0.0.1';
+  if (bound === '::') bound = '::1';
+  url.hostname = bound.includes(':') ? `[${bound}]` : bound;
   url.port = String(localPort);
   return url.href;
 }
