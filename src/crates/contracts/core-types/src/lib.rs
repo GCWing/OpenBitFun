@@ -52,7 +52,7 @@ pub use surface::{
     RuntimeArtifactKind, RuntimeArtifactRef, SurfaceKind, ThreadEnvironment, ThreadEnvironmentKind,
 };
 pub use tool_image_attachment::ToolImageAttachment;
-pub use tool_presentation::ToolPresentationMode;
+pub use tool_presentation::{PtcLanguage, ToolPresentationMode};
 pub use worktree::{
     SessionExecutionTarget, SessionExecutionTargetKind, SessionExecutionTargetRequest,
     WorktreeError, WorktreeErrorCode, WorktreeLifecycle, WorktreeSessionSummary, WorktreeSettings,
@@ -60,4 +60,5 @@ pub use worktree::{
 };
 
 pub mod workspace;
+pub mod workspace_icon;
 pub use workspace::WorkspaceKind;

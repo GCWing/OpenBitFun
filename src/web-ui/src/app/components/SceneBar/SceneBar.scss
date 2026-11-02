@@ -19,6 +19,9 @@
     flex: 0 0 auto;
     min-width: 0;
 
+    // Keep the tab's layout and hit target while its portalled surface expands.
+    &[data-session-history-open='true'] [role='tab'] { opacity: 0; }
+
     &[data-canvas-drop-position]::after {
       content: '';
       position: absolute;

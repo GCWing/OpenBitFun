@@ -399,12 +399,87 @@ describe('Router setup', () => {
     expect(document.body.textContent).not.toContain('router.connected'); expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('prefers a Router connection issue over a separate readiness issue', async () => {
+    await render();
+    vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValue({
+      ...routingStatus(false),
+      connectionIssue: 'Router returned HTTP 401: api_key=private-secret',
+      issue: 'Configure an enabled economy model before using smart mode',
+    });
+    await check();
+    expectState('router', 'failed');
+    expect(row('router').textContent).toContain('router.connectionFailures.authentication');
+    expect(row('router').textContent).not.toContain('router.connectionChecks.unconfigured');
+    expect(document.body.textContent).not.toContain('private-secret');
+  });
+
+  it.each([
+    ['Router requires OpenAI Chat Completions API format; select an OpenAI-compatible classifier service', 'protocol'],
+    ['Router protocol mismatch: classifier token IDs and logprobs are required', 'protocol'],
+    ['Router response lacks classifier token logprobs', 'protocol'],
+    ['Failed to decode Router response: invalid response body', 'protocol'],
+    ['Router returned HTTP 401', 'authentication'],
+    ['Router returned HTTP 403', 'authentication'],
+    ['Router returned HTTP 404', 'addressOrModel'],
+    ['Invalid Router URL', 'addressOrModel'],
+    ['Router returned HTTP 429', 'rateLimited'],
+    ['Router returned HTTP 500', 'serviceUnavailable'],
+    ['Router returned HTTP 503', 'serviceUnavailable'],
+    ['Router returned HTTP 418', 'http'],
+    ['Router deadline expired during classification after queue admission', 'network'],
+    ['Router request failed: connection refused', 'network'],
+  ])('localizes a legacy Router issue without displaying its raw contents: %s', async (issue, category) => {
+    await render();
+    vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValue({ ...routingStatus(false), issue });
+    await check();
+    expectState('router', 'failed');
+    expect(row('router').textContent).toContain(`router.connectionFailures.${category}`);
+    expect(document.body.textContent).not.toContain(issue);
+  });
+
+  it('reports an unconfigured Router without exposing the host diagnostic', async () => {
+    await render();
+    const issue = 'Configure a Router service model in model settings';
+    vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValue({ ...routingStatus(false), issue });
+    await check();
+    expectState('router', 'failed');
+    expect(row('router').textContent).toContain('router.connectionChecks.unconfigured');
+    expect(document.body.textContent).not.toContain(issue);
+  });
+
+  it('gives safe retry guidance for an unknown connection issue without substituting a readiness issue', async () => {
+    await render();
+    vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValue({
+      ...routingStatus(false), connectionIssue: 'provider body api_key=private-secret /private/host/config',
+      issue: 'Router returned HTTP 404',
+    });
+    await check();
+    expectState('router', 'failed');
+    expect(row('router').textContent).toContain('router.checkFailed');
+    expect(row('router').textContent).not.toContain('router.connectionFailures.addressOrModel');
+    expect(document.body.textContent).not.toContain('private-secret');
+    expect(document.body.textContent).not.toContain('/private/host/config');
+  });
+
+  it('does not display stale failure details when the explicit Router probe succeeds', async () => {
+    await render();
+    vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValue({
+      ...routingStatus(true), connectionIssue: 'Router returned HTTP 401', issue: 'private-old-failure',
+    });
+    await check();
+    expectState('router', 'connected');
+    expect(row('router').querySelector('.model-router-settings__check-detail')).toBeNull();
+    expect(row('router').textContent).not.toContain('router.connectionFailures');
+    expect(document.body.textContent).not.toContain('private-old-failure');
+  });
+
   it('localizes a rejected protocol check containing a tokenizer file error', async () => {
     await render();
     vi.mocked(agentAPI.getModelRoutingStatus).mockResolvedValueOnce({ apiVersion: 1, available: true, estimatedTokenBudgetSupported: true } as Awaited<ReturnType<typeof agentAPI.getModelRoutingStatus>>)
       .mockRejectedValueOnce(new Error('Failed to load Router tokenizer from /host/tokenizer.json'));
     await act(async () => button('router.test').click());
     expectState('router', 'failed');
+    expect(row('router').textContent).toContain('router.checkFailed');
     expect(document.body.textContent).not.toContain('Failed to load Router tokenizer');
     expect(onClose).not.toHaveBeenCalled();
   });

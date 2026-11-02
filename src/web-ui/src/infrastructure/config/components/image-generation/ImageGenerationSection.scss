@@ -1,12 +1,18 @@
 .openbitfun-image-settings__editor {
+  container-name: config-panel;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: var(--openbitfun-space-3);
+  gap: var(--openbitfun-space-5);
   min-inline-size: 0;
   font-family: var(--openbitfun-type-body-sm-font-family);
   font-size: var(--openbitfun-type-body-sm-font-size);
   font-weight: var(--openbitfun-type-body-sm-font-weight);
   line-height: var(--openbitfun-type-body-sm-line-height);
+}
+.openbitfun-image-settings__editor-fields .openbitfun-config-page-row {
+  padding-block: var(--openbitfun-layout-field-group-row-padding-block);
+  padding-inline: var(--openbitfun-layout-field-group-row-padding-inline);
 }
 .openbitfun-image-settings__hint {
   margin: 0;

@@ -253,7 +253,7 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
     <Dialog open={Boolean(draft)} onOpenChange={nextOpen => { if (!nextOpen) discardDraft(); }}
       className="openbitfun-model-pools__editor"
       data-testid="settings-model-pool-dialog"
-      size="lg" closeOnPointerOutside={false}>
+      preset="panel" closeOnPointerOutside={false}>
       <DialogHeader>
         <DialogHeading>
           <DialogTitle>{t(pools.some(pool => pool.id === draft?.id) ? 'pools.editTitle' : 'pools.create')}</DialogTitle>

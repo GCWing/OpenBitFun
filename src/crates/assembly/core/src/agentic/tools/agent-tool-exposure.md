@@ -17,6 +17,8 @@ Notes:
   inherit each tool's default behavior.
 - Dynamically registered MCP tools default to `Deferred`; they are discovered
   at runtime and are not enumerated in the built-in table below.
+- Pages defaults expose `PageManage`. `PagePublish` and `PageDeploy` remain
+  registered for legacy explicit Agent tool selections and existing calls only.
 - When `ai.enable_deferred_tool_loading=false`, all allowed tools are exposed as
   `Direct`, and `GetToolSpec` plus `CallDeferredTool` are removed from the
   model-visible manifest.
@@ -83,6 +85,7 @@ Notes:
 | `PublishMiniApp` | Direct | None | - |
 | `FrontendWorkbench` | Direct | None | - |
 | `PublishAppearance` | Direct | None | - |
+| `PageManage` | Direct | None | - |
 | `PageDeploy` | Direct | None | - |
 | `PagePublish` | Direct | None | - |
 | `ControlHub` | Deferred | `ComputerUse` | Direct |

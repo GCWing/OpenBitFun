@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
-import { Alert, Button, Checkbox, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeaderActions, DialogHeading, DialogTitle, Icon, IconButton, LoadingState, OverflowText, ScrollArea, SearchField, Switch, StatusPill, type IconSource } from '@openbitfun/ui';
+import { Alert, Button, Checkbox, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeaderActions, DialogHeading, DialogTitle, FieldGroup, Icon, IconButton, LoadingState, OverflowText, ScrollArea, SearchField, Switch, StatusPill, type IconSource } from '@openbitfun/ui';
 import { EcosystemDialog as Dialog } from './EcosystemDialog';
 import { EcosystemBatchLayout } from './EcosystemBatchLayout';
 import EcosystemPets from './EcosystemPets';
@@ -615,7 +615,7 @@ export default function ExternalAgentContent({ scopeKey, actionsRef, onActionSta
     <section className="ecosystem-compatibility__section" data-external-agent-content={runtime.spec.ecosystemId}>
       {notice && !kind && !review && !undo && !batch && !batchUndo ? <Alert className="ecosystem-compatibility__notice ecosystem-compatibility__feedback" role="status" showIcon={false} message={notice} /> : null}
       {loading ? <LoadingState size="sm">{t('loading')}</LoadingState> : null}
-      <div className="ecosystem-compatibility__content-overview" role="table" aria-label={t('content.title', { name: runtime.spec.name })}>
+      <FieldGroup appearance="subtle" fieldSurface="ambient" dividers={false} className="ecosystem-compatibility__content-overview" role="table" aria-label={t('content.title', { name: runtime.spec.name })}>
         <div className="ecosystem-compatibility__content-summary ecosystem-compatibility__content-summary--header" role="row">
           <span role="columnheader">{t('import.columns.item')}</span>
           <span role="columnheader">{t('import.columns.state')}</span>
@@ -653,7 +653,7 @@ export default function ExternalAgentContent({ scopeKey, actionsRef, onActionSta
           </div>
         </div>;
       })}
-      </div>
+      </FieldGroup>
       <Dialog
         id={categoryDialogId}
         className="ecosystem-compatibility__catalog-dialog"

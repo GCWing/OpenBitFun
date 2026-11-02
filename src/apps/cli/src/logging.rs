@@ -32,6 +32,7 @@ pub(crate) struct CliLogPaths {
 }
 
 static ACTIVE_LOG_PATHS: OnceLock<CliLogPaths> = OnceLock::new();
+static ACTIVE_LOG_LEVEL: OnceLock<tracing::Level> = OnceLock::new();
 
 struct RotatingFile {
     dir: PathBuf,
@@ -254,6 +255,32 @@ pub(crate) fn active_plugin_host_log_path() -> Option<PathBuf> {
         .map(|paths| paths.plugin_host_log_path.clone())
 }
 
+/// The `get_runtime_logging_info` wire shape shared with Desktop hosts. Logs a
+/// CLI does not write (webview, Flow Chat, native startup) report empty paths.
+pub(crate) fn runtime_logging_info() -> serde_json::Value {
+    let paths = ACTIVE_LOG_PATHS
+        .get()
+        .cloned()
+        .unwrap_or_else(|| build_log_paths(&resolve_logs_root()));
+    let level = ACTIVE_LOG_LEVEL.get().copied().unwrap_or(DEFAULT_LOG_LEVEL);
+    logging_info_value(&paths, level)
+}
+
+fn logging_info_value(paths: &CliLogPaths, level: tracing::Level) -> serde_json::Value {
+    serde_json::json!({
+        "effectiveLevel": level.as_str().to_ascii_lowercase(),
+        "sessionLogDir": paths.session_log_dir.to_string_lossy(),
+        "earlyStartupLogPath": "",
+        "nativeStartupTracePath": "",
+        "appLogPath": paths.app_log_path.to_string_lossy(),
+        "aiLogPath": paths.ai_log_path.to_string_lossy(),
+        "flashgrepLogPath": paths.flashgrep_log_path.to_string_lossy(),
+        "webviewLogPath": "",
+        "flowChatLogPath": "",
+        "previousUnexpectedExit": serde_json::Value::Null,
+    })
+}
+
 fn create_rotating_writer(
     session_log_dir: &Path,
     file_name: &str,
@@ -379,6 +406,7 @@ pub(crate) fn init_file_logging_at(
     fs::create_dir_all(session_log_dir).ok();
     let paths = build_log_paths(session_log_dir);
     let _ = ACTIVE_LOG_PATHS.set(paths.clone());
+    let _ = ACTIVE_LOG_LEVEL.set(log_level);
 
     let app_writer = create_rotating_writer(session_log_dir, "app");
     let ai_writer = create_rotating_writer(session_log_dir, "ai");
@@ -418,6 +446,20 @@ pub(crate) fn init_file_logging(log_level: tracing::Level) -> CliLogPaths {
 mod tests {
     use super::*;
     use tracing::Subscriber;
+
+    #[test]
+    fn logging_info_matches_the_controller_wire_shape() {
+        let info = logging_info_value(
+            &build_log_paths(Path::new("/logs/session")),
+            tracing::Level::DEBUG,
+        );
+        assert_eq!(info["effectiveLevel"], "debug");
+        assert_eq!(info["sessionLogDir"], "/logs/session");
+        assert!(info["appLogPath"].as_str().unwrap().ends_with("app.log"));
+        assert!(info["aiLogPath"].as_str().unwrap().ends_with("ai.log"));
+        assert_eq!(info["webviewLogPath"], "");
+        assert!(info["previousUnexpectedExit"].is_null());
+    }
 
     fn file_subscriber(
         dir: &Path,

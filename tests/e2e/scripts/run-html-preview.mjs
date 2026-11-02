@@ -93,8 +93,16 @@ for (const [directory, color, marker] of [['site/dist', 'rgb(23, 81, 139)', 'fir
   await writeFile(path.join(site, 'assets/chunk.mjs'), 'export const marker = ' + JSON.stringify(marker) + ';');
   await writeFile(path.join(site, 'assets/pixel.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'));
 }
+const spa = path.join(workspace, 'website #1/dist');
+await mkdir(path.join(spa, 'assets'), { recursive: true });
+await writeFile(path.join(spa, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="/assets/app.css"></head><body><main id="route">loading</main><a id="navigate" href="/evaluation">Evaluation</a><img id="image" src="/assets/pixel.png"><script type="module" src="/assets/app.mjs"></script></body></html>');
+await writeFile(path.join(spa, 'assets/app.css'), '#route { color: rgb(23, 81, 139); } @keyframes reveal { from { opacity: 0; } to { opacity: 1; } } #image { animation: reveal 120ms both; }');
+await writeFile(path.join(spa, 'assets/app.mjs'), 'const { routes } = await import("./routes.mjs"); document.querySelector("#route").textContent = routes.includes(location.pathname) ? location.pathname : "PAGE NOT FOUND";');
+await writeFile(path.join(spa, 'assets/routes.mjs'), 'export const routes = ["/", "/evaluation", "/docs/detail"];');
+await cp(path.join(workspace, 'site/dist/assets/pixel.png'), path.join(spa, 'assets/pixel.png'));
 const previews = [];
 async function checkPage(label, marker, color) {
+  await invoke('plugin:webview|webview_show', { label });
   await request('/session/' + session + '/window', { handle: label });
   try {
     await until(() => execute((marker, color) => {
@@ -111,13 +119,27 @@ async function checkPage(label, marker, color) {
     report.checks.push(details);
   } finally {
     await request('/session/' + session + '/window', { handle: 'main' });
+    await invoke('plugin:webview|webview_hide', { label });
   }
+}
+async function checkRoute(route) {
+  await until(() => execute(route => {
+    const result = document.querySelector('#route');
+    const image = document.querySelector('#image');
+    return document.visibilityState === 'visible' && location.pathname === route && result?.textContent === route
+      && getComputedStyle(result).color === 'rgb(23, 81, 139)'
+      && image?.complete && image.naturalWidth === 1 && getComputedStyle(image).opacity === '1';
+  }, route), 'site route and resources for ' + route);
+  report.checks.push(await execute(() => ({ url: location.href,
+    route: document.querySelector('#route').textContent, imageWidth: document.querySelector('#image').naturalWidth,
+    resources: performance.getEntriesByType('resource').map(entry => entry.name) })));
 }
 try {
   await until(async () => (await request('/status')).ready, 'embedded driver');
   session = (await request('/session', {})).sessionId;
   await request('/session/' + session + '/timeouts', { script: 10000 });
   await until(() => execute(() => !!window.__TAURI_INTERNALS__), 'main frontend');
+  await invoke('show_main_window');
   const opened = await invoke('open_workspace', { request: { path: workspace, createLocal: true } });
   for (const [directory, marker, color] of [['site/dist', 'first', 'rgb(23, 81, 139)'], ['other/build', 'second', 'rgb(163, 45, 18)']]) {
     const preview = await invoke('html_preview_create', { request: { workspaceId: opened.id,
@@ -132,6 +154,29 @@ try {
   await request('/session/' + session + '/refresh', {});
   await request('/session/' + session + '/window', { handle: 'main' });
   await checkPage('embedded-browser-panel-view-html-first', 'first', 'rgb(23, 81, 139)');
+  const sitePreview = await invoke('html_preview_create', { request: { workspaceId: opened.id,
+    filePath: path.join(spa, 'index.html') } });
+  previews.push(sitePreview);
+  const siteLabel = 'embedded-browser-panel-view-html-site';
+  await invoke('browser_webview_create', { request: { label: siteLabel, url: sitePreview.url, x: 350, y: 80, width: 480, height: 320 } });
+  await invoke('plugin:webview|webview_show', { label: siteLabel });
+  await request('/session/' + session + '/window', { handle: siteLabel });
+  await checkRoute('/');
+  await execute(() => document.querySelector('#navigate').click());
+  await checkRoute('/evaluation');
+  await request('/session/' + session + '/refresh', {});
+  await checkRoute('/evaluation');
+  const siteOrigin = new URL(sitePreview.url).origin;
+  await request('/session/' + session + '/url', { url: siteOrigin + '/docs/detail?lang=en' });
+  await checkRoute('/docs/detail');
+  assert.equal(await execute(() => location.search), '?lang=en');
+  const missing = await execute(async () => {
+    const reply = await fetch('/assets/missing.png', { headers: { accept: 'image/png' } });
+    return { status: reply.status, body: await reply.text() };
+  });
+  assert.equal(missing.status, 404);
+  assert.equal(missing.body, 'Preview resource not found');
+  await request('/session/' + session + '/window', { handle: 'main' });
   for (const preview of previews) await invoke('html_preview_release', { request: { sessionId: preview.sessionId } });
   report.passed = true;
 } catch (error) {

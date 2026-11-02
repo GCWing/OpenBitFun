@@ -88,6 +88,8 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       'theme', 'font', 'size', 'motion', 'animation',
       'appearance pack', 'skin', 'import',
       'session', 'panel', 'layout', 'overlay',
+      'chat', 'content', 'width', 'resize',
+      'sidebar', 'navigation', 'pin', 'order',
     ],
     namespaces: ['settings/appearance', 'settings/application'],
     searchPhrases: [
@@ -100,7 +102,17 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       phrase('settings/appearance', 'sessionPanel.displayMode'),
       phrase('settings/appearance', 'sessionPanel.split'),
       phrase('settings/appearance', 'sessionPanel.overlay'),
+      phrase('settings/appearance', 'contentWidth.title'),
+      phrase('settings/appearance', 'contentWidth.label'),
+      phrase('settings/appearance', 'sidebar.title'),
+      phrase('settings/appearance', 'sidebar.available'),
     ],
+    sections: [{
+      id: 'sidebar-navigation',
+      labelKey: 'navigation.sections.sidebar-navigation',
+      keywords: ['sidebar', 'navigation', 'pin', 'order'],
+      searchPhrases: [phrase('settings/appearance', 'sidebar.title'), phrase('settings/appearance', 'sidebar.available')],
+    }],
     load: () => import('./pages/application/AppearanceSettingsPage'),
   }),
   definePage({
@@ -314,6 +326,19 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       },
     ],
     load: () => import('./pages/development/WorkspaceGitSettingsPage'),
+  }),
+  definePage({
+    id: 'tools.external-import',
+    categoryId: 'tools',
+    labelKey: 'navigation.pages.externalImport.label',
+    descriptionKey: 'navigation.pages.externalImport.description',
+    keywords: ['external import', 'integrations', 'ecosystem', 'opencode', 'claude code', 'codex', 'zcode'],
+    namespaces: ['scenes/ecosystem-compatibility', 'settings/external-apps', 'settings/acp-agents'],
+    searchPhrases: [
+      phrase('scenes/ecosystem-compatibility', 'title'),
+      phrase('scenes/ecosystem-compatibility', 'applications.title'),
+    ],
+    load: () => import('./pages/tools/ExternalImportSettingsPage'),
   }),
   definePage({
     id: 'tools.web-search',

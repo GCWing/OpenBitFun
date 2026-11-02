@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "40fada109d5dbcfdbc1b289af574f7ac736da1620d4eee26128a40d3f0f5818c",
-  "commandCount": 706,
+  "catalogDigest": "513e184cc2d93f183cdea258516f532caf58ac6400ef76dce9b54f6de0752627",
+  "commandCount": 709,
   "coverage": {
-    "commandCount": 706,
-    "documentedCommandCount": 646,
+    "commandCount": 709,
+    "documentedCommandCount": 649,
     "implementationCommandCount": 60,
     "implementationDigest": "5047b674e890f899e65baf9235e9df4bd912fa28f44eb10a656e079a1b89974d"
   },
@@ -193,11 +193,13 @@
     {
       "id": "account_list_devices",
       "moduleId": "remote_connect",
-      "capabilityId": "feature.remote-connect",
+      "capabilityId": null,
       "capabilityIds": [
+        "feature.detached-dispatch",
         "feature.remote-connect"
       ],
       "documentedItemIds": [
+        "feature.detached-dispatch:targets",
         "feature.remote-connect:devices"
       ],
       "visibility": "documented",
@@ -2276,7 +2278,7 @@
         "feature.detached-dispatch"
       ],
       "documentedItemIds": [
-        "feature.detached-dispatch:permission-continuation"
+        "feature.detached-dispatch:cancel"
       ],
       "visibility": "documented",
       "rustPath": "api::dispatch_api::dispatch_cancel",
@@ -4438,6 +4440,22 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
+      "id": "get_workspace_icon",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [
+        "feature.projects:workspace-icon"
+      ],
+      "visibility": "documented",
+      "rustPath": "get_workspace_icon",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn get_workspace_icon( state: State<'_, AppState>, request: openbitfun_core::service::workspace::WorkspaceIconRequest, ) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "get_workspace_reference_snapshot",
       "moduleId": "external_sources",
       "capabilityId": "feature.ecosystem-compatibility",
@@ -5814,6 +5832,22 @@
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn load_session_event_backfill( runtime: State<'_, DesktopRuntimeContext>, request: LoadSessionEventBackfillRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "load_session_trajectory",
+      "moduleId": "agentic",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [
+        "feature.ai-assistant:history-search"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::agentic_api::load_session_trajectory",
+      "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
+      "signature": "fn load_session_trajectory( runtime: State<'_, DesktopRuntimeContext>, request: LoadSessionTrajectoryRequest, ) -> Result<openbitfun_services_core::session::trajectory::SessionTrajectoryPage, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
       "id": "load_session_turn_window",
@@ -9542,6 +9576,22 @@
       "sourceFile": "src/apps/desktop/src/api/system_api.rs",
       "signature": "fn set_tray_unread_count( app: tauri::AppHandle, request: SetTrayUnreadCountRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "set_workspace_icon",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [
+        "feature.projects:workspace-icon"
+      ],
+      "visibility": "documented",
+      "rustPath": "set_workspace_icon",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn set_workspace_icon( state: State<'_, AppState>, request: openbitfun_core::service::workspace::SetWorkspaceIconRequest, ) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "show_agent_companion_desktop_pet",

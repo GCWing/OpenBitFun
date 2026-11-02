@@ -1,0 +1,49 @@
+// Match External Import: one clipped outer frame, shared grid columns and
+// separators between rows. Native table-cell styles must not own these borders.
+@mixin table($columns) {
+  display: grid;
+  grid-template-columns: $columns;
+  min-inline-size: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-layout-field-group-radius);
+
+  > .resource-table__row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    gap: var(--openbitfun-space-4);
+    min-inline-size: 0;
+    padding-block: var(--openbitfun-layout-field-group-row-padding-block);
+    padding-inline: var(--openbitfun-layout-field-group-row-padding-inline);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+
+    > [role='cell'], > [role='columnheader'] {
+      min-inline-size: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  > .resource-table__row + .resource-table__row {
+    border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  }
+
+  > .resource-table__header {
+    padding-block: var(--openbitfun-space-3);
+    background: var(--openbitfun-color-surface-tertiary);
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-meta-font-size);
+    font-weight: var(--openbitfun-type-meta-font-weight);
+    line-height: var(--openbitfun-type-meta-line-height);
+
+    > [role='columnheader']:last-child { text-align: center; }
+  }
+
+  > .resource-table__details {
+    padding: 0;
+    > [role='cell'] { grid-column: 1 / -1; }
+  }
+}

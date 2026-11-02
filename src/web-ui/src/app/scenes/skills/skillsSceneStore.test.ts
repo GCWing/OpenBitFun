@@ -12,6 +12,7 @@ describe('Skills entry navigation', () => {
     expect(useSkillsSceneStore.getState()).toMatchObject({
       nativeNavigationTarget: 'discover',
       nativeNavigationRequest: 1,
+      activeTab: 'discover',
       searchDraft: '',
       marketQuery: '',
     });
@@ -24,6 +25,7 @@ describe('Skills entry navigation', () => {
     expect(useSkillsSceneStore.getState()).toMatchObject({
       nativeNavigationTarget: 'installed',
       nativeNavigationRequest: 2,
+      activeTab: 'installed',
       installedView: 'all',
     });
   });
@@ -39,5 +41,10 @@ describe('Skills entry navigation', () => {
       searchDraft: '',
       marketQuery: '',
     });
+  });
+
+  it('publishes in-page tab changes without issuing a new navigation request', () => {
+    useSkillsSceneStore.getState().setActiveTab('discover');
+    expect(useSkillsSceneStore.getState()).toMatchObject({ activeTab: 'discover', nativeNavigationRequest: 0 });
   });
 });

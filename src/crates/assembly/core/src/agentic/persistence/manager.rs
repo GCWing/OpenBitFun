@@ -7,6 +7,8 @@ mod external_history;
 #[cfg(feature = "external-sources")]
 pub(crate) use external_history::external_history_catalog;
 mod session_catalog;
+mod usage_context;
+pub(crate) use usage_context::SessionUsageContextSnapshot;
 
 use crate::agentic::core::{
     sanitize_persisted_session_state, CompressionState, Message, MessageContent,

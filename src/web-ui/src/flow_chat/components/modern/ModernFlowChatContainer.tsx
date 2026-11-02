@@ -1,10 +1,11 @@
+import { globalEventBus } from '@/infrastructure/event-bus';
 import { requireSessionOwningWorkspaceId } from '../../utils/sessionOrdering';
 /**
  * Modern FlowChat container.
  * Uses virtual scrolling with Zustand and syncs legacy store state.
  */
 
-import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect, useState, useSyncExternalStore, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { FlowChatManager } from '@/flow_chat/services/FlowChatManager';
@@ -38,6 +39,11 @@ import { useFlowChatCopyDialog } from './useFlowChatCopyDialog';
 import { useFlowChatSync } from './useFlowChatSync';
 import { useFlowChatToolActions } from './useFlowChatToolActions';
 import { useFlowChatSearch } from './useFlowChatSearch';
+import { TrajectoryExplorer, type TrajectoryExplorerRef, type TrajectorySearchState, type TrajectorySelection } from '../../trajectory/TrajectoryExplorer';
+import { trajectoryNodeKey } from '../../trajectory/trajectoryModel';
+import { TRAJECTORY_NAVIGATE_EVENT, type TrajectoryPanelData, showTrajectoryRange } from '../../trajectory/trajectoryPanel';
+import type { TrajectoryRangeSummary } from '../../trajectory/trajectoryRange';
+import { useTrajectoryNavigation } from '../../trajectory/useTrajectoryNavigation';
 import {
   sessionToVirtualItems,
   useVirtualItems,
@@ -130,6 +136,8 @@ interface ModernFlowChatContainerProps {
   isViewportActive?: boolean;
   /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
   resizeSuspended?: boolean;
+  /** Preferred reading-column width; invalidates cached row heights on change. */
+  contentWidth?: number;
   /** Whether the host-owned session right panel is open. */
   isRightPanelOpen?: boolean;
   /** Toggle the host-owned session right panel. */
@@ -302,6 +310,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   className = '',
   isViewportActive = true,
   resizeSuspended = false,
+  contentWidth,
   isRightPanelOpen = false,
   onToggleRightPanel,
   emptyState,
@@ -522,7 +531,14 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const turnSummariesRef = useRef<FlowChatTurnSummary[]>([]);
   const turnRailTurnIdsRef = useRef<Set<string>>(new Set());
   const requestTurnNavigationRef = useRef<((turnId: string) => FlowChatTurnNavigationStatus) | null>(null);
-  const searchFullHistorySessionIdRef = useRef<string | null>(null);
+  const trajectoryViewId = useId();
+  const [trajectoryOpen, setTrajectoryOpen] = useState(false);
+  const [trajectorySelection, setTrajectorySelection] = useState<TrajectorySelection>();
+  const [trajectorySelectionClearRequest, setTrajectorySelectionClearRequest] = useState(0);
+  const [trajectorySearchInput, setTrajectorySearchInput] = useState('');
+  const [trajectorySearchState, setTrajectorySearchState] = useState<TrajectorySearchState>({ count: 0, current: 0 });
+  const trajectoryRef = useRef<TrajectoryExplorerRef>(null);
+  const openTrajectory = useCallback(() => setTrajectoryOpen(true), []);
   const virtualListRef = useRef<VirtualMessageListRef>(null);
   const chatScopeRef = useRef<HTMLDivElement>(null);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -666,17 +682,19 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     onSearchChange: setSearchQuery,
     matches: searchMatches,
     matchesByVirtualIndex: searchMatchesByVirtualIndex,
-    currentMatchIndex: searchCurrentMatchIndex,
-    goToNext: handleSearchNext,
-    goToPrev: handleSearchPrev,
     clearSearch,
   } = useFlowChatSearch(virtualItems);
-  const searchCurrentMatch = searchMatches[searchCurrentMatchIndex];
-  const searchCurrentMatchFlowItemId = searchCurrentMatch?.flowItemId;
-  const searchCurrentMatchTurnId = searchCurrentMatch?.turnId;
-  const searchCurrentMatchVirtualItemIndex = searchCurrentMatch?.virtualItemIndex ?? -1;
-  const searchCurrentMatchOccurrenceIndex = searchCurrentMatch?.occurrenceIndex ?? 0;
-  const searchCurrentMatchExpandableKey = searchCurrentMatch?.expandableIds?.join('\u0000') ?? '';
+  const searchCurrentMatch = trajectorySelection ? searchMatches.find(match =>
+    match.turnId === trajectorySelection.node.turnId && (trajectorySelection.node.focusItemId
+      ? match.flowItemId === trajectorySelection.node.focusItemId : match.type === 'user-message')) : undefined;
+  const closeTrajectory = useCallback(() => {
+    setTrajectoryOpen(false); setTrajectorySelection(undefined); clearSearch();
+    setTrajectorySearchInput(''); setTrajectorySearchState({ count: 0, current: 0 });
+    setTrajectorySelectionClearRequest(value => value + 1);
+    virtualListRef.current?.clearSearchMatch();
+  }, [clearSearch]);
+
+  useEffect(() => { virtualListRef.current?.clearSearchMatch(); }, [searchQuery]);
 
   useFlowChatSync();
   useFlowChatCopyDialog();
@@ -1408,8 +1426,12 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   useLayoutEffect(() => {
     autoTailTurnKeyRef.current = null;
     releasedHistoryCompletionKeyRef.current = null;
-    searchFullHistorySessionIdRef.current = null;
-  }, [activeSession?.sessionId]);
+    setTrajectoryOpen(false);
+    setTrajectorySelection(undefined);
+    setTrajectorySearchInput(''); setTrajectorySearchState({ count: 0, current: 0 });
+    clearSearch();
+    virtualListRef.current?.clearSearchMatch();
+  }, [activeSession?.sessionId, surfaceScope.epoch, clearSearch]);
 
   useEffect(() => {
     setHistoryInitialContentReadyKey(null);
@@ -1556,35 +1578,6 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     isViewportActive,
     latestTurnId,
     turnSummaries.length,
-  ]);
-
-  useEffect(() => {
-    if (searchCurrentMatchVirtualItemIndex < 0 || !searchQuery.trim()) {
-      virtualListRef.current?.clearSearchMatch();
-      return;
-    }
-
-    const frameId = requestAnimationFrame(() => {
-      virtualListRef.current?.scrollToSearchMatch({
-        virtualItemIndex: searchCurrentMatchVirtualItemIndex,
-        query: searchQuery,
-        flowItemId: searchCurrentMatchFlowItemId,
-        occurrenceIndex: searchCurrentMatchOccurrenceIndex,
-        expandableIds: searchCurrentMatchExpandableKey
-          ? searchCurrentMatchExpandableKey.split('\u0000')
-          : undefined,
-      });
-    });
-    return () => {
-      cancelAnimationFrame(frameId);
-    };
-  }, [
-    searchCurrentMatchFlowItemId,
-    searchCurrentMatchTurnId,
-    searchCurrentMatchExpandableKey,
-    searchCurrentMatchVirtualItemIndex,
-    searchCurrentMatchOccurrenceIndex,
-    searchQuery,
   ]);
 
   const applyHistoryPresentation = useCallback((
@@ -1753,27 +1746,33 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     restoreTailPresentation,
   ]);
 
-  const handleSearchChange = useCallback((query: string) => {
-    setSearchQuery(query);
-    const sessionId = activeSession?.sessionId;
-    if (
-      !query.trim()
-      || !sessionId
-      || activeSession.isPartial !== true
-      || searchFullHistorySessionIdRef.current === sessionId
-    ) {
-      return;
-    }
+  const handleTrajectoryRange = useCallback((range: TrajectoryRangeSummary | null, activate: boolean) => {
+    const session = flowChatStore.getState().sessions.get(activeSessionIdRef.current ?? '');
+    if (session) showTrajectoryRange(session, range, t('trajectory.rangeDetails'), activate, trajectoryViewId);
+  }, [t, trajectoryViewId]);
 
-    searchFullHistorySessionIdRef.current = sessionId;
-    void flowChatStore.ensureSessionFullHistory(sessionId, 'flowchat-search').then(ready => {
-      if (ready && activeSessionIdRef.current === sessionId) {
-        restoreTailPresentation({ discardRecentHistory: true });
-      } else if (activeSessionIdRef.current === sessionId) {
-        searchFullHistorySessionIdRef.current = null;
-      }
+  const navigateTrajectory = useTrajectoryNavigation({
+    session: activeSession, items: virtualItems, listRef: virtualListRef, rootRef: chatScopeRef,
+    present: applyHistoryPresentation, expand: handleExpandGroup, viewId: trajectoryViewId,
+    selectionClearRequest: trajectorySelectionClearRequest,
+  });
+  const clearTrajectorySelection = useCallback(() => {
+    setTrajectorySelection(undefined);
+    setTrajectorySelectionClearRequest(value => value + 1);
+    virtualListRef.current?.clearSearchMatch();
+  }, []);
+  const selectTrajectory = useCallback(async (selection: TrajectorySelection) => {
+    const located = await navigateTrajectory(selection);
+    if (located) setTrajectorySelection(selection);
+    return located;
+  }, [navigateTrajectory]);
+  useEffect(() => globalEventBus.on<TrajectoryPanelData>(TRAJECTORY_NAVIGATE_EVENT, request => {
+    if (!isViewportActive || request.viewId !== trajectoryViewId || request.surfaceId !== getActiveSurfaceScope().surfaceId
+      || request.sessionId !== activeSessionIdRef.current) return;
+    void selectTrajectory({ node: request.node, query: request.query }).catch(error => {
+      log.warn('Failed to locate trajectory endpoint', { error });
     });
-  }, [activeSession?.isPartial, activeSession?.sessionId, restoreTailPresentation, setSearchQuery]);
+  }), [isViewportActive, trajectoryViewId, selectTrajectory]);
 
   const navigateToTurn = useCallback(async (target: FlowChatTurnRailItem | string) => {
     const targetItem = typeof target === 'string'
@@ -2723,13 +2722,12 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
           sessionId={activeSession?.sessionId}
           isRightPanelOpen={isRightPanelOpen}
           onToggleRightPanel={onToggleRightPanel}
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
-          searchMatchCount={searchMatches.length}
-          searchCurrentMatch={searchMatches.length > 0 ? searchCurrentMatchIndex + 1 : 0}
-          onSearchNext={handleSearchNext}
-          onSearchPrev={handleSearchPrev}
-          onSearchClose={clearSearch}
+          onTrajectoryOpen={openTrajectory}
+          trajectoryOpen={trajectoryOpen}
+          searchQuery={trajectorySearchInput} onSearchChange={setTrajectorySearchInput}
+          searchMatchCount={trajectorySearchState.count} searchCurrentMatch={trajectorySearchState.current}
+          onSearchNext={() => trajectoryRef.current?.next()} onSearchPrev={() => trajectoryRef.current?.previous()}
+          onSearchClose={closeTrajectory}
           searchOpenRequest={searchOpenRequest}
           backgroundCommands={headerBackgroundCommands}
           onOpenSessionTreeSession={handleOpenSessionTreeSession}
@@ -2741,6 +2739,14 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
           onStopBackgroundCommand={handleStopBackgroundCommand}
           onStopAllBackgroundCommands={handleStopAllBackgroundCommands}
         />
+
+        {trajectoryOpen && activeSession && <TrajectoryExplorer
+          ref={trajectoryRef}
+          key={surfaceScope.key('trajectory', activeSession.sessionId)} session={activeSession}
+          searchInput={trajectorySearchInput} onQueryChange={setSearchQuery} onSearchStateChange={setTrajectorySearchState}
+          onSelect={selectTrajectory} onClose={closeTrajectory} onRangeChange={handleTrajectoryRange}
+          onClearSelection={clearTrajectorySelection}
+          selectedNodeKey={trajectorySelection ? trajectoryNodeKey(trajectorySelection.node) : undefined} />}
 
         <BackgroundCommandInputDialog
           command={backgroundCommandInputTarget}
@@ -2809,6 +2815,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
                   latestTurnId={latestTurnId}
                   isViewportActive={isViewportActive}
                   measurementSuspended={resizeSuspended}
+                  contentWidth={contentWidth}
                   presentationMode={isRenderingHistoryProjection ? 'history-window' : 'tail'}
                   viewportMode={isViewportDetachedFromLiveTail ? 'history-reading' : 'live-tail'}
                   historyWindow={isShowingHistoryPresentation ? activeHistoryPresentation?.range ?? null : null}

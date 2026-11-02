@@ -2,13 +2,16 @@
 //!
 //! This module deliberately contains no process, model-provider, or product
 //! runtime code.  It describes the stable tool snapshot that can be projected
-//! into a TypeScript program before the program is executed by a host runtime.
+//! into the selected PTC source language before the program is executed by a
+//! host runtime.
 
+use openbitfun_core_types::PtcLanguage;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 pub const PTC_TOOL_PRESENTATION_CONTEXT_KEY: &str = "tool_presentation_mode";
 pub const PTC_TOOL_PRESENTATION_MODE: &str = "ptc";
+pub const PTC_LANGUAGE_CONTEXT_KEY: &str = "ptc_language";
 /// Serialized per-turn allowlist used by the PTC host for nested calls.
 ///
 /// The model-facing manifest intentionally contains only `RunCode`, while
@@ -86,6 +89,31 @@ pub fn render_ptc_typescript_sdk(contracts: &[PtcToolContract]) -> String {
     render_ptc_typescript_sdk_with_options(contracts, true)
 }
 
+/// Render the SDK for the selected PTC source language.
+pub fn render_ptc_sdk(contracts: &[PtcToolContract], language: PtcLanguage) -> String {
+    render_ptc_sdk_with_options(contracts, language, true)
+}
+
+/// Render the SDK while controlling whether deferred loading APIs are exposed.
+/// When deferred loading is disabled, the model should not be told about APIs
+/// that the host will reject.
+pub fn render_ptc_sdk_with_options(
+    contracts: &[PtcToolContract],
+    language: PtcLanguage,
+    include_deferred_tool_apis: bool,
+) -> String {
+    match language {
+        PtcLanguage::TypeScript => {
+            render_ptc_typescript_sdk_with_options(contracts, include_deferred_tool_apis)
+        }
+        PtcLanguage::Python => render_ptc_python_sdk(
+            contracts,
+            include_deferred_tool_apis,
+            include_deferred_tool_apis,
+        ),
+    }
+}
+
 /// Render the generated PTC SDK, optionally exposing the APIs used to load and
 /// invoke deferred tools by name.
 pub fn render_ptc_typescript_sdk_with_options(
@@ -117,6 +145,334 @@ pub fn render_ptc_loaded_tool_typescript_sdk(contract: &PtcToolContract) -> Stri
         format!("{} {}", contract.description, call_hint)
     };
     render_ptc_typescript_sdk_internal(&[contract], false, false, true)
+}
+
+/// Render a loaded-tool SDK in the selected language.
+pub fn render_ptc_loaded_tool_sdk(contract: &PtcToolContract, language: PtcLanguage) -> String {
+    match language {
+        PtcLanguage::TypeScript => render_ptc_loaded_tool_typescript_sdk(contract),
+        PtcLanguage::Python => render_ptc_python_sdk(std::slice::from_ref(contract), false, true),
+    }
+}
+
+fn render_ptc_python_sdk(
+    contracts: &[PtcToolContract],
+    include_deferred_apis: bool,
+    include_call_tool_api: bool,
+) -> String {
+    let mut output = String::from(
+        "from typing import Any, Literal, NotRequired, Protocol, Required, TypedDict, Union\n\n",
+    );
+    if include_deferred_apis {
+        output.push_str(
+            "PtcToolSpec = TypedDict(\n    \"PtcToolSpec\",\n    {\n        \"language\": Required[str],\n        \"sdk_source\": Required[str],\n    },\n)\n\n",
+        );
+    }
+    let mut methods = Vec::new();
+    for contract in contracts {
+        if contract.is_deferred {
+            continue;
+        }
+        if !is_python_identifier(&contract.name) {
+            continue;
+        }
+        let args_alias = python_alias_name(&contract.name, "Args");
+        let output_alias = python_alias_name(&contract.name, "Output");
+        render_python_schema_alias(&mut output, &args_alias, &contract.input_schema);
+        render_python_schema_alias(&mut output, &output_alias, &contract.output_schema);
+        methods.push((contract, args_alias, output_alias));
+    }
+
+    output.push_str("\nclass PtcToolBindings(Protocol):\n");
+    for contract in contracts {
+        if contract.is_deferred {
+            output.push_str("    # Deferred tool: ");
+            output.push_str(&contract.name);
+            output.push_str(
+                ". Load its SDK with tools.get_tool_spec before calling tools.call_tool.\n",
+            );
+            continue;
+        }
+        let Some((_, args_alias, output_alias)) = methods
+            .iter()
+            .find(|(method, _, _)| method.name == contract.name)
+        else {
+            continue;
+        };
+        if !contract.description.trim().is_empty() {
+            for line in contract.description.lines() {
+                output.push_str("    # ");
+                output.push_str(line.trim());
+                output.push('\n');
+            }
+        }
+        output.push_str("    async def ");
+        output.push_str(&contract.name);
+        output.push_str("(self, args: ");
+        output.push_str(args_alias);
+        output.push_str(") -> ");
+        output.push_str(output_alias);
+        output.push_str(": ...\n");
+    }
+    if methods.is_empty() {
+        output.push_str("    pass\n");
+    }
+    if include_deferred_apis {
+        output.push_str("\n    async def get_tool_spec(self, name: str) -> PtcToolSpec: ...\n");
+    }
+    if include_call_tool_api {
+        output.push_str(
+            "    async def call_tool(self, name: str, args: dict[str, Any]) -> Any: ...\n",
+        );
+    }
+    if include_deferred_apis {
+        output.push_str(
+            "\n# Deferred tools: await tools.get_tool_spec(\"name\"), then await tools.call_tool(\"name\", args).\n",
+        );
+    }
+    output.push_str("\ntools: PtcToolBindings\n");
+    output
+}
+
+fn python_alias_name(tool_name: &str, suffix: &str) -> String {
+    let mut name = tool_name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if name.is_empty() {
+        name.push_str("Tool");
+    }
+    if name
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_ascii_digit())
+    {
+        name.insert(0, '_');
+    }
+    name.push_str(suffix);
+    name
+}
+
+fn render_python_schema_alias(output: &mut String, alias: &str, schema: &Value) {
+    let mut aliases = Vec::new();
+    let type_name = python_type_with_aliases(schema, alias, &mut aliases);
+    for definition in aliases {
+        output.push_str(&definition);
+    }
+    if type_name != alias {
+        output.push_str(alias);
+        output.push_str(" = ");
+        output.push_str(&type_name);
+        output.push_str("\n\n");
+    }
+}
+
+fn python_type_with_aliases(schema: &Value, alias: &str, aliases: &mut Vec<String>) -> String {
+    let Some(object) = schema.as_object() else {
+        return "Any".to_string();
+    };
+    if let Some(constant) = object.get("const") {
+        return format!("Literal[{}]", python_literal(constant));
+    }
+    if let Some(values) = object.get("enum").and_then(Value::as_array) {
+        if values.is_empty() {
+            return "Any".to_string();
+        }
+        return format!(
+            "Literal[{}]",
+            values
+                .iter()
+                .map(python_literal)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    for key in ["oneOf", "anyOf"] {
+        if let Some(variants) = object.get(key).and_then(Value::as_array) {
+            if variants.is_empty() {
+                return "Any".to_string();
+            }
+            return format!(
+                "Union[{}]",
+                variants
+                    .iter()
+                    .enumerate()
+                    .map(|(index, variant)| {
+                        python_type_with_aliases(
+                            variant,
+                            &format!("{alias}Variant{}", index + 1),
+                            aliases,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+    if let Some(types) = object.get("type").and_then(Value::as_array) {
+        return format!(
+            "Union[{}]",
+            types
+                .iter()
+                .filter_map(Value::as_str)
+                .enumerate()
+                .map(|(index, type_name)| {
+                    python_type_with_aliases(
+                        &serde_json::json!({"type": type_name}),
+                        &format!("{alias}Variant{}", index + 1),
+                        aliases,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if object.contains_key("properties") || object.contains_key("additionalProperties") {
+        return python_object_type(object, alias, aliases);
+    }
+    match object.get("type").and_then(Value::as_str) {
+        Some("null") => "None".to_string(),
+        Some("boolean") => "bool".to_string(),
+        Some("integer") => "int".to_string(),
+        Some("number") => "float".to_string(),
+        Some("string") => "str".to_string(),
+        Some("array") => format!(
+            "list[{}]",
+            object
+                .get("items")
+                .map(|item| python_type_with_aliases(item, &format!("{alias}Item"), aliases))
+                .unwrap_or_else(|| "Any".to_string())
+        ),
+        Some("object") => python_object_type(object, alias, aliases),
+        _ => "Any".to_string(),
+    }
+}
+
+fn python_object_type(
+    object: &Map<String, Value>,
+    alias: &str,
+    aliases: &mut Vec<String>,
+) -> String {
+    let Some(properties) = object.get("properties").and_then(Value::as_object) else {
+        return python_additional_properties_type(object, alias, aliases);
+    };
+    if properties.is_empty() {
+        return python_additional_properties_type(object, alias, aliases);
+    }
+
+    let required = object
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<std::collections::BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let mut definition = String::new();
+    definition.push_str(alias);
+    definition.push_str(" = TypedDict(\n    \"");
+    definition.push_str(alias);
+    definition.push_str("\",\n    {\n");
+    let mut fields = Vec::new();
+    for (name, property) in properties {
+        let child_alias = format!("{}{}", alias, python_alias_component(name));
+        let property_type = python_type_with_aliases(property, &child_alias, aliases);
+        fields.push((
+            name,
+            property_type,
+            required.contains(name.as_str()),
+            property,
+        ));
+    }
+    for (name, property_type, is_required, property) in fields {
+        if let Some(description) = property.get("description").and_then(Value::as_str) {
+            for line in description.lines() {
+                definition.push_str("        # ");
+                definition.push_str(line.trim());
+                definition.push('\n');
+            }
+        }
+        definition.push_str("        ");
+        definition.push_str(&python_string_literal(name));
+        definition.push_str(": ");
+        definition.push_str(if is_required {
+            "Required["
+        } else {
+            "NotRequired["
+        });
+        definition.push_str(&property_type);
+        definition.push_str("],\n");
+    }
+    definition.push_str("    },\n)\n\n");
+    aliases.push(definition);
+    alias.to_string()
+}
+
+fn python_additional_properties_type(
+    object: &Map<String, Value>,
+    alias: &str,
+    aliases: &mut Vec<String>,
+) -> String {
+    match object.get("additionalProperties") {
+        Some(Value::Bool(false)) => "dict[str, Any]".to_string(),
+        Some(Value::Bool(true)) | None => "dict[str, Any]".to_string(),
+        Some(schema) => format!(
+            "dict[str, {}]",
+            python_type_with_aliases(schema, &format!("{alias}Value"), aliases)
+        ),
+    }
+}
+
+fn python_alias_component(value: &str) -> String {
+    let mut component = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if component.is_empty() {
+        component.push_str("Field");
+    }
+    if component
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_ascii_digit())
+    {
+        component.insert(0, '_');
+    }
+    component[0..1].to_ascii_uppercase() + &component[1..]
+}
+
+fn python_string_literal(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+fn python_literal(value: &Value) -> String {
+    match value {
+        Value::Null => "None".to_string(),
+        Value::Bool(value) => {
+            if *value {
+                "True".to_string()
+            } else {
+                "False".to_string()
+            }
+        }
+        Value::Number(value) => value.to_string(),
+        Value::String(value) => python_string_literal(value),
+        Value::Array(_) | Value::Object(_) => "Any".to_string(),
+    }
 }
 
 fn render_ptc_typescript_sdk_internal(
@@ -187,7 +543,9 @@ fn render_ptc_typescript_sdk_internal(
     if include_deferred_tool_apis {
         output
             .push_str("  /** Load a deferred tool definition into the current PTC operation. */\n");
-        output.push_str("  getToolSpec(name: string): Promise<{ typescript_sdk: string }>;\n");
+        output.push_str(
+            "  getToolSpec(name: string): Promise<{ language: string; sdk_source: string }>;\n",
+        );
     }
     if include_call_tool_api {
         output
@@ -221,15 +579,64 @@ pub fn ptc_run_code_input_schema() -> Value {
     })
 }
 
+pub fn ptc_run_code_input_schema_for_language(language: PtcLanguage) -> Value {
+    let mut schema = ptc_run_code_input_schema();
+    let description = match language {
+        PtcLanguage::TypeScript => {
+            "TypeScript program. Call tools through the generated tools binding and return a JSON value."
+        }
+        PtcLanguage::Python => {
+            "Python source code executed inside an existing async function. Use top-level `await`; do not call `asyncio.run`."
+        }
+    };
+    if let Some(code) = schema
+        .get_mut("properties")
+        .and_then(Value::as_object_mut)
+        .and_then(|properties| properties.get_mut("code"))
+    {
+        code["description"] = Value::String(description.to_string());
+    }
+    schema
+}
+
 pub fn ptc_run_code_description() -> String {
     "Execute a TypeScript program that can call available tools through the provided `tools` binding and return a compact JSON value."
         .to_string()
+}
+
+pub fn ptc_run_code_description_for_language(language: PtcLanguage) -> String {
+    match language {
+        PtcLanguage::TypeScript => ptc_run_code_description(),
+        PtcLanguage::Python => {
+            "Execute a Python program that can call available tools through the provided `tools` binding and return a compact JSON value. The program runs inside an existing async event loop, so use top-level `await` and do not call `asyncio.run`. Use Python syntax only. Do not emit TypeScript/JavaScript syntax such as `const`, `let`, `Promise`, or `=>`. The runtime has already imported and bound `asyncio` and `json` in the execution scope, so use them directly. Do not import other modules, including `os`, `pathlib`, `subprocess`, `requests`, and similar modules.".to_string()
+        }
+    }
 }
 
 /// Render the PTC SDK as a conversation-start reminder instead of embedding
 /// the large declaration block in the single `RunCode` tool description.
 pub fn render_ptc_tool_calling_guide(sdk_source: &str) -> String {
     render_ptc_tool_calling_guide_with_options(sdk_source, true)
+}
+
+pub fn render_ptc_tool_calling_guide_for_language(
+    sdk_source: &str,
+    language: PtcLanguage,
+    include_deferred_tool_apis: bool,
+) -> String {
+    if language.is_typescript() {
+        return render_ptc_tool_calling_guide_with_options(sdk_source, include_deferred_tool_apis);
+    }
+    let deferred_guidance = if include_deferred_tool_apis {
+        "\n\nFor deferred tools:\n1. Await `tools.get_tool_spec(\"tool_name\")` before choosing arguments.\n2. Read the returned `sdk_source`, which contains the input and output types.\n3. Await `tools.call_tool(\"tool_name\", args)` with arguments matching that SDK.\nDo not infer deferred tool arguments from the placeholder type."
+    } else {
+        ""
+    };
+    format!(
+        "# Tool Calling Guide\nUse `RunCode` with a Python program only. The program is inserted into an already-running async function: use top-level `await` and never call `asyncio.run`. Use `await tools.ToolName(args)` for direct tools and return a JSON-serializable value. The runtime has already imported and bound `asyncio` and `json` in the execution scope; use them directly. Do not emit TypeScript/JavaScript (`const`, `let`, `Promise`, `=>`) or import other modules, including `os`, `pathlib`, `subprocess`, `requests`, and similar modules.{}\n\nGenerated SDK:\n```python\n{}\n```",
+        deferred_guidance,
+        sdk_source.trim(),
+    )
 }
 
 /// Render the PTC conversation-start guide with wording that matches the
@@ -239,7 +646,7 @@ pub fn render_ptc_tool_calling_guide_with_options(
     include_deferred_tool_apis: bool,
 ) -> String {
     let deferred_guidance = if include_deferred_tool_apis {
-        "\n\nFor deferred tools:\n1. Call `tools.getToolSpec(\"tool_name\")` before choosing arguments.\n2. Read the returned `typescript_sdk`, which contains the input and output types.\n3. Call `tools.callTool(\"tool_name\", args)` with arguments matching that SDK.\nDo not infer deferred tool arguments from the placeholder `Record<string, unknown>` type."
+        "\n\nFor deferred tools:\n1. Call `tools.getToolSpec(\"tool_name\")` before choosing arguments.\n2. Read the returned `sdk_source`, which contains the input and output types.\n3. Call `tools.callTool(\"tool_name\", args)` with arguments matching that SDK.\nDo not infer deferred tool arguments from the placeholder `Record<string, unknown>` type."
     } else {
         ""
     };
@@ -517,6 +924,51 @@ fn is_typescript_identifier(value: &str) -> bool {
         })
 }
 
+fn is_python_identifier(value: &str) -> bool {
+    if !is_typescript_identifier(value) {
+        return false;
+    }
+    !matches!(
+        value,
+        "and"
+            | "as"
+            | "assert"
+            | "async"
+            | "await"
+            | "break"
+            | "case"
+            | "class"
+            | "continue"
+            | "def"
+            | "del"
+            | "elif"
+            | "else"
+            | "except"
+            | "False"
+            | "finally"
+            | "for"
+            | "from"
+            | "global"
+            | "if"
+            | "import"
+            | "in"
+            | "is"
+            | "lambda"
+            | "None"
+            | "nonlocal"
+            | "not"
+            | "or"
+            | "pass"
+            | "raise"
+            | "return"
+            | "True"
+            | "try"
+            | "while"
+            | "with"
+            | "yield"
+    )
+}
+
 fn json_string_literal(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
@@ -534,11 +986,14 @@ fn json_literal_type(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        json_schema_to_typescript, ptc_run_code_description, ptc_run_code_input_schema,
-        render_ptc_loaded_tool_typescript_sdk, render_ptc_tool_calling_guide,
+        json_schema_to_typescript, ptc_run_code_description, ptc_run_code_description_for_language,
+        ptc_run_code_input_schema, ptc_run_code_input_schema_for_language,
+        render_ptc_loaded_tool_sdk, render_ptc_loaded_tool_typescript_sdk, render_ptc_sdk,
+        render_ptc_tool_calling_guide, render_ptc_tool_calling_guide_for_language,
         render_ptc_tool_calling_guide_with_options, render_ptc_typescript_sdk,
         render_ptc_typescript_sdk_with_options, PtcToolContract,
     };
+    use openbitfun_core_types::PtcLanguage;
     use serde_json::json;
 
     #[test]
@@ -647,7 +1102,8 @@ mod tests {
         assert!(output.contains("WebFetch: Record<string, unknown>;"));
         assert!(output.contains("WebFetch: unknown;"));
         assert!(output.contains("getToolSpec(name: string)"));
-        assert!(output.contains("Promise<{ typescript_sdk: string }>"));
+        assert!(output.contains("Promise<{ language: string; sdk_source: string }>"));
+        assert!(!output.contains("typescript_sdk"));
         assert!(!output.contains("input_schema: unknown"));
         assert!(output.contains("callTool(name: string, args: Record<string, unknown>)"));
         assert!(!output.contains("url: string"));
@@ -667,7 +1123,8 @@ mod tests {
         assert!(
             guide.contains("Call `tools.getToolSpec(\"tool_name\")` before choosing arguments.")
         );
-        assert!(guide.contains("Read the returned `typescript_sdk`"));
+        assert!(guide.contains("Read the returned `sdk_source`"));
+        assert!(!guide.contains("typescript_sdk"));
         assert!(guide.contains("Call `tools.callTool(\"tool_name\", args)`"));
         assert!(guide.contains("Do not infer deferred tool arguments"));
     }
@@ -703,6 +1160,114 @@ mod tests {
     }
 
     #[test]
+    fn python_sdk_exposes_valid_bindings_and_generic_deferred_apis() {
+        let direct = PtcToolContract::new(
+            "Read",
+            "Read a file.",
+            json!({"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["path"]}),
+            json!({"type": "string"}),
+        );
+        let mut deferred = PtcToolContract::new(
+            "tool.with-dash",
+            "Deferred tool.",
+            json!({"type": "object"}),
+            json!({}),
+        );
+        deferred.is_deferred = true;
+        let output = render_ptc_sdk(&[direct, deferred], PtcLanguage::Python);
+        assert!(output.contains("ReadArgs = TypedDict("));
+        assert!(output.contains("\"path\": Required[str]"));
+        assert!(output.contains("\"limit\": NotRequired[int]"));
+        assert!(output.contains("ReadOutput = str"));
+        assert!(output.contains("async def Read(self, args: ReadArgs) -> ReadOutput"));
+        assert!(output.contains("PtcToolSpec = TypedDict("));
+        assert!(output.contains("\"language\": Required[str]"));
+        assert!(output.contains("\"sdk_source\": Required[str]"));
+        assert!(output.contains("async def get_tool_spec(self, name: str) -> PtcToolSpec"));
+        assert!(output.contains("async def call_tool(self, name: str, args: dict[str, Any])"));
+        assert!(!output.contains("async def tool.with-dash"));
+
+        let loaded = render_ptc_loaded_tool_sdk(
+            &PtcToolContract::new(
+                "tool.with-dash",
+                "Loaded tool.",
+                json!({"type": "object"}),
+                json!({"type": "string"}),
+            ),
+            PtcLanguage::Python,
+        );
+        assert!(loaded.contains("async def call_tool(self, name: str"));
+        assert!(!loaded.contains("async def get_tool_spec(self"));
+    }
+
+    #[test]
+    fn python_sdk_preserves_nested_object_shapes() {
+        let contract = PtcToolContract::new(
+            "ListFiles",
+            "List files.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "filter": {
+                        "type": "object",
+                        "properties": {
+                            "pattern": {"type": "string"}
+                        },
+                        "required": ["pattern"],
+                        "additionalProperties": false
+                    }
+                },
+                "required": ["filter"],
+                "additionalProperties": false
+            }),
+            json!({
+                "type": "object",
+                "properties": {
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "is_dir": {"type": "boolean"}
+                            },
+                            "required": ["name", "is_dir"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["entries"],
+                "additionalProperties": false
+            }),
+        );
+
+        let output = render_ptc_sdk(&[contract], PtcLanguage::Python);
+        assert!(output.contains("\"pattern\": Required[str]"));
+        assert!(output.contains("\"filter\": Required[ListFilesArgsFilter]"));
+        assert!(output.contains("\"name\": Required[str]"));
+        assert!(output.contains("\"is_dir\": Required[bool]"));
+        assert!(output.contains("\"entries\": Required[list[ListFilesOutputEntriesItem]]"));
+    }
+
+    #[test]
+    fn python_calling_guide_uses_python_deferred_contract_name() {
+        let guide = render_ptc_tool_calling_guide_for_language(
+            "tools: PtcToolBindings",
+            PtcLanguage::Python,
+            true,
+        );
+        assert!(guide.contains("Python program"));
+        assert!(guide.contains("Do not emit TypeScript/JavaScript"));
+        assert!(guide.contains("already imported and bound `asyncio` and `json`"));
+        assert!(guide
+            .contains("including `os`, `pathlib`, `subprocess`, `requests`, and similar modules"));
+        assert!(guide.contains("never call `asyncio.run`"));
+        assert!(guide.contains("tools.get_tool_spec"));
+        assert!(guide.contains("`sdk_source`"));
+        assert!(!guide.contains("typescript_sdk"));
+    }
+
+    #[test]
     fn run_code_schema_requires_code_and_description_points_to_guide() {
         let schema = ptc_run_code_input_schema();
         assert_eq!(schema["required"], json!(["code"]));
@@ -716,6 +1281,22 @@ mod tests {
         assert!(!description.contains("remote-routing"));
         assert!(
             render_ptc_tool_calling_guide("export type ToolArgsMap = {};").contains("ToolArgsMap")
+        );
+    }
+
+    #[test]
+    fn python_run_code_contract_rejects_typescript_syntax() {
+        let description = ptc_run_code_description_for_language(PtcLanguage::Python);
+        assert!(description.contains("Do not emit TypeScript/JavaScript"));
+        assert!(description.contains("`const`, `let`, `Promise`, or `=>`"));
+
+        let schema = ptc_run_code_input_schema_for_language(PtcLanguage::Python);
+        let code_description = schema["properties"]["code"]["description"]
+            .as_str()
+            .expect("Python RunCode code description should be a string");
+        assert_eq!(
+            code_description,
+            "Python source code executed inside an existing async function. Use top-level `await`; do not call `asyncio.run`."
         );
     }
 }

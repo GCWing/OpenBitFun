@@ -53,7 +53,7 @@ import SkillGroupsView from './components/SkillGroupsView';
 import { useUserSkillGroups } from '@/features/skill-groups/useUserSkillGroups';
 import { resolveSkillGroups } from '@/features/skill-groups/skillGroups';
 import './SkillsScene.scss';
-import { useSkillsSceneStore, type SkillsView, type SkillTab } from './skillsSceneStore';
+import { useSkillsSceneStore, type SkillsView } from './skillsSceneStore';
 import { formatSkillDetailPath } from './skillDetailPath';
 import { useGallerySceneAutoRefresh } from '@/app/hooks/useGallerySceneAutoRefresh';
 
@@ -104,6 +104,8 @@ const SkillsScene: React.FC = () => {
   const [marketPageSize, setMarketPageSize] = useState(10);
   const focusPage = useRef(false);
   const {
+    activeTab,
+    setActiveTab,
     nativeNavigationRequest,
     nativeNavigationTarget,
     searchDraft,
@@ -119,7 +121,6 @@ const SkillsScene: React.FC = () => {
 
   const [marketSettingsOpen, setMarketSettingsOpen] = useState(false);
   useEffect(() => { if (!desktopConfigAvailable) setMarketSettingsOpen(false); }, [desktopConfigAvailable]);
-  const [activeTab, setActiveTab] = useState<SkillTab>('installed');
   const [deleteTarget, setDeleteTarget] = useState<SkillInfo | null>(null);
   const [installedSearch, setInstalledSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
@@ -135,7 +136,7 @@ const SkillsScene: React.FC = () => {
     setActiveTab(desktopConfigAvailable ? nativeNavigationTarget : 'installed');
     setInstalledSearch('');
     setSelectedDetail(null);
-  }, [nativeNavigationRequest, nativeNavigationTarget, desktopConfigAvailable]);
+  }, [nativeNavigationRequest, nativeNavigationTarget, desktopConfigAvailable, setActiveTab]);
 
   const installed = useInstalledSkills({
     searchQuery: installedSearch,
@@ -196,7 +197,7 @@ const SkillsScene: React.FC = () => {
     setAddFormOpen(false);
     setDeleteTarget(null);
     setSelectedDetail(null);
-  }, [desktopConfigAvailable, setAddFormOpen]);
+  }, [desktopConfigAvailable, setAddFormOpen, setActiveTab]);
 
   const market = useSkillMarket({
     searchQuery: marketQuery,

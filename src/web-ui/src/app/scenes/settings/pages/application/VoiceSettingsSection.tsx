@@ -300,7 +300,6 @@ const VoiceSettingsSection: React.FC = () => {
         {settingsError && <ConfigMessage message={{ type: 'error', text: t('messages.loadFailed') }} />}
         <ConfigPageSection
           title={t('sections.basic')}
-          description={t('sections.basicDescription')}
         >
           <ConfigPageRow
             label={t('composer.enabled.label')}

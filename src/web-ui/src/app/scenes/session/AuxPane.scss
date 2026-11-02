@@ -41,6 +41,15 @@
     padding: 0;
   }
 
+  &__empty-content {
+    max-inline-size: 100%;
+
+    & > [data-openbitfun-part="title"] {
+      min-inline-size: 0;
+      max-inline-size: 100%;
+    }
+  }
+
   &:focus-within {
     outline: none;
   }
@@ -69,4 +78,3 @@
   justify-content: center;
   gap: var(--openbitfun-space-2);
 }
-.openbitfun-aux-pane__empty-path { overflow-wrap: anywhere; }

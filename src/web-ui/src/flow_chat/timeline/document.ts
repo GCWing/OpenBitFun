@@ -261,10 +261,11 @@ export class ConversationDocumentProjection {
 /** Source/search indexes never leak into the virtualizer's block index space. */
 export function findTimelineBlockIndex(items: readonly VirtualItem[], sourceIndex: number, memberId?: string): number {
   if (memberId) {
-    const member = items.findIndex(item => item.timeline?.memberIds.includes(memberId)
-      || (item.type === 'model-round' && item.canvasArtifactItems?.some(candidate => candidate.id === memberId)));
+    const ownsSource = (item: VirtualItem, index: number) => sourceIndex < 0 || (item.timeline?.sourceIndex ?? index) === sourceIndex;
+    const member = items.findIndex((item, index) => ownsSource(item, index) && (item.timeline?.memberIds.includes(memberId)
+      || (item.type === 'model-round' && item.canvasArtifactItems?.some(candidate => candidate.id === memberId))));
     if (member >= 0) return member;
-    const group = items.findIndex(item => item.timeline?.kind === 'group-header'
+    const group = items.findIndex((item, index) => ownsSource(item, index) && item.timeline?.kind === 'group-header'
       && item.timeline.group?.allItems.some(candidate => candidate.id === memberId));
     if (group >= 0) return group;
   }

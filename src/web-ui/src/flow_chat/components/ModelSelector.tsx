@@ -2251,7 +2251,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const poolLabel = selectedPool?.name || (!poolSupported ? t('modelSelector.pools.surfaceUnsupported')
     : poolError ? t('modelSelector.pools.loadError')
       : poolsLoading ? t('modelSelector.status.loading') : t('modelSelector.pools.pendingSelection'));
-  const modelLabel = poolId ? poolLabel : isAcpSelection && !showModelChoices
+  const showModelConfiguration = isNativeModelSelection && nativeAvailability.status === 'unconfigured';
+  const modelLabel = showModelConfiguration ? t('modelSelector.noModelSelected') : poolId ? poolLabel : isAcpSelection && !showModelChoices
     ? t('modelSelector.modelSettings')
     : currentModelMode === 'smart' ? t('modelSelector.modes.smart')
       : currentModelMode === 'pool' ? t('modelSelector.modes.pool')
@@ -2277,7 +2278,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const isSelectionPanel = activePanel === 'models' || activePanel === 'providers' || activePanel === 'pool' || activePanel === 'pools';
   const isModelPicker = activePanel === 'models' && !activeProviderGroup;
   const showEmptyModeCard = !showModelLoadingState && !activeProviderGroup && (
-    (activePanel === 'pools' && poolsEmpty)
+    showModelConfiguration || (activePanel === 'pools' && poolsEmpty)
     || (!isSelectionPanel && activePanel !== 'modes' && smartView
       && (!routing.status?.ready || currentModelMode !== 'smart'))
   );
@@ -2424,7 +2425,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     },
     t,
   });
-  const tooltipContent = poolId ? (
+  const tooltipContent = showModelConfiguration ? t('modelSelector.configure') : poolId ? (
     <ModelSelectorTooltipContent details={tooltipDetails} pool={{
       label: t('modelSelector.pools.title'),
       name: poolLabel,
@@ -2582,6 +2583,24 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               >
                 <LoadingState size="sm">{t('modelSelector.status.loading')}</LoadingState>
               </div>
+            ) : showModelConfiguration || (activePanel === 'pools' && poolsEmpty) ? (
+              <MenuList
+                className="openbitfun-model-selector__mode-empty"
+                data-testid="chat-model-selector-options"
+                data-panel-kind={showModelConfiguration ? 'models' : 'pools'}
+              >
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  role="menuitem"
+                  tabIndex={-1}
+                  data-openbitfun-menu-item=""
+                  data-testid="chat-model-selector-open-settings"
+                  onClick={handleOpenModelSettings}
+                >
+                  {showModelConfiguration ? t('modelSelector.configure') : poolSelectionLabel}
+                </Button>
+              </MenuList>
             ) : activePanel === 'pool' ? (
               <div className="openbitfun-model-selector__picker" data-testid="chat-model-selector-pool-connections" data-panel-kind="pool">
                 <ScrollArea className="openbitfun-model-selector__pool-connections" role="region" aria-label={t(currentModelMode === 'smart' ? 'modelSelector.home.modelList' : 'modelSelector.home.poolConnections')}>
@@ -2637,7 +2656,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                         </MenuItem>
                       ) : searchedModels.map(model => {
                         const isSelected = !currentModelMode && (isNativeModelSelection ? concreteModelId : currentModelId) === model.id;
-                        const providerMatched = modelSearchTerms.some(term => model.providerName.toLowerCase().includes(term));
                         return (
                           <Tooltip key={model.id} content={buildModelMetaText(model)} placement="right">
                             <MenuItem
@@ -2655,7 +2673,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                               disabled={disabled || loading || reasoningLoading || externalSelection?.disabled}
                               onClick={() => handleSelectModelFromMenu(model.id)}
                             >
-                              {model.modelName}{providerMatched && <span className="openbitfun-model-selector__option-provider"> {model.providerName}</span>}
+                              {model.modelName}<span className="openbitfun-model-selector__option-provider"> {model.providerName}</span>
                             </MenuItem>
                           </Tooltip>
                         );
@@ -2838,24 +2856,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                   {acpFastModeItem}
                 </div>
               </div>
-            ) : activePanel === 'pools' && poolsEmpty ? (
-              <MenuList
-                className="openbitfun-model-selector__mode-empty"
-                data-testid="chat-model-selector-options"
-                data-panel-kind="pools"
-              >
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  role="menuitem"
-                  tabIndex={-1}
-                  data-openbitfun-menu-item=""
-                  data-testid="chat-model-selector-open-settings"
-                  onClick={handleOpenModelSettings}
-                >
-                  {poolSelectionLabel}
-                </Button>
-              </MenuList>
             ) : isSelectionPanel ? (
               <div data-testid="chat-model-selector-options" data-panel-kind={activePanel}>
                 <ModelSelectorMenuLevel
@@ -2936,7 +2936,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                               metadata={isSelected ? <Icon name="check-line" size="sm" aria-hidden className="openbitfun-model-selector__option-selected-check" /> : null}
                               onClick={() => handleSelectModelFromMenu(model.id)}
                             >
-                              {model.modelName}
+                              {model.modelName}<span className="openbitfun-model-selector__option-provider"> {model.providerName}</span>
                             </MenuItem>
                           </Tooltip>
                         );

@@ -3,10 +3,18 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionMetadataPage } from '@/infrastructure/api/service-api/SessionAPI';
-const mocks = vi.hoisted(() => ({ loadPage: vi.fn(), completed: vi.fn(), epoch: 0, host: 'local', configListeners: new Set<(path: string) => void>() }));
+const mocks = vi.hoisted(() => ({
+  loadPage: vi.fn(),
+  getOptionalConfig: vi.fn(),
+  completed: vi.fn(),
+  epoch: 0,
+  host: 'local',
+  configListeners: new Set<(path: string, oldValue?: unknown, newValue?: unknown) => void>(),
+}));
 vi.mock('@/flow_chat/store/FlowChatStore', () => ({ flowChatStore: { loadSessionMetadataPage: mocks.loadPage } }));
 vi.mock('@/infrastructure/config/services/ConfigManager', () => ({ configManager: {
-  onConfigChange: (callback: (path: string) => void) => {
+  getOptionalConfig: mocks.getOptionalConfig,
+  onConfigChange: (callback: (path: string, oldValue?: unknown, newValue?: unknown) => void) => {
     mocks.configListeners.add(callback);
     return () => mocks.configListeners.delete(callback);
   },
@@ -38,6 +46,7 @@ describe('workspace discovery observation', () => {
     mocks.epoch = 0;
     mocks.host = 'local';
     mocks.configListeners.clear();
+    mocks.getOptionalConfig.mockResolvedValue({ codex: true, zcode: false });
     mocks.loadPage.mockResolvedValue(page(false));
     container = document.createElement('div');
     root = createRoot(container);
@@ -69,6 +78,17 @@ describe('workspace discovery observation', () => {
     await tick();
     expect(current.pending).toBe(false);
     expect(mocks.completed).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes source settings and applies a saved disable immediately', async () => {
+    await render();
+    await act(async () => { await Promise.resolve(); });
+    expect([...current.enabledSources ?? []]).toEqual(['codex']);
+
+    await act(async () => {
+      mocks.configListeners.forEach(callback => callback('app.external_session_discovery.codex', true, false));
+    });
+    expect([...current.enabledSources ?? []]).toEqual([]);
   });
 
   it('refreshes filtered totals even when a settings-triggered scan finishes before the first response', async () => {

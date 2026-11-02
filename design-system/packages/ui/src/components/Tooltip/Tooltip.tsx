@@ -562,7 +562,8 @@ export function Tooltip({
 
   return (
     <>
-      <TooltipTriggerContext.Provider value={!disabled}>
+      {/* Disabling an authored hint must not enable a nested overflow hint. */}
+      <TooltipTriggerContext.Provider value={true}>
         {triggerElement}
       </TooltipTriggerContext.Provider>
       {visible && (

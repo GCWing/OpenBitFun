@@ -8,10 +8,7 @@ export function LanguageSettingsSection() {
   const { t } = useTranslation('settings/application');
   const { currentLanguage, supportedLocales, selectLanguage, isChanging } = useLanguageSelector();
   return (
-    <ConfigPageSection
-      title={t('appearance.interfaceTitle')}
-      description={t('appearance.interfaceHint')}
-    >
+    <ConfigPageSection title={t('appearance.interfaceTitle')}>
       <ConfigPageRow
         label={t('appearance.language')}
         align="center"

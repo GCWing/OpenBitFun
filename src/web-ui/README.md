@@ -77,6 +77,35 @@ still wait for the current turn; Detached Dispatch sessions keep appending
 messages to the target task. In Peer Device Mode, the preference belongs to the
 active host, as do the other conversation settings.
 
+## Sidebar customization
+
+Open **Settings → Appearance → Left sidebar** to pin Agents,
+assistants, MiniApps, installed/discoverable Skills, or Insights. Available pages
+use capsules; select one to pin it. Move pinned pages up/down, remove
+them, or restore the default Home + Task Board layout. Home remains available.
+The selected pinned subpage gets its own highlight instead of also highlighting Home.
+
+Changes apply immediately and persist on this controller across workspaces and
+device switches. An unsupported or temporarily missing destination keeps its
+position with an unavailable state; returning to a supported device or restoring
+the contribution makes it usable again. This layout preference does not enable
+host capabilities. Skill management/discovery currently requires the local Desktop.
+
+## MiniApp navigation shortcuts
+
+In **MiniApps → Installed**, open an app's **More actions** menu and choose
+**Add to left navigation**. The same action is available on installed-app detail
+pages. Shortcuts appear after the customized page entries, in the order added, and open the
+app in a tab. Each shortcut shows only the app icon and name. Its remove button
+appears on hover or keyboard focus within the same navigation row. Use that
+button or the app's navigation action to remove it without uninstalling the app.
+
+Shortcuts survive restarts and are saved separately for each selected device on
+this controller. Switching devices uses that device's installed catalog; failed
+catalog reads retain the saved shortcuts. Apps requiring workspace filesystem
+access remain disabled in unsupported remote workspaces. Launching an app that
+is already open in a native window uses the existing transfer confirmation.
+
 ## Floating conversations
 
 The bottom-right window opens the persistent OpenBitFun control conversation in
@@ -365,7 +394,8 @@ ControlHub, while native apps and OS dialogs use ComputerUse.
 
 ## External Import status checks
 
-Open a disposable local workspace in Desktop and select an app under External Import.
+Open a disposable local workspace in Desktop and select an app under **Settings → Tools & integrations → External import**.
+The page retains application selection and import tables inside the settings layout; it no longer has a separate menu entry.
 Use test content or reversible imported copies. Category discovery coverage is independent of copy import and execution support.
 
 For Codex, Zcode, Claude Code, OpenCode, Pi, DeepSeek Harness and Cursor, enable **Automatically discover sessions** in Ecosystem
@@ -462,3 +492,34 @@ pnpm run capabilities:test
 
 Fixtures cover scan failures, legacy hosts with missing facts, and conflicts without damaging real configuration.
 Remote/Peer frontend fixtures verify presentation and import gates; actual SSH, cross-device, IM remote control and Detached Dispatch require separate environment testing.
+
+### Session trajectory
+
+The chart icon in the conversation header opens a three-lane trajectory for user
+input, model rounds and tool calls. Search, previous/next result and close controls
+share the session's top tab bar. Blank clicks clear selections while keeping the
+trajectory and search open; the close button or Escape dismisses them.
+Hover or keyboard focus previews one node while dimming the others; clicking or
+pressing Enter locates its FlowChat item and opens the reusable details panel.
+The reference line highlights the crossed node without dimming its neighbors.
+Selected nodes retain their emphasis until another selection or a blank click.
+Details use the shared PageHeader, FieldGroup, Disclosure and ScrollArea components.
+Timing appears in the header, followed by parameter and result chapters without
+inner tabs. Search reveals its matched chapter within the panel. Large output is
+disclosed incrementally, and missing timing remains unknown rather than a measured zero.
+Read-only fields align labels and values, stack on narrow panels, and give long
+values the full row width. Nested data expands within its field group.
+
+Drag across the rail, Shift-select, or adjust the range handles with the arrow
+keys to select an inclusive range. Search navigation stays within that range;
+the details panel shows counts, recorded cumulative durations and endpoint actions.
+Parallel model/tool durations are sums, not elapsed wall time.
+
+Only visible trajectory markers are mounted. History summaries are read in
+bounded pages without materializing the whole transcript; selected bodies use
+existing scoped history readers. SSH workspace requests retain the owning workspace
+identity. Peer hosts negotiate `session_trajectory_v1`; older hosts expose an explicit
+partial view of available events. Peer detail bodies remain owned by the canonical
+record replica. This observer UI adds no runtime or filesystem dependency for
+Remote Control or Detached Dispatch jobs. Automated fixtures simulate these routing
+and device-switch contracts; live remote and native visual checks remain manual.

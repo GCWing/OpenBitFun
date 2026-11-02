@@ -1,4 +1,8 @@
 {
+  "contentWidth": {
+    "resizeLeft": "Resize conversation from the left edge",
+    "resizeRight": "Resize conversation from the right edge"
+  },
   "externalHistory": {
     "removed": "The source session was removed from OpenBitFun. This branch keeps its own history.",
     "restoreSource": "Add source again",
@@ -198,6 +202,92 @@
     "retry": "Retry"
   },
   "usage": {
+    "toolDefinitions": {
+      "required": "Required",
+      "optional": "Optional",
+      "anyValue": "Any value is allowed.",
+      "noValue": "No value is allowed.",
+      "items": "Array items",
+      "prefixItems": "Tuple items",
+      "oneOf": "Exactly one option",
+      "anyOf": "One or more options",
+      "allOf": "All conditions",
+      "definitions": "Referenced definitions",
+      "enum": "Allowed values",
+      "default": "Default",
+      "constraints": {
+        "const": "Fixed value",
+        "minimum": "Minimum",
+        "maximum": "Maximum",
+        "exclusiveMinimum": "Greater than",
+        "exclusiveMaximum": "Less than",
+        "minLength": "Min. length",
+        "maxLength": "Max. length",
+        "minItems": "Min. items",
+        "maxItems": "Max. items",
+        "pattern": "Pattern",
+        "format": "Format",
+        "additionalProperties": "Additional properties",
+        "reference": "Reference"
+      },
+      "search": "Search tools or parameters",
+      "clearSearch": "Clear search",
+      "unavailable": "These tool definitions could not be read.",
+      "noMatches": "No matching tools",
+      "empty": "No tool definitions in this request",
+      "parameters": "Parameters",
+      "noParameters": "No parameters accepted.",
+      "anyParameters": "Parameters are not restricted.",
+      "notes": "Tool calling instructions"
+    },
+    "context": {
+      "viewReport": "View Report",
+      "collapse": "Collapse context usage",
+      "full": "{{value}} Full",
+      "tokenCapacity": "{{used}} / {{size}} Tokens",
+      "loading": "Loading context usage…",
+      "loadFailed": "Unable to load context usage. Close and reopen to try again.",
+      "title": "Context composition",
+      "label": "Context",
+      "utilization": "Context usage",
+      "unused": "Unused",
+      "capacityUnavailable": "Context capacity was not reported. Only recorded usage by category is shown.",
+      "exceedsCapacity": "Estimated context usage exceeds the reported capacity. Only recorded usage by category is shown.",
+      "usageOfCapacity": "{{used}} / {{size}}",
+      "approximateTokens": "~{{value}}",
+      "estimated": "Estimated",
+      "estimatedTokens": "Estimated tokens",
+      "estimateHelp": "Estimated from the latest recorded model request. Rules include workspace and user instructions; Skills and subagents include their listings. These are not provider-reported token counts.",
+      "unavailable": "No context breakdown recorded",
+      "previewCategory": "Preview {{category}}",
+      "previewEmpty": "This category has no content in the latest request.",
+      "previewUnavailable": "This session or host has no preview available for this category.",
+      "previewFailed": "Unable to load the preview. Please try again.",
+      "categories": {
+        "systemPrompt": "System prompt",
+        "toolDefinitions": "Tool definitions",
+        "rules": "Rules",
+        "skills": "Skills",
+        "mcpTools": "MCP & dynamic tools",
+        "subagentDefinitions": "Subagent definitions",
+        "summarizedConversation": "Summarized conversation",
+        "conversation": "Conversation"
+      }
+    },
+    "tokens": {
+      "title": "Token usage",
+      "uncachedInput": "Input (uncached)",
+      "cacheHit": "KV Cache hits",
+      "hitRate": "Cache hit rate {{value}}",
+      "hitRateDetail": "Cache hit rate {{rate}} ({{cached}} / {{input}} input tokens)",
+      "cacheHitDetail": "(cache hit {{rate}})",
+      "minimumRate": "≥{{rate}}",
+      "recordedCacheHits": "Recorded cache hits",
+      "remainingInput": "Remaining input",
+      "inputShareDetail": "{{tokens}} / {{input}} input tokens ({{share}} of input)",
+      "partialCacheHelp": "Only some calls reported cache usage. The chart shows recorded cache hits; remaining input includes unreported usage. The hit percentage is a lower bound over all input tokens.",
+      "cacheUnavailable": "(cache unavailable)"
+    },
     "title": "Session Usage",
     "unavailable": "Unavailable",
     "redacted": "Redacted",
@@ -215,8 +305,6 @@
     "actions": {
       "copyMarkdown": "Copy Markdown",
       "copied": "Copied",
-      "copySessionId": "Copy session ID",
-      "copyWorkspacePath": "Copy project path",
       "openDetails": "Open details",
       "openFileDiff": "Open diff",
       "openSectionDetails": "Open {{section}} details",
@@ -315,8 +403,7 @@
       "errorsDescription": "No sampled tool or model errors were recorded.",
       "slowest": "No slow spans",
       "slowestDescription": "No timed turn, model-call, or tool spans were recorded.",
-      "session": "No activity yet",
-      "sessionDescription": "Send a message in this session to start. Model usage, tools and timing will appear here after the session runs."
+      "session": "No activity yet"
     },
     "help": {
       "wall": "Span from the first recorded turn start to the last recorded turn end. Idle gaps can be included.",
@@ -356,11 +443,10 @@
     "runtime": {
       "open": "Generate session usage",
       "button": "Usage",
-      "tooltip": "Generate a usage report in this chat"
+      "tooltip": "Open the session usage report in the side panel"
     },
     "panel": {
       "tabsLabel": "Usage report sections",
-      "metadataLabel": "Usage report metadata",
       "accounting": "Accounting",
       "turnScope": "Scope",
       "cacheCoverage": "Cache reporting",
@@ -368,7 +454,15 @@
       "fileScope": "File scope",
       "toolErrors": "Tool errors",
       "modelErrors": "Model errors",
-      "errorScope": "Error scope"
+      "errorScope": "Error scope",
+      "report": "Context Usage Report",
+      "workspace": "Project",
+      "totalTokens": "Total tokens",
+      "totalUsage": "Total usage",
+      "explorer": "Usage explorer",
+      "cachedSubset": "Cached tokens are included in input tokens, not added to the total again.",
+      "distributionUnavailable": "A token breakdown is unavailable because complete, consistent input and output counts were not reported.",
+      "failed": "Could not generate the usage report"
     },
     "privacy": {
       "title": "Privacy-safe report",
@@ -849,6 +943,7 @@
       }
     },
     "harness": {
+      "modeLabel": "{{name}} mode",
       "selectorTooltip": "Current execution: {{name}}",
       "fixedTooltip": "This session uses {{name}} and is now fixed.",
       "compatibilityShort": "Legacy",
@@ -2071,6 +2166,8 @@
       "untitled": "(unnamed)",
       "publishFailed": "Could not publish OpenBitFun Page",
       "openFailed": "Could not create a secure link for this Page.",
+      "openOnExecutingDevice": "Open this Page from Pages on the device that ran the task.",
+      "hostUnsupported": "This host does not support opening Pages from tool cards.",
       "labelSlug": "slug",
       "labelVersion": "version",
       "labelPath": "url_path",
@@ -3319,9 +3416,28 @@
         "hidden": "Hidden",
         "disabledNotice": "Desktop cards are turned off in settings, so these cards are not displayed."
       }
+    },
+    "pageManage": {
+      "title": "Manage Pages",
+      "list": "List Pages",
+      "publish": "Publish Page",
+      "update": "Update Page",
+      "permissions": "Page access",
+      "delete": "Delete Page",
+      "versions": "Page versions",
+      "deploy": "Deploy Page",
+      "unpublish": "Unpublish Page",
+      "private": "Owner only",
+      "relay": "Relay users",
+      "public": "Public",
+      "name": "Name",
+      "updated": "Updated",
+      "empty": "No Pages or versions found",
+      "count": "{{count}} items"
     }
   },
   "welcome": {
+    "openingWorkspace": "Let's get to work in <workspace>{{workspace}}</workspace>.",
     "openingMorning": "Good morning. The day starts with you.",
     "openingAfternoon": "Good afternoon. Let's make today a little more interesting.",
     "openingEvening": "Good evening. Set your own pace.",
@@ -3421,6 +3537,8 @@
     "model": "Model",
     "modelExplanation": "Model explanation",
     "modelSettings": "Model settings",
+    "configure": "Configure models",
+    "noModelSelected": "No model selected",
     "modelSelection": "Select Model",
     "searchModels": "Search models",
     "collapseSearch": "Collapse search",
@@ -3762,5 +3880,50 @@
     "quiet": "Background task completed · No report needed",
     "running": "Background task running",
     "executionDetails": "Execution details"
+  },
+  "trajectory": {
+    "title": "Trajectory",
+    "user": "Input",
+    "model": "Model",
+    "tool": "Tool",
+    "details": "Trajectory details",
+    "count": "{{count}} events",
+    "search": "Search messages, tools, parameters and results",
+    "matches": "{{current}} / {{count}} matches",
+    "node": "Turn {{turn}} · {{name}}",
+    "turn": "Turn {{turn}}",
+    "locateFailed": "The source could not be located. Select it again to retry.",
+    "loadFailed": "History could not be indexed. Results are incomplete.",
+    "loading": "Reading history…",
+    "partial": "Showing loaded content. Full history search is unavailable on this host.",
+    "retry": "Retry",
+    "notRecorded": "Not recorded",
+    "showMore": "Show more",
+    "waiting": "Waiting",
+    "duration": "Duration",
+    "queue": "Queue wait",
+    "preflight": "Preparation",
+    "confirmation": "Confirmation wait",
+    "execution": "Execution",
+    "firstOutput": "Time to first output",
+    "streaming": "Streaming",
+    "overview": "Overview",
+    "parameters": "Parameters",
+    "result": "Result",
+    "timing": "Timing",
+    "query": "Search: {{query}}",
+    "unavailable": "This source is unavailable. Its history may have changed.",
+    "started": "Started",
+    "clearRange": "Clear range",
+    "rangeStart": "Range start",
+    "rangeEnd": "Range end",
+    "rangeDetails": "Selected range",
+    "rangeTurns": "Turns {{start}}–{{end}}",
+    "errors": "Failed events",
+    "modelTotal": "Summed model duration",
+    "toolTotal": "Summed tool duration",
+    "parallelTime": "Durations are summed by event. Parallel calls overlap; these totals are not elapsed time.",
+    "locateStart": "Go to range start",
+    "locateEnd": "Go to range end"
   }
 }

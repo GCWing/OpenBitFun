@@ -115,6 +115,5 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | `SessionMessage` | Send a message to another agent session and receive its result asynchronously. |
 | `SessionHistory` | Export an agent session transcript and index for targeted history reads. |
 | `PortForward` | Forward a port from an SSH host to the user's machine. |
-| `PagePublish` | Upload, save a version of, and deploy an OpenBitFun Page. |
-| `PageDeploy` | Deploy a saved OpenBitFun Page version to production. |
+| `PageManage` | List, publish, update, delete, manage visibility, and deploy saved OpenBitFun Page versions. |
 | `GetTime` | Return the current time, weekday, and Unix timestamp. |

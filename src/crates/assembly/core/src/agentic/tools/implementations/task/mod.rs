@@ -92,8 +92,9 @@ impl AgentExecutionTool {
         let mut out = String::from("<available_agents>\n");
         for agent in agents {
             out.push_str(&format!(
-                "<agent type=\"{}\">\n<description>\n{}\n</description>\n<tools>{}</tools>\n</agent>\n",
+                "<agent type=\"{}\">\n<name>{}</name>\n<description>\n{}\n</description>\n<tools>{}</tools>\n</agent>\n",
                 agent.id,
+                agent.name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"),
                 agent.description,
                 agent.default_tools.join(", ")
             ));

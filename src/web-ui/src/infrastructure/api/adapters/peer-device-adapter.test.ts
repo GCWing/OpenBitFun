@@ -730,6 +730,17 @@ describe('PeerDeviceTransportAdapter queue', () => {
     expect(deviceRpc).toHaveBeenCalledTimes(1);
   });
 
+  it('requires the Remote Connect capability before executing a management operation', async () => {
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { started: true } }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsProductControlV1: true });
+    const request = { request: { action: 'execute', capabilityId: 'feature.remote-connect', operationId: 'start', arguments: { method: 'weixin' } } };
+    await expect(adapter.request('product_control_invoke', request)).rejects.toThrow('remote_connect_control_v1_unsupported');
+    expect(deviceRpc).not.toHaveBeenCalled();
+    const capable = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsProductControlV1: true, supportsRemoteConnectControlV1: true });
+    await expect(capable.request('product_control_invoke', request)).resolves.toEqual({ started: true });
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves a session conflict returned by the Peer Host without replaying it', async () => {
     const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
       resp: 'host_invoke_result',

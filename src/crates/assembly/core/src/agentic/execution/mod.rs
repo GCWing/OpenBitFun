@@ -7,6 +7,7 @@ pub(super) mod compression_request;
 #[cfg(feature = "agent-runtime")]
 pub(crate) mod conditional_instructions;
 mod context_budget;
+mod context_composition;
 pub mod edit_constraint_guard;
 pub mod execution_engine;
 pub(crate) mod model_exchange_trace;

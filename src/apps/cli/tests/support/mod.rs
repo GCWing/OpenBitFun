@@ -163,6 +163,15 @@ impl CliTestEnvironment {
 
     pub(crate) fn configure_tool_loop_mock_model(&self, server_base_url: &str) {
         self.configure_mock_model(server_base_url);
+        self.allow_tool_loop_rounds();
+    }
+
+    pub(crate) fn configure_tool_loop_image_model(&self, server_base_url: &str) {
+        self.configure_mock_image_model(server_base_url);
+        self.allow_tool_loop_rounds();
+    }
+
+    fn allow_tool_loop_rounds(&self) {
         let config_path = self.user_root.join("config/app.json");
         let mut config: serde_json::Value = serde_json::from_slice(
             &std::fs::read(&config_path).expect("read tool-loop model config"),
@@ -572,11 +581,14 @@ fn serve_model_response(
             .to_string(),
         )
         .expect("write scripted tool response");
-        write_chunk(stream, b"data: [DONE]\n\n").expect("finish scripted tool SSE");
-        stream
-            .write_all(b"0\r\n\r\n")
-            .expect("finish scripted response");
-        stream.flush().expect("flush scripted response");
+        // The client may close as soon as it consumes the finish reason. A Windows
+        // ConnectionAborted here must not kill the server for the next tool
+        // response; all required SSE data was already written successfully.
+        if write_chunk(stream, b"data: [DONE]\n\n").is_err() {
+            return;
+        }
+        let _ = stream.write_all(b"0\r\n\r\n");
+        let _ = stream.flush();
         return;
     }
 
@@ -770,11 +782,12 @@ fn serve_product_control_response(stream: &mut TcpStream, attempt: usize) {
         .expect("write product-control completion chunk");
     }
 
-    write_chunk(stream, b"data: [DONE]\n\n").expect("finish product-control SSE");
-    stream
-        .write_all(b"0\r\n\r\n")
-        .expect("finish product-control chunked response");
-    stream.flush().expect("flush product-control response");
+    // Match the ordinary streaming response: EOF after completion is normal.
+    if write_chunk(stream, b"data: [DONE]\n\n").is_err() {
+        return;
+    }
+    let _ = stream.write_all(b"0\r\n\r\n");
+    let _ = stream.flush();
 }
 
 fn write_http_403(stream: &mut TcpStream, reason: &str) -> std::io::Result<()> {

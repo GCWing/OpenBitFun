@@ -10,6 +10,8 @@
     "description": "原生会话默认立即向当前任务补充指令；选择排队则等待当前轮次结束。ACP 会话仍需等待当前轮次结束，远程派发会话保持向目标任务追加消息。",
     "immediate": "立即发送（默认）",
     "queue": "排队发送",
+    "immediateDescription": "原生会话中，新消息会立即补充到当前任务。",
+    "queueDescription": "原生会话中，新消息会在本轮结束后自动发送。",
     "loading": "正在加载消息发送偏好…",
     "loadFailed": "加载消息发送偏好失败",
     "saveFailed": "保存消息发送偏好失败"
@@ -46,15 +48,15 @@
     "languageRowHint": "选择一个语言包作为当前界面语言",
     "appearanceRowHint": "选择界面外观",
     "systemAppearance": "跟随系统",
-    "systemAppearanceDescription": "跟随系统自动切换亮色或暗色外观",
+    "systemAppearanceDescription": "跟随系统自动切换浅色或暗色外观",
     "presets": {
       "openbitfun-dark": {
         "name": "暗色",
         "description": "默认暗色外观"
       },
       "openbitfun-light": {
-        "name": "亮色",
-        "description": "亮色外观 - 纯白界面、柔和中性灰与深海军蓝操作色"
+        "name": "浅色",
+        "description": "浅色外观 - 纯白界面、柔和中性灰与深海军蓝操作色"
       },
       "openbitfun-monochrome": {
         "name": "黑白撞色",
@@ -136,7 +138,7 @@
       "hint": "OpenBitFun 运行时的电脑睡眠行为"
     },
     "toggleLabel": "阻止电脑睡眠",
-    "toggleDescription": "OpenBitFun 运行期间保持电脑唤醒，即使没有任务。显示器仍可关闭；手动睡眠和合盖行为由系统决定",
+    "toggleDescription": "运行时阻止自动睡眠，不影响熄屏、手动睡眠和合盖。",
     "messages": {
       "loading": "加载中…",
       "loadFailed": "无法读取阻止睡眠设置",
@@ -205,6 +207,7 @@
       "loadFailed": "加载日志配置失败",
       "saveFailed": "保存日志级别失败",
       "levelUpdated": "日志级别已更新",
+      "levelSavedNotApplied": "日志级别已保存，但该设备仍按 {{level}} 级别记录日志。",
       "sensitiveDiagnosticsUpdated": "敏感调试信息日志偏好已更新",
       "refreshed": "运行时状态已刷新",
       "openedFolder": "日志文件夹已打开",

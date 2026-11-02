@@ -48,6 +48,7 @@ test("tab presentation props reach the button without replacing its owned semant
       className: "product-tab", "data-openbitfun-product-component": "product",
       "data-openbitfun-product-part": "tab", title: "Full title",
       "aria-describedby": "help", style: { opacity: 0.8 },
+      "aria-haspopup": "menu", "aria-expanded": true,
       // Untyped callers must not override component-owned interaction/identity.
       role: "button", type: "submit", tabIndex: 8, id: "wrong-id",
       "aria-selected": false, "aria-controls": "wrong-panel", "data-openbitfun-part": "wrong-part",
@@ -58,6 +59,8 @@ test("tab presentation props reach the button without replacing its owned semant
   assert.match(button, /data-openbitfun-product-component="product"/);
   assert.match(button, /data-openbitfun-product-part="tab"/);
   assert.match(button, /aria-describedby="help"/);
+  assert.match(button, /aria-haspopup="menu"/);
+  assert.match(button, /aria-expanded="true"/);
   assert.match(button, /style="opacity:0.8"/);
   assert.match(button, /title="Full title"/);
   assert.match(button, /id="product-tab"/);

@@ -43,6 +43,30 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/common/S
 ```
 
 Follow the parent guide for `check:web`, i18n, and Appearance registration checks.
+For the independent Appearance conversation-width setting and shared drag preference:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/application/FlowChatWidthSettingsSection.test.tsx src/flow_chat/components/FlowChatWidthBoundary.test.tsx src/infrastructure/appearance/preferences/flowChatWidthStore.test.ts
+```
+
+These local DOM/storage fixtures do not establish rendered visuals or live remote behavior.
+
+For Appearance sidebar pinning, capsule selection, ordering, persistence and contribution lifecycle:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/navigation/sidebarPreferences.test.ts src/app/navigation/sidebarRegistry.test.ts src/app/scenes/settings/pages/application/SidebarSettingsSection.test.tsx src/app/scenes/settings/settingsRegistry.test.ts src/app/components/NavPanel/MainNav.projectCreation.test.tsx src/app/scenes/skills/skillsSceneStore.test.ts
+```
+
+Keep trusted navigation contributions separate from controller-local preferences and
+device-scoped MiniApp pins. These tests simulate Peer activation and capability gates;
+they do not establish live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
+
+Model connection and detail editors use the shared `Dialog preset="panel"`
+with a centered provider identity and the panel's top/bottom spacing. Keep the
+editor footer `appearance="floating"` for centered actions. This presentation is
+intentional; form controls inside still follow the standard shared sizing and
+field-surface contracts.
+
 For model-pool strategy selection, member search/multi-selection, nested-dialog
 dismissal, preserved records and device-switch isolation, run:
 
@@ -71,6 +95,20 @@ pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/subscription
 These tests cover product grouping, regional selection and account isolation in
 local DOM/fixtures; they do not exercise a real remote host or provider login.
 
+Subscription import presents provider cards with their own sign-in buttons and
+in-card region selection; existing account management is opened from account
+entries. Starting sign-in replaces the picker with the selected provider's
+authorization tracker; cancel waits for host cleanup before returning to the
+picker, and failed attempts can retry in the same slot or return.
+For picker loading, regional sign-in, retry/cancel,
+and the separate account-management route, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx src/app/scenes/settings/pages/ai/ModelSettingsPage.presentation.test.ts
+```
+
+These DOM fixtures do not establish visual fidelity or live remote sign-in.
+
 Subscription allowance panels use `useSubscriptionQuota` and the typed host API.
 Keep observations scoped to device activation and exact account slot; gate peers
 on `subscription_quota_v1`, with an explicit unsupported state and no local
@@ -84,6 +122,16 @@ pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/Subscription
 
 These fixtures verify data presentation and activation/account isolation; they
 do not establish rendered visual fidelity or physical remote-host behavior.
+
+For the three-row subscription capsule summary, its always-visible More entry,
+resize/focus behavior, and provider-filtered account browser:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/SubscriptionCapsuleList.test.tsx src/app/scenes/settings/pages/ai/ModelSettingsPage.loading.test.tsx
+```
+
+These DOM fixtures use measured-width stubs and simulated device activation;
+they do not establish native rendering or live remote behavior.
 
 Service headings use the provider catalog; account rows use exact host-owned slots
 from `list_subscription_account_instances`. Preserve retained signed-out identities,

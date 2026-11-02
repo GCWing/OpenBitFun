@@ -53,6 +53,9 @@
     "rescan": "Refresh status",
     "import": "Use as model",
     "login": "Sign in",
+    "loginTitle": "{{provider}} sign-in",
+    "backToProviders": "Back to providers",
+    "cancelAndBack": "Cancel sign-in and go back",
     "browserLogin": "Browser sign-in",
     "deviceLogin": "Device-code sign-in",
     "cancel": "Cancel",
@@ -88,18 +91,22 @@
       "zcode": "ZCode"
     },
     "details": {
-      "codex": "ChatGPT subscription",
-      "antigravity": "Google subscription",
-      "opencode": "Console · Zen",
-      "grok": "SuperGrok subscription",
-      "hermes": "Nous Portal subscription",
+      "codex": "ChatGPT",
+      "antigravity": "Google",
+      "opencode": "Zen",
+      "grok": "SuperGrok",
+      "hermes": "Nous Portal",
       "workbuddy": "Removed · vendor no longer supports sign-in",
       "workbuddy_ai": "Removed · international",
-      "zcode": "GLM Coding Plan"
+      "zcode": "GLM Coding"
     },
     "regions": {
-      "zai": "Z.ai",
+      "zai": "Z.ai (International)",
       "bigmodel": "BigModel (China)"
+    },
+    "regionsShort": {
+      "zai": "Global",
+      "bigmodel": "China"
     },
     "options": {
       "opencode": "OpenCode",
@@ -243,8 +250,16 @@
       "name": "OpenBitFun Service",
       "description": "OpenBitFun Model Platform",
       "urlOptions": {
-        "default": "Anthropic Format",
-        "openai": "OpenAI Compatible Format - Default"
+        "default": "Official API",
+        "openai": "Official API"
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "description": "OpenAI GPT and reasoning models",
+      "urlOptions": {
+        "default": "Official API",
+        "chatCompletions": "Official API"
       }
     },
     "gemini": {
@@ -259,52 +274,52 @@
       "name": "MiniMax",
       "description": "MiniMax series models",
       "urlOptions": {
-        "default": "China - Anthropic Format - Default",
-        "openai": "China - OpenAI Compatible",
-        "intl": "Global - Anthropic Format",
-        "intlOpenai": "Global - OpenAI Compatible"
+        "default": "China - Default",
+        "openai": "China",
+        "intl": "Global",
+        "intlOpenai": "Global"
       }
     },
     "xiaomi": {
       "name": "Xiaomi MiMo",
       "description": "Xiaomi MiMo models. API and Token Plan keys are separate.",
       "urlOptions": {
-        "default": "API - OpenAI Chat Completions - Default",
-        "responses": "API - OpenAI Responses",
-        "anthropic": "API - Anthropic Messages",
-        "tokenPlan": "China - Token Plan - OpenAI",
-        "tokenPlanAnthropic": "China - Token Plan - Anthropic"
+        "default": "API - Default",
+        "responses": "API",
+        "anthropic": "API",
+        "tokenPlan": "China - Token Plan",
+        "tokenPlanAnthropic": "China - Token Plan"
       }
     },
     "moonshot": {
       "name": "Moonshot AI",
       "description": "Moonshot Kimi series models",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
-        "intl": "Global - OpenAI Format",
-        "intlAnthropic": "Global - Anthropic Format",
+        "default": "China - Default",
+        "anthropic": "China",
+        "intl": "Global",
+        "intlAnthropic": "Global",
         "kimiForCoding": "Kimi For Coding plan (models: k3 / kimi-for-coding)",
-        "kimiForCodingAnthropic": "Kimi For Coding plan - Anthropic Format"
+        "kimiForCodingAnthropic": "Kimi For Coding plan"
       }
     },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek series models",
       "urlOptions": {
-        "default": "OpenAI Format - Default",
-        "anthropic": "Anthropic Format"
+        "default": "Official API - Default",
+        "anthropic": "Official API"
       }
     },
     "zhipu": {
       "name": "Zhipu AI",
       "description": "Zhipu AI GLM series models",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
+        "default": "China - Default",
+        "anthropic": "China",
         "codingPlan": "China - Coding Plan",
-        "intl": "Global (Z.AI) - OpenAI Format",
-        "intlAnthropic": "Global (Z.AI) - Anthropic Format",
+        "intl": "Global (Z.AI)",
+        "intlAnthropic": "Global (Z.AI)",
         "intlCodingPlan": "Global (Z.AI) - Coding Plan"
       }
     },
@@ -312,10 +327,10 @@
       "name": "Qwen",
       "description": "Alibaba Cloud Bailian Model Platform",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "intl": "Global (International) - OpenAI Format",
+        "default": "China - Default",
+        "intl": "Global (International)",
         "codingPlan": "China - Coding Plan",
-        "codingPlanAnthropic": "China - Coding Plan - Anthropic Format",
+        "codingPlanAnthropic": "China - Coding Plan",
         "intlCodingPlan": "Global - Coding Plan"
       }
     },
@@ -332,9 +347,9 @@
       "name": "SiliconFlow",
       "description": "SiliconFlow Model Platform",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
-        "intl": "Global - OpenAI Format"
+        "default": "China - Default",
+        "anthropic": "China",
+        "intl": "Global"
       }
     },
     "nvidia": {
@@ -387,6 +402,7 @@
     "modelSelection": "Select Models",
     "modelNameHint": "GLM-ASR uses glm-asr, other speech models use their corresponding model names",
     "baseUrl": "API URL",
+    "baseUrlPlaceholder": "https://api.example.com/v1",
     "resolvedUrlLabel": "Request URL: ",
     "forceUrlHint": "Append # to force use the exact URL you entered",
     "apiKey": "API Key",
@@ -581,9 +597,9 @@
   "draftClose": {
     "title": "Keep this editing draft?",
     "message": "These changes have not been written to the model configuration. Keeping the draft will not run a connection test, and you can resume it when you reopen this editor.",
-    "keepAndClose": "Keep draft and close",
-    "discard": "Discard changes",
-    "continueEditing": "Continue editing",
+    "keepAndClose": "Keep draft",
+    "discard": "Discard",
+    "continueEditing": "Keep editing",
     "discardDraft": "Discard draft",
     "retainedHint": "The model editing draft is retained and has not been written to the active configuration."
   },
@@ -739,10 +755,12 @@
     "subscriptions": "Subscriptions",
     "importedSummary": "{{models}} models imported from {{providers}} services",
     "noneImported": "No subscriptions imported yet",
-    "import": "Import",
+    "addSubscription": "Add subscription",
     "importTitle": "Import subscriptions",
     "loadFailed": "Could not load subscriptions. Retry to refresh; existing model configurations are retained.",
-    "noServices": "No subscriptions are available to import on this host"
+    "noServices": "No subscriptions are available to import on this host",
+    "more": "More",
+    "noSignedInAccounts": "No signed-in accounts"
   },
   "selectionModes": {
     "unavailable": "Not available yet",
@@ -844,6 +862,15 @@
       "connected": "Connected",
       "failed": "Connection failed",
       "unconfigured": "No available model configured"
+    },
+    "connectionFailures": {
+      "protocol": "Choose an OpenAI Chat Completions classifier service that returns token IDs and logprobs",
+      "authentication": "Router authentication failed; check the API key and service permissions",
+      "addressOrModel": "Check the Router service address and model name; the endpoint or model may not exist",
+      "rateLimited": "Router requests are rate limited; wait and retry",
+      "serviceUnavailable": "The Router service is temporarily unavailable; wait and retry",
+      "http": "The Router returned an unsuccessful HTTP response; check service settings and retry",
+      "network": "The Router could not be reached or timed out; check the service, network, and timeout settings"
     },
     "notReady": "Router not ready",
     "unsupported": "This execution host does not support smart routing",

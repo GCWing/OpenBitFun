@@ -192,6 +192,12 @@ For shared GitHub sign-in and token redaction, use
 For the matching cross-entry UI state, run
 `pnpm --dir src/web-ui run test:run src/infrastructure/account-identity/AccountIdentityService.test.ts src/features/market-account/AccountIdentityControls.test.tsx src/app/components/RemoteConnectDialog/ensureAccountSession.test.ts`.
 
+For Pages Agent startup registration and Desktop-owned account execution, run
+`cargo test --locked -p openbitfun-desktop --lib api::remote_connect_api::page_tool_tests`.
+This child-process fixture invokes the actual registered tool against a loopback
+Relay and covers account-switch fencing; it does not launch the native UI or
+exercise a live remote device.
+
 For side-question request compatibility, initial model selection, and optional
 message metadata, use
 `cargo test -p openbitfun-desktop --no-default-features --lib api::btw_api::tests`.
@@ -320,10 +326,12 @@ For alternate dev-server ports and preview startup URL changes, run
 `cargo test -p openbitfun-desktop --no-default-features --lib appearance::development_frontend_tests`.
 For launcher-only development storage mode changes, run
 `node --test scripts/dev-startup.test.mjs`; no native app launch is required.
-By default (or with `--isolated-data`), both desktop development launchers set `OPENBITFUN_USER_ROOT` and
-`OPENBITFUN_HOME` before spawning children, defaulting to the checkout-local
-`.openbitfun/desktop-dev/{user,home}` directories. `--shared-data` leaves storage
-selection to the app; the two flags are mutually exclusive. Preserve explicit
+By default (or with `--shared-data`), both desktop development launchers leave
+storage selection to the app so existing settings, workspaces and sessions are
+visible. Only `--isolated-data` sets `OPENBITFUN_USER_ROOT` and `OPENBITFUN_HOME`
+before spawning children, defaulting to the checkout-local
+`.openbitfun/desktop-dev/{user,home}` directories. Keep existing isolated data in
+place; switching modes must not move, merge or delete it. The two flags are mutually exclusive. Preserve explicit
 overrides and the legacy E2E aliases in both modes. Development launchers set
 `OPENBITFUN_DESKTOP_HOST_CHANNEL=development`: its MiniApp lease, discovery and
 launch records are separate even when product storage is shared. Keep per-session
@@ -349,8 +357,9 @@ and rechecks its authorization binding before publishing the result. Model-scope
 requests require the separately advertised `subscription_model_quota_v1` capability;
 legacy requests retain the exact account-slot path. These tests do not contact billing.
 
-For workspace HTML gateway authentication, chunking, cancellation and peer
-capability negotiation and encrypted loopback Relay transfer, run:
+For workspace HTML gateway authentication, chunking, cancellation, site-root
+entry URLs, document-route fallback, owner-error preservation, peer capability
+negotiation and encrypted loopback Relay transfer, run:
 
 ```bash
 cargo test --locked -p openbitfun-desktop --lib html_preview

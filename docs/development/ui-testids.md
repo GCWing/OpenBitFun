@@ -132,7 +132,8 @@ Avoid adding IDs to these surfaces unless there is a clear automated workflow.
 | Workspace card | `nav-workspace-card` | Clickable row body. Pair with `data-workspace-id`. |
 | Workspace sessions toggle | `nav-workspace-sessions-toggle` | Expands/collapses session rows. Pair with `data-workspace-id`. |
 | Workspace name button | `nav-workspace-name-btn` | Activates workspace or toggles sessions. Pair with `data-workspace-id`. |
-| Workspace files button | `nav-workspace-files-btn` | Opens file viewer for workspace. Pair with `data-workspace-id`. |
+| Project resources button | `nav-workspace-project-resources-btn` | Opens project resources management. Pair with `data-workspace-id`. |
+| Open directory menu item | `nav-workspace-menu-open-directory` | Opens the project's file viewer from the workspace More menu. |
 | Workspace search index button | `nav-workspace-search-index-btn` | Opens search index status modal when present. Pair with `data-workspace-id`. |
 | Workspace row menu button | `nav-workspace-menu-btn` | Opens row action menu. Pair with `data-workspace-id`. |
 | Workspace row menu | `nav-workspace-item-menu` | Portal menu for one workspace. Pair with `data-workspace-id`. |

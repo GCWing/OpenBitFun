@@ -31,7 +31,7 @@ describe('unified project session creation', () => {
     const projectActionsEnd = workspaceItem.indexOf('{menuOpen && createOverlayPortal(', projectActionsStart);
     const actionStrips = [
       { source: workspaceItem.slice(assistantActionsStart, assistantActionsEnd), middleAction: 'nav-assistant-history-btn' },
-      { source: workspaceItem.slice(projectActionsStart, projectActionsEnd), middleAction: 'nav-workspace-files-btn' },
+      { source: workspaceItem.slice(projectActionsStart, projectActionsEnd), middleAction: 'nav-workspace-project-resources-btn' },
     ];
 
     expect(utilityRowIndex).toBeGreaterThan(-1);
@@ -78,7 +78,8 @@ describe('unified project session creation', () => {
     );
     expect(mainNav).not.toContain('nav-new-code-session-btn');
     expect(mainNav).not.toContain('nav-new-cowork-session-btn');
-    expect(workspaceItem).toContain('data-testid="nav-workspace-menu-create-session"');
+    expect(workspaceItem).not.toContain('data-testid="nav-workspace-menu-create-session"');
+    expect(workspaceItem.match(/onClick=\{handleOpenFiles\}\s+data-testid="nav-workspace-menu-open-directory"/g)).toHaveLength(2);
   });
 
   it('projects projects and assistants through one grouped session region', () => {
@@ -89,13 +90,17 @@ describe('unified project session creation', () => {
 
     expect(mainNav).not.toContain('data-testid="nav-smart-members-btn"');
     expect(mainNav).not.toContain('data-testid="nav-long-term-tracking-btn"');
-    expect(mainNav).toContain('data-testid="nav-todos-btn"');
+    const pinnedNav = source('./components/PinnedNavigationItems.tsx');
+    expect(mainNav).toContain('<PinnedNavigationItems');
+    expect(pinnedNav).toContain('data-testid="nav-todos-btn"');
     expect(footerActions).not.toContain('data-testid="nav-todos-btn"');
-    expect(mainNav).toContain('data-openbitfun-part="todoEntry"');
-    expect(mainNav).toContain("activateProductAction('surface.todos.open')");
+    expect(pinnedNav).toContain('data-openbitfun-part="todoEntry"');
+    expect(source('../../navigation/sidebarContributions.ts')).toContain("'todos', 'surface.todos.open'");
     expect(mainNav).not.toContain("new Set(['sessions'])");
     expect(mainNav).toContain('label={t(\'nav.items.sessions\')}');
-    expect(mainNav).toContain('<WorkspaceListSection variant="all" />');
+    const sessionLists = mainNav.match(/<WorkspaceListSection\b[^>]*\/>/g) ?? [];
+    expect(sessionLists).toHaveLength(1);
+    expect(sessionLists[0]).toMatch(/\svariant\s*=\s*["']all["']/);
     expect(workspaceList).toContain('variant: SessionNavigationScope');
     expect(workspaceList).toContain("variant === 'all'");
     expect(workspaceList).toContain('openedWorkspacesList');
@@ -104,11 +109,11 @@ describe('unified project session creation', () => {
     expect(projection).toContain("WorkspaceBackedSessionGroupKind = 'assistant' | 'project'");
   });
 
-  it('keeps Personal Overview and Task Board as direct entries and External Import in More', () => {
+  it('keeps Home before customizable pins and retains External Import in More', () => {
     const mainNav = source('./MainNav.tsx');
     const footerActions = source('./components/PersistentFooterActions.tsx');
     const overviewIndex = mainNav.indexOf('data-testid="nav-personal-overview"');
-    const taskBoardIndex = mainNav.indexOf('data-testid="nav-todos-btn"');
+    const taskBoardIndex = mainNav.indexOf('<PinnedNavigationItems');
     const sessionsIndex = mainNav.indexOf('data-openbitfun-section="sessions"');
 
     expect(overviewIndex).toBeGreaterThanOrEqual(0);
@@ -119,22 +124,19 @@ describe('unified project session creation', () => {
     expect(mainNav).not.toContain('<MiniAppEntry');
     expect(mainNav).not.toContain('data-testid="skill-tab"');
     expect(mainNav).not.toContain('data-testid="agent-skill-entry"');
-    expect(mainNav).toContain("t('nav.items.todos')");
+    expect(source('../../navigation/sidebarPreferences.ts')).toContain("DEFAULT_SIDEBAR_PINS = ['builtin.todos']");
     expect(mainNav).not.toContain('data-testid="nav-bottom-bar"');
     expect(mainNav).not.toContain('className="openbitfun-nav-panel__top-action-expand"');
     expect(mainNav).not.toContain('data-testid="ecosystem-compatibility-tab"');
-    expect(footerActions).toContain('data-testid="ecosystem-compatibility-tab"');
-    expect(footerActions).toContain("activateProductAction('surface.ecosystemCompatibility.open')");
+    expect(footerActions).not.toContain('data-testid="ecosystem-compatibility-tab"');
+    expect(footerActions).not.toContain("activateProductAction('surface.ecosystemCompatibility.open')");
     expect(footerActions).not.toContain("activateProductAction('settings.external-sources.open')");
   });
 
   it('keeps the settings gear and places update checks before Settings in its utility menu, independently of About', () => {
     const footerActions = source('./components/PersistentFooterActions.tsx');
-    const appearanceQuickSwitch = source('./components/AppearanceQuickSwitchMenuItem.tsx');
     const floatingIndex = footerActions.indexOf('data-testid="nav-settings-floating-item"');
     const notificationIndex = footerActions.indexOf('<NotificationButton menuItem');
-    const appearanceIndex = footerActions.indexOf('<AppearanceQuickSwitchMenuItem');
-    const ecosystemIndex = footerActions.indexOf('data-testid="ecosystem-compatibility-tab"');
     const updateIndex = footerActions.indexOf('<UpdateMenuItems');
     const openSettingsIndex = footerActions.indexOf('data-testid="nav-settings-open-item"');
     const aboutIndex = footerActions.indexOf('data-testid="nav-settings-about-item"');
@@ -148,23 +150,12 @@ describe('unified project session creation', () => {
     expect(footerActions).toContain('data-testid="nav-settings-menu"');
     expect(floatingIndex).toBeGreaterThan(-1);
     expect(notificationIndex).toBeGreaterThan(floatingIndex);
-    expect(appearanceIndex).toBeGreaterThan(notificationIndex);
-    expect(ecosystemIndex).toBeGreaterThan(appearanceIndex);
-    expect(updateIndex).toBeGreaterThan(ecosystemIndex);
-    expect(footerActions).toMatch(/<MenuSeparator \/>\s*<MenuSection aria-label=\{t\('nav.items.ecosystemCompatibility'\)\}>[\s\S]*?<\/MenuSection>\s*<MenuSeparator \/>\s*<UpdateMenuItems/);
+    expect(updateIndex).toBeGreaterThan(notificationIndex);
     expect(openSettingsIndex).toBeGreaterThan(updateIndex);
     expect(aboutIndex).toBeGreaterThan(openSettingsIndex);
     expect(footerActions.slice(footerActions.indexOf('onClick={handleShowAbout}'), aboutIndex)).not.toContain('UpdateIndicator');
-    expect(footerActions).toContain("useSettingsStore.getState().openPage('application.appearance')");
     expect(footerActions).not.toContain('GithubStarButton');
     expect(footerActions).not.toContain('nav-footer-github-star-btn');
-    expect(appearanceQuickSwitch).toContain('data-testid="nav-settings-appearance-item"');
-    expect(appearanceQuickSwitch).toContain('data-testid="nav-settings-appearance-menu"');
-    expect(appearanceQuickSwitch).toMatch(
-      /leading=\{<Icon name="gear" size="sm" aria-hidden="true" \/>\}[\s\S]*?data-testid="nav-settings-appearance-settings"/,
-    );
-    expect(appearanceQuickSwitch).toContain('role="menuitemradio"');
-    expect(appearanceQuickSwitch).toContain('selectedDisplayName');
     expect(footerActions).not.toContain('onMouseMove=');
     expect(footerActions).not.toContain('onFocusCapture=');
     expect(footerActions).not.toContain('data-testid="nav-footer-more-btn"');
@@ -235,6 +226,7 @@ describe('unified project session creation', () => {
     const workspaceList = source('./sections/workspaces/WorkspaceListSection.tsx');
     const projection = source('./sessionNavigationProjection.ts');
     const sessionsSection = source('./sections/sessions/SessionsSection.tsx');
+    const archivedMetadata = source('./sections/sessions/useArchivedSessionMetadata.ts');
 
     expect(workspaceList).toContain("grouping === 'all'");
     expect(workspaceList).toContain('data-session-group-kind={group.kind}');
@@ -244,7 +236,8 @@ describe('unified project session creation', () => {
     expect(sessionsSection).toContain("'sessions_nav_all_grouping'");
     expect(sessionsSection).toContain('Promise.allSettled(workspaceScopes.map');
     expect(sessionsSection).toContain('matchesWorkspaceSessionView(');
-    expect(sessionsSection).toContain('loadArchivedSessionMetadata(');
+    expect(sessionsSection).toContain('const archivedCatalog = useArchivedSessionMetadata({');
+    expect(archivedMetadata).toContain('flowChatStore.loadArchivedSessionMetadata(');
     expect(sessionsSection).toContain("layout === 'flat' ? ' is-flat-workspace-view'");
     expect(sessionsSection).toContain("const showAllWithoutLimit = layout === 'flat'");
     expect(sessionsSection).toContain('!showAllWithoutLimit && expandLevel === 2');
@@ -256,7 +249,7 @@ describe('unified project session creation', () => {
     const workspaceItem = source('./sections/workspaces/WorkspaceItem.tsx');
     const sessionMenu = source('../../../flow_chat/components/session-menu/SessionMenu.tsx');
 
-    expect(workspaceItem).toContain('data-testid="nav-workspace-menu-create-session"');
+    expect(workspaceItem.match(/data-testid="nav-workspace-new-session-btn"/g)).toHaveLength(2);
     expect(workspaceItem).not.toContain('nav-workspace-menu-create-code-session');
     expect(workspaceItem).not.toContain('nav-workspace-menu-create-cowork-session');
     expect(workspaceItem).not.toContain('WorkspaceSessionSourceFilter');

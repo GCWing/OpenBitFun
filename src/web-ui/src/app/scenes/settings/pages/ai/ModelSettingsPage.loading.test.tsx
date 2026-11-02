@@ -83,12 +83,260 @@ describe('ModelSettingsPage loading and provider actions', () => {
     root = createRoot(container);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     act(() => root.unmount());
+    await i18nService.applyPersistedLanguage('en-US');
     container.remove();
     vi.useRealTimers();
     vi.restoreAllMocks();
     activateSurface('local');
+  });
+
+  const editor = () => document.querySelector<HTMLElement>(
+    '.openbitfun-model-settings__editor-dialog:not([data-state="exiting"])',
+  );
+  const editorButton = (key: string) => [...editor()!.querySelectorAll<HTMLButtonElement>('button')]
+    .find(element => element.textContent === copy(key))!;
+  const editorDraft = () => getSettingsDraftSnapshot().resources.find(resource => resource.id === 'model-provider-editor')!;
+  const inputValue = async (input: HTMLInputElement, value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const openNewProvider = async (provider = 'custom') => {
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => {
+      reads.get('ai.models')!.resolve([]);
+      reads.get('ai.default_models')!.resolve({});
+    });
+    await act(async () => button('actions.addModel').click());
+    if (provider !== 'custom') {
+      await inputValue(container.querySelector<HTMLInputElement>('[data-testid="settings-model-provider-search"]')!, provider);
+    }
+    await act(async () => container.querySelector<HTMLButtonElement>(`button[data-provider-id="${provider}"]`)!.click());
+  };
+
+  it.each([
+    ['en-US', 'cancel'], ['zh-CN', 'escape'], ['zh-TW', 'close'],
+  ] as const)('opens a neutral, pristine custom provider in %s and dismisses with %s', async (locale, dismissal) => {
+    await i18nService.applyPersistedLanguage(locale);
+    const update = vi.spyOn(configManager, 'updateConfig');
+    const probe = vi.spyOn(aiApi, 'testAIConfigConnection');
+    const discover = vi.spyOn(aiApi, 'listModelsByConfig');
+    await openNewProvider();
+    expect(editor()!.querySelector('[data-testid="settings-provider-editor-brand"]')?.textContent).toBe(copy('providerSelection.customTitle'));
+    expect(editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-provider-name-input"]')!.value).toBe('');
+    const endpoint = editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-base-url-input"]')!;
+    expect(endpoint.value).toBe('');
+    expect(endpoint.placeholder).toBe(copy('form.baseUrlPlaceholder'));
+    expect(editor()!.textContent).not.toContain('bigmodel.cn');
+    expect(editor()!.querySelector('.openbitfun-model-settings__resolved-url')).toBeNull();
+    expect(editorDraft().dirty).toBe(false);
+    expect(editor()!.getAttribute('data-preset')).toBe('panel');
+    expect(editor()!.getAttribute('data-size')).toBe('xl');
+    expect(endpoint.closest('[data-field-surface]')?.getAttribute('data-field-surface')).toBe('filled');
+    await act(async () => editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-advanced-toggle"] button')!.click());
+    expect(editorDraft().dirty).toBe(false);
+    await act(async () => {
+      if (dismissal === 'escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      else if (dismissal === 'close') editor()!.querySelector<HTMLButtonElement>('[data-openbitfun-part="close"]')!.click();
+      else editorButton('actions.cancel').click();
+    });
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(editor()).toBeNull();
+    expect(editorDraft().dirty).toBe(false);
+    expect(container.querySelector('[data-openbitfun-view="selection"]')).not.toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('button[data-provider-id="custom"]'));
+    const backButton = container.querySelector<HTMLButtonElement>('[data-testid="settings-model-provider-back-btn"]')!;
+    expect(backButton.getAttribute('aria-label')).toBe(copy('actions.back'));
+    expect(backButton.closest('.openbitfun-config-page-header__extra')).not.toBeNull();
+    expect(button('actions.cancel')).toBeUndefined();
+    await act(async () => backButton.click());
+    expect(container.querySelector('[data-openbitfun-view="settings"]')).not.toBeNull();
+    expect(update).not.toHaveBeenCalled();
+    expect(probe).not.toHaveBeenCalled();
+    expect(discover).not.toHaveBeenCalled();
+  });
+
+  it.each(['custom', 'zhipu'])('treats reverted %s fields as pristine and preserves real changes across reopen', async provider => {
+    await openNewProvider(provider);
+    const endpoint = () => editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-base-url-input"]')!;
+    const initialUrl = endpoint().value;
+    expect(editorDraft().dirty).toBe(false);
+    if (provider === 'zhipu') expect(initialUrl).toContain('bigmodel.cn');
+    await inputValue(endpoint(), 'https://custom.example.test/v1');
+    expect(editorDraft().dirty).toBe(true);
+    await inputValue(endpoint(), initialUrl);
+    expect(editorDraft().dirty).toBe(false);
+    await inputValue(endpoint(), 'https://custom.example.test/v1');
+    await act(async () => editorButton('actions.cancel').click());
+    const confirmation = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    expect(confirmation.textContent).toContain(copy('draftClose.title'));
+    await act(async () => [...confirmation.querySelectorAll<HTMLButtonElement>('button')]
+      .find(element => element.textContent === copy('draftClose.keepAndClose'))!.click());
+    expect(editor()).toBeNull();
+    expect(editorDraft().dirty).toBe(true);
+    await act(async () => button('actions.addModel').click());
+    expect(endpoint().value).toBe('https://custom.example.test/v1');
+    expect(editorDraft().dirty).toBe(true);
+    await inputValue(endpoint(), initialUrl);
+    expect(editorDraft().dirty).toBe(false);
+    await act(async () => editorButton('actions.cancel').click());
+    expect(editor()).toBeNull();
+    expect(container.querySelector('[data-openbitfun-view="selection"]')).not.toBeNull();
+    expect(container.querySelector<HTMLInputElement>('[data-testid="settings-model-provider-search"]')!.value)
+      .toBe(provider === 'custom' ? '' : provider);
+  });
+
+  describe('request format and endpoint presets', () => {
+    const endpoint = () => editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-base-url-input"]')!;
+    const presetPicker = () => editor()!.querySelector('[data-testid="settings-model-endpoint-preset-select"]');
+    const resolvedUrl = () => editor()!.querySelector('.openbitfun-model-settings__resolved-url-value')!.textContent;
+    const chooseFormat = async (format: string) => act(async () => {
+      const select = editor()!.querySelector<HTMLSelectElement>('select[data-testid="settings-model-request-format-select"]')!;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, format);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    it('drops the format-only OpenAI preset picker and moves its endpoint with the format', async () => {
+      await openNewProvider('openai');
+      expect(presetPicker()).toBeNull();
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/responses');
+      await chooseFormat('openai');
+      expect(endpoint().value).toBe('https://api.openai.com/v1');
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/chat/completions');
+      expect(presetPicker()).toBeNull();
+      await chooseFormat('responses');
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/responses');
+    });
+
+    it('keeps a region picker for presets that share the selected format', async () => {
+      await openNewProvider('zhipu');
+      expect(presetPicker()).not.toBeNull();
+      await chooseFormat('anthropic');
+      expect(endpoint().value).toBe('https://open.bigmodel.cn/api/anthropic');
+      expect(resolvedUrl()).toBe('https://open.bigmodel.cn/api/anthropic/v1/messages');
+      expect(presetPicker()).not.toBeNull();
+    });
+
+    it('moves a saved preset endpoint with the format instead of appending a second path', async () => {
+      const saved = { ...model, id: 'saved-openai', name: 'OpenAI', provider: 'responses',
+        base_url: 'https://api.openai.com/v1/responses' };
+      await act(async () => root.render(<ModelSettingsPage />));
+      await act(async () => {
+        reads.get('ai.models')!.resolve([saved]);
+        reads.get('ai.default_models')!.resolve({});
+      });
+      await act(async () => container.querySelector<HTMLButtonElement>('.openbitfun-model-settings__source-pill')!.click());
+      await chooseFormat('openai');
+      expect(endpoint().value).toBe('https://api.openai.com/v1');
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/chat/completions');
+    });
+  });
+
+  it.each(['custom', 'zhipu'])('returns a discarded %s draft to the same provider selection', async provider => {
+    const update = vi.spyOn(configManager, 'updateConfig');
+    await openNewProvider(provider);
+    await act(async () => editorButton('actions.cancel').click());
+    if (provider === 'custom') {
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="settings-model-provider-expand-btn"]')!.click());
+    }
+    const providerCount = container.querySelectorAll('button[data-provider-id]').length;
+    await act(async () => container.querySelector<HTMLButtonElement>(`button[data-provider-id="${provider}"]`)!.click());
+    const name = () => editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-provider-name-input"]')!;
+    const initialName = name().value;
+    await inputValue(name(), 'Unsaved provider');
+    await act(async () => editorButton('actions.cancel').click());
+    const confirmation = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    await act(async () => [...confirmation.querySelectorAll<HTMLButtonElement>('button')]
+      .find(element => element.textContent === copy('draftClose.discard'))!.click());
+    expect(editor()).toBeNull();
+    expect(editorDraft().dirty).toBe(false);
+    expect(container.querySelector('[data-openbitfun-view="selection"]')).not.toBeNull();
+    expect(container.querySelectorAll('button[data-provider-id]')).toHaveLength(providerCount);
+    expect(document.activeElement).toBe(container.querySelector(`button[data-provider-id="${provider}"]`));
+    expect(container.querySelector<HTMLInputElement>('[data-testid="settings-model-provider-search"]')!.value)
+      .toBe(provider === 'custom' ? '' : provider);
+    await act(async () => container.querySelector<HTMLButtonElement>(`button[data-provider-id="${provider}"]`)!.click());
+    expect(name().value).toBe(initialName);
+    expect(editorDraft().dirty).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('returns an existing provider editor to the model overview', async () => {
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => {
+      reads.get('ai.models')!.resolve([model]);
+      reads.get('ai.default_models')!.resolve({});
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('.openbitfun-model-settings__source-pill')!.click());
+    expect(editorDraft().dirty).toBe(false);
+    await act(async () => editorButton('actions.cancel').click());
+    expect(editor()).toBeNull();
+    expect(container.querySelector('[data-openbitfun-view="settings"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-view="selection"]')).toBeNull();
+  });
+
+  it.each(['provider', 'model'])('does not dirty an existing %s when reselecting or restoring default request modes', async target => {
+    const update = vi.spyOn(configManager, 'updateConfig');
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => {
+      reads.get('ai.models')!.resolve([model]);
+      reads.get('ai.default_models')!.resolve({});
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>(target === 'provider'
+      ? '.openbitfun-model-settings__source-pill'
+      : `[data-config-id="${model.id}"] button[aria-label="${copy('actions.edit')}"]`,
+    )!.click());
+    await act(async () => editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-advanced-toggle"] button')!.click());
+    const mergeButtons = () => [...editor()!.querySelectorAll<HTMLButtonElement>('.openbitfun-model-settings__mode-button')]
+      .filter(element => element.textContent === copy('advancedSettings.customHeaders.modeMerge'));
+    expect(mergeButtons()).toHaveLength(2);
+    await act(async () => mergeButtons().forEach(element => element.click()));
+    expect(editorDraft().dirty).toBe(false);
+    await act(async () => editorButton('advancedSettings.customHeaders.modeReplace').click());
+    expect(editorDraft().dirty).toBe(true);
+    await act(async () => mergeButtons().forEach(element => element.click()));
+    expect(editorDraft().dirty).toBe(false);
+    await act(async () => editorButton('advancedSettings.customRequestBody.modeTrim').click());
+    expect(editorDraft().dirty).toBe(true);
+    await act(async () => mergeButtons().forEach(element => element.click()));
+    expect(editorDraft().dirty).toBe(false);
+    await act(async () => editorButton('actions.cancel').click());
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(editor()).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each(['en-US', 'zh-CN', 'zh-TW'] as const)('saves nested model edits into the provider draft in %s', async locale => {
+    await i18nService.applyPersistedLanguage(locale);
+    const update = vi.spyOn(configManager, 'updateConfig');
+    await openNewProvider();
+    await act(async () => editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-add-custom-btn"]')!.click());
+    const manualName = editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-manual-name-input"]')!;
+    await inputValue(manualName, 'custom-model');
+    await act(async () => manualName.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    await act(async () => editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-capsule-edit"]')!.click());
+    await inputValue(editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-name-input"]')!, 'renamed-model');
+    const save = editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-save-btn"]')!;
+    expect(save.textContent).toBe(copy('actions.save'));
+    await act(async () => save.click());
+    expect(editor()!.querySelector('[data-testid="settings-model-name-input"]')).toBeNull();
+    expect(editor()!.querySelector('[data-testid="settings-model-selected-row"]')?.getAttribute('data-model-name')).toBe('renamed-model');
+    expect(editorDraft().dirty).toBe(true);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('protects a typed custom model and clears dirty state when that model is removed', async () => {
+    await openNewProvider();
+    await act(async () => editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-add-custom-btn"]')!.click());
+    const name = editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-manual-name-input"]')!;
+    await inputValue(name, 'custom-model');
+    expect(editorDraft().dirty).toBe(true);
+    await act(async () => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(editor()!.querySelector('[data-testid="settings-model-selected-row"]')).not.toBeNull();
+    expect(editorDraft().dirty).toBe(true);
+    await act(async () => editor()!.querySelector<HTMLButtonElement>('[data-testid="settings-model-selected-remove-btn"]')!.click());
+    expect(editorDraft().dirty).toBe(false);
   });
 
   it.each([false, true])('shows host accounts on the page without importing a model (account slots: %s)', async slotsSupported => {
@@ -121,8 +369,12 @@ describe('ModelSettingsPage loading and provider actions', () => {
     if (slotsSupported) expect(summary.textContent).toContain(copy('subscriptionAuth.pool.disabled'));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(update).not.toHaveBeenCalled();
-    await act(async () => summary.querySelector<HTMLButtonElement>('button')!.click());
+    await act(async () => summary.querySelector<HTMLButtonElement>('[data-testid="settings-subscription-more"] button')!.click());
     const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.getAttribute('data-preset')).toBe('panel');
+    expect(dialog.getAttribute('data-size')).toBe('xl');
+    expect(dialog.querySelector('[data-openbitfun-part="header"] [data-openbitfun-part="description"]')).toBeNull();
+    expect(dialog.querySelector(`button[aria-label="${copy('subscriptionAuth.rescan')}"]`)).not.toBeNull();
     expect(dialog.textContent).toContain('shared@example.invalid');
     const quota = dialog.querySelector('[data-account-id="codex"] [data-openbitfun-part="subscriptionQuota"]')!;
     expect(quota.closest('.openbitfun-config-page-row__description')).not.toBeNull();
@@ -168,7 +420,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
     vi.mocked(aiApi.listSubscriptionAccounts).mockResolvedValue([account]);
     vi.spyOn(aiApi, 'listSubscriptionAccountInstances').mockResolvedValue([
       { account_id: 'codex', is_default: true, account, enabled: true },
-      { account_id: 'codex:second-slot', is_default: false, account, enabled: true },
+      { account_id: 'codex:second-slot', is_default: false, account: { ...account, account: 'unused@example.invalid' }, enabled: true },
     ]);
     const configured: AIModelConfig = { ...model, auth: type === 'subscription'
       ? { type, provider: 'codex' }
@@ -182,10 +434,59 @@ describe('ModelSettingsPage loading and provider actions', () => {
     vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);
     await act(async () => root.render(<ModelSettingsPage />));
     const summary = container.querySelector('[data-testid="settings-subscription-services"]')!;
-    expect(summary.querySelectorAll('li')).toHaveLength(2);
+    expect(summary.querySelectorAll('li')).toHaveLength(3);
     expect(summary.querySelector('[data-account-id="codex"]')).toBeNull();
     expect(summary.querySelector('[data-account-id="codex:second-slot"]')).not.toBeNull();
+    const configuredProvider = summary.querySelector<HTMLButtonElement>('.openbitfun-model-settings__source-pill')!;
+    expect(configuredProvider.textContent).toBe(`${model.name} · ${account.account}`);
+    expect(configuredProvider.textContent).not.toContain('unused@example.invalid');
+    expect(summary.querySelector('[data-account-id="codex:second-slot"]')?.textContent).toContain('unused@example.invalid');
     expect(summary.querySelector(`button[aria-label="${copy('actions.deleteProvider')}: ${model.name}"]`)).not.toBeNull();
+  });
+
+  it('filters the account browser by product, retains ZCode regions, and resets on device activation', async () => {
+    const codex = { provider: 'codex' as const, connected: true, account: 'codex@example.invalid',
+      display_label: 'Codex', suggested_format: 'openai', suggested_base_url: 'https://example.test/v1', suggested_model: 'fixture-model', api_offerings: [] };
+    const accounts = [codex,
+      { ...codex, provider: 'zcode' as const, account: 'global@example.invalid' },
+      { ...codex, provider: 'zcode_cn' as const, account: 'regional@example.invalid' },
+      { ...codex, provider: 'hermes' as const, connected: false, account: 'signed-out@example.invalid' }];
+    const list = vi.mocked(aiApi.listSubscriptionAccounts).mockResolvedValue(accounts);
+    vi.spyOn(aiApi, 'listSubscriptionAccountInstances').mockResolvedValue([]);
+    vi.spyOn(aiApi, 'getSubscriptionAccountQuota').mockImplementation(async (provider, accountId) => ({
+      provider, account_id: accountId || provider, state: 'unknown', windows: [],
+    }));
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="settings-subscription-more"] button')!.click());
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const filter = (value: string) => dialog().querySelector<HTMLButtonElement>(`[role="radio"][data-openbitfun-value="${value}"]`)!;
+    expect(dialog().querySelectorAll('[data-account-id]')).toHaveLength(3);
+    expect(filter('hermes')).toBeNull();
+    expect(dialog().textContent).not.toContain('signed-out@example.invalid');
+    expect(dialog().querySelector('[data-testid="settings-subscription-service"]')).toBeNull();
+    expect(dialog().querySelector('[data-testid="settings-zcode-service"]')).toBeNull();
+    expect(dialog().querySelector('[data-account-id]')?.closest('[data-openbitfun-component="field-group"]')?.getAttribute('data-appearance')).toBe('subtle');
+    const codexRow = dialog().querySelector('[data-account-id="codex"]')!;
+    expect(codexRow.querySelector('[data-provider-logo="codex"] [style*="mask-image"]')?.getAttribute('style')).toContain('/assets/ecosystem-compatibility/codex-icon.svg');
+    expect(codexRow.querySelector('[data-openbitfun-component="avatar"]')).toBeNull();
+    expect(codexRow.querySelector('.openbitfun-model-settings__cli-description-line')?.textContent).not.toContain('Codex');
+    expect(filter('codex').querySelector('[style*="mask-image"]')?.getAttribute('style')).toContain('/assets/ecosystem-compatibility/codex-icon.svg');
+    await act(async () => filter('zcode').click());
+    expect(dialog().textContent).toContain('global@example.invalid');
+    expect(dialog().textContent).toContain('regional@example.invalid');
+    expect(dialog().textContent).not.toContain('codex@example.invalid');
+    expect(dialog().querySelector('[data-account-id="zcode_cn"] [data-provider-logo="zcode_cn"] [style*="mask-image"]')?.getAttribute('style')).toContain('/assets/ecosystem-compatibility/zcode-icon.svg');
+    await act(async () => filter('codex').click());
+    expect(dialog().querySelectorAll('[data-account-id]')).toHaveLength(1);
+    expect(dialog().textContent).toContain('codex@example.invalid');
+    const pending = deferred();
+    list.mockReturnValue(pending.promise as never);
+    await act(async () => activateSurface('peer-account-browser'));
+    expect(dialog().textContent).not.toContain('codex@example.invalid');
+    expect(filter('all').getAttribute('aria-checked')).toBe('true');
+    await act(async () => pending.resolve([{ ...codex, account: 'peer@example.invalid' }]));
+    expect(dialog().textContent).toContain('peer@example.invalid');
+    expect(dialog().textContent).not.toContain('codex@example.invalid');
   });
 
   it('refreshes host accounts on focus and ignores older reads without discarding accounts on failure', async () => {
@@ -344,6 +645,106 @@ describe('ModelSettingsPage loading and provider actions', () => {
     }[operation]);
   });
 
+  it.each(['codex', 'zcode_cn'] as const)('signs in to %s directly from its card and closes after authorization', async loginProvider => {
+    const account = { provider: 'codex' as const, connected: true, account: 'private@example.invalid',
+      display_label: 'Codex', suggested_format: 'openai', suggested_base_url: 'https://example.test/v1',
+      suggested_model: 'fixture-model', api_offerings: [] };
+    const catalog = [account, ...(['zcode', 'zcode_cn', 'workbuddy'] as const).map(provider => ({ ...account, provider }))];
+    const catalogRead = deferred();
+    const list = vi.mocked(aiApi.listSubscriptionAccounts).mockImplementation(() => catalogRead.promise as never);
+    vi.spyOn(aiApi, 'listSubscriptionAccountInstances').mockResolvedValue([]);
+    const quota = vi.spyOn(aiApi, 'getSubscriptionAccountQuota');
+    const update = vi.spyOn(configManager, 'updateConfig');
+    const status = deferred();
+    const start = vi.spyOn(aiApi, 'startSubscriptionLogin').mockImplementation(async (_provider, sessionId) => ({
+      session_id: sessionId!, authorization_url: 'https://example.test/login', user_code: 'REGION-CODE', method: 'device',
+    }));
+    vi.spyOn(aiApi, 'getSubscriptionLoginStatus').mockImplementation(() => status.promise as never);
+    vi.spyOn(aiApi, 'cancelSubscriptionLogin').mockResolvedValue(undefined);
+    vi.spyOn(systemAPI, 'openExternal').mockResolvedValue(undefined);
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => button('acquisition.addSubscription').click());
+    const dialog = () => document.querySelector<HTMLElement>('.openbitfun-model-settings__subscription-dialog:not([aria-hidden="true"])')!;
+    expect(dialog().querySelector(`button[aria-label="${copy('subscriptionAuth.rescan')}"]`)).toBeNull();
+    const login = (provider: string) => [...dialog().querySelectorAll<HTMLButtonElement>(`[data-provider="${provider}"] button`)]
+      .find(element => element.textContent === copy('subscriptionAuth.login'))!;
+    expect(dialog().querySelector('[data-testid="settings-subscription-provider"]')).toBeNull();
+    expect(dialog().textContent).toContain(copy('messages.loading'));
+    list.mockResolvedValue(catalog);
+    await act(async () => catalogRead.resolve(catalog));
+    expect(dialog().querySelectorAll('[data-testid="settings-subscription-provider"]')).toHaveLength(2);
+    expect(dialog().querySelector('input[type="radio"], [role="radiogroup"]')).toBeNull();
+    expect(login('codex').disabled).toBe(false);
+    expect(login('zcode').disabled).toBe(false);
+    expect(dialog().textContent).not.toContain(account.account);
+    expect(dialog().textContent).not.toContain(copy('subscriptionAuth.products.workbuddy'));
+    expect(dialog().querySelector('[data-openbitfun-part="subscriptionAccounts"]')).toBeNull();
+    expect(quota).not.toHaveBeenCalled();
+    if (loginProvider === 'zcode_cn') {
+      const zcode = dialog().querySelector<HTMLElement>('[data-provider="zcode"]')!;
+      const capsule = zcode.querySelector('[data-openbitfun-component="capsule"]')!;
+      expect(capsule.getAttribute('data-layout')).toBe('split');
+      expect(capsule.getAttribute('data-split-sizing')).toBe('content');
+      expect(capsule.querySelector('[data-openbitfun-component="select"]')?.getAttribute('data-width')).toBe('content');
+      expect(capsule.children).toHaveLength(2);
+      expect(capsule.querySelector('[role="combobox"]')).not.toBeNull();
+      expect(login('zcode').parentElement).toBe(capsule);
+      expect(zcode.querySelector('[role="combobox"]')?.textContent).toBe(copy('subscriptionAuth.regionsShort.zai'));
+      await act(async () => zcode.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
+      await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find(option => option.textContent === copy('subscriptionAuth.regions.bigmodel'))!.click());
+      expect(zcode.querySelector('[role="combobox"]')?.textContent).toBe(copy('subscriptionAuth.regionsShort.bigmodel'));
+    }
+    await act(async () => login(loginProvider === 'zcode_cn' ? 'zcode' : loginProvider).click());
+    expect(start).toHaveBeenCalledWith(loginProvider, expect.any(String), loginProvider === 'codex' ? 'device' : undefined);
+    expect(dialog().textContent).toContain('REGION-CODE');
+    expect(dialog().textContent).toContain(copy('subscriptionAuth.copyCode'));
+    expect(dialog().textContent).not.toContain(account.account);
+    expect(dialog().querySelector('[data-testid="settings-subscription-provider"]')).toBeNull();
+    const tracking = dialog().querySelector('[data-testid="settings-subscription-login"]');
+    expect(tracking?.getAttribute('data-provider')).toBe(loginProvider);
+    expect(document.activeElement).toBe(tracking);
+    expect(dialog().querySelector('[role="combobox"]')).toBeNull();
+    expect(dialog().querySelector(`[aria-label="${copy('subscriptionAuth.rescan')}"]`)).toBeNull();
+    if (loginProvider === 'zcode_cn') expect(tracking?.textContent).toContain(copy('subscriptionAuth.regions.bigmodel'));
+    await act(async () => status.resolve({ provider: loginProvider, session_id: start.mock.calls[0][1], status: 'authorized' }));
+    expect(dialog()).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+    expect(quota).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed provider login in the same new slot without showing saved accounts', async () => {
+    const account = { provider: 'hermes' as const, connected: true, account: 'private@example.invalid',
+      display_label: 'Hermes', suggested_format: 'openai', suggested_base_url: 'https://example.test/v1',
+      suggested_model: 'fixture-model', api_offerings: [] };
+    vi.mocked(aiApi.listSubscriptionAccounts).mockResolvedValue([account]);
+    vi.spyOn(aiApi, 'listSubscriptionAccountInstances').mockResolvedValue([
+      { account_id: 'hermes', is_default: true, account, enabled: true, supports_multiple_accounts: true },
+    ]);
+    const start = vi.spyOn(aiApi, 'startSubscriptionAccountLogin').mockRejectedValue(new Error('Authorization unavailable'));
+    vi.spyOn(aiApi, 'cancelSubscriptionLogin').mockResolvedValue(undefined);
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => button('acquisition.addSubscription').click());
+    const dialog = document.querySelector<HTMLElement>('.openbitfun-model-settings__subscription-dialog')!;
+    const action = (key: string) => [...dialog.querySelectorAll<HTMLButtonElement>('button')]
+      .find(element => element.textContent === copy(key))!;
+    await act(async () => action('subscriptionAuth.login').click());
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('Authorization unavailable');
+    await act(async () => action('subscriptionAuth.retryLogin').click());
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(start.mock.calls[0][1]).not.toBe('hermes');
+    expect(start.mock.calls[1][1]).toBe(start.mock.calls[0][1]);
+    expect(dialog.textContent).not.toContain(account.account);
+    expect(dialog.querySelector('[data-testid="settings-subscription-provider"]')).toBeNull();
+    await act(async () => action('subscriptionAuth.backToProviders').click());
+    expect(dialog.querySelector('[data-testid="settings-subscription-login"]')).toBeNull();
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
+    expect(document.activeElement).toBe(action('subscriptionAuth.login'));
+    await act(async () => action('subscriptionAuth.login').click());
+    expect(start).toHaveBeenCalledTimes(3);
+    expect(start.mock.calls[2][1]).not.toBe(start.mock.calls[0][1]);
+  });
+
   it.each([false, true])('cancelling a new Hermes account preserves the settings draft state (model editor: %s)', async inModelEditor => {
     const account = {
       provider: 'hermes' as const, display_label: 'Hermes', connected: true,
@@ -372,7 +773,9 @@ describe('ModelSettingsPage loading and provider actions', () => {
     vi.spyOn(configManager, 'hasCachedConfig').mockImplementation(path => path in values);
     vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);
     await act(async () => root.render(<ModelSettingsPage />));
-    await act(async () => button('acquisition.import').click());
+    await act(async () => inModelEditor
+      ? container.querySelector<HTMLButtonElement>('[data-testid="settings-subscription-services"] button')!.click()
+      : button('acquisition.addSubscription').click());
     const dialog = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].at(-1)!;
     const dialogButton = (key: string) => [...dialog().querySelectorAll<HTMLButtonElement>('button')]
       .find(element => element.textContent === copy(key))!;
@@ -380,13 +783,23 @@ describe('ModelSettingsPage loading and provider actions', () => {
       await act(async () => dialogButton('subscriptionAuth.import').click());
       await act(async () => dialogButton('subscriptionAuth.manageAccount').click());
     }
-    await act(async () => dialogButton('subscriptionAuth.pool.addAccount').click());
+    if (!inModelEditor) {
+      expect(dialog().querySelector('[data-openbitfun-part="subscriptionAccounts"]')).toBeNull();
+      expect(dialog().textContent).not.toContain(account.account);
+    }
+    await act(async () => dialogButton(inModelEditor ? 'subscriptionAuth.pool.addAccount' : 'subscriptionAuth.login').click());
     expect(start).toHaveBeenCalledOnce();
     if (inModelEditor) {
       vi.useFakeTimers();
       await act(async () => started.resolve({ session_id: start.mock.calls[0][2], authorization_url: 'https://example.test/login' }));
     }
-    await act(async () => dialogButton('subscriptionAuth.cancel').click());
+    if (!inModelEditor) expect(dialog().querySelector('[data-testid="settings-subscription-provider"]')).toBeNull();
+    await act(async () => dialogButton(inModelEditor ? 'subscriptionAuth.cancel' : 'subscriptionAuth.cancelAndBack').click());
+    if (!inModelEditor) {
+      expect(dialog().querySelector('[data-openbitfun-status="cancelling"]')).not.toBeNull();
+      expect(dialogButton('subscriptionAuth.cancelAndBack').disabled).toBe(true);
+      expect(dialog().querySelector('[data-testid="settings-subscription-provider"]')).toBeNull();
+    }
     if (inModelEditor) {
       await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
       vi.useRealTimers();
@@ -396,7 +809,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(cancel).toHaveBeenCalled();
     expect(dialog().textContent).not.toContain(copy('subscriptionAuth.newAccount'));
     expect([...dialog().querySelectorAll<HTMLButtonElement>('button')].some(
-      element => element.textContent === copy('subscriptionAuth.pool.addAccount') && !element.disabled,
+      element => element.textContent === copy(inModelEditor ? 'subscriptionAuth.pool.addAccount' : 'subscriptionAuth.login') && !element.disabled,
     )).toBe(true);
     if (inModelEditor) {
       await act(async () => dialogButton('actions.done').click());
@@ -445,7 +858,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(selectors().every(element => element.disabled)).toBe(true);
     expect(button('actions.addModel').disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>('[data-testid="settings-smart-mode-configure"]')?.disabled).toBe(true);
-    expect(button('acquisition.import').disabled).toBe(false);
+    expect(button('acquisition.addSubscription').disabled).toBe(false);
 
     await act(async () => {
       reads.get('ai.models')!.resolve([model]);
@@ -648,6 +1061,21 @@ describe('ModelSettingsPage loading and provider actions', () => {
       if (entryPoint === 'editor') {
         await act(async () => providerButton.click());
         const editor = document.querySelector<HTMLElement>('.openbitfun-model-settings__editor-dialog')!;
+        const brand = editor.querySelector<HTMLElement>('[data-testid="settings-provider-editor-brand"]')!;
+        expect(brand.getAttribute('aria-label')).toBe(model.name);
+        expect(editor.getAttribute('data-preset')).toBe('panel');
+        expect(editor.querySelector('[data-openbitfun-part="title"]')?.classList.contains('sr-only')).toBe(true);
+        expect(brand.closest('[data-openbitfun-part="heading"]')).not.toBeNull();
+        if (kind === 'subscription') expect(brand.querySelector<HTMLElement>('[data-product-logo="codex"]')?.style.width).toBe('64px');
+        else {
+          expect(brand.getAttribute('role')).toBe('heading');
+          expect(brand.textContent).toBe(model.name);
+          expect(brand.querySelector('[data-product-logo]')).toBeNull();
+          const advanced = editor.querySelector('[data-testid="settings-model-advanced-toggle"]')!;
+          expect(advanced.classList.contains('openbitfun-model-settings__edit-section')).toBe(false);
+          const models = editor.querySelector('[data-testid="settings-model-selected-list"]')!;
+          expect(models.compareDocumentPosition(advanced) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        }
         deleteButton = [...editor.querySelectorAll<HTMLButtonElement>('button')]
           .find(element => element.textContent === copy('actions.deleteProvider'))!;
       }

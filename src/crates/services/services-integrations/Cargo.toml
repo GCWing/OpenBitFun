@@ -469,6 +469,7 @@ script-tool-runtime = [
 ]
 ptc-runtime = [
     "async-trait",
+    "dep:openbitfun-core-types",
     "openbitfun-runtime-ports/ptc-runtime",
     "process-tree",
     "tokio/io-util",

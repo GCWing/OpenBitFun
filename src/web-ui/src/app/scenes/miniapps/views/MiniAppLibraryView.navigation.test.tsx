@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import type { MarketListingDetail } from '@/infrastructure/api/service-api/MiniAppMarketAPI';
 import { useMiniAppStore } from '../miniAppStore';
+import { useMiniAppNavigationStore } from '../miniAppNavigationStore';
 import MiniAppLibraryView from './MiniAppLibraryView';
 
 const mocks = vi.hoisted(() => ({
@@ -68,6 +69,7 @@ const openMarketDetail = () => act(async () => {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.clearAllMocks();
+  useMiniAppNavigationStore.setState({ pinnedAppIdsBySurface: {} });
   mocks.remote = false;
   mocks.items = [listing];
   mocks.getListing.mockResolvedValue(listing);
@@ -141,6 +143,8 @@ describe('MiniApp detail page navigation', () => {
     expect(launch.dataset.size).toBe('standard');
     await act(async () => card.querySelector<HTMLButtonElement>('.miniapp-installed-card__content')!.click());
     expect(page()?.querySelector('h1')?.textContent).toBe('Notes');
+    await act(async () => button('navigation.add').click());
+    expect(useMiniAppNavigationStore.getState().pinnedAppIdsBySurface.local).toEqual(['notes']);
     expect(mocks.openApp).not.toHaveBeenCalled();
     await act(async () => button('detail.back').click());
     await act(async () => launch.click());
@@ -154,6 +158,7 @@ describe('MiniApp detail page navigation', () => {
     expect(mocks.deleteMiniApp).not.toHaveBeenCalled();
     await act(async () => button('confirmDelete.cancel', confirm).click());
     expect(useMiniAppStore.getState().apps).toHaveLength(1);
+    expect(useMiniAppNavigationStore.getState().pinnedAppIdsBySurface.local).toEqual(['notes']);
     expect(mocks.deleteMiniApp).not.toHaveBeenCalled();
 
     await remove();
@@ -161,6 +166,7 @@ describe('MiniApp detail page navigation', () => {
     await act(async () => button('confirmDelete.confirm', confirm).click());
     expect(mocks.deleteMiniApp).toHaveBeenCalledWith('notes');
     expect(useMiniAppStore.getState().apps).toHaveLength(0);
+    expect(useMiniAppNavigationStore.getState().pinnedAppIdsBySurface.local).toEqual([]);
     expect(page()).toBeNull();
   });
 

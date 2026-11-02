@@ -27,8 +27,8 @@ Manage agent tool permissions, presentation mode, concurrency, timeouts, deferre
   - Review, revoke, or clear remembered project permission grants and audit records
 - **智能体可直接控制 / Direct Agent control** · 按需延迟加载工具定义以减少智能体初始上下文
   - Deferred tool loading on demand to reduce initial agent context
-- **智能体可直接控制 / Direct Agent control** · 选择模型使用原生模式还是 PTC TypeScript 模式
-  - Choose native mode or PTC TypeScript mode for the model
+- **智能体可直接控制 / Direct Agent control** · 选择模型使用原生模式、PTC TypeScript 或 PTC Python 模式
+  - Choose native, PTC TypeScript, or PTC Python mode for the model
 - **智能体可直接控制 / Direct Agent control** · 设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略
   - Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy
 - **智能体可直接控制 / Direct Agent control** · 设置或取消单次工具调用超时
@@ -69,7 +69,7 @@ Manage agent tool permissions, presentation mode, concurrency, timeouts, deferre
 | --- | --- | --- | --- |
 | 显示权限模式选择器 / Show permission-mode selector | `boolean` | 在聊天输入框下方显示或隐藏权限模式快捷选择器。 | Show or hide the permission-mode shortcut below the chat composer. |
 | 延迟加载工具 / Deferred tool loading | `boolean` | 按需加载大型工具定义，减少智能体初始上下文。 | Load large tool definitions on demand to reduce initial agent context. |
-| 工具呈现模式 / Tool presentation mode | `native` / `ptc` | 选择模型直接调用原生工具，或通过 PTC TypeScript 调用工具。 | Choose whether the model calls native tools directly or uses PTC TypeScript. |
+| 工具呈现模式 / Tool presentation mode | `native` / `ptc` / `ptc_python` | 选择模型直接调用原生工具，或通过 PTC TypeScript/Python 调用工具。 | Choose whether the model calls native tools directly or uses PTC TypeScript or Python. |
 | 子智能体批量执行策略 / Subagent batch policy | `safe_only` / `force_parallel` / `serial` | 选择仅安全任务并行、强制并行或串行执行。 | Choose safe-only parallelism, forced parallelism, or serial execution. |
 | 子智能体最大并发 / Maximum subagent concurrency | `integer` (1–32) | 限制同时运行的子智能体数量。 | Limit the number of subagents that may run at once. |
 | Swarm 最大并发 / Maximum swarm concurrency | `integer` (1–64) | 限制 Swarm 中同时执行的工作单元。 | Limit concurrent work units inside a swarm. |

@@ -163,6 +163,7 @@
   margin: 0;
 
   .header { display: contents; }
+  &.compact .header { display: flex; flex-basis: 100%; }
   .title:empty { display: none; }
   .actions { order: 1; margin-inline-start: auto; }
   .actions:empty { display: none; }

@@ -54,6 +54,8 @@ export interface FlowChatHeaderProps {
   sessionId?: string;
   /** Current search query string. */
   searchQuery?: string;
+  onTrajectoryOpen?: () => void;
+  trajectoryOpen?: boolean;
   /** Called when the user types in the search box. */
   onSearchChange?: (query: string) => void;
   /** Total number of search matches. */
@@ -94,6 +96,8 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
   visible,
   sessionId,
   searchQuery = '',
+  onTrajectoryOpen,
+  trajectoryOpen = false,
   onSearchChange,
   searchMatchCount = 0,
   searchCurrentMatch = 0,
@@ -171,7 +175,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
         current: searchCurrentMatch,
         total: searchMatchCount,
       });
-  const isSearchMode = visible && isSearchOpen;
+  const isSearchMode = visible && (onTrajectoryOpen ? trajectoryOpen : isSearchOpen);
   const hasOpenBackgroundCommandMenu =
     isBackgroundCommandSectionMenuOpen ||
     openBackgroundCommandMenuId !== null;
@@ -333,9 +337,10 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
     if (searchOpenRequest > 0 && searchOpenRequest !== prevSearchOpenRequestRef.current) {
       prevSearchOpenRequestRef.current = searchOpenRequest;
       closeSessionOverview(false);
-      setIsSearchOpen(true);
+      if (onTrajectoryOpen) onTrajectoryOpen();
+      else setIsSearchOpen(true);
     }
-  }, [closeSessionOverview, searchOpenRequest]);
+  }, [closeSessionOverview, searchOpenRequest, onTrajectoryOpen]);
 
   useEffect(() => {
     if (hasBackgroundCommands) return;
@@ -346,7 +351,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
   }, [hasBackgroundCommands]);
 
   useEffect(() => {
-    if (!isSearchOpen) return;
+    if (!isSearchMode) return;
 
     const frameId = requestAnimationFrame(() => {
       searchInputRef.current?.focus();
@@ -356,12 +361,13 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
     return () => {
       cancelAnimationFrame(frameId);
     };
-  }, [isSceneChromeActive, isSearchOpen, visible]);
+  }, [isSceneChromeActive, isSearchMode, searchOpenRequest]);
 
   const handleOpenSearch = useCallback(() => {
     closeSessionOverview(false);
-    setIsSearchOpen(true);
-  }, [closeSessionOverview]);
+    if (onTrajectoryOpen) onTrajectoryOpen();
+    else setIsSearchOpen(true);
+  }, [closeSessionOverview, onTrajectoryOpen]);
 
   const handleCloseSearch = useCallback(() => {
     setIsSearchOpen(false);
@@ -695,14 +701,15 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
             </span>
           </div>
         ) : visible ? (
-          <Tooltip content={t('flowChatHeader.searchOpen')}>
+          <Tooltip content={onTrajectoryOpen ? t('trajectory.title') : t('flowChatHeader.searchOpen')}>
             <IconButton
               className="flowchat-header__search-btn"
               size="xs"
               onClick={handleOpenSearch}
-              aria-label={t('flowChatHeader.searchOpen')}
+              aria-label={onTrajectoryOpen ? t('trajectory.title') : t('flowChatHeader.searchOpen')}
               data-testid="flowchat-header-search"
-              icon={<Icon name="search" size="sm" />}
+              aria-expanded={onTrajectoryOpen ? trajectoryOpen : undefined}
+              icon={<Icon name={onTrajectoryOpen ? "chart-spline" : "search"} size="sm" />}
             />
           </Tooltip>
         ) : null}

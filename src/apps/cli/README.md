@@ -40,6 +40,51 @@ current invocation may approve them.
 Run `openbitfun --help` or `openbitfun <command> --help` for the complete command and
 option reference.
 
+## Computer Use
+
+CLI chat and `exec` can use the same native Computer Use provider as Desktop on
+Linux, macOS and Windows. It is enabled by default when the executing machine has
+a graphical user session; no enable command is needed on a fresh configuration:
+
+```bash
+openbitfun computer-use status
+# macOS: explicitly request the permissions needed by the terminal/CLI host.
+openbitfun computer-use request-permission accessibility
+openbitfun computer-use request-permission screen-recording
+```
+
+`status` reports JSON with the setting, graphical-session availability and OS
+permission states. Availability does not imply consent or an active capture.
+`disable` turns the shared setting off; `enable` restores it. These are persistent,
+optional controls, not startup steps. Existing saved `false` values are preserved
+on upgrade; use `enable` once to change that preference. CLI and Desktop share it;
+OS permission is tied to the executing application and may need separate consent.
+The existing tool approval policy still applies (`exec` rejects asks by default).
+Cancel the active turn with the normal interrupt control to revoke its native
+action lease; process shutdown also stops capture and input.
+
+On macOS, window capture requires macOS 12.3 or newer and Screen Recording;
+Accessibility is needed for application trees and directed input. Windows
+requires an interactive user window station, not a service/session 0. Linux
+requires an X11/Wayland session and its D-Bus session bus. Native capture and
+foreground input use the desktop portal's consented PipeWire surface; AT-SPI
+provides supported background semantic actions. The system portal chooser and
+native permission dialogs appear on the executing machine.
+
+Linux capture needs GStreamer with PipeWire, base and good plugins; OCR needs
+Tesseract with English data (`tesseract-ocr-eng` on Ubuntu). These runtime
+libraries load only when used; their absence does not prevent ordinary CLI
+commands from starting. Source builds additionally need `pkg-config`,
+`libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`, `libtesseract-dev` and
+`libleptonica-dev` on Ubuntu, or the equivalent development packages.
+
+SSH/headless sessions and remote workspaces do not fall back to the controller's
+desktop. Detached jobs, ACP and the stdio server do not acquire an implicit GUI
+provider. Peer/mobile control can use the executing CLI host's Agent only when
+that host has a graphical provider and local OS consent; Desktop sharing/preview
+commands are not added to CLI peer capabilities. Shared TUI uses the Shared
+Runtime host's provider, never the controller process's desktop.
+
 ## Interactive TUI
 
 The most frequently used commands follow established OpenCode names where an
@@ -236,6 +281,23 @@ protocol version before submitting or inspecting jobs. See the
 [detached task architecture](../../../docs/architecture/detached-task-dispatch.md)
 for the transport and workspace-snapshot contract.
 
+To dispatch from this machine, use the controller commands. They print JSON and
+work from any Git checkout:
+
+```bash
+openbitfun dispatch outbound targets
+openbitfun dispatch outbound submit --target "MacBook-Pro-2.local" \
+  --approval-policy reject-and-report "Run the integration tests and fix failures"
+openbitfun dispatch outbound status <job-id> --cursor 0
+openbitfun dispatch outbound list
+openbitfun dispatch outbound cancel <job-id>
+```
+
+`--target` accepts an account device name or alias, `device:<deviceId>`, or
+`ssh:<connectionId>`. Device targets need this machine to be signed in to the
+same account; an offline device is an error, never a local fallback. The target
+works in its own worktree branched from `--base-ref` (default `HEAD`).
+
 The `remote` approval policy lets a controller answer pending tool permissions.
 Interactive questions from `AskUserQuestion` are unavailable for dispatch jobs;
 provide required task choices in the prompt instead of waiting for a question.
@@ -259,13 +321,32 @@ the limit is enforced at the stdin reader. stdin EOF is a deterministic
 disconnect: the Host cancels in-flight turns and exits. `app/initialize`
 advertises only the methods this Host actually serves.
 
-### Publishing Pages
+### Managing Pages
 
-After `/login`, Standard and Claw sessions can use `PagePublish` to save page
-content and optionally publish it, and `PageDeploy` to deploy or roll back to a
-saved version. The tools appear only while the executing CLI Runtime has an
+After `/login`, Standard and Claw sessions use `PageManage` to list, publish,
+update, delete, and manage access to Pages. `list` returns published Pages with
+their name, absolute URL, visibility, and update time; set `published_only=false`
+to include unpublished Pages. `publish` saves a complete content bundle;
+`update` changes an existing Page's title or content while preserving visibility.
+Both save a preview unless `deploy=true` is requested. `permissions` sets
+`private` (owner), `relay` (signed-in Relay users), or `public` access.
+`versions` lists saved versions; `deploy` promotes or rolls back to one;
+`unpublish` takes a Page offline without deleting versions. `delete` removes the
+whole Page, or only the supplied `version_id`.
+
+Content updates require a Relay that supports metadata preconditions. If another
+device changes the title or permissions during upload, the save is rejected;
+list the Page again before retrying. Older Relays return an unsupported state
+for content updates while retaining their existing publish and management paths.
+Do not replace a failed `update` with `publish`, which can change access settings.
+
+The tool appears only while the executing CLI Runtime has an
 account session. Existing tool permissions still apply; unattended `exec` and
 dispatch runs use their configured approval policy.
+
+`PagePublish` and `PageDeploy` remain available for legacy explicit Agent tool
+configurations and existing calls, but are no longer included in new defaults.
+Legacy Pages exclusions remain effective after upgrading.
 
 The CLI restores its saved account session at startup, including for `exec` and
 Shared Runtime hosts. Shared TUI account login remains unsupported: sign in
@@ -292,6 +373,42 @@ Linux uses a systemd user service and macOS uses a LaunchAgent. Windows does not
 currently install an auto-start service; use `openbitfun daemon run` under a
 supervisor instead. Run `openbitfun daemon --help` for lifecycle commands and
 platform diagnostics.
+
+### Bots and Mobile Web from Claw
+
+In Claw chat, ask to start a WeChat, Telegram, or Feishu bot, inspect Remote
+Connect, stop a channel, or enable Mobile Web. Claw uses `OpenBitFunControl`
+(`feature.remote-connect`) on the executing host. Starting a channel launches
+the local CLI daemon when needed; closing the chat leaves listeners running.
+Use `daemon install` if they should also return after a machine reboot.
+
+For WeChat, the TUI displays a full black-on-white QR in the tool card, including
+when tool details are collapsed. Widen the terminal if the card asks for more
+columns; scroll to the latest QR if a login refreshes it. Scan the QR and let Claw finish login polling, then
+send the returned six-digit pairing code to the bot. QR login only obtains the
+credentials; the separate pairing step authorizes message routing. Telegram
+and Feishu accept a private JSON credential file on the executing host, for
+example `{"bot_type":"telegram","bot_token":"..."}` or
+`{"bot_type":"feishu","app_id":"...","app_secret":"..."}`. On Unix, give it
+owner-only permissions (`chmod 600`). Supply the file path to Claw, never the
+secret values in the conversation.
+
+The daemon restores paired, enabled channels after restart. Stopping a bot
+retains its credentials, selected workspace and session, and keeps it disabled
+until explicitly started. One process may listen to each bot channel in a
+product home; stop it in Desktop before starting it in the daemon, or vice
+versa. A listener reported as running may still be retrying its provider;
+check a real inbound message and reply to verify connectivity.
+
+Mobile Web uses the configured account Relay and returns a device URL. Sign in
+with the same OpenBitFun account on the phone. Stopping Mobile Web also stops
+Peer Device routing on this daemon until an explicit start or daemon restart;
+bot channels remain active. CLI does not host an embedded LAN Relay. All
+management targets the executing host, including Peer and detached jobs. Direct
+Peer RPC supports bot management; use a Claw conversation for Relay start/stop so
+the mutation does not hold the connection it replaces.
+remote workspace paths cannot be used as local credential-file paths. An older
+daemon must be upgraded and restarted before it supports these controls.
 
 ## Updates and troubleshooting
 

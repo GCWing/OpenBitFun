@@ -26,6 +26,8 @@ pub mod openbitfun_control_host;
 #[cfg(feature = "tools-pages")]
 pub mod page_deploy_host;
 #[cfg(feature = "tools-pages")]
+pub mod page_manage_host;
+#[cfg(feature = "tools-pages")]
 pub mod page_publish_host;
 pub mod pipeline;
 #[cfg(feature = "plugin-runtime")]

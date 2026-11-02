@@ -63,10 +63,10 @@ function resolveDesktopDevDataMode(args = []) {
   if (args.includes('--shared-data') && args.includes('--isolated-data')) {
     throw new Error('Choose only one of --shared-data or --isolated-data');
   }
-  return args.includes('--shared-data') ? 'shared' : 'isolated';
+  return args.includes('--isolated-data') ? 'isolated' : 'shared';
 }
 
-function resolveDesktopDevStorageEnvironment(env = process.env, rootDir = ROOT_DIR, dataMode = 'isolated') {
+function resolveDesktopDevStorageEnvironment(env = process.env, rootDir = ROOT_DIR, dataMode = 'shared') {
   // Shared mode leaves path selection to the app, including caller overrides.
   if (dataMode === 'shared') {
     return { OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development' };

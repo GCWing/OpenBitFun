@@ -183,6 +183,7 @@ product-full = [
     "opencode-plugin-host",
     "file-watch",
     "workspace-watch",
+    "workspace-icons",
     "ssh-remote",
     "dispatch-store",
     "ptc-runtime",
@@ -461,6 +462,7 @@ filesystem = ["openbitfun-services-core/filesystem"]
 local-storage = ["dep:openbitfun-agent-tools", "openbitfun-services-core/local-storage"]
 process-runtime = ["openbitfun-services-core/process-runtime"]
 terminal = ["dep:terminal-core"]
+workspace-icons = ["workspace-runtime", "openbitfun-services-core/workspace-icons"]
 workspace-runtime = [
     "openbitfun-services-core/workspace-persistence",
     "dep:serde_yaml",

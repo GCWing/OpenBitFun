@@ -84,7 +84,7 @@
     },
     "autoDiscovery": {
       "label": "Automatically discover {{name}} sessions",
-      "description": "When a workspace opens, list its {{name}} sessions using a lightweight index. The full history is saved locally the first time you open or continue a session. Unopened history requires the original source. Turning this off keeps existing entries and copies. SSH workspace discovery is not available.",
+      "description": "When a workspace opens, list its {{name}} sessions using a lightweight index. The full history is saved locally the first time you open or continue a session. Unopened history requires the original source. Turning this off immediately hides source-following entries; local forks remain visible. SSH workspace discovery is not available.",
       "unsupported": "This host does not support automatic session discovery. Update the serving host to enable it.",
       "loadFailed": "Could not load automatic session discovery settings.",
       "saveFailed": "Could not save the automatic session discovery setting."

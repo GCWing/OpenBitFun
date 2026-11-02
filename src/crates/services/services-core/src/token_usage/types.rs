@@ -51,6 +51,9 @@ pub struct ModelRequestUsageContext {
     /// future observations readable by older statistics and replay consumers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routing_warnings: Vec<String>,
+    /// Optional runtime estimate; older persisted attempts have no composition data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_composition: Option<openbitfun_core_types::UsageContextBreakdown>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

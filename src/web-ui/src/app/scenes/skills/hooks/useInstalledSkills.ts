@@ -1,3 +1,5 @@
+import type { GlobalSkillSettings } from '@/infrastructure/config/types';
+import { classifyPeerHostRefusal } from '@/infrastructure/peer-device/peerHostRefusal';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +9,7 @@ import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer
 import type { SkillInfo, SkillLevel, SkillValidationResult, SkillScanDiagnostic } from '@/infrastructure/config/types';
 import { canDeleteSkill, isOpenBitFunManagedSkill, getSkillOriginSourceId, getSkillSourceLabel } from '@/infrastructure/config/skillSourcePresentation';
 import { useWorkspaceManagerSync } from '@/infrastructure/hooks/useWorkspaceManagerSync';
+import { isRemoteWorkspace as workspaceIsRemote, type WorkspaceInfo } from '@/shared/types';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import type { InstalledFilter } from '../skillsSceneStore';
@@ -22,6 +25,8 @@ function installedSkillGroup(skill: SkillInfo): InstalledFilter {
 }
 
 interface UseInstalledSkillsOptions {
+  workspace?: WorkspaceInfo;
+  initialLevel?: SkillLevel;
   searchQuery: string;
   activeFilter: InstalledFilter;
   enabled?: boolean;
@@ -31,11 +36,17 @@ export function useInstalledSkills({
   searchQuery,
   activeFilter,
   enabled = true,
+  workspace: targetWorkspace,
+  initialLevel = 'user',
 }: UseInstalledSkillsOptions) {
   const { t } = useTranslation('scenes/skills');
   const notification = useNotification();
   const { warning: notifyScanWarning, info: notifyScanInfo } = notification;
-  const { workspace, workspacePath, hasWorkspace, isRemoteWorkspace } = useWorkspaceManagerSync();
+  const current = useWorkspaceManagerSync();
+  const workspace = targetWorkspace ?? current.workspace;
+  const workspacePath = targetWorkspace ? targetWorkspace.rootPath : current.workspacePath;
+  const hasWorkspace = targetWorkspace ? true : current.hasWorkspace;
+  const isRemoteWorkspace = targetWorkspace ? workspaceIsRemote(targetWorkspace) : current.isRemoteWorkspace;
 
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [loadedContextKey, setLoadedContextKey] = useState<string | null>(null);
@@ -44,11 +55,13 @@ export function useInstalledSkills({
   const [loadedDiagnosticsAvailable, setDiagnosticsAvailable] = useState(true);
   const [globallyDisabledSkillKeys, setGloballyDisabledSkillKeys] = useState<Set<string>>(new Set());
   const [directManagementSupported, setDirectManagementSupported] = useState(false);
+  /** Version 0: the host lists Skills but refuses every availability change. */
+  const [skillSettingsReadOnly, setSkillSettingsReadOnly] = useState(false);
   const [savingGlobalSkillKey, setSavingGlobalSkillKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [formLevel, setFormLevel] = useState<SkillLevel>('user');
+  const [formLevel, setFormLevel] = useState<SkillLevel>(initialLevel);
   const [formPath, setFormPath] = useState('');
   const [validationResult, setValidationResult] = useState<SkillValidationResult | null>(null);
   const [isValidating, setIsValidating] = useState(false);
@@ -98,7 +111,12 @@ export function useInstalledSkills({
           forceRefresh,
           workspaceId: workspace?.id,
         }),
-        configAPI.getGlobalSkillSettings(isRemoteWorkspace ? undefined : workspace?.id),
+        configAPI.getGlobalSkillSettings(isRemoteWorkspace ? undefined : workspace?.id).catch((error: unknown): GlobalSkillSettings => {
+          // Availability settings are optional here: a host that refuses them can
+          // still list its Skills, only without direct management.
+          if (!classifyPeerHostRefusal(error)) throw error;
+          return { directSkillManagementVersion: 0, globallyDisabledUserSkillKeys: [], globallyDisabledProjectSkillKeys: [] };
+        }),
       ]);
       if (requestId !== loadRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
         return;
@@ -108,6 +126,7 @@ export function useInstalledSkills({
       setDiagnostics(list.diagnostics);
       setDiagnosticsAvailable(list.diagnosticsAvailable);
       setDirectManagementSupported(!isRemoteWorkspace && globalSettings.directSkillManagementVersion === 1);
+      setSkillSettingsReadOnly(globalSettings.directSkillManagementVersion === 0);
       setGloballyDisabledSkillKeys(new Set([
         ...globalSettings.globallyDisabledUserSkillKeys,
         ...(!isRemoteWorkspace ? globalSettings.globallyDisabledProjectSkillKeys ?? [] : []),
@@ -265,9 +284,9 @@ export function useInstalledSkills({
 
   const resetForm = useCallback(() => {
     setFormPath('');
-    setFormLevel('user');
+    setFormLevel(initialLevel);
     setValidationResult(null);
-  }, []);
+  }, [initialLevel]);
 
   const handleAdd = useCallback(async () => {
     const capabilityEpoch = currentCapabilityEpoch();
@@ -363,8 +382,9 @@ export function useInstalledSkills({
   }, [capabilityIsCurrent, currentCapabilityEpoch, loadSkills, notification, t, workspace?.id]);
 
   const canToggleSkill = useCallback((skill: SkillInfo) => (
-    directManagementSupported || (skill.level === 'user' && isOpenBitFunManagedSkill(skill))
-  ), [directManagementSupported]);
+    !skillSettingsReadOnly
+      && (directManagementSupported || (skill.level === 'user' && isOpenBitFunManagedSkill(skill)))
+  ), [directManagementSupported, skillSettingsReadOnly]);
 
   const handleGlobalSkillToggle = useCallback(async (skill: SkillInfo, enabled: boolean) => {
     const capabilityEpoch = currentCapabilityEpoch();

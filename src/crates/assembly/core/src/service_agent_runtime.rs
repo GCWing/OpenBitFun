@@ -40,7 +40,7 @@ use openbitfun_runtime_ports::{
 #[cfg(feature = "remote-connect")]
 use openbitfun_services_integrations::remote_connect::{
     agent_input_attachment_from_remote_image_context, build_remote_chat_messages,
-    build_remote_model_catalog,
+    build_remote_model_catalog, file_projection::controller_file_read_scope,
     normalize_remote_model_selection as normalize_remote_model_selection_contract,
     normalize_remote_session_model_id, project_remote_chat_user,
     remote_dialog_submit_outcome_from_scheduler, remote_model_selection_needs_config, ChatMessage,
@@ -3328,6 +3328,22 @@ impl RemoteDialogRuntimeHost for CoreRemoteDialogRuntimeHost<'_> {
 #[cfg(feature = "remote-connect")]
 #[async_trait::async_trait]
 impl RemoteWorkspaceFileRuntimeHost for CoreRemoteWorkspaceFileRuntimeHost {
+    async fn store_session_attachment(
+        &self,
+        session_id: &str,
+        attachment: openbitfun_runtime_ports::RemoteSessionAttachment,
+    ) -> Result<openbitfun_runtime_ports::RemoteStoredAttachment, String> {
+        let target = CoreServiceAgentRuntime::remote_file_target(".", Some(session_id)).await?;
+        let session_id = session_id.to_owned();
+        // Once admitted, storage finishes on the execution host even if its
+        // controller disconnects. A retry with the same attachment id is safe.
+        tokio::spawn(async move {
+            openbitfun_services_integrations::remote_connect::bot::inbound_files::store_session_attachment(
+                &target, &session_id, attachment,
+            ).await.map_err(|error| error.to_string())
+        }).await.map_err(|error| error.to_string())?
+    }
+
     async fn resolve_remote_file_workspace_root(
         &self,
         session_id: Option<&str>,
@@ -3343,7 +3359,7 @@ impl RemoteWorkspaceFileRuntimeHost for CoreRemoteWorkspaceFileRuntimeHost {
     ) -> Result<Option<openbitfun_runtime_ports::RemoteWorkspaceFileContent>, String> {
         CoreServiceAgentRuntime::remote_file_target(path, session_id)
             .await?
-            .read(max_bytes)
+            .read_with_scope(max_bytes, controller_file_read_scope(path)?)
             .await
             .map(Some)
     }
@@ -3366,7 +3382,7 @@ impl RemoteWorkspaceFileRuntimeHost for CoreRemoteWorkspaceFileRuntimeHost {
             remote_connection_id,
         )
         .await?
-        .read_chunk(offset, limit)
+        .read_chunk_with_scope(offset, limit, controller_file_read_scope(path)?)
         .await
         .map(Some)
     }
@@ -3387,7 +3403,7 @@ impl RemoteWorkspaceFileRuntimeHost for CoreRemoteWorkspaceFileRuntimeHost {
             remote_connection_id,
         )
         .await?
-        .info()
+        .info_with_scope(controller_file_read_scope(path)?)
         .await
         .map(Some)
     }
@@ -3396,6 +3412,25 @@ impl RemoteWorkspaceFileRuntimeHost for CoreRemoteWorkspaceFileRuntimeHost {
 #[cfg(feature = "remote-connect")]
 #[async_trait::async_trait]
 impl RemoteWorkspaceRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
+    fn supports_workspace_icons(&self) -> bool {
+        cfg!(feature = "workspace-icons")
+    }
+    async fn workspace_icon(
+        &self,
+        workspace_id: &str,
+    ) -> Result<openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot, String> {
+        #[cfg(feature = "workspace-icons")]
+        {
+            let service = crate::service::workspace::get_global_workspace_service()
+                .ok_or("Workspace service unavailable")?;
+            service.get_workspace_icon(workspace_id).await
+        }
+        #[cfg(not(feature = "workspace-icons"))]
+        {
+            let _ = workspace_id;
+            Err("This host does not support workspace icons".into())
+        }
+    }
     async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts> {
         current_remote_workspace_facts().await
     }
@@ -3520,6 +3555,9 @@ impl RemoteWorkspaceRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
 #[cfg(feature = "remote-connect")]
 #[async_trait::async_trait]
 impl RemoteInitialSyncRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
+    fn supports_workspace_icons(&self) -> bool {
+        cfg!(feature = "workspace-icons")
+    }
     async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts> {
         current_remote_workspace_facts().await
     }
@@ -4082,6 +4120,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn controller_file_reads_support_absolute_and_relative_paths_outside_workspace() {
+        use openbitfun_services_integrations::remote_connect::file_projection::controller_file_read_scope;
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("project");
+        std::fs::create_dir(&workspace).unwrap();
+        let file = tmp.path().join("qr.png");
+        std::fs::write(&file, b"png-data").unwrap();
+        for reference in [file.to_string_lossy().into_owned(), "../qr.png".to_string()] {
+            let target = CoreServiceAgentRuntime::file_target_for_binding(
+                &reference,
+                None,
+                WorkspaceBinding::new(None, workspace.clone()),
+            )
+            .await
+            .unwrap();
+            let scope = controller_file_read_scope(&reference).unwrap();
+            assert_eq!(target.info_with_scope(scope).await.unwrap().name, "qr.png");
+            assert_eq!(
+                target.read_with_scope(100, scope).await.unwrap().bytes,
+                b"png-data"
+            );
+            assert_eq!(
+                target
+                    .read_chunk_with_scope(4, 100, scope)
+                    .await
+                    .unwrap()
+                    .bytes,
+                b"data"
+            );
+            assert!(
+                target.read(100).await.is_err(),
+                "automatic delivery keeps its scope"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn missing_output_session_cannot_borrow_the_selected_workspace() {
         let missing = "missing-output-session-route-test";
         assert!(
@@ -4094,6 +4169,15 @@ mod tests {
         assert!(
             matches!(result, Err(error) if error.contains("output session workspace is unavailable"))
         );
+        let attachment = openbitfun_runtime_ports::RemoteSessionAttachment {
+            attachment_id: uuid::Uuid::new_v4().to_string(),
+            name: "fixture.pem".into(),
+            content_base64: "Zml4dHVyZQ==".into(),
+        };
+        let stored = CoreRemoteWorkspaceFileRuntimeHost
+            .store_session_attachment(missing, attachment)
+            .await;
+        assert!(matches!(stored, Err(error) if error.contains("no current-workspace fallback")));
     }
 
     #[tokio::test]

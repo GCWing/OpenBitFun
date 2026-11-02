@@ -67,7 +67,7 @@ tool-runtime-handles = [
     "terminal-port",
     "remote-exec-port",
 ]
-remote-workspace-ports = []
+remote-workspace-ports = ["dep:openbitfun-core-types"]
 git-port = []
 runtime-event-port = []
 permission = ["dep:openbitfun-product-domains"]

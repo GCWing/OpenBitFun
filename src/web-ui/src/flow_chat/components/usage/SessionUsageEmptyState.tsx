@@ -1,14 +1,15 @@
-import { Empty } from '@openbitfun/ui';
-import { useTranslation } from 'react-i18next';
+import { Empty, Icon } from '@openbitfun/ui';
+import { ChartPie } from 'lucide-react';
+import { useI18n } from '@/infrastructure/i18n';
 
 export function SessionUsageEmptyState() {
-  const { t } = useTranslation('flow-chat');
+  const { t } = useI18n('flow-chat');
   return (
     <Empty
       data-testid="session-usage-empty"
       role="status"
+      icon={<Icon glyph={ChartPie} />}
       title={t('usage.empty.session')}
-      description={t('usage.empty.sessionDescription')}
     />
   );
 }

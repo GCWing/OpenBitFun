@@ -36,6 +36,10 @@ export interface MenuPopoverProps extends Omit<MenuProps, "children"> {
   ownerRef?: RefObject<HTMLElement | null>;
   position?: { x: number; y: number };
   placement?: LayerPlacement;
+  /** Replace the trigger visually while keeping the layer attached to it. */
+  overlapAnchor?: boolean;
+  /** Retain custom closing motion before releasing the layer. */
+  exitDurationMs?: number;
   /** Stable wrappers must forward all props (and refs for root/item/separator). */
   parts?: MenuPopoverParts;
 }
@@ -57,11 +61,11 @@ function ownItems(menu: HTMLElement) {
 }
 
 /** Anchored/coordinate menu with nested navigation, safe pointer corridors and focus return. */
-export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, position, placement = "bottom", autoFocusFirstItem = true, ...props }: MenuPopoverProps) {
+export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, position, placement = "bottom", overlapAnchor = false, exitDurationMs = 100, autoFocusFirstItem = true, ...props }: MenuPopoverProps) {
   const markerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const treeId = useId();
-  const { present, state: phase } = usePresence(open, 100);
+  const { present, state: phase } = usePresence(open, exitDurationMs);
   const resolvedAnchor = anchorRef ?? markerRef;
   const branchRefs = anchorRef ? [anchorRef] : [];
   const closeAndRestoreFocus = () => {
@@ -96,6 +100,7 @@ export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, positio
       open={open}
       phase={phase}
       placement={placement}
+      overlapAnchor={overlapAnchor}
       position={position}
       treeId={treeId}
     />
@@ -118,11 +123,12 @@ interface MenuLevelProps extends Omit<MenuProps, "children"> {
   anchorRef: RefObject<HTMLElement | null>;
   position?: { x: number; y: number };
   placement: LayerPlacement;
+  overlapAnchor?: boolean;
   menuRef?: RefObject<HTMLDivElement | null>;
   parts?: MenuPopoverParts;
 }
 
-function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, position, placement, menuRef: externalRef, autoFocusFirstItem, className, inlineSize, style, parts, ...props }: MenuLevelProps) {
+function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, position, placement, overlapAnchor, menuRef: externalRef, autoFocusFirstItem, className, inlineSize, style, parts, ...props }: MenuLevelProps) {
   const MenuSurface = parts?.root ?? Menu;
   const Item = parts?.item ?? MenuItem;
   const Separator = parts?.separator ?? MenuSeparator;
@@ -140,7 +146,7 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
   const submenuId = useId();
   const intent = useSubmenuIntent({ activeId, onActiveIdChange: setActiveId, parentRef: menuRef, submenuRef, enabled: open, openDelayMs: 150, closeDelayMs: 300, switchDelayMs: 300, tolerance: 50 });
   // Keep geometry until presence unmounts the menu, including its exit transition.
-  const layout = useAnchoredLayer({ open: true, anchorRef, layerRef: menuRef, placement, point: position });
+  const layout = useAnchoredLayer({ open: true, anchorRef, layerRef: menuRef, placement, overlapAnchor, point: position });
   const activeEntry = items.find(item => item.id === activeId && !item.disabled && item.submenu?.length);
   const openSubmenu = (item: MenuEntry, trigger: HTMLElement, keyboard: boolean) => {
     if (item.disabled || !item.submenu?.length) return;

@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 assert.equal(process.platform, 'darwin', 'native AX fixture requires macOS');
+const cli = process.argv.includes('--cli');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), 'openbitfun-ax-context-'));
 const run = (cmd, args, env = process.env) => new Promise((resolve, reject) => {
@@ -24,8 +25,8 @@ try {
     fixture.on('exit', code => { clearTimeout(timeout); reject(new Error(`AX fixture exited ${code}`)); });
     fixture.stdout.on('data', chunk => { if (String(chunk).includes('READY')) { clearTimeout(timeout); resolve(); } });
   });
-  const nativeArgs = ['native_ax_fixture_round_trips_tree_and_cached_targets', '--ignored'];
-  await run(process.env.OPENBITFUN_TEST_BINARY || 'cargo', process.env.OPENBITFUN_TEST_BINARY ? nativeArgs : ['test', '-p', 'openbitfun-desktop', '--lib', nativeArgs[0], '--', ...nativeArgs.slice(1)], {
+  const nativeArgs = [cli ? 'computer_use_native_cli_observes_and_stops_fixture' : 'native_ax_fixture_round_trips_tree_and_cached_targets', '--ignored'];
+  await run(process.env.OPENBITFUN_TEST_BINARY || 'cargo', process.env.OPENBITFUN_TEST_BINARY ? nativeArgs : ['test', '-p', cli ? 'openbitfun-cli' : 'openbitfun-computer-use', ...(cli ? ['--test', 'cli_command_contracts'] : ['--lib']), nativeArgs[0], '--', ...nativeArgs.slice(1)], {
     ...process.env, OPENBITFUN_AX_FIXTURE_PID: String(fixture.pid),
   });
 } finally {

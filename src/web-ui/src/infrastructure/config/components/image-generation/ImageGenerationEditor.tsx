@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Combobox, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Input } from '@openbitfun/ui';
-import { ConfigPageRow } from '../common';
+import { Button, Combobox, ConfirmDialog, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeaderActions, DialogHeading, DialogTitle, FieldRow, Input } from '@openbitfun/ui';
+import { ConfigPageRow, ConfigPageSection } from '../common';
 import { mediaAPI, type ImageServiceTestOutcome } from '@/infrastructure/api/service-api/MediaApi';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
@@ -35,13 +35,14 @@ export default function ImageGenerationEditor({ open, initial, credentials, serv
   const [source, setSource] = useState(initial ? 'saved' : 'manual');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testConfirmOpen, setTestConfirmOpen] = useState(false);
   const [outcome, setOutcome] = useState<ImageServiceTestOutcome>();
   const version = useRef(0);
   const original = useRef('');
-  const checkPrompt = 'A simple red circle centered on a plain white background';
+  const checkPrompt = 'A cute minimalist mascot icon with a rounded-rectangle body, two small friendly oval eyes, and a short top antenna ending in a round joystick knob. Use a playful, harmonious color palette selected randomly for each generation, with no fixed colors. Centered composition, clean uncluttered background, polished product illustration.';
 
   useEffect(() => {
-    version.current += 1; setOutcome(undefined); setTesting(false); setSaving(false);
+    version.current += 1; setOutcome(undefined); setTesting(false); setSaving(false); setTestConfirmOpen(false);
     if (open) {
       const value = createDraft(initial);
       setDraft(value); original.current = JSON.stringify(value); setSource(initial ? 'saved' : 'manual');
@@ -49,7 +50,7 @@ export default function ImageGenerationEditor({ open, initial, credentials, serv
   }, [open, initial]);
 
   const patch = useCallback((changes: Partial<ImageServiceConfig>) => {
-    version.current += 1; setOutcome(undefined); setTesting(false);
+    version.current += 1; setOutcome(undefined); setTesting(false); setTestConfirmOpen(false);
     setDraft(current => ({ ...current, ...changes }));
   }, []);
   const subscription = draft.auth?.type === 'subscription' || draft.auth?.type === 'subscription_pool';
@@ -101,6 +102,7 @@ export default function ImageGenerationEditor({ open, initial, credentials, serv
     save: submit, discard: onClose });
 
   const runTest = async () => {
+    if (!open || saving || testing || validationError) return;
     const ticket = ++version.current;
     const scope = getActiveSurfaceScope();
     setTesting(true); setOutcome(undefined);
@@ -117,45 +119,58 @@ export default function ImageGenerationEditor({ open, initial, credentials, serv
     } finally { if (scope.isCurrent() && ticket === version.current) setTesting(false); }
   };
 
-  return <Dialog open={open} onOpenChange={next => { if (!next && !saving && !testing) onClose(); }} size="lg" closeOnPointerOutside={false}>
+  const hasTestImage = Boolean(outcome?.success && outcome.image_base64 && outcome.mime);
+  const testResult = outcome && <div className="openbitfun-image-settings__test-result" role={hasTestImage ? 'status' : 'alert'} data-status={hasTestImage ? 'success' : 'failure'}>
+    <p>{hasTestImage ? t('wizard.test.success', { time: formatNumber(outcome.elapsed_ms) })
+      : t(`wizard.errors.${outcome.success ? 'empty_result' : outcome.error_kind || 'provider'}`)}</p>
+    {outcome.message && <p className="openbitfun-image-settings__test-detail">{outcome.message}</p>}
+    {hasTestImage && <img className="openbitfun-image-settings__test-image" src={`data:${outcome.mime};base64,${outcome.image_base64}`} alt={t('wizard.test.previewAlt')} />}
+  </div>;
+
+  return <><Dialog open={open} onOpenChange={next => { if (!next && !saving && !testing) onClose(); }} preset="panel" closeOnPointerOutside={false}>
     <DialogHeader><DialogHeading><DialogTitle>{t(initial ? 'wizard.titleEdit' : 'wizard.titleCreate')}</DialogTitle></DialogHeading>
-      <DialogClose disabled={saving || testing} /></DialogHeader>
+      <DialogHeaderActions><DialogClose disabled={saving || testing} /></DialogHeaderActions></DialogHeader>
     <DialogBody>
       <div className="openbitfun-image-settings__editor" aria-busy={saving}>
-        <ConfigPageRow label={t('import.source')} description={t('import.hint')} align="center">
-          <Combobox size="sm" options={sourceOptions} value={source} disabled={saving || testing} data-testid="image-service-source"
-            onValueChange={value => chooseSource(String(Array.isArray(value) ? value[0] ?? '' : value))} />
-        </ConfigPageRow>
-        {subscription ? <p className="openbitfun-image-settings__hint" role="note">{t('import.subscriptionHint')}</p> : <>
-          <ConfigPageRow label={t('wizard.steps.dialect.label')} align="center">
-            <Combobox size="sm" value={draft.dialect} options={IMAGE_DIALECT_PRESETS.filter(item => item.id !== 'chatgpt_codex').map(item => ({ label: t(item.labelKey), value: item.id }))}
-              disabled={saving || testing} onValueChange={value => chooseDialect(String(value) as ImageDialect)} />
+        <ConfigPageSection title={t('wizard.steps.connection.label')} bodySurface fieldSurface="default"
+          className="openbitfun-image-settings__editor-fields">
+          <ConfigPageRow label={t('import.source')} description={t('import.hint')} align="center">
+            <Combobox size="sm" options={sourceOptions} value={source} disabled={saving || testing} data-testid="image-service-source"
+              onValueChange={value => chooseSource(String(Array.isArray(value) ? value[0] ?? '' : value))} />
           </ConfigPageRow>
-          <ConfigPageRow label={t('wizard.fields.modelName.label')} required align="center">
-            <Input size="sm" value={draft.model_name} disabled={saving || testing} onValueChange={value => patch({ model_name: value })} />
-          </ConfigPageRow>
-          <ConfigPageRow label={t('wizard.fields.baseUrl.label')} required align="center">
-            <Input size="sm" value={draft.request_url ?? draft.base_url} disabled={saving || testing}
-              onValueChange={value => patch(draft.request_url !== undefined ? { request_url: value } : { base_url: value })} />
-          </ConfigPageRow>
-          <ConfigPageRow label={t('wizard.fields.apiKey.label')} required align="center">
-            <Input size="sm" type="password" autoComplete="off" value={draft.api_key} disabled={saving || testing} onValueChange={value => patch({ api_key: value })} />
-          </ConfigPageRow>
-        </>}
+          {subscription ? <FieldRow><p className="openbitfun-image-settings__hint" role="note">{t('import.subscriptionHint')}</p></FieldRow> : <>
+            <ConfigPageRow label={t('wizard.steps.dialect.label')} align="center">
+              <Combobox size="sm" value={draft.dialect} options={IMAGE_DIALECT_PRESETS.filter(item => item.id !== 'chatgpt_codex').map(item => ({ label: t(item.labelKey), value: item.id }))}
+                disabled={saving || testing} onValueChange={value => chooseDialect(String(value) as ImageDialect)} />
+            </ConfigPageRow>
+            <ConfigPageRow label={t('wizard.fields.modelName.label')} required align="center">
+              <Input size="sm" value={draft.model_name} disabled={saving || testing} onValueChange={value => patch({ model_name: value })} />
+            </ConfigPageRow>
+            <ConfigPageRow label={t('wizard.fields.baseUrl.label')} required align="center">
+              <Input size="sm" value={draft.request_url ?? draft.base_url} disabled={saving || testing}
+                onValueChange={value => patch(draft.request_url !== undefined ? { request_url: value } : { base_url: value })} />
+            </ConfigPageRow>
+            <ConfigPageRow label={t('wizard.fields.apiKey.label')} required align="center">
+              <Input size="sm" type="password" autoComplete="off" value={draft.api_key} disabled={saving || testing} onValueChange={value => patch({ api_key: value })} />
+            </ConfigPageRow>
+          </>}
+          {duplicate && <FieldRow><p className="openbitfun-image-settings__hint" role="alert">{t('wizard.validation.duplicate')}</p></FieldRow>}
+        </ConfigPageSection>
 
-        {outcome && <div className="openbitfun-image-settings__test-result" role={outcome.success ? 'status' : 'alert'} data-status={outcome.success ? 'success' : 'failure'}>
-          <p>{outcome.success ? t('wizard.test.success', { time: formatNumber(outcome.elapsed_ms) }) : t(`wizard.errors.${outcome.error_kind || 'provider'}`)}</p>
-          {outcome.message && <p className="openbitfun-image-settings__test-detail">{outcome.message}</p>}
-          {outcome.success && outcome.image_base64 && outcome.mime && <img className="openbitfun-image-settings__test-image" src={`data:${outcome.mime};base64,${outcome.image_base64}`} alt={t('wizard.test.previewAlt')} />}
-        </div>}
-        {duplicate && <p className="openbitfun-image-settings__hint" role="alert">{t('wizard.validation.duplicate')}</p>}
-        <p className="openbitfun-image-settings__hint">{t('wizard.test.billed')}</p>
+        {hasTestImage ? <ConfigPageSection title={t('wizard.steps.test.label')} bodySurface fieldSurface="default">
+          <FieldRow>{testResult}</FieldRow>
+        </ConfigPageSection> : testResult}
       </div>
     </DialogBody>
-    <DialogFooter>
-      <Button size="sm" variant="quiet" disabled={saving || testing || Boolean(validationError)} loading={testing} onClick={() => void runTest()}>{t('wizard.test.run')}</Button>
-      <Button size="sm" variant="quiet" onClick={onClose} disabled={saving || testing}>{t('actions.cancel')}</Button>
+    <DialogFooter appearance="floating">
+      <Button size="sm" variant="outline" disabled={saving || testing || Boolean(validationError)} loading={testing} onClick={() => setTestConfirmOpen(true)}>{t('wizard.test.run')}</Button>
+      <Button size="sm" variant="fill" onClick={onClose} disabled={saving || testing}>{t('actions.cancel')}</Button>
       <Button size="sm" variant="primary" onClick={() => void submit()} loading={saving} disabled={testing || Boolean(validationError)} title={validationError}>{t('actions.save')}</Button>
     </DialogFooter>
-  </Dialog>;
+  </Dialog>
+    <ConfirmDialog open={open && testConfirmOpen} onOpenChange={() => setTestConfirmOpen(false)}
+      title={t('wizard.test.run')} message={t('wizard.test.billed')}
+      confirmText={t('wizard.test.run')} cancelText={t('actions.cancel')}
+      onConfirm={() => { setTestConfirmOpen(false); void runTest(); }} />
+  </>;
 }

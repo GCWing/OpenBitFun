@@ -95,6 +95,7 @@ describe('PeerConnectionManager attach', () => {
             miniapp_agent_images_v1: true,
             wsl_workspaces_v1: true,
             whole_session_copy_v1: true,
+            session_trajectory_v1: true,
             btw_initial_model_selection_v1: true,
             btw_model_pool_selection_v1: true,
           },
@@ -113,6 +114,7 @@ describe('PeerConnectionManager attach', () => {
     expect(caps.miniAppAgentImagesV1).toBe(true);
     expect(caps.wslWorkspacesV1).toBe(true);
     expect(caps.wholeSessionCopyV1).toBe(true);
+    expect(caps.sessionTrajectoryV1).toBe(true);
     expect(caps.btwInitialModelSelectionV1).toBe(true);
     expect(caps.btwModelPoolSelectionV1).toBe(true);
   });
@@ -144,6 +146,7 @@ describe('PeerConnectionManager attach', () => {
     expect(desktop.getState().capabilities.reviewPlatformV1).toBeNull();
     expect(desktop.getState().capabilities.inlineImageAttachmentsV1).toBe(false);
     expect(desktop.getState().capabilities.wholeSessionCopyV1).toBe(false);
+    expect(desktop.getState().capabilities.sessionTrajectoryV1).toBe(false);
     expect(desktop.getState().capabilities.btwInitialModelSelectionV1).toBe(false);
     expect(desktop.getState().capabilities.btwModelPoolSelectionV1).toBe(false);
     expect(desktop.getState().capabilities.chatMcpCatalogV1).toBe(false);

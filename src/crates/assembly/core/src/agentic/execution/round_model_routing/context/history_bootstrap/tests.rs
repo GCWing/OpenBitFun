@@ -50,6 +50,8 @@ impl RouterHistorySource for MemoryHistory {
 
 struct RecordingSummary {
     prompts: Mutex<Vec<String>>,
+    targets: Mutex<Vec<usize>>,
+    responses: Vec<String>,
     calls: AtomicUsize,
     fail_call: Option<usize>,
     block_from: Option<usize>,
@@ -61,6 +63,8 @@ impl RecordingSummary {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             prompts: Mutex::new(Vec::new()),
+            targets: Mutex::new(Vec::new()),
+            responses: Vec::new(),
             calls: AtomicUsize::new(0),
             fail_call: None,
             block_from: None,
@@ -79,10 +83,14 @@ impl SummaryProvider for RecordingSummary {
     async fn summarize(
         &self,
         prompt: String,
-        _: &RouterContextConfig,
+        config: &RouterContextConfig,
     ) -> OpenBitFunResult<SummaryResult> {
         assert!(EstimatedRouterTokens.count(&prompt) <= self.budget);
         self.prompts.lock().unwrap().push(prompt);
+        self.targets
+            .lock()
+            .unwrap()
+            .push(config.summary_target_tokens);
         let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
         if self.fail_call == Some(call) {
             return Err(OpenBitFunError::AIClient(
@@ -93,7 +101,9 @@ impl SummaryProvider for RecordingSummary {
             self.release.acquire().await.unwrap().forget();
         }
         Ok(SummaryResult {
-            text: "Verified earlier parser evidence; current validation remains pending".into(),
+            text: self.responses.get(call - 1).cloned().unwrap_or_else(|| {
+                "Verified earlier parser evidence; current validation remains pending".into()
+            }),
             complete: true,
             model_id: "economy-fixture".into(),
             model_name: "economy-fixture".into(),
@@ -156,6 +166,113 @@ async fn wait_calls(provider: &RecordingSummary, count: usize) {
 
 fn lineage(previous: &str) -> Vec<String> {
     vec![previous.into(), "current".into()]
+}
+
+fn bounded_history_context(provider: Arc<RecordingSummary>) -> RoundRouterContext {
+    let mut context = context(provider);
+    context.factory.config.summary_target_tokens = 64;
+    context.state.summary = "Earlier parser behavior is verified; the fix is unverified".into();
+    context.state.history_coverage = vec!["verified-older-turn".into()];
+    context.state.history_bootstrap = Some(RouterHistoryBootstrap {
+        turn_ids: vec!["older".into()],
+        entry_cursor: 3,
+        ..Default::default()
+    });
+    let mut batch = RouterHistoryBatch::new(&context.state, 4096);
+    for index in 0..3 {
+        assert!(batch.try_append(
+            &mut context.state,
+            &format!("older/observation/{index}"),
+            RouterEntryKind::Round,
+            &json!({"round_id": format!("historical-round-{index}"),
+                "assistant": {"text": format!("FACT_{index}: user correction; parser test remains failing")}}),
+            &EstimatedRouterTokens,
+        ));
+    }
+    context
+}
+
+#[tokio::test]
+async fn oversized_history_summary_retry_keeps_all_evidence_and_coverage_when_still_too_large() {
+    let oversized = "Repeated background without compression. ".repeat(40);
+    assert!(EstimatedRouterTokens.count(&oversized) > 64);
+    let mut provider = RecordingSummary::new();
+    Arc::get_mut(&mut provider).unwrap().responses = vec![oversized.clone(), oversized];
+    let mut context = bounded_history_context(provider.clone());
+    let before = serde_json::to_value(&context.state).unwrap();
+    let batch = RouterHistoryBatch::new(&context.state, 4096);
+    let (_sender, mut cancellation) = watch::channel(true);
+    let result = summarize_prefix(
+        &mut context.state,
+        &context.factory,
+        &batch,
+        0,
+        "historical-budget-test",
+        &mut cancellation,
+        &tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "Oversized retry must not replace historical evidence"
+    );
+    assert_eq!(serde_json::to_value(&context.state).unwrap(), before);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    let prompts = provider.prompts.lock().unwrap();
+    assert_eq!(prompts[0], prompts[1]);
+    for index in 0..3 {
+        assert!(prompts[1].contains(&format!("FACT_{index}")));
+    }
+    assert_eq!(*provider.targets.lock().unwrap(), vec![32, 16]);
+}
+
+#[tokio::test]
+async fn oversized_history_summary_retry_accepts_complete_bounded_rewrite_of_original_evidence() {
+    let compact = "Latest user correction: preserve parser aliases; rejects_legacy_alias still fails; fix unverified.";
+    assert!(EstimatedRouterTokens.count(compact) <= 64);
+    let mut provider = RecordingSummary::new();
+    Arc::get_mut(&mut provider).unwrap().responses = vec![
+        "Repeated background without compression. ".repeat(40),
+        compact.into(),
+    ];
+    let mut context = bounded_history_context(provider.clone());
+    let batch = RouterHistoryBatch::new(&context.state, 4096);
+    let (_sender, mut cancellation) = watch::channel(true);
+    summarize_prefix(
+        &mut context.state,
+        &context.factory,
+        &batch,
+        0,
+        "historical-budget-test",
+        &mut cancellation,
+        &tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(context.state.summary, compact);
+    assert_eq!(context.state.summarized_through, 3);
+    assert!(context.state.entries.is_empty());
+    assert_eq!(context.state.omitted_through, 0);
+    assert_eq!(context.state.history_coverage, vec!["verified-older-turn"]);
+    assert_eq!(
+        context
+            .state
+            .history_bootstrap
+            .as_ref()
+            .unwrap()
+            .entry_cursor,
+        3
+    );
+    assert!(!context.state.history_bootstrap.as_ref().unwrap().complete);
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+    let prompts = provider.prompts.lock().unwrap();
+    assert_eq!(prompts[0], prompts[1]);
+    assert!(prompts[1].contains("Earlier parser behavior is verified"));
+    assert_eq!(*provider.targets.lock().unwrap(), vec![32, 16]);
+    let restored: RouterContextState =
+        serde_json::from_value(serde_json::to_value(&context.state).unwrap()).unwrap();
+    assert_eq!(restored.summary, compact);
+    assert_eq!(restored.summarized_through, 3);
 }
 
 #[tokio::test]

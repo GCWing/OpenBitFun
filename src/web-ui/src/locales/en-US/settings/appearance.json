@@ -1,4 +1,12 @@
 {
+  "contentWidth": {
+    "title": "Conversation content width",
+    "label": "Preferred width",
+    "description": "Minimum {{min}} px. The displayed width fits the panel with space at both edges. Drag either content edge to adjust; your preference is remembered on this device.",
+    "reset": "Reset to default",
+    "decrease": "Decrease conversation width",
+    "increase": "Increase conversation width"
+  },
   "title": "Appearance",
   "subtitle": "Adjust themes and font size",
   "sessionPanel": {
@@ -168,5 +176,20 @@
       "allowedParts": "Show currently available parts",
       "dismiss": "Dismiss issue details"
     }
+  },
+  "sidebar": {
+    "title": "Left sidebar",
+    "reset": "Restore defaults",
+    "alwaysVisible": "Always visible",
+    "pinned": "Pinned pages",
+    "empty": "No additional pages pinned",
+    "available": "Available pages",
+    "moveUp": "Move {{name}} up",
+    "moveDown": "Move {{name}} down",
+    "remove": "Unpin {{name}}",
+    "addEntry": "Pin {{name}}",
+    "noResults": "No more pages to add",
+    "saveFailed": "Changes could not be saved. Your previous layout is still in use. Try again.",
+    "readFailed": "Saved navigation preferences could not be read by this version. They have been kept. Restore defaults to replace them."
   }
 }

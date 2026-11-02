@@ -10,19 +10,24 @@ import {
   ListTodo as LucideListTodo,
   LoaderCircle as LucideLoaderCircle,
   Square as LucideSquare,
-  X as LucideX,
 } from 'lucide-react';
 import ChatToolDetails from './ChatToolDetails';
 import { backgroundDeliveryFromMetadata, readBackgroundDelivery, suppressesBackgroundPresentation } from '../../../shared/background-delivery';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { MobileButton, MobileCard, MobileDisclosure, MobileMessage } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
+import { messageTimestamp } from '../i18n/messageTime';
 import type { ActiveTurnSnapshot, ChatMessage, ChatMessageItem, RemoteToolStatus } from '../services/RemoteSessionManager';
 import ChatAskQuestionCard from './ChatAskQuestionCard';
 import { MarkdownContent } from './ChatMarkdown';
 import ChatToolApprovalActions, { isToolAwaitingApproval } from './ChatToolApprovalActions';
 
 type ToolApprovalHandler = (toolId: string, updatedInput?: Record<string, unknown>) => Promise<void>;
+
+function isToolSettled(tool: RemoteToolStatus): boolean {
+  return ['completed', 'failed', 'error', 'cancelled', 'rejected'].includes(tool.status);
+}
+
 
 function getEnglishPluralSuffix(language: string, count: number): string {
   return language === 'en-US' && count !== 1 ? 's' : '';
@@ -250,7 +255,7 @@ export const TaskToolCard: React.FC<{
   const [stepsExpanded, setStepsExpanded] = useState(false);
   const isRunning = tool.status === 'running';
   const isCompleted = tool.status === 'completed';
-  const isError = tool.status === 'failed' || tool.status === 'error';
+  const settled = isToolSettled(tool);
   const showCancel = isRunning && !!onCancelTool;
   const taskInfo = parseTaskInfo(tool);
 
@@ -260,7 +265,7 @@ export const TaskToolCard: React.FC<{
     ? formatDuration(now - tool.start_ms)
     : '';
 
-  const statusClass = isRunning ? 'running' : isCompleted ? 'done' : isError ? 'error' : 'pending';
+  const statusClass = isRunning ? 'running' : isCompleted ? 'done' : settled ? 'settled' : 'pending';
 
   const subTools = subItems.filter(i => i.type === 'tool' && i.tool);
   const subToolsDone = subTools.filter(i => i.tool!.status === 'completed').length;
@@ -273,7 +278,7 @@ export const TaskToolCard: React.FC<{
 
 
   return (
-    <MobileCard padding="none" className={`chat-task-card chat-task-card--${statusClass}`} data-prominent={isError || isToolAwaitingApproval(tool) || hasPendingSubtoolApproval}>
+    <MobileCard padding="none" className={`chat-task-card chat-task-card--${statusClass}`} data-prominent={isToolAwaitingApproval(tool) || hasPendingSubtoolApproval}>
       <div className="chat-task-card__header">
         <span className="chat-tool-card__icon">
           {isRunning ? (
@@ -282,9 +287,9 @@ export const TaskToolCard: React.FC<{
             <span className="chat-tool-card__check">
               <LucideCheck width="12" height="12" aria-hidden="true" />
             </span>
-          ) : isError ? (
-            <span className="chat-tool-card__error-icon">
-              <LucideX width="12" height="12" aria-hidden="true" />
+          ) : settled ? (
+            <span className="chat-tool-card__settled-icon">
+              <LucideCircle width="12" height="12" aria-hidden="true" />
             </span>
           ) : (
             <span className="chat-tool-card__spinner" />
@@ -341,14 +346,14 @@ export const TaskToolCard: React.FC<{
                 if (item.type === 'tool' && item.tool) {
                   const t = item.tool;
                   const isDone = t.status === 'completed';
-                  const isErr = t.status === 'failed' || t.status === 'error';
+                  const settled = isToolSettled(t);
                   return (
                     <div key={`sub-tool-${t.id}-${idx}`} className="chat-task-card__step-wrap">
-                      <div className={`chat-task-card__step chat-task-card__step--tool ${isDone ? 'is-done' : isErr ? 'is-error' : 'is-running'}`}>
+                      <div className={`chat-task-card__step chat-task-card__step--tool ${isDone ? 'is-done' : settled ? 'is-settled' : 'is-running'}`}>
                       {isDone ? (
                         <LucideCheck width="10" height="10" color="var(--openbitfun-color-status-success-content)" aria-hidden="true" />
-                      ) : isErr ? (
-                        <LucideX width="10" height="10" color="var(--openbitfun-color-status-danger-content)" aria-hidden="true" />
+                      ) : settled ? (
+                        <LucideCircle width="10" height="10" aria-hidden="true" />
                       ) : (
                         <span className="chat-task-card__step-spinner" />
                       )}
@@ -450,7 +455,7 @@ const ToolCard: React.FC<{
   const typeLabel = typeLabelKey ? t(typeLabelKey) : '';
   const isRunning = tool.status === 'running';
   const isCompleted = tool.status === 'completed';
-  const isError = tool.status === 'failed' || tool.status === 'error';
+  const settled = isToolSettled(tool);
   const showCancel = isRunning && !!onCancelTool;
   const preview = getToolPreview(tool);
 
@@ -460,10 +465,10 @@ const ToolCard: React.FC<{
     ? formatDuration(now - tool.start_ms)
     : '';
 
-  const statusClass = isRunning ? 'running' : isCompleted ? 'done' : isError ? 'error' : 'pending';
+  const statusClass = isRunning ? 'running' : isCompleted ? 'done' : settled ? 'settled' : 'pending';
 
   return (
-    <MobileCard padding="none" className={`chat-tool-card chat-tool-card--${statusClass}`} data-prominent={isError || isToolAwaitingApproval(tool)}>
+    <MobileCard padding="none" className={`chat-tool-card chat-tool-card--${statusClass}`} data-prominent={isToolAwaitingApproval(tool)}>
       <div className="chat-tool-card__row">
         <span className="chat-tool-card__icon">
           {isRunning ? (
@@ -472,9 +477,9 @@ const ToolCard: React.FC<{
             <span className="chat-tool-card__check">
               <LucideCheck width="12" height="12" aria-hidden="true" />
             </span>
-          ) : isError ? (
-            <span className="chat-tool-card__error-icon">
-              <LucideX width="12" height="12" aria-hidden="true" />
+          ) : settled ? (
+            <span className="chat-tool-card__settled-icon">
+              <LucideCircle width="12" height="12" aria-hidden="true" />
             </span>
           ) : (
             <span className="chat-tool-card__spinner" />
@@ -545,7 +550,7 @@ const ReadFilesToggle: React.FC<{ tools: RemoteToolStatus[] }> = ({ tools }) => 
   if (tools.length === 0) return null;
 
   const doneCount = tools.filter(t => t.status === 'completed').length;
-  const allDone = doneCount === tools.length;
+  const allDone = tools.every(isToolSettled);
   const summary = buildGroupedToolSummary(tools, t);
   const label = allDone
     ? t('chat.readToolsDone', { summary })
@@ -557,7 +562,7 @@ const ReadFilesToggle: React.FC<{ tools: RemoteToolStatus[] }> = ({ tools }) => 
           {tools.map(tool => (
             <ChatToolDetails key={tool.id} tool={tool} label={
               <span className="chat-tool-card__name">
-                {tool.status === 'completed' ? '✓' : '⋯'} {tool.name}
+                {tool.status === 'completed' ? '✓' : isToolSettled(tool) ? '○' : '⋯'} {tool.name}
                 <span className="chat-tool-card__preview"> {getToolPreview(tool)}</span>
               </span>
             } />
@@ -583,8 +588,8 @@ export const ToolList: React.FC<{
 
   if (!tools || tools.length === 0) return null;
 
-  // Decisions and failures must remain visible outside collapsed process groups.
-  if (tools.length <= TOOL_LIST_COLLAPSE_THRESHOLD || tools.some(tool => isToolAwaitingApproval(tool) || ['failed', 'error'].includes(tool.status))) {
+  // Decisions remain visible; ordinary tool failures stay available in the details.
+  if (tools.length <= TOOL_LIST_COLLAPSE_THRESHOLD || tools.some(tool => isToolAwaitingApproval(tool))) {
     return (
       <div className="chat-tool-list">
         {tools.map((tc) => (
@@ -870,7 +875,7 @@ function renderStandardGroups(
         } else if (entry.tool?.name === 'TodoWrite') {
           flushAll();
           rendered.push(<TodoCard key={`${keyPrefix}-todo-${gi}-${rendered.length}`} tool={entry.tool!} />);
-        } else if (entry.tool && READ_LIKE_TOOLS.has(entry.tool.name) && !['failed', 'error'].includes(entry.tool.status)) {
+        } else if (entry.tool && READ_LIKE_TOOLS.has(entry.tool.name)) {
           flushRegular();
           readBuf.push(entry.tool);
         } else if (entry.tool) {
@@ -979,8 +984,17 @@ export function renderActiveTurnItems(
 
 interface OptimisticMessage {
   id: string;
+  timestamp?: string;
   text: string;
   images: Array<{ name: string; data_url: string }>;
+}
+
+function MessageTimestamp({ value }: { value?: string }) {
+  const { formatDate } = useI18n();
+  const date = messageTimestamp(value);
+  return date ? <time className="chat-msg__timestamp" dateTime={date.toISOString()}>
+    {formatDate(date, { dateStyle: 'short', timeStyle: 'short' })}
+  </time> : null;
 }
 
 function BackgroundExecutionReceipt({ completed, children }: { completed: boolean; children: React.ReactNode }) {
@@ -1059,6 +1073,7 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
           return (
             <MobileMessage
               key={message.id}
+              actions={<MessageTimestamp value={message.timestamp} />}
               className={`chat-msg chat-msg--user${menuMessageId === message.id ? ' chat-msg--menu-active' : ''}`}
               roleType="user"
               onTouchStart={(event) => onMessageTouchStart(message, event)}
@@ -1109,6 +1124,7 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
           return (
             <MobileMessage
               key={message.id}
+              actions={<MessageTimestamp value={message.timestamp} />}
               className={`chat-msg chat-msg--assistant chat-msg--collapsed${menuMessageId === message.id ? ' chat-msg--menu-active' : ''}`}
               roleType="assistant"
               onTouchStart={(event) => onMessageTouchStart(message, event)}
@@ -1125,6 +1141,7 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
         return (
           <MobileMessage
             key={message.id}
+              actions={<MessageTimestamp value={message.timestamp} />}
             className={`chat-msg chat-msg--assistant${menuMessageId === message.id ? ' chat-msg--menu-active' : ''}`}
             roleType="assistant"
             onTouchStart={(event) => onMessageTouchStart(message, event)}
@@ -1247,7 +1264,7 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
       })()}
 
       {optimisticMessage && (
-        <MobileMessage className="chat-msg chat-msg--user" roleType="user">
+        <MobileMessage className="chat-msg chat-msg--user" roleType="user" actions={<MessageTimestamp value={optimisticMessage.timestamp} />}>
           <div className="chat-msg__user-content">
             {optimisticMessage.text}
             {optimisticMessage.images.length > 0 && (

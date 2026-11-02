@@ -189,7 +189,7 @@
   "acquisition": {
     "label": "Image models",
     "description": "Add an image service or import an existing model configuration",
-    "add": "Add or import",
+    "add": "Add model",
     "empty": "No image models added",
     "remove": "Delete image model {{name}}"
   },

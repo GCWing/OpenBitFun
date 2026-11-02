@@ -144,12 +144,38 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
         log.warn('Smart-mode model connection check failed', { role });
       }
     });
+    const routerFailureDetail = (issue: unknown): string => {
+      // Host/provider diagnostics may contain credentials or paths. Only select
+      // fixed translated advice; never render any part of the diagnostic itself.
+      const reason = typeof issue === 'string' ? issue : '';
+      if (/Router requires OpenAI Chat Completions API format|Router protocol mismatch|Router response lacks classifier token logprobs|Failed to decode Router response|Router (?:output is invalid JSON|response did not contain)/i.test(reason)) {
+        return t('router.connectionFailures.protocol');
+      }
+      const httpStatus = /\bRouter returned HTTP ([1-5]\d{2})\b/i.exec(reason)?.[1];
+      if (httpStatus === '401' || httpStatus === '403') return t('router.connectionFailures.authentication');
+      if (httpStatus === '404' || /Invalid Router URL|Router URL must use HTTP\(S\)/i.test(reason)) {
+        return t('router.connectionFailures.addressOrModel');
+      }
+      if (httpStatus === '429') return t('router.connectionFailures.rateLimited');
+      if (httpStatus?.startsWith('5')) return t('router.connectionFailures.serviceUnavailable');
+      if (httpStatus) return t('router.connectionFailures.http');
+      if (/Router (?:request failed|deadline expired)|\b(?:connection refused|connect error|dns error|timed out)\b/i.test(reason)) {
+        return t('router.connectionFailures.network');
+      }
+      if (/Configure a Router service model|Configure an enabled (?:primary|economy) model/i.test(reason)) {
+        return t('router.connectionChecks.unconfigured');
+      }
+      return t('router.checkFailed');
+    };
     const routerCheck = async () => {
       try {
         const status = await agentAPI.getModelRoutingStatus({ probe: true });
-        update('router', { state: status.connected ? 'connected' : 'failed' });
+        update('router', {
+          state: status.connected ? 'connected' : 'failed',
+          detail: status.connected ? undefined : routerFailureDetail(status.connectionIssue ?? status.issue),
+        });
       } catch {
-        update('router', { state: 'failed' });
+        update('router', { state: 'failed', detail: t('router.checkFailed') });
         log.warn('Smart-mode Router connection check failed');
       }
     };
@@ -238,7 +264,7 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
     } finally { if (isCurrent()) setBusy(false); }
   };
   const saving = busy && !currentChecks;
-  return <Dialog open size="md" closeOnEscape={!saving} closeOnPointerOutside={false} onOpenChange={open => { if (!open && !saving) onClose(); }}>
+  return <Dialog open preset="panel" closeOnEscape={!saving} closeOnPointerOutside={false} onOpenChange={open => { if (!open && !saving) onClose(); }}>
     <DialogHeader><DialogHeading><DialogTitle>{t('router.title')}</DialogTitle></DialogHeading><DialogClose disabled={saving} /></DialogHeader>
     <DialogBody>
       <div className="model-router-settings" data-openbitfun-component="model-router-settings" data-openbitfun-part="root">
@@ -272,7 +298,7 @@ export function ModelRouterSettings({ models, onClose, onSaved, onManageModels, 
         {onManageModels && <Button size="sm" variant="text" disabled={busy} onClick={onManageModels}>{t('router.manageModels')}</Button>}
       </div>
     </DialogBody>
-    <DialogFooter separator>
+    <DialogFooter appearance="floating">
       <Button size="sm" variant="outline" disabled={!available || busy || !draft || !roleDraft} onClick={() => void save(true)}>{t('router.test')}</Button>
       <Button size="sm" variant="primary" loading={busy} disabled={!available || !draft || !roleDraft} onClick={() => void save(false)}>{t('router.save')}</Button>
     </DialogFooter>

@@ -73,7 +73,7 @@ export default function DesktopCardsSettingsSection() {
   }
 
   return (
-    <ConfigPageSection id={sectionAnchor} title={t('features.desktopCards.title')} description={t('features.desktopCards.subtitle')}>
+    <ConfigPageSection id={sectionAnchor} title={t('features.desktopCards.title')}>
       <ConfigPageRow
         label={t('features.desktopCards.enable')}
         align="center"

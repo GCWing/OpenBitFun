@@ -162,8 +162,8 @@ so `autotests = false` cannot silently omit a new contract.
 
 ## Verification
 
-For next-input suggestion eligibility, plain-text output without text
-post-processing, and cancellation:
+For next-input suggestion eligibility, surrounding whitespace trimming with
+message content preservation, and cancellation:
 
 ```bash
 cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib prompt_suggestion::tests

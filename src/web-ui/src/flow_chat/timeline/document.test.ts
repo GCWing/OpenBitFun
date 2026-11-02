@@ -33,6 +33,16 @@ describe('desktop conversation document', () => {
     expect(JSON.stringify(input)).toBe(before);
   });
 
+  it('resolves repeated member ids within the requested source row', () => {
+    const projection = new ConversationDocumentProjection();
+    const first = source([agent('reused')]);
+    const second = { ...source([agent('reused')]), turnId: 'another-turn' };
+    const rows = projection.project([first, second], options());
+    const index = findTimelineBlockIndex(rows, 1, 'reused');
+    expect(rows[index].turnId).toBe('another-turn');
+    expect(rows[index].timeline?.sourceIndex).toBe(1);
+  });
+
   it('packs adjacent launch cards independently of execution status or timing', () => {
     const projection = new ConversationDocumentProjection();
     const launches = [agent('a', 'Task', 'running'), agent('b', 'AgentSpawn', 'cancelled'), agent('c', 'LaunchReviewAgent', 'error')];

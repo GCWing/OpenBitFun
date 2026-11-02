@@ -576,6 +576,7 @@ struct TurnPromptScaffoldInput<'a> {
 }
 
 struct FinalizeRoundInput<'a> {
+    prompt_reminders: &'a PrependedPromptReminders,
     permission_constraints: openbitfun_runtime_ports::PermissionConstraintLayer,
     context_window: usize,
     tool_definitions: Option<Vec<ToolDefinition>>,
@@ -2129,6 +2130,107 @@ impl ExecutionEngine {
             && msg.metadata.turn_id.as_deref() != Some(current_turn_id)
     }
 
+    fn context_composition_for_send(
+        messages: &[Message],
+        reminders: &PrependedPromptReminders,
+        tools: Option<&[ToolDefinition]>,
+        context_window: usize,
+        current_turn_id: &str,
+        attach_images: bool,
+    ) -> openbitfun_core_types::UsageContextBreakdown {
+        let kept_images = if attach_images {
+            Self::image_bearing_indices_to_keep(messages)
+        } else {
+            HashSet::new()
+        };
+        let estimates = messages
+            .iter()
+            .enumerate()
+            .filter(|(_, message)| {
+                !Self::skip_message_for_model_send(message)
+                    && !Self::is_stale_interrupted_continue(message, current_turn_id)
+            })
+            .map(|(index, message)| {
+                // Use the same eligibility and image-retention policy as model sends;
+                // omitted pixels must not inflate the conversation slice.
+                let tokens = if !kept_images.contains(&index) && Self::message_bears_images(message)
+                {
+                    let mut projected = message.clone();
+                    match &mut projected.content {
+                        MessageContent::Multimodal { text, images } => {
+                            projected.content = MessageContent::Text(if attach_images {
+                                text.clone()
+                            } else {
+                                Self::render_multimodal_as_text(text, images)
+                            });
+                        }
+                        MessageContent::ToolResult {
+                            image_attachments, ..
+                        } => *image_attachments = None,
+                        _ => {}
+                    }
+                    projected.estimate_tokens_with_reasoning(true)
+                } else {
+                    message.estimate_tokens_with_reasoning(true)
+                };
+                (message, tokens as u64)
+            });
+        super::context_composition::estimate_context_composition(
+            estimates,
+            reminders,
+            tools,
+            context_window,
+        )
+    }
+
+    async fn persist_usage_context_preview(
+        &self,
+        context: &ExecutionContext,
+        messages: &[Message],
+        reminders: &PrependedPromptReminders,
+        tools: Option<&[ToolDefinition]>,
+    ) {
+        let Some(storage_path) = self
+            .session_manager
+            .effective_session_storage_path(&context.session_id)
+            .await
+        else {
+            return;
+        };
+        let result = async {
+            let contents = super::context_composition::context_preview_contents(
+                messages.iter().filter(|message| {
+                    !Self::skip_message_for_model_send(message)
+                        && !Self::is_stale_interrupted_continue(message, &context.dialog_turn_id)
+                }),
+                reminders,
+                tools,
+            )
+            .map_err(|error| OpenBitFunError::parse(error.to_string()))?;
+            self.session_manager
+                .persistence_manager()
+                .save_usage_context_snapshot(
+                    &storage_path,
+                    &crate::agentic::persistence::manager::SessionUsageContextSnapshot {
+                        schema_version: 1,
+                        session_id: context.session_id.clone(),
+                        turn_id: context.dialog_turn_id.clone(),
+                        turn_index: context.turn_index,
+                        captured_at: chrono::Utc::now().timestamp_millis().max(0) as u64,
+                        contents,
+                    },
+                )
+                .await
+        }
+        .await;
+        if let Err(error) = result {
+            warn!(
+                "Failed to persist usage context preview: session_id={}, error={}",
+                context.session_id, error
+            );
+        }
+    }
+
     /// True if this message would contribute at least one image to the model (before pruning).
     fn message_bears_images(msg: &Message) -> bool {
         if Self::skip_message_for_model_send(msg) {
@@ -2231,6 +2333,13 @@ impl ExecutionEngine {
         .await?;
         final_ai_messages.push(AIMessage::user(render_system_reminder(input.reminder_text)));
         final_ai_messages.push(AIMessage::user(Self::FINALIZE_USER_FOLLOWUP.to_string()));
+        self.persist_usage_context_preview(
+            input.context,
+            input.messages,
+            input.prompt_reminders,
+            input.tool_definitions.as_deref(),
+        )
+        .await;
 
         let model_exchange_trace_dir = self
             .session_manager
@@ -2244,6 +2353,23 @@ impl ExecutionEngine {
             )
             .await;
         let round_context = RoundContext {
+            context_composition: Some({
+                let mut composition = Self::context_composition_for_send(
+                    input.messages,
+                    input.prompt_reminders,
+                    input.tool_definitions.as_deref(),
+                    input.context_window,
+                    &input.context.dialog_turn_id,
+                    input.primary_model_facts.supports_image_inputs,
+                );
+                composition.conversation += TokenCounter::estimate_message_tokens(&AIMessage::user(
+                    render_system_reminder(input.reminder_text),
+                )) as u64
+                    + TokenCounter::estimate_message_tokens(&AIMessage::user(
+                        Self::FINALIZE_USER_FOLLOWUP.to_string(),
+                    )) as u64;
+                composition
+            }),
             session_id: input.context.session_id.clone(),
             subagent_parent_info: input.context.subagent_parent_info.clone(),
             permission_delegation: input.context.permission_delegation.clone(),
@@ -4633,6 +4759,7 @@ impl ExecutionEngine {
                 .persistent_model_exchange_trace_dir(&context.session_id)
                 .await;
             let mut round_context = RoundContext {
+                context_composition: None,
                 session_id: context.session_id.clone(),
                 subagent_parent_info: context.subagent_parent_info.clone(),
                 permission_delegation: context.permission_delegation.clone(),
@@ -4719,6 +4846,14 @@ impl ExecutionEngine {
                 &model_fingerprint,
                 selected_pool.is_some(),
             );
+            round_context.context_composition = Some(Self::context_composition_for_send(
+                &request_messages,
+                &turn_prompt_scaffold.prepended_prompt_reminders,
+                tool_definitions.as_deref(),
+                context_window,
+                &context.dialog_turn_id,
+                primary_supports_image_understanding,
+            ));
             let ai_messages = Self::build_ai_messages_for_send(
                 &request_messages,
                 &ai_client.config.format,
@@ -4729,6 +4864,14 @@ impl ExecutionEngine {
                 &send_prepended_reminders,
             )
             .await?;
+
+            self.persist_usage_context_preview(
+                &context,
+                &request_messages,
+                &turn_prompt_scaffold.prepended_prompt_reminders,
+                tool_definitions.as_deref(),
+            )
+            .await;
 
             let round_lifecycle =
                 active_round_lifecycle.get_or_insert_with(ModelRoundLifecycle::new);
@@ -5566,6 +5709,7 @@ impl ExecutionEngine {
                 );
                 let final_round_result = self
                     .run_finalize_round(FinalizeRoundInput {
+                        prompt_reminders: &turn_prompt_scaffold.prepended_prompt_reminders,
                         permission_constraints: tool_policy.permission_constraints.clone(),
                         ai_client: ai_client.clone(),
                         account_client_source: account_client_source.clone(),
@@ -5600,6 +5744,7 @@ impl ExecutionEngine {
                     );
                     let retry_result = self
                         .run_finalize_round(FinalizeRoundInput {
+                            prompt_reminders: &turn_prompt_scaffold.prepended_prompt_reminders,
                             permission_constraints: tool_policy.permission_constraints.clone(),
                             ai_client: ai_client.clone(),
                             account_client_source: account_client_source.clone(),
@@ -5962,7 +6107,9 @@ mod tests {
     use crate::agentic::agents::{
         PrependedPromptReminders, PromptBuilderContext, ToolListingSections, UserContextPolicy,
     };
-    use crate::agentic::core::{InternalReminderKind, Message, MessageRole, ToolCall, ToolResult};
+    use crate::agentic::core::{
+        InternalReminderKind, Message, MessageRole, MessageSemanticKind, ToolCall, ToolResult,
+    };
     use crate::agentic::persistence::PersistenceManager;
     use crate::agentic::session::{
         ContextCompressor, PromptCachePolicy, SessionContextStore, SessionManager,
@@ -5972,6 +6119,7 @@ mod tests {
     use crate::agentic::tools::ToolRuntimeRestrictions;
     use crate::agentic::workspace::{local_workspace_services, WorkspaceBinding};
     use crate::infrastructure::PathManager;
+
     #[cfg(feature = "external-sources")]
     use crate::instruction_sources::test_support::{lock_environment, EnvironmentGuard};
     use crate::service::config::types::AIConfig;
@@ -6951,6 +7099,29 @@ mod tests {
         assert_eq!(
             super::initial_round_index(&std::collections::HashMap::new()),
             0
+        );
+    }
+
+    #[test]
+    fn context_composition_excludes_ui_frames_and_stale_continuations() {
+        let current = Message::user("Current input".into());
+        let mut screenshot = Message::user("UI-only content".repeat(100));
+        screenshot.metadata.semantic_kind =
+            Some(MessageSemanticKind::ComputerUsePostActionSnapshot);
+        let mut stale = Message::user("Interrupted old turn".repeat(100));
+        stale.metadata.internal_reminder_kind = Some(InternalReminderKind::InterruptedContinue);
+        stale.metadata.turn_id = Some("old-turn".into());
+        let composition = ExecutionEngine::context_composition_for_send(
+            &[current.clone(), screenshot, stale],
+            &PrependedPromptReminders::default(),
+            None,
+            128_000,
+            "current-turn",
+            false,
+        );
+        assert_eq!(
+            composition.conversation,
+            current.estimate_tokens_with_reasoning(true) as u64
         );
     }
 

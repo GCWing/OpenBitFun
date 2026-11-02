@@ -409,7 +409,15 @@ async fn summarize_prefix(
                 return Err(OpenBitFunError::Session("Router history summary superseded".into()));
             };
             tokio::time::timeout(factory.config.summary_timeout,
-                factory.summary_provider.summarize(work.prompt, &factory.config)).await
+                summarize_bounded(factory.summary_provider.as_ref(), work.prompt, &factory.config,
+                    Some(SummaryAttemptTrace {
+                        path: factory.trace_path.as_ref(),
+                        identity: json!({
+                            "root_session_id": root_session_id, "session_id": state.session_id,
+                            "dialog_turn_id": state.dialog_turn_id, "source": "history_bootstrap",
+                            "base_through": work.base_through, "through": work.through,
+                        }),
+                    }))).await
                 .map_err(|_| OpenBitFunError::AIClient("Router history summary timed out".into()))?
         } => result?,
     };

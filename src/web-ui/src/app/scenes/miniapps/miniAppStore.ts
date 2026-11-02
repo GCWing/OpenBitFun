@@ -165,6 +165,7 @@ export interface MiniAppComposerClaim {
 
 interface MiniAppState {
   apps: MiniAppMeta[];
+  catalogSurfaceId: string | null;
   loading: boolean;
   /** App IDs whose JS workers are currently running. */
   runningWorkerIds: string[];
@@ -202,6 +203,7 @@ interface MiniAppState {
 
 export const useMiniAppStore = create<MiniAppState>((set) => ({
   apps: [],
+  catalogSurfaceId: null,
   loading: false,
   runningWorkerIds: [],
   customizingAppIds: [],
@@ -213,6 +215,7 @@ export const useMiniAppStore = create<MiniAppState>((set) => ({
       const validIds = new Set(apps.map((app) => app.id));
       return {
         apps,
+        catalogSurfaceId: getActiveSurfaceId(),
         runningWorkerIds: state.runningWorkerIds.filter((id) => validIds.has(id)),
         customizingAppIds: state.customizingAppIds.filter((id) => validIds.has(id)),
         composerClaims: Object.fromEntries(

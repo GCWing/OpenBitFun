@@ -192,6 +192,24 @@ Narrower local guides already exist for some subtrees:
 
 ## Verification
 
+For opt-in category/system-prompt previews and session-storage isolation:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- system_prompt_preview usage_context_preview
+```
+
+This fixture verifies default report privacy and resolved host storage with a
+simulated SSH workspace identity; it does not exercise live remote connections.
+
+For Agent name references, enabled-catalog admission, and prompt catalog names:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::implementations::task::tests
+```
+
+These fixtures cover prompt name mappings and simulated workspace policies;
+they do not establish live SSH, relay, Peer, or Detached Dispatch behavior.
+
 For smart routing, unchanged subagent model policy and resumed subagent choices:
 
 ```bash
@@ -388,6 +406,13 @@ cargo test --locked -p openbitfun-core --no-default-features --features remote-c
 cargo test --locked -p openbitfun-core --no-default-features --features remote-connect --lib service_agent_runtime::tests::remote_workspace_catalog_tracks_opened_rows_and_assistant_identity
 ```
 
+For explicit mobile file preview/download outside the selected workspace:
+`cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib service_agent_runtime::tests::controller_file_reads_support_absolute_and_relative_paths_outside_workspace`.
+Provider isolation and automatic delivery confinement are covered by
+`cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::file_projection::tests`.
+These fixtures cover local IO and a simulated remote filesystem, not live SSH,
+relay, Peer Device, or Detached Dispatch connections.
+
 Focused workspace-IO and snapshot regression entry points (use the matching
 filter rather than a product-wide build):
 
@@ -537,7 +562,7 @@ cargo test --locked -p openbitfun-core --no-default-features --features remote-c
 cargo test --locked -p openbitfun-core --no-default-features --features remote-connect --lib service::remote_connect::bot::weixin::tests
 ```
 
-Pages account publication and tool gates (including remote directory rejection):
+Pages account management and tool gates (including remote directory rejection):
 
 ```bash
 cargo test -p openbitfun-core --no-default-features --features remote-connect,tools-pages,git,ssh-remote --lib page_
@@ -546,6 +571,13 @@ cargo test -p openbitfun-core --no-default-features --features remote-connect,to
 `tools-pages` selects only the Pages tool group. Account host wiring additionally
 requires `remote-connect`; CLI and Desktop select both explicitly. Pages does
 not select MiniApp runtime or market dependencies.
+
+`PageManage` is the default Pages Agent tool. `PagePublish` and `PageDeploy`
+remain registered only for legacy explicit tool selections and existing calls;
+do not add them back to mode defaults. List/version reads have no mutation
+permission intent; writes retain fresh, account-scoped Ask-mode approval.
+The focused fixtures cover loopback Relay requests, old Relay payloads, account
+switches, and simulated remote workspace rejection, not live remote connections.
 
 Scheduled-job workspace identity and the temporary 1.0.0 target upgrade boundary:
 
@@ -580,7 +612,7 @@ cargo test -p openbitfun-core --no-default-features --features agent-runtime,git
 ```
 
 These mock-host tests do not validate native capture, background input or remote
-GUI behavior; native fixtures remain owned by the Desktop Computer Use guide.
+GUI behavior; native fixtures remain owned by the shared Computer Use service guide.
 
 For plain-prompt goal activation and remote goal storage routing:
 
@@ -600,3 +632,23 @@ For HTML preview workspace identity and shared resource-service wiring:
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features remote-connect --lib service::filesystem::html_preview::tests
 ```
+
+For host-owned workspace icon persistence, legacy metadata round trips, worktree inheritance,
+concurrent-controller revisions and failed-write preservation:
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features workspace-icons --lib service::workspace::service::icons
+```
+
+These are local fixtures, including an offline SSH workspace record; they do not establish
+live SSH, Relay or Detached Dispatch behavior. `workspace-icons` selects only workspace
+catalog and image service owners; headless task execution need not select it.
+
+For Remote Connect bot restore eligibility and listener shutdown/status:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features remote-connect --lib -- service::remote_connect::control:: listener_lifecycle_tests
+```
+
+The lifecycle fixtures cover account/config replacement, explicit disablement,
+and task release; real provider message delivery requires a signed-in host.

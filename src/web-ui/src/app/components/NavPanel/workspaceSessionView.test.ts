@@ -9,6 +9,7 @@ import {
   deriveWorkspaceSessionWorktree,
   getNextWorkspaceSessionGrouping,
   matchesWorkspaceSessionView,
+  matchesWorkspaceExternalDiscovery,
   matchesWorkspaceSourceAgent,
   normalizeWorkspaceSessionGrouping,
 } from './workspaceSessionView';
@@ -44,6 +45,18 @@ describe('workspace session view model', () => {
     const imported = session({ importedSource: source, config: { agentType: 'Standard' } });
     expect(matchesWorkspaceSourceAgent(imported, source)).toBe(true);
     expect(matchesWorkspaceSourceAgent(imported, 'openbitfun')).toBe(false);
+  });
+  it('hides disabled source-following views while retaining native forks and unknown settings', () => {
+    const followed = session({
+      importedSource: 'codex',
+      externalHistory: { mode: 'follow' },
+    });
+    const fork = session({ importedSource: 'codex' });
+    const enabled = new Set(['zcode']);
+
+    expect(matchesWorkspaceExternalDiscovery(followed, enabled)).toBe(false);
+    expect(matchesWorkspaceExternalDiscovery(fork, enabled)).toBe(true);
+    expect(matchesWorkspaceExternalDiscovery(followed, undefined)).toBe(true);
   });
   it('toggles between unified groups and the flat all-session view', () => {
     expect(getNextWorkspaceSessionGrouping('grouped')).toBe('all');
@@ -113,5 +126,19 @@ describe('workspace session view model', () => {
       ...DEFAULT_WORKSPACE_SESSION_FILTERS,
       hiddenStatuses: ['completed'],
     }, false)).toBe(false);
+  });
+
+  it('shows only archived records while retaining the other filter facets', () => {
+    const archived = session({ persistedStatus: 'archived', remoteConnectionId: 'ssh-one' });
+    expect(matchesWorkspaceSessionView(archived, 'archived', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(true);
+    expect(matchesWorkspaceSessionView(session({}), 'archived', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(session({ persistedStatus: 'completed' }), 'archived', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(archived, 'archived', {
+      ...DEFAULT_WORKSPACE_SESSION_FILTERS, hiddenEnvironments: ['remote'],
+    }, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(archived, 'all', DEFAULT_WORKSPACE_SESSION_FILTERS, false)).toBe(false);
+    expect(matchesWorkspaceSessionView(archived, 'all', {
+      ...DEFAULT_WORKSPACE_SESSION_FILTERS, hideArchived: false,
+    }, false)).toBe(true);
   });
 });

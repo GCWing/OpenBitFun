@@ -1000,6 +1000,8 @@ $model-mode-dust-sizes: ();
 
   &__option-provider {
     color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-meta-font-size);
+    font-weight: var(--openbitfun-type-meta-font-weight);
   }
 
   &__option-meta {

@@ -667,7 +667,8 @@ export const mobileComponents = {
       "anatomy": [
         "message_text",
         "role_surface",
-        "hairline_border"
+        "hairline_border",
+        "message_timestamp"
       ],
       "states": [
         "user",
@@ -682,7 +683,7 @@ export const mobileComponents = {
         "message_spacing",
         "timeline_top_padding"
       ],
-      "platformNotes": "The maximum width is the 276-unit compact HarmonyOS baseline; wide layouts may use a separate responsive policy."
+      "platformNotes": "The maximum width is the 276-unit compact HarmonyOS baseline; wide layouts may use a separate responsive policy. Show each available host message time below its content in localized short date/time with muted label-small text, right aligned for users and left aligned for assistants. Omit unavailable or invalid legacy timestamps. Ordinary failed tool calls share the neutral collapsed activity presentation; their actual failure details remain expandable. Questions, approvals and failed replies retain their attention states."
     },
     "conversation_overlay": {
       "purpose": "Lets the transcript own the whole pane while the header and composer stay reachable above it.",

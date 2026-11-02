@@ -273,7 +273,7 @@ async fn summary_request_isolates_generation_limit_and_reasoning_on_the_wire() {
 }
 
 #[test]
-fn complete_summary_text_is_not_truncated_to_the_advisory_target() {
+fn summary_response_preserves_full_text_before_budget_admission() {
     let client = summary_client_fixture("http://127.0.0.1:1/v1/chat/completions");
     let text = format!(
         "{}\nTail evidence: rejects_legacy_alias still fails; fix unverified.\n[omitted through sequence 42]",
@@ -1080,9 +1080,9 @@ async fn incomplete_summary_keeps_old_state_but_records_reported_usage() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 3);
     assert_eq!(events[0]["event"], "router_context_summary_started");
-    let event = &events[1];
+    let event = events.last().unwrap();
     assert_eq!(event["request_id"], events[0]["request_id"]);
     assert_eq!(event["event"], "router_context_summary");
     assert_eq!(event["usage"]["candidatesTokenCount"], 4096);
@@ -1093,6 +1093,233 @@ async fn incomplete_summary_keeps_old_state_but_records_reported_usage() {
     assert_eq!(event["response"]["incomplete_reason"], "output_limit");
     assert_eq!(event["max_output_tokens"], 16_384);
     assert_eq!(events[0]["summary_target_tokens"], 2_048);
+}
+
+/// Distinct evidence at the tail catches accidental clipping or candidate-only
+/// recompression; every attempt must still receive the entire source snapshot.
+struct BudgetSummary {
+    responses: std::sync::Mutex<std::collections::VecDeque<OpenBitFunResult<SummaryResult>>>,
+    prompts: std::sync::Mutex<Vec<(String, usize)>>,
+    delay: Duration,
+}
+
+impl BudgetSummary {
+    fn new(responses: Vec<OpenBitFunResult<SummaryResult>>) -> Arc<Self> {
+        Arc::new(Self {
+            responses: std::sync::Mutex::new(responses.into()),
+            prompts: Default::default(),
+            delay: Duration::ZERO,
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl SummaryProvider for BudgetSummary {
+    async fn summarize(
+        &self,
+        prompt: String,
+        config: &RouterContextConfig,
+    ) -> OpenBitFunResult<SummaryResult> {
+        self.prompts
+            .lock()
+            .unwrap()
+            .push((prompt, config.summary_target_tokens));
+        tokio::time::sleep(self.delay).await;
+        self.responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("Unexpected summary retry")
+    }
+}
+
+fn budget_response(text: &str, finish: &str, usage: Value) -> OpenBitFunResult<SummaryResult> {
+    let response = serde_json::from_value(json!({"text": text, "finish_reason": finish,
+        "usage": usage}))
+    .unwrap();
+    Ok(SummaryResult::from_response(
+        response,
+        "economy".into(),
+        &summary_client_fixture("http://127.0.0.1:1/v1/chat/completions"),
+    ))
+}
+
+fn budget_usage(input: u32, output: u32) -> Value {
+    json!({"promptTokenCount":input, "candidatesTokenCount":output,
+        "totalTokenCount":input + output})
+}
+
+#[tokio::test]
+async fn bounded_summary_rewrites_old_oversized_summary_from_full_evidence_and_counts_both_calls() {
+    let accepted = "Latest correction: inspect only. parser.rs rejects the legacy alias; test remains failing. [omitted through sequence 42]";
+    let provider = BudgetSummary::new(vec![
+        budget_response(
+            &"Repeated background. ".repeat(2000),
+            "stop",
+            budget_usage(100, 5000),
+        ),
+        budget_response(accepted, "stop", budget_usage(100, 100)),
+    ]);
+    let (mut context, _) = fixture(true);
+    let trace_dir = tempfile::tempdir().unwrap();
+    context.factory.trace_path = Some(trace_dir.path().join("trace.jsonl"));
+    context.factory.config.summary_target_tokens = 128;
+    context.factory.summary_provider = provider.clone();
+    context.state.summary = "Earlier background; ".repeat(500);
+    // A legacy oversized sidecar remains readable until a bounded rewrite wins.
+    context.state = serde_json::from_value(serde_json::to_value(&context.state).unwrap()).unwrap();
+    let mut messages = rounds(8);
+    messages[4] = Message::assistant(
+        "TAIL_EVIDENCE: parser.rs rejects the legacy alias; test remains failing".into(),
+    );
+    context.prepare(&messages).await;
+    settle(&mut context).await;
+    assert_eq!(context.state.summary, accepted);
+    assert_eq!(context.state.summarized_through, 5);
+    assert_eq!(context.state.entries.len(), 3);
+    let prompts = provider.prompts.lock().unwrap();
+    assert_eq!(prompts.len(), 2);
+    assert_eq!(prompts[0].0, prompts[1].0);
+    assert!(prompts[0].0.contains("TAIL_EVIDENCE"));
+    assert!(prompts[0].0.contains("Earlier background;"));
+    assert!(!prompts[1].0.contains("Repeated background."));
+    assert_eq!((prompts[0].1, prompts[1].1), (64, 32));
+    let trace = tokio::fs::read_to_string(context.factory.trace_path.as_ref().unwrap())
+        .await
+        .unwrap();
+    let event: Value = serde_json::from_str(trace.lines().last().unwrap()).unwrap();
+    assert_eq!(event["usage"]["promptTokenCount"], 200);
+    assert_eq!(event["usage"]["candidatesTokenCount"], 5100);
+    assert!(event["usage"].get("cachedContentTokenCount").is_none());
+    assert_eq!(event["response"]["summary_budget_tokens"], 128);
+    assert_eq!(event["response"]["attempts"].as_array().unwrap().len(), 2);
+    assert!(
+        event["response"]["attempts"][0]["summary_tokens"]
+            .as_u64()
+            .unwrap()
+            > 128
+    );
+    assert!(!trace.contains("TAIL_EVIDENCE"));
+}
+
+#[tokio::test]
+async fn bounded_summary_failed_or_incomplete_rewrite_never_advances_or_discards_history() {
+    for retry in [
+        budget_response(
+            &"still too long ".repeat(1000),
+            "stop",
+            budget_usage(100, 5000),
+        ),
+        budget_response(
+            "Truncated before decisive conditions",
+            "length",
+            budget_usage(100, 16000),
+        ),
+        Err(OpenBitFunError::AIClient(
+            "Synthetic rewrite failure".into(),
+        )),
+    ] {
+        let provider = BudgetSummary::new(vec![
+            budget_response(&"too long ".repeat(1000), "stop", budget_usage(100, 5000)),
+            retry,
+        ]);
+        let (mut context, _) = fixture(true);
+        context.factory.config.summary_target_tokens = 128;
+        context.factory.summary_provider = provider.clone();
+        context.token_budget = Arc::new(RouterInputBudget::new(
+            512,
+            512,
+            context.factory.system_tokens,
+        ));
+        context.state.summary = "Previously verified result; pending fix is unverified".into();
+        let messages = rounds(20);
+        context.prepare(&messages).await;
+        let before = serde_json::to_value(&context.state).unwrap();
+        settle(&mut context).await;
+        assert_eq!(serde_json::to_value(&context.state).unwrap(), before);
+        assert!(context.render().history_truncated);
+        context.prepare(&messages).await;
+        assert_eq!(provider.prompts.lock().unwrap().len(), 2);
+        assert!(context.pending_summary.is_none());
+    }
+}
+
+#[tokio::test]
+async fn bounded_summary_rewrite_shares_original_deadline_and_releases_permit() {
+    let mut provider = BudgetSummary::new(vec![
+        budget_response(&"too long ".repeat(1000), "stop", budget_usage(100, 5000)),
+        budget_response("Complete", "stop", budget_usage(100, 5)),
+    ]);
+    Arc::get_mut(&mut provider).unwrap().delay = Duration::from_millis(80);
+    let (mut context, _) = fixture(true);
+    let trace_dir = tempfile::tempdir().unwrap();
+    context.factory.trace_path = Some(trace_dir.path().join("trace.jsonl"));
+    context.factory.config.summary_target_tokens = 128;
+    context.factory.config.summary_timeout = Duration::from_millis(120);
+    context.factory.summary_provider = provider.clone();
+    context.prepare(&rounds(8)).await;
+    settle(&mut context).await;
+    assert_eq!(provider.prompts.lock().unwrap().len(), 2);
+    assert_eq!(context.state.summarized_through, 0);
+    assert_eq!(context.state.entries.len(), 8);
+    assert_eq!(context.factory.summary_queue.available_permits(), 1);
+    let trace = tokio::fs::read_to_string(context.factory.trace_path.as_ref().unwrap())
+        .await
+        .unwrap();
+    let events = trace
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let completed = events
+        .iter()
+        .filter(|event| event["event"] == "router_context_summary_attempt")
+        .collect::<Vec<_>>();
+    assert_eq!(completed.len(), 1);
+    assert_eq!(
+        completed[0]["response"]["usage"]["candidatesTokenCount"],
+        5000
+    );
+    assert!(events.last().unwrap()["error"]
+        .as_str()
+        .unwrap()
+        .contains("timed out"));
+}
+
+#[tokio::test]
+async fn bounded_summary_short_output_does_not_retry_and_unknown_usage_stays_unknown() {
+    let provider = BudgetSummary::new(vec![budget_response(
+        "Concise verified result",
+        "stop",
+        budget_usage(100, 5),
+    )]);
+    let result = summarize_bounded(
+        provider.as_ref(),
+        "Original evidence".into(),
+        &RouterContextConfig::default(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(result.complete);
+    assert_eq!(provider.prompts.lock().unwrap().len(), 1);
+    assert_eq!(result.usage.unwrap()["promptTokenCount"], 100);
+    let provider = BudgetSummary::new(vec![
+        budget_response(&"too long ".repeat(2000), "stop", budget_usage(100, 5000)),
+        Err(OpenBitFunError::AIClient(
+            "Synthetic rewrite failure".into(),
+        )),
+    ]);
+    let result = summarize_bounded(
+        provider.as_ref(),
+        "Original evidence".into(),
+        &RouterContextConfig::default(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(!result.complete);
+    assert!(result.usage.is_none());
+    assert_eq!(result.diagnostics.attempts.len(), 2);
 }
 
 #[tokio::test]

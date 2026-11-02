@@ -123,6 +123,14 @@ fn product_service_config(config: &AIConfig) -> OpenBitFunResult<HttpRoundModelR
             "Router requires an API-key service; subscription authentication is unsupported".into(),
         ));
     }
+    // Router classification uses Chat Completions directly, rather than the
+    // model's normal chat adapter. Reject other formats before deriving an
+    // endpoint or sending their credentials with a different wire protocol.
+    if !model.provider.trim().eq_ignore_ascii_case("openai") {
+        return Err(OpenBitFunError::Configuration(
+            "Router requires OpenAI Chat Completions API format; select an OpenAI-compatible classifier service".into(),
+        ));
+    }
     if !(0.0..=1.0).contains(&setup.simple_threshold) || setup.timeout_ms == 0 {
         return Err(OpenBitFunError::Configuration(
             "Router threshold must be between 0 and 1 and timeout must be positive".into(),
@@ -468,6 +476,7 @@ mod tests {
             config.models.push(AIModelConfig {
                 id: id.into(),
                 enabled: true,
+                provider: "openai".into(),
                 base_url: endpoint.into(),
                 model_name: "router-fixture".into(),
                 api_key: "fixture-token".into(),
@@ -478,6 +487,33 @@ mod tests {
         config.default_models.economy = Some("economy-fixture".into());
         config.model_routing.router_model_id = Some("router-service".into());
         config
+    }
+
+    #[tokio::test]
+    async fn router_probe_rejects_incompatible_api_formats_without_provider_io() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        for provider in ["anthropic", "response", "responses", "gemini", ""] {
+            let mut config = connection_fixture(&endpoint);
+            config.model_routing.timeout_ms = 50;
+            config.models[2].provider = provider.into();
+            config.models[2].request_url = Some(format!("{endpoint}/v1/messages"));
+            config.default_models.economy = None;
+            let status = status_for_config(&config, Some("smart"), true, true).await;
+            assert!(!status.ready);
+            assert_eq!(status.connected, Some(false));
+            assert!(status.issue.as_deref().unwrap().contains("economy model"));
+            assert!(status
+                .connection_issue
+                .as_deref()
+                .unwrap()
+                .contains("requires OpenAI Chat Completions API format"));
+            assert_eq!(
+                listener.accept().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock
+            );
+        }
     }
 
     fn classifier_response() -> Value {
@@ -682,6 +718,7 @@ mod tests {
         config.models.push(AIModelConfig {
             id: "router-service".into(),
             enabled: true,
+            provider: " OpenAI ".into(),
             base_url: "https://router.example.invalid/v1/".into(),
             model_name: "router-fixture".into(),
             api_key: "fixture-token".into(),
@@ -735,6 +772,7 @@ mod tests {
         config.models.push(AIModelConfig {
             id: "router-service".into(),
             enabled: true,
+            provider: "openai".into(),
             base_url: "https://router.example.invalid/v1".into(),
             model_name: "router-fixture".into(),
             ..Default::default()

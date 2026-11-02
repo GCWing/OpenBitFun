@@ -10,9 +10,10 @@ import {
   DialogTitle,
 } from '@openbitfun/ui';
 import React, { useState } from 'react';
-import { FolderOpen, FileText, Code } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { useWorkspaceContext } from '../../../infrastructure/contexts/WorkspaceContext';
-import { WorkspaceInfo, WorkspaceKind, WorkspaceType } from '../../../shared/types';
+import { WorkspaceInfo, WorkspaceKind } from '../../../shared/types';
+import { WorkspaceIcon } from '@/app/components/WorkspaceIcon/WorkspaceIcon';
 import { AssistantAvatar } from '@/app/components/AssistantAvatar';
 import { i18nService, useI18n } from '@/infrastructure/i18n';
 import { createLogger } from '@/shared/utils/logger';
@@ -159,17 +160,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({
       );
     }
 
-    const type = workspace.workspaceType;
-    switch (type) {
-      case WorkspaceType.SingleProject:
-        return <Code size={16} />;
-      case WorkspaceType.Documentation:
-        return <FileText size={16} />;
-      case WorkspaceType.MultiProject:
-        return <Icon name="folder" size="md" />;
-      default:
-        return <FolderOpen size={16} />;
-    }
+    return <WorkspaceIcon workspace={workspace} />;
   };
 
   const formatDate = (dateStr: string) => {

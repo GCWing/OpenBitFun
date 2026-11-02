@@ -53,6 +53,9 @@
     "rescan": "重新整理狀態",
     "import": "匯入使用",
     "login": "登入",
+    "loginTitle": "{{provider}} 登入",
+    "backToProviders": "返回服務商清單",
+    "cancelAndBack": "取消登入並返回",
     "browserLogin": "瀏覽器登入",
     "deviceLogin": "裝置碼登入",
     "cancel": "取消",
@@ -88,18 +91,22 @@
       "zcode": "ZCode"
     },
     "details": {
-      "codex": "ChatGPT 訂閱",
-      "antigravity": "Google 訂閱",
-      "opencode": "Console · Zen",
-      "grok": "SuperGrok 訂閱",
-      "hermes": "Nous Portal 訂閱",
+      "codex": "ChatGPT",
+      "antigravity": "Google",
+      "opencode": "Zen",
+      "grok": "SuperGrok",
+      "hermes": "Nous Portal",
       "workbuddy": "已下線 · 廠商不再支援訂閱授權",
       "workbuddy_ai": "已下線 · 國際版",
-      "zcode": "GLM Coding Plan"
+      "zcode": "GLM Coding"
     },
     "regions": {
-      "zai": "Z.ai",
-      "bigmodel": "智譜"
+      "zai": "Z.ai（國際版）",
+      "bigmodel": "智譜 BigModel（中國版）"
+    },
+    "regionsShort": {
+      "zai": "國際",
+      "bigmodel": "國內"
     },
     "options": {
       "opencode": "OpenCode",
@@ -243,8 +250,16 @@
       "name": "OpenBitFun 服務",
       "description": "OpenBitFun 大模型平臺",
       "urlOptions": {
-        "default": "Anthropic格式",
-        "openai": "OpenAI兼容格式-默認"
+        "default": "官方介面",
+        "openai": "官方介面"
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "description": "OpenAI GPT 與推理模型",
+      "urlOptions": {
+        "default": "官方介面",
+        "chatCompletions": "官方介面"
       }
     },
     "gemini": {
@@ -259,52 +274,52 @@
       "name": "MiniMax",
       "description": "MiniMax 系列模型",
       "urlOptions": {
-        "default": "國內-Anthropic格式-默認",
-        "openai": "國內-OpenAI兼容格式",
-        "intl": "海外-Anthropic格式",
-        "intlOpenai": "海外-OpenAI兼容格式"
+        "default": "國內-默認",
+        "openai": "國內",
+        "intl": "海外",
+        "intlOpenai": "海外"
       }
     },
     "xiaomi": {
       "name": "Xiaomi MiMo",
       "description": "小米 MiMo 系列模型，API 與 Token Plan 金鑰不可混用",
       "urlOptions": {
-        "default": "API - OpenAI Chat Completions（預設）",
-        "responses": "API - OpenAI Responses",
-        "anthropic": "API - Anthropic Messages",
-        "tokenPlan": "中國 - Token Plan - OpenAI",
-        "tokenPlanAnthropic": "中國 - Token Plan - Anthropic"
+        "default": "API-默認",
+        "responses": "API",
+        "anthropic": "API",
+        "tokenPlan": "中國 - Token Plan",
+        "tokenPlanAnthropic": "中國 - Token Plan"
       }
     },
     "moonshot": {
       "name": "月之暗面",
       "description": "月之暗面 Kimi 系列模型",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "anthropic": "國內-Anthropic格式",
-        "intl": "海外-OpenAI格式",
-        "intlAnthropic": "海外-Anthropic格式",
+        "default": "國內-默認",
+        "anthropic": "國內",
+        "intl": "海外",
+        "intlAnthropic": "海外",
         "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）",
-        "kimiForCodingAnthropic": "Kimi For Coding 套餐 - Anthropic格式"
+        "kimiForCodingAnthropic": "Kimi For Coding 套餐"
       }
     },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek 系列模型",
       "urlOptions": {
-        "default": "OpenAI格式-默認",
-        "anthropic": "Anthropic格式"
+        "default": "官方介面-默認",
+        "anthropic": "官方介面"
       }
     },
     "zhipu": {
       "name": "智譜AI",
       "description": "智譜AI GLM 系列模型",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "anthropic": "國內-Anthropic格式",
+        "default": "國內-默認",
+        "anthropic": "國內",
         "codingPlan": "國內-Coding Plan",
-        "intl": "海外(Z.AI)-OpenAI格式",
-        "intlAnthropic": "海外(Z.AI)-Anthropic格式",
+        "intl": "海外(Z.AI)",
+        "intlAnthropic": "海外(Z.AI)",
         "intlCodingPlan": "海外(Z.AI)-Coding Plan"
       }
     },
@@ -312,10 +327,10 @@
       "name": "通義千問",
       "description": "阿里雲百鍊大模型平臺",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "intl": "海外(國際站)-OpenAI格式",
+        "default": "國內-默認",
+        "intl": "海外(國際站)",
         "codingPlan": "國內-Coding Plan",
-        "codingPlanAnthropic": "國內-Coding Plan-Anthropic格式",
+        "codingPlanAnthropic": "國內-Coding Plan",
         "intlCodingPlan": "海外-Coding Plan"
       }
     },
@@ -332,9 +347,9 @@
       "name": "硅基流動",
       "description": "硅基流動大模型平臺",
       "urlOptions": {
-        "default": "國內-OpenAI格式-默認",
-        "anthropic": "國內-Anthropic格式",
-        "intl": "海外-OpenAI格式"
+        "default": "國內-默認",
+        "anthropic": "國內",
+        "intl": "海外"
       }
     },
     "nvidia": {
@@ -387,6 +402,7 @@
     "modelSelection": "選擇模型",
     "modelNameHint": "智譜 GLM-ASR 使用 glm-asr，其他語音模型填寫對應的模型名稱",
     "baseUrl": "API地址",
+    "baseUrlPlaceholder": "https://api.example.com/v1",
     "resolvedUrlLabel": "實際請求地址：",
     "forceUrlHint": "以 # 結尾可強制使用輸入地址",
     "apiKey": "API密鑰",
@@ -581,7 +597,7 @@
   "draftClose": {
     "title": "保留這次編輯草稿？",
     "message": "這些修改尚未寫入模型設定。保留草稿不會觸發連接測試，再次開啟此編輯器時可以繼續。",
-    "keepAndClose": "保留草稿並關閉",
+    "keepAndClose": "保留草稿",
     "discard": "放棄修改",
     "continueEditing": "繼續編輯",
     "discardDraft": "放棄草稿",
@@ -739,10 +755,12 @@
     "subscriptions": "訂閱服務",
     "importedSummary": "已匯入 {{providers}} 個服務，共 {{models}} 個模型",
     "noneImported": "尚未匯入訂閱服務",
-    "import": "匯入",
+    "addSubscription": "新增訂閱",
     "importTitle": "匯入訂閱服務",
     "loadFailed": "無法讀取訂閱服務，請重試；既有模型設定仍會保留",
-    "noServices": "目前主機沒有可匯入的訂閱服務"
+    "noServices": "目前主機沒有可匯入的訂閱服務",
+    "more": "更多",
+    "noSignedInAccounts": "暫無已登入帳號"
   },
   "selectionModes": {
     "unavailable": "暫未開放",
@@ -844,6 +862,15 @@
       "connected": "連線正常",
       "failed": "連線失敗",
       "unconfigured": "尚未設定可用模型"
+    },
+    "connectionFailures": {
+      "protocol": "請選擇支援 OpenAI Chat Completions 且回傳 token IDs 和 logprobs 的分類服務",
+      "authentication": "Router 驗證失敗，請檢查 API Key 和服務存取權限",
+      "addressOrModel": "請檢查 Router 服務位址和模型名稱，介面或模型可能不存在",
+      "rateLimited": "Router 請求受到速率限制，請稍後重試",
+      "serviceUnavailable": "Router 服務暫時無法使用，請稍後重試",
+      "http": "Router 回傳非成功的 HTTP 回應，請檢查服務設定後重試",
+      "network": "無法連線至 Router 或請求逾時，請檢查服務、網路和逾時設定"
     },
     "notReady": "路由未就緒",
     "unsupported": "目前執行端不支援智慧路由",

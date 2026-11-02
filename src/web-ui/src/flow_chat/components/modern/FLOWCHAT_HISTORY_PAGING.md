@@ -641,9 +641,17 @@ first, then restores that row-and-offset relationship through
 `viewportOwner.shift` and opens the ordinary anchor settle window so later
 measurements keep it stable.
 
-The saved `scrollTop` is only a materialization hint when the anchor Turn has
-not entered the rendered virtual window yet. It is never the final answer: once
-the Turn exists in the DOM, its semantic offset is authoritative. A snapshot
+When the exact row has not entered the rendered window, restoration measures
+the mounted rows, resolves the saved key in the current virtualizer, and uses
+its current bounds plus the saved intra-row offset to materialize it. That first
+placement stays within the estimated row when the saved offset exceeds the
+estimate; otherwise a long answer could remain outside the mounted window. It then
+publishes the actual offset back to window selection without waiting for a
+native scroll event. Repeatedly using the old absolute `scrollTop` can select a
+different Turn indefinitely because a remount starts with a new measurement
+cache. The saved absolute offset remains a compatibility fallback when the key
+cannot be resolved. Once the row exists in the DOM, its semantic offset is
+authoritative. A snapshot
 whose reader was away from the tail also suppresses the session-open tail
 follow, including when the reader was using the ordinary tail projection rather
 than an explicit history window. Snapshot publication remains gated until that

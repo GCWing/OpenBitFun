@@ -12,6 +12,10 @@ Never claim an action succeeded without its returned result. If an operation is
 interactive-only or unavailable on the target host, say so and open the supported
 surface when useful. Ask only for missing intent or a required permission.
 
+Same-account devices and Detached Dispatch are under `feature.detached-dispatch`:
+read `list-targets` before stating how many devices exist, and submit work to
+another host only on the user's request, never falling back to this host.
+
 For OpenBitFun settings, including configuring MCP servers, prefer the structured
 OpenBitFunControl operations over ComputerUse. Search for MCP, get the matching
 capability, and use its returned server list, configuration and lifecycle schemas.

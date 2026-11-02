@@ -5051,6 +5051,8 @@ mod tests {
                     workspace_path: Some(usage_workspace_path),
                     remote_connection_id: None,
                     remote_ssh_host: None,
+                    include_system_prompt_preview: false,
+                    context_preview_category: None,
                     include_hidden_subagents: false,
                 })
                 .await
@@ -5101,6 +5103,8 @@ mod tests {
                 workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                 remote_connection_id: None,
                 remote_ssh_host: None,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
                 include_hidden_subagents: false,
             },
         )
@@ -5165,6 +5169,8 @@ mod tests {
                 workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                 remote_connection_id: None,
                 remote_ssh_host: None,
+                include_system_prompt_preview: false,
+                context_preview_category: None,
                 include_hidden_subagents: false,
             },
         )

@@ -54,14 +54,16 @@ it('shows precise remaining credits with accessible progress, plan and reset tim
 it('keeps the editor summary concise without losing quota meaning or refresh', () => {
   observation.value = { account_id: 'codex', provider: 'codex', state: 'known', plan: 'Pro', windows: [], observed_at: 1700000000, valid_until: Date.now() / 1000 + 60,
     display: { version: 1, meters: [{ id: 'weekly', duration_seconds: 604800, used_percent: 25, resets_at: 1800000000 }] } };
-  act(() => root.render(<SubscriptionQuotaPanel provider="codex" accountId="slot-a" identity="fixture" active supported compact />));
+  act(() => root.render(<SubscriptionQuotaPanel provider="codex" accountId="slot-a" identity="fixture" active supported compact inline />));
   expect(container.querySelector('section')?.getAttribute('aria-label')).toBe(copy.quota.title);
   expect(container.querySelector('[data-openbitfun-component="card"]')).toBeNull();
   expect(container.querySelector('[data-openbitfun-part="quotaHeader"]')?.textContent).toBe('Pro');
   expect(container.querySelector('[data-openbitfun-part="quotaValue"]')?.textContent).toBe('75%');
   expect(container.querySelector('[data-openbitfun-part="quotaValue"]')?.getAttribute('aria-label')).toContain('Weekly');
   expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('75');
-  expect(container.textContent).toContain('Resets');
+  expect(container.querySelectorAll('[data-filled]')).toHaveLength(24);
+  expect(container.querySelectorAll('[data-filled="true"]')).toHaveLength(18);
+  expect(container.textContent).not.toContain('Resets');
   expect(container.querySelector('[data-openbitfun-part="quotaFooter"]')).toBeNull();
   act(() => container.querySelector('button')!.click());
   expect(observation.refresh).toHaveBeenCalledOnce();
@@ -74,7 +76,7 @@ it('keeps the editor summary concise without losing quota meaning or refresh', (
 it('combines the account, plan badge and account-scoped refresh in one header', () => {
   observation.value = { account_id: 'slot-a', provider: 'codex', state: 'known', plan: 'Pro', windows: [], valid_until: Date.now() / 1000 + 60,
     display: { version: 1, meters: [{ id: 'weekly', duration_seconds: 604800, used_percent: 25 }] } };
-  act(() => root.render(<SubscriptionQuotaPanel provider="codex" accountId="slot-a" identity="fixture" active supported compact
+  act(() => root.render(<SubscriptionQuotaPanel provider="codex" accountId="slot-a" identity="fixture" active supported compact inline
     accountLabel={<span>account@example.invalid</span>} headerLeading={<input type="checkbox" aria-label="Select account" />}
     headerActions={<button>Move up</button>} />));
   const header = container.querySelector('[data-openbitfun-part="quotaHeader"]')!;
@@ -87,7 +89,7 @@ it('combines the account, plan badge and account-scoped refresh in one header', 
   act(() => (header.querySelector(`button[aria-label="${copy.quota.refresh}"]`) as HTMLButtonElement).click());
   expect(observation.refresh).toHaveBeenCalledOnce();
   observation.unsupportedHost = true;
-  act(() => root.render(<SubscriptionQuotaPanel provider="codex" accountId="slot-a" identity="fixture" active supported compact accountLabel="account@example.invalid" />));
+  act(() => root.render(<SubscriptionQuotaPanel provider="codex" accountId="slot-a" identity="fixture" active supported compact inline accountLabel="account@example.invalid" />));
   expect(container.textContent).toContain('account@example.invalid');
   expect(container.textContent).toContain('This host does not support');
   expect(container.querySelector('button')).toBeNull();

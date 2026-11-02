@@ -336,7 +336,11 @@ async fn preview_handler(
             .status(StatusCode::FOUND)
             .header(
                 header::LOCATION,
-                format!("/{}", encode_url_path(&state.entry_path)),
+                if index_entry_filename(&state.entry_path).is_some() {
+                    "/".to_string()
+                } else {
+                    format!("/{}", encode_url_path(&state.entry_path))
+                },
             )
             .header(
                 header::SET_COOKIE,
@@ -359,20 +363,55 @@ async fn preview_handler(
         Ok(relative) => relative.into_owned(),
         Err(_) => return response(StatusCode::BAD_REQUEST, "Invalid preview path"),
     };
+    let index_entry = index_entry_filename(&state.entry_path);
+    if index_entry.is_some_and(|filename| relative == filename || relative == state.entry_path) {
+        // The site router must see its public root, including when a link uses
+        // the entry filename or an older workspace-prefixed preview URL.
+        return Response::builder()
+            .status(StatusCode::FOUND)
+            .header(header::LOCATION, site_root_url(&uri))
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::REFERRER_POLICY, "no-referrer")
+            .body(Body::empty())
+            .unwrap_or_else(|_| response(StatusCode::BAD_REQUEST, "Invalid preview path"));
+    }
     let mut request = state.request.clone();
-    request.resource_path = Some(relative);
+    request.resource_path = if index_entry.is_some() && relative.is_empty() {
+        None
+    } else {
+        Some(relative.clone())
+    };
     request.metadata_only = method == Method::HEAD;
     let bypass_cache = force_resource_reload(&headers);
     let resource = match state
         .transfer
         .open(
-            request,
+            request.clone(),
             bypass_cache,
             uri.path_and_query().map(|path| path.as_str().to_string()),
         )
         .await
     {
         Ok(resource) => resource,
+        Err(error)
+            if error.code == Code::NotFound
+                && index_entry.is_some()
+                && is_document_route(&relative, &headers) =>
+        {
+            // Existing files always win. Only document navigation can use the
+            // selected index as a history-router fallback; assets, authorization
+            // failures and offline owners retain their original error. None is
+            // the existing v1 entry request, so older peer hosts work unchanged.
+            request.resource_path = None;
+            match state
+                .transfer
+                .open(request, bypass_cache, Some(site_root_url(&uri)))
+                .await
+            {
+                Ok(resource) => resource,
+                Err(error) => return preview_error_response(error),
+            }
+        }
         Err(error) => return preview_error_response(error),
     };
     let size = resource.metadata.size;
@@ -396,6 +435,60 @@ async fn preview_handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Invalid preview response",
             )
+        })
+}
+
+fn index_entry_filename(entry_path: &str) -> Option<&str> {
+    entry_path.rsplit('/').next().filter(|filename| {
+        filename.eq_ignore_ascii_case("index.html") || filename.eq_ignore_ascii_case("index.htm")
+    })
+}
+
+fn site_root_url(uri: &Uri) -> String {
+    match uri.query() {
+        Some(query) => format!("/?{query}"),
+        None => "/".to_string(),
+    }
+}
+
+fn is_document_route(path: &str, headers: &HeaderMap) -> bool {
+    // Explicit filenames (including missing .html pages) remain ordinary file
+    // requests. Browser fetches that accept */* are not page navigations.
+    if path
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .is_some_and(|part| part.contains('.'))
+    {
+        return false;
+    }
+    if headers
+        .get("sec-fetch-dest")
+        .is_some_and(|value| value != "document" && value != "iframe" && value != "frame")
+    {
+        return false;
+    }
+    headers
+        .get_all(header::ACCEPT)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| {
+            value.split(',').any(|range| {
+                let mut parts = range.trim().split(';');
+                parts
+                    .next()
+                    .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/html"))
+                    && parts.all(|parameter| {
+                        let Some((name, value)) = parameter.trim().split_once('=') else {
+                            return true;
+                        };
+                        !name.trim().eq_ignore_ascii_case("q")
+                            || value
+                                .trim()
+                                .parse::<f32>()
+                                .is_ok_and(|quality| quality > 0.0 && quality <= 1.0)
+                    })
+            })
         })
 }
 

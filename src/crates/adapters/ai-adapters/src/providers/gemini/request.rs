@@ -1,6 +1,9 @@
 use super::GeminiMessageConverter;
 use crate::client::sse::execute_sse_request;
 use crate::client::{AIClient, StreamResponse};
+use crate::providers::reasoning::{
+    self, resolve_reasoning_rule, ReasoningApiFormat, ReasoningRule,
+};
 use crate::providers::shared;
 use crate::stream::handle_gemini_stream;
 use crate::trace::ModelExchangeTraceConfig;
@@ -97,27 +100,36 @@ fn compile_reasoning_action(
         .trim()
         .to_ascii_lowercase();
     let is_generic_reasoning = shared::is_generic_reasoning_preset(preset);
+    let rule = resolve_reasoning_rule(ReasoningApiFormat::Gemini, "google", "", &model);
     match action {
         ReasoningPresetAction::Effort { value }
-            if model.starts_with("gemini-3-") || is_generic_reasoning =>
+            if matches!(rule, ReasoningRule::Gemini3 { .. }) =>
         {
-            let value = if is_generic_reasoning {
-                shared::normalize_generic_reasoning_effort(value)
-                    .ok_or_else(|| anyhow!("Generic reasoning effort '{}' is unsupported", value))?
-            } else {
-                value.trim()
-            };
+            let normalized = reasoning::normalize_gemini_reasoning_effort(&model, value)
+                .ok_or_else(|| anyhow!("Gemini reasoning effort '{}' is unsupported", value))?;
             insert_generation_field(
                 request_body,
                 "thinkingConfig",
                 serde_json::json!({
                     "includeThoughts": true,
-                    "thinkingLevel": value.to_ascii_uppercase(),
+                    "thinkingLevel": normalized,
                 }),
             );
             Ok(true)
         }
-        ReasoningPresetAction::BudgetTokens { value } if model.starts_with("gemini-2.5-") => {
+        ReasoningPresetAction::Effort { value } if is_generic_reasoning => {
+            reasoning::compile_format_fallback(
+                ReasoningApiFormat::Gemini,
+                &ReasoningPresetAction::Effort {
+                    value: value.clone(),
+                },
+                request_body,
+                max_tokens,
+            )
+        }
+        ReasoningPresetAction::BudgetTokens { value }
+            if matches!(rule, ReasoningRule::Gemini25 { .. }) =>
+        {
             if max_tokens.is_some_and(|limit| *value > limit) {
                 return Err(anyhow!(
                     "Gemini reasoning budget {} exceeds max output tokens {}",
@@ -135,7 +147,9 @@ fn compile_reasoning_action(
             );
             Ok(true)
         }
-        ReasoningPresetAction::Toggle { enabled } if model.starts_with("gemini-2.5-flash") => {
+        ReasoningPresetAction::Toggle { enabled }
+            if matches!(rule, ReasoningRule::Gemini25 { flash: true }) =>
+        {
             insert_generation_field(
                 request_body,
                 "thinkingConfig",
@@ -164,9 +178,26 @@ fn compile_reasoning_action(
             );
             Ok(true)
         }
-        ReasoningPresetAction::Effort { .. }
-        | ReasoningPresetAction::Toggle { .. }
-        | ReasoningPresetAction::BudgetTokens { .. } => Ok(false),
+        ReasoningPresetAction::Effort { value } => reasoning::compile_format_fallback(
+            ReasoningApiFormat::Gemini,
+            &ReasoningPresetAction::Effort {
+                value: value.clone(),
+            },
+            request_body,
+            max_tokens,
+        ),
+        ReasoningPresetAction::Toggle { enabled } => reasoning::compile_format_fallback(
+            ReasoningApiFormat::Gemini,
+            &ReasoningPresetAction::Toggle { enabled: *enabled },
+            request_body,
+            max_tokens,
+        ),
+        ReasoningPresetAction::BudgetTokens { value } => reasoning::compile_format_fallback(
+            ReasoningApiFormat::Gemini,
+            &ReasoningPresetAction::BudgetTokens { value: *value },
+            request_body,
+            max_tokens,
+        ),
         ReasoningPresetAction::RequestPatch { .. } => {
             unreachable!("patches are compiled by shared code")
         }

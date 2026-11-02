@@ -286,9 +286,115 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         AppearanceSelection, FlowChatPermissionModeControl, Language,
     };
     use ProductControlArgumentScope::ProductHostLocal;
-    use ProductControlRisk::{Destructive, Read, Ui, Write};
+    use ProductControlRisk::{Destructive, Execute, Read, Ui, Write};
 
     vec![
+        operation(
+            "feature.detached-dispatch",
+            "list-targets",
+            Read,
+            json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "list-targets"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "submit",
+            Execute,
+            json!({"type": "object", "properties": {
+                "target": {"type": "string", "minLength": 1, "maxLength": 512},
+                "prompt": {"type": "string", "minLength": 1, "maxLength": 32768},
+                "approvalPolicy": {"type": "string", "enum": ["auto", "reject-and-report"]},
+                "workspacePath": {"type": "string", "minLength": 1},
+                "agent": {"type": "string", "minLength": 1, "maxLength": 128},
+                "model": {"type": "string", "minLength": 1, "maxLength": 256},
+                "baseRef": {"type": "string", "minLength": 1, "maxLength": 512},
+                "includeUncommitted": {"type": "boolean"},
+                "title": {"type": "string", "minLength": 1, "maxLength": 200}
+            }, "required": ["target", "prompt", "approvalPolicy", "workspacePath"], "additionalProperties": false}),
+            &[("workspacePath", ProductHostLocal)],
+            operation_provider("detached-dispatch", "submit"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "status",
+            Read,
+            json!({"type": "object", "properties": {"jobId": {"type": "string", "minLength": 1, "maxLength": 128}, "cursor": {"type": "integer", "minimum": 0}}, "required": ["jobId"], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "status"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "list-jobs",
+            Read,
+            json!({"type": "object", "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 512}}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "list-jobs"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "cancel",
+            Destructive,
+            json!({"type": "object", "properties": {"jobId": {"type": "string", "minLength": 1, "maxLength": 128}}, "required": ["jobId"], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "cancel"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "status",
+            Read,
+            json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "status"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "start",
+            Write,
+            json!({"type": "object", "properties": {"method": {"type": "string", "enum": ["weixin", "telegram", "feishu", "mobile_web", "lan"]}, "lanIp": {"type": "string"}}, "required": ["method"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "start"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "stop",
+            Write,
+            json!({"type": "object", "properties": {"method": {"type": "string", "enum": ["weixin", "telegram", "feishu", "mobile_web", "lan"]}}, "required": ["method"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "stop"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "configure-bot",
+            Write,
+            json!({"type": "object", "properties": {"method": {"type": "string", "enum": ["weixin", "telegram", "feishu"]}, "credentialsFile": {"type": "string", "minLength": 1}}, "required": ["method", "credentialsFile"], "additionalProperties": false}),
+            &[("credentialsFile", ProductHostLocal)],
+            operation_provider("remote-connect", "configure-bot"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "weixin-login-start",
+            Write,
+            json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "weixin-login-start"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "weixin-login-poll",
+            Write,
+            json!({"type": "object", "properties": {"sessionKey": {"type": "string", "minLength": 1}, "verifyCode": {"type": "string"}}, "required": ["sessionKey"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "weixin-login-poll"),
+        ),
+        operation(
+            "feature.remote-connect",
+            "set-bot-verbose",
+            Write,
+            json!({"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"], "additionalProperties": false}),
+            &[],
+            operation_provider("remote-connect", "set-bot-verbose"),
+        ),
         operation(
             "setting.tools.mcp",
             "list-servers",
@@ -837,7 +943,7 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         option(
             "setting.tools.execution",
             "tool-presentation-mode",
-            string_enum(&["native", "ptc"]),
+            string_enum(&["native", "ptc", "ptc_python"]),
             config("ai.tool_presentation_mode"),
         ),
         option(

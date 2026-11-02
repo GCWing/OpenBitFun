@@ -1,3 +1,13 @@
+For numeric context composition, category provenance, latest-request report projection,
+and attempt-ledger persistence, use:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- context_composition account_attempt_ledger_keeps_failed_usage_actual_accounts_and_idempotent_events
+```
+
+These fixtures exercise typed runtime sources, persisted attempts, and simulated
+SSH report selection; they do not establish live remote transport behavior.
+
 For `stream_processor.rs` changes, run the portable stream suite and the Core
 compatibility tests, plus the relevant round-executor tests below:
 
@@ -24,8 +34,9 @@ a full cache miss. If the model call fails, retry it once unchanged. Both
 attempts share one 80-second deadline and session cancellation. Clear the
 turn's output schema, retain the request prefix and cache routing, and request
 plain text on both attempts. Empty output, the literal `null`, tool calls, and
-content filters do not trigger the retry; all other candidate text is kept
-verbatim. Do not add JSON parsing, format negotiation, correction retries, or
+content filters do not trigger the retry. Trim surrounding whitespace before
+publishing a candidate; preserve its internal whitespace and content verbatim.
+Do not add JSON parsing, format negotiation, correction retries, or
 text reconstruction.
 
 The prepended deferred tool listing renders the session's skill/agent listing
@@ -73,6 +84,16 @@ provider futures. Session continuity must validate the complete visible turn
 lineage and fence recovered execution generations before writing. Legacy per-turn
 sidecars without lineage proof are retained but cannot establish continuity. Never feed Router summaries back into the main transcript or
 use the main compactor's summary/model/config as Router state.
+
+Router summary text is admitted against a conservative token estimate separately
+from the provider's combined reasoning/output limit. Live updates and history
+bootstrap share one bounded generation path: an oversized complete response gets
+one tighter rewrite from the same full source under the original deadline and
+queue permit. If it still exceeds the budget or fails, retain the previous
+summary and all pending observations. Never clip a candidate or advance coverage
+for a rejected response. Older oversized sidecars remain readable until a valid
+rewrite replaces them. Attempt traces retain known usage even if a rewrite times
+out; estimated text counts are not provider billing tokens.
 
 Router HTTP transport and classifier wire parsing live in
 `openbitfun-ai-adapters::round_router`. Keep the existing Core router facade and

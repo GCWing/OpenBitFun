@@ -168,7 +168,7 @@ export class DurableSessionReducer {
     const metadata = turn.userMessage.metadata as UserMetadata | undefined;
     const userText = metadata?.original_text || turn.userMessage.content;
     if (userText.length > 0 || (metadata?.images?.length || 0) > 0) result.push({ id: turn.userMessage.id, turnId: turn.turnId,
-      role: 'user', text: userText, images: metadata?.images, status: 'sent', timestamp: new Date(turn.userMessage.timestamp).toISOString() });
+      role: 'user', text: userText, images: metadata?.images, status: 'sent', timestamp: String(turn.userMessage.timestamp) });
     const turnFence = this.tombstones.get(`turn/${turn.turnId}`) ?? 0;
     const visible = entries.filter((item: StoredItem) => {
       const round = this.rounds.get(item.roundId);
@@ -201,7 +201,7 @@ export class DurableSessionReducer {
     result.push({ id: `assistant-${turn.turnId}`, turnId: turn.turnId, role: 'assistant', status: status,
       text: items.filter((item: ChatMessageItemResponse) => item.type === 'text' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
       thinking: items.filter((item: ChatMessageItemResponse) => item.type === 'thinking' && !item.is_subagent).map((item: ChatMessageItemResponse) => item.content || '').join(''),
-      tools: tools, items: items, timestamp: new Date(turn.timestamp).toISOString(), error: turn.error, renderVersion: stored.revision });
+      tools: tools, items: items, timestamp: String(turn.timestamp), error: turn.error, renderVersion: stored.revision });
     return result;
   }
 }

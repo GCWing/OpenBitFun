@@ -1,0 +1,101 @@
+[package]
+name = "openbitfun-computer-use"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Native Computer Use providers shared by OpenBitFun product hosts"
+
+[features]
+default = []
+test-support = []
+
+[build-dependencies]
+cc = { workspace = true }
+pkg-config = { workspace = true }
+
+[dependencies]
+openbitfun-agent-tools = { path = "../../execution/tool-contracts", features = ["computer-use-contract", "element-token"] }
+openbitfun-core-types = { path = "../../contracts/core-types" }
+openbitfun-services-core = { path = "../services-core", features = ["process-runtime"] }
+tool-runtime = { path = "../../execution/tool-execution" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+base64 = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+log = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+enigo = { workspace = true }
+image = { workspace = true, features = ["jpeg", "png"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = { workspace = true }
+core-graphics = { workspace = true }
+dispatch = { workspace = true }
+foreign-types = { workspace = true }
+libc = { workspace = true }
+objc2 = { workspace = true, features = ["exception"] }
+block2 = { workspace = true }
+objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSEnumerator", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSNotification", "NSOperation", "NSString", "block2"] }
+objc2-app-kit = { workspace = true, features = ["std", "libc", "NSAnimationContext", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSRunningApplication"] }
+objc2-vision = { workspace = true, features = ["std", "VNRecognizeTextRequest", "VNRequest", "VNObservation", "VNRequestHandler", "VNUtils", "VNTypes", "objc2-core-foundation"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+  "Foundation",
+  "Globalization",
+  "Graphics_Capture",
+  "Graphics_DirectX",
+  "Graphics_DirectX_Direct3D11",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams",
+  "Win32_Foundation",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_LibraryLoader",
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+  "Win32_System_Com",
+  "Win32_System_StationsAndDesktops",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Ole",
+  "Win32_System_Variant",
+  "Win32_System_WinRT",
+  "Win32_System_WinRT_Direct3D11",
+  "Win32_System_WinRT_Graphics",
+  "Win32_System_WinRT_Graphics_Capture",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = { workspace = true }
+
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+screenshots = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+enigo = { workspace = true, features = ["x11rb"] }
+x11rb = { workspace = true, features = ["randr"] }
+libc = { workspace = true }
+atspi = { workspace = true, features = ["zbus"] }
+futures = { workspace = true }
+
+[lints]
+workspace = true

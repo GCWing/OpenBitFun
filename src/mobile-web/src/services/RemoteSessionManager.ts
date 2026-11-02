@@ -54,6 +54,7 @@ export function isWorkspaceIdReferencesUnsupportedError(
 }
 
 const RETRYABLE_REMOTE_READ_COMMANDS = new Set([
+  'get_workspace_icon',
   'get_workspace_info',
   'list_recent_workspaces',
   'list_assistants',
@@ -95,6 +96,15 @@ export interface RuntimeFileWorkspace {
   /** Root or browsed directory used as the legacy projection / IO operand. */
   path: string;
   remoteConnectionId?: string;
+}
+
+export interface MobileWorkspaceIcon {
+  workspaceId: string;
+  icon: { version: number; revision: number; mode: string; color: string; glyph?: string };
+  imageData?: string;
+  imageUnavailable: boolean;
+  darkImageData?: string;
+  darkImageUnavailable?: boolean;
 }
 
 export interface WorkspaceInfo {
@@ -518,6 +528,25 @@ export class RemoteSessionManager {
       this.ensureControlTargetCurrent(target);
       throw error;
     }
+  }
+
+  async getWorkspaceIcon(workspaceId: string): Promise<MobileWorkspaceIcon | null> {
+    const target = this.client.getControlTargetSnapshot();
+    await this.ensureHostCapabilitiesKnown(target);
+    if (!this.supportsHostCapability('workspace_icon_read_v1')) return null;
+    const response = await this.request<{ snapshot: MobileWorkspaceIcon }>({ cmd: 'get_workspace_icon', workspace_id: workspaceId }, target);
+    const snapshot = response.snapshot;
+    if (!snapshot || !snapshot.workspaceId || snapshot.icon?.version !== 1
+      || !Number.isSafeInteger(snapshot.icon.revision) || snapshot.icon.revision < 0
+      || !['default', 'image'].includes(snapshot.icon.mode)
+      || (snapshot.icon.glyph !== undefined && typeof snapshot.icon.glyph !== 'string')
+      || !/^(default|blue|cyan|green|yellow|orange|red|purple|pink|#[\da-f]{6})$/i.test(snapshot.icon.color)
+      || (snapshot.darkImageUnavailable !== undefined && typeof snapshot.darkImageUnavailable !== 'boolean')
+      || [snapshot.imageData, snapshot.darkImageData].some(image => image !== undefined
+        && (typeof image !== 'string' || !image.startsWith('data:image/png;base64,') || image.length > 720_000))) {
+      throw new Error('Unsupported workspace icon response');
+    }
+    return snapshot;
   }
 
   async getWorkspaceInfo(): Promise<WorkspaceInfo> {

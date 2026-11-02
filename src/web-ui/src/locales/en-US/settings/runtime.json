@@ -101,9 +101,23 @@
     "description": "Choose how tools are exposed to the model. This setting applies only to sessions created after it changes.",
     "native": "Native tools",
     "ptc": "PTC (TypeScript)",
-    "ptcTooltip": "PTC executes TypeScript through RunCode."
+    "ptcTooltip": "PTC executes TypeScript through RunCode.",
+    "ptcPython": "PTC (Python)",
+    "ptcPythonTooltip": "PTC executes Python through RunCode."
   },
   "projectPermissions": {
+    "title": "Tool and command permissions",
+    "entryCount": "Permission entries",
+    "summary": "{{allow}} allow · {{ask}} ask · {{deny}} deny",
+    "incomplete": "Some permissions are not available yet",
+    "listTitle": "Permissions",
+    "empty": "No permissions configured",
+    "unsaved": "Unsaved changes",
+    "addAuthorization": "Add permission",
+    "editAuthorization": "Edit permission",
+    "clearRemembered": "Clear remembered grants",
+    "source": "Source",
+    "actions": "Actions",
     "description": "Always allow decisions are saved as remembered grants for the current project; static project rules apply before a tool runs.",
     "grantsTitle": "Remembered grants",
     "grantsEmpty": "No remembered grants for the current project.",
@@ -135,7 +149,7 @@
     "saveRules": "Save rules",
     "rulesSaveSuccess": "Static project rules saved",
     "rulesSaveFailed": "Failed to save static project rules",
-    "rulesConflict": "The rules file changed outside OpenBitFun. Reopen project permissions before saving.",
+    "rulesConflict": "The rules file changed outside OpenBitFun. Discard local edits and refresh before trying again.",
     "cancel": "Cancel",
     "effects": { "allow": "Allow", "ask": "Ask", "deny": "Deny" }
   },

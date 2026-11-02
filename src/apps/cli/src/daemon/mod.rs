@@ -7,6 +7,7 @@
 //! AuthConnect wins). `install`/`uninstall` register it with the platform
 //! service manager (systemd user unit / LaunchAgent) so it survives reboots.
 
+pub(crate) mod control;
 mod pid;
 mod provision;
 mod runner;

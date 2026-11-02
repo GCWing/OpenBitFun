@@ -1,4 +1,12 @@
 {
+  "contentWidth": {
+    "title": "對話內容寬度",
+    "label": "偏好寬度",
+    "description": "最小 {{min}} px。顯示寬度會依面板自動縮小，並保留兩側間距。也可拖曳內容邊界調整，設定會在目前裝置記憶。",
+    "reset": "恢復預設",
+    "decrease": "縮小對話內容寬度",
+    "increase": "增大對話內容寬度"
+  },
   "title": "外觀",
   "subtitle": "調整主題與字體大小",
   "sessionPanel": {
@@ -168,5 +176,20 @@
       "allowedParts": "查看目前可用部件",
       "dismiss": "關閉問題詳情"
     }
+  },
+  "sidebar": {
+    "title": "左側導覽列",
+    "reset": "還原預設",
+    "alwaysVisible": "始終顯示",
+    "pinned": "已固定頁面",
+    "empty": "尚未固定其他頁面",
+    "available": "可新增頁面",
+    "moveUp": "上移{{name}}",
+    "moveDown": "下移{{name}}",
+    "remove": "取消固定{{name}}",
+    "addEntry": "固定{{name}}",
+    "noResults": "沒有其他可新增的頁面",
+    "saveFailed": "儲存失敗，仍使用先前的導覽配置，請重試。",
+    "readFailed": "目前版本無法讀取已儲存的導覽偏好，原資料已保留。可透過還原預設來替換。"
   }
 }

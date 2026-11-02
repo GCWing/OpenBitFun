@@ -19,7 +19,7 @@ describe('ModelSettingsPage presentation', () => {
   it('declares required model fields structurally instead of embedding asterisks in label copy', () => {
     expect(source).not.toMatch(/label=\{`[^`]*\*[^`]*`\}/);
     expect(source.match(/<ConfigPageRow label=\{t\('form\.configName'\)\} required=\{!providerIdentityLocked\}/g)).toHaveLength(1);
-    expect(source.match(/<ConfigPageRow label=\{t\('form\.modelSelection'\)\} required/g)).toHaveLength(1);
+    expect(source).not.toContain("<ConfigPageRow label={t('form.modelSelection')}");
     // Template and custom-provider editors share the required API URL row.
     expect(source.match(/<ConfigPageRow label=\{t\('form\.baseUrl'\)\} required/g)).toHaveLength(1);
     expect(source).toContain('const apiKeyRequired = !isOpenCodeZenApiKeyConfig(editingConfig);');

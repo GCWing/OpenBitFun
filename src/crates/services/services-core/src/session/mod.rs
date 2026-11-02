@@ -8,6 +8,7 @@ pub mod naming;
 mod offline_import;
 mod ordinal;
 pub mod page;
+pub mod trajectory;
 pub mod types;
 mod write_lock;
 

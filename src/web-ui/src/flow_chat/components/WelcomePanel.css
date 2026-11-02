@@ -1,8 +1,15 @@
 /*
- * Center the heading in the viewport above ChatInput, with supporting content below.
+ * Center the mode icon and caption as one row above ChatInput.
  */
 
 .welcome-panel {
+  /* Match WelcomeScene's logo dimensions, including its compact breakpoints. */
+  --_welcome-mode-size: 56px;
+  --_welcome-mode-expanded-glyph-size: var(--openbitfun-space-12);
+  --_welcome-mode-expanded-size: calc(var(--openbitfun-space-16) + var(--openbitfun-space-10));
+  --_welcome-mode-expanded-padding: var(--openbitfun-space-3);
+  --_welcome-mode-gap: var(--openbitfun-space-2);
+  --_welcome-mode-label-gap: var(--openbitfun-space-1);
   width: 100%;
   height: 100%;
   padding: var(--openbitfun-space-8) var(--openbitfun-space-6);
@@ -13,6 +20,7 @@
 }
 
 .welcome-panel__content {
+  container-type: inline-size;
   display: grid;
   /* Equal tracks keep the heading centered regardless of the details' height. */
   grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -25,10 +33,238 @@
 /* ── Greeting ── */
 
 .welcome-panel__greeting {
+  container-type: inline-size;
   grid-row: 2;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--_welcome-mode-size);
+  column-gap: var(--openbitfun-space-4);
+  transition: column-gap var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+}
+
+.welcome-panel__greeting[data-mode-expanded='true'] {
+  column-gap: 0;
+}
+
+.welcome-panel__caption {
+  --_welcome-caption-width: auto;
+  flex: none;
+  inline-size: var(--_welcome-caption-width);
+  overflow: hidden;
+  opacity: 1;
+  transform: none;
+  transition:
+    inline-size var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    opacity var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard),
+    transform var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+}
+
+.welcome-panel__caption-content {
+  inline-size: max-content;
+  max-inline-size: max(0px, calc(100cqi - var(--_welcome-mode-size) - var(--openbitfun-space-4)));
+  overflow-wrap: anywhere;
+}
+
+.welcome-panel__greeting[data-mode-expanded='true'] > .welcome-panel__caption {
+  inline-size: 0;
+  opacity: 0;
+  transform: translateX(var(--openbitfun-space-4));
+  pointer-events: none;
+}
+
+.welcome-panel__mode-choices {
+  --_welcome-mode-glyph-size: var(--_welcome-mode-size);
+  --_welcome-mode-option-width: var(--_welcome-mode-size);
+  --_welcome-mode-option-height: var(--_welcome-mode-size);
+  --_welcome-mode-option-padding: 0px;
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  column-gap: 0;
+  block-size: var(--_welcome-mode-option-height);
+  max-inline-size: 100%;
+  transition:
+    column-gap var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    block-size var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+}
+
+.welcome-panel__mode-choices[data-expanded='true'] {
+  --_welcome-mode-glyph-size: var(--_welcome-mode-expanded-glyph-size);
+  /* One edge length keeps the hover surface square throughout the morph. */
+  --_welcome-mode-option-width: var(--_welcome-mode-expanded-size);
+  --_welcome-mode-option-height: var(--_welcome-mode-expanded-size);
+  --_welcome-mode-option-padding: var(--_welcome-mode-expanded-padding);
+  column-gap: var(--_welcome-mode-gap);
+}
+
+.welcome-panel__mode-slot {
+  flex: none;
+  inline-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(calc(var(--openbitfun-space-2) * -1)) scale(0.92);
+  transition:
+    inline-size var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    opacity var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard),
+    transform var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+}
+
+.welcome-panel__mode-slot[data-current='true'],
+.welcome-panel__mode-choices[data-expanded='true'] > .welcome-panel__mode-slot {
+  inline-size: var(--_welcome-mode-option-width);
+  opacity: 1;
+  transform: none;
+}
+
+.welcome-panel__mode-option {
+  box-sizing: border-box;
+  display: flex;
   flex-direction: column;
-  gap: var(--openbitfun-control-flow-chat-inline-gap);
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--_welcome-mode-option-width);
+  block-size: 100%;
+  gap: 0;
+  padding: var(--_welcome-mode-option-padding);
+  border: 0;
+  border-radius: var(--openbitfun-radius-xl);
+  background: transparent;
+  color: var(--openbitfun-color-content-secondary);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    inline-size var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    padding var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    background-color var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard);
+}
+
+.welcome-panel__mode-option:disabled {
+  cursor: default;
+}
+
+.welcome-panel__mode-option:focus-visible {
+  outline: 2px solid var(--openbitfun-color-accent-default);
+  outline-offset: -2px;
+}
+
+.welcome-panel__mode-option:hover:not(:disabled),
+.welcome-panel__mode-option:focus-visible {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+
+.welcome-panel__mode-name {
+  flex: none;
+  align-self: stretch;
+  max-block-size: 0;
+  margin-block-start: 0;
+  overflow: hidden;
+  color: inherit;
+  font-family: var(--openbitfun-type-label-lg-font-family);
+  font-size: var(--openbitfun-type-label-lg-font-size);
+  font-weight: var(--openbitfun-type-label-lg-font-weight);
+  line-height: var(--openbitfun-type-label-lg-line-height);
+  letter-spacing: var(--openbitfun-type-label-lg-letter-spacing);
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(calc(var(--openbitfun-space-1) * -1));
+  transition:
+    max-block-size var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    margin-block-start var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    opacity var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard),
+    transform var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+}
+
+.welcome-panel__mode-choices[data-expanded='true'] .welcome-panel__mode-name {
+  max-block-size: var(--openbitfun-space-6);
+  margin-block-start: var(--_welcome-mode-label-gap);
+  opacity: 1;
+  transform: none;
+}
+
+.welcome-panel__mode-slot[data-current='true'] .welcome-panel__mode-name {
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+}
+
+.welcome-panel__mode-mark {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.welcome-panel .welcome-panel__assistant-avatar[data-size] {
+  --assistant-avatar-size: var(--_welcome-mode-size);
+  /* The joystick extends above the body: its visual center sits about 10%
+     below the asset midpoint. Align the body with the caption, preserving
+     the full artwork and its layout box. Scale the correction with the IP. */
+  transform: translateY(-10%);
+}
+
+.welcome-panel__mode-mark > [data-openbitfun-component='icon'] {
+  inline-size: var(--_welcome-mode-size);
+  block-size: var(--_welcome-mode-size);
+}
+
+.welcome-panel__mode-option .welcome-panel__mode-mark > [data-openbitfun-component='icon'] {
+  inline-size: var(--_welcome-mode-glyph-size);
+  block-size: var(--_welcome-mode-glyph-size);
+  transition:
+    inline-size var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard),
+    block-size var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+}
+
+.welcome-panel__mode-mark[data-harness-profile='Minimal'],
+.welcome-panel__mode-option[data-harness-profile='Minimal'] {
+  color: var(--openbitfun-color-identity-harness-minimal);
+}
+
+.welcome-panel__mode-mark[data-harness-profile='Standard'],
+.welcome-panel__mode-option[data-harness-profile='Standard'] {
+  color: var(--openbitfun-color-identity-harness-standard);
+}
+
+.welcome-panel__mode-mark[data-harness-profile='Ultimate'],
+.welcome-panel__mode-option[data-harness-profile='Ultimate'] {
+  color: var(--openbitfun-color-identity-harness-ultimate);
+}
+
+.welcome-panel__mode-mark[data-harness-profile='Creative'],
+.welcome-panel__mode-option[data-harness-profile='Creative'] {
+  color: var(--openbitfun-color-identity-harness-creative);
+}
+
+.welcome-panel__workspace-name {
+  appearance: none;
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  white-space: normal;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.welcome-panel__workspace-name:disabled {
+  opacity: 1;
+  cursor: inherit;
+}
+
+.welcome-panel__workspace-name:hover:not(:disabled) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: var(--openbitfun-border-width-default);
+  text-underline-offset: var(--openbitfun-space-1);
+}
+
+.welcome-panel__workspace-name:focus-visible {
+  outline: 2px solid var(--openbitfun-color-focus-ring);
+  outline-offset: 2px;
 }
 
 .welcome-panel__details {
@@ -45,6 +281,7 @@
 
 .welcome-panel__tagline {
   margin: 0;
+  text-align: center;
   color: var(--openbitfun-color-content-primary);
   font-family: var(--openbitfun-type-page-intro-font-family);
   font-size: var(--openbitfun-type-page-intro-font-size);
@@ -71,19 +308,6 @@
   font-size: var(--openbitfun-type-flow-lead-font-size);
   line-height: var(--openbitfun-type-flow-body-line-height);
   color: var(--openbitfun-color-content-muted);
-}
-
-/* Lead text, chips, and trail text share one typographic line (baseline-aligned) */
-.welcome-panel__narrative-sentence {
-  display: inline-flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  column-gap: 0.35em;
-  row-gap: 0.25em;
-}
-
-.welcome-panel__narrative-sentence__text {
-  line-height: inherit;
 }
 
 .welcome-panel__inline-btn {
@@ -114,19 +338,6 @@
 
 .welcome-panel__inline-btn > [data-openbitfun-part='content'] { gap: inherit; }
 
-.welcome-panel__inline-btn [data-openbitfun-part='leading-icon'] {
-  --openbitfun-opacity-icon-artwork: inherit;
-  inline-size: 13px;
-  block-size: 13px;
-}
-
-.welcome-panel__inline-btn [data-openbitfun-part='trailing-icon'] {
-  --openbitfun-opacity-icon-artwork: inherit;
-  inline-size: 11px;
-  block-size: 11px;
-  opacity: 1;
-}
-
 .welcome-panel__inline-btn--interactive {
   cursor: pointer;
 }
@@ -140,72 +351,9 @@
   outline-offset: 1px;
 }
 
-.welcome-panel__inline-btn--active {
-  background: var(--openbitfun-color-surface-subtle);
-}
-
 .welcome-panel__inline-btn:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-.welcome-panel__inline-icon {
-  flex-shrink: 0;
-  display: block;
-}
-
-.welcome-panel__inline-chevron {
-  opacity: 0.5;
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-  display: block;
-}
-
-.welcome-panel__inline-chevron--open {
-  transform: rotate(180deg);
-}
-
-.welcome-panel__narrative-clean {
-  color: var(--openbitfun-color-content-secondary);
-}
-
-/* ── Context row: workspace + branch always on the same line ── */
-
-.welcome-panel__context-row {
-  display: inline-flex;
-  align-items: baseline;
-  flex-wrap: nowrap;
-  margin: 0 1px;
-}
-
-.welcome-panel__context-sep {
-  padding: 0 2px;
-  line-height: inherit;
-  color: var(--openbitfun-color-content-muted);
-  opacity: 0.4;
-  font-weight: var(--openbitfun-type-body-sm-font-weight);
-  user-select: none;
-}
-
-/* ── Workspace anchor (inline position reference for dropdown) ── */
-
-.welcome-panel__workspace-anchor {
-  position: relative;
-  display: inline-flex;
-  align-items: baseline;
-}
-
-/* Git status line: tight follow-up under workspace sentence (avoid <br> full line-gap) */
-.welcome-panel__narrative-git {
-  display: block;
-  margin-top: 0.28em;
-}
-
-/* ── Dropdown ── */
-
-.welcome-panel__dropdown {
-  position: fixed;
-  z-index: 360;
 }
 
 /* ── Cowork ── */
@@ -223,6 +371,41 @@
 
 /* ── Responsive ── */
 
+@container (max-width: 560px) {
+  .welcome-panel__greeting {
+    --_welcome-mode-size: var(--openbitfun-space-12);
+    --_welcome-mode-expanded-glyph-size: calc(var(--openbitfun-space-8) + var(--openbitfun-space-1));
+    --_welcome-mode-expanded-size: calc(var(--openbitfun-space-12) + var(--openbitfun-space-10));
+  }
+}
+
+@container (max-width: 400px) {
+  .welcome-panel__greeting {
+    --_welcome-mode-size: 36px;
+    --_welcome-mode-expanded-glyph-size: var(--openbitfun-space-6);
+    --_welcome-mode-expanded-size: var(--openbitfun-space-16);
+    --_welcome-mode-expanded-padding: var(--openbitfun-space-2);
+    --_welcome-mode-gap: var(--openbitfun-space-1);
+    --_welcome-mode-label-gap: var(--openbitfun-space-1);
+  }
+
+  .welcome-panel__mode-name {
+    font-family: var(--openbitfun-type-label-sm-font-family);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    font-weight: var(--openbitfun-type-label-sm-font-weight);
+    line-height: var(--openbitfun-type-label-sm-line-height);
+    letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
+  }
+}
+
+@container (max-width: 300px) {
+  .welcome-panel__greeting {
+    --_welcome-mode-expanded-glyph-size: var(--openbitfun-space-5);
+    --_welcome-mode-expanded-size: 56px;
+    --_welcome-mode-expanded-padding: var(--openbitfun-space-1);
+  }
+}
+
 @media (max-width: 480px) {
   .welcome-panel {
     padding: var(--openbitfun-space-5) var(--openbitfun-space-4);
@@ -236,7 +419,14 @@
   }
 
   .welcome-panel__inline-btn,
-  .welcome-panel__inline-chevron {
+  .welcome-panel__greeting,
+  .welcome-panel__caption,
+  .welcome-panel__mode-choices,
+  .welcome-panel__mode-slot,
+  .welcome-panel__mode-option,
+  .welcome-panel__mode-mark,
+  .welcome-panel__mode-name,
+  .welcome-panel__mode-option .welcome-panel__mode-mark > [data-openbitfun-component='icon'] {
     transition-duration: 0ms;
   }
 }

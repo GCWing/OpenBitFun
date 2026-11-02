@@ -10,6 +10,36 @@ cross-compilation. Windows native execution, GNOME Wayland portal execution and
 remote end-to-end control remain acceptance gaps. Compilation is not native
 acceptance, and background support is limited to each provider's declared routes.
 
+## Native provider ownership
+
+`services/computer-use` owns the Windows, macOS and Linux native implementation.
+Desktop and graphical CLI execution inject the same `NativeComputerUseHost`;
+`tool-contracts::computer_use_host` owns the portable provider interface and
+`core::agentic::tools::computer_use_host` remains a source-path facade. Core
+continues to own tool orchestration and product permission policy. The provider
+receives the host's diagnostic directory instead of discovering Core config.
+
+CLI chat/exec (including the executing Shared/Peer host) register a provider only
+inside a graphical login session. macOS keeps the real main thread servicing
+CoreFoundation/main dispatch while the existing async Runtime runs on its worker.
+Shutdown revokes native control before that run loop ends. Startup never prompts
+for OS consent. The `computer-use` CLI command exposes status, the existing
+`ai.computer_use_enabled` switch and explicit native permission requests. The
+shared setting defaults to enabled when absent; saved true/false values survive
+upgrades. Provider availability, OS consent and tool approval are separate gates.
+Linux's GStreamer/Tesseract adapters load system libraries on demand so headless
+CLI startup does not require desktop packages. Missing libraries and plugins
+return explicit capture/OCR errors. The native contract and existing Linux
+portal/AT-SPI capability limits remain unchanged.
+
+Remote workspace refusal is unchanged. Remote control can drive a graphical CLI
+host's Agent with its own OS consent and normal cancellation; OS dialogs still
+require a person at that host. CLI does not advertise the Desktop sharing/preview
+capability. Detached Dispatch has no negotiated GUI provider and stays disabled;
+ACP and the stdio server likewise keep their provider-free initialization. No
+persisted record or remote wire shape changes in this extraction.
+
+
 ## Product contract
 
 Computer Use controls the GUI on the machine that owns the selected provider.
@@ -868,7 +898,7 @@ checks discard stale preview responses and device-switch results.
 | Scenario | Required behavior |
 |---|---|
 | Remote workspace | Existing SSH/Docker workspace refusal; never operate the controller's local GUI as fallback |
-| Remote control | An executing Desktop's Agent selects and controls its own applications without requiring an App picker on Mobile/IM; cancellation remains reachable. Native OS consent and missing GUI providers are explicit limitations; no hidden app-selection dialog |
+| Remote control | An executing Desktop or graphical CLI host's Agent selects and controls its own applications without requiring an App picker on Mobile/IM; cancellation remains reachable. Native OS consent and missing GUI providers are explicit limitations; no hidden app-selection dialog |
 | Peer Device | Share/permission/preview commands proxy to the peer only after `computer_use_sharing_v1` negotiation; controller permission is not peer permission; old peers and CLI without GUI reject explicitly |
 | Detached Dispatch | Headless execution has no implied GUI capability or submitter UI dependency; require an explicitly negotiated target provider |
 
@@ -1181,13 +1211,14 @@ expanded. That visual harness mocks transport. It is not an end-to-end Tauri
 permission-dialog test. Full OS denied-to-granted/restart flows and system Stop
 Sharing UI interaction remain manual acceptance work.
 
-Run focused checks from the [Desktop Computer Use guide](../../src/apps/desktop/src/computer_use/AGENTS.md)
+Run focused checks from the [Native Computer Use guide](../../src/crates/services/computer-use/AGENTS.md)
 and [Core guide](../../src/crates/assembly/core/AGENTS.md). A build-only result,
 ignored native test or permissive first-click fixture is not a successful strict
 background-input run.
 
 | Area | Recorded evidence | Remaining scope |
 |---|---|---|
+| CLI shared native provider | macOS real CLI process observed a disposable native window, returned AX and image content, and stopped control; shared native directed-input and Desktop full Tool fixtures passed. Linux CLI compiled; shared-provider tests, GTK/AT-SPI under D-Bus/Xvfb, generated GStreamer frames, real Tesseract OCR and missing-runtime-library errors passed. Windows shared Rust library and tests type-checked | Windows native runtime/C linkage; Linux Wayland portal chooser, PipeWire seat input; all four remote scenarios remain without end-to-end GUI evidence |
 | macOS strict production Tool pipeline | User-selected share and separate grant; five-action non-AX canvas/text/menu/scroll/emoji program with one final observation; exactly one content click and one outside-frame focus pair; native preview input and revocation; observer foreground/key/stacking and human cursor unchanged; no observer input; Stop deactivated target | Wider applications, cross-Space behavior and visual system Sharing UI acceptance |
 | macOS capture/feedback | Dedicated native fixtures exercised obscured target pixels, binding retention, movement/resize, hidden/minimized errors, closure and pointer lifetime; earlier locked-session rejection evidence was not rerun | System Stop Sharing interaction and broader platform/application matrix |
 | Linux text semantics and scope | 65 production-module tests plus a real GTK/AT-SPI activation and UTF-8 insertion fixture under D-Bus/Xvfb; portable admission, permission, grant and geometry checks | Full Linux Desktop build, GNOME Wayland portal consent, real PipeWire/seat input and sharing UI; arbitrary background coordinates remain explicitly unsupported |

@@ -189,7 +189,7 @@
   "acquisition": {
     "label": "图像生成模型",
     "description": "添加图像服务，或导入已有模型配置",
-    "add": "添加或导入",
+    "add": "添加模型",
     "empty": "尚未添加图像模型",
     "remove": "删除图像模型 {{name}}"
   },

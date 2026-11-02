@@ -3887,6 +3887,72 @@ pub async fn load_session_event_backfill(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadSessionTrajectoryRequest {
+    #[serde(default)]
+    pub catalog_only: bool,
+    #[serde(flatten)]
+    pub window: LoadSessionTurnWindowRequest,
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub node_offset: usize,
+}
+
+#[tauri::command]
+pub async fn load_session_trajectory(
+    runtime: State<'_, DesktopRuntimeContext>,
+    request: LoadSessionTrajectoryRequest,
+) -> Result<openbitfun_services_core::session::trajectory::SessionTrajectoryPage, String> {
+    let window = request.window;
+    let response = runtime
+        .session_application()
+        .load_session_turn_window(
+            desktop_session_scope(
+                window.workspace_id,
+                window.workspace_path.clone(),
+                window.remote_connection_id,
+                window.remote_ssh_host,
+            ),
+            SessionTurnWindowRequest {
+                workspace_path: PathBuf::from(window.workspace_path),
+                session_id: window.session_id,
+                include_internal: window.include_internal,
+                target_storage_turn_index: if request.catalog_only {
+                    usize::MAX
+                } else {
+                    window.target_storage_turn_index
+                },
+                expected_turn_id: window.expected_turn_id,
+                expected_catalog_revision: window.expected_catalog_revision,
+                before: 0,
+                after: window.after.unwrap_or(8).clamp(1, 8),
+            },
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    if request.catalog_only {
+        if let SessionTurnWindowResponse::NotFound { catalog }
+        | SessionTurnWindowResponse::Stale { catalog } = response
+        {
+            return Ok(
+                openbitfun_services_core::session::trajectory::SessionTrajectoryPage::Catalog {
+                    catalog,
+                },
+            );
+        }
+        return Err("Unexpected trajectory catalog response".into());
+    }
+    Ok(
+        openbitfun_services_core::session::trajectory::project_session_trajectory(
+            response,
+            &request.query,
+            request.node_offset,
+        ),
+    )
+}
+
 #[tauri::command]
 pub async fn load_session_turn_window(
     runtime: State<'_, DesktopRuntimeContext>,

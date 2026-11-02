@@ -1,4 +1,9 @@
 {
+  "navigation": {
+    "add": "添加到左侧导航",
+    "remove": "从左侧导航移除",
+    "removeApp": "从左侧导航移除 {{name}}"
+  },
   "presentation": {
     "titlebar": "应用窗口控制",
     "minimize": "$t(shared:window.minimize)",

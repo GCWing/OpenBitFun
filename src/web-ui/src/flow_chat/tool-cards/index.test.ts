@@ -15,22 +15,26 @@ import { TaskToolDisplay } from './TaskToolDisplay';
 import { AgentControlToolCard } from './AgentControlToolCard';
 import { AgentInteractionToolCard } from './AgentInteractionToolCard';
 import { OpenBitFunControlToolCard } from './OpenBitFunControlToolCard';
+import { DefaultToolCard } from './DefaultToolCard';
+import { compatibilityToolPresentationOwners, genericToolNames } from '@openbitfun/flow-chat-presentation/registry';
+import { GenerateImageToolCard } from './GenerateImageToolCard';
 
 // These cards remain available for rendering historical or explicitly
 // configured tool calls, but are no longer part of the current presentation
 // registry: AgentControl replaced the AgentInterrupt/AgentDelete tools, and
 // Task remains only as a compatibility tool.
-const COMPATIBILITY_ONLY_TOOL_CARD_NAMES = new Set([
-  'AgentInterrupt',
-  'AgentDelete',
-  'Task',
-]);
+const COMPATIBILITY_ONLY_TOOL_CARD_NAMES = new Set(Object.keys(compatibilityToolPresentationOwners));
 
 describe('tool card registry', () => {
   it('keeps OpenBitFun controls visible through their dedicated product card', () => {
     expect(getToolCardComponent('OpenBitFunControl')).toBe(OpenBitFunControlToolCard);
     expect(usesDefaultToolCard('OpenBitFunControl')).toBe(false);
     expect(isCollapsibleTool('OpenBitFunControl')).toBe(false);
+  });
+
+  it('uses the dedicated always-open image card for generated images', () => {
+    expect(getToolCardComponent('generate_image')).toBe(GenerateImageToolCard);
+    expect(isCollapsibleTool('generate_image')).toBe(false);
   });
   it('projects managed Review workers through the unified coverage card', () => {
     expect(getToolCardComponent('LaunchReviewAgent')).toBe(TaskToolDisplay);
@@ -48,6 +52,12 @@ describe('tool card registry', () => {
         .filter((toolName) => !COMPATIBILITY_ONLY_TOOL_CARD_NAMES.has(toolName))
         .sort(),
     );
+  });
+
+  it.each([...genericToolNames])('keeps %s on its explicit generic-card path', (toolName) => {
+    expect(getToolCardComponent(toolName)).toBe(DefaultToolCard);
+    expect(usesDefaultToolCard(toolName)).toBe(true);
+    expect(TOOL_CARD_COMPONENTS).not.toHaveProperty(toolName);
   });
 
   it('keeps standard design-system adapters separate from bespoke product cards', () => {
@@ -83,6 +93,7 @@ describe('tool card registry', () => {
       'ExecCommand',
       'WriteStdin',
       'ExecControl',
+      'PageManage',
       'PageDeploy',
       'PagePublish',
       'view_image',

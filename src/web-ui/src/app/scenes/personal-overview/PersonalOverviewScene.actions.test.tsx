@@ -187,7 +187,6 @@ describe('overview catalog actions', () => {
     expect(useAgentsStore.getState()).toBe(agentsState);
     expect(mocks.openScene).not.toHaveBeenCalled();
     await fillAgentField('name', 'New agent');
-    await fillAgentField('id', 'new-agent');
     await fillAgentField('description', 'A new agent');
     await clickDialogButton('agentsOverview.form.wizard.next');
     await fillAgentField('prompt', 'Help with the task.');
@@ -198,7 +197,7 @@ describe('overview catalog actions', () => {
     await clickDialogButton('agentsOverview.form.wizard.next');
     await clickDialogButton('agentsOverview.form.submit');
     expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'new-agent', kind: 'mode', description: 'A new agent', prompt: 'Help with the task.',
+      id: expect.stringMatching(/^agent-[a-f0-9]{8}$/), kind: 'mode', description: 'A new agent', prompt: 'Help with the task.',
       userContextPolicy: ['workspace_instructions', 'project_layout'],
     }));
     expect(mocks.updateAgent).not.toHaveBeenCalled();
@@ -222,12 +221,12 @@ describe('overview catalog actions', () => {
     let finish!: () => void;
     mocks.createAgent.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
     await act(async () => { root.render(<CreateAgentPage />); });
-    for (const [field, value] of [['name', 'Page agent'], ['id', 'page-agent'], ['description', 'Page agent'], ['prompt', 'Original prompt']]) {
+    for (const [field, value] of [['name', 'Page agent'], ['description', 'Page agent'], ['prompt', 'Original prompt']]) {
       await fillAgentField(field, value, container);
     }
     const submit = container.querySelector<HTMLButtonElement>('.th-create-page__footer button[type="submit"]')!;
     await act(async () => { submit.click(); });
-    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ id: 'page-agent', prompt: 'Original prompt' }));
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ id: expect.stringMatching(/^agent-[a-f0-9]{8}$/), name: 'Page agent', prompt: 'Original prompt' }));
     expect(submit.textContent).toBe('agentsOverview.form.submit');
     expect(submit.getAttribute('aria-busy')).toBe('true');
     await act(async () => { finish(); });
@@ -240,7 +239,6 @@ describe('overview catalog actions', () => {
     await render();
     await click('personal-overview-create-agent');
     await fillAgentField('name', 'Old agent');
-    await fillAgentField('id', 'old-agent');
     await fillAgentField('description', 'Created on the original device');
     await clickDialogButton('agentsOverview.form.wizard.next');
     await fillAgentField('prompt', 'Original task');
@@ -250,7 +248,7 @@ describe('overview catalog actions', () => {
     await act(async () => { activateSurface('peer-host'); });
     await act(async () => { finish(); });
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(document.querySelector<HTMLInputElement>('[role="dialog"] [id$="custom-agent-id"]')?.value).toMatch(/^agent-[a-f0-9]{8}$/);
+    expect(document.querySelector('[role="dialog"] [id$="custom-agent-id"]')).toBeNull();
     expect(document.querySelector<HTMLInputElement>('[role="dialog"] [id$="custom-agent-name"]')?.value).toBe('');
     expect(mocks.refresh).not.toHaveBeenCalled();
     expect(mocks.success).not.toHaveBeenCalled();

@@ -484,6 +484,11 @@ pub struct AgentSessionUsageRequest {
     pub remote_ssh_host: Option<String>,
     #[serde(default)]
     pub include_hidden_subagents: bool,
+    /// Explicit viewer request only; ordinary reports never include prompt text.
+    #[serde(default)]
+    pub include_system_prompt_preview: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_preview_category: Option<openbitfun_core_types::UsageContextCategory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3599,6 +3604,35 @@ mod tests {
         assert!(legacy_cancellation.expected_active_turn_id.is_none());
         assert_eq!(inspection_json["transcript"]["sessionId"], "child_1");
         assert_eq!(inspection_json["activeTurnId"], "turn-live");
+    }
+
+    #[test]
+    fn session_usage_preview_is_opt_in_for_legacy_and_current_requests() {
+        let legacy = serde_json::json!({"sessionId": "session-1", "workspacePath": "/workspace"});
+        let mut request: AgentSessionUsageRequest = serde_json::from_value(legacy).unwrap();
+        assert!(!request.include_system_prompt_preview);
+        assert!(request.context_preview_category.is_none());
+        let encoded = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            serde_json::from_value::<AgentSessionUsageRequest>(encoded).unwrap(),
+            request
+        );
+        request.include_system_prompt_preview = true;
+        request.context_preview_category =
+            Some(openbitfun_core_types::UsageContextCategory::McpTools);
+        let encoded = serde_json::to_value(&request).unwrap();
+        assert_eq!(encoded["includeSystemPromptPreview"], true);
+        assert_eq!(encoded["contextPreviewCategory"], "mcpTools");
+        assert_eq!(
+            serde_json::from_value::<AgentSessionUsageRequest>(encoded).unwrap(),
+            request
+        );
+        request.context_preview_category =
+            Some(serde_json::from_value(serde_json::json!("futureCategory")).unwrap());
+        assert_eq!(
+            request.context_preview_category,
+            Some(openbitfun_core_types::UsageContextCategory::Unknown)
+        );
     }
 
     #[test]

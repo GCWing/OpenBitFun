@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { SceneTabDef, SceneTabIcon, SceneTabId } from '../components/SceneBar/types';
 import { getSceneViewId } from '../components/SceneBar/types';
+import { parseProjectResourceTarget } from './project-resources/projectResourceTarget';
 
 function catalogSceneIcon(name: IconName): SceneTabIcon {
   return function CatalogSceneIcon() {
@@ -174,6 +175,10 @@ export const SCENE_TAB_REGISTRY: SceneTabDef[] = [
 ];
 
 export function getSceneDef(id: SceneTabId): SceneTabDef | undefined {
+  if (parseProjectResourceTarget(id)) {
+    return { id, label: 'Project resources', labelKey: 'nav.workspaces.actions.projectResources',
+      Icon: catalogSceneIcon('folder'), pinned: false, singleton: false, defaultOpen: false };
+  }
   return SCENE_TAB_REGISTRY.find(d => d.id === getSceneViewId(id));
 }
 

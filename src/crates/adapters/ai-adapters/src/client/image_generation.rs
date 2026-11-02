@@ -1352,7 +1352,7 @@ mod tests {
         let response = generate(
             &target,
             ImageGenerationRequest {
-                prompt: "A simple red circle on a white background".to_string(),
+                prompt: "A cute minimalist mascot icon with a rounded-rectangle body, two small friendly oval eyes, and a short top antenna ending in a round joystick knob. Use a playful, harmonious color palette selected randomly for each generation, with no fixed colors. Centered composition, clean uncluttered background, polished product illustration.".to_string(),
                 size: Some("1024x1024".to_string()),
                 n: Some(1),
                 ..ImageGenerationRequest::default()

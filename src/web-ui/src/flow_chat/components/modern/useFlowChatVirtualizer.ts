@@ -752,7 +752,24 @@ export function useFlowChatVirtualizer<T>({
     if (!attached.length || isViewportSuspendedRef.current()) return;
     // Read before any viewport shift or size-cache notification can write.
     measurementBatchRef.current = new Map(attached.map(element => [element, element.offsetHeight]));
-    try { for (const element of attached) virtualizer.measureElement(element); }
+    try {
+      for (const element of attached) {
+        virtualizer.measureElement(element);
+        // Explicit aims keep the library's measurement policy. During smooth
+        // navigation it skips rows far from the target; forcing their sizes
+        // changes that target and makes the re-aim jump with 'auto' behavior.
+        // Reader takeover clears the aim before the next scrolling commit.
+        if (aimStartedAtMsRef.current !== null) continue;
+        // The library observes newly attached rows but skips their inline
+        // measurement during scrolling. In our flow layout their real heights
+        // already displace the following rows in this commit. Reconcile before
+        // paint, rather than showing the displacement until ResizeObserver.
+        const index = Number(element.getAttribute('data-virtual-index'));
+        if (Number.isInteger(index) && index >= 0 && index < itemsRef.current.length) {
+          virtualizer.resizeItem(index, measurementBatchRef.current.get(element)!);
+        }
+      }
+    }
     finally { measurementBatchRef.current = null; }
   });
 

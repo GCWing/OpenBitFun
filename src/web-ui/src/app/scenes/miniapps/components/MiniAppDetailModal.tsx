@@ -18,6 +18,7 @@ import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { getMiniAppShowcaseAsset, renderMiniAppIcon } from '../utils/miniAppIcons';
 import { MarketImage } from '@/app/components/GalleryLayout/MarketImage';
 import { MiniAppDetailPage } from './MiniAppDetailPage';
+import { MiniAppNavigationAction } from './MiniAppNavigationAction';
 import { pickLocalizedString, pickLocalizedTags } from '../utils/pickLocalizedString';
 import {
   projectMiniAppDetailCapabilities,
@@ -204,6 +205,7 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
           {localizedTags.map(tag => <StatusPill key={tag} tone="neutral">{tag}</StatusPill>)}
         </>}
         actions={<>
+          <MiniAppNavigationAction appId={displayedApp.id} />
           {systemAppActions}
           {launchActions ?? <Button variant="outline" size="sm" onClick={() => onOpen(displayedApp.id)}>
             {t('detail.start')}
@@ -350,6 +352,7 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
             <span data-testid="miniapp-detail-status">{statusCopy}</span>
           </div>
           <div className="miniapp-detail-modal__actions" data-openbitfun-component="mini-app-detail-modal" data-openbitfun-part="actions">
+            <MiniAppNavigationAction appId={displayedApp.id} />
             {snapshot.isActive && onStop ? (
               <Button
                 variant="outline"

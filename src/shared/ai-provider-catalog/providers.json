@@ -196,6 +196,25 @@
       }
     },
     {
+      "id": "openai",
+      "display_order": 66,
+      "region": "global",
+      "name": "OpenAI",
+      "description": "OpenAI GPT and reasoning models",
+      "help_url": "https://platform.openai.com/api-keys",
+      "requires_api_key": true,
+      "catalog_provider_ids": ["openai"],
+      "endpoints": [
+        { "id": "default", "base_url": "https://api.openai.com/v1/responses", "api_format": "responses", "label": "default", "is_default": true, "trusted_for_auto_detection": true, "catalog_provider_ids": ["openai"] },
+        { "id": "chat-completions", "base_url": "https://api.openai.com/v1", "api_format": "openai", "label": "chatCompletions", "trusted_for_auto_detection": true, "catalog_provider_ids": ["openai"] }
+      ],
+      "model_policy": {
+        "mode": "catalog_with_fallback",
+        "curated_models": ["gpt-6-astra", "gpt-5.4", "gpt-5.4-mini"],
+        "additional_models": []
+      }
+    },
+    {
       "id": "gemini",
       "display_order": 70,
       "region": "global",

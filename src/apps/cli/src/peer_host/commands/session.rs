@@ -454,6 +454,21 @@ pub(crate) async fn load_session_turn_window(
     state: &PeerHostState,
     args: &Value,
 ) -> Result<Value, String> {
+    read_session_turn_window(state, args, false).await
+}
+
+pub(crate) async fn load_session_trajectory(
+    state: &PeerHostState,
+    args: &Value,
+) -> Result<Value, String> {
+    read_session_turn_window(state, args, true).await
+}
+
+async fn read_session_turn_window(
+    state: &PeerHostState,
+    args: &Value,
+    trajectory: bool,
+) -> Result<Value, String> {
     let request = request_value(args);
     let session_id = validated_session_id(request)?;
     let workspace_path = resolved_session_storage_path(state, request).await?;
@@ -465,19 +480,62 @@ pub(crate) async fn load_session_turn_window(
                 workspace_path: workspace_path.clone(),
                 session_id,
                 include_internal: optional_bool(request, "includeInternal").unwrap_or(false),
-                target_storage_turn_index: request
-                    .get("targetStorageTurnIndex")
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| "targetStorageTurnIndex is required".to_string())?
-                    as usize,
+                target_storage_turn_index: if trajectory
+                    && optional_bool(request, "catalogOnly").unwrap_or(false)
+                {
+                    usize::MAX
+                } else {
+                    request
+                        .get("targetStorageTurnIndex")
+                        .and_then(Value::as_u64)
+                        .ok_or_else(|| "targetStorageTurnIndex is required".to_string())?
+                        as usize
+                },
                 expected_turn_id: optional_string(request, "expectedTurnId"),
                 expected_catalog_revision: optional_string(request, "expectedCatalogRevision"),
-                before: request.get("before").and_then(Value::as_u64).unwrap_or(4) as usize,
-                after: request.get("after").and_then(Value::as_u64).unwrap_or(12) as usize,
+                before: if trajectory {
+                    0
+                } else {
+                    request.get("before").and_then(Value::as_u64).unwrap_or(4) as usize
+                },
+                after: if trajectory {
+                    request
+                        .get("after")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(8)
+                        .clamp(1, 8) as usize
+                } else {
+                    request.get("after").and_then(Value::as_u64).unwrap_or(12) as usize
+                },
             },
         )
         .await
         .map_err(|e| format!("Failed to load session Turn window: {e}"))?;
+    if trajectory && optional_bool(request, "catalogOnly").unwrap_or(false) {
+        if let openbitfun_services_core::session::SessionTurnWindowResponse::NotFound { catalog }
+        | openbitfun_services_core::session::SessionTurnWindowResponse::Stale { catalog } =
+            response
+        {
+            return serde_json::to_value(
+                openbitfun_services_core::session::trajectory::SessionTrajectoryPage::Catalog {
+                    catalog,
+                },
+            )
+            .map_err(|e| format!("serialize trajectory catalog: {e}"));
+        }
+        return Err("Unexpected trajectory catalog response".into());
+    }
+    if trajectory {
+        let page = openbitfun_services_core::session::trajectory::project_session_trajectory(
+            response,
+            request.get("query").and_then(Value::as_str).unwrap_or(""),
+            request
+                .get("nodeOffset")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize,
+        );
+        return serde_json::to_value(page).map_err(|e| format!("serialize trajectory: {e}"));
+    }
     serde_json::to_value(response).map_err(|e| format!("serialize Turn window: {e}"))
 }
 

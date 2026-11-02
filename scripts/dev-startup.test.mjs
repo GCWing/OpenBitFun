@@ -11,9 +11,11 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { resolveCommandInvocation, resolveDesktopDevDataMode, resolveDesktopDevStorageEnvironment, runCommandPrefixed } = require('./dev.cjs');
 
-test('desktop data mode flags default to isolation and support pnpm argument forwarding', () => {
-  assert.equal(resolveDesktopDevDataMode([]), 'isolated');
+test('desktop data mode defaults to shared history and supports explicit isolation', () => {
+  assert.equal(resolveDesktopDevDataMode([]), 'shared');
+  assert.equal(resolveDesktopDevDataMode(['--force-rebuild']), 'shared');
   assert.equal(resolveDesktopDevDataMode(['--isolated-data']), 'isolated');
+  assert.equal(resolveDesktopDevDataMode(['--', '--isolated-data']), 'isolated');
   assert.equal(resolveDesktopDevDataMode(['--shared-data']), 'shared');
   assert.equal(resolveDesktopDevDataMode(['--', '--shared-data', '--force-rebuild']), 'shared');
   assert.throws(() => resolveDesktopDevDataMode(['--shared-data', '--isolated-data']), /Choose only one/);
@@ -33,8 +35,9 @@ test('conflicting desktop data flags fail before resource preparation', () => {
   assert.doesNotMatch(result.stdout + result.stderr, /Prepare resources/);
 });
 
-test('shared desktop data keeps app defaults and explicit storage overrides intact', () => {
+test('default and explicit shared desktop data keep app defaults and storage overrides intact', () => {
   const channel = { OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development' };
+  assert.deepEqual(resolveDesktopDevStorageEnvironment({}, tmpdir()), channel);
   assert.deepEqual(resolveDesktopDevStorageEnvironment({}, tmpdir(), 'shared'), channel);
   const env = {
     OPENBITFUN_USER_ROOT: '/custom/user',
@@ -43,20 +46,21 @@ test('shared desktop data keeps app defaults and explicit storage overrides inta
     OPENBITFUN_E2E_HOME: '/legacy/home',
   };
   const original = { ...env };
+  assert.deepEqual(resolveDesktopDevStorageEnvironment(env, tmpdir()), channel);
   Object.assign(env, resolveDesktopDevStorageEnvironment(env, tmpdir(), 'shared'));
   assert.deepEqual(env, { ...original, ...channel });
 });
 
-test('desktop development uses persistent storage scoped to each checkout', () => {
+test('explicitly isolated desktop development uses persistent storage scoped to each checkout', () => {
   const root = join(tmpdir(), 'desktop dev & spaces');
-  const storage = resolveDesktopDevStorageEnvironment({}, root);
+  const storage = resolveDesktopDevStorageEnvironment({}, root, 'isolated');
   assert.deepEqual(storage, {
     OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development',
     OPENBITFUN_USER_ROOT: join(root, '.openbitfun', 'desktop-dev', 'user'),
     OPENBITFUN_HOME: join(root, '.openbitfun', 'desktop-dev', 'home'),
   });
-  assert.deepEqual(resolveDesktopDevStorageEnvironment({}, root), storage);
-  const other = resolveDesktopDevStorageEnvironment({}, join(root, 'worktree'));
+  assert.deepEqual(resolveDesktopDevStorageEnvironment({}, root, 'isolated'), storage);
+  const other = resolveDesktopDevStorageEnvironment({}, join(root, 'worktree'), 'isolated');
   assert.notEqual(other.OPENBITFUN_USER_ROOT, storage.OPENBITFUN_USER_ROOT);
   assert.notEqual(other.OPENBITFUN_HOME, storage.OPENBITFUN_HOME);
 });
@@ -71,8 +75,8 @@ test('desktop development preserves explicit and legacy isolated storage overrid
     OPENBITFUN_E2E_HOME: '/legacy/home',
   };
   const channel = { OPENBITFUN_DESKTOP_HOST_CHANNEL: 'development' };
-  assert.deepEqual(resolveDesktopDevStorageEnvironment({ ...legacy, ...explicit }), { ...explicit, ...channel });
-  assert.deepEqual(resolveDesktopDevStorageEnvironment(legacy), {
+  assert.deepEqual(resolveDesktopDevStorageEnvironment({ ...legacy, ...explicit }, tmpdir(), 'isolated'), { ...explicit, ...channel });
+  assert.deepEqual(resolveDesktopDevStorageEnvironment(legacy, tmpdir(), 'isolated'), {
     ...channel,
     OPENBITFUN_USER_ROOT: legacy.OPENBITFUN_E2E_USER_ROOT,
     OPENBITFUN_HOME: legacy.OPENBITFUN_E2E_HOME,
@@ -80,7 +84,7 @@ test('desktop development preserves explicit and legacy isolated storage overrid
   const root = tmpdir();
   assert.deepEqual(resolveDesktopDevStorageEnvironment({
     ...explicit, OPENBITFUN_HOME: '',
-  }, root), {
+  }, root, 'isolated'), {
     ...channel,
     OPENBITFUN_USER_ROOT: explicit.OPENBITFUN_USER_ROOT,
     OPENBITFUN_HOME: join(root, '.openbitfun', 'desktop-dev', 'home'),
@@ -99,12 +103,43 @@ test('desktop child processes inherit both isolated storage roots', async t => {
       channel: process.env.OPENBITFUN_DESKTOP_HOST_CHANNEL,
     }));
   `);
-  const env = resolveDesktopDevStorageEnvironment({}, root);
+  const env = resolveDesktopDevStorageEnvironment({}, root, 'isolated');
   const result = await runCommandPrefixed('storage-fixture', 'node', [script, output], root, env);
   assert.equal(result.ok, true);
   assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')), {
     user: env.OPENBITFUN_USER_ROOT,
     home: env.OPENBITFUN_HOME,
+    channel: 'development',
+  });
+});
+
+test('default desktop children retain the callers shared data roots without injecting checkout storage', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'desktop-shared-storage-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const script = join(root, 'storage-child.cjs');
+  const output = join(root, 'storage.json');
+  writeFileSync(script, `
+    require('node:fs').writeFileSync(process.argv[2], JSON.stringify({
+      user: process.env.OPENBITFUN_USER_ROOT,
+      home: process.env.OPENBITFUN_HOME,
+      channel: process.env.OPENBITFUN_DESKTOP_HOST_CHANNEL,
+    }));
+  `);
+  const original = {
+    OPENBITFUN_USER_ROOT: join(root, 'existing user data'),
+    OPENBITFUN_HOME: join(root, 'existing session data'),
+  };
+  const storage = resolveDesktopDevStorageEnvironment(original, root);
+  assert.equal(storage.OPENBITFUN_USER_ROOT, undefined);
+  assert.equal(storage.OPENBITFUN_HOME, undefined);
+  const result = await runCommandPrefixed('storage-fixture', 'node', [script, output], root, {
+    ...original,
+    ...storage,
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(readFileSync(output, 'utf8')), {
+    user: original.OPENBITFUN_USER_ROOT,
+    home: original.OPENBITFUN_HOME,
     channel: 'development',
   });
 });

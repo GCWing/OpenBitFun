@@ -41,10 +41,11 @@ public data class RemoteSidebarWorkspaceRow public constructor(
     public val remoteConnectionId: String?,
     public val remoteSshHost: String?,
     public val workspaceId: String?,
-    public val load: RemoteSidebarWorkspaceLoad = RemoteSidebarWorkspaceLoad.READY,
+    public val load: RemoteSidebarWorkspaceLoad,
+    public val kind: String,
 ) {
     public val key: String get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost, workspaceId).key
-    public constructor(path: String, name: String, selected: Boolean, sessions: List<RemoteSidebarSessionRow>, remoteConnectionId: String?, remoteSshHost: String?) : this(path, name, selected, sessions, remoteConnectionId, remoteSshHost, null)
+    public constructor(path: String, name: String, selected: Boolean, sessions: List<RemoteSidebarSessionRow>, remoteConnectionId: String?, remoteSshHost: String?) : this(path, name, selected, sessions, remoteConnectionId, remoteSshHost, null, RemoteSidebarWorkspaceLoad.READY, "normal")
     public constructor(path: String, name: String, selected: Boolean, sessions: List<RemoteSidebarSessionRow>, remoteConnectionId: String?) : this(path, name, selected, sessions, remoteConnectionId, null)
     public constructor(path: String, name: String, selected: Boolean, sessions: List<RemoteSidebarSessionRow>) : this(path, name, selected, sessions, null)
 }
@@ -130,6 +131,7 @@ public object RemoteSidebarPresentation {
                 remoteSshHost = workspace.remoteSshHost,
                 workspaceId = workspace.workspaceId,
                 load = load,
+                kind = workspace.kind,
                 sessions = owned.map { session ->
                     RemoteSidebarSessionRow(
                         id = session.id,

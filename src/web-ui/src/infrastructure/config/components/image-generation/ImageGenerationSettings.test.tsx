@@ -9,6 +9,7 @@ import { ImageGenerationAcquisitionRow, ImageGenerationDefaultSlot, ImageGenerat
 import { useImageGenerationSettings, type ImageGenerationSettings } from './useImageGenerationSettings';
 import DefaultModelConfig from '../DefaultModelConfig';
 import { imageServiceFromSubscriptionModel } from './imageModels';
+import type { ImageServiceTestOutcome } from '@/infrastructure/api/service-api/MediaApi';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const mocks = vi.hoisted(() => ({ get: vi.fn(), getModels: vi.fn(), update: vi.fn(), success: vi.fn(), error: vi.fn(), test: vi.fn() }));
@@ -54,6 +55,15 @@ describe('image models in model settings', () => {
     expect(option, `option ${label}`).toBeTruthy(); await click(option!);
   };
   const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find(element => element.textContent === label)!;
+  const confirmation = () => document.querySelector<HTMLElement>('[role="alertdialog"]:not([aria-hidden="true"])');
+  const confirmationButton = (label: string) => [...confirmation()!.querySelectorAll<HTMLButtonElement>('button')]
+    .find(element => element.textContent === label)!;
+  const openSavedEditor = async () => {
+    await render();
+    await click([...host.querySelectorAll<HTMLButtonElement>('[data-testid="acquisition"] button')]
+      .find(element => element.textContent?.includes('Saved image'))!);
+    return document.querySelector<HTMLElement>('[role="dialog"]:not([aria-hidden="true"])')!;
+  };
 
   beforeEach(() => {
     activateSurface('local');
@@ -65,6 +75,77 @@ describe('image models in model settings', () => {
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   });
   afterEach(() => { act(() => root.unmount()); host.remove(); activateSurface('local'); });
+
+  it('requires billing confirmation and only shows verification after an image is returned', async () => {
+    const pending = deferred<ImageServiceTestOutcome>();
+    mocks.test.mockReturnValueOnce(pending.promise);
+    const editor = await openSavedEditor();
+    expect(editor.textContent).not.toContain('wizard.steps.test.label');
+    expect(editor.textContent).not.toContain('wizard.test.billed');
+
+    await click(button('wizard.test.run'));
+    expect(confirmation()?.textContent).toContain('wizard.test.billed');
+    expect(mocks.test).not.toHaveBeenCalled();
+    await click(confirmationButton('actions.cancel'));
+    expect(confirmation()).toBeNull();
+    expect(mocks.test).not.toHaveBeenCalled();
+
+    await click(button('wizard.test.run'));
+    await click(confirmationButton('wizard.test.run'));
+    expect(confirmation()).toBeNull();
+    expect(mocks.test).toHaveBeenCalledTimes(1);
+    expect(mocks.test.mock.calls[0][0]).toMatchObject({ id: 'legacy', model_name: 'image-model' });
+    expect(editor.textContent).not.toContain('wizard.steps.test.label');
+    expect(editor.querySelector('img')).toBeNull();
+    expect(button('wizard.test.run').disabled).toBe(true);
+
+    await act(async () => pending.resolve({ success: true, elapsed_ms: 10, mime: 'image/png', image_base64: 'dGVzdA==' }));
+    expect(editor.textContent).toContain('wizard.steps.test.label');
+    expect(editor.textContent).not.toContain('wizard.test.billed');
+    expect(editor.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,dGVzdA==');
+    expect(button('wizard.test.run').disabled).toBe(false);
+
+    const field = [...editor.querySelectorAll<HTMLElement>('.openbitfun-config-page-row')]
+      .find(element => element.textContent?.includes('wizard.fields.modelName.label'))!.querySelector<HTMLInputElement>('input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, 'updated-image-model');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(editor.textContent).not.toContain('wizard.steps.test.label');
+    expect(editor.querySelector('img')).toBeNull();
+  });
+
+  it.each([
+    { result: { success: false, elapsed_ms: 0, error_kind: 'auth' }, error: 'auth' },
+    { result: { success: true, elapsed_ms: 10 }, error: 'empty_result' },
+    { result: new Error('host offline'), error: 'transport' },
+  ] as const)('reports $error without showing the image verification section', async ({ result, error }) => {
+    if (result instanceof Error) mocks.test.mockRejectedValueOnce(result);
+    else mocks.test.mockResolvedValueOnce(result);
+    const editor = await openSavedEditor();
+    await click(button('wizard.test.run'));
+    await click(confirmationButton('wizard.test.run'));
+    expect(editor.querySelector('[role="alert"]')?.textContent).toContain(`wizard.errors.${error}`);
+    expect(editor.textContent).not.toContain('wizard.steps.test.label');
+    expect(editor.querySelector('img')).toBeNull();
+    expect(button('wizard.test.run').disabled).toBe(false);
+  });
+
+  it.each(['confirmation', 'generation'])('clears test %s when switching execution hosts', async stage => {
+    const pending = deferred<ImageServiceTestOutcome>();
+    mocks.test.mockReturnValueOnce(pending.promise);
+    await openSavedEditor();
+    await click(button('wizard.test.run'));
+    if (stage === 'generation') await click(confirmationButton('wizard.test.run'));
+    mocks.get.mockResolvedValue({ image_services: [] });
+    mocks.getModels.mockResolvedValue([]);
+    await act(async () => { activateSurface('next-host'); });
+    expect(confirmation()).toBeNull();
+    expect(mocks.test).toHaveBeenCalledTimes(stage === 'generation' ? 1 : 0);
+    await act(async () => pending.resolve({ success: true, elapsed_ms: 10, mime: 'image/png', image_base64: 'dGVzdA==' }));
+    expect(document.querySelector('[role="dialog"]:not([aria-hidden="true"])')).toBeNull();
+    expect(document.querySelector('img[alt="wizard.test.previewAlt"]')).toBeNull();
+  });
 
   it('selects an already configured subscription as the image default without changing chat defaults', async () => {
     await render();

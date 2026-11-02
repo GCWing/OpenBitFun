@@ -85,7 +85,45 @@ pub async fn generate_session_usage_report_from_storage_path(
     let snapshot_facts =
         load_snapshot_facts(&request, workspace_id.as_deref(), revert_boundary).await;
 
-    Ok(build_session_usage_report_from_sources_with_scope(
+    let system_prompt_preview = if request.include_system_prompt_preview {
+        persistence_manager
+            .load_prompt_cache(session_storage_path, &request.session_id)
+            .await?
+            .and_then(|cache| cache.system_prompt)
+            .filter(|prompt| !prompt.text.content.trim().is_empty())
+            .map(|prompt| openbitfun_core_types::UsageSystemPromptPreview {
+                content: prompt.text.content,
+                cached_at: prompt.text.created_at_ms,
+            })
+    } else {
+        None
+    };
+    let context_preview = if let Some(category) = request
+        .context_preview_category
+        .filter(|category| *category != openbitfun_core_types::UsageContextCategory::Unknown)
+    {
+        persistence_manager
+            .load_usage_context_snapshot(session_storage_path, &request.session_id)
+            .await?
+            .filter(|snapshot| {
+                usage_index_is_visible(snapshot.turn_index, revert_boundary)
+                    && turns.iter().any(|turn| {
+                        turn.turn_id == snapshot.turn_id && turn.turn_index == snapshot.turn_index
+                    })
+            })
+            .and_then(|mut snapshot| {
+                snapshot.contents.remove(&category).map(|content| {
+                    openbitfun_core_types::UsageContextPreview {
+                        category,
+                        content,
+                        captured_at: snapshot.captured_at,
+                    }
+                })
+            })
+    } else {
+        None
+    };
+    let mut report = build_session_usage_report_from_sources_with_scope(
         request,
         &turns,
         &token_records,
@@ -93,7 +131,12 @@ pub async fn generate_session_usage_report_from_storage_path(
         Utc::now().timestamp_millis(),
         &token_turn_scope,
         subagent_scope_complete && turn_scope_complete,
-    ))
+    );
+    report.privacy.prompt_content_included =
+        system_prompt_preview.is_some() || context_preview.is_some();
+    report.system_prompt_preview = system_prompt_preview;
+    report.context_preview = context_preview;
+    Ok(report)
 }
 
 fn token_usage_query(request: &SessionUsageReportRequest) -> TokenUsageQuery {
@@ -314,6 +357,14 @@ fn build_session_usage_report_from_sources_with_scope(
     );
     report.time = build_time_breakdown(turns, generated_at);
     report.tokens = build_token_breakdown(token_records);
+    // Pick the latest parent request before reading its optional snapshot. Falling
+    // back to an older snapshot would misrepresent a newer legacy/external request.
+    report.context = token_records
+        .iter()
+        .filter(|record| record.session_id == request.session_id)
+        .max_by_key(|record| record.timestamp)
+        .and_then(|record| record.request_context())
+        .and_then(|context| context.context_composition);
     report.models = build_model_breakdown(turns, token_records);
     report.tools = build_tool_breakdown(turns);
     report.files = build_file_breakdown(request.workspace_path.as_deref(), turns, snapshot_facts);
@@ -1527,6 +1578,199 @@ mod tests {
     };
     use chrono::TimeZone;
 
+    #[tokio::test]
+    async fn system_prompt_preview_reads_only_the_requested_host_session_and_requires_opt_in() {
+        use crate::agentic::core::Session;
+        use crate::agentic::session::{
+            CachedSystemPrompt, SessionPromptCache, SystemPromptCacheIdentity,
+        };
+        use crate::infrastructure::PathManager;
+        use std::sync::Arc;
+
+        let temp = tempfile::tempdir().unwrap();
+        let storage = dunce::canonicalize(temp.path()).unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(&storage);
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            storage.join("user-root"),
+        ));
+        let persistence = PersistenceManager::new(paths).unwrap();
+        let mut session = Session::new("Preview".into(), "Standard".into(), Default::default());
+        session.session_id = "session-1".into();
+        persistence.save_session(&storage, &session).await.unwrap();
+        let mut other_session =
+            Session::new("No cache".into(), "Standard".into(), Default::default());
+        other_session.session_id = "another-session".into();
+        persistence
+            .save_session(&storage, &other_session)
+            .await
+            .unwrap();
+        let text = "# System prompt\n\nExact host-owned instructions.\n";
+        let cache = SessionPromptCache {
+            system_prompt: Some(CachedSystemPrompt::new(
+                SystemPromptCacheIdentity::new("test"),
+                text,
+            )),
+            user_context: None,
+        };
+        persistence
+            .save_prompt_cache(&storage, "session-1", &cache)
+            .await
+            .unwrap();
+        let mut request = test_request(Some("ssh-host"));
+        request.workspace_path = Some("/remote/project".into());
+        request.include_hidden_subagents = false;
+
+        let ordinary = generate_session_usage_report_from_storage_path(
+            &persistence,
+            None,
+            &storage,
+            request.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(ordinary.system_prompt_preview.is_none());
+        assert!(!ordinary.privacy.prompt_content_included);
+        request.include_system_prompt_preview = true;
+        let preview = generate_session_usage_report_from_storage_path(
+            &persistence,
+            None,
+            &storage,
+            request.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            preview.system_prompt_preview.as_ref().unwrap().content,
+            text
+        );
+        assert_eq!(
+            preview.system_prompt_preview.unwrap().cached_at,
+            cache.system_prompt.unwrap().text.created_at_ms
+        );
+        assert!(preview.privacy.prompt_content_included);
+        request.session_id = "another-session".into();
+        let missing =
+            generate_session_usage_report_from_storage_path(&persistence, None, &storage, request)
+                .await
+                .unwrap();
+        assert!(missing.system_prompt_preview.is_none());
+        assert!(!missing.privacy.prompt_content_included);
+    }
+
+    #[tokio::test]
+    async fn usage_context_preview_is_opt_in_host_scoped_and_rejects_stale_turns() {
+        use crate::agentic::core::Session;
+        use crate::agentic::persistence::manager::SessionUsageContextSnapshot;
+        use crate::infrastructure::PathManager;
+        use openbitfun_core_types::UsageContextCategory::*;
+        use std::sync::Arc;
+
+        let temp = tempfile::tempdir().unwrap();
+        let storage = dunce::canonicalize(temp.path()).unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(&storage);
+        let persistence = PersistenceManager::new(Arc::new(PathManager::with_user_root_for_tests(
+            storage.join("user-root"),
+        )))
+        .unwrap();
+        let mut session = Session::new("Preview".into(), "Standard".into(), Default::default());
+        session.session_id = "session-1".into();
+        persistence.save_session(&storage, &session).await.unwrap();
+        let turn = test_turn("turn-1", 0, DialogTurnKind::UserDialog);
+        persistence.save_dialog_turn(&storage, &turn).await.unwrap();
+        let mut snapshot = SessionUsageContextSnapshot {
+            schema_version: 1,
+            session_id: session.session_id.clone(),
+            turn_id: turn.turn_id.clone(),
+            turn_index: 0,
+            captured_at: 123,
+            contents: [
+                SystemPrompt,
+                ToolDefinitions,
+                Rules,
+                Skills,
+                McpTools,
+                SubagentDefinitions,
+            ]
+            .into_iter()
+            .map(|category| (category, format!("# {category:?}\nExact content")))
+            .collect(),
+        };
+        persistence
+            .save_usage_context_snapshot(&storage, &snapshot)
+            .await
+            .unwrap();
+        let mut request = test_request(Some("ssh-host"));
+        request.workspace_path = Some("/remote/project".into());
+        request.include_hidden_subagents = false;
+        let ordinary = generate_session_usage_report_from_storage_path(
+            &persistence,
+            None,
+            &storage,
+            request.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(ordinary.context_preview.is_none());
+        assert!(!ordinary.privacy.prompt_content_included);
+        assert!(!serde_json::to_string(&ordinary)
+            .unwrap()
+            .contains("Exact content"));
+        for (category, expected) in &snapshot.contents {
+            request.context_preview_category = Some(*category);
+            let report = generate_session_usage_report_from_storage_path(
+                &persistence,
+                None,
+                &storage,
+                request.clone(),
+            )
+            .await
+            .unwrap();
+            let preview = report.context_preview.unwrap();
+            assert_eq!(preview.category, *category);
+            assert_eq!(preview.content, *expected);
+            assert_eq!(preview.captured_at, 123);
+            assert!(report.system_prompt_preview.is_none());
+            assert!(report.privacy.prompt_content_included);
+        }
+        snapshot.contents.insert(Skills, String::new());
+        persistence
+            .save_usage_context_snapshot(&storage, &snapshot)
+            .await
+            .unwrap();
+        request.context_preview_category = Some(Skills);
+        let empty = generate_session_usage_report_from_storage_path(
+            &persistence,
+            None,
+            &storage,
+            request.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(empty.context_preview.unwrap().content, "");
+        request.session_id = "another-session".into();
+        let missing = generate_session_usage_report_from_storage_path(
+            &persistence,
+            None,
+            &storage,
+            request.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(missing.context_preview.is_none());
+        request.session_id = "session-1".into();
+        snapshot.turn_id = "replaced-turn".into();
+        persistence
+            .save_usage_context_snapshot(&storage, &snapshot)
+            .await
+            .unwrap();
+        let stale =
+            generate_session_usage_report_from_storage_path(&persistence, None, &storage, request)
+                .await
+                .unwrap();
+        assert!(stale.context_preview.is_none());
+        assert!(!stale.privacy.prompt_content_included);
+    }
+
     #[test]
     fn report_marks_cache_unavailable_for_zero_filled_cache_source() {
         let request = test_request(None);
@@ -2724,8 +2968,39 @@ mod tests {
             workspace_path: Some("D:/workspace/openbitfun".to_string()),
             remote_connection_id: remote_connection_id.map(ToOwned::to_owned),
             remote_ssh_host: remote_connection_id.map(|_| "host.example".to_string()),
+            include_system_prompt_preview: false,
+            context_preview_category: None,
             include_hidden_subagents: true,
         }
+    }
+
+    #[test]
+    fn context_composition_uses_latest_parent_request_and_never_reuses_stale_data() {
+        let composition = openbitfun_core_types::UsageContextBreakdown {
+            system_prompt: 100,
+            conversation: 900,
+            ..Default::default()
+        };
+        let mut record = test_token_record("model-a", 1000, 20, 0);
+        record.token_details = Some(serde_json::json!({"openbitfunModelRequest": {
+            "version": 1, "roundId": "round-1", "attemptId": "attempt-1", "attemptIndex": 1,
+            "startedAt": record.timestamp, "authentication": "api_key", "requestedModel": "model-a",
+            "outcome": "completed", "usageKnown": true, "contextComposition": composition
+        }}));
+        let turns = [test_turn("turn-1", 0, DialogTurnKind::UserDialog)];
+        let report = build_session_usage_report_from_turns(
+            test_request(Some("ssh")),
+            &turns,
+            &[record.clone()],
+            42,
+        );
+        assert_eq!(report.context, Some(composition));
+        let mut newer = record.clone();
+        newer.timestamp += chrono::Duration::seconds(1);
+        newer.token_details = None;
+        let report =
+            build_session_usage_report_from_turns(test_request(None), &turns, &[record, newer], 42);
+        assert!(report.context.is_none());
     }
 
     fn test_snapshot_facts(operations: Vec<UsageSnapshotOperationSummary>) -> UsageSnapshotFacts {

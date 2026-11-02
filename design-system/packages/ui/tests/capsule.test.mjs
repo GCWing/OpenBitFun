@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import test from "node:test";
-import { Button, Capsule, Icon, IconButton, MultiSelect, TabGroup, Tooltip } from "../dist/index.js";
+import { readFile } from "node:fs/promises";
+import { Button, Capsule, Icon, IconButton, MultiSelect, Select, TabGroup, Tooltip } from "../dist/index.js";
 
 const action = (props = {}) => h(IconButton, {
   "aria-label": "Remove provider", icon: h(Icon, { name: "delete" }), ...props,
@@ -34,6 +35,33 @@ test("capsules without actions preserve ordinary content and do not add a focus 
   const markup = renderToStaticMarkup(h(Capsule, { size: "xs", actionPlacement: "reserved" }, "A tag"));
   assert.match(markup, />A tag<\/span>/);
   assert.doesNotMatch(markup, /tabindex|role=|data-openbitfun-part="action"|data-action-placement/);
+});
+
+test("split capsules align filled edges with equal or compact content-sized widths", async () => {
+  const markup = renderToStaticMarkup(h(Capsule, { layout: "split", splitSizing: "content", size: "sm", role: "group", "aria-label": "Provider" },
+    h(Select, { size: "sm", variant: "pill", width: "content", "aria-label": "Region", options: [{ value: "international", label: "International" }] }),
+    h(Button, { size: "sm", variant: "primary" }, "Sign in"),
+  ));
+  assert.match(markup, /data-layout="split"/);
+  assert.match(markup, /data-split-sizing="content"/);
+  assert.match(renderToStaticMarkup(h(Capsule, { layout: "split" })), /data-split-sizing="equal"/);
+  assert.match(markup, /role="combobox"/);
+  assert.match(markup, /aria-label="Region"/);
+  assert.match(markup, /Sign in/);
+  assert.equal((markup.match(/<button\b/g) ?? []).length, 2);
+  assert.ok(markup.indexOf("</button>") < markup.lastIndexOf("<button"));
+  assert.doesNotMatch(markup, /data-openbitfun-part="action"/);
+
+  const styles = await readFile(new URL("../dist/styles.css", import.meta.url), "utf8");
+  const splitRules = styles.match(/\[data-layout=split\][^{}]*\{[^}]*\}/g)?.join("\n") ?? "";
+  assert.match(splitRules, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(splitRules, /\[data-split-sizing=content\]\{grid-template-columns:repeat\(2,max-content\);inline-size:max-content/);
+  assert.match(splitRules, /\[data-split-sizing=content\]>\[data-openbitfun-component=button\]\{inline-size:max-content;max-inline-size:100%/);
+  assert.match(splitRules, /\[data-openbitfun-component=select\]>\[data-openbitfun-part=trigger\]\{border-color:transparent;background-clip:padding-box\}/);
+  assert.match(splitRules, /border-inline-end-width:0/);
+  assert.match(splitRules, /border-inline-start-width:0/);
+  assert.match(splitRules, /border-start-end-radius:0;border-end-end-radius:0/);
+  assert.match(splitRules, /border-start-start-radius:0;border-end-start-radius:0/);
 });
 
 test("tab actions and removable MultiSelect labels adopt the same glass presentation", () => {

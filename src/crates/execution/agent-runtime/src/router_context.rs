@@ -14,6 +14,42 @@ use std::time::Instant;
 
 const OBSERVATION_BUFFER_CAPACITY: usize = 128;
 
+/// Admission budget for the final Router summary text, separate from the
+/// provider's combined reasoning/output allowance. Counts are a conservative
+/// local estimate, not model tokenizer counts or billing usage. This policy
+/// never truncates text or changes persisted history.
+#[derive(Debug, Clone, Copy)]
+pub struct RouterSummaryBudget {
+    max_tokens: usize,
+}
+
+impl RouterSummaryBudget {
+    /// A zero budget cannot admit a nonempty summary.
+    pub fn new(max_tokens: usize) -> Option<Self> {
+        (max_tokens > 0).then_some(Self { max_tokens })
+    }
+
+    pub fn max_tokens(&self) -> usize {
+        self.max_tokens
+    }
+
+    /// Leave headroom between the requested length and the admission ceiling
+    /// because providers cannot count this host-side heuristic exactly.
+    pub fn target_tokens(&self) -> usize {
+        self.max_tokens
+            .saturating_sub(self.max_tokens.div_ceil(4))
+            .max(1)
+    }
+
+    pub fn estimate(&self, text: &str) -> usize {
+        EstimatedRouterTokens.count(text.trim())
+    }
+
+    pub fn accepts(&self, text: &str) -> bool {
+        !text.trim().is_empty() && self.estimate(text) <= self.max_tokens
+    }
+}
+
 pub trait RouterTokenCounter: Send + Sync {
     fn count(&self, text: &str) -> usize;
     fn name(&self) -> &'static str;
@@ -1123,6 +1159,38 @@ fn compact_json_uncached(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn summary_budget_admits_complete_text_without_cutting_multilingual_facts() {
+        let budget = RouterSummaryBudget::new(3).unwrap();
+        assert_eq!(budget.estimate(" abcdefghi \n"), 3);
+        assert!(budget.accepts(" abcdefghi \n"));
+        assert!(!budget.accepts("abcdefghij"));
+        assert_eq!(budget.estimate("a你"), 3);
+        assert!(budget.accepts("a你"));
+        assert_eq!(budget.estimate("你🙂"), 4);
+        assert!(!budget.accepts("你🙂"));
+        assert!(!budget.accepts(""));
+        assert!(!budget.accepts(" \t\n\u{3000}"));
+        assert_eq!(budget.estimate(" \t\n\u{3000}"), 0);
+    }
+
+    #[test]
+    fn summary_budget_reserves_rewrite_headroom_without_overflow() {
+        assert!(RouterSummaryBudget::new(0).is_none());
+        for (maximum, target) in [(1, 1), (2, 1), (3, 2), (4, 3), (2_048, 1_536)] {
+            let budget = RouterSummaryBudget::new(maximum).unwrap();
+            assert_eq!(budget.max_tokens(), maximum);
+            assert_eq!(budget.target_tokens(), target);
+        }
+        let largest = RouterSummaryBudget::new(usize::MAX).unwrap();
+        assert_eq!(largest.max_tokens(), usize::MAX);
+        assert_eq!(
+            largest.target_tokens(),
+            ((usize::MAX as u128 * 3) / 4) as usize
+        );
+        assert!(largest.accepts("A retained fact"));
+    }
 
     #[test]
     fn tool_projection_keeps_paths_ranges_changes_status_and_actual_excerpts() {

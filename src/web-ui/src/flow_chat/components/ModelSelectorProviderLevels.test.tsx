@@ -367,6 +367,8 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('disabled-model')).toBeNull();
     expect(modelOption('image-model')).toBeNull();
     expect(modelOption('acme-fast')?.getAttribute('aria-checked')).toBe('true');
+    expect(modelOption('acme-fast')?.querySelector('[data-openbitfun-part="label"]')?.textContent).toBe('acme-fast-native Acme');
+    expect(modelOption('umbra-main')?.querySelector('.openbitfun-model-selector__option-provider')?.textContent?.trim()).toBe('Umbra');
     expect(modelOption('acme-fast')?.querySelector('[data-openbitfun-part="metadata"]')).toBeNull();
 
     await searchFor('  ACME deep  ');
@@ -377,7 +379,7 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('acme-fast')).toBeNull();
     expect(modelOption('umbra-main')).toBeNull();
     await searchFor('deep');
-    expect(modelOption('acme-deep')?.textContent).toBe('acme-deep-native');
+    expect(modelOption('acme-deep')?.textContent).toBe('acme-deep-native Acme');
     expect(modelOption('acme-deep')?.querySelector('[data-openbitfun-part="metadata"]')).toBeNull();
     await searchFor('Umbra');
     expect(modelOption('umbra-main')).not.toBeNull();
@@ -1802,6 +1804,7 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('acme-fast')).not.toBeNull();
     expect(modelOption('acme-deep')).not.toBeNull();
     expect(modelOption('umbra-main')).toBeNull();
+    expect(modelOption('acme-fast')?.querySelector('[data-openbitfun-part="label"]')?.textContent).toBe('acme-fast-native Acme');
     expect(sharedPanelItems()).not.toBeNull();
     expect(sharedPanelItems()?.contains(modelOption('acme-fast'))).toBe(true);
     expect(sharedPanelItems()?.contains(modelOption('acme-deep'))).toBe(true);
@@ -1833,7 +1836,8 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('umbra-main')).not.toBeNull();
   });
 
-  it('keeps the selector visible and actionable when no model is configured', async () => {
+  it.each(['local', 'peer-empty-models'])('offers only model configuration without fallback context on %s when no model is configured', async surface => {
+    activateSurface(surface);
     const onAvailabilityChange = vi.fn();
     vi.mocked(configManager.getConfigs).mockResolvedValue({
       'ai.models': [],
@@ -1844,6 +1848,8 @@ describe('ModelSelector provider levels', () => {
       root.render(
         <ModelSelector
           currentMode='Standard'
+          currentTokens={1_000}
+          maxTokens={128_128}
           onAvailabilityChange={onAvailabilityChange}
         />,
       );
@@ -1854,19 +1860,37 @@ describe('ModelSelector provider levels', () => {
       '[data-testid="chat-model-selector-btn"]',
     );
     expect(trigger).not.toBeNull();
-    expect(trigger?.textContent).toContain('modelSelector.status.unconfigured');
+    expect(trigger?.textContent).toContain('modelSelector.noModelSelected');
+    expect(trigger?.dataset.tooltip).toBe('modelSelector.configure');
     expect(onAvailabilityChange).toHaveBeenLastCalledWith({
       status: 'unconfigured',
       canSend: false,
     });
 
-    await openMenu();
-    expect(document.body.querySelector(
-      '[data-testid="chat-model-selector-status"][data-model-status="unconfigured"]',
-    )).not.toBeNull();
-    expect(document.body.querySelector(
-      '[data-testid="chat-model-selector-open-settings"]',
-    )).not.toBeNull();
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    await act(async () => {
+      trigger!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      vi.advanceTimersToNextFrame();
+    });
+    await act(async () => { vi.advanceTimersToNextFrame(); });
+    const menu = document.body.querySelector('[data-testid="chat-model-selector-menu"]')!;
+    const configure = menu.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-open-settings"]')!;
+    expect(menu.getAttribute('data-mode-empty')).toBe('true');
+    expect(configure.closest('.openbitfun-model-selector__mode-empty')).not.toBeNull();
+    expect(menu.querySelectorAll('button')).toHaveLength(1);
+    expect(menu.textContent).toBe('modelSelector.configure');
+    expect(document.activeElement).toBe(configure);
+    expect(menu.querySelector('[data-testid="chat-model-selector-settings-context"]')).toBeNull();
+    expect(menu.querySelector('[data-testid="chat-model-selector-status"]')).toBeNull();
+
+    const openSettings = vi.spyOn(quickActions, 'openSettings').mockImplementation(() => undefined);
+    try {
+      await act(async () => configure.click());
+      expect(openSettings).toHaveBeenCalledExactlyOnceWith({ pageId: 'ai.models' });
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false');
+    } finally {
+      openSettings.mockRestore();
+    }
   });
 
   it('blocks sending with a missing pinned ID while keeping replacement models selectable', async () => {

@@ -1260,7 +1260,7 @@ pub async fn test_image_generation_service(
     request: TestImageGenerationServiceRequest,
 ) -> Result<openbitfun_core::agentic::image_generation::ImageServiceTestOutcome, String> {
     const DEFAULT_PROMPT: &str =
-        "A simple red circle centered on a plain white background, flat vector style";
+        "A cute minimalist mascot icon with a rounded-rectangle body, two small friendly oval eyes, and a short top antenna ending in a round joystick knob. Use a playful, harmonious color palette selected randomly for each generation, with no fixed colors. Centered composition, clean uncluttered background, polished product illustration.";
 
     let prompt = request
         .prompt
@@ -6257,4 +6257,23 @@ mod quota_request_compatibility_tests {
         assert_eq!(request.model_id.as_deref(), Some("fixture"));
         assert_eq!(request.account_id, "model:fixture");
     }
+}
+
+#[tauri::command]
+pub async fn get_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::WorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state
+        .workspace_service
+        .get_workspace_icon(&request.workspace_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn set_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::SetWorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state.workspace_service.set_workspace_icon(request).await
 }

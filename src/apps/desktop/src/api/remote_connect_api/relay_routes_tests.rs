@@ -655,7 +655,7 @@ async fn peer_preview_fixture(benchmark: bool) {
             std::time::Duration::from_secs(20),
             crate::api::html_preview_api::tests::verify_encrypted_peer_gateway(
                 "preview-peer",
-                request,
+                request.clone(),
                 &bytes,
             ),
         )
@@ -666,6 +666,17 @@ async fn peer_preview_fixture(benchmark: bool) {
             4,
             "entry metadata and three encrypted chunks"
         );
+        tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            crate::api::html_preview_api::tests::verify_encrypted_peer_site_routes(
+                "preview-peer",
+                request,
+                &files[0].1,
+                &files[3].1,
+            ),
+        )
+        .await
+        .unwrap();
     }
     client.disconnect().await;
     serving.abort();

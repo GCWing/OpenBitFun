@@ -23,6 +23,9 @@ interface CustomDisclosureProps
   actions?: ReactNode;
   /** Compose a header with independent controls using the supplied toggle attributes. */
   renderHeader?: (triggerProps: DisclosureTriggerProps) => ReactNode;
+  /** Style the default header surface without replacing its trigger or actions. */
+  headerClassName?: string;
+  triggerClassName?: string;
   contentClassName?: string;
   contentInnerClassName?: string;
   unmountOnClose?: boolean;
@@ -53,6 +56,8 @@ const CustomDisclosure = forwardRef<HTMLElement, CustomDisclosureProps>(
   function Disclosure({
     actions,
     renderHeader,
+    headerClassName,
+    triggerClassName,
     contentClassName,
     contentInnerClassName,
     unmountOnClose = false,
@@ -107,11 +112,11 @@ const CustomDisclosure = forwardRef<HTMLElement, CustomDisclosureProps>(
           id: triggerId,
           onClick: toggle,
           type: 'button',
-        }) : <div className={styles.header} data-openbitfun-part="header">
+        }) : <div className={classNames(styles.header, headerClassName)} data-openbitfun-part="header">
           <button data-overflow-trigger
             aria-controls={contentId}
             aria-expanded={resolvedOpen}
-            className={styles.trigger}
+            className={classNames(styles.trigger, triggerClassName)}
             disabled={disabled}
             id={triggerId}
             onClick={toggle}

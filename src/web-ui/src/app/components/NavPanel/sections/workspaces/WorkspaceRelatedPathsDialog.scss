@@ -1,28 +1,58 @@
+@use '../../../../../shared/styles/resource-table';
+
 .workspace-related-paths-dialog {
+  container: related-directories / inline-size;
   display: flex;
   min-inline-size: 0;
+  flex-shrink: 0;
   flex-direction: column;
   gap: var(--openbitfun-space-5);
 
-  &__add {
+  &__modal {
+    block-size: min(
+      var(--openbitfun-overlay-dialog-panel-block-size),
+      calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter))
+    );
+  }
+
+  &__toolbar {
     display: flex;
-    justify-content: center;
+    justify-content: flex-end;
   }
 
-  &__folders {
-    gap: var(--openbitfun-space-3);
+  &__add-form { display: flex; flex-direction: column; gap: var(--openbitfun-space-4); }
+
+  &__table {
+    @include resource-table.table(minmax(0, 1.4fr) minmax(0, 1fr) minmax(8rem, max-content));
   }
 
-  &__external-path {
-    overflow-wrap: anywhere;
+  &__row {
+    &[data-editing='true'] { background: var(--openbitfun-color-surface-tertiary); }
+  }
+
+  &__identity { display: flex; align-items: center; min-inline-size: 0; gap: var(--openbitfun-space-3); }
+  &__icon { display: inline-flex; flex-shrink: 0; color: var(--openbitfun-color-content-secondary); }
+  &__copy { display: flex; flex-direction: column; min-inline-size: 0; gap: var(--openbitfun-space-1); }
+  &__name { font-weight: var(--openbitfun-type-heading-card-font-weight); }
+  &__actions > div { display: flex; align-items: center; justify-content: center; gap: var(--openbitfun-space-1); }
+  &__editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-4);
+    padding: var(--openbitfun-layout-field-group-row-padding-block) var(--openbitfun-layout-field-group-row-padding-inline);
+    background: var(--openbitfun-color-surface-tertiary);
+  }
+
+  &__path {
     color: var(--openbitfun-color-content-secondary);
     font-family: var(--openbitfun-type-code-sm-font-family);
     font-size: var(--openbitfun-type-code-sm-font-size);
     line-height: var(--openbitfun-type-code-sm-line-height);
   }
 
-  &__external-description {
+  &__description {
     overflow-wrap: anywhere;
+    white-space: pre-wrap;
     color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-body-sm-font-size);
     line-height: var(--openbitfun-type-body-sm-line-height);
@@ -48,5 +78,17 @@
     align-items: center;
     gap: var(--openbitfun-space-2);
     margin-inline-start: auto;
+  }
+}
+
+@container related-directories (max-width: 480px) {
+  .workspace-related-paths-dialog {
+    &__table { grid-template-columns: minmax(0, 1fr) auto; }
+    &__table > .resource-table__header { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+    &__table > &__row { gap: var(--openbitfun-space-3); }
+    &__table > .resource-table__header + &__row { border-block-start: 0; }
+    &__directory { grid-column: 1; }
+    &__description { grid-column: 1; }
+    &__actions { grid-column: 2; grid-row: 1 / 3; align-self: center; }
   }
 }

@@ -568,6 +568,16 @@ async fn inspect_desktop(
             }),
         );
     }
+    if capability_id == "feature.remote-connect" {
+        let status = crate::api::remote_connect_api::execute_remote_control(
+            openbitfun_product_domains::remote_control::RemoteControlRequest::Status,
+        )
+        .await;
+        option_values.insert(
+            "remoteConnect".into(),
+            status.unwrap_or_else(|error| json!({"status":"unavailable", "reason":error})),
+        );
+    }
     if capability_id == "setting.application.pet" {
         let provider_state = match companion_state(&state).await {
             Ok(value) => value,
@@ -845,6 +855,8 @@ async fn configure_desktop_provider_option(
 enum DesktopProviderOperation {
     MiniApp(miniapps::Operation),
     Mcp(openbitfun_core::service::mcp::control::MCPControlOperation),
+    RemoteConnect(&'static str),
+    DetachedDispatch(&'static str),
     ListCompanionPets,
     UseCompanionPet,
     DeleteCompanionPet,
@@ -855,6 +867,22 @@ fn desktop_provider_operation(
     operation_id: &str,
 ) -> Option<DesktopProviderOperation> {
     match (provider_id, operation_id) {
+        ("remote-connect", id) => [
+            "status",
+            "start",
+            "stop",
+            "configure-bot",
+            "weixin-login-start",
+            "weixin-login-poll",
+            "set-bot-verbose",
+        ]
+        .into_iter()
+        .find(|operation| *operation == id)
+        .map(DesktopProviderOperation::RemoteConnect),
+        ("detached-dispatch", id) => ["list-targets", "submit", "status", "list-jobs", "cancel"]
+            .into_iter()
+            .find(|operation| *operation == id)
+            .map(DesktopProviderOperation::DetachedDispatch),
         ("miniapp", id) => miniapps::operation(id).map(DesktopProviderOperation::MiniApp),
         ("mcp", id) => {
             openbitfun_core::service::mcp::control::operation(id).map(DesktopProviderOperation::Mcp)
@@ -893,6 +921,26 @@ async fn execute_desktop_provider_operation(
 ) -> Result<Value, String> {
     let state = app.state::<AppState>();
     match operation {
+        DesktopProviderOperation::RemoteConnect(operation) => {
+            let request =
+                openbitfun_product_domains::remote_control::RemoteControlRequest::from_operation(
+                    operation, arguments,
+                )?;
+            crate::api::remote_connect_api::execute_remote_control(request).await
+        }
+        DesktopProviderOperation::DetachedDispatch(operation) => {
+            let request = openbitfun_product_domains::detached_dispatch_control::DetachedDispatchControlRequest::from_operation(
+                operation, arguments,
+            )?;
+            let path_manager =
+                app.state::<std::sync::Arc<openbitfun_core::infrastructure::PathManager>>();
+            crate::api::dispatch_api::execute_agent_dispatch_control(
+                &state,
+                path_manager.as_ref(),
+                request,
+            )
+            .await
+        }
         DesktopProviderOperation::Mcp(operation) => {
             let mut result = state
                 .mcp_service
@@ -1068,7 +1116,14 @@ async fn execute_desktop(
     // Reads stay concurrent. Every mutating product operation shares the same
     // transaction coordinator as GUI and Agent setting mutations, so revision
     // order matches the order in which product state/effects are committed.
-    let _transaction = if operation.risk == ProductControlRisk::Read {
+    // Dispatch jobs change no product settings, and a submit can spend minutes
+    // uploading its baseline; holding the transaction would stall settings.
+    let dispatch_job = matches!(
+        &operation.handler,
+        ProductCapabilityOperationHandler::Provider { provider_id, .. }
+            if provider_id == openbitfun_product_domains::detached_dispatch_control::DETACHED_DISPATCH_CONTROL_PROVIDER
+    );
+    let _transaction = if operation.risk == ProductControlRisk::Read || dispatch_job {
         None
     } else {
         Some(product_control_transaction().lock().await)

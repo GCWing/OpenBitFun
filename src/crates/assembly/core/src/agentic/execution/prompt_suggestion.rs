@@ -517,7 +517,7 @@ mod tests {
             let events = queue.dequeue_batch(10).await;
             assert_eq!(events.len(), 1);
             assert!(
-                matches!(&events[0].event, AgenticEvent::PromptSuggestionGenerated { suggestion, .. } if suggestion == text)
+                matches!(&events[0].event, AgenticEvent::PromptSuggestionGenerated { suggestion, .. } if suggestion == "Run the tests.")
             );
             assert_eq!(
                 session_client
@@ -594,8 +594,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plain_text_response_emits_one_unchanged_candidate_without_output_schema() {
-        let text = "  运行测试，保留原文。  ";
+    async fn plain_text_response_emits_one_trimmed_candidate_without_output_schema() {
+        let text = " \r\n\tRun  the tests.\n\n  Keep this indentation.\t \r\n";
         let server = RetryTestServer::new(vec![suggestion_response(text)]);
         let mut request = test_suggestion_request(server.client());
         request.model_request_context.output_schema = Some(serde_json::json!({
@@ -616,7 +616,7 @@ mod tests {
         let events = queue.dequeue_batch(10).await;
         assert_eq!(events.len(), 1);
         assert!(
-            matches!(&events[0].event, AgenticEvent::PromptSuggestionGenerated { suggestion, .. } if suggestion == text)
+            matches!(&events[0].event, AgenticEvent::PromptSuggestionGenerated { suggestion, .. } if suggestion == "Run  the tests.\n\n  Keep this indentation.")
         );
         let requests = server.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);

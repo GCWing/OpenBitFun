@@ -82,7 +82,7 @@ describe('catalog icon consumer integration', () => {
     expect(localAdapters).toEqual([]);
     expect(source('app/components/NavPanel/MainNav.tsx')).toContain('<Icon glyph={House} size="sm" />');
     expect(source('app/components/NavPanel/components/PersistentFooterActions.tsx'))
-      .toContain('<Icon glyph={Cable} size="sm" aria-hidden="true" />');
+      .toContain('<Icon name="gear" size="sm" aria-hidden="true" />');
     expect(source('app/scenes/agents/agentsIcons.ts')).toContain('Record<AgentIconKey, IconSource>');
     expect(source('app/scenes/ecosystem-compatibility/ExternalAgentContent.tsx'))
       .toContain('Record<EcosystemImportItemKind, IconSource>');

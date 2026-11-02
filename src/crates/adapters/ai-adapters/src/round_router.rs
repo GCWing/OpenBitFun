@@ -384,10 +384,28 @@ fn token_index_at_byte_offset(
 
 fn find_token_logprob(candidates: &[OpenAiTokenLogprob], token_id: u32) -> Option<f64> {
     let expected = format!("token_id:{token_id}");
-    candidates
+    // Some compatible services decode top candidates despite return_tokens_as_token_ids.
+    // Accept only the classifier's two known token spellings; the generated
+    // token ID and semantic label position are still validated by the caller.
+    let decoded = match token_id {
+        SIMPLE_TOKEN_ID => "simple",
+        NON_SIMPLE_FIRST_TOKEN_ID => "non",
+        _ => return None,
+    };
+    let mut observed_logprob = None;
+    for candidate in candidates
         .iter()
-        .find(|candidate| candidate.token == expected)
-        .map(|candidate| candidate.logprob)
+        .filter(|candidate| candidate.token == expected || candidate.token == decoded)
+    {
+        if !candidate.logprob.is_finite() || candidate.logprob > 0.0 {
+            return None;
+        }
+        if observed_logprob.is_some_and(|previous| previous != candidate.logprob) {
+            return None;
+        }
+        observed_logprob = Some(candidate.logprob);
+    }
+    observed_logprob
 }
 
 fn parse_router_route(raw_output: &str) -> Result<(bool, bool), RouterClientError> {
@@ -757,5 +775,125 @@ mod tests {
         };
 
         assert!(extract_simple_probability(&choice, raw_output, true).is_none());
+    }
+
+    fn classifier_choice(candidates: &[(&str, f64)]) -> OpenAiChatChoice {
+        OpenAiChatChoice {
+            message: OpenAiResponseMessage { content: None },
+            logprobs: Some(OpenAiChatLogprobs {
+                content: Some(vec![
+                    OpenAiChatLogprobContent {
+                        bytes: Some(br#"{"simple_type":""#.to_vec()),
+                        top_logprobs: Vec::new(),
+                    },
+                    OpenAiChatLogprobContent {
+                        bytes: Some(b"simple".to_vec()),
+                        top_logprobs: candidates
+                            .iter()
+                            .map(|(token, logprob)| OpenAiTokenLogprob {
+                                token: (*token).into(),
+                                logprob: *logprob,
+                            })
+                            .collect(),
+                    },
+                    OpenAiChatLogprobContent {
+                        bytes: Some(br#""}"#.to_vec()),
+                        top_logprobs: Vec::new(),
+                    },
+                ]),
+            }),
+            token_ids: Some(vec![1, SIMPLE_TOKEN_ID, 2]),
+        }
+    }
+
+    #[test]
+    fn decoded_classifier_candidates_preserve_two_class_confidence() {
+        for candidates in [
+            vec![("simple", -0.2), ("non", -1.4)],
+            vec![("token_id:22944", -0.2), ("token_id:6280", -1.4)],
+            vec![("simple", -0.2), ("token_id:6280", -1.4)],
+            vec![
+                ("simple", -0.2),
+                ("token_id:22944", -0.2),
+                ("non", -1.4),
+                ("non", -1.4),
+            ],
+        ] {
+            let choice = classifier_choice(&candidates);
+            let probability =
+                extract_simple_probability(&choice, r#"{"simple_type":"simple"}"#, true).unwrap();
+            assert!((probability - 0.768_524_783_5).abs() < 1e-9);
+        }
+        let mut choice = classifier_choice(&[("simple", -1.4), ("non", -0.2)]);
+        choice.token_ids.as_mut().unwrap()[1] = NON_SIMPLE_FIRST_TOKEN_ID;
+        let tokens = choice.logprobs.as_mut().unwrap().content.as_mut().unwrap();
+        tokens[1].bytes = Some(b"non".to_vec());
+        tokens[2].bytes = Some(br#"_simple"}"#.to_vec());
+        let probability =
+            extract_simple_probability(&choice, r#"{"simple_type":"non_simple"}"#, false).unwrap();
+        assert!((probability - 0.231_475_216_5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn decoded_classifier_candidates_require_generated_id_and_label_position() {
+        let raw = r#"{"simple_type":"simple"}"#;
+        let mut wrong_id = classifier_choice(&[("simple", -0.2), ("non", -1.4)]);
+        wrong_id.token_ids.as_mut().unwrap()[1] = NON_SIMPLE_FIRST_TOKEN_ID;
+        assert!(extract_simple_probability(&wrong_id, raw, true).is_none());
+
+        let mut wrong_position = classifier_choice(&[("simple", -0.2), ("non", -1.4)]);
+        let tokens = wrong_position
+            .logprobs
+            .as_mut()
+            .unwrap()
+            .content
+            .as_mut()
+            .unwrap();
+        tokens[0].top_logprobs = std::mem::take(&mut tokens[1].top_logprobs);
+        assert!(extract_simple_probability(&wrong_position, raw, true).is_none());
+
+        let mut wrong_alignment = classifier_choice(&[("simple", -0.2), ("non", -1.4)]);
+        wrong_alignment.token_ids.as_mut().unwrap().pop();
+        assert!(extract_simple_probability(&wrong_alignment, raw, true).is_none());
+    }
+
+    #[test]
+    fn decoded_classifier_candidates_require_both_exact_classes() {
+        for candidates in [
+            vec![("simple", -0.2)],
+            vec![("non", -1.4)],
+            vec![("simple", -0.2), ("non_simple", -1.4)],
+            vec![(" simple", -0.2), ("non", -1.4)],
+            vec![("simple", -0.2), ("token_id:999", -1.4)],
+        ] {
+            let choice = classifier_choice(&candidates);
+            assert!(
+                extract_simple_probability(&choice, r#"{"simple_type":"simple"}"#, true).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn classifier_candidates_reject_conflicting_and_invalid_probabilities() {
+        for candidates in [
+            vec![("simple", -0.2), ("simple", -0.3), ("non", -1.4)],
+            vec![("simple", -0.2), ("token_id:22944", -0.3), ("non", -1.4)],
+            vec![("simple", -0.2), ("non", -1.4), ("token_id:6280", -1.5)],
+            vec![
+                ("token_id:22944", -0.2),
+                ("token_id:22944", -0.3),
+                ("token_id:6280", -1.4),
+            ],
+            vec![("simple", f64::NAN), ("non", -1.4)],
+            vec![("simple", -0.2), ("non", f64::INFINITY)],
+            vec![("simple", f64::NEG_INFINITY), ("non", -1.4)],
+            vec![("simple", 0.1), ("non", -1.4)],
+            vec![("token_id:22944", -0.2), ("token_id:6280", 0.1)],
+        ] {
+            let choice = classifier_choice(&candidates);
+            assert!(
+                extract_simple_probability(&choice, r#"{"simple_type":"simple"}"#, true).is_none()
+            );
+        }
     }
 }

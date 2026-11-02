@@ -159,11 +159,32 @@ export interface SessionUsageReportRequest {
   sessionId: string;
   workspaceId: string;
   includeHiddenSubagents?: boolean;
+  includeSystemPromptPreview?: boolean;
+  contextPreviewCategory?: UsageContextCategory;
 }
+
+export type UsageContextCategory = 'systemPrompt' | 'toolDefinitions' | 'rules' | 'skills' | 'mcpTools' | 'subagentDefinitions';
 
 export type UsageModelIdentitySource = 'recorded' | 'inferred_session_model' | 'legacy_missing';
 
+/** Runtime estimates for the latest parent request; absent for older/external hosts. */
+export interface UsageContextBreakdown {
+  systemPrompt: number;
+  toolDefinitions: number;
+  rules: number;
+  skills: number;
+  mcpTools: number;
+  subagentDefinitions: number;
+  summarizedConversation: number;
+  conversation: number;
+  contextWindow?: number;
+}
+
 export interface SessionUsageReport {
+  context?: UsageContextBreakdown;
+  /** Opt-in view of the latest cached system message, not a historical snapshot. */
+  systemPromptPreview?: { content: string; cachedAt: number };
+  contextPreview?: { category: UsageContextCategory; content: string; capturedAt: number };
   schemaVersion: number;
   reportId: string;
   sessionId: string;
@@ -576,7 +597,8 @@ export class SessionAPI {
           session_id: request.sessionId,
           ...await sessionWorkspaceIdRequest(request.workspaceId),
           include_hidden_subagents: request.includeHiddenSubagents ?? true,
-
+          ...(request.includeSystemPromptPreview ? { include_system_prompt_preview: true } : {}),
+          ...(request.contextPreviewCategory ? { context_preview_category: request.contextPreviewCategory } : {}),
         }
       }));
     } catch (error) {

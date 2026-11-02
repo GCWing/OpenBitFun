@@ -114,7 +114,7 @@ pub fn tool_feature_group(tool_name: &str) -> Option<ToolPackFeatureGroup> {
         | "MiniAppBrowser" | "PublishAppearance" | "Playbook" => {
             Some(ToolPackFeatureGroup::MiniApp)
         }
-        "PageDeploy" | "PagePublish" => Some(ToolPackFeatureGroup::Pages),
+        "PageManage" | "PageDeploy" | "PagePublish" => Some(ToolPackFeatureGroup::Pages),
         "FrontendWorkbench" => Some(ToolPackFeatureGroup::Creation),
         "CreateCanvas" | "ReadCanvas" | "UpdateCanvas" | "PatchCanvas" => {
             Some(ToolPackFeatureGroup::Canvas)
@@ -281,7 +281,9 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
     ToolProviderGroupPlan {
         provider_id: "core.pages",
         feature_groups: &[ToolPackFeatureGroup::Pages],
-        tool_names: &["PageDeploy", "PagePublish"],
+        // Legacy names remain available for persisted Agent allowlists and old calls.
+        // New Agent defaults expose only PageManage.
+        tool_names: &["PageManage", "PageDeploy", "PagePublish"],
     },
     ToolProviderGroupPlan {
         provider_id: "core.creation",
@@ -611,6 +613,7 @@ mod tests {
                 "MiniAppBrowser",
                 "PublishAppearance",
                 "Playbook",
+                "PageManage",
                 "PageDeploy",
                 "PagePublish",
                 "FrontendWorkbench",

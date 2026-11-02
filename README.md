@@ -150,3 +150,12 @@ Core code is licensed under the [MIT License](./LICENSE). Third-party dependenci
 Scan the QR code with WeChat to add us and request to join the OpenBitFun community group.
 
 <img src="./png/openbitfun-community-wechat.png" alt="WeChat QR code for joining the OpenBitFun community" width="360" />
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=gcwing%2Fopenbitfun&amp;type=date&amp;legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=gcwing/openbitfun&amp;type=date&amp;legend=top-left&amp;theme=dark" />
+    <img alt="OpenBitFun Star History Chart" src="https://api.star-history.com/chart?repos=gcwing/openbitfun&amp;type=date&amp;legend=top-left" />
+  </picture>
+</a>

@@ -89,18 +89,6 @@ pub fn validate_model_config(model: &crate::AIModelConfig, index: usize) -> Resu
                 model.name
             )
         })?;
-        if let Some(preset) = &reasoning.default_preset {
-            if matches!(
-                reasoning.catalog,
-                openbitfun_core_types::ReasoningCatalogBinding::Disabled
-            ) && reasoning.preset(preset).is_none()
-            {
-                return Err(format!(
-                    "Model '{}' reasoning default preset '{}' is not available at index {index}",
-                    model.name, preset
-                ));
-            }
-        }
     }
     Ok(())
 }

@@ -606,7 +606,7 @@ mod tests {
     #[test]
     fn overlay_is_valid_and_keeps_product_endpoint_decisions() {
         let overlay = parse_overlay().expect("valid overlay");
-        assert_eq!(overlay.providers.len(), 16);
+        assert_eq!(overlay.providers.len(), 17);
         let go = overlay
             .providers
             .iter()
@@ -849,7 +849,7 @@ mod tests {
             "bundle".to_string(),
             ProviderCatalogSource::Bundle,
         );
-        assert_eq!(resolved.providers.len(), 16);
+        assert_eq!(resolved.providers.len(), 17);
         let go = resolved
             .providers
             .iter()

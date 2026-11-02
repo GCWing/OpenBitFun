@@ -25,6 +25,15 @@ struct PromptOrderTestAgent {
     id: String,
 }
 
+fn named_agent(id: &str, name: &str) -> crate::agentic::agents::AgentInfo {
+    serde_json::from_value(json!({
+        "key": id, "id": id, "name": name, "description": "A specialist agent",
+        "isReadonly": true, "isReview": false, "toolCount": 1,
+        "defaultTools": ["Read"], "promptCacheScopeKey": "test", "source": "user"
+    }))
+    .expect("legacy catalog entry should deserialize")
+}
+
 #[test]
 fn external_subagent_validation_accepts_model_emitted_casing() {
     let available = vec!["FileFinder".to_string(), "explore".to_string()];

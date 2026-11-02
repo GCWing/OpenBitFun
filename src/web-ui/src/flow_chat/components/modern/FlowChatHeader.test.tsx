@@ -208,6 +208,31 @@ describe('FlowChatHeader', () => {
     expect(container.querySelector('[data-testid="flowchat-header-turn-next"]')).toBeNull();
   });
 
+  it('hosts trajectory search and its navigation in the shared scene top bar', () => {
+    const onTrajectoryOpen = vi.fn(); const onSearchNext = vi.fn(); const onSearchClose = vi.fn();
+    const render = (trajectoryOpen: boolean) => root.render(
+      <SceneChromeProvider activeSceneId="session">
+        <SceneChromeHost data-testid="scene-actions-host" />
+        <FlowChatHeader {...createProps({ onTrajectoryOpen, trajectoryOpen, searchQuery: 'needle',
+          searchMatchCount: 3, searchCurrentMatch: 1, onSearchNext, onSearchClose })} />
+      </SceneChromeProvider>,
+    );
+    act(() => render(false));
+    const host = container.querySelector('[data-testid="scene-actions-host"]')!;
+    expect(host.querySelector('[data-openbitfun-name="chart-spline"]')).not.toBeNull();
+    act(() => host.querySelector<HTMLButtonElement>('[data-testid="flowchat-header-search"]')!.click());
+    expect(onTrajectoryOpen).toHaveBeenCalledTimes(1);
+    act(() => render(true));
+    const search = host.querySelector('[data-testid="flowchat-header-search-bar"]')!;
+    expect(search.querySelector('input')?.value).toBe('needle');
+    act(() => search.querySelector<HTMLButtonElement>('[aria-label="flowChatHeader.searchNext"]')!.click());
+    expect(onSearchNext).toHaveBeenCalledTimes(1);
+    act(() => search.querySelector<HTMLButtonElement>('.flowchat-header__search-close')!.click());
+    expect(onSearchClose).toHaveBeenCalledTimes(1);
+    act(() => render(false));
+    expect(host.querySelector('[data-testid="flowchat-header-search-bar"]')).toBeNull();
+  });
+
   it('toggles the host-owned right panel from the session header', () => {
     const onToggleRightPanel = vi.fn();
     const onSearchClose = vi.fn();

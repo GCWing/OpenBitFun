@@ -58,6 +58,7 @@ const PROMINENT_TOOL_CARD_NAMES = new Set([
   'Git',
   'GetFileDiff',
   'InitMiniApp',
+  'PageManage',
   'PageDeploy',
   'PagePublish',
   'GenerativeUI',
@@ -506,6 +507,16 @@ const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
     description: 'Submit an Appearance package to the Skin market for review',
     displayMode: 'standard',
     primaryColor: 'var(--openbitfun-color-accent-hover)'
+  },
+  'PageManage': {
+    toolName: 'PageManage',
+    displayName: 'Manage Pages',
+    icon: 'WEB',
+    requiresConfirmation: false,
+    resultDisplayType: 'detailed',
+    description: 'List, publish, update, delete, and manage access to OpenBitFun Pages',
+    displayMode: 'standard',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.terminal
   },
   'PageDeploy': {
     toolName: 'PageDeploy',

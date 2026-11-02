@@ -62,6 +62,8 @@ pub mod openbitfun_control_tool;
 #[cfg(feature = "tools-pages")]
 pub mod page_deploy_tool;
 #[cfg(feature = "tools-pages")]
+pub mod page_manage_tool;
+#[cfg(feature = "tools-pages")]
 pub mod page_publish_tool;
 mod plan_artifact_diagnostics;
 #[cfg(feature = "tools-miniapp")]
@@ -143,6 +145,8 @@ pub use miniapp_publish_tool::PublishMiniAppTool;
 pub use openbitfun_control_tool::OpenBitFunControlTool;
 #[cfg(feature = "tools-pages")]
 pub use page_deploy_tool::PageDeployTool;
+#[cfg(feature = "tools-pages")]
+pub use page_manage_tool::PageManageTool;
 #[cfg(feature = "tools-pages")]
 pub use page_publish_tool::PagePublishTool;
 #[cfg(feature = "tools-miniapp")]
