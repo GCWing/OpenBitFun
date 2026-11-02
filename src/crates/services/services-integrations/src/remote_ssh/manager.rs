@@ -2854,7 +2854,17 @@ impl SSHConnectionManager {
         // extended store; that later explicit save wins.
         let mut merged = saved;
         for connection in extended {
-            if merged.iter().any(|existing| existing.id == connection.id) {
+            // Same rule as `save_connection`: an equal id, or a legacy
+            // `:port` alias of the same endpoint.
+            if merged.iter().any(|existing| {
+                existing.id == connection.id
+                    || (existing.host == connection.host
+                        && existing.username == connection.username
+                        && existing.port == connection.port
+                        && existing.container == connection.container
+                        && existing.wsl == connection.wsl
+                        && Self::connection_ids_are_aliases(&existing.id, &connection.id))
+            }) {
                 log::warn!(
                     "Ignoring extended SSH profile shadowed by the primary store: id={}",
                     connection.id
@@ -10349,6 +10359,108 @@ Host *
             .unwrap()
             .unwrap();
         assert!(matches!(restored.auth, SSHAuthMethod::None));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn none_profiles_keep_port_scoped_ids_and_legacy_alias_dedup_across_stores() {
+        let dir = test_data_dir("none-auth-port-ids");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        let mut key_profile = none_auth_config("ssh-coder@ws", "ws");
+        key_profile.port = 22;
+        key_profile.auth = SSHAuthMethod::Agent {
+            key_fingerprint: None,
+            fallback_key_path: None,
+        };
+        manager.save_connection(&key_profile).await.unwrap();
+        let mut scoped = none_auth_config("ssh-coder@ws#2222", "ws");
+        scoped.port = 2222;
+        manager.save_connection(&scoped).await.unwrap();
+
+        // Two ports on one host stay distinct even though they live in
+        // different stores.
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut saved: Vec<(String, u16)> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| (c.id, c.port))
+            .collect();
+        saved.sort();
+        assert_eq!(
+            saved,
+            vec![
+                ("ssh-coder@ws".to_string(), 22),
+                ("ssh-coder@ws#2222".to_string(), 2222),
+            ]
+        );
+        let restored = reloaded
+            .load_connection_config_from_saved("ssh-coder@ws#2222")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+
+        // A legacy `:port` alias of the key profile switched to `None`
+        // replaces it and moves it to the extended store.
+        let mut alias = none_auth_config("ssh-coder@ws:22", "ws");
+        alias.port = 22;
+        reloaded.save_connection(&alias).await.unwrap();
+        let primary = tokio::fs::read_to_string(dir.join("ssh_connections.json"))
+            .await
+            .unwrap();
+        assert!(
+            serde_json::from_str::<Vec<ReleasedSavedConnection>>(&primary)
+                .unwrap()
+                .is_empty()
+        );
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut ids: Vec<String> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["ssh-coder@ws#2222", "ssh-coder@ws:22"]);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn primary_alias_from_an_older_build_shadows_the_same_extended_endpoint() {
+        let dir = test_data_dir("none-auth-alias-shadow");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        let mut none_profile = none_auth_config("ssh-coder@ws", "ws");
+        none_profile.port = 22;
+        manager.save_connection(&none_profile).await.unwrap();
+        let mut alias = released_profile("ssh-coder@ws:22");
+        alias["host"] = serde_json::json!("ws");
+        alias["username"] = serde_json::json!("coder");
+        let mut other_port = released_profile("ssh-coder@ws:2201");
+        other_port["host"] = serde_json::json!("ws");
+        other_port["username"] = serde_json::json!("coder");
+        other_port["port"] = serde_json::json!(2201);
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_vec(&vec![alias, other_port]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut ids: Vec<String> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["ssh-coder@ws:22", "ssh-coder@ws:2201"]);
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
