@@ -439,7 +439,7 @@ const home = {
   workspace_id: 'ws-home', has_workspace: true, path: '/Users/me/home',
   project_name: 'home', git_branch: 'master', workspace_kind: 'normal',
 };
-const claw = { workspace_id: 'ws-claw', path: '/Users/me/.bitfun/personal_assistant/workspace', name: 'Nova' };
+const claw = { workspace_id: 'ws-claw', path: '/Users/me/assistant/workspace', name: 'Nova' };
 const header = (overrides) => resolveChatHeaderContext({
   agentType: 'Standard',
   currentWorkspace: home,
