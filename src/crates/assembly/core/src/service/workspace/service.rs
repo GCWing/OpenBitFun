@@ -38,6 +38,7 @@ use openbitfun_services_core::workspace_identity::{
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
@@ -184,11 +185,23 @@ fn assistant_descriptor_in_root(
 /// migrator, so both sides resolve one legacy root. Returns `None` when no
 /// user home directory is available.
 fn legacy_assistant_workspace_root() -> Option<PathBuf> {
-    let legacy_home_root = std::env::var_os("BITFUN_HOME")
-        .or_else(|| std::env::var_os("BITFUN_E2E_HOME"))
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .or_else(|| dirs::home_dir().map(|home| home.join(legacy_hidden_data_directory())))?;
+    resolve_legacy_assistant_workspace_root(
+        std::env::var_os("BITFUN_HOME"),
+        std::env::var_os("BITFUN_E2E_HOME"),
+        dirs::home_dir().as_deref(),
+    )
+}
+
+fn resolve_legacy_assistant_workspace_root(
+    bitfun_home: Option<OsString>,
+    bitfun_e2e_home: Option<OsString>,
+    user_home: Option<&Path>,
+) -> Option<PathBuf> {
+    let non_empty =
+        |value: Option<OsString>| value.filter(|path| !path.is_empty()).map(PathBuf::from);
+    let legacy_home_root = non_empty(bitfun_home)
+        .or_else(|| non_empty(bitfun_e2e_home))
+        .or_else(|| user_home.map(|home| home.join(legacy_hidden_data_directory())))?;
     Some(legacy_home_root.join("personal_assistant"))
 }
 
@@ -3928,21 +3941,12 @@ mod tests {
     async fn manageable_check_accepts_legacy_bitfun_assistant_roots() {
         let env = TestEnvironment::new();
         let service = build_test_workspace_service(env.path_manager.clone()).await;
-        let temp = tempfile::tempdir().expect("temp root");
+        let legacy_assistant_root =
+            legacy_assistant_workspace_root().expect("legacy assistant root");
 
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
-        let previous_home = std::env::var_os("BITFUN_HOME");
-        let previous_e2e_home = std::env::var_os("BITFUN_E2E_HOME");
-        std::env::remove_var("BITFUN_HOME");
-        // Mirror the data migrator: the override points at the legacy
-        // `.bitfun` data root itself, not at the user home above it.
-        std::env::set_var("BITFUN_E2E_HOME", temp.path().join(".bitfun"));
-
-        let legacy_assistant_root = temp.path().join(".bitfun").join("personal_assistant");
         assert!(
             service.is_manageable_assistant_workspace_path(
-                &legacy_assistant_root.join("workspace-abc")
+                &legacy_assistant_root.join("workspace-44e0e781")
             ),
             "legacy BitFun assistant workspaces must stay manageable"
         );
@@ -3952,10 +3956,14 @@ mod tests {
             "the legacy default assistant workspace must stay manageable"
         );
         assert!(
+            !service.is_assistant_workspace_path(&legacy_assistant_root.join("workspace-44e0e781")),
+            "legacy paths must not be classified as current assistant workspaces"
+        );
+        assert!(
             !service.is_manageable_assistant_workspace_path(
-                &temp
-                    .path()
-                    .join(".bitfun")
+                &legacy_assistant_root
+                    .parent()
+                    .expect("legacy data root")
                     .join("other")
                     .join("workspace-x")
             ),
@@ -3963,18 +3971,33 @@ mod tests {
         );
         assert!(
             !service
-                .is_manageable_assistant_workspace_path(&temp.path().join("Documents").join("foo")),
+                .is_manageable_assistant_workspace_path(&env.root.join("Documents").join("foo")),
             "unrelated directories must be rejected"
         );
+    }
 
-        match previous_home {
-            Some(value) => std::env::set_var("BITFUN_HOME", value),
-            None => std::env::remove_var("BITFUN_HOME"),
-        }
-        match previous_e2e_home {
-            Some(value) => std::env::set_var("BITFUN_E2E_HOME", value),
-            None => std::env::remove_var("BITFUN_E2E_HOME"),
-        }
+    #[test]
+    fn legacy_assistant_root_follows_the_migrator_data_root_precedence() {
+        let home = Path::new("/home/dev");
+        let explicit = OsString::from("/custom/legacy");
+        let e2e = OsString::from("/e2e/legacy");
+        let root = |bitfun_home, e2e_home, user_home| {
+            resolve_legacy_assistant_workspace_root(bitfun_home, e2e_home, user_home)
+        };
+
+        assert_eq!(
+            root(Some(explicit.clone()), Some(e2e.clone()), Some(home)),
+            Some(PathBuf::from("/custom/legacy/personal_assistant"))
+        );
+        assert_eq!(
+            root(Some(OsString::new()), Some(e2e), Some(home)),
+            Some(PathBuf::from("/e2e/legacy/personal_assistant"))
+        );
+        assert_eq!(
+            root(None, None, Some(home)),
+            Some(PathBuf::from("/home/dev/.bitfun/personal_assistant"))
+        );
+        assert_eq!(root(None, None, None), None);
     }
 }
 

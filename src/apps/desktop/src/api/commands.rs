@@ -1729,7 +1729,7 @@ pub async fn delete_assistant_workspace(
             .map_err(|e| format!("Failed to delete assistant workspace files: {}", e))?;
     } else {
         info!(
-            "Assistant workspace directory is missing; removed registry entry only: workspace_id={}, path={}",
+            "Assistant workspace directory is missing; removing registry entry only: workspace_id={}, path={}",
             request.workspace_id,
             workspace_info.root_path.display()
         );

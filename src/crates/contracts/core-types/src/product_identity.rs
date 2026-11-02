@@ -24,7 +24,7 @@ pub const fn data_namespace() -> &'static str {
     }
 }
 
-/// Hidden directory name derived from [`hidden_data_directory`] by the build adapter.
+/// Hidden directory name derived from [`data_namespace`] by the build adapter.
 ///
 /// The same name is used for the product home and project-local product data.
 pub const fn hidden_data_directory() -> &'static str {
