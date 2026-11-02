@@ -291,6 +291,7 @@ test('a write is locked while it runs and sends the whole object', async () => {
   const pending = controller.applyRoleSelection('fast', 'm-vision');
   assert.equal(state().busy, true);
   assert.equal(state().statusText, 'status.updatingModelDefaults');
+  await flush();
   assert.deepEqual(writeCalls, [['m-primary', 'm-vision', null]]);
   // The three slots travel together; only the selected one changed.
   await controller.applyRoleSelection('primary', 'm-vision');
@@ -311,8 +312,8 @@ test('values change only after the read-back, never optimistically', async () =>
   const {controller, state} = controllerWith({
     getModelCatalog: async () => {
       reads += 1;
-      // The first read is the page open; the second is the post-write re-read.
-      return reads === 1 ?
+      // Page open, then the pre-write read; the third is the post-write re-read.
+      return reads <= 2 ?
         catalog({primary: 'm-primary', fast: null, image_understanding: null}) : read.promise;
     },
     setModelDefaults: async () => write.promise
@@ -331,7 +332,7 @@ test('values change only after the read-back, never optimistically', async () =>
   await flush();
   // Acknowledged: still nothing on screen, because the desktop reconciles and
   // the read has not answered yet.
-  assert.equal(reads, 2);
+  assert.equal(reads, 3);
   assert.equal(state().roles.primary, 'm-primary');
   assert.equal(state().busy, true);
 
@@ -341,6 +342,27 @@ test('values change only after the read-back, never optimistically', async () =>
   assert.deepEqual(state().roles, {primary: 'm-reconciled', fast: 'm-vision', image_understanding: null});
   assert.equal(state().busy, false);
   assert.equal(state().statusText, 'status.modelDefaultsUpdated');
+});
+
+test('a write keeps the slots a desktop save changed after the page opened', async () => {
+  const writeCalls = [];
+  let stored = {primary: 'm-primary', fast: null, image_understanding: null};
+  const {controller, state} = controllerWith({
+    getModelCatalog: async () => catalog(stored),
+    setModelDefaults: async (...args) => {
+      writeCalls.push(args);
+      stored = {primary: args[0], fast: args[1], image_understanding: args[2]};
+      return {};
+    }
+  });
+
+  controller.setGate(gate(true, true, 'desk-1'));
+  await controller.load();
+  stored = {primary: 'm-desktop', fast: null, image_understanding: null};
+  await controller.applyRoleSelection('fast', 'm-vision');
+
+  assert.deepEqual(writeCalls, [['m-desktop', 'm-vision', null]]);
+  assert.equal(state().roles.primary, 'm-desktop');
 });
 
 test('selecting the value a role already has writes nothing', async () => {
@@ -388,7 +410,7 @@ test('a failed read-back after an accepted write is a read failure', async () =>
   const {controller, state} = controllerWith({
     getModelCatalog: async () => {
       reads += 1;
-      if (reads === 1) {
+      if (reads <= 2) {
         return catalog({primary: 'm-primary'});
       }
       throw new Error('Remote transport is not connected.');

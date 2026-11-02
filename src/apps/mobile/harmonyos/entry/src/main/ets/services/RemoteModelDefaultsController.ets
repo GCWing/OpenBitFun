@@ -161,6 +161,9 @@ export class RemoteModelDefaultsController {
   /**
    * Writes one role by sending the whole object, then reads the result back.
    *
+   * The verb replaces all three slots, so the other two come from a fresh read:
+   * the snapshot from when this page opened could revert a newer desktop save.
+   *
    * Selecting the value a role already has writes nothing: the host reconciles
    * on every write, and there is no intent to persist.
    */
@@ -168,14 +171,26 @@ export class RemoteModelDefaultsController {
     if (!this.state.available || this.state.busy || this.state.loading) {
       return;
     }
-    const nextRoles = RemoteModelDefaultsController.rolesWithSelection(this.state.roles, role, modelId);
-    if (RemoteModelDefaultsController.sameRoles(nextRoles, this.state.roles)) {
+    if (RemoteModelDefaultsController.sameRoles(
+      RemoteModelDefaultsController.rolesWithSelection(this.state.roles, role, modelId), this.state.roles)) {
       return;
     }
     const generation = this.generation;
     this.publish(RemoteModelDefaultsController.workingState(this.state, false, true,
       RemoteI18n.t('status.updatingModelDefaults')));
     try {
+      const latest = await this.readCatalog(generation);
+      if (!latest) {
+        return;
+      }
+      const currentRoles = RemoteModelDefaultsController.rolesFromDefaults(latest.default_models);
+      const nextRoles = RemoteModelDefaultsController.rolesWithSelection(currentRoles, role, modelId);
+      if (RemoteModelDefaultsController.sameRoles(nextRoles, currentRoles)) {
+        const unchanged = RemoteModelDefaultsController.readState(this.state, latest);
+        unchanged.busy = true;
+        this.publish(unchanged);
+        return;
+      }
       await this.client.setModelDefaults(
         nextRoles.primary,
         nextRoles.fast,

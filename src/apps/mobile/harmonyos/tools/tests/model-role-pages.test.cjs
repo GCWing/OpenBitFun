@@ -284,6 +284,7 @@ test('a write locks the pages, sends every slot, and reports the read-back', asy
   const pending = sheet.selectRole('fast', 'm-vision');
   assert.equal(sheet.state.busy, true);
   assert.equal(sheet.feedbackVisible, false);
+  await wait(0);
   assert.deepEqual(writes, [['m-primary', 'm-vision', null]]);
   assert.equal(sheet.pendingRole, 'fast');
   assert.equal(sheet.pendingModelId, 'm-vision');
@@ -354,10 +355,10 @@ test('a read that fails after an accepted write is retried as a read', async () 
   const sheet = sheetWith({
     getModelCatalog: async () => {
       reads += 1;
-      if (reads === 2) {
+      if (reads === 3) {
         throw new Error('Remote transport is not connected.');
       }
-      return catalog({primary: reads === 1 ? 'm-primary' : 'm-vision'});
+      return catalog({primary: reads <= 2 ? 'm-primary' : 'm-vision'});
     },
     setModelDefaults: async () => ({})
   }, 5);
@@ -371,7 +372,7 @@ test('a read that fails after an accepted write is retried as a read', async () 
   assert.equal(sheet.state.roles.primary, 'm-primary');
 
   await sheet.retry();
-  assert.equal(reads, 3);
+  assert.equal(reads, 4);
   assert.equal(sheet.state.error, '');
   assert.equal(sheet.state.roles.primary, 'm-vision');
   // A re-read confirms nothing new was written, so it does not claim an update.

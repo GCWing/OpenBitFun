@@ -940,6 +940,7 @@ fn merge_remote_model_defaults(
             image_understanding,
             &is_known_model,
         )?,
+        economy: ai_config.default_models.economy.clone(),
         search: ai_config.default_models.search.clone(),
         image_generation: ai_config.default_models.image_generation.clone(),
         speech_recognition: ai_config.default_models.speech_recognition.clone(),
@@ -4638,9 +4639,11 @@ mod tests {
         let mut config = device_default_model_catalog();
         config.ai.default_models.fast = Some("retired-fast".to_string());
         config.ai.default_models.image_understanding = Some("vision-1".to_string());
+        config.ai.default_models.economy = Some("text-1".to_string());
 
         // A cleared slot (absent field or explicit null) is a real write.
         let cleared = merge_remote_model_defaults(&config.ai, None, None, None).unwrap();
+        assert_eq!(cleared.economy.as_deref(), Some("text-1"));
         assert_eq!(cleared.primary, None);
         assert_eq!(cleared.fast, None);
         assert_eq!(cleared.image_understanding, None);
