@@ -7,7 +7,6 @@
 
 use std::future::Future;
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
 
 use openbitfun_core::agentic::coordination::{
     btw_turn_id, get_global_coordinator, ConversationCoordinator, DialogSubmissionPolicy,
@@ -15,7 +14,9 @@ use openbitfun_core::agentic::coordination::{
 };
 use openbitfun_core::agentic::core::SessionState;
 use openbitfun_core::agentic::image_analysis::ImageContextData;
-use openbitfun_core::agentic::side_question::SideQuestionRuntime;
+use openbitfun_core::agentic::side_question::{
+    BtwTurnWatch, SideQuestionRuntime, BTW_TURN_POLL_INTERVAL,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -152,23 +153,17 @@ pub(crate) async fn btw_ask_stream(state: &PeerHostState, args: &Value) -> Resul
         )
         .await;
     tokio::spawn(async move {
-        // The registration only serves cancellation; release it once the turn settles.
+        let mut watch = BtwTurnWatch::new();
         loop {
-            let processing = coordinator
-                .get_session_manager()
-                .get_session(&child_session_id)
-                .is_some_and(|session| {
-                    matches!(
-                        session.state,
-                        SessionState::Processing { current_turn_id, .. }
-                            if current_turn_id == turn_id
-                    )
-                });
-            if !processing {
+            let processing = matches!(
+                coordinator.get_session_manager().get_session_state(&child_session_id),
+                Some(SessionState::Processing { current_turn_id, .. }) if current_turn_id == turn_id
+            );
+            if watch.should_release(processing) {
                 runtime.remove(&request_id).await;
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(BTW_TURN_POLL_INTERVAL).await;
         }
     });
     Ok(json!({ "ok": true }))

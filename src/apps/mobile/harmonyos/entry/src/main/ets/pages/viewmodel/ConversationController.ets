@@ -8,7 +8,7 @@ import { ChatTimelineItem } from '../../model/ChatTimelineModels';
 import { VoiceInputRouteSnapshot } from '../../services/VoiceInputLifecycleController';
 import { AppRootRouteState } from '../navigation/AppRootRouteState';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
-import { MessageCopyScope, SessionRollbackRequest } from '../actions/ConversationIntent';
+import { MessageCopyScope, CommandPaletteRequest, SessionRollbackRequest } from '../actions/ConversationIntent';
 import { GeneralChatPageState } from '../state/GeneralChatPageState';
 import { RemotePageState } from '../state/RemotePageState';
 import { RemoteChatPollingSnapshot } from '../../services/RemoteChatPollingLifecycleController';
@@ -209,6 +209,9 @@ export class ConversationController {
   async retryVisibleMessage(text: string): Promise<void> { await this.visible.retryVisibleMessage(text); }
   downloadVisibleFile(path: string): void { this.visible.downloadVisibleFile(path); }
   async selectVisibleModel(modelId: string): Promise<void> { await this.visible.selectVisibleModel(modelId); }
+  async dispatchCommandPalette(request: CommandPaletteRequest): Promise<void> {
+    await this.visible.dispatchCommandPalette(request);
+  }
   onVisibleChatInputChange(route: AppRoute, value: string): void {
     this.visible.onVisibleChatInputChange(route, value);
   }

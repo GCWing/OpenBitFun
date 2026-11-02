@@ -21,6 +21,7 @@ fn test_config() -> SSHConnectionConfig {
         },
         default_workspace: Some("/repo".to_string()),
         proxy_jump: None,
+        proxy_command: None,
         container: None,
         wsl: None,
         options: Default::default(),
