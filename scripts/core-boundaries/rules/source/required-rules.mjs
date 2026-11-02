@@ -363,7 +363,7 @@ export const requiredContentRules = [
         message: 'missing shared frontend projection usage in Tauri transport',
       },
       {
-        regex: /\.emit\(projected\.event_name\.as_str\(\), projected\.payload\)/,
+        regex: /\.emit(?:_to\("main", |\()projected\.event_name\.as_str\(\), projected\.payload\)/,
         message: 'Tauri transport must emit projected event name and payload',
       },
     ],

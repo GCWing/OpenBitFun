@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "6ae2eeaa19e6342f9dcf7ff33b7c0fa94547ee1c02fc1835f6f4471caab6fbb3",
+  "digest": "b08b4b912cb2ed217bc2fd592e59a2e41b9c8cb342e6c0a01c1ea46bbd72b258",
   "ownerDigest": "3cc6d7d869b2c90c2161494a854b5ff7eb72ea69a1a28e40ccd42065fb3382e2",
   "searchAcceptance": [
     {
@@ -23060,8 +23060,8 @@
         },
         {
           "id": "scene-and-panel",
-          "titleZh": "既可作为独立浏览器场景，也可在会话旁的辅助面板中打开",
-          "titleEn": "Use the browser as a standalone scene or an auxiliary panel beside a session",
+          "titleZh": "既可作为独立浏览器场景，也可在会话旁的辅助面板中打开；关闭面板时释放对应的原生 WebView",
+          "titleEn": "Use the browser as a standalone scene or an auxiliary panel beside a session, and release the native webview when the panel closes",
           "control": {
             "kind": "delegate",
             "tools": [
@@ -23306,8 +23306,8 @@
         "Navigate page history with Back, Forward, and the address bar",
         "刷新页面，并同步当前 URL、加载状态与错误提示",
         "Reload pages and synchronize the current URL, loading state, and errors",
-        "既可作为独立浏览器场景，也可在会话旁的辅助面板中打开",
-        "Use the browser as a standalone scene or an auxiliary panel beside a session",
+        "既可作为独立浏览器场景，也可在会话旁的辅助面板中打开；关闭面板时释放对应的原生 WebView",
+        "Use the browser as a standalone scene or an auxiliary panel beside a session, and release the native webview when the panel closes",
         "启动元素选择器，悬停时高亮页面元素并显示标签、ID 和 Class",
         "Start the element picker to highlight hovered elements and show tag, ID, and class details",
         "点击元素后捕获 CSS 路径、属性、文本和 HTML，并加入当前会话上下文",

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:7dadb93da46481aa",
+  "digest": "fnv1a64:b6f21440c8242b1f",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -704,6 +704,18 @@
     },
     {
       "id": "browser_webview_capture_preview",
+      "surface": "tauri_command",
+      "remoteWorkspace": "LocalOnly",
+      "peer": {
+        "kind": "controller_local"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the controller keeps this command; peer hosts refuse it before dispatch"
+      }
+    },
+    {
+      "id": "browser_webview_close",
       "surface": "tauri_command",
       "remoteWorkspace": "LocalOnly",
       "peer": {

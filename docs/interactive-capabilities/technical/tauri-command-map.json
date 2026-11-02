@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "6ae2eeaa19e6342f9dcf7ff33b7c0fa94547ee1c02fc1835f6f4471caab6fbb3",
-  "commandCount": 709,
+  "catalogDigest": "b08b4b912cb2ed217bc2fd592e59a2e41b9c8cb342e6c0a01c1ea46bbd72b258",
+  "commandCount": 710,
   "coverage": {
-    "commandCount": 709,
-    "documentedCommandCount": 649,
+    "commandCount": 710,
+    "documentedCommandCount": 650,
     "implementationCommandCount": 60,
     "implementationDigest": "5047b674e890f899e65baf9235e9df4bd912fa28f44eb10a656e079a1b89974d"
   },
@@ -802,6 +802,22 @@
       "rustPath": "api::browser_api::browser_webview_capture_preview",
       "sourceFile": "src/apps/desktop/src/api/browser_api.rs",
       "signature": "fn browser_webview_capture_preview( app: tauri::AppHandle, request: WebviewLabelRequest, ) -> Result<WebviewPreviewResponse, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "browser_webview_close",
+      "moduleId": "browser",
+      "capabilityId": "feature.browser",
+      "capabilityIds": [
+        "feature.browser"
+      ],
+      "documentedItemIds": [
+        "feature.browser:scene-and-panel"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::browser_api::browser_webview_close",
+      "sourceFile": "src/apps/desktop/src/api/browser_api.rs",
+      "signature": "fn browser_webview_close( app: tauri::AppHandle, request: WebviewLabelRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {

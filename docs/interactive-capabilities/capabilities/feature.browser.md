@@ -25,8 +25,8 @@ Open webpages and local services inside OpenBitFun, where an agent can inspect t
   - Navigate page history with Back, Forward, and the address bar
 - **由专用智能体工具控制 / Delegated Agent tool** · `ControlHub` · 刷新页面，并同步当前 URL、加载状态与错误提示
   - Reload pages and synchronize the current URL, loading state, and errors
-- **由专用智能体工具控制 / Delegated Agent tool** · `ControlHub` · 既可作为独立浏览器场景，也可在会话旁的辅助面板中打开
-  - Use the browser as a standalone scene or an auxiliary panel beside a session
+- **由专用智能体工具控制 / Delegated Agent tool** · `ControlHub` · 既可作为独立浏览器场景，也可在会话旁的辅助面板中打开；关闭面板时释放对应的原生 WebView
+  - Use the browser as a standalone scene or an auxiliary panel beside a session, and release the native webview when the panel closes
 - **由专用智能体工具控制 / Delegated Agent tool** · `ControlHub` · 启动元素选择器，悬停时高亮页面元素并显示标签、ID 和 Class
   - Start the element picker to highlight hovered elements and show tag, ID, and class details
 - **由专用智能体工具控制 / Delegated Agent tool** · `ControlHub` · 点击元素后捕获 CSS 路径、属性、文本和 HTML，并加入当前会话上下文
