@@ -538,6 +538,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
         : buildAuthMethod(),
       defaultWorkspace: editingProfile?.defaultWorkspace,
       proxyJump: !isLocalDocker ? resolvedProxyJump || undefined : undefined,
+      proxyCommand: editingProfile?.proxyCommand,
       container: usesContainer ? {
         name: containerName,
         access: formData.targetType === 'containerSshd'

@@ -9917,6 +9917,7 @@ Host *
                 auth: SSHAuthMethod::None,
                 default_workspace: Some("/root".to_string()),
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -9955,6 +9956,82 @@ Host *
         }))
         .unwrap();
         assert!(matches!(from_wire.auth, SSHAuthMethod::None));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    struct NoneOnlyTestServer {
+        none_attempts: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl russh::server::Handler for NoneOnlyTestServer {
+        type Error = russh::Error;
+
+        async fn auth_none(&mut self, _user: &str) -> Result<russh::server::Auth, Self::Error> {
+            self.none_attempts.fetch_add(1, Ordering::SeqCst);
+            Ok(russh::server::Auth::Accept)
+        }
+    }
+
+    fn nc_on_path() -> bool {
+        std::env::var_os("PATH").is_some_and(|paths| {
+            std::env::split_paths(&paths).any(|path| path.join("nc").is_file())
+        })
+    }
+
+    /// The Coder shape: the transport is a local process and the endpoint
+    /// advertises only `none`, so any other method would fail the connection.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn none_auth_over_proxy_command_connects_after_restoring_the_saved_profile() {
+        if !nc_on_path() {
+            return;
+        }
+        let dir = test_data_dir("none-auth-proxy-command");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let none_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let server_attempts = none_attempts.clone();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let config = Arc::new(russh::server::Config {
+                keys: vec![KeyPair::generate_ed25519().unwrap()],
+                methods: russh::MethodSet::NONE,
+                ..Default::default()
+            });
+            let handler = NoneOnlyTestServer {
+                none_attempts: server_attempts,
+            };
+            let session = russh::server::run_stream(config, socket, handler)
+                .await
+                .unwrap();
+            let _ = session.await;
+        });
+
+        // The alias does not resolve, so only the proxy can reach the server.
+        let proxy_command = format!("nc 127.0.0.1 {port}");
+        let mut profile = none_auth_config("coder", "coder-workspace.invalid");
+        profile.proxy_command = Some(proxy_command.clone());
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.save_connection(&profile).await.unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let restored = reloaded
+            .load_connection_config_from_saved("coder")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+        assert_eq!(restored.proxy_command, Some(proxy_command));
+
+        let result = reloaded.connect(restored).await.unwrap();
+        assert!(result.success, "unexpected result: {:?}", result.error);
+        assert!(none_attempts.load(Ordering::SeqCst) >= 1);
+
+        let _ = reloaded.disconnect("coder").await;
+        server.abort();
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
@@ -10003,6 +10080,7 @@ Host *
             auth: SSHAuthMethod::None,
             default_workspace: Some("/root".to_string()),
             proxy_jump: None,
+            proxy_command: None,
             container: None,
             wsl: None,
             options: Default::default(),

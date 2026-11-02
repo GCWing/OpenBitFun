@@ -402,6 +402,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           auth: authMethod,
           defaultWorkspace: savedConn.defaultWorkspace,
           proxyJump: savedConn.proxyJump,
+          proxyCommand: savedConn.proxyCommand,
           container: savedConn.container,
           wsl: savedConn.wsl,
           options: savedConn.options,

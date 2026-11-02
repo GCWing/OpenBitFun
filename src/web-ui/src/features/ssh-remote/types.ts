@@ -13,6 +13,8 @@ export interface SSHConnectionConfig {
   auth: SSHAuthMethod;
   defaultWorkspace?: string;
   proxyJump?: string;
+  /** Host-owned value carried through unchanged; no form edits it yet. */
+  proxyCommand?: string;
   container?: ContainerWorkspaceConfig;
   wsl?: WslWorkspaceConfig;
   options?: SSHConnectionOptions;
@@ -62,6 +64,7 @@ export interface SavedConnection {
   defaultWorkspace?: string;
   lastConnected?: number;
   proxyJump?: string;
+  proxyCommand?: string;
   container?: ContainerWorkspaceConfig;
   wsl?: WslWorkspaceConfig;
   options?: SSHConnectionOptions;

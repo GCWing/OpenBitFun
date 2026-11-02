@@ -409,6 +409,7 @@ describe('SSHRemoteProvider startup restore', () => {
         port: 2222,
         username: 'coder',
         authType: { type: 'None' },
+        proxyCommand: 'coder ssh --stdio repos',
       },
     ]);
     sshApiMock.connect.mockResolvedValue({ success: true, connectionId: 'conn-coder' });
@@ -416,7 +417,7 @@ describe('SSHRemoteProvider startup restore', () => {
     await renderProvider();
 
     expect(sshApiMock.connect).toHaveBeenCalledWith(
-      expect.objectContaining({ auth: { type: 'None' } })
+      expect.objectContaining({ auth: { type: 'None' }, proxyCommand: 'coder ssh --stdio repos' })
     );
     expect(sshApiMock.hasStoredPassword).not.toHaveBeenCalled();
     expect(sshApiMock.openWorkspace).toHaveBeenCalledWith('conn-coder', '/root/repos');
