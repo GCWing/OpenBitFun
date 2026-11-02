@@ -6,9 +6,10 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+pub use super::workspace_grep_prefilter::content_search_candidate_literal;
 use super::workspace_grep_prefilter::{
     grep_batch_command, grep_probe_command, literal_alternatives, parse_grep_batch_output,
-    MAX_GREP_BATCH_COMMAND_BYTES, MAX_GREP_BATCH_PATHS,
+    recursive_grep_candidate_command, MAX_GREP_BATCH_COMMAND_BYTES, MAX_GREP_BATCH_PATHS,
 };
 use globset::GlobBuilder;
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
@@ -21,6 +22,10 @@ use std::collections::HashSet;
 const MAX_DISPLAY_COLUMNS: usize = 500;
 const MAX_VIRTUAL_GREP_CONTENT_LINES: usize = 4096;
 const VCS_DIRECTORIES_TO_EXCLUDE: &[&str] = &[".git", ".svn", ".hg", ".bzr", ".jj", ".sl"];
+const CANDIDATE_COMMAND_TIMEOUT_MS: u64 = 30_000;
+/// Interactive search has its own overall deadline and scans whole workspaces
+/// without a narrowing path, so its one candidate command gets most of that budget.
+const INTERACTIVE_CANDIDATE_COMMAND_TIMEOUT_MS: u64 = 100_000;
 
 /// Output mode enumeration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -369,6 +374,15 @@ pub struct GrepOptions {
     pub reject_linked_files: bool,
     /// Cooperative cancellation. `None` means the search cannot be cancelled.
     pub cancellation: Option<SearchCancellation>,
+    /// Fixed string the caller has proven every match contains (see
+    /// [`content_search_candidate_literal`]). `pattern` cannot always reveal it:
+    /// an escaped or case-folded literal looks like complex regex to the prefilter.
+    /// Only workspace-stream search reads this, and only to select candidates.
+    pub candidate_literal: Option<String>,
+    /// Interactive workspace-stream search: keep structured [`WorkspaceGrepLineMatch`]es
+    /// and stop scanning once `head_limit` is known to be exceeded, because a person
+    /// waiting on a result list wants the first page rather than exact totals.
+    pub collect_line_matches: bool,
 }
 
 impl Default for GrepOptions {
@@ -391,6 +405,8 @@ impl Default for GrepOptions {
             excluded_paths: Vec::new(),
             reject_linked_files: false,
             cancellation: None,
+            candidate_literal: None,
+            collect_line_matches: false,
         }
     }
 }
@@ -453,6 +469,19 @@ impl GrepOptions {
     /// Attach a cancellation token so the caller can stop this search early.
     pub fn cancellation(mut self, value: SearchCancellation) -> Self {
         self.cancellation = Some(value);
+        self
+    }
+
+    /// Declare a fixed string every match contains, enabling candidate selection for
+    /// literal searches that `pattern` alone cannot prove.
+    pub fn candidate_literal(mut self, value: Option<String>) -> Self {
+        self.candidate_literal = value;
+        self
+    }
+
+    /// Return structured line matches and stop scanning once the limit is exceeded.
+    pub fn collect_line_matches(mut self, value: bool) -> Self {
+        self.collect_line_matches = value;
         self
     }
 
@@ -685,6 +714,40 @@ impl GrepResultCollector {
                 }
             }
         }
+    }
+
+    /// The retained prefix already proves truncation, so further matches cannot
+    /// change what a caller that accepts unsorted first results will show.
+    fn budget_exhausted(&self) -> bool {
+        self.budget
+            .is_some_and(|budget| self.retained_units >= budget)
+    }
+
+    /// Recover structured matches from the sink's `path:line:text` rendering. The
+    /// file's own display path is the prefix, so a `:` in a path stays unambiguous.
+    fn line_matches(&self) -> Vec<WorkspaceGrepLineMatch> {
+        let mut matches = Vec::with_capacity(self.retained_units);
+        for file in self.files.values() {
+            let Some(prefix) = file.display_path.as_deref() else {
+                continue;
+            };
+            let path = file.path.to_string_lossy();
+            for line in &file.output_lines {
+                let parsed = line
+                    .strip_prefix(prefix)
+                    .and_then(|rest| rest.strip_prefix(':'))
+                    .and_then(|rest| rest.split_once(':'))
+                    .and_then(|(number, text)| Some((number.parse().ok()?, text)));
+                if let Some((line_number, text)) = parsed {
+                    matches.push(WorkspaceGrepLineMatch {
+                        path: path.to_string(),
+                        line_number,
+                        text: text.to_string(),
+                    });
+                }
+            }
+        }
+        matches
     }
 
     fn finish(self, options: &GrepOptions, cancelled: bool) -> Result<GrepSearchResult, String> {
@@ -1232,7 +1295,7 @@ fn reduce_grep_results_with_totals(
 /// `rg` is only a candidate accelerator. Matching, context, counts and output
 /// windows are always produced by this crate's native matcher and reducer.
 pub fn build_grep_candidate_command(options: &GrepOptions) -> String {
-    let Some(literals) = literal_alternatives(&options.pattern, options.case_insensitive) else {
+    let Some(literals) = candidate_literals(options) else {
         return "exit 127".to_string();
     };
     // Native Searcher does not skip binary content. Disable rg's binary and
@@ -1242,6 +1305,11 @@ pub fn build_grep_candidate_command(options: &GrepOptions) -> String {
     let mut command =
         "command rg --no-config --fixed-strings --hidden --no-ignore --text --files-with-matches --null --color never"
             .to_string();
+    // Reached only with a caller-proven literal: rg folds with the same Unicode
+    // tables as the native matcher, so this cannot exclude a match it would accept.
+    if options.case_insensitive {
+        command.push_str(" --ignore-case");
+    }
     for literal in literals {
         command.push_str(&format!(" -e {}", shell_single_quote(literal)));
     }
@@ -1267,12 +1335,79 @@ pub fn build_grep_candidate_command(options: &GrepOptions) -> String {
     )
 }
 
+/// One matched line of an interactive workspace-stream search.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceGrepLineMatch {
+    /// Provider path of the file: POSIX for a remote workspace on every client OS.
+    pub path: String,
+    pub line_number: usize,
+    pub text: String,
+}
+
 pub struct WorkspaceGrepResult {
     pub result: GrepSearchResult,
     pub used_rg_candidates: bool,
     pub used_grep_candidates: bool,
     pub scanned_file_count: usize,
     pub scanned_bytes: u64,
+    /// Filled only when [`GrepOptions::collect_line_matches`] is set. Holds one entry
+    /// beyond `head_limit` when more matches exist, which is how callers see truncation.
+    pub line_matches: Vec<WorkspaceGrepLineMatch>,
+}
+
+fn candidate_literals(options: &GrepOptions) -> Option<Vec<&str>> {
+    match options.candidate_literal.as_deref() {
+        Some(literal) => Some(vec![literal]),
+        None => literal_alternatives(&options.pattern, options.case_insensitive),
+    }
+}
+
+/// Exit status 2 means some files could not be read, not that the search failed:
+/// `rg` and `grep` still report everything they could read. Those unreadable files
+/// could not be opened through the workspace provider either. Interactive search
+/// accepts this, while agent Grep keeps treating any failure as an error.
+fn parse_partial_candidates(stdout: &str, root: &str) -> Result<HashSet<String>, String> {
+    let empty = stdout == "OPENBITFUN_RG_CANDIDATES_BEGIN\0OPENBITFUN_RG_CANDIDATES_END\0";
+    warn!("Workspace search candidate command could not read some files under {root}");
+    parse_rg_candidates(stdout, i32::from(empty), root)
+}
+
+/// One-shot candidate selection through system grep. Unlike the per-file batch
+/// prefilter this avoids a metadata round trip per file, and it also supports the
+/// ASCII case folding that interactive search uses by default.
+async fn recursive_grep_candidates(
+    shell: &dyn WorkspaceShell,
+    literals: &[&str],
+    options: &GrepOptions,
+    cancellation: &SearchCancellation,
+) -> Result<Option<HashSet<String>>, String> {
+    let result = shell
+        .exec_with_options(
+            &recursive_grep_candidate_command(
+                literals,
+                &options.path,
+                options.case_insensitive,
+                VCS_DIRECTORIES_TO_EXCLUDE,
+            ),
+            openbitfun_runtime_ports::WorkspaceCommandOptions {
+                timeout_ms: Some(INTERACTIVE_CANDIDATE_COMMAND_TIMEOUT_MS),
+                cancellation_token: Some(cancellation.token.clone()),
+            },
+        )
+        .await
+        .map_err(|error| format!("Workspace grep candidate command failed: {error}"))?;
+    if result.timed_out || result.interrupted {
+        return Err("Workspace grep candidate command timed out or was interrupted".to_string());
+    }
+    match result.exit_code {
+        0 | 1 => parse_rg_candidates(&result.stdout, result.exit_code, &options.path).map(Some),
+        2 => parse_partial_candidates(&result.stdout, &options.path).map(Some),
+        127 => Ok(None),
+        status => Err(format!(
+            "Workspace grep candidate command failed with exit code {status}: {}",
+            result.stderr.trim(),
+        )),
+    }
 }
 
 fn parse_rg_candidates(
@@ -1470,6 +1605,7 @@ pub async fn grep_search_workspace(
                 used_grep_candidates: false,
                 scanned_file_count: 0,
                 scanned_bytes: 0,
+                line_matches: Vec::new(),
             })
         },
         result = grep_search_workspace_inner(options.clone(), fs, shell, workers.clone()) => result,
@@ -1660,16 +1796,22 @@ async fn grep_search_workspace_inner(
         .cancellation
         .as_ref()
         .expect("search cancellation bound");
-    let literals = literal_alternatives(&options.pattern, options.case_insensitive)
+    let literals = candidate_literals(&options)
         .filter(|_| build_grep_candidate_command(&options).len() <= MAX_GREP_BATCH_COMMAND_BYTES);
     let mut candidates = None;
     let mut used_grep_candidates = false;
+    let mut used_recursive_grep = false;
+    let candidate_timeout_ms = if options.candidate_literal.is_some() {
+        INTERACTIVE_CANDIDATE_COMMAND_TIMEOUT_MS
+    } else {
+        CANDIDATE_COMMAND_TIMEOUT_MS
+    };
     if let (Some(shell), Some(literals)) = (shell, literals.as_ref()) {
         let command_result = shell
             .exec_with_options(
                 &build_grep_candidate_command(&options),
                 openbitfun_runtime_ports::WorkspaceCommandOptions {
-                    timeout_ms: Some(30_000),
+                    timeout_ms: Some(candidate_timeout_ms),
                     cancellation_token: Some(cancellation.token.clone()),
                 },
             )
@@ -1688,11 +1830,27 @@ async fn grep_search_workspace_inner(
                     &options.path,
                 )?);
             }
+            2 if options.candidate_literal.is_some() => {
+                candidates = Some(parse_partial_candidates(
+                    &command_result.stdout,
+                    &options.path,
+                )?);
+            }
             127 => {
+                if options.candidate_literal.is_some() {
+                    candidates =
+                        recursive_grep_candidates(shell, literals, &options, cancellation).await?;
+                    used_recursive_grep = candidates.is_some();
+                }
                 // A compatible grep is an optional fixed-byte prefilter. It
                 // never reinterprets regex syntax or renders tool results.
                 // Oversized patterns skip acceleration, not the search itself.
-                if grep_batch_command(literals, &[]).len() < MAX_GREP_BATCH_COMMAND_BYTES {
+                // The batch command never folds case, so a case-folded literal
+                // without a usable recursive grep scans through the provider.
+                if candidates.is_none()
+                    && !options.case_insensitive
+                    && grep_batch_command(literals, &[]).len() < MAX_GREP_BATCH_COMMAND_BYTES
+                {
                     let probe = shell
                         .exec_with_options(
                             grep_probe_command(),
@@ -1732,7 +1890,7 @@ async fn grep_search_workspace_inner(
             }
         }
     }
-    let used_rg_candidates = candidates.is_some();
+    let used_rg_candidates = candidates.is_some() && !used_recursive_grep;
     let grep_prefilter = if used_grep_candidates {
         Some((
             shell.expect("grep shell checked"),
@@ -1762,7 +1920,9 @@ async fn grep_search_workspace_inner(
     let mut single_file =
         (root_metadata.kind == WorkspacePathKind::File).then(|| options.path.clone());
     loop {
-        if cancellation.is_cancelled() {
+        if cancellation.is_cancelled()
+            || (options.collect_line_matches && collector.file_results.budget_exhausted())
+        {
             break;
         }
         let (path, is_symlink, file_name) = if let Some(path) = single_file.take() {
@@ -1816,8 +1976,14 @@ async fn grep_search_workspace_inner(
         let metadata = fs
             .metadata(&path, is_symlink)
             .await
-            .map_err(|error| format!("Failed to inspect {path}: {error}"))?
-            .ok_or_else(|| format!("File disappeared while searching: {path}"))?;
+            .map_err(|error| format!("Failed to inspect {path}: {error}"))?;
+        // A dangling link is ordinary workspace content, and it must not fail a
+        // whole-workspace search that the person never scoped around it.
+        if metadata.is_none() && is_symlink && options.collect_line_matches {
+            continue;
+        }
+        let metadata =
+            metadata.ok_or_else(|| format!("File disappeared while searching: {path}"))?;
         if metadata.kind != WorkspacePathKind::File {
             continue;
         }
@@ -1845,12 +2011,18 @@ async fn grep_search_workspace_inner(
         }
     }
     collector.scan_batch(&mut pending, grep_prefilter).await?;
+    let line_matches = if options.collect_line_matches {
+        collector.file_results.line_matches()
+    } else {
+        Vec::new()
+    };
     Ok(WorkspaceGrepResult {
+        line_matches,
         result: collector
             .file_results
             .finish(&options, cancellation.is_cancelled())?,
         used_rg_candidates,
-        used_grep_candidates,
+        used_grep_candidates: used_grep_candidates || used_recursive_grep,
         scanned_file_count: collector.scanned_file_count,
         scanned_bytes: collector
             .bytes_read

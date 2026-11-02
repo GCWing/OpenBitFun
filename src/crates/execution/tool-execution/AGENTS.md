@@ -26,7 +26,10 @@ agent-facing tool surface.
   Native and workspace-stream Grep share the Rust matcher and output reducer;
   optional target `rg` or batched system `grep` supplies conservative literal
   candidates only, after behavior probes. Complex/case-folded regex stays in the
-  shared matcher; never translate it to a weaker shell regex. `tokio-util/io-util`
+  shared matcher; never translate it to a weaker shell regex. Interactive callers
+  may pass a proven fixed-string hint (`content_search_candidate_literal`), which
+  also allows a case-folded target `rg` or recursive `grep` candidate step; the hint
+  must stay a conservative superset of what the shared matcher accepts. `tokio-util/io-util`
   bridges provider read streams into the existing blocking matcher, with
   cancellation closing pending readers.
 - Glob and ignore matching compile POSIX patterns to byte regexes without host

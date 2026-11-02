@@ -10,9 +10,10 @@ use crate::api::path_target::{
 };
 use crate::api::search_api::{
     build_content_search_request, group_search_results, prepare_content_search_runner,
-    remote_content_search_refusal, remote_content_search_refusal_message,
+    remote_content_search_refusal_message, remote_content_search_target,
     search_file_contents_via_workspace_search, search_metadata_from_content_result,
-    should_use_workspace_search, SearchMetadataResponse,
+    search_remote_contents, should_use_workspace_search, RemoteContentSearchQuery,
+    SearchMetadataResponse,
 };
 use crate::api::workspace_activation::spawn_workspace_background_warmup;
 use crate::startup_trace::DesktopStartupTrace;
@@ -4976,31 +4977,26 @@ pub async fn search_files(
         request.search_content && should_use_workspace_search(&state, &workspace).await;
     let result = if request.search_content {
         if workspace.workspace_kind == WorkspaceKind::Remote {
-            if !use_workspace_search {
-                Err(
-                    remote_content_search_refusal(&state, "search_files", &workspace)
-                        .await
-                        .unwrap_or_else(|| {
-                            remote_content_search_refusal_message(
-                                "search_files",
-                                &request.root_path,
-                                "remote workspace search is unavailable",
-                            )
-                        }),
-                )
-            } else {
-                search_file_contents_via_workspace_search(
-                    &state,
-                    &workspace,
-                    &request.pattern,
-                    request.case_sensitive,
-                    request.use_regex,
-                    request.whole_word,
-                    max_results,
-                )
-                .await
-                .map(|result| result.outcome.results)
-            }
+            let outcome = match remote_content_search_target(&state, &workspace).await {
+                Ok(target) => {
+                    search_remote_contents(
+                        target,
+                        RemoteContentSearchQuery {
+                            pattern: request.pattern.clone(),
+                            case_sensitive: request.case_sensitive,
+                            use_regex: request.use_regex,
+                            whole_word: request.whole_word,
+                            limit: max_results,
+                            cancel_flag: cancel_flag.clone(),
+                        },
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            };
+            outcome.map(|outcome| outcome.results).map_err(|error| {
+                remote_content_search_refusal_message("search_files", &request.root_path, &error)
+            })
         } else {
             let filename_outcome = state
                 .filesystem_service
@@ -5234,12 +5230,21 @@ pub async fn search_file_contents(
     .await?;
     request.root_path = workspace.root_path.to_string_lossy().into_owned();
 
-    if let Some(message) =
-        remote_content_search_refusal(&state, "search_file_contents", &workspace).await
-    {
-        error!("Content search refused: {}", message);
-        return Err(message);
-    }
+    let remote_target = if workspace.workspace_kind == WorkspaceKind::Remote {
+        Some(
+            remote_content_search_target(&state, &workspace)
+                .await
+                .map_err(|error| {
+                    remote_content_search_refusal_message(
+                        "search_file_contents",
+                        &request.root_path,
+                        &error,
+                    )
+                })?,
+        )
+    } else {
+        None
+    };
 
     let search_id = request.search_id.clone();
     let cancel_flag = register_search(&state, search_id.as_deref());
@@ -5254,7 +5259,28 @@ pub async fn search_file_contents(
         include_directories: false,
     };
 
-    let result = if should_use_workspace_search(&state, &workspace).await {
+    let result = if let Some(target) = remote_target {
+        search_remote_contents(
+            target,
+            RemoteContentSearchQuery {
+                pattern: request.pattern.clone(),
+                case_sensitive: request.case_sensitive,
+                use_regex: request.use_regex,
+                whole_word: request.whole_word,
+                limit,
+                cancel_flag,
+            },
+        )
+        .await
+        .map(|outcome| (outcome, None))
+        .map_err(|error| {
+            remote_content_search_refusal_message(
+                "search_file_contents",
+                &request.root_path,
+                &error,
+            )
+        })
+    } else if should_use_workspace_search(&state, &workspace).await {
         search_file_contents_via_workspace_search(
             &state,
             &workspace,
@@ -5476,12 +5502,21 @@ pub async fn start_search_file_contents_stream(
     .await?;
     request.root_path = workspace.root_path.to_string_lossy().into_owned();
 
-    if let Some(message) =
-        remote_content_search_refusal(&state, "start_search_file_contents_stream", &workspace).await
-    {
-        error!("Content search stream refused: {}", message);
-        return Err(message);
-    }
+    let remote_target = if workspace.workspace_kind == WorkspaceKind::Remote {
+        Some(
+            remote_content_search_target(&state, &workspace)
+                .await
+                .map_err(|error| {
+                    remote_content_search_refusal_message(
+                        "start_search_file_contents_stream",
+                        &request.root_path,
+                        &error,
+                    )
+                })?,
+        )
+    } else {
+        None
+    };
 
     let search_id = ensure_search_id(request.search_id.clone(), "content-stream");
     let cancel_flag = register_search(&state, Some(&search_id));
@@ -5530,7 +5565,45 @@ pub async fn start_search_file_contents_stream(
     ));
 
     tokio::spawn(async move {
-        let result = if use_workspace_search {
+        let result = if let Some(target) = remote_target {
+            let result = search_remote_contents(
+                target,
+                RemoteContentSearchQuery {
+                    pattern: pattern.clone(),
+                    case_sensitive,
+                    use_regex,
+                    whole_word,
+                    limit,
+                    cancel_flag: cancel_flag.clone(),
+                },
+            )
+            .await;
+            if let Ok(outcome) = &result {
+                if !cancel_flag
+                    .as_ref()
+                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                {
+                    for group in group_search_results(outcome.results.clone()) {
+                        openbitfun_core::infrastructure::FileSearchProgressSink::report(
+                            progress_sink.as_ref(),
+                            group,
+                        );
+                    }
+                    openbitfun_core::infrastructure::FileSearchProgressSink::flush(
+                        progress_sink.as_ref(),
+                    );
+                }
+            }
+            result.map(|outcome| (outcome, None)).map_err(|error| {
+                openbitfun_core::util::errors::OpenBitFunError::service(
+                    remote_content_search_refusal_message(
+                        "start_search_file_contents_stream",
+                        &root_path,
+                        &error,
+                    ),
+                )
+            })
+        } else if use_workspace_search {
             let result = workspace_search_runner
                 .as_ref()
                 .expect("workspace search runner should exist when enabled")
