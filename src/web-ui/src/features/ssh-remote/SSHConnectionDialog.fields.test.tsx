@@ -12,7 +12,7 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', async importOrigina
   remoteConnectAPI: { getDeviceInfo: async () => ({ device_id: 'local', device_name: 'Workstation' }) },
 }));
 const { sshApi, remote, peerDevice } = vi.hoisted(() => ({
-  peerDevice: { value: null as null | { peerMode: { active: boolean; deviceName: string }; capabilities: object | null } },
+  peerDevice: { value: null as null | { peerMode: { active: boolean; deviceName: string }; currentPeerCapabilities: object | null } },
   sshApi: {
     listSavedConnections: vi.fn(), listSSHConfigHosts: vi.fn(), getSSHConfig: vi.fn(),
     listWslDistributions: vi.fn(), listDockerContainers: vi.fn(), saveConnection: vi.fn(),
@@ -303,9 +303,9 @@ describe('remote workspace form composition', () => {
       await act(async () => fieldControl('ssh.remote.authMethod').click());
       return labels;
     };
-    peerDevice.value = { peerMode: { active: true, deviceName: 'Older peer' }, capabilities: { sshNoneAuthV1: false } };
+    peerDevice.value = { peerMode: { active: true, deviceName: 'Older peer' }, currentPeerCapabilities: { sshNoneAuthV1: false } };
     expect(await authOptionLabels()).not.toContain('ssh.remote.noAuth');
-    peerDevice.value = { peerMode: { active: true, deviceName: 'Peer' }, capabilities: { sshNoneAuthV1: true } };
+    peerDevice.value = { peerMode: { active: true, deviceName: 'Peer' }, currentPeerCapabilities: { sshNoneAuthV1: true } };
     expect(await authOptionLabels()).toContain('ssh.remote.noAuth');
   });
 
