@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canCopySessionsOnSurface,
+  canUseSshNoneAuthOnSurface,
   canViewPullRequestsOnSurface,
   canQueryToolCatalogOnSurface,
   canSubmitUserQuestionsOnSurface,
@@ -49,6 +50,15 @@ it('requires explicit host allowance-query capability and never falls back to co
   expect(canQuerySubscriptionQuotaOnSurface(true, caps({ hostKind: 'desktop' }))).toBe(false);
   expect(canQuerySubscriptionQuotaOnSurface(true, caps({ hostKind: 'cli' }))).toBe(false);
   expect(canQuerySubscriptionQuotaOnSurface(true, caps({ subscriptionQuotaV1: true }))).toBe(true);
+});
+
+describe('canUseSshNoneAuthOnSurface', () => {
+  it('requires the negotiated capability on a peer surface', () => {
+    expect(canUseSshNoneAuthOnSurface(false, null)).toBe(true);
+    expect(canUseSshNoneAuthOnSurface(true, null)).toBe(false);
+    expect(canUseSshNoneAuthOnSurface(true, { sshNoneAuthV1: false } as PeerHostCapabilities)).toBe(false);
+    expect(canUseSshNoneAuthOnSurface(true, { sshNoneAuthV1: true } as PeerHostCapabilities)).toBe(true);
+  });
 });
 
 describe('canCopySessionsOnSurface', () => {

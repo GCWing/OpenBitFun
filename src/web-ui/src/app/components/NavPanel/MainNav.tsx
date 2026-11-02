@@ -39,7 +39,7 @@ import { isRemoteWorkspace } from '@/shared/types';
 import { useSSHRemoteContext, SSHConnectionDialog, RemoteFileBrowser } from '@/features/ssh-remote';
 import { savedConnectionConfig } from '@/features/ssh-remote/savedConnectionConfig';
 import { workspacePresetHost } from '@/features/ssh-remote/useWorkspaceSourceOptions';
-import { isSshAuthenticationError, workspaceSourceErrorKey } from '@/features/ssh-remote/workspaceSourceError';
+import { canRepairSshCredentials, sshConnectionErrorKey, workspaceSourceErrorKey } from '@/features/ssh-remote/workspaceSourceError';
 import type { WorkspaceConnectionTarget } from '@/features/ssh-remote/types';
 import { openGlobalSearch } from '@/app/global-search/globalSearchStore';
 import { useSidebarNavigation } from '@/app/navigation/useSidebarNavigation';
@@ -125,9 +125,9 @@ const MainNav: React.FC = () => {
         return { connectionId: result?.connectionId || profile.id, connectionName: profile.name, sshHost: profile.host };
       } catch (cause) {
         scope.assertCurrent('retry project source authentication');
-        if (profile.wsl || profile.container?.local || !isSshAuthenticationError(cause)) {
+        if (profile.wsl || profile.container?.local || !canRepairSshCredentials(profile.authType, cause)) {
           log.error('Failed to connect selected project source', cause);
-          throw new Error(t(profile.wsl || profile.container?.local ? workspaceSourceErrorKey(target, cause) : 'workspaceSource.connectionFailed'));
+          throw new Error(t(profile.wsl || profile.container?.local ? workspaceSourceErrorKey(target, cause) : sshConnectionErrorKey(cause)));
         }
         preset = { kind: 'saved', connection: profile, authenticate: true };
       }
