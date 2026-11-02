@@ -991,10 +991,15 @@ const ChatPage: React.FC<ChatPageProps> = ({
     return () => clearInterval(tid);
   }, [isStreaming]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async (overrideText?: string) => {
     if (useMobileStore.getState().connectionHealth === 'unreachable') return;
-    const text = input.trim();
-    const imgs = pendingImages;
+    // `onClick` passes the click event here; only a string means "submit this
+    // text instead of the current draft", which is how a suggested prompt is
+    // sent in one tap.
+    const explicitText = typeof overrideText === 'string' ? overrideText : null;
+    const text = (explicitText ?? input).trim();
+    // Attachments belong to the draft, which a suggestion leaves untouched.
+    const imgs = explicitText === null ? pendingImages : [];
     if ((!text && imgs.length === 0) || imageAnalyzing || sendInFlightRef.current) return;
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;
@@ -1037,11 +1042,15 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (!isChatTargetCurrent(targetEpoch)) return;
       // Keep the draft until the host acknowledges it. A failed request must
       // remain retryable, and an acknowledgement must not erase newer typing.
-      const draftUnchanged = inputRef.current?.value === input;
-      setInput(current => current === input ? '' : current);
+      // A suggestion sent in one tap never touched the draft, so it must leave
+      // whatever the user had typed alone.
       setPromptSuggestion(null);
+      if (explicitText === null) {
+        const draftUnchanged = inputRef.current?.value === input;
+        setInput(current => current === input ? '' : current);
+        if (!wasStreaming && draftUnchanged) setInputExpanded(false);
+      }
       setPendingImages(current => current.filter(image => !imgs.includes(image)));
-      if (!wasStreaming && draftUnchanged) setInputExpanded(false);
       streamRef.current?.nudge();
       if (hostQueue?.getSnapshot().snapshot?.receipt?.status === 'queued') {
         setInfoToast(t('chat.messageQueued'));
@@ -1338,10 +1347,11 @@ const ChatPage: React.FC<ChatPageProps> = ({
         onCompositionStart={handleCompositionStart}
         onKeyDown={handleKeyDown}
         onRemoveImage={removeImage}
-        onSend={handleSend}
+        onSend={() => void handleSend()}
         pendingImages={pendingImages}
         promptSuggestion={promptSuggestion}
         onAcceptPromptSuggestion={acceptPromptSuggestion}
+        onSendPromptSuggestion={suggestion => void handleSend(suggestion)}
         streaming={isStreaming}
       />
 
