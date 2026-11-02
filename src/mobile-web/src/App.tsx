@@ -25,6 +25,7 @@ import { useConnectionHealth } from './hooks/useConnectionHealth';
 import { useMobileViewport } from './hooks/useMobileViewport';
 import { useWideLayout } from './hooks/useWideLayout';
 import { useMobileStore } from './services/store';
+import type { SessionWorkspaceContext } from './services/workspaceIdentity';
 import RemoteHomePanel from './components/RemoteHomePanel';
 import './styles/index.scss';
 
@@ -55,6 +56,7 @@ const AppContent: React.FC = () => {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSessionName, setActiveSessionName] = useState<string>('Session');
   const [activeSessionAgentType, setActiveSessionAgentType] = useState('Standard');
+  const [activeSessionWorkspace, setActiveSessionWorkspace] = useState<SessionWorkspaceContext | undefined>();
   const [chatAutoFocus, setChatAutoFocus] = useState(false);
   const [compactSidebarOpen, setCompactSidebarOpen] = useState(false);
   const isWideLayout = useWideLayout();
@@ -195,6 +197,7 @@ const AppContent: React.FC = () => {
         setActiveSessionId(null);
         setActiveSessionName('Session');
         setActiveSessionAgentType('Standard');
+        setActiveSessionWorkspace(undefined);
         setChatAutoFocus(false);
         setPrevPage(null);
         setNavDir(null);
@@ -279,11 +282,13 @@ const AppContent: React.FC = () => {
     sessionName?: string,
     isNew?: boolean,
     agentType = 'Standard',
+    workspace?: SessionWorkspaceContext,
   ) => {
     useMobileStore.getState().setError(null);
     setActiveSessionId(sessionId);
     setActiveSessionName(sessionName || 'Session');
     setActiveSessionAgentType(agentType);
+    setActiveSessionWorkspace(workspace);
     setChatAutoFocus(!!isNew);
     setCompactSidebarOpen(false);
     if (isWideLayout) {
@@ -315,6 +320,7 @@ const AppContent: React.FC = () => {
       setActiveSessionId(restored.session.id);
       setActiveSessionName(restored.session.name);
       setActiveSessionAgentType(restored.session.agentType);
+      setActiveSessionWorkspace(restored.session.workspace);
       setChatAutoFocus(false);
       setPrevPage(null);
       setNavDir(null);
@@ -327,6 +333,7 @@ const AppContent: React.FC = () => {
     setActiveSessionId(null);
     setActiveSessionName('Session');
     setActiveSessionAgentType('Standard');
+    setActiveSessionWorkspace(undefined);
     setChatAutoFocus(false);
     setPrevPage(null);
     setNavDir(null);
@@ -352,6 +359,7 @@ const AppContent: React.FC = () => {
     setActiveSessionId(null);
     setActiveSessionName('Session');
     setActiveSessionAgentType('Standard');
+    setActiveSessionWorkspace(undefined);
     setChatAutoFocus(false);
     setCompactSidebarOpen(false);
     setPrevPage(null);
@@ -429,6 +437,7 @@ const AppContent: React.FC = () => {
     setActiveSessionId(null);
     setActiveSessionName('Session');
     setActiveSessionAgentType('Standard');
+    setActiveSessionWorkspace(undefined);
     setChatAutoFocus(false);
     setCompactSidebarOpen(false);
     setPrevPage(null);
@@ -454,9 +463,10 @@ const AppContent: React.FC = () => {
         id: activeSessionId,
         name: activeSessionName,
         agentType: activeSessionAgentType,
+        workspace: activeSessionWorkspace,
       } : undefined,
     });
-  }, [accountDirectoryOpen, activeSessionAgentType, activeSessionId, activeSessionName, controlTarget, page]);
+  }, [accountDirectoryOpen, activeSessionAgentType, activeSessionId, activeSessionName, activeSessionWorkspace, controlTarget, page]);
 
   const isAnimating = navDir !== null;
   const currentPage: Page = page;
@@ -500,6 +510,7 @@ const AppContent: React.FC = () => {
             sessionId={activeSessionId}
             sessionName={activeSessionName}
             agentType={activeSessionAgentType}
+            workspace={activeSessionWorkspace}
             onBack={isWideLayout ? handleBackToSessions : () => setCompactSidebarOpen(true)}
             autoFocus={chatAutoFocus}
             wideLayout={isWideLayout}

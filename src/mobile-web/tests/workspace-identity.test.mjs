@@ -10,6 +10,7 @@ const code = ts.transpileModule(source, {
 const {
   mergeWorkspaceSessions, sessionMatchesWorkspace, workspaceIdentityKey,
   resolveLegacyWorkspaceReference, sameWorkspace,
+  isClawAgent, resolveChatHeaderContext, sessionWorkspaceContext, workspaceContext,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 );
@@ -431,4 +432,105 @@ test('workspace icons reject future formats and external image URLs without loca
     await assert.rejects(manager.getWorkspaceIcon('project'), /Unsupported workspace icon/);
     assert.equal(calls, 1);
   }
+});
+
+const home = {
+  workspace_id: 'ws-home', has_workspace: true, path: '/Users/me/home',
+  project_name: 'home', git_branch: 'master', workspace_kind: 'normal',
+};
+const claw = { workspace_id: 'ws-claw', path: '/Users/me/.bitfun/personal_assistant/workspace', name: 'Nova' };
+const header = (overrides) => resolveChatHeaderContext({
+  agentType: 'Standard',
+  currentWorkspace: home,
+  currentAssistant: null,
+  assistantLabel: 'Claw',
+  ...overrides,
+});
+
+test('assistant sessions never inherit the selected normal workspace or its branch', () => {
+  // Issue 2360: Pro mode selected `home / master`, then a Claw session is opened.
+  const owner = workspaceContext({ ...claw, workspace_kind: 'assistant' });
+  const session = sessionWorkspaceContext({
+    workspace_id: 'ws-claw', workspace_path: claw.path, workspace_name: 'workspace',
+  }, owner);
+  assert.deepEqual(header({ agentType: 'Claw', session }), { workspaceName: 'Nova' });
+  // A catalog row may carry the kind without the agent type saying Claw.
+  assert.deepEqual(header({ agentType: 'Cowork', session }), { workspaceName: 'Nova' });
+  // The selected assistant is matched by identity and supplies the current name.
+  assert.deepEqual(
+    header({ agentType: 'claw', session: { path: claw.path }, currentAssistant: claw }),
+    { workspaceName: 'Nova' },
+  );
+});
+
+test('a different selected assistant does not rename an attributed assistant session', () => {
+  const session = { workspace_id: 'ws-claw', path: claw.path, name: 'Nova', workspace_kind: 'assistant' };
+  const other = { workspace_id: 'ws-other', path: '/Users/me/other', name: 'Other' };
+  assert.deepEqual(header({ agentType: 'Claw', session, currentAssistant: other }), { workspaceName: 'Nova' });
+});
+
+test('assistant sessions without workspace facts use the selection, then the localized label', () => {
+  // Navigation restored from an older build only knows the agent type.
+  assert.deepEqual(header({ agentType: 'Claw', currentAssistant: claw }), { workspaceName: 'Nova' });
+  assert.deepEqual(header({ agentType: 'Claw' }), { workspaceName: 'Claw' });
+});
+
+test('normal sessions show their own workspace and a branch only for the current workspace', () => {
+  assert.deepEqual(
+    header({ session: { workspace_id: 'ws-home', path: home.path, name: 'stale label' } }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+  assert.deepEqual(
+    header({ session: { workspace_id: 'ws-api', path: '/Users/me/api', name: 'api' } }),
+    { workspaceName: 'api', gitBranch: undefined },
+  );
+  assert.deepEqual(
+    header({ session: { path: '/Users/me/api/' } }),
+    { workspaceName: 'api', gitBranch: undefined },
+  );
+  // No session facts: show nothing rather than guess from the selection.
+  assert.deepEqual(header({}), { workspaceName: '' });
+});
+
+test('same-path SSH sessions keep their branch scoped to the selected host', () => {
+  const sshA = {
+    has_workspace: true, path: a.path, project_name: 'herdr', git_branch: 'main',
+    workspace_kind: 'remote', remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+  };
+  assert.deepEqual(
+    header({ currentWorkspace: sshA, session: { ...b, name: 'herdr' } }),
+    { workspaceName: 'herdr', gitBranch: undefined },
+  );
+  assert.deepEqual(
+    header({ currentWorkspace: sshA, session: { ...a, name: 'herdr' } }),
+    { workspaceName: 'herdr', gitBranch: 'main' },
+  );
+});
+
+test('legacy localhost markers on the current workspace still match the local session', () => {
+  const legacy = { ...home, workspace_id: undefined, remote_ssh_host: 'localhost' };
+  assert.deepEqual(
+    header({ currentWorkspace: legacy, session: { path: home.path } }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+});
+
+test('session workspace context keeps host identity and takes only display facts from the owner', () => {
+  const owner = workspaceContext({ ...a, workspace_id: 'ws-owner', name: 'Row name', workspace_kind: 'remote' });
+  assert.deepEqual(sessionWorkspaceContext({
+    workspace_id: 'ws-session', workspace_path: '/pinned', workspace_name: 'host label',
+  }, owner), {
+    workspace_id: 'ws-session', path: '/pinned',
+    remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+    name: 'Row name', workspace_kind: 'remote',
+  });
+  // Pre-ID rows carry only the path and root label.
+  assert.deepEqual(sessionWorkspaceContext({ workspace_path: '/p', workspace_name: 'p' }), {
+    workspace_id: undefined, path: '/p', remote_connection_id: undefined, remote_ssh_host: undefined,
+    name: 'p', workspace_kind: undefined,
+  });
+  assert.equal(sessionWorkspaceContext({}), undefined);
+  assert.equal(isClawAgent('claw'), true);
+  assert.equal(isClawAgent('Claw'), true);
+  assert.equal(isClawAgent('Cowork'), false);
 });

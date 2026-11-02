@@ -63,9 +63,13 @@ import { describeRemoteError } from '../services/remoteErrorPresentation';
 // Device-directory read failures share the device pages' relay-failure copy.
 import { deviceFailurePresentation } from '../services/deviceFailureCopy';
 import {
+  isClawAgent,
   sameWorkspace,
   sessionMatchesWorkspace,
+  sessionWorkspaceContext,
+  workspaceContext,
   workspaceIdentityKey,
+  type SessionWorkspaceContext,
   type WorkspaceReference,
 } from '../services/workspaceIdentity';
 import { useTheme } from '../theme';
@@ -93,6 +97,7 @@ interface SessionListPageProps {
     sessionName?: string,
     isNew?: boolean,
     agentType?: string,
+    workspace?: SessionWorkspaceContext,
   ) => void;
   onOpenWorkspace: () => void;
   onOpenDeviceTools: () => void;
@@ -137,6 +142,21 @@ function commandIdentity(
     remoteConnectionId: workspace?.remote_connection_id,
     remoteSshHost: workspace?.remote_ssh_host,
   };
+}
+
+function createdSessionWorkspace(
+  path: string,
+  identity: RemoteWorkspaceIdentity,
+  owner?: SessionWorkspaceContext,
+): SessionWorkspaceContext | undefined {
+  return sessionWorkspaceContext({
+    workspace_id: identity.workspaceId,
+    workspace_path: path,
+    workspace_identity: {
+      remote_connection_id: identity.remoteConnectionId,
+      remote_ssh_host: identity.remoteSshHost,
+    },
+  }, owner);
 }
 
 function assistantIdentity(assistant: AssistantEntry | null | undefined): RemoteWorkspaceIdentity {
@@ -211,10 +231,6 @@ function agentLabel(agentType: string, t: (key: string) => string): string {
 
 function isCoworkAgent(agentType: string): boolean {
   return agentType === 'cowork' || agentType === 'Cowork';
-}
-
-function isClawAgent(agentType: string): boolean {
-  return agentType === 'claw' || agentType === 'Claw';
 }
 
 /** Pick first workspace suitable for Expert mode (exclude Claw assistant roots when kind is known). */
@@ -434,15 +450,37 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     clearLongPressTimer();
   }, []);
 
-  const handleSessionClick = useCallback((s: SessionInfo, e: React.MouseEvent) => {
+  // The flat list is scoped by the selected mode; compact rows name their own owner.
+  const listWorkspaceOwner = useMemo(() => {
+    if (displayMode === 'assistant') {
+      return currentAssistant ? workspaceContext({ ...currentAssistant, workspace_kind: 'assistant' }) : undefined;
+    }
+    return currentWorkspace ? workspaceContext(currentWorkspace) : undefined;
+  }, [currentAssistant, currentWorkspace, displayMode]);
+
+  const listedSessionWorkspace = useCallback((session: SessionInfo) => {
+    const owner = listWorkspaceOwner;
+    return sessionWorkspaceContext(
+      session,
+      owner?.path && sessionMatchesWorkspace(session, { ...owner, path: owner.path }) ? owner : undefined,
+    );
+  }, [listWorkspaceOwner]);
+
+  const handleSessionClick = useCallback((s: SessionInfo, e: React.MouseEvent, owner?: RecentWorkspaceEntry) => {
     if (longPressTriggeredRef.current) {
       e.preventDefault();
       e.stopPropagation();
       longPressTriggeredRef.current = false;
       return;
     }
-    onSelectSession(s.session_id, s.name, false, s.agent_type);
-  }, [onSelectSession]);
+    onSelectSession(
+      s.session_id,
+      s.name,
+      false,
+      s.agent_type,
+      owner ? sessionWorkspaceContext(s, workspaceContext(owner)) : listedSessionWorkspace(s),
+    );
+  }, [listedSessionWorkspace, onSelectSession]);
 
   // ── Session actions ─────────────────────────────────────────────
   const showToast = useCallback((msg: string) => {
@@ -1031,7 +1069,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         workspaceIdentity: createdIdentity,
         replaceWorkspace: true,
       });
-      onSelectSession(created.session_id, t(isClawAgent(agentType) ? 'sessions.remoteClawSession' : isCoworkAgent(agentType) ? 'sessions.remoteCoworkSession' : 'sessions.remoteCodeSession'), true, agentType);
+      onSelectSession(created.session_id, t(isClawAgent(agentType) ? 'sessions.remoteClawSession' : isCoworkAgent(agentType) ? 'sessions.remoteCoworkSession' : 'sessions.remoteCodeSession'), true, agentType, createdSessionWorkspace(createdPath, createdIdentity, workspaceContext(workspace)));
     } catch (error: unknown) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(error)) {
         setError(describeRemoteError(error, t));
@@ -1430,14 +1468,15 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         remoteConnectionId: created.remote_connection_id ?? identity.remoteConnectionId,
         remoteSshHost: created.remote_ssh_host ?? identity.remoteSshHost,
       };
-      await loadFirstPage(created.workspace_path ?? workspacePath, searchQuery, createdIdentity);
+      const createdPath = created.workspace_path ?? workspacePath;
+      await loadFirstPage(createdPath, searchQuery, createdIdentity);
       if (!isSessionListCurrent(targetEpoch)) return;
       const label = isClawAgent(agentType)
         ? t('sessions.remoteClawSession')
         : isCoworkAgent(agentType)
           ? t('sessions.remoteCoworkSession')
           : t('sessions.remoteCodeSession');
-      onSelectSession(created.session_id, label, true, agentType);
+      onSelectSession(created.session_id, label, true, agentType, createdSessionWorkspace(createdPath, createdIdentity, listWorkspaceOwner));
     } catch (e: any) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
         setError(describeRemoteError(e, t));
@@ -1452,6 +1491,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     currentAssistant,
     displayMode,
     isSessionListCurrent,
+    listWorkspaceOwner,
     loadFirstPage,
     onSelectSession,
     searchQuery,
@@ -1686,7 +1726,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                               key={session.session_id}
                               onContextMenu={(event) => { event.preventDefault(); setMenuSession(session); }}
                             >
-                              <MobileButton appearance="plain" block className="harmony-sidebar__session-main" onClick={(event) => handleSessionClick(session, event)}>
+                              <MobileButton appearance="plain" block className="harmony-sidebar__session-main" onClick={(event) => handleSessionClick(session, event, workspace)}>
                                 <span className="harmony-sidebar__session-icon" aria-hidden="true"><LucideMessageCircle width="18" height="18" stroke="currentColor" /></span>
                                 <span className="harmony-sidebar__row-label">{session.name || t('sessions.untitledSession')}</span>
                               </MobileButton>
@@ -1859,7 +1899,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                onSelectSession(sessions[0].session_id, sessions[0].name, false, sessions[0].agent_type);
+                onSelectSession(sessions[0].session_id, sessions[0].name, false, sessions[0].agent_type, listedSessionWorkspace(sessions[0]));
               }
             }}
           >

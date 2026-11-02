@@ -1,4 +1,4 @@
-import type { AssistantEntry, RecentWorkspaceEntry, SessionInfo } from './RemoteSessionManager';
+import type { AssistantEntry, RecentWorkspaceEntry, SessionInfo, WorkspaceInfo } from './RemoteSessionManager';
 
 export interface WorkspaceCatalog {
   workspaces: RecentWorkspaceEntry[];
@@ -233,4 +233,98 @@ export function workspaceDisplayName(
   const basename = root.split('/').pop()?.trim() ?? '';
   if (basename) return basename;
   return remoteSshHost?.trim() || remoteConnectionId?.trim() || 'Workspace';
+}
+
+/** Claw sessions run in an assistant workspace, which is never a project checkout. */
+export function isClawAgent(agentType: string): boolean {
+  return agentType === 'claw' || agentType === 'Claw';
+}
+
+/**
+ * The workspace a session belongs to, captured when the session is opened. Every
+ * field is optional because pre-ID hosts and old navigation records omit them.
+ */
+export interface SessionWorkspaceContext extends WorkspaceReference {
+  name?: string;
+  workspace_kind?: RecentWorkspaceEntry['workspace_kind'];
+}
+
+export function workspaceContext(workspace: WorkspaceReference & {
+  name?: string;
+  project_name?: string;
+  workspace_kind?: RecentWorkspaceEntry['workspace_kind'];
+}): SessionWorkspaceContext {
+  return {
+    workspace_id: workspace.workspace_id,
+    path: workspace.path,
+    remote_connection_id: workspace.remote_connection_id,
+    remote_ssh_host: workspace.remote_ssh_host,
+    name: workspace.name ?? workspace.project_name,
+    workspace_kind: workspace.workspace_kind,
+  };
+}
+
+/**
+ * Merge a session's own facts with the workspace row that owns it. The session
+ * decides identity because the host pinned it; the owner supplies the display
+ * name and kind, since `workspace_name` is only the workspace's root label.
+ */
+export function sessionWorkspaceContext(
+  session: Partial<Pick<SessionInfo, 'workspace_id' | 'workspace_path' | 'workspace_name' | 'workspace_identity'>>,
+  owner?: SessionWorkspaceContext,
+): SessionWorkspaceContext | undefined {
+  const provenance = session.workspace_identity;
+  const context: SessionWorkspaceContext = {
+    workspace_id: session.workspace_id ?? provenance?.workspace_id ?? owner?.workspace_id,
+    path: provenance?.path || session.workspace_path || owner?.path,
+    remote_connection_id: provenance?.remote_connection_id ?? owner?.remote_connection_id,
+    remote_ssh_host: provenance?.remote_ssh_host ?? owner?.remote_ssh_host,
+    name: owner?.name ?? session.workspace_name,
+    workspace_kind: owner?.workspace_kind,
+  };
+  return context.workspace_id || context.path || context.name ? context : undefined;
+}
+
+export interface ChatHeaderContext {
+  workspaceName: string;
+  gitBranch?: string;
+}
+
+/**
+ * Header facts for one session. The store's current workspace and assistant are
+ * selections, not the session's owner: they only contribute when they are the
+ * same workspace. A branch is known only for the current workspace, and an
+ * unattributed non-assistant session shows nothing rather than a guess.
+ */
+export function resolveChatHeaderContext({
+  agentType,
+  session,
+  currentWorkspace,
+  currentAssistant,
+  assistantLabel,
+}: {
+  agentType: string;
+  session?: SessionWorkspaceContext;
+  currentWorkspace?: WorkspaceInfo | null;
+  currentAssistant?: AssistantEntry | null;
+  assistantLabel: string;
+}): ChatHeaderContext {
+  const sessionIsCurrentAssistant = sameWorkspace(session, currentAssistant);
+  if (isClawAgent(agentType) || session?.workspace_kind === 'assistant' || sessionIsCurrentAssistant) {
+    const selectedAssistant = !session || sessionIsCurrentAssistant ? currentAssistant : undefined;
+    return { workspaceName: selectedAssistant?.name.trim() || session?.name?.trim() || assistantLabel };
+  }
+  if (!session) return { workspaceName: '' };
+  const current = currentWorkspace && sameWorkspace(session, normalizeWorkspaceRouting(currentWorkspace))
+    ? currentWorkspace
+    : undefined;
+  return {
+    workspaceName: workspaceDisplayName(
+      current?.project_name || session.name,
+      session.path,
+      session.remote_ssh_host,
+      session.remote_connection_id,
+    ),
+    gitBranch: current?.git_branch,
+  };
 }

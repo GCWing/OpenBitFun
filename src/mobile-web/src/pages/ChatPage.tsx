@@ -22,6 +22,11 @@ import {
   type PendingChatImage,
 } from '../services/chatImageAttachments';
 import { useMobileStore } from '../services/store';
+import {
+  resolveChatHeaderContext,
+  sessionWorkspaceContext,
+  type SessionWorkspaceContext,
+} from '../services/workspaceIdentity';
 import { createRemoteCacheScope, remoteCache } from '../services/RemoteCache';
 import ChatHeader from '../components/ChatHeader';
 import ChatComposerBar from '../components/ChatComposerBar';
@@ -51,6 +56,7 @@ interface ChatPageProps {
   sessionId: string;
   sessionName?: string;
   agentType?: string;
+  workspace?: SessionWorkspaceContext;
   onBack: () => void;
   autoFocus?: boolean;
   wideLayout?: boolean;
@@ -74,6 +80,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   sessionId,
   sessionName,
   agentType: sessionAgentType = 'Standard',
+  workspace: sessionWorkspace,
   onBack,
   autoFocus,
   wideLayout = false,
@@ -88,6 +95,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
     error,
     setError,
     currentWorkspace,
+    currentAssistant,
+    sessions,
     authenticatedUserId,
     controlTarget,
     connectionHealth,
@@ -1152,8 +1161,15 @@ const ChatPage: React.FC<ChatPageProps> = ({
     }
   };
 
-  const workspaceName = currentWorkspace?.project_name || currentWorkspace?.path?.split('/').pop() || '';
-  const gitBranch = currentWorkspace?.git_branch;
+  // Restored navigation from an older build has no workspace; the loaded session row may.
+  const listedSession = sessionWorkspace ? undefined : sessions.find((session) => session.session_id === sessionId);
+  const { workspaceName, gitBranch } = resolveChatHeaderContext({
+    agentType: sessionAgentType,
+    session: sessionWorkspace ?? (listedSession && sessionWorkspaceContext(listedSession)),
+    currentWorkspace,
+    currentAssistant,
+    assistantLabel: t('shared.agents.Claw'),
+  });
   const displayName = liveTitle || sessionName || t('chat.session');
   const isRemoteWorkspace = currentWorkspace?.workspace_kind === 'remote'
     || Boolean(currentWorkspace?.remote_connection_id)
