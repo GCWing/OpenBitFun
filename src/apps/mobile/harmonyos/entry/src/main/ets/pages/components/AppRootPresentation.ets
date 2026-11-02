@@ -100,6 +100,10 @@ export struct AppRootPresentation {
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.RemoteViewSettings);
   @Local fullTextPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  @Local skillPickerPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SkillPicker);
+  @Local usageReportPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UsageReport);
   private verticalCreases: ConversationLayoutCrease[] = [];
   private horizontalCreases: ConversationLayoutHorizontalCrease[] = [];
   private wideQueryListener?: mediaQuery.MediaQueryListener;
@@ -242,6 +246,8 @@ export struct AppRootPresentation {
       filePreviewLayout: this.filePreviewLayout(),
       sessionDetailsPlacement: this.sessionDetailsPlacement,
       fullTextSheetPlacement: this.fullTextPlacement,
+      skillPickerSheetPlacement: this.skillPickerPlacement,
+      usageReportSheetPlacement: this.usageReportPlacement,
       wideMasterPaneWidth: this.wideMasterPaneWidth,
       wideMasterDetailGap: this.wideMasterDetailGap,
       wideDetailContentOffset: this.wideDetailContentOffset,
@@ -284,6 +290,8 @@ export struct AppRootPresentation {
         showBackButton: false,
         hoverOperateMode: this.isHoverLayout(),
         fullTextSheetPlacement: this.fullTextPlacement,
+        skillPickerSheetPlacement: this.skillPickerPlacement,
+        usageReportSheetPlacement: this.usageReportPlacement,
         onRestoreSidebar: () => this.restoreWideMasterPane()
       })
     }
@@ -531,6 +539,8 @@ export struct AppRootPresentation {
       input,
       SettingsSheetKind.UserMessageFullText
     );
+    this.skillPickerPlacement = SettingsPlacementPolicy.resolve(input, SettingsSheetKind.SkillPicker);
+    this.usageReportPlacement = SettingsPlacementPolicy.resolve(input, SettingsSheetKind.UsageReport);
   }
 
   private isRtlLayout(): boolean {

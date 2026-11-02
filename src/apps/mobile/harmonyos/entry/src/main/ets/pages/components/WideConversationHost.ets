@@ -52,6 +52,10 @@ export struct WideConversationHost {
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
   @Param fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  @Param skillPickerSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SkillPicker);
+  @Param usageReportSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UsageReport);
   @Param wideMasterPaneWidth: number = 0;
   @Param wideMasterDetailGap: number = 0;
   @Param wideDetailContentOffset: number = 0;
@@ -367,6 +371,8 @@ export struct WideConversationHost {
       ),
       useWidePresentation: true,
       fullTextSheetPlacement: this.fullTextSheetPlacement,
+      skillPickerSheetPlacement: this.skillPickerSheetPlacement,
+      usageReportSheetPlacement: this.usageReportSheetPlacement,
       onRestoreSidebar: this.onRestoreMasterPane
     })
   }

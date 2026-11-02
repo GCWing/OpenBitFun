@@ -22,6 +22,7 @@ import { AppRoute } from '../navigation/AppRouteContract';
 import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
+import { CommandPalettePresentation } from './CommandPaletteState';
 import { RollbackEntryFacts } from '../policy/RollbackPresentationPolicy';
 
 /** Immutable presentation state consumed by ConversationView. */
@@ -54,6 +55,11 @@ export class ConversationViewState {
   selectedImages: ConversationUiSelectedImage[] = [];
   isVoiceListening: boolean = false;
   chatInput: string = '';
+  /**
+   * The composer's command row. Hidden on the general surface and whenever the
+   * conversation has no session, so the row can never act on a stale target.
+   */
+  commandPalette: CommandPalettePresentation = CommandPalettePresentation.hidden();
   promptSuggestion: string = '';
   /**
    * The facts a tap on the rollback entry is judged with.
@@ -105,6 +111,10 @@ export class ConversationViewState {
     state.downloadedFilePath = remote.downloadedFilePath;
     state.fileDownloadStatus = remote.fileDownloadStatus;
     state.interactionMailbox = remote.interactionMailbox;
+    state.commandPalette = CommandPalettePresentation.project(
+      remote.commandPalette,
+      state.activeSession.sessionId.length > 0,
+      state.isBusy);
     // A rollback needs an idle session on a host that serves the capability; a
     // dispatch session cannot be proven from this controller (see
     // `RollbackEntryFacts.isDispatchSession`), so the host's own refusal stays the
