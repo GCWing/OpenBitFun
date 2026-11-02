@@ -6,7 +6,7 @@ import { EXTERNAL_SESSION_NAMES, isExternalSessionEcosystem, type ExternalSessio
 
 export type WorkspaceSessionGrouping = 'grouped' | 'all';
 export type WorkspaceSessionOrdering = 'updated' | 'status' | 'created' | 'name';
-export type WorkspaceSessionShow = 'all' | 'unread' | 'attention';
+export type WorkspaceSessionShow = 'all' | 'unread' | 'attention' | 'archived';
 export type WorkspaceSessionStatus = 'running' | 'attention' | 'error' | 'completed' | 'idle';
 export type WorkspaceSessionEnvironment = 'local' | 'remote' | 'detached';
 export type WorkspaceSessionSource = 'openbitfun' | 'external';
@@ -246,7 +246,9 @@ export function matchesWorkspaceSessionView(
 ): boolean {
   if (show === 'unread' && !session.hasUnreadCompletion) return false;
   if (show === 'attention' && !session.needsUserAttention) return false;
-  if (filters.hideArchived && session.persistedStatus === 'archived') return false;
+  if (show === 'archived') {
+    if (session.persistedStatus !== 'archived') return false;
+  } else if (filters.hideArchived && session.persistedStatus === 'archived') return false;
   if (filters.hiddenStatuses.includes(deriveWorkspaceSessionStatus(session, isRunning))) return false;
   if (filters.hiddenEnvironments.includes(deriveWorkspaceSessionEnvironment(session))) return false;
   if (filters.hiddenSources.includes(deriveWorkspaceSessionSource(session))) return false;

@@ -137,25 +137,21 @@ pub(crate) fn detach_route_controller(route: RelayRoute, device_id: &str) -> Vec
 
 fn retain_online_in_state(
     state: &mut PeerControlState,
+    route: RelayRoute,
     online_device_ids: &HashSet<String>,
-) -> Vec<String> {
-    let had_controllers = !state.controllers.is_empty();
-    state.controllers.retain(|(route, device_id)| {
-        *route != RelayRoute::Official || online_device_ids.contains(device_id)
-    });
-    if had_controllers && state.controllers.is_empty() {
-        return state.permission_request_ids.drain().collect();
-    }
-    Vec::new()
+) {
+    state
+        .controllers
+        .retain(|(owner, device_id)| *owner != route || online_device_ids.contains(device_id));
 }
 
-/// Remove controllers missing from account presence and return requests that
-/// lost their final control surface.
-pub fn retain_online_controllers(online_device_ids: &HashSet<String>) -> Vec<String> {
+/// Remove offline delivery subscribers only on the reporting route. Presence
+/// loss does not revoke pending permissions; reconnect recovers the mailbox.
+pub(crate) fn retain_online_controllers(route: RelayRoute, online_device_ids: &HashSet<String>) {
     let Ok(mut state) = peer_control_state().lock() else {
-        return Vec::new();
+        return;
     };
-    retain_online_in_state(&mut state, online_device_ids)
+    retain_online_in_state(&mut state, route, online_device_ids);
 }
 
 /// Clear all attached controllers after the device-routing stream closes.
@@ -749,14 +745,46 @@ mod tests {
     }
 
     #[test]
-    fn presence_loss_drains_requests_only_when_every_controller_is_offline() {
+    fn presence_loss_preserves_pending_permissions_after_the_last_controller_leaves() {
         let mut state = control_state(&["controller-a", "controller-b"], &["request-1"]);
         let online = HashSet::from(["controller-b".to_string()]);
-        assert!(retain_online_in_state(&mut state, &online).is_empty());
+        retain_online_in_state(&mut state, RelayRoute::Official, &online);
+        assert_eq!(state.controllers.len(), 1);
 
-        assert_eq!(
-            retain_online_in_state(&mut state, &HashSet::new()),
-            vec!["request-1".to_string()]
-        );
+        retain_online_in_state(&mut state, RelayRoute::Official, &HashSet::new());
+        assert!(state.controllers.is_empty());
+        assert!(state.permission_request_ids.contains("request-1"));
+    }
+
+    #[test]
+    fn presence_updates_only_remove_subscribers_from_the_reporting_route() {
+        for route in [RelayRoute::Official, RelayRoute::Lan] {
+            let other = if route == RelayRoute::Official {
+                RelayRoute::Lan
+            } else {
+                RelayRoute::Official
+            };
+            let mut state = PeerControlState::default();
+            state.controllers.extend([
+                (route, "shared-device".to_string()),
+                (other, "shared-device".to_string()),
+                (route, "online-device".to_string()),
+            ]);
+            state.permission_request_ids.insert("request-1".to_string());
+
+            retain_online_in_state(
+                &mut state,
+                route,
+                &HashSet::from(["online-device".to_string()]),
+            );
+            assert_eq!(state.controllers.len(), 2);
+            assert!(state
+                .controllers
+                .contains(&(other, "shared-device".to_string())));
+            assert!(state
+                .controllers
+                .contains(&(route, "online-device".to_string())));
+            assert!(state.permission_request_ids.contains("request-1"));
+        }
     }
 }

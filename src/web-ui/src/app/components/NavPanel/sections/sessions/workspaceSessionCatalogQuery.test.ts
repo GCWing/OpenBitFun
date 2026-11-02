@@ -52,7 +52,7 @@ describe('workspace catalog query selection', () => {
     for (const ordering of ['name', 'status'] as const) {
       expect(workspaceSessionCatalogQuery('main', ordering, 'all', DEFAULT_WORKSPACE_SESSION_FILTERS, 'all')).toBeUndefined();
     }
-    for (const show of ['unread', 'attention'] as const) {
+    for (const show of ['unread', 'attention', 'archived'] as const) {
       expect(workspaceSessionCatalogQuery('main', 'updated', show, DEFAULT_WORKSPACE_SESSION_FILTERS, 'codex')).toBeUndefined();
     }
     const filters = [

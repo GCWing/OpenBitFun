@@ -172,6 +172,11 @@ describe('SessionList target initialization ownership', () => {
       'sessions.remoteClawSession',
       true,
       'claw',
+      expect.objectContaining({
+        workspace_kind: 'assistant',
+        workspace_id: 'assistant-b',
+        path: '/assistant-b',
+      }),
     );
   });
   it('workspace creation offers all modes while footer tools preserve workspace identity', async () => {

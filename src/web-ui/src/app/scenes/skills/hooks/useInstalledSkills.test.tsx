@@ -108,6 +108,41 @@ describe('useInstalledSkills', () => {
     vi.useRealTimers();
   });
 
+  describe('on a CLI peer host', () => {
+    const skills = [{ key: 'user::openbitfun::good', name: 'good', sourceId: 'openbitfun', sourceSlot: 'openbitfun', level: 'user', path: '/skills/good' }];
+
+    it('lists Skills read-only when the host reports no direct management', async () => {
+      getSkillConfigsMock.mockResolvedValue(skills);
+      getGlobalSkillSettingsMock.mockResolvedValue({
+        directSkillManagementVersion: 0,
+        globallyDisabledUserSkillKeys: [],
+        globallyDisabledProjectSkillKeys: [],
+      });
+      await act(async () => root.render(<Harness enabled />));
+      expect(currentInstalled?.skills).toEqual(skills);
+      expect(currentInstalled?.error).toBeNull();
+      expect(currentInstalled?.canToggleSkill(skills[0] as never)).toBe(false);
+    });
+
+    it('still lists Skills when an older host refuses the availability settings', async () => {
+      getSkillConfigsMock.mockResolvedValue(skills);
+      getGlobalSkillSettingsMock.mockRejectedValue(new Error(
+        "command 'get_global_skill_settings' is not supported on CLI peer host: the CLI peer host has no handler for this command",
+      ));
+      await act(async () => root.render(<Harness enabled />));
+      expect(currentInstalled?.skills).toEqual(skills);
+      expect(currentInstalled?.error).toBeNull();
+      expect(currentInstalled?.canToggleSkill(skills[0] as never)).toBe(false);
+    });
+
+    it('keeps reporting other availability failures', async () => {
+      getSkillConfigsMock.mockResolvedValue(skills);
+      getGlobalSkillSettingsMock.mockRejectedValue(new Error('config is unreadable'));
+      await act(async () => root.render(<Harness enabled />));
+      expect(currentInstalled?.error).not.toBeNull();
+    });
+  });
+
   it('preserves available skills alongside discovery failures', async () => {
     const skills = [{ key: 'user::openbitfun::good', name: 'good', sourceId: 'openbitfun', level: 'user', path: '/skills/good' }];
     getSkillConfigsMock.mockResolvedValue(skills);

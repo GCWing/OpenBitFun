@@ -82,6 +82,7 @@ export default function AssistantSessionHistory({ workspace, isActive }: Props) 
         workspaceId={workspace.id}
         workspacePath={workspace.rootPath}
         isActiveWorkspace={isActive}
+        useWorkspaceViewPreferences
         defaultSessionAction={{
           sessionId: preference?.sessionId ?? null,
           disabled: Boolean(disabledReason) || saving,

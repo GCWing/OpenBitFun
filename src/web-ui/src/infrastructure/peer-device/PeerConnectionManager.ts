@@ -45,6 +45,8 @@ export interface PeerHostCapabilities {
   readonly inlineImageAttachmentsV1?: boolean;
   readonly btwInitialModelSelectionV1?: boolean;
   readonly btwModelPoolSelectionV1?: boolean;
+  /** Terminal output arrives as replay pages announced on the host stream. */
+  readonly terminalCursorReplayV1?: boolean;
   readonly controlConversationV1?: boolean;
   readonly controlConversationResetV1?: boolean;
   readonly targetedSessionRollback: boolean;
@@ -190,6 +192,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   inlineImageAttachmentsV1: false,
   btwInitialModelSelectionV1: false,
   btwModelPoolSelectionV1: false,
+  terminalCursorReplayV1: false,
   controlConversationV1: false,
   controlConversationResetV1: false,
   targetedSessionRollback: false,
@@ -551,6 +554,7 @@ export class PeerConnectionManager {
       inlineImageAttachmentsV1: caps?.inline_image_attachments_v1 === true,
       btwInitialModelSelectionV1: caps?.btw_initial_model_selection_v1 === true,
       btwModelPoolSelectionV1: caps?.btw_model_pool_selection_v1 === true,
+      terminalCursorReplayV1: caps?.terminal_cursor_replay_v1 === true,
       controlConversationV1: caps?.control_conversation_v1 === true,
       controlConversationResetV1: caps?.control_conversation_reset_v1 === true,
       targetedSessionRollback: caps?.targeted_session_rollback === true,
