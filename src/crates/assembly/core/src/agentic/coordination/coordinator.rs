@@ -252,7 +252,17 @@ fn loaded_session_workspace_id_for_locator<'a>(
     if requested.is_empty() {
         return None;
     }
-    let requested = comparable_workspace_path(requested);
+    // Remote roots are POSIX paths on the SSH host: never canonicalize or
+    // case-fold them with controller (for example Windows) path semantics.
+    let is_remote = config.is_remote_workspace();
+    let comparable = |path: &str| {
+        if is_remote {
+            openbitfun_services_core::workspace_identity::normalize_remote_workspace_path(path)
+        } else {
+            comparable_workspace_path(path)
+        }
+    };
+    let requested = comparable(requested);
     let names_session_root = [
         config.workspace_path.as_deref(),
         config.project_workspace_path.as_deref(),
@@ -261,8 +271,67 @@ fn loaded_session_workspace_id_for_locator<'a>(
     .flatten()
     .map(str::trim)
     .filter(|path| !path.is_empty())
-    .any(|path| comparable_workspace_path(path) == requested);
+    .any(|path| comparable(path) == requested);
     names_session_root.then_some(workspace_id)
+}
+
+/// ID-first storage resolution for a request that targets a loaded session.
+///
+/// Returns `None` when the request locator does not merely re-state the
+/// session's own root (see [`loaded_session_workspace_id_for_locator`]); the
+/// caller must then keep its legacy path resolution and binding checks.
+///
+/// When a local worktree session's own workspace record is gone, storage is
+/// retried through the session's `project_workspace_id`. This is safe because
+/// local worktree history is always stored under the project workspace, and
+/// the retry is by ID only: it never falls back to a path, never applies to
+/// remote sessions (whose workspace and project IDs are the same record), and
+/// only accepts a local storage owner.
+pub(super) async fn resolve_loaded_session_storage_by_id(
+    port: &CoreSessionStorePort,
+    config: &SessionConfig,
+    requested_workspace_path: &str,
+    requested_connection_id: Option<&str>,
+    requested_ssh_host: Option<&str>,
+) -> Option<openbitfun_runtime_ports::PortResult<SessionStoragePathResolution>> {
+    let workspace_id = loaded_session_workspace_id_for_locator(
+        config,
+        requested_workspace_path,
+        requested_connection_id,
+        requested_ssh_host,
+    )?;
+    let resolved = match port.resolve_workspace_storage(workspace_id).await {
+        Ok(resolution) => Ok(resolution),
+        Err(error) => {
+            let project_id = config
+                .project_workspace_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && *id != workspace_id);
+            match project_id {
+                Some(project_id) if !config.is_remote_workspace() => {
+                    match port.resolve_workspace_storage(project_id).await {
+                        Ok(resolution)
+                            if resolution.storage_kind
+                                == openbitfun_runtime_ports::SessionStorageKind::Local =>
+                        {
+                            warn!(
+                                "Session workspace record is unavailable; using its project workspace storage: workspace_id={}, project_workspace_id={}",
+                                workspace_id, project_id
+                            );
+                            Ok(resolution)
+                        }
+                        _ => Err(error),
+                    }
+                }
+                _ => Err(error),
+            }
+        }
+    };
+    Some(resolved.map(|mut resolution| {
+        resolution.requested_workspace_path = PathBuf::from(requested_workspace_path);
+        resolution
+    }))
 }
 
 fn trimmed_model_id(value: Option<&str>) -> Option<String> {
@@ -5126,24 +5195,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         remote_connection_id: Option<&str>,
         remote_ssh_host: Option<&str>,
     ) -> OpenBitFunResult<SessionStoragePathResolution> {
-        if let Some(workspace_id) = loaded_session_workspace_id_for_locator(
+        let port = CoreSessionStorePort::with_path_manager(self.session_manager.path_manager());
+        if let Some(resolution) = resolve_loaded_session_storage_by_id(
+            &port,
             session_config,
             workspace_path,
             remote_connection_id,
             remote_ssh_host,
-        ) {
-            let mut resolution =
-                CoreSessionStorePort::with_path_manager(self.session_manager.path_manager())
-                    .resolve_storage_for_reference(
-                        Some(workspace_id),
-                        workspace_path,
-                        remote_connection_id.map(ToOwned::to_owned),
-                        remote_ssh_host.map(ToOwned::to_owned),
-                    )
-                    .await
-                    .map_err(|error| OpenBitFunError::Session(error.to_string()))?;
-            resolution.requested_workspace_path = PathBuf::from(workspace_path);
-            return Ok(resolution);
+        )
+        .await
+        {
+            return resolution.map_err(|error| OpenBitFunError::Session(error.to_string()));
         }
         self.resolve_session_restore_scope(workspace_path, remote_connection_id, remote_ssh_host)
             .await
@@ -16926,12 +16988,21 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(not(feature = "remote-workspace"))]
     #[tokio::test]
     async fn remote_session_metadata_never_falls_back_to_a_local_workspace_binding() {
+        // A remote binding is built from the registered SSH workspace record;
+        // register it here instead of depending on another test's fixture.
+        let registered_root = format!("/srv/remote-project-{}", uuid::Uuid::new_v4());
+        let unregistered_root = format!("/srv/unregistered-project-{}", uuid::Uuid::new_v4());
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &registered_root,
+            "ssh-user@example.test:22",
+            "example.test",
+        )
+        .await;
         let binding = ConversationCoordinator::build_workspace_binding(&SessionConfig {
             tool_presentation_mode: Default::default(),
-            workspace_path: Some("/srv/remote-project".to_string()),
+            workspace_path: Some(registered_root.clone()),
             remote_connection_id: Some("ssh-user@example.test:22".to_string()),
             remote_ssh_host: Some("example.test".to_string()),
             ..SessionConfig::default()
@@ -16948,16 +17019,18 @@ pub(crate) mod tests {
             "a remote binding without a reachable provider must be an error, never local services"
         );
 
+        // Partial remote metadata for a root no workspace record owns must
+        // fail closed instead of becoming a local binding.
         for incomplete in [
             SessionConfig {
                 tool_presentation_mode: Default::default(),
-                workspace_path: Some("/srv/remote-project".to_string()),
+                workspace_path: Some(unregistered_root.clone()),
                 remote_connection_id: Some("ssh-user@example.test:22".to_string()),
                 ..SessionConfig::default()
             },
             SessionConfig {
                 tool_presentation_mode: Default::default(),
-                workspace_path: Some("/srv/remote-project".to_string()),
+                workspace_path: Some(unregistered_root.clone()),
                 remote_ssh_host: Some("example.test".to_string()),
                 ..SessionConfig::default()
             },
@@ -22579,6 +22652,97 @@ pub(crate) mod tests {
             );
             assert!(!resolution.is_remote_storage());
         }
+    }
+
+    #[tokio::test]
+    async fn loaded_worktree_session_with_missing_record_retries_project_id_only() {
+        let project_dir = tempfile::tempdir().expect("project");
+        let project = dunce::canonicalize(project_dir.path()).expect("canonical project");
+        let worktree = project.join("removed-worktree");
+        std::fs::create_dir_all(&worktree).expect("worktree dir");
+        let project_record =
+            crate::service::workspace::legacy_compat::register_local_fixture(&project, None).await;
+        register_same_path_remote(&project).await;
+        let (coordinator, _) = test_coordinator();
+        let port =
+            CoreSessionStorePort::with_path_manager(coordinator.session_manager.path_manager());
+        let project_storage = port
+            .resolve_storage_for_reference(Some(&project_record.id), "", None, None)
+            .await
+            .expect("project storage by ID");
+        let missing_worktree_id = format!("removed-worktree-{}", uuid::Uuid::new_v4());
+        let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some(missing_worktree_id.clone()),
+            project_workspace_id: Some(project_record.id.clone()),
+            workspace_path: Some(worktree.to_string_lossy().into_owned()),
+            project_workspace_path: Some(project.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        let resolution = coordinator
+            .resolve_loaded_session_restore_scope(&config, &project.to_string_lossy(), None, None)
+            .await
+            .expect("a removed worktree record retries the project workspace ID");
+        assert_eq!(
+            resolution.effective_storage_path,
+            project_storage.effective_storage_path
+        );
+        assert!(!resolution.is_remote_storage());
+
+        // Without a project ID there is nothing ID-based to retry: fail loudly.
+        let without_project = SessionConfig {
+            project_workspace_id: None,
+            ..config.clone()
+        };
+        let error = coordinator
+            .resolve_loaded_session_restore_scope(
+                &without_project,
+                &project.to_string_lossy(),
+                None,
+                None,
+            )
+            .await
+            .expect_err("a missing workspace record must not fall back to a path");
+        assert!(error.to_string().contains(&missing_worktree_id), "{error}");
+
+        // Remote sessions never retry through another record.
+        let remote = SessionConfig {
+            remote_connection_id: Some("ssh-missing".to_string()),
+            remote_ssh_host: Some("remote.example".to_string()),
+            workspace_kind: Some(openbitfun_core_types::WorkspaceKind::Remote),
+            ..config
+        };
+        assert!(coordinator
+            .resolve_loaded_session_restore_scope(
+                &remote,
+                &project.to_string_lossy(),
+                Some("ssh-missing"),
+                None,
+            )
+            .await
+            .is_err());
+    }
+
+    #[test]
+    fn loaded_remote_session_locator_uses_posix_comparison() {
+        let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some("remote-id".to_string()),
+            workspace_path: Some("/srv/Project".to_string()),
+            remote_connection_id: Some("ssh-a".to_string()),
+            remote_ssh_host: Some("remote.example".to_string()),
+            workspace_kind: Some(openbitfun_core_types::WorkspaceKind::Remote),
+            ..Default::default()
+        };
+        assert_eq!(
+            loaded_session_workspace_id_for_locator(&config, "/srv/Project/", None, None),
+            Some("remote-id")
+        );
+        // POSIX remote roots are case-sensitive on every controller OS.
+        assert_eq!(
+            loaded_session_workspace_id_for_locator(&config, "/srv/project", None, None),
+            None
+        );
     }
 
     #[tokio::test]
