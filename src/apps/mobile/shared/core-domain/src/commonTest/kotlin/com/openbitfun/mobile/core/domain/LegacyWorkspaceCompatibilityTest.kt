@@ -55,6 +55,18 @@ class LegacyWorkspaceCompatibilityTest {
     }
 
     @Test
+    fun connectionlessLegacyReferenceNeverSelectsAPortScopedSshWorkspace() {
+        val legacy = RemoteWorkspaceIdentity("/srv/app", "ssh-root@cluster", "cluster", "legacy-id")
+        val node = RemoteWorkspaceIdentity("/srv/app", "ssh-root@cluster#2201", "cluster", "node-id")
+        val nodes = listOf(legacy, node)
+        assertEquals(legacy, LegacyWorkspaceCompatibility.resolve(RemoteWorkspaceIdentity("/srv/app", null, "cluster"), nodes))
+        assertEquals(node, LegacyWorkspaceCompatibility.resolve(RemoteWorkspaceIdentity("/srv/app", "ssh-root@cluster#2201", "cluster"), nodes))
+        assertTrue(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("workspace-host-ssh-root%40cluster%232201-container-web"))
+        assertFalse(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("ssh-root@cluster:2201"))
+        assertFalse(LegacyWorkspaceCompatibility.isPortScopedSshConnectionId("workspace-host-%ZZ"))
+    }
+
+    @Test
     fun bareLocalhostHostIsIgnoredOnlyWithoutAConnectionId() {
         // 1.0.0 stamped `localhost` on local workspaces: without a connection it says nothing.
         assertEquals(local, LegacyWorkspaceCompatibility.resolve(RemoteWorkspaceIdentity("/repo", null, "localhost"), listOf(local, other)))

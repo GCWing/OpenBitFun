@@ -80,6 +80,7 @@ fn runtime_root_for_workspace_info(workspace: &WorkspaceInfo) -> Result<PathBuf,
             openbitfun_core::service::remote_ssh::workspace_state::ssh_workspace_identity_host(
                 ssh_host,
                 workspace.remote_ssh_connection_id(),
+                &remote_root,
             );
         return Ok(remote_workspace_runtime_root(&identity_host, &remote_root));
     }

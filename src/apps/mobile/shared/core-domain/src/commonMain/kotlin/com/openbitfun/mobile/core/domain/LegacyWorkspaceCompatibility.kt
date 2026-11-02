@@ -55,6 +55,9 @@ public object LegacyWorkspaceCompatibility {
             ?.takeIf { host -> host != LOCALHOST || connectionId != null }
         val candidates = catalog.filter { candidate ->
             normalizedRoot(candidate.path) == root &&
+                // A reference without a connection id predates port-scoped SSH
+                // profiles (`ssh-user@host#port`) and can never name one.
+                (connectionId != null || !isPortScopedSshConnectionId(candidate.remoteConnectionId)) &&
                 (connectionId == null || candidate.remoteConnectionId?.trim() == connectionId) &&
                 (sshHost == null || candidate.remoteSshHost?.trim() == sshHost)
         }
@@ -87,6 +90,39 @@ public object LegacyWorkspaceCompatibility {
         resolveReference(reference, catalog).identityOrNull
 
     private const val LOCALHOST: String = "localhost"
+    private const val WORKSPACE_HOST_PREFIX: String = "workspace-host-"
+    private val PORT_SCOPED_SSH_ID = Regex("""^ssh-[^@]*@[^#]*#(\d+)(?:~\d+)?(?:-.*)?$""")
+
+    /**
+     * Mirrors `ssh_connection_id_port_scope` in the Rust workspace identity
+     * owner: `ssh-user@host#port` ids (also wrapped as
+     * `workspace-host-<encoded id>...`) name a distinct connection per port.
+     */
+    public fun isPortScopedSshConnectionId(connectionId: String?): Boolean {
+        var id = connectionId?.trim().orEmpty()
+        if (id.startsWith(WORKSPACE_HOST_PREFIX)) {
+            id = percentDecode(id.removePrefix(WORKSPACE_HOST_PREFIX)) ?: return false
+        }
+        val port = PORT_SCOPED_SSH_ID.matchEntire(id)?.groupValues?.get(1) ?: return false
+        return (port.toIntOrNull() ?: Int.MAX_VALUE) <= 65535
+    }
+
+    private fun percentDecode(value: String): String? {
+        val bytes = ArrayList<Byte>(value.length)
+        var index = 0
+        while (index < value.length) {
+            if (value[index] == '%') {
+                if (index + 2 >= value.length) return null
+                val hex = value.substring(index + 1, index + 3).toIntOrNull(16) ?: return null
+                bytes.add(hex.toByte())
+                index += 3
+            } else {
+                value[index].toString().encodeToByteArray().forEach(bytes::add)
+                index += 1
+            }
+        }
+        return bytes.toByteArray().decodeToString()
+    }
 
     private fun normalizedRoot(path: String): String = path.trim().let { it.trimEnd('/').ifEmpty { it } }
 }

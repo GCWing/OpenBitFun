@@ -2038,6 +2038,7 @@
       "hostRequired": "主機地址不能為空",
       "usernameRequired": "用戶名不能為空",
       "portInvalid": "端口必須是 1-65535 之間的數字",
+      "portScopedIdentityUnsupported": "所連接的裝置無法為同一主機和使用者的不同 SSH 連接埠保存獨立設定，繼續保存會取代「{{connection}}」。請在該裝置上更新 OpenBitFun，或改為編輯現有設定。",
       "passwordRequired": "密碼不能為空",
       "keyPathRequired": "私鑰路徑不能為空",
       "enterPassword": "請輸入密碼",

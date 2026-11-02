@@ -321,7 +321,7 @@ impl RemoteWorkspaceStateManager {
         if let Some(host) = remote_ssh_host.map(str::trim).filter(|s| !s.is_empty()) {
             return runtime_service
                 .context_for_remote_workspace(
-                    &ssh_workspace_identity_host(host, remote_id),
+                    &ssh_workspace_identity_host(host, remote_id, &path_norm),
                     &path_norm,
                 )
                 .sessions_dir;
@@ -330,7 +330,11 @@ impl RemoteWorkspaceStateManager {
             if !entry.ssh_host.trim().is_empty() {
                 return runtime_service
                     .context_for_remote_workspace(
-                        &ssh_workspace_identity_host(&entry.ssh_host, Some(&entry.connection_id)),
+                        &ssh_workspace_identity_host(
+                            &entry.ssh_host,
+                            Some(&entry.connection_id),
+                            &entry.remote_root,
+                        ),
                         &entry.remote_root,
                     )
                     .sessions_dir;

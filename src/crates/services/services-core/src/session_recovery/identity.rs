@@ -85,10 +85,20 @@ fn host(record: &Value) -> Result<String> {
 pub(super) fn runtime_key(record: &Value) -> Result<String> {
     let root = record_root(record)?;
     if string(record, "workspaceKind") == Some("remote") {
-        let identity_host = wi::ssh_workspace_identity_host(
-            &host(record)?,
-            string(&record["metadata"], "connectionId"),
-        );
+        let host = host(record)?;
+        let connection_id = string(&record["metadata"], "connectionId");
+        let root_norm = remote_path(&root)?;
+        // A record an older host wrote keeps the host-only identity it was stored under.
+        let legacy_record = connection_id.is_some_and(|connection_id| {
+            string(record, "id").is_some_and(|id| {
+                wi::remote_record_uses_legacy_identity(id, &host, connection_id, &root_norm)
+            })
+        });
+        let identity_host = if legacy_record {
+            host.clone()
+        } else {
+            wi::ssh_workspace_identity_host(&host, connection_id, &root_norm)
+        };
         Ok(wi::remote_workspace_runtime_key(
             &identity_host,
             &remote_path(&root)?,

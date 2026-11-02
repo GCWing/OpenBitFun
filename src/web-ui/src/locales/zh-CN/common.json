@@ -2038,6 +2038,7 @@
       "hostRequired": "主机地址不能为空",
       "usernameRequired": "用户名不能为空",
       "portInvalid": "端口必须是 1-65535 之间的数字",
+      "portScopedIdentityUnsupported": "所连接的设备无法为同一主机和用户的不同 SSH 端口保存独立配置，继续保存会替换“{{connection}}”。请在该设备上更新 OpenBitFun，或改为编辑已有配置。",
       "passwordRequired": "密码不能为空",
       "keyPathRequired": "私钥路径不能为空",
       "enterPassword": "请输入密码",

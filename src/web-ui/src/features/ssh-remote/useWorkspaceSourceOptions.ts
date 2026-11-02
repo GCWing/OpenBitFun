@@ -7,12 +7,14 @@ import { createLogger } from '@/shared/utils/logger';
 const log = createLogger('WorkspaceSourceOptions');
 import { sameWorkspaceSource, savedConnectionTarget, type WorkspaceSource } from './workspaceSource';
 import type { SavedConnection, SSHConfigEntry, SSHConnectionConfig } from './types';
-import { DEFAULT_SSH_PORT, sshConnectionIdForEndpoint } from './sshConnectionId';
+import { DEFAULT_SSH_PORT, type SshEndpoint } from './sshConnectionId';
+import { resolveNewSshConnectionId } from './resolveSshConnectionId';
 
 export type WorkspaceConnectionPreset = (
   | { kind: 'new'; host?: SavedConnection }
   | { kind: 'saved'; connection: SavedConnection }
-  | { kind: 'sshConfig'; entry: SSHConfigEntry }) & { edit?: boolean; authenticate?: boolean; credentialConnectionId?: string };
+  /** `connectionId` is resolved against the host's saved profiles; without it the dialog decides. */
+  | { kind: 'sshConfig'; entry: SSHConfigEntry; connectionId?: string }) & { edit?: boolean; authenticate?: boolean; credentialConnectionId?: string };
 
 export interface WorkspaceSourceOption {
   id: string;
@@ -21,17 +23,26 @@ export interface WorkspaceSourceOption {
   preset: WorkspaceConnectionPreset;
 }
 
+const sshConfigEndpoint = (entry: SSHConfigEntry): SshEndpoint => ({
+  host: entry.hostname || entry.host, port: entry.port || DEFAULT_SSH_PORT, username: entry.user || '',
+});
+
+/** Connectable profile of a preset; an `sshConfig` entry whose id is unresolved has none. */
 export function workspacePresetHost(preset?: WorkspaceConnectionPreset): SavedConnection | undefined {
   if (preset?.kind === 'saved') return preset.connection;
-  if (preset?.kind !== 'sshConfig') return undefined;
+  if (preset?.kind !== 'sshConfig' || !preset.connectionId) return undefined;
   const { entry } = preset;
   return {
-    id: sshConnectionIdForEndpoint({ host: entry.hostname || entry.host, port: entry.port || DEFAULT_SSH_PORT, username: entry.user || '' }),
-    name: entry.host, host: entry.hostname || entry.host, port: entry.port || 22, username: entry.user || '',
+    ...sshConfigEndpoint(entry), id: preset.connectionId, name: entry.host,
     authType: entry.identityFile ? { type: 'PrivateKey', keyPath: entry.identityFile, certificatePath: entry.certificateFile }
       : entry.agent ? { type: 'Agent' } : { type: 'Password' },
     proxyJump: entry.proxyJump,
   };
+}
+
+function presetEndpoint(preset: WorkspaceConnectionPreset) {
+  if (preset.kind === 'saved') return preset.connection;
+  return preset.kind === 'sshConfig' ? { ...sshConfigEndpoint(preset.entry), proxyJump: preset.entry.proxyJump } : undefined;
 }
 
 function hostDiscoveryConfig(host: SavedConnection, credentialConnectionId?: string): SSHConnectionConfig {
@@ -67,7 +78,7 @@ export function useWorkspaceSourceOptions(source: WorkspaceSource, enabled: bool
       })
       : source === 'remoteDocker' && host ? sshApi.listDockerContainers(hostDiscoveryConfig(host, hostPreset?.credentialConnectionId))
       : source === 'ssh' ? sshApi.listSSHConfigHosts() : Promise.resolve(null);
-    void Promise.allSettled([sshApi.listSavedConnections(), discovery]).then(([saved, detected]) => {
+    void Promise.allSettled([sshApi.listSavedConnections(), discovery]).then(async ([saved, detected]) => {
       if (cancelled || !scope.isCurrent()) return;
       const connections = saved.status === 'fulfilled' ? saved.value.filter(connection => sameWorkspaceSource(savedConnectionTarget(connection), source)
         && (source !== 'remoteDocker' || (host && connection.host === host.host && connection.port === host.port && connection.username === host.username))) : [];
@@ -80,7 +91,7 @@ export function useWorkspaceSourceOptions(source: WorkspaceSource, enabled: bool
         for (const connection of saved.value) {
           if (!connection.container || connection.container.local || connection.wsl) continue;
           if (result.some(option => {
-            const host = workspacePresetHost(option.preset);
+            const host = presetEndpoint(option.preset);
             return host?.host === connection.host && host.port === connection.port && host.username === connection.username && host.proxyJump === connection.proxyJump;
           })) continue;
           const id = `workspace-host-${encodeURIComponent(connection.id)}`;
@@ -119,10 +130,16 @@ export function useWorkspaceSourceOptions(source: WorkspaceSource, enabled: bool
           }
         } else if (source === 'ssh') {
           for (const entry of detected.value as SSHConfigEntry[]) {
-            if (connections.some(connection => connection.host === (entry.hostname || entry.host) && connection.port === (entry.port || 22) && connection.username === (entry.user || ''))) continue;
+            const endpoint = sshConfigEndpoint(entry);
+            if (connections.some(connection => connection.host === endpoint.host && connection.port === endpoint.port && connection.username === endpoint.username)) continue;
+            // Without the saved profiles any id could overwrite one, so the dialog resolves it on connect.
+            const resolved = saved.status === 'fulfilled'
+              ? await resolveNewSshConnectionId(endpoint, connection => !connection.container && !connection.wsl, saved.value)
+              : undefined;
+            if (cancelled || !scope.isCurrent()) return;
             result.push({ id: `ssh-config:${entry.host}`, label: entry.host,
-              description: `${entry.user || ''}@${entry.hostname || entry.host}:${entry.port || 22}`,
-              preset: { kind: 'sshConfig', entry } });
+              description: `${endpoint.username}@${endpoint.host}:${endpoint.port}`,
+              preset: { kind: 'sshConfig', entry, ...(resolved && 'id' in resolved ? { connectionId: resolved.id } : {}) } });
           }
         }
       }

@@ -251,7 +251,12 @@ session paths unchanged. New profiles on other ports use `ssh-user@host#port`;
 opaque instead of folding them into the legacy `ssh-user@host:port` alias.
 Profiles saved by earlier builds keep their id when the port is edited, and
 their workspaces and sessions stay where they are; saving a profile for another
-port never overwrites them.
+port never overwrites them. Re-adding a deleted legacy profile reuses its old id
+while workspace records still reference it. Workspace records that an older
+host stored under the host-only identity keep that identity after an upgrade.
+Peer hosts advertise `ssh_port_scoped_identity_v1`; against an older peer the
+controller keeps legacy ids and refuses to add a second port for the same host
+and user instead of replacing the existing profile.
 
 Legacy local-Docker profiles do not need an SSH password-vault entry, even if
 their old serialized auth placeholder is an empty password.

@@ -25,6 +25,14 @@ describe('legacy session workspace identity', () => {
     expect(resolveLegacySessionWorkspace({ workspacePath: '/repo', remoteSshHost: 'server-2' }, records)).toBe(otherHost);
   });
 
+  it('never resolves a connection-less legacy reference to a port-scoped SSH record', () => {
+    const legacy = { ...parent, id: 'legacy-id', workspaceKind: 'remote', connectionId: 'ssh-root@cluster', sshHost: 'cluster' };
+    const node = { ...legacy, id: 'node-id', connectionId: 'ssh-root@cluster#2201' };
+    // Old session projection: sshHost and root, no connection id.
+    expect(resolveLegacySessionWorkspace({ workspacePath: '/repo', remoteSshHost: 'cluster' }, [legacy, node])).toBe(legacy);
+    expect(resolveLegacySessionWorkspace({ workspacePath: '/repo', remoteConnectionId: 'ssh-root@cluster#2201', remoteSshHost: 'cluster' }, [legacy, node])).toBe(node);
+  });
+
   it('does not substitute a worktree project for its missing execution workspace', () => {
     const old = { workspacePath: '/repo/tree', projectWorkspacePath: '/repo' };
     expect(resolveLegacySessionWorkspace(old, [parent])).toBeUndefined();

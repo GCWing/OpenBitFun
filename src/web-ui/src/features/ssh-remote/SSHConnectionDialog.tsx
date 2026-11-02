@@ -54,7 +54,7 @@ import { workspaceSourceErrorKey, isSshAuthenticationError } from './workspaceSo
 import { savedConnectionConfig } from './savedConnectionConfig';
 import type { WorkspaceConnectionPreset } from './useWorkspaceSourceOptions';
 import { sameWorkspaceSource, savedConnectionTarget } from './workspaceSource';
-import { sshConnectionIdForEndpoint } from './sshConnectionId';
+import { resolveNewSshConnectionId } from './resolveSshConnectionId';
 import {
   pickSshCertificatePath,
   pickSshPrivateKeyPath,
@@ -390,6 +390,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
 
   const buildConnectionConfig = async (
     requireContainer: boolean,
+    persistsProfile = true,
   ): Promise<SSHConnectionConfig | null> => {
     if (formData.targetType === 'wsl') {
       if (!editOnly && !wslDistributions?.supported) {
@@ -513,20 +514,27 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     const containerName = formData.containerName.trim() || (formData.targetType === 'containerSshd' ? connectHost : 'discovery');
     // Editing keeps the saved id (so a port change never moves sessions);
     // new profiles get a port-aware id that cannot overwrite another endpoint.
-    const knownConnections = editingProfile || isLocalDocker
-      ? savedConnections
-      : await sshApi.listSavedConnections().catch(() => savedConnections);
-    const id = isLocalDocker
-      ? `docker-local-${containerName}`
-      : sshConnectionIdForEndpoint(
+    let id = editingProfile?.id ?? `docker-local-${containerName}`;
+    if (!editingProfile && !isLocalDocker) {
+      const resolved = await resolveNewSshConnectionId(
         { host: connectHost, port, username, suffix: usesContainer ? `-container-${containerName}` : '' },
-        knownConnections,
         connection => !connection.wsl && (usesContainer
           ? !connection.container?.local && connection.container?.name === containerName
           : !connection.container),
       );
+      if (!('error' in resolved)) {
+        id = resolved.id;
+      } else if (!persistsProfile) {
+        id = resolved.transientId;
+      } else {
+        setLocalError(resolved.error === 'portScopedIdentityUnsupported'
+          ? t('ssh.remote.portScopedIdentityUnsupported', { connection: resolved.conflict.name || resolved.conflict.id })
+          : t('workspaceSource.hostDiscoveryFailed'));
+        return null;
+      }
+    }
     return {
-      id: editingProfile?.id ?? id,
+      id,
       name: formData.name || (isLocalDocker ? containerName : `${username}@${hostInput}`),
       host: connectHost,
       port,
@@ -599,7 +607,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     setConnectionTest(null);
     setLocalError(null);
     try {
-      const config = await buildConnectionConfig(true);
+      const config = await buildConnectionConfig(true, false);
       if (!config) return;
       setConnectionTest(await sshApi.testConnection(config));
     } catch (_error) {
@@ -614,7 +622,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     setIsListingContainers(true);
     setLocalError(null);
     try {
-      const config = await buildConnectionConfig(false);
+      const config = await buildConnectionConfig(false, false);
       if (!config || requestId !== containerRequestId.current || !scope.isCurrent()) return;
       const containers = await sshApi.listDockerContainers(config);
       if (requestId !== containerRequestId.current || !scope.isCurrent()) return;

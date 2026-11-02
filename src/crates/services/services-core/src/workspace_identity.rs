@@ -1,7 +1,9 @@
 //! Remote SSH workspace path and identity helpers.
 
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{OnceLock, RwLock};
 
 /// SSH host label for local disk workspaces (`Normal` / `Assistant`).
 pub const LOCAL_WORKSPACE_SSH_HOST: &str = "localhost";
@@ -27,7 +29,11 @@ impl WorkspaceSessionIdentity {
 
     /// Host string for runtime and session paths; see [`ssh_workspace_identity_host`].
     pub fn identity_host(&self) -> String {
-        ssh_workspace_identity_host(&self.hostname, self.remote_connection_id.as_deref())
+        ssh_workspace_identity_host(
+            &self.hostname,
+            self.remote_connection_id.as_deref(),
+            &self.logical_workspace_path,
+        )
     }
 }
 
@@ -88,14 +94,30 @@ pub fn ssh_connection_id_for_endpoint(username: &str, host: &str, port: u16) -> 
     }
 }
 
+/// Prefix of the synthetic host profile the Web UI wraps around a saved SSH
+/// connection when it discovers Docker containers on it
+/// (`workspace-host-{percent-encoded id}`); container profiles derived from it
+/// append `-container-{name}`.
+const WORKSPACE_HOST_PREFIX: &str = "workspace-host-";
+
 /// Port scope carried by a port-scoped SSH connection id.
 ///
 /// Returns the text after `#` (a port, optionally followed by a `~{n}`
-/// disambiguator) for ids shaped `ssh-{user}@{host}#{scope}` and for container
-/// ids derived from them (`...#{scope}-container-{name}`). Legacy ids, including
-/// pre-#710 `ssh-{user}@{host}:{port}` ids, return `None`.
-pub fn ssh_connection_id_port_scope(connection_id: &str) -> Option<&str> {
-    let rest = connection_id.trim().strip_prefix("ssh-")?;
+/// disambiguator) for ids shaped `ssh-{user}@{host}#{scope}`, for container
+/// ids derived from them (`...#{scope}-container-{name}`), and for synthetic
+/// container-host wrappers around them (`workspace-host-{encoded id}...`).
+/// Legacy ids, including pre-#710 `ssh-{user}@{host}:{port}` ids and wrappers
+/// around them, return `None`.
+pub fn ssh_connection_id_port_scope(connection_id: &str) -> Option<String> {
+    let id = connection_id.trim();
+    if let Some(wrapped) = id.strip_prefix(WORKSPACE_HOST_PREFIX) {
+        return direct_port_scope(&percent_decode(wrapped)?).map(str::to_string);
+    }
+    direct_port_scope(id).map(str::to_string)
+}
+
+fn direct_port_scope(id: &str) -> Option<&str> {
+    let rest = id.strip_prefix("ssh-")?;
     let at = rest.find('@')?;
     let after_at = &rest[at + 1..];
     let separator = after_at.find(SSH_CONNECTION_ID_PORT_SEPARATOR)?;
@@ -117,6 +139,74 @@ pub fn ssh_connection_id_port_scope(connection_id: &str) -> Option<&str> {
     Some(scope)
 }
 
+/// `decodeURIComponent` for the ids the Web UI encodes; `None` on malformed input.
+fn percent_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = value.get(index + 1..index + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            index += 3;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// `(connection id, normalized remote root)` pairs pinned to the legacy identity.
+fn legacy_identity_records() -> &'static RwLock<HashSet<(String, String)>> {
+    static PINNED: OnceLock<RwLock<HashSet<(String, String)>>> = OnceLock::new();
+    PINNED.get_or_init(|| RwLock::new(HashSet::new()))
+}
+
+fn legacy_identity_key(connection_id: &str, remote_root: &str) -> (String, String) {
+    (
+        connection_id.trim().to_string(),
+        normalize_remote_workspace_path(remote_root),
+    )
+}
+
+/// Whether a persisted remote workspace record proves that its port-scoped
+/// connection was registered with the legacy host-only identity: a host that
+/// did not understand port scopes stored it under
+/// `remote_workspace_stable_id(host, root)`.
+pub fn remote_record_uses_legacy_identity(
+    record_id: &str,
+    ssh_host: &str,
+    connection_id: &str,
+    remote_root_norm: &str,
+) -> bool {
+    ssh_connection_id_port_scope(connection_id).is_some()
+        && record_id.trim() == remote_workspace_stable_id(ssh_host, remote_root_norm)
+}
+
+/// Keep the host-only identity for one persisted `(connection, root)` record
+/// of a port-scoped connection in this process.
+///
+/// Called when persisted workspace records are loaded, so data an older host
+/// wrote under the legacy identity stays where it is after an upgrade. The pin
+/// is per root: other workspaces of the same connection keep their port-scoped
+/// identity.
+pub fn pin_legacy_ssh_workspace_identity(connection_id: &str, remote_root: &str) {
+    if connection_id.trim().is_empty() || ssh_connection_id_port_scope(connection_id).is_none() {
+        return;
+    }
+    if let Ok(mut pinned) = legacy_identity_records().write() {
+        pinned.insert(legacy_identity_key(connection_id, remote_root));
+    }
+}
+
+fn legacy_identity_pinned(connection_id: &str, remote_root: &str) -> bool {
+    legacy_identity_records()
+        .read()
+        .map(|pinned| pinned.contains(&legacy_identity_key(connection_id, remote_root)))
+        .unwrap_or(false)
+}
+
 /// SSH host string used for workspace identity (stable id, runtime key, and
 /// session mirror path).
 ///
@@ -125,9 +215,19 @@ pub fn ssh_connection_id_port_scope(connection_id: &str) -> Option<&str> {
 /// so their workspace identity and on-disk layout stay byte-for-byte the same.
 /// Port-scoped connections return `{ssh_host}#{scope}`; `#` never appears in a
 /// real SSH host, so these identities cannot collide with legacy ones and are
-/// a safe path component on every client OS.
-pub fn ssh_workspace_identity_host(ssh_host: &str, connection_id: Option<&str>) -> String {
-    match connection_id.and_then(ssh_connection_id_port_scope) {
+/// a safe path component on every client OS. A root of a port-scoped
+/// connection whose record was written with the legacy identity (see
+/// [`pin_legacy_ssh_workspace_identity`]) keeps `ssh_host`.
+pub fn ssh_workspace_identity_host(
+    ssh_host: &str,
+    connection_id: Option<&str>,
+    remote_root: &str,
+) -> String {
+    let Some(connection_id) = connection_id else {
+        return ssh_host.to_string();
+    };
+    match ssh_connection_id_port_scope(connection_id) {
+        Some(_) if legacy_identity_pinned(connection_id, remote_root) => ssh_host.to_string(),
         Some(scope) => format!(
             "{}{SSH_CONNECTION_ID_PORT_SEPARATOR}{scope}",
             ssh_host.trim()
@@ -143,7 +243,7 @@ pub fn remote_workspace_stable_id_for_connection(
     remote_root_norm: &str,
 ) -> String {
     remote_workspace_stable_id(
-        &ssh_workspace_identity_host(ssh_host, connection_id),
+        &ssh_workspace_identity_host(ssh_host, connection_id, remote_root_norm),
         remote_root_norm,
     )
 }
@@ -488,7 +588,8 @@ pub fn build_project_runtime_slug(canonical: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        canonical_ssh_connection_id, remote_workspace_runtime_key,
+        canonical_ssh_connection_id, pin_legacy_ssh_workspace_identity,
+        remote_record_uses_legacy_identity, remote_workspace_runtime_key,
         remote_workspace_session_mirror_dir, remote_workspace_stable_id,
         remote_workspace_stable_id_for_connection, ssh_connection_id_for_endpoint,
         ssh_connection_id_port_scope, ssh_workspace_identity_host,
@@ -511,19 +612,19 @@ mod tests {
     fn port_scope_is_parsed_only_from_port_scoped_ids() {
         assert_eq!(
             ssh_connection_id_port_scope("ssh-root@example.com#2222"),
-            Some("2222")
+            Some("2222".to_string())
         );
         assert_eq!(
             ssh_connection_id_port_scope("ssh-root@example.com#2222~2"),
-            Some("2222~2")
+            Some("2222~2".to_string())
         );
         assert_eq!(
             ssh_connection_id_port_scope("ssh-root@example.com#2222-container-web"),
-            Some("2222")
+            Some("2222".to_string())
         );
         assert_eq!(
             ssh_connection_id_port_scope("ssh-root@fe80::1#2201"),
-            Some("2201")
+            Some("2201".to_string())
         );
         // Every id shape written by released builds stays legacy.
         for legacy in [
@@ -553,7 +654,7 @@ mod tests {
             Some("ssh-root@example.com-container-web"),
         ] {
             assert_eq!(
-                ssh_workspace_identity_host("example.com", connection_id),
+                ssh_workspace_identity_host("example.com", connection_id, "/home/user/repo"),
                 "example.com"
             );
             assert_eq!(
@@ -581,7 +682,11 @@ mod tests {
         assert_ne!(port_b, legacy);
         assert_ne!(port_a, port_b);
         assert_eq!(
-            ssh_workspace_identity_host(" Example.com ", Some("ssh-u@example.com#2201")),
+            ssh_workspace_identity_host(
+                " Example.com ",
+                Some("ssh-u@example.com#2201"),
+                "/home/user/repo"
+            ),
             "Example.com#2201"
         );
         assert_ne!(
@@ -590,7 +695,11 @@ mod tests {
         );
         let mirror = remote_workspace_session_mirror_dir(
             Path::new("/mirror"),
-            &ssh_workspace_identity_host("example.com", Some("ssh-u@example.com#2201")),
+            &ssh_workspace_identity_host(
+                "example.com",
+                Some("ssh-u@example.com#2201"),
+                "/home/user/repo",
+            ),
             root,
         );
         assert_eq!(
@@ -601,6 +710,114 @@ mod tests {
                 .join("user")
                 .join("repo")
                 .join("sessions")
+        );
+    }
+
+    #[test]
+    fn synthetic_container_host_wrappers_keep_the_wrapped_port_scope() {
+        assert_eq!(
+            ssh_connection_id_port_scope("workspace-host-ssh-root%40cluster%232201-container-web"),
+            Some("2201".to_string())
+        );
+        assert_eq!(
+            ssh_connection_id_port_scope("workspace-host-ssh-root%40cluster%232201"),
+            Some("2201".to_string())
+        );
+        // Wrappers around legacy ids written by released builds stay legacy.
+        for legacy in [
+            "workspace-host-ssh-root%40cluster-container-web",
+            "workspace-host-ssh-root%40cluster%3A2201-container-web",
+            "workspace-host-%ZZ",
+        ] {
+            assert_eq!(ssh_connection_id_port_scope(legacy), None, "{legacy}");
+        }
+        assert_ne!(
+            ssh_workspace_identity_host(
+                "cluster",
+                Some("workspace-host-ssh-root%40cluster%232201-container-web"),
+                "/home/user/repo"
+            ),
+            ssh_workspace_identity_host(
+                "cluster",
+                Some("workspace-host-ssh-root%40cluster%232202-container-web"),
+                "/home/user/repo"
+            )
+        );
+    }
+
+    #[test]
+    fn records_written_with_the_legacy_identity_pin_their_connection() {
+        let root = "/srv/pinned";
+        let connection = "ssh-root@pinned.example#2201";
+        let legacy_id = remote_workspace_stable_id("pinned.example", root);
+        assert!(remote_record_uses_legacy_identity(
+            &legacy_id,
+            "pinned.example",
+            connection,
+            root
+        ));
+        assert!(!remote_record_uses_legacy_identity(
+            &remote_workspace_stable_id_for_connection("pinned.example", Some(connection), root),
+            "pinned.example",
+            connection,
+            root
+        ));
+        assert!(!remote_record_uses_legacy_identity(
+            &legacy_id,
+            "pinned.example",
+            "ssh-root@pinned.example",
+            root
+        ));
+
+        assert_eq!(
+            ssh_workspace_identity_host("pinned.example", Some(connection), root),
+            "pinned.example#2201"
+        );
+        pin_legacy_ssh_workspace_identity(connection, root);
+        assert_eq!(
+            ssh_workspace_identity_host("pinned.example", Some(connection), root),
+            "pinned.example"
+        );
+        assert_eq!(
+            remote_workspace_stable_id_for_connection("pinned.example", Some(connection), root),
+            legacy_id
+        );
+        // Other ports of the same host are unaffected.
+        assert_eq!(
+            ssh_workspace_identity_host(
+                "pinned.example",
+                Some("ssh-root@pinned.example#2202"),
+                root
+            ),
+            "pinned.example#2202"
+        );
+    }
+
+    #[test]
+    fn loading_one_legacy_root_does_not_reidentify_another_root_on_the_same_connection() {
+        let host = "mixed-records.example";
+        let connection = "ssh-root@mixed-records.example#2201";
+        let legacy_root = "/srv/legacy";
+        let scoped_root = "/srv/scoped";
+        let legacy_id = remote_workspace_stable_id(host, legacy_root);
+        assert!(remote_record_uses_legacy_identity(
+            &legacy_id,
+            host,
+            connection,
+            legacy_root
+        ));
+        let scoped_id =
+            remote_workspace_stable_id_for_connection(host, Some(connection), scoped_root);
+        pin_legacy_ssh_workspace_identity(connection, legacy_root);
+        assert_eq!(
+            remote_workspace_stable_id_for_connection(host, Some(connection), legacy_root),
+            legacy_id,
+            "the pinned record keeps its legacy identity"
+        );
+        assert_eq!(
+            remote_workspace_stable_id_for_connection(host, Some(connection), scoped_root),
+            scoped_id,
+            "loading a different legacy record must not move an existing workspace's identity"
         );
     }
 

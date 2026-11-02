@@ -2038,6 +2038,7 @@
       "hostRequired": "Host is required",
       "usernameRequired": "Username is required",
       "portInvalid": "Port must be a number between 1 and 65535",
+      "portScopedIdentityUnsupported": "The connected device cannot keep separate profiles for SSH ports on the same host and user, so saving would replace \"{{connection}}\". Update OpenBitFun on that device, or edit the existing profile instead.",
       "passwordRequired": "Password is required",
       "keyPathRequired": "Private key path is required",
       "enterPassword": "Enter Password",

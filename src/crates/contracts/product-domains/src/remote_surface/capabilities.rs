@@ -69,6 +69,10 @@ pub enum PeerHostCapability {
     MiniappAgentImagesV1,
     /// WSL profiles and discovery are understood; availability is probed on the host.
     WslWorkspacesV1,
+    /// SSH profiles on the same host that differ only by port are distinct:
+    /// `ssh-user@host#port` connection ids get their own saved profile,
+    /// workspace identity, and session store.
+    SshPortScopedIdentityV1,
     /// User-selected native window sharing and explicit permission receipts.
     ComputerUseSharingV1,
     /// `product_control_invoke` is implemented (shared config contract).
@@ -129,6 +133,7 @@ impl PeerHostCapability {
         Self::MiniappAgentContextFilesV1,
         Self::MiniappAgentImagesV1,
         Self::WslWorkspacesV1,
+        Self::SshPortScopedIdentityV1,
         Self::ComputerUseSharingV1,
         Self::ProductControlV1,
         Self::RemoteConnectControlV1,
@@ -174,6 +179,7 @@ impl PeerHostCapability {
             Self::MiniappAgentContextFilesV1 => "miniapp_agent_context_files_v1",
             Self::MiniappAgentImagesV1 => "miniapp_agent_images_v1",
             Self::WslWorkspacesV1 => "wsl_workspaces_v1",
+            Self::SshPortScopedIdentityV1 => "ssh_port_scoped_identity_v1",
             Self::ComputerUseSharingV1 => "computer_use_sharing_v1",
             Self::ProductControlV1 => "product_control_v1",
             Self::RemoteConnectControlV1 => "remote_connect_control_v1",
@@ -201,8 +207,8 @@ impl PeerHostCapability {
 
 const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL;
 
-/// The CLI peer host has no MiniApp runtime, WSL connection setup, host-native
-/// ProductControl providers, or presentation surface.
+/// The CLI peer host has no MiniApp runtime, WSL or SSH connection setup,
+/// host-native ProductControl providers, or presentation surface.
 const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ModelRoutingV1,
     PeerHostCapability::ModelPoolSelectionV1,
@@ -315,6 +321,11 @@ mod tests {
             true
         );
         assert!(!cli.contains_key("product_control_native_v1"));
+        assert!(!cli.contains_key("ssh_port_scoped_identity_v1"));
+        assert_eq!(
+            capability_map(PeerHostKind::Desktop).get("ssh_port_scoped_identity_v1"),
+            Some(&Value::Bool(true))
+        );
         assert!(!cli.contains_key("product_control_presentation_v1"));
         assert!(!cli.contains_key("whole_session_copy_v1"));
         assert!(!cli.contains_key("review_platform_v1"));

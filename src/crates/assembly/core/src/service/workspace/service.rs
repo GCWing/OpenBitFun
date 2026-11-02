@@ -238,6 +238,7 @@ impl WorkspaceService {
                     openbitfun_services_core::workspace_identity::ssh_workspace_identity_host(
                         ssh_host,
                         workspace.remote_ssh_connection_id(),
+                        &workspace.root_path.to_string_lossy(),
                     );
                 self.runtime_service
                     .ensure_remote_workspace_runtime(
@@ -1931,6 +1932,7 @@ impl WorkspaceService {
             warnings: Vec::new(),
         };
 
+        super::legacy_compat::pin_legacy_port_scoped_identities(&export.workspaces);
         let mut manager = self.manager.write().await;
 
         for workspace in export.workspaces {
@@ -2068,6 +2070,7 @@ impl WorkspaceService {
                     || !self.is_miniapp_owned_path(&workspace.root_path)
             });
 
+            super::legacy_compat::pin_legacy_port_scoped_identities(data.workspaces.values());
             let mut manager = self.manager.write().await;
             *manager.get_workspaces_mut() = data.workspaces;
             manager.restore_assistant_name_sequence(data.assistant_name_sequence);

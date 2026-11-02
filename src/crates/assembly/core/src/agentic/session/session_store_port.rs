@@ -268,6 +268,7 @@ impl SessionStorePort for CoreSessionStorePort {
                             &openbitfun_services_core::workspace_identity::ssh_workspace_identity_host(
                                 host,
                                 Some(connection_id),
+                                &workspace.root_path.to_string_lossy(),
                             ),
                             &workspace.root_path.to_string_lossy(),
                         )

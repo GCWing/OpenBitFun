@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { useWorkspaceSourceOptions, type WorkspaceConnectionPreset } from './useWorkspaceSourceOptions';
+import { useWorkspaceSourceOptions, workspacePresetHost, type WorkspaceConnectionPreset } from './useWorkspaceSourceOptions';
 import type { WorkspaceSource } from './workspaceSource';
 import { activateSurface, resetDeviceSurfaceForTest, surfaceIdForDevice } from '@/infrastructure/peer-device/deviceSurface';
 
@@ -114,4 +114,27 @@ it('discards late discovery after a device switch', async () => {
   expect(result.options.map(option => option.label)).toEqual(['Ubuntu']);
   await act(async () => resolveOld({ supported: true, distributions: ['Old machine'] }));
   expect(result.options.map(option => option.label)).toEqual(['Ubuntu']);
+});
+
+it('resolves ~/.ssh/config ids against saved profiles so another port is never overwritten', async () => {
+  // Saved profile on port 2201 under the port-less legacy id; config entry for port 22.
+  api.listSavedConnections.mockResolvedValue([{
+    id: 'ssh-root@cluster', name: 'Node 1', host: 'cluster', port: 2201, username: 'root', authType: { type: 'Agent' },
+  }]);
+  api.listSSHConfigHosts.mockResolvedValue([{ host: 'cluster-main', hostname: 'cluster', port: 22, user: 'root', agent: true }]);
+  await render('ssh');
+  const preset = result.options.find(option => option.id === 'ssh-config:cluster-main')?.preset;
+  expect(preset).toMatchObject({ kind: 'sshConfig', connectionId: 'ssh-root@cluster#22' });
+  expect(workspacePresetHost(preset)?.id).toBe('ssh-root@cluster#22');
+});
+
+it('routes ~/.ssh/config entries to the dialog when saved profiles cannot be listed', async () => {
+  api.listSavedConnections.mockRejectedValue(new Error('offline'));
+  api.listSSHConfigHosts.mockResolvedValue([{ host: 'cluster-main', hostname: 'cluster', port: 22, user: 'root', agent: true }]);
+  await render('ssh');
+  const preset = result.options.find(option => option.id === 'ssh-config:cluster-main')?.preset;
+  expect(preset).toMatchObject({ kind: 'sshConfig' });
+  expect(preset && 'connectionId' in preset ? preset.connectionId : undefined).toBeUndefined();
+  // No connectable profile: the caller opens the connection dialog instead of a one-click connect.
+  expect(workspacePresetHost(preset)).toBeUndefined();
 });
