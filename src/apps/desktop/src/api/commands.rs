@@ -1164,6 +1164,13 @@ pub async fn test_ai_config_connection(
     request: TestAIConfigConnectionRequest,
 ) -> Result<openbitfun_core::util::types::ConnectionTestResult, String> {
     let model_name = request.config.name.clone();
+    if let Some(result) = openbitfun_core::agentic::execution::round_model_routing::configuration::test_configured_router_connection(&request.config)
+        .await.map_err(|error| error.to_string())?
+    {
+        info!("Router model connection test completed: model={}, success={}, response_time={}ms",
+            model_name, result.success, result.response_time_ms);
+        return Ok(result);
+    }
     let supports_image_input = request.config.capabilities.iter().any(|cap| {
         matches!(
             cap,

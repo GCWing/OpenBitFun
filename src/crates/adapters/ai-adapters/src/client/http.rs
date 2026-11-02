@@ -11,12 +11,28 @@ pub(crate) fn create_router_http_client(
     proxy_config: Option<ProxyConfig>,
     skip_ssl_verify: bool,
 ) -> Result<Client> {
+    create_router_http_client_with_connection_mode(timeout, proxy_config, skip_ssl_verify, false)
+}
+
+/// Only explicit local classifier profiles opt into a direct loopback connection.
+/// Other Router and model traffic keeps the existing shared proxy policy.
+pub(crate) fn create_router_http_client_with_connection_mode(
+    timeout: std::time::Duration,
+    proxy_config: Option<ProxyConfig>,
+    skip_ssl_verify: bool,
+    direct: bool,
+) -> Result<Client> {
     openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
     let builder = Client::builder()
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::none())
         .danger_accept_invalid_certs(skip_ssl_verify);
-    Ok(apply_proxy_policy(builder, proxy_config).build()?)
+    let builder = if direct {
+        builder.no_proxy()
+    } else {
+        apply_proxy_policy(builder, proxy_config)
+    };
+    Ok(builder.build()?)
 }
 
 pub(crate) fn create_http_client(

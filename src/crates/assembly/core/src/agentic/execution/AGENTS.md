@@ -76,6 +76,30 @@ These loopback fixtures verify actual provider requests and slot-owned account,
 channel, replay and retry state. They do not establish live OAuth, SSH, Peer or
 detached-dispatch behavior.
 
+Router protocol profiles are explicit host-owned configuration. Old records use
+`openai_logprobs`; `openai_router_extension` consumes direct classifier facts in
+the AI adapter and uses a single inference slot per service within the host.
+Status advertises supported profiles for older-client/host negotiation. Do not
+infer a profile from the hostname or model name, or use a classifier as a primary
+or economy execution model. For profile/probe/threshold and cache-transition checks:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib classifier_extension
+```
+
+Model-card and model-editor checks for the selected Router use that host's
+Router protocol with the supplied draft model, not its saved endpoint. Other
+models retain the ordinary chat/image checks. For draft isolation, release gates,
+timeout handling and invalid classifier responses, run:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib router_model_probe
+```
+
+These loopback fixtures do not establish live Peer, relay, SSH, detached-dispatch,
+or cross-process admission behavior. The ordinary routing checks above also cover
+usage calibration, immutable execution slots and auxiliary history lifecycle.
+
 Router context state/budgets live in `openbitfun-agent-runtime::router_context`;
 Core only observes messages, invokes the configured auxiliary model and stores its
 separate sidecar. Portable summary admission lives in
