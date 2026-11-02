@@ -64,6 +64,86 @@ describe('RelaySessionHistory', () => {
     expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
   });
 
+  it('fails an overdue first page as retryable without claiming an empty complete history', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValueOnce('subscription');
+    const apply = vi.fn();
+    const flushed = vi.fn();
+    const ready = vi.fn();
+    const error = vi.fn();
+    const resumed = vi.fn(async () => {});
+    const history = new RelaySessionHistory('session', apply, ready, error, resumed, flushed);
+
+    const opening = history.open();
+    const outcome = expect(opening).rejects.toMatchObject({
+      name: 'RelayHistoryFirstPageOverdueError', retryable: true, sessionId: 'session',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // Records that did arrive are known history and must stay rendered.
+    fixture.record?.({ sessionId: 'session', id: 'item/known' });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await outcome;
+
+    expect(apply).toHaveBeenCalledOnce();
+    expect(flushed).toHaveBeenCalled();
+    // A blocking question is answerable from the mailbox without the page.
+    expect(resumed).toHaveBeenCalledOnce();
+    // Never a synthetic ready: no fake `hasMore: false` or zero cursor.
+    expect(ready).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledOnce();
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
+
+    // A late page belongs to a closed read; retrying opens a fresh one.
+    expect(fixture.ready).toBeNull();
+  });
+
+  it('keeps a first page that arrives before the deadline and clears the deadline', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValueOnce('subscription');
+    const ready = vi.fn();
+    const error = vi.fn();
+    const history = new RelaySessionHistory('session', vi.fn(), ready, error, async () => {});
+
+    const opening = history.open();
+    await vi.advanceTimersByTimeAsync(14_000);
+    fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 5, cursor: 9 });
+    await opening;
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(ready).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'session', hasMore: true, oldestSeq: 5, cursor: 9,
+    });
+    expect(error).not.toHaveBeenCalled();
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
+    history.close();
+  });
+
+  it('does not report an overdue page for a read that was closed or switched away', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValue('subscription');
+    const closedError = vi.fn();
+    const closedResume = vi.fn(async () => {});
+    const closed = new RelaySessionHistory('session', vi.fn(), vi.fn(), closedError, closedResume);
+    const closing = expect(closed.open()).rejects.toThrow('Session subscription closed');
+    await vi.advanceTimersByTimeAsync(0);
+    closed.close();
+    await closing;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(closedError).not.toHaveBeenCalled();
+    expect(closedResume).not.toHaveBeenCalled();
+
+    const switchedError = vi.fn();
+    const switchedResume = vi.fn(async () => {});
+    const switched = new RelaySessionHistory('session', vi.fn(), vi.fn(), switchedError, switchedResume);
+    const switching = expect(switched.open()).rejects.toThrow('first page overdue');
+    await vi.advanceTimersByTimeAsync(0);
+    fixture.current = false;
+    await vi.advanceTimersByTimeAsync(15_000);
+    await switching;
+    expect(switchedError).not.toHaveBeenCalled();
+    expect(switchedResume).not.toHaveBeenCalled();
+  });
+
   it('drops stale replay and unsubscribes when the surface changes during grant', async () => {
     const apply = vi.fn();
     fixture.subscribe.mockImplementation(async () => {
