@@ -42,6 +42,16 @@ export class SessionRecordReplica {
   constructor(readonly sessionId: string) {}
 
   apply(record: SessionRecord): SessionRecordChange | null {
+    const turnId = this.ingest(record);
+    return turnId === null ? null : this.snapshot(turnId);
+  }
+
+  /**
+   * Reduce one record and report the turn it changed, without materializing it.
+   * Materializing is O(items in turn), so a consumer replaying a long turn one
+   * record at a time ingests them all and then takes one snapshot per turn.
+   */
+  ingest(record: SessionRecord): string | null {
     if (record.sessionId !== this.sessionId || (!record.deleted && record.turn.sessionId !== this.sessionId)) {
       throw new Error('Session record belongs to another session');
     }
@@ -56,9 +66,9 @@ export class SessionRecordReplica {
       for (const [turnId, turn] of this.turns) {
         if (record.id === `turn/${turnId}` || [...turn.rounds.entries()].some(([roundId, round]) => (
           record.id === `round/${roundId}` || [...round.items.keys()].some(itemId => record.id === `item/${itemId}`)
-        ))) return this.change(turnId, turn);
+        ))) return turnId;
       }
-      return record.id.startsWith('turn/') ? { turnId: record.id.slice(5), turn: null } : null;
+      return record.id.startsWith('turn/') ? record.id.slice(5) : null;
     }
     const turnId = record.turn.turnId;
     if (!turnId || (record.round && record.round.turnId !== turnId) || (record.item && !record.round)) {
@@ -91,11 +101,13 @@ export class SessionRecordReplica {
       }
     }
     this.records.set(record.id, record.revision);
-    return this.change(turnId, turn);
+    return turnId;
   }
 
-  private change(turnId: string, turn: TurnEntry): SessionRecordChange {
-    return { turnId, turn: turn.header.revision <= (this.deleted.get(`turn/${turnId}`) ?? 0)
+  /** The turn's current state; `turn` is null once it was tombstoned or never seen. */
+  snapshot(turnId: string): SessionRecordChange {
+    const turn = this.turns.get(turnId);
+    return { turnId, turn: !turn || turn.header.revision <= (this.deleted.get(`turn/${turnId}`) ?? 0)
       ? null : this.materialize(turnId, turn) };
   }
 

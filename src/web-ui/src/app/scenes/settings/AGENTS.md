@@ -61,6 +61,12 @@ Keep trusted navigation contributions separate from controller-local preferences
 device-scoped MiniApp pins. These tests simulate Peer activation and capability gates;
 they do not establish live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
 
+Model connection and detail editors use the shared `Dialog preset="panel"`
+with a centered provider identity and the panel's top/bottom spacing. Keep the
+editor footer `appearance="floating"` for centered actions. This presentation is
+intentional; form controls inside still follow the standard shared sizing and
+field-surface contracts.
+
 For model-pool strategy selection, member search/multi-selection, nested-dialog
 dismissal, preserved records and device-switch isolation, run:
 

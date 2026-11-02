@@ -72,7 +72,9 @@ fn dialog_submission_slot(
         .clone())
 }
 
-fn peer_dialog_metadata(request: &Value) -> Result<serde_json::Map<String, Value>, String> {
+pub(super) fn peer_dialog_metadata(
+    request: &Value,
+) -> Result<serde_json::Map<String, Value>, String> {
     let mut metadata = match request.get("userMessageMetadata") {
         Some(Value::Object(metadata)) => metadata.clone(),
         Some(Value::Null) | None => serde_json::Map::new(),

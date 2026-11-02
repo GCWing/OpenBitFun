@@ -193,6 +193,7 @@
       "loadFailed": "載入日誌設定失敗",
       "saveFailed": "儲存日誌級別失敗",
       "levelUpdated": "日誌級別已更新",
+      "levelSavedNotApplied": "日誌級別已儲存，但該裝置仍按 {{level}} 級別記錄日誌。",
       "sensitiveDiagnosticsUpdated": "敏感除錯資訊日誌偏好已更新",
       "refreshed": "運行時狀態已重新整理",
       "openedFolder": "日誌資料夾已開啟",

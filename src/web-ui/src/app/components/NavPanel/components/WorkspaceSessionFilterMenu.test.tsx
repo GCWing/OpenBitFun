@@ -26,7 +26,8 @@ vi.mock('@/flow_chat/store/FlowChatStore', () => ({
 }));
 
 import WorkspaceSessionFilterMenu from './WorkspaceSessionFilterMenu';
-import { useWorkspaceSessionViewStore } from '../workspaceSessionView';
+import { matchesWorkspaceSessionView, useWorkspaceSessionViewStore } from '../workspaceSessionView';
+import type { Session } from '@/flow_chat/types/flow-chat';
 
 describe('WorkspaceSessionFilterMenu', () => {
   let container: HTMLDivElement;
@@ -78,6 +79,37 @@ describe('WorkspaceSessionFilterMenu', () => {
     act(() => filterButton!.click());
     expect(document.querySelector('[data-testid="nav-session-filter-menu"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="nav-session-collapse-all"]')).toBeNull();
+  });
+
+  it.each(['grouped', 'all'] as const)('selects archived sessions and returns to the working list in %s grouping', grouping => {
+    act(() => useWorkspaceSessionViewStore.getState().setGrouping(grouping));
+    const filterButton = container.querySelector<HTMLButtonElement>('[data-testid="nav-session-filter-btn"]')!;
+    const openShow = () => {
+      act(() => filterButton.click());
+      act(() => document.querySelector<HTMLButtonElement>('[data-submenu-id="show"]')!.click());
+      return document.querySelector<HTMLElement>('[data-testid="nav-session-filter-show-menu"]')!;
+    };
+    const rows = ['active', 'archived', 'completed'].map(persistedStatus => ({ persistedStatus, config: {} }) as Session);
+    const visibleStatuses = () => {
+      const { show, filters } = useWorkspaceSessionViewStore.getState();
+      return rows.filter(row => matchesWorkspaceSessionView(row, show, filters, false)).map(row => row.persistedStatus);
+    };
+
+    const archivedOption = [...openShow().querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
+      .find(option => option.textContent === 'Archived sessions')!;
+    expect(archivedOption).toBeDefined();
+    act(() => archivedOption.click());
+    expect(visibleStatuses()).toEqual(['archived']);
+    expect(useWorkspaceSessionViewStore.getState().grouping).toBe(grouping);
+    expect(document.querySelector('[data-testid="nav-session-filter-menu"]')).toBeNull();
+    expect(filterButton.getAttribute('data-openbitfun-state')).toBe('filtered');
+
+    const submenu = openShow();
+    expect(submenu.querySelector('[aria-checked="true"]')?.textContent).toBe('Archived sessions');
+    act(() => [...submenu.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
+      .find(option => option.textContent === 'All sessions')!.click());
+    expect(visibleStatuses()).toEqual(['active', 'completed']);
+    expect(filterButton.getAttribute('data-openbitfun-state')).toBeNull();
   });
 
   it('selects a shared session source from the header and resets it with the other filters', () => {

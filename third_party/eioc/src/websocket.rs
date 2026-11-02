@@ -78,6 +78,7 @@ impl Stream for WebSocketStream {
 
                             Some(Ok(Frame::Binary(binary)))
                         }
+                        WebSocketMessage::Close(_) => Some(Ok(Frame::Packet(Packet::Close))),
                         _ => continue,
                     },
                     Err(e) => Some(Err(e.into())),
@@ -515,6 +516,10 @@ mod tests {
         assert!(
             matches!(action, crate::engine::EngineAction::Transport(Frame::Packet(Packet::Message(m))) if m == "data")
         );
+        assert!(matches!(
+            engine_rx.recv().await.unwrap(),
+            crate::engine::EngineAction::Transport(Frame::Packet(Packet::Close))
+        ));
         server_task.await.unwrap();
     }
 

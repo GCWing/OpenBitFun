@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:ee62faff5c97f12a",
+  "digest": "fnv1a64:6af8cd66ba85f89e",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -48,7 +48,8 @@
       "whole_session_copy_v1",
       "session_trajectory_v1",
       "user_question_response",
-      "user_question_interaction_v1"
+      "user_question_interaction_v1",
+      "terminal_cursor_replay_v1"
     ],
     "desktop": [
       "model_routing_v1",
@@ -101,6 +102,8 @@
       "control_conversation_reset_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
+      "btw_initial_model_selection_v1",
+      "btw_model_pool_selection_v1",
       "targeted_session_rollback",
       "token_usage_statistics",
       "model_channel_routing_v1",
@@ -114,7 +117,8 @@
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
       "user_question_response",
-      "user_question_interaction_v1"
+      "user_question_interaction_v1",
+      "terminal_cursor_replay_v1"
     ]
   },
   "operations": [
@@ -784,8 +788,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {
@@ -796,8 +799,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {
@@ -809,7 +811,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -1341,7 +1343,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -2298,7 +2300,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "the CLI peer host does not export diagnostics bundles; collect its log directory on that device instead"
       }
     },
     {
@@ -2430,7 +2432,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -2442,7 +2444,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -2870,8 +2872,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {
@@ -3050,8 +3051,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {
@@ -3247,8 +3247,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {
@@ -3385,8 +3384,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {
@@ -4110,7 +4108,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -4181,7 +4179,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -4517,7 +4515,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -5599,7 +5597,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -5623,7 +5621,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -6794,7 +6792,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -7077,7 +7075,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -7089,7 +7087,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -7891,7 +7889,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -8033,7 +8031,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
@@ -8069,7 +8067,7 @@
       },
       "cliPeer": {
         "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
       }
     },
     {
