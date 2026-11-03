@@ -85,17 +85,53 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
             user_input,
             original_user_input,
             user_message_metadata,
-        } => Some(AgenticFrontendEvent::new(
-            "agentic://dialog-turn-started",
-            json!({
+            session_workspace,
+        } => {
+            let mut payload = json!({
                 "sessionId": session_id,
                 "turnId": turn_id,
                 "turnIndex": turn_index,
                 "userInput": user_input,
                 "originalUserInput": original_user_input,
                 "userMessageMetadata": user_message_metadata,
-            }),
-        )),
+            });
+            if let (Some(workspace), Some(fields)) = (session_workspace, payload.as_object_mut()) {
+                // Same flat keys as `agentic://session-created`, so the UI can
+                // place a session it has not loaded with one resolver.
+                let entries = [
+                    ("workspacePath", workspace.workspace_path.map(Value::from)),
+                    (
+                        "projectWorkspacePath",
+                        workspace.project_workspace_path.map(Value::from),
+                    ),
+                    (
+                        "executionTarget",
+                        workspace
+                            .execution_target
+                            .and_then(|target| serde_json::to_value(target).ok()),
+                    ),
+                    ("workspaceId", workspace.workspace_id.map(Value::from)),
+                    (
+                        "projectWorkspaceId",
+                        workspace.project_workspace_id.map(Value::from),
+                    ),
+                    (
+                        "remoteConnectionId",
+                        workspace.remote_connection_id.map(Value::from),
+                    ),
+                    ("remoteSshHost", workspace.remote_ssh_host.map(Value::from)),
+                ];
+                for (key, value) in entries {
+                    if let Some(value) = value {
+                        fields.insert(key.to_string(), value);
+                    }
+                }
+            }
+            Some(AgenticFrontendEvent::new(
+                "agentic://dialog-turn-started",
+                payload,
+            ))
+        }
         AgenticEvent::SubagentSessionLinked {
             session_id,
             subagent_dialog_turn_id,
@@ -546,7 +582,7 @@ mod tests {
     use super::*;
     use crate::{
         DeepReviewQueueReason, DeepReviewQueueState, DeepReviewQueueStatus,
-        ModelRoundAttemptDiagnostic,
+        ModelRoundAttemptDiagnostic, SessionWorkspaceFacts,
     };
     use openbitfun_core_types::{
         ReasoningContentKind, SessionExecutionTarget, SessionExecutionTargetKind, WorktreeLifecycle,
@@ -605,6 +641,73 @@ mod tests {
         assert_eq!(projected.payload["projectWorkspacePath"], "/repo");
         assert_eq!(projected.payload["executionTarget"]["worktreeId"], "wt-1");
         assert_eq!(projected.payload["workspaceId"], "workspace-wt-1");
+    }
+
+    #[test]
+    fn dialog_turn_started_projects_session_workspace_binding() {
+        let projected = project_agentic_frontend_event(AgenticEvent::DialogTurnStarted {
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            turn_index: 3,
+            user_input: "check".to_string(),
+            original_user_input: None,
+            user_message_metadata: None,
+            session_workspace: Some(SessionWorkspaceFacts {
+                workspace_path: Some("/assistants/pdf".to_string()),
+                project_workspace_path: Some("/assistants/pdf".to_string()),
+                execution_target: Some(SessionExecutionTarget {
+                    kind: SessionExecutionTargetKind::Local,
+                    worktree_id: None,
+                    root_path: "/assistants/pdf".to_string(),
+                    base_ref: None,
+                    base_commit: None,
+                    branch: None,
+                    lifecycle: None,
+                }),
+                workspace_id: Some("workspace-pdf".to_string()),
+                project_workspace_id: Some("workspace-pdf".to_string()),
+                remote_connection_id: None,
+                remote_ssh_host: None,
+            }),
+        })
+        .expect("projected");
+
+        assert_eq!(projected.event_name, "agentic://dialog-turn-started");
+        assert_eq!(projected.payload["workspacePath"], "/assistants/pdf");
+        assert_eq!(projected.payload["projectWorkspacePath"], "/assistants/pdf");
+        assert_eq!(projected.payload["workspaceId"], "workspace-pdf");
+        assert_eq!(projected.payload["projectWorkspaceId"], "workspace-pdf");
+        assert_eq!(
+            projected.payload["executionTarget"]["rootPath"],
+            "/assistants/pdf"
+        );
+        assert!(projected.payload.get("remoteConnectionId").is_none());
+    }
+
+    #[test]
+    fn legacy_dialog_turn_started_without_workspace_still_round_trips() {
+        let legacy = serde_json::json!({
+            "type": "DialogTurnStarted",
+            "session_id": "session-1",
+            "turn_id": "turn-1",
+            "turn_index": 0,
+            "user_input": "hello",
+            "original_user_input": null,
+            "user_message_metadata": null,
+        });
+        let event: AgenticEvent = serde_json::from_value(legacy.clone()).expect("legacy event");
+        let AgenticEvent::DialogTurnStarted {
+            session_workspace, ..
+        } = &event
+        else {
+            panic!("expected DialogTurnStarted");
+        };
+        assert!(session_workspace.is_none());
+        assert_eq!(serde_json::to_value(&event).expect("serialize"), legacy);
+
+        let projected = project_agentic_frontend_event(event).expect("projected");
+        assert!(projected.payload.get("workspaceId").is_none());
+        assert!(projected.payload.get("workspacePath").is_none());
     }
 
     #[test]

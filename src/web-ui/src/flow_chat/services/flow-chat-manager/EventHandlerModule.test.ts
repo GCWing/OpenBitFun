@@ -113,6 +113,51 @@ describe('external BTW turn projection', () => {
   });
 });
 
+describe('background turn in a workspace this surface has not loaded', () => {
+  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+
+  function foregroundContext(): FlowChatContext {
+    return {
+      ...createFlowChatContext(),
+      currentWorkspaceId: 'workspace-secretary',
+      currentWorkspacePath: '/assistants/secretary',
+    } as FlowChatContext;
+  }
+
+  it('places the session in the workspace the host announces, not the foreground one', () => {
+    __test_only__.handleDialogTurnStarted(foregroundContext(), {
+      sessionId: 'scheduled-session', turnId: 'cronjob_1', turnIndex: 7, userInput: 'check',
+      workspaceId: 'workspace-pdf',
+      workspacePath: '/assistants/pdf',
+      projectWorkspacePath: '/assistants/pdf',
+      projectWorkspaceId: 'workspace-pdf',
+      executionTarget: { kind: 'local', rootPath: '/assistants/pdf' },
+      userMessageMetadata: { backgroundDelivery: { source: 'scheduled_job' } },
+    });
+
+    const session = FlowChatStore.getInstance().getState().sessions.get('scheduled-session');
+    expect(session).toMatchObject({
+      workspaceId: 'workspace-pdf',
+      workspacePath: '/assistants/pdf',
+      projectWorkspacePath: '/assistants/pdf',
+      projectWorkspaceId: 'workspace-pdf',
+    });
+    expect(session?.config.executionTarget).toMatchObject({ rootPath: '/assistants/pdf' });
+  });
+
+  it('keeps the legacy foreground fallback for events from hosts that omit the binding', () => {
+    __test_only__.handleDialogTurnStarted(foregroundContext(), {
+      sessionId: 'legacy-session', turnId: 'turn-1', turnIndex: 0, userInput: 'hello',
+    });
+
+    expect(FlowChatStore.getInstance().getState().sessions.get('legacy-session')).toMatchObject({
+      workspaceId: 'workspace-secretary',
+      workspacePath: '/assistants/secretary',
+    });
+  });
+});
+
 describe('Claw bootstrap cancellation', () => {
   beforeEach(() => {
     resetFlowChatStore();
