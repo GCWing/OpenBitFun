@@ -43,7 +43,7 @@ try {
     readFile(join(root, 'scripts/fixtures/windows-window-material.rs'), 'utf8'),
   ]);
   const version = (name, prefix = '') => {
-    const packages = lock.split('[[package]]').map(section => section.match(/\nname = "([^"]+)"\nversion = "([^"]+)"/));
+    const packages = lock.split('[[package]]').map(section => section.match(/\r?\nname = "([^"]+)"\r?\nversion = "([^"]+)"/));
     const found = packages.find(entry => entry?.[1] === name && entry[2].startsWith(prefix));
     if (!found) throw new Error(`Missing locked dependency: ${name} ${prefix}`);
     return found[2];
