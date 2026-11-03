@@ -3,7 +3,7 @@
 //! This module manages SSH connections using the pure-Russ SSH implementation
 
 use super::proxy_command::{expand_tokens, ProxyCommandChild};
-use super::sftp_file::ManagedSftpSession;
+use super::sftp_file::{ManagedSftpFile, ManagedSftpSession};
 #[cfg(feature = "ssh_config")]
 use super::ssh_config_loader::{
     is_host_pattern, load_merged_config_async, resolve_host_settings, split_directive,
@@ -5607,11 +5607,9 @@ impl SSHConnectionManager {
             let transport = self.open_workspace_stdio(connection_id, &command).await?;
             return Ok(Box::new(ContainerFileReader::from_transport(transport)));
         }
-        let sftp = self.get_sftp(connection_id).await?;
-        let file = sftp
-            .open(&path)
+        let file = self
+            .sftp_open_with_recovery(connection_id, &path)
             .await
-            .map_err(anyhow::Error::new)
             .with_context(|| format!("Failed to open remote file '{path}'"))?;
         if !file.metadata().await?.file_type().is_file() {
             anyhow::bail!("Workspace path is not a regular file: {path}");
@@ -6435,6 +6433,21 @@ impl SSHConnectionManager {
         }
     }
 
+    /// Open a file read-only, replaying the OPEN once on a fresh subsystem.
+    ///
+    /// A read-only OPEN changes nothing on the server and no data has reached
+    /// the caller yet, so it is as safe to replay as a metadata query.
+    async fn sftp_open_with_recovery(
+        &self,
+        connection_id: &str,
+        path: &str,
+    ) -> anyhow::Result<ManagedSftpFile> {
+        self.sftp_query_with_recovery(connection_id, path, |sftp, open_path| {
+            Box::pin(async move { sftp.open(&open_path).await })
+        })
+        .await
+    }
+
     /// Reuse a dedicated SFTP channel for serialized directory enumeration.
     /// The high-level API leaks directory handles on errors/cancellation. The
     /// raw path closes on all exits and can also stop at an entry budget.
@@ -6518,9 +6531,8 @@ impl SSHConnectionManager {
     /// Read a file via SFTP
     pub async fn sftp_read(&self, connection_id: &str, path: &str) -> anyhow::Result<Vec<u8>> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        let mut file = sftp
-            .open(&path)
+        let mut file = self
+            .sftp_open_with_recovery(connection_id, &path)
             .await
             .map_err(|e| anyhow!("Failed to open remote file '{}': {}", path, e))?;
 
@@ -6549,18 +6561,18 @@ impl SSHConnectionManager {
         on_progress: &mut impl FnMut(u64, u64) -> bool,
     ) -> anyhow::Result<Vec<u8>> {
         let resolved = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
 
         // Determine file size from metadata for progress calculation.
-        let metadata = sftp
-            .as_ref()
-            .metadata(&resolved)
+        let metadata = self
+            .sftp_query_with_recovery(connection_id, &resolved, |sftp, query_path| {
+                Box::pin(async move { sftp.as_ref().metadata(&query_path).await })
+            })
             .await
             .map_err(|e| anyhow!("Failed to stat '{}': {}", resolved, e))?;
         let total = metadata.size.unwrap_or(0);
 
-        let mut file = sftp
-            .open(&resolved)
+        let mut file = self
+            .sftp_open_with_recovery(connection_id, &resolved)
             .await
             .map_err(|e| anyhow!("Failed to open remote file '{}': {}", resolved, e))?;
 
@@ -6946,16 +6958,37 @@ impl SSHConnectionManager {
     /// Create directory and all parents via SFTP
     pub async fn sftp_mkdir_all(&self, connection_id: &str, path: &str) -> anyhow::Result<()> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
+        // Every step accepts directories that already exist, so a whole attempt
+        // can be replayed once after a dead cached subsystem was retired.
+        match self.sftp_mkdir_all_once(connection_id, &path).await {
+            Err(error)
+                if error
+                    .downcast_ref::<SftpError>()
+                    .is_some_and(sftp_error_may_be_stale_transport) =>
+            {
+                log::warn!(
+                    "Cached SFTP subsystem for {} failed creating '{}' (will retry once on a new channel): {:#}",
+                    connection_id,
+                    path,
+                    error
+                );
+                self.sftp_mkdir_all_once(connection_id, &path).await
+            }
+            result => result,
+        }
+    }
+
+    async fn sftp_mkdir_all_once(&self, connection_id: &str, path: &str) -> anyhow::Result<()> {
         let sftp = self.get_sftp(connection_id).await?;
 
         // Check if path exists
-        match sftp.as_ref().try_exists(&path).await {
+        match sftp.as_ref().try_exists(path).await {
             Ok(true) => return Ok(()), // Already exists
             Ok(false) => {}
             Err(_) => {}
         }
 
-        for dir in sftp_mkdir_all_prefixes(&path) {
+        for dir in sftp_mkdir_all_prefixes(path) {
             if let Ok(true) = sftp.as_ref().try_exists(&dir).await {
                 continue;
             }
@@ -6964,7 +6997,8 @@ impl SSHConnectionManager {
                 match sftp.as_ref().try_exists(&dir).await {
                     Ok(true) => continue,
                     Ok(false) | Err(_) => {
-                        return Err(anyhow!("Failed to create directory '{}': {}", dir, error));
+                        let message = format!("Failed to create directory '{}': {}", dir, error);
+                        return Err(anyhow::Error::new(error).context(message));
                     }
                 }
             }

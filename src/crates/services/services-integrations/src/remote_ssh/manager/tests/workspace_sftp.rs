@@ -1162,12 +1162,9 @@ async fn a_directory_waiter_detects_retirement_after_acquiring_the_lock() {
     assert_eq!(f.state.opened.load(Ordering::SeqCst), 1);
 }
 
-#[tokio::test]
-async fn a_closed_subsystem_channel_is_replaced_instead_of_failing_forever() {
-    let f = Fixture::new().await;
-
-    // Serve SFTP over an in-memory transport and cache that session, so the
-    // test can kill its channel without disturbing the SSH transport.
+/// Serve SFTP over an in-memory transport and cache that session, so a test
+/// can kill its channel without disturbing the SSH transport.
+async fn cache_killable_sftp_session(f: &Fixture) -> Arc<ManagedSftpSession> {
     let (client_io, server_io) = tokio::io::duplex(64 * 1024);
     let handler = SftpServer {
         state: f.state.clone(),
@@ -1190,14 +1187,17 @@ async fn a_closed_subsystem_channel_is_replaced_instead_of_failing_forever() {
     }
     f.manager.sftp_stat("sftp-test", "/file").await.unwrap();
     assert_eq!(f.state.channels.load(Ordering::SeqCst), 0);
+    cached
+}
 
-    // Kill the channel underneath a cached session the manager still considers
-    // usable. A server-side close leaves exactly this state: russh-sftp answers
-    // every later request with "session closed" while the SSH transport and the
-    // cache entry stay alive. The raw session is used on purpose here, because
-    // the managed wrapper is what the fix adds.
+/// Kill the channel underneath a cached session the manager still considers
+/// usable. A server-side close leaves exactly this state: russh-sftp answers
+/// every later request with "session closed" while the SSH transport and the
+/// cache entry stay alive. The raw session is used on purpose here, because
+/// the managed wrapper is what retires a dead subsystem.
+async fn kill_cached_sftp_channel(f: &Fixture, cached: &ManagedSftpSession) {
     f.state.kill_sftp.kill();
-    let raw: &SftpSession = &cached;
+    let raw: &SftpSession = cached;
     // A request in flight when the channel dies never completes, so every probe
     // is bounded and repeated until russh-sftp reports the closed session.
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -1217,6 +1217,13 @@ async fn a_closed_subsystem_channel_is_replaced_instead_of_failing_forever() {
     .await
     .expect("the closed subsystem channel never surfaced to the cached session");
     assert!(!cached.is_retired());
+}
+
+#[tokio::test]
+async fn a_closed_subsystem_channel_is_replaced_instead_of_failing_forever() {
+    let f = Fixture::new().await;
+    let cached = cache_killable_sftp_session(&f).await;
+    kill_cached_sftp_channel(&f, &cached).await;
 
     // A dead cached subsystem must not poison metadata queries: the manager
     // retires it and opens a new channel on the same SSH transport.
@@ -1225,6 +1232,33 @@ async fn a_closed_subsystem_channel_is_replaced_instead_of_failing_forever() {
     assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
     assert!(f.manager.sftp_exists("sftp-test", "/file").await.unwrap());
     f.manager.sftp_lstat("sftp-test", "/file").await.unwrap();
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_read_after_the_subsystem_channel_closed_replays_its_open() {
+    let f = Fixture::new().await;
+    let cached = cache_killable_sftp_session(&f).await;
+    kill_cached_sftp_channel(&f, &cached).await;
+
+    assert_eq!(
+        f.manager.sftp_read("sftp-test", "/file").await.unwrap(),
+        vec![0, 1, 254, 255]
+    );
+    assert!(cached.is_retired());
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn mkdir_all_after_the_subsystem_channel_closed_replays_on_a_new_channel() {
+    let f = Fixture::new().await;
+    let cached = cache_killable_sftp_session(&f).await;
+    kill_cached_sftp_channel(&f, &cached).await;
+
+    // The fixture reports every path as existing, so a healthy channel
+    // finishes without CREATE; the dead one fails every step instead.
+    f.manager.sftp_mkdir_all("sftp-test", "/a/b").await.unwrap();
+    assert!(cached.is_retired());
     assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
 }
 
