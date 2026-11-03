@@ -8002,6 +8002,41 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
     ).toHaveLength(2);
   });
 
+  it('keeps live round timing when a Peer snapshot adopts a settled Turn', async () => {
+    await hydrateSessionWithContent();
+    flowChatStore.updateModelRound('history-1', 'turn-0', 'round-0', round => ({
+      ...round,
+      durationMs: 2172,
+      ttftMs: 690,
+    }));
+
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: hostSession(),
+      turns: [{
+        ...createPersistedTurn(0),
+        modelRounds: [{
+          ...HYDRATED_ROUND,
+          durationMs: 0,
+          textItems: [
+            { id: 'text-0', content: 'OpenBitFun is an agentic IDE…', timestamp: 2 },
+            { id: 'text-1', content: '…with multi-device control.', timestamp: 3 },
+          ],
+        }],
+      }],
+      contextRestoreState: 'ready',
+    });
+
+    const result = await flowChatStore.refreshPeerSessionSnapshot(
+      'history-1',
+      { requireActiveSession: true },
+    );
+
+    expect(result.applied).toBe(true);
+    const round = flowChatStore.getState().sessions.get('history-1')?.dialogTurns[0].modelRounds[0];
+    expect(round?.items).toHaveLength(2);
+    expect(round).toMatchObject({ durationMs: 2172, ttftMs: 690 });
+  });
+
   describe('a Turn whose terminal event this window missed', () => {
     // Regression 2026-11-02: a Turn kept running locally while the window
     // rendered a Peer device. Its later chunks and terminal event were dropped
