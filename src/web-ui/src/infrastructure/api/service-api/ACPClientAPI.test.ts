@@ -102,6 +102,64 @@ describe('ACPClientAPI client list startup cache', () => {
     expect(invokeMock).toHaveBeenCalledTimes(2);
   });
 
+  it.each([false, true])('coalesces readers behind an in-flight probe (forced: %s) and retries failures', async force => {
+    const ACPClientAPI = await importApi();
+    const deferred = createDeferred<[]>();
+    invokeMock.mockReturnValueOnce(deferred.promise).mockResolvedValue([]);
+    const first = ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-a', force });
+    const second = ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-a' });
+    const settled = Promise.allSettled([first, second]);
+    deferred.reject(new Error('Transport unavailable'));
+    expect((await settled).map(result => result.status)).toEqual(['rejected', 'rejected']);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    await ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-a', force });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a retired request failure clear a newer forced request', async () => {
+    const ACPClientAPI = await importApi();
+    const old = createDeferred<[]>();
+    const fresh = createDeferred<[]>();
+    invokeMock.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+    const first = ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-a' }).catch(error => error);
+    const second = ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-a', force: true });
+    old.reject(new Error('Old snapshot failed'));
+    await first;
+    const joined = ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-a', force: true });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    fresh.resolve([]);
+    await Promise.all([second, joined]);
+  });
+
+  it('keeps local and independent connection probes isolated', async () => {
+    const ACPClientAPI = await importApi();
+    invokeMock.mockResolvedValueOnce([{ id: 'local' }]).mockResolvedValueOnce([{ id: 'a' }]).mockResolvedValueOnce([{ id: 'b' }]);
+    expect(await ACPClientAPI.probeClientRequirements()).toEqual([{ id: 'local' }]);
+    expect(await ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-a' })).toEqual([{ id: 'a' }]);
+    expect(await ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-b' })).toEqual([{ id: 'b' }]);
+    ACPClientAPI.invalidateRemoteRequirementProbeCache('ssh-a');
+    expect(await ACPClientAPI.probeClientRequirements()).toEqual([{ id: 'local' }]);
+    expect(await ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'ssh-b' })).toEqual([{ id: 'b' }]);
+    expect(invokeMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('abandons old forced probe results across local-peer-local activation', async () => {
+    const ACPClientAPI = await importApi();
+    const { activateSurface, isSurfaceChangedError } = await import('@/infrastructure/peer-device/deviceSurface');
+    const old = createDeferred<[]>();
+    invokeMock.mockReturnValueOnce(old.promise).mockResolvedValueOnce([{ id: 'current' }]);
+    const pending = ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'same-id', force: true });
+    const rejection = expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    activateSurface('peer-b');
+    activateSurface('local');
+    await ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'same-id', force: true });
+    vi.mocked(window.dispatchEvent).mockClear();
+    old.resolve([]);
+    await rejection;
+    expect(window.dispatchEvent).not.toHaveBeenCalled();
+    expect(await ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'same-id' })).toEqual([{ id: 'current' }]);
+  });
+
   it('does not let a snapshot read swallow or overwrite a forced probe', async () => {
     const ACPClientAPI = await importApi();
     const snapshot = createDeferred<Array<{ id: string }>>();

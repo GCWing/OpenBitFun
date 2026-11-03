@@ -464,10 +464,12 @@ describe('SSHRemoteProvider workspace connection state', () => {
   let container: HTMLDivElement;
   let root: Root;
   let latestStatuses: Record<string, ConnectionStatus>;
+  let latestContext: SSHContextValue | null;
   let statusHistory: Array<Record<string, ConnectionStatus>>;
 
   function StatusProbe() {
     const ctx = React.useContext(SSHContext);
+    latestContext = ctx;
     latestStatuses = ctx?.workspaceStatuses ?? {};
     statusHistory.push(latestStatuses);
     return null;
@@ -494,6 +496,7 @@ describe('SSHRemoteProvider workspace connection state', () => {
     vi.clearAllMocks();
     peerModeFlagMock.active = false;
     latestStatuses = {};
+    latestContext = null;
     statusHistory = [];
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -701,6 +704,136 @@ describe('SSHRemoteProvider workspace connection state', () => {
     peerModeFlagMock.active = true;
     await act(async () => { window.dispatchEvent(new Event('openbitfun:acp-requirements-invalidated')); });
     expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refresh a closed connection when ACP configuration changes', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    workspaceManagerMock.getState.mockReturnValue({ loading: false, openedWorkspaces: new Map(), activeWorkspaceId: null });
+    emitWorkspaceManagerEvent({ type: 'workspace:closed', workspaceId: workspace.id });
+    await act(async () => { window.dispatchEvent(new Event('openbitfun:acp-requirements-invalidated')); });
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed capability probe after configuration is corrected', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    vi.mocked(ACPClientAPI.probeClientRequirements).mockRejectedValueOnce(new Error('Invalid configuration'));
+    await renderProvider();
+    await act(async () => { window.dispatchEvent(new Event('openbitfun:acp-requirements-invalidated')); });
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['closed', 'rebound'])('discards a pending restore after its workspace is %s', async change => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    let finish!: (value: boolean) => void;
+    sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { finish = resolve; }));
+    await renderProvider();
+    const rebound = { ...workspace, connectionId: 'conn-2' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: change === 'closed' ? new Map() : new Map([[workspace.id, rebound]]),
+      activeWorkspaceId: change === 'closed' ? null : workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    emitWorkspaceManagerEvent(change === 'closed'
+      ? { type: 'workspace:closed', workspaceId: workspace.id }
+      : { type: 'workspace:updated', workspace: rebound });
+    await act(async () => { finish(true); });
+    expect(sshApiMock.openWorkspace).not.toHaveBeenCalledWith('conn-1', workspace.rootPath);
+    expect(ACPClientAPI.probeClientRequirements).not.toHaveBeenCalledWith({ force: true, remoteConnectionId: 'conn-1' });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.isConnected.mock.calls.map(([id]) => id)).toEqual(change === 'closed' ? [] : ['conn-2']);
+  });
+
+  it('does not reactivate a workspace after the user disconnects during reconciliation', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    let finish!: (value: boolean) => void;
+    sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { finish = resolve; }));
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await latestContext!.disconnect(); });
+    await act(async () => { finish(true); });
+    expect(latestContext!.isConnected).toBe(false);
+    expect(latestContext!.connectionId).toBeNull();
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledTimes(1);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops reconnect retries after the last workspace closes', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.listSavedConnections.mockResolvedValue([{
+      id: 'conn-1', name: 'dev-box', host: 'example.com', port: 22, username: 'dev',
+      authType: { type: 'PrivateKey', keyPath: '/tmp/key' },
+    }]);
+    await renderProvider();
+    expect(sshApiMock.connect).toHaveBeenCalledTimes(1);
+    workspaceManagerMock.getState.mockReturnValue({ loading: false, openedWorkspaces: new Map(), activeWorkspaceId: null });
+    emitWorkspaceManagerEvent({ type: 'workspace:closed', workspaceId: workspace.id });
+    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
+    expect(sshApiMock.connect).toHaveBeenCalledTimes(1);
+    expect(sshApiMock.openWorkspace).not.toHaveBeenCalled();
+    expect(notificationService.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps successful connections monitored when another workspace cannot activate', async () => {
+    vi.useFakeTimers();
+    const first = createRemoteWorkspace();
+    const second = { ...first, id: 'ws-remote-2', connectionId: 'conn-2' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[first.id, first], [second.id, second]]), activeWorkspaceId: first.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    sshApiMock.openWorkspace.mockImplementation(async id => {
+      if (id === 'conn-2') throw new Error('Remote path missing');
+    });
+    await renderProvider();
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+    expect(latestStatuses['conn-2']).toBe('error');
+  });
+
+  it.each([true, false])('monitors a ready workspace while another activation is pending (shared connection: %s)', async shared => {
+    vi.useFakeTimers();
+    const first = createRemoteWorkspace();
+    const second = { ...first, id: 'ws-remote-2', connectionId: shared ? 'conn-1' : 'conn-2', rootPath: '/missing' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[first.id, first], [second.id, second]]), activeWorkspaceId: first.id,
+    });
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    sshApiMock.openWorkspace.mockImplementation(async (_id, path) => {
+      if (path === '/missing') { await pending; throw new Error('Remote path missing'); }
+    });
+    await renderProvider();
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+    await act(async () => { finish(); });
+    expect(latestStatuses['conn-1']).toBe('connected');
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
   });
 
   it('reactivates an unchanged workspace on selection and opens a closed record again', async () => {
@@ -1143,6 +1276,60 @@ describe('SSHRemoteProvider remote workspace connection conflicts', () => {
       sshApiMock.isConnected.mockClear();
       await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
       expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('ssh-deploy@example.com');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resumes a browser-only connection after returning from Peer mode', async () => {
+    vi.useFakeTimers();
+    try {
+      await renderProvider();
+      await connectDeployProfile();
+      peerModeFlagMock.active = true;
+      activateSurface('peer-b');
+      await act(async () => { window.dispatchEvent(new CustomEvent('peer-mode:changed', { detail: { active: true } })); });
+      peerModeFlagMock.active = false;
+      activateSurface('local');
+      await act(async () => { window.dispatchEvent(new CustomEvent('peer-mode:changed', { detail: { active: false } })); });
+      sshApiMock.isConnected.mockClear();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('ssh-deploy@example.com');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores a heartbeat from before an explicit reconnect on the same connection', async () => {
+    vi.useFakeTimers();
+    try {
+      await renderProvider();
+      await connectDeployProfile();
+      let finish!: (value: boolean) => void;
+      sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { finish = resolve; }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      await connectDeployProfile();
+      await act(async () => { finish(false); });
+      expect(context!.isConnected).toBe(true);
+      expect(context!.connectionError).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never resumes a peer-owned browser connection on the controller', async () => {
+    vi.useFakeTimers();
+    try {
+      await renderProvider();
+      peerModeFlagMock.active = true;
+      activateSurface('peer-b');
+      await connectDeployProfile();
+      peerModeFlagMock.active = false;
+      activateSurface('local');
+      await act(async () => { window.dispatchEvent(new CustomEvent('peer-mode:changed', { detail: { active: false } })); });
+      sshApiMock.isConnected.mockClear();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(sshApiMock.isConnected).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

@@ -224,6 +224,27 @@ describe('CodeEditor disk synchronization', () => {
     expect(model().getValue()).toBe('external change');
   });
 
+  it('pauses hidden polling and reloads external edits immediately on return', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    try {
+      await render();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      visibility.mockReturnValue('hidden');
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      mocks.metadata.mockClear();
+      mocks.metadata.mockResolvedValue({ ...fileMetadata, modified: 2 });
+      mocks.read.mockResolvedValue('edited while hidden');
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(mocks.metadata).not.toHaveBeenCalled();
+      expect(model().getValue()).toBe('disk');
+      visibility.mockReturnValue('visible');
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      expect(model().getValue()).toBe('edited while hidden');
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
   it('retains find/replace interaction across inactivity and releases only after the query is cleared', async () => {
     await render();
     const originalModel = model();

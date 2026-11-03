@@ -91,10 +91,11 @@ pnpm --dir src/web-ui run test:run src/app/layout/useNavResize.test.tsx src/app/
 远端工作区状态核对与 ACP 能力缓存失效使用以下聚焦检查：
 
 ```bash
-pnpm --dir src/web-ui run test:run src/features/ssh-remote/SSHRemoteProvider.test.tsx src/infrastructure/api/service-api/ACPClientAPI.test.ts
+pnpm --dir src/web-ui run test:run src/features/ssh-remote/SSHRemoteProvider.test.tsx src/infrastructure/api/service-api/ACPClientAPI.test.ts src/app/components/NavPanel/sections/workspaces/workspaceAcpMenuClients.test.ts src/app/components/NavPanel/sections/workspaces/workspaceAcpMenuClients.integration.test.ts
 ```
 
-这些测试覆盖空闲元数据更新、连接恢复、显式激活、并发绑定变更、配置失效和模拟 Peer
+这些测试覆盖空闲元数据更新、连接恢复、显式激活、并发改绑与关闭、部分工作区恢复失败、
+配置失效、菜单探测反馈循环和模拟 Peer
 设备切换，不代表真实 SSH、远程控制或离线派发验证。编辑器轮询检查见
 `src/tools/editor/AGENTS.md`。
 

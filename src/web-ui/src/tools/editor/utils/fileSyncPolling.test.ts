@@ -75,4 +75,38 @@ describe('editor file sync polling', () => {
     expect(tick).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('keeps exactly one interval through repeated visibility and peer transitions', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const tick = vi.fn();
+    const stop = startEditorFileSyncPolling(tick, 100);
+    try {
+      await vi.advanceTimersByTimeAsync(350);
+      expect(tick).toHaveBeenCalledTimes(1);
+      for (let index = 0; index < 3; index += 1) {
+        visibility.mockReturnValue('hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+        state.peer = true;
+        window.dispatchEvent(new Event('peer-mode:changed'));
+        expect(vi.getTimerCount()).toBe(0);
+        const calls = tick.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(tick).toHaveBeenCalledTimes(calls);
+        visibility.mockReturnValue('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+        expect(tick).toHaveBeenCalledTimes(calls + 1);
+        expect(vi.getTimerCount()).toBe(1);
+        await vi.advanceTimersByTimeAsync(15_100);
+        expect(tick).toHaveBeenCalledTimes(calls + 2);
+        state.peer = false;
+        window.dispatchEvent(new Event('peer-mode:changed'));
+        expect(vi.getTimerCount()).toBe(1);
+        await vi.advanceTimersByTimeAsync(1100);
+        expect(tick).toHaveBeenCalledTimes(calls + 3);
+      }
+    } finally {
+      stop();
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
