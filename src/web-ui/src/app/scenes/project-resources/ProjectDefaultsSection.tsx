@@ -32,7 +32,8 @@ export function ProjectDefaultsSection({ workspace, scope, isActive }: {
   const copy = useRef(t); copy.current = t;
 
   useEffect(() => {
-    const order = ++generation.current;
+    const order = generation.current + 1;
+    generation.current = order;
     if (!isActive) return;
     setLoading(true); setError(undefined); setSaved(false);
     void (async () => {
@@ -51,7 +52,7 @@ export function ProjectDefaultsSection({ workspace, scope, isActive }: {
         if (order === generation.current && scope.isCurrent()) setLoading(false);
       }
     })();
-    return () => { ++generation.current; };
+    return () => { generation.current = order + 1; };
   }, [isActive, projectId, workspace.id, scope, revision]);
 
   const save = async (field: 'primary_model' | 'fast_model' | 'mode', value: string) => {

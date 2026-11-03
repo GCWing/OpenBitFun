@@ -126,6 +126,8 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
     ? []
     : reorderableGroups;
   const canReorderGroups = visibleReorderableGroups.length > 1;
+  const canContinueDrag = draggedWorkspaceId !== null && canReorderGroups
+    && visibleReorderableGroups.some(group => group.workspace.id === draggedWorkspaceId);
   /**
    * Pinned assistants sit outside the drag order, so a project drag rewrites
    * project positions only and leaves the assistant's stored slot untouched.
@@ -151,11 +153,10 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
   }, [grouping, surfaceId, variant, resetDragState]);
 
   useLayoutEffect(() => {
-    if (draggedWorkspaceId && (!canReorderGroups
-      || !visibleReorderableGroups.some(group => group.workspace.id === draggedWorkspaceId))) {
+    if (draggedWorkspaceId && !canContinueDrag) {
       resetDragState();
     }
-  }, [canReorderGroups, draggedWorkspaceId, visibleReorderableGroups, resetDragState]);
+  }, [canContinueDrag, draggedWorkspaceId, resetDragState]);
 
   useEffect(() => {
     if (!draggedWorkspaceId) return;
