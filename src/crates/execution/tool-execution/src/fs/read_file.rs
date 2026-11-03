@@ -22,6 +22,34 @@ pub struct ReadFilePresentation {
     pub next_offset: Option<usize>,
 }
 
+/// Per-call budgets a Read implementation advertises in its continuation
+/// guidance. A follow-up call that omits `limit` and stays within these budgets
+/// returns the whole remaining window in one step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadCallBudget {
+    pub max_lines: usize,
+    pub max_total_chars: usize,
+}
+
+impl ReadCallBudget {
+    pub const fn new(max_lines: usize, max_total_chars: usize) -> Self {
+        Self {
+            max_lines,
+            max_total_chars,
+        }
+    }
+}
+
+impl Default for ReadCallBudget {
+    fn default() -> Self {
+        Self::new(DEFAULT_READ_MAX_LINES, DEFAULT_READ_MAX_TOTAL_CHARS)
+    }
+}
+
+/// Default line and character window a single Read call may return.
+pub const DEFAULT_READ_MAX_LINES: usize = 2000;
+pub const DEFAULT_READ_MAX_TOTAL_CHARS: usize = 64_000;
+
 fn read_file_lines_read(result: &ReadFileResult) -> usize {
     if result.total_lines == 0 || result.end_line < result.start_line {
         0
@@ -33,6 +61,14 @@ fn read_file_lines_read(result: &ReadFileResult) -> usize {
 pub fn build_read_file_presentation(
     logical_path: &str,
     result: &ReadFileResult,
+) -> ReadFilePresentation {
+    build_read_file_presentation_with_budget(logical_path, result, ReadCallBudget::default())
+}
+
+pub fn build_read_file_presentation_with_budget(
+    logical_path: &str,
+    result: &ReadFileResult,
+    budget: ReadCallBudget,
 ) -> ReadFilePresentation {
     let lines_read = read_file_lines_read(result);
     let mut result_for_assistant = if result.total_lines == 0 {
@@ -52,15 +88,29 @@ pub fn build_read_file_presentation(
     let has_more = lines_read > 0 && result.end_line < result.total_lines;
     let next_start_line = has_more.then_some(result.end_line + 1);
     if let Some(next_start) = next_start_line {
+        // State what one more call can still return. Without the remaining
+        // count and the per-call budget, callers page a large file window by
+        // window instead of continuing in one step.
+        let remaining_lines = result.total_lines - result.end_line;
         if result.hit_total_char_limit {
             result_for_assistant.push_str(&format!(
-                "\n\n[Output truncated after reaching the Read tool size limit. Use offset={} and limit to continue reading.]",
-                next_start
+                "\n\n[Output truncated after reaching the Read tool size limit (remaining: {}). Use offset={} without limit to read up to {} characters per call.]",
+                remaining_lines, next_start, budget.max_total_chars
+            ));
+        } else if remaining_lines <= budget.max_lines {
+            result_for_assistant.push_str(&format!(
+                "\n\n[Showing lines {}-{} of {} total (remaining: {}). All of it fits in one call: use offset={} without limit.]",
+                result.start_line, result.end_line, result.total_lines, remaining_lines, next_start
             ));
         } else {
             result_for_assistant.push_str(&format!(
-                "\n\n[Showing lines {}-{} of {} total. Use offset={} and limit to continue reading.]",
-                result.start_line, result.end_line, result.total_lines, next_start
+                "\n\n[Showing lines {}-{} of {} total (remaining: {}). Use offset={} without limit to read up to {} lines per call, or offset/limit for a known range.]",
+                result.start_line,
+                result.end_line,
+                result.total_lines,
+                remaining_lines,
+                next_start,
+                budget.max_lines
             ));
         }
     }
@@ -852,7 +902,38 @@ mod tests {
             .contains("Read lines 1-2 from src/lib.rs (4 total lines)"));
         assert!(presentation
             .result_for_assistant
-            .contains("Use offset=3 and limit to continue reading."));
+            .contains("All of it fits in one call"));
+        assert!(presentation
+            .result_for_assistant
+            .contains("use offset=3 without limit."));
+    }
+
+    #[test]
+    fn continuation_guidance_reports_remaining_lines_beyond_one_call() {
+        let text = format!("{}last\n", "line\n".repeat(2500));
+        let result = read_text(&text, 1, 10, 50, 1000).unwrap();
+        let presentation = build_read_file_presentation("big.txt", &result);
+
+        assert_eq!(presentation.next_offset, Some(11));
+        assert!(presentation
+            .result_for_assistant
+            .contains("(remaining: 2491)"));
+        assert!(presentation
+            .result_for_assistant
+            .contains("Use offset=11 without limit to read up to 2000 lines per call"));
+    }
+
+    #[test]
+    fn continuation_guidance_names_the_character_cap_when_a_call_is_cut() {
+        let result = read_text("abcdefghij\nnext\n", 1, 10, 10, 20).unwrap();
+        let presentation = build_read_file_presentation("long.txt", &result);
+
+        assert!(result.hit_total_char_limit);
+        assert_eq!(presentation.next_offset, Some(2));
+        assert!(presentation.result_for_assistant.contains("(remaining: 1)"));
+        assert!(presentation
+            .result_for_assistant
+            .contains("read up to 64000 characters per call"));
     }
 
     #[test]
