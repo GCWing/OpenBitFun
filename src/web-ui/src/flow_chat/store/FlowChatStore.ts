@@ -6381,6 +6381,12 @@ export class FlowChatStore {
   public retireRelaySessionTurns(sessionId: string, turnIds: readonly string[]): void {
     const surface = this.activeSurface;
     if (surface.surfaceId === 'local' || turnIds.length === 0) return;
+    let replica = surface.relaySessionRecords.get(sessionId);
+    if (!replica) {
+      replica = new SessionRecordReplica(sessionId);
+      surface.relaySessionRecords.set(sessionId, replica);
+    }
+    replica.retireTurns(turnIds);
     const retired = new Set(turnIds);
     const pending = surface.relayPendingRecordTurns.get(sessionId);
     if (pending) {

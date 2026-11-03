@@ -87,3 +87,12 @@ pnpm --dir src/web-ui run test:run src/app/layout/useNavResize.test.tsx src/app/
 ```
 
 这些本地 DOM 测试覆盖手势状态和弹簧收敛，不代表原生 WebView 渲染或真实远程场景验证。
+
+编辑/回滚结果、旧版本被控端响应与延迟记录重放使用以下聚焦检查：
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/services/SessionRollbackService.test.ts src/flow_chat/services/UserMessageEditService.test.ts src/flow_chat/store/FlowChatStore.test.ts src/flow_chat/session-stream/SessionRecordReplica.test.ts src/flow_chat/services/RelaySessionHistory.test.ts
+```
+
+这些测试通过模拟 Peer 记录验证共享操作服务和实际展示状态，包括设备切换与 redo；
+不代表真实 Desktop-to-Desktop 或 Desktop-to-CLI 连接验证。
