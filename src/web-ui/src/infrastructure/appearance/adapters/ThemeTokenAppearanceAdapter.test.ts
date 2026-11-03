@@ -97,10 +97,12 @@ describe('theme root background', () => {
     expect(document.documentElement.getAttribute('data-openbitfun-native-material')).toBe('sidebar');
   });
 
-  it('preserves the opaque theme background in browsers and older desktop hosts', async () => {
-    const settings = builtinAppearancePackages[0].renderers?.['theme-tokens']?.settings;
-    await themeTokenAppearanceAdapter.apply(settings, undefined, context);
-    expect(document.documentElement.style.backgroundColor).toBe('var(--openbitfun-color-surface-chrome)');
-    expect(document.body.style.backgroundColor).toBe('var(--openbitfun-color-surface-chrome)');
+  it('preserves the opaque fallback across theme switches in browsers and older desktop hosts', async () => {
+    for (const pkg of builtinAppearancePackages) {
+      await themeTokenAppearanceAdapter.apply(pkg.renderers?.['theme-tokens']?.settings, undefined, context);
+      expect(document.documentElement.style.backgroundColor).toBe('var(--openbitfun-color-surface-chrome)');
+      expect(document.body.style.backgroundColor).toBe('var(--openbitfun-color-surface-chrome)');
+      expect(document.documentElement.hasAttribute('data-openbitfun-native-material')).toBe(false);
+    }
   });
 });
