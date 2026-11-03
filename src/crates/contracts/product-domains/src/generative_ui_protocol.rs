@@ -7,15 +7,25 @@ use super::generative_ui::{catalog, safe, validate, validate_generation, validat
 use serde_json::{json, Map, Value};
 
 pub fn assemble(input: &Value) -> Result<(Value, Value), String> {
-    let messages = input["messages"]
-        .as_array()
-        .ok_or("generation.messages must be an array")?;
+    // Some Anthropic-compatible tool bridges serialize deeply nested array
+    // arguments as a JSON string. Accept that wire-level representation at
+    // this boundary, then validate and assemble the canonical array shape.
+    let mut normalized_input = input.clone();
+    let messages = match input.get("messages") {
+        Some(Value::Array(messages)) => messages.clone(),
+        Some(Value::String(serialized)) => serde_json::from_str::<Value>(serialized)
+            .ok()
+            .and_then(|value| value.as_array().cloned())
+            .ok_or("generation.messages must be an array")?,
+        _ => return Err("generation.messages must be an array".into()),
+    };
+    normalized_input["messages"] = Value::Array(messages.clone());
     if messages.iter().any(|message| {
         message.get("updateComponents").is_some() || message.get("updateLogic").is_some()
     }) {
         return Err("GenUI graph messages were removed; send a complete source document in createSurface.source".into());
     }
-    validate(&catalog()["generation"], input, "generation")?;
+    validate(&catalog()["generation"], &normalized_input, "generation")?;
     let first = messages
         .first()
         .ok_or("generation.messages: createSurface is required")?;
@@ -99,5 +109,24 @@ mod tests {
         ]});
         let error = assemble(&input).unwrap_err();
         assert!(error.contains("graph messages were removed"));
+    }
+
+    #[test]
+    fn accepts_stringified_messages_from_compatible_tool_bridges() {
+        let messages = json!([
+            {"createSurface": {
+                "id":"a", "title":"A", "template":"openbitfun.app",
+                "libraryId":"openbitfun.composable.v1", "libraryRevision":2,
+                "designSpec":{"id":"openbitfun.desktop.v1","revision":1},
+                "source":{"kind":"openui-lang","content":"root = Col([])"}
+            }}
+        ]);
+        let input = json!({
+            "protocol":"openbitfun.genui.v1",
+            "messages": serde_json::to_string(&messages).unwrap(),
+        });
+        let (app, state) = assemble(&input).unwrap();
+        assert_eq!(app["source"]["kind"], "openui-lang");
+        assert_eq!(state, json!({}));
     }
 }
