@@ -745,6 +745,27 @@ impl SessionManager {
         Self::load_effective_ai_config_from_service(config_service.as_ref()).await
     }
 
+    pub(crate) async fn load_ai_config_for_session(
+        config: &SessionConfig,
+    ) -> OpenBitFunResult<Option<AIConfig>> {
+        #[cfg(test)]
+        if let Ok(ai_config) = TEST_MODEL_RESOLUTION_AI_CONFIG.try_with(Clone::clone) {
+            return Ok(Some(ai_config));
+        }
+        let Ok(service) = get_global_config_service().await else {
+            return Ok(None);
+        };
+        service
+            .get_project_ai_config(
+                config
+                    .project_workspace_id
+                    .as_deref()
+                    .or(config.workspace_id.as_deref()),
+            )
+            .await
+            .map(Some)
+    }
+
     async fn load_effective_ai_config_from_service(
         config_service: &crate::service::config::ConfigService,
     ) -> Option<AIConfig> {
@@ -2494,7 +2515,13 @@ impl SessionManager {
         session_id: &str,
         reason: &'static str,
     ) -> OpenBitFunResult<Option<String>> {
-        let Some(ai_config) = Self::load_ai_config_for_model_resolution().await else {
+        let config = self
+            .get_session(session_id)
+            .map(|session| session.config.clone());
+        let Some(ai_config) = (match config {
+            Some(config) => Self::load_ai_config_for_session(&config).await?,
+            None => None,
+        }) else {
             return Ok(self
                 .sessions
                 .get(session_id)
@@ -2505,13 +2532,13 @@ impl SessionManager {
     }
 
     async fn reconcile_loaded_session_reasoning_presets(&self, reason: &'static str) {
-        let Some(ai_config) = Self::load_ai_config_for_model_resolution().await else {
+        if Self::load_ai_config_for_model_resolution().await.is_none() {
             debug!(
                 "Skipping session reasoning preset reconciliation because AI config is unavailable: reason={}",
                 reason
             );
             return;
-        };
+        }
         let candidates = self
             .sessions
             .iter()
@@ -2521,7 +2548,7 @@ impl SessionManager {
 
         for session_id in candidates {
             if let Err(error) = self
-                .reconcile_session_reasoning_preset_locked(&session_id, &ai_config, reason)
+                .reconcile_session_reasoning_preset_for_turn(&session_id, reason)
                 .await
             {
                 warn!(
@@ -2816,7 +2843,7 @@ impl SessionManager {
         };
         session.created_by = created_by;
         session.kind = kind;
-        let ai_config = Self::load_ai_config_for_model_resolution().await;
+        let ai_config = Self::load_ai_config_for_session(&session.config).await?;
         if session.config.model_routing.is_none()
             && kind != SessionKind::Subagent
             && session.config.model_binding_policy == SessionModelBindingPolicy::Mutable
@@ -4522,7 +4549,7 @@ impl SessionManager {
                 "An approved immutable model binding cannot be replaced by model pool selection",
             ));
         }
-        let ai_config = Self::load_ai_config_for_model_resolution().await;
+        let ai_config = Self::load_ai_config_for_session(&original_session.config).await?;
         let mut resolved_context_window = None;
         let mut auto_cleared_reasoning_preset = None;
         let mut updated_session = original_session.clone();
@@ -4997,7 +5024,13 @@ impl SessionManager {
     /// model's actual configured `context_window`, so subagents with large-context
     /// models are not prematurely capped.
     pub async fn refresh_session_context_window(&self, session_id: &str) -> OpenBitFunResult<()> {
-        if let Some(ai_config) = Self::load_ai_config_for_model_resolution().await {
+        let config = self
+            .get_session(session_id)
+            .map(|session| session.config.clone());
+        if let Some(ai_config) = match config {
+            Some(config) => Self::load_ai_config_for_session(&config).await?,
+            None => None,
+        } {
             if let Some(mut session) = self.sessions.get_mut(session_id) {
                 let previous = session.config.max_context_tokens;
                 Self::sync_session_context_window_from_ai_config(&mut session, &ai_config);
@@ -6237,7 +6270,7 @@ impl SessionManager {
             elapsed_ms_u64(session_started_at)
         );
 
-        let ai_config_for_restore = Self::load_ai_config_for_model_resolution().await;
+        let ai_config_for_restore = Self::load_ai_config_for_session(&session.config).await?;
         let mut should_persist_restored_session = false;
         let mut fallback_previous_model_id = None;
         let mut auto_cleared_reasoning_preset = None;
@@ -10339,8 +10372,11 @@ impl SessionManager {
         let ai_client_factory = get_global_ai_client_factory().await.map_err(|e| {
             OpenBitFunError::AIClient(format!("Failed to get AI client factory: {}", e))
         })?;
-        let ai_config = Self::load_ai_config_for_model_resolution()
-            .await
+        let title_session = self
+            .get_session(session_id)
+            .ok_or_else(|| OpenBitFunError::NotFound(format!("Session not found: {session_id}")))?;
+        let ai_config = Self::load_ai_config_for_session(&title_session.config)
+            .await?
             .ok_or_else(|| {
                 OpenBitFunError::AIClient("Failed to load AI configuration".to_string())
             })?;

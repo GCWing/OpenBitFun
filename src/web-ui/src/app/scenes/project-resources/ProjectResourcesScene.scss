@@ -99,6 +99,20 @@
     margin-top: var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size);
     details { min-width: 0; overflow-wrap: anywhere; } }
   &__section { margin-top: var(--openbitfun-space-10); scroll-margin-block-start: var(--openbitfun-space-5); }
+  &__default-settings { margin-block-end: var(--openbitfun-space-8); }
+  &__default-fields {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: var(--openbitfun-space-8);
+    row-gap: var(--openbitfun-space-4);
+    overflow: visible;
+  }
+  &__default-field {
+    inline-size: auto;
+    max-inline-size: 100%;
+  }
   &__section-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
     gap: var(--openbitfun-space-3); margin-bottom: var(--openbitfun-space-5);
     h2 { margin: 0; font-size: var(--openbitfun-type-heading-section-font-size); font-weight: var(--openbitfun-type-heading-section-font-weight); }

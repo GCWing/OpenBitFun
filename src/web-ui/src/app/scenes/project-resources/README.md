@@ -3,7 +3,7 @@
 Open **Project resources** from the `Settings2` action beside a project's More menu.
 **Open directory** is available inside the More menu. The page uses the Home
 content frame and design-system cards, buttons, typography and colors. It contains
-directory management, workspace-targeted schedules,
+project defaults, directory management, workspace-targeted schedules,
 inline project permissions, and project agents and skills, in that order. It does not claim that a
 discovered capability was loaded by a specific conversation. The page does not list
 project instruction documents or read the project root for them.
@@ -22,6 +22,29 @@ connection and filesystem paths are not shown in the statistics, and the page no
 longer reads connection profiles solely for that summary. Task, Agent and Skill
 counts are keyboard-accessible shortcuts that scroll to and focus their sections;
 scrolling respects reduced-motion preferences.
+
+Default settings precede the statistics as three centered pill selectors
+for the primary model, fast model and default mode, without enclosing cards.
+Each pill is transparent, shows its border on hover, and combines a field name, a localized
+colon and the selected value in one clickable trigger. The mode list matches
+the entire pill width. Model lists can widen to fit their options and keep
+provider descriptions on one line. Adjacent settings are separated
+by `space.8`; labels and values use the selector's compact spacing.
+Closed pills omit the arrow and use symmetric system padding. Labels and values
+use their natural combined width for visual centering;
+expanded pointer targets stay outside that layout and do not widen the popup.
+The section has no visible heading, and fields wrap on small viewports.
+Each selection saves immediately and can inherit
+the host's global setting. Enabled text-chat models and the project's available
+modes come from the owning host. Defaults are keyed by project workspace ID in
+`app.project_defaults`; linked worktrees inherit their project. The default mode
+and primary model seed new Web UI conversations; explicit choices take precedence.
+Runtime primary/fast selectors use the project's model overrides, including
+delegated sessions, without rewriting global defaults or concrete model choices.
+An unavailable saved model remains visible for repair. Failed reads and writes
+show retryable errors; device switches discard stale results. Hosts without the
+configuration field show disabled controls with an upgrade explanation. This
+page does not add Remote Control or Detached Dispatch configuration commands.
 
 The page does not scan the project for a file count. Git counts include staged,
 unstaged, untracked and conflicting paths without double
@@ -78,6 +101,10 @@ them. Unavailable hosts show retryable errors.
 
 Scheduled tasks follow directories and use the same split layout, with total and
 enabled/paused counts. Their summary and full list both target workspace-owned jobs.
+The task preview reserves the same three-row minimum height in empty, loading,
+failed and populated states, so adding the first task or removing the last one
+does not resize the card.
+The left summary content is vertically centered in both task and permission cards.
 Add task opens a separate fixed-size creation dialog, including when launched from
 the task manager. The page entry does not open or load the manager behind it.
 Manage tasks, beside Add task with the Home action divider, opens the full list. Both task and

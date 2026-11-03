@@ -6501,7 +6501,8 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         // Queueing and live steering must reject an oversized user attachment
         // batch while the sender still owns it. Do not guess unresolved defaults;
         // a selected pool has a common limit independent of its current member.
-        if let Some(ai_config) = SessionManager::load_ai_config_for_model_resolution().await {
+        if let Some(ai_config) = SessionManager::load_ai_config_for_session(&session.config).await?
+        {
             Self::validate_input_image_count(
                 &ai_config,
                 session.config.model_id.as_deref(),

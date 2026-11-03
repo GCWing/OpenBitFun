@@ -82,5 +82,18 @@
     "listTitle": "任务列表",
     "summary": "已启用 {{enabled}} · 已暂停 {{paused}}"
   },
-  "failureDetails": "查看原因"
+  "failureDetails": "查看原因",
+  "defaults": {
+    "title": "默认设置",
+    "labelPrefix": "{{label}}：",
+    "primary_model": "主力模型",
+    "fast_model": "快速模型",
+    "mode": "默认模式",
+    "inherit": "跟随全局",
+    "unsupported": "当前主机版本不支持项目默认设置，请升级后重试。",
+    "loadFailed": "项目默认设置加载失败，请重试。",
+    "saveFailed": "保存失败，请重新选择后重试。",
+    "saved": "已保存",
+    "unavailableValue": "不可用：{{value}}"
+  }
 }
