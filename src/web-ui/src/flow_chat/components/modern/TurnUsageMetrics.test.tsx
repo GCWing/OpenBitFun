@@ -20,21 +20,21 @@ describe('completed turn usage', () => {
   const round: ModelRound = {
     id: 'round', index: 0, startTime: 0, endTime: 90_000, status: 'completed', items: [],
     isStreaming: false, isComplete: true,
-    firstChunkMs: 10, firstVisibleOutputMs: 2_000, streamDurationMs: 12_000, ttftMs: 3_000,
+    firstChunkMs: 10, firstVisibleOutputMs: 2_000, streamDurationMs: 12_000, durationMs: 12_000, ttftMs: 3_000,
   };
   const usage = { inputTokens: 10_000, outputTokens: 2_000, totalTokens: 12_000, timestamp: 90_000 };
 
-  it('shows request TTFT separately and calculates speed only over effective output', () => {
+  it('shows request TTFT separately and includes it in output speed', () => {
     const html = renderToStaticMarkup(<TurnUsageMetrics usage={usage}
       durationMs={getTurnOutputDurationMs([round])} ttftMs={getTurnTtftMs([round])} focusable />);
     expect(html).toContain('TTFT 3 sec');
-    expect(html).toContain('200 t/s');
+    expect(html).toContain('166.7 t/s');
     expect(html).toContain('data-openbitfun-part="ttft"');
     expect(html).toContain('data-openbitfun-part="speed"');
   });
 
   it('keeps legacy usage visible without inventing TTFT or throughput from wall time', () => {
-    const legacy = { ...round, firstVisibleOutputMs: undefined, ttftMs: undefined };
+    const legacy = { ...round, durationMs: undefined, firstVisibleOutputMs: undefined, ttftMs: undefined };
     const html = renderToStaticMarkup(<TurnUsageMetrics usage={usage}
       durationMs={getTurnOutputDurationMs([legacy])} ttftMs={getTurnTtftMs([legacy])} focusable />);
     expect(html).toContain('data-openbitfun-part="tokens"');

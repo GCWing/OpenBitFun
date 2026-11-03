@@ -64,7 +64,7 @@ type VirtualContent =
       turnStartedAt?: number;
       turnEndedAt?: number;
       turnDurationMs?: number;
-      /** Streaming window only; the throughput denominator, not turn wall time. */
+      /** Sum of model request durations including TTFT; the throughput denominator. */
       turnOutputDurationMs?: number;
       turnTtftMs?: number;
       turnTokenUsage?: TokenUsage;

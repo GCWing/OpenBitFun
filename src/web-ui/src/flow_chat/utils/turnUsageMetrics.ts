@@ -9,30 +9,25 @@ function isPositiveMs(value: unknown): value is number {
 }
 
 /**
- * Round-level milliseconds spent actually receiving model output.
+ * Round-level milliseconds from model request start to stream completion.
  *
- * Both marks use the host's stream-processing clock. The first upstream chunk
- * can contain only metadata, so generation starts at the first effective output
- * (text, thinking or a tool event), not `firstChunkMs`. Request-level TTFT also
- * includes time before streaming starts and must not be subtracted here again.
+ * This intentionally includes TTFT. Providers can buffer a pseudo-stream and
+ * deliver a large block after a long idle period; measuring only from the first
+ * visible output would turn that wait into an implausibly high throughput.
  */
-function roundOutputDurationMs(round: ModelRound): number | undefined {
-  if (!isPositiveMs(round.streamDurationMs)) return undefined;
-  if (!isCount(round.firstVisibleOutputMs) || round.firstVisibleOutputMs >= round.streamDurationMs) {
-    return undefined;
-  }
+function roundRequestDurationMs(round: ModelRound): number | undefined {
+  if (!isPositiveMs(round.durationMs)) return undefined;
   // Turn usage includes all attempts, but timing only covers the accepted one.
   if ((round.attemptCount ?? 1) > 1) return undefined;
-  return round.streamDurationMs - round.firstVisibleOutputMs;
+  return round.durationMs;
 }
 
 /**
- * Milliseconds a turn spent streaming model output, summed over its rounds.
+ * Milliseconds a turn spent in model requests, summed over its rounds.
  *
- * Turn wall time also covers tool execution, permission waits and retries, so
- * dividing output tokens by it understates throughput by a wide margin. Returns
- * undefined if any round lacks usable timing. Using partial timing with the
- * whole turn's token count would overstate throughput; wall time is no fallback.
+ * Tool execution and permission waits between model calls are not model request
+ * time. Returns undefined if any model round lacks usable timing; partial timing
+ * would make the aggregate rate unreliable.
  */
 export function getTurnOutputDurationMs(rounds?: readonly ModelRound[]): number | undefined {
   if (!rounds?.length) return undefined;
@@ -40,7 +35,7 @@ export function getTurnOutputDurationMs(rounds?: readonly ModelRound[]): number 
   for (const round of rounds) {
     // Negative indexes are controller setup/audit rows, not model calls.
     if (round.index < 0) continue;
-    const durationMs = roundOutputDurationMs(round);
+    const durationMs = roundRequestDurationMs(round);
     if (durationMs === undefined) return undefined;
     totalMs += durationMs;
   }
@@ -58,8 +53,8 @@ export function getTurnUsageMetrics(usage?: TokenUsage, outputDurationMs?: numbe
   const cacheHitRate = isCount(usage?.cachedTokens) && isCount(usage?.inputTokens)
     && usage.inputTokens > 0 && usage.cachedTokens <= usage.inputTokens
     ? usage.cachedTokens / usage.inputTokens : null;
-  // `outputDurationMs` must be the streaming window from `getTurnOutputDurationMs`,
-  // never turn wall time: tool execution and waiting would deflate the rate.
+  // `outputDurationMs` is the sum of model request durations from
+  // `getTurnOutputDurationMs`, including TTFT but excluding tool execution.
   const rate = isCount(usage?.outputTokens) && isCount(outputDurationMs) && outputDurationMs > 0
     ? usage.outputTokens / (outputDurationMs / 1000) : null;
   const outputRate = rate !== null && Number.isFinite(rate) ? rate : null;
