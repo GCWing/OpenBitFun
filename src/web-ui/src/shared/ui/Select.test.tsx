@@ -126,7 +126,7 @@ describe('public Select product integration', () => {
 
   it('keeps a pill trigger compact while expanded and native options retain full labels', () => {
     render({
-      variant: 'pill', size: 'sm', width: 'content', popupWidth: 'content',
+      variant: 'pill', bordered: false, size: 'sm', width: 'content', popupWidth: 'content',
       defaultValue: 'global',
       options: [
         { value: 'global', label: 'International platform', selectedLabel: 'Global' },
@@ -218,7 +218,7 @@ describe('public Select product integration', () => {
     });
     act(() => root.render(
       <Field description="Choose a mode" label="Mode" required>
-        <Select options={options} />
+        <Select options={options} valuePrefix={<span>Mode:</span>} bordered="hover" hitArea="expanded" showIndicator={false} />
       </Field>,
     ));
     const button = trigger();
@@ -226,11 +226,13 @@ describe('public Select product integration', () => {
     expect(host.querySelector('label')?.htmlFor).toBe(button.id);
     expect(button.getAttribute('aria-required')).toBe('true');
     expect(button.getAttribute('aria-describedby')).not.toBeNull();
+    expect(button.querySelector('[data-openbitfun-part="indicator"]')).toBeNull();
 
-    act(() => button.click());
+    act(() => button.querySelector<HTMLElement>('[data-openbitfun-part="value-prefix"]')!.click());
     const popup = document.querySelector<HTMLElement>('[data-openbitfun-component="select-popup"]')!;
     const header = popup.querySelector<HTMLButtonElement>('[data-openbitfun-part="header"]')!;
     expect(popup.style.left).toBe('40px');
+    expect(header.querySelector('[data-openbitfun-part="indicator"]')).not.toBeNull();
     expect(popup.style.top).toBe('20px');
     expect(popup.style.width).toBe('240px');
     expect(popup.dataset.placement).toBe('bottom');

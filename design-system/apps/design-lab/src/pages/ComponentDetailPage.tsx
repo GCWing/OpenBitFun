@@ -668,7 +668,7 @@ export function ComponentDetailPage({
       return `import { Combobox } from "@openbitfun/ui";\n\n<Combobox\n  aria-label="Mode"\n  onValueChange={setMode}\n  options={[\n    { label: "Ask", value: "ask" },\n    { label: "Plan", value: "plan" },\n    { disabled: true, label: "Agent", value: "agent" },\n  ]}\n  value={mode}\n/>`;
     }
     if (component.name === "Spinner") {
-      return `import { Spinner } from "@openbitfun/ui";\n\n<Spinner aria-label="${t("detail.loading")}" size="${size}" variant="${previewState === "bars" ? "bars" : "matrix"}" />`;
+      return `import { Spinner } from "@openbitfun/ui";\n\n<Spinner aria-label="${t("detail.loading")}" size="${size}" variant="${previewState === "bars" ? "bars" : "logo"}"${previewState === "reduced-motion" ? " active={false}" : ""} />`;
     }
     if (component.name === "MultiSelect") {
       return `import { MultiSelect } from "@openbitfun/ui";\n\n<MultiSelect\n  aria-label="Modes"\n  onValueChange={setModes}\n  options={[\n    { label: "Ask", value: "ask" },\n    { label: "Plan", value: "plan" },\n    { disabled: true, label: "Agent", value: "agent" },\n  ]}\n  value={modes}\n/>`;
@@ -1884,9 +1884,9 @@ export function ComponentDetailPage({
       return (
         <Spinner
           aria-label={t("detail.loading")}
-          className={state === "reduced-motion" ? "design-preview-reduced-motion" : undefined}
+          active={state !== "reduced-motion"}
           size={size}
-          variant={state === "bars" ? "bars" : "matrix"}
+          variant={state === "bars" ? "bars" : "logo"}
         />
       );
     }

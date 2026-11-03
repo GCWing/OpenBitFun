@@ -26,6 +26,11 @@
   }
 
   .root {
+    --_combobox-trailing-width: calc(
+      var(--openbitfun-control-select-trailing-inset)
+      + var(--openbitfun-control-select-indicator-size)
+      + var(--openbitfun-control-select-content-gap)
+    );
     position: relative;
     display: flex;
     inline-size: 100%;
@@ -33,6 +38,14 @@
     flex-direction: column;
     gap: var(--openbitfun-space-1);
     color: var(--openbitfun-color-content-primary);
+  }
+
+  .root[data-show-indicator="false"] {
+    --_combobox-trailing-width: var(--openbitfun-control-select-padding-inline);
+  }
+
+  .root[data-show-indicator="false"][data-variant="pill"] {
+    --_combobox-trailing-width: var(--openbitfun-control-status-pill-padding-inline);
   }
 
   .root[data-size="sm"],
@@ -83,11 +96,7 @@
     margin: 0;
     padding-block: 0;
     padding-inline-start: var(--openbitfun-control-select-padding-inline);
-    padding-inline-end: calc(
-      var(--openbitfun-control-select-trailing-inset)
-      + var(--openbitfun-control-select-indicator-size)
-      + var(--openbitfun-control-select-content-gap)
-    );
+    padding-inline-end: var(--_combobox-trailing-width);
     border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border);
     border-radius: var(--openbitfun-control-select-radius);
     outline: 0;
@@ -106,18 +115,48 @@
       box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
+  .root[data-variant="pill"] .trigger {
+    padding-inline-start: var(--openbitfun-control-status-pill-padding-inline);
+    border-radius: var(--openbitfun-control-status-pill-radius);
+    background: var(--openbitfun-color-action-neutral-surface);
+    font-family: var(--openbitfun-type-meta-font-family);
+    font-size: var(--openbitfun-type-meta-font-size);
+    font-weight: var(--openbitfun-type-meta-font-weight);
+    line-height: var(--openbitfun-type-status-pill-line-height);
+    letter-spacing: var(--openbitfun-type-meta-letter-spacing);
+  }
+
   .root:has(.clear) .trigger {
-    padding-inline-end: calc(
-      var(--openbitfun-control-select-trailing-inset)
-      + var(--openbitfun-control-select-indicator-size)
-      + var(--openbitfun-control-select-content-gap)
-      + var(--openbitfun-control-height-sm)
-    );
+    padding-inline-end: calc(var(--_combobox-trailing-width) + var(--openbitfun-control-height-sm));
+  }
+
+  .root[data-bordered="false"] .trigger {
+    border: 0;
+  }
+
+  .root[data-bordered="hover"] .trigger {
+    border-color: transparent;
+  }
+
+  .root[data-hit-area="expanded"] .trigger {
+    position: relative;
+  }
+
+  .root[data-hit-area="expanded"]:not([data-open="true"]) .trigger::after {
+    content: "";
+    position: absolute;
+    inset-block: calc(-1 * var(--openbitfun-space-1));
+    inset-inline: calc(-1 * var(--openbitfun-space-2));
+    border-radius: inherit;
   }
 
   .trigger:not(:disabled):hover {
     border-color: var(--openbitfun-color-field-border-hover);
     background: var(--openbitfun-color-field-background-hover);
+  }
+
+  .root[data-variant="pill"] .trigger:not(:disabled):hover {
+    background: var(--openbitfun-color-action-neutral-surface-hover);
   }
 
   .root[data-field-surface="ambient"] .trigger,
@@ -160,6 +199,23 @@
 
   .singleValue {
     gap: var(--openbitfun-control-select-content-gap);
+  }
+
+  .root[data-has-value-prefix="true"] .value {
+    gap: var(--openbitfun-control-select-content-gap);
+  }
+
+  .root[data-has-value-prefix="true"][data-variant="pill"] .value {
+    gap: var(--openbitfun-control-status-pill-gap);
+  }
+
+  .root[data-has-value-prefix="true"] .singleValue {
+    flex: 0 1 auto;
+  }
+
+  .valuePrefix {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .valueLeading {
@@ -249,11 +305,7 @@
   }
 
   .clear {
-    margin-inline-end: calc(
-      var(--openbitfun-control-select-trailing-inset)
-      + var(--openbitfun-control-select-indicator-size)
-      + var(--openbitfun-control-select-content-gap)
-    );
+    margin-inline-end: var(--_combobox-trailing-width);
   }
 
   .indicator {
@@ -298,6 +350,10 @@
 
   .popover[data-placement="top"] {
     flex-direction: column-reverse;
+  }
+
+  .popover[data-popup-width="content"] {
+    inline-size: max-content;
   }
 
   .popover:focus-within {
