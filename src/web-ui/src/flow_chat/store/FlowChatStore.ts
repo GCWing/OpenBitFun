@@ -8386,7 +8386,7 @@ export class FlowChatStore {
           if (adopted === turns) {
             adopted = [...turns];
           }
-          adopted[index] = snapshotTurn;
+          adopted[index] = preserveLiveRoundTiming(adopted[index], snapshotTurn);
         }
         return adopted;
       };
@@ -8443,24 +8443,27 @@ export class FlowChatStore {
       let turnsChanged = false;
       for (const snapshotTurn of snapshotTurns) {
         const existingIndex = mergedTurns.findIndex(turn => turn.id === snapshotTurn.id);
+        // The Runtime journal replay *is* the runtime writer, so it always
+        // establishes its own active Turn.
+        const isRuntimeReplayTurn = Boolean(runtimeReplaySnapshot)
+          && snapshotTurn.id === runtimeReplaySnapshot?.activeTurnId;
         if (existingIndex === -1) {
           mergedTurns.push(snapshotTurn);
           turnsChanged = true;
         } else if (
-          // The Runtime journal replay *is* the runtime writer, so it always
-          // establishes its own active Turn.
-          runtimeReplaySnapshot && snapshotTurn.id === runtimeReplaySnapshot.activeTurnId
-            ? true
-            : persistedReadMayReplaceTurn(
-                sessionId,
-                mergedTurns[existingIndex],
-                snapshotTurn,
-                activeTurnId,
-                Boolean(runtimeEventSnapshot),
-                true,
-              )
+          isRuntimeReplayTurn
+          || persistedReadMayReplaceTurn(
+            sessionId,
+            mergedTurns[existingIndex],
+            snapshotTurn,
+            activeTurnId,
+            Boolean(runtimeEventSnapshot),
+            true,
+          )
         ) {
-          mergedTurns[existingIndex] = snapshotTurn;
+          mergedTurns[existingIndex] = isRuntimeReplayTurn
+            ? snapshotTurn
+            : preserveLiveRoundTiming(mergedTurns[existingIndex], snapshotTurn);
           turnsChanged = true;
         }
       }
