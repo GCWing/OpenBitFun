@@ -66,6 +66,8 @@ pub struct ListPersistedSessionsPageRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<openbitfun_services_core::session::page::SessionCatalogQuery>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_external_discovery: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
@@ -465,6 +467,7 @@ pub async fn list_persisted_sessions_page(
             request.limit,
             request.session_ids.as_deref(),
             request.query.as_ref(),
+            request.refresh_external_discovery.unwrap_or(false),
         )
         .await
         .map_err(|error| {
@@ -937,6 +940,11 @@ mod catalog_request_tests {
         let request: ListPersistedSessionsPageRequest =
             serde_json::from_value(current.clone()).unwrap();
         assert_eq!(request.query.as_ref().unwrap().workspace_id, "main");
+        assert_eq!(serde_json::to_value(request).unwrap(), current);
+        current["refresh_external_discovery"] = serde_json::json!(true);
+        let request: ListPersistedSessionsPageRequest =
+            serde_json::from_value(current.clone()).unwrap();
+        assert_eq!(request.refresh_external_discovery, Some(true));
         assert_eq!(serde_json::to_value(request).unwrap(), current);
     }
 }

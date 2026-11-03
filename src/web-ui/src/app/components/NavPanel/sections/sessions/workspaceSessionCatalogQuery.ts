@@ -1,5 +1,6 @@
 import type { SessionCatalogQuery } from '@/infrastructure/api/service-api/SessionAPI';
 import type { Session } from '@/flow_chat/types/flow-chat';
+import { EXTERNAL_SESSION_NAMES } from '@/shared/types/external-session';
 import { sessionBelongsToWorkspaceNavRow } from '@/flow_chat/utils/sessionOrdering';
 import { isUnmaterializedSessionDraft } from '@/flow_chat/utils/sessionDraft';
 import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
@@ -32,10 +33,49 @@ export function workspaceSessionCatalogQuery(
   show: WorkspaceSessionShow,
   filters: WorkspaceSessionFilters,
   source: string,
+  sources?: readonly string[],
 ): SessionCatalogQuery | undefined {
   if (!workspaceId || (ordering !== 'updated' && ordering !== 'created')
     || show !== 'all' || hasWorkspaceSessionFilters(filters)) return;
-  return { workspaceId, ordering, source };
+  return {
+    workspaceId,
+    ordering,
+    source,
+    ...(sources?.length ? { sources: [...sources] } : {}),
+  };
+}
+
+/**
+ * Build the allowlist needed when only some external discovery sources are
+ * enabled. Native sessions remain part of every mixed projection. Empty and
+ * fully-enabled sets retain the legacy single-source query shape so older
+ * hosts keep their existing fast path.
+ */
+export function workspaceSessionCatalogSources(
+  sourceAgent: WorkspaceSessionSourceAgent,
+  enabledExternalSources: ReadonlySet<string> | undefined,
+): string[] | undefined {
+  if (sourceAgent !== 'all' || enabledExternalSources === undefined) return undefined;
+  const externalSources = Object.keys(EXTERNAL_SESSION_NAMES);
+  const enabled = externalSources.filter(source => enabledExternalSources.has(source));
+  if (enabled.length === 0 || enabled.length === externalSources.length) return undefined;
+  return ['openbitfun', ...enabled].sort();
+}
+
+/**
+ * When every known external source is disabled, the navigation projection is
+ * the native OpenBitFun view. Keep that source on the host query so it can
+ * page native rows directly instead of traversing imported records just to
+ * discard them in the client.
+ *
+ * An unresolved setting stays on the caller's requested source. The caller
+ * preserves the legacy projection until the host setting is known.
+ */
+export function resolveWorkspaceSessionCatalogSource(
+  sourceAgent: WorkspaceSessionSourceAgent,
+  enabledExternalSources: ReadonlySet<string> | undefined,
+): string {
+  return enabledExternalSources?.size === 0 ? 'openbitfun' : sourceAgent;
 }
 
 /** Bind every observed timestamp before reading a new host catalog. Matching
@@ -56,7 +96,10 @@ export function captureWorkspaceSessionCatalogQuery(
 }
 
 export function sessionCatalogQueryKey(query?: SessionCatalogQuery): string {
-  return query ? JSON.stringify([query.workspaceId, query.ordering, query.source,
-    Object.entries(query.sortTimestamps ?? {}).sort(([left], [right]) => left.localeCompare(right)),
-  ]) : '';
+  if (!query) return '';
+  const base = [query.workspaceId, query.ordering, query.source,
+    Object.entries(query.sortTimestamps ?? {}).sort(([left], [right]) => left.localeCompare(right))];
+  return query.sources?.length
+    ? JSON.stringify([...base, [...new Set(query.sources)].sort()])
+    : JSON.stringify(base);
 }

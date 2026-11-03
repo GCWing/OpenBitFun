@@ -1305,7 +1305,7 @@ impl CoreAgentRuntimeCompatibility {
         cursor: Option<&str>,
         limit: usize,
     ) -> OpenBitFunResult<SessionMetadataPage> {
-        self.list_persisted_session_catalog_page(workspace_path, cursor, limit, None)
+        self.list_persisted_session_catalog_page(workspace_path, cursor, limit, None, false)
             .await
     }
 
@@ -1315,12 +1315,24 @@ impl CoreAgentRuntimeCompatibility {
         cursor: Option<&str>,
         limit: usize,
         query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+        refresh_external_discovery: bool,
     ) -> OpenBitFunResult<SessionMetadataPage> {
+        #[cfg(not(feature = "external-sources"))]
+        if refresh_external_discovery {
+            return Err(OpenBitFunError::Validation(
+                "External session discovery is not supported by this host".into(),
+            ));
+        }
         #[cfg(feature = "external-sources")]
-        let warnings = crate::external_session_import::auto_discovery::discover_for_storage_path(
-            workspace_path,
-        )
-        .await;
+        let warnings = if refresh_external_discovery {
+            crate::external_session_import::auto_discovery::refresh_for_storage_path(workspace_path)
+                .await
+        } else {
+            crate::external_session_import::auto_discovery::discover_for_storage_path(
+                workspace_path,
+            )
+            .await
+        };
         #[allow(unused_mut)]
         let mut page = self
             .persistence
@@ -1331,6 +1343,7 @@ impl CoreAgentRuntimeCompatibility {
             page.discovery_warnings.extend(warnings.warnings);
             page.discovery_diagnostics.extend(warnings.diagnostics);
             page.discovery_pending = warnings.pending;
+            page.discovery_refreshed = refresh_external_discovery;
         }
         Ok(page)
     }
@@ -1353,6 +1366,7 @@ impl CoreAgentRuntimeCompatibility {
             limit,
             session_ids,
             None,
+            false,
         )
         .await
     }
@@ -1365,6 +1379,7 @@ impl CoreAgentRuntimeCompatibility {
         limit: usize,
         session_ids: Option<&[String]>,
         query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+        refresh_external_discovery: bool,
     ) -> OpenBitFunResult<SessionMetadataPage> {
         use futures::StreamExt;
         use openbitfun_agent_runtime::session_state::SessionState;
@@ -1385,8 +1400,14 @@ impl CoreAgentRuntimeCompatibility {
         let mut page = if session_ids.is_some() {
             empty_session_metadata_page()
         } else {
-            self.list_persisted_session_catalog_page(workspace_path, cursor, limit, query)
-                .await?
+            self.list_persisted_session_catalog_page(
+                workspace_path,
+                cursor,
+                limit,
+                query,
+                refresh_external_discovery,
+            )
+            .await?
         };
         let selected = match session_ids {
             Some(ids) => {

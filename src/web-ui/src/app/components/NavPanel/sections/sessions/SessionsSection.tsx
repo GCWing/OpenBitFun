@@ -64,7 +64,7 @@ import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
 import { useWorkspaceSessionCatalog } from './useWorkspaceSessionCatalog';
 import { useArchivedSessionMetadata } from './useArchivedSessionMetadata';
 import ArchivedSessionMenuItems from './ArchivedSessionMenuItems';
-import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, workspaceSessionCatalogQuery, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
+import { captureWorkspaceSessionCatalogQuery, countPersistedWorkspaceCatalogSessions, resolveWorkspaceSessionCatalogSource, workspaceSessionCatalogQuery, workspaceSessionCatalogSources, workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
 import { useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
 import { useSessionNavExpansion } from './useSessionNavExpansion';
 import { isSessionNavRowActive } from './sessionNavSelection';
@@ -372,13 +372,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     return new Set([...flowChatState.sessions.keys()].filter(sessionNavStatusService.isRunning));
   }, [flowChatState.sessions, orderingRevision]);
   const discoveryEnabledSources = discovery.enabledSources;
-  const discoveryFilterActive = discoveryEnabledSources !== undefined
-    && Object.keys(EXTERNAL_SESSION_NAMES).some(source => !discoveryEnabledSources.has(source));
+  const catalogSource = resolveWorkspaceSessionCatalogSource(sourceAgent, discoveryEnabledSources);
+  const catalogSources = workspaceSessionCatalogSources(sourceAgent, discoveryEnabledSources);
   const catalogQueryJson = useMemo(() => {
-    if (discoveryFilterActive) return JSON.stringify(null);
+    // New hosts can express a mixed native/external projection with an
+    // allowlist. Older hosts will omit it from catalogQuery and the catalog
+    // hook will retain its complete traversal fallback.
     return JSON.stringify(workspaceSessionCatalogQuery(workspaceId, sessionOrdering, sessionShow,
-      sessionFilters, sourceAgent) ?? null);
-  }, [discoveryFilterActive, workspaceId, sessionOrdering, sessionShow, sessionFilters, sourceAgent]);
+      sessionFilters, catalogSource, catalogSources) ?? null);
+  }, [catalogSources, catalogSource, workspaceId, sessionOrdering, sessionShow, sessionFilters]);
   const captureCatalogQuery = useCallback((query: SessionCatalogQuery) => captureWorkspaceSessionCatalogQuery(
     query, flowChatStore.getState().sessions.values(), sessionNavStatusService.getSortTimestamp,
   ), []);
@@ -1277,17 +1279,25 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     setExpandLevel(0);
   }, [expandLevel, setExpandLevel, totalTopLevelSessionCount]);
 
-  const sourceFilterStatus = discovery.failed ? (
+  const sourceFilterErrorStatus = discovery.failed ? (
     <Button variant="outline" size="sm" onClick={discovery.retry}>{t('nav.sessions.partialLoadFailedRetry')}</Button>
-  ) : catalog.loading || discovery.pending || archivedCatalog.loading ? (
-    <div className="openbitfun-nav-panel__inline-loading" role="status">
-      <Loader2 className="openbitfun-nav-panel__inline-loading-icon" aria-hidden="true" />
-      <OverflowText>{t(discovery.pending ? 'nav.sessions.discoveringExternal' : 'nav.sessions.loading')}</OverflowText>
-    </div>
   ) : catalog.failed || archivedCatalog.failed ? (
     <Button variant="outline" size="sm" onClick={() => setCatalogRefreshVersion(value => value + 1)}>
       {t('nav.sessions.partialLoadFailedRetry')}
     </Button>
+  ) : null;
+  const backgroundLoadStatus = catalog.loading || discovery.pending || archivedCatalog.loading || metadataPageState.isLoading ? (
+    <div
+      className="openbitfun-nav-panel__inline-loading is-background-loading"
+      data-testid="nav-session-background-loading"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="openbitfun-nav-panel__inline-loading-icon" aria-hidden="true" />
+      <OverflowText>{t(
+        discovery.pending ? 'nav.sessions.discoveringExternal' : 'nav.sessions.loading',
+      )}</OverflowText>
+    </div>
   ) : null;
   const aggregateLoadStatus = showAllWithoutLimit
     ? aggregateLoadState.isLoading
@@ -1322,14 +1332,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     : null;
 
   if (allTopLevelSessions.length === 0) {
-    if (sourceFilterStatus) return <div className={sessionListClassName}>{sourceFilterStatus}</div>;
-    if (aggregateLoadStatus) {
-      return (
-        <div data-openbitfun-component="sessions-section" data-openbitfun-part="root" className={sessionListClassName}>
-          {aggregateLoadStatus}
-        </div>
-      );
-    }
     if (metadataPageState.isLoading) {
       return (
         <div data-openbitfun-component="sessions-section" data-openbitfun-part="root" className={sessionListClassName}>
@@ -1356,6 +1358,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         </div>
       );
     }
+    if (sourceFilterErrorStatus) return <div className={sessionListClassName}>{sourceFilterErrorStatus}</div>;
+    if (aggregateLoadStatus) {
+      return (
+        <div data-openbitfun-component="sessions-section" data-openbitfun-part="root" className={sessionListClassName}>
+          {aggregateLoadStatus}
+        </div>
+      );
+    }
+    if (backgroundLoadStatus) return <div className={sessionListClassName}>{backgroundLoadStatus}</div>;
     return (
       <div className={sessionListClassName}>
         {presentation?.kind === 'assistant' ? (
@@ -1382,7 +1393,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }
 
   if (topLevelSessions.length === 0) {
-    if (sourceFilterStatus) return <div className={sessionListClassName}>{sourceFilterStatus}</div>;
+    if (sourceFilterErrorStatus) return <div className={sessionListClassName}>{sourceFilterErrorStatus}</div>;
     if (aggregateLoadState.isLoading && aggregateLoadStatus) {
       return (
         <div className={sessionListClassName}>
@@ -1395,6 +1406,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         <div className="openbitfun-nav-panel__inline-empty" aria-disabled="true">
           {t('nav.sessions.viewMenu.noMatches')}
         </div>
+        {backgroundLoadStatus}
         {aggregateLoadStatus}
       </div>
     );
@@ -1402,7 +1414,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
   return (
     <div className={sessionListClassName} ref={sessionListRef}>
-      {sourceFilterStatus}
+      {sourceFilterErrorStatus ?? backgroundLoadStatus}
       {visibleItems.map(({ session, level }) => {
           const isEditing = editingSessionId === session.sessionId;
           const isArchived = session.persistedStatus === 'archived';
