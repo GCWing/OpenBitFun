@@ -101,6 +101,28 @@ pub struct ModelExecutionMetadata {
     pub effective_model_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routing: Option<openbitfun_events::agentic::ModelRoutingDecision>,
+    /// Accepted-attempt timing of the model round that produced this message.
+    /// Durable Turn rounds are rebuilt from the generation journal, so the
+    /// Runtime keeps these facts here instead of relying on a client checkpoint
+    /// of `ModelRoundCompleted` having landed before the Turn completes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<ModelRoundTimingMetadata>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelRoundTimingMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_chunk_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_visible_output_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttft_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -836,6 +858,12 @@ mod tests {
                 latency_ms: 10,
                 fallback_reason: None,
             }),
+            timing: Some(super::ModelRoundTimingMetadata {
+                duration_ms: Some(1200),
+                ttft_ms: Some(300),
+                attempt_count: Some(1),
+                ..Default::default()
+            }),
         });
         let value = serde_json::to_value(&message).unwrap();
         let restored: Message = serde_json::from_value(value.clone()).unwrap();
@@ -843,11 +871,21 @@ mod tests {
             restored.metadata.ptc_loaded_deferred_tool_specs,
             message.metadata.ptc_loaded_deferred_tool_specs
         );
+        let execution = restored.metadata.model_execution.unwrap();
+        assert_eq!(execution.model_config_id, "economy");
         assert_eq!(
-            restored.metadata.model_execution.unwrap().model_config_id,
-            "economy"
+            execution.timing.and_then(|timing| timing.ttft_ms),
+            Some(300)
         );
         let mut legacy = value;
+        // Journals written before round timing existed still deserialize.
+        let mut untimed = legacy.clone();
+        untimed["metadata"]["model_execution"]
+            .as_object_mut()
+            .unwrap()
+            .remove("timing");
+        let untimed: Message = serde_json::from_value(untimed).unwrap();
+        assert!(untimed.metadata.model_execution.unwrap().timing.is_none());
         let metadata = legacy["metadata"].as_object_mut().unwrap();
         metadata.remove("ptc_loaded_deferred_tool_specs");
         metadata.remove("model_execution");
