@@ -28,6 +28,7 @@ import {
   SETTINGS_CATEGORIES,
   SETTINGS_PAGE_MANIFESTS,
   preloadSettingsPage,
+  type SettingsPageManifest,
   type SettingsSearchPhrase,
 } from './settingsRegistry';
 import { useSettingsStore } from './settingsStore';
@@ -38,6 +39,7 @@ type SettingsT = (key: string, options?: Record<string, unknown>) => unknown;
 
 export interface SettingsSearchRow {
   destination: SettingsDestination;
+  icon: SettingsPageManifest['icon'];
   categoryLabel: string;
   pageLabel: string;
   targetLabel?: string;
@@ -79,6 +81,7 @@ function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRo
     return [
       {
         destination: { pageId: page.id },
+        icon: page.icon,
         categoryLabel,
         pageLabel,
         description,
@@ -88,6 +91,7 @@ function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRo
         const targetLabel = translateString(t, target.labelKey, target.id);
         return {
           destination: target.destination,
+          icon: page.icon,
           categoryLabel,
           pageLabel,
           targetLabel,
@@ -323,6 +327,7 @@ const SettingsNav: React.FC = () => {
                       role="option"
                       aria-selected={active}
                       aria-busy={pendingPageId === row.destination.pageId || undefined}
+                      leading={<Icon glyph={row.icon} size="sm" />}
                       selected={active}
                       data-openbitfun-component="settings-nav"
                       data-openbitfun-part="searchResult"
@@ -383,6 +388,7 @@ const SettingsNav: React.FC = () => {
                     data-openbitfun-part="item"
                     data-openbitfun-state={activePageId === page.id ? 'active' : undefined}
                     className="openbitfun-settings-nav__item"
+                    leading={<Icon glyph={page.icon} size="sm" />}
                     selected={activePageId === page.id}
                     aria-busy={pendingPageId === page.id || undefined}
                     onClick={() => activate({ pageId: page.id })}
