@@ -207,6 +207,16 @@ run `pnpm --dir src/web-ui run test:run src/flow_chat/services/flow-chat-manager
 Missing fence identities (including legacy payloads) must reload authoritative
 history; an explicit settled-Turn identity must preserve newer live Turns.
 
+For edit/rollback receipts, legacy peer outcomes, and delayed record replay:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/services/SessionRollbackService.test.ts src/flow_chat/services/UserMessageEditService.test.ts src/flow_chat/store/FlowChatStore.test.ts src/flow_chat/session-stream/SessionRecordReplica.test.ts src/flow_chat/services/RelaySessionHistory.test.ts
+```
+
+These tests exercise the shared mutation services and real presentation store
+with simulated Peer records, including device switches and redo. They do not
+establish live Desktop-to-Desktop or Desktop-to-CLI behavior.
+
 For text-entry guards, composer sanitization, or keyboard focus routing, run
 `pnpm --dir src/web-ui run test:run src/shared/utils/textInputGuard.test.tsx src/flow_chat/components/RichTextInput.test.tsx src/flow_chat/hooks/useComposerDefaultFocus.test.tsx src/flow_chat/utils/chatInputKeyOwnership.test.ts`.
 These cover DOM event ownership, controlled fields, IME and selection preservation;

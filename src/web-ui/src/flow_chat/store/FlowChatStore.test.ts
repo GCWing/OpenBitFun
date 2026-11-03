@@ -27,6 +27,9 @@ import {
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
+import { rollbackSessionToTurn } from '../services/SessionRollbackService';
+import { editAndRerunUserMessage } from '../services/UserMessageEditService';
+import { useSessionMutationStore } from './sessionMutationStore';
 import { HARNESS_IDS } from '@/shared/agents/identity';
 import {
   askUserQuestionDraftKey,
@@ -55,6 +58,7 @@ function fixtureWorkspaceId(rootPath: string, connectionId?: string, sshHost?: s
 }
 
 const apiMocks = vi.hoisted(() => ({
+  rollbackSessionToTurn: vi.fn(),
   getSessionInteractionMailbox: vi.fn(async (sessionId: string) => ({sessionId, userQuestions:{revision:0,questions:[]}, permissions:{revision:0,requests:[]}})),
   subscribeRelaySession: vi.fn(),
   loadOlderRelaySession: vi.fn(),
@@ -99,6 +103,7 @@ const configManagerMock = vi.hoisted(() => {
 });
 
 const stateMachineManagerMock = vi.hoisted(() => ({
+  getCurrentState: vi.fn(() => 'idle'),
   delete: vi.fn(),
   getOrCreate: vi.fn(),
   reset: vi.fn(),
@@ -106,6 +111,7 @@ const stateMachineManagerMock = vi.hoisted(() => ({
 }));
 
 vi.mock('@/infrastructure/api', () => ({
+  agentAPI: { rollbackSessionToTurn: apiMocks.rollbackSessionToTurn },
   sessionAPI: {
     listSessions: apiMocks.listSessions,
     loadSessionMetadata: apiMocks.loadSessionMetadata,
@@ -113,6 +119,10 @@ vi.mock('@/infrastructure/api', () => ({
     loadSessionTurns: apiMocks.loadSessionTurns,
     saveSessionTurn: apiMocks.saveSessionTurn,
   },
+}));
+
+vi.mock('../services/hostDialogQueue', () => ({
+  hostQueueSupported: () => false,
 }));
 
 vi.mock('@/infrastructure/api/service-api/SessionAPI', () => ({
@@ -171,6 +181,7 @@ vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
 
 vi.mock('../state-machine', () => ({
   stateMachineManager: stateMachineManagerMock,
+  SessionExecutionState: { IDLE: 'idle' },
   SessionExecutionEvent: {
     START: 'start',
   },
@@ -8455,6 +8466,120 @@ describe('FlowChatStore device surfaces', () => {
       const session = flowChatStore.getState().sessions.get('peer-retire')!;
       expect(session.turnCatalog?.entries.map(entry => entry.turnId)).toEqual(['turn-0']);
       expect(session.totalTurnCount).toBe(1);
+    });
+
+    it.each([
+      ['rollback', []], ['edit-rerun', []],
+      ['rollback', ['turn-1', 'turn-2']], ['edit-rerun', ['turn-1', 'turn-2']],
+    ] as const)(
+      'removes the confirmed suffix for %s with peer retired IDs %j', async (kind, retiredTurnIds) => {
+        const sessionId = `peer-legacy-${kind}`;
+        await openPeerSession(sessionId, 3);
+        useSessionMutationStore.setState({ mutations: new Map(), retiredTurnIds: new Map() });
+        apiMocks.rollbackSessionToTurn.mockResolvedValueOnce({
+          status: 'completed', sessionId, changed: true, hiddenTurnCount: 2,
+          boundaryStorageTurnIndex: 1, targetTurnId: 'turn-1',
+          retiredTurnIds, restoredFiles: [],
+          composer: { kind: 'replace', text: 'test2' },
+        });
+        const rerun = vi.fn(async () => {
+          // The edited prompt must not be submitted over the stale suffix.
+          expect(turnIds(sessionId)).toEqual(['turn-0']);
+        });
+
+        if (kind === 'edit-rerun') {
+          await editAndRerunUserMessage({
+            sessionId, turnId: 'turn-1', originalContent: 'test2',
+            editedContent: 'test2 edited', rerun,
+          });
+          expect(rerun).toHaveBeenCalledOnce();
+        } else {
+          const result = await rollbackSessionToTurn({ sessionId, targetTurnId: 'turn-1', kind });
+          expect(result.composerText).toBe('test2');
+        }
+        expect(turnIds(sessionId)).toEqual(['turn-0']);
+        expect(sessionToVirtualItems(flowChatStore.getState().sessions.get(sessionId)!))
+          .toEqual(expect.arrayContaining([expect.objectContaining({ turnId: 'turn-0' })]));
+        expect(sessionToVirtualItems(flowChatStore.getState().sessions.get(sessionId)!)
+          .some(item => item.turnId === 'turn-1' || item.turnId === 'turn-2')).toBe(false);
+        expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps the transcript and send previews when the host rejects a rollback', async () => {
+      const sessionId = 'peer-rejected-rollback';
+      await openPeerSession(sessionId, 3);
+      useSessionMutationStore.setState({ mutations: new Map(), retiredTurnIds: new Map() });
+      const scope = getActiveSurfaceScope();
+      beginSubmittedMessagePreview(scope, sessionId, 'turn-2', {
+        id: 'preview-2', content: 'test3', timestamp: 2,
+      });
+      apiMocks.rollbackSessionToTurn.mockRejectedValueOnce(new Error('Rollback target is stale'));
+
+      await expect(rollbackSessionToTurn({ sessionId, targetTurnId: 'turn-1', kind: 'rollback' }))
+        .rejects.toThrow('Rollback target is stale');
+
+      expect(turnIds(sessionId)).toEqual(['turn-0', 'turn-1', 'turn-2']);
+      expect(getSubmittedMessagePreviews(scope, sessionId)).toHaveLength(1);
+    });
+
+    it('does not revive rolled-back turns from records already in flight', async () => {
+      await openPeerSession('peer-late-rollback', 3);
+      // One record is buffered before the ACK, another arrives after it.
+      apiMocks.relayRecord?.(itemRecord('peer-late-rollback', 1, 1, 20));
+      flowChatStore.retireRelaySessionTurns('peer-late-rollback', ['turn-1', 'turn-2']);
+      apiMocks.relayRecord?.(itemRecord('peer-late-rollback', 2, 1, 21));
+      flowChatStore.settleRelaySessionRecords('peer-late-rollback');
+
+      expect(turnIds('peer-late-rollback')).toEqual(['turn-0']);
+    });
+
+    it('accepts a new Turn at the retired storage index and an authoritative redo replay', async () => {
+      const sessionId = 'peer-rollback-new-turn';
+      await openPeerSession(sessionId, 3);
+      flowChatStore.retireRelaySessionTurns(sessionId, ['turn-1', 'turn-2']);
+      const next = itemRecord(sessionId, 1, 0, 30);
+      next.turn.turnId = 'edited-turn';
+      next.round.turnId = 'edited-turn';
+      next.round.id = 'edited-round';
+      next.item.data.id = 'edited-text';
+      next.id = 'item/edited-text';
+      apiMocks.relayRecord?.(next);
+      flowChatStore.settleRelaySessionRecords(sessionId);
+      expect(turnIds(sessionId)).toEqual(['turn-0', 'edited-turn']);
+
+      // Redo/host restart supplies a new authoritative epoch. The ACK fence
+      // belongs to the old replica and must not become a permanent blacklist.
+      apiMocks.relayGap?.({ sessionId, reason: 'host stream restarted', resync: true });
+      for (let turn = 0; turn < 3; turn += 1) apiMocks.relayRecord?.(itemRecord(sessionId, turn, 0, turn + 1));
+      apiMocks.relayReady?.({ sessionId, hasMore: false, oldestSeq: 1, cursor: 3 });
+      expect(turnIds(sessionId)).toEqual(['turn-0', 'turn-1', 'turn-2']);
+    });
+
+    it('fences a retired Turn even before this surface has opened its history subscription', async () => {
+      const sessionId = 'peer-rollback-before-open';
+      activateSurface(PEER_SURFACE_ID);
+      seedSession(sessionId);
+      flowChatStore.retireRelaySessionTurns(sessionId, ['turn-1']);
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord(sessionId, 0, 0, 1));
+        apiMocks.relayRecord?.(itemRecord(sessionId, 1, 0, 2));
+        apiMocks.relayReady?.({ sessionId, hasMore: false, oldestSeq: 1, cursor: 2 });
+        return 'subscription-after-rollback';
+      });
+      await flowChatStore.loadRelaySessionHistory(sessionId);
+      expect(turnIds(sessionId)).toEqual(['turn-0']);
+
+      // Same local identities on a different device must remain independent.
+      activateSurface('another-peer');
+      seedSession(sessionId);
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        apiMocks.relayRecord?.(itemRecord(sessionId, 1, 0, 1));
+        apiMocks.relayReady?.({ sessionId, hasMore: false, oldestSeq: 1, cursor: 1 });
+        return 'another-peer-subscription';
+      });
+      await flowChatStore.loadRelaySessionHistory(sessionId);
+      expect(turnIds(sessionId)).toEqual(['turn-1']);
     });
 
     it('applies a tombstone that lands in the same batch as the turn', async () => {

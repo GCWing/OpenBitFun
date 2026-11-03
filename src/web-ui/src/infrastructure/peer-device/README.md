@@ -226,6 +226,16 @@ listener alone recovers an interaction emitted before attachment.
     Rollback remains an explicit runtime operation; it never falls back to a
     controller-local mutation. Never log catalog preview text.
 
+    A successful targeted rollback confirms the pre-request suffix even when
+    an older host omits `retiredTurnIds` or supplies only active/queued IDs.
+    Capture that suffix's stable identities from materialized Turns and the
+    catalog before invoking; after completion remove them and their send
+    previews before reporting success or submitting the edited prompt. Do not
+    delete by storage index after the response: a new Turn may reuse that slot.
+    Fence delayed records in the surface's replica until the host supplies its
+    real tombstone revision or starts a new authoritative replay. This must not
+    blacklist another device's equal IDs or prevent host-authoritative redo.
+
 15. **Git ownership trust is read on the peer, granted at the machine.**
     `git_get_repository_trust` is a read-only probe and routes to the peer
     host. `git_trust_repository` writes the peer user's global Git
