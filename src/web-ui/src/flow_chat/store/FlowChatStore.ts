@@ -35,6 +35,7 @@ import {
 import { createLogger } from '@/shared/utils/logger';
 import { canonicalAgentId } from '@/shared/agents/identity';
 import { optimisticTurnAdoptionKey } from '../utils/optimisticTurnAdoption';
+import { finishSubmittedMessagePreview } from '../services/submittedMessagePresentation';
 import {
   isRemoteTraceContext,
   markPhaseAfterAnimationFrames,
@@ -6503,6 +6504,13 @@ export class FlowChatStore {
     });
     if (failed.size > 0) surface.relayPendingRecordTurns.set(sessionId, new Set(failed.keys()));
     else surface.relayPendingRecordTurns.delete(sessionId);
+    // The host's record is the real Turn for a send from this window. Its user
+    // message carries the host's ID, so DialogTurnStarted cannot match the
+    // preview by message; the reserved turn ID is the join. A preview left
+    // behind stays hidden only while the Turn exists, and would reappear as a
+    // bare user message once a rollback retires it.
+    const scope = getActiveSurfaceScope();
+    incoming.forEach(turn => finishSubmittedMessagePreview(scope, sessionId, turn.id));
     const mailbox = surface.relayQuestionMailboxes.get(sessionId);
     if (mailbox) {
       const turns = this.state.sessions.get(sessionId)?.dialogTurns ?? [];

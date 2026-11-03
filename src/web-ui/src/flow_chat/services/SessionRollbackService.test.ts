@@ -34,6 +34,11 @@ import {
   stateMachineManager,
 } from '../state-machine';
 import { pendingQueueManager } from './flow-chat-manager/PendingQueueModule';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import {
+  beginSubmittedMessagePreview,
+  getSubmittedMessagePreviews,
+} from './submittedMessagePresentation';
 import { localTurnCatalogRevision } from '../utils/flowChatTurnIdentity';
 
 describe('SessionRollbackService', () => {
@@ -87,6 +92,8 @@ describe('SessionRollbackService', () => {
   });
 
   it('submits stable persisted identity and reloads only after completion', async () => {
+    const scope = getActiveSurfaceScope();
+    beginSubmittedMessagePreview(scope, 'session-1', 'turn-8', { id: 'user_local', content: 'later', timestamp: 1 });
     agentApiMock.rollbackSessionToTurn.mockResolvedValue({
       status: 'completed',
       restoredFiles: ['src/lib.rs'],
@@ -112,6 +119,8 @@ describe('SessionRollbackService', () => {
     expect(isSessionTurnRetired('session-1', 'turn-7')).toBe(true);
     expect(isSessionTurnRetired('session-1', 'turn-8')).toBe(true);
     expect(retireRelaySessionTurns).toHaveBeenCalledWith('session-1', ['turn-7', 'turn-8']);
+    // A preview renders whenever its Turn is absent; a retired Turn's must go.
+    expect(getSubmittedMessagePreviews(scope, 'session-1')).toEqual([]);
   });
 
   it('omits a stale catalog revision when the current Turn is not represented', async () => {
