@@ -1002,6 +1002,30 @@ Second paragraph.
     expect(image?.src).toBe('data:image/png;base64,cmVsdS1wbmc=');
   });
 
+  it('loads generated images when Markdown contains a native Windows path', async () => {
+    const imagePath = 'D:\\Desktop\\.openbitfun\\generated-images\\preview.jpg';
+
+    await act(async () => {
+      root.render(
+        <MarkdownRenderer
+          content={`![Generated preview](${imagePath})`}
+          basePath="C:/IgnoredWorkspace"
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const image = container.querySelector<HTMLImageElement>('img[alt="Generated preview"]');
+    expect(image).not.toBeNull();
+    expect(mocks.readFileContent).toHaveBeenCalledWith(
+      'D:/Desktop/.openbitfun/generated-images/preview.jpg',
+      'base64',
+      undefined,
+    );
+    expect(image?.src).toBe('data:image/jpeg;base64,cmVsdS1wbmc=');
+  });
+
   it.each([
     ['computer://output/preview%20%E5%9B%BE.png', '/srv/project/output/preview 图.png'],
     ['file:///srv/project/preview.png', '/srv/project/preview.png'],

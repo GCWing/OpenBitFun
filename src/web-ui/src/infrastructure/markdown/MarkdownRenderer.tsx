@@ -66,6 +66,16 @@ function markdownUrlTransform(value: string, key?: string): string {
   // the renderer will strip the internal prefix and read it through the
   // owning workspace/session provider.
   if (/^[A-Za-z]:[\\/]/.test(value)) return `file:///${value.replace(/\\/g, '/')}`;
+  // micromark percent-encodes backslashes in some Markdown destinations. Keep
+  // those references safe even when no rehype node position is available.
+  if (key === 'src' && /^[A-Za-z]:(?:%5C|%2F)/i.test(value)) {
+    try {
+      const decoded = decodeURIComponent(value);
+      if (/^[A-Za-z]:[\\/]/.test(decoded)) return `file:///${decoded.replace(/\\/g, '/')}`;
+    } catch {
+      // Leave malformed URLs to react-markdown's normal safety transform.
+    }
+  }
   if (key === 'src' && /^data:image\/(png|jpeg|gif|webp|bmp|svg\+xml|avif);base64,/i.test(value)) return value;
   if (value.startsWith(CANVAS_LINK_PREFIX) && parseCanvasArtifactReference(value)) {
     return value;
@@ -1756,7 +1766,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     const basicFragment = (
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
-        rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema]]}
+        rehypePlugins={[rehypeRaw, [rehypeWindowsDrivePaths, { markdownSource: fragment }], [rehypeSanitize, sanitizeSchema]]}
         urlTransform={markdownUrlTransform}
         components={fragmentComponents}
       >{fragment}</ReactMarkdown>
@@ -1778,7 +1788,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   const basicMarkdownRenderer = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, ...(!isStreaming ? [remarkCachedParse] : []), [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
-      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
+      rehypePlugins={[rehypeRaw, [rehypeWindowsDrivePaths, { markdownSource: markdownContent }], [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
       urlTransform={markdownUrlTransform}
       components={components}
     >
