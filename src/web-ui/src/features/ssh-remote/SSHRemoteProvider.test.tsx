@@ -764,6 +764,21 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-2');
   });
 
+  it('refreshes capabilities when a lost heartbeat is followed by recovery elsewhere', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    sshApiMock.isConnected.mockResolvedValueOnce(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.connect).not.toHaveBeenCalled();
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+    expect(latestStatuses['conn-1']).toBe('connected');
+  });
+
   it('refreshes capabilities once when an idle restored connection really disconnects', async () => {
     vi.useFakeTimers();
     const workspace = createRemoteWorkspace();
@@ -1108,6 +1123,21 @@ describe('SSHRemoteProvider remote workspace connection conflicts', () => {
       sshApiMock.isConnected.mockClear();
       await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
       expect(sshApiMock.isConnected).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resumes monitoring when an unused file browser is reopened', async () => {
+    vi.useFakeTimers();
+    try {
+      await renderProvider();
+      await connectDeployProfile();
+      await act(async () => { context!.setShowFileBrowser(false); });
+      await act(async () => { context!.setShowFileBrowser(true); });
+      sshApiMock.isConnected.mockClear();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('ssh-deploy@example.com');
     } finally {
       vi.useRealTimers();
     }

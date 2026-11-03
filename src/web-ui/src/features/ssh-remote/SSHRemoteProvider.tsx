@@ -393,7 +393,10 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     }
   }, [stopHeartbeat]);
 
-  useEffect(() => { pruneHeartbeats(); }, [connectionId, showFileBrowser, pruneHeartbeats]);
+  useEffect(() => {
+    if (showFileBrowser && connectionId && isConnected) startHeartbeatRef.current(connectionId);
+    pruneHeartbeats();
+  }, [connectionId, isConnected, showFileBrowser, pruneHeartbeats]);
 
   // Cleanup heartbeats on unmount.
   useEffect(() => {
@@ -567,6 +570,14 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
   const handleConnectionLost = useCallback((connId: string) => {
     log.warn('Remote connection lost, attempting auto-reconnect', { connectionId: connId });
+    // Retire at the observation, before another entry point can restore the
+    // transport and make the reconciliation below see an already-live host.
+    const restored = restoredScope(getActiveSurfaceScope());
+    restored.capabilityProbes.delete(connId);
+    ACPClientAPI.invalidateRemoteRequirementProbeCache(connId);
+    for (const workspace of workspaceManager.getState().openedWorkspaces.values()) {
+      if (workspace.connectionId?.trim() === connId) restored.bindings.delete(workspace.id);
+    }
     if (connectionIdRef.current === connId) {
       setStatus('error');
       setConnectionError('Connection lost. Attempting to reconnect...');
@@ -575,7 +586,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     setWorkspaceStatus(connId, 'error');
     stopHeartbeat(connId);
     void checkRemoteWorkspaceRef.current();
-  }, [setWorkspaceStatus, stopHeartbeat]);
+  }, [restoredScope, setWorkspaceStatus, stopHeartbeat]);
 
   const startHeartbeat = useCallback((connId: string) => {
     if (!mountedRef.current || isPeerDeviceModeActive()) return;
