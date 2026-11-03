@@ -2484,14 +2484,16 @@
         },
         {
           "id": "scene-and-panel",
-          "titleZh": "既可作为独立浏览器场景，也可在会话旁的辅助面板中打开",
-          "titleEn": "Use the browser as a standalone scene or an auxiliary panel beside a session",
+          "titleZh": "既可作为独立浏览器场景，也可在会话旁的辅助面板中打开；关闭面板时释放对应的原生 WebView",
+          "titleEn": "Use the browser as a standalone scene or an auxiliary panel beside a session, and release the native webview when the panel closes",
           "control": {
             "kind": "delegate"
           },
           "evidence": [
             "source:src/web-ui/src/app/scenes/browser/BrowserScene.tsx#BrowserScene",
-            "source:src/web-ui/src/app/scenes/browser/BrowserPanel.tsx#BrowserPanel"
+            "source:src/web-ui/src/app/scenes/browser/BrowserPanel.tsx#BrowserPanel",
+            "source:src/web-ui/src/app/scenes/browser/useEmbeddedBrowserWebview.ts#closeWebview",
+            "command:browser_webview_close"
           ]
         },
         {

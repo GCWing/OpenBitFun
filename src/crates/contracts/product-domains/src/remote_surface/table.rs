@@ -139,6 +139,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("browser_control_restart_with_cdp",                           LocalOnly,   Proxied,          CLI_NO_BROWSER_OR_OS_AUTOMATION),
     op("browser_get_url",                                            LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_capture_preview",                            LocalOnly,   ControllerLocal,  REFUSED),
+    op("browser_webview_close",                                      LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_create",                                     LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_eval",                                       LocalOnly,   ControllerLocal,  REFUSED),
     op("browser_webview_navigate",                                   LocalOnly,   ControllerLocal,  REFUSED),

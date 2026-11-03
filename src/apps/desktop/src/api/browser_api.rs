@@ -692,6 +692,19 @@ pub async fn browser_get_url(
         .map_err(|e| format!("url failed: {e}"))
 }
 
+#[tauri::command]
+pub async fn browser_webview_close(
+    app: tauri::AppHandle,
+    request: WebviewLabelRequest,
+) -> Result<(), String> {
+    validate_browser_label(&request.label)?;
+    unregister_browser_target(&request.label);
+    if let Some(webview) = app.get_webview(&request.label) {
+        let _ = webview.close();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

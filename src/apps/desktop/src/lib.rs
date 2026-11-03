@@ -559,40 +559,43 @@ pub async fn run() {
     startup_timings.record_elapsed("initialize_global_config", step_started);
     startup_trace.record_elapsed_step("native_pre_tauri", "initialize_global_config", step_started);
 
-    let step_started = Instant::now();
-    match openbitfun_core::plugin_host::initialize_configured_plugin_host_with_log_file(
-        PLUGIN_HOST_LAUNCH_POLICY,
-        Some(session_log_dir.join("plugin-host.log")),
-    )
-    .await
-    {
-        Ok(openbitfun_core::plugin_host::PluginHostStartup::Disabled) => {}
-        Ok(status) => log::info!("Plugin host initialization completed: {:?}", status),
-        Err(error) => {
-            log::error!("Failed to initialize configured plugin host: {}", error);
-            openbitfun_core::plugin_host::report_configured_plugin_activation_failure(
-                "Desktop startup",
-                None,
-                error,
-            )
-            .await;
-        }
-    }
-    startup_timings.record_elapsed("initialize_plugin_host", step_started);
-    startup_trace.record_elapsed_step("native_pre_tauri", "initialize_plugin_host", step_started);
-
-    // The three steps below only depend on the global config service (initialized
-    // above) and write to disjoint global singletons, so they can run concurrently:
+    // The four steps below only depend on the global config service (initialized
+    // above) and write to disjoint targets, so they can run concurrently:
+    // - initialize_plugin_host: starts the plugin host process
     // - initialize_global_i18n_service: reads config, sets the global i18n singleton
     // - resolve_runtime_log_level: reads config, returns a value
     // - AIClientFactory::initialize_global: reads config, sets GLOBAL_AI_CLIENT_FACTORY
     let (
+        plugin_host_duration_ms,
         i18n_duration_ms,
         (startup_log_level, log_level_duration_ms),
         (ai_factory_result, ai_factory_duration_ms),
     ) = {
         use openbitfun_core::service::config::get_global_config_service;
         use openbitfun_core::service::i18n::initialize_global_i18n_service;
+
+        let plugin_host_task = async {
+            let step_started = Instant::now();
+            match openbitfun_core::plugin_host::initialize_configured_plugin_host_with_log_file(
+                PLUGIN_HOST_LAUNCH_POLICY,
+                Some(session_log_dir.join("plugin-host.log")),
+            )
+            .await
+            {
+                Ok(openbitfun_core::plugin_host::PluginHostStartup::Disabled) => {}
+                Ok(status) => log::info!("Plugin host initialization completed: {:?}", status),
+                Err(error) => {
+                    log::error!("Failed to initialize configured plugin host: {}", error);
+                    openbitfun_core::plugin_host::report_configured_plugin_activation_failure(
+                        "Desktop startup",
+                        None,
+                        error,
+                    )
+                    .await;
+                }
+            }
+            elapsed_ms(step_started)
+        };
 
         // Initialize global I18nService so bot/remote-connect language is always in sync.
         let i18n_task = async {
@@ -622,9 +625,16 @@ pub async fn run() {
             (result, elapsed_ms(step_started))
         };
 
-        tokio::join!(i18n_task, log_level_task, ai_factory_task)
+        tokio::join!(plugin_host_task, i18n_task, log_level_task, ai_factory_task)
     };
 
+    startup_timings.push_duration("initialize_plugin_host", plugin_host_duration_ms);
+    startup_trace.record_step(
+        "native_step_end",
+        "native_pre_tauri",
+        "initialize_plugin_host",
+        plugin_host_duration_ms,
+    );
     startup_timings.push_duration("initialize_global_i18n_service", i18n_duration_ms);
     startup_trace.record_step(
         "native_step_end",
@@ -1074,7 +1084,7 @@ pub async fn run() {
                 // on timeout the frontend falls back to the existing
                 // `initialize_workspace_startup_state` command path.
                 const WORKSPACE_STARTUP_SNAPSHOT_TIMEOUT: std::time::Duration =
-                    std::time::Duration::from_secs(4);
+                    std::time::Duration::from_millis(150);
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
                         match tokio::time::timeout(
@@ -2011,6 +2021,7 @@ pub async fn run() {
             api::browser_api::browser_webview_capture_preview,
             api::browser_api::browser_webview_set_agent_target_state,
             api::browser_api::browser_get_url,
+            api::browser_api::browser_webview_close,
             api::html_preview_api::html_preview_create,
             api::html_preview_api::html_preview_read_resource,
             api::html_preview_api::html_preview_release,
