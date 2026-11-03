@@ -204,6 +204,11 @@ impl OpenAISSEData {
         // can replay structurally present thinking blocks when a provider requires it.
         let content = content.filter(|s| !s.is_empty());
         let reasoning_content = reasoning_content.or(reasoning);
+        // OpenAI's Chat Completions contract uses `null` until a choice has
+        // actually finished. Some OpenAI-compatible gateways serialize that
+        // state as an empty string; treat it as an intermediate chunk so it
+        // cannot finalize and discard a tool-call argument buffer.
+        let finish_reason = finish_reason.filter(|reason| !reason.trim().is_empty());
 
         // MiniMax uses `reasoning_details` instead of `reasoning_content`.
         // Collect all "reasoning.text" entries and join them as a fallback.
@@ -334,6 +339,48 @@ mod tests {
             map_openai_finish_reason("custom_terminal_state"),
             ToolCallCompletion::Unknown
         );
+    }
+
+    #[test]
+    fn treats_blank_finish_reason_as_an_intermediate_chunk() {
+        for blank_reason in ["", "   "] {
+            let raw = r#"{
+                    "id": "chatcmpl_test",
+                    "created": 123,
+                    "model": "gateway-test",
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [{
+                                "index": 0,
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "Read",
+                                    "arguments": "{\"path\":\"src/main.rs\"}"
+                                }
+                            }]
+                        },
+                        "finish_reason": "__BLANK_REASON__"
+                    }]
+                }"#
+            .replace("__BLANK_REASON__", blank_reason);
+
+            let sse_data: OpenAISSEData =
+                serde_json::from_str(&raw).expect("valid openai sse data");
+            let responses = sse_data.into_unified_responses();
+
+            assert_eq!(responses.len(), 1);
+            assert!(responses[0].finish_reason.is_none());
+            assert!(responses[0].tool_call_completion.is_none());
+            assert_eq!(
+                responses[0]
+                    .tool_call
+                    .as_ref()
+                    .and_then(|tool| tool.arguments.as_deref()),
+                Some(r#"{"path":"src/main.rs"}"#)
+            );
+        }
     }
 
     #[test]

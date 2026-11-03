@@ -71,6 +71,27 @@ async fn openai_fixture_keeps_collecting_tool_args_across_usage_chunks() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn openai_fixture_ignores_blank_finish_reason_until_tool_call_completion() {
+    let output = run_stream_fixture(
+        StreamFixtureProvider::OpenAi,
+        "stream/openai/tool_args_blank_finish_reason.sse",
+        FixtureSseServerOptions::default(),
+    )
+    .await;
+
+    let result = output.result.expect("stream result");
+
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].tool_id, "call_1");
+    assert_eq!(result.tool_calls[0].tool_name, "Read");
+    assert_eq!(
+        result.tool_calls[0].arguments,
+        json!({ "path": "src/main.rs" })
+    );
+    assert!(!result.tool_calls[0].is_error);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn openai_fixture_keeps_malformed_tool_arguments_invalid() {
     let output = run_stream_fixture(
         StreamFixtureProvider::OpenAi,
