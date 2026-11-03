@@ -44,7 +44,12 @@ describe('AgentCompanionDesktopPet styles', () => {
 
     expect(bubble).toContain('background-color: var(--openbitfun-color-surface-raised);');
     expect(bubble).toContain('color: var(--openbitfun-color-content-primary);');
-    expect(status).toContain('color: var(--openbitfun-color-content-secondary);');
+    // Status words are drawn as a glyph; the text stays for assistive tech only.
+    expect(status).toContain('clip-path: inset(50%);');
+    expect(extractBlock(stylesheet, '&__bubble-state')).toContain('color: var(--_bubble-light);');
+    for (const state of ['running', 'waiting', 'attention', 'completed', 'error', 'interrupted']) {
+      expect(readSource()).toMatch(new RegExp(`\\n  ${state}: Lucide\\w+,`));
+    }
     expect(output).toContain('color: var(--openbitfun-color-content-secondary);');
     expect(composerInput).toContain('background: var(--openbitfun-color-field-background);');
     expect(composerInput).toContain('color: var(--openbitfun-color-content-primary);');

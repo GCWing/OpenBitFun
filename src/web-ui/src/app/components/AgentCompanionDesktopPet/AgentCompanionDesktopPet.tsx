@@ -1,4 +1,15 @@
-import { ArrowUp as LucideArrowUp, PencilLine as LucidePencilLine, X as LucideX } from 'lucide-react';
+import {
+  ArrowUp as LucideArrowUp,
+  CircleAlert as LucideCircleAlert,
+  CircleCheck as LucideCircleCheck,
+  CirclePause as LucideCirclePause,
+  CircleX as LucideCircleX,
+  Hourglass as LucideHourglass,
+  LoaderCircle as LucideLoaderCircle,
+  PencilLine as LucidePencilLine,
+  X as LucideX,
+  type LucideIcon,
+} from 'lucide-react';
 import { OverflowText, Menu, MenuItem, ScrollArea } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -102,6 +113,16 @@ function menuAnchorFromEvent(event: React.MouseEvent): MenuAnchor {
     bottom: Math.max(0, window.innerHeight - event.clientY),
   };
 }
+
+/** A bubble states its task with a glyph; the words stay for tooltips and assistive tech. */
+const TASK_STATE_GLYPHS: Record<AgentCompanionTaskState, LucideIcon> = {
+  running: LucideLoaderCircle,
+  waiting: LucideHourglass,
+  attention: LucideCircleAlert,
+  completed: LucideCircleCheck,
+  error: LucideCircleX,
+  interrupted: LucideCirclePause,
+};
 
 function bubbleDismissBucket(state: AgentCompanionTaskState): BubbleDismissBucket {
   return state === 'running' || state === 'waiting' ? 'active' : 'notice';
@@ -1082,15 +1103,30 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                 const isComposingTask = overlay?.kind === 'composer'
                   && overlay.sessionId === task.sessionId;
                 const isHoveredTask = hoveredBubbleSessionId === task.sessionId;
-                const bubbleClassName = `openbitfun-agent-companion-window__bubble openbitfun-agent-companion-window__bubble--${task.state}${isSingleTask ? ' openbitfun-agent-companion-window__bubble--single' : ''}${isComposingTask ? ' openbitfun-agent-companion-window__bubble--composing' : ''}`;
+                // A session that finished in the background may only have metadata
+                // here, so there is no reply text yet: keep the single bubble
+                // compact instead of reserving an empty output block.
+                const isCompactSingle = isSingleTask && !task.latestOutput && !isComposingTask;
+                const bubbleClassName = `openbitfun-agent-companion-window__bubble openbitfun-agent-companion-window__bubble--${task.state}${isSingleTask ? ' openbitfun-agent-companion-window__bubble--single' : ''}${isCompactSingle ? ' openbitfun-agent-companion-window__bubble--compact' : ''}${isComposingTask ? ' openbitfun-agent-companion-window__bubble--composing' : ''}`;
+                const statusLabel = t(task.labelKey, { defaultValue: task.defaultLabel });
+                const StateGlyph = TASK_STATE_GLYPHS[task.state] ?? LucideLoaderCircle;
                 const bubbleBody = (
                   <>
-                    <OverflowText className="openbitfun-agent-companion-window__bubble-title" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleTitle">
-                      {task.title}
-                    </OverflowText>
-                    <OverflowText className="openbitfun-agent-companion-window__bubble-status" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleStatus">
-                      {t(task.labelKey, { defaultValue: task.defaultLabel })}
-                    </OverflowText>
+                    <span className="openbitfun-agent-companion-window__bubble-head">
+                      <StateGlyph
+                        className="openbitfun-agent-companion-window__bubble-state"
+                        width="13"
+                        height="13"
+                        strokeWidth={2.25}
+                        aria-hidden="true"
+                      />
+                      <OverflowText className="openbitfun-agent-companion-window__bubble-title" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleTitle">
+                        {task.title}
+                      </OverflowText>
+                    </span>
+                    <span className="openbitfun-agent-companion-window__bubble-status" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleStatus">
+                      {statusLabel}
+                    </span>
                     {isSingleTask && task.latestOutput && (() => {
                       const typedOutput = typedOutputBySessionId[task.sessionId];
                       const visibleOutput = typedOutput?.visible ?? seedTypewriterOutput(task.latestOutput);
@@ -1120,7 +1156,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                   <div
                     key={task.sessionId}
                     data-agent-companion-session-id={task.sessionId}
-                    className={`openbitfun-agent-companion-window__bubble-shell${isSingleTask ? ' openbitfun-agent-companion-window__bubble-shell--single' : ''}${isHoveredTask ? ' openbitfun-agent-companion-window__bubble-shell--hovered' : ''}`}
+                    className={`openbitfun-agent-companion-window__bubble-shell${isSingleTask ? ' openbitfun-agent-companion-window__bubble-shell--single' : ''}${isCompactSingle ? ' openbitfun-agent-companion-window__bubble-shell--compact' : ''}${isHoveredTask ? ' openbitfun-agent-companion-window__bubble-shell--hovered' : ''}`}
                     onContextMenu={event => onBubbleContextMenu(event, task.sessionId)}
                   >
                     {isComposingTask ? (
@@ -1152,7 +1188,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                             aria-label={t('agentCompanion.composer.cancel')}
                             onClick={cancelBubbleComposer}
                           >
-                            <LucideX width="11" height="11" aria-hidden="true" />
+                            <LucideX width="11" height="11" strokeWidth={2.25} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
@@ -1162,7 +1198,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                             disabled={!composerValue.trim() || isSendingComposer}
                             onClick={() => void submitBubbleComposer()}
                           >
-                            <LucideArrowUp width="11" height="11" aria-hidden="true" />
+                            <LucideArrowUp width="12" height="12" strokeWidth={2.5} aria-hidden="true" />
                           </button>
                         </div>
                       </div>
@@ -1170,6 +1206,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                       <button
                         type="button"
                         className={bubbleClassName}
+                        title={`${task.title} · ${statusLabel}`}
                         onClick={() => void openTaskSession(task)}
                         data-openbitfun-component="agent-companion-desktop-pet"
                         data-openbitfun-part="bubble"
@@ -1185,7 +1222,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                         aria-label={t('agentCompanion.composer.openTitle')}
                         onClick={() => openBubbleComposer(task.sessionId)}
                       >
-                        <LucidePencilLine width="11" height="11" aria-hidden="true" />
+                        <LucidePencilLine width="12" height="12" aria-hidden="true" />
                       </button>
                     )}
                   </div>
