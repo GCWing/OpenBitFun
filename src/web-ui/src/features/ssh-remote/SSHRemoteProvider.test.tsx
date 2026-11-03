@@ -648,20 +648,25 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
   });
 
-  it('does not restart heartbeats when a restore check finishes after the provider closes', async () => {
+  it.each(['connection', 'activation'])('retires a pending %s check when the provider closes', async phase => {
     vi.useFakeTimers();
     const workspace = createRemoteWorkspace();
     workspaceManagerMock.getState.mockReturnValue({
       loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
     });
-    let finishCheck!: (connected: boolean) => void;
-    sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { finishCheck = resolve; }));
+    let finishCheck!: () => void;
+    const pending = new Promise<void>(resolve => { finishCheck = resolve; });
+    sshApiMock.isConnected.mockImplementationOnce(async () => {
+      if (phase === 'connection') await pending;
+      return true;
+    });
+    if (phase === 'activation') sshApiMock.openWorkspace.mockReturnValueOnce(pending);
     await renderProvider();
     await act(async () => { root.unmount(); });
     sshApiMock.isConnected.mockClear();
-    await act(async () => { finishCheck(true); });
+    await act(async () => { finishCheck(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
-    expect(sshApiMock.openWorkspace).not.toHaveBeenCalled();
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledTimes(phase === 'activation' ? 1 : 0);
     expect(sshApiMock.isConnected).not.toHaveBeenCalled();
     expect(ACPClientAPI.probeClientRequirements).not.toHaveBeenCalled();
   });

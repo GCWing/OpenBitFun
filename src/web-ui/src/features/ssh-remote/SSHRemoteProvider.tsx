@@ -481,7 +481,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         const result = await reconnectUntilDeadline({
           totalTimeoutMs: timeoutMs,
           attempt: async (attemptTimeoutMs, attempt) => {
-            if (!scope.isCurrent()) return false as const;
+            if (!mountedRef.current || !scope.isCurrent()) return false as const;
             if (isPeerDeviceModeActive()) {
               // Abort controller-side reconnects: connecting now would open an SSH
               // session on the peer with controller-local credentials.
@@ -771,6 +771,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
                 sshApi.openWorkspace(workspace.connectionId, workspace.remotePath));
             }
             scope.assertCurrent('publish restored SSH workspace');
+            if (!mountedRef.current) return { ok: false as const };
             setWorkspaceStatus(workspace.connectionId, 'connected');
             bindings.set(record.id, binding);
             refreshRemoteAcpCapabilities(workspace.connectionId);
@@ -828,6 +829,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
             await runInSurfaceScope(scope, 'activate reconnected SSH workspace', () =>
               sshApi.openWorkspace(result.connectionId, result.workspace.remotePath));
             scope.assertCurrent('publish reconnected SSH workspace');
+            if (!mountedRef.current) return { ok: false as const };
             setWorkspaceStatus(result.workspace.connectionId, 'connected');
             restoredScope(scope).bindings.set(record.id, remoteWorkspaceBinding(record));
             if (!refreshedReconnects.has(result.connectionId)) {
