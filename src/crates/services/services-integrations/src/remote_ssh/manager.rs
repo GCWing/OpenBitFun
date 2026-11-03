@@ -26,6 +26,8 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{File as SftpFile, StatusCode as SftpStatusCode};
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -375,7 +377,7 @@ mtime=$(stat -c %Y \"$item\" 2>/dev/null || stat -f %m \"$item\" 2>/dev/null || 
 mode=$(stat -c %a \"$item\" 2>/dev/null || stat -f %Lp \"$item\" 2>/dev/null || true); \
 printf '%s\\0%s\\0%s\\0%s\\0%s\\0%s\\0' \"$name\" \"$item\" \"$kind\" \"$size\" \"$mtime\" \"$mode\";";
 
-fn sftp_error_may_be_stale_transport(error: &SftpError) -> bool {
+pub(super) fn sftp_error_may_be_stale_transport(error: &SftpError) -> bool {
     match error {
         SftpError::Status(status) => matches!(
             status.status_code,
@@ -670,6 +672,9 @@ struct SftpCache {
     session: tokio::sync::RwLock<Option<Arc<ManagedSftpSession>>>,
     init_lock: tokio::sync::Mutex<()>,
 }
+
+/// One replayable request issued against a cached SFTP subsystem.
+type SftpRequest<T> = Pin<Box<dyn Future<Output = Result<T, SftpError>> + Send>>;
 
 impl SftpCache {
     fn new() -> Self {
@@ -6393,6 +6398,43 @@ impl SSHConnectionManager {
         Ok(sftp)
     }
 
+    /// Replay one read-only request on a fresh subsystem channel.
+    ///
+    /// russh-sftp rejects every request on a closed subsystem channel with
+    /// `UnexpectedBehavior("session closed")` and never reopens it, while
+    /// `get_sftp` keeps handing out that same cached session. Returning that
+    /// error left the file browser stuck on `Failed to stat` until the app was
+    /// restarted. [`ManagedSftpSession`] now retires a session whose channel is
+    /// gone, so replaying the request once opens a new channel instead of
+    /// failing forever. Only idempotent queries may use this helper.
+    async fn sftp_query_with_recovery<T, F>(
+        &self,
+        connection_id: &str,
+        path: &str,
+        query: F,
+    ) -> anyhow::Result<T>
+    where
+        F: Fn(Arc<ManagedSftpSession>, String) -> SftpRequest<T>,
+    {
+        let mut replay = true;
+        loop {
+            let session = self.get_sftp(connection_id).await?;
+            match query(session, path.to_owned()).await {
+                Ok(value) => return Ok(value),
+                Err(error) if replay && sftp_error_may_be_stale_transport(&error) => {
+                    replay = false;
+                    log::warn!(
+                        "Cached SFTP subsystem for {} failed on '{}' (will retry once on a new channel): {}",
+                        connection_id,
+                        path,
+                        error
+                    );
+                }
+                Err(error) => return Err(anyhow::Error::new(error)),
+            }
+        }
+    }
+
     /// Reuse a dedicated SFTP channel for serialized directory enumeration.
     /// The high-level API leaks directory handles on errors/cancellation. The
     /// raw path closes on all exits and can also stop at an entry budget.
@@ -6970,11 +7012,11 @@ impl SSHConnectionManager {
     /// Check if path exists via SFTP
     pub async fn sftp_exists(&self, connection_id: &str, path: &str) -> anyhow::Result<bool> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        sftp.as_ref()
-            .try_exists(&path)
-            .await
-            .map_err(|e| anyhow!("Failed to check if '{}' exists: {}", path, e))
+        self.sftp_query_with_recovery(connection_id, &path, |sftp, query_path| {
+            Box::pin(async move { sftp.as_ref().try_exists(&query_path).await })
+        })
+        .await
+        .map_err(|e| anyhow!("Failed to check if '{}' exists: {}", path, e))
     }
 
     /// Get file metadata via SFTP
@@ -6984,10 +7026,13 @@ impl SSHConnectionManager {
         path: &str,
     ) -> anyhow::Result<russh_sftp::client::fs::Metadata> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        sftp.as_ref().metadata(&path).await.map_err(|error| {
+        self.sftp_query_with_recovery(connection_id, &path, |sftp, query_path| {
+            Box::pin(async move { sftp.as_ref().metadata(&query_path).await })
+        })
+        .await
+        .map_err(|error| {
             let message = format!("Failed to stat '{}': {}", path, error);
-            anyhow::Error::new(error).context(message)
+            error.context(message)
         })
     }
 
@@ -6998,12 +7043,11 @@ impl SSHConnectionManager {
         path: &str,
     ) -> anyhow::Result<russh_sftp::client::fs::Metadata> {
         let path = self.resolve_sftp_path(connection_id, path).await?;
-        let sftp = self.get_sftp(connection_id).await?;
-        sftp.as_ref()
-            .symlink_metadata(&path)
-            .await
-            .map_err(anyhow::Error::new)
-            .with_context(|| format!("Failed to inspect '{}'", path))
+        self.sftp_query_with_recovery(connection_id, &path, |sftp, query_path| {
+            Box::pin(async move { sftp.as_ref().symlink_metadata(&query_path).await })
+        })
+        .await
+        .with_context(|| format!("Failed to inspect '{}'", path))
     }
 
     // ============================================================================
