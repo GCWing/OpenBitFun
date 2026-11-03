@@ -204,6 +204,29 @@ afterEach(() => {
 });
 
 describe('device status card', () => {
+  it('pins an upward card by its bottom edge so height changes never reposition it', () => {
+    render(false);
+    const rect = (top: number, height: number, width: number) => ({
+      top, bottom: top + height, left: 16, right: 16 + width, width, height, x: 16, y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+    const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'nav-footer-device-status') return rect(700, 32, 160);
+        if (this.dataset.testid === 'nav-device-status-popover') return rect(0, 200, 312);
+        return rect(0, 0, 0);
+      });
+    try {
+      render(true);
+      const card = element('nav-device-status-popover');
+      expect(card.dataset.openbitfunPlacement).toBe('top');
+      expect(card.style.top).toBe('');
+      expect(card.style.bottom).toBe(`${window.innerHeight - 700 + 8}px`);
+    } finally {
+      measure.mockRestore();
+    }
+  });
+
   it('shows the device management icon in the header without an account display', () => {
     render();
     const card = element('nav-device-status-popover');
@@ -227,10 +250,17 @@ describe('device status card', () => {
     expect(element('nav-device-status-manage').getAttribute('aria-label')).toBe('deviceOverview.devicesAndConnections');
     expect(element('nav-device-status-manage').querySelector('.lucide-monitor-smartphone')).not.toBeNull();
     expect(card.querySelector('[data-testid="nav-device-status-pagination"]')).toBeNull();
-    expect(element('nav-device-status-local').textContent).toBe('deviceOverview.localDevice');
-    expect(element('nav-device-status-local').dataset.openbitfunComponent).toBe('status-pill');
-    expect(element('nav-device-status-local').dataset.tone).toBe('neutral');
-    expect(element('nav-device-status-local').closest('.openbitfun-device-overview__device-actions')).not.toBeNull();
+    // Titles and status words are drawn, not written: no header title, and this
+    // machine is a quiet mark after its name rather than a text pill.
+    expect(header?.querySelector('[data-openbitfun-part="title"]')).toBeNull();
+    expect(card.textContent).not.toContain('deviceOverview.title');
+    expect(card.dataset.controlState).toBe('local');
+    expect(element('nav-device-status-local').textContent).toBe('');
+    expect(element('nav-device-status-local').getAttribute('role')).toBe('img');
+    expect(element('nav-device-status-local').getAttribute('aria-label')).toBe('deviceOverview.localDevice');
+    expect(element('nav-device-status-local').querySelector('.lucide-house')).not.toBeNull();
+    expect(element('nav-device-status-local').closest('.openbitfun-device-overview__device-heading')).not.toBeNull();
+    expect(card.querySelector('[data-openbitfun-component="status-pill"]')).toBeNull();
     expect(card.querySelector('.openbitfun-device-overview__carousel-controls')).toBeNull();
     expect(card.querySelector('[data-openbitfun-part="footer"]')).toBeNull();
     expect(card.querySelector('[data-testid="nav-device-status-connected-devices"]')).toBeNull();
@@ -507,12 +537,18 @@ describe('device status card', () => {
     expect(state.switchToDevice).not.toHaveBeenCalled();
     expect(element('nav-device-status-connect').closest('.openbitfun-device-overview__device-status')).not.toBeNull();
     expect(element('nav-device-status-connect').closest('.openbitfun-device-overview__device-actions')).not.toBeNull();
-    expect(element('nav-device-status-connect').dataset.openbitfunComponent).toBe('button');
+    expect(element('nav-device-status-connect').dataset.openbitfunComponent).toBe('icon-button');
+    expect(element('nav-device-status-connect').dataset.openbitfunShape).toBe('circle');
     expect(element('nav-device-status-connect').dataset.openbitfunVariant).toBe('primary');
-    expect(element('nav-device-status-connect').textContent).toBe('deviceOverview.connectAndUse');
+    expect(element('nav-device-status-connect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.connectAndUse$/);
+    // Connecting and switching to an attached device are told apart by glyph.
+    expect(element('nav-device-status-connect').querySelector('.lucide-link')).not.toBeNull();
+    expect(element('nav-device-status-connect').textContent).toBe('');
     state.attachedHostKinds = { 'peer-2': 'cli' };
     render();
-    expect(element('nav-device-status-connect').textContent).toBe('deviceOverview.switchUse');
+    expect(element('nav-device-status-connect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.switchUse$/);
+    expect(element('nav-device-status-connect').querySelector('.lucide-arrow-right-left')).not.toBeNull();
+    expect(element('nav-device-status-connect').textContent).toBe('');
     expect(element('nav-device-status-popover').querySelector('[data-openbitfun-part="footer"]')).toBeNull();
     expect(document.querySelector('[data-testid="nav-device-status-disconnect"]')).toBeNull();
     await act(async () => { element('nav-device-status-connect').click(); });
@@ -522,13 +558,14 @@ describe('device status card', () => {
     await act(async () => { previous.click(); });
     expect(element('nav-device-status-disconnect').closest('[data-control-state="active"]')).not.toBeNull();
     await act(async () => { previous.click(); });
-    expect(element('nav-device-status-return-local').textContent).toBe('deviceOverview.returnLocalAction');
+    expect(element('nav-device-status-return-local').getAttribute('aria-label')).toMatch(/ · deviceOverview\.returnLocalAction$/);
+    expect(element('nav-device-status-return-local').textContent).toBe('');
     await act(async () => { element('nav-device-status-return-local').click(); });
     expect(state.switchToLocal).toHaveBeenCalledWith('manual');
     expect(state.disconnectDevice).not.toHaveBeenCalled();
   });
 
-  it('marks only the current remote name with an in-use pill and keeps the artwork clear', () => {
+  it('marks only the current remote name with an in-use signal and keeps the artwork clear', () => {
     state.overview = overview({ localDeviceName: 'This computer' });
     render();
     const summary = element('nav-device-status-summary');
@@ -536,7 +573,7 @@ describe('device status card', () => {
     expect(summary.querySelector('[data-control-state="local"]')?.getAttribute('aria-label')).toContain('deviceOverview.currentLocalDevice');
     expect(header?.querySelector('.openbitfun-device-overview__device-status')).toBeNull();
     expect(summary.querySelector('.openbitfun-device-overview__usage-badge')).toBeNull();
-    expect(summary.querySelector('[data-openbitfun-component="status-pill"]')).toBe(element('nav-device-status-local'));
+    expect(summary.querySelector('[role="img"][aria-label="deviceOverview.localDevice"]')).toBe(element('nav-device-status-local'));
     expect(summary.querySelector('.openbitfun-device-overview__connection-control')).toBeNull();
 
     // The active peer carries its status after the name, and keeps its bottom disconnect action.
@@ -546,40 +583,32 @@ describe('device status card', () => {
     });
     render();
     expect(summary.querySelector('[data-control-state="active"]')?.getAttribute('aria-label')).toContain('deviceOverview.currentUse · deviceOverview.controlling');
-    expect(summary.textContent).toContain('deviceOverview.inUse');
+    expect(summary.textContent).not.toContain('deviceOverview.inUse');
+    expect(element('nav-device-status-popover').dataset.controlState).toBe('active');
     const usageControl = element('nav-device-usage-status');
     expect(usageControl.tagName).toBe('SPAN');
-    expect(usageControl.dataset.openbitfunComponent).toBe('status-pill');
-    expect(usageControl.dataset.tone).toBe('success');
-    expect(usageControl.dataset.shape).toBe('pill');
+    expect(usageControl.getAttribute('role')).toBe('img');
+    expect(usageControl.getAttribute('aria-label')).toBe('deviceOverview.inUse');
+    expect(usageControl.getAttribute('title')).toBe('deviceOverview.inUse');
+    expect(usageControl.textContent).toBe('');
     expect(usageControl.closest('.openbitfun-device-overview__device-heading')).not.toBeNull();
     expect(element('nav-device-status-name').nextElementSibling).toBe(usageControl);
     expect(summary.querySelector('[data-testid="nav-device-usage-status"]')).toBe(usageControl);
-    expect(usageControl.textContent).toBe('deviceOverview.inUse');
-    expect(usageControl.getAttribute('role')).not.toBe('button');
     expect(usageControl.getAttribute('tabindex')).toBeNull();
-    expect(usageControl.querySelector('svg')).toBeNull();
-    expect(usageControl.getAttribute('title')).toBeNull();
-    act(() => usageControl.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
-    expect(usageControl.textContent).toBe('deviceOverview.inUse');
-    expect(usageControl.querySelector('svg')).toBeNull();
     expect(usageControl.querySelector('.lucide-unplug')).toBeNull();
-    act(() => usageControl.focus());
-    act(() => usageControl.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: container })));
-    expect(usageControl.textContent).toBe('deviceOverview.inUse');
-    act(() => element('nav-device-status-manage').focus());
-    expect(usageControl.textContent).toBe('deviceOverview.inUse');
     expect(usageControl.closest('[aria-hidden="true"]')).toBeNull();
     expect(summary.querySelector('.openbitfun-device-overview__device-heading .openbitfun-device-overview__usage-badge')).toBe(usageControl);
     expect(header?.contains(element('nav-device-status-disconnect'))).toBe(false);
     expect(summary.contains(element('nav-device-status-disconnect'))).toBe(true);
     expect(element('nav-device-status-disconnect').closest('.openbitfun-device-overview__device-actions')).not.toBeNull();
     expect(element('nav-device-status-disconnect').closest('.openbitfun-device-overview__device-status')).not.toBeNull();
-    expect(element('nav-device-status-disconnect').textContent).toBe('deviceOverview.disconnectAction');
-    expect(element('nav-device-status-disconnect').dataset.openbitfunComponent).toBe('button');
+    expect(element('nav-device-status-disconnect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.disconnectAction$/);
+    expect(element('nav-device-status-disconnect').textContent).toBe('');
+    expect(element('nav-device-status-disconnect').dataset.openbitfunComponent).toBe('icon-button');
+    expect(element('nav-device-status-disconnect').dataset.openbitfunShape).toBe('circle');
     expect(element('nav-device-status-disconnect').dataset.openbitfunVariant).toBe('primary');
     expect(summary.querySelector('.openbitfun-device-overview__connection-control')).toBeNull();
-    expect(summary.querySelector('[data-openbitfun-component="status-pill"]')).toBe(usageControl);
+    expect(summary.querySelector('[data-openbitfun-component="status-pill"]')).toBeNull();
     expect(document.querySelector('[data-testid="nav-device-status-connected-devices"]')).toBeNull();
     expect(element('nav-device-status-disconnect').closest('[data-control-state="active"]')).not.toBeNull();
     expect(element('nav-device-status-popover').querySelector('[data-openbitfun-part="footer"]')).toBeNull();
@@ -624,12 +653,14 @@ describe('device status card', () => {
     let finishDisconnect!: () => void;
     state.disconnectDevice.mockImplementationOnce(() => new Promise<void>(resolve => { finishDisconnect = resolve; }));
     act(() => element('nav-device-status-disconnect').click());
-    expect(element('nav-device-status-disconnect').textContent).toBe('deviceOverview.disconnectingAction');
+    expect(element('nav-device-status-disconnect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.disconnectingAction$/);
+    expect(element('nav-device-status-disconnect').textContent).toBe('');
     expect((element('nav-device-status-disconnect') as HTMLButtonElement).disabled).toBe(true);
     act(() => element('nav-device-status-disconnect').click());
     expect(state.disconnectDevice).toHaveBeenCalledTimes(1);
     await act(async () => { finishDisconnect(); });
-    expect(element('nav-device-status-disconnect').textContent).toBe('deviceOverview.disconnectAction');
+    expect(element('nav-device-status-disconnect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.disconnectAction$/);
+    expect(element('nav-device-status-disconnect').textContent).toBe('');
     expect(state.disconnectDevice).toHaveBeenCalledWith('peer-1', 'manual');
     expect(state.switchToLocal).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalled();
@@ -644,10 +675,10 @@ describe('device status card', () => {
     const usageControl = element('nav-device-usage-status');
     act(() => usageControl.click());
     expect(state.disconnectDevice).not.toHaveBeenCalled();
-    expect(usageControl.textContent).toBe('deviceOverview.inUse');
+    expect(usageControl.getAttribute('aria-label')).toBe('deviceOverview.inUse');
     act(() => element('nav-device-status-disconnect').click());
     expect(state.disconnectDevice).toHaveBeenCalledWith('peer-1', 'manual');
-    expect(usageControl.textContent).toBe('deviceOverview.inUse');
+    expect(usageControl.getAttribute('aria-label')).toBe('deviceOverview.inUse');
     expect((element('nav-device-status-disconnect') as HTMLButtonElement).disabled).toBe(true);
     expect((element('nav-footer-cancel-remote') as HTMLButtonElement).disabled).toBe(true);
     act(() => { usageControl.click(); element('nav-footer-cancel-remote').click(); });
@@ -843,14 +874,18 @@ describe('device status card', () => {
     expect(next).not.toBeNull();
     await act(async () => { next!.click(); });
 
-    // The unavailable connection is disabled and explains the version in its tooltip.
+    // The unavailable connection has no action and explains the version in its tooltip.
     const notice = document.querySelector('[data-testid="nav-device-status-incompatible"]');
     expect(notice).not.toBeNull();
     expect(notice?.tagName).toBe('BUTTON');
-    expect((notice as HTMLButtonElement).disabled).toBe(true);
+    // Not natively disabled: it stays focusable so its version tooltip is reachable.
+    expect((notice as HTMLButtonElement).disabled).toBe(false);
+    expect(notice?.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => { (notice as HTMLButtonElement).click(); });
     expect(notice?.closest('[data-control-state="incompatible"]')).not.toBeNull();
     expect(notice?.getAttribute('title')).toContain('deviceOverview.deviceClientIncompatibleWithVersion');
-    expect(notice?.textContent).toBe('deviceOverview.unavailableAction');
+    expect(notice?.getAttribute('aria-label')).toMatch(/ · deviceOverview\.unavailableAction$/);
+    expect(notice?.textContent).toBe('');
     expect(document.querySelector('.openbitfun-device-overview__device-name')?.textContent).toBeDefined();
     expect(Array.from(document.querySelectorAll('button')).some(
       button => button.textContent === 'deviceOverview.connectDevice',

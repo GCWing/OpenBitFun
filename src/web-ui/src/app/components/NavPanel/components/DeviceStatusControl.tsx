@@ -1,7 +1,7 @@
 import { useDeviceDirectory, resolveDeviceName, isDeviceControllable, deviceClientVersion } from '@/infrastructure/account/deviceDirectory';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, ScrollArea, StatusPill, type IconSize } from '@openbitfun/ui';
-import { ChevronLeft, ChevronRight, CircleAlert, MessageCircle, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, ScrollArea, type IconSize } from '@openbitfun/ui';
+import { ArrowRightLeft, ChevronLeft, ChevronRight, CircleAlert, House, Link, MessageCircle, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
@@ -364,6 +364,8 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   )) ?? false;
   const displayedIncompatible = previewIncompatible && !displayedActive;
   const displayedHasAction = displayedActive || isPreviewing || displayedIncompatible;
+  const displayedControlState = displayedIncompatible ? 'incompatible'
+    : displayedActive ? 'active' : displayedDevice.local ? 'local' : 'available';
   const displayedActionLabel = displayedIncompatible
     ? previewIncompatibleNotice
     : displayedActive ? t('deviceOverview.disconnectActionHint')
@@ -446,8 +448,13 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
             data-openbitfun-product-part="root"
             data-openbitfun-state={overview.mode}
             data-openbitfun-placement={popoverLayout?.placement ?? 'top'}
+            data-control-state={displayedControlState}
             style={{
-              top: `${popoverLayout?.top ?? 0}px`,
+              // Opening upward, the card is pinned by its bottom edge so any
+              // height change grows away from the trigger in the same frame
+              // instead of being repositioned a frame late.
+              top: popoverLayout?.bottom === undefined ? `${popoverLayout?.top ?? 0}px` : undefined,
+              bottom: popoverLayout?.bottom === undefined ? undefined : `${popoverLayout.bottom}px`,
               left: `${popoverLayout?.left ?? 0}px`,
               visibility: popoverLayout ? 'visible' : 'hidden',
             }}
@@ -458,6 +465,18 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
               contentAlign="start"
               actions={(
                 <div className="openbitfun-device-overview__header-actions">
+                  {overview.topologyUnavailable && (
+                    <IconButton
+                      variant="quiet"
+                      size="xs"
+                      shape="circle"
+                      icon={<Icon name="refresh" size="sm" tone="warning" />}
+                      className="openbitfun-device-overview__notice"
+                      aria-label={t('deviceOverview.statusUnavailable')}
+                      title={t('deviceOverview.statusUnavailable')}
+                      onClick={() => { void refresh(); }}
+                    />
+                  )}
                   <IconButton
                     className="openbitfun-device-overview__manage-devices"
                     variant="quiet"
@@ -472,7 +491,6 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                 </div>
               )}
             />
-            <ScrollArea className="openbitfun-device-overview__scroll">
             <CardBody className="openbitfun-device-overview__body">
               <div className="openbitfun-device-overview__summary" data-testid="nav-device-status-summary">
                 <div className="openbitfun-device-overview__carousel-viewport">
@@ -480,9 +498,20 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                     ref={artworkRef}
                     role="group"
                     aria-label={[displayedDevice.name, deviceActivity(displayedDevice)].join(' · ')}
-                    data-control-state={displayedIncompatible ? 'incompatible' : displayedActive ? 'active' : displayedDevice.local ? 'local' : 'available'}>
+                    data-control-state={displayedControlState}>
                     <DeviceArtwork device={displayedDevice} />
                   </div>
+                  {previewDevices.length > 1 && (
+                    <span className="openbitfun-device-overview__page-dots" aria-hidden="true">
+                      {previewDevices.map((device, index) => (
+                        <span
+                          key={device.id}
+                          className="openbitfun-device-overview__page-dot"
+                          data-active={index === previewIndex ? 'true' : undefined}
+                        />
+                      ))}
+                    </span>
+                  )}
                 </div>
                 <div className="openbitfun-device-overview__device-details">
                   {carouselDeviceIds.length > 1 && (
@@ -518,43 +547,60 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                     </span>
                   )}
                   <div className="openbitfun-device-overview__device-heading" ref={headingRef} data-overflow-trigger aria-live="polite" aria-atomic="true">
+                    {/* The system is drawn, not written: the same mark the trigger and
+                        the device rows use. State is drawn after the name. */}
+                    <span className="openbitfun-device-overview__device-mark" aria-hidden="true">
+                      <DeviceMark device={displayedDevice} size="md" />
+                    </span>
                     <OverflowText className="openbitfun-device-overview__device-name" title="" data-testid="nav-device-status-name">
                       {displayedDevice.name}
                     </OverflowText>
                     {displayedActive && (
-                      <StatusPill
+                      <span
                         className="openbitfun-device-overview__usage-badge"
-                        tone="success"
+                        role="img"
+                        aria-label={t('deviceOverview.inUse')}
+                        title={t('deviceOverview.inUse')}
                         data-testid="nav-device-usage-status"
+                      />
+                    )}
+                    {!displayedHasAction && displayedDevice.local && (
+                      <span
+                        className="openbitfun-device-overview__local-mark"
+                        role="img"
+                        aria-label={t('deviceOverview.localDevice')}
+                        title={t('deviceOverview.localDevice')}
+                        data-testid="nav-device-status-local"
                       >
-                        {t('deviceOverview.inUse')}
-                      </StatusPill>
+                        <Icon glyph={House} size="xs" />
+                      </span>
                     )}
                   </div>
                 </div>
                 <div className="openbitfun-device-overview__device-actions" ref={actionsRef}>
-                  {!displayedHasAction && displayedDevice.local && (
-                    <StatusPill tone="neutral" data-testid="nav-device-status-local">
-                      {t('deviceOverview.localDevice')}
-                    </StatusPill>
-                  )}
                   {displayedHasAction && (
                     <div className="openbitfun-device-overview__device-status"
                       role="group"
                       aria-label={[displayedDevice.name, deviceActivity(displayedDevice)].join(' · ')}
-                      data-control-state={displayedIncompatible ? 'incompatible' : displayedActive ? 'active' : displayedDevice.local ? 'local' : 'available'}>
-                      <Button
+                      data-control-state={displayedControlState}>
+                      {/* One round action: the glyph says what it does, the tooltip and
+                          the accessible name carry the words. */}
+                      <IconButton
                         className="openbitfun-device-overview__connection-status"
                         variant={displayedIncompatible ? 'fill' : 'primary'}
-                        size="xs"
-                        labelBehavior="static"
-                        leadingIcon={displayedIncompatible
-                          ? <Icon glyph={CircleAlert} size="sm" tone="warning" />
-                          : displayedActive ? <Icon glyph={Unplug} size="sm" />
-                            : displayedDevice.local ? <Icon glyph={Undo2} size="sm" /> : <Icon name="link" size="sm" />}
-                        aria-label={`${displayedDevice.name} · ${displayedActionLabel}`}
-                        title={displayedActionLabel}
-                        disabled={displayedIncompatible || (!displayedActive && !isPreviewing) || !peerContext || switchingDevice || previewMotion.isTransitioning}
+                        size="md"
+                        shape="circle"
+                        icon={displayedIncompatible
+                          ? <Icon glyph={CircleAlert} size="md" />
+                          : displayedActive ? <Icon glyph={Unplug} size="md" />
+                            : displayedDevice.local ? <Icon glyph={Undo2} size="md" />
+                              : displayedConnected ? <Icon glyph={ArrowRightLeft} size="md" /> : <Icon glyph={Link} size="md" />}
+                        aria-label={`${displayedDevice.name} · ${displayedActionText}`}
+                        title={switchingDevice ? displayedActionText : displayedActionLabel}
+                        // An incompatible device stays focusable so its version notice
+                        // (the tooltip) is reachable; it simply has no action.
+                        disabled={!displayedIncompatible && ((!displayedActive && !isPreviewing) || !peerContext || switchingDevice || previewMotion.isTransitioning)}
+                        aria-disabled={displayedIncompatible || undefined}
                         loading={switchingDevice}
                         data-testid={displayedIncompatible ? 'nav-device-status-incompatible'
                           : displayedActive ? 'nav-device-status-disconnect'
@@ -562,31 +608,23 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                         onClick={displayedIncompatible ? undefined : displayedActive
                           ? () => { void handleDisconnect(); }
                           : () => { void connectPreview(); }}
-                      >
-                        <OverflowText title="">{displayedActionText}</OverflowText>
-                      </Button>
+                      />
                     </div>
                   )}
                 </div>
-                {overview.topologyUnavailable && (
-                  <IconButton
-                    variant="quiet"
-                    size="xs"
-                    shape="circle"
-                    icon={<Icon name="refresh" size="sm" tone="warning" />}
-                    className="openbitfun-device-overview__notice"
-                    aria-label={t('deviceOverview.statusUnavailable')}
-                    title={t('deviceOverview.statusUnavailable')}
-                    onClick={() => { void refresh(); }}
-                  />
-                )}
               </div>
 
               {listedDevices.length > 0 && (
                 <section
                   className="openbitfun-device-overview__device-group"
                   data-testid="nav-device-status-connected-devices"
+                  aria-label={t('deviceOverview.connectedDevices')}
                 >
+                  <ScrollArea
+                    className="openbitfun-device-overview__scroll"
+                    edgeFade="vertical"
+                    scrollbarVisibility="hover"
+                  >
                   <div className="openbitfun-device-overview__device-rows">
                     {listedDevices.map(device => (
                       <div
@@ -613,11 +651,11 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                       </div>
                     ))}
                   </div>
+                  </ScrollArea>
                 </section>
               )}
 
             </CardBody>
-            </ScrollArea>
 
           </Card>
         </>,
