@@ -147,7 +147,8 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
         <OverviewSplitCard>
           <OverviewSplitCardSection title={t('desktopCards.title')}
             value={<span data-testid="personal-overview-desktop-card-count">{summaryValue}</span>}
-            description={summaryDescription} />
+            description={summaryDescription}
+            centerSummary />
           <OverviewSplitCardSection title={t('desktopCards.listTitle')}>
             {state.status === 'failed' ? (
               <div className="personal-overview__catalog-status" role="status">
@@ -157,7 +158,10 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
             ) : state.status === 'loading' ? (
               <p className="personal-overview__catalog-empty" role="status">{t('desktopCards.loading')}</p>
             ) : cards.length === 0 ? (
-              <p className="personal-overview__catalog-empty">{t('desktopCards.empty')}</p>
+              <div className="overview-desktop-cards__empty">
+                <p className="personal-overview__catalog-empty">{t('desktopCards.empty')}</p>
+                <p className="personal-overview__catalog-empty">{t('desktopCards.emptyHint')}</p>
+              </div>
             ) : (
               <ul className="overview-desktop-cards" data-testid="personal-overview-desktop-card-list">
                 {cards.map(card => {

@@ -186,15 +186,29 @@ describe('WorkspaceListSection layout styles', () => {
     );
   });
 
-  it('uses distinct disclosure icons for collapsed and expanded session groups', () => {
+  it('keeps the project icon visible on hover and exposes the disclosure state', () => {
     const source = readWorkspaceItemSource();
     const stylesheet = readWorkspaceListStylesheet();
 
-    expect(source).toContain(
-      "const sessionDisclosureIcon = sessionsCollapsed ? 'chevron-right' : 'chevron-down';",
-    );
-    expect(source.match(/<Icon name=\{sessionDisclosureIcon\} size="sm" \/>/g)).toHaveLength(1);
+    expect(source).toContain('aria-expanded={!sessionsCollapsed}');
+    expect(source).not.toContain('workspace-item-icon-toggle');
+    expect(stylesheet).not.toContain('workspace-item-icon-default');
+    expect(stylesheet).not.toContain('workspace-item-icon-toggle');
     expect(stylesheet).not.toContain('&.is-collapsed svg');
+  });
+
+  it('animates the project session region while keeping collapsed sessions inert', () => {
+    const source = readWorkspaceItemSource();
+    const stylesheet = readWorkspaceListStylesheet();
+    const projectSessions = extractBlock(stylesheet, '&__workspace-item-sessions--project');
+    const inner = extractBlock(stylesheet, '&__workspace-item-sessions-inner');
+
+    expect(source).toContain('inert: sessionsCollapsed ?');
+    expect(source).toContain('isVisible={!sessionsCollapsed}');
+    expect(projectSessions).toContain('grid-template-rows: 1fr;');
+    expect(projectSessions).toContain('grid-template-rows: 0fr;');
+    expect(projectSessions).toContain('grid-template-rows var(--openbitfun-motion-duration-normal)');
+    expect(inner).toContain('min-block-size: 0;');
   });
 
   it('keeps remote workspace directory and host metadata on one row with the status dot first', () => {
@@ -266,8 +280,8 @@ describe('WorkspaceListSection layout styles', () => {
     const iconSource = readFileSync(fileURLToPath(new URL('../../../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
 
     expect(itemSource).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
-    expect(itemSource).toContain('<WorkspaceIcon workspace={workspace} />');
-    expect(iconSource).toContain('projectGlyphs[glyph] : remote ? Server : Folder');
+    expect(itemSource).toContain('<WorkspaceIcon workspace={workspace} expanded={!sessionsCollapsed} />');
+    expect(iconSource).toContain('customGlyph ?? (remote ? Server : Folder)');
     expect(iconSource).toContain('<Icon glyph={artwork} size="sm"');
     expect(itemSource).not.toContain('SessionGroup');
     expect(listSource).not.toContain('nav.sessions.viewMenu.grouping.all');

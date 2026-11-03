@@ -190,20 +190,6 @@
     transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
                 background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
                 box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-
-
-    &:hover {
-      .openbitfun-nav-panel__workspace-item-icon-default {
-        opacity: 0;
-        transform: scale(0.7);
-      }
-
-      .openbitfun-nav-panel__workspace-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
   }
 
   &__workspace-item:not(.is-active) &__workspace-item-card {
@@ -242,16 +228,6 @@
 
     &:hover {
       background: color-mix(in srgb, var(--openbitfun-color-action-neutral-surface-hover) 60%, transparent);
-
-      .openbitfun-nav-panel__workspace-item-icon-default {
-        opacity: 0;
-        transform: scale(0.7);
-      }
-
-      .openbitfun-nav-panel__workspace-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
     }
   }
 
@@ -358,22 +334,9 @@
       opacity: 1;
       transform: scale(1);
     }
-
-    .openbitfun-nav-panel__workspace-item-icon-toggle {
-      position: absolute;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      inset: 0;
-      opacity: 0;
-      transform: scale(0.7);
-      color: var(--openbitfun-color-content-primary);
-
-    }
   }
 
   &__workspace-item-icon {
-    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -384,28 +347,6 @@
     /* The row color already communicates inactive, hover, and active states.
      * Compact one-pixel icon strokes must not be attenuated a second time. */
     opacity: 1;
-  }
-
-  &__workspace-item-icon-default,
-  &__workspace-item-icon-toggle {
-    position: absolute;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-                transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-  }
-
-  &__workspace-item-icon-default {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  &__workspace-item-icon-toggle {
-    opacity: 0;
-    transform: scale(0.7);
-    color: inherit;
-
   }
 
   &__workspace-item-label {
@@ -934,15 +875,6 @@
     min-width: 0;
     max-width: 100%;
     overflow-x: clip;
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-    opacity: 1;
-
-    &.is-collapsed {
-      max-height: 0;
-      opacity: 0;
-      overflow: hidden;
-      pointer-events: none;
-    }
 
     .openbitfun-nav-panel__inline-list {
       // Let the row own the full selection surface; indent only its content below.
@@ -963,6 +895,31 @@
     .openbitfun-nav-panel__inline-empty {
       padding-left: var(--openbitfun-space-1);
     }
+  }
+
+  &__workspace-item-sessions--project {
+    display: grid;
+    grid-template-rows: 1fr;
+    overflow: clip;
+    opacity: 1;
+    transition:
+      grid-template-rows var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard),
+      opacity var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-standard);
+
+    &.is-collapsed {
+      grid-template-rows: 0fr;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  &__workspace-item-sessions-inner {
+    min-block-size: 0;
+    min-inline-size: 0;
   }
 
   &__workspace-drop-target {
@@ -1294,10 +1251,6 @@
     transition:
       background 120ms ease,
       color 120ms ease;
-  }
-
-  &__workspace-item-sessions {
-    transition: none;
   }
 
   &__workspace-item-menu-popover {

@@ -95,7 +95,7 @@ describe('navigation icon integration', () => {
     const assistantStart = source.indexOf('openbitfun-nav-panel__assistant-item-avatar');
     const assistantEnd = source.indexOf('</span>', assistantStart);
     const assistantMarkup = source.slice(assistantStart, assistantEnd);
-    const workspaceStart = source.indexOf('openbitfun-nav-panel__workspace-item-icon-default');
+    const workspaceStart = source.indexOf('className="openbitfun-nav-panel__workspace-item-icon"');
     const workspaceEnd = source.indexOf('</span>', workspaceStart);
     const workspaceMarkup = source.slice(workspaceStart, workspaceEnd);
 
@@ -104,9 +104,8 @@ describe('navigation icon integration', () => {
     expect(assistantMarkup).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
     expect(assistantMarkup).not.toContain('SessionGroupAssistant');
 
-    expect(workspaceMarkup).toContain('<WorkspaceIcon workspace={workspace} />');
-    const renderer = readFileSync(fileURLToPath(new URL('../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
-    expect(renderer).toContain('remote ? Server : Folder');
+    expect(workspaceMarkup).toContain('<WorkspaceIcon workspace={workspace} expanded={!sessionsCollapsed} />');
     expect(workspaceMarkup).not.toContain('SessionGroup');
+    expect(source.match(/leading=\{<Icon name="folder-open" size="sm" \/>\}\s+onClick=\{handleOpenFiles\}/g)).toHaveLength(2);
   });
 });

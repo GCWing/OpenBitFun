@@ -155,7 +155,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   const [assistantHistoryOpen, setAssistantHistoryOpen] = useState(false);
   const assistantHistoryId = useId();
   const openingAssistantRef = useRef(false);
-  const sessionDisclosureIcon = sessionsCollapsed ? 'chevron-right' : 'chevron-down';
   const collapseAllRequestId = useWorkspaceSessionViewStore(state => state.collapseAllRequestId);
   const [searchIndexModalOpen, setSearchIndexModalOpen] = useState(false);
   const [scheduledJobsModalOpen, setScheduledJobsModalOpen] = useState(false);
@@ -938,7 +937,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 data-workspace-id={workspace.id}
               >
                 <MenuItem
-                  leading={<Icon name="folder" size="sm" />}
+                  leading={<Icon name="folder-open" size="sm" />}
                   onClick={handleOpenFiles}
                   data-testid="nav-workspace-menu-open-directory"
                 >
@@ -1126,12 +1125,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
           data-workspace-id={workspace.id}
         >
           <span className="openbitfun-nav-panel__workspace-item-icon" data-openbitfun-product-component="workspace-item" data-openbitfun-product-part="icon" aria-hidden="true">
-            <span className="openbitfun-nav-panel__workspace-item-icon-default">
-              <WorkspaceIcon workspace={workspace} />
-            </span>
-            <span className="openbitfun-nav-panel__workspace-item-icon-toggle">
-              <Icon name={sessionDisclosureIcon} size="sm" />
-            </span>
+            <WorkspaceIcon workspace={workspace} expanded={!sessionsCollapsed} />
           </span>
         </button>
         <div className="openbitfun-nav-panel__workspace-item-name-cluster">
@@ -1391,7 +1385,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 data-workspace-id={workspace.id}
               >
                 <MenuItem
-                  leading={<Icon name="folder" size="sm" />}
+                  leading={<Icon name="folder-open" size="sm" />}
                   onClick={handleOpenFiles}
                   data-testid="nav-workspace-menu-open-directory"
                 >
@@ -1482,17 +1476,21 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       <div
         data-openbitfun-product-component="workspace-item"
         data-openbitfun-product-part="sessions"
-        className={`openbitfun-nav-panel__workspace-item-sessions${sessionsCollapsed ? ' is-collapsed' : ''}`}
+        className={`openbitfun-nav-panel__workspace-item-sessions openbitfun-nav-panel__workspace-item-sessions--project${sessionsCollapsed ? ' is-collapsed' : ''}`}
+        {...{ inert: sessionsCollapsed ? '' : undefined }}
+        aria-hidden={sessionsCollapsed || undefined}
         data-testid="nav-workspace-session-region"
         data-workspace-id={workspace.id}
       >
-        <SessionsSection
-          workspaceId={workspace.id}
-          workspacePath={workspace.rootPath}
-          isActiveWorkspace={isActive}
-          isVisible={!sessionsCollapsed}
-          useWorkspaceViewPreferences
-        />
+        <div className="openbitfun-nav-panel__workspace-item-sessions-inner">
+          <SessionsSection
+            workspaceId={workspace.id}
+            workspacePath={workspace.rootPath}
+            isActiveWorkspace={isActive}
+            isVisible={!sessionsCollapsed}
+            useWorkspaceViewPreferences
+          />
+        </div>
       </div>
 
       <InputDialog

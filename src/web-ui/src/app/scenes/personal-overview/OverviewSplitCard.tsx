@@ -9,11 +9,19 @@ interface PaneContentProps {
   children?: ReactNode;
 }
 
-function PaneContent({ title, value, description, children }: PaneContentProps) {
-  return <>
-    <OverflowText className="overview-split-card__title">{title}</OverflowText>
+type SectionContentProps = PaneContentProps & { centerSummary?: boolean };
+
+function PaneContent({ title, value, description, children, centerSummary }: SectionContentProps) {
+  const summary = <>
     {value !== undefined && <span className="overview-split-card__value">{value}</span>}
     {description && <span className="overview-split-card__description">{description}</span>}
+  </>;
+
+  return <>
+    <OverflowText className="overview-split-card__title">{title}</OverflowText>
+    {centerSummary ? (
+      <div className="overview-split-card__content overview-split-card__content--summary">{summary}</div>
+    ) : summary}
     {children && <div className="overview-split-card__content">{children}</div>}
   </>;
 }
@@ -31,6 +39,6 @@ export function OverviewSplitCardAction({ title, value, description, children, .
   </button>;
 }
 
-export function OverviewSplitCardSection(props: PaneContentProps) {
+export function OverviewSplitCardSection(props: SectionContentProps) {
   return <div className="overview-split-card__pane"><PaneContent {...props} /></div>;
 }

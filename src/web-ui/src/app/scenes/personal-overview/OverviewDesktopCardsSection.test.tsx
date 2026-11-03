@@ -230,7 +230,11 @@ it('offers retry after a failed read and opens the desktop card settings section
   await act(async () => {
     [...container.querySelectorAll('button')].find(entry => entry.textContent === 'retry')!.click();
   });
-  expect(container.textContent).toContain('desktopCards.empty');
+  const emptyStateLines = container.querySelectorAll('.overview-desktop-cards__empty > p');
+  expect(Array.from(emptyStateLines, line => line.textContent)).toEqual([
+    'desktopCards.empty',
+    'desktopCards.emptyHint',
+  ]);
 
   await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="personal-overview-desktop-card-settings"]')!.click());
   expect(mocks.openDestination).toHaveBeenCalledWith({ pageId: 'application.pet', sectionId: 'desktop-cards' });

@@ -14,7 +14,9 @@ export function ProjectResourceSummary({ title, value, description, listTitle, b
   return <div data-openbitfun-scene="project-resources" data-openbitfun-part="summary">
     <Card appearance="subtle" radius="lg" clip>
       <div className="project-resource-summary">
-        <button type="button" className="project-resource-summary__pane project-resource-summary__pane--action" onClick={onOpen} aria-haspopup="dialog" data-overflow-trigger>
+        <button type="button"
+          className={`project-resource-summary__pane project-resource-summary__pane--action${listTitle ? '' : ' project-resource-summary__pane--centered'}`}
+          onClick={onOpen} aria-haspopup="dialog" data-overflow-trigger>
           <OverflowText className="project-resource-summary__title">{title}</OverflowText>
           <span className="project-resource-summary__value">{value}</span>
           {description && <span className="project-resource-summary__description">{description}</span>}
