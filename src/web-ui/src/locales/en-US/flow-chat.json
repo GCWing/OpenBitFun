@@ -1836,7 +1836,7 @@
       "ttft": "Time to first token",
       "ttftValue": "TTFT {{value}}",
       "ttftBasis": "Request start to the first text, thinking or tool output of the first model call in this turn. For retried calls, this measures the accepted attempt.",
-      "rateBasis": "Output tokens divided by the sum of each model call’s time from first effective output to end of stream, excluding TTFT and tool execution; speed levels change at 15, 40 and 80 tokens/s",
+      "rateBasis": "Output tokens divided by the sum of each model call’s request-to-completion time, including TTFT and excluding tool execution; speed levels change at 15, 40 and 80 tokens/s",
       "slow": "Slow",
       "normal": "Normal",
       "fast": "Fast",

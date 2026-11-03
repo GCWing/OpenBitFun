@@ -647,6 +647,7 @@ describe('sessionToVirtualItems explore grouping', () => {
         modelRounds: [makeRound({
           id: 'round-with-answer',
           items: [makeTextItem('text-final', 'Here is the answer.')],
+          durationMs: 1500,
           streamDurationMs: 1200,
           firstChunkMs: 20,
           firstVisibleOutputMs: 200,
@@ -671,7 +672,7 @@ describe('sessionToVirtualItems explore grouping', () => {
       turnStartedAt: 900,
       turnEndedAt: 2400,
       turnDurationMs: 1500,
-      turnOutputDurationMs: 1000,
+      turnOutputDurationMs: 1500,
       turnTtftMs: 350,
       turnTokenUsage: {
         inputTokens: 1200,

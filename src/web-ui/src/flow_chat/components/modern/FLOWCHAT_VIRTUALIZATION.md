@@ -169,12 +169,12 @@ for the first model call (the accepted attempt after a retry). Text, thinking an
 tool output count as effective output; metadata-only packets do not. The host
 reports this optional duration, so controller clock skew and event delivery
 latency do not affect it. The speed levels use output tokens divided by the sum
-of each call's first-effective-output-to-stream-end time, with thresholds at 15,
-40 and 80 tokens/s disclosed in the Tooltip. HTTP setup, TTFT, tool execution and
-post-stream usage persistence are excluded. Missing or inconsistent timing in
-any model call, or retries whose earlier attempt timing is unavailable, omit speed
-rather than substituting turn wall time. Negative-index controller setup/audit
-rows are presentation only and do not participate in either metric.
+of each call's request-to-completion time, including TTFT but excluding tool
+execution, with thresholds at 15, 40 and 80 tokens/s disclosed in the Tooltip.
+Missing or inconsistent timing in any model call, or retries whose earlier
+attempt timing is unavailable, omit speed rather than substituting partial turn
+time. Negative-index controller setup/audit rows are presentation only and do
+not participate in either metric.
 Legacy records omit unknown TTFT;
 reported zero remains valid. Timing survives the normal history save/load path. Total usage and the cache ring form one unit,
 hidden only when both values are missing. If usage is known but the cache ratio
