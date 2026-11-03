@@ -359,18 +359,18 @@ pub async fn remote_remove(
     if recursive {
         remote_fs.remove_dir_all(&connection_id, &path).await
     } else {
-        // Check if it's a directory by trying to read it
-        let entries = remote_fs.read_dir(&connection_id, &path).await;
-        match entries {
-            Ok(_) => {
-                // It's a directory, but non-recursive remove of non-empty dir
-                // Try to remove it anyway (will fail if not empty)
-                remote_fs.remove_dir_all(&connection_id, &path).await
-            }
-            Err(_) => {
-                // Not a directory or empty, remove as file
-                remote_fs.remove_file(&connection_id, &path).await
-            }
+        // A non-recursive request must never delete directory contents. Use
+        // no-follow metadata so directory links are unlinked as files, and
+        // preserve metadata errors instead of guessing the path's type.
+        let entry = remote_fs
+            .symlink_stat(&connection_id, &path)
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| format!("Remote path does not exist: {path}"))?;
+        if entry.is_dir && !entry.is_symlink {
+            remote_fs.remove_dir(&connection_id, &path).await
+        } else {
+            remote_fs.remove_file(&connection_id, &path).await
         }
     }
     .map_err(|e| e.to_string())
