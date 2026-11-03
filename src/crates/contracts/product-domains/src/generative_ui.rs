@@ -44,6 +44,14 @@ pub fn generation_schema_for_profile(profile: &str) -> Result<Value, String> {
         branch["properties"].get("createSurface").is_some()
             || branch["properties"].get("updateDataModel").is_some()
     });
+    if let Some(message) = messages[0].as_object_mut() {
+        message.insert(
+            "description".into(),
+            Value::String(
+                "One protocol message object. Keep messages as a JSON array; never serialize this array into a string.".into(),
+            ),
+        );
+    }
     let create = &mut messages[0]["properties"]["createSurface"];
     create["properties"]["template"]["enum"] = Value::Array(selected.clone());
     let selected_library_ids = selected
@@ -69,7 +77,7 @@ pub fn generation_schema_for_profile(profile: &str) -> Result<Value, String> {
     create["properties"]["designSpec"]["properties"]["revision"] =
         serde_json::json!({"const": design_spec["revision"]});
     schema["description"] = serde_json::json!(format!(
-        "Generate the openbitfun.genui.v1 protocol for the selected GenUI profile. The GenerativeUI tool receives a JSON protocol object; when createSurface.source.kind is openui-lang, source.content must contain the raw OpenUI Lang program. The profile's official OpenUI lang-core rules, component signatures and worked examples are supplied in the system prompt. Selected adapter collection: {profile}; allowed createSurface.template: {}; selected design specification {design_spec_id}: {}. New applications must send a complete source document in createSurface.source and may send updateDataModel for initial values.",
+        "Generate the openbitfun.genui.v1 protocol for the selected GenUI profile. The GenerativeUI tool receives a JSON protocol object and messages must remain a JSON array of message objects, never a JSON-encoded string. When createSurface.source.kind is openui-lang, source.content must contain the raw OpenUI Lang program. The profile's official OpenUI lang-core rules, component signatures and worked examples are supplied in the system prompt. Selected adapter collection: {profile}; allowed createSurface.template: {}; selected design specification {design_spec_id}: {}. New applications must send a complete source document in createSurface.source and may send updateDataModel for initial values.",
         selected[0],
         design_spec,
     ));
@@ -458,6 +466,12 @@ mod tests {
             }
             let schema_text = schema["description"].as_str().unwrap();
             assert!(schema_text.contains("raw OpenUI Lang program"));
+            assert!(schema_text.contains("messages must remain a JSON array"));
+            assert!(
+                schema["properties"]["messages"]["items"]["anyOf"][0]["description"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("never serialize this array into a string"))
+            );
             assert!(schema_text.contains("official OpenUI lang-core rules"));
             assert!(schema_text.contains("complete source document"));
             assert!(!schema_text.contains("updateComponents"));

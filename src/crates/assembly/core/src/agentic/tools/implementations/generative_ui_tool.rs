@@ -69,7 +69,7 @@ impl Tool for GenerativeUITool {
                 }
             }
         }
-        schema["description"] = json!("Stream an OpenUI Lang or HTML document in createSurface.source. OpenUI statements may render before the enclosing arguments close; updateDataModel is only for initial values. Source is the only accepted application representation and final delivery still requires validation. The active profile's official OpenUI authoring prompt is supplied as a scoped system instruction.");
+        schema["description"] = json!("Stream an OpenUI Lang or HTML document in createSurface.source. Keep messages as a JSON array of message objects; never serialize the array into a string. OpenUI statements may render before the enclosing arguments close; updateDataModel is only for initial values. Source is the only accepted application representation and final delivery still requires validation. The active profile's official OpenUI authoring prompt is supplied as a scoped system instruction.");
         schema
     }
     async fn input_schema_for_model(&self) -> Value {
