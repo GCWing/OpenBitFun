@@ -393,6 +393,7 @@ impl DesktopSessionApplication {
         limit: usize,
         session_ids: Option<&[String]>,
         query: Option<&openbitfun_services_core::session::page::SessionCatalogQuery>,
+        refresh_external_discovery: bool,
     ) -> DesktopSessionApplicationResult<SessionMetadataPage> {
         let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
@@ -405,6 +406,7 @@ impl DesktopSessionApplication {
                 limit,
                 session_ids,
                 query.filter(|query| query.workspace_id == scope.workspace_id),
+                refresh_external_discovery,
             )
             .await
             .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))?;

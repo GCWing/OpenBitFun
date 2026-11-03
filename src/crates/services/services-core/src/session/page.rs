@@ -61,6 +61,9 @@ pub struct SessionMetadataPage {
     pub discovery_diagnostics: Vec<SessionDiscoveryDiagnostic>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub discovery_pending: bool,
+    /// Acknowledges an explicit discovery refresh completed before this page.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub discovery_refreshed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_query: Option<SessionCatalogQuery>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,6 +109,7 @@ pub fn empty_session_metadata_page() -> SessionMetadataPage {
         discovery_warnings: Vec::new(),
         discovery_diagnostics: Vec::new(),
         discovery_pending: false,
+        discovery_refreshed: false,
         catalog_query: None,
         catalog_revision: None,
         catalog_reset: false,
@@ -292,6 +296,7 @@ impl PreparedSessionCatalog {
             discovery_warnings: Vec::new(),
             discovery_diagnostics: Vec::new(),
             discovery_pending: false,
+            discovery_refreshed: false,
             catalog_query: query.cloned(),
             catalog_revision: self.revision.clone(),
             catalog_reset,
@@ -481,6 +486,17 @@ mod tests {
         assert!(page.discovery_warnings.is_empty());
         assert!(page.discovery_diagnostics.is_empty());
         assert_eq!(serde_json::to_value(page).unwrap(), legacy);
+    }
+
+    #[test]
+    fn explicit_discovery_refresh_acknowledgement_round_trips() {
+        let mut page = empty_session_metadata_page();
+        page.discovery_refreshed = true;
+        let wire = serde_json::to_value(page).unwrap();
+        assert_eq!(wire["discoveryRefreshed"], true);
+        let restored: SessionMetadataPage = serde_json::from_value(wire).unwrap();
+        assert!(restored.discovery_refreshed);
+        assert!(!restored.discovery_pending);
     }
 
     #[test]

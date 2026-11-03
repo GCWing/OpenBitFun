@@ -12,6 +12,7 @@ use openbitfun_services_core::session::SessionDiscoveryDiagnostic;
 struct DiscoveryState {
     enabled_sources: Option<Vec<String>>,
     activation_revision: Option<i64>,
+    changed: Arc<tokio::sync::Notify>,
     snapshot: DiscoverySnapshot,
     cancelled: Arc<AtomicBool>,
     worker: Arc<tokio::sync::Mutex<()>>,
@@ -57,8 +58,8 @@ async fn enabled_sources() -> Result<Vec<String>, String> {
 }
 
 /// Opening a workspace explicitly refreshes discovery. Metadata reads also run
-/// this once after startup (including restored background workspace rows), and
-/// after the user changes a source toggle. Concurrent readers share one scan.
+/// this once after startup and source-toggle changes. Explicit reveals refresh
+/// a completed snapshot; concurrent readers share a running scan.
 pub async fn discover_workspace(workspace: &WorkspaceInfo, refresh: bool) -> DiscoverySnapshot {
     let enabled = match enabled_sources().await {
         Ok(enabled) => enabled,
@@ -124,6 +125,7 @@ where
         state.enabled_sources = Some(enabled);
         state.activation_revision = activation_revision;
         state.snapshot = DiscoverySnapshot::default();
+        state.changed.notify_waiters();
         return state.snapshot.clone();
     }
     if state.enabled_sources.as_ref() == Some(&enabled)
@@ -159,6 +161,7 @@ where
                 warnings: result.warnings,
                 diagnostics: result.diagnostics,
             };
+            state.changed.notify_waiters();
         }
     });
     state.snapshot.clone()
@@ -168,6 +171,16 @@ where
 /// remote workspace's synthetic local storage directory is never treated as a
 /// source directory and cannot cause a scan of controller-side history.
 pub async fn discover_for_storage_path(storage_path: &Path) -> DiscoverySnapshot {
+    discovery_for_storage_path(storage_path, false).await
+}
+
+/// A user reveal performs one refresh and waits for host-owned work. Completion
+/// wakes the request through a notification, never through timed status reads.
+pub async fn refresh_for_storage_path(storage_path: &Path) -> DiscoverySnapshot {
+    discovery_for_storage_path(storage_path, true).await
+}
+
+async fn discovery_for_storage_path(storage_path: &Path, refresh: bool) -> DiscoverySnapshot {
     let Some(service) = crate::service::workspace::get_global_workspace_service() else {
         return DiscoverySnapshot::default();
     };
@@ -176,7 +189,11 @@ pub async fn discover_for_storage_path(storage_path: &Path) -> DiscoverySnapshot
         crate::service::WorkspaceRuntimeService::new(crate::infrastructure::get_path_manager_arc());
     let mut snapshot = DiscoverySnapshot::default();
     for workspace in workspaces_for_storage_path(storage_path, &workspaces, &runtime) {
-        let discovery = discover_workspace(workspace, false).await;
+        let mut discovery = discover_workspace(workspace, refresh).await;
+        if refresh && discovery.pending {
+            let key = format!("{}:{}", workspace.id, normalized_path(&workspace.root_path));
+            discovery = wait_for_discovery(&key).await;
+        }
         snapshot.pending |= discovery.pending;
         snapshot.warnings.extend(discovery.warnings);
         snapshot.diagnostics.extend(discovery.diagnostics);
@@ -192,6 +209,27 @@ pub async fn discover_for_storage_path(storage_path: &Path) -> DiscoverySnapshot
         .diagnostics
         .dedup_by(|left, right| left.ecosystem_id == right.ecosystem_id && left.code == right.code);
     snapshot
+}
+
+async fn wait_for_discovery(key: &str) -> DiscoverySnapshot {
+    let lock = DISCOVERY
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .get(key)
+        .expect("pending discovery has a state")
+        .clone();
+    let changed = lock.lock().await.changed.clone();
+    loop {
+        let notified = changed.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        let state = lock.lock().await;
+        if !state.snapshot.pending {
+            return state.snapshot.clone();
+        }
+        drop(state);
+        notified.await;
+    }
 }
 
 fn workspaces_for_storage_path<'a>(
@@ -567,6 +605,86 @@ pub(super) mod tests {
         .await
         .unwrap();
         assert_eq!(final_snapshot.warnings, vec!["fixture warning"]);
+    }
+
+    #[tokio::test]
+    async fn explicit_refresh_waits_for_notification_and_rescans_completed_work() {
+        let key = Uuid::new_v4().to_string();
+        let (release, wait) = tokio::sync::oneshot::channel();
+        schedule_discovery(
+            key.clone(),
+            vec!["codex".into()],
+            false,
+            None,
+            |_| async move {
+                wait.await.unwrap();
+                DiscoveryResult {
+                    warnings: vec!["original catalog".into()],
+                    ..Default::default()
+                }
+            },
+        )
+        .await;
+        let waiter_key = key.clone();
+        let waiter = tokio::spawn(async move { wait_for_discovery(&waiter_key).await });
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished());
+        let shared = schedule_discovery(key.clone(), vec!["codex".into()], true, None, |_| async {
+            panic!("A reveal must share the existing worker")
+        })
+        .await;
+        assert!(shared.pending);
+        release.send(()).unwrap();
+        let completed = tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!completed.pending);
+        assert_eq!(completed.warnings, vec!["original catalog"]);
+        // A completion before subscription must also return immediately.
+        assert!(!wait_for_discovery(&key).await.pending);
+        schedule_discovery(key.clone(), vec!["codex".into()], true, None, |_| async {
+            DiscoveryResult {
+                warnings: vec!["new session catalog".into()],
+                ..Default::default()
+            }
+        })
+        .await;
+        let refreshed = tokio::time::timeout(Duration::from_secs(2), wait_for_discovery(&key))
+            .await
+            .unwrap();
+        assert_eq!(refreshed.warnings, vec!["new session catalog"]);
+    }
+
+    #[tokio::test]
+    async fn disabling_sources_wakes_an_explicit_refresh_waiter() {
+        let key = Uuid::new_v4().to_string();
+        let (release, wait) = tokio::sync::oneshot::channel();
+        schedule_discovery(
+            key.clone(),
+            vec!["codex".into()],
+            false,
+            None,
+            |_| async move {
+                let _ = wait.await;
+                DiscoveryResult::default()
+            },
+        )
+        .await;
+        let waiter_key = key.clone();
+        let waiter = tokio::spawn(async move { wait_for_discovery(&waiter_key).await });
+        tokio::task::yield_now().await;
+        schedule_discovery(key, vec![], false, None, |_| async {
+            panic!("Disabled sources must not be scanned")
+        })
+        .await;
+        let disabled = tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!disabled.pending);
+        assert!(disabled.warnings.is_empty());
+        let _ = release.send(());
     }
 
     #[tokio::test]

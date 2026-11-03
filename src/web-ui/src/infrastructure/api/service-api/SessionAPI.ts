@@ -43,6 +43,8 @@ export interface SessionMetadataPageRequest {
   /** Read only these summaries (max 128), without returning metadata rows. */
   sessionIds?: string[];
   query?: SessionCatalogQuery;
+  /** Explicitly refresh sources and wait for that scan in this request. */
+  refreshExternalDiscovery?: boolean;
 }
 
 export interface SessionMetadataPage {
@@ -57,6 +59,7 @@ export interface SessionMetadataPage {
   /** Structured host diagnostics for clients that can localize each issue. */
   discoveryDiagnostics?: SessionDiscoveryDiagnostic[];
   discoveryPending?: boolean;
+  discoveryRefreshed?: boolean;
   /** Present only when the host applied this complete query before paging. */
   catalogQuery?: SessionCatalogQuery;
   catalogRevision?: string;
@@ -455,6 +458,7 @@ export class SessionAPI {
           ...(request.cursor ? { cursor: request.cursor } : {}),
           ...(request.sessionIds ? { session_ids: request.sessionIds } : {}),
           ...(request.query ? { query: request.query } : {}),
+          ...(request.refreshExternalDiscovery ? { refresh_external_discovery: true } : {}),
         }
       }));
     } catch (error) {

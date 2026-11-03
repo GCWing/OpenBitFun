@@ -318,6 +318,16 @@ pub(crate) async fn list_persisted_sessions_page(
         .transpose()
         .map_err(|error| format!("Invalid session activity ids: {error}"))?;
     let query = session_catalog_query(request)?;
+    let refresh_external_discovery = request
+        .get("refresh_external_discovery")
+        .or_else(|| request.get("refreshExternalDiscovery"))
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or("Invalid external discovery refresh flag")
+        })
+        .transpose()?
+        .unwrap_or(false);
     let page = state
         .compatibility
         .list_persisted_sessions_page_with_activity_and_query(
@@ -327,6 +337,7 @@ pub(crate) async fn list_persisted_sessions_page(
             limit,
             session_ids.as_deref(),
             query.as_ref(),
+            refresh_external_discovery,
         )
         .await
         .map_err(|e| format!("Failed to list persisted session page: {e}"))?;
