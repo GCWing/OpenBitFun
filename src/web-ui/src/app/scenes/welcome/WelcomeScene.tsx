@@ -7,6 +7,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { isReducedMotionPreferred } from '@/shared/utils/motionPreference';
 import { OpenBitFunMark } from '@openbitfun/ui/brand';
+import { isStartupOverlayPresent } from '@/app/startup/startupOverlay';
+import { STARTUP_OVERLAY_HIDDEN_EVENT } from '@/app/startup/startupSignals';
 import './WelcomeScene.scss';
 
 const TYPE_MS = 100;
@@ -19,6 +21,8 @@ const WelcomeScene: React.FC = () => {
   const { t } = useI18n('common');
   const [text, setText] = useState('');
   const [reducedMotion, setReducedMotion] = useState(isReducedMotionPreferred);
+  const [startupEntry] = useState(isStartupOverlayPresent);
+  const [startupPending, setStartupPending] = useState(startupEntry);
   const impossible = t('welcomeScene.phrases.impossible');
   const dreams = t('welcomeScene.phrases.dreams');
   const your = t('welcomeScene.space.your');
@@ -41,6 +45,15 @@ const WelcomeScene: React.FC = () => {
   );
 
   useEffect(() => {
+    if (!startupPending) return;
+    const handleHandoff = () => setStartupPending(false);
+    window.addEventListener(STARTUP_OVERLAY_HIDDEN_EVENT, handleHandoff);
+    // The overlay may finish between this component's render and effect.
+    if (!isStartupOverlayPresent()) handleHandoff();
+    return () => window.removeEventListener(STARTUP_OVERLAY_HIDDEN_EVENT, handleHandoff);
+  }, [startupPending]);
+
+  useEffect(() => {
     const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     const handleMotionChange = () => setReducedMotion(isReducedMotionPreferred());
     media?.addEventListener('change', handleMotionChange);
@@ -48,7 +61,7 @@ const WelcomeScene: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (reducedMotion) return;
+    if (reducedMotion || startupPending) return;
 
     // Reset on locale changes; keep the full phrase, including punctuation, in the loop.
     const characters = phrases.map(phrase => Array.from(phrase));
@@ -90,7 +103,7 @@ const WelcomeScene: React.FC = () => {
       window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [phrases, reducedMotion]);
+  }, [phrases, reducedMotion, startupPending]);
 
   return (
     <section
@@ -98,6 +111,8 @@ const WelcomeScene: React.FC = () => {
       data-testid="welcome-scene"
       data-openbitfun-scene="welcome"
       data-openbitfun-part="root"
+      data-startup-entry={startupEntry ? '' : undefined}
+      data-startup-pending={startupPending ? '' : undefined}
       aria-labelledby="welcome-scene-title"
     >
       <div className="welcome-scene__content" data-openbitfun-scene="welcome" data-openbitfun-part="content">
@@ -116,11 +131,12 @@ const WelcomeScene: React.FC = () => {
               className="welcome-scene__logo"
               data-openbitfun-scene="welcome"
               data-openbitfun-part="logo"
+              data-startup-logo-target=""
               aria-hidden="true"
             >
               <OpenBitFunMark style={{ width: '100%', height: '100%' }} />
             </span>
-            <span className="welcome-scene__brand-name">
+            <span className="welcome-scene__brand-name" data-startup-reveal="">
               OpenBitFun{t('welcomeScene.space.separator')}
             </span>
           </h1>
@@ -128,6 +144,7 @@ const WelcomeScene: React.FC = () => {
             className="welcome-scene__tagline"
             data-openbitfun-scene="welcome"
             data-openbitfun-part="subtitle"
+            data-startup-reveal=""
             aria-label={phrases[YOUR_WORD_INDEX]}
           >
             <span className="welcome-scene__phrase-slot" aria-hidden="true">

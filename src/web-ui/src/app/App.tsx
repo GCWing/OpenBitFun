@@ -20,7 +20,6 @@ import { useDebugInspector } from '@/infrastructure/debug/useDebugInspector';
 import { useI18n } from '@/infrastructure/i18n';
 import { scheduleDeferredStartupSystems } from './startup/deferredStartupSystems';
 import { shouldScheduleDeferredStartupSystems } from './startup/deferredStartupGate';
-import { STARTUP_OVERLAY_HIDDEN_EVENT } from './startup/startupSignals';
 import {
   getStartupOverlayElapsedMs,
   hideStartupOverlay,
@@ -279,7 +278,6 @@ function App() {
           // The completed handoff still proves the layout and workspace mounted;
           // do not leave product control and customization waiting for a paint.
           releaseInteractiveShellReadyIfReady('startup-overlay-hidden', false);
-          window.dispatchEvent(new CustomEvent(STARTUP_OVERLAY_HIDDEN_EVENT));
         }
       });
     }, scheduledDelayMs);

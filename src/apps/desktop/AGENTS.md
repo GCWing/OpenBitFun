@@ -272,6 +272,25 @@ For peer system-info response compatibility, run
 `cargo test -p openbitfun-desktop --lib system_info_home_contract`.
 For window geometry recovery, legacy state compatibility, and snapshot persistence,
 run `cargo test -p openbitfun-desktop --lib window_state_support::tests`.
+For window resize layout scheduling, run
+`cargo check --locked -p openbitfun-desktop --no-default-features --lib` and
+`pnpm --dir src/web-ui exec vitest run src/app/layout/WindowResizeLayout.test.tsx src/infrastructure/runtime/windowResize.test.ts src/infrastructure/runtime/sceneBackdrop.test.ts src/app/workbench/WorkbenchLayout.test.tsx`.
+These checks cover bounded measurement batches, native completion, micro-adjustments,
+cancellation, older-host fallback and retained content. They do not establish native
+paint timing or live remote behavior. Resize completion stays on the local controller
+even in Peer Device Mode; it must not use the peer product transport.
+On macOS also run `node scripts/test-macos-window-resize.mjs`. It reproduces the
+old child-view size lag and verifies synchronous main-view geometry, fractional
+sizes and independent browser child bounds using unattached NSViews, without
+opening a window or controlling a browser. The host replaces Tauri's queued
+proportional resize owner only for the main frontend with AppKit autoresizing;
+do not apply this full-container policy to embedded browser views. The fixture
+also covers native scene background growth, zoom and invalid-payload fallback.
+Scene paint is below the main WebView and above the OS material; it receives the
+resolved opaque CSS background through a versioned controller-local event, with
+no native palette, capture or reveal timer. Transparent/image surfaces opt out.
+Run `pnpm run theme:color-audit:all` when changing this projection. The fixture
+does not measure WebKit paint latency; native visual verification remains manual.
 For main-window activation with embedded browsers, build Desktop and run
 `node tests/e2e/scripts/run-browser-window-activation.mjs` with completed frontend
 assets. It checks the native command shared by pet/bubble clicks with zero, one

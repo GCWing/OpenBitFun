@@ -3,6 +3,20 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Window resizing
+
+The main window keeps its content visible while resizing or maximizing. Continuous
+resizing briefly batches expensive transcript and terminal measurements, with
+regular updates during the drag. Single adjustments use normal live layout;
+macOS releases the batch as soon as the native drag ends. Conversations, draft
+text and editor views remain mounted, with no resize cover, logo or reveal animation.
+On macOS the main WebView follows its native container immediately, including
+when embedded browsers are open. Browser children retain their own bounds.
+The opaque scene background is also painted underneath the WebView by AppKit,
+so newly exposed edges retain the page color while WebKit catches up. The sidebar
+keeps its native material. Theme changes and sidebar geometry update this paint;
+translucent or image-backed scene surfaces retain their original composition.
+
 ## Model selection and smart routing
 
 **Release availability:** smart mode is not available in this release. The GUI

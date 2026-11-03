@@ -100,7 +100,8 @@ describe('startup performance contract', () => {
     const appSource = readSource('../App.tsx');
 
     expect(appSource).toContain('const MIN_SPLASH_MS = 650;');
-    expect(source).toContain('animation: openbitfun-startup-overlay-exit 0.24s ease-in-out both;');
+    expect(source).toContain('animation: openbitfun-startup-overlay-exit 0.2s ease-in-out both;');
+    expect(source).toContain('animation-duration: 0.12s;');
   });
 
   it('keeps editor and tool infrastructure out of the first startup module', () => {
@@ -300,7 +301,8 @@ describe('startup performance contract', () => {
       startupOverlayVisible: false,
     })).toBe(true);
     expect(source).toContain('shouldScheduleDeferredStartupSystems({ interactiveShellReady, startupOverlayVisible })');
-    expect(source).toContain('window.dispatchEvent(new CustomEvent(STARTUP_OVERLAY_HIDDEN_EVENT))');
+    // The overlay owner also signals error-recovery exits and deduplicates callers.
+    expect(readSource('./startupOverlay.ts')).toContain('window.dispatchEvent(new CustomEvent(STARTUP_OVERLAY_HIDDEN_EVENT))');
     expect(source).toContain('}, [interactiveShellReady, startupOverlayVisible]);');
   });
 
@@ -320,7 +322,7 @@ describe('startup performance contract', () => {
     expect(source).not.toMatch(/useCurrentModelConfig/);
     expect(source).not.toMatch(/from\s+['"]@\/infrastructure\/config\/services\/AIExperienceConfigService['"]/);
     expect(source).toContain('openbitfun:interactive-shell-ready');
-    expect(source).toContain('STARTUP_OVERLAY_HIDDEN_EVENT');
+    expect(source).toContain('hideStartupOverlay()');
   });
 
   it('keeps the heavy app layout out of the root startup module', () => {
