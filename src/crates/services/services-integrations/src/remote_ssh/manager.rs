@@ -6116,6 +6116,42 @@ impl SSHConnectionManager {
         .await
     }
 
+    /// Recursive deletion is a single operation on the effective SSH, Docker,
+    /// or WSL target. Never enumerate children across the transport boundary.
+    pub async fn remove_workspace_directory_all(
+        &self,
+        connection_id: &str,
+        path: &str,
+    ) -> anyhow::Result<()> {
+        // Expand only the home prefix. The general SFTP path resolver trims
+        // whitespace, which could select a different directory for deletion.
+        let path = if path == "~" || path.starts_with("~/") {
+            let home = self.resolve_sftp_path(connection_id, "~").await?;
+            format!("{}{}", home.trim_end_matches('/'), &path[1..])
+        } else {
+            path.to_owned()
+        };
+        let command = super::shell::remove_directory_command(&path)?;
+        let (_, stderr, status) = self
+            .execute_workspace_bytes(connection_id, &command)
+            .await
+            .map_err(|error| anyhow!("Failed to execute remote directory deletion: {error}"))?;
+        if status == -1 {
+            anyhow::bail!(
+                "Remote directory deletion returned no exit status; the host may have rejected command execution or disconnected"
+            );
+        }
+        if status != 0 {
+            anyhow::bail!(
+                "Failed to remove remote directory '{}': exit_status={} {}",
+                path,
+                status,
+                container_stderr_detail(&stderr)
+            );
+        }
+        Ok(())
+    }
+
     pub async fn container_remove(
         &self,
         connection_id: &str,
@@ -8240,6 +8276,40 @@ mod tests {
             file_service,
         );
         (manager, provider)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workspace_recursive_directory_delete_shell() {
+        use openbitfun_runtime_ports::WorkspaceFileSystem;
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let (_manager, provider) = shell_workspace_provider_fixture(temp.path()).await;
+        let target = temp.path().join("delete 'quoted' $(printf injected) ");
+        let keep = temp.path().join("keep");
+        std::fs::write(&keep, b"keep").unwrap();
+        std::fs::create_dir_all(target.join("nested")).unwrap();
+        for file in 0..100 {
+            std::fs::write(target.join("nested").join(file.to_string()), b"delete").unwrap();
+        }
+        symlink(&keep, target.join("outside-link")).unwrap();
+        assert!(provider
+            .remove_dir(target.to_str().unwrap(), false)
+            .await
+            .is_err());
+        assert!(target.join("nested/0").exists());
+        provider
+            .remove_dir(&format!("{}/", target.display()), true)
+            .await
+            .unwrap();
+        assert!(!target.exists());
+        assert_eq!(std::fs::read(&keep).unwrap(), b"keep");
+        let error = provider
+            .remove_dir(keep.to_str().unwrap(), true)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("not a directory"));
+        assert_eq!(std::fs::read(&keep).unwrap(), b"keep");
     }
 
     #[cfg(unix)]

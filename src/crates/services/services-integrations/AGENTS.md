@@ -187,6 +187,12 @@ and `OPENBITFUN_TEST_SFTP_SERVER` set. This runs real OpenSSH SFTP over loopback
 and the Docker command adapter against a local POSIX shell fixture; the latter
 does not establish real Docker-daemon or Windows WSL coverage.
 
+For recursive remote directory deletion, use the same package/features with
+`--lib recursive_directory_delete`. This covers one SSH exec with no per-file
+SFTP requests, literal filenames, symlink preservation, invalid targets and
+command rejection, plus the Docker command adapter against a local POSIX shell.
+It does not establish real Docker, Windows WSL, Peer Device or mobile coverage.
+
 For the remote Flashgrep distribution gate and retained protocol helpers, use:
 
 ```bash

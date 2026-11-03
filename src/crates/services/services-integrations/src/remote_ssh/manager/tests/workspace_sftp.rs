@@ -15,6 +15,10 @@ struct State {
     closed: AtomicUsize,
     live: AtomicUsize,
     channels: AtomicUsize,
+    #[cfg(unix)]
+    execs: AtomicUsize,
+    #[cfg(unix)]
+    reject_exec: AtomicBool,
     pause_open: AtomicBool,
     pause_read: AtomicBool,
     pause_dir: AtomicBool,
@@ -302,6 +306,37 @@ impl russh::server::Handler for SshServer {
         self.channels.insert(channel.id(), channel);
         Ok(true)
     }
+    #[cfg(unix)]
+    async fn exec_request(
+        &mut self,
+        id: russh::ChannelId,
+        command: &[u8],
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        self.state.execs.fetch_add(1, Ordering::SeqCst);
+        if self.state.reject_exec.load(Ordering::SeqCst) {
+            session.channel_failure(id);
+            session.close(id);
+            self.channels.remove(&id);
+            return Ok(());
+        }
+        session.channel_success(id);
+        let output = process_manager::create_tokio_command("/bin/sh")
+            .arg("-c")
+            .arg(std::str::from_utf8(command).unwrap())
+            .stdin(Stdio::null())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .unwrap();
+        session.data(id, russh::CryptoVec::from_slice(&output.stdout));
+        session.extended_data(id, 1, russh::CryptoVec::from_slice(&output.stderr));
+        session.exit_status_request(id, output.status.code().unwrap_or(1) as u32);
+        session.eof(id);
+        session.close(id);
+        self.channels.remove(&id);
+        Ok(())
+    }
     async fn subsystem_request(
         &mut self,
         id: russh::ChannelId,
@@ -383,6 +418,105 @@ impl russh::server::Handler for SshServer {
         tokio::spawn(russh_sftp::server::run(channel.into_stream(), handler));
         Ok(())
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn recursive_directory_delete_uses_one_exec_and_no_sftp() {
+    use std::os::unix::fs::symlink;
+    let f = Fixture::new().await;
+    let service = crate::remote_ssh::RemoteFileService::new(Arc::new(tokio::sync::RwLock::new(
+        Some(f.manager.as_ref().clone()),
+    )));
+    let root = f._dir.path();
+    let target = root.join("delete 'quoted'; $(printf injected) `printf injected` \\ \n ");
+    let outside = root.join("keep");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("sentinel"), b"keep").unwrap();
+    for directory in 0..10 {
+        let nested = target.join(format!("nested-{directory}"));
+        std::fs::create_dir_all(&nested).unwrap();
+        for file in 0..50 {
+            std::fs::write(nested.join(format!("file-{file}")), b"delete").unwrap();
+        }
+    }
+    std::fs::write(target.join(".hidden"), b"delete").unwrap();
+    symlink(&outside, target.join("outside-link")).unwrap();
+    symlink("missing", target.join("dangling-link")).unwrap();
+    service
+        .remove_dir_all("sftp-test", &format!("{}///", target.display()))
+        .await
+        .unwrap();
+    assert!(!target.exists());
+    assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"keep");
+    assert_eq!(f.state.execs.load(Ordering::SeqCst), 1);
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 0);
+
+    for (name, destination) in [
+        ("directory-link", outside.clone()),
+        ("broken-link", root.join("missing")),
+    ] {
+        let link = root.join(name);
+        symlink(destination, &link).unwrap();
+        service
+            .remove_dir_all("sftp-test", &format!("{}/", link.display()))
+            .await
+            .unwrap();
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"keep");
+    }
+    let error = service
+        .remove_dir_all("sftp-test", outside.join("sentinel").to_str().unwrap())
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("not a directory"));
+    assert_eq!(std::fs::read(outside.join("sentinel")).unwrap(), b"keep");
+    let error = service
+        .remove_dir_all("sftp-test", root.join("missing").to_str().unwrap())
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("does not exist"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn recursive_directory_delete_rejects_unsafe_paths_and_exec_failure() {
+    let f = Fixture::new().await;
+    let service = crate::remote_ssh::RemoteFileService::new(Arc::new(tokio::sync::RwLock::new(
+        Some(f.manager.as_ref().clone()),
+    )));
+    for path in [
+        "",
+        "/",
+        "///",
+        "relative",
+        "/tmp/.",
+        "/tmp/../",
+        "/tmp/invalid\0name",
+    ] {
+        assert!(
+            service.remove_dir_all("sftp-test", path).await.is_err(),
+            "{path:?}"
+        );
+    }
+    assert_eq!(f.state.execs.load(Ordering::SeqCst), 0);
+
+    let target = f._dir.path().join("must stay");
+    std::fs::create_dir(&target).unwrap();
+    std::fs::write(target.join("sentinel"), b"keep").unwrap();
+    f.state.reject_exec.store(true, Ordering::SeqCst);
+    let error = service
+        .remove_dir_all("sftp-test", target.to_str().unwrap())
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("no exit status"), "{error}");
+    assert_eq!(std::fs::read(target.join("sentinel")).unwrap(), b"keep");
+    assert_eq!(f.state.execs.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        f.state.channels.load(Ordering::SeqCst),
+        0,
+        "must not fall back to per-file SFTP deletion"
+    );
 }
 
 struct Fixture {
