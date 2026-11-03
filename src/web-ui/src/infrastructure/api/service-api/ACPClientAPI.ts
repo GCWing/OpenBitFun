@@ -234,9 +234,13 @@ export interface AcpPermissionRequestEvent {
 }
 
 const LOCAL_REQUIREMENT_CACHE_KEY = '__local__';
+export const ACP_REQUIREMENTS_INVALIDATED_EVENT = 'openbitfun:acp-requirements-invalidated';
 const CLIENT_LIST_CACHE_TTL_MS = 1000;
 const requirementProbeCache = new Map<string, AcpClientRequirementProbe[]>();
-const requirementProbeInFlight = new Map<string, Promise<AcpClientRequirementProbe[]>>();
+const requirementProbeInFlight = new Map<string, {
+  promise: Promise<AcpClientRequirementProbe[]>;
+  force: boolean;
+}>();
 
 export class ACPClientAPI {
   private static cacheScope = getActiveSurfaceScope();
@@ -253,9 +257,16 @@ export class ACPClientAPI {
     ACPClientAPI.clientListInFlight = null;
   }
 
-  private static invalidateRequirementProbeCache(): void {
+  private static invalidateRequirementProbeCache(notify = false): void {
     requirementProbeCache.clear();
     requirementProbeInFlight.clear();
+    if (notify) window.dispatchEvent(new Event(ACP_REQUIREMENTS_INVALIDATED_EVENT));
+  }
+
+  /** A new transport must not inherit a probe still running on the old one. */
+  static invalidateRemoteRequirementProbeCache(connectionId: string): void {
+    requirementProbeCache.delete(connectionId);
+    requirementProbeInFlight.delete(connectionId);
   }
 
   private static prepareCacheScope() {
@@ -273,7 +284,7 @@ export class ACPClientAPI {
     await api.invoke('initialize_acp_clients');
     scope.assertCurrent('publish ACP client changes');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-clients-changed'));
   }
 
@@ -314,8 +325,9 @@ export class ACPClientAPI {
     if (!options.force && requirementProbeCache.has(cacheKey)) {
       return requirementProbeCache.get(cacheKey) ?? [];
     }
-    if (!options.force && requirementProbeInFlight.has(cacheKey)) {
-      return requirementProbeInFlight.get(cacheKey)!;
+    const pending = requirementProbeInFlight.get(cacheKey);
+    if (pending && (!options.force || pending.force)) {
+      return pending.promise;
     }
 
     const request = options.remoteConnectionId
@@ -325,17 +337,21 @@ export class ACPClientAPI {
     const inFlight = api.invoke<AcpClientRequirementProbe[]>('probe_acp_client_requirements', { request })
       .then((probes) => {
         scope.assertCurrent('cache ACP client requirements');
-        requirementProbeCache.set(cacheKey, probes);
-        window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
+        // Config edits, reconnects and a newer forced probe retire the old
+        // request. Its result must not overwrite the current snapshot.
+        if (requirementProbeInFlight.get(cacheKey)?.promise === inFlight) {
+          requirementProbeCache.set(cacheKey, probes);
+          window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
+        }
         return probes;
       })
       .finally(() => {
-        if (requirementProbeInFlight.get(cacheKey) === inFlight) {
+        if (requirementProbeInFlight.get(cacheKey)?.promise === inFlight) {
           requirementProbeInFlight.delete(cacheKey);
         }
       });
 
-    requirementProbeInFlight.set(cacheKey, inFlight);
+    requirementProbeInFlight.set(cacheKey, { promise: inFlight, force: options.force === true });
     return inFlight;
   }
 
@@ -344,7 +360,7 @@ export class ACPClientAPI {
     await api.invoke('predownload_acp_client_adapter', { request });
     scope.assertCurrent('publish ACP client requirements');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
   }
 
@@ -353,7 +369,7 @@ export class ACPClientAPI {
     await api.invoke('install_acp_client_cli', { request });
     scope.assertCurrent('publish ACP client requirements');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-requirements-changed'));
   }
 
@@ -374,7 +390,7 @@ export class ACPClientAPI {
     await api.invoke('save_acp_json_config', { jsonConfig });
     scope.assertCurrent('publish ACP client changes');
     ACPClientAPI.invalidateClientListCache();
-    ACPClientAPI.invalidateRequirementProbeCache();
+    ACPClientAPI.invalidateRequirementProbeCache(true);
     window.dispatchEvent(new Event('openbitfun:acp-clients-changed'));
   }
 

@@ -503,37 +503,42 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     }
 
     let cancelled = false;
+    let requestId = 0;
     const remoteWorkspace = isRemoteWorkspace(workspace);
 
-    const loadAcpClients = async () => {
+    const loadAcpClients = async (refreshIfMissing = true) => {
+      const request = ++requestId;
       setAcpClients([]);
       setAcpClientsLoading(true);
       try {
         const clients = await loadWorkspaceAcpMenuClients({
           remoteWorkspace,
           remoteConnectionId: remoteWorkspace ? workspace.connectionId : undefined,
+          refreshIfMissing,
         });
-        if (!cancelled) {
+        if (!cancelled && request === requestId) {
           setAcpClients(clients);
         }
       } catch (_error) {
-        if (!cancelled) {
+        if (!cancelled && request === requestId) {
           setAcpClients([]);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && request === requestId) {
           setAcpClientsLoading(false);
         }
       }
     };
 
+    const onClientsChanged = () => { void loadAcpClients(); };
+    const onRequirementsChanged = () => { void loadAcpClients(false); };
     void loadAcpClients();
-    window.addEventListener('openbitfun:acp-clients-changed', loadAcpClients);
-    window.addEventListener('openbitfun:acp-requirements-changed', loadAcpClients);
+    window.addEventListener('openbitfun:acp-clients-changed', onClientsChanged);
+    window.addEventListener('openbitfun:acp-requirements-changed', onRequirementsChanged);
     return () => {
       cancelled = true;
-      window.removeEventListener('openbitfun:acp-clients-changed', loadAcpClients);
-      window.removeEventListener('openbitfun:acp-requirements-changed', loadAcpClients);
+      window.removeEventListener('openbitfun:acp-clients-changed', onClientsChanged);
+      window.removeEventListener('openbitfun:acp-requirements-changed', onRequirementsChanged);
     };
   }, [menuOpen, workspace]);
 

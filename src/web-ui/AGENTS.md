@@ -152,6 +152,18 @@ credential-only retries, custom container values, search clearing, independent a
 numeric bounds, and focus ownership; DOM assertions do not establish native
 rendering or live connections.
 
+For remote workspace reconciliation and ACP requirement cache invalidation:
+
+```bash
+pnpm --dir src/web-ui run test:run src/features/ssh-remote/SSHRemoteProvider.test.tsx src/infrastructure/api/service-api/ACPClientAPI.test.ts src/app/components/NavPanel/sections/workspaces/workspaceAcpMenuClients.test.ts src/app/components/NavPanel/sections/workspaces/workspaceAcpMenuClients.integration.test.ts
+```
+
+These fixtures cover idle metadata updates, live-status recovery, explicit
+activation, concurrent binding changes/closure, partial restore failures,
+config invalidation, menu probe feedback, and simulated Peer surface changes.
+They do not establish live SSH, Remote Control or Detached
+Dispatch behavior. Editor polling checks belong in `src/tools/editor/AGENTS.md`.
+
 For conversation selection and the floating annotation editor (placement,
 dragging, resizing, draft retention, and nonmodal interaction):
 

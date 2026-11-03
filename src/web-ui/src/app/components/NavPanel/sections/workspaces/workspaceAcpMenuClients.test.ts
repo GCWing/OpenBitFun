@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ACPClientAPI } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { loadWorkspaceAcpMenuClients } from './workspaceAcpMenuClients';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({
   ACPClientAPI: {
@@ -27,6 +28,7 @@ function client(id: string, enabled: boolean) {
 describe('loadWorkspaceAcpMenuClients', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    activateSurface('local');
   });
 
   it('does not probe external ACP executables while loading workspace menu clients', async () => {
@@ -154,5 +156,19 @@ describe('loadWorkspaceAcpMenuClients', () => {
       force: true,
     });
     expect(clients.map(item => item.id)).toEqual(['codex']);
+  });
+
+  it('refreshes negative snapshots again after the same connection ID moves to another device', async () => {
+    vi.mocked(ACPClientAPI.getClients).mockResolvedValue([client('codex', true)]);
+    vi.mocked(ACPClientAPI.probeClientRequirements).mockResolvedValue([
+      { id: 'codex', tool: { name: 'codex', installed: false }, runnable: false, notes: [] },
+    ]);
+    const options = { remoteWorkspace: true, remoteConnectionId: 'same-id' };
+    await loadWorkspaceAcpMenuClients(options);
+    await loadWorkspaceAcpMenuClients(options);
+    expect(vi.mocked(ACPClientAPI.probeClientRequirements).mock.calls.filter(([options]) => options?.force)).toHaveLength(1);
+    activateSurface('peer-b');
+    await loadWorkspaceAcpMenuClients(options);
+    expect(vi.mocked(ACPClientAPI.probeClientRequirements).mock.calls.filter(([options]) => options?.force)).toHaveLength(2);
   });
 });
