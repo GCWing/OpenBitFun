@@ -22,9 +22,77 @@ struct State {
     fail_read: AtomicBool,
     fail_write: AtomicBool,
     fail_close: AtomicBool,
+    kill_sftp: Arc<KillSwitch>,
     requested: tokio::sync::Notify,
     release: tokio::sync::Notify,
     response_delay_ms: std::sync::atomic::AtomicU64,
+}
+
+/// Cuts an in-memory SFTP transport on demand.
+#[derive(Default)]
+struct KillSwitch {
+    killed: AtomicBool,
+    waker: std::sync::Mutex<Option<std::task::Waker>>,
+}
+
+impl KillSwitch {
+    fn kill(&self) {
+        self.killed.store(true, Ordering::SeqCst);
+        let waker = self.waker.lock().unwrap().take();
+        if let Some(waker) = waker {
+            // A pending read has to observe the new state without a packet.
+            waker.wake();
+        }
+    }
+}
+
+/// Server side of an in-memory SFTP transport that can be cut on demand.
+///
+/// Ending the server's read loop drops its channel, which is what a server-side
+/// subsystem close leaves behind.
+struct KillableStream<S> {
+    inner: S,
+    switch: Arc<KillSwitch>,
+}
+
+impl<S: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for KillableStream<S> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.switch.killed.load(Ordering::SeqCst) {
+            return std::task::Poll::Ready(Ok(()));
+        }
+        if let Ok(mut waker) = self.switch.waker.lock() {
+            *waker = Some(cx.waker().clone());
+        }
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite for KillableStream<S> {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
 }
 
 struct SftpServer {
@@ -171,6 +239,12 @@ impl russh_sftp::server::Handler for SftpServer {
         Ok(ok(id))
     }
     async fn stat(&mut self, id: u32, _path: String) -> Result<Attrs, Self::Error> {
+        Ok(Attrs {
+            id,
+            attrs: metadata(),
+        })
+    }
+    async fn lstat(&mut self, id: u32, _path: String) -> Result<Attrs, Self::Error> {
         Ok(Attrs {
             id,
             attrs: metadata(),
@@ -1086,6 +1160,106 @@ async fn a_directory_waiter_detects_retirement_after_acquiring_the_lock() {
     );
     assert_eq!(f.state.channels.load(Ordering::SeqCst), 2);
     assert_eq!(f.state.opened.load(Ordering::SeqCst), 1);
+}
+
+/// Serve SFTP over an in-memory transport and cache that session, so a test
+/// can kill its channel without disturbing the SSH transport.
+async fn cache_killable_sftp_session(f: &Fixture) -> Arc<ManagedSftpSession> {
+    let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+    let handler = SftpServer {
+        state: f.state.clone(),
+        handles: HashMap::new(),
+        data: vec![0, 1, 254, 255],
+    };
+    let server_stream = KillableStream {
+        inner: server_io,
+        switch: f.state.kill_sftp.clone(),
+    };
+    tokio::spawn(russh_sftp::server::run(server_stream, handler));
+    let session = SftpSession::new_with_config(client_io, sftp_client_config())
+        .await
+        .unwrap();
+    let cached = Arc::new(ManagedSftpSession::new(session));
+    {
+        let connections = f.manager.connections.read().await;
+        let connection = connections.get("sftp-test").unwrap();
+        *connection.sftp_session.session.write().await = Some(cached.clone());
+    }
+    f.manager.sftp_stat("sftp-test", "/file").await.unwrap();
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 0);
+    cached
+}
+
+/// Kill the channel underneath a cached session the manager still considers
+/// usable. A server-side close leaves exactly this state: russh-sftp answers
+/// every later request with "session closed" while the SSH transport and the
+/// cache entry stay alive. The raw session is used on purpose here, because
+/// the managed wrapper is what retires a dead subsystem.
+async fn kill_cached_sftp_channel(f: &Fixture, cached: &ManagedSftpSession) {
+    f.state.kill_sftp.kill();
+    let raw: &SftpSession = cached;
+    // A request in flight when the channel dies never completes, so every probe
+    // is bounded and repeated until russh-sftp reports the closed session.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match tokio::time::timeout(Duration::from_millis(100), raw.metadata("/file")).await {
+                Ok(Ok(_)) | Err(_) => continue,
+                Ok(Err(error)) => {
+                    assert!(
+                        sftp_error_may_be_stale_transport(&error),
+                        "unexpected SFTP failure: {error}"
+                    );
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("the closed subsystem channel never surfaced to the cached session");
+    assert!(!cached.is_retired());
+}
+
+#[tokio::test]
+async fn a_closed_subsystem_channel_is_replaced_instead_of_failing_forever() {
+    let f = Fixture::new().await;
+    let cached = cache_killable_sftp_session(&f).await;
+    kill_cached_sftp_channel(&f, &cached).await;
+
+    // A dead cached subsystem must not poison metadata queries: the manager
+    // retires it and opens a new channel on the same SSH transport.
+    let metadata = f.manager.sftp_stat("sftp-test", "/file").await.unwrap();
+    assert_eq!(metadata.size, Some(4));
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
+    assert!(f.manager.sftp_exists("sftp-test", "/file").await.unwrap());
+    f.manager.sftp_lstat("sftp-test", "/file").await.unwrap();
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_read_after_the_subsystem_channel_closed_replays_its_open() {
+    let f = Fixture::new().await;
+    let cached = cache_killable_sftp_session(&f).await;
+    kill_cached_sftp_channel(&f, &cached).await;
+
+    assert_eq!(
+        f.manager.sftp_read("sftp-test", "/file").await.unwrap(),
+        vec![0, 1, 254, 255]
+    );
+    assert!(cached.is_retired());
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn mkdir_all_after_the_subsystem_channel_closed_replays_on_a_new_channel() {
+    let f = Fixture::new().await;
+    let cached = cache_killable_sftp_session(&f).await;
+    kill_cached_sftp_channel(&f, &cached).await;
+
+    // The fixture reports every path as existing, so a healthy channel
+    // finishes without CREATE; the dead one fails every step instead.
+    f.manager.sftp_mkdir_all("sftp-test", "/a/b").await.unwrap();
+    assert!(cached.is_retired());
+    assert_eq!(f.state.channels.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

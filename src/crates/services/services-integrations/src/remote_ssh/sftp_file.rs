@@ -2,11 +2,13 @@
 //!
 //! russh-sftp 2.3 File::drop sends CLOSE without decrementing the client's
 //! handle counter. Explicit shutdown is required even for read-only files.
+use super::manager::sftp_error_may_be_stale_transport;
 use russh_sftp::client::{
     error::Error,
     fs::{File, Metadata},
     SftpSession,
 };
+use russh_sftp::protocol::FileAttributes;
 use std::{
     io,
     pin::Pin,
@@ -57,6 +59,58 @@ impl ManagedSftpSession {
 
     pub(super) async fn create_new(self: &Arc<Self>, path: &str) -> Result<ManagedSftpFile, Error> {
         self.open_owned(path, 2).await
+    }
+
+    /// Record that a request found this subsystem's channel unusable.
+    ///
+    /// russh-sftp never revives a session whose writer task stopped: it answers
+    /// every later request with `UnexpectedBehavior("session closed")`. Without
+    /// this flag the manager would keep serving the dead cached session, so one
+    /// closed channel would fail every file operation until the app restarts.
+    /// Marking it retired makes the next request open a new subsystem channel.
+    fn record<T>(&self, result: Result<T, Error>) -> Result<T, Error> {
+        if let Err(error) = &result {
+            if sftp_error_may_be_stale_transport(error) {
+                self.retired.store(true, Ordering::Release);
+            }
+        }
+        result
+    }
+
+    pub(super) async fn metadata(&self, path: &str) -> Result<Metadata, Error> {
+        self.record(self.session.metadata(path).await)
+    }
+
+    pub(super) async fn symlink_metadata(&self, path: &str) -> Result<Metadata, Error> {
+        self.record(self.session.symlink_metadata(path).await)
+    }
+
+    pub(super) async fn try_exists(&self, path: &str) -> Result<bool, Error> {
+        self.record(self.session.try_exists(path).await)
+    }
+
+    pub(super) async fn create_dir(&self, path: &str) -> Result<(), Error> {
+        self.record(self.session.create_dir(path).await)
+    }
+
+    pub(super) async fn remove_file(&self, path: &str) -> Result<(), Error> {
+        self.record(self.session.remove_file(path).await)
+    }
+
+    pub(super) async fn remove_dir(&self, path: &str) -> Result<(), Error> {
+        self.record(self.session.remove_dir(path).await)
+    }
+
+    pub(super) async fn rename(&self, old_path: &str, new_path: &str) -> Result<(), Error> {
+        self.record(self.session.rename(old_path, new_path).await)
+    }
+
+    pub(super) async fn set_metadata(
+        &self,
+        path: &str,
+        attributes: FileAttributes,
+    ) -> Result<(), Error> {
+        self.record(self.session.set_metadata(path, attributes).await)
     }
 
     async fn open_owned(self: &Arc<Self>, path: &str, mode: u8) -> Result<ManagedSftpFile, Error> {
