@@ -163,6 +163,30 @@ fn merge_runtime_owned_turn_facts(
 ) -> DialogTurnData {
     let mut merged = projected.clone();
     merged.agent_type = persisted.agent_type.clone();
+    // Round timing comes from the Runtime's accepted attempt. A projection
+    // saved by a window that missed (or had not yet applied) that round's
+    // `ModelRoundCompleted` must not erase it from the durable record.
+    for round in &mut merged.model_rounds {
+        let Some(persisted_round) = persisted
+            .model_rounds
+            .iter()
+            .find(|candidate| candidate.id == round.id)
+        else {
+            continue;
+        };
+        if round.duration_ms.is_none_or(|duration_ms| duration_ms == 0) {
+            round.duration_ms = persisted_round.duration_ms.or(round.duration_ms);
+        }
+        round.first_chunk_ms = round.first_chunk_ms.or(persisted_round.first_chunk_ms);
+        round.first_visible_output_ms = round
+            .first_visible_output_ms
+            .or(persisted_round.first_visible_output_ms);
+        round.stream_duration_ms = round
+            .stream_duration_ms
+            .or(persisted_round.stream_duration_ms);
+        round.ttft_ms = round.ttft_ms.or(persisted_round.ttft_ms);
+        round.attempt_count = round.attempt_count.or(persisted_round.attempt_count);
+    }
 
     let Some(persisted_metadata) = persisted
         .user_message
@@ -3312,6 +3336,53 @@ mod tests {
             metadata.get("canvas_context"),
             Some(&serde_json::json!({ "node": "selected" }))
         );
+    }
+
+    #[test]
+    fn projected_turn_saves_keep_runtime_round_timing() {
+        let mut persisted = DialogTurnData::new(
+            "turn-1".to_string(),
+            0,
+            "session-1".to_string(),
+            UserMessageData {
+                id: "user-1".to_string(),
+                content: "hi".to_string(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        let round = |id: &str| {
+            SessionManager::build_model_rounds_from_messages(
+                &[crate::agentic::core::Message::assistant("answer".into())
+                    .with_round_id(id.into())],
+                "turn-1",
+                1,
+            )
+            .remove(0)
+        };
+        let mut timed = round("round-1");
+        timed.duration_ms = Some(2172);
+        timed.stream_duration_ms = Some(1500);
+        timed.ttft_ms = Some(690);
+        timed.attempt_count = Some(1);
+        let mut projected_timed = round("round-0");
+        projected_timed.duration_ms = Some(900);
+        let mut persisted_timed = projected_timed.clone();
+        persisted_timed.duration_ms = Some(800);
+        persisted.model_rounds = vec![persisted_timed, timed];
+        let mut projected = persisted.clone();
+        // The window checkpointed the last round before its completion event.
+        let mut untimed = round("round-1");
+        untimed.duration_ms = Some(0);
+        projected.model_rounds = vec![projected_timed, untimed];
+
+        let merged = merge_runtime_owned_turn_facts(&persisted, &projected);
+        assert_eq!(merged.model_rounds[0].duration_ms, Some(900));
+        let last = &merged.model_rounds[1];
+        assert_eq!(last.duration_ms, Some(2172));
+        assert_eq!(last.stream_duration_ms, Some(1500));
+        assert_eq!(last.ttft_ms, Some(690));
+        assert_eq!(last.attempt_count, Some(1));
     }
 
     #[tokio::test]
