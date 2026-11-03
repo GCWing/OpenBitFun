@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WorkspaceKind, WorkspaceType } from '@/shared/types/global-state';
 import { notificationService } from '@/shared/notification-system';
+import { ACPClientAPI } from '@/infrastructure/api/service-api/ACPClientAPI';
 import {
   activateSurface,
   getActiveSurfaceId,
@@ -63,8 +64,10 @@ vi.mock('@/flow_chat/store/FlowChatStore', () => ({
 }));
 
 vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({
+  ACP_REQUIREMENTS_INVALIDATED_EVENT: 'openbitfun:acp-requirements-invalidated',
   ACPClientAPI: {
     probeClientRequirements: vi.fn(() => Promise.resolve()),
+    invalidateRemoteRequirementProbeCache: vi.fn(),
   },
 }));
 
@@ -545,6 +548,187 @@ describe('SSHRemoteProvider workspace connection state', () => {
     });
   }
 
+  it('does not repeat capability probes or reopen a workspace during idle heartbeats and metadata updates', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3 * 60 * 60 * 1000); });
+    for (let index = 0; index < 5; index += 1) {
+      emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace: { ...workspace, name: `Renamed ${index}` } });
+      await act(async () => { await Promise.resolve(); });
+    }
+
+    expect(sshApiMock.isConnected.mock.calls.length).toBeGreaterThan(1);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores and probes a workspace whose connection binding changed', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    const rebound = { ...workspace, connectionId: 'conn-2' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[rebound.id, rebound]]), activeWorkspaceId: rebound.id,
+    });
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace: rebound });
+    await act(async () => { await Promise.resolve(); });
+    expect(sshApiMock.openWorkspace).toHaveBeenLastCalledWith('conn-2', workspace.rootPath);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenLastCalledWith({ force: true, remoteConnectionId: 'conn-2' });
+  });
+
+  it('checks a shared transport once while restoring every workspace on that connection', async () => {
+    const first = createRemoteWorkspace();
+    const second = { ...first, id: 'ws-remote-2', rootPath: '/root/other' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[first.id, first], [second.id, second]]), activeWorkspaceId: first.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledWith('conn-1', first.rootPath);
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledWith('conn-1', second.rootPath);
+  });
+
+  it('refreshes capabilities after a config invalidation without looping on probe completion', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    await act(async () => { window.dispatchEvent(new Event('openbitfun:acp-requirements-invalidated')); });
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+    await act(async () => { window.dispatchEvent(new Event('openbitfun:acp-requirements-changed')); });
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+    peerModeFlagMock.active = true;
+    await act(async () => { window.dispatchEvent(new Event('openbitfun:acp-requirements-invalidated')); });
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+  });
+
+  it('reactivates an unchanged workspace on selection and opens a closed record again', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    emitWorkspaceManagerEvent({ type: 'workspace:switched', workspace });
+    await act(async () => { await Promise.resolve(); });
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledTimes(2);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
+    emitWorkspaceManagerEvent({ type: 'workspace:closed', workspaceId: workspace.id });
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace });
+    await act(async () => { await Promise.resolve(); });
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledTimes(3);
+  });
+
+  it('reconciles a binding update that arrives while an earlier check is pending', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    let finishCheck!: (connected: boolean) => void;
+    sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { finishCheck = resolve; }));
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace });
+    await act(async () => { await Promise.resolve(); });
+    const rebound = { ...workspace, connectionId: 'conn-2' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[rebound.id, rebound]]), activeWorkspaceId: rebound.id,
+    });
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace: rebound });
+    await act(async () => { finishCheck(true); });
+    expect(sshApiMock.openWorkspace).toHaveBeenLastCalledWith('conn-2', workspace.rootPath);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenLastCalledWith({ force: true, remoteConnectionId: 'conn-2' });
+  });
+
+  it('does not overlap idle heartbeats or act on a heartbeat from a replaced connection', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    sshApiMock.isConnected.mockClear();
+    let finishHeartbeat!: (connected: boolean) => void;
+    sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { finishHeartbeat = resolve; }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+    expect(sshApiMock.isConnected).toHaveBeenCalledTimes(1);
+
+    const rebound = { ...workspace, connectionId: 'conn-2' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[rebound.id, rebound]]), activeWorkspaceId: rebound.id,
+    });
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace: rebound });
+    await act(async () => { await Promise.resolve(); });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { finishHeartbeat(false); });
+    expect(sshApiMock.isConnected).not.toHaveBeenCalled();
+    expect(latestStatuses['conn-2']).toBe('connected');
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-2');
+  });
+
+  it('refreshes capabilities once when an idle restored connection really disconnects', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.listSavedConnections.mockResolvedValue([{
+      id: 'conn-1', name: 'dev-box', host: 'example.com', port: 22, username: 'dev',
+      authType: { type: 'PrivateKey', keyPath: '/tmp/key' },
+    }]);
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    sshApiMock.isConnected.mockResolvedValue(false);
+    sshApiMock.connect.mockImplementation(async () => {
+      sshApiMock.isConnected.mockResolvedValue(true);
+      return { success: true, connectionId: 'conn-1' };
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+    expect(sshApiMock.connect).toHaveBeenCalledTimes(1);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+    expect(latestStatuses['conn-1']).toBe('connected');
+  });
+
+  it('still recovers a disconnected workspace on an ordinary metadata update', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.listSavedConnections.mockResolvedValue([{
+      id: 'conn-1', name: 'dev-box', host: 'example.com', port: 22, username: 'dev',
+      authType: { type: 'PrivateKey', keyPath: '/tmp/key' },
+    }]);
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    sshApiMock.isConnected.mockResolvedValue(false);
+    sshApiMock.connect.mockImplementation(async () => {
+      sshApiMock.isConnected.mockResolvedValue(true);
+      return { success: true, connectionId: 'conn-1' };
+    });
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace });
+    await act(async () => { await Promise.resolve(); });
+    expect(sshApiMock.connect).toHaveBeenCalledTimes(1);
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledTimes(2);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+    expect(latestStatuses['conn-1']).toBe('connected');
+  });
+
   it.each([true, false])('keeps an established connection green during a session-switch probe (saved profile: %s)', async (hasSavedProfile) => {
     const workspace = createRemoteWorkspace();
     workspaceManagerMock.getState.mockReturnValue({
@@ -569,6 +753,7 @@ describe('SSHRemoteProvider workspace connection state', () => {
 
     expect(statusHistory.every(statuses => statuses['conn-1'] === 'connected')).toBe(true);
     expect(sshApiMock.connect).not.toHaveBeenCalled();
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
   });
 
   it('shows connecting after a probe confirms a real disconnect and clears it when reconnection finishes', async () => {
@@ -596,6 +781,8 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(latestStatuses['conn-1']).toBe('connecting');
     await act(async () => { finishReconnect({ success: true, connectionId: 'conn-1' }); });
     expect(latestStatuses['conn-1']).toBe('connected');
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+    expect(ACPClientAPI.invalidateRemoteRequirementProbeCache).toHaveBeenCalledWith('conn-1');
   });
 
   it('mirrors peer-owned remote workspaces as connected without starting the reconnect timeout', async () => {

@@ -209,6 +209,21 @@ afterEach(async () => {
 });
 
 describe('CodeEditor disk synchronization', () => {
+  it('keeps remote external edits responsive and immediately checks again on window focus', async () => {
+    session.scope.remoteConnectionId = 'ssh-a';
+    await render();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    mocks.metadata.mockClear();
+    mocks.metadata.mockResolvedValue({ ...fileMetadata, modified: 2 });
+    mocks.read.mockResolvedValue('external change');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1400); });
+    expect(model().getValue()).toBe('external change');
+    mocks.metadata.mockClear();
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(mocks.metadata).toHaveBeenCalledTimes(1);
+    expect(model().getValue()).toBe('external change');
+  });
+
   it('retains find/replace interaction across inactivity and releases only after the query is cleared', async () => {
     await render();
     const originalModel = model();

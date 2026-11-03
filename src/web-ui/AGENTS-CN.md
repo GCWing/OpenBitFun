@@ -88,6 +88,16 @@ pnpm --dir src/web-ui run test:run src/app/layout/useNavResize.test.tsx src/app/
 
 这些本地 DOM 测试覆盖手势状态和弹簧收敛，不代表原生 WebView 渲染或真实远程场景验证。
 
+远端工作区状态核对与 ACP 能力缓存失效使用以下聚焦检查：
+
+```bash
+pnpm --dir src/web-ui run test:run src/features/ssh-remote/SSHRemoteProvider.test.tsx src/infrastructure/api/service-api/ACPClientAPI.test.ts
+```
+
+这些测试覆盖空闲元数据更新、连接恢复、显式激活、并发绑定变更、配置失效和模拟 Peer
+设备切换，不代表真实 SSH、远程控制或离线派发验证。编辑器轮询检查见
+`src/tools/editor/AGENTS.md`。
+
 编辑/回滚结果、旧版本被控端响应与延迟记录重放使用以下聚焦检查：
 
 ```bash

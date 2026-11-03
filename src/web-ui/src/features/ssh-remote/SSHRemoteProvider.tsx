@@ -9,7 +9,7 @@ import { WorkspaceKind } from '@/shared/types/global-state';
 import type { SSHConnectionConfig, RemoteWorkspace } from './types';
 import { sshApi } from './sshApi';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
-import { ACPClientAPI } from '@/infrastructure/api/service-api/ACPClientAPI';
+import { ACPClientAPI, ACP_REQUIREMENTS_INVALIDATED_EVENT } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
 import { notificationService } from '@/shared/notification-system';
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
@@ -38,26 +38,14 @@ import {
 } from './remoteWorkspaceReconnect';
 
 const log = createLogger('SSHRemoteProvider');
-const pendingAcpCapabilityRefreshes = new Set<string>();
 const RECONNECT_TIMEOUT_SECONDS = remoteReconnectTimeoutSeconds();
 
-function refreshRemoteAcpCapabilities(connectionId: string): void {
-  const normalized = connectionId.trim();
-  if (!normalized || pendingAcpCapabilityRefreshes.has(normalized)) {
-    return;
-  }
-
-  pendingAcpCapabilityRefreshes.add(normalized);
-  void ACPClientAPI.probeClientRequirements({
-    force: true,
-    remoteConnectionId: normalized,
-  })
-    .catch(error => {
-      log.warn('Failed to refresh remote ACP capabilities', { connectionId: normalized, error });
-    })
-    .finally(() => {
-      pendingAcpCapabilityRefreshes.delete(normalized);
-    });
+function remoteWorkspaceBinding(workspace: WorkspaceInfo): string {
+  return JSON.stringify([
+    workspace.connectionId?.trim(),
+    normalizeRemoteWorkspacePath(workspace.rootPath),
+    workspace.sshHost?.trim(),
+  ]);
 }
 
 /**
@@ -184,12 +172,64 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
   const workspaceStatusesRef = useRef<Record<string, ConnectionStatus>>({});
   const remoteWorkspaceRef = useRef<RemoteWorkspace | null>(null);
   const startHeartbeatRef = useRef<(connId: string) => void>(() => {});
-  const checkRemoteWorkspaceRef = useRef<() => Promise<void>>(async () => {});
+  const checkRemoteWorkspaceRef = useRef<(activate?: boolean) => Promise<void>>(async () => {});
   const checkRemoteWorkspaceInFlightRef = useRef(false);
+  const checkRemoteWorkspaceAgainRef = useRef<boolean | null>(null);
+  const mountedRef = useRef(true);
   const reconnectByConnectionRef = useRef(new Map<
     string,
     Promise<false | { connectionId: string; connectionName: string; sshHost?: string }>
   >());
+  const restoredScopeRef = useRef({
+    epoch: -1,
+    bindings: new Map<string, string>(),
+    capabilityProbes: new Map<string, object>(),
+  });
+  const restoredScope = useCallback((scope: SurfaceScope) => {
+    if (restoredScopeRef.current.epoch !== scope.epoch) {
+      restoredScopeRef.current = {
+        epoch: scope.epoch,
+        bindings: new Map(),
+        capabilityProbes: new Map(),
+      };
+    }
+    return restoredScopeRef.current;
+  }, []);
+
+  const refreshRemoteAcpCapabilities = useCallback((connectionId: string, reconnected = false) => {
+    const normalized = connectionId.trim();
+    const scope = getActiveSurfaceScope();
+    const probes = restoredScope(scope).capabilityProbes;
+    if (!normalized || (!reconnected && probes.has(normalized))) return;
+    if (reconnected) ACPClientAPI.invalidateRemoteRequirementProbeCache(normalized);
+    const probe = {};
+    probes.set(normalized, probe);
+    // Probe once on first use in this activation, then only on a real reconnect
+    // or an explicit settings refresh. Catalog/session events reuse the result.
+    void ACPClientAPI.probeClientRequirements({ force: true, remoteConnectionId: normalized })
+      .catch(error => {
+        if (probes.get(normalized) === probe) probes.delete(normalized);
+        if (!isSurfaceChangedError(error)) {
+          log.warn('Failed to refresh remote ACP capabilities', { connectionId: normalized, error });
+        }
+      });
+  }, [restoredScope]);
+
+  useEffect(() => {
+    const onRequirementsInvalidated = () => {
+      if (isPeerDeviceModeActive()) return;
+      const probes = restoredScope(getActiveSurfaceScope()).capabilityProbes;
+      const connectionIds = [...probes.keys()];
+      probes.clear();
+      for (const id of connectionIds) {
+        if (workspaceStatusesRef.current[id] === 'connected' || (id === connectionId && isConnected)) {
+          refreshRemoteAcpCapabilities(id);
+        }
+      }
+    };
+    window.addEventListener(ACP_REQUIREMENTS_INVALIDATED_EVENT, onRequirementsInvalidated);
+    return () => window.removeEventListener(ACP_REQUIREMENTS_INVALIDATED_EVENT, onRequirementsInvalidated);
+  }, [connectionId, isConnected, refreshRemoteAcpCapabilities, restoredScope]);
 
   workspaceStatusesRef.current = workspaceStatuses;
   remoteWorkspaceRef.current = remoteWorkspace;
@@ -330,10 +370,13 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
   // Cleanup heartbeat on unmount
   useEffect(() => {
+    mountedRef.current = true;
     const statusTimeouts = workspaceStatusTimeouts.current;
     return () => {
+      mountedRef.current = false;
       if (heartbeatInterval.current) {
         clearInterval(heartbeatInterval.current);
+        heartbeatInterval.current = null;
       }
       for (const timeoutId of statusTimeouts.values()) {
         window.clearTimeout(timeoutId);
@@ -527,26 +570,35 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       return;
     }
 
-    heartbeatInterval.current = window.setInterval(async () => {
+    const scope = getActiveSurfaceScope();
+    let checking = false;
+    const intervalId = window.setInterval(async () => {
+      if (checking || !scope.isCurrent() || isPeerDeviceModeActive()) return;
+      checking = true;
       try {
         const connected = await sshApi.isConnected(connId);
-        if (!connected && statusRef.current === 'connected') {
+        if (!scope.isCurrent() || heartbeatInterval.current !== intervalId) return;
+        if (!connected && (workspaceStatusesRef.current[connId] === 'connected' || statusRef.current === 'connected')) {
           handleConnectionLost(connId);
         }
       } catch {
         // Ignore heartbeat errors
+      } finally {
+        checking = false;
       }
     }, 30000);
+    heartbeatInterval.current = intervalId;
   }, [handleConnectionLost]);
   startHeartbeatRef.current = startHeartbeat;
 
-  const checkRemoteWorkspace = useCallback(async () => {
+  const checkRemoteWorkspace = useCallback(async (activate = true) => {
+    if (!mountedRef.current) return;
     if (isPeerDeviceModeActive()) {
       log.info('checkRemoteWorkspace: skipped while peer device mode is active');
       return;
     }
     if (checkRemoteWorkspaceInFlightRef.current) {
-      log.debug('checkRemoteWorkspace: skipped because startup restore is already in progress');
+      checkRemoteWorkspaceAgainRef.current = (checkRemoteWorkspaceAgainRef.current ?? false) || activate;
       return;
     }
     checkRemoteWorkspaceInFlightRef.current = true;
@@ -654,6 +706,8 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       setWorkspaceStatuses(prev => ({ ...initialStatuses, ...prev }));
 
       type ConnectedEntry = { workspace: RemoteWorkspace; connectionId: string };
+      const refreshedReconnects = new Set<string>();
+      const connectionChecks = new Map<string, Promise<boolean>>();
       const results = await Promise.all(
         reconnectList.map(async workspace => {
           // Upgrade-only restore of pre-ID SSH workspace cache entries.
@@ -662,7 +716,12 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
             remoteConnectionId: workspace.connectionId, remoteSshHost: workspace.sshHost,
           }, openedRemote);
 
-          const alreadyConnected = await sshApi.isConnected(workspace.connectionId).catch(() => false);
+          let connectionCheck = connectionChecks.get(workspace.connectionId);
+          if (!connectionCheck) {
+            connectionCheck = sshApi.isConnected(workspace.connectionId).catch(() => false);
+            connectionChecks.set(workspace.connectionId, connectionCheck);
+          }
+          const alreadyConnected = await connectionCheck;
           scope.assertCurrent('check SSH restore connection');
 
           if (alreadyConnected) {
@@ -671,10 +730,17 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
             if (!record) {
               return { ok: false as const };
             }
-            await runInSurfaceScope(scope, 'activate restored SSH workspace', () =>
-              sshApi.openWorkspace(workspace.connectionId, workspace.remotePath));
+            const bindings = restoredScope(scope).bindings;
+            const binding = remoteWorkspaceBinding(record);
+            // Catalog metadata changes still check liveness, but need not
+            // reopen a bound path. Explicit selection keeps host activation.
+            if (activate || bindings.get(record.id) !== binding) {
+              await runInSurfaceScope(scope, 'activate restored SSH workspace', () =>
+                sshApi.openWorkspace(workspace.connectionId, workspace.remotePath));
+            }
             scope.assertCurrent('publish restored SSH workspace');
             setWorkspaceStatus(workspace.connectionId, 'connected');
+            bindings.set(record.id, binding);
             refreshRemoteAcpCapabilities(workspace.connectionId);
             workspace.workspaceId = record.id;
             void flowChatStore.initializeFromDisk(record.id, 'ssh_remote_auto_restore_existing').catch(() => {});
@@ -719,7 +785,11 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
               sshApi.openWorkspace(result.connectionId, result.workspace.remotePath));
             scope.assertCurrent('publish reconnected SSH workspace');
             setWorkspaceStatus(result.workspace.connectionId, 'connected');
-            refreshRemoteAcpCapabilities(result.connectionId);
+            restoredScope(scope).bindings.set(record.id, remoteWorkspaceBinding(record));
+            if (!refreshedReconnects.has(result.connectionId)) {
+              refreshedReconnects.add(result.connectionId);
+              refreshRemoteAcpCapabilities(result.connectionId, true);
+            }
             result.workspace.workspaceId = record.id;
             void flowChatStore.initializeFromDisk(record.id, 'ssh_remote_auto_restore_reconnected').catch(() => {});
 
@@ -757,9 +827,16 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       log.error('checkRemoteWorkspace failed', e);
     } finally {
       checkRemoteWorkspaceInFlightRef.current = false;
+      const queuedActivation = checkRemoteWorkspaceAgainRef.current;
+      if (queuedActivation !== null) {
+        checkRemoteWorkspaceAgainRef.current = null;
+        if (mountedRef.current) void checkRemoteWorkspaceRef.current(queuedActivation);
+      }
     }
   }, [
     openRestoredRemoteWorkspaceRecord,
+    refreshRemoteAcpCapabilities,
+    restoredScope,
     reportRemoteWorkspaceReconnectFailure,
     reportRemoteWorkspaceRestoreDeferred,
     setWorkspaceStatus,
@@ -809,6 +886,10 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
   useEffect(() => {
     return workspaceManager.addEventListener(event => {
+      if (event.type === 'workspace:closed' || event.type === 'workspace:removed') {
+        restoredScope(getActiveSurfaceScope()).bindings.delete(event.workspaceId);
+        return;
+      }
       const workspace =
         'workspace' in event && event.workspace?.workspaceKind === WorkspaceKind.Remote
           ? event.workspace
@@ -833,9 +914,10 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       if (!workspaceStatusesRef.current[connId]) {
         setWorkspaceStatus(connId, 'connecting');
       }
-      void checkRemoteWorkspaceRef.current();
+      const metadataOnly = event.type === 'workspace:updated' || event.type === 'workspace:primary-assistant-changed';
+      void checkRemoteWorkspaceRef.current(!metadataOnly);
     });
-  }, [setWorkspaceStatus]);
+  }, [restoredScope, setWorkspaceStatus]);
 
   const connect = useCallback(async (
     _connId: string,
@@ -856,7 +938,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
       if (result.success && result.connectionId) {
         log.info('SSH connection successful', { connectionId: result.connectionId });
-        refreshRemoteAcpCapabilities(result.connectionId);
+        refreshRemoteAcpCapabilities(result.connectionId, true);
         let home = result.serverInfo?.homeDir?.trim();
         if (!home && result.connectionId) {
           try {
@@ -934,7 +1016,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     } finally {
       if (connectionScope.isCurrent()) setIsConnecting(false);
     }
-  }, [setWorkspaceStatus, startHeartbeat]);
+  }, [refreshRemoteAcpCapabilities, setWorkspaceStatus, startHeartbeat]);
 
   const disconnect = useCallback(async () => {
     const currentRemoteWorkspace = remoteWorkspace;

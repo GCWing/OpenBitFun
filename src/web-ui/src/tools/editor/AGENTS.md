@@ -53,15 +53,19 @@ For view residency, also run:
 pnpm --dir src/web-ui run test:run src/tools/editor/services/editorViewResidency.test.ts src/tools/editor/components/CodeEditor.test.tsx
 ```
 
-For code editor disk synchronization, encoding reloads, and dirty-state changes:
+For code editor disk synchronization, polling lifecycle, encoding reloads, and dirty-state changes:
 
 ```bash
-pnpm --dir src/web-ui run test:run src/tools/editor/components/CodeEditor.test.tsx src/tools/editor/services/MonacoModelManager.test.ts src/tools/editor/services/EditorDocument.test.ts src/tools/editor/utils/diskFileVersion.test.ts
+pnpm --dir src/web-ui run test:run src/tools/editor/components/CodeEditor.test.tsx src/tools/editor/services/MonacoModelManager.test.ts src/tools/editor/services/EditorDocument.test.ts src/tools/editor/utils/diskFileVersion.test.ts src/tools/editor/utils/fileSyncPolling.test.ts
 ```
 
 The component tests use the real document/model manager with fake Monaco rendering
 and host IO. They cover delayed reads, stale requests, surface changes, and view
 remounts; they do not establish live SSH or peer transport behavior.
+Direct workspace polling keeps its one-second cadence: external terminal/tool
+edits need not emit frontend events. Hidden windows pause polling and check on
+return; Peer mode retains its existing fifteen-second cadence. Clear both the
+warmup and repeating timers when switching mode or disposing an editor.
 
 Run from the repository root after Markdown editor changes:
 

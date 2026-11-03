@@ -10,6 +10,7 @@ const documentMock = vi.hoisted(() => ({
   enabled: false,
   session: {
     id: 'markdown-load-test',
+    scope: { surfaceId: 'local', remoteConnectionId: undefined as string | undefined },
     snapshot: undefined as DocumentSnapshot | undefined,
     files: { readFileContent: vi.fn(), getFileMetadata: vi.fn() },
     isCurrent: vi.fn(() => true),
@@ -128,6 +129,7 @@ describe('MarkdownEditor file load recovery', () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.useFakeTimers();
     documentMock.enabled = true;
+    documentMock.session.scope.remoteConnectionId = undefined;
     documentMock.session.snapshot = undefined;
     documentMock.session.isCurrent.mockReturnValue(true);
     // Unexpected reads stay pending so a regression fails instead of hanging.
@@ -143,6 +145,21 @@ describe('MarkdownEditor file load recovery', () => {
     container.remove();
     documentMock.enabled = false;
     vi.useRealTimers();
+  });
+
+  it('keeps remote document polling responsive and checks immediately on focus', async () => {
+    documentMock.session.scope.remoteConnectionId = 'container-a';
+    read.mockResolvedValue('# Unchanged');
+    const metadata = documentMock.session.files.getFileMetadata;
+    metadata.mockResolvedValue({ isFile: true, size: 10, modified: 1 });
+    await act(async () => root.render(<MarkdownEditor filePath={filePath} />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    metadata.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1400); });
+    expect(metadata).toHaveBeenCalled();
+    const beforeFocus = metadata.mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(metadata).toHaveBeenCalledTimes(beforeFocus + 1);
   });
 
   it('keeps a missing file error stable through rerenders and disk polling', async () => {
