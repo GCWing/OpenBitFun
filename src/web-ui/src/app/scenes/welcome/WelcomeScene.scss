@@ -28,6 +28,17 @@
     animation: welcome-scene-reveal var(--openbitfun-motion-duration-normal) var(--openbitfun-motion-easing-enter) both;
   }
 
+  // The startup overlay owns this entrance, including the logo and text timing.
+  // Keep this for the mount lifetime so removing the overlay cannot replay it.
+  &[data-startup-entry] &__content {
+    animation: none;
+  }
+
+  &[data-startup-pending] &__cursor {
+    visibility: hidden;
+    animation: none;
+  }
+
   &__greeting {
     display: flex;
     flex-flow: row nowrap;

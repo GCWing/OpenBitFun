@@ -48,6 +48,13 @@ struct RestorePlan {
     repair: bool,
 }
 
+impl RestorePlan {
+    fn fullscreen_on_launch(&self, is_macos: bool, app_identifier: &str) -> bool {
+        // A dev reload can bypass the exit save and replay a stale fullscreen Space.
+        self.fullscreen && !(is_macos && app_identifier == "com.openbitfun.desktop.dev")
+    }
+}
+
 fn restore_plan(document: &Value, desktop: &Desktop) -> RestorePlan {
     let entry = &document["main"];
     let maximized = entry["maximized"].as_bool().unwrap_or(false);
@@ -177,13 +184,14 @@ fn restore_inner(window: &tauri::Window) -> Result<bool, String> {
             );
         }
     }
+    let fullscreen = plan.fullscreen_on_launch(cfg!(target_os = "macos"), &app.config().identifier);
     window
-        .set_fullscreen(plan.fullscreen)
+        .set_fullscreen(fullscreen)
         .map_err(|error| error.to_string())?;
     state.ready.store(true, Ordering::Release);
     // Windows must not maximize a hidden undecorated window. Fullscreen takes
     // precedence for this launch; its saved maximize preference is kept on disk.
-    Ok(plan.maximized && !plan.fullscreen)
+    Ok(plan.maximized && !fullscreen)
 }
 
 fn apply_geometry(

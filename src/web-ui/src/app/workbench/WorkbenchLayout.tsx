@@ -16,6 +16,7 @@ import { CanvasToolbarHost, CanvasToolbarProvider } from '../components/panels/c
 import AuxPane from '../scenes/session/AuxPane';
 import { useWorkbenchPaneLayout } from './workbenchPaneLayoutStore';
 import { WorkbenchResizeContext } from './workbenchResize';
+import { useWindowResizeLayout } from '../layout/windowResizeScheduler';
 import { PANEL_COMMON_CONFIG, RIGHT_PANEL_CONFIG } from '../layout/panelConfig';
 import './WorkbenchLayout.scss';
 
@@ -31,10 +32,11 @@ export default function WorkbenchLayout({ workspacePath, children, ...windowProp
   const { t: tCommon } = useI18n('common');
   const [resizing, setResizing] = useState(false);
   const [settling, setSettling] = useState(false);
+  const windowMeasurementSuspended = useWindowResizeLayout(state => state.measurementSuspended);
   const resizeState = useMemo(() => ({
     resizing,
-    measurementSuspended: resizing || settling,
-  }), [resizing, settling]);
+    measurementSuspended: resizing || settling || windowMeasurementSuspended,
+  }), [resizing, settling, windowMeasurementSuspended]);
   const [offeredTab, setOfferedTab] = useState(false);
   const [dropTarget, setDropTarget] = useState<'leading' | 'trailing' | null>(null);
   const panelOpen = pane.mode !== 'chat-only';

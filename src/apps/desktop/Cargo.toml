@@ -105,7 +105,7 @@ libc = { workspace = true }
 objc2 = { workspace = true, features = ["exception"] }
 block2 = { workspace = true }
 objc2-foundation = { workspace = true, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSNotification", "NSOperation", "NSString", "block2"] }
-objc2-app-kit = { workspace = true, features = ["std", "libc", "NSAnimationContext", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSRunningApplication"] }
+objc2-app-kit = { workspace = true, features = ["std", "libc", "objc2-core-foundation", "NSAnimationContext", "NSBezierPath", "NSColor", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSWorkspace", "NSRunningApplication"] }
 
 [target.'cfg(windows)'.dependencies]
 notify-rust = { workspace = true }

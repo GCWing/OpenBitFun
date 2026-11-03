@@ -22,6 +22,7 @@ import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { FlowChatManager } from '../../flow_chat/services/FlowChatManager';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import WorkspaceBody from './WorkspaceBody';
+import { WindowResizeLayout } from './WindowResizeLayout';
 import { useToolbarModeContext } from '../../flow_chat/components/toolbar-mode/ToolbarModeContext';
 import { MCPInteractionDialog } from '../components/MCPInteractionDialog/MCPInteractionDialog';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
@@ -699,6 +700,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   return (
     <>
       <DailyAppUpdateGate />
+      <WindowResizeLayout />
       <div
         className={containerClassName}
         data-testid="app-layout"

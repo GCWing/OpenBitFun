@@ -120,6 +120,16 @@ pnpm --dir src/web-ui run test:run src/app/scenes/agents/components/CreateAgentD
 These DOM fixtures cover local forms and simulated Peer surface switches;
 they do not establish native rendering or live remote behavior.
 
+For startup logo handoff, welcome typing, reduced motion, and interrupted startup exits:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/startup/startupOverlay.test.ts src/app/startup/startupPreload.test.ts src/app/startup/startupPerformanceContract.test.ts src/app/scenes/welcome/WelcomeScene.test.tsx
+pnpm run motion:audit
+```
+
+These DOM fixtures use measured rectangles and animation stubs. They do not
+establish native WebView animation fidelity or live remote behavior.
+
 For navigation-divider dragging, elastic feedback, cancellation, and keyboard resizing:
 
 ```bash

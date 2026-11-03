@@ -625,6 +625,7 @@ pub fn create_main_window(
                 #[cfg(target_os = "macos")]
                 if matches!(payload.event(), PageLoadEvent::Started) {
                     crate::macos_window_chrome::reset_renderer(_window.app_handle());
+                    let _ = _window.app_handle().run_on_main_thread(crate::macos_window_resize::reset_backdrop);
                 }
                 if matches!(payload.event(), PageLoadEvent::Finished) {
                     let _ = startup_page_ready.send(true);
@@ -713,6 +714,10 @@ pub fn create_main_window(
             #[cfg(target_os = "macos")]
             if let Err(error) = crate::macos_window_chrome::install(&window) {
                 error!("Failed to install native fullscreen chrome synchronization: {error}");
+            }
+            #[cfg(target_os = "macos")]
+            if let Err(error) = crate::macos_window_resize::install(&window) {
+                error!("Failed to install native window resize completion: {error}");
             }
             #[cfg(target_os = "windows")]
             if let Err(error) = crate::window_webview_geometry::install(&window) {

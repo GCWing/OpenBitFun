@@ -229,7 +229,7 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
         >
           <BottomTerminalPane workspacePath={workspacePath} isSceneActive={isActive && !isBottomHidden}
             onExpand={expandBottomTerminalPanel} onCollapse={collapseSessionBottomTerminalPane}
-            terminalResizeSuspended={isBottomTerminalPanelTransitioning || isDraggingBottom} />
+            terminalResizeSuspended={isBottomTerminalPanelTransitioning || isDraggingBottom || workbenchResize.measurementSuspended} />
         </div>
       </>}
     </div>

@@ -34,6 +34,8 @@ pub mod macos_menubar;
 mod macos_window_chrome;
 #[cfg(target_os = "macos")]
 mod macos_window_close;
+#[cfg(target_os = "macos")]
+mod macos_window_resize;
 mod miniapp_desktop;
 mod miniapp_web_host;
 
