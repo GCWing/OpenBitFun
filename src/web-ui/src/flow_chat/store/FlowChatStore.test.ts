@@ -8337,6 +8337,18 @@ describe('FlowChatStore device surfaces', () => {
       expect(session).toMatchObject({ totalTurnCount: 1, loadedTurnCount: 1 });
     });
 
+    it('keeps an open relay session ready when it is reloaded after a mutation', async () => {
+      await openPeerSession('peer-reload', 2);
+      const subscriptions = apiMocks.subscribeRelaySession.mock.calls.length;
+
+      await flowChatStore.loadSessionHistory('peer-reload', { deferFullHistoryUntilActive: true });
+
+      // A non-paged host stream answers a rollback with tombstones and no
+      // second ready, so hydrating here would block the next submission.
+      expect(flowChatStore.getState().sessions.get('peer-reload')!.historyState).toBe('ready');
+      expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(subscriptions);
+    });
+
     it('keeps rendered turns for a host-appended gap without a replay', async () => {
       await openPeerSession('peer-source-gap', 2);
 

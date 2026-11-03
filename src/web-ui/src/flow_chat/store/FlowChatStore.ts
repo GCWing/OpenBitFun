@@ -8919,7 +8919,12 @@ export class FlowChatStore {
         this.setSessionHistoryState(sessionId, 'failed');
         throw new Error(i18nService.t('flow-chat:externalHistory.unsupportedSurface'));
       }
-      this.setSessionHistoryState(sessionId, 'hydrating');
+      // An open subscription is already the live owner and announces no second
+      // first page; marking it hydrating again would block submission until
+      // an unrelated stream restart happened to report ready.
+      const open = this.activeSurface.relaySessionHistory.has(sessionId)
+        && initialSession?.historyState === 'ready';
+      if (!open) this.setSessionHistoryState(sessionId, 'hydrating');
       await this.loadRelaySessionHistory(sessionId);
       scope.assertCurrent('load relay session history');
       return;
