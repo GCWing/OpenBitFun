@@ -3,6 +3,7 @@ import { workspaceScopedRequest } from './legacyWorkspaceCompatibility';
  
 
 import { api } from './ApiClient';
+import type { ApiRequestConfig } from './types';
 import { workspaceIdRequest, workspaceSearchRequest, workspaceWatchRequest } from './legacyWorkspaceCompatibility';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { getActiveSurfaceId, getActiveSurfaceScope, SurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
@@ -245,11 +246,12 @@ export class WorkspaceAPI {
     command: string,
     workspaceId: string,
     request: Record<string, unknown>,
+    config?: ApiRequestConfig,
   ): Promise<T> {
     try {
       return await invokePrepared<T>(command, async () => ({
         request: { ...await workspaceIdRequest(workspaceId, 'workspacePath'), ...request },
-      }));
+      }), config);
     } catch (error) {
       throw createTauriCommandError(command, error, { workspaceId, ...request });
     }
@@ -268,7 +270,14 @@ export class WorkspaceAPI {
   }
 
   async deleteWorkspaceDirectory(workspaceId: string, path: string, recursive: boolean = true): Promise<void> {
-    await this.invokeWorkspaceFileCommand<void>('delete_directory', workspaceId, { path, recursive });
+    // Disk work may outlive the generic 30s UI deadline. Wait for its outcome;
+    // the selected transport still owns connection and peer RPC deadlines.
+    await this.invokeWorkspaceFileCommand<void>(
+      'delete_directory',
+      workspaceId,
+      { path, recursive },
+      recursive ? { timeout: 0 } : undefined,
+    );
   }
 
   async renameWorkspaceFile(workspaceId: string, oldPath: string, newPath: string): Promise<void> {
@@ -360,7 +369,7 @@ export class WorkspaceAPI {
     try {
       await api.invoke('delete_directory', {
         request: { path, recursive, remoteConnectionId }
-      });
+      }, recursive ? { timeout: 0 } : undefined);
     } catch (error) {
       throw createTauriCommandError('delete_directory', error, { path, recursive });
     }
