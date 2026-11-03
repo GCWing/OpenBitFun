@@ -45,10 +45,10 @@ export function TurnUsageMetrics({ usage, durationMs, ttftMs, focusable }: {
     cacheHitRate={cacheHitRate}
     ttftValue={ttft === null ? null : t('modelRound.metrics.ttftValue', { value: ttft })}
     ttftDescription={ttftRows.map(row => `${row.label}: ${row.value}`).join(' · ')}
-    ttftDetails={<FlowChatMetricDetails rows={ttftRows} note={t('modelRound.metrics.ttftBasis')} />}
+    ttftDetails={<FlowChatMetricDetails rows={ttftRows} />}
     rateValue={rate === null ? null : t('modelRound.metrics.rateValue', { value: rate })}
     rateDescription={rateRows.map(row => `${row.label}: ${row.value}`).join(' · ')}
-    rateDetails={<FlowChatMetricDetails rows={rateRows} note={t('modelRound.metrics.rateBasis')} />}
+    rateDetails={<FlowChatMetricDetails rows={rateRows} />}
     speedLevel={speedLevel}
     focusable={focusable}
   />;
