@@ -117,7 +117,13 @@ impl ExecutionEngine {
         let expected_last_turn = session.dialog_turn_ids.last().cloned();
         let planned_result = prepare_compression_cancellable(&cancellation_token, async {
             native_hooks::dispatch_pre_compact(
-                Self::native_hook_facts(session_id, dialog_turn_id, workspace, &ai_client_model),
+                Self::native_hook_facts(
+                    session_id,
+                    dialog_turn_id,
+                    workspace,
+                    workspace_services,
+                    &ai_client_model,
+                ),
                 trigger,
             )
             .await;
@@ -440,6 +446,7 @@ impl ExecutionEngine {
                             session_id,
                             dialog_turn_id,
                             workspace,
+                            workspace_services,
                             &ai_client_model,
                         ),
                         trigger,

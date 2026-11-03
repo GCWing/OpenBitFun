@@ -3104,6 +3104,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         session: &'a Session,
         workspace_root: Option<&'a Path>,
         is_remote_workspace: bool,
+        workspace_services: Option<&'a WorkspaceServices>,
     ) -> NativeHookSessionFacts<'a> {
         NativeHookSessionFacts {
             workspace_id: session.config.workspace_id.as_deref(),
@@ -3113,6 +3114,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             is_remote_workspace,
             model: session.config.model_id.as_deref().unwrap_or_default(),
             bypass_permissions: false,
+            workspace_services,
         }
     }
 
@@ -3131,10 +3133,26 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     /// Run SessionStart hooks. `source` follows the Codex vocabulary:
     /// `startup` | `resume` | `clear` | `compact`.
     async fn dispatch_session_start_hooks(session: &Session, source: &str) {
-        let workspace_root = session.config.workspace_path.as_ref().map(Path::new);
+        let binding = Self::build_workspace_binding(&session.config).await;
+        let workspace_root = binding.as_ref().map(|binding| binding.root_path());
         let is_remote = Self::session_hooks_are_remote(session).await;
+        let workspace_services = match Self::build_workspace_services(&binding).await {
+            Ok(services) => services,
+            Err(error) => {
+                warn!(
+                    "SessionStart project Hooks are unavailable for the workspace: {}",
+                    error
+                );
+                None
+            }
+        };
         native_hooks::dispatch_session_start(
-            Self::session_hook_facts(session, workspace_root, is_remote),
+            Self::session_hook_facts(
+                session,
+                workspace_root,
+                is_remote,
+                workspace_services.as_ref(),
+            ),
             source,
         )
         .await;
@@ -6853,6 +6871,10 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             }
         }
 
+        // Resolve the workspace provider before UserPromptSubmit so a remote
+        // project Hook can run on the target before the turn is admitted.
+        let workspace_services = Self::build_workspace_services(&session_workspace).await?;
+
         // UserPromptSubmit hooks run before any turn state is created, so a
         // blocking hook rejects the prompt without leaving a partial turn.
         // Their context (plus buffered SessionStart context) is prepended to
@@ -6864,6 +6886,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     &session,
                     session.config.workspace_path.as_deref().map(Path::new),
                     Self::session_hooks_are_remote(&session).await,
+                    workspace_services.as_ref(),
                 )
             },
             &user_input,
@@ -7004,9 +7027,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             }
             user_message_metadata = Some(metadata);
         }
-
-        // Build WorkspaceServices based on the workspace type
-        let workspace_services = Self::build_workspace_services(&session_workspace).await?;
 
         info!(
             "Dialog turn workspace context: session_id={}, workspace_path={:?}, is_remote={}, workspace_services={}",
@@ -9046,10 +9066,23 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 Self::session_hooks_are_remote(&session).await,
                 session.config.model_id.clone().unwrap_or_default(),
                 session.config.workspace_id.clone(),
+                match Self::build_workspace_services(
+                    &Self::build_workspace_binding(&session.config).await,
+                )
+                .await
+                {
+                    Ok(services) => services,
+                    Err(error) => {
+                        warn!("SessionEnd project Hooks are unavailable: {}", error);
+                        None
+                    }
+                },
             )),
             None => None,
         };
-        if let Some((is_remote_workspace, model, workspace_id)) = session_hook_facts {
+        if let Some((is_remote_workspace, model, workspace_id, workspace_services)) =
+            session_hook_facts
+        {
             native_hooks::dispatch_session_end(
                 NativeHookSessionFacts {
                     workspace_id: workspace_id.as_deref(),
@@ -9059,6 +9092,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     is_remote_workspace,
                     model: &model,
                     bypass_permissions: false,
+                    workspace_services: workspace_services.as_ref(),
                 },
                 "other",
             )
@@ -11258,6 +11292,8 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         }
 
         let subagent_workspace = Self::build_workspace_binding(&session.config).await;
+        let subagent_services = Self::build_workspace_services(&subagent_workspace).await?;
+        let subagent_hook_services = subagent_services.clone();
         let subagent_workspace_path = subagent_workspace
             .as_ref()
             .map(|workspace| workspace.root_path_string());
@@ -11307,6 +11343,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             is_remote_workspace: subagent_hook_is_remote,
             model: &subagent_hook_model,
             bypass_permissions: false,
+            workspace_services: subagent_hook_services.as_ref(),
         };
         for section in
             native_hooks::dispatch_subagent_start(subagent_hook_facts, &session_id, &agent_type)
@@ -11330,7 +11367,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 session.config.model_pool_selection_revision.to_string(),
             );
         }
-        let subagent_services = Self::build_workspace_services(&subagent_workspace).await?;
         let execution_context = ExecutionContext {
             session_id: session_id.clone(),
             dialog_turn_id: dialog_turn_id.clone(),
@@ -13472,6 +13508,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         let workspace_path = session.config.workspace_path.clone().map(PathBuf::from);
         let is_remote_workspace = Self::session_hooks_are_remote(&session).await;
         let model = session.config.model_id.clone().unwrap_or_default();
+        let workspace_services = match Self::build_workspace_services(
+            &Self::build_workspace_binding(&session.config).await,
+        )
+        .await
+        {
+            Ok(services) => services,
+            Err(error) => {
+                warn!("SessionEnd project Hooks are unavailable: {}", error);
+                None
+            }
+        };
         if let Some(workspace_path) = workspace_path.as_deref() {
             native_hooks::dispatch_session_end(
                 NativeHookSessionFacts {
@@ -13482,6 +13529,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     is_remote_workspace,
                     model: &model,
                     bypass_permissions: false,
+                    workspace_services: workspace_services.as_ref(),
                 },
                 "other",
             )

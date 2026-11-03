@@ -13,24 +13,26 @@
 //! - Dispatch: typed helpers per lifecycle event, called from the
 //!   conversation coordinator, execution engine, and tool pipeline.
 //!
-//! Hooks always execute on the local host. Remote workspaces skip hook
-//! dispatch because the payload `cwd` and the hook process would disagree
-//! about the filesystem they describe.
+//! Local hooks use the controller process environment. Remote workspaces keep
+//! user hooks disabled, while project hooks are loaded through the workspace
+//! filesystem and executed through the target workspace shell.
 
+use crate::agentic::workspace::WorkspaceServices;
 use crate::infrastructure::try_get_path_manager_arc;
 use crate::service::config::get_global_config_service;
 pub use crate::service::config::types::AgentHooksConfig;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use log::{debug, info, warn};
+use log::{info, warn};
 #[cfg(feature = "opencode-plugin-host")]
 use openbitfun_agent_runtime::native_hooks::PluginHookDispatchResult;
 use openbitfun_agent_runtime::native_hooks::{
     AgentHookEngine, AgentHookEvent, AgentHookEventPayload, AgentHookMatcher, AgentHookOutcome,
     AgentHookPayload, AgentHookPayloadCommon, AgentHookPermissionMode, AgentHookPermissionOutcome,
     AgentHookScope, AgentHookSettings, AgentHookSettingsLayer, BuiltinHookExecutor, HookCall,
-    HookCallPayload, HookHandler, HookHandlerResult, RuntimeHookKind, RuntimeHookPlan,
-    RuntimeHookRegistration, RuntimeHookRegistry, RuntimeHookSource, MAX_HOOKS_FILE_BYTES,
+    HookCallPayload, HookHandler, HookHandlerResult, HookProcessProvider, HookProcessResult,
+    RuntimeHookKind, RuntimeHookPlan, RuntimeHookRegistration, RuntimeHookRegistry,
+    RuntimeHookSource, MAX_HOOKS_FILE_BYTES,
 };
 use openbitfun_agent_runtime::post_call_hooks::{
     resolve_deep_review_shared_context_tool_use, DeepReviewSharedContextToolUseFacts,
@@ -40,6 +42,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 const MAX_CACHED_WORKSPACE_HOOK_SOURCES: usize = 32;
 const MAX_PENDING_CONTEXT_SESSIONS: usize = 1024;
@@ -88,6 +91,53 @@ pub(crate) fn hook_environment_defaults() -> BTreeMap<String, String> {
 
 fn hook_engine(registry: RuntimeHookRegistry) -> AgentHookEngine {
     AgentHookEngine::with_registry(registry).with_environment_defaults(hook_environment_defaults())
+}
+
+#[derive(Clone)]
+struct WorkspaceHookProcessProvider {
+    shell: Arc<dyn openbitfun_runtime_ports::WorkspaceShell>,
+}
+
+impl std::fmt::Debug for WorkspaceHookProcessProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkspaceHookProcessProvider")
+            .field("shell", &"<workspace shell>")
+            .finish()
+    }
+}
+
+#[async_trait]
+impl HookProcessProvider for WorkspaceHookProcessProvider {
+    async fn execute(
+        &self,
+        command: &str,
+        payload_json: &str,
+        _cwd: &Path,
+        timeout: Duration,
+        environment: &BTreeMap<String, String>,
+    ) -> HookProcessResult {
+        let result = self
+            .shell
+            .exec_with_stdin(
+                command,
+                payload_json.as_bytes(),
+                environment,
+                openbitfun_runtime_ports::WorkspaceCommandOptions {
+                    timeout_ms: Some(timeout.as_millis().min(u64::MAX as u128) as u64),
+                    ..Default::default()
+                },
+            )
+            .await;
+        match result {
+            Ok(result) if result.timed_out => HookProcessResult::TimedOut,
+            Ok(result) => HookProcessResult::Completed {
+                exit_code: Some(result.exit_code),
+                stdout: result.stdout,
+                stderr: result.stderr,
+            },
+            Err(error) => HookProcessResult::SpawnFailed(error.to_string()),
+        }
+    }
 }
 
 #[cfg(feature = "opencode-plugin-host")]
@@ -356,6 +406,9 @@ pub struct NativeHookSessionFacts<'a> {
     /// Maps to payload `permission_mode`: `bypassPermissions` when the turn
     /// auto-approves permission asks, `default` otherwise.
     pub bypass_permissions: bool,
+    /// Workspace IO provider used for remote project Hook configuration and
+    /// target-side command execution.
+    pub workspace_services: Option<&'a WorkspaceServices>,
 }
 
 #[derive(Debug, Default)]
@@ -913,8 +966,33 @@ async fn prepare<'a>(
         return None;
     }
     if facts.is_remote_workspace {
-        report_remote_workspace_skip(&facts, event).await;
-        return None;
+        if !config.project_hooks_enabled {
+            return None;
+        }
+        let services = facts.workspace_services?;
+        let engine = remote_engine_for(facts.workspace_id, facts.workspace_root, services)
+            .await?
+            .with_project_hooks_enabled(true)
+            .with_remote_project_only(true)
+            // Do not export the controller's GUI/login PATH to the target;
+            // the remote shell owns its own environment and PATH resolution.
+            .with_environment_defaults(BTreeMap::new())
+            .with_process_provider(Arc::new(WorkspaceHookProcessProvider {
+                shell: Arc::clone(&services.shell),
+            }));
+        let workspace_scope = facts.workspace_id.map(str::to_owned);
+        if !engine.has_rules_for_session(event, workspace_scope.as_deref(), facts.session_id) {
+            return None;
+        }
+        return Some(PreparedDispatch {
+            engine,
+            facts,
+            cwd: facts
+                .workspace_root
+                .map(Path::to_path_buf)
+                .unwrap_or_default(),
+            workspace_scope,
+        });
     }
     let engine = engine_for(
         facts.workspace_id,
@@ -940,70 +1018,66 @@ async fn prepare<'a>(
     })
 }
 
+/// Read the project Hook document from the target workspace. User and imported
+/// layers remain controller-owned and are filtered out by the remote engine.
+async fn remote_engine_for(
+    workspace_id: Option<&str>,
+    workspace_root: Option<&Path>,
+    services: &WorkspaceServices,
+) -> Option<AgentHookEngine> {
+    let workspace_id = workspace_id?;
+    let root = workspace_root?;
+    let path = services.fs.join_path(
+        &root.to_string_lossy(),
+        &[".openbitfun", "config", "hooks.json"],
+    );
+    let text = match services
+        .fs
+        .read_file_text_bounded(&path, MAX_HOOKS_FILE_BYTES)
+        .await
+    {
+        Ok(Some(text)) => text,
+        Ok(None) => {
+            warn!(
+                "Ignoring remote Hook configuration over the {} byte limit: {}",
+                MAX_HOOKS_FILE_BYTES, path
+            );
+            return None;
+        }
+        Err(error) => {
+            warn!(
+                "Remote project Hook configuration is unavailable; project Hooks were not run: path={}, error={}",
+                path, error
+            );
+            return Some(hook_engine(RuntimeHookRegistry::default()));
+        }
+    };
+    let layer = AgentHookSettingsLayer {
+        scope: AgentHookScope::Project,
+        source: path,
+        bytes: text.into_bytes(),
+    };
+    let (project_settings, issues) = AgentHookSettings::from_layers(&[layer]);
+    for issue in issues {
+        warn!("Remote project Hook configuration issue: {issue}");
+    }
+    let project_entries = registrations_for_source(
+        project_settings,
+        RuntimeHookSource::ProjectCommand,
+        Some(workspace_id),
+    );
+    let registry = RuntimeHookRegistry::default();
+    if let Err(error) = registry.register_batch(project_entries) {
+        warn!("Failed to publish remote project Hook registrations: {error}");
+        return None;
+    }
+    Some(hook_engine(registry))
+}
+
 /// Dot-path of the hook gates inside the settings document. Config paths
 /// resolve against the serialized `GlobalConfig`, where `AppConfig` lives
 /// under `app`.
 pub(crate) const HOOKS_CONFIG_PATH: &str = "app.hooks";
-
-/// A remote workspace never dispatches hooks: a local hook process and a
-/// remote workspace path do not describe the same filesystem. The skip must
-/// still be visible, so when the host-level hook configuration has rules for
-/// this event the first skip per session is logged as a warning.
-///
-/// Only the host-owned user layer is consulted. The project layer of a remote
-/// workspace lives on the remote host; deriving a controller-local path from
-/// the remote root to look for it would be exactly the local read this skip
-/// exists to prevent.
-async fn report_remote_workspace_skip(facts: &NativeHookSessionFacts<'_>, event: AgentHookEvent) {
-    let configured = match engine_for(None, None, false).await {
-        Some(engine) => engine.has_rules_for_workspace(event, None),
-        None => false,
-    };
-    if !configured {
-        debug!(
-            "Skipping agent hook dispatch for remote workspace: event={}, session_id={}",
-            event, facts.session_id
-        );
-        return;
-    }
-    if remote_skip_already_reported(facts.session_id) {
-        debug!(
-            "Skipping configured agent hooks for remote workspace: event={}, session_id={}",
-            event, facts.session_id
-        );
-        return;
-    }
-    warn!(
-        "Configured agent hooks are not executed for a remote workspace: event={}, session_id={}, workspace_root={}; hooks run only where the workspace filesystem lives, and this host did not run them locally",
-        event,
-        facts.session_id,
-        facts
-            .workspace_root
-            .map(|root| root.to_string_lossy().to_string())
-            .unwrap_or_default()
-    );
-}
-
-/// One warning per session keeps the skip visible without repeating it for
-/// every tool call of a long remote turn. The set is bounded so a long-lived
-/// host does not accumulate ids forever.
-fn remote_skip_already_reported(session_id: &str) -> bool {
-    const MAX_TRACKED_SESSIONS: usize = 1024;
-    static REPORTED: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
-        OnceLock::new();
-    let reported = REPORTED.get_or_init(Default::default);
-    let Ok(mut reported) = reported.lock() else {
-        return false;
-    };
-    if reported.contains(session_id) {
-        return true;
-    }
-    if reported.len() >= MAX_TRACKED_SESSIONS {
-        reported.clear();
-    }
-    reported.insert(session_id.to_string());
-    false
-}
 
 async fn hooks_config() -> AgentHooksConfig {
     match get_global_config_service().await {
@@ -1327,8 +1401,8 @@ pub struct NativeHookOverview {
     pub total_handlers: usize,
     /// Configuration problems, in the wording used for the backend log.
     pub issues: Vec<String>,
-    /// `true` when the workspace is remote: the rules above describe what is
-    /// configured on this host, but none of them run for that workspace.
+    /// `true` when the workspace is remote: user/imported rules in this host
+    /// view are skipped; enabled project rules execute on the target host.
     pub remote_workspace_unsupported: bool,
 }
 
@@ -1358,10 +1432,9 @@ pub async fn overview(workspace_id: Option<&str>) -> Result<NativeHookOverview, 
     .await)
 }
 
-/// [`overview`] with the session's remote fact. For a remote workspace only
-/// the host-owned user layer is inspected (the project layer lives on the
-/// remote host and no controller-local path is derived from the remote root),
-/// and the result is flagged so surfaces can say the hooks will not run.
+/// [`overview`] with the session's remote fact. The dispatch path loads the
+/// project layer through the target workspace provider; this read-only local
+/// projection still avoids deriving a controller path from a remote root.
 pub(crate) async fn overview_with_facts(
     workspace_id: Option<&str>,
     workspace_root: Option<&Path>,

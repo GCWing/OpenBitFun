@@ -188,6 +188,7 @@ mod tests {
                 is_remote_workspace: false,
                 model: "test",
                 bypass_permissions: false,
+                workspace_services: None,
             },
             "other",
         )

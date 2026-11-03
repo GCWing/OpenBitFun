@@ -51,6 +51,22 @@ Both layers are additive: every matching handler runs, user handlers first.
 There is no override or shadowing between them. Changes are picked up without
 restarting OpenBitFun.
 
+### RTK command rewrite example
+
+The repository contains a reusable RTK example in
+[`examples/rtk`](agent-hooks/examples/rtk/README.md). It includes a Windows
+user hook and a POSIX project hook for `ExecCommand`.
+
+Copy the POSIX files into a target repository's `.openbitfun/` directory when
+the workspace runs on Linux, WSL, or an SSH host. The Python script resolves
+`~/.local/bin/rtk` before consulting `PATH`, because remote non-interactive
+shells may not load `.bashrc`. The Windows template is copied into the user
+configuration and is suitable for local workspaces.
+
+The templates are inactive until copied into one of the documented hook
+locations. Project hooks still require `app.hooks.project_hooks_enabled` and
+should only be enabled for trusted repositories.
+
 ## Turning hooks on
 
 **Settings → Agent Hooks**, or directly under the `app` section of
@@ -117,9 +133,9 @@ Import, update, enable, disable, and remove take effect on the next matching
 Hook event; an already running Hook finishes against the snapshot it started
 with. OpenBitFun does not re-import on startup, poll, or watch Claude Code/Codex
 files. Use **Refresh** or `/hooks refresh` to check for source changes, then
-review an update explicitly. The management and execution paths are local-only;
-remote workspaces return unsupported instead of running local commands against
-a remote path.
+review an update explicitly. Import management remains controller-owned. Remote
+dispatch skips user/imported snapshots and runs only the manually configured
+project layer through the target workspace provider.
 
 OpenCode plugin Hooks are intentionally excluded. Their JavaScript callbacks
 need the OpenCode plugin execution domain; the current OpenCode Hook catalog is
@@ -208,8 +224,8 @@ metadata. Native `hooks.json` keeps its Codex decision contract.
 
 The master `app.hooks.enabled` gate applies. Project skills additionally require
 `app.hooks.project_hooks_enabled`, including on subsequent dispatch. Activation
-without a session/local workspace, or in an SSH/remote workspace, returns an
-explicit error; no controller-local fallback executes. Remote control, Peer Device,
+without a session/local workspace, or for a skill invocation in an SSH/remote workspace, returns an
+explicit error; no controller-local fallback executes. Native project `hooks.json` still runs through the target provider. Remote control, Peer Device,
 and Detached Dispatch reuse their target runtime's session and permission owners;
 this change does not introduce a separate client-side hook runner.
 
@@ -289,7 +305,7 @@ Everything not listed here behaves as the Codex documentation describes.
 | `[features] hooks = false` | use `app.hooks.enabled` |
 | Plugin-bundled and managed hooks (`PLUGIN_ROOT`, `managed_dir`) | not supported |
 | `prompt` and `agent` handler types | parsed so shared files stay valid, but skipped — only `type: "command"` executes |
-| Remote workspaces | hooks are not dispatched: a local hook process and a remote workspace path do not describe the same filesystem. The skip is reported, not silent: when the host has rules for the event, the first skipped dispatch per session logs a warning, and the hook overview carries `remote_workspace_unsupported` so surfaces can say the configured rules did not run |
+| Remote workspaces | user hooks and imported Hook snapshots are skipped; when `app.hooks.project_hooks_enabled` is enabled, the project `hooks.json` is read from the remote workspace and its command handlers run through the target workspace shell with the normal JSON stdin contract. Missing remote providers fail closed without controller-local fallback. |
 
 ### Fields not populated yet
 
@@ -342,7 +358,7 @@ every time its event fires. Treat `hooks.json` like a shell profile:
 
 | Symptom | Cause |
 | --- | --- |
-| No hook runs at all | `app.hooks.enabled` is `false`, the file is not at the documented path, or the workspace is remote (the log then carries a warning for the first skipped dispatch of each session). |
+| No hook runs at all | `app.hooks.enabled` is `false`, the file is not at the documented path, or a remote project Hook cannot read its target-side configuration/provider. Remote user hooks are skipped by design. |
 | Project hooks do not run | `app.hooks.project_hooks_enabled` is `false` (the default). |
 | The whole file is ignored | Invalid JSON, or a root key other than `description`/`hooks`. |
 | One event is ignored | Misspelled event name — the names are case-sensitive. |

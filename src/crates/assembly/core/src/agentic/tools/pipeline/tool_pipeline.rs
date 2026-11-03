@@ -735,6 +735,7 @@ fn native_hook_session_facts<'a>(
             .is_some_and(|workspace| workspace.is_remote()),
         model: &context.primary_model_facts.model_id,
         bypass_permissions: options.auto_approve_ask,
+        workspace_services: context.workspace_services.as_ref(),
     }
 }
 
