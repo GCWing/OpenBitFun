@@ -80,6 +80,22 @@ are gone.
 
 ## What Counts as a Gesture
 
+Native scroll and input subscriptions live for the scroller's lifetime. The
+callbacks they consume are refreshed after each React commit through a ref.
+TanStack's earlier native scroll listener can synchronously commit a new virtual
+window. If that commit tears down and rebinds the list's later listener, DOM event
+dispatch skips the removed listener and does not call its replacement for the
+same event. That loses the whole scroll observation: edge fade, follow, anchor,
+visible Turn, snapshot and history-boundary evaluation.
+
+The first-message fade regression exposed this with `scrollTop: 0` while
+`data-scroll-at-start` remained `false`. A native-event fixture with an earlier
+listener forcing a synchronous virtualizer commit reproduces the lost update;
+the ordinary scroll fixture alone does not. Keep callbacks current without
+rebinding subscriptions, and clean up when the scroller/session is replaced.
+The fix changes no scroll target, ownership priority or CSS mask, and needs no
+polling, delayed repaint or extra scroll writer.
+
 Selecting transcript text hands the viewport to the reader through the existing
 user-gesture path. The selection toolbar waits for pointer release and uses a
 portal; neither the toolbar nor its frozen annotation changes row geometry.

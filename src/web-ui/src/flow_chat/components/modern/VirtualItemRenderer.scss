@@ -10,10 +10,12 @@
   @include flatMarkdownSurfaces.apply;
   @include transcriptLayout.reading-column;
 
-  // Keep descendant margins inside the border box measured by the virtualizer.
-  // Escaped margins otherwise disappear when a row is replaced by virtual padding.
-  // Unlike overflow: hidden, this preserves outlying decorations and controls.
-  display: flow-root;
+  // Flex contains descendant margins in the measured border box, as flow-root
+  // did, without clipping controls. It also makes the content a flex item:
+  // WebKit then paints native selection over text instead of filling the row's
+  // turn padding and the gaps around its positioned message containers.
+  display: flex;
+  flex-direction: column;
 
   /*
    * Single reading column shared by every item type (model rounds, explore

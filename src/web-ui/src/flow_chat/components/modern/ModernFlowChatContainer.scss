@@ -100,58 +100,6 @@
   line-height: var(--openbitfun-type-flow-support-line-height);
 }
 
-.modern-flowchat-container__history-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  pointer-events: none;
-  background: var(--openbitfun-color-surface-scene);
-}
-
-.modern-flowchat-container__history-open-intent-shield {
-  position: absolute;
-  inset: 0;
-  z-index: 11;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 40px;
-  pointer-events: auto;
-  background: var(--openbitfun-color-surface-scene);
-  contain: paint;
-}
-
-.modern-flowchat-container__history-open-intent-shield::before {
-  content: "";
-  position: absolute;
-  top: 80px;
-  left: 50%;
-  width: min(720px, calc(100% - 48px));
-  height: min(220px, calc(100% - 132px));
-  min-height: 120px;
-  transform: translateX(-50%);
-  border-radius: 8px;
-  opacity: 0.72;
-  background:
-    linear-gradient(90deg, transparent 0 4%, var(--openbitfun-color-action-neutral-surface-hover) 4% 62%, transparent 62% 100%) 0 0 / 100% 24px no-repeat,
-    linear-gradient(90deg, transparent 0 9%, var(--openbitfun-color-action-neutral-surface-hover) 9% 86%, transparent 86% 100%) 0 48px / 100% 24px no-repeat,
-    linear-gradient(90deg, transparent 0 6%, var(--openbitfun-color-action-neutral-surface-hover) 6% 74%, transparent 74% 100%) 0 96px / 100% 24px no-repeat,
-    linear-gradient(90deg, transparent 0 12%, var(--openbitfun-color-action-neutral-surface-hover) 12% 68%, transparent 68% 100%) 0 144px / 100% 24px no-repeat;
-}
-
-.modern-flowchat-container__history-open-intent-spinner {
-  position: relative;
-  z-index: 1;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--openbitfun-color-border-default);
-  border-top-color: var(--openbitfun-color-accent-default);
-  border-radius: 50%;
-  background: var(--openbitfun-color-surface-scene);
-  box-shadow: 0 0 0 6px var(--openbitfun-color-surface-scene);
-  animation: history-placeholder-spin 0.9s linear infinite;
-}
-
 @keyframes history-placeholder-spin {
   to {
     transform: rotate(360deg);
@@ -159,8 +107,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .history-session-placeholder__icon svg,
-  .modern-flowchat-container__history-open-intent-spinner {
+  .history-session-placeholder__icon svg {
     animation: none;
   }
 }

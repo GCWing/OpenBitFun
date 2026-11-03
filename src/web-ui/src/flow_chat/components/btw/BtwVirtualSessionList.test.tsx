@@ -199,7 +199,7 @@ describe('BtwVirtualSessionList', () => {
 
   it.each([false, true])('settles tail rows when trailing margins are measured: %s', contained => {
     // Supplied CSS geometry: a 100px body and an 8px trailing child margin.
-    // With flow-root both occupy the measured border box; with block the
+    // With the column flex context both occupy the measured border box; with block the
     // margin escapes, still occupies layout space, and vanishes on unmount.
     // jsdom does not perform margin collapsing; this tests its consequences
     // against the real virtualizer and the panel's real follow scheduler.

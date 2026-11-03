@@ -24,8 +24,11 @@ export const modernFlowChatAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   parts: [
     { id: 'root' },
     { id: 'messages' },
+    { id: 'historyContent' },
+    { id: 'historySkeleton' },
     { id: 'historyOverlay' },
     { id: 'historyOpenIntent' },
+    // Hidden compatibility slot: older installed packages can still address it.
     { id: 'historyOpenIntentSpinner' },
   ],
 };

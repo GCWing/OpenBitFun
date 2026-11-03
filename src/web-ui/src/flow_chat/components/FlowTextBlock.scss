@@ -1,5 +1,15 @@
 @use '../flat-markdown-surfaces' as flatMarkdownSurfaces;
 
+// Own the selection boundary at the text leaf, including replies nested in
+// collections, retry history and subagent projections. An outer flex row does
+// not make this block's Markdown/plain-text child a flex item. Keep that child
+// in its own formatting context so WebKit does not fill its paragraph/list gaps.
+// Do not override native [hidden] or the runtime-status row's horizontal layout.
+.flow-text-block:not([hidden]):not(.flow-text-block--runtime-status) {
+  display: flex;
+  flex-direction: column;
+}
+
 .flow-text-block {
   @include flatMarkdownSurfaces.apply;
 

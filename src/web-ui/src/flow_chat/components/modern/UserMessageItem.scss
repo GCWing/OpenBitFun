@@ -6,6 +6,13 @@
 .user-message-item-shell {
   @include transcriptLayout.content-column;
 
+  // Keep the right-aligned bubble a flex item so native selection does not
+  // paint its surrounding layout gaps. Auto inline margins still own alignment;
+  // the gallery and action row retain their full reading-column layout.
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+
   --_user-message-radius: var(--openbitfun-control-flow-chat-user-message-radius);
   --_user-message-padding-inline: var(--_user-message-radius);
 

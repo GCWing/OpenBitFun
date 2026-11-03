@@ -4,12 +4,14 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../types/flow-chat';
 import type { TrajectoryNode } from './trajectoryModel';
-const mocks = vi.hoisted(() => ({ nodes: [] as TrajectoryNode[], select: vi.fn(), clearSelection: vi.fn(), range: vi.fn(), close: vi.fn(), query: vi.fn(), searchState: vi.fn() }));
-vi.mock('./useTrajectory', () => ({ useTrajectory: () => ({ nodes: mocks.nodes, complete: true, supported: true, loading: false, error: false, retry: vi.fn() }) }));
+const mocks = vi.hoisted(() => ({ nodes: [] as TrajectoryNode[], loading: false, select: vi.fn(), clearSelection: vi.fn(), range: vi.fn(), close: vi.fn(), query: vi.fn(), searchState: vi.fn() }));
+vi.mock('./useTrajectory', () => ({ useTrajectory: () => ({ nodes: mocks.nodes, complete: !mocks.loading, supported: true, loading: mocks.loading, error: false, retry: vi.fn() }) }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key, formatNumber: (value: number) => String(value) }) }));
-vi.mock('@openbitfun/ui', async () => {
+vi.mock('@openbitfun/ui', async importOriginal => {
   const { forwardRef } = await import('react');
+  const { Spinner } = await importOriginal<typeof import('@openbitfun/ui')>();
   return {
+    Spinner,
     Button: ({ children, variant: _v, size: _s, ...props }: any) => <button {...props}>{children}</button>,
     IconButton: ({ icon, size: _s, ...props }: any) => <button {...props}>{icon}</button>, Icon: () => null,
     SearchField: forwardRef<HTMLInputElement, any>((props, ref) => <input ref={ref} {...props} />),
@@ -23,6 +25,7 @@ let root: Root; let container: HTMLDivElement;
 let explorer: ReturnType<typeof createRef<TrajectoryExplorerRef>>;
 beforeEach(() => {
   explorer = createRef<TrajectoryExplorerRef>();
+  mocks.loading = false;
   mocks.nodes = Array.from({ length: 10000 }, (_, i) => ({ id: `${i}`, turnId: `${Math.floor(i / 3)}`, turnOrdinal: Math.floor(i / 3),
     kind: (['user', 'model', 'tool'] as const)[i % 3], label: '', preview: '', status: 'completed', timestamp: i, matched: i % 2 === 0 }));
   mocks.select.mockReset().mockResolvedValue(true); mocks.range.mockReset(); mocks.clearSelection.mockReset();
@@ -44,6 +47,26 @@ function pointer(target: Element, type: string, x: number, pointerType = 'mouse'
   Object.defineProperty(event, 'pointerId', { value: 1 }); target.dispatchEvent(event);
 }
 describe('trajectory rail', () => {
+  it('hides the loading logo as soon as the first trajectory node appears', async () => {
+    const firstPage = mocks.nodes.slice(0, 3);
+    mocks.nodes = [];
+    mocks.loading = true;
+    await mount();
+    const body = container.querySelector('.trajectory__body')!;
+    const spinner = body.querySelector('.trajectory__loading[role="status"]');
+    expect(spinner?.getAttribute('data-variant')).toBe('logo');
+    expect(spinner?.getAttribute('aria-label')).toBe('trajectory.loading');
+    expect(container.querySelector('.trajectory__status')).toBeNull();
+    expect(body.querySelector('[role="listbox"]')?.getAttribute('aria-busy')).toBe('true');
+    expect(body.querySelector('[role="option"]')).toBeNull();
+
+    mocks.nodes = firstPage;
+    await mount();
+    expect(body.querySelectorAll('[role="option"]')).toHaveLength(3);
+    expect(body.querySelector('.trajectory__loading')).toBeNull();
+    expect(body.querySelector('[role="listbox"]')?.getAttribute('aria-busy')).toBe('false');
+    expect(container.querySelector('.trajectory__status')).toBeNull();
+  });
   it('tracks the pointer across lanes and horizontal scrolling without selecting or opening details', async () => {
     await mount(); const rail = container.querySelector('[role="listbox"]') as HTMLElement;
     const line = container.querySelector('.trajectory__reference-line') as HTMLElement;

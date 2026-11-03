@@ -9,6 +9,10 @@
   overflow-y: auto;
   list-style: none;
 
+  &__empty {
+    text-align: center;
+  }
+
   &__item {
     display: flex;
     align-items: center;

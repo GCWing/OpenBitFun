@@ -152,15 +152,17 @@ it('opens project-owned task creation from the empty action and the full list fr
   await render();
   const section = container.querySelector('[data-openbitfun-part="automation"]')!;
   const pane = section.querySelector('.project-resource-summary__pane:not(button)')!;
+  const countPane = section.querySelector<HTMLButtonElement>('.project-resource-summary__pane--action')!;
   expect(pane.textContent).toBe('automation.add');
   expect(pane.querySelector('.project-resource-summary__title')).toBeNull();
+  expect(countPane.classList.contains('project-resource-summary__pane--centered')).toBe(true);
   expect(section.querySelector('.project-resources__section-header button')?.textContent).toBe('automation.manage');
   expect(section.querySelector('.project-resources__action-divider')).toBeNull();
   await act(async () => pane.querySelector<HTMLButtonElement>('button')!.click());
   await act(async () => { await vi.dynamicImportSettled(); });
   expect(mocks.jobsDialog).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: 'a', targetKind: 'workspace', initialCreate: true, listPresentation: 'table' }));
   await click('close-jobs');
-  await act(async () => section.querySelector<HTMLButtonElement>('.project-resource-summary__pane--action')!.click());
+  await act(async () => countPane.click());
   expect(mocks.jobsDialog).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: 'a', initialCreate: false }));
   expect(mocks.activate).not.toHaveBeenCalled();
   await click('close-jobs');
@@ -169,6 +171,8 @@ it('opens project-owned task creation from the empty action and the full list fr
   });
   await render();
   expect(section.querySelector('.project-resource-summary__empty')).toBeNull();
+  expect(pane.querySelector('.project-resource-summary__title')?.textContent).toBe('automation.listTitle');
+  expect(countPane.classList.contains('project-resource-summary__pane--centered')).toBe(false);
   expect([...section.querySelectorAll('.project-resources__section-header button')].map(button => button.textContent)).toEqual(['automation.add', 'automation.manage']);
   expect(section.querySelector('.project-resources__action-divider')).not.toBeNull();
   await click('automation.manage');

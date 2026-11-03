@@ -2,6 +2,7 @@
 
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FlowGroup, ThinkingBlock } from '@openbitfun/ui/flow-chat';
 import { DeferredContent } from '@openbitfun/flow-chat-presentation/deferred-content';
@@ -24,6 +25,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
   items: [] as Array<Record<string, unknown>>,
+  commitDuringNativeScroll: false,
   trajectoryPanel: vi.fn(),
   renderTimelineMembers: false,
   activeSession: null as Record<string, unknown> | null,
@@ -155,6 +157,16 @@ vi.mock('./useFlowChatVirtualizer', async () => {
       estimateContext?: { availableWidthPx?: number };
       estimateContextRevision?: string;
     }) => {
+      const [, commit] = React.useReducer(revision => revision + 1, 0);
+      React.useLayoutEffect(() => {
+        const scroller = options.scrollerRef.current;
+        if (!scroller) return;
+        // TanStack can synchronously commit a new virtual window before the
+        // list's later scroll listener receives this same native event.
+        const onScroll = () => { if (mocks.commitDuringNativeScroll) flushSync(commit); };
+        scroller.addEventListener('scroll', onScroll);
+        return () => scroller.removeEventListener('scroll', onScroll);
+      }, [options.scrollerRef]);
       mocks.virtualizerStartsAtTail = options.startAtTailOnMount === true;
       mocks.estimateWidth = options.estimateContext?.availableWidthPx;
       mocks.estimateRevision = options.estimateContextRevision ?? '';
@@ -376,6 +388,7 @@ describe('VirtualMessageList natural scroll contract', () => {
       dialogTurns: [],
     };
     mocks.isFollowingOutput = false;
+    mocks.commitDuringNativeScroll = false;
     mocks.followsNow = false;
     mocks.trajectoryPanel.mockReset();
     mocks.scrollItemIntoView.mockReset();
@@ -500,6 +513,65 @@ describe('VirtualMessageList natural scroll contract', () => {
       expect(scroller.scrollTop).toBe(880);
       expect(rows[0].getBoundingClientRect().top).toBe(100);
     } finally { restore(); }
+  });
+
+  it.each([false, true])('restores the unfaded start after scroll round trips with synchronous virtualizer commits=%s', async commitDuringScroll => {
+    const restoreLayout = fakeLayout({ clientHeight: 800, scrollHeight: 4000, turnTopFromScrollerTop: 0 });
+    try {
+      act(() => root.render(<VirtualMessageList />));
+      await settleOpenReveal();
+      const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      expect(scroller.dataset.scrollAtStart).toBe('true');
+      act(() => {
+        scroller.scrollTop = 1200;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+      expect(scroller.dataset.scrollAtStart).toBe('false');
+      mocks.commitDuringNativeScroll = commitDuringScroll;
+      mocks.handleFollowScroll.mockClear();
+
+      // Include fractional offsets and top-edge overscroll from native WebViews.
+      const offsets = [0, 400, 0.5, 2000, -12, 2, 1, 800, 0];
+      for (const topPx of offsets) {
+        act(() => {
+          scroller.scrollTop = topPx;
+          scroller.dispatchEvent(new Event('scroll'));
+        });
+        expect(scroller.dataset.scrollAtStart).toBe(topPx <= 1 ? 'true' : 'false');
+      }
+      expect(mocks.handleFollowScroll).toHaveBeenCalledTimes(offsets.length);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it('uses current gesture callbacks and detaches listeners when the session changes', async () => {
+    const restoreLayout = fakeLayout({ clientHeight: 800, scrollHeight: 4000, turnTopFromScrollerTop: 0 });
+    const initialIntent = vi.fn();
+    const currentIntent = vi.fn();
+    const nextSessionIntent = vi.fn();
+    try {
+      act(() => root.render(<VirtualMessageList onUserScrollIntent={initialIntent} />));
+      await settleOpenReveal();
+      const oldScroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      act(() => root.render(<VirtualMessageList onUserScrollIntent={currentIntent} />));
+      act(() => oldScroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, bubbles: true })));
+      act(() => oldScroller.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })));
+      expect(initialIntent).not.toHaveBeenCalled();
+      expect(currentIntent).toHaveBeenCalledTimes(2);
+
+      mocks.activeSession = { ...mocks.activeSession, sessionId: 'session-2' };
+      act(() => root.render(<VirtualMessageList onUserScrollIntent={nextSessionIntent} />));
+      await settleOpenReveal();
+      act(() => oldScroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, bubbles: true })));
+      expect(currentIntent).toHaveBeenCalledTimes(2);
+      expect(nextSessionIntent).not.toHaveBeenCalled();
+      const newScroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      act(() => newScroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, bubbles: true })));
+      expect(nextSessionIntent).toHaveBeenCalledTimes(1);
+    } finally {
+      restoreLayout();
+    }
   });
 
   it('crops only idle gutter paint across content and viewport resizing without moving the reader', () => {
@@ -1813,10 +1885,11 @@ describe('VirtualMessageList natural scroll contract', () => {
       }
     }
 
-    it('asks again when the reader returns toward the boundary within the lead', async () => {
+    it.each([false, true])('asks again within the boundary lead with synchronous virtualizer commits=%s', async commitDuringScroll => {
       // Prefetch must not require reaching the physical head first. Moving
       // away alone must also not ask for another older page.
       await withPagedTranscript(async (scroller, asked) => {
+        mocks.commitDuringNativeScroll = commitDuringScroll;
         // Rows 3..7 are on screen, so nothing is reached; the head is 120px up,
         // which is inside the one-screen lead.
         await scrollTo(scroller, 300);

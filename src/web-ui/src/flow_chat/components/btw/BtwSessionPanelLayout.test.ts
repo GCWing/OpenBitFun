@@ -22,7 +22,9 @@ describe('BtwSessionPanel layout styles', () => {
     const shared = readFileSync(
       fileURLToPath(new URL('../modern/VirtualItemRenderer.scss', import.meta.url)), 'utf8',
     );
-    expect(extractBlock(shared, '.virtual-item-wrapper')).toContain('display: flow-root;');
+    const row = extractBlock(shared, '.virtual-item-wrapper');
+    expect(row).toContain('display: flex;');
+    expect(row).toContain('flex-direction: column;');
     // A more specific sidebar rule must not undo the measured row boundary.
     expect(extractBlock(stylesheet, '.virtual-item-wrapper')).not.toMatch(/display\s*:/);
   });

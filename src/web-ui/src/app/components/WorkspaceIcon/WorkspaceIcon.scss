@@ -5,6 +5,28 @@
   justify-content: center;
   vertical-align: middle;
   > img { inline-size: 100%; block-size: 100%; object-fit: contain; border-radius: var(--openbitfun-radius-sm); }
+
+  &__folder {
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  &__folder-layer {
+    grid-area: 1 / 1;
+    inline-size: 100%;
+    block-size: 100%;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &[data-active='false'] {
+      opacity: 0;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
 }
 .workspace-icon-editor {
   display: flex;

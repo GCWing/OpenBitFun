@@ -197,6 +197,13 @@
 }
 
 .markdown-renderer pre {
+  // Both the Markdown fence shell and the rendered code pre can become WebKit
+  // selection roots (overflow/positioning). Isolate each level, with code as a
+  // flex item, so selecting through a fence does not fill its padding or the
+  // unused line width. Code/token children keep their normal preformatted flow.
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   margin: var(--markdown-code-block-gap) 0;
   padding: var(--markdown-code-block-pad-y) var(--markdown-code-block-pad-x);
   overflow: auto;
@@ -272,6 +279,8 @@
 }
 
 .markdown-renderer .code-block-body {
+  display: flex;
+  flex-direction: column;
   position: relative;
   min-width: 0;
   overflow-x: auto;
@@ -544,6 +553,28 @@
 .markdown-renderer .table-wrapper .inline-code {
   // Inline code has its own prose wrapping rule; preserve its word widths too.
   overflow-wrap: normal;
+}
+
+// Keep native table-cell layout (column sizing, alignment and spans). A cell is
+// itself a WebKit selection root, so its padding/unused row height must not
+// paint. Only these renderer-owned cell boxes are transparent; the inner body
+// and its inline descendants retain the application's native selection color.
+.markdown-header-cell::selection,
+.markdown-data-cell::selection {
+  background-color: transparent;
+}
+
+// A separate flex boundary avoids filling the unused inline width of a cell.
+// The body stays in block flow: putting text/link/code runs directly in flex
+// would split them into independent items and change wrapping and alignment.
+.markdown-table-cell-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.markdown-table-cell-body {
+  min-width: 0;
 }
 
 .markdown-renderer .table-wrapper th {
