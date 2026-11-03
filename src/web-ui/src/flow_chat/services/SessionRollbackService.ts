@@ -3,6 +3,8 @@ import { agentAPI } from '@/infrastructure/api';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { createLogger } from '@/shared/utils/logger';
 import { flowChatStore } from '../store/FlowChatStore';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { finishSubmittedMessagePreview } from './submittedMessagePresentation';
 import {
   assertSessionMutationLease,
   completeSessionMutationReconciliation,
@@ -145,6 +147,12 @@ export async function rollbackSessionToTurn(
     markSessionTurnsRetired(request.sessionId, outcome.retiredTurnIds);
     // A device surface renders a host replica that reloading does not rewrite.
     flowChatStore.retireRelaySessionTurns(request.sessionId, outcome.retiredTurnIds);
+    // A send preview renders whenever its Turn is absent; never let a retired
+    // Turn's preview stand in for it.
+    const scope = getActiveSurfaceScope();
+    outcome.retiredTurnIds.forEach(turnId => (
+      finishSubmittedMessagePreview(scope, request.sessionId, turnId)
+    ));
     refreshFiles(outcome.restoredFiles);
     try {
       await reloadAuthoritativeSession(request.sessionId);

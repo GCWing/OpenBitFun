@@ -19,6 +19,11 @@ import { SessionRecordReplica } from '../session-stream/SessionRecordReplica';
 import { resetSessionStreamsForTest, sessionStream } from '../session-stream/SessionStream';
 import { isSessionBindingLocked } from '../utils/sessionLifecycle';
 import { isHostIssuedTurnCatalogRevision } from '../utils/flowChatTurnIdentity';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import {
+  beginSubmittedMessagePreview,
+  getSubmittedMessagePreviews,
+} from '../services/submittedMessagePresentation';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
@@ -8413,6 +8418,23 @@ describe('FlowChatStore device surfaces', () => {
       // second ready, so hydrating here would block the next submission.
       expect(flowChatStore.getState().sessions.get('peer-reload')!.historyState).toBe('ready');
       expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(subscriptions);
+    });
+
+    it('lets the host record of a send adopt its preview, so a rollback cannot expose it', async () => {
+      await openPeerSession('peer-preview', 1);
+      const scope = getActiveSurfaceScope();
+      // The controller reserves the turn ID; the host assigns its own message ID.
+      beginSubmittedMessagePreview(scope, 'peer-preview', 'turn-1', {
+        id: 'user_local', content: 'prompt 1', timestamp: 2,
+      });
+
+      apiMocks.relayRecord?.(itemRecord('peer-preview', 1, 0, 20));
+      await vi.waitFor(() => expect(turnIds('peer-preview')).toEqual(['turn-0', 'turn-1']));
+
+      expect(getSubmittedMessagePreviews(scope, 'peer-preview')).toEqual([]);
+      flowChatStore.retireRelaySessionTurns('peer-preview', ['turn-1']);
+      expect(turnIds('peer-preview')).toEqual(['turn-0']);
+      expect(getSubmittedMessagePreviews(scope, 'peer-preview')).toEqual([]);
     });
 
     it('keeps rendered turns for a host-appended gap without a replay', async () => {
