@@ -50,10 +50,6 @@ const PRODUCT_TOOL_REGISTRATION_ORDER: &[&str] = &[
     "CallDeferredTool",
     "OpenBitFunControl",
     "GetFileDiff",
-    "CreateCanvas",
-    "ReadCanvas",
-    "UpdateCanvas",
-    "PatchCanvas",
     "ListWorkspaces",
     "SessionControl",
     "SessionMessage",
@@ -140,14 +136,6 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "get_goal" => Some(Arc::new(GetGoalTool::new())),
             "create_goal" => Some(Arc::new(CreateGoalTool::new())),
             "update_goal" => Some(Arc::new(UpdateGoalTool::new())),
-            #[cfg(feature = "tools-canvas")]
-            "CreateCanvas" => Some(Arc::new(CreateCanvasTool::new())),
-            #[cfg(feature = "tools-canvas")]
-            "ReadCanvas" => Some(Arc::new(ReadCanvasTool::new())),
-            #[cfg(feature = "tools-canvas")]
-            "UpdateCanvas" => Some(Arc::new(UpdateCanvasTool::new())),
-            #[cfg(feature = "tools-canvas")]
-            "PatchCanvas" => Some(Arc::new(PatchCanvasTool::new())),
             "submit_code_review" => Some(Arc::new(CodeReviewTool::new())),
             "GetToolSpec" => Some(Arc::new(GetToolSpecTool::new())),
             "CallDeferredTool" => Some(Arc::new(CallDeferredTool::new())),

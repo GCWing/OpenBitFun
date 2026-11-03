@@ -595,23 +595,6 @@ export function buildBuiltinAppearance(palette: AppearancePalette): AppearancePa
           vars: createWidgetAppearanceVars(themeTokens),
         },
       },
-      'openbitfun-canvas': {
-        version: 1,
-        settings: {
-          id: `builtin.${palette.id}`,
-          mode: palette.type,
-          bg: palette.colors.background.primary,
-          panel: palette.colors.background.secondary,
-          fg: palette.colors.text.primary,
-          muted: palette.colors.text.muted,
-          border: palette.colors.border.base,
-          accent: palette.colors.accent[500],
-          success: palette.colors.semantic.success,
-          warning: palette.colors.semantic.warning,
-          danger: palette.colors.semantic.error,
-          info: palette.colors.semantic.info,
-        },
-      },
     },
   };
 }

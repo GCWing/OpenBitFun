@@ -180,10 +180,6 @@ function mergeRenderers(
         },
       },
     } : base?.['generative-widget'],
-    'openbitfun-canvas': override?.['openbitfun-canvas'] ? {
-      version: 1,
-      settings: { ...base?.['openbitfun-canvas']?.settings, ...override['openbitfun-canvas'].settings },
-    } : base?.['openbitfun-canvas'],
   };
 }
 

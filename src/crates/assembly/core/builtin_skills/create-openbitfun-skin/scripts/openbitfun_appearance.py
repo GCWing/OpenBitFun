@@ -201,7 +201,6 @@ MERMAID_KEYS = [
     "activationStroke", "success", "warning", "error", "errorBackground", "info",
     "highlight", "pieColors",
 ]
-CANVAS_COLOR_KEYS = ["bg", "panel", "fg", "muted", "border", "accent", "success", "warning", "danger", "info"]
 MIME_BY_EXTENSION = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".gif": "image/gif", ".mp4": "video/mp4", ".webm": "video/webm",
@@ -810,8 +809,6 @@ class ManifestValidator:
             return self.validate_mermaid(settings)
         if renderer_id == "generative-widget":
             return self.validate_widget(settings)
-        if renderer_id == "openbitfun-canvas":
-            return self.validate_canvas(settings)
         return [f"Unsupported renderer: {renderer_id}"]
 
     def validate_theme_token_map(
@@ -967,22 +964,6 @@ class ManifestValidator:
                     errors.append(f"vars.{key} is not registered by the widget host contract")
                 if not isinstance(value, str) or len(value) > 256 or not WIDGET_SAFE_VALUE.fullmatch(value):
                     errors.append(f"vars.{key} has an unsafe value")
-        return errors
-
-    def validate_canvas(self, settings: Mapping[str, Any]) -> list[str]:
-        errors: list[str] = []
-        known = {"id", "mode", *CANVAS_COLOR_KEYS}
-        for key in settings:
-            if key not in known:
-                errors.append(f"Unknown setting: {key}")
-        if not isinstance(settings.get("id"), str) or not re.fullmatch(r"[a-z][a-z0-9.-]{0,95}", settings["id"]):
-            errors.append("id is invalid")
-        if settings.get("mode") not in ("light", "dark"):
-            errors.append("mode must be light or dark")
-        for key in CANVAS_COLOR_KEYS:
-            color = settings.get(key)
-            if not isinstance(color, str) or not COLOR_STRING_PATTERN.fullmatch(color):
-                errors.append(f"{key} is not a supported color")
         return errors
 
     def validate_assets(self, value: Any) -> None:

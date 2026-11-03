@@ -38,6 +38,7 @@ pub fn session_event_publication(name: &str, payload: &Value) -> SessionEventPub
                 kind,
                 "EarlyDetected"
                     | "ParamsPartial"
+                    | "GenUIStream"
                     | "Queued"
                     | "Waiting"
                     | "Progress"
@@ -142,7 +143,7 @@ mod publication_tests {
             assert!(policy.synchronize_records);
             assert!(!policy.persist_control);
         }
-        for kind in ["ParamsPartial", "StreamChunk", "Streaming"] {
+        for kind in ["ParamsPartial", "GenUIStream", "StreamChunk", "Streaming"] {
             let policy = session_event_publication(
                 "agentic://tool-event",
                 &json!({"toolEvent":{"event_type":kind}}),

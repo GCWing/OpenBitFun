@@ -51,6 +51,7 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_STATE_REVISION: AtomicU64 = AtomicU64::new(1);
 static SURFACE_READY: AtomicBool = AtomicBool::new(false);
 static CREATION_API_VERSION: AtomicU64 = AtomicU64::new(0);
+static GENUI_API_VERSION: AtomicU64 = AtomicU64::new(0);
 static PENDING_RESPONSES: OnceLock<Mutex<HashMap<String, PendingResponse>>> = OnceLock::new();
 static PRODUCT_CONTROL_TRANSACTION: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
@@ -97,6 +98,14 @@ async fn dispatch_surface_event(
     );
     let (sender, receiver) = oneshot::channel();
     lock_pending_responses().insert(request_id.clone(), sender);
+    // Cancellation drops the pending sender as well as the receiver.
+    struct PendingGuard(String);
+    impl Drop for PendingGuard {
+        fn drop(&mut self) {
+            lock_pending_responses().remove(&self.0);
+        }
+    }
+    let _pending = PendingGuard(request_id.clone());
 
     let Some(payload) = payload.as_object_mut() else {
         lock_pending_responses().remove(&request_id);
@@ -1201,6 +1210,22 @@ impl ProductControlPort for DesktopProductControlPort {
 }
 
 pub(crate) fn install(app: AppHandle) {
+    openbitfun_core::agentic::tools::generative_ui_host::set_generative_ui_checker(Arc::new(
+        |request| {
+            Box::pin(async move {
+                if GENUI_API_VERSION.load(Ordering::Acquire) != 1 {
+                    return Err("The active host does not advertise GenUI checker v1".into());
+                }
+                dispatch_surface_event(
+                    "agentic://genui-check-request",
+                    request,
+                    OPENBITFUN_CONTROL_RESPONSE_TIMEOUT,
+                    "verify the GenUI candidate",
+                )
+                .await
+            })
+        },
+    ));
     set_openbitfun_control_port(Arc::new(DesktopProductControlPort { app }));
 }
 
@@ -1210,12 +1235,20 @@ pub(crate) fn install(app: AppHandle) {
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct ProductControlSurfaceReadyRequest {
     creation_api_version: Option<u64>,
+    gen_ui_api_version: Option<u64>,
 }
 
 #[tauri::command]
 pub(crate) fn mark_openbitfun_control_surface_ready(
     request: Option<ProductControlSurfaceReadyRequest>,
 ) {
+    GENUI_API_VERSION.store(
+        request
+            .as_ref()
+            .and_then(|request| request.gen_ui_api_version)
+            .unwrap_or(0),
+        Ordering::Release,
+    );
     CREATION_API_VERSION.store(
         request
             .and_then(|request| request.creation_api_version)
@@ -1229,6 +1262,7 @@ pub(crate) fn mark_openbitfun_control_surface_ready(
 pub(crate) fn mark_openbitfun_control_surface_unready() {
     SURFACE_READY.store(false, Ordering::Release);
     CREATION_API_VERSION.store(0, Ordering::Release);
+    GENUI_API_VERSION.store(0, Ordering::Release);
     let pending = std::mem::take(&mut *lock_pending_responses());
     for (_, sender) in pending {
         let _ = sender.send(Err(
@@ -1287,9 +1321,13 @@ mod tests {
         let legacy: super::ProductControlSurfaceReadyRequest =
             serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(legacy.creation_api_version, None);
-        let current: super::ProductControlSurfaceReadyRequest =
-            serde_json::from_value(serde_json::json!({"creationApiVersion": 1})).unwrap();
+        assert_eq!(legacy.gen_ui_api_version, None);
+        let current: super::ProductControlSurfaceReadyRequest = serde_json::from_value(
+            serde_json::json!({"creationApiVersion": 1, "genUiApiVersion": 1}),
+        )
+        .unwrap();
         assert_eq!(current.creation_api_version, Some(1));
+        assert_eq!(current.gen_ui_api_version, Some(1));
     }
     use super::*;
 

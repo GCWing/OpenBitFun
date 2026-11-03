@@ -172,7 +172,6 @@ export class ConversationDocumentProjection {
         const previous = this.previous.get(key);
         const chrome = kind === 'round-header' || kind === 'round-footer';
         const isLastRound = (kind === 'round-footer' || (kind === 'content' && extra.last === true)) && source.isLastRound;
-        const canvasArtifactItems = kind === 'round-footer' ? source.canvasArtifactItems : undefined;
         const layout = isAgentCardRun(members) ? 'agent-cards' : undefined;
         // Judge reuse from cheap primitives first; an unchanged block keeps the
         // previous row identity the virtualizer memoized, and now also keeps the
@@ -191,7 +190,7 @@ export class ConversationDocumentProjection {
           && previous.timeline.revealThinkingIds?.join('|') === extra.revealThinkingIds?.join('|')
           && previous.isLastRound === isLastRound && previous.isTurnComplete === source.isTurnComplete
           && previous.layoutHints?.expandedThinkingItemIds.join('|') === source.layoutHints?.expandedThinkingItemIds.join('|')
-          && (chrome ? previous.data === source.data && previous.canvasArtifactItems === canvasArtifactItems
+          && (chrome ? previous.data === source.data
             : previous.data.items.length === members.length && previous.data.items.every((item, index) => item === members[index]))
           ? previous : undefined;
         if (reusable) {
@@ -208,7 +207,7 @@ export class ConversationDocumentProjection {
         const row: RoundItem = {
           ...source, data,
           projectedGroups: members.map(item => ({ type: 'critical', item })),
-          isLastRound, canvasArtifactItems,
+          isLastRound,
           timeline: { key, kind, sourceIndex, memberIds: members.map(item => item.id), layout, ...extra },
         };
         this.next.set(key, row);
@@ -247,7 +246,7 @@ export class ConversationDocumentProjection {
             revealThinkingIds: run.filter(member => browse.matchingThinkingIds.has(member.id)).map(member => member.id) }));
       });
       flush(true);
-      if ((source.isLastRound && source.isTurnComplete) || source.canvasArtifactItems?.length) {
+      if (source.isLastRound && source.isTurnComplete) {
         add('round-footer', `${source.data.id}:footer`, emptyItems);
       }
       this.sourceCache.set(original, { viewStamp, sourceIndex, items: rows });
@@ -262,8 +261,7 @@ export class ConversationDocumentProjection {
 export function findTimelineBlockIndex(items: readonly VirtualItem[], sourceIndex: number, memberId?: string): number {
   if (memberId) {
     const ownsSource = (item: VirtualItem, index: number) => sourceIndex < 0 || (item.timeline?.sourceIndex ?? index) === sourceIndex;
-    const member = items.findIndex((item, index) => ownsSource(item, index) && (item.timeline?.memberIds.includes(memberId)
-      || (item.type === 'model-round' && item.canvasArtifactItems?.some(candidate => candidate.id === memberId))));
+    const member = items.findIndex((item, index) => ownsSource(item, index) && item.timeline?.memberIds.includes(memberId));
     if (member >= 0) return member;
     const group = items.findIndex((item, index) => ownsSource(item, index) && item.timeline?.kind === 'group-header'
       && item.timeline.group?.allItems.some(candidate => candidate.id === memberId));

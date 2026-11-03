@@ -8,7 +8,6 @@ import type { PanelContentType } from '@/app/components/panels/base/types';
 import { openCanvasContent, openContentInBestTarget } from '@/shared/services/workbenchContentService';
 type OpenSource = 'default' | 'project-nav';
 import { TAB_EVENTS } from '@/app/components/panels/content-canvas/types';
-import { parseCanvasArtifactReference } from '@/shared/utils/canvasArtifactReference';
 import type { ContentResourceScope } from '@/shared/types/contentResource';
 export type TabTargetMode = 'agent' | 'project' | 'git';
 
@@ -24,6 +23,10 @@ export interface TabCreationOptions {
   mode?: TabTargetMode;
   /** Check the originating operation before committing a resource or inline view. */
   isCurrent?: () => boolean;
+  /** Explicit resource scope for content emitted by a session. */
+  scope?: ContentResourceScope;
+  /** Explicit session owner for session-scoped canvas content. */
+  sessionId?: string;
 }
 
 interface CreateTerminalTabOptions {
@@ -38,20 +41,6 @@ export interface CreateReviewPlatformPullRequestDetailTabOptions {
   pullRequestId?: string;
   pullRequestUrl?: string;
   title?: string;
-}
-
-export interface OpenCanvasArtifactTabOptions {
-  workspaceId?: string;
-  artifactReference: string;
-  title?: string;
-  source?: string;
-  status?: string;
-  diagnostics?: unknown[];
-  workspacePath?: string;
-  remoteConnectionId?: string;
-  remoteSshHost?: string;
-  sourceMetadata?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
 }
 
 
@@ -69,44 +58,15 @@ export function createTab(options: TabCreationOptions): void {
   } = options;
 
   const content = { type: type as PanelContentType, title, data, metadata: { ...metadata, duplicateCheckKey: duplicateCheckKey ?? metadata.duplicateCheckKey } };
-  const openOptions = { resourceKey: duplicateCheckKey, replaceExisting, isCurrent: options.isCurrent };
+  const openOptions = {
+    resourceKey: duplicateCheckKey,
+    replaceExisting,
+    isCurrent: options.isCurrent,
+    scope: options.scope,
+    sessionId: options.sessionId,
+  };
   if (mode === 'git') openCanvasContent('git', content, openOptions);
   else openContentInBestTarget(content, openOptions);
-}
-
-/** Open a persisted Canvas artifact through the same panel path as Canvas tool cards. */
-export function openCanvasArtifactTab(options: OpenCanvasArtifactTabOptions): boolean {
-  const artifactReference = options.artifactReference.trim();
-  if (!options.workspaceId || !parseCanvasArtifactReference(artifactReference)) {
-    return false;
-  }
-
-  const duplicateCheckKey = JSON.stringify(['openbitfun-canvas', options.workspaceId, artifactReference]);
-  createTab({
-    type: 'openbitfun-canvas',
-    title: options.title?.trim() || 'OpenBitFun Canvas',
-    data: {
-      artifactReference,
-      source: options.source,
-      status: options.status,
-      diagnostics: options.diagnostics,
-      workspaceId: options.workspaceId,
-      workspacePath: options.workspacePath,
-      remoteConnectionId: options.remoteConnectionId,
-      remoteSshHost: options.remoteSshHost,
-      ...(options.sourceMetadata ? { _source: options.sourceMetadata } : {}),
-    },
-    metadata: {
-      duplicateCheckKey,
-      artifactReference,
-      ...options.metadata,
-    },
-    checkDuplicate: true,
-    duplicateCheckKey,
-    replaceExisting: true,
-    mode: 'agent',
-  });
-  return true;
 }
 
  

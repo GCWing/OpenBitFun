@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:ad57aa872484f2a8",
+  "digest": "fnv1a64:2af59588f1408cda",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -9,6 +9,8 @@
   ],
   "capabilities": {
     "ids": [
+      "gen_ui_owner_v1",
+      "gen_ui_libraries_v1",
       "model_routing_v1",
       "model_pool_selection_v1",
       "background_result_delivery_v1",
@@ -2383,6 +2385,30 @@
       }
     },
     {
+      "id": "gen_ui_app",
+      "surface": "tauri_command",
+      "remoteWorkspace": "RemoteRouted",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "gen_ui_provider_call",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
       "id": "generate_commit_message",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
@@ -4526,30 +4552,6 @@
       }
     },
     {
-      "id": "load_canvas_artifact",
-      "surface": "tauri_command",
-      "remoteWorkspace": "WorkspaceAgnostic",
-      "peer": {
-        "kind": "proxied"
-      },
-      "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
-      }
-    },
-    {
-      "id": "load_canvas_state",
-      "surface": "tauri_command",
-      "remoteWorkspace": "WorkspaceAgnostic",
-      "peer": {
-        "kind": "proxied"
-      },
-      "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
-      }
-    },
-    {
       "id": "load_git_repo_history",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
@@ -6271,30 +6273,6 @@
       }
     },
     {
-      "id": "report_canvas_runtime_error",
-      "surface": "tauri_command",
-      "remoteWorkspace": "WorkspaceAgnostic",
-      "peer": {
-        "kind": "proxied"
-      },
-      "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
-      }
-    },
-    {
-      "id": "report_canvas_runtime_ready",
-      "surface": "tauri_command",
-      "remoteWorkspace": "WorkspaceAgnostic",
-      "peer": {
-        "kind": "proxied"
-      },
-      "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
-      }
-    },
-    {
       "id": "report_ide_control_result",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
@@ -6788,18 +6766,6 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "ACP agents cannot be managed or launched from a controller on the CLI peer host yet; use the `acp clients` commands on that device"
-      }
-    },
-    {
-      "id": "save_canvas_state",
-      "surface": "tauri_command",
-      "remoteWorkspace": "WorkspaceAgnostic",
-      "peer": {
-        "kind": "proxied"
-      },
-      "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
       }
     },
     {

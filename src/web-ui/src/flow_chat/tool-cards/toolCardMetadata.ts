@@ -62,10 +62,6 @@ const PROMINENT_TOOL_CARD_NAMES = new Set([
   'PageDeploy',
   'PagePublish',
   'GenerativeUI',
-  'CreateCanvas',
-  'ReadCanvas',
-  'UpdateCanvas',
-  'PatchCanvas',
 ]);
 
 export const DEDICATED_TOOL_CARD_PRESENTATION_NAMES = new Set([
@@ -571,47 +567,6 @@ const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
     primaryColor: 'var(--openbitfun-color-accent-hover)'
   },
 
-  // OpenBitFun Canvas tools
-  'CreateCanvas': {
-    toolName: 'CreateCanvas',
-    displayName: 'Create Canvas',
-    icon: 'UI',
-    requiresConfirmation: false,
-    resultDisplayType: 'detailed',
-    description: 'Create a OpenBitFun Canvas artifact',
-    displayMode: 'detailed',
-    primaryColor: APPEARANCE_DOMAIN_TOKENS.generativeUi
-  },
-  'ReadCanvas': {
-    toolName: 'ReadCanvas',
-    displayName: 'Read Canvas',
-    icon: 'UI',
-    requiresConfirmation: false,
-    resultDisplayType: 'detailed',
-    description: 'Read a OpenBitFun Canvas artifact',
-    displayMode: 'detailed',
-    primaryColor: APPEARANCE_DOMAIN_TOKENS.generativeUi
-  },
-  'UpdateCanvas': {
-    toolName: 'UpdateCanvas',
-    displayName: 'Update Canvas',
-    icon: 'UI',
-    requiresConfirmation: false,
-    resultDisplayType: 'detailed',
-    description: 'Update a OpenBitFun Canvas artifact',
-    displayMode: 'detailed',
-    primaryColor: APPEARANCE_DOMAIN_TOKENS.generativeUi
-  },
-  'PatchCanvas': {
-    toolName: 'PatchCanvas',
-    displayName: 'Patch Canvas',
-    icon: 'UI',
-    requiresConfirmation: false,
-    resultDisplayType: 'detailed',
-    description: 'Patch a OpenBitFun Canvas artifact',
-    displayMode: 'detailed',
-    primaryColor: APPEARANCE_DOMAIN_TOKENS.generativeUi
-  },
 };
 
 export const TOOL_CARD_CONFIGS: Record<string, ToolCardConfig> = Object.fromEntries(

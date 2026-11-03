@@ -599,60 +599,6 @@ Second paragraph.
   });
 
   it.each([
-    '[Open Canvas](openbitfun-canvas://session/session_1/canvas/canvas_1)',
-    'openbitfun-canvas://session/session_1/canvas/canvas_1',
-  ])('opens Canvas artifact links in the Canvas panel: %s', async (content) => {
-    openSessionHost({
-      workspaceId: SESSION_WORKSPACE.id,
-      workspacePath: '/srv/project',
-      remoteConnectionId: 'remote-connection-1',
-      remoteSshHost: 'workspace.example',
-    });
-
-    try {
-      await act(async () => {
-        root.render(
-          <MarkdownRenderer
-            content={content}
-            workspaceId={SESSION_WORKSPACE.id}
-            basePath="/srv/project"
-            remoteConnectionId="remote-connection-1"
-            remoteSshHost="workspace.example"
-          />,
-        );
-        await Promise.resolve();
-      });
-
-      const link = container.querySelector<HTMLButtonElement>('button.canvas-link');
-      expect(link).not.toBeNull();
-
-      act(() => link?.click());
-
-      expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
-      expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content).toMatchObject({
-        type: 'openbitfun-canvas',
-        title: 'OpenBitFun Canvas',
-        data: {
-          artifactReference: 'openbitfun-canvas://session/session_1/canvas/canvas_1',
-          workspaceId: SESSION_WORKSPACE.id,
-          workspacePath: '/srv/project',
-          remoteConnectionId: 'remote-connection-1',
-          remoteSshHost: 'workspace.example',
-          _source: { type: 'markdown-link' },
-        },
-        metadata: {
-          artifactReference: 'openbitfun-canvas://session/session_1/canvas/canvas_1',
-          fromMarkdown: true,
-        },
-
-      });
-      expect(mocks.getCurrentWorkspacePath).not.toHaveBeenCalled();
-    } finally {
-      useAgentCanvasStore.getState().reset();
-    }
-  });
-
-  it.each([
     ['legacy CLI', { hostKind: 'cli' }],
     ['unprobed peer', null],
     ['unknown peer', { hostKind: null }],

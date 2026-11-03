@@ -1,4 +1,4 @@
-import type { DialogTurn, ModelRound, FlowToolItem, FlowUserSteeringItem, TokenUsage } from './flow-chat';
+import type { DialogTurn, ModelRound, FlowUserSteeringItem, TokenUsage } from './flow-chat';
 import type { ExploreGroupData, FlowGroupData, ModelRoundItemGroup } from '../grouping/types';
 import type { TurnCompletionNotice } from '../utils/turnCompletionNotice';
 
@@ -68,7 +68,6 @@ type VirtualContent =
       turnOutputDurationMs?: number;
       turnTtftMs?: number;
       turnTokenUsage?: TokenUsage;
-      canvasArtifactItems?: FlowToolItem[];
     }
   | { type: 'explore-group'; data: ExploreGroupData; turnId: string }
   | { type: 'turn-completion-notice'; data: TurnCompletionNotice; turnId: string }

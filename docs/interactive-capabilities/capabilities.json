@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "6ae2eeaa19e6342f9dcf7ff33b7c0fa94547ee1c02fc1835f6f4471caab6fbb3",
-  "ownerDigest": "3cc6d7d869b2c90c2161494a854b5ff7eb72ea69a1a28e40ccd42065fb3382e2",
+  "digest": "d9509b2230b87eb48363b5d79dae72009f1e84d3007de98ee20e717ae609b0b8",
+  "ownerDigest": "d3fe9126806fe064f8a7ad70e6e9c72dad48eef1f45f314f537a9e48d3771908",
   "searchAcceptance": [
     {
       "id": "native-image-generation",
@@ -175,11 +175,11 @@
     "features": 22,
     "settings": 22,
     "userFacing": 44,
-    "documentedItems": 339,
+    "documentedItems": 333,
     "controlCoverage": {
-      "direct": 62,
-      "delegated": 72,
-      "interactive": 205,
+      "direct": 63,
+      "delegated": 70,
+      "interactive": 200,
       "unsupported": 0
     }
   },
@@ -6922,426 +6922,6 @@
       "presentationTarget": {
         "kind": "action",
         "actionId": "surface.miniapps.open"
-      }
-    },
-    {
-      "id": "feature.canvas:query",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "artifact-open",
-        "html-react",
-        "inline-generative-ui",
-        "state",
-        "source-inspection",
-        "element-context",
-        "runtime-errors",
-        "export-html"
-      ],
-      "kind": "query",
-      "risk": "read",
-      "executionHost": "productHost",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": true
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": true
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "valueSource": {
-        "kind": "static"
-      },
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:open:artifact-open",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "artifact-open"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:delegate:html-react",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "html-react"
-      ],
-      "kind": "delegate",
-      "risk": "execute",
-      "executionHost": "workspaceHost",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": true
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": true
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "delegateTools": [
-        "CreateCanvas",
-        "ReadCanvas",
-        "PatchCanvas",
-        "UpdateCanvas"
-      ],
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:delegate:inline-generative-ui",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "inline-generative-ui"
-      ],
-      "kind": "delegate",
-      "risk": "execute",
-      "executionHost": "workspaceHost",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": true
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": true
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "delegateTools": [
-        "GenerativeUI"
-      ],
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:open:state",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "state"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:delegate:source-inspection",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "source-inspection"
-      ],
-      "kind": "delegate",
-      "risk": "execute",
-      "executionHost": "workspaceHost",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": true
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": true
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "delegateTools": [
-        "ReadCanvas"
-      ],
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:open:element-context",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "element-context"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:open:runtime-errors",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "runtime-errors"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
-      }
-    },
-    {
-      "id": "feature.canvas:open:export-html",
-      "capabilityId": "feature.canvas",
-      "itemIds": [
-        "export-html"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "session"
       }
     },
     {
@@ -16809,7 +16389,8 @@
         "computer-use-permissions",
         "browser-auto-connect",
         "browser-setup",
-        "json-repair"
+        "json-repair",
+        "genui-library"
       ],
       "kind": "query",
       "risk": "read",
@@ -17294,6 +16875,55 @@
       },
       "inputSchema": {
         "type": "boolean"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "static"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "tools.execution"
+      }
+    },
+    {
+      "id": "setting.tools.execution:option:genui-library",
+      "capabilityId": "setting.tools.execution",
+      "itemIds": [
+        "genui-library"
+      ],
+      "kind": "option",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "string",
+        "enum": [
+          "harmony",
+          "openbitfun",
+          "openui"
+        ]
       },
       "outputSchema": {
         "type": "object",
@@ -20748,6 +20378,96 @@
       "presentationTarget": {
         "kind": "settings",
         "pageId": "data.diagnostics"
+      }
+    },
+    {
+      "id": "feature.generative-ui:query",
+      "capabilityId": "feature.generative-ui",
+      "itemIds": [
+        "app-generation"
+      ],
+      "kind": "query",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "static"
+      },
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      }
+    },
+    {
+      "id": "feature.generative-ui:delegate:app-generation",
+      "capabilityId": "feature.generative-ui",
+      "itemIds": [
+        "app-generation"
+      ],
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "delegateTools": [
+        "GenerativeUI"
+      ],
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
       }
     }
   ],
@@ -24422,237 +24142,6 @@
         "Open the current instance with MiniAppBrowser; prefer observe_bridge for business state and act_bridge for semantic operations and result verification. Preserve drafts without editing source, reloading, or changing presentation. For legacy apps use available DOM/input controls or report the gap; activity is not business state"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.miniapps/"
-    },
-    {
-      "id": "feature.canvas",
-      "kind": "feature",
-      "categoryId": "automation",
-      "titleZh": "Canvas 与交互产物",
-      "titleEn": "Canvas & interactive artifacts",
-      "summaryZh": "在会话旁展示和保存智能体生成的可视化、交互页面与结构化产物。",
-      "summaryEn": "Display and save visualizations, interactive pages, and structured artifacts generated beside a session.",
-      "keywordsZh": [
-        "Canvas",
-        "画布",
-        "可视化",
-        "交互产物",
-        "Artifact"
-      ],
-      "keywordsEn": [
-        "canvas",
-        "visualization",
-        "interactive artifact",
-        "artifact",
-        "preview"
-      ],
-      "highlightsZh": [
-        "在会话中打开交互内容",
-        "保留画布状态",
-        "在面板中查看运行错误"
-      ],
-      "highlightsEn": [
-        "Open interactive content from a session",
-        "Persist canvas state",
-        "Inspect runtime errors in the panel"
-      ],
-      "items": [
-        {
-          "id": "artifact-open",
-          "titleZh": "从会话工具结果加载并打开持久化 Canvas 产物",
-          "titleEn": "Load and open persistent Canvas artifacts from session tool results",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“从会话工具结果加载并打开持久化 Canvas 产物”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Load and open persistent Canvas artifacts from session tool results” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          }
-        },
-        {
-          "id": "html-react",
-          "titleZh": "渲染并持续编辑 HTML 或 React 交互界面、图表和可视化",
-          "titleEn": "Render and iteratively edit HTML or React interfaces, charts, and interactive visualizations",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "CreateCanvas",
-              "ReadCanvas",
-              "PatchCanvas",
-              "UpdateCanvas"
-            ],
-            "workflowZh": [
-              "用 CreateCanvas 提交单文件 TSX，并仅从 openbitfun/canvas 导入允许的运行时组件",
-              "保留返回的 openbitfun-canvas 引用，先 ReadCanvas 获取当前版本，再用 PatchCanvas 做局部改动或 UpdateCanvas 完整更新"
-            ],
-            "workflowEn": [
-              "Use CreateCanvas with a single TSX file and import runtime components only from openbitfun/canvas",
-              "Keep the returned openbitfun-canvas reference, inspect it with ReadCanvas, then use PatchCanvas for focused changes or UpdateCanvas for a full update"
-            ]
-          }
-        },
-        {
-          "id": "inline-generative-ui",
-          "titleZh": "在会话中生成紧凑的 HTML/SVG 图表、说明器或交互组件",
-          "titleEn": "Generate compact HTML/SVG charts, explainers, or interactive widgets inline in a session",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "GenerativeUI"
-            ],
-            "workflowZh": [
-              "仅在可视化或交互能明显帮助理解时使用 GenerativeUI，并输出紧凑、自包含且适配明暗外观的组件",
-              "需要持久编辑或独立产物时改用 Canvas；纯文本足够时不创建组件"
-            ],
-            "workflowEn": [
-              "Use GenerativeUI only when visualization or interaction materially improves understanding, producing a compact self-contained widget that supports light and dark appearances",
-              "Use Canvas for persistent editable artifacts, and skip widget generation when text is sufficient"
-            ]
-          }
-        },
-        {
-          "id": "state",
-          "titleZh": "在重新打开或刷新 Canvas 时加载和保存交互状态",
-          "titleEn": "Load and save interactive state when a Canvas is reopened or refreshed",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“在重新打开或刷新 Canvas 时加载和保存交互状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Load and save interactive state when a Canvas is reopened or refreshed” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          }
-        },
-        {
-          "id": "source-inspection",
-          "titleZh": "查看 Canvas 源码、编译版本和最后可用版本",
-          "titleEn": "Inspect Canvas source, compiled revisions, and the last known good revision",
-          "control": {
-            "kind": "delegate",
-            "tools": [
-              "ReadCanvas"
-            ],
-            "workflowZh": [
-              "用 ReadCanvas 按 artifact_reference 或 canvas_id 读取源码、状态、诊断与编译信息"
-            ],
-            "workflowEn": [
-              "Use ReadCanvas with artifact_reference or canvas_id to inspect source, status, diagnostics, and compiled information"
-            ]
-          }
-        },
-        {
-          "id": "element-context",
-          "titleZh": "选择 Canvas 内的元素并把元素引用加入会话上下文",
-          "titleEn": "Select an element inside Canvas and add its reference to session context",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“选择 Canvas 内的元素并把元素引用加入会话上下文”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Select an element inside Canvas and add its reference to session context” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          }
-        },
-        {
-          "id": "runtime-errors",
-          "titleZh": "捕获运行错误、上报诊断并请求智能体自动修复",
-          "titleEn": "Capture runtime errors, report diagnostics, and ask the agent to repair them",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“捕获运行错误、上报诊断并请求智能体自动修复”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Capture runtime errors, report diagnostics, and ask the agent to repair them” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          }
-        },
-        {
-          "id": "export-html",
-          "titleZh": "把当前 Canvas 导出为可独立打开的 HTML 文件",
-          "titleEn": "Export the current Canvas as a standalone HTML file",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“把当前 Canvas 导出为可独立打开的 HTML 文件”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Export the current Canvas as a standalone HTML file” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          }
-        }
-      ],
-      "stepsZh": [
-        "打开一个 AI 会话",
-        "让智能体创建可视化或交互工具",
-        "从工具结果打开 Canvas"
-      ],
-      "stepsEn": [
-        "Open an AI session",
-        "Ask the agent for a visualization or interactive tool",
-        "Open the Canvas from the tool result"
-      ],
-      "agentExamplesZh": [
-        "打开 AI 助手，我想做一个交互可视化",
-        "创建一个可交互的 Canvas"
-      ],
-      "agentExamplesEn": [
-        "Open the AI assistant; I want an interactive visualization",
-        "Create an interactive Canvas"
-      ],
-      "destination": {
-        "kind": "scene",
-        "sceneId": "session"
-      },
-      "operations": [],
-      "options": [],
-      "searchTerms": [
-        "feature.canvas",
-        "Canvas 与交互产物",
-        "Canvas & interactive artifacts",
-        "扩展与自动化",
-        "Extensions & automation",
-        "Canvas",
-        "画布",
-        "可视化",
-        "交互产物",
-        "Artifact",
-        "canvas",
-        "visualization",
-        "interactive artifact",
-        "artifact",
-        "preview",
-        "在会话中打开交互内容",
-        "保留画布状态",
-        "在面板中查看运行错误",
-        "Open interactive content from a session",
-        "Persist canvas state",
-        "Inspect runtime errors in the panel",
-        "从会话工具结果加载并打开持久化 Canvas 产物",
-        "Load and open persistent Canvas artifacts from session tool results",
-        "渲染并持续编辑 HTML 或 React 交互界面、图表和可视化",
-        "Render and iteratively edit HTML or React interfaces, charts, and interactive visualizations",
-        "在会话中生成紧凑的 HTML/SVG 图表、说明器或交互组件",
-        "Generate compact HTML/SVG charts, explainers, or interactive widgets inline in a session",
-        "在重新打开或刷新 Canvas 时加载和保存交互状态",
-        "Load and save interactive state when a Canvas is reopened or refreshed",
-        "查看 Canvas 源码、编译版本和最后可用版本",
-        "Inspect Canvas source, compiled revisions, and the last known good revision",
-        "选择 Canvas 内的元素并把元素引用加入会话上下文",
-        "Select an element inside Canvas and add its reference to session context",
-        "捕获运行错误、上报诊断并请求智能体自动修复",
-        "Capture runtime errors, report diagnostics, and ask the agent to repair them",
-        "把当前 Canvas 导出为可独立打开的 HTML 文件",
-        "Export the current Canvas as a standalone HTML file",
-        "打开 AI 助手，我想做一个交互可视化",
-        "创建一个可交互的 Canvas",
-        "Open the AI assistant; I want an interactive visualization",
-        "Create an interactive Canvas",
-        "CreateCanvas",
-        "ReadCanvas",
-        "PatchCanvas",
-        "UpdateCanvas",
-        "用 CreateCanvas 提交单文件 TSX，并仅从 openbitfun/canvas 导入允许的运行时组件",
-        "保留返回的 openbitfun-canvas 引用，先 ReadCanvas 获取当前版本，再用 PatchCanvas 做局部改动或 UpdateCanvas 完整更新",
-        "Use CreateCanvas with a single TSX file and import runtime components only from openbitfun/canvas",
-        "Keep the returned openbitfun-canvas reference, inspect it with ReadCanvas, then use PatchCanvas for focused changes or UpdateCanvas for a full update",
-        "GenerativeUI",
-        "仅在可视化或交互能明显帮助理解时使用 GenerativeUI，并输出紧凑、自包含且适配明暗外观的组件",
-        "需要持久编辑或独立产物时改用 Canvas；纯文本足够时不创建组件",
-        "Use GenerativeUI only when visualization or interaction materially improves understanding, producing a compact self-contained widget that supports light and dark appearances",
-        "Use Canvas for persistent editable artifacts, and skip widget generation when text is sufficient",
-        "用 ReadCanvas 按 artifact_reference 或 canvas_id 读取源码、状态、诊断与编译信息",
-        "Use ReadCanvas with artifact_reference or canvas_id to inspect source, status, diagnostics, and compiled information"
-      ],
-      "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.canvas/"
     },
     {
       "id": "feature.tasks-automation",
@@ -30375,6 +29864,25 @@
               }
             ]
           }
+        },
+        {
+          "id": "genui-library",
+          "titleZh": "选择生成式 UI 组件库及关联 UI 规范并操作预览",
+          "titleEn": "Select a GenUI component library, its UI specification and preview",
+          "destination": {
+            "kind": "settings",
+            "pageId": "tools.execution",
+            "viewId": "advanced"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "genui-library"
+              }
+            ]
+          }
         }
       ],
       "stepsZh": [
@@ -30519,6 +30027,21 @@
           "valueSchema": {
             "type": "boolean"
           }
+        },
+        {
+          "id": "genui-library",
+          "titleZh": "生成式 UI 组件库及 UI 规范",
+          "titleEn": "GenUI component library and UI specification",
+          "descriptionZh": "选择后续生成使用的组件库及其关联的设计规则、资源、视口、宿主外壳和验收检查；已有应用保留自己的目标身份。",
+          "descriptionEn": "Choose the component library and its bound design rules, resources, viewport, host shell and acceptance checks. Existing apps retain their target identity.",
+          "valueSchema": {
+            "type": "string",
+            "enum": [
+              "harmony",
+              "openbitfun",
+              "openui"
+            ]
+          }
         }
       ],
       "searchTerms": [
@@ -30583,6 +30106,8 @@
         "Discover and choose a browser, configure default CDP, or restart it when needed",
         "控制是否在安全边界内修复模型生成的非法工具参数 JSON",
         "Choose whether malformed model-generated tool-argument JSON may be repaired within safety boundaries",
+        "选择生成式 UI 组件库及关联 UI 规范并操作预览",
+        "Select a GenUI component library, its UI specification and preview",
         "启用 Computer Use",
         "把子智能体最大并发改为 8",
         "打开权限设置",
@@ -32607,6 +32132,138 @@
         "Take me to export a diagnostic bundle"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/setting.data.diagnostics/"
+    },
+    {
+      "id": "feature.generative-ui",
+      "kind": "feature",
+      "categoryId": "automation",
+      "titleZh": "Generative UI 生成式界面",
+      "titleEn": "Generative UI",
+      "summaryZh": "由智能体按组件库及关联 UI 规范生成 OpenUI 组件应用或 HTML/CSS/SVG 自由文档，经目标视口实际渲染、宿主验收与需求复核后接受并保存。",
+      "summaryEn": "Generate OpenUI component apps or free HTML/CSS/SVG documents under a bound UI specification; accept and persist only after target-viewport rendering, host checks and requirement review.",
+      "keywordsZh": [
+        "Generative UI",
+        "生成式界面",
+        "交互应用",
+        "宿主组件",
+        "应用状态"
+      ],
+      "keywordsEn": [
+        "generative UI",
+        "interactive app",
+        "component contracts",
+        "application state",
+        "structured widget"
+      ],
+      "highlightsZh": [
+        "按组件库及其 UI 规范的设计规则、资源、视口和宿主外壳约束生成结果",
+        "组件路径使用 OpenUI 描述和可信 renderer；自由路径保留 HTML/CSS/SVG",
+        "支持生成、交互、保存和重开",
+        "实际挂载、交互、保存重开与需求审查通过后接受候选",
+        "可注册自定义宿主组件"
+      ],
+      "highlightsEn": [
+        "Constrain generated results with the selected library's UI rules, resources, viewport and host shell",
+        "Use OpenUI descriptions and trusted renderers for components; retain HTML/CSS/SVG for free documents",
+        "Support generation, interaction, save and reopen",
+        "Accept candidates after mounted interaction, durable reopen and requirement checks",
+        "Register custom host components"
+      ],
+      "items": [
+        {
+          "id": "app-generation",
+          "titleZh": "生成可交互的 GenUI 应用并由宿主渲染",
+          "titleEn": "Generate interactive GenUI applications rendered by the host",
+          "control": {
+            "kind": "delegate",
+            "tools": [
+              "GenerativeUI"
+            ],
+            "workflowZh": [
+              "按所选 UI 规范选择 OpenUI 组件描述或 HTML/CSS/SVG 自由文档；规范身份随候选固定。",
+              "宿主在目标视口实际渲染并执行布局、外壳、保存重开和需求检查；失败诊断返回原生成流程。",
+              "候选与已接受版本分离，状态由会话所属宿主持久化，使用版本校验避免并发覆盖。"
+            ],
+            "workflowEn": [
+              "Use OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification; pin that identity to the candidate.",
+              "Render in the target viewport and run shell, layout, save/reopen and requirement checks on every candidate; return diagnostics to generation on failure.",
+              "Separate candidates from accepted revisions and persist state on the session owner using version checks to prevent concurrent overwrite."
+            ]
+          }
+        }
+      ],
+      "stepsZh": [
+        "打开 AI 会话",
+        "让智能体生成一个 GenUI 应用",
+        "在宿主中完成交互并保存，随后重开应用"
+      ],
+      "stepsEn": [
+        "Open an AI session",
+        "Ask the agent to generate a GenUI application",
+        "Interact and save it in the host, then reopen the application"
+      ],
+      "agentExamplesZh": [
+        "生成一个可保存的记账应用",
+        "生成一个带预算设置和支出汇总的 dashboard 应用",
+        "生成一个阅读目录并支持收藏",
+        "生成一个带完成状态的日计划"
+      ],
+      "agentExamplesEn": [
+        "Generate a saveable accounting app",
+        "Generate a dashboard with budget settings and an expense summary",
+        "Generate a reading catalog with favorites",
+        "Generate a daily plan with completion state"
+      ],
+      "destination": {
+        "kind": "scene",
+        "sceneId": "session"
+      },
+      "operations": [],
+      "options": [],
+      "searchTerms": [
+        "feature.generative-ui",
+        "Generative UI 生成式界面",
+        "Generative UI",
+        "扩展与自动化",
+        "Extensions & automation",
+        "生成式界面",
+        "交互应用",
+        "宿主组件",
+        "应用状态",
+        "generative UI",
+        "interactive app",
+        "component contracts",
+        "application state",
+        "structured widget",
+        "按组件库及其 UI 规范的设计规则、资源、视口和宿主外壳约束生成结果",
+        "组件路径使用 OpenUI 描述和可信 renderer；自由路径保留 HTML/CSS/SVG",
+        "支持生成、交互、保存和重开",
+        "实际挂载、交互、保存重开与需求审查通过后接受候选",
+        "可注册自定义宿主组件",
+        "Constrain generated results with the selected library's UI rules, resources, viewport and host shell",
+        "Use OpenUI descriptions and trusted renderers for components; retain HTML/CSS/SVG for free documents",
+        "Support generation, interaction, save and reopen",
+        "Accept candidates after mounted interaction, durable reopen and requirement checks",
+        "Register custom host components",
+        "生成可交互的 GenUI 应用并由宿主渲染",
+        "Generate interactive GenUI applications rendered by the host",
+        "生成一个可保存的记账应用",
+        "生成一个带预算设置和支出汇总的 dashboard 应用",
+        "生成一个阅读目录并支持收藏",
+        "生成一个带完成状态的日计划",
+        "Generate a saveable accounting app",
+        "Generate a dashboard with budget settings and an expense summary",
+        "Generate a reading catalog with favorites",
+        "Generate a daily plan with completion state",
+        "GenerativeUI",
+        "按所选 UI 规范选择 OpenUI 组件描述或 HTML/CSS/SVG 自由文档；规范身份随候选固定。",
+        "宿主在目标视口实际渲染并执行布局、外壳、保存重开和需求检查；失败诊断返回原生成流程。",
+        "候选与已接受版本分离，状态由会话所属宿主持久化，使用版本校验避免并发覆盖。",
+        "Use OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification; pin that identity to the candidate.",
+        "Render in the target viewport and run shell, layout, save/reopen and requirement checks on every candidate; return diagnostics to generation on failure.",
+        "Separate candidates from accepted revisions and persist state on the session owner using version checks to prevent concurrent overwrite."
+      ],
+      "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.generative-ui/"
     }
   ]
 }

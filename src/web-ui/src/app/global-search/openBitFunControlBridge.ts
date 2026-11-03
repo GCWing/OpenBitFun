@@ -6,6 +6,7 @@ import { notifyMcpConfigChanged } from '@/infrastructure/mcp/configEvents';
 import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
 import { listenForCreationRequests } from '@/infrastructure/creation/creationBridge';
+import { listenForGenUIChecks } from '@/tools/generative-ui/genUIDeliveryBridge';
 import { activateInteractiveCapability } from './interactiveCapabilityActivator';
 import { activateProductAction } from './productActionActivator';
 import { getInteractiveCapability, getInteractiveControlDefinition } from './interactiveCapabilityCatalog';
@@ -49,6 +50,7 @@ let requestUnlisten: (() => void) | null = null;
 let appliedUnlisten: (() => void) | null = null;
 let effectUnlisten: (() => void) | null = null;
 let creationUnlisten: (() => void) | null = null;
+let genUIUnlisten: (() => void) | null = null;
 let detachListenerInstalled = false;
 
 function errorMessage(error: unknown): string {
@@ -204,6 +206,7 @@ function markSurfaceDetached(): void {
 export async function initializeOpenBitFunControlBridge(): Promise<void> {
   if (requestUnlisten) return;
   creationUnlisten = listenForCreationRequests();
+  genUIUnlisten = listenForGenUIChecks();
   requestUnlisten = api.listen<OpenBitFunControlRequest>(REQUEST_EVENT, request => {
     void handleRequest(request);
   });
@@ -218,8 +221,10 @@ export async function initializeOpenBitFunControlBridge(): Promise<void> {
     detachListenerInstalled = true;
   }
   try {
-    await api.invoke('mark_openbitfun_control_surface_ready', { request: { creationApiVersion: 1 } });
+    await api.invoke('mark_openbitfun_control_surface_ready', { request: { creationApiVersion: 1, genUiApiVersion: 1 } });
   } catch (error) {
+    genUIUnlisten?.();
+    genUIUnlisten = null;
     creationUnlisten?.();
     creationUnlisten = null;
     requestUnlisten();

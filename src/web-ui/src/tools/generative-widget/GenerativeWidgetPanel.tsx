@@ -1,177 +1,164 @@
-import { Button, Textarea } from '@openbitfun/ui';
-import React from 'react';
-import { Code2, RotateCcw, Save } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import React, { useMemo, useState } from 'react';
+import { useI18n } from '@/infrastructure/i18n';
+import {
+  type GenerativeWidgetOrigin,
+} from '@/flow_chat/utils/generativeWidgetProjection';
+import { useGenerativeWidgetProjection } from '@/flow_chat/hooks/useGenerativeWidgetProjection';
+import GenUIApplication from '@/tools/generative-ui/GenUIApplication';
+import { isGenUIAppEnvelope, type GenUIAppEnvelope, type GenUIAppState } from '@/tools/generative-ui/genUITypes';
+import type { GenUIVerification } from '@/tools/generative-ui/genUIVerification';
+import { GenUIVerificationPanel } from '@/tools/generative-ui/GenUIVerificationPanel';
+import { genUIContentKey } from '@/tools/generative-ui/genUIState';
+import { requestGenUIRepair } from '@/tools/generative-ui/genUIRepair';
+import { useGenUIOwner } from '@/tools/generative-ui/useGenUIOwner';
+import { resolveGenUIInteractionState } from '@/tools/generative-ui/genUIInteractionState';
+import { useChatMcpCatalog } from '@/flow_chat/hooks/useChatMcpCatalog';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { createGenUIMcpProvider } from '@/tools/generative-ui/genUIMcpProvider';
+import { createGenUINativeProvider, mergeGenUIProviders } from '@/tools/generative-ui/genUINativeProvider';
+import type { GenUITargetEvent } from '@/tools/generative-ui/genUIAsyncCapabilities';
+import { requiresGenUIAsyncProvider } from '@/tools/generative-ui/genUIAsyncSource';
 import './GenerativeWidgetPanel.scss';
 
 export interface GenerativeWidgetPanelProps {
-  title?: string;
-  widgetId?: string;
-  widgetCode?: string;
-  onWidgetCodePersist?: (widgetCode: string) => Promise<void> | void;
+  app?: GenUIAppEnvelope;
+  appState?: GenUIAppState;
+  origin?: GenerativeWidgetOrigin;
+  presentation?: 'panel' | 'inline';
+  /** Optional host delivery for component events such as Map marker selection. */
+  onTargetEvent?: (event: GenUITargetEvent) => void | Promise<void>;
+  onExpand?: (value: { origin: GenerativeWidgetOrigin; app: GenUIAppEnvelope; appState?: GenUIAppState; widgetId: string }) => void;
 }
 
-const AUTO_SAVE_DELAY_MS = 600;
-
 export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
-  widgetCode,
-  onWidgetCodePersist,
+  app: suppliedApp,
+  appState: suppliedState,
+  origin,
+  presentation = 'panel',
+  onTargetEvent,
+  onExpand,
 }) => {
-  const { t } = useTranslation('flow-chat');
-  const [draftCode, setDraftCode] = React.useState(widgetCode ?? '');
-  const [saveState, setSaveState] = React.useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
-  const [saveError, setSaveError] = React.useState<string | null>(null);
-  const savedCodeRef = React.useRef(widgetCode ?? '');
+  const { t } = useI18n('flow-chat');
+  const projection = useGenerativeWidgetProjection(origin);
+  const [reloading, setReloading] = useState(false);
+  const [evidence, setEvidence] = useState<{ source: string; report: GenUIVerification }>();
+  const [reloaded, setReloaded] = useState<{ source: string; state: GenUIAppState; revision: number; baseline: string }>();
+  const app = origin ? projection?.app : (isGenUIAppEnvelope(suppliedApp) ? suppliedApp : undefined);
+  const appState = origin ? projection?.appState : suppliedState;
+  const session = origin ? flowChatStore.getState().sessions.get(origin.sessionId) : undefined;
+  const mcpCatalog = useChatMcpCatalog({
+    // A plain OpenUI document does not need a host catalog. Loading it only
+    // for sources that can actually call Query/Mutation or remote media/map
+    // providers avoids a relay request for every transient FlowChat answer.
+    // Capability admission remains enforced by the async runtime itself.
+    enabled: Boolean(origin?.sessionId && app && requiresGenUIAsyncProvider(app)),
+    surfaceEpoch: getActiveSurfaceScope().epoch,
+    modeId: session?.mode ?? session?.config?.agentType ?? 'Standard',
+    workspaceId: origin?.scope.workspaceId,
+  });
+  const asyncTarget: 'local' | 'peer' = origin?.scope.surfaceId && origin.scope.surfaceId !== 'local' ? 'peer' : 'local';
+  const asyncTargetId = asyncTarget === 'peer' ? origin?.scope.surfaceId : undefined;
+  const mcpProvider = useMemo(() => {
+    const mcp = createGenUIMcpProvider(mcpCatalog.catalog ?? { modeRestricted: false, tools: [] }, {
+      target: asyncTarget,
+      eventCapabilities: {
+        'map.marker.select': { target: asyncTarget, description: 'A user selected a marker on the generated map' },
+      },
+      onTargetEvent,
+    });
+    return mergeGenUIProviders(mcp, createGenUINativeProvider(asyncTarget), onTargetEvent);
+  }, [asyncTarget, mcpCatalog.catalog, onTargetEvent]);
+  const appIdentity = app as unknown as Record<string, unknown> | undefined;
+  const deliveryMode: 'transient' | 'delivery' = projection?.deliveryMode
+    ?? ((typeof appIdentity?.libraryId === 'string' && appIdentity.libraryId.includes('.harmony.')) || (typeof appIdentity?.template === 'string' && appIdentity.template.includes('.harmony.')) ? 'delivery' : 'transient');
+  const requiresDelivery = deliveryMode === 'delivery';
+  const owner = useGenUIOwner(projection?.origin, app, projection?.ownerRevision);
+  const canEdit = Boolean(requiresDelivery && projection?.origin && owner.enabled && !projection.readOnly && projection.status === 'completed' && !projection.isFailed && app && app.schemaVersion === 2 && owner.ready);
+  const canInteract = Boolean(app && !projection?.readOnly && !projection?.isFailed && projection?.status !== 'cancelled' && projection?.status !== 'rejected' && !reloading);
+  const canPersist = requiresDelivery && canEdit && !projection?.isStreaming;
+  const sourceKey = JSON.stringify([projection?.origin ?? origin, app]);
+  const verification = evidence?.source === sourceKey ? evidence.report : undefined;
+  const loaded = reloaded?.source === sourceKey ? reloaded : undefined;
+  const loadedState = owner.enabled ? owner.state : appState;
+  const interactionState = resolveGenUIInteractionState({
+    app,
+    toolStatus: projection?.status,
+    isStreaming: projection?.isStreaming,
+    isFailed: projection?.isFailed,
+    isCancelled: projection?.status === 'cancelled',
+    isRejected: projection?.status === 'rejected',
+    verification,
+    ownerReady: !owner.enabled || owner.ready,
+    ownerError: projection?.readOnlyReason ?? owner.error,
+    deliveryAccepted: Boolean(projection?.deliveryEvidence && projection.deliveryEvidence.persistence === 'saved' && projection.deliveryEvidence.reopen === 'passed'),
+    requiresDelivery,
+  });
+  const terminalStatus = t(`toolCards.generativeUI.state.${interactionState}`);
+  const showToolbar = presentation === 'panel' || requiresDelivery;
 
-  React.useEffect(() => {
-    const externalCode = widgetCode ?? '';
-    if (externalCode === savedCodeRef.current || draftCode !== savedCodeRef.current) {
-      return;
-    }
-
-    savedCodeRef.current = externalCode;
-    setDraftCode(externalCode);
-    setSaveState('saved');
-    setSaveError(null);
-  }, [draftCode, widgetCode]);
-
-  const persistWidgetCode = React.useCallback(async (nextCode: string) => {
-    if (nextCode === savedCodeRef.current) {
-      setSaveState('saved');
-      setSaveError(null);
-      return;
-    }
-
-    setSaveState('saving');
-    setSaveError(null);
-
-    try {
-      await onWidgetCodePersist?.(nextCode);
-      savedCodeRef.current = nextCode;
-      setSaveState('saved');
-    } catch (error) {
-      setSaveState('error');
-      setSaveError(error instanceof Error ? error.message : t('toolCards.generativeUI.saveError'));
-    }
-  }, [onWidgetCodePersist, t]);
-
-  React.useEffect(() => {
-    if (draftCode === savedCodeRef.current) {
-      if (saveState !== 'saving' && saveState !== 'error') {
-        setSaveState('saved');
-      }
-      return;
-    }
-
-    setSaveState(current => (current === 'saving' ? current : 'unsaved'));
-    const timer = window.setTimeout(() => {
-      void persistWidgetCode(draftCode);
-    }, AUTO_SAVE_DELAY_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [draftCode, persistWidgetCode, saveState]);
-
-  const handleReset = React.useCallback(() => {
-    setDraftCode(savedCodeRef.current);
-    setSaveState('saved');
-    setSaveError(null);
-  }, []);
-
-  const handleSaveNow = React.useCallback(() => {
-    void persistWidgetCode(draftCode);
-  }, [draftCode, persistWidgetCode]);
-
-  const saveLabel = React.useMemo(() => {
-    switch (saveState) {
-      case 'saving':
-        return t('toolCards.generativeUI.saving');
-      case 'unsaved':
-        return t('toolCards.generativeUI.unsaved');
-      case 'error':
-        return t('toolCards.generativeUI.saveFailed');
-      case 'saved':
-      default:
-        return t('toolCards.generativeUI.savedToSession');
-    }
-  }, [saveState, t]);
-
-  if (!draftCode) {
+  if (app) {
     return (
-      <div className="openbitfun-generative-widget-panel openbitfun-generative-widget-panel--empty" data-openbitfun-component="generative-widget" data-openbitfun-part="empty" data-openbitfun-state="empty">
-        <div className="openbitfun-generative-widget-panel__empty-copy">
-          {t('toolCards.generativeUI.empty')}
+      <div
+        className={`openbitfun-generative-widget-panel openbitfun-generative-widget-panel--app openbitfun-generative-widget-panel--${presentation}`}
+        data-openbitfun-component="generative-widget"
+        data-openbitfun-part="application"
+        data-openbitfun-state={interactionState}
+      >
+        {showToolbar ? <div className="openbitfun-generative-widget-panel__toolbar" data-openbitfun-component="generative-widget" data-openbitfun-part="toolbar">
+          <span className="openbitfun-generative-widget-panel__title">{app.title}</span>
+          <span className="openbitfun-generative-widget-panel__status" role="status" aria-live="polite">{terminalStatus}</span>
+          {presentation === 'panel' ? <span className="openbitfun-generative-widget-panel__readonly">{t(canEdit ? 'toolCards.generativeUI.hostedState' : 'toolCards.generativeUI.readOnly')}</span> : null}
+          {presentation === 'inline' && projection?.origin && onExpand ? <button
+            type="button"
+            className="openbitfun-generative-widget-panel__expand"
+            onClick={() => onExpand({ origin: projection.origin, app, appState, widgetId: projection.widgetId })}
+            aria-label="Open expanded GenUI view"
+          >↗</button> : null}
+        </div> : null}
+        {projection?.readOnlyReason ? <p role="status">{projection.readOnlyReason}</p> : null}
+        {owner.error ? <p role="alert">{owner.error}</p> : null}
+        <div className="openbitfun-generative-widget-panel__app" data-openbitfun-component="generative-widget" data-openbitfun-part="app">
+          <GenUIApplication
+            key={JSON.stringify([projection?.origin ?? origin, app.id, loaded?.revision])}
+            definition={app}
+            streaming={projection?.isStreaming}
+            initialState={loadedState}
+            restoredFromStorage={requiresDelivery && owner.enabled && owner.ready}
+            readOnly={!canInteract}
+            persistState={canPersist}
+            onVerification={requiresDelivery ? report => setEvidence({ source: sourceKey, report }) : undefined}
+            onStateChange={canPersist ? owner.save : undefined}
+            asyncProvider={mcpProvider}
+            asyncTarget={asyncTarget}
+            asyncTargetId={asyncTargetId}
+            onTargetEvent={onTargetEvent}
+          />
+          {requiresDelivery && verification?.definitionKey === genUIContentKey(app) ? <GenUIVerificationPanel report={verification}
+            delivery={projection?.deliveryEvidence}
+            onRepair={projection?.origin && !projection.isStreaming ? () => requestGenUIRepair(projection.origin, verification) : undefined}
+            onReload={canEdit && projection ? async () => {
+              setReloading(true);
+              try {
+                const state = await owner.reload();
+                setReloaded(current => ({ source: sourceKey, state, baseline: genUIContentKey(projection.appState), revision: (current?.revision ?? 0) + 1 }));
+              } finally { setReloading(false); }
+            } : undefined} /> : null}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="openbitfun-generative-widget-panel" data-openbitfun-component="generative-widget" data-openbitfun-part="root">
-      <div className="openbitfun-generative-widget-panel__toolbar" data-openbitfun-component="generative-widget" data-openbitfun-part="toolbar">
-        <div className="openbitfun-generative-widget-panel__toolbar-meta" data-openbitfun-component="generative-widget" data-openbitfun-part="toolbarMeta">
-          <span className={`openbitfun-generative-widget-panel__save-state openbitfun-generative-widget-panel__save-state--${saveState}`}>
-            {saveLabel}
-          </span>
-        </div>
-        <div className="openbitfun-generative-widget-panel__toolbar-actions" data-openbitfun-component="generative-widget" data-openbitfun-part="toolbarActions">
-          <Button
-            variant="outline"
-            size="sm"
-            leadingIcon={<RotateCcw size={14} />}
-            onClick={handleReset}
-            disabled={draftCode === savedCodeRef.current}
-          >
-            {t('toolCards.generativeUI.reset')}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            leadingIcon={<Save size={14} />}
-            loading={saveState === 'saving'}
-            onClick={handleSaveNow}
-            disabled={draftCode === savedCodeRef.current}
-          >
-            {t('toolCards.generativeUI.saveNow')}
-          </Button>
-        </div>
-      </div>
-
-      <div className="openbitfun-generative-widget-panel__workspace" data-openbitfun-component="generative-widget" data-openbitfun-part="workspace">
-        <section className="openbitfun-generative-widget-panel__pane openbitfun-generative-widget-panel__pane--editor" data-openbitfun-component="generative-widget" data-openbitfun-part="editorPane">
-          <div className="openbitfun-generative-widget-panel__pane-header" data-openbitfun-component="generative-widget" data-openbitfun-part="paneHeader">
-            <span className="openbitfun-generative-widget-panel__pane-title">
-              <Code2 size={14} />
-              <span>{t('toolCards.generativeUI.source')}</span>
-            </span>
-          </div>
-          <Textarea
-            className="openbitfun-generative-widget-panel__editor-field"
-            font="mono"
-            layout="fill"
-            resize="none"
-            data-openbitfun-component="generative-widget"
-            data-openbitfun-part="editor"
-            value={draftCode}
-            onValueChange={(value) => {
-              setDraftCode(value);
-              if (saveState === 'error') {
-                setSaveState('unsaved');
-                setSaveError(null);
-              }
-            }}
-            spellCheck={false}
-            aria-label={t('toolCards.generativeUI.source')}
-          />
-        </section>
-      </div>
-
-      {saveError && (
-        <div className="openbitfun-generative-widget-panel__error" data-openbitfun-component="generative-widget" data-openbitfun-part="error">
-          {saveError}
-        </div>
-      )}
+    <div className="openbitfun-generative-widget-panel openbitfun-generative-widget-panel--empty"
+      data-openbitfun-component="generative-widget" data-openbitfun-part="empty"
+      data-openbitfun-state={interactionState}>
+      {interactionState === 'starting' ? <div className="openbitfun-generative-widget-panel__skeleton" aria-label={terminalStatus} aria-busy="true">
+        <span /><span /><span />
+      </div> : <div className="openbitfun-generative-widget-panel__empty-copy">
+        {projection?.readOnlyReason ?? terminalStatus}
+      </div>}
     </div>
   );
 };
-
 export default GenerativeWidgetPanel;

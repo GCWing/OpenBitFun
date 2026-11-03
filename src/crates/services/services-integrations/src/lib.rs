@@ -3,6 +3,9 @@
 //! Heavy external integrations live here behind feature groups so local checks
 //! can opt into only the integration family they need.
 
+#[cfg(feature = "generative-ui")]
+pub mod generative_ui;
+
 #[cfg(any(
     feature = "account-identity",
     feature = "mcp",
@@ -36,9 +39,6 @@ pub mod appearance_market;
 
 #[cfg(feature = "browser-control")]
 pub mod browser_control;
-
-#[cfg(feature = "canvas-runtime")]
-pub mod canvas;
 
 #[cfg(feature = "deep-research")]
 pub mod deep_research;

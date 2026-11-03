@@ -698,7 +698,7 @@ agent-workflows
 - 当前没有第二个可执行 provider，因此不建立通用 workflow trait、registry、descriptor 或 step engine。
 - 工作流策略保持无 I/O；需要编排 Runtime / Tool 时，只增加当前生产调用链所需的窄接口。
 - 产品命令只映射到工作流能力，不把命令展示逻辑下沉。
-- MiniApp、Canvas 是产品产物与呈现能力，不进入该 crate。
+- MiniApp、GenUI 是产品产物与呈现能力，不进入该 crate。
 - DeepReview 仍有兼容逻辑位于 `agent-runtime` 与 `assembly/core`；只有真实调用方切换、行为等价测试通过且旧写入方删除后，才算迁移完成。
 
 ## 4. 产品组装与扩展

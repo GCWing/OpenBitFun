@@ -98,6 +98,8 @@ pub struct PendingToolCall {
     tool_name: String,
     raw_arguments: String,
     early_detected_emitted: bool,
+    openui_content: String,
+    openui_seq: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -130,11 +132,28 @@ pub struct ToolCallParamsChunk {
     pub params_chunk: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenUIStreamChunk {
+    pub tool_id: String,
+    pub tool_name: String,
+    pub message_id: String,
+    pub seq: u64,
+    pub format: String,
+    pub text: String,
+    pub reset: bool,
+    pub app_id: Option<String>,
+    pub title: Option<String>,
+    pub template: Option<String>,
+    pub library_id: Option<String>,
+    pub library_revision: Option<u64>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ToolCallDeltaOutcome {
     pub finalized_previous: Option<FinalizedToolCall>,
     pub early_detected: Option<EarlyDetectedToolCall>,
     pub params_partial: Option<ToolCallParamsChunk>,
+    pub genui_stream: Option<GenUIStreamChunk>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -244,6 +263,190 @@ fn repair_truncated_json(raw: &str) -> Option<String> {
     Some(out)
 }
 
+fn quoted_string_end(input: &str, start: usize) -> Option<usize> {
+    if input.as_bytes().get(start) != Some(&b'"') {
+        return None;
+    }
+    let mut index = start + 1;
+    let bytes = input.as_bytes();
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index = index.saturating_add(2),
+            b'"' => return Some(index + 1),
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn decoded_json_string_prefix(input: &str, start: usize) -> Option<String> {
+    if input.as_bytes().get(start) != Some(&b'"') {
+        return None;
+    }
+    let mut output = String::new();
+    let mut index = start + 1;
+    while index < input.len() {
+        let ch = input[index..].chars().next()?;
+        if ch == '"' {
+            return Some(output);
+        }
+        if ch != '\\' {
+            output.push(ch);
+            index += ch.len_utf8();
+            continue;
+        }
+
+        index += 1;
+        let escaped = input[index..].chars().next()?;
+        index += escaped.len_utf8();
+        match escaped {
+            '"' => output.push('"'),
+            '\\' => output.push('\\'),
+            '/' => output.push('/'),
+            'b' => output.push('\u{0008}'),
+            'f' => output.push('\u{000c}'),
+            'n' => output.push('\n'),
+            'r' => output.push('\r'),
+            't' => output.push('\t'),
+            'u' => {
+                let end = index.saturating_add(4);
+                if end > input.len() {
+                    break;
+                }
+                let code = u32::from_str_radix(&input[index..end], 16).ok()?;
+                index = end;
+                if (0xD800..=0xDBFF).contains(&code)
+                    && input.as_bytes().get(index) == Some(&b'\\')
+                    && input.as_bytes().get(index + 1) == Some(&b'u')
+                    && index.saturating_add(6) <= input.len()
+                {
+                    let low_end = index + 6;
+                    if let Ok(low) = u32::from_str_radix(&input[index + 2..low_end], 16) {
+                        if (0xDC00..=0xDFFF).contains(&low) {
+                            let combined = 0x1_0000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                            if let Some(value) = char::from_u32(combined) {
+                                output.push(value);
+                            }
+                            index = low_end;
+                            continue;
+                        }
+                    }
+                }
+                if let Some(value) = char::from_u32(code) {
+                    output.push(value);
+                }
+            }
+            _ => break,
+        }
+    }
+    Some(output)
+}
+
+/// Find JSON object field value starts without requiring the enclosing
+/// document to be valid. This is intentionally a framing scanner, not an
+/// OpenUI parser: it only locates the source.content string emitted by the
+/// provider so the renderer can receive native deltas immediately.
+fn find_object_field_starts(input: &str, wanted: &str) -> Vec<usize> {
+    let bytes = input.as_bytes();
+    let mut stack: Vec<u8> = Vec::new();
+    let mut starts = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' => {
+                let Some(end) = quoted_string_end(input, index) else {
+                    break;
+                };
+                if let Ok(key) = serde_json::from_str::<String>(&input[index..end]) {
+                    let parent_is_object = stack.last() == Some(&b'{');
+                    if parent_is_object && key == wanted {
+                        let mut value_start = end;
+                        while value_start < bytes.len() && bytes[value_start].is_ascii_whitespace()
+                        {
+                            value_start += 1;
+                        }
+                        if bytes.get(value_start) != Some(&b':') {
+                            // A string value can equal the requested field
+                            // name. It is not a key, so keep scanning for the
+                            // actual object member instead of abandoning the
+                            // source stream.
+                            index = end;
+                            continue;
+                        }
+                        value_start += 1;
+                        while value_start < bytes.len() && bytes[value_start].is_ascii_whitespace()
+                        {
+                            value_start += 1;
+                        }
+                        starts.push(value_start);
+                    }
+                }
+                index = end;
+            }
+            b'{' | b'[' => {
+                stack.push(bytes[index]);
+                index += 1;
+            }
+            b'}' => {
+                if stack.last() == Some(&b'{') {
+                    stack.pop();
+                }
+                index += 1;
+            }
+            b']' => {
+                if stack.last() == Some(&b'[') {
+                    stack.pop();
+                }
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    starts
+}
+
+fn find_object_field_start(input: &str, wanted: &str) -> Option<usize> {
+    find_object_field_starts(input, wanted).into_iter().next()
+}
+
+fn extract_openui_content(raw: &str) -> Option<String> {
+    for source_start in find_object_field_starts(raw, "source") {
+        if raw.as_bytes().get(source_start) != Some(&b'{') {
+            continue;
+        }
+        let Some(kind_start) = find_object_field_start(&raw[source_start..], "kind") else {
+            continue;
+        };
+        let Some(kind) = decoded_json_string_prefix(&raw[source_start + kind_start..], 0) else {
+            continue;
+        };
+        if kind != "openui-lang" {
+            // GenUIStream is the OpenUI Lang transport. Free HTML documents
+            // stay on the completed-source path so a partial document is
+            // never mistaken for executable component language.
+            continue;
+        }
+        let content_start = find_object_field_start(&raw[source_start..], "content")?;
+        let content_start = source_start + content_start;
+        return decoded_json_string_prefix(raw, content_start);
+    }
+    None
+}
+
+fn extract_json_string_field(raw: &str, field: &str) -> Option<String> {
+    let start = find_object_field_start(raw, field)?;
+    decoded_json_string_prefix(raw, start)
+}
+
+fn extract_json_u64_field(raw: &str, field: &str) -> Option<u64> {
+    let start = find_object_field_start(raw, field)?;
+    let end = raw[start..]
+        .find(|character: char| !character.is_ascii_digit())
+        .map(|offset| start + offset)
+        .unwrap_or(raw.len());
+    raw.get(start..end)?.parse().ok()
+}
+
 impl PendingToolCall {
     fn parse_arguments(
         _tool_name: &str,
@@ -285,6 +488,8 @@ impl PendingToolCall {
         self.tool_name = tool_name.unwrap_or_default();
         self.raw_arguments.clear();
         self.early_detected_emitted = false;
+        self.openui_content.clear();
+        self.openui_seq = 0;
     }
 
     pub fn update_tool_name_if_missing(&mut self, tool_name: Option<String>) {
@@ -509,12 +714,54 @@ impl PendingToolCalls {
                 }
                 let tool_name = pending.tool_name().to_string();
                 let params_chunk = arguments;
-                if !params_chunk.is_empty() {
+                if !params_chunk.is_empty() && pending.tool_name() != "GenerativeUI" {
                     outcome.params_partial = Some(ToolCallParamsChunk {
                         tool_id: pending.tool_id().to_string(),
-                        tool_name,
+                        tool_name: tool_name.clone(),
                         params_chunk,
                     });
+                }
+
+                if pending.tool_name() == "GenerativeUI" {
+                    if let Some(content) = extract_openui_content(pending.raw_arguments()) {
+                        let reset = !content.starts_with(&pending.openui_content);
+                        let text = if reset {
+                            content.clone()
+                        } else {
+                            content[pending.openui_content.len()..].to_string()
+                        };
+                        if reset {
+                            pending.openui_seq = 0;
+                        }
+                        pending.openui_content = content;
+                        if !text.is_empty() {
+                            let seq = pending.openui_seq;
+                            pending.openui_seq = pending.openui_seq.saturating_add(1);
+                            outcome.genui_stream = Some(GenUIStreamChunk {
+                                tool_id: pending.tool_id().to_string(),
+                                tool_name: tool_name.clone(),
+                                message_id: pending.tool_id().to_string(),
+                                seq,
+                                format: "openui-lang".to_string(),
+                                text,
+                                reset,
+                                app_id: extract_json_string_field(pending.raw_arguments(), "id"),
+                                title: extract_json_string_field(pending.raw_arguments(), "title"),
+                                template: extract_json_string_field(
+                                    pending.raw_arguments(),
+                                    "template",
+                                ),
+                                library_id: extract_json_string_field(
+                                    pending.raw_arguments(),
+                                    "libraryId",
+                                ),
+                                library_revision: extract_json_u64_field(
+                                    pending.raw_arguments(),
+                                    "libraryRevision",
+                                ),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -584,6 +831,173 @@ mod tests {
         assert_eq!(finalized.arguments, json!({"a": 1}));
         assert!(!finalized.is_error);
         assert!(!pending.has_pending());
+    }
+
+    #[test]
+    fn emits_native_genui_source_deltas_before_outer_json_closes() {
+        let mut calls = PendingToolCalls::new();
+        let first = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_genui".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"id":"app","title":"Demo","template":"openbitfun.app","libraryId":"openbitfun.composable.v1","libraryRevision":2,"source":{"kind":"openui-lang","content":"root = Text("#.into()),
+            false,
+        );
+        assert_eq!(
+            first.genui_stream.as_ref().map(|event| event.text.as_str()),
+            Some("root = Text(")
+        );
+        assert_eq!(first.genui_stream.as_ref().map(|event| event.seq), Some(0));
+        assert!(first.params_partial.is_none());
+        assert_eq!(
+            first
+                .genui_stream
+                .as_ref()
+                .and_then(|event| event.app_id.as_deref()),
+            Some("app")
+        );
+        assert_eq!(
+            first
+                .genui_stream
+                .as_ref()
+                .and_then(|event| event.library_revision),
+            Some(2)
+        );
+
+        let second = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            None,
+            None,
+            Some(r#"Hello")}"#.into()),
+            false,
+        );
+        assert_eq!(
+            second
+                .genui_stream
+                .as_ref()
+                .map(|event| event.text.as_str()),
+            Some("Hello")
+        );
+        assert_eq!(second.genui_stream.as_ref().map(|event| event.seq), Some(1));
+        assert_eq!(
+            second.genui_stream.as_ref().map(|event| event.reset),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn ignores_string_values_that_look_like_source_fields() {
+        let mut calls = PendingToolCalls::new();
+        let outcome = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_genui".into()),
+            Some("GenerativeUI".into()),
+            Some(
+                r#"{"title":"source","source":{"kind":"openui-lang","content":"root = Text("#
+                    .into(),
+            ),
+            false,
+        );
+
+        assert_eq!(
+            outcome
+                .genui_stream
+                .as_ref()
+                .map(|event| event.text.as_str()),
+            Some("root = Text(")
+        );
+        assert_eq!(
+            outcome
+                .genui_stream
+                .as_ref()
+                .and_then(|event| event.title.as_deref()),
+            Some("source")
+        );
+    }
+
+    #[test]
+    fn ignores_nested_source_metadata_before_the_application_source() {
+        let mut calls = PendingToolCalls::new();
+        let outcome = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_genui".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"metadata":{"source":{"kind":"html-document","html":"ignored"}},"source":{"kind":"openui-lang","content":"root = Text("#.into()),
+            false,
+        );
+
+        assert_eq!(
+            outcome
+                .genui_stream
+                .as_ref()
+                .map(|event| event.text.as_str()),
+            Some("root = Text(")
+        );
+    }
+
+    #[test]
+    fn decodes_surrogate_pairs_in_streamed_source_text() {
+        let mut calls = PendingToolCalls::new();
+        let outcome = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_genui".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"source":{"kind":"openui-lang","content":"Text \uD83D\uDE00"#.into()),
+            false,
+        );
+
+        assert_eq!(
+            outcome
+                .genui_stream
+                .as_ref()
+                .map(|event| event.text.as_str()),
+            Some("Text 😀")
+        );
+    }
+
+    #[test]
+    fn resets_native_genui_sequence_when_provider_snapshot_rewinds() {
+        let mut calls = PendingToolCalls::new();
+        let first = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_genui".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"source":{"kind":"openui-lang","content":"root = Text("#.into()),
+            false,
+        );
+        assert_eq!(first.genui_stream.as_ref().map(|event| event.seq), Some(0));
+
+        let reset = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            None,
+            None,
+            Some(r#"{"source":{"kind":"openui-lang","content":"root = Col("#.into()),
+            true,
+        );
+        assert_eq!(
+            reset.genui_stream.as_ref().map(|event| event.text.as_str()),
+            Some("root = Col(")
+        );
+        assert_eq!(reset.genui_stream.as_ref().map(|event| event.seq), Some(0));
+        assert_eq!(
+            reset.genui_stream.as_ref().map(|event| event.reset),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn does_not_emit_openui_stream_for_html_documents() {
+        let mut calls = PendingToolCalls::new();
+        let outcome = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_html".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"source":{"kind":"html-document","html":"<main>"}"#.into()),
+            false,
+        );
+
+        assert!(outcome.genui_stream.is_none());
+        assert!(outcome.params_partial.is_none());
     }
 
     #[test]

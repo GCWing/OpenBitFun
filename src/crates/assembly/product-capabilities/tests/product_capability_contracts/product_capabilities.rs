@@ -144,7 +144,6 @@ fn default_capability_registry_preserves_product_tool_provider_order() {
             "core.miniapp",
             "core.pages",
             "core.creation",
-            "core.canvas",
         ]
     );
 }
@@ -167,7 +166,6 @@ fn capability_packs_describe_service_and_tool_requirements() {
             "miniapp",
             "pages",
             "creation",
-            "canvas",
             "voice-input"
         ]
     );
@@ -187,7 +185,6 @@ fn product_assembly_plan_keeps_full_capabilities_only_for_core_compatibility_pro
         "miniapp",
         "pages",
         "creation",
-        "canvas",
     ];
     let full_tool_groups = vec![
         "core.basic",
@@ -201,7 +198,6 @@ fn product_assembly_plan_keeps_full_capabilities_only_for_core_compatibility_pro
         "core.miniapp",
         "core.pages",
         "core.creation",
-        "core.canvas",
     ];
 
     for profile in [DeliveryProfile::ProductFull, DeliveryProfile::Desktop] {
@@ -504,7 +500,6 @@ fn product_assembly_plan_exposes_build_feature_groups_explicitly() {
             ProductFeatureGroup::MiniApp,
             ProductFeatureGroup::Pages,
             ProductFeatureGroup::Creation,
-            ProductFeatureGroup::Canvas,
         ]
     );
     assert_eq!(
@@ -521,7 +516,6 @@ fn product_assembly_plan_exposes_build_feature_groups_explicitly() {
             "miniapp",
             "pages",
             "creation",
-            "canvas",
         ]
     );
 }
@@ -828,7 +822,6 @@ fn default_capability_assembly_keeps_service_and_tool_facts_together() {
             "miniapp",
             "pages",
             "creation",
-            "canvas",
             "voice-input"
         ]
     );
@@ -867,7 +860,6 @@ fn default_capability_assembly_keeps_service_and_tool_facts_together() {
             "core.miniapp",
             "core.pages",
             "core.creation",
-            "core.canvas",
         ]
     );
 }

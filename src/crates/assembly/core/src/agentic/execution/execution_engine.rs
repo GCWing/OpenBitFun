@@ -1771,13 +1771,33 @@ impl ExecutionEngine {
         prompt_context: Option<&PromptBuilderContext>,
         prompt_policy_id: Option<&str>,
     ) -> OpenBitFunResult<String> {
+        // The GenUI profile is a fixed product route, just like the upstream
+        // Open Intelligent UI pages. Keep its official lang-core prompt in the
+        // system message, but scope it to the GenerativeUI tool because BitFun
+        // still runs a general agent whose outer response is a JSON tool call.
+        // Include the profile in the cache key so changing the setting cannot
+        // reuse a prompt generated for the previous component library.
+        let genui_prompt = Self::active_genui_system_prompt().await;
+        let genui_scope = genui_prompt
+            .as_ref()
+            .map(|(profile, _)| format!("|genui-profile:{profile}"))
+            .unwrap_or_default();
         let identity = match prompt_policy_id {
-            Some(policy_id) => SystemPromptCacheIdentity::new(format!("harness:{policy_id}")),
+            Some(policy_id) => {
+                SystemPromptCacheIdentity::new(format!("harness:{policy_id}{genui_scope}"))
+            }
             None => prompt_context
                 .map(|context| {
-                    current_agent.system_prompt_cache_identity(context.model_name.as_deref())
+                    let mut identity =
+                        current_agent.system_prompt_cache_identity(context.model_name.as_deref());
+                    identity.scope_key.push_str(&genui_scope);
+                    identity
                 })
-                .unwrap_or_else(|| current_agent.system_prompt_cache_identity(None)),
+                .unwrap_or_else(|| {
+                    let mut identity = current_agent.system_prompt_cache_identity(None);
+                    identity.scope_key.push_str(&genui_scope);
+                    identity
+                }),
         };
 
         if let Some(cached_system_prompt) = self
@@ -1796,7 +1816,7 @@ impl ExecutionEngine {
             "System prompt cache miss: session_id={}, scope_key={}",
             session_id, identity.scope_key
         );
-        let system_prompt = if let Some(policy_id) = prompt_policy_id {
+        let mut system_prompt = if let Some(policy_id) = prompt_policy_id {
             let context = prompt_context.ok_or_else(|| {
                 OpenBitFunError::Agent("Prompt build context is required".to_string())
             })?;
@@ -1809,10 +1829,33 @@ impl ExecutionEngine {
         } else {
             current_agent.get_system_prompt(prompt_context).await?
         };
+        if let Some((profile, prompt)) = genui_prompt {
+            system_prompt.push_str(
+                "\n\n# GenerativeUI source authoring (scoped to the GenerativeUI tool)\n",
+            );
+            system_prompt.push_str(
+                "The following official OpenUI prompt applies only when you call the GenerativeUI tool and only to createSurface.source.content. Continue using the normal agent behavior and the JSON GenerativeUI protocol outside that field; do not emit raw OpenUI as the overall assistant response. The active profile is ",
+            );
+            system_prompt.push_str(&profile);
+            system_prompt.push_str(".\n\n<openui-lang-profile>\n");
+            system_prompt.push_str(prompt);
+            system_prompt.push_str("\n</openui-lang-profile>");
+        }
         self.session_manager
             .remember_system_prompt(session_id, identity, system_prompt.clone())
             .await;
         Ok(system_prompt)
+    }
+
+    async fn active_genui_system_prompt() -> Option<(String, &'static str)> {
+        let service = get_global_config_service().await.ok()?;
+        let profile = service
+            .get_config::<String>(Some("ai.generative_ui_library"))
+            .await
+            .ok()?;
+        let prompt =
+            openbitfun_product_domains::generative_ui::system_prompt_for_profile(&profile)?;
+        Some((profile, prompt))
     }
 
     async fn resolve_turn_prompt_scaffold(

@@ -621,6 +621,7 @@ fn compactable_tool_event(event: &ToolEventData) -> bool {
             | ToolEventData::Waiting { .. }
             | ToolEventData::Progress { .. }
             | ToolEventData::Streaming { .. }
+            | ToolEventData::GenUIStream { .. }
     )
 }
 
@@ -628,6 +629,7 @@ fn tool_event_identity(event: &ToolEventData) -> &str {
     match event {
         ToolEventData::EarlyDetected { identity }
         | ToolEventData::ParamsPartial { identity, .. }
+        | ToolEventData::GenUIStream { identity, .. }
         | ToolEventData::Queued { identity, .. }
         | ToolEventData::Waiting { identity, .. }
         | ToolEventData::Started { identity, .. }
@@ -659,6 +661,7 @@ fn compact_projection(projection: &mut SessionProjection) {
                     AgenticEvent::ToolEvent {
                         tool_event: ToolEventData::Progress { .. }
                             | ToolEventData::Streaming { .. }
+                            | ToolEventData::GenUIStream { .. }
                             | ToolEventData::StreamChunk { .. },
                         ..
                     }

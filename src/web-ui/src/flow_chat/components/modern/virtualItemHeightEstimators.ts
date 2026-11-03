@@ -36,7 +36,6 @@ export function getKnownVirtualItemHeightPx(item: VirtualItem): number | undefin
   if (item.type !== 'model-round' || item.projectedGroups?.length !== 0
     || (item.isLastRound && item.isTurnComplete)
     || hasModelRoundLeadingControls(item.data)
-    || item.canvasArtifactItems?.length
     || getModelRoundActiveItems(item.data).length === 0) return undefined;
   return 0;
 }
@@ -199,7 +198,7 @@ export function estimateToolHeight(
     };
   }
 
-  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'CreateCanvas' || toolName === 'UpdateCanvas') {
+  if (toolName === 'Write' || toolName === 'Edit') {
     return {
       heightPx: collapsed
         ? TOOL_COMPACT_HEIGHT_PX

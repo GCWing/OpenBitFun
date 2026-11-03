@@ -432,25 +432,6 @@ mod tests {
     }
 
     #[test]
-    fn canvas_skills_keep_internal_artifact_references_out_of_chat() {
-        for path in [
-            "openbitfun-canvas/SKILL.md",
-            "pr-review-canvas/SKILL.md",
-            "agent-eval-canvas/SKILL.md",
-        ] {
-            let text = embedded_skill_text(path);
-            assert!(
-                text.contains("automatically"),
-                "{path} must tell the agent to leave Canvas URI presentation to the client"
-            );
-            assert!(
-                !text.contains("give the returned `openbitfun-canvas://...` artifact reference"),
-                "{path} still instructs the agent to expose an internal Canvas URI"
-            );
-        }
-    }
-
-    #[test]
     fn agent_browser_uses_dynamic_cli_documentation_only() {
         let text = embedded_skill_text("agent-browser/SKILL.md");
         assert!(text.contains("agent-browser skills get core"));

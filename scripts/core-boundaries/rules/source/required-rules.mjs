@@ -3743,17 +3743,6 @@ export const requiredContentRules = [
         message: 'core MiniApp tool owner must select its product-domain slice explicitly',
       },
       {
-        regex: /canvas-runtime = \[[^\]]*"openbitfun-services-integrations\/canvas-runtime"[^\]]*\]/,
-        message:
-          'core canvas-runtime facade must enable the Canvas service owner feature it imports',
-      },
-      {
-        regex:
-          /canvas-runtime = \[[\s\S]*"dep:openbitfun-product-domains"[\s\S]*"openbitfun-services-integrations\/canvas-runtime"[\s\S]*\]/,
-        message:
-          'core canvas-runtime feature must explicitly aggregate the domain contract and canvas service owner',
-      },
-      {
         regex:
           /openbitfun-product-domains = \{ path = "\.\.\/\.\.\/contracts\/product-domains", optional = true \}/,
         message:

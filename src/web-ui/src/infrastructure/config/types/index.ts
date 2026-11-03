@@ -482,6 +482,7 @@ export interface ModelRoutingConfig {
 }
 
 export interface AIConfig {
+  generative_ui_library?: string;
   models: AIModelConfig[];
   tool_presentation_mode?: 'native' | 'ptc' | 'ptc_python';
   default_models: DefaultModelsConfig;

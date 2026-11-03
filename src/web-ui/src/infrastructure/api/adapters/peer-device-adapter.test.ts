@@ -22,6 +22,38 @@ import { TauriTransportAdapter } from './tauri-adapter';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 describe('smart routing host capability', () => {
+  it('requires GenUI owner negotiation and never falls back to local storage', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    const args = { request: { workspaceId: 'workspace', sessionId: 'session', appId: 'app' } };
+    await expect(adapter.request('gen_ui_app', args)).rejects.toThrow('GenUI owner v1');
+    expect(rpc).not.toHaveBeenCalled();
+    adapter.setHostCapabilities({ supportsGenUiOwnerV1: true });
+    await adapter.request('gen_ui_app', args);
+    expect(JSON.parse(rpc.mock.calls[0][1])).toMatchObject({ command: 'gen_ui_app', args });
+    adapter.setHostCapabilities({ supportsGenUiOwnerV1: false });
+    await expect(adapter.request('gen_ui_app', args)).rejects.toThrow('GenUI owner v1');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+  it('negotiates library setting reads and writes without falling back to local config', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: 'future.collection' }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    const requests = [
+      ['get_config', { request: { path: 'ai.generative_ui_library' } }],
+      ['get_configs', { request: { paths: ['ai.generative_ui_library'] } }],
+      ['set_config', { request: { path: 'ai.generative_ui_library', value: 'future.collection' } }],
+      ['reset_config', { request: { path: 'ai.generative_ui_library' } }],
+    ] as const;
+    for (const [command, args] of requests) await expect(adapter.request(command, args)).rejects.toThrow('gen_ui_libraries_v1');
+    expect(rpc).not.toHaveBeenCalled();
+    await expect(adapter.request('product_control_invoke', { request: { capabilityId: 'setting.tools.execution', optionId: 'genui-library', action: 'configure', value: 'future.collection' } })).rejects.toThrow('gen_ui_libraries_v1');
+    adapter.setHostCapabilities({ supportsGenUiLibrariesV1: true });
+    for (const [command, args] of requests) await adapter.request(command, args);
+    expect(rpc).toHaveBeenCalledTimes(requests.length);
+    adapter.setHostCapabilities({ supportsGenUiLibrariesV1: false });
+    await expect(adapter.request('get_config', requests[0][1])).rejects.toThrow('gen_ui_libraries_v1');
+    expect(rpc).toHaveBeenCalledTimes(requests.length);
+  });
   it('rejects unsupported routing reads and mutations before RPC', async () => {
     const rpc = vi.fn();
     const adapter = new PeerDeviceTransportAdapter('peer-1', rpc);

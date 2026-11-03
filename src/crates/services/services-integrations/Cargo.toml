@@ -48,7 +48,6 @@ local-ip-address = { workspace = true, optional = true }
 mac_address = { workspace = true, optional = true }
 md5 = { workspace = true, optional = true }
 notify = { workspace = true, optional = true }
-oxc = { workspace = true, optional = true }
 qrcode = { workspace = true, features = ["image", "svg"], optional = true }
 rand = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
@@ -111,14 +110,6 @@ models-dev = [
     "windows",
 ]
 browser-control = ["anyhow", "openbitfun-services-core/process-runtime", "openbitfun-services-core/tls-provider", "dirs", "reqwest", "reqwest/json", "reqwest/rustls-no-provider", "thiserror", "tokio/rt", "tokio/time"]
-canvas-runtime = [
-    "dep:openbitfun-product-domains",
-    "oxc",
-    "sha2",
-    "tokio/fs",
-    "urlencoding",
-    "uuid",
-]
 deep-research = [
     "anyhow",
     "async-trait",
@@ -174,6 +165,7 @@ mcp = [
     "url",
     "process-tree",
 ]
+generative-ui = ["openbitfun-services-core/json-io", "dep:openbitfun-product-domains", "uuid"]
 miniapp-storage = [
     "openbitfun-services-core/json-io",
     "dep:openbitfun-product-domains",
@@ -493,7 +485,6 @@ web-tools = [
 product-full = [
     "models-dev",
     "browser-control",
-    "canvas-runtime",
     "deep-research",
     "file-watch",
     "function-agents",

@@ -1,6 +1,5 @@
 import type { FlowItem, FlowTextItem, FlowToolItem, ModelRound, ModelRoundAttempt } from '../types/flow-chat';
 import type { VirtualItem } from '../types/flow-chat-projection';
-import { canvasArtifactReferenceFromToolItem } from '../utils/canvasArtifactPresentation';
 import { isFlowItemVisible } from '../utils/flowItemVisibility';
 import { canContinueFlowGroup, classifyFlowGroupItem, flowGroupPolicies, joinedFlowGroupCategory, meetsFlowGroupThreshold, type FlowGroupPolicyOptions } from './policies';
 import { isFlowGroupMemberActive } from './lifecycle';
@@ -89,7 +88,7 @@ export function getModelRoundFlowGroups(round: ModelRound, projectedGroups?: Mod
 
 export function getProjectedModelRoundGroups(item: Extract<VirtualItem, { type: 'model-round' }>, retainCandidates = false): ModelRoundItemGroup[] {
   return item.projectedGroups ?? buildFlowItemGroups({
-    items: getModelRoundActiveItems(item.data).filter(member => !item.isTurnComplete || !canvasArtifactReferenceFromToolItem(member)),
+    items: getModelRoundActiveItems(item.data),
     disabled: isModelRoundGroupingDisabled(item.data), retainCandidates,
   });
 }

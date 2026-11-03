@@ -130,6 +130,29 @@ src/apps/mobile/android/.kotlin/
 /resources/flashgrep/flashgrep-*
 /resources/flashgrep/*.download-*
 
+# Local HarmonyOS PC scaffold build output and signing material under
+# src/apps/ohos. Written per-directory for the same reason as the Gradle block
+# above: a bare `.hvigor/` or `build/` would hide checked-in files elsewhere.
+# The hvigor-generated frontend copy under entry/src/main/resources/resfile
+# already matches the repo-wide `**/dist` rule.
+/src/apps/ohos/.hvigor/
+/src/apps/ohos/**/.hvigor/
+/src/apps/ohos/oh_modules/
+/src/apps/ohos/**/oh_modules/
+/src/apps/ohos/*/build/
+/src/apps/ohos/**/build/
+/src/apps/ohos/*/libs/
+# hvigor writes a BuildProfile.ets next to each module during the build.
+/src/apps/ohos/*/BuildProfile.ets
+# Same policy as src/apps/mobile/harmonyos/.gitignore: signing credentials and
+# installable artifacts never leave the machine.
+/src/apps/ohos/signing.local.json*
+/src/apps/ohos/*.cer
+/src/apps/ohos/*.p12
+/src/apps/ohos/*.p7b
+/src/apps/ohos/*.hap
+/src/apps/ohos/*.app
+
 # Local generated workspace output.
 /output/
 

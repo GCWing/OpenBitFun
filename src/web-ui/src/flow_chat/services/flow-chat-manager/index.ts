@@ -7,6 +7,7 @@ export {
   immediateSaveDialogTurn,
   cleanupSaveState,
   saveDialogTurnToDisk,
+  saveDialogTurnConfirmed,
   saveAllInProgressTurns,
   convertDialogTurnToBackendFormat,
   updateSessionMetadata,

@@ -62,27 +62,34 @@ function clearSaveTimer(context: FlowChatContext, key: string): void {
 async function runSerialDialogTurnSave(
   context: FlowChatContext,
   sessionId: string,
-  turnId: string
+  turnId: string,
+  strict = false
 ): Promise<void> {
+  const scope = getActiveSurfaceScope();
   const key = `${sessionId}:${turnId}`;
   const existingTask = context.turnSaveInFlight.get(key);
   if (existingTask) {
     context.turnSavePending.add(key);
-    await existingTask;
+    await existingTask.catch(error => { if (!strict) throw error; });
+    scope.assertCurrent();
+    if (strict) await runSerialDialogTurnSave(context, sessionId, turnId, true);
     return;
   }
 
-  const task = (async () => {
+  const task = Promise.resolve().then(async () => {
     try {
       do {
         context.turnSavePending.delete(key);
-        await performSaveDialogTurnToDisk(context, sessionId, turnId);
+        scope.assertCurrent();
+        await performSaveDialogTurnToDisk(context, sessionId, turnId, strict);
       } while (context.turnSavePending.has(key));
     } finally {
-      context.turnSaveInFlight.delete(key);
-      context.turnSavePending.delete(key);
+      if (context.turnSaveInFlight.get(key) === task) {
+        context.turnSaveInFlight.delete(key);
+        context.turnSavePending.delete(key);
+      }
     }
-  })();
+  });
 
   context.turnSaveInFlight.set(key, task);
   await task;
@@ -281,30 +288,44 @@ export async function saveDialogTurnToDisk(
   await runSerialDialogTurnSave(context, sessionId, turnId);
 }
 
+/** Await a real durable write; unsupported owners and IO failures reject. */
+export async function saveDialogTurnConfirmed(context: FlowChatContext, sessionId: string, turnId: string): Promise<void> {
+  clearSaveTimer(context, sessionId + ':' + turnId);
+  await runSerialDialogTurnSave(context, sessionId, turnId, true);
+}
+
 async function performSaveDialogTurnToDisk(
   context: FlowChatContext,
   sessionId: string,
-  turnId: string
+  turnId: string,
+  strict = false
 ): Promise<void> {
+  const scope = getActiveSurfaceScope();
+  const skip = (reason: string) => { if (strict) throw new Error(reason); };
   try {
     const { sessionAPI } = await import('@/infrastructure/api/service-api/SessionAPI');
 
+    scope.assertCurrent();
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     if (!session) {
+      skip('GenUI session is unavailable');
       log.debug('Session not found, skipping save', { sessionId, turnId });
       return;
     }
     if (isTransientSession(session) || isObserverOnlyDispatchSession(sessionId, session)) {
+      skip('This session does not support controller-owned state persistence');
       return;
     }
 
     
     const dialogTurn = session.dialogTurns.find(turn => turn.id === turnId);
     if (!dialogTurn) {
+      skip('GenUI source turn is unavailable');
       log.debug('Dialog turn not found, skipping save', { sessionId, turnId });
       return;
     }
     if (dialogTurn.recovery) {
+      skip('Runtime-owned recovered turns do not support GenUI state updates');
       // The Runtime owns the durable snapshot and generation CAS for an
       // interrupted/recovered turn. A frontend whole-turn save can otherwise
       // overwrite newly appended rounds or restore stale recovery metadata.
@@ -319,6 +340,7 @@ async function performSaveDialogTurnToDisk(
 
     const turnIndex = resolveStorageTurnIndex(session, dialogTurn);
     if (turnIndex === undefined) {
+      skip('GenUI source turn has no durable storage identity');
       context.deferredStorageIdentitySaves?.add(`${sessionId}:${turnId}`);
       log.debug('Dialog turn has no storage identity, deferring save', { sessionId, turnId });
       return;
@@ -328,10 +350,13 @@ async function performSaveDialogTurnToDisk(
       turnData,
       requireSessionOwningWorkspaceId(session));
     
+    scope.assertCurrent();
     await updateSessionMetadata(context, sessionId);
+    scope.assertCurrent();
     
   } catch (error) {
     log.error('Failed to save dialog turn', { sessionId, turnId, error });
+    if (strict) throw error;
   }
 }
 

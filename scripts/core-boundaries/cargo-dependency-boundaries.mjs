@@ -149,7 +149,6 @@ const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['models-dev', ['fs', 'rt', 'sync', 'time']],
   // Browser profile files and process probes use spawn_blocking off async IO workers.
   ['browser-control', ['rt', 'time']],
-  ['canvas-runtime', ['fs']],
   ['deep-research', []],
   ['git', ['fs', 'io-util', 'macros', 'rt', 'time']],
   ['file-watch', ['rt', 'sync']],
@@ -1495,7 +1494,6 @@ export function findProductEntrypointCoreFeatureViolations(
     'agent-runtime',
     'ai-adapter-runtime',
     'browser-control',
-    'canvas-runtime',
     'deep-research',
     'document-read',
     'external-sources',
@@ -1518,7 +1516,6 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-agent-control',
     'tools-basic',
     'tools-browser-web',
-    'tools-canvas',
     'tools-computer-use',
     'tools-creation',
     'tools-git',

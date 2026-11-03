@@ -689,9 +689,8 @@ describe('startup performance contract', () => {
     const sources = [
       '../../app/scenes/shell/ShellNav.tsx',
       '../../infrastructure/markdown/MarkdownRenderer.tsx',
-      '../../flow_chat/tool-cards/GenerativeWidgetToolCard.tsx',
+      '../../flow_chat/components/GenerativeWidgetInline.tsx',
       '../../tools/file-system/components/FileSearchResults.tsx',
-      '../../tools/generative-widget/useGenerativeWidgetPromptMenu.ts',
       '../../shared/notification-system/providers/NotificationContextMenuProvider.ts',
     ].map(readSource);
 

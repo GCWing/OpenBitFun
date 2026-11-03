@@ -21,8 +21,6 @@ const crossBoundaryRoots = [
   path.join(repoRoot, 'tests', 'e2e', 'specs'),
   path.join(repoRoot, 'tests', 'e2e', 'helpers'),
   path.join(repoRoot, 'src', 'crates', 'contracts', 'product-domains', 'src', 'miniapp'),
-  path.join(repoRoot, 'src', 'crates', 'services', 'services-integrations', 'src', 'canvas'),
-  path.join(repoRoot, 'src', 'crates', 'assembly', 'core', 'builtin_skills', 'openbitfun-canvas'),
   path.join(repoRoot, 'src', 'crates', 'assembly', 'core', 'builtin_skills', 'miniapp-dev'),
 ];
 const failures = [];
@@ -686,10 +684,7 @@ for (const sceneFile of walk(sceneRoot).filter(file => file.endsWith('Scene.tsx'
   }
 }
 
-const visualEntryPoints = new Set([
-  'main.tsx',
-  'tools/openbitfun-canvas/runtime/entry.tsx',
-]);
+const visualEntryPoints = new Set(['main.tsx']);
 const styledProductionTsx = productionCodeSources.filter(([file, source]) => {
   if (!file.endsWith('.tsx')) return false;
   const sourceRelative = path.relative(sourceRoot, file).replaceAll(path.sep, '/');
@@ -853,8 +848,6 @@ for (const [file, source] of productionSources) {
 
 const crossBoundaryForbiddenContracts = [
   ['hostTheme', /\bhostTheme\b/],
-  ['CanvasHostTheme', /\bCanvasHostTheme\b/],
-  ['openbitfun-canvas-theme', /openbitfun-canvas-theme/],
   ['onThemeChange', /\bonThemeChange\b/],
   ['data-theme-type', /data-theme-type/],
   ['openbitfun/request-theme', /openbitfun\/request-theme/],

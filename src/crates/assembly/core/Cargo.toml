@@ -174,10 +174,8 @@ product-full = [
     "tools-miniapp",
     "tools-pages",
     "tools-creation",
-    "tools-canvas",
     "tools-agent-control",
     "function-agents",
-    "canvas-runtime",
     "external-sources",
     "plugin-runtime",
     "opencode-plugin-host",
@@ -387,6 +385,7 @@ tools-image-generation = [
     "openbitfun-ai-adapters/image-generation",
 ]
 tools-miniapp = [
+    "openbitfun-services-integrations/generative-ui",
     "dep:openbitfun-product-domains",
     "openbitfun-tool-packs/miniapp",
     "openbitfun-product-domains/appearance-market",
@@ -402,10 +401,6 @@ tools-pages = [
 ]
 tools-creation = [
     "openbitfun-tool-packs/creation",
-]
-tools-canvas = [
-    "openbitfun-tool-packs/canvas",
-    "canvas-runtime",
 ]
 tools-agent-control = [
     "openbitfun-tool-packs/agent-control",
@@ -444,10 +439,6 @@ function-agents = [
     "openbitfun-product-domains/function-agents",
     "openbitfun-services-integrations/function-agents",
     "runtime-services",
-]
-canvas-runtime = [
-    "dep:openbitfun-product-domains",
-    "openbitfun-services-integrations/canvas-runtime",
 ]
 runtime-services = ["dep:openbitfun-runtime-services"]
 legacy-migration = ["dep:openbitfun-legacy-migration-adapters"]

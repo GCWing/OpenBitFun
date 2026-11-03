@@ -976,6 +976,7 @@ mod tests {
                 root,
             )),
             loaded_deferred_tool_specs: Vec::new(),
+            model_client: None,
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             custom_data: HashMap::new(),
             computer_use_host: None,

@@ -5,7 +5,7 @@ import { useContentResourceStore } from './contentResourceStore';
 import { registerContentCloseGuard } from './contentResourceLifecycle';
 import { fileTabManager } from '@/shared/services/FileTabManager';
 import { openFileInBestTarget, createTerminalTab, createGitCodeEditorTab, createTab } from '@/shared/utils/tabUtils';
-import { openContentInBestTarget, openWorkbenchContent } from '@/shared/services/workbenchContentService';
+import { clearTransientGenerativeWidgetResources, openContentInBestTarget, openWorkbenchContent } from '@/shared/services/workbenchContentService';
 import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore, useGitCanvasStore } from '../components/panels/content-canvas/stores';
 import { appManager } from '../services/AppManager';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
@@ -75,6 +75,46 @@ describe('workbench content navigation', () => {
       : Object.values(useContentResourceStore.getState().resources).map(resource => resource.content);
     expect(contents).toHaveLength(1);
     expect(contents[0].data.imageSource.dataUrl).toBe('data:image/png;base64,Ag==');
+  });
+
+  it('keeps transient OpenUI widgets out of the workbench', () => {
+    const openUi = {
+      type: 'generative-widget' as const,
+      title: 'OpenUI answer',
+      data: { app: { template: 'openui.app', libraryId: 'openbitfun.composable.v1' } },
+    };
+
+    expect(openWorkbenchContent(openUi, { scope: { surfaceId: 'local', workspaceId: 'project' } })).toBe('');
+    openContentInBestTarget(openUi, { scope: { surfaceId: 'local', workspaceId: 'project' } });
+
+    expect(Object.values(useContentResourceStore.getState().resources)).toHaveLength(0);
+    expect(useSceneStore.getState().openTabs.some(tab => tab.contentId)).toBe(false);
+  });
+
+  it('still allows an explicit Harmony widget to open in the workbench', () => {
+    const harmony = {
+      type: 'generative-widget' as const,
+      title: 'Harmony delivery',
+      data: { app: { template: 'openbitfun.harmony.app', libraryId: 'openbitfun.harmony.v1' } },
+    };
+
+    const resourceId = openWorkbenchContent(harmony, { scope: { surfaceId: 'local', workspaceId: 'project' } });
+    expect(resourceId).toMatch(/^resource-/);
+    expect(useContentResourceStore.getState().resources[resourceId]?.content).toMatchObject(harmony);
+  });
+
+  it('clears an OpenUI resource left by the retired automatic route', async () => {
+    const openUi = {
+      type: 'generative-widget' as const,
+      title: 'Stale OpenUI answer',
+      data: { app: { template: 'openui.app', libraryId: 'openbitfun.composable.v1' } },
+    };
+    const resourceId = useContentResourceStore.getState().open(openUi, { surfaceId: 'local', workspaceId: 'project' });
+    useSceneStore.getState().openContentScene(resourceId);
+
+    clearTransientGenerativeWidgetResources();
+    await vi.waitFor(() => expect(useSceneStore.getState().openTabs.some(tab => tab.id === `content:${resourceId}`)).toBe(false));
+    expect(useContentResourceStore.getState().resources[resourceId]).toBeUndefined();
   });
 
   it('falls back to one main file tab when a stale scene has no usable session', () => {

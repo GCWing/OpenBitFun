@@ -115,7 +115,6 @@ export const CONTRACT_VAR_DEFINITION_PATH_PARTS = [
   'design-system/packages/theme-openbitfun/src',
   'infrastructure/appearance',
   'src/mobile-web/src/styles/global.scss',
-  'tools/openbitfun-canvas/runtime/styles',
   'tools/generative-widget/appearancePayload.ts',
 ];
 
@@ -169,11 +168,6 @@ export const COLOR_DOMAIN_RULES = [
     key: 'generatedWidget',
     label: 'Generated widget',
     pathParts: ['tools/generative-widget'],
-  },
-  {
-    key: 'openbitfunCanvas',
-    label: 'OpenBitFun Canvas',
-    pathParts: ['tools/openbitfun-canvas'],
   },
   {
     key: 'mermaid',
@@ -268,12 +262,6 @@ export const COLOR_DOMAIN_CONTRACTS = [
     mergePolicy: 'Derive fallback values from a builtin Appearance package and keep iframe payload keys canonical.',
   },
   {
-    key: 'openbitfunCanvas',
-    owner: 'src/web-ui/src/tools/openbitfun-canvas',
-    reason: 'OpenBitFun Canvas renders generated TSX inside a dedicated iframe runtime with an SDK palette that must stay isolated from app chrome tokens.',
-    mergePolicy: 'Keep Canvas iframe and SDK colors in the Canvas Appearance contract; promote only reusable host chrome roles to shared app tokens.',
-  },
-  {
     key: 'mermaid',
     owner: 'src/web-ui/src/tools/mermaid-editor',
     reason: 'Mermaid rendering owns graph palette semantics that do not map one-to-one to app surface states.',
@@ -336,11 +324,6 @@ export const DYNAMIC_VAR_FAMILY_CONTRACTS = [
     prefix: '--openbitfun-appearance-asset-',
     owner: 'src/web-ui/src/infrastructure/appearance/compiler/AppearanceCompiler.ts; src/web-ui/src/infrastructure/appearance/runtime/AppearanceRuntime.ts',
     reason: 'Appearance package image ids are validated by the package schema, then projected to host-created blob URL variables for registered component parts.',
-  },
-  {
-    prefix: '--openbitfun-canvas-',
-    owner: 'src/web-ui/src/tools/openbitfun-canvas/runtime/canvasRuntimeInstaller.ts; src/web-ui/src/tools/openbitfun-canvas/runtime/styles/canvas-runtime.scss',
-    reason: 'OpenBitFun Canvas iframe runtime receives host Appearance values through a scoped CSS variable family that must stay isolated from app root tokens.',
   },
   {
     prefix: '--openbitfun-font-size-',

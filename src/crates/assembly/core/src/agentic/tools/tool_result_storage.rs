@@ -363,6 +363,7 @@ mod tests {
             dialog_turn_id: Some("turn_1".to_string()),
             workspace: Some(WorkspaceBinding::new(None, root)),
             loaded_deferred_tool_specs: Vec::new(),
+            model_client: None,
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             custom_data,
             computer_use_host: None,

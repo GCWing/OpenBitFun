@@ -61,15 +61,11 @@ const BUILTIN_TOOL_GROUPS: BuiltinToolGroupDefinition[] = [
     toolNames: ['analyze_image', 'view_image'],
   },
   {
-    id: 'builtin:interaction-canvas',
+    id: 'builtin:interactive-ui',
     labelKey: 'agentsOverview.toolGroups.interactionCanvas',
     toolNames: [
       'AskUserQuestion',
       'GenerativeUI',
-      'CreateCanvas',
-      'ReadCanvas',
-      'PatchCanvas',
-      'UpdateCanvas',
     ],
   },
   {

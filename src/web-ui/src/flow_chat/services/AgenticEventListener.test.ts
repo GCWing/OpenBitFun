@@ -20,14 +20,14 @@ it('uses records for remote content while local content and remote approvals kee
   expect(onToolEvent).toHaveBeenCalledOnce();
   fixture.surface = 'peer';
   fixture.text?.({ text: 'duplicate remote token' });
-  for (const event_type of ['Started', 'ParamsPartial', 'StreamChunk', 'Completed', 'Failed']) {
+  for (const event_type of ['Started', 'ParamsPartial', 'GenUIStream', 'StreamChunk', 'Completed', 'Failed']) {
     fixture.tool?.({ toolEvent: { event_type, result: 'duplicate remote body' } });
     expect(agenticEventListener.dispatchExternal('agentic://tool-event', { toolEvent: { event_type } })).toBe(true);
   }
   expect(onTextChunk).toHaveBeenCalledOnce();
-  expect(onToolEvent).toHaveBeenCalledOnce();
+  expect(onToolEvent).toHaveBeenCalledTimes(3);
   fixture.tool?.({ toolEvent: { event_type: 'ConfirmationNeeded' } });
-  expect(onToolEvent).toHaveBeenCalledTimes(2);
+  expect(onToolEvent).toHaveBeenCalledTimes(4);
 });
 it('routes peer prompt suggestions to the registered handler', async () => {
   const onPromptSuggestion = vi.fn();

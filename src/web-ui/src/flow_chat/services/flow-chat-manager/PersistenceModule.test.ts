@@ -6,6 +6,7 @@ import {
   debouncedSaveDialogTurn,
   immediateSaveDialogTurn,
   saveDialogTurnToDisk,
+  saveDialogTurnConfirmed,
   updateSessionMetadata,
 } from './PersistenceModule';
 
@@ -422,6 +423,21 @@ describe('PersistenceModule', () => {
     await vi.advanceTimersByTimeAsync(500);
     await flushMicrotasks();
     expect(mockSaveSessionTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirmed saves await IO and propagate persistence failures', async () => {
+    const context = createContext(createDialogTurn('completed'));
+    mockSaveSessionTurn.mockRejectedValueOnce(new Error('disk unavailable'));
+    await expect(saveDialogTurnConfirmed(context, SESSION_ID, TURN_ID)).rejects.toThrow('disk unavailable');
+    await expect(saveDialogTurnConfirmed(context, SESSION_ID, TURN_ID)).resolves.toBeUndefined();
+  });
+
+  it('confirmed saves reject unsupported owners instead of reporting success', async () => {
+    await expect(saveDialogTurnConfirmed(createContext(createDialogTurn('completed'), { isTransient: true }), SESSION_ID, TURN_ID)).rejects.toThrow('does not support');
+    const turn = createDialogTurn('completed');
+    turn.recovery = { status: 'recovering', executionGeneration: 1, resumeCount: 1 };
+    await expect(saveDialogTurnConfirmed(createContext(turn), SESSION_ID, TURN_ID)).rejects.toThrow('Runtime-owned');
+    expect(mockSaveSessionTurn).not.toHaveBeenCalled();
   });
 
   it('does not overwrite Runtime-owned interrupted or recovering turns', async () => {

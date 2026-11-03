@@ -96,7 +96,11 @@
     "removeGlobalRule": "删除规则",
     "discardGlobalRules": "放弃更改",
     "saveGlobalRules": "保存规则",
-    "globalRulesEffects": { "allow": "允许", "ask": "询问", "deny": "拒绝" },
+    "globalRulesEffects": {
+      "allow": "允许",
+      "ask": "询问",
+      "deny": "拒绝"
+    },
     "modeDescription": "作为新会话的默认设置，可在输入框中临时切换。"
   },
   "toolPresentation": {
@@ -156,7 +160,11 @@
     "rulesSaveFailed": "保存静态项目规则失败",
     "rulesConflict": "规则文件已在外部变更，请取消本地修改并刷新后重试。",
     "cancel": "取消",
-    "effects": { "allow": "允许", "ask": "询问", "deny": "拒绝" }
+    "effects": {
+      "allow": "允许",
+      "ask": "询问",
+      "deny": "拒绝"
+    }
   },
   "deferredToolLoading": {
     "sectionTitle": "按需加载工具",
@@ -249,5 +257,51 @@
     "saveSuccess": "设置已保存",
     "saveFailed": "保存失败",
     "updateFailed": "设置失败"
+  },
+  "genui": {
+    "title": "生成式 UI",
+    "description": "选择新建生成式 UI 应用使用的组件库。已有应用继续使用保存的组件库和版本。",
+    "collection": "生成式 UI 配置",
+    "loading": "正在读取组件设置",
+    "retry": "重试",
+    "unknown": "当前版本不支持此组件集合，已保留原设置。请选择已安装的集合。",
+    "collections": {
+      "openui": "Open Intelligent UI：在 FlowChat 中流式显示 OpenUI Lang，并保留本地状态和动作。",
+      "openbitfun": "OpenBitFun：使用当前 BitFun 组件库和桌面样式。",
+      "harmony": "Harmony 手机：固定手机视口、宿主状态栏和持久化交付验收。"
+    },
+    "specification": "UI 规范",
+    "viewport": "目标视口",
+    "responsiveViewport": "响应当前宿主宽度",
+    "componentLibraries": "可用组件库",
+    "styleResources": "样式资源",
+    "hostShell": "宿主外壳",
+    "designRules": "设计规则",
+    "acceptance": "验收检查",
+    "preview": {
+      "title": "交互预览",
+      "description": "可以直接操作示例控件。预览修改只保留在当前页面，不会保存到应用。新应用使用所选组件库和 UI 规范，已有应用沿用保存的规范身份。",
+      "live": "可交互",
+      "period": "周期",
+      "daily": "每日",
+      "weekly": "每周",
+      "noteValue": "与下方文本共享的一条备注",
+      "edited": "已修改的预览备注",
+      "note": "共享备注",
+      "progress": "完成进度",
+      "hint": "响应式组件",
+      "hintBody": "修改备注，下方绑定的文本会立即更新。",
+      "metric": "合计",
+      "unit": "项",
+      "sample": "示例数据 · 已适配的组件子集",
+      "table": "示例记录",
+      "item": "条目",
+      "amount": "数量",
+      "first": "第一步",
+      "second": "第二步",
+      "steps": "操作流程",
+      "plot": "函数图",
+      "card": "组件集合"
+    }
   }
 }

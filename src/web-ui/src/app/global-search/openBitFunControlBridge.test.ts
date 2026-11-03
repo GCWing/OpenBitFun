@@ -42,10 +42,11 @@ describe('OpenBitFunControl presentation bridge', () => {
 
     await expect(initializeOpenBitFunControlBridge()).rejects.toThrow('Host unavailable');
     expect(listeners.has('agentic://creation-runtime-request')).toBe(true);
+    expect(listeners.has('agentic://genui-check-request')).toBe(true);
     expect(listeners.has('agentic://openbitfun-control-request')).toBe(true);
     expect(Math.max(...listen.mock.invocationCallOrder)).toBeLessThan(invoke.mock.invocationCallOrder[0]);
     expect(invoke).toHaveBeenCalledWith('mark_openbitfun_control_surface_ready', {
-      request: { creationApiVersion: 1 },
+      request: { creationApiVersion: 1, genUiApiVersion: 1 },
     });
     for (const unlisten of listeners.values()) expect(unlisten).toHaveBeenCalledOnce();
   });

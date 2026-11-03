@@ -58,7 +58,7 @@ Desktop bootstrap 和产品前端也不能反向定义公共主题值。
    组件差异；必须在 `appearanceTokenContract.ts` 中登记。
 3. **Product domain**：`--openbitfun-domain-*`。用于 Git lane、语言身份、syntax、inspector、工具类别等明确的
    专用语义；不得当作普通 UI 的备用色板。
-4. **Renderer payload**：Monaco、xterm、Mermaid、OpenBitFun Canvas 等第三方或专用渲染器的显式配置。
+4. **Renderer payload**：Monaco、xterm、Mermaid、GenUI 等第三方或专用渲染器的显式配置。
    它们有各自格式，不进入普通组件 CSS。
 
 Primitive/reference 色值只存在于主题 authoring、明确的主题 preset 或专用 renderer owner 中。普通组件

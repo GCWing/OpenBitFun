@@ -19,6 +19,19 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 Provider parsing changes also require the adapter's focused stream tests.
 
 
+For GenUI candidate requirement review and tool-client ownership:
+
+    cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,tools-miniapp,git --lib -- generative_ui tool_task_context_materialization_preserves_runtime_fields
+
+Review consumes canonical actual user messages only through the originating
+turn and the candidate's owner state. Preserve the producing model client in
+internal tool context, including account and reasoning policy; never resolve a
+fresh primary model for review. The client is not a serialized DTO or model
+tool input. Every repaired candidate is reviewed again. Unknown citations,
+missing interaction checks, malformed responses and timeout reject acceptance.
+Local tests prove evidence/provenance and client identity, not live model
+quality or remote end-to-end delivery.
+
 For next-input suggestions (turn reasoning settings, one identical retry,
 plain-text output, unchanged message prefix, and silent failure), use:
 

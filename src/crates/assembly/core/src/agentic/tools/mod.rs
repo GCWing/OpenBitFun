@@ -13,6 +13,7 @@ pub mod file_tool_guidance;
 pub mod framework;
 #[cfg(feature = "tools-creation")]
 pub mod frontend_workbench_host;
+pub mod generative_ui_host;
 pub mod image_context;
 pub mod implementations;
 mod integer_parser;

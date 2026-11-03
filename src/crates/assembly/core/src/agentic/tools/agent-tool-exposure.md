@@ -60,10 +60,6 @@ Notes:
 | `CallDeferredTool` | Direct | None | - |
 | `OpenBitFunControl` | Direct | None | - |
 | `GetFileDiff` | Deferred | `CodeReview`, `DeepReview`, `ReviewFixer`, `ReviewWorker`, `ReviewJudge` | Direct |
-| `CreateCanvas` | Direct | None | - |
-| `ReadCanvas` | Direct | None | - |
-| `UpdateCanvas` | Direct | None | - |
-| `PatchCanvas` | Direct | None | - |
 | `ListWorkspaces` | Deferred | None | - |
 | `SessionControl` | Deferred | None | - |
 | `SessionMessage` | Deferred | None | - |
@@ -77,7 +73,7 @@ Notes:
 | `ReadMCPResource` | Deferred | None | - |
 | `ListMCPPrompts` | Deferred | None | - |
 | `GetMCPPrompt` | Deferred | None | - |
-| `GenerativeUI` | Deferred | None | - |
+| `GenerativeUI` | Direct | None | - |
 | `Worktree` | Deferred | None | - |
 | `ReviewPlatform` | Deferred | None | - |
 | `InitMiniApp` | Direct | None | - |

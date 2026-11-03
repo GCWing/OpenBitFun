@@ -36,7 +36,7 @@ function acceptsSurfaceEvent(eventName: string, payload: { toolEvent?: { event_t
   if (getActiveSurfaceId() === 'local') return true;
   if (eventName === 'agentic://text-chunk') return false;
   if (eventName !== 'agentic://tool-event') return true;
-  return ['ConfirmationNeeded', 'Confirmed', 'Rejected', 'Cancelled']
+  return ['GenUIStream', 'ConfirmationNeeded', 'Confirmed', 'Rejected', 'Cancelled']
     .includes(payload.toolEvent?.event_type ?? '');
 }
 

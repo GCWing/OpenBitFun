@@ -58,8 +58,8 @@ import { contextListAppearanceDescriptor } from '@/shared/context-system/appeara
 import { notificationAppearanceDescriptor } from '@/shared/notification-system/appearance';
 import { imageLightboxAppearanceDescriptor } from '@/shared/ui/ImageLightbox.appearance';
 import { productBrandIconAppearanceDescriptor } from '@/shared/ui/ProductBrandIcon.appearance';
-import { canvasToolAppearanceDescriptor } from '@/tools/openbitfun-canvas/appearance';
 import { generativeWidgetAppearanceDescriptor } from '@/tools/generative-widget/appearance';
+import { genUIApplicationAppearanceDescriptor, genUIComponentsAppearanceDescriptor } from '@/tools/generative-ui/appearance';
 import { editorToolAppearanceDescriptor } from '@/tools/editor/appearance';
 import { fileSystemAppearanceDescriptor } from '@/tools/file-system/appearance';
 import { gitToolAppearanceDescriptor } from '@/tools/git/appearance';
@@ -105,6 +105,7 @@ import { flexiblePanelAppearanceDescriptor } from '@/app/components/panels/base/
 import { btwSessionPanelAppearanceDescriptor } from '@/flow_chat/components/btw/BtwSessionPanel.appearance';
 import { conversationExcerptAppearanceDescriptor } from '@/flow_chat/selection/ConversationExcerpt.appearance';
 import { modernFlowChatAppearanceDescriptor, virtualMessageListAppearanceDescriptor } from '@/flow_chat/components/modern/appearance';
+import { genUILibrarySettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/ai/GenUILibrarySection.appearance';
 import { modelSettingsAppearanceDescriptor } from '@/app/scenes/settings/pages/ai/ModelSettingsPage.appearance';
 import { reasoningConfigPanelAppearanceDescriptor } from '@/infrastructure/config/components/ReasoningConfigPanel.appearance';
 import { reasoningPresetEditorAppearanceDescriptor } from '@/infrastructure/config/components/ReasoningPresetEditor.appearance';
@@ -123,7 +124,6 @@ import { monacoAppearanceAdapter } from '../adapters/MonacoAppearanceAdapter';
 import { xtermAppearanceAdapter } from '../adapters/XtermAppearanceAdapter';
 import { mermaidAppearanceAdapter } from '../adapters/MermaidAppearanceAdapter';
 import { widgetAppearanceAdapter } from '../adapters/WidgetAppearanceAdapter';
-import { canvasAppearanceAdapter } from '../adapters/CanvasAppearanceAdapter';
 import { themeTokenAppearanceAdapter } from '../adapters/ThemeTokenAppearanceAdapter';
 import { tiptapEditorAppearanceDescriptor } from '@/tools/editor/meditor/components/TiptapEditor.appearance';
 import { workspaceProjectPermissionsDialogAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceProjectPermissionsDialog.appearance';
@@ -168,7 +168,7 @@ import { pendingQueuePanelAppearanceDescriptor } from '@/flow_chat/components/Pe
 import { subagentProjectionAppearanceDescriptor } from '@/flow_chat/components/subagent/SubagentProjectionView.appearance';
 import { threadGoalDialogsAppearanceDescriptor } from '@/flow_chat/components/thread-goal/ThreadGoalDialogs.appearance';
 import { welcomePanelAppearanceDescriptor } from '@/flow_chat/components/WelcomePanel.appearance';
-import { generativeWidgetToolCardAppearanceDescriptor } from '@/flow_chat/tool-cards/GenerativeWidgetToolCard.appearance';
+import { generativeWidgetInlineAppearanceDescriptor } from '@/flow_chat/components/GenerativeWidgetInline.appearance';
 import { snapshotFullscreenDiffViewerAppearanceDescriptor } from '@/flow_chat/tool-cards/SnapshotFullscreenDiffViewer.appearance';
 import { mermaidBlockAppearanceDescriptor } from '@/infrastructure/markdown/MermaidBlock.appearance';
 import { defaultModelConfigAppearanceDescriptor } from '@/infrastructure/config/components/DefaultModelConfig.appearance';
@@ -222,7 +222,6 @@ import { deepReviewConsentDialogAppearanceDescriptor } from '@/flow_chat/compone
 import { flowToolCardAppearanceDescriptor } from '@/flow_chat/components/FlowToolCard.appearance';
 import { flowTextBlockAppearanceDescriptor } from '@/flow_chat/components/FlowTextBlock.appearance';
 import { chatInputApprovalBandAppearanceDescriptor } from '@/flow_chat/components/ChatInputApprovalBand.appearance';
-import { canvasToolCardAppearanceDescriptor } from '@/flow_chat/tool-cards/CanvasToolCard.appearance';
 import { computerUseToolCardAppearanceDescriptor } from '@/flow_chat/tool-cards/ComputerUseToolCard.appearance';
 import { openBitFunControlToolCardAppearanceDescriptor } from '@/flow_chat/tool-cards/OpenBitFunControlToolCard.appearance';
 import { miniAppToolDisplayAppearanceDescriptor } from '@/flow_chat/tool-cards/MiniAppToolDisplay.appearance';
@@ -331,8 +330,9 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(notificationAppearanceDescriptor)
     .registerComponent(imageLightboxAppearanceDescriptor)
     .registerComponent(productBrandIconAppearanceDescriptor)
-    .registerComponent(canvasToolAppearanceDescriptor)
     .registerComponent(generativeWidgetAppearanceDescriptor)
+    .registerComponent(genUIApplicationAppearanceDescriptor)
+    .registerComponent(genUIComponentsAppearanceDescriptor)
     .registerComponent(editorToolAppearanceDescriptor)
     .registerComponent(fileSystemAppearanceDescriptor)
     .registerComponent(gitToolAppearanceDescriptor)
@@ -383,6 +383,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(modernFlowChatAppearanceDescriptor)
     .registerComponent(virtualMessageListAppearanceDescriptor)
     .registerComponent(modelSettingsAppearanceDescriptor)
+    .registerComponent(genUILibrarySettingsAppearanceDescriptor)
     .registerComponent(reasoningConfigPanelAppearanceDescriptor)
     .registerComponent(reasoningPresetEditorAppearanceDescriptor)
     .registerComponent(externalSourcesConfigAppearanceDescriptor)
@@ -440,7 +441,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(subagentProjectionAppearanceDescriptor)
     .registerComponent(threadGoalDialogsAppearanceDescriptor)
     .registerComponent(welcomePanelAppearanceDescriptor)
-    .registerComponent(generativeWidgetToolCardAppearanceDescriptor)
+    .registerComponent(generativeWidgetInlineAppearanceDescriptor)
     .registerComponent(snapshotFullscreenDiffViewerAppearanceDescriptor)
     .registerComponent(mermaidBlockAppearanceDescriptor)
     .registerComponent(defaultModelConfigAppearanceDescriptor)
@@ -469,7 +470,6 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(flowToolCardAppearanceDescriptor)
     .registerComponent(flowTextBlockAppearanceDescriptor)
     .registerComponent(chatInputApprovalBandAppearanceDescriptor)
-    .registerComponent(canvasToolCardAppearanceDescriptor)
     .registerComponent(computerUseToolCardAppearanceDescriptor)
     .registerComponent(openBitFunControlToolCardAppearanceDescriptor)
     .registerComponent(miniAppToolDisplayAppearanceDescriptor)
@@ -529,6 +529,5 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerRenderer(xtermAppearanceAdapter)
     .registerRenderer(mermaidAppearanceAdapter)
     .registerRenderer(widgetAppearanceAdapter)
-    .registerRenderer(canvasAppearanceAdapter)
     .freeze();
 }

@@ -954,25 +954,6 @@ mod tests {
     }
 
     #[test]
-    fn canonicalize_agent_profile_preserves_explicit_canvas_selection() {
-        let raw = serde_json::json!({
-            "profile_id": "Standard",
-            "added_tools": ["CreateCanvas"]
-        });
-        let canonical = canonicalize_agent_profile(
-            "Standard",
-            Some(&raw),
-            &["Read".to_string()],
-            &HashSet::from(["Read".to_string(), "CreateCanvas".to_string()]),
-        )
-        .expect("profile should canonicalize")
-        .expect("the explicit Canvas selection should keep the profile");
-
-        assert_eq!(canonical.added_tools, vec!["CreateCanvas".to_string()]);
-        assert!(canonical.removed_tools.is_empty());
-    }
-
-    #[test]
     fn shared_modes_report_shared_profile_members() {
         assert_eq!(
             agent_profile_member_mode_ids_for("Standard"),

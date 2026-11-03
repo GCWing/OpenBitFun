@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "6ae2eeaa19e6342f9dcf7ff33b7c0fa94547ee1c02fc1835f6f4471caab6fbb3",
-  "commandCount": 709,
+  "catalogDigest": "d9509b2230b87eb48363b5d79dae72009f1e84d3007de98ee20e717ae609b0b8",
+  "commandCount": 706,
   "coverage": {
-    "commandCount": 709,
-    "documentedCommandCount": 649,
-    "implementationCommandCount": 60,
-    "implementationDigest": "5047b674e890f899e65baf9235e9df4bd912fa28f44eb10a656e079a1b89974d"
+    "commandCount": 706,
+    "documentedCommandCount": 644,
+    "implementationCommandCount": 62,
+    "implementationDigest": "35499f219e8b80a5aa464bf1b3f6c8c9f978888bd423aab5c487fba23ceb0276"
   },
   "commands": [
     {
@@ -2838,6 +2838,34 @@
       "sourceFile": "src/apps/desktop/src/frontend_workbench.rs",
       "signature": "fn frontend_update_candidate_ready( state: tauri::State<'_, Arc<FrontendWorkbenchManager>>, webview: tauri::Webview, request: FrontendUpdateDecisionRequest, ) -> Result<Value, String>",
       "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "gen_ui_app",
+      "moduleId": "generative_ui",
+      "capabilityId": "feature.generative-ui",
+      "capabilityIds": [
+        "feature.generative-ui"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::generative_ui_api::gen_ui_app",
+      "sourceFile": "src/apps/desktop/src/api/generative_ui_api.rs",
+      "signature": "fn gen_ui_app(request: GenUIAppRequest) -> Result<Option<Revision>, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "gen_ui_provider_call",
+      "moduleId": "generative_ui",
+      "capabilityId": "feature.generative-ui",
+      "capabilityIds": [
+        "feature.generative-ui"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::generative_ui_api::gen_ui_provider_call",
+      "sourceFile": "src/apps/desktop/src/api/generative_ui_api.rs",
+      "signature": "fn gen_ui_provider_call(request: GenUIProviderRequest) -> Result<Value, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "generate_commit_message",
@@ -5723,38 +5751,6 @@
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
-      "id": "load_canvas_artifact",
-      "moduleId": "canvas",
-      "capabilityId": "feature.canvas",
-      "capabilityIds": [
-        "feature.canvas"
-      ],
-      "documentedItemIds": [
-        "feature.canvas:artifact-open"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::canvas_api::load_canvas_artifact",
-      "sourceFile": "src/apps/desktop/src/api/canvas_api.rs",
-      "signature": "fn load_canvas_artifact( state: State<'_, AppState>, request: CanvasStateRequest, ) -> Result<CanvasArtifactResponse, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "load_canvas_state",
-      "moduleId": "canvas",
-      "capabilityId": "feature.canvas",
-      "capabilityIds": [
-        "feature.canvas"
-      ],
-      "documentedItemIds": [
-        "feature.canvas:state"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::canvas_api::load_canvas_state",
-      "sourceFile": "src/apps/desktop/src/api/canvas_api.rs",
-      "signature": "fn load_canvas_state( state: State<'_, AppState>, request: CanvasStateRequest, ) -> Result<CanvasStateResponse, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
       "id": "load_git_repo_history",
       "moduleId": "git",
       "capabilityId": "feature.git",
@@ -8040,38 +8036,6 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
-      "id": "report_canvas_runtime_error",
-      "moduleId": "canvas",
-      "capabilityId": "feature.canvas",
-      "capabilityIds": [
-        "feature.canvas"
-      ],
-      "documentedItemIds": [
-        "feature.canvas:runtime-errors"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::canvas_api::report_canvas_runtime_error",
-      "sourceFile": "src/apps/desktop/src/api/canvas_api.rs",
-      "signature": "fn report_canvas_runtime_error( state: State<'_, AppState>, request: ReportCanvasRuntimeErrorRequest, ) -> Result<CanvasArtifactResponse, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "report_canvas_runtime_ready",
-      "moduleId": "canvas",
-      "capabilityId": "feature.canvas",
-      "capabilityIds": [
-        "feature.canvas"
-      ],
-      "documentedItemIds": [
-        "feature.canvas:html-react"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::canvas_api::report_canvas_runtime_ready",
-      "sourceFile": "src/apps/desktop/src/api/canvas_api.rs",
-      "signature": "fn report_canvas_runtime_ready( state: State<'_, AppState>, request: ReportCanvasRuntimeReadyRequest, ) -> Result<CanvasArtifactResponse, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
       "id": "report_ide_control_result",
       "moduleId": "commands",
       "capabilityId": "feature.projects",
@@ -8737,22 +8701,6 @@
       "sourceFile": "src/apps/desktop/src/api/acp_client_api.rs",
       "signature": "fn save_acp_json_config( state: State<'_, AppState>, json_config: String, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
-    },
-    {
-      "id": "save_canvas_state",
-      "moduleId": "canvas",
-      "capabilityId": "feature.canvas",
-      "capabilityIds": [
-        "feature.canvas"
-      ],
-      "documentedItemIds": [
-        "feature.canvas:state"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::canvas_api::save_canvas_state",
-      "sourceFile": "src/apps/desktop/src/api/canvas_api.rs",
-      "signature": "fn save_canvas_state( state: State<'_, AppState>, request: SaveCanvasStateRequest, ) -> Result<CanvasStateResponse, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "save_cloud_speech_config",

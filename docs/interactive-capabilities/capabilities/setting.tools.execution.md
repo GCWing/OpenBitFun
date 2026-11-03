@@ -45,6 +45,8 @@ Manage agent tool permissions, presentation mode, concurrency, timeouts, deferre
   - Discover and choose a browser, configure default CDP, or restart it when needed
 - **智能体可直接控制 / Direct Agent control** · 控制是否在安全边界内修复模型生成的非法工具参数 JSON
   - Choose whether malformed model-generated tool-argument JSON may be repaired within safety boundaries
+- **智能体可直接控制 / Direct Agent control** · 选择生成式 UI 组件库及关联 UI 规范并操作预览
+  - Select a GenUI component library, its UI specification and preview
 
 ## 怎么用 / How to use it
 
@@ -77,6 +79,7 @@ Manage agent tool permissions, presentation mode, concurrency, timeouts, deferre
 | Computer Use 桌面控制 / Computer Use | `boolean` | 允许智能体使用已授权的桌面控制能力。 | Allow agents to use authorized desktop-control capabilities. |
 | 启动时连接浏览器 / Connect browser on startup | `boolean` | OpenBitFun 启动后自动尝试连接浏览器控制。 | Automatically try to connect browser control after OpenBitFun starts. |
 | 工具参数 JSON 修复 / Tool-argument JSON repair | `boolean` | 允许在安全边界内修复模型生成的轻微 JSON 格式错误。 | Allow minor model-generated JSON formatting errors to be repaired within the safety boundary. |
+| 生成式 UI 组件库及 UI 规范 / GenUI component library and UI specification | `harmony` / `openbitfun` / `openui` | 选择后续生成使用的组件库及其关联的设计规则、资源、视口、宿主外壳和验收检查；已有应用保留自己的目标身份。 | Choose the component library and its bound design rules, resources, viewport, host shell and acceptance checks. Existing apps retain their target identity. |
 
 ## 可以直接对智能体说 / Try saying
 

@@ -5,20 +5,22 @@
 
 import { createLogger } from '@/shared/utils/logger';
 import { isMcpToolName } from '@/infrastructure/mcp/toolName';
-import type { CompatibilityToolNameForOwner, ToolNameForOwner } from '@openbitfun/flow-chat-presentation/registry';
+import type { ToolNameForOwner } from '@openbitfun/flow-chat-presentation/registry';
 import type { JSXElementConstructor } from 'react';
 import type { ToolCardProps } from '../types/flow-chat';
 
+type CompatibilityStandardToolName = 'AgentInterrupt' | 'AgentDelete';
+type CompatibilityProductToolName = 'Task';
 type StandardToolCardRegistry = Record<
   ToolNameForOwner<'standard'>,
   JSXElementConstructor<ToolCardProps>
 > &
-  Record<CompatibilityToolNameForOwner<'standard'>, JSXElementConstructor<ToolCardProps>>;
-type ProductToolCardRegistry = Record<
+  Partial<Record<CompatibilityStandardToolName, JSXElementConstructor<ToolCardProps>>>;
+type ProductToolCardRegistry = Partial<Record<
   ToolNameForOwner<'product'>,
   JSXElementConstructor<ToolCardProps>
-> &
-  Record<CompatibilityToolNameForOwner<'product'>, JSXElementConstructor<ToolCardProps>>;
+>> &
+  Partial<Record<CompatibilityProductToolName, JSXElementConstructor<ToolCardProps>>>;
 
 export {
   TOOL_CARD_CONFIGS,
@@ -68,9 +70,6 @@ import { ExecControlToolCard } from './ExecControlToolCard';
 import { InitMiniAppDisplay } from './MiniAppToolDisplay';
 import { PageDeployDisplay } from './PageDeployToolDisplay';
 import { PagePublishDisplay } from './PagePublishToolDisplay';
-import { PageManageDisplay } from './PageManageToolDisplay';
-import { GenerativeWidgetToolCard } from './GenerativeWidgetToolCard';
-import { CanvasToolCard } from './CanvasToolCard';
 import { ReviewSessionSummaryCard } from './ReviewSessionSummaryCard';
 import { SessionControlToolCard } from './SessionControlToolCard';
 import { SessionMessageToolCard } from './SessionMessageToolCard';
@@ -187,15 +186,9 @@ export const PRODUCT_OWNED_TOOL_CARD_COMPONENTS = {
   // Legacy CreatePlan history remains displayable after runtime tool removal.
   'CreatePlan': CreatePlanDisplay,
   'InitMiniApp': InitMiniAppDisplay,
-  'GenerativeUI': GenerativeWidgetToolCard,
   'ComputerUse': ComputerUseToolCard,
   'OpenBitFunControl': OpenBitFunControlToolCard,
 
-  // OpenBitFun Canvas tools
-  'CreateCanvas': CanvasToolCard,
-  'ReadCanvas': CanvasToolCard,
-  'UpdateCanvas': CanvasToolCard,
-  'PatchCanvas': CanvasToolCard,
 } as const satisfies ProductToolCardRegistry;
 
 // Runtime map keyed by backend tool names.

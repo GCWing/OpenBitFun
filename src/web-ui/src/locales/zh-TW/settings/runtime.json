@@ -96,7 +96,11 @@
     "removeGlobalRule": "刪除規則",
     "discardGlobalRules": "放棄變更",
     "saveGlobalRules": "儲存規則",
-    "globalRulesEffects": { "allow": "允許", "ask": "詢問", "deny": "拒絕" },
+    "globalRulesEffects": {
+      "allow": "允許",
+      "ask": "詢問",
+      "deny": "拒絕"
+    },
     "modeDescription": "作為新工作階段的預設設定，可在輸入框中暫時切換。"
   },
   "toolPresentation": {
@@ -156,7 +160,11 @@
     "rulesSaveFailed": "儲存靜態專案規則失敗",
     "rulesConflict": "規則檔案已在外部變更，請取消本機修改並重新整理後再試。",
     "cancel": "取消",
-    "effects": { "allow": "允許", "ask": "詢問", "deny": "拒絕" }
+    "effects": {
+      "allow": "允許",
+      "ask": "詢問",
+      "deny": "拒絕"
+    }
   },
   "deferredToolLoading": {
     "sectionTitle": "按需載入工具",
@@ -249,5 +257,51 @@
     "saveSuccess": "設置已儲存",
     "saveFailed": "儲存失敗",
     "updateFailed": "設置失敗"
+  },
+  "genui": {
+    "title": "生成式 UI",
+    "description": "選擇新建生成式 UI 應用使用的元件庫。既有應用會繼續使用已儲存的元件庫與版本。",
+    "collection": "生成式 UI 設定",
+    "loading": "正在讀取元件設定",
+    "retry": "重試",
+    "unknown": "目前版本不支援此元件集合，已保留原設定。請選擇已安裝的集合。",
+    "collections": {
+      "openui": "Open Intelligent UI：在 FlowChat 中串流顯示 OpenUI Lang，保留本地狀態與動作。",
+      "openbitfun": "OpenBitFun：使用目前 BitFun 元件庫與桌面樣式。",
+      "harmony": "Harmony 手機：固定手機視口、宿主狀態列與持久化交付驗收。"
+    },
+    "specification": "UI 規範",
+    "viewport": "目標視口",
+    "responsiveViewport": "響應目前宿主寬度",
+    "componentLibraries": "可用元件庫",
+    "styleResources": "樣式資源",
+    "hostShell": "宿主外殼",
+    "designRules": "設計規則",
+    "acceptance": "驗收檢查",
+    "preview": {
+      "title": "互動預覽",
+      "description": "可以直接操作範例控制項。預覽修改只保留在目前頁面，不會儲存至應用。新應用使用所選元件庫和 UI 規範，既有應用沿用已儲存的規範身分。",
+      "live": "可互動",
+      "period": "週期",
+      "daily": "每日",
+      "weekly": "每週",
+      "noteValue": "與下方文字共用的一則備註",
+      "edited": "已修改的預覽備註",
+      "note": "共用備註",
+      "progress": "完成進度",
+      "hint": "響應式元件",
+      "hintBody": "修改備註，下方綁定的文字會立即更新。",
+      "metric": "合計",
+      "unit": "項",
+      "sample": "範例資料 · 已適配的元件子集",
+      "table": "範例記錄",
+      "item": "項目",
+      "amount": "數量",
+      "first": "第一步",
+      "second": "第二步",
+      "steps": "操作流程",
+      "plot": "函數圖",
+      "card": "元件集合"
+    }
   }
 }

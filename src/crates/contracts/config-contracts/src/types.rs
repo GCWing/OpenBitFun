@@ -1356,6 +1356,11 @@ pub struct AIConfig {
     #[serde(default = "default_true")]
     pub allow_tool_json_repair: bool,
 
+    /// Component collection advertised for subsequent GenUI generation.
+    /// String preserves unknown future selections without resetting user data.
+    #[serde(default = "default_generative_ui_library")]
+    pub generative_ui_library: String,
+
     /// Allow Computer Use when the executing host has a native provider.
     /// System consent and tool approval remain independent; persisted opt-outs win.
     #[serde(default = "default_true")]
@@ -1713,6 +1718,10 @@ pub struct AgentProfileView {
     pub disabled_user_skills: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enabled_user_skills: Vec<String>,
+}
+
+fn default_generative_ui_library() -> String {
+    "openui".to_string()
 }
 
 fn default_true() -> bool {
@@ -2319,6 +2328,7 @@ impl Default for AIConfig {
             enable_context_compression_prefetch: true,
             enable_edit_constraint_guard: false,
             allow_tool_json_repair: true,
+            generative_ui_library: default_generative_ui_library(),
             computer_use_enabled: true,
             browser_control_preferred_browser: String::new(),
             web_search: WebSearchConfig::default(),
@@ -2502,6 +2512,25 @@ impl AIModelConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn generative_ui_library_legacy_and_future_roundtrip() {
+        let legacy: super::AIConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(legacy.generative_ui_library, "openui");
+        for value in [
+            "openbitfun",
+            "openui",
+            "harmony",
+            "future.collection",
+        ] {
+            let config: super::AIConfig =
+                serde_json::from_value(serde_json::json!({"generative_ui_library":value})).unwrap();
+            assert_eq!(
+                serde_json::to_value(config).unwrap()["generative_ui_library"],
+                value
+            );
+        }
+    }
+
     #[test]
     fn model_routing_summary_defaults_to_automatic_and_preserves_old_switch_values() {
         let legacy: super::ModelRoutingConfig =

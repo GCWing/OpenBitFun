@@ -35,7 +35,6 @@ mod tests {
             builtin_skill_group_key("agent-browser"),
             Some("computer-use")
         );
-        assert_eq!(builtin_skill_group_key("agent-eval-canvas"), Some("canvas"));
         assert_eq!(builtin_skill_group_key("unknown-skill"), None);
     }
 

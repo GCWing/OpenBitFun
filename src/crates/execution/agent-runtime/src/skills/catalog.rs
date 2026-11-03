@@ -5,7 +5,6 @@ pub(super) enum BuiltinSkillGroup {
     MiniApp,
     Creation,
     ComputerUse,
-    Canvas,
     Debugging,
     Coordination,
     Planning,
@@ -19,7 +18,6 @@ impl BuiltinSkillGroup {
             Self::MiniApp => "miniapp",
             Self::Creation => "creation",
             Self::ComputerUse => "computer-use",
-            Self::Canvas => "canvas",
             Self::Debugging => "debugging",
             Self::Coordination => "coordination",
             Self::Planning => "planning",
@@ -37,18 +35,6 @@ pub(super) const BUILTIN_SKILL_SPECS: &[BuiltinSkillSpec] = &[
     BuiltinSkillSpec {
         dir_name: "agent-browser",
         group: BuiltinSkillGroup::ComputerUse,
-    },
-    BuiltinSkillSpec {
-        dir_name: "agent-eval-canvas",
-        group: BuiltinSkillGroup::Canvas,
-    },
-    BuiltinSkillSpec {
-        dir_name: "docs-canvas",
-        group: BuiltinSkillGroup::Canvas,
-    },
-    BuiltinSkillSpec {
-        dir_name: "openbitfun-canvas",
-        group: BuiltinSkillGroup::Canvas,
     },
     BuiltinSkillSpec {
         dir_name: "create-agent",
@@ -93,10 +79,6 @@ pub(super) const BUILTIN_SKILL_SPECS: &[BuiltinSkillSpec] = &[
     BuiltinSkillSpec {
         dir_name: "ppt-design",
         group: BuiltinSkillGroup::Office,
-    },
-    BuiltinSkillSpec {
-        dir_name: "pr-review-canvas",
-        group: BuiltinSkillGroup::Canvas,
     },
     BuiltinSkillSpec {
         dir_name: "writing-skills",

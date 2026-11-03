@@ -1,0 +1,169 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { GenUIAppDefinition, GenUIAppEnvelope, GenUIAppState } from './genUITypes';
+import { designSpecForApp, libraryFor, preflightGenUIApp } from './genUIContract';
+import { GenUIStateStore, genUIContentKey, validateGenUIState } from './genUIState';
+import type { GenUIVerification } from './genUIVerification';
+import './GenUIApplication.scss';
+import GenUIHostSurface from './GenUIHostSurface';
+import GenUISourceDocument from './GenUISourceDocument';
+import { inspectGenUIHtmlSource } from './GenUIHtmlDocument';
+import type { GenUIOpenUIActionEvent, GenUIOpenUIToolProvider } from './genUIOpenUI';
+import type { GenUIHtmlBridge } from './GenUIHtmlDocument';
+import { GenUIStream } from './genUIStream';
+import { genUIProduct, type GenUIProduct } from './genUIProduct';
+import type { GenUIAsyncRuntime, GenUIProviderInput, GenUITargetEvent } from './genUIAsyncCapabilities';
+import { createGenUIAsyncRuntime } from './genUIAsyncCapabilities';
+import { HARMONY_STYLE_RESOURCE_CSS } from './components/vendor/harmonyStyles';
+
+export interface GenUIApplicationProps {
+  product?: GenUIProduct;
+  definition: GenUIAppEnvelope;
+  initialState?: GenUIAppState;
+  readOnly?: boolean;
+  streaming?: boolean;
+  restoredFromStorage?: boolean;
+  preview?: boolean;
+  onStateChange?: (state: GenUIAppState) => void | Promise<void>;
+  /** Persist only after the owning surface has accepted the source. */
+  persistState?: boolean;
+  onAction?: (event: GenUIOpenUIActionEvent) => void | Promise<void>;
+  toolProvider?: GenUIOpenUIToolProvider;
+  asyncProvider?: GenUIProviderInput;
+  asyncPermissions?: readonly string[];
+  asyncTarget?: 'local' | 'workspace' | 'peer' | 'unsupported';
+  asyncTargetId?: string;
+  onTargetEvent?: (event: GenUITargetEvent) => void | Promise<void>;
+  htmlBridge?: GenUIHtmlBridge;
+  onVerification?: (report: GenUIVerification) => void;
+}
+
+function harmonyPresentation(app: GenUIAppDefinition | GenUIAppEnvelope) {
+  const source = 'source' in app && app.source ? app.source.kind === 'openui-lang' ? app.source.content : `${app.source.html} ${app.source.css ?? ''}` : '';
+  const text = `${app.title} ${'description' in app ? app.description ?? '' : ''} ${source}`.toLowerCase();
+  const themes: Array<[string, RegExp]> = [
+    ['orange', /orange|food|cook|recipe|energy|餐|食|烹饪|橙/],
+    ['green', /green|health|fitness|workout|plant|nature|health|健康|运动|植物|绿色/],
+    ['indigo', /indigo|study|reading|book|plan|course|学习|阅读|计划|靛/],
+    ['purple', /purple|music|creative|night|art|音乐|创意|夜|紫/],
+    ['rose', /rose|beauty|gift|celebration|美妆|礼物|庆祝|玫瑰/],
+    ['teal', /teal|water|travel|weather|calm|旅行|天气|水|青绿/],
+    ['brown', /brown|coffee|baking|wood|history|咖啡|烘焙|历史|棕/],
+    ['ink', /ink|minimal|editorial|fashion|serious|极简|编辑|时尚|墨/],
+  ];
+  const theme = themes.find(([, pattern]) => pattern.test(text))?.[0] ?? 'blue';
+  const font = /journal|diary|personal|手账|日记/.test(text) ? 'handwritten' : /book|reading|history|paper|calligraphy|书|阅读|历史/.test(text) ? 'serif' : /code|technical|developer|tech|代码|技术/.test(text) ? 'tech' : 'sans';
+  const scheme = /dark|cinema|film|movie|astronomy|night|music player|game|电影|影院|夜空|播放器|游戏|深色/.test(text) ? 'dark' : 'light';
+  return { theme, font, scheme } as const;
+}
+
+export default function GenUIApplication(props: GenUIApplicationProps) {
+  return <Application key={props.definition.id} {...props} />;
+}
+
+function Application({ product = genUIProduct, definition, initialState, readOnly = false, preview = false, streaming = false, restoredFromStorage = false, onStateChange, persistState = true, onAction, toolProvider, asyncProvider, asyncPermissions, asyncTarget = 'local', asyncTargetId, onTargetEvent, htmlBridge, onVerification }: GenUIApplicationProps) {
+  const stream = useRef(new GenUIStream());
+  const sourceKey = genUIContentKey(definition);
+  const app = useMemo(() => (streaming ? stream.current.project(definition, product.catalog) : definition as GenUIAppDefinition), [definition, streaming, product]);
+  const definitionKey = sourceKey;
+  const preflight = useMemo(() => streaming ? { accepted: true, issues: [] } : preflightGenUIApp(app, false, product.catalog), [app, streaming, product]);
+  const designSpec = designSpecForApp(app, product.catalog);
+  const library = libraryFor(app, product.catalog);
+  const source = app.source;
+  const harmony = app.libraryId.startsWith('openbitfun.harmony');
+  const harmonyStyle = harmonyPresentation(app);
+  // Keep one async controller for the mounted FlowChat application. The
+  // source key still changes for admission and late-result isolation, but it
+  // must not remount every map/image component as OpenUI receives fragments.
+  // Keep provider identity stable across OpenUI source fragments. The
+  // renderer reconciles completed statements while streaming; using the full
+  // source text here would abort an image/route request on every token.
+  const runtimeIdentity = `${app.id}:${app.libraryId}:${app.source?.kind ?? 'unknown'}`;
+  const asyncRuntime = useMemo<GenUIAsyncRuntime | undefined>(() => createGenUIAsyncRuntime({
+    provider: asyncProvider ?? toolProvider,
+    appId: app.id,
+    sourceKey: runtimeIdentity,
+    policy: { permissions: asyncPermissions, target: asyncTarget, targetId: asyncTargetId },
+    onTargetEvent,
+  }), [asyncProvider, toolProvider, app.id, runtimeIdentity, asyncPermissions, asyncTarget, asyncTargetId, onTargetEvent]);
+  const runtimeSourceInitialized = useRef(false);
+  useLayoutEffect(() => {
+    asyncRuntime?.updateSourceKey?.(runtimeIdentity, runtimeSourceInitialized.current);
+    runtimeSourceInitialized.current = true;
+  }, [asyncRuntime, runtimeIdentity]);
+  useEffect(() => {
+    if (!asyncRuntime) return;
+    asyncRuntime.setTargetEventHandler?.(onTargetEvent);
+  }, [asyncRuntime, onTargetEvent]);
+  useEffect(() => () => asyncRuntime?.abortAll('GenUI source was replaced or unmounted'), [asyncRuntime]);
+  const sourceIssues = useMemo(() => source?.kind === 'html-document' ? inspectGenUIHtmlSource(source, designSpec) : [], [source, designSpec]);
+  const store = useRef(new GenUIStateStore());
+  const [state, setState] = useState(() => store.current.initialize(app, initialState));
+  const [persistence, setPersistence] = useState<GenUIVerification['persistence']>('unverified');
+  const [saveError, setSaveError] = useState('');
+  const [openUIError, setOpenUIError] = useState('');
+  const [observed, setObserved] = useState(false);
+  const baseline = useRef(initialState);
+  const dirty = useRef(false);
+  const alive = useRef(true);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const lastStateKey = useRef(genUIContentKey(state));
+  // Treat verification as an event sink. Hosts commonly update their own
+  // state from a report, which gives them a new callback identity on the next
+  // render. The report itself is keyed by reportKey; callback identity must
+  // not cause the effect to emit the same report again.
+  const onVerificationRef = useRef(onVerification);
+  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => { onVerificationRef.current = onVerification; }, [onVerification]);
+  useEffect(() => {
+    baseline.current = initialState;
+    if (!dirty.current) setState(store.current.initialize(app, initialState));
+  }, [definitionKey, app, initialState]);
+  const stateIssues = preflight.accepted ? validateGenUIState(app, state) : [];
+  const renderErrors = !library ? [`GenUI library ${app.libraryId}@${app.libraryRevision} is unavailable`] : !source ? ['GenUI source is required; semantic graph documents were removed'] : sourceIssues.length ? sourceIssues : openUIError ? [openUIError] : [];
+  const render: GenUIVerification['render'] = renderErrors.length ? 'failed' : streaming ? 'unverified' : 'passed';
+  const checks: GenUIVerification['checks'] = renderErrors.length || stateIssues.length ? 'failed' : source?.kind === 'html-document' ? 'passed' : streaming ? 'unverified' : 'passed';
+  const report: GenUIVerification = {
+    definitionKey,
+    state,
+    checks,
+    preflight: streaming ? 'unverified' : preflight.accepted && !stateIssues.length ? 'passed' : 'failed',
+    render,
+    interaction: observed ? 'observed' : 'unverified',
+    persistence,
+    reopen: restoredFromStorage ? 'restored' : 'unverified',
+    issues: [...preflight.issues, ...stateIssues, ...renderErrors.map(message => ({ path: 'source', message, code: 'render', severity: 'error' as const })), ...(saveError ? [{ path: 'app_state', message: saveError, code: 'persistence', severity: 'error' as const }] : [])],
+  };
+  const reportKey = JSON.stringify(report);
+  useEffect(() => { onVerificationRef.current?.(JSON.parse(reportKey)); }, [reportKey]);
+  // Streaming only controls parser mode. It must not disable already mounted
+  // local controls; persistence remains explicitly gated by persistState.
+  // A streamed source is an interactive transient preview. Only a confirmed
+  // render failure (or an explicitly read-only/preview host) locks controls;
+  // persistence is still independently gated by `persistState`.
+  const locked = readOnly || preview || render === 'failed';
+  const save = (next: GenUIAppState) => {
+    if (!persistState || locked || !onStateChange) return;
+    setPersistence('saving'); setSaveError('');
+    Promise.resolve(onStateChange(next)).then(() => { if (alive.current) setPersistence('saved'); }, error => { if (alive.current) { setPersistence('failed'); setSaveError(error instanceof Error ? error.message : String(error)); } });
+  };
+  if (!source) {
+    return <GenUIHostSurface specification={designSpec} harmony={harmony} harmonyTheme={harmonyStyle.theme} harmonyFont={harmonyStyle.font} harmonyScheme={harmonyStyle.scheme}><div className="gen-ui-application" data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-openbitfun-state="rejected">Semantic graph GenUI documents are no longer supported. Generate a complete OpenUI or HTML source document.</div></GenUIHostSurface>;
+  }
+  return <GenUIHostSurface specification={designSpec} harmony={harmony} harmonyTheme={harmonyStyle.theme} harmonyFont={harmonyStyle.font} harmonyScheme={harmonyStyle.scheme}>
+    <div className={'gen-ui-application gen-ui-application--' + (product.adapters[app.libraryId]?.adapterKind ?? 'unknown') + (designSpec?.shell.kind === 'phone' ? ' gen-ui-application--phone' : '') + (source.kind === 'html-document' ? ' gen-ui-application--document' : '')} data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-gen-ui-app={app.id} data-gen-ui-library={app.libraryId} data-gen-ui-library-revision={app.libraryRevision} data-gen-ui-source-kind={source.kind} data-hm-theme={harmony ? harmonyStyle.theme : undefined} data-hm-font={harmony ? harmonyStyle.font : undefined} data-hm-scheme={harmony ? harmonyStyle.scheme : undefined} data-openbitfun-state={render === 'failed' || report.preflight === 'failed' ? 'rejected' : render === 'passed' ? 'rendered' : undefined} data-gen-ui-preflight={report.preflight} data-gen-ui-postcheck={report.render} data-gen-ui-save={persistence}>
+      {harmony ? <style data-gen-ui-harmony-style dangerouslySetInnerHTML={{ __html: HARMONY_STYLE_RESOURCE_CSS }} /> : null}
+      {renderErrors.length && !streaming ? <p className="gen-ui-application__error" role="alert">GenUI render error: {renderErrors.join('; ')}</p> : null}
+      {library && <GenUISourceDocument source={source} library={product.libraries[app.libraryId]} specification={designSpec} designSpecId={app.designSpec?.id} appId={app.id} sourceKey={definitionKey} initialState={state} isStreaming={streaming} readOnly={locked} onStateUpdate={next => {
+        const nextKey = genUIContentKey(next);
+        // OpenUI can report the same snapshot through both its field setter and
+        // store subscription. A no-op owner update must stay a no-op or the
+        // parent rerenders forever while the document is mounting.
+        if (nextKey === lastStateKey.current || nextKey === genUIContentKey(stateRef.current)) return;
+        lastStateKey.current = nextKey;
+        setOpenUIError(''); setObserved(true); dirty.current = true;
+        store.current.commit(next); setState(next); save(next);
+      }} onError={setOpenUIError} onAction={event => { setObserved(true); return onAction?.(event); }} toolProvider={toolProvider} asyncProvider={asyncProvider} asyncRuntime={asyncRuntime} asyncPermissions={asyncPermissions} asyncTarget={asyncTarget} asyncTargetId={asyncTargetId} onTargetEvent={onTargetEvent} htmlBridge={htmlBridge} htmlScriptEnabled={Boolean(!preview && !readOnly && !streaming)} harmonyPresentation={harmony ? harmonyStyle : undefined} />}
+    </div>
+  </GenUIHostSurface>;
+}
