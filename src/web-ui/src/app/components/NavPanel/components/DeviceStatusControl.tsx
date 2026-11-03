@@ -1,7 +1,7 @@
 import { useDeviceDirectory, resolveDeviceName, isDeviceControllable, deviceClientVersion } from '@/infrastructure/account/deviceDirectory';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, ScrollArea, type IconSize } from '@openbitfun/ui';
-import { ArrowRightLeft, ChevronLeft, ChevronRight, CircleAlert, House, MessageCircle, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
+import { ArrowRightLeft, ChevronLeft, ChevronRight, CircleAlert, House, Link, MessageCircle, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
@@ -450,7 +450,11 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
             data-openbitfun-placement={popoverLayout?.placement ?? 'top'}
             data-control-state={displayedControlState}
             style={{
-              top: `${popoverLayout?.top ?? 0}px`,
+              // Opening upward, the card is pinned by its bottom edge so any
+              // height change grows away from the trigger in the same frame
+              // instead of being repositioned a frame late.
+              top: popoverLayout?.bottom === undefined ? `${popoverLayout?.top ?? 0}px` : undefined,
+              bottom: popoverLayout?.bottom === undefined ? undefined : `${popoverLayout.bottom}px`,
               left: `${popoverLayout?.left ?? 0}px`,
               visibility: popoverLayout ? 'visible' : 'hidden',
             }}
@@ -589,10 +593,14 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                         icon={displayedIncompatible
                           ? <Icon glyph={CircleAlert} size="md" />
                           : displayedActive ? <Icon glyph={Unplug} size="md" />
-                            : displayedDevice.local ? <Icon glyph={Undo2} size="md" /> : <Icon glyph={ArrowRightLeft} size="md" />}
+                            : displayedDevice.local ? <Icon glyph={Undo2} size="md" />
+                              : displayedConnected ? <Icon glyph={ArrowRightLeft} size="md" /> : <Icon glyph={Link} size="md" />}
                         aria-label={`${displayedDevice.name} · ${displayedActionText}`}
                         title={switchingDevice ? displayedActionText : displayedActionLabel}
-                        disabled={displayedIncompatible || (!displayedActive && !isPreviewing) || !peerContext || switchingDevice || previewMotion.isTransitioning}
+                        // An incompatible device stays focusable so its version notice
+                        // (the tooltip) is reachable; it simply has no action.
+                        disabled={!displayedIncompatible && ((!displayedActive && !isPreviewing) || !peerContext || switchingDevice || previewMotion.isTransitioning)}
+                        aria-disabled={displayedIncompatible || undefined}
                         loading={switchingDevice}
                         data-testid={displayedIncompatible ? 'nav-device-status-incompatible'
                           : displayedActive ? 'nav-device-status-disconnect'

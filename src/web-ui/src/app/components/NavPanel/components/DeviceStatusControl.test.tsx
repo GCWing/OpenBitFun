@@ -204,6 +204,29 @@ afterEach(() => {
 });
 
 describe('device status card', () => {
+  it('pins an upward card by its bottom edge so height changes never reposition it', () => {
+    render(false);
+    const rect = (top: number, height: number, width: number) => ({
+      top, bottom: top + height, left: 16, right: 16 + width, width, height, x: 16, y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+    const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'nav-footer-device-status') return rect(700, 32, 160);
+        if (this.dataset.testid === 'nav-device-status-popover') return rect(0, 200, 312);
+        return rect(0, 0, 0);
+      });
+    try {
+      render(true);
+      const card = element('nav-device-status-popover');
+      expect(card.dataset.openbitfunPlacement).toBe('top');
+      expect(card.style.top).toBe('');
+      expect(card.style.bottom).toBe(`${window.innerHeight - 700 + 8}px`);
+    } finally {
+      measure.mockRestore();
+    }
+  });
+
   it('shows the device management icon in the header without an account display', () => {
     render();
     const card = element('nav-device-status-popover');
@@ -518,10 +541,13 @@ describe('device status card', () => {
     expect(element('nav-device-status-connect').dataset.openbitfunShape).toBe('circle');
     expect(element('nav-device-status-connect').dataset.openbitfunVariant).toBe('primary');
     expect(element('nav-device-status-connect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.connectAndUse$/);
+    // Connecting and switching to an attached device are told apart by glyph.
+    expect(element('nav-device-status-connect').querySelector('.lucide-link')).not.toBeNull();
     expect(element('nav-device-status-connect').textContent).toBe('');
     state.attachedHostKinds = { 'peer-2': 'cli' };
     render();
     expect(element('nav-device-status-connect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.switchUse$/);
+    expect(element('nav-device-status-connect').querySelector('.lucide-arrow-right-left')).not.toBeNull();
     expect(element('nav-device-status-connect').textContent).toBe('');
     expect(element('nav-device-status-popover').querySelector('[data-openbitfun-part="footer"]')).toBeNull();
     expect(document.querySelector('[data-testid="nav-device-status-disconnect"]')).toBeNull();
@@ -848,11 +874,14 @@ describe('device status card', () => {
     expect(next).not.toBeNull();
     await act(async () => { next!.click(); });
 
-    // The unavailable connection is disabled and explains the version in its tooltip.
+    // The unavailable connection has no action and explains the version in its tooltip.
     const notice = document.querySelector('[data-testid="nav-device-status-incompatible"]');
     expect(notice).not.toBeNull();
     expect(notice?.tagName).toBe('BUTTON');
-    expect((notice as HTMLButtonElement).disabled).toBe(true);
+    // Not natively disabled: it stays focusable so its version tooltip is reachable.
+    expect((notice as HTMLButtonElement).disabled).toBe(false);
+    expect(notice?.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => { (notice as HTMLButtonElement).click(); });
     expect(notice?.closest('[data-control-state="incompatible"]')).not.toBeNull();
     expect(notice?.getAttribute('title')).toContain('deviceOverview.deviceClientIncompatibleWithVersion');
     expect(notice?.getAttribute('aria-label')).toMatch(/ · deviceOverview\.unavailableAction$/);

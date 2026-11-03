@@ -2078,17 +2078,38 @@ $_section-header-height: 22px;
   --_device-overview-action-tone: var(--_device-overview-light);
   --_icon-button-size: var(--openbitfun-control-height-md);
   --_icon-button-icon-size: 16px;
-  --_icon-button-content: color-mix(in srgb, var(--_device-overview-action-tone) 72%, var(--openbitfun-color-content-primary));
-  --_icon-button-background: color-mix(in srgb, var(--_device-overview-action-tone) 16%, transparent);
-  --_icon-button-background-hover: color-mix(in srgb, var(--_device-overview-action-tone) 26%, transparent);
-  --_icon-button-background-active: color-mix(in srgb, var(--_device-overview-action-tone) 32%, transparent);
   flex: 0 0 auto;
   border-radius: var(--openbitfun-radius-pill);
-  box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--_device-overview-action-tone) 30%, transparent);
+  // The primary and fill variants paint an opaque base under their tint; the
+  // glass tint must sit on the lit card instead.
+  background: transparent;
   transition: box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
-  &:is(:hover, :focus-visible):not(:disabled) {
+  &:not(:disabled, [aria-disabled='true']) {
+    --_icon-button-content: color-mix(in srgb, var(--_device-overview-action-tone) 72%, var(--openbitfun-color-content-primary));
+    --_icon-button-background: color-mix(in srgb, var(--_device-overview-action-tone) 16%, transparent);
+    --_icon-button-background-hover: color-mix(in srgb, var(--_device-overview-action-tone) 26%, transparent);
+    --_icon-button-background-active: color-mix(in srgb, var(--_device-overview-action-tone) 32%, transparent);
+    box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--_device-overview-action-tone) 30%, transparent);
+  }
+
+  &:not(:disabled, [aria-disabled='true']):is(:hover, :focus-visible) {
     box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--_device-overview-action-tone) 48%, transparent);
+  }
+
+  // Unavailable reads as unavailable: a quiet neutral disc, no state light.
+  &:is(:disabled, [aria-disabled='true']) {
+    --_icon-button-content: var(--openbitfun-color-action-neutral-content-disabled);
+    --_icon-button-background: color-mix(in srgb, var(--openbitfun-color-content-primary) 5%, transparent);
+    --_icon-button-background-hover: var(--_icon-button-background);
+    --_icon-button-background-active: var(--_icon-button-background);
+    box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) var(--openbitfun-color-border-subtle);
+    cursor: not-allowed;
+  }
+
+  // An incompatible device keeps its warning mark legible.
+  [data-control-state='incompatible'] > &[aria-disabled='true'] {
+    --_icon-button-content: var(--openbitfun-color-status-warning-content);
   }
 
   [data-control-state='active'] > & {
