@@ -41,7 +41,7 @@ export const MarkdownMathRenderer: React.FC<MarkdownMathRendererProps> = ({
   const content = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkComputerFileLinks]}
-      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex, [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
+      rehypePlugins={[rehypeRaw, [rehypeWindowsDrivePaths, { markdownSource: markdownContent }], [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex, [rehypeImageThumbnails, { enabled: imageThumbnails }]]}
       urlTransform={urlTransform}
       components={components}
     >
