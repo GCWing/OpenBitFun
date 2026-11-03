@@ -707,8 +707,9 @@ between identical OS credentials.
 Discover capabilities at the provider/assembly boundary, not with scattered
 `is_remote` gates in individual tools. Missing target programs, an unavailable
 interactive desktop, network loss and platform-specific process behavior can
-require explicit differences. A local hook executable or MCP command is not
-silently relocated to the target. Keep its execution domain and source trust
+require explicit differences. User and imported Hook commands remain host
+owned; manually configured project Hook commands are explicitly target-owned
+when the project gate is enabled. Keep execution domain and source trust
 explicit; reuse the existing engine and approval mechanism.
 
 Remote workspaces do not acquire Detached Dispatch semantics through this

@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -344,6 +345,21 @@ pub trait WorkspaceShell: Send + Sync {
         command: &str,
         options: WorkspaceCommandOptions,
     ) -> anyhow::Result<WorkspaceCommandResult>;
+
+    /// Execute a command with a finite stdin payload and target-side
+    /// environment overrides. This is used by protocols such as Agent Hooks
+    /// whose contract is a JSON document on stdin. Providers that do not own a
+    /// full-duplex process transport must fail explicitly rather than silently
+    /// dropping the payload.
+    async fn exec_with_stdin(
+        &self,
+        _command: &str,
+        _stdin: &[u8],
+        _environment: &BTreeMap<String, String>,
+        _options: WorkspaceCommandOptions,
+    ) -> anyhow::Result<WorkspaceCommandResult> {
+        anyhow::bail!("workspace shell does not support stdin process execution")
+    }
 
     /// Execute a command and return (stdout, stderr, exit_code).
     async fn exec(

@@ -154,7 +154,7 @@ fn project_native_hook_overview(
 
 /// English line shown in `/hooks` when the session workspace is remote.
 const REMOTE_WORKSPACE_HOOKS_NOTICE: &str =
-    "Hooks are not run for this remote workspace: hooks execute only on the host that owns the workspace filesystem, and none of the rules above ran here.";
+    "Remote workspace: user and imported Hooks are skipped; enabled project Hooks are read and run on the target workspace host.";
 
 fn native_hook_help_text() -> String {
     [
@@ -342,7 +342,7 @@ mod remote_hook_projection_tests {
     }
 
     #[test]
-    fn remote_workspace_overview_renders_the_skip_before_configuration_issues() {
+    fn remote_workspace_overview_renders_target_side_semantics_before_issues() {
         let workspace = std::path::Path::new("/srv/remote-project");
         let projected = project_native_hook_overview(core_overview(true), workspace);
         assert_eq!(
@@ -352,7 +352,9 @@ mod remote_hook_projection_tests {
         assert_eq!(projected.issues.len(), 2);
 
         let text = render_native_hook_overview(&projected);
-        assert!(text.contains("Hooks are not run for this remote workspace"));
+        assert!(
+            text.contains("enabled project Hooks are read and run on the target workspace host")
+        );
         assert!(text.contains("is not a supported event name"));
     }
 

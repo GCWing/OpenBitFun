@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^ExecCommand$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .openbitfun/hooks/rtk-hook.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

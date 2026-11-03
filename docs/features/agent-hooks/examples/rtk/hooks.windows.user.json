@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^ExecCommand$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\.openbitfun\\hooks\\rtk-hook.ps1\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
