@@ -1120,7 +1120,8 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                         strokeWidth={2.25}
                         aria-hidden="true"
                       />
-                      <OverflowText className="openbitfun-agent-companion-window__bubble-title" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleTitle">
+                      {/* The bubble's own tooltip carries title and status together. */}
+                      <OverflowText className="openbitfun-agent-companion-window__bubble-title" title="" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleTitle">
                         {task.title}
                       </OverflowText>
                     </span>
@@ -1156,7 +1157,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                   <div
                     key={task.sessionId}
                     data-agent-companion-session-id={task.sessionId}
-                    className={`openbitfun-agent-companion-window__bubble-shell${isSingleTask ? ' openbitfun-agent-companion-window__bubble-shell--single' : ''}${isCompactSingle ? ' openbitfun-agent-companion-window__bubble-shell--compact' : ''}${isHoveredTask ? ' openbitfun-agent-companion-window__bubble-shell--hovered' : ''}`}
+                    className={`openbitfun-agent-companion-window__bubble-shell${isSingleTask ? ' openbitfun-agent-companion-window__bubble-shell--single' : ''}${isCompactSingle ? ' openbitfun-agent-companion-window__bubble-shell--compact' : ''}${task.canReply !== false && !isComposingTask ? ' openbitfun-agent-companion-window__bubble-shell--replyable' : ''}${isHoveredTask ? ' openbitfun-agent-companion-window__bubble-shell--hovered' : ''}`}
                     onContextMenu={event => onBubbleContextMenu(event, task.sessionId)}
                   >
                     {isComposingTask ? (

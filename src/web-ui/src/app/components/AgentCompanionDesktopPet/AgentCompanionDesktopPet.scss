@@ -324,6 +324,24 @@
     }
   }
 
+  /* One-line bubbles centre the disc on the title row instead of tucking it
+     into a corner it would half cover. */
+  &__bubble-shell:not(.openbitfun-agent-companion-window__bubble-shell--single) &__bubble-compose,
+  &__bubble-shell--compact &__bubble-compose {
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+  }
+
+  /* While the disc shows, the title end fades out beneath it instead of
+     reflowing, so the disc never sits on legible text. A mask only reads
+     alpha, so any opaque token works as the ink. */
+  &--native-hover &__bubble-shell--replyable:hover &__bubble-title,
+  &__bubble-shell--replyable.openbitfun-agent-companion-window__bubble-shell--hovered &__bubble-title {
+    -webkit-mask-image: linear-gradient(to right, var(--openbitfun-color-surface-raised) calc(100% - 26px), transparent calc(100% - 6px));
+    mask-image: linear-gradient(to right, var(--openbitfun-color-surface-raised) calc(100% - 26px), transparent calc(100% - 6px));
+  }
+
   &--native-hover &__bubble-shell:hover &__bubble-compose,
   &__bubble-shell--hovered &__bubble-compose {
     opacity: 1;
@@ -589,19 +607,6 @@
   50% {
     transform: scale(1.15);
     opacity: 0.7;
-  }
-}
-
-@keyframes openbitfun-agent-companion-attention-dot {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-
-  50% {
-    transform: scale(1.5);
-    opacity: 0.65;
   }
 }
 
