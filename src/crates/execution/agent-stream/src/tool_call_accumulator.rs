@@ -707,13 +707,22 @@ impl PendingToolCalls {
 
         if let Some(arguments) = arguments.filter(|arguments| !arguments.is_empty()) {
             if pending.has_pending() {
-                if arguments_is_snapshot {
-                    pending.replace_arguments(&arguments);
+                let params_chunk = arguments;
+                // Some OpenAI-compatible providers (notably Qwen/DashScope)
+                // send the complete function-arguments prefix on every SSE
+                // frame without declaring snapshot semantics. GenUI needs the
+                // latest source document, so detect that cumulative shape at
+                // the provider-neutral boundary instead of duplicating JSON
+                // and hiding the source until the tool call completes.
+                let genui_snapshot = pending.tool_name() == "GenerativeUI"
+                    && !pending.raw_arguments().is_empty()
+                    && params_chunk.starts_with(pending.raw_arguments());
+                if arguments_is_snapshot || genui_snapshot {
+                    pending.replace_arguments(&params_chunk);
                 } else {
-                    pending.append_arguments(&arguments);
+                    pending.append_arguments(&params_chunk);
                 }
                 let tool_name = pending.tool_name().to_string();
-                let params_chunk = arguments;
                 if !params_chunk.is_empty() && pending.tool_name() != "GenerativeUI" {
                     outcome.params_partial = Some(ToolCallParamsChunk {
                         tool_id: pending.tool_id().to_string(),
@@ -983,6 +992,38 @@ mod tests {
             reset.genui_stream.as_ref().map(|event| event.reset),
             Some(true)
         );
+    }
+
+    #[test]
+    fn accepts_cumulative_genui_argument_snapshots_without_duplicate_source() {
+        let mut calls = PendingToolCalls::new();
+        let first = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            Some("call_qwen".into()),
+            Some("GenerativeUI".into()),
+            Some(r#"{"source":{"kind":"openui-lang","content":"root = Text("#.into()),
+            false,
+        );
+        assert_eq!(
+            first.genui_stream.as_ref().map(|event| event.text.as_str()),
+            Some("root = Text(")
+        );
+
+        let second = calls.apply_delta(
+            ToolCallStreamKey::Indexed(0),
+            None,
+            None,
+            Some(r#"{"source":{"kind":"openui-lang","content":"root = Text(\"Qwen\")"}}"#.into()),
+            false,
+        );
+        assert_eq!(
+            second
+                .genui_stream
+                .as_ref()
+                .map(|event| event.text.as_str()),
+            Some("\"Qwen\")")
+        );
+        assert!(!second.genui_stream.as_ref().expect("source delta").reset);
     }
 
     #[test]

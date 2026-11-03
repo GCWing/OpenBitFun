@@ -19,6 +19,8 @@ const cases: Record<string, [string, unknown][]> = {
     ['@FormatDate(0, "iso")', "1970-01-01"],
     ['@FormatDate("2026-02-30")', null],
     ['@FormatDate("soon")', null],
+    ['@FormatDate({date: "2026-10-09"})', "Oct 9, 2026"],
+    ['@FormatDate({year: 2026, month: 10, day: 9}, "iso")', "2026-10-09"],
   ],
   AddDays: [
     ['@AddDays("2026-10-09", 3)', "2026-10-12"],

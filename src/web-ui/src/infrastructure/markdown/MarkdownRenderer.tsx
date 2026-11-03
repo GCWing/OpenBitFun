@@ -959,7 +959,6 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   isStreamingRef.current = isStreaming;
   const basePathRef = useLiveValueRef(basePath);
   const remoteConnectionIdRef = useLiveValueRef(fileAccess ? fileAccess.scope.remoteConnectionId : remoteConnectionId);
-  const remoteSshHostRef = useLiveValueRef(remoteSshHost);
   const workspaceIdRef = useLiveValueRef(fileAccess ? fileAccess.scope.workspaceId : workspaceId);
   const currentWorkspacePathRef = useLiveValueRef(fileAccess?.scope.workspacePath ?? currentWorkspacePath);
   const expandDetailsByDefaultRef = useLiveValueRef(expandDetailsByDefault);
@@ -1716,7 +1715,6 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     markdownContentRef,
     onHttpLinkClickRef,
     remoteConnectionIdRef,
-    remoteSshHostRef,
     workspaceIdRef,
     syntaxThemeRef,
     traceContextRef,

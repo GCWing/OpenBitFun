@@ -6,7 +6,23 @@ const finite = (value: number) => Number.isFinite(value) ? value : 0;
 const read = (value: unknown, field = ''): unknown => { if (!field) return value; let current = value; for (const key of field.split('.')) { if (!current || typeof current !== 'object') return undefined; current = (current as AnyRecord)[key]; } return current; };
 const same = (a: unknown, b: unknown): boolean => { if (a === b) return true; if ((typeof a === 'number' && typeof b === 'string') || (typeof a === 'string' && typeof b === 'number')) return String(a) === String(b); if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => same(x, b[i])); if (a && b && typeof a === 'object' && typeof b === 'object') { const ak = Object.keys(a as AnyRecord), bk = Object.keys(b as AnyRecord); return ak.length === bk.length && ak.every(key => Object.prototype.hasOwnProperty.call(b, key) && same((a as AnyRecord)[key], (b as AnyRecord)[key])); } return false; };
 const num = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
-const date = (value: unknown) => { const parsed = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00Z`) : new Date(value as string | number); if (Number.isNaN(parsed.getTime())) throw new Error('Invalid date'); return parsed; };
+const date = (value: unknown) => {
+  let normalized = value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as AnyRecord;
+    for (const key of ['date', 'timestamp', 'datetime', 'createdAt', 'updatedAt', 'time', 'value']) {
+      if (typeof record[key] === 'string' || typeof record[key] === 'number') { normalized = record[key]; break; }
+    }
+    if (normalized === value && ['year', 'month', 'day'].every(key => typeof record[key] === 'number' && Number.isFinite(record[key]))) {
+      const month = Number(record.month);
+      const normalizedMonth = month >= 1 && month <= 12 ? month : month + 1;
+      normalized = `${Number(record.year).toString().padStart(4, '0')}-${String(normalizedMonth).padStart(2, '0')}-${String(Number(record.day)).padStart(2, '0')}`;
+    }
+  }
+  const parsed = typeof normalized === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? new Date(`${normalized}T00:00:00Z`) : new Date(normalized as string | number);
+  if (Number.isNaN(parsed.getTime())) throw new Error(`Invalid date "${String(value)}"`);
+  return parsed;
+};
 const isoDay = (value: Date) => value.toISOString().slice(0, 10);
 const agg = (rows: unknown[], field: string | undefined, kind = field ? 'sum' : 'count') => { if (kind === 'count') return rows.length; const values = rows.map(row => num(read(row, field)).valueOf()).filter(value => Number.isFinite(value)); if (!values.length) return 0; if (kind === 'avg') return values.reduce((a, b) => a + b, 0) / values.length; if (kind === 'min') return Math.min(...values); if (kind === 'max') return Math.max(...values); return values.reduce((a, b) => a + b, 0); };
 

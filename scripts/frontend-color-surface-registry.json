@@ -54,7 +54,10 @@
           "src/flow_chat/assets/subagent-avatars/robot-17.svg",
           "src/flow_chat/assets/subagent-avatars/robot-18.svg",
           "src/flow_chat/assets/subagent-avatars/robot-19.svg",
-          "src/flow_chat/assets/subagent-avatars/robot-20.svg"
+          "src/flow_chat/assets/subagent-avatars/robot-20.svg",
+          "src/tools/generative-ui/components/openui",
+          "src/tools/generative-ui/components/openuiLibrary.tsx",
+          "src/tools/generative-ui/components/vendor"
         ]
       }
     },

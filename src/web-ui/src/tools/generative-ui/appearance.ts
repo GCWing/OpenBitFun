@@ -20,3 +20,20 @@ export const genUIComponentsAppearanceDescriptor: AppearanceSurfaceDescriptor = 
     { id: 'control' },
   ],
 };
+
+export const genUIGalleryAppearanceDescriptor: AppearanceSurfaceDescriptor = {
+  id: 'gen-ui-gallery',
+  parts: [
+    { id: 'root' },
+    { id: 'sidebar' },
+    { id: 'brand' },
+    { id: 'section' },
+    { id: 'items' },
+    { id: 'content' },
+    { id: 'header' },
+    { id: 'actions' },
+    { id: 'render' },
+    { id: 'diagnostics' },
+    { id: 'source' },
+  ],
+};

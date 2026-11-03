@@ -55,6 +55,15 @@ const COMPLETE_PRODUCT_STYLE_ROOTS = [
   'OpenBitFun-Installer/src/',
 ];
 
+// These files are intentionally vendored style resources. Their typography is
+// part of the upstream renderer contract and is scoped by the GenUI host before
+// it reaches the product surface. Keep this allowlist narrow: product-owned
+// GenUI styles continue to use the canonical OpenBitFun type roles below.
+const VENDORED_TYPOGRAPHY_OWNER_ROOTS = [
+  'src/web-ui/src/tools/generative-ui/components/openui/',
+  'src/web-ui/src/tools/generative-ui/components/vendor/',
+];
+
 const TYPOGRAPHY_PROPERTIES = new Set([
   'font',
   'fontFamily',
@@ -415,6 +424,10 @@ function isBuildOwnedWebFontDeclaration(relativePath, source, offset, property, 
   ));
 }
 
+function hasVendoredTypographyOwner(relativePath) {
+  return VENDORED_TYPOGRAPHY_OWNER_ROOTS.some(root => relativePath.startsWith(root));
+}
+
 function isStructuralZero(property, value) {
   return (property === 'fontSize' || property === 'lineHeight') && /^0(?:\.0+)?$/.test(value);
 }
@@ -729,6 +742,7 @@ export function auditTypographyText(text, relativePath, options = {}) {
   const issues = auditRetiredReferences(text, normalizedPath);
 
   if (options.retiredOnly) return issues;
+  if (hasVendoredTypographyOwner(normalizedPath)) return issues;
   if (STYLE_EXTENSIONS.has(extension) && productionSource) {
     issues.push(...auditCssDeclarations(text, normalizedPath));
     issues.push(...auditSemanticRoleConsumption(text, normalizedPath));

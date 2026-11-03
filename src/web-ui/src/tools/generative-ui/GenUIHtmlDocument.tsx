@@ -51,6 +51,7 @@ export interface GenUIHtmlInspection {
 /** Parent-owned presentation selected by the Harmony library profile. */
 export interface GenUIHarmonyPresentation {
   theme: string;
+  // typography-audit: allow -- selected family identifier, not a CSS declaration
   font: string;
   scheme: string;
 }
@@ -367,7 +368,7 @@ export default function GenUIHtmlDocument({ source, specification, designSpecId,
       if (value && !/[{};]/.test(value)) tokens.push(`${name}:${value};`);
     }
     const base = tokens.length
-      ? `:root{${tokens.join('')}}html,body{margin:0;min-height:100%;color:var(--openbitfun-color-content-primary, var(--hm-text-primary));background:var(--openbitfun-color-surface-canvas, var(--hm-panel-bg));font-family:var(--openbitfun-type-body-md-font-family, var(--hm-body-font));font-size:var(--openbitfun-type-body-md-font-size, var(--hm-text-body1));line-height:var(--openbitfun-type-body-md-line-height, 1.5);}`
+      ? `:root{${tokens.join('')}}html,body{margin:0;min-height:100%;color:var(--openbitfun-color-content-primary);background:var(--openbitfun-color-surface-canvas);font-family:var(--openbitfun-type-body-md-font-family);font-size:var(--openbitfun-type-body-md-font-size);line-height:var(--openbitfun-type-body-md-line-height);}`
       : '';
     return harmony ? HARMONY_STYLE_RESOURCE_CSS + base : base;
   }, [specification]);

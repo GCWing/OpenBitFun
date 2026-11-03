@@ -12,7 +12,33 @@ const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
  */
 type Parsed = { day: number; instant: Date | null };
 
-export function parseDate(value: string | number): Parsed {
+/**
+ * Models sometimes pass the complete data row to a date display helper.
+ * Accept common record shapes at this boundary so that a recoverable data
+ * shape mismatch does not take down the whole component tree.
+ */
+function unwrapDateValue(value: unknown): string | number {
+  if (typeof value === "string" || typeof value === "number") return value;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    for (const key of ["date", "timestamp", "datetime", "createdAt", "updatedAt", "time", "value"]) {
+      const nested = record[key];
+      if (typeof nested === "string" || typeof nested === "number") return nested;
+    }
+    const year = record.year;
+    const month = record.month;
+    const day = record.day;
+    if ([year, month, day].every((part) => typeof part === "number" && Number.isFinite(part))) {
+      const monthNumber = Number(month);
+      const normalizedMonth = monthNumber >= 1 && monthNumber <= 12 ? monthNumber : monthNumber + 1;
+      return `${Number(year).toString().padStart(4, "0")}-${String(normalizedMonth).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`;
+    }
+  }
+  throw new Error(`invalid date "${String(value)}"`);
+}
+
+export function parseDate(value: string | number | Record<string, unknown>): Parsed {
+  value = unwrapDateValue(value);
   if (typeof value === "string") {
     const m = DATE_ONLY.exec(value.trim());
     if (m) {

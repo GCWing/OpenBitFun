@@ -48,8 +48,8 @@
 .gen-ui-gallery__eyebrow {
   margin: 0 0 6px;
   color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-caption-font-size);
-  letter-spacing: .08em;
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
   text-transform: uppercase;
 }
 
@@ -60,8 +60,8 @@
 .gen-ui-gallery__section h2 {
   margin: 0 8px 8px;
   color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-caption-font-size);
-  font-weight: 600;
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
   text-transform: uppercase;
 }
 
@@ -95,7 +95,7 @@
 .gen-ui-gallery__items small,
 .gen-ui-gallery__identity {
   color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-caption-font-size);
+  font-size: var(--openbitfun-type-body-xs-font-size);
 }
 
 .gen-ui-gallery__content {
@@ -111,7 +111,7 @@
 }
 
 .gen-ui-gallery__header h2 {
-  font-size: 28px;
+  font-size: var(--openbitfun-type-heading-section-font-size);
 }
 
 .gen-ui-gallery__header p {
@@ -120,7 +120,7 @@
 
 .gen-ui-gallery__prompt {
   padding: 8px 12px;
-  border-left: 3px solid var(--openbitfun-color-border-focus);
+  border-left: 3px solid var(--openbitfun-color-focus-ring);
   background: var(--openbitfun-color-surface-canvas);
 }
 
@@ -163,7 +163,7 @@
 
 .gen-ui-gallery__diagnostic-header span {
   color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-caption-font-size);
+  font-size: var(--openbitfun-type-body-xs-font-size);
 }
 
 .gen-ui-gallery__source pre {

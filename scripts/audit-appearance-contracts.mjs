@@ -114,6 +114,17 @@ function relative(file) {
   return path.relative(repoRoot, file);
 }
 
+// OpenUI and Harmony component sources are vendored renderer resources. They
+// carry their upstream theme DOM and CSS vocabulary inside the GenUI renderer
+// boundary, where the host scopes delivery separately from product Appearance
+// surfaces. Do not treat those upstream contracts as product-owned surfaces.
+function isVendoredGenUISource(file) {
+  const normalized = relative(file).replaceAll('\\', '/');
+  return normalized.startsWith('src/web-ui/src/tools/generative-ui/components/openui/')
+    || normalized.startsWith('src/web-ui/src/tools/generative-ui/components/vendor/')
+    || normalized === 'src/web-ui/src/tools/generative-ui/components/openuiLibrary.tsx';
+}
+
 function extractObject(source, start) {
   const open = source.indexOf('{', start);
   if (open < 0) return null;
@@ -383,7 +394,9 @@ function analyzeStyledOwnerContract(file, source, visualClassIds) {
 
 const sourceFiles = walk(sourceRoot);
 const sources = new Map(sourceFiles.map(file => [file, fs.readFileSync(file, 'utf8')]));
-const productionSources = [...sources.entries()].filter(([file]) => !/\.(?:test|spec)\.[jt]sx?$/.test(file));
+const productionSources = [...sources.entries()].filter(([file]) => (
+  !/\.(?:test|spec)\.[jt]sx?$/.test(file) && !isVendoredGenUISource(file)
+));
 const productionCodeSources = productionSources.filter(([file]) => /\.(?:ts|tsx)$/.test(file));
 const externalAppearanceContractSources = externalAppearanceContractFiles
   .filter(file => fs.existsSync(file))

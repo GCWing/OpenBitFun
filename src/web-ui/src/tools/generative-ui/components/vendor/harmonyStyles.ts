@@ -1,3 +1,5 @@
+import { HM_ICON_CODEPOINTS } from './hm-icons';
+
 /**
  * HarmonyOS design resources used by the Harmony GenUI profile.
  *
@@ -728,5 +730,4 @@ export const HARMONY_STYLE_RESOURCE_CSS = String.raw`
 ${HARMONY_ICON_CSS}`;
 
 export const HARMONY_STYLE_RESOURCE_IDS = ['openbitfun-harmony-components', 'harmony-theme-tokens'] as const;
-import { HM_ICON_CODEPOINTS } from './hm-icons';
 
