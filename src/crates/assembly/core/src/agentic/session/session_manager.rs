@@ -8140,6 +8140,14 @@ impl SessionManager {
                         || !tool_items.is_empty()
                         || !thinking_items.is_empty()
                     {
+                        // Messages written before the Runtime recorded round
+                        // timing leave these unknown rather than claiming 0 ms.
+                        let timing = msg
+                            .metadata
+                            .model_execution
+                            .as_ref()
+                            .and_then(|facts| facts.timing)
+                            .unwrap_or_default();
                         rounds.push(ModelRoundData {
                             id: round_id,
                             turn_id: turn_id.to_string(),
@@ -8151,7 +8159,7 @@ impl SessionManager {
                             thinking_items,
                             start_time: timestamp,
                             end_time: Some(timestamp),
-                            duration_ms: Some(0),
+                            duration_ms: timing.duration_ms,
                             provider_id: None,
                             model_config_id: msg
                                 .metadata
@@ -8168,11 +8176,11 @@ impl SessionManager {
                                 .model_execution
                                 .as_ref()
                                 .and_then(|facts| facts.routing.clone()),
-                            first_chunk_ms: None,
-                            first_visible_output_ms: None,
-                            stream_duration_ms: None,
-                            ttft_ms: None,
-                            attempt_count: None,
+                            first_chunk_ms: timing.first_chunk_ms,
+                            first_visible_output_ms: timing.first_visible_output_ms,
+                            stream_duration_ms: timing.stream_duration_ms,
+                            ttft_ms: timing.ttft_ms,
+                            attempt_count: timing.attempt_count,
                             attempt_diagnostics: vec![],
                             failure_category: None,
                             token_details: None,
@@ -8814,7 +8822,15 @@ impl SessionManager {
                 round.timestamp = existing.timestamp;
                 round.start_time = existing.start_time;
                 round.end_time = existing.end_time.or(round.end_time);
-                round.duration_ms = existing.duration_ms.or(round.duration_ms);
+                // Round timing is a Runtime fact carried by the generation
+                // journal. The client checkpoint only mirrors
+                // `ModelRoundCompleted`, and for the last round it routinely
+                // loses the race with Turn completion, so it is a fallback for
+                // journals written before the Runtime recorded timing. Older
+                // completion writers persisted `0` for unknown durations.
+                round.duration_ms = round
+                    .duration_ms
+                    .or(existing.duration_ms.filter(|duration_ms| *duration_ms > 0));
                 round.provider_id = existing.provider_id.clone();
                 round.model_config_id = round
                     .model_config_id
@@ -8823,11 +8839,13 @@ impl SessionManager {
                     .effective_model_name
                     .or_else(|| existing.effective_model_name.clone());
                 round.routing = round.routing.or_else(|| existing.routing.clone());
-                round.first_chunk_ms = existing.first_chunk_ms;
-                round.first_visible_output_ms = existing.first_visible_output_ms;
-                round.stream_duration_ms = existing.stream_duration_ms;
-                round.ttft_ms = existing.ttft_ms;
-                round.attempt_count = existing.attempt_count;
+                round.first_chunk_ms = round.first_chunk_ms.or(existing.first_chunk_ms);
+                round.first_visible_output_ms = round
+                    .first_visible_output_ms
+                    .or(existing.first_visible_output_ms);
+                round.stream_duration_ms = round.stream_duration_ms.or(existing.stream_duration_ms);
+                round.ttft_ms = round.ttft_ms.or(existing.ttft_ms);
+                round.attempt_count = round.attempt_count.or(existing.attempt_count);
                 round.attempt_diagnostics = existing.attempt_diagnostics.clone();
                 round.failure_category = existing.failure_category.clone();
                 round.token_details = existing.token_details.clone();
@@ -10787,6 +10805,7 @@ mod tests {
                     latency_ms: 17,
                     fallback_reason: None,
                 }),
+                timing: None,
             });
         let restored: Message =
             serde_json::from_value(serde_json::to_value(routed).unwrap()).unwrap();
@@ -10799,6 +10818,77 @@ mod tests {
             Some("economy-api-model")
         );
         assert_eq!(rounds[1].routing.as_ref().unwrap().latency_ms, 17);
+    }
+
+    #[test]
+    fn completion_merge_keeps_runtime_round_timing_over_stale_client_checkpoint() {
+        let timed_message = |round_id: &str, timing| {
+            let mut message = Message::assistant("answer".into()).with_round_id(round_id.into());
+            message.metadata.model_execution =
+                Some(crate::agentic::core::message::ModelExecutionMetadata {
+                    model_config_id: "model".into(),
+                    effective_model_name: "model".into(),
+                    routing: None,
+                    timing,
+                });
+            message
+        };
+        let mut turn = DialogTurnData::new(
+            "turn".into(),
+            0,
+            "session".into(),
+            UserMessageData {
+                id: "input".into(),
+                content: "hi".into(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        // The client checkpointed the final round before its
+        // `ModelRoundCompleted` arrived, and a checkpoint from an older writer
+        // recorded an unknown duration as 0.
+        let mut stale = SessionManager::build_model_rounds_from_messages(
+            &[timed_message("final", None)],
+            "turn",
+            1,
+        );
+        stale[0].duration_ms = Some(0);
+        // A legacy journal without timing keeps the client's real facts.
+        let mut checkpointed = SessionManager::build_model_rounds_from_messages(
+            &[timed_message("legacy", None)],
+            "turn",
+            1,
+        );
+        checkpointed[0].duration_ms = Some(900);
+        checkpointed[0].ttft_ms = Some(150);
+        turn.model_rounds = vec![checkpointed.remove(0), stale.remove(0)];
+
+        let runtime_timing = crate::agentic::core::message::ModelRoundTimingMetadata {
+            duration_ms: Some(2172),
+            first_chunk_ms: Some(10),
+            first_visible_output_ms: Some(20),
+            stream_duration_ms: Some(1500),
+            ttft_ms: Some(690),
+            attempt_count: Some(1),
+        };
+        SessionManager::append_generation_rounds(
+            &mut turn,
+            "turn",
+            &[
+                timed_message("legacy", None),
+                timed_message("final", Some(runtime_timing)),
+            ],
+            2,
+        );
+
+        let legacy = &turn.model_rounds[0];
+        assert_eq!(legacy.duration_ms, Some(900));
+        assert_eq!(legacy.ttft_ms, Some(150));
+        let last = &turn.model_rounds[1];
+        assert_eq!(last.duration_ms, Some(2172));
+        assert_eq!(last.ttft_ms, Some(690));
+        assert_eq!(last.stream_duration_ms, Some(1500));
+        assert_eq!(last.attempt_count, Some(1));
     }
 
     #[test]

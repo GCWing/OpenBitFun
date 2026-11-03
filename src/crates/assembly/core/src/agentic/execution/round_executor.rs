@@ -1851,21 +1851,31 @@ impl RoundExecutor {
             !stream_result.tool_calls.is_empty()
         );
 
+        // The same facts ride on the assistant message so the durable Turn
+        // round keeps them even when no client checkpointed this event.
+        let round_timing = crate::agentic::core::message::ModelRoundTimingMetadata {
+            duration_ms: Some(elapsed_ms_u64(round_started_at)),
+            first_chunk_ms: stream_result.first_chunk_ms,
+            first_visible_output_ms: stream_result.first_visible_output_ms,
+            stream_duration_ms: Some(stream_processing_ms),
+            ttft_ms,
+            attempt_count: Some(lifecycle.attempts_started()),
+        };
         self.emit_event(
             AgenticEvent::ModelRoundCompleted {
                 session_id: context.session_id.clone(),
                 turn_id: context.dialog_turn_id.clone(),
                 round_id: round_id.clone(),
                 has_tool_calls: !stream_result.tool_calls.is_empty(),
-                duration_ms: Some(elapsed_ms_u64(round_started_at)),
+                duration_ms: round_timing.duration_ms,
                 provider_id: None,
                 model_config_id: context.model_config_id.clone(),
                 effective_model_name: context.effective_model_name.clone(),
-                first_chunk_ms: stream_result.first_chunk_ms,
-                first_visible_output_ms: stream_result.first_visible_output_ms,
-                stream_duration_ms: Some(stream_processing_ms),
-                ttft_ms,
-                attempt_count: Some(lifecycle.attempts_started()),
+                first_chunk_ms: round_timing.first_chunk_ms,
+                first_visible_output_ms: round_timing.first_visible_output_ms,
+                stream_duration_ms: round_timing.stream_duration_ms,
+                ttft_ms: round_timing.ttft_ms,
+                attempt_count: round_timing.attempt_count,
                 failure_category: None,
                 token_details: stream_result
                     .usage
@@ -1922,6 +1932,7 @@ impl RoundExecutor {
                     model_config_id: context.model_config_id.clone(),
                     effective_model_name: context.effective_model_name.clone(),
                     routing: lifecycle.routing.clone(),
+                    timing: Some(round_timing),
                 });
 
             debug!("Returning RoundResult: has_more_rounds=false");
@@ -1998,6 +2009,7 @@ impl RoundExecutor {
                 model_config_id: context.model_config_id.clone(),
                 effective_model_name: context.effective_model_name.clone(),
                 routing: lifecycle.routing.clone(),
+                timing: Some(round_timing),
             });
 
         // Publish the semantic assistant response before tool execution so
