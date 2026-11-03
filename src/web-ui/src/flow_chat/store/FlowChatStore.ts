@@ -2058,6 +2058,8 @@ interface SurfaceStateContainer {
   readonly relaySessionRecords: Map<string, SessionRecordReplica>;
   /** Turns the replica changed that the rendered session does not reflect yet. */
   readonly relayPendingRecordTurns: Map<string, Set<string>>;
+  /** Sessions rebuilding from a restarted host stream until its replay is ready. */
+  readonly relayResyncingSessions: Set<string>;
   readonly relaySessionHistory: Map<string, RelaySessionHistory>;
 }
 
@@ -2080,6 +2082,7 @@ function createSurfaceStateContainer(surfaceId: DeviceSurfaceId): SurfaceStateCo
     relayMailboxReads: new Map(),
     relaySessionRecords: new Map(),
     relayPendingRecordTurns: new Map(),
+    relayResyncingSessions: new Set(),
     relaySessionHistory: new Map(),
   };
 }
@@ -3255,6 +3258,7 @@ export class FlowChatStore {
       this.activeSurface.relaySessionHistory.delete(id);
       this.activeSurface.relaySessionRecords.delete(id);
       this.activeSurface.relayPendingRecordTurns.delete(id);
+      this.activeSurface.relayResyncingSessions.delete(id);
       this.activeSurface.relayQuestionMailboxes.delete(id);
       this.activeSurface.relayRecordVersions.delete(id);
       this.activeSurface.relayMailboxVersions.delete(id);
@@ -6197,6 +6201,7 @@ export class FlowChatStore {
       history = new RelaySessionHistory(sessionId,
         record => this.applyRelaySessionRecord(record),
         ready => {
+          this.finishRelaySessionResync(sessionId);
           this.setState(previous => {
             const session = previous.sessions.get(sessionId);
             if (!session) return previous;
@@ -6219,7 +6224,8 @@ export class FlowChatStore {
             history?.close();
           }
         }, () => this.refreshRelayInteractionMailbox(sessionId),
-        () => this.flushRelaySessionRecords(sessionId));
+        () => this.flushRelaySessionRecords(sessionId),
+        () => this.beginRelaySessionResync(sessionId));
       history.setVisible(this.historyLeases.has(this.surfaceKey(sessionId)));
       surface.relaySessionHistory.set(sessionId, history);
     }
@@ -6295,6 +6301,83 @@ export class FlowChatStore {
       totalTurnCount: entries.length, entries,
     });
     this.seedSessionHistoryLoadedRanges(sessionId);
+  }
+
+  /**
+   * The host restarted this session's stream. Its replay carries fresh
+   * revisions that an existing replica could reject as older, and no
+   * tombstones for what the host dropped, so it is reduced into a new replica.
+   * Rendered turns stay until the replay is ready, then only its turns remain.
+   */
+  private beginRelaySessionResync(sessionId: string): void {
+    const surface = this.activeSurface;
+    if (surface.surfaceId === 'local' || !surface.state.sessions.has(sessionId)) return;
+    surface.relaySessionRecords.set(sessionId, new SessionRecordReplica(sessionId));
+    surface.relayPendingRecordTurns.delete(sessionId);
+    surface.relayResyncingSessions.add(sessionId);
+  }
+
+  private finishRelaySessionResync(sessionId: string): void {
+    const surface = this.activeSurface;
+    if (!surface.relayResyncingSessions.delete(sessionId)) return;
+    const replica = surface.relaySessionRecords.get(sessionId);
+    // Optimistic submissions have no storage index and are joined by their echo.
+    // The ready handler then records whether older pages remain and rebuilds
+    // the catalog only for a complete history.
+    this.removeRelaySessionTurns(sessionId, turn => (
+      turn.storageTurnIndex !== undefined && !replica?.snapshot(turn.id).turn
+    ), false);
+  }
+
+  /**
+   * A completed rollback on a device surface hides these turns on the host.
+   * The host stream only reports that after it restarts, so the rendered copy
+   * drops them now instead of offering a target the host no longer has.
+   */
+  public retireRelaySessionTurns(sessionId: string, turnIds: readonly string[]): void {
+    const surface = this.activeSurface;
+    if (surface.surfaceId === 'local' || turnIds.length === 0) return;
+    const retired = new Set(turnIds);
+    const pending = surface.relayPendingRecordTurns.get(sessionId);
+    if (pending) {
+      retired.forEach(turnId => pending.delete(turnId));
+      if (pending.size === 0) surface.relayPendingRecordTurns.delete(sessionId);
+    }
+    this.removeRelaySessionTurns(sessionId, turn => retired.has(turn.id), true);
+  }
+
+  private removeRelaySessionTurns(
+    sessionId: string,
+    remove: (turn: DialogTurn) => boolean,
+    refreshCatalog: boolean,
+  ): void {
+    const surface = this.activeSurface;
+    const session = surface.state.sessions.get(sessionId);
+    if (!session || !session.dialogTurns.some(remove)) return;
+    this.setState(previous => {
+      const current = previous.sessions.get(sessionId);
+      if (!current) return previous;
+      const dialogTurns = current.dialogTurns.filter(turn => !remove(turn));
+      const sourceRemoved = Boolean(current.currentTokenUsage?.turnId)
+        && !dialogTurns.some(turn => turn.id === current.currentTokenUsage?.turnId);
+      const sessions = new Map(previous.sessions);
+      sessions.set(sessionId, {
+        ...current,
+        dialogTurns,
+        currentTokenUsage: currentTokenUsageAfterSourceRemoval(current, dialogTurns, sourceRemoved),
+        loadedTurnCount: dialogTurns.length,
+        totalTurnCount: current.isPartial === false ? dialogTurns.length : undefined,
+        turnCatalog: undefined,
+        lastUserDialogMode: this.deriveLastUserDialogMode(dialogTurns),
+      });
+      return { ...previous, sessions };
+    });
+    // Loaded ranges and the catalog index ordinals that no longer exist.
+    surface.sessionHistoryViews.delete(sessionId);
+    surface.sessionHistoryTurnAccessTimes.delete(sessionId);
+    surface.deferredFullHistoryProjections.delete(sessionId);
+    surface.fullHistoryProjectionApplyRequests.delete(sessionId);
+    if (refreshCatalog) this.refreshRelayTurnCatalog(sessionId);
   }
 
   /**
@@ -8386,7 +8469,7 @@ export class FlowChatStore {
           if (adopted === turns) {
             adopted = [...turns];
           }
-          adopted[index] = preserveLiveRoundTiming(adopted[index], snapshotTurn);
+          adopted[index] = snapshotTurn;
         }
         return adopted;
       };
@@ -8443,27 +8526,24 @@ export class FlowChatStore {
       let turnsChanged = false;
       for (const snapshotTurn of snapshotTurns) {
         const existingIndex = mergedTurns.findIndex(turn => turn.id === snapshotTurn.id);
-        // The Runtime journal replay *is* the runtime writer, so it always
-        // establishes its own active Turn.
-        const isRuntimeReplayTurn = Boolean(runtimeReplaySnapshot)
-          && snapshotTurn.id === runtimeReplaySnapshot?.activeTurnId;
         if (existingIndex === -1) {
           mergedTurns.push(snapshotTurn);
           turnsChanged = true;
         } else if (
-          isRuntimeReplayTurn
-          || persistedReadMayReplaceTurn(
-            sessionId,
-            mergedTurns[existingIndex],
-            snapshotTurn,
-            activeTurnId,
-            Boolean(runtimeEventSnapshot),
-            true,
-          )
+          // The Runtime journal replay *is* the runtime writer, so it always
+          // establishes its own active Turn.
+          runtimeReplaySnapshot && snapshotTurn.id === runtimeReplaySnapshot.activeTurnId
+            ? true
+            : persistedReadMayReplaceTurn(
+                sessionId,
+                mergedTurns[existingIndex],
+                snapshotTurn,
+                activeTurnId,
+                Boolean(runtimeEventSnapshot),
+                true,
+              )
         ) {
-          mergedTurns[existingIndex] = isRuntimeReplayTurn
-            ? snapshotTurn
-            : preserveLiveRoundTiming(mergedTurns[existingIndex], snapshotTurn);
+          mergedTurns[existingIndex] = snapshotTurn;
           turnsChanged = true;
         }
       }

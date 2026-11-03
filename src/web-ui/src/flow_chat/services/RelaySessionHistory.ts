@@ -79,6 +79,7 @@ export class RelaySessionHistory {
     onError: (error: unknown) => void,
     onResumed?: () => Promise<void>,
     private readonly onFlush?: () => void,
+    onResync?: () => void,
   ) {
     this.fail = error => { this.rejectReady(error); this.rejectPage?.(error); onError(error); };
     this.resumeInteraction = onResumed;
@@ -91,6 +92,15 @@ export class RelaySessionHistory {
         if (onRecord(record) === true) this.flush();
         else this.scheduleFlush();
       } catch (error) { this.fail(error); }
+    }));
+    // A restarted host stream replays its latest page under fresh revisions and
+    // sends no tombstones for what it dropped (a rollback, undo, or history
+    // rewrite). Records already received are rendered first; the replay that
+    // follows, up to its ready event, is then the whole truth.
+    this.listeners.push(remoteConnectAPI.onSessionGap(gap => {
+      if (!this.isCurrent() || gap.sessionId !== this.sessionId || gap.resync !== true) return;
+      this.flush();
+      try { onResync?.(); } catch (error) { this.fail(error); }
     }));
     this.listeners.push(remoteConnectAPI.onSessionSyncError(error => {
       if (!this.isCurrent() || error.sessionId !== this.sessionId || error.targetDeviceId !== this.scope.surfaceId) return;

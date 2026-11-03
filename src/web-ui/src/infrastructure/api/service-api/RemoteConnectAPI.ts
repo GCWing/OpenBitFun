@@ -485,7 +485,11 @@ class RemoteConnectAPIService {
     }
   }
 
-  onSessionGap(callback: (event: { sessionId: string; reason: string }) => void): () => void {
+  /**
+   * `resync` marks a restarted host stream: a full replay from its latest page
+   * follows and replaces the controller's records. Host-appended gaps omit it.
+   */
+  onSessionGap(callback: (event: { sessionId: string; reason: string; resync?: boolean }) => void): () => void {
     return api.listen('relay://session-gap', callback);
   }
 

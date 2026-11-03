@@ -9,6 +9,7 @@ vi.mock('./hostDialogQueue', () => ({
 const agentApiMock = vi.hoisted(() => ({ rollbackSessionToTurn: vi.fn() }));
 const eventBusMock = vi.hoisted(() => ({ emit: vi.fn() }));
 const loadSessionHistory = vi.hoisted(() => vi.fn(async () => undefined));
+const retireRelaySessionTurns = vi.hoisted(() => vi.fn());
 const sessions = vi.hoisted(() => new Map<string, any>());
 const historyViews = vi.hoisted(() => new Map<string, any>());
 
@@ -19,6 +20,7 @@ vi.mock('../store/FlowChatStore', () => ({
     getState: () => ({ sessions }),
     getSessionHistoryViewState: (sessionId: string) => historyViews.get(sessionId),
     loadSessionHistory,
+    retireRelaySessionTurns,
   },
 }));
 
@@ -109,6 +111,7 @@ describe('SessionRollbackService', () => {
     expect(result).toMatchObject({ fromTurnIndex: 2, composerText: 'prompt' });
     expect(isSessionTurnRetired('session-1', 'turn-7')).toBe(true);
     expect(isSessionTurnRetired('session-1', 'turn-8')).toBe(true);
+    expect(retireRelaySessionTurns).toHaveBeenCalledWith('session-1', ['turn-7', 'turn-8']);
   });
 
   it('omits a stale catalog revision when the current Turn is not represented', async () => {
