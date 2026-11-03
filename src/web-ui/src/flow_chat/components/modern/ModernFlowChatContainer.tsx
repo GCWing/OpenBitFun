@@ -26,6 +26,7 @@ import { composerPresentationToTurnRailPreview, parseComposerPresentation } from
 import { BackgroundCommandInputDialog } from '../background-command/BackgroundCommandInputDialog';
 import { WelcomePanel } from '../WelcomePanel';
 import { HistorySessionPlaceholder } from './HistorySessionPlaceholder';
+import { HistorySessionLoadingBoundary } from './HistorySessionLoadingBoundary';
 import {
   FlowChatContext,
   FlowChatContextValue,
@@ -577,6 +578,11 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     );
   const [historyInitialContentReadyKey, setHistoryInitialContentReadyKey] = useState<string | null>(null);
   const [historyInitialContentPostPaintKey, setHistoryInitialContentPostPaintKey] = useState<string | null>(null);
+  const [historyLoadingPresentation, setHistoryLoadingPresentation] = useState<{ identity: string; ready: boolean } | null>(null);
+  const handleHistoryPresentationChange = useCallback((identity: string, ready: boolean) => {
+    setHistoryLoadingPresentation(previous => previous?.identity === identity && previous.ready === ready
+      ? previous : { identity, ready });
+  }, []);
   const workspaceContext = useWorkspaceContext();
   const workspacePath = viewScope ? activeSession?.workspacePath : workspaceContext.workspacePath;
   const activeWorkspace = viewScope ? undefined : workspaceContext.activeWorkspace;
@@ -1237,6 +1243,9 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const showHistoryLoadingLayer =
     !showHistoryOpenIntentOverlay && !showFailedHistoryPlaceholder
     && (showHistoryPlaceholder || activeHistoryRestore?.status === 'loading');
+  const historyLoadingIdentity = surfaceScope.key('history-loading', surfaceScope.epoch,
+    showHistoryOpenIntentOverlay ? pendingHistoryOpenSession?.sessionId : activeSession?.sessionId);
+  const isHistoryContentPresented = historyLoadingPresentation?.identity === historyLoadingIdentity && historyLoadingPresentation.ready;
   useEffect(() => {
     if (!showHistoryLoadingLayer || !activeSession?.sessionId) {
       return;
@@ -1541,7 +1550,6 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       attempts += 1;
       if (virtualListRef.current?.isTurnTextRenderedInViewport(latestTurnId) === true) {
         setHistoryInitialContentReadyKey(releaseKey);
-        cancelAfterPaint = scheduleAfterStartupPaint(releaseAfterPaint, { frameCount: 2 });
         return;
       }
 
@@ -1561,7 +1569,15 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       frameId = requestAnimationFrame(checkLatestTextVisibility);
     };
 
-    frameId = requestAnimationFrame(checkLatestTextVisibility);
+    if (historyInitialContentReadyKey === releaseKey) {
+      // The loading boundary keeps measurable text hidden through its exit.
+      // Release background hydration only after the final presentation paints.
+      if (isHistoryContentPresented) {
+        cancelAfterPaint = scheduleAfterStartupPaint(releaseAfterPaint, { frameCount: 2 });
+      }
+    } else {
+      frameId = requestAnimationFrame(checkLatestTextVisibility);
+    }
 
     return () => {
       cancelled = true;
@@ -1575,6 +1591,8 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     activeSession?.contextRestoreState,
     activeSession?.sessionId,
     hasPendingHistoryCompletion,
+    historyInitialContentReadyKey,
+    isHistoryContentPresented,
     isViewportActive,
     latestTurnId,
     turnSummaries.length,
@@ -2786,7 +2804,15 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
           onMouseDownCapture={blockHistoryOverlayActivation}
           onPointerDownCapture={blockHistoryOverlayActivation}
         >
-          <>
+          <HistorySessionLoadingBoundary
+            identity={historyLoadingIdentity}
+            loading={showHistoryLoadingLayer || showHistoryOpenIntentOverlay || shouldBlockHistoryInitialContentInteraction}
+            hasTranscript={virtualItems.length > 0 && activeHistoryRestore?.status !== 'loading' && !showFailedHistoryPlaceholder}
+            disabled={showFailedHistoryPlaceholder || !isViewportActive}
+            intent={showHistoryOpenIntentOverlay}
+            label={t('historyState.loadingTitle')}
+            onPresentationChange={handleHistoryPresentationChange}
+          >
             {showFailedHistoryPlaceholder ? (
               <HistorySessionPlaceholder
                 state="failed"
@@ -2838,36 +2864,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
                 onNavigate={navigateToTurn}
               />
             ) : null}
-            {showHistoryLoadingLayer && (
-              <div
-                className="modern-flowchat-container__history-overlay"
-                role="status"
-                aria-label={t('historyState.loadingTitle')}
-                data-openbitfun-component="modern-flow-chat"
-                data-openbitfun-part="historyOverlay"
-              >
-                <HistorySessionPlaceholder
-                  state={historyState === 'metadata-only' ? 'metadata-only' : 'hydrating'}
-                />
-              </div>
-            )}
-            {showHistoryOpenIntentOverlay && (
-              <div
-                className="modern-flowchat-container__history-open-intent-shield"
-                data-openbitfun-component="modern-flow-chat"
-                data-openbitfun-part="historyOpenIntent"
-                role="status"
-                aria-label={t('historyState.loadingTitle')}
-              >
-                <span
-                  className="modern-flowchat-container__history-open-intent-spinner"
-                  data-openbitfun-component="modern-flow-chat"
-                  data-openbitfun-part="historyOpenIntentSpinner"
-                  aria-hidden="true"
-                />
-              </div>
-            )}
-          </>
+          </HistorySessionLoadingBoundary>
         </div>
       </div>
       </FlowChatVolatileContext.Provider>

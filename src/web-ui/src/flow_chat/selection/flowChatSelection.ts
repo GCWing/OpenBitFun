@@ -33,7 +33,10 @@ function sourceTextIndex(root: HTMLElement) {
       text += node.textContent;
     } else if (node instanceof HTMLElement) {
       if (node.matches(EXCLUDED)) return;
-      const block = BLOCK.test(node.tagName);
+      // Table selection layout is presentation only. Preserve the rendered-text
+      // offsets/anchors of excerpts saved before cells acquired these wrappers.
+      const block = BLOCK.test(node.tagName)
+        && !node.matches('.markdown-table-cell-content, .markdown-table-cell-body');
       if (block || node.tagName === 'BR') lineBreak = true;
       node.childNodes.forEach(visit);
       if (block) lineBreak = true;

@@ -42,6 +42,33 @@ describe('FlowChat selection snapshots', () => {
     expect(snapshot.excerpt.fragments.map(part => [part.flowItemId, part.text])).toEqual([[undefined, 'Question'], ['reply', 'Answer']]);
   });
 
+  it('preserves legacy cross-cell excerpts when table presentation wrappers are added', () => {
+    const root = transcript('<div data-turn-id="turn-1"><div data-flow-item-id="table"><table><tbody><tr><td>First <strong>value</strong></td><td>Second</td></tr><tr><td>Third</td><td>Last</td></tr></tbody></table></div></div>');
+    const cells = root.querySelectorAll('td');
+    const start = cells[0].firstChild!;
+    const end = cells[3].firstChild!;
+    const legacy = captureFlowChatSelection(root, select(start, end), source)!.excerpt.fragments[0];
+    for (const cell of cells) {
+      const boundary = document.createElement('div');
+      boundary.className = 'markdown-table-cell-content';
+      const body = document.createElement('div');
+      body.className = 'markdown-table-cell-body';
+      body.append(...cell.childNodes);
+      boundary.append(body);
+      cell.append(boundary);
+    }
+    const current = captureFlowChatSelection(root, select(start, end), source)!.excerpt.fragments[0];
+    expect(current).toEqual(legacy);
+    const restored = resolveExcerptRange(findExcerptSource(root, legacy)!, legacy)!;
+    expect(restored.startContainer).toBe(start);
+    expect(restored.endContainer).toBe(end);
+    const restoredText = restored.toString();
+    // A rehydrated excerpt from either DOM shape still resolves after reverting
+    // to old markup; layout wrappers must not create persisted text separators.
+    for (const cell of cells) cell.replaceChildren(...cell.querySelector('.markdown-table-cell-body')!.childNodes);
+    expect(resolveExcerptRange(findExcerptSource(root, current)!, current)?.toString()).toBe(restoredText);
+  });
+
   it('rejects a selection across session surfaces or inside an editor', () => {
     const first = transcript('<div data-turn-id="turn-1"><div data-flow-item-id="a">first</div></div>');
     const second = transcript('<div data-turn-id="turn-2"><div data-flow-item-id="b">second</div></div>');

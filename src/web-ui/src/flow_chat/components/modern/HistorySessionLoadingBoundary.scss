@@ -1,0 +1,119 @@
+@use '../../transcript-layout' as transcriptLayout;
+
+.history-session-loading {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+
+  &__content { position: relative; height: 100%; }
+
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 11;
+    overflow: hidden;
+    background: var(--openbitfun-color-surface-scene);
+    touch-action: none;
+  }
+
+  &__overlay[hidden] { display: none; }
+}
+
+.history-session-skeleton {
+  position: absolute;
+  inset: 0;
+  color: var(--openbitfun-color-content-primary);
+  pointer-events: none;
+
+  &__column {
+    @include transcriptLayout.reading-column;
+    @include transcriptLayout.content-column;
+    position: relative;
+    height: 100%;
+  }
+
+  &__user {
+    position: absolute;
+    top: var(--openbitfun-space-6);
+    right: var(--openbitfun-control-flow-chat-content-padding-inline);
+    width: min(288px, 54%);
+    padding: var(--openbitfun-space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+    border-radius: var(--openbitfun-radius-xl);
+    background: var(--openbitfun-color-action-quiet-hover);
+
+    span {
+      display: block;
+      height: var(--openbitfun-space-4);
+      width: 82%;
+      border-radius: var(--openbitfun-radius-pill);
+      background: color-mix(in srgb, var(--openbitfun-color-content-primary) 18%, transparent);
+    }
+
+    span:last-child { width: 56%; opacity: 0.7; }
+  }
+
+  &__group {
+    position: absolute;
+    left: var(--openbitfun-control-flow-chat-content-padding-inline);
+    right: var(--openbitfun-control-flow-chat-content-padding-inline);
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+  }
+
+  &__bar {
+    display: block;
+    height: var(--openbitfun-space-6);
+    flex-shrink: 0;
+    border-radius: var(--openbitfun-radius-pill);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 18%, transparent);
+    transform-origin: left center;
+  }
+
+  &__group--first {
+    top: max(148px, 29%);
+    .history-session-skeleton__bar:nth-child(1) { width: 66%; opacity: 0.72; }
+    .history-session-skeleton__bar:nth-child(2) { width: 83%; opacity: 0.64; }
+    .history-session-skeleton__bar:nth-child(3) { width: 34%; opacity: 0.56; }
+  }
+
+  &__group--second {
+    top: max(280px, 54%);
+    .history-session-skeleton__bar:nth-child(1) { width: 74%; opacity: 0.56; }
+    .history-session-skeleton__bar:nth-child(2) { width: 44%; opacity: 0.48; }
+  }
+
+  &__group--third {
+    top: max(380px, 79%);
+    .history-session-skeleton__bar:nth-child(1) { width: 59%; opacity: 0.4; }
+    .history-session-skeleton__bar:nth-child(2) { width: 28%; opacity: 0.32; }
+  }
+
+  @media (max-width: 768px) {
+    &__user { right: var(--openbitfun-control-flow-chat-content-padding-inline-mobile); }
+    &__group {
+      left: var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
+      right: var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
+    }
+  }
+}
+
+// One moving alpha field illuminates the complete composition.
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  .history-session-skeleton {
+    mask-image: linear-gradient(105deg, currentColor 28%, color-mix(in srgb, currentColor 40%, transparent) 48%, currentColor 68%);
+    mask-size: 230% 100%;
+    mask-repeat: no-repeat;
+    animation: history-session-skeleton-light calc(var(--openbitfun-motion-duration-loop) * 5.5) ease-in-out infinite;
+  }
+
+  [data-history-loading-phase='exiting'] .history-session-skeleton { animation-play-state: paused; }
+}
+
+@keyframes history-session-skeleton-light {
+  0%, 12% { mask-position: 100% 0; }
+  85%, 100% { mask-position: 0 0; }
+}

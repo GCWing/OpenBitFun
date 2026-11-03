@@ -52,7 +52,9 @@ each missing what the other had.
 | `useFlowChatLeadingExtent.test.tsx` | shared event geometry without repeated rectangle reads; fresh layout reads after resize and collection |
 | `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, search placement only outside the readable viewport, and real viewport-register acknowledgement before trajectory details/highlights commit for user/search/model/folded-tool/history targets |
 | `flowChatScrollbarMask.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | idle gutter masking with symmetric, one-sided and overlay scrollbars; overflow restoration and content/viewport resizing without scroll writes; supplied DOM geometry, not native rendering or live remote evidence |
+| `VirtualMessageList.edgeFade.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | repeated scroll-away/back restores the opaque top edge even when an earlier native listener synchronously commits a virtual window; fractional/top-overscroll offsets, one follow notification per event, current gesture callbacks and old-session cleanup; DOM/CSS contracts, not native repaint or live remote evidence |
 | `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
+| `HistorySessionLoadingBoundary.test.tsx` | settled-viewport gating, sequential abstract/text handoff for text/tools/code, interaction blocking, session/device cancellation, failure/inactive/reduced-motion cleanup and no streaming/remount replay; DOM/animation fixtures, not native paint or live remote evidence |
 | `ModernFlowChatContainer.history-state.test.tsx` | history presentation and the submission event |
 | `flowChatViewportOwnership.test.ts` | the priority order, preemption, expiry |
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
@@ -66,7 +68,8 @@ each missing what the other had.
 | `flowChatSearchDom.test.ts` | concrete text ranges and independent highlight ownership across rows and panes |
 | `../../selection/flowChatHighlights.test.ts` | exact text-parent scoping across Markdown nodes, shared markers, cleanup and document isolation |
 | `../../../infrastructure/appearance/adapters/ThemeTokenAppearanceAdapter.test.ts` | legacy accent projection, alpha preservation, theme changes and paint cleanup |
-| `../../selection/flowChatSelection.test.ts` | Markdown selection boundaries, source isolation, repeated text anchors, and changed sources |
+| `../../selection/flowChatSelection.test.ts` | Markdown selection boundaries, source isolation, repeated text anchors, changed sources and legacy table excerpt offsets across cell presentation wrappers |
+| `../../../infrastructure/markdown/MarkdownRenderer.test.tsx`, `../../../infrastructure/markdown/AsyncPrismSyntaxHighlighter.test.tsx` | compiled CSS and product DOM selection boundaries for mixed replies, hidden/runtime bodies, response/thinking tables and fences; table alignment/semantics, unchanged cross-message ranges, real Prism/fallback whitespace; not native selection paint evidence |
 | `../../selection/FlowChatSelectionBar.test.tsx` | annotation Dialog focus containment and return, frozen excerpts during scroll/resize, and comment submission |
 | `../../selection/useExcerptComposerActions.test.tsx` | main/side draft routing, focus after activation, ordinary child ownership, and stale surface rejection |
 | `../../../shared/utils/conversationExcerpt.test.ts` | quote deduplication, source-data framing, and legacy/additive presentation metadata |
@@ -116,7 +119,29 @@ For text selection, check the floating toolbar and right-click actions in the
 native WebView; keyboard selection, Tab, Escape, and Ctrl/Cmd+Alt+B; both main
 and ordinary side transcripts; multiline Markdown/code; dark/light and forced
 colors; narrow AuxPane layouts; long virtualized history; and switching targets
-with existing drafts. Remote workspace and desktop-peer sends, older-host quote
+with existing drafts. Drag across an assistant reply, a short right-aligned user
+bubble and the next reply in both directions: turn padding, paragraph gaps and
+the empty lane beside the bubble must stay unpainted, with full text still
+selectable/copyable. Include direct model rounds, timeline content/group members,
+parallel tool capsules, expanded user messages and the full-width edit composer;
+check that row height, action alignment and outlying controls remain intact.
+In a single reply, include several paragraphs, bold/link runs, wrapped lines,
+tight and loose nested lists. Select through the last paragraph in either
+direction: the right-hand blank and inter-paragraph/list gaps must stay clear.
+Repeat inside a collected group, retry history and a subagent projection, and
+confirm hidden reply bodies remain hidden while their source text stays mounted.
+For tables, include short/long cells, left/center/right alignment, inline links,
+code and emphasis, wrapped rows, and horizontal overflow in a narrow pane.
+Select across cells and rows in both directions: padding and unused row height
+must stay clear, while text remains selected and copied with native table
+semantics. Locate a table excerpt saved before the cell-wrapper change.
+For fences, select from the preceding paragraph through the following paragraph,
+then partially within code. Include labelled/unlabelled one-line fences,
+indented multiline code with blank lines, syntax tokens, long scrollable lines,
+streaming responses, completed responses and thinking. Check both outer fence
+insets and right-hand line blanks stay unpainted, source whitespace survives
+selection/copy, and line hover/copy controls remain usable.
+Remote workspace and desktop-peer sends, older-host quote
 fallbacks, disconnect recovery, and CLI-peer/dispatch unsupported states require
 separate real-host checks. Unit fixtures are not evidence of those scenarios.
 Annotation editing, draft management, and sent annotations use the public Dialog
@@ -153,6 +178,21 @@ unless a human confirms them. They are grouped so that adding a check to one
 group does not renumber the others.
 
 ### Opening a session
+
+Check the sparse history placeholder in light/dark themes and wide/narrow panes:
+the left lines retain a normal 24px height, the upper-right user bubble has equal
+rounded corners and no border, and the composition shares one soft light field.
+Open text-only, tool-only and long-code histories, including a restored bookmark.
+The abstract layer must disappear completely before real content reveals; no
+thin-line intermediate state or jump in the reading position is acceptable.
+Switch sessions/devices rapidly, fail and retry a load, and toggle reduced
+motion. Local, remote-workspace, Peer Device and detached-dispatch observer
+histories need separate real-host checks; mobile Remote Control uses its own UI.
+
+For the top edge fade, scroll down and all the way back to the first message
+several times. Its first line must be as readable as on initial open; leaving
+the top must restore the fade. Check native WebViews, light/dark themes and
+forced colors. Automated DOM/CSS checks do not establish this paint behavior.
 
 1. Session open lands at the end of the transcript, not inside the spacer.
 2. Open a long `isPartial` session and leave it alone. Nothing may page in

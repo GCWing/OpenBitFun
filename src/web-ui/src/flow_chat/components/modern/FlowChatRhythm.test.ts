@@ -19,7 +19,10 @@ describe('FlowChat transcript rhythm', () => {
     const wrapper = styles.slice(styles.indexOf('.virtual-item-wrapper {'), styles.indexOf("&[data-item-type='user-message']"));
 
     // This is a stylesheet contract; browser margin geometry needs real layout.
-    expect(wrapper).toContain('display: flow-root;');
+    // Column flex retains margin containment and avoids WebKit's block-gap
+    // selection paint without converting the internal capsule/Markdown flow.
+    expect(wrapper).toContain('display: flex;');
+    expect(wrapper).toContain('flex-direction: column;');
     expect(wrapper).not.toMatch(/overflow(?:-x|-y)?:\s*(?:hidden|clip|auto|scroll)\s*;/);
   });
 

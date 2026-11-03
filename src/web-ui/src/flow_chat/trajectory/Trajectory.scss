@@ -10,7 +10,8 @@
   line-height: var(--openbitfun-type-meta-line-height);
 
   &__tooltip { max-width: 320px; overflow-wrap: anywhere; }
-  &__body { display: flex; gap: var(--openbitfun-space-2); }
+  &__body { position: relative; display: flex; gap: var(--openbitfun-space-2); }
+  &__loading { position: absolute; inset: 0; margin: auto; z-index: 4; pointer-events: none; }
   &__labels { display: flex; flex-direction: column; flex-shrink: 0; width: 3em; color: var(--openbitfun-color-content-primary); }
   &__labels > span { height: 20px; display: flex; align-items: center; }
   &__rail { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior: contain; cursor: crosshair; }

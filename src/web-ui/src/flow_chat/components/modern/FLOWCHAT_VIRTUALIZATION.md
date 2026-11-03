@@ -69,8 +69,9 @@ mount animation is added, and execution order remains host-owned.
 
 ## Measured row spacing
 
-`VirtualItemRenderer` establishes a `flow-root` on the measured wrapper so
-descendant block margins remain inside its border box. A row replaced by virtual
+`VirtualItemRenderer` establishes a column flex formatting context on the measured
+wrapper so descendant block margins remain inside its border box. Like the former
+`flow-root`, it contains spacing without clipping decorations. A row replaced by virtual
 padding must retain its full occupied height, including trailing item spacing.
 Do not substitute clipping overflow: user-message decorations and controls can
 extend outside the reading column. The rhythm test protects this stylesheet
@@ -639,6 +640,46 @@ continues to participate in the existing footer/reservation contract.
 Native transcript selections use the application selection style. Do not add
 descendant `::selection` overrides to the chat root: WebKitGTK reports show
 uncached highlight pseudo-style resolution during long-transcript repaint.
+
+The measured row, timeline bridge and user-message shell use column flex layout.
+This keeps the positioned model round and right-aligned bubble as flex items,
+avoiding WebKit's block-selection gap fill across turn padding, paragraph gaps
+and the empty space beside a bubble. See `RenderBlock::selectionGaps` in
+[WebKit](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/rendering/RenderBlock.cpp).
+The internal model-round stack stays in block/inline flow so parallel capsules,
+Markdown margins, lists and card grids keep their existing layout. Selection
+remains native: no `user-select: none` on transcript ancestors, range replacement,
+custom selection overlay, extra selection listener or platform-specific path.
+The flex boundary also contains the margins used by virtual-row measurement;
+do not restore block layout in an embedded pane. Stylesheet and DOM fixtures do
+not establish native selection paint; cross-message selection and scroll geometry
+still require native WebView acceptance.
+
+The text leaf also owns a column flex boundary: making only the outer model
+round a flex item leaves the Markdown/plain-text body behind a block wrapper.
+`FlowTextBlock` makes its immediate body a flex item independently of its host
+(direct/timeline reply, collected group, retry history or subagent projection).
+The Deep Research wrapper already supplies the equivalent grid-item boundary.
+Keep the body itself in block flow so paragraph/list margin collapse and inline
+markup remain intact. Exclude `[hidden]` and the horizontal runtime-status row
+from this layout rule. DOM/CSS integration fixtures cover those boundaries and
+native range contents; they cannot prove WebKit's selection pixels.
+
+Markdown table cells retain native table layout. Their renderer-owned cell boxes
+use transparent selection paint for padding and unused row height; an inner flex
+boundary isolates the text body while preserving inline runs, alignment and
+column sizing. These are exact cell-owner pseudo selectors, not a chat-root
+descendant override. Text continues to use the application selection colors;
+forced-colors rendering still needs native acceptance. The two layout wrappers are transparent to excerpt
+text indexing so stored pre-wrapper offsets and cross-cell anchors remain valid.
+
+Code fences have further independent selection roots: the response parser's
+outer `pre`, the positioned/scrollable code body, and the inner highlighted or
+fallback `pre`. Each uses column flex layout, making `code` a flex item while
+keeping its token runs in normal preformatted flow. This covers both one-line
+and multiline fences, including unlabelled fences and the thinking fallback.
+Keep `white-space: pre`, source whitespace, horizontal overflow, and hover-line
+geometry intact. No source nodes or excerpt offsets change for code fences.
 
 Search, temporary excerpts and persistent annotations use `flowChatHighlights`
 to own both their CSS Highlight ranges and attributes on every intersecting text

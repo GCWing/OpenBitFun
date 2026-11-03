@@ -1698,12 +1698,26 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
       return <li {...props} className={['markdown-list-item', className].filter(Boolean).join(' ')}>{children}</li>;
     },
 
-    th({ node: _node, children, className, ...props }: any) {
-      return <th {...props} className={['markdown-header-cell', className].filter(Boolean).join(' ')}>{children}</th>;
+    th({ node: _node, children, className, align, style, ...props }: any) {
+      return (
+        <th {...props} className={['markdown-header-cell', className].filter(Boolean).join(' ')}
+          style={align ? { ...style, textAlign: align } : style}>
+          <div className="markdown-table-cell-content">
+            <div className="markdown-table-cell-body">{children}</div>
+          </div>
+        </th>
+      );
     },
 
-    td({ node: _node, children, className, ...props }: any) {
-      return <td {...props} className={['markdown-data-cell', className].filter(Boolean).join(' ')}>{children}</td>;
+    td({ node: _node, children, className, align, style, ...props }: any) {
+      return (
+        <td {...props} className={['markdown-data-cell', className].filter(Boolean).join(' ')}
+          style={align ? { ...style, textAlign: align } : style}>
+          <div className="markdown-table-cell-content">
+            <div className="markdown-table-cell-body">{children}</div>
+          </div>
+        </td>
+      );
     },
     
     p({ node: _node, children, align, style, className, ...props }: any) {

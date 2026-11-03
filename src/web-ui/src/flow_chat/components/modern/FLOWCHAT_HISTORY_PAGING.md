@@ -1,5 +1,28 @@
 # FlowChat History Paging
 
+## History loading presentation
+
+`HistorySessionLoadingBoundary` covers open intents, cold hydration and bookmark
+restoration with one content-independent composition: seven 24px lines, a rounded
+user bubble and a shared light field. It retains the loading surface until the
+existing initial-content gate and `data-open-viewport-settled` both release.
+Only then does it read the rendered window once to align the decorative lines
+horizontally. Their height stays fixed; the measured rows are never animated,
+re-keyed or scrolled by this boundary.
+
+All abstract marks finish fading before the transcript's outer paint layer
+reveals. Its presentation callback releases the existing two-paint barrier for
+background history completion, so measurable but still hidden text does not
+count as a painted conversation. Interaction and focus stay guarded through
+that handoff. Session and surface-activation identity changes cancel old work;
+failures, inactive scenes,
+reduced motion and hidden documents settle without retaining an animation.
+Ordinary streaming and virtual-window remounts do not replay the transition.
+This is shared Web UI presentation and adds no persistence or transport shape.
+The old `historyOpenIntentSpinner` appearance part remains a hidden compatibility
+slot so installed appearance packages still validate; the new visual is exposed
+through `historySkeleton`.
+
 ## Inactive history residency
 
 Reader bookmarks retain the semantic snapshot, intent and ordinal range, never

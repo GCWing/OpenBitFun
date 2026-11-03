@@ -1449,11 +1449,33 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     };
   }, [activeSessionId, handleTurnsRolledBack]);
 
+  // TanStack may flush a React commit from its earlier native scroll listener.
+  // Rebinding our listener during that commit removes it from the event still
+  // being dispatched, losing the edge state, follow, anchor and paging update.
+  // Keep subscriptions for the scroller's lifetime and read committed callbacks.
+  const nativeScrollCallbacksRef = useRef({
+    captureLeadingExtent, handleScroll, notifyUserScrollIntent,
+    publishViewportSnapshot, scheduleVisibleTurnInfoUpdate,
+    updateIsAtBottom, viewportAnchor,
+  });
+  useLayoutEffect(() => {
+    nativeScrollCallbacksRef.current = {
+      captureLeadingExtent, handleScroll, notifyUserScrollIntent,
+      publishViewportSnapshot, scheduleVisibleTurnInfoUpdate,
+      updateIsAtBottom, viewportAnchor,
+    };
+  });
+
   useEffect(() => {
     if (!scrollerElement) return;
     const { wheel: wheelIntent, touch: touchIntent, scrollbar: scrollbarIntent } = nativeScrollIntent;
     const handleNativeScroll = () => {
       if (isViewportSuspendedRef.current) return;
+      const {
+        captureLeadingExtent, handleScroll, notifyUserScrollIntent,
+        publishViewportSnapshot, scheduleVisibleTurnInfoUpdate,
+        updateIsAtBottom, viewportAnchor,
+      } = nativeScrollCallbacksRef.current;
       // Share this event's read phase. It cannot outlive the event: commits,
       // ResizeObserver and explicit navigation must measure their own layout.
       const geometry = readFlowChatViewportGeometry(scrollerElement);
@@ -1501,17 +1523,17 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     };
     const handleWheel = (event: WheelEvent) => {
       const direction = wheelIntent.wheel(event, scrollerElement.clientHeight);
-      if (direction) notifyUserScrollIntent(direction);
+      if (direction) nativeScrollCallbacksRef.current.notifyUserScrollIntent(direction);
     };
     const handleTouchStart = (event: TouchEvent) => { touchIntent.start(event); };
     const handleTouchMove = (event: TouchEvent) => {
       const direction = touchIntent.move(event);
-      if (direction) notifyUserScrollIntent(direction);
+      if (direction) nativeScrollCallbacksRef.current.notifyUserScrollIntent(direction);
     };
     const handleTouchEnd = () => { touchIntent.end(); };
     const handleKeyDown = (event: KeyboardEvent) => {
       const direction = flowChatKeyScrollDirection(event);
-      if (direction) notifyUserScrollIntent(direction);
+      if (direction) nativeScrollCallbacksRef.current.notifyUserScrollIntent(direction);
     };
     /*
      * Arming rather than releasing outright: `scrollbar-gutter: stable` keeps
@@ -1552,17 +1574,10 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       window.removeEventListener('pointercancel', handlePointerRelease);
     };
   }, [
-    captureLeadingExtent,
     historyPager,
-    handleScroll,
     nativeScrollIntent,
-    notifyUserScrollIntent,
-    publishViewportSnapshot,
-    scheduleVisibleTurnInfoUpdate,
     scrollerElement,
     updateIsAtScrollStart,
-    updateIsAtBottom,
-    viewportAnchor,
     viewportOwner,
   ]);
 
