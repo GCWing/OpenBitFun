@@ -167,7 +167,9 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
   const [remoteFileBrowserInitialPath, setRemoteFileBrowserInitialPath] = useState('/tmp');
   // Per-workspace connection statuses (keyed by connectionId)
   const [workspaceStatuses, setWorkspaceStatuses] = useState<Record<string, ConnectionStatus>>({});
-  const heartbeatInterval = useRef<number | null>(null);
+  const heartbeats = useRef(new Map<string, { timer: number; epoch: number }>());
+  const connectionIdRef = useRef(connectionId);
+  const showFileBrowserRef = useRef(showFileBrowser);
   const workspaceStatusTimeouts = useRef<Map<string, number>>(new Map());
   const workspaceStatusesRef = useRef<Record<string, ConnectionStatus>>({});
   const remoteWorkspaceRef = useRef<RemoteWorkspace | null>(null);
@@ -231,6 +233,8 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     return () => window.removeEventListener(ACP_REQUIREMENTS_INVALIDATED_EVENT, onRequirementsInvalidated);
   }, [connectionId, isConnected, refreshRemoteAcpCapabilities, restoredScope]);
 
+  connectionIdRef.current = connectionId;
+  showFileBrowserRef.current = showFileBrowser;
   workspaceStatusesRef.current = workspaceStatuses;
   remoteWorkspaceRef.current = remoteWorkspace;
 
@@ -368,22 +372,42 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     }
   }, [reportRemoteWorkspaceRestoreDeferred, setWorkspaceStatus]);
 
-  // Cleanup heartbeat on unmount
+  const stopHeartbeat = useCallback((connId?: string) => {
+    for (const [id, heartbeat] of heartbeats.current) {
+      if (connId !== undefined && connId !== id) continue;
+      window.clearInterval(heartbeat.timer);
+      heartbeats.current.delete(id);
+    }
+  }, []);
+
+  const pruneHeartbeats = useCallback(() => {
+    const opened = workspaceManager.getState().openedWorkspaces.values();
+    const usedConnections = new Set(Array.from(opened)
+      .filter(workspace => workspace.workspaceKind === WorkspaceKind.Remote)
+      .map(workspace => workspace.connectionId));
+    if (showFileBrowserRef.current && connectionIdRef.current) {
+      usedConnections.add(connectionIdRef.current);
+    }
+    for (const id of heartbeats.current.keys()) {
+      if (!usedConnections.has(id)) stopHeartbeat(id);
+    }
+  }, [stopHeartbeat]);
+
+  useEffect(() => { pruneHeartbeats(); }, [connectionId, showFileBrowser, pruneHeartbeats]);
+
+  // Cleanup heartbeats on unmount.
   useEffect(() => {
     mountedRef.current = true;
     const statusTimeouts = workspaceStatusTimeouts.current;
     return () => {
       mountedRef.current = false;
-      if (heartbeatInterval.current) {
-        clearInterval(heartbeatInterval.current);
-        heartbeatInterval.current = null;
-      }
+      stopHeartbeat();
       for (const timeoutId of statusTimeouts.values()) {
         window.clearTimeout(timeoutId);
       }
       statusTimeouts.clear();
     };
-  }, []);
+  }, [stopHeartbeat]);
 
   // Try to reconnect a single remote workspace until the reconnect budget expires.
   // Fast connection failures must keep retrying inside the budget; only then remove.
@@ -541,54 +565,46 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     return { workspace: reconnectedWorkspace, connectionId: result.connectionId };
   }, []);
 
-  const statusRef = useRef<ConnectionStatus>(status);
-  statusRef.current = status;
-
   const handleConnectionLost = useCallback((connId: string) => {
-    log.warn('Remote connection lost, attempting auto-reconnect...');
-    setStatus('error');
-    setWorkspaceStatus(connId, 'error');
-    setConnectionError('Connection lost. Attempting to reconnect...');
-    setIsConnected(false);
-    if (heartbeatInterval.current) {
-      clearInterval(heartbeatInterval.current);
-      heartbeatInterval.current = null;
+    log.warn('Remote connection lost, attempting auto-reconnect', { connectionId: connId });
+    if (connectionIdRef.current === connId) {
+      setStatus('error');
+      setConnectionError('Connection lost. Attempting to reconnect...');
+      setIsConnected(false);
     }
-    // Attempt auto-reconnect in background
+    setWorkspaceStatus(connId, 'error');
+    stopHeartbeat(connId);
     void checkRemoteWorkspaceRef.current();
-  }, [setWorkspaceStatus]);
+  }, [setWorkspaceStatus, stopHeartbeat]);
 
   const startHeartbeat = useCallback((connId: string) => {
-    if (heartbeatInterval.current) {
-      clearInterval(heartbeatInterval.current);
-    }
-
-    // Peer Device Mode routes product invokes to the peer; controller-local SSH
-    // heartbeats must not flood HostInvoke with unrelated connection checks.
-    if (isPeerDeviceModeActive()) {
-      heartbeatInterval.current = null;
-      return;
-    }
-
+    if (!mountedRef.current || isPeerDeviceModeActive()) return;
     const scope = getActiveSurfaceScope();
+    if (heartbeats.current.get(connId)?.epoch === scope.epoch) return;
+    stopHeartbeat(connId);
+
     let checking = false;
-    const intervalId = window.setInterval(async () => {
-      if (checking || !scope.isCurrent() || isPeerDeviceModeActive()) return;
+    const heartbeat = { timer: 0, epoch: scope.epoch };
+    heartbeat.timer = window.setInterval(async () => {
+      if (heartbeats.current.get(connId) !== heartbeat) return;
+      if (!scope.isCurrent() || isPeerDeviceModeActive()) {
+        stopHeartbeat(connId);
+        return;
+      }
+      if (checking) return;
       checking = true;
       try {
         const connected = await sshApi.isConnected(connId);
-        if (!scope.isCurrent() || heartbeatInterval.current !== intervalId) return;
-        if (!connected && (workspaceStatusesRef.current[connId] === 'connected' || statusRef.current === 'connected')) {
-          handleConnectionLost(connId);
-        }
+        if (!scope.isCurrent() || heartbeats.current.get(connId) !== heartbeat) return;
+        if (!connected) handleConnectionLost(connId);
       } catch {
-        // Ignore heartbeat errors
+        // A transient invoke error is retried at the next heartbeat.
       } finally {
         checking = false;
       }
     }, 30000);
-    heartbeatInterval.current = intervalId;
-  }, [handleConnectionLost]);
+    heartbeats.current.set(connId, heartbeat);
+  }, [handleConnectionLost, stopHeartbeat]);
   startHeartbeatRef.current = startHeartbeat;
 
   const checkRemoteWorkspace = useCallback(async (activate = true) => {
@@ -626,6 +642,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         }
       }
       scope.assertCurrent('read SSH restore snapshot');
+      if (!mountedRef.current) return;
 
       // Opened workspaces are keyed by workspace ID. Only the pre-ID legacy
       // snapshot still uses connection + path, and it is dropped when an
@@ -666,6 +683,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       const reconnectList = Array.from(toReconnect.values());
       const savedConnectionsList = await sshApi.listSavedConnections();
       scope.assertCurrent('read SSH restore profiles');
+      if (!mountedRef.current) return;
 
       const skipPasswordAutoReconnect = new Set<string>();
       const missingSavedConnections = new Set<string>();
@@ -683,6 +701,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
             hasVault = false;
           }
           scope.assertCurrent('read SSH stored password');
+          if (!mountedRef.current) return;
           if (!hasVault) {
             skipPasswordAutoReconnect.add(ws.connectionId);
           }
@@ -724,6 +743,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           }
           const alreadyConnected = await connectionCheck;
           scope.assertCurrent('check SSH restore connection');
+          if (!mountedRef.current) return { ok: false as const };
 
           if (alreadyConnected) {
             log.info('Remote workspace already connected', { connectionId: workspace.connectionId });
@@ -786,6 +806,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           setWorkspaceStatuses(prev => ({ ...prev, [workspace.connectionId]: 'connecting' }));
           const result = await tryReconnectWithRetry(workspace, scope);
           scope.assertCurrent('restore reconnected SSH workspace');
+          if (!mountedRef.current) return { ok: false as const };
 
           if (result !== false) {
             log.info('Reconnection successful', { newConnectionId: result.connectionId });
@@ -822,17 +843,19 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         })
       );
       scope.assertCurrent('select restored SSH workspace');
+      if (!mountedRef.current) return;
 
       const connectedEntries: ConnectedEntry[] = results
         .filter((r): r is { ok: true; connected: ConnectedEntry } => r.ok)
         .map(r => r.connected);
 
+      for (const entry of connectedEntries) startHeartbeatRef.current(entry.connectionId);
+      pruneHeartbeats();
       const chosen = pickGlobalRemoteAfterReconnect(connectedEntries, reconnectList);
       if (chosen) {
         setIsConnected(true);
         setConnectionId(chosen.connectionId);
         setRemoteWorkspace(chosen.workspace);
-        startHeartbeatRef.current(chosen.connectionId);
       }
     } catch (e) {
       if (isSurfaceChangedError(e)) return;
@@ -847,6 +870,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     }
   }, [
     openRestoredRemoteWorkspaceRecord,
+    pruneHeartbeats,
     refreshRemoteAcpCapabilities,
     restoredScope,
     reportRemoteWorkspaceReconnectFailure,
@@ -879,10 +903,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     const onPeerModeChanged = (event: Event) => {
       const detail = (event as CustomEvent<{ active?: boolean }>).detail;
       if (detail?.active === true) {
-        if (heartbeatInterval.current) {
-          clearInterval(heartbeatInterval.current);
-          heartbeatInterval.current = null;
-        }
+        stopHeartbeat();
         // Cancel pending controller-side reconnect timeouts; the peer owns the
         // SSH lifecycle now, so these must never fire their removal path.
         for (const timeoutId of workspaceStatusTimeouts.current.values()) {
@@ -890,16 +911,19 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         }
         workspaceStatusTimeouts.current.clear();
         log.info('Paused SSH heartbeat while peer device mode is active');
+      } else if (detail?.active === false) {
+        void checkRemoteWorkspaceRef.current();
       }
     };
     window.addEventListener('peer-mode:changed', onPeerModeChanged);
     return () => window.removeEventListener('peer-mode:changed', onPeerModeChanged);
-  }, []);
+  }, [stopHeartbeat]);
 
   useEffect(() => {
     return workspaceManager.addEventListener(event => {
       if (event.type === 'workspace:closed' || event.type === 'workspace:removed') {
         restoredScope(getActiveSurfaceScope()).bindings.delete(event.workspaceId);
+        pruneHeartbeats();
         return;
       }
       const workspace =
@@ -929,7 +953,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       const metadataOnly = event.type === 'workspace:updated' || event.type === 'workspace:primary-assistant-changed';
       void checkRemoteWorkspaceRef.current(!metadataOnly);
     });
-  }, [restoredScope, setWorkspaceStatus]);
+  }, [pruneHeartbeats, restoredScope, setWorkspaceStatus]);
 
   const connect = useCallback(async (
     _connId: string,
@@ -1034,12 +1058,8 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     const currentRemoteWorkspace = remoteWorkspace;
     const currentConnectionId = connectionId;
 
-    if (heartbeatInterval.current) {
-      clearInterval(heartbeatInterval.current);
-      heartbeatInterval.current = null;
-    }
-
     if (currentConnectionId) {
+      stopHeartbeat(currentConnectionId);
       try {
         await sshApi.disconnect(currentConnectionId);
       } catch {
@@ -1058,7 +1078,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       setWorkspaceStatus(currentRemoteWorkspace.connectionId, 'disconnected');
       await removeRemoteWorkspaceRecord(currentRemoteWorkspace);
     }
-  }, [connectionId, remoteWorkspace, setWorkspaceStatus]);
+  }, [connectionId, remoteWorkspace, setWorkspaceStatus, stopHeartbeat]);
 
   /**
    * Opens the record for an interactive selection. A record bound to another

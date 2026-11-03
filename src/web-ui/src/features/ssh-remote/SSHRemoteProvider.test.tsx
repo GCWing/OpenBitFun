@@ -600,6 +600,88 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(sshApiMock.openWorkspace).toHaveBeenCalledWith('conn-1', second.rootPath);
   });
 
+  it('monitors every opened connection and stops checking a connection after its last workspace closes', async () => {
+    vi.useFakeTimers();
+    const first = createRemoteWorkspace();
+    const second = { ...first, id: 'ws-remote-2', connectionId: 'conn-2', rootPath: '/root/other' };
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[first.id, first], [second.id, second]]), activeWorkspaceId: first.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.isConnected.mock.calls.map(([id]) => id).sort()).toEqual(['conn-1', 'conn-2']);
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[second.id, second]]), activeWorkspaceId: second.id,
+    });
+    emitWorkspaceManagerEvent({ type: 'workspace:closed', workspaceId: first.id });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-2');
+    workspaceManagerMock.getState.mockReturnValue({ loading: false, openedWorkspaces: new Map(), activeWorkspaceId: null });
+    emitWorkspaceManagerEvent({ type: 'workspace:closed', workspaceId: second.id });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(sshApiMock.isConnected).not.toHaveBeenCalled();
+  });
+
+  it('resumes local connection monitoring after leaving Peer mode without needing a catalog event', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    peerModeFlagMock.active = true;
+    activateSurface('peer-b');
+    await act(async () => { window.dispatchEvent(new CustomEvent('peer-mode:changed', { detail: { active: true } })); });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(sshApiMock.isConnected).not.toHaveBeenCalled();
+    peerModeFlagMock.active = false;
+    activateSurface('local');
+    await act(async () => { window.dispatchEvent(new CustomEvent('peer-mode:changed', { detail: { active: false } })); });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+  });
+
+  it('does not restart heartbeats when a restore check finishes after the provider closes', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    let finishCheck!: (connected: boolean) => void;
+    sshApiMock.isConnected.mockReturnValueOnce(new Promise<boolean>(resolve => { finishCheck = resolve; }));
+    await renderProvider();
+    await act(async () => { root.unmount(); });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { finishCheck(true); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(sshApiMock.openWorkspace).not.toHaveBeenCalled();
+    expect(sshApiMock.isConnected).not.toHaveBeenCalled();
+    expect(ACPClientAPI.probeClientRequirements).not.toHaveBeenCalled();
+  });
+
+  it('does not postpone the heartbeat deadline when workspace metadata is reconciled', async () => {
+    vi.useFakeTimers();
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace });
+    await act(async () => { await Promise.resolve(); });
+    sshApiMock.isConnected.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('conn-1');
+  });
+
   it('refreshes capabilities after a config invalidation without looping on probe completion', async () => {
     const workspace = createRemoteWorkspace();
     workspaceManagerMock.getState.mockReturnValue({
@@ -1012,6 +1094,24 @@ describe('SSHRemoteProvider remote workspace connection conflicts', () => {
     });
     sshApiMock.openWorkspace.mockClear();
   }
+
+  it('keeps a browsing connection monitored until the unused browser is dismissed', async () => {
+    vi.useFakeTimers();
+    try {
+      await renderProvider();
+      await connectDeployProfile();
+      expect(context!.showFileBrowser).toBe(true);
+      sshApiMock.isConnected.mockClear();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(sshApiMock.isConnected).toHaveBeenCalledExactlyOnceWith('ssh-deploy@example.com');
+      await act(async () => { context!.setShowFileBrowser(false); });
+      sshApiMock.isConnected.mockClear();
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(sshApiMock.isConnected).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('keeps a background-restored record bound to its owner and reports it', async () => {
     workspaceManagerMock.consumeStartupLegacyRemoteWorkspaceSnapshot.mockReturnValue({
