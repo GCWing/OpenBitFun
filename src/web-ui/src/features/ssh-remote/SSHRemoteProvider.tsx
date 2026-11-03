@@ -707,6 +707,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
       type ConnectedEntry = { workspace: RemoteWorkspace; connectionId: string };
       const refreshedReconnects = new Set<string>();
+      const disconnectedConnections = new Set<string>();
       const connectionChecks = new Map<string, Promise<boolean>>();
       const results = await Promise.all(
         reconnectList.map(async workspace => {
@@ -746,6 +747,17 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
             void flowChatStore.initializeFromDisk(record.id, 'ssh_remote_auto_restore_existing').catch(() => {});
 
             return { ok: true as const, connected: { workspace, connectionId: workspace.connectionId } };
+          }
+
+          // Another surface may restore the transport before our next check.
+          // Observing a disconnect retires the binding/probe even when this
+          // renderer cannot reconnect (for example, credentials are missing).
+          const restored = restoredScope(scope);
+          if (openedRecord) restored.bindings.delete(openedRecord.id);
+          if (!disconnectedConnections.has(workspace.connectionId)) {
+            disconnectedConnections.add(workspace.connectionId);
+            restored.capabilityProbes.delete(workspace.connectionId);
+            ACPClientAPI.invalidateRemoteRequirementProbeCache(workspace.connectionId);
           }
 
           if (missingSavedConnections.has(workspace.connectionId)) {

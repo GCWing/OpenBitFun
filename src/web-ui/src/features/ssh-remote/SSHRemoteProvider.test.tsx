@@ -729,6 +729,32 @@ describe('SSHRemoteProvider workspace connection state', () => {
     expect(latestStatuses['conn-1']).toBe('connected');
   });
 
+  it('refreshes a connection restored elsewhere after credential-only recovery was deferred', async () => {
+    const workspace = createRemoteWorkspace();
+    workspaceManagerMock.getState.mockReturnValue({
+      loading: false, openedWorkspaces: new Map([[workspace.id, workspace]]), activeWorkspaceId: workspace.id,
+    });
+    sshApiMock.listSavedConnections.mockResolvedValue([{
+      id: 'conn-1', name: 'dev-box', host: 'example.com', port: 22, username: 'dev',
+      authType: { type: 'Password' },
+    }]);
+    sshApiMock.hasStoredPassword.mockResolvedValue(false);
+    sshApiMock.isConnected.mockResolvedValue(true);
+    await renderProvider();
+    sshApiMock.isConnected.mockResolvedValue(false);
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace });
+    await act(async () => { await Promise.resolve(); });
+    expect(latestStatuses['conn-1']).toBe('error');
+    expect(sshApiMock.connect).not.toHaveBeenCalled();
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(1);
+    sshApiMock.isConnected.mockResolvedValue(true);
+    emitWorkspaceManagerEvent({ type: 'workspace:updated', workspace });
+    await act(async () => { await Promise.resolve(); });
+    expect(latestStatuses['conn-1']).toBe('connected');
+    expect(sshApiMock.openWorkspace).toHaveBeenCalledTimes(2);
+    expect(ACPClientAPI.probeClientRequirements).toHaveBeenCalledTimes(2);
+  });
+
   it.each([true, false])('keeps an established connection green during a session-switch probe (saved profile: %s)', async (hasSavedProfile) => {
     const workspace = createRemoteWorkspace();
     workspaceManagerMock.getState.mockReturnValue({
