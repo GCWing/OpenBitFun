@@ -98,7 +98,10 @@ the container. OpenBitFun does not silently translate host paths to container
 paths. File transfer uses binary stdin/stdout streams. Uploads write to a
 same-directory temporary file and rename atomically after success; cancellation
 leaves the previous destination intact. Ordinary SSH workspaces continue to use
-SFTP.
+SFTP for file transfers. Recursive directory deletion runs one command on the
+effective SSH, Docker or WSL target, rather than enumerating and deleting each
+child across the connection. It requires target-side shell execution and removes
+symbolic links without following their targets.
 
 Text command output is decoded as one UTF-8 byte stream, so a multibyte
 character split across SSH or Docker chunks is preserved. File bytes are never
