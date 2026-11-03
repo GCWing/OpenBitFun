@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -16,15 +16,17 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
   anchorRef: RefObject<HTMLElement | null>;
   layerRef: RefObject<HTMLElement | null>;
   placement?: LayerPlacement;
-  matchWidth?: boolean;
+  /** Match the anchor exactly, or use its width as the layer's minimum. */
+  matchWidth?: boolean | "minimum";
   /** Position the layer over the anchor when the layer visually replaces it. */
   overlapAnchor?: boolean;
   revision?: unknown;
   point?: { x: number; y: number };
 }) {
   const [layout, setLayout] = useState<{ style: CSSProperties; placement: LayerPlacement } | null>(null);
+  const measuredContentWidth = useRef(0);
   useIsomorphicLayoutEffect(() => {
-    if (!open) { setLayout(null); return; }
+    if (!open) { measuredContentWidth.current = 0; setLayout(null); return; }
     const anchor = anchorRef.current;
     const layer = layerRef.current;
     const view = layer?.ownerDocument.defaultView;
@@ -40,10 +42,20 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
       const vy = viewport?.offsetTop ?? 0;
       const vw = viewport?.width ?? view.innerWidth;
       const vh = viewport?.height ?? view.innerHeight;
-      const width = matchWidth ? Math.min(rect.width, vw - padding * 2) : undefined;
-      layer.style.maxWidth = `${Math.max(0, vw - padding * 2)}px`;
+      const maxWidth = Math.max(0, vw - padding * 2);
+      const anchorWidth = Math.min(rect.width, maxWidth);
+      const width = matchWidth === true ? anchorWidth : undefined;
+      const minWidth = matchWidth === "minimum"
+        ? Math.min(Math.max(anchorWidth, measuredContentWidth.current), maxWidth)
+        : undefined;
+      layer.style.maxWidth = `${maxWidth}px`;
       if (width !== undefined) layer.style.width = `${width}px`;
+      if (minWidth !== undefined) layer.style.minWidth = `${minWidth}px`;
       const box = layer.getBoundingClientRect();
+      // Filtering can remove the widest item. Keep the open surface stable.
+      if (matchWidth === "minimum") {
+        measuredContentWidth.current = Math.max(measuredContentWidth.current, box.width);
+      }
       const horizontal = placement === "left" || placement === "right";
       const before = horizontal ? rect.left - vx : rect.top - vy;
       const after = horizontal ? vx + vw - rect.right : vy + vh - rect.bottom;
@@ -72,7 +84,7 @@ export function useAnchoredLayer({ open, anchorRef, layerRef, placement = "botto
           ? (useBefore ? rect.bottom - height : rect.top)
           : (useBefore ? rect.top - height - resolvedGap : rect.bottom + resolvedGap);
       const style: CSSProperties = {
-        position: "fixed", width, maxWidth: vw - padding * 2, maxHeight,
+        position: "fixed", width, minWidth, maxWidth, maxHeight,
         left: Math.max(vx + padding, Math.min(left, vx + vw - box.width - padding)),
         top: Math.max(vy + padding, Math.min(top, vy + vh - height - padding)),
       };

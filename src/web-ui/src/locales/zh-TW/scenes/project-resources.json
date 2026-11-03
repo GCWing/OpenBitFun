@@ -82,5 +82,18 @@
     "listTitle": "任務列表",
     "summary": "已啟用 {{enabled}} · 已暫停 {{paused}}"
   },
-  "failureDetails": "查看原因"
+  "failureDetails": "查看原因",
+  "defaults": {
+    "title": "預設設定",
+    "labelPrefix": "{{label}}：",
+    "primary_model": "主力模型",
+    "fast_model": "快速模型",
+    "mode": "預設模式",
+    "inherit": "跟隨全域",
+    "unsupported": "目前主機版本不支援專案預設設定，請升級後重試。",
+    "loadFailed": "專案預設設定載入失敗，請重試。",
+    "saveFailed": "儲存失敗，請重新選擇後重試。",
+    "saved": "已儲存",
+    "unavailableValue": "無法使用：{{value}}"
+  }
 }

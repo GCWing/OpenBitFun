@@ -193,6 +193,9 @@ pub struct AppConfig {
     /// An empty map also advertises support to older/newer controller surfaces.
     #[serde(default)]
     pub assistant_default_sessions: HashMap<String, String>,
+    /// Project defaults keyed by the owning host's project workspace ID.
+    #[serde(default)]
+    pub project_defaults: HashMap<String, crate::project_defaults::ProjectDefaultsConfig>,
     /// Global, user-defined groups used to organize Agent tool pickers.
     #[serde(default, skip_serializing_if = "UserToolGroupsConfig::is_empty")]
     pub user_tool_groups: UserToolGroupsConfig,
@@ -2167,6 +2170,7 @@ impl Default for AppConfig {
             voice_call: VoiceCallConfig::default(),
             keybindings: None,
             assistant_default_sessions: HashMap::new(),
+            project_defaults: HashMap::new(),
             user_tool_groups: UserToolGroupsConfig::default(),
             user_skill_groups: UserSkillGroupsConfig::default(),
             skill_market: SkillMarketConfig::default(),

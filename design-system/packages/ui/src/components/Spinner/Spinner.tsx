@@ -1,24 +1,35 @@
-import { forwardRef, type HTMLAttributes } from "react";
+import { forwardRef, useEffect, useRef, type HTMLAttributes } from "react";
+import { startBrandPlayback } from "../../brand/brandPlayback";
 import { classNames } from "../../internal/classNames";
+import { createSpinnerAnimations } from "./spinnerMotion";
 import styles from "./Spinner.module.css";
 
 export type SpinnerSize = "xs" | "sm" | "md" | "lg";
-export type SpinnerVariant = "bars" | "matrix";
+export type SpinnerVariant = "logo" | "bars" | "matrix";
 
 export interface SpinnerProps
   extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
   size?: SpinnerSize;
+  /** `matrix` is a compatibility alias for the logo presentation. */
   variant?: SpinnerVariant;
+  active?: boolean;
 }
 
 export const Spinner = forwardRef<HTMLSpanElement, SpinnerProps>(function Spinner({
   "aria-label": ariaLabel,
   className,
   size = "md",
-  variant = "matrix",
+  variant = "logo",
+  active = true,
   ...props
 }, ref) {
-  const cellCount = variant === "matrix" ? 9 : 3;
+  const presentation = variant === "matrix" ? "logo" : variant;
+  const glyphRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const glyph = glyphRef.current;
+    if (!active || presentation !== "logo" || !glyph) return;
+    return startBrandPlayback(glyph, () => createSpinnerAnimations(glyph));
+  }, [active, presentation]);
   return (
     <span
       {...props}
@@ -27,11 +38,16 @@ export const Spinner = forwardRef<HTMLSpanElement, SpinnerProps>(function Spinne
       className={classNames(styles.root, className)}
       data-openbitfun-component="spinner"
       data-size={size}
-      data-variant={variant}
+      data-variant={presentation}
+      data-active={active}
       ref={ref}
       role={ariaLabel ? "status" : undefined}
     >
-      {Array.from({ length: cellCount }, (_, index) => (
+      {presentation === "logo" ? (
+        <span aria-hidden="true" className={styles.glyph} ref={glyphRef}>
+          <span className={styles.artwork} />
+        </span>
+      ) : Array.from({ length: 3 }, (_, index) => (
         <span aria-hidden="true" className={styles.cell} key={index} />
       ))}
     </span>

@@ -1999,8 +1999,8 @@ impl ExecutionEngine {
                 )
                 .await;
         }
-        let ai_config = SessionManager::load_ai_config_for_model_resolution()
-            .await
+        let ai_config = SessionManager::load_ai_config_for_session(&session.config)
+            .await?
             .ok_or_else(|| {
                 OpenBitFunError::AIClient(
                     "Failed to get config service for model resolution".to_string(),

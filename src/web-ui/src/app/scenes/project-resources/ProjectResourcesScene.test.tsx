@@ -21,6 +21,7 @@ vi.mock('@/infrastructure/api/service-api/PermissionAPI', () => ({ permissionAPI
   listProjectGrants: mocks.grants, getProjectRules: mocks.rules,
 } }));
 vi.mock('./useProjectResources', () => ({ useProjectResources: mocks.load }));
+vi.mock('./ProjectDefaultsSection', () => ({ ProjectDefaultsSection: () => <section data-openbitfun-part="defaults" aria-label="defaults.title" /> }));
 vi.mock('@/shared/services/FileTabManager', () => ({ fileTabManager: { openFile: mocks.openFile } }));
 vi.mock('@/app/stores/navSceneStore', () => ({ useNavSceneStore: { getState: () => ({ openWorkspaceResources: mocks.browse, closeNavScene: vi.fn() }) } }));
 vi.mock('../agents/components/CreateAgentDialog', () => ({ default: (props: unknown) => { mocks.agentDialog(props); return <div data-testid="agent-dialog" />; } }));
@@ -79,7 +80,7 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); resetDeviceSurfaceForTest(); });
 
-it('renders four sections with inline project permissions without activating the project', async () => {
+it('renders project defaults above metrics and inline project permissions without activating the project', async () => {
   await render();
   expect(container.querySelector('h1')?.textContent).toBe('Project A');
   expect(container.querySelector('header')?.textContent).not.toContain('/a');
@@ -88,6 +89,8 @@ it('renders four sections with inline project permissions without activating the
   expect([...container.querySelectorAll('h2')].map(item => item.textContent)).toEqual([
     'directories.title', 'automation.title', 'projectPermissions.title', 'capabilities.title',
   ]);
+  expect(container.querySelector('[data-openbitfun-part="defaults"]')!.compareDocumentPosition(
+    container.querySelector('[data-openbitfun-part="metrics"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   const permissions = container.querySelector('[data-openbitfun-part="permissions"]')!;
   expect(permissions.textContent).toContain('projectPermissions.addAuthorization');
   expect(container.textContent).not.toContain('projectPermissions.description');

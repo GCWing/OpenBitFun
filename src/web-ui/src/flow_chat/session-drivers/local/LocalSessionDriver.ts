@@ -1,4 +1,6 @@
 import { readModelSelections } from '@/infrastructure/config/services/modelSelections';
+import { readProjectDefaults } from '@/infrastructure/config/services/ProjectDefaultsService';
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { acpClientIdFromAgentType } from '../../utils/acpSession';
 import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../../services/hostDialogQueue';
@@ -72,6 +74,16 @@ export const localSessionDriver: SessionDriver = {
     } = seed;
     surfaceScope.assertCurrent('start local session creation');
     let config = seedConfig;
+    if (!config.modelName && !config.modelPoolId && !acpClientIdFromAgentType(agentType)) {
+      const catalog = workspaceManager.getState();
+      const workspace = catalog.openedWorkspaces.get(workspaceId ?? '')
+        ?? catalog.recentWorkspaces.find(item => item.id === workspaceId);
+      const projectId = workspace?.worktree && !workspace.worktree.isMain && workspace.workspaceKind !== 'remote'
+        ? workspace.worktree.mainWorkspaceId : workspaceId;
+      const projectPrimary = projectId ? (await readProjectDefaults(projectId)).defaults.primary_model : undefined;
+      surfaceScope.assertCurrent('resolve project default model');
+      if (projectPrimary) config = { ...config, modelName: projectPrimary };
+    }
     if (!config.modelName && !config.modelPoolId && !acpClientIdFromAgentType(agentType)) {
       const { mode: selection } = await readModelSelections();
       surfaceScope.assertCurrent('resolve default model target');

@@ -7,6 +7,7 @@ import { isSessionEmptyForCopy } from '../../utils/sessionCopy';
 
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
+import { readProjectDefaults } from '@/infrastructure/config/services/ProjectDefaultsService';
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
 import { notificationService } from '../../../shared/notification-system';
@@ -404,7 +405,10 @@ export const resolveAgentTypeForSessionCreation = async (
   }
 
   try {
-    const configuredDefaultMode = resolveConfiguredChatInputDefaultModeId(
+    const projectId = workspace?.worktree && !workspace.worktree.isMain && workspace.workspaceKind !== WorkspaceKind.Remote
+      ? workspace.worktree.mainWorkspaceId : workspace?.id;
+    const projectMode = projectId ? (await readProjectDefaults(projectId)).defaults.mode : undefined;
+    const configuredDefaultMode = projectMode || resolveConfiguredChatInputDefaultModeId(
       normalizeChatInputModePreference(
         await configAPI.getConfig(CHAT_INPUT_MODE_PREFERENCE_CONFIG_PATH, {
           skipRetryOnNotFound: true,

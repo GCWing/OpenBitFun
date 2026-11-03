@@ -40,6 +40,8 @@ const agentApiMocks = vi.hoisted(() => ({
 const configApiMocks = vi.hoisted(() => ({
   getConfig: vi.fn(),
 }));
+const projectDefaults = vi.hoisted(() => ({ read: vi.fn(async (_id: string) => ({ supported: true, defaults: {} as { mode?: string } })) }));
+vi.mock('@/infrastructure/config/services/ProjectDefaultsService', () => ({ readProjectDefaults: projectDefaults.read }));
 
 const configManagerMocks = vi.hoisted(() => ({
   getConfigs: vi.fn(),
@@ -295,6 +297,7 @@ function createContext(
 }
 
 describe('resolveAgentTypeForSessionCreation', () => {
+  beforeEach(() => { projectDefaults.read.mockResolvedValue({ supported: true, defaults: {} }); });
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -310,6 +313,15 @@ describe('resolveAgentTypeForSessionCreation', () => {
     ]);
 
     await expect(resolveAgentTypeForSessionCreation(undefined, null)).resolves.toBe('PlannerPlus');
+  });
+
+  it('uses the owning project mode before the global preference and preserves explicit choices', async () => {
+    projectDefaults.read.mockResolvedValue({ supported: true, defaults: { mode: 'Ultimate' } });
+    agentApiMocks.getAvailableModes.mockResolvedValue([{ id: 'Standard' }, { id: 'Ultimate' }]);
+    const workspace = { id: 'ssh-project', workspaceKind: 'remote' } as any;
+    await expect(resolveAgentTypeForSessionCreation(undefined, workspace)).resolves.toBe('Ultimate');
+    expect(projectDefaults.read).toHaveBeenCalledWith('ssh-project');
+    await expect(resolveAgentTypeForSessionCreation('Standard', workspace)).resolves.toBe('Standard');
   });
 
   it('does not override any explicit mode, including the Standard Harness id', async () => {

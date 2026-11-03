@@ -17,6 +17,8 @@ const { mockCreateSession, mockStartAcpDialogTurn, mockStartAgenticDialogTurn, m
 }));
 
 const poolMocks = vi.hoisted(() => ({ list: vi.fn(), supported: vi.fn(() => false), read: vi.fn() }));
+const projectDefaults = vi.hoisted(() => ({ read: vi.fn(async (_id: string) => ({ supported: true, defaults: {} as { primary_model?: string } })) }));
+vi.mock('@/infrastructure/config/services/ProjectDefaultsService', () => ({ readProjectDefaults: projectDefaults.read }));
 vi.mock('@/infrastructure/config/services/modelSelections', () => ({ readModelSelections: poolMocks.read }));
 vi.mock('@/infrastructure/api/service-api/ModelPoolAPI', () => ({
   modelPoolAPI: { list: poolMocks.list }, supportsModelPools: poolMocks.supported,
@@ -118,6 +120,15 @@ describe('localSessionDriver conversation creation', () => {
       modelPoolId: 'pool-1', modelPoolSelectionPending: true, reasoningPreset: undefined,
     });
     expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('uses the project primary model before the global default target', async () => {
+    projectDefaults.read.mockResolvedValueOnce({ supported: true, defaults: { primary_model: 'project-model' } });
+    const createSession = vi.fn();
+    await localSessionDriver.createSession({ flowChatStore: { createSession } } as any, { ...seed(), config: {} });
+    expect(projectDefaults.read).toHaveBeenCalledWith('project');
+    expect(createSession.mock.calls[0][1].modelName).toBe('project-model');
+    expect(poolMocks.read).not.toHaveBeenCalled();
   });
 
   it('preserves an explicit single-model choice even when a default pool exists', async () => {

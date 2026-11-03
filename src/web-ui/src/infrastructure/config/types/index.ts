@@ -81,7 +81,16 @@ export interface AppConfig {
   user_tool_groups?: UserToolGroupsConfig;
   /** Absent on hosts that predate assistant entry-session preferences. */
   assistant_default_sessions?: Record<string, string>;
+  /** Absent on hosts that predate project defaults. */
+  project_defaults?: Record<string, ProjectDefaultsConfig>;
   user_skill_groups?: UserSkillGroupsConfig;
+}
+
+export interface ProjectDefaultsConfig {
+  primary_model?: string | null;
+  fast_model?: string | null;
+  mode?: string | null;
+  [key: string]: unknown;
 }
 
 export interface UserToolGroupsConfig {

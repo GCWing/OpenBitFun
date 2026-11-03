@@ -21,6 +21,7 @@ import { ProjectScheduledJobList } from './ProjectScheduledJobList';
 import { ProjectResourceList, type ProjectResourceListAction } from './ProjectResourceList';
 import { useProjectDirectoryActions } from './useProjectDirectoryActions';
 import './ProjectResourcesScene.scss';
+import { ProjectDefaultsSection } from './ProjectDefaultsSection';
 
 const RelatedPathsDialog = lazyWithRecovery(() => import('@/app/components/NavPanel/sections/workspaces/WorkspaceRelatedPathsDialog'));
 const WorkspaceIconDialog = lazyWithRecovery(() => import('@/app/components/WorkspaceIcon/WorkspaceIconDialog'));
@@ -122,6 +123,7 @@ function ProjectResourcesContent({ workspace, scope, isActive }: { workspace: Wo
           <h1>{workspace.name}</h1>
           {workspace.description && <p className="project-resources__description">{workspace.description}</p>}
         </header>
+        <ProjectDefaultsSection workspace={workspace} scope={scope} isActive={isActive} />
         <ProjectResourceMetrics data={data} onNavigate={navigateToResource} />
         {error && <p className="project-resources__error" role="alert">{error}</p>}
         {!fileAccess && <p className="project-resources__error" role="status">{t('connectionUnavailable')}</p>}
@@ -143,7 +145,7 @@ function ProjectResourcesContent({ workspace, scope, isActive }: { workspace: Wo
           <ProjectResourceSummary title={t('automation.countLabel')} value={data.jobs.status === 'ready' ? formatNumber(jobs.length) : '—'}
             description={data.jobs.status === 'ready' ? t('automation.summary', {
               enabled: formatNumber(jobs.filter(job => job.enabled).length), paused: formatNumber(jobs.filter(job => !job.enabled).length),
-            }) : undefined} listTitle={jobsEmpty ? undefined : t('automation.listTitle')} boundedList={jobs.length > 0} onOpen={() => setDialog('jobs')}>
+            }) : undefined} listTitle={jobsEmpty ? undefined : t('automation.listTitle')} boundedList onOpen={() => setDialog('jobs')}>
             <LoadFeedback state={data.jobs} retry={data.refresh} />
             {jobs.length > 0 && <ProjectScheduledJobList jobs={jobs} onOpen={() => setDialog('jobs')} />}
             {jobsEmpty && <div className="project-resource-summary__empty">

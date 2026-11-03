@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('./settingsRegistry', () => {
+  const icon = () => null;
   const pages = [
     { id: 'application.general', categoryId: 'application', labelKey: 'General' },
     { id: 'application.appearance', categoryId: 'application', labelKey: 'Appearance' },
@@ -19,7 +20,7 @@ vi.mock('./settingsRegistry', () => {
       ],
     },
     { id: 'ai.models', categoryId: 'ai', labelKey: 'Models' },
-  ].map((page) => ({ descriptionKey: 'Description', keywords: ['settings'], searchPhrases: [], ...page }));
+  ].map((page) => ({ icon, descriptionKey: 'Description', keywords: ['settings'], searchPhrases: [], ...page }));
   return {
     DEFAULT_SETTINGS_PAGE_ID: 'application.general',
     SETTINGS_PAGE_MANIFESTS: pages,

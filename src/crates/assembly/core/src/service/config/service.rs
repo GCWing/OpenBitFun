@@ -232,6 +232,22 @@ impl ConfigService {
         Ok(ai)
     }
 
+    pub async fn get_project_ai_config(
+        &self,
+        project_id: Option<&str>,
+    ) -> OpenBitFunResult<AIConfig> {
+        let mut ai = self.get_effective_ai_config().await?;
+        if let Some(project_id) = project_id {
+            let app: crate::service::config::AppConfig = self.get_config(Some("app")).await?;
+            if let Some(defaults) = app.project_defaults.get(project_id) {
+                defaults
+                    .apply_model_defaults(&mut ai)
+                    .map_err(OpenBitFunError::validation)?;
+            }
+        }
+        Ok(ai)
+    }
+
     pub async fn remove_runtime_ai_model(&self, model_id: &str) {
         self.runtime_ai_models.write().await.remove(model_id);
     }
@@ -2010,6 +2026,50 @@ mod tests {
             .get_runtime_ai_model("sdk:openai:fixture")
             .await
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn project_defaults_are_host_scoped_and_preserve_global_models() {
+        let (service, _dir) = test_service("project-defaults").await;
+        service
+            .set_config(
+                "ai.models",
+                vec![
+                    model("global", true, ModelCategory::GeneralChat),
+                    model("ssh-main", true, ModelCategory::GeneralChat),
+                    model("ssh-fast", true, ModelCategory::GeneralChat),
+                ],
+            )
+            .await
+            .unwrap();
+        service
+            .set_config("ai.default_models.primary", "global")
+            .await
+            .unwrap();
+        service.set_config("app.project_defaults", serde_json::json!({
+            "ssh-project": { "primary_model": "ssh-main", "fast_model": "ssh-fast", "mode": "Ultimate" }
+        })).await.unwrap();
+        let project = service
+            .get_project_ai_config(Some("ssh-project"))
+            .await
+            .unwrap();
+        assert_eq!(
+            project.resolve_model_selection("primary").as_deref(),
+            Some("ssh-main")
+        );
+        assert_eq!(
+            project.resolve_model_selection("fast").as_deref(),
+            Some("ssh-fast")
+        );
+        for other in [None, Some("other-project")] {
+            let ai = service.get_project_ai_config(other).await.unwrap();
+            assert_eq!(
+                ai.resolve_model_selection("primary").as_deref(),
+                Some("global")
+            );
+        }
+        let persisted: AIConfig = service.get_config(Some("ai")).await.unwrap();
+        assert_eq!(persisted.default_models.primary.as_deref(), Some("global"));
     }
 
     #[tokio::test]

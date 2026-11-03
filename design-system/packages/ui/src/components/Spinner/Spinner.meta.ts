@@ -2,15 +2,16 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const spinnerMeta = {
   category: "feedback",
-  description: "A compact decorative or labeled activity indicator with canonical matrix and bar presentations.",
+  description: "A compact activity indicator with a breathing, rotating double-hexagon logo and a bar presentation.",
   maturity: "stable",
   name: "Spinner",
   props: [
-    { defaultValue: "matrix", name: "variant", type: "matrix | bars" },
+    { defaultValue: "logo", name: "variant", type: "logo | bars (matrix is a legacy alias for logo)" },
     { defaultValue: "md", name: "size", type: "xs | sm | md | lg" },
+    { defaultValue: "true", name: "active", type: "boolean" },
     { name: "aria-label", type: "string" },
   ],
-  states: ["matrix", "bars", "reduced-motion"],
+  states: ["logo", "bars", "reduced-motion"],
   tokens: [
     "color.content.secondary",
     "color.content.muted",
