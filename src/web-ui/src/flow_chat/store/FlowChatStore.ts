@@ -858,6 +858,49 @@ function preserveClientDerivedDisplayItems(
   return changed ? { ...persisted, modelRounds } : persisted;
 }
 
+const ROUND_TIMING_KEYS = [
+  'firstChunkMs',
+  'firstVisibleOutputMs',
+  'streamDurationMs',
+  'ttftMs',
+  'attemptCount',
+] as const;
+
+/**
+ * Keep live `ModelRoundCompleted` timing that a settled record lacks.
+ *
+ * Hosts that predate journal-carried round timing rebuild the last round of a
+ * Turn without it (duration persisted as 0), because their completion write
+ * usually lands before this client's checkpoint of that event. Adopting such a
+ * record would erase the TTFT and output rate this window already measured.
+ */
+function preserveLiveRoundTiming(current: DialogTurn, persisted: DialogTurn): DialogTurn {
+  let changed = false;
+  const modelRounds = persisted.modelRounds.map(persistedRound => {
+    const currentRound = current.modelRounds.find(round => round.id === persistedRound.id);
+    if (!currentRound) {
+      return persistedRound;
+    }
+    const patch: Partial<ModelRound> = {};
+    const isMeasured = (durationMs?: number) => typeof durationMs === 'number' && durationMs > 0;
+    if (!isMeasured(persistedRound.durationMs) && isMeasured(currentRound.durationMs)) {
+      patch.durationMs = currentRound.durationMs;
+    }
+    for (const key of ROUND_TIMING_KEYS) {
+      if (persistedRound[key] === undefined && currentRound[key] !== undefined) {
+        patch[key] = currentRound[key];
+      }
+    }
+    if (Object.keys(patch).length === 0) {
+      return persistedRound;
+    }
+    changed = true;
+    return { ...persistedRound, ...patch };
+  });
+
+  return changed ? { ...persisted, modelRounds } : persisted;
+}
+
 /**
  * Whether a persisted-record read may replace the Turn already projected.
  *
@@ -8646,7 +8689,10 @@ export class FlowChatStore {
         return prev;
       }
       const current = session.dialogTurns[turnIndex];
-      const reconciled = preserveClientDerivedDisplayItems(current, incoming);
+      const reconciled = preserveLiveRoundTiming(
+        current,
+        preserveClientDerivedDisplayItems(current, incoming),
+      );
       if (
         !['completed', 'cancelled', 'error'].includes(current.status)
         || !persistedReadMayReplaceTurn(

@@ -7940,6 +7940,37 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
     ).toContainEqual(expect.objectContaining({ id: 'plan-display-test' }));
   });
 
+  it('keeps live round timing when the settled host record lost it', async () => {
+    // Older hosts rebuild the last round at Turn completion before this
+    // window's checkpoint of `ModelRoundCompleted`, persisting duration 0 and
+    // no TTFT. Adopting that would hide the turn's TTFT and output rate.
+    await hydrateSessionWithContent();
+    flowChatStore.updateModelRound('history-1', 'turn-0', 'round-0', round => ({
+      ...round,
+      durationMs: 2172,
+      streamDurationMs: 1500,
+      ttftMs: 690,
+      attemptCount: 1,
+    }));
+
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: hostSession(),
+      turns: [{
+        ...createPersistedTurn(0),
+        modelRounds: [{ ...HYDRATED_ROUND, durationMs: 0 }],
+        endTime: 3,
+      }],
+      contextRestoreState: 'ready',
+    });
+
+    await expect(
+      flowChatStore.reconcileSettledDialogTurn('history-1', 'turn-0'),
+    ).resolves.toBe(true);
+    expect(
+      flowChatStore.getState().sessions.get('history-1')?.dialogTurns[0].modelRounds[0],
+    ).toMatchObject({ durationMs: 2172, streamDurationMs: 1500, ttftMs: 690, attemptCount: 1 });
+  });
+
   it('still adopts the host copy when the snapshot carries the projected work', async () => {
     // The guard must not disable wholesale replacement, which is how a settled
     // turn picks up the host's authoritative copy.
