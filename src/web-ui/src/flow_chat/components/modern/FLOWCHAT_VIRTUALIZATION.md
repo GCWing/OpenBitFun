@@ -170,7 +170,8 @@ tool output count as effective output; metadata-only packets do not. The host
 reports this optional duration, so controller clock skew and event delivery
 latency do not affect it. The speed levels use output tokens divided by the sum
 of each call's request-to-completion time, including TTFT but excluding tool
-execution, with thresholds at 15, 40 and 80 tokens/s disclosed in the Tooltip.
+execution, with thresholds at 15, 40 and 80 tokens/s. Tooltips show only the
+measured values and level, not the formula or thresholds.
 Missing or inconsistent timing in any model call, or retries whose earlier
 attempt timing is unavailable, omit speed rather than substituting partial turn
 time. Negative-index controller setup/audit rows are presentation only and do

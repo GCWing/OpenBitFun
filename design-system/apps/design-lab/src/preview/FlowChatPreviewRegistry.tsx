@@ -165,7 +165,7 @@ function TurnMetricsPreview({ state, interactive }: PreviewProps) {
     cacheHitRate={unknown ? null : 0.625}
     rateValue={unknown ? null : rateValue}
     rateDescription={rateRows.map(row => `${row.label}: ${row.value}`).join(" · ")}
-    rateDetails={<FlowChatMetricDetails rows={rateRows} note={t("modelRound.metrics.rateBasis")} />}
+    rateDetails={<FlowChatMetricDetails rows={rateRows} />}
     speedLevel={unknown ? null : 3}
     focusable={interactive}
   />;

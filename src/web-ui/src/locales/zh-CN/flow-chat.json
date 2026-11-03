@@ -1835,8 +1835,6 @@
       "rateValue": "{{value}} t/s",
       "ttft": "首 Token 延迟",
       "ttftValue": "TTFT {{value}}",
-      "ttftBasis": "本轮首次模型调用从发送请求到收到首个文字、思考或工具输出的耗时。发生重试时，显示最终采用的请求耗时。",
-      "rateBasis": "输出 Token 除以各次模型调用从请求开始到完成的时长之和，包含 TTFT，不含工具执行；档位分界为 15、40、80 Token/秒",
       "slow": "慢",
       "normal": "一般",
       "fast": "快",
