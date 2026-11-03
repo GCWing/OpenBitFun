@@ -55,6 +55,7 @@ const apiMocks = vi.hoisted(() => ({
   loadOlderRelaySession: vi.fn(),
   relayRecord: null as ((value: any) => void) | null,
   relayReady: null as ((value: any) => void) | null,
+  relayGap: null as ((value: any) => void) | null,
   listSessions: vi.fn(),
   loadSessionMetadata: vi.fn(),
   listSessionsPage: vi.fn(),
@@ -147,6 +148,7 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({
     onSessionInteractionChanged: () => () => {},
   onSessionRecord: (listener: (value: any) => void) => { apiMocks.relayRecord = listener; return () => { apiMocks.relayRecord = null; }; },
     onSessionReady: (listener: (value: any) => void) => { apiMocks.relayReady = listener; return () => { apiMocks.relayReady = null; }; },
+    onSessionGap: (listener: (value: any) => void) => { apiMocks.relayGap = listener; return () => { apiMocks.relayGap = null; }; },
     onSessionSyncError: vi.fn(() => () => {}),
     subscribeSession: apiMocks.subscribeRelaySession,
     loadOlderSession: apiMocks.loadOlderRelaySession,
@@ -8365,6 +8367,72 @@ describe('FlowChatStore device surfaces', () => {
       expect(catalog.entries.map(entry => entry.turnId)).toEqual(['turn-0', 'turn-1']);
       // Rollback must not echo this as the host's optimistic-concurrency token.
       expect(isHostIssuedTurnCatalogRevision(catalog.revision)).toBe(false);
+    });
+
+    const openPeerSession = async (sessionId: string, turnCount: number) => {
+      activateSurface(PEER_SURFACE_ID);
+      seedSession(sessionId);
+      apiMocks.subscribeRelaySession.mockImplementationOnce(async () => {
+        for (let turn = 0; turn < turnCount; turn += 1) {
+          apiMocks.relayRecord?.(itemRecord(sessionId, turn, 0, turn + 10));
+        }
+        apiMocks.relayReady?.({ sessionId, hasMore: false, oldestSeq: 1, cursor: turnCount });
+        return `${sessionId}-subscription`;
+      });
+      await flowChatStore.loadRelaySessionHistory(sessionId);
+    };
+    const turnIds = (sessionId: string) => flowChatStore.getState().sessions.get(sessionId)!
+      .dialogTurns.map(turn => turn.id);
+
+    it('rebuilds from the replay of a restarted host stream', async () => {
+      await openPeerSession('peer-rewrite', 3);
+      expect(turnIds('peer-rewrite')).toEqual(['turn-0', 'turn-1', 'turn-2']);
+
+      // A rollback on the host restarts the stream: no tombstones, and the
+      // replay reuses revisions lower than the ones already reduced.
+      apiMocks.relayGap?.({ sessionId: 'peer-rewrite', reason: 'host stream restarted', resync: true });
+      apiMocks.relayRecord?.(itemRecord('peer-rewrite', 0, 1, 1));
+      expect(turnIds('peer-rewrite')).toEqual(['turn-0', 'turn-1', 'turn-2']);
+      apiMocks.relayReady?.({ sessionId: 'peer-rewrite', hasMore: false, oldestSeq: 1, cursor: 1 });
+
+      expect(turnIds('peer-rewrite')).toEqual(['turn-0']);
+      expect(texts('peer-rewrite')).toHaveLength(1);
+      expect(texts('peer-rewrite')[0]).toMatchObject({ content: 'item 1' });
+      const session = flowChatStore.getState().sessions.get('peer-rewrite')!;
+      expect(session.turnCatalog?.entries.map(entry => entry.turnId)).toEqual(['turn-0']);
+      expect(session).toMatchObject({ totalTurnCount: 1, loadedTurnCount: 1 });
+    });
+
+    it('keeps an open relay session ready when it is reloaded after a mutation', async () => {
+      await openPeerSession('peer-reload', 2);
+      const subscriptions = apiMocks.subscribeRelaySession.mock.calls.length;
+
+      await flowChatStore.loadSessionHistory('peer-reload', { deferFullHistoryUntilActive: true });
+
+      // A non-paged host stream answers a rollback with tombstones and no
+      // second ready, so hydrating here would block the next submission.
+      expect(flowChatStore.getState().sessions.get('peer-reload')!.historyState).toBe('ready');
+      expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(subscriptions);
+    });
+
+    it('keeps rendered turns for a host-appended gap without a replay', async () => {
+      await openPeerSession('peer-source-gap', 2);
+
+      apiMocks.relayGap?.({ sessionId: 'peer-source-gap', reason: 'source lagged' });
+      apiMocks.relayReady?.({ sessionId: 'peer-source-gap', hasMore: false, oldestSeq: 1, cursor: 2 });
+
+      expect(turnIds('peer-source-gap')).toEqual(['turn-0', 'turn-1']);
+    });
+
+    it('drops turns a device-surface rollback retired before the host restarts', async () => {
+      await openPeerSession('peer-retire', 3);
+
+      flowChatStore.retireRelaySessionTurns('peer-retire', ['turn-1', 'turn-2']);
+
+      expect(turnIds('peer-retire')).toEqual(['turn-0']);
+      const session = flowChatStore.getState().sessions.get('peer-retire')!;
+      expect(session.turnCatalog?.entries.map(entry => entry.turnId)).toEqual(['turn-0']);
+      expect(session.totalTurnCount).toBe(1);
     });
 
     it('applies a tombstone that lands in the same batch as the turn', async () => {

@@ -143,6 +143,8 @@ export async function rollbackSessionToTurn(
     }
 
     markSessionTurnsRetired(request.sessionId, outcome.retiredTurnIds);
+    // A device surface renders a host replica that reloading does not rewrite.
+    flowChatStore.retireRelaySessionTurns(request.sessionId, outcome.retiredTurnIds);
     refreshFiles(outcome.restoredFiles);
     try {
       await reloadAuthoritativeSession(request.sessionId);

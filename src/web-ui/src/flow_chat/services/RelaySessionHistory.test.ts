@@ -6,6 +6,7 @@ const fixture = vi.hoisted(() => ({
   record: null as ((event: unknown) => void) | null,
   ready: null as ((event: any) => void) | null,
   error: null as ((event: any) => void) | null,
+  gap: null as ((event: any) => void) | null,
   subscribe: vi.fn(), unsubscribe: vi.fn(async () => {}), older: vi.fn(async () => {}),
 }));
 vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({
@@ -17,6 +18,7 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({ remoteConn
   onSessionRecord: (listener: (event: unknown) => void) => { fixture.record = listener; return () => { fixture.record = null; }; },
   onSessionReady: (listener: (event: any) => void) => { fixture.ready = listener; return () => { fixture.ready = null; }; },
   onSessionSyncError: (listener: (event: any) => void) => { fixture.error = listener; return () => { fixture.error = null; }; },
+  onSessionGap: (listener: (event: any) => void) => { fixture.gap = listener; return () => { fixture.gap = null; }; },
   subscribeSession: fixture.subscribe, unsubscribeSession: fixture.unsubscribe, loadOlderSession: fixture.older,
 } }));
 
@@ -50,6 +52,29 @@ describe('RelaySessionHistory', () => {
     history.close();
     expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
     expect(fixture.record).toBeNull();
+  });
+
+  it('renders pending records, then resyncs only for a gap the controller replays', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 1 });
+      return 'subscription';
+    });
+    const order: string[] = [];
+    const history = new RelaySessionHistory('session', () => { order.push('record'); }, vi.fn(), vi.fn(),
+      undefined, () => order.push('flush'), () => order.push('resync'));
+    await history.open();
+    order.length = 0;
+
+    fixture.gap?.({ sessionId: 'session', reason: 'source lagged' });
+    fixture.gap?.({ sessionId: 'other', reason: 'host stream restarted', resync: true });
+    expect(order).toEqual([]);
+
+    fixture.record?.({ sessionId: 'session', id: 'turn/turn' });
+    fixture.gap?.({ sessionId: 'session', reason: 'host stream restarted', resync: true });
+    expect(order).toEqual(['record', 'flush', 'resync']);
+    history.close();
+    expect(fixture.gap).toBeNull();
   });
 
   it('surfaces replay failures instead of leaving the first page loading forever', async () => {

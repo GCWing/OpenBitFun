@@ -226,11 +226,15 @@ impl Reader {
         Ok(true)
     }
 
+    /// Announce a restarted stream. A full replay from the latest page always
+    /// follows, so `resync` tells the controller to rebuild its records from
+    /// that replay: the new epoch carries no tombstones for what it dropped.
+    /// Gaps appended by the host itself stay inside one epoch and omit it.
     fn gap(&self, reason: &str) -> Result<()> {
         (self.emit)(SessionEvent {
             session_id: self.session_id.clone(),
             event: "relay://session-gap".into(),
-            payload: serde_json::json!({"sessionId":self.session_id,"reason":reason}),
+            payload: serde_json::json!({"sessionId":self.session_id,"reason":reason,"resync":true}),
         })
     }
 
@@ -638,6 +642,8 @@ mod tests {
                 "relay://session-ready",
             ]
         );
+        let gap = lab.events.lock().unwrap()[2].1.clone();
+        assert_eq!(gap["resync"], true);
         let ready = lab.events.lock().unwrap().last().unwrap().1.clone();
         assert_eq!(ready["cursor"], page.cursor);
         assert!(lab.errors.lock().unwrap().is_empty());
