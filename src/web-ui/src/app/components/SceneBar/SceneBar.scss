@@ -34,11 +34,20 @@
   }
 
   // The device a session tab belongs to when it is not the rendered one.
+  // Same capsule as the sidebar's device tags, so a device reads the same everywhere.
   &__tab-device {
-    max-inline-size: 8em;
+    flex: 0 0 auto;
+    max-inline-size: 7em;
+    margin-inline-start: var(--openbitfun-space-1);
+    padding: 0 5px;
     overflow: hidden;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-sm-font-size);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--openbitfun-color-content-muted) 55%, transparent);
+    color: var(--openbitfun-color-surface-chrome);
+    font-size: var(--openbitfun-type-micro-font-size);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: 14px;
+    letter-spacing: normal;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
