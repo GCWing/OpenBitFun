@@ -18,7 +18,6 @@ import { OverflowText,
   PageHeader,
   ScrollArea,
   Select,
-  StatusPill,
   Switch,
   TabGroup,
   type TabGroupItem,
@@ -29,6 +28,9 @@ import { OverflowText,
   DialogHeading,
   DialogTitle,
 } from '@openbitfun/ui';
+import { morphFromOrigin } from '@/app/services/surfaceMorph';
+import { DEVICES_DIALOG_MORPH_KEY } from './morphKey';
+import { ConnectionStateMark } from './ConnectionStateMark';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -926,9 +928,9 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
       data-openbitfun-part="status"
       data-openbitfun-state={connected ? 'connected' : undefined}
     >
-      <StatusPill tone={statusState === 'ready' && connected ? 'success' : 'neutral'}>
+      <ConnectionStateMark tone={statusState === 'ready' && connected ? 'success' : 'neutral'}>
         {connectionStatusLabel(connected)}
-      </StatusPill>
+      </ConnectionStateMark>
     </span>
   );
 
@@ -954,6 +956,7 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
     >
       <section
         className="openbitfun-remote-connect__bot-card"
+        data-openbitfun-state={connected ? 'connected' : undefined}
         data-openbitfun-component="remote-connect-dialog"
         data-openbitfun-part="botCard"
         aria-label={botLabel(botTab) ?? undefined}
@@ -1326,7 +1329,7 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
             {statusDetail}
           </OverflowText>
         )}
-        <StatusPill tone={statusPositive ? 'success' : 'neutral'}>{statusLabel}</StatusPill>
+        <ConnectionStateMark tone={statusPositive ? 'success' : 'neutral'}>{statusLabel}</ConnectionStateMark>
       </span>
       <Icon name="chevron-right" size="sm" className="openbitfun-remote-connect__overview-action-chevron" aria-hidden="true" />
     </button>
@@ -1520,6 +1523,11 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
     }
   }, [accountLoggedIn, activeView, handleViewChange]);
 
+  // Opened from the device card, the dialog grows out of it (see surfaceMorph).
+  const growFromOrigin = useCallback((surface: HTMLDivElement | null) => {
+    if (surface) morphFromOrigin(DEVICES_DIALOG_MORPH_KEY, surface);
+  }, []);
+
   return (
     <>
       <Dialog
@@ -1528,6 +1536,7 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
         size="2xl"
         aria-label={t('remoteConnect.centerTitle')}
         className="openbitfun-remote-connect-dialog"
+        ref={growFromOrigin}
       >
         <DialogHeader className="openbitfun-remote-connect-dialog__header">
           <DialogClose />

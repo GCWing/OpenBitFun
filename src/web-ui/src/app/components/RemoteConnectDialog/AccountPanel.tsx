@@ -1,13 +1,13 @@
 import { refreshDeviceDirectory, isDeviceControllable, deviceClientVersion } from '@/infrastructure/account/deviceDirectory';
 /** Account login and authenticated device connections. */
 
-import { OverflowText, Alert, Avatar, Button, Icon, IconButton, Input, ScrollArea, StatusPill } from '@openbitfun/ui';
+import { OverflowText, Alert, Avatar, Button, Icon, IconButton, Input, ScrollArea } from '@openbitfun/ui';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import {
   confirmDanger,
 } from '@/infrastructure/confirm-dialog';
-import { LogOut, Pencil, Check, X } from 'lucide-react';
+import { LogOut, Pencil, Check, X, House } from 'lucide-react';
 import { DeviceSystemGlyph } from '../NavPanel/components/DeviceSystemGlyph';
 import { reportedHostKind } from '../NavPanel/deviceInterconnectionOverview';
 import { remoteConnectAPI, deviceDisplayName, deviceMetadataLabel } from '@/infrastructure/api/service-api/RemoteConnectAPI';
@@ -959,40 +959,47 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                             name next to an editor reads as two device names. */}
                         {editingDeviceId === d.device_id ? (
                           <span className="account-panel__device-alias-editor">
+                            {/* The name itself becomes editable, as on the device card. */}
                             <Input
                               className="account-panel__device-alias-input"
+                              size="sm"
                               value={aliasDraft}
                               onChange={e => setAliasDraft(e.target.value)}
                               onKeyDown={event => {
                                 if (event.key === 'Enter') { event.preventDefault(); void handleUpdateAlias(d); }
                                 if (event.key === 'Escape') { event.preventDefault(); setEditingDeviceId(null); }
                               }}
-                              placeholder={t('accountLogin.deviceAliasPlaceholder')}
+                              onFocus={event => event.currentTarget.select()}
+                              placeholder={d.device_name ?? t('accountLogin.deviceAliasPlaceholder')}
+                              title={t('accountLogin.deviceAliasPlaceholder')}
                               aria-label={t('accountLogin.deviceAlias')}
                               autoFocus
                               disabled={savingAliasId === d.device_id}
-                            />
-                            <IconButton
-                              aria-label={t('accountLogin.saveDeviceAlias')}
-                              icon={<Check size={14} />}
-                              loading={savingAliasId === d.device_id}
-                              onClick={() => void handleUpdateAlias(d)}
-                              size="sm"
-                              variant="primary"
-                            />
-                            <IconButton
-                              aria-label={t('accountLogin.cancel')}
-                              disabled={savingAliasId === d.device_id}
-                              icon={<X size={14} />}
-                              onClick={() => setEditingDeviceId(null)}
-                              size="sm"
-                              variant="quiet"
+                              trailing={<>
+                                <IconButton
+                                  className="account-panel__device-alias-action"
+                                  aria-label={t('accountLogin.saveDeviceAlias')}
+                                  icon={<Check size={12} />}
+                                  loading={savingAliasId === d.device_id}
+                                  onClick={() => void handleUpdateAlias(d)}
+                                  size="xs"
+                                  variant="quiet"
+                                />
+                                <IconButton
+                                  className="account-panel__device-alias-action"
+                                  aria-label={t('accountLogin.cancel')}
+                                  disabled={savingAliasId === d.device_id}
+                                  icon={<X size={12} />}
+                                  onClick={() => setEditingDeviceId(null)}
+                                  size="xs"
+                                  variant="quiet"
+                                />
+                              </>}
                             />
                           </span>
                         ) : (
                           <span className="account-panel__device-name">
                             <OverflowText title={displayName}>{displayName}</OverflowText>
-                            {isLocal && <StatusPill tone="neutral" className="account-panel__device-badge">{t('accountLogin.thisDevice')}</StatusPill>}
                           </span>
                         )}
                         <span className="account-panel__device-meta">
@@ -1017,21 +1024,29 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                         delete beside it rendered two competing icon clusters. */}
                     {editingDeviceId !== d.device_id && (
                       <span className="account-panel__device-actions">
+                        {/* This machine: the device card's home disc. */}
+                        {isLocal && (
+                          <span className="account-panel__device-home" role="img" aria-label={t('accountLogin.thisDevice')}>
+                            <House size={14} />
+                          </span>
+                        )}
                         <IconButton
+                          className="account-panel__device-action"
                           aria-label={t('accountLogin.editDeviceAlias')}
                           disabled={loading || editingDeviceId !== null || !aliasSupported || savingAliasId !== null}
-                          icon={<Pencil size={14} />}
+                          icon={<Pencil size={12} />}
                           onClick={(e) => { e.stopPropagation(); handleStartAliasEdit(d); }}
-                          size="sm"
+                          size="xs"
                           title={t('accountLogin.editDeviceAlias')}
                           variant="quiet"
                         />
                         <IconButton
+                          className="account-panel__device-action"
                           aria-label={`${removeLabel}: ${displayName}`}
                           disabled={loading || savingAliasId !== null}
-                          icon={<Icon name="delete" size="sm" />}
+                          icon={<Icon name="delete" size="xs" />}
                           onClick={(e) => { e.stopPropagation(); handleDeleteDevice(d.device_id, displayName); }}
-                          size="sm"
+                          size="xs"
                           title={removeLabel}
                           variant="quiet"
                         />

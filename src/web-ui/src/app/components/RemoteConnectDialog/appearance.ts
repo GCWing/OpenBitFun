@@ -19,6 +19,7 @@ export const remoteConnectDialogAppearanceDescriptor: AppearanceSurfaceDescripto
     { id: 'connections' },
     { id: 'botCard' },
     { id: 'status' },
+    { id: 'stateMark' },
     { id: 'error' },
   ],
   facets: [

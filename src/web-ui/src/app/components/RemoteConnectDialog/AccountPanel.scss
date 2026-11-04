@@ -130,6 +130,8 @@
   }
 
   &__device-card {
+    @include surface.state-light(--_account-light);
+    --_account-light: var(--openbitfun-color-status-success-content);
     position: relative;
     display: flex;
     min-width: 0;
@@ -139,13 +141,21 @@
     padding: var(--openbitfun-space-3) surface.$row-inline;
     transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
+    // Lit like the device card: this machine in its home light, another
+    // online device in the live light, an offline one neutral.
+    &.current { --_account-light: var(--openbitfun-color-accent-secondary); }
+    &.offline { --_account-light: var(--openbitfun-color-content-muted); }
+
     & + & {
       @include surface.card-divider;
     }
 
     &.selectable:has(> .account-panel__device-select:hover) {
-      background: var(--openbitfun-color-action-neutral-surface);
+      background: color-mix(in srgb, var(--_account-light) 8%, var(--openbitfun-color-action-neutral-surface));
     }
+
+    // Row actions stay quiet until the row is in hand.
+    &:not(:hover, :focus-within) .account-panel__device-action { opacity: 0.6; }
 
     &.selectable:has(> .account-panel__device-select:active) {
       background: var(--openbitfun-color-action-neutral-surface-pressed);
@@ -192,7 +202,17 @@
   }
 
   &__device-glyph {
-    @include surface.icon-slot;
+    @include surface.icon-disc(--_account-light);
+  }
+
+  &__device-home {
+    @include surface.icon-disc(--_account-light, 28px);
+  }
+
+  &__device-action {
+    --_icon-button-size: 24px;
+    --_icon-button-icon-size: 12px;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
   &__device-info {
@@ -238,6 +258,7 @@
 
     &[data-openbitfun-state='online']::before {
       background: var(--openbitfun-color-status-success-content);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--openbitfun-color-status-success-content) 22%, transparent);
     }
   }
 
@@ -271,16 +292,39 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: var(--openbitfun-space-2);
-
-    > [data-openbitfun-component='icon-button'] {
-      flex-shrink: 0;
-    }
   }
 
+  // Editing keeps the name's type and place: an underline in the row's light.
   &__device-alias-input {
     flex: 1 1 auto;
     min-inline-size: 0;
+    gap: var(--openbitfun-space-1);
+    padding-inline: 0;
+    border: 0;
+    border-block-end: var(--openbitfun-border-width-default) solid color-mix(in srgb, var(--_account-light) 35%, transparent);
+    border-radius: 0;
+
+    &,
+    &:hover,
+    &:focus-within { background: transparent; }
+
+    &:focus-within { border-block-end-color: color-mix(in srgb, var(--_account-light) 80%, transparent); }
+
+    input {
+      @include surface.row-title;
+      caret-color: var(--_account-light);
+    }
+
+    input::placeholder { color: var(--openbitfun-color-content-muted); }
+  }
+
+  &__device-alias-action {
+    --_icon-button-size: 20px;
+    --_icon-button-icon-size: 12px;
+    --_icon-button-background-hover: color-mix(in srgb, var(--_account-light) 18%, transparent);
+    border-radius: var(--openbitfun-radius-pill);
+
+    &:first-child { --_icon-button-content: color-mix(in srgb, var(--_account-light) 72%, var(--openbitfun-color-content-primary)); }
   }
 
   &__loading-overlay {

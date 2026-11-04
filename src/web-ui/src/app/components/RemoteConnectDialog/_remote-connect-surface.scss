@@ -91,6 +91,51 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   color: var(--openbitfun-color-content-secondary);
 }
 
+// The device card's language: every surface carries a state light
+// (`--_rc-light`). Neutral until a link is live, then it lights its disc,
+// dot and card.
+@mixin state-light($light) {
+  #{$light}: var(--openbitfun-color-content-muted);
+  #{$light}-strength: 10%;
+
+  :where([data-color-scheme='dark']) & {
+    #{$light}-strength: 16%;
+  }
+
+  &[data-openbitfun-state~='connected'],
+  &[data-openbitfun-state~='authenticated'] {
+    #{$light}: var(--openbitfun-color-status-success-content);
+  }
+}
+
+// A row's icon in a tinted glass disc, lit by its state light.
+@mixin icon-disc($light, $size: 36px) {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: $size;
+  block-size: $size;
+  border-radius: var(--openbitfun-radius-pill);
+  background: color-mix(in srgb, var(#{$light}) 14%, transparent);
+  box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(#{$light}) 26%, transparent);
+  color: color-mix(in srgb, var(#{$light}) 60%, var(--openbitfun-color-content-primary));
+  transition:
+    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+// The card glows faintly from its top edge in its state light.
+@mixin lit-card($light) {
+  background:
+    radial-gradient(
+      110% 90% at 0% 0%,
+      color-mix(in srgb, var(#{$light}) var(#{$light}-strength), transparent),
+      transparent 70%
+    ),
+    var(--openbitfun-color-field-group-background);
+}
+
 @mixin row-copy {
   display: flex;
   min-width: 0;

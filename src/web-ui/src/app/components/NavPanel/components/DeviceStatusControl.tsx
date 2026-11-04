@@ -25,6 +25,8 @@ import {
   type DeviceOverviewHostKind,
 } from '../deviceInterconnectionOverview';
 import { useDeviceInterconnectionOverview } from './useDeviceInterconnectionOverview';
+import { DEVICES_DIALOG_MORPH_KEY } from '@/app/components/RemoteConnectDialog/morphKey';
+import { rememberMorphOrigin } from '@/app/services/surfaceMorph';
 import { DeviceArtwork } from './DeviceArtwork';
 import { DeviceSystemGlyph } from './DeviceSystemGlyph';
 import { useDevicePreviewMotion } from './useDevicePreviewMotion';
@@ -311,6 +313,8 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   }, [activePeerId, peerContext, warning]);
 
   const handleManageDevices = useCallback(() => {
+    // The dialog grows out of this card instead of replacing it.
+    rememberMorphOrigin(DEVICES_DIALOG_MORPH_KEY, popoverRef.current);
     onOpenChange(false);
     onManageDevices();
   }, [onManageDevices, onOpenChange]);
