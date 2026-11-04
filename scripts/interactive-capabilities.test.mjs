@@ -443,7 +443,7 @@ test('Desktop and Web UI share the OpenBitFunControl transport contract', async 
     assert.match(source, /agentic:\/\/openbitfun-control-request/u);
   }
   assert.match(host, /#\[serde\(rename_all = "camelCase"\)\]/u);
-  assert.match(bridge, /api\.invoke\('mark_openbitfun_control_surface_ready',\s*\{\s*request:\s*\{\s*creationApiVersion:\s*1,\s*genUiApiVersion:\s*1\s*\}\s*\}\)/u);
+  assert.match(bridge, /api\.invoke\('mark_openbitfun_control_surface_ready',\s*\{\s*request:\s*\{\s*creationApiVersion:\s*1\s*\}\s*\}\)/u);
   assert.match(bridge, /api\.invoke\('report_openbitfun_control_result'/u);
   assert.match(desktopRegistration, /openbitfun_control_host::mark_openbitfun_control_surface_ready/u);
   assert.match(desktopRegistration, /openbitfun_control_host::report_openbitfun_control_result/u);

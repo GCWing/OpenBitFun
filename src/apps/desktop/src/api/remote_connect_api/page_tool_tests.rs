@@ -110,6 +110,7 @@ async fn desktop_page_manage_registration_reaches_the_executing_account() {
         custom_data: HashMap::new(),
         computer_use_host: None,
         runtime_tool_restrictions: Default::default(),
+        model_client: None,
         runtime_handles: Default::default(),
     };
     assert!(tool.is_available_in_context(Some(&context)).await);

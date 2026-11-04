@@ -314,6 +314,7 @@ mod tests {
             custom_data: HashMap::new(),
             computer_use_host: None,
             runtime_tool_restrictions: Default::default(),
+            model_client: None,
             runtime_handles: Default::default(),
         }
     }

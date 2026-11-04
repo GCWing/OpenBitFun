@@ -122,7 +122,7 @@ function renderInspectableComponent(
     : rendered;
 }
 
-function zodForSchema(schema: Record<string, unknown> | undefined): z.ZodTypeAny {
+export function zodForSchema(schema: Record<string, unknown> | undefined): z.ZodTypeAny {
   if (!schema) return z.any();
   if (Array.isArray(schema.enum) && schema.enum.length > 0 && schema.enum.every(value => typeof value === 'string')) {
     return z.enum(schema.enum as [string, ...string[]]);
@@ -136,7 +136,14 @@ function zodForSchema(schema: Record<string, unknown> | undefined): z.ZodTypeAny
     case 'string': return z.string();
     case 'number': return z.number();
     case 'integer': return z.number().int();
-    case 'boolean': return z.boolean();
+    // Models commonly serialize boolean component flags as 0/1. Accept those
+    // exact JSON equivalents at the library boundary so one malformed flag
+    // does not leave a visible render error above an otherwise valid page.
+    case 'boolean': return z.union([
+      z.boolean(),
+      z.literal(0),
+      z.literal(1),
+    ]);
     case 'array': return z.array(zodForSchema(schema.items as Record<string, unknown> | undefined));
     case 'object': {
       const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
@@ -209,6 +216,11 @@ function createGenUIOpenUILibrary(library: GenUILibrary, options: { onInspect?: 
         const isStreaming = useIsStreaming();
         const rawValues = values as Record<string, unknown>;
         const normalizedValues = { ...rawValues };
+        for (const [key, schema] of Object.entries(declaredSchemas)) {
+          if (schema.type === 'boolean' && (rawValues[key] === 0 || rawValues[key] === 1)) {
+            normalizedValues[key] = rawValues[key] === 1;
+          }
+        }
         if (contract.action && Object.prototype.hasOwnProperty.call(rawValues, 'action')) {
           // OpenUI's action slot is positional and has one canonical place:
           // after required visual props and before optional visual props. Do

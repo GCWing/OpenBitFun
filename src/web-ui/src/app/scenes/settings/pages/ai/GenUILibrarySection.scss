@@ -11,80 +11,24 @@
   background: var(--openbitfun-color-surface-panel);
 }
 
-.gen-ui-profile-card {
-  position: relative;
+.gen-ui-library-preview {
   min-width: 0;
-  border-top: 1px solid var(--openbitfun-color-border-subtle);
-  background: var(--openbitfun-color-surface-subtle);
+  margin-top: var(--openbitfun-space-5);
+  overflow: hidden;
+  border: 1px solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-lg);
+  background: var(--openbitfun-color-surface-panel);
 }
 
-  .gen-ui-profile-card__accent {
-    background: var(--openbitfun-color-status-info-emphasis);
-  }
-
-  .gen-ui-profile-mark,
-  .gen-ui-profile-revision {
-    border-color: color-mix(in srgb, var(--openbitfun-color-status-info-emphasis) 28%, transparent);
-    background: var(--openbitfun-color-status-info-surface);
-    color: var(--openbitfun-color-status-info-emphasis);
-  }
-}
-
-.gen-ui-profile-card--openbitfun {
-  .gen-ui-profile-card__accent {
-    background: var(--openbitfun-color-accent-secondary);
-  }
-
-  .gen-ui-profile-mark,
-  .gen-ui-profile-revision {
-    border-color: color-mix(in srgb, var(--openbitfun-color-accent-secondary) 28%, transparent);
-    color: var(--openbitfun-color-accent-secondary);
-  }
-}
-
-.gen-ui-profile-card__accent {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 3px;
-  background: var(--openbitfun-color-accent-default);
-}
-
-.gen-ui-profile-card__content {
-  min-width: 0;
-  padding: var(--openbitfun-space-5);
-}
-
-.gen-ui-profile-card__heading,
 .gen-ui-library-preview__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--openbitfun-space-4);
+  padding: var(--openbitfun-space-5);
+  border-bottom: 1px solid var(--openbitfun-color-border-subtle);
 }
 
-.gen-ui-profile-identity {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: var(--openbitfun-space-3);
-}
-
-.gen-ui-profile-mark {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--openbitfun-radius-md);
-  background: var(--openbitfun-color-action-secondary-background);
-  color: var(--openbitfun-color-accent-default);
-  font-size: var(--openbitfun-type-heading-card-font-size);
-  font-weight: var(--openbitfun-type-heading-card-font-weight);
-  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
-}
-
-.gen-ui-profile-kicker,
 .gen-ui-preview-kicker {
   display: block;
   margin-bottom: 3px;
@@ -96,149 +40,12 @@
   text-transform: uppercase;
 }
 
-.gen-ui-profile-identity h4,
 .gen-ui-library-preview__header h4 {
   margin: 0;
   color: var(--openbitfun-color-content-primary);
   font-size: var(--openbitfun-type-heading-card-font-size);
   font-weight: var(--openbitfun-type-heading-card-font-weight);
   line-height: var(--openbitfun-type-heading-card-line-height);
-}
-
-.gen-ui-profile-revision,
-.gen-ui-preview-status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  min-height: 24px;
-  padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 28%, transparent);
-  border-radius: var(--openbitfun-radius-pill);
-  background: var(--openbitfun-color-action-secondary-background);
-  color: var(--openbitfun-color-accent-default);
-  font-size: var(--openbitfun-type-body-xs-font-size);
-  font-weight: var(--openbitfun-type-label-sm-font-weight);
-  line-height: var(--openbitfun-type-label-sm-line-height);
-  white-space: nowrap;
-}
-
-.gen-ui-profile-description {
-  max-width: 68ch;
-  margin: var(--openbitfun-space-3) 0 0 52px;
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-}
-
-.gen-ui-design-spec {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  margin: var(--openbitfun-space-5) 0 0;
-  overflow: hidden;
-  border: 1px solid var(--openbitfun-color-border-subtle);
-  border-radius: var(--openbitfun-radius-md);
-  background: var(--openbitfun-color-border-subtle);
-}
-
-.gen-ui-design-spec > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
-  background: var(--openbitfun-color-surface-panel);
-}
-
-.gen-ui-design-spec dt,
-.gen-ui-spec-details__body dt {
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-overline-xs-font-size);
-  font-weight: var(--openbitfun-type-label-sm-font-weight);
-  letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
-  line-height: var(--openbitfun-type-heading-page-line-height);
-  text-transform: uppercase;
-}
-
-.gen-ui-design-spec dd,
-.gen-ui-spec-details__body dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-}
-
-.gen-ui-spec-details {
-  margin-top: var(--openbitfun-space-3);
-  border-top: 1px solid var(--openbitfun-color-border-subtle);
-}
-
-.gen-ui-spec-details summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-3) 0 0;
-  cursor: pointer;
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  font-weight: var(--openbitfun-type-label-sm-font-weight);
-  list-style-position: inside;
-}
-
-.gen-ui-spec-details summary::marker {
-  color: var(--openbitfun-color-accent-default);
-}
-
-  color: var(--openbitfun-color-status-info-emphasis);
-}
-
-.gen-ui-profile-card--openbitfun .gen-ui-spec-details summary::marker {
-  color: var(--openbitfun-color-accent-secondary);
-}
-
-.gen-ui-spec-details summary:focus-visible {
-  outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
-  outline-offset: var(--openbitfun-focus-offset);
-  border-radius: var(--openbitfun-radius-xs);
-}
-
-.gen-ui-spec-details__summary-value {
-  overflow: hidden;
-  color: var(--openbitfun-color-content-muted);
-  font-family: var(--openbitfun-type-code-sm-font-family);
-  font-size: var(--openbitfun-type-code-sm-font-size);
-  font-weight: var(--openbitfun-type-body-sm-font-weight);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.gen-ui-spec-details__body {
-  display: grid;
-  gap: var(--openbitfun-space-4);
-  padding: var(--openbitfun-space-4) 0 var(--openbitfun-space-1);
-}
-
-.gen-ui-spec-details__body > div {
-  display: grid;
-  grid-template-columns: minmax(96px, 140px) minmax(0, 1fr);
-  gap: var(--openbitfun-space-4);
-}
-
-.gen-ui-library-preview {
-  min-width: 0;
-  margin-top: var(--openbitfun-space-5);
-  overflow: hidden;
-  border: 1px solid var(--openbitfun-color-border-default);
-  border-radius: var(--openbitfun-radius-lg);
-  background: var(--openbitfun-color-surface-panel);
-}
-
-.gen-ui-library-preview__header {
-  padding: var(--openbitfun-space-5);
-  border-bottom: 1px solid var(--openbitfun-color-border-subtle);
 }
 
 .gen-ui-library-preview__caption {
@@ -250,9 +57,19 @@
 }
 
 .gen-ui-preview-status {
-  border-color: color-mix(in srgb, var(--openbitfun-color-status-success-emphasis) 28%, transparent);
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--openbitfun-color-status-success-emphasis) 28%, transparent);
+  border-radius: var(--openbitfun-radius-pill);
   background: var(--openbitfun-color-status-success-surface);
   color: var(--openbitfun-color-status-success-emphasis);
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  line-height: var(--openbitfun-type-label-sm-line-height);
+  white-space: nowrap;
 }
 
 .gen-ui-preview-status > span {
@@ -281,34 +98,18 @@
 }
 
 @media (max-width: 640px) {
-  .gen-ui-profile-card__content,
   .gen-ui-library-preview__header,
   .gen-ui-library-preview__canvas {
     padding: var(--openbitfun-space-4);
   }
 
-  .gen-ui-profile-card__heading,
   .gen-ui-library-preview__header {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .gen-ui-profile-revision,
   .gen-ui-preview-status {
     align-self: flex-start;
-  }
-
-  .gen-ui-profile-description {
-    margin-inline-start: 0;
-  }
-
-  .gen-ui-design-spec {
-    grid-template-columns: 1fr;
-  }
-
-  .gen-ui-spec-details__body > div {
-    grid-template-columns: 1fr;
-    gap: var(--openbitfun-space-1);
   }
 }
 

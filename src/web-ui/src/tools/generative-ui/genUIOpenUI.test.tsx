@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import GenUIOpenUIDocument from './genUIOpenUI';
+import GenUIOpenUIDocument, { zodForSchema } from './genUIOpenUI';
 import GenUIApplication from './GenUIApplication';
 import { genUIProduct } from './genUIProduct';
 import { genUICatalog } from './genUIContract';
@@ -23,6 +23,14 @@ describe('OpenUI source adapter', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+  });
+
+  it('accepts JSON numeric equivalents for boolean component props', () => {
+    const booleanProp = zodForSchema({ type: 'boolean' });
+    expect(booleanProp.parse(0)).toBe(0);
+    expect(booleanProp.parse(1)).toBe(1);
+    expect(booleanProp.parse(false)).toBe(false);
+    expect(() => booleanProp.parse(2)).toThrow();
   });
 
   it('forwards a generated action plan to the owning host', async () => {

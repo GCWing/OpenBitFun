@@ -6,7 +6,6 @@ import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { useI18n } from '@/infrastructure/i18n';
 import GenUIApplication from '@/tools/generative-ui/GenUIApplication';
-import { genUICatalog } from '@/tools/generative-ui/genUIContract';
 import { createGenUILibraryPreview, genUILibraryProfiles } from '@/tools/generative-ui/genUILibraryPreview';
 import './GenUILibrarySection.scss';
 
@@ -54,10 +53,7 @@ export default function GenUILibrarySection() {
   const options = Object.entries(genUILibraryProfiles).map(([value, profile]) => ({ value, label: profile.label }));
   const known = ready && Object.prototype.hasOwnProperty.call(genUILibraryProfiles, loaded.value);
   if (ready && !known) options.push({ value: loaded.value, label: loaded.value });
-  const descriptions: Record<string, string> = { openui: t('genui.collections.openui'), openbitfun: t('genui.collections.openbitfun') };
   const preview = useMemo(() => ready && known ? createGenUILibraryPreview(loaded.value, t) : null, [ready, known, loaded?.value, t]);
-  const designSpec = known ? genUICatalog.designSpecs?.[genUILibraryProfiles[loaded.value].designSpec] : undefined;
-  const activeProfile = known ? genUILibraryProfiles[loaded.value] : undefined;
   return <ConfigPageSection id="generative-ui-library" className="gen-ui-library-section" title={t('genui.title')} description={t('genui.description')} bodySurface={false}>
     {!ready ? error
       ? <ConfigRetryState message={error} retryLabel={t('genui.retry')} onRetry={() => void load()} />
@@ -67,38 +63,6 @@ export default function GenUILibrarySection() {
           <ConfigPageRow className="gen-ui-library-selector" label={t('genui.collection')} description={known ? undefined : t('genui.unknown')} align="center">
             <Select size="sm" aria-label={t('genui.collection')} options={options} value={loaded.value} disabled={saving} onValueChange={value => void save(String(value))} />
           </ConfigPageRow>
-          {designSpec && activeProfile && <div className={`gen-ui-profile-card gen-ui-profile-card--${loaded.value}`} data-openbitfun-component="gen-ui-library-settings" data-openbitfun-part="profile">
-            <div className="gen-ui-profile-card__accent" aria-hidden="true" />
-            <div className="gen-ui-profile-card__content">
-              <div className="gen-ui-profile-card__heading">
-                <div className="gen-ui-profile-identity">
-                  <span className="gen-ui-profile-mark" aria-hidden="true">{activeProfile.label.slice(0, 1)}</span>
-                  <div>
-                    <span className="gen-ui-profile-kicker">{t('genui.specification')}</span>
-                    <h4>{activeProfile.label}</h4>
-                  </div>
-                </div>
-                <span className="gen-ui-profile-revision">v{designSpec.revision}</span>
-              </div>
-              <p className="gen-ui-profile-description">{descriptions[loaded.value]}</p>
-              <dl className="gen-ui-design-spec" data-openbitfun-component="gen-ui-library-settings" data-openbitfun-part="designSpec">
-                <div><dt>{t('genui.viewport')}</dt><dd>{designSpec.viewport.mode === 'fixed' ? `${designSpec.viewport.width} x ${designSpec.viewport.height} ${designSpec.viewport.unit}` : t('genui.responsiveViewport')}</dd></div>
-                <div><dt>{t('genui.componentLibraries')}</dt><dd>{designSpec.componentLibraries.join(', ')}</dd></div>
-                <div><dt>{t('genui.styleResources')}</dt><dd>{designSpec.styleResources.join(', ')}</dd></div>
-                <div><dt>{t('genui.hostShell')}</dt><dd>{designSpec.shell.hostOwnedParts.join(', ')}{designSpec.shell.statusBarHeight ? ` · ${designSpec.shell.statusBarHeight}px` : ''}</dd></div>
-              </dl>
-              <details className="gen-ui-spec-details">
-                <summary>
-                  <span>{t('genui.specification')}</span>
-                  <span className="gen-ui-spec-details__summary-value">{designSpec.label} @ {designSpec.revision}</span>
-                </summary>
-                <dl className="gen-ui-spec-details__body">
-                  <div><dt>{t('genui.designRules')}</dt><dd>{designSpec.rules.join(' ')}</dd></div>
-                  <div><dt>{t('genui.acceptance')}</dt><dd>{designSpec.acceptance.checks.join(', ')}</dd></div>
-                </dl>
-              </details>
-            </div>
-          </div>}
         </div>
         {preview && <div data-openbitfun-component="gen-ui-library-settings" data-openbitfun-part="preview" className="gen-ui-library-preview" aria-label={t('genui.preview.title')}>
           <div className="gen-ui-library-preview__header">

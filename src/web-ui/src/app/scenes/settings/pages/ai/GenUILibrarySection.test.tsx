@@ -29,6 +29,8 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 it('selects a collection, previews its real components, and never saves demo edits', async () => {
   await mount();
   expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-openui');
+  expect(container.querySelector('[data-openbitfun-part="profile"]')).toBeNull();
+  expect(container.querySelector('[data-openbitfun-part="designSpec"]')).toBeNull();
   await select('openbitfun');
   expect(ports.save).toHaveBeenCalledExactlyOnceWith('ai.generative_ui_library', 'openbitfun');
   await act(async () => {
