@@ -12,7 +12,7 @@
 import { getActiveSurfaceId, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { deviceWorkspaceCatalog } from '@/infrastructure/peer-device/deviceWorkspaceCatalog';
 import { flowChatStore, type BackgroundSessionPage } from '../store/FlowChatStore';
-import { DEFAULT_SESSION_VIEW_KEY, rememberWorkspaceSessionTotal } from './workspaceSessionTotals';
+import { DEFAULT_SESSION_VIEW_KEY, forgetSurfaceSessionTotals, rememberWorkspaceSessionTotal } from './workspaceSessionTotals';
 
 let installs = 0;
 /** Page record arrays already projected, per surface; the catalog replaces arrays on change. */
@@ -21,7 +21,9 @@ let teardown: (() => void) | null = null;
 export function seedBackgroundSurface(surfaceId: DeviceSurfaceId): void {
   const snapshot = deviceWorkspaceCatalog.getSnapshot(surfaceId);
   if (snapshot.status === 'idle') {
+    // Catalog reset (account change): nothing of the previous read survives.
     flowChatStore.discardSeededSessions(surfaceId);
+    forgetSurfaceSessionTotals(surfaceId);
     seededRecords.delete(surfaceId);
     return;
   }
