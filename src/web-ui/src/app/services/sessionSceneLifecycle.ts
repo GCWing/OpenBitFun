@@ -56,8 +56,14 @@ export function startSessionSceneLifecycle(): () => void {
       } catch (error) {
         if (isCurrent() && !isSurfaceChangedError(error)) {
           log.error('Failed to activate session tab', { sessionId: target.sessionId, error });
-          const { notificationService } = await import('@/shared/notification-system');
-          if (isCurrent()) notificationService.error(error instanceof Error ? error.message : String(error));
+          const [{ notificationService }, { peerReplyLostMessage }, { i18nService }] = await Promise.all([
+            import('@/shared/notification-system'),
+            import('@/infrastructure/peer-device/peerReplyLost'),
+            import('@/infrastructure/i18n'),
+          ]);
+          const message = peerReplyLostMessage(error, (key, options) => i18nService.t(key, options))
+            ?? (error instanceof Error ? error.message : String(error));
+          if (isCurrent()) notificationService.error(message);
         }
         return false;
       }
