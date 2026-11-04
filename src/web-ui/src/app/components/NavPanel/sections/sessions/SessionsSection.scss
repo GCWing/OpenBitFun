@@ -74,6 +74,7 @@
   }
 
   &__inline-loading {
+    animation: openbitfun-nav-inline-loading-reveal 160ms ease-out 200ms both;
     display: flex;
     align-items: center;
     gap: 5px;
@@ -940,4 +941,11 @@
   &__inline-item-edit-btn {
     @include nav-font.nav-panel-text-icon;
   }
+}
+
+// A wait that ends quickly shows nothing: the indicator fades in only once
+// the wait has lasted long enough to be noticed.
+@keyframes openbitfun-nav-inline-loading-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

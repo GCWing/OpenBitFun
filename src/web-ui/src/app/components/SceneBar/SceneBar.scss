@@ -19,6 +19,12 @@
     flex: 0 0 auto;
     min-width: 0;
 
+    // The tab is chosen while its scene is still being prepared: it breathes
+    // until the scene shows, starting only once the wait is noticeable.
+    &[data-pending] [role='tab'] {
+      animation: openbitfun-scene-tab-pending 1.1s ease-in-out 160ms infinite;
+    }
+
     &[data-canvas-drop-position]::after {
       content: '';
       position: absolute;
@@ -223,4 +229,13 @@
     transition: none;
     transform: none;
   }
+}
+
+@keyframes openbitfun-scene-tab-pending {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-scene-bar__item[data-pending] [role='tab'] { animation: none; }
 }

@@ -37,6 +37,7 @@
     justify-content: center;
     pointer-events: none;
     z-index: 1;
+    animation: openbitfun-scene-viewport-wait-reveal 180ms var(--openbitfun-motion-easing-standard) 220ms both;
   }
 
   // ── Scene slot ────────────────────────────────────────
@@ -99,6 +100,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .openbitfun-scene-viewport__lazy-fallback {
+    animation-duration: 1ms;
+  }
+
   .openbitfun-scene-viewport__scene--incoming {
     transition: none;
   }
@@ -133,4 +138,11 @@
 .openbitfun-scene-viewport:not(.openbitfun-scene-viewport--paned) .openbitfun-scene-viewport__scene {
   position: absolute;
   inset: 0;
+}
+
+// A wait that ends quickly shows nothing: the indicator fades in only once
+// the wait has lasted long enough to be noticed.
+@keyframes openbitfun-scene-viewport-wait-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

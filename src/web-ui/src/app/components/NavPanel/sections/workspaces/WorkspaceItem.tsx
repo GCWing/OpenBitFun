@@ -726,8 +726,13 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     }
   }, [t, workspace.rootPath]);
 
+  const creatingSessionRef = useRef(false);
   const handleCreateSession = useCallback(async (mode?: 'Standard' | 'Cowork' | 'Claw') => {
     setMenuOpen(false);
+    // One new session per gesture: a second click while the first is
+    // being created would open a second draft.
+    if (creatingSessionRef.current) return;
+    creatingSessionRef.current = true;
     const resolvedMode = mode ?? (workspace.workspaceKind === WorkspaceKind.Assistant ? 'Claw' : undefined);
     try {
       const reusableId = findReusableEmptySessionId(workspace, resolvedMode);
@@ -751,6 +756,8 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         error instanceof Error ? error.message : t('nav.workspaces.createSessionFailed'),
         { duration: 4000 }
       );
+    } finally {
+      creatingSessionRef.current = false;
     }
   }, [
     setActiveWorkspace,

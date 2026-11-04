@@ -938,9 +938,9 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       return;
     }
 
-    if (historyState === 'failed') {
-      clearHistorySessionOpenTransition(pendingHistoryOpenSession.sessionId);
-    }
+    // Settled either way: the open's transition ends now, not at its timeout
+    // (a cross-device open allows up to 20 s, and its readers defer work).
+    clearHistorySessionOpenTransition(pendingHistoryOpenSession.sessionId);
     setPendingHistoryOpenSession(null);
   }, [
     historyState,

@@ -106,13 +106,16 @@ const DeviceSection: React.FC<{
   const loading = useCatalogLoading(slot.surfaceId, slot.rendered) || (opening && !slot.rendered);
   // While the rendered device's live catalog hydrates after a switch, keep
   // drawing its warm device catalog so the list neither empties nor jumps.
-  const { loading: liveLoading } = useWorkspaceContext();
+  // Only a live list that has nothing yet is hydrating: activating a workspace
+  // also sets `loading`, and must not swap the list it is clicked in.
+  const { loading: liveLoading, openedWorkspacesList } = useWorkspaceContext();
+  const liveHydrating = liveLoading && openedWorkspacesList.length === 0;
   const hasCatalog = useCatalogHasWorkspaces(slot.surfaceId);
   // During a cross-device open every device draws its background projection,
   // which uses the live list's data and rules; the rendered device hands over
   // to its live list once, after the open, so its reads never delay the open.
   const switching = useDeviceOpenIntent(state => state.intent !== null);
-  const showLive = slot.rendered && ((!switching && !liveLoading) || !hasCatalog);
+  const showLive = slot.rendered && ((!switching && !liveHydrating) || !hasCatalog);
   // CLI hosts say so; client hosts name their platform.
   const platform = devicePlatform(slot.os);
   const hostTag = slot.hostKind === 'cli' ? t('nav.devices.hostCli')

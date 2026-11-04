@@ -254,9 +254,16 @@ export function observeHostQueue(queue: HostDialogQueue): () => void {
   const refresh = async () => {
     if (closed || running) return;
     if (timer) clearTimeout(timer);
+    // A hidden window is refreshed when it is shown again.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     running = true;
-    let delay = 2_000;
-    try { await queue.refresh(); } catch { delay = 10_000; }
+    let delay = 10_000;
+    try {
+      // Watch closely only while something is queued; an empty queue changes
+      // through this window's own sends (which refresh it) or rarely elsewhere.
+      const snapshot = await queue.refresh();
+      if ((snapshot?.items?.length ?? 0) > 0 || snapshot?.activeTurnId) delay = 2_000;
+    } catch { delay = 10_000; }
     finally { running = false; if (!closed) timer = setTimeout(() => void refresh(), delay); }
   };
   const wake = () => { if (document.visibilityState !== 'hidden') void refresh(); };

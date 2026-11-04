@@ -11,6 +11,11 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 const KEEPALIVE: Duration = Duration::from_secs(4 * 60);
+/// Events in the first page of an open: enough to fill a transcript view, so
+/// the session shows after one small read instead of a full 200-event /
+/// 768 KiB page over the relay. Older pages follow in the background. Every
+/// host honours `limit`, so no capability is needed.
+const FIRST_PAGE_EVENTS: usize = 48;
 const UNSUPPORTED_HOST_MESSAGE: &str = "The controlled device runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on that device to continue.";
 
 #[derive(Deserialize)]
@@ -148,6 +153,7 @@ impl Reader {
             .read(StreamReadRequest {
                 stream_id: self.session_id.clone(),
                 subscribe: true,
+                limit: Some(FIRST_PAGE_EVENTS),
                 ..Default::default()
             })
             .await?;
@@ -580,6 +586,14 @@ mod tests {
             .unwrap();
         lab.settle().await;
         assert_eq!(lab.transport.reads.lock().unwrap().len(), reads_before);
+    }
+
+    #[tokio::test]
+    async fn opening_reads_a_small_latest_page_first() {
+        let lab = lab();
+        let _subscriber = lab.subscribe("s").await.unwrap();
+        let reads = lab.transport.reads.lock().unwrap().clone();
+        assert_eq!(reads[0].limit, Some(super::FIRST_PAGE_EVENTS));
     }
 
     #[tokio::test]

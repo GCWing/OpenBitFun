@@ -4,13 +4,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const slots = vi.hoisted(() => ({ value: [] as unknown[] }));
-const live = vi.hoisted(() => ({ loading: false }));
+const live = vi.hoisted(() => ({ loading: false, opened: [] as unknown[] }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('./useSidebarDevices', async importOriginal => ({
   ...await importOriginal<typeof import('./useSidebarDevices')>(),
   useSidebarDevices: () => slots.value,
 }));
-vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({ useWorkspaceContext: () => ({ loading: live.loading }) }));
+vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({ useWorkspaceContext: () => ({ loading: live.loading, openedWorkspacesList: live.opened }) }));
 vi.mock('../workspaces/WorkspaceListSection', () => ({ default: () => <div data-testid="live-list" /> }));
 vi.mock('./DeviceCatalogSection', () => ({
   default: ({ slot }: { slot: { surfaceId: string } }) => <div data-testid="background-list" data-surface={slot.surfaceId} />,
@@ -66,6 +66,16 @@ describe('DeviceWorkspaceSections hand-over', () => {
     live.loading = false;
     render();
     expect(body('local')).toBe('live-list');
+  });
+
+  it('keeps the live rows while a workspace is activated in them', () => {
+    live.loading = true;
+    live.opened = [{ id: 'ws' }];
+    slots.value = [slot('local', true), slot('peer-b', false)];
+    render();
+    expect(body('local')).toBe('live-list');
+    live.loading = false;
+    live.opened = [];
   });
 
   it('keeps device sections in a fixed order whichever device is rendered', () => {

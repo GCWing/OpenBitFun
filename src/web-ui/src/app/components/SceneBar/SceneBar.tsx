@@ -320,6 +320,7 @@ const SceneBar: React.FC<SceneBarProps> = ({
             const title = resource?.target.kind === 'file' ? [resource.scope.surfaceId, resource.scope.remoteConnectionId, resource.target.path].filter(Boolean).join(' · ') : undefined;
             return <div className="openbitfun-scene-bar__item" draggable title={title}
               data-scene-tab-id={tabId}
+              data-pending={pendingTabId === tabId || undefined}
               data-canvas-drop-position={activeCanvasDrop?.target?.tabId === tabId ? activeCanvasDrop.target.placement : undefined}
               onContextMenu={event => handleContextMenu(event, tabId)}
               onDragStart={event => { writeSceneTabDrag(event.dataTransfer, tabId); if (tab?.session) beginConversationTransfer(event.dataTransfer, tab.session, tabId); }}
