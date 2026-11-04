@@ -154,6 +154,8 @@ class FakeConnectionManager {
 
 function createHarness(options: {
   rebootstrap?: (scope: SurfaceScope) => Promise<void>;
+  reloadConfig?: (scope: SurfaceScope) => Promise<void>;
+  deferConfigReload?: () => boolean;
 } = {}) {
   const manager = new FakeConnectionManager();
   const commits: string[] = [];
@@ -169,7 +171,8 @@ function createHarness(options: {
     connectionManager: manager,
     getLocalAdapter: async () => adapter(),
     resetProductSurface: async assertCurrent => assertCurrent(),
-    reloadConfig: async scope => scope.assertCurrent('reload config'),
+    reloadConfig: options.reloadConfig ?? (async scope => scope.assertCurrent('reload config')),
+    deferConfigReload: options.deferConfigReload,
     rebootstrapWorkspaces: options.rebootstrap
       ?? (async scope => scope.assertCurrent('rebootstrap workspaces')),
     setPeerControllerActive: async active => {
@@ -253,6 +256,15 @@ describe('PeerDeviceSurfaceController switching', () => {
     await expect(pending).resolves.toBe('activated');
     expect(harness.peerModeEvents).toEqual([{ active: true, deviceId: 'peer-a' }]);
     expect(harness.snapshot().peerMode).toMatchObject({ active: true, deviceId: 'peer-a' });
+  });
+
+  it('does not hold a switch on config while a cross-device open waits for it', async () => {
+    const config = deferred<void>();
+    const reloadConfig = vi.fn(() => config.promise);
+    const harness = createHarness({ reloadConfig, deferConfigReload: () => true });
+    await expect(harness.controller.switchToDevice('peer-a', 'A')).resolves.toBe('activated');
+    expect(reloadConfig).toHaveBeenCalledOnce();
+    config.resolve();
   });
 
   it('coalesces a rapid switch to the last target before the first connection completes', async () => {

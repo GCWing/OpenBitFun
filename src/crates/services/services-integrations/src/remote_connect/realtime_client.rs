@@ -3,6 +3,7 @@
 use anyhow::{anyhow, bail, Result};
 use futures::{stream::FuturesUnordered, StreamExt};
 use serde_json::{json, Value};
+use sioc::error::AckError;
 use sioc::prelude::*;
 use std::time::Duration;
 
@@ -28,6 +29,21 @@ impl RpcCallDeadlines {
             ack: target + Duration::from_secs(3),
             overall: target + Duration::from_secs(5),
         }
+    }
+}
+
+/// Stable text for an acknowledgement the socket lost because its connection
+/// closed (a reconnect, a device switch, a revoked socket) before the Relay
+/// answered. The frontend matches this prefix; keep it byte-stable.
+pub const RELAY_REPLY_LOST: &str =
+    "Relay connection closed before the reply arrived; delivery outcome is unknown";
+
+/// The Relay always answers an acknowledged event, so a dropped acknowledgement
+/// means this socket went away. Say so instead of the transport's own text.
+fn ack_error(error: AckError) -> anyhow::Error {
+    match error {
+        AckError::Recv(_) => anyhow!(RELAY_REPLY_LOST),
+        other => anyhow::Error::from(other),
     }
 }
 
@@ -169,7 +185,8 @@ impl RealtimeConnection {
                 ))
                 .await?
                 .timeout(Duration::from_secs(10))
-                .await?;
+                .await
+                .map_err(ack_error)?;
             if ack.payload.0["ok"] != true {
                 bail!("Relay RPC registration rejected");
             }
@@ -242,7 +259,8 @@ impl RealtimeSender {
             ))
             .await?
             .timeout(Duration::from_secs(10))
-            .await?;
+            .await
+            .map_err(ack_error)?;
         if response.payload.0["ok"] != true {
             bail!(
                 "Relay event rejected: {}",
@@ -274,7 +292,7 @@ impl RealtimeSender {
                 .await?
                 .timeout(deadlines.ack)
                 .await
-                .map_err(anyhow::Error::from)
+                .map_err(ack_error)
         })
         .await
         .map_err(|_| anyhow!("Relay RPC timed out; delivery outcome is unknown"))??;
@@ -306,6 +324,15 @@ impl RealtimeSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_dropped_acknowledgement_reads_as_a_lost_reply() {
+        let (sender, receiver) = tokio::sync::oneshot::channel::<()>();
+        drop(sender);
+        let dropped = receiver.await.unwrap_err();
+        let error = ack_error(AckError::Recv(dropped));
+        assert_eq!(error.to_string(), RELAY_REPLY_LOST);
+    }
 
     #[test]
     fn default_rpc_payload_keeps_the_legacy_deadlines() {

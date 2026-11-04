@@ -1804,9 +1804,11 @@ describe('VirtualMessageList natural scroll contract', () => {
 
         prependOlderTurns(3);
 
-        // Refused, because the holder owns a target of its own...
-        expect(scroller.scrollTop).toBe(500);
-        // ...and asked to go and reach it.
+        // Held still before paint, as the holder itself, so no frame shows
+        // the arrived history pushing the reader's Turn down...
+        expect(scroller.scrollTop).toBe(620);
+        expect(mocks.viewportOwner?.currentOwner()).toBe('follow-output');
+        // ...and the holder is asked to go and reach its own target.
         expect(mocks.scheduleFollowToLatest).toHaveBeenCalled();
       });
     });

@@ -42,6 +42,9 @@ slices that are outside pure product logic but still platform-neutral.
   Only the requested page's bodies enter the bounded log; the pending source
   batch is at most one persisted turn, which can itself be large. No wire or
   persisted-format migration is required; all controllers retain `read_stream`.
+  `limit` is a budget for history reads: a page grows to the first record of its
+  oldest turn so no turn splits across pages, within the hard event and byte
+  bounds. Controllers must not assume a page holds at most `limit` events.
 - The `remote-persistence` feature is the lightweight persisted-shape owner shared
   by Remote Connect, remote SSH, and offline migration. Keep it free of network,
   SSH transport, and runtime orchestration dependencies so owner readers and

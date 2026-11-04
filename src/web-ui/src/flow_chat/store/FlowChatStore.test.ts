@@ -814,7 +814,7 @@ describe('FlowChatStore metadata persistence callbacks', () => {
       expect(flowChatStore.getState().sessions.get(session.sessionId)).toMatchObject({
         hasUnreadCompletion: undefined, needsUserAttention: 'tool_confirm',
       });
-      expect(persist).toHaveBeenCalledWith(session.sessionId, undefined);
+      expect(persist).toHaveBeenCalledWith(session.sessionId, undefined, summary.lastTurn);
       expect(sessionActivityStore.get(session.sessionId)?.summary?.unreadCompletion).toBeUndefined();
 
       sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [summary]);
@@ -865,7 +865,7 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     flowChatStore.clearSessionUnreadCompletion(session.sessionId);
 
     expect(persist).toHaveBeenCalledTimes(1);
-    expect(persist).toHaveBeenCalledWith(session.sessionId, undefined);
+    expect(persist).toHaveBeenCalledWith(session.sessionId, undefined, undefined);
   });
 
   it('persists attention clear only when the session state changes', () => {
@@ -9292,6 +9292,25 @@ describe('FlowChatStore reconstructable history residency', () => {
     expect(flowChatStore.getSessionHistoryViewState(session.sessionId)).toBeUndefined();
   });
 
+  it('keeps the latest turns of a long session when first evicted, so it reopens without a read', () => {
+    const turns = (flowChatStore as any).convertToDialogTurns(Array.from({ length: 10 }, (_, index) => createPersistedTurn(index)));
+    const session = createSession({ sessionId: 'history-1', dialogTurns: turns,
+      historyState: 'ready', turnCatalog: createTurnCatalog(10), totalTurnCount: 10 });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: null }));
+    (flowChatStore as any).seedSessionHistoryLoadedRanges(session.sessionId);
+    (flowChatStore as any).updateHistoryResidency();
+    withHistoryBudgetPressure(() => resourceBudget.trim());
+    const warm = flowChatStore.getState().sessions.get(session.sessionId)!;
+    expect(warm.dialogTurns.map(turn => turn.id)).toEqual(turns.slice(-3).map((turn: DialogTurn) => turn.id));
+    expect(warm.historyState).toBe('ready');
+    expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.loadedRanges[0])
+      .toMatchObject({ startOrdinal: 7, endOrdinalExclusive: 10 });
+    // Under continued pressure the tail goes too.
+    (flowChatStore as any).updateHistoryResidency();
+    withHistoryBudgetPressure(() => resourceBudget.trim());
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.historyState).toBe('metadata-only');
+  });
+
   it('protects a visible child and never evicts a newly edited or streaming projection', () => {
     const turns = (flowChatStore as any).convertToDialogTurns([createPersistedTurn(0)]);
     const session = createSession({ sessionId: 'history-1', dialogTurns: turns, historyState: 'ready' });
@@ -9306,5 +9325,118 @@ describe('FlowChatStore reconstructable history residency', () => {
     (flowChatStore as any).updateHistoryResidency();
     withHistoryBudgetPressure(() => resourceBudget.trim());
     expect(flowChatStore.getState().sessions.get(session.sessionId)?.dialogTurns).toBe(liveTurns);
+  });
+});
+
+describe('background device session seeding', () => {
+  const metadata = (sessionId: string, extra: Record<string, unknown> = {}) => ({
+    sessionId, sessionName: sessionId, agentType: 'agentic', modelName: 'm', createdAt: 10, lastActiveAt: 20,
+    turnCount: 1, messageCount: 1, toolCallCount: 0, status: 'active', tags: [], workspaceId: 'peer-ws', ...extra,
+  }) as never;
+  const page = (sessions: never[]) => [{ workspaceId: 'peer-ws', workspacePath: '/srv/app', sessions }];
+
+  afterEach(() => {
+    activateSurface(LOCAL_SURFACE_ID);
+    flowChatStore.discardSurfaceState('peer-seed');
+  });
+
+  it('projects a background device into its own container, never the rendered one', () => {
+    const listener = vi.fn();
+    const unsubscribe = flowChatStore.subscribeSurfaceSessions(listener);
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1'), metadata('archived', { status: 'archived' })]));
+    flowChatStore.seedSurfaceSessions(LOCAL_SURFACE_ID, page([metadata('local-1')]));
+    unsubscribe();
+    const seeded = flowChatStore.getSurfaceSessions('peer-seed');
+    expect([...seeded.keys()]).toEqual(['s-1']);
+    expect(seeded.get('s-1')).toMatchObject({ workspaceId: 'peer-ws', historyState: 'metadata-only', dialogTurns: [] });
+    expect(flowChatStore.getState().sessions.has('local-1')).toBe(false);
+    expect(listener).toHaveBeenCalledWith('peer-seed');
+    // An identical page does not notify again.
+    listener.mockClear();
+    flowChatStore.subscribeSurfaceSessions(listener);
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('finds the seeds after a switch and rebuilds them through the metadata path', async () => {
+    workspaceFixtures.set('peer-ws', { id: 'peer-ws', rootPath: '/srv/app', workspaceKind: 'normal' });
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    activateSurface('peer-seed');
+    expect(flowChatStore.getState().sessions.get('s-1')?.workspaceId).toBe('peer-ws');
+    await flowChatStore.promoteSeededSessions();
+    expect(stateMachineManagerMock.getOrCreate).toHaveBeenCalledWith('s-1');
+    expect(flowChatStore.getState().sessions.get('s-1')).toMatchObject({ workspaceId: 'peer-ws', historyState: 'metadata-only' });
+    workspaceFixtures.delete('peer-ws');
+  });
+
+  it('never replaces a seeded session once it has history', async () => {
+    workspaceFixtures.set('peer-ws', { id: 'peer-ws', rootPath: '/srv/app', workspaceKind: 'normal' });
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    activateSurface('peer-seed');
+    flowChatStore.setState(state => {
+      const sessions = new Map(state.sessions);
+      sessions.set('s-1', { ...sessions.get('s-1')!, historyState: 'ready', dialogTurns: [{ id: 'turn' } as never] });
+      return { ...state, sessions };
+    });
+    await flowChatStore.promoteSeededSessions();
+    expect(flowChatStore.getState().sessions.get('s-1')?.dialogTurns).toHaveLength(1);
+    workspaceFixtures.delete('peer-ws');
+  });
+
+  it('refreshes navigation facts of a loaded background session without dropping its state', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    activateSurface('peer-seed');
+    flowChatStore.setState(state => {
+      const sessions = new Map(state.sessions);
+      sessions.set('s-1', { ...sessions.get('s-1')!, historyState: 'ready', dialogTurns: [{ id: 'turn' } as never] });
+      return { ...state, sessions };
+    });
+    activateSurface(LOCAL_SURFACE_ID);
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1', { sessionName: 'Renamed', lastActiveAt: 99 })]));
+    const session = flowChatStore.getSurfaceSessions('peer-seed').get('s-1');
+    expect(session).toMatchObject({ title: 'Renamed', lastActiveAt: 99 });
+    expect(session?.dialogTurns).toHaveLength(1);
+  });
+
+  it('drops sessions its host deleted or archived, never the rendered device or drafts', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1'), metadata('s-2')]));
+    flowChatStore.dropSurfaceSessions('peer-seed', ['s-2', 'missing']);
+    expect([...flowChatStore.getSurfaceSessions('peer-seed').keys()]).toEqual(['s-1']);
+    flowChatStore.seedSurfaceSessions(LOCAL_SURFACE_ID, page([metadata('local-1')]));
+    flowChatStore.dropSurfaceSessions(LOCAL_SURFACE_ID, ['s-1']);
+    expect([...flowChatStore.getSurfaceSessions('peer-seed').keys()]).toEqual(['s-1']);
+  });
+
+  it('adds only missing sessions from an older page', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1', { sessionName: 'Current' })]));
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1', { sessionName: 'Older' }), metadata('s-2')]), { onlyMissing: true });
+    const sessions = flowChatStore.getSurfaceSessions('peer-seed');
+    expect([...sessions.keys()]).toEqual(['s-1', 's-2']);
+    expect(sessions.get('s-1')?.title).toBe('Current');
+  });
+
+  it('drops only seeds when the account changes', () => {
+    flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
+    flowChatStore.discardSeededSessions('peer-seed');
+    expect(flowChatStore.getSurfaceSessions('peer-seed').size).toBe(0);
+  });
+});
+
+describe('read receipts of unloaded sessions', () => {
+  it('persists the host record of the result even when no turn was loaded', async () => {
+    workspaceFixtures.set('rr-ws', { id: 'rr-ws', rootPath: '/srv/rr', workspaceKind: 'normal' });
+    const target = { turnId: 'turn-9', turnIndex: 9, status: 'cancelled', executionGeneration: 2, recoveryPending: true };
+    await flowChatStore.adoptHostSessionMetadata('rr-ws', [{
+      sessionId: 'rr-1', sessionName: 'rr', agentType: 'agentic', modelName: 'm', createdAt: 1, lastActiveAt: 2,
+      turnCount: 9, messageCount: 9, toolCallCount: 0, status: 'active', tags: [], workspaceId: 'rr-ws',
+      unreadCompletion: 'interrupted', lastTurn: { turnId: 'turn-10', turnIndex: 10, status: 'completed' },
+      customMetadata: { unreadCompletionTarget: target },
+    } as never]);
+    const persisted: unknown[] = [];
+    flowChatStore.registerPersistUnreadCompletionCallback((...args) => { persisted.push(args); });
+    flowChatStore.clearSessionUnreadCompletion('rr-1');
+    expect(persisted).toEqual([['rr-1', undefined, target]]);
+    expect(flowChatStore.getState().sessions.get('rr-1')?.unreadCompletionReceipt).toBeUndefined();
+    workspaceFixtures.delete('rr-ws');
   });
 });

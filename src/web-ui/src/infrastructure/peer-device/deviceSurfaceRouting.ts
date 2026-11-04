@@ -47,6 +47,8 @@ const SURFACE_SCOPED_EVENTS = new Set<string>([
   'ai://model-catalog-updated',
   'session_title_generated',
   'workspace-catalog-changed',
+  // Catalog stream hint of one host; the sidebar device catalog observes it.
+  'host-catalog-changed',
   'cron://jobs-changed',
 ]);
 

@@ -1,4 +1,5 @@
-import { Button, Icon, StatusPill } from '@openbitfun/ui';
+import { Button, Icon } from '@openbitfun/ui';
+import { ConnectionStateMark } from './ConnectionStateMark';
 import type { ReactNode } from 'react';
 import type { ConnectionResult, RemoteConnectStatus } from '@/infrastructure/api/service-api/RemoteConnectAPI';
 import { useI18n } from '@/infrastructure/i18n';
@@ -40,6 +41,7 @@ export function RemoteNetworkConnections({
   return <div className="openbitfun-remote-connect__body">
     <section
       className="openbitfun-remote-connect__network-card"
+      data-openbitfun-state={connected ? 'connected' : undefined}
       data-openbitfun-component="remote-connect-dialog"
       data-openbitfun-part="connections"
       aria-label={title}
@@ -52,11 +54,11 @@ export function RemoteNetworkConnections({
         </div>
         {!invitation && (
           <span className="openbitfun-remote-connect__status" role="status">
-            <StatusPill tone={statusState === 'ready' && connected ? 'success' : 'neutral'}>
+            <ConnectionStateMark tone={statusState === 'ready' && connected ? 'success' : 'neutral'}>
               {t(statusState === 'unavailable' ? 'remoteConnect.statusUnavailable'
                 : statusState === 'loading' ? 'remoteConnect.statusChecking'
                   : connected ? 'remoteConnect.stateConnected' : 'remoteConnect.notConnected')}
-            </StatusPill>
+            </ConnectionStateMark>
           </span>
         )}
       </div>
@@ -106,7 +108,7 @@ export function RemoteNetworkConnections({
       {error && <div className="openbitfun-remote-connect__card-section">{error}</div>}
       <div className="openbitfun-remote-connect__card-actions">
         {connected && (
-          <Button variant="outline" tone="danger" size="sm" onClick={onDisconnect}>
+          <Button variant="quiet" tone="danger" size="sm" onClick={onDisconnect}>
             {t('remoteConnect.disconnect')}
           </Button>
         )}

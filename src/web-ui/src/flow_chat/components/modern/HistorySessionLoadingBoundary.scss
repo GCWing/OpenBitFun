@@ -117,3 +117,18 @@
   0%, 12% { mask-position: 100% 0; }
   85%, 100% { mask-position: 0 0; }
 }
+
+// The skeleton appears only once a load has lasted long enough to notice; a
+// fast open goes straight to its transcript.
+.history-session-loading__overlay .history-session-skeleton {
+  animation: history-session-skeleton-reveal 180ms ease-out 140ms both;
+}
+
+@keyframes history-session-skeleton-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-session-loading__overlay .history-session-skeleton { animation: none; }
+}

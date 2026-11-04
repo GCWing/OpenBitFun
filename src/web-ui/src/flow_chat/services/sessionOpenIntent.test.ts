@@ -110,4 +110,13 @@ describe('sessionOpenIntent', () => {
     expect(shouldShowHistorySessionOpenIntent(metadataOnlySession, { isRunning: true })).toBe(false);
     expect(shouldShowHistorySessionOpenIntent(renderableSession)).toBe(false);
   });
+
+  it('keeps a cross-device open overlay for its longer window, with its title', () => {
+    vi.useFakeTimers();
+    dispatchHistorySessionOpenIntent('remote-1', 'Remote', 20_000);
+    vi.advanceTimersByTime(10_000);
+    expect(getHistorySessionOpenTransitionSnapshot()).toMatchObject({ sessionId: 'remote-1', sessionTitle: 'Remote', maxMs: 20_000 });
+    vi.advanceTimersByTime(10_000);
+    expect(getHistorySessionOpenTransitionSnapshot()).toBeNull();
+  });
 });

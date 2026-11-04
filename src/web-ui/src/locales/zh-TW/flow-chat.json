@@ -247,6 +247,8 @@
       "tokenCapacity": "{{used}} / {{size}} Tokens",
       "loading": "正在載入上下文用量…",
       "loadFailed": "無法載入上下文用量，請收合後重新開啟。",
+      "unsupported": "此裝置暫不支援檢視上下文用量。",
+      "updateRequired": "此裝置上的 OpenBitFun 版本暫不支援檢視上下文用量，更新該裝置上的 OpenBitFun 後即可檢視。",
       "title": "上下文組成",
       "label": "上下文",
       "utilization": "使用占比",

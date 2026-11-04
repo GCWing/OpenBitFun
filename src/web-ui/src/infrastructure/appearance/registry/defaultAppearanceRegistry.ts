@@ -181,6 +181,8 @@ import { imageViewerAppearanceDescriptor } from '@/tools/editor/components/Image
 import { pdfViewerAppearanceDescriptor } from '@/tools/editor/components/PdfViewer.appearance';
 import { branchQuickSwitchAppearanceDescriptor } from '@/tools/git/components/BranchQuickSwitch.appearance';
 import { workspaceListSectionAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceListSection.appearance';
+import { navDeviceSectionAppearanceDescriptor } from '@/app/components/NavPanel/sections/devices/DeviceWorkspaceSections.appearance';
+import { deviceSwitchCurtainAppearanceDescriptor } from '@/app/scenes/device-switch/DeviceSwitchCurtain.appearance';
 import { workspaceIconAppearanceDescriptor, workspaceIconEditorAppearanceDescriptor } from '@/app/components/WorkspaceIcon/appearance';
 import { workspaceItemAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceItem.appearance';
 import { newProjectDialogAppearanceDescriptor } from '@/app/components/NewProjectDialog/NewProjectDialog.appearance';
@@ -453,6 +455,8 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(pdfViewerAppearanceDescriptor)
     .registerComponent(branchQuickSwitchAppearanceDescriptor)
     .registerComponent(workspaceListSectionAppearanceDescriptor)
+    .registerComponent(navDeviceSectionAppearanceDescriptor)
+    .registerComponent(deviceSwitchCurtainAppearanceDescriptor)
     .registerComponent(workspaceIconAppearanceDescriptor)
     .registerComponent(workspaceIconEditorAppearanceDescriptor)
     .registerComponent(workspaceItemAppearanceDescriptor)

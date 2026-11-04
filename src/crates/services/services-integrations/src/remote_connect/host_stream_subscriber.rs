@@ -11,6 +11,13 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 const KEEPALIVE: Duration = Duration::from_secs(4 * 60);
+/// Event budget of the first page of an open: enough to fill a transcript view,
+/// so the session shows after one small read instead of a full 200-event /
+/// 768 KiB page over the relay. Older pages follow in the background. Every
+/// host honours `limit`, so no capability is needed; current hosts extend the
+/// page to the first record of the turn the budget ran out in, older ones cut it
+/// mid-turn and their boundary turn fills in with the next page.
+const FIRST_PAGE_EVENTS: usize = 48;
 const UNSUPPORTED_HOST_MESSAGE: &str = "The controlled device runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on that device to continue.";
 
 #[derive(Deserialize)]
@@ -148,6 +155,7 @@ impl Reader {
             .read(StreamReadRequest {
                 stream_id: self.session_id.clone(),
                 subscribe: true,
+                limit: Some(FIRST_PAGE_EVENTS),
                 ..Default::default()
             })
             .await?;
@@ -580,6 +588,62 @@ mod tests {
             .unwrap();
         lab.settle().await;
         assert_eq!(lab.transport.reads.lock().unwrap().len(), reads_before);
+    }
+
+    #[tokio::test]
+    async fn opening_reads_a_small_latest_page_first() {
+        let lab = lab();
+        let _subscriber = lab.subscribe("s").await.unwrap();
+        let reads = lab.transport.reads.lock().unwrap().clone();
+        assert_eq!(reads[0].limit, Some(super::FIRST_PAGE_EVENTS));
+    }
+
+    #[tokio::test]
+    async fn opening_a_long_session_shows_whole_turns_and_pages_older_ones_after_them() {
+        let lab = lab();
+        lab.hub.activate("s");
+        let mut records = Vec::new();
+        for turn in 0..5 {
+            records.push(record("s", &format!("t{turn}"), "completed"));
+            for item in 0..19 {
+                let mut body = record("s", &format!("t{turn}"), "completed");
+                let id = format!("{turn}-{item}");
+                body["id"] = serde_json::json!(format!("item/{id}"));
+                body["round"] =
+                    serde_json::json!({"id":format!("r{turn}"),"turnId":format!("t{turn}")});
+                body["item"] = serde_json::json!({"type":"text","data":{"id":id}});
+                records.push(body);
+            }
+        }
+        lab.hub
+            .synchronize_records("s".into(), true, || async { Ok(records) })
+            .await
+            .unwrap();
+        let subscriber = lab.subscribe("s").await.unwrap();
+        let ids = |lab: &Lab| -> Vec<String> {
+            lab.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(event, _)| event == "session-record")
+                .map(|(_, payload)| payload["id"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        // 48 events run out inside t2; the page grows back to its header.
+        let first = ids(&lab);
+        assert_eq!(first.len(), 60);
+        assert_eq!(first[0], "turn/t2");
+        let ready = lab.events.lock().unwrap().last().unwrap().1.clone();
+        assert_eq!(ready["hasMore"], true);
+        // The older page brings only turns the first page does not touch.
+        subscriber.load_older().await.unwrap();
+        let all = ids(&lab);
+        assert_eq!(all.len(), 100);
+        assert_eq!(all[60], "turn/t0");
+        let unique: std::collections::HashSet<_> = all.iter().collect();
+        assert_eq!(unique.len(), 100);
+        let ready = lab.events.lock().unwrap().last().unwrap().1.clone();
+        assert_eq!(ready["hasMore"], false);
     }
 
     #[tokio::test]

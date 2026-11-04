@@ -104,6 +104,8 @@ const PersistentFooterActions: React.FC = () => {
     if (nextOpen && menuOpen) {
       closeMenu();
     }
+    // The dialog grows out of the card: have its code ready before it is asked for.
+    if (nextOpen) void import('../../RemoteConnectDialog');
     setDeviceOverviewOpen(nextOpen);
   }, [closeMenu, menuOpen]);
 

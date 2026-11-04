@@ -906,6 +906,7 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
               sessionTitle={content.data?.sessionTitle}
               isLoading={content.data?.isLoading}
               error={content.data?.error}
+              unsupported={content.data?.unsupported}
               workspaceId={content.data?.workspaceId ?? content.data?.report?.workspace?.workspaceId}
               workspacePath={content.data?.workspacePath || workspacePath}
               initialTab={content.data?.initialTab}

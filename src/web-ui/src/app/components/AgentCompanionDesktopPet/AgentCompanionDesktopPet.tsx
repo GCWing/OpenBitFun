@@ -766,7 +766,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     }
     // Finished / failed / interrupted bubbles are pure "unread" notices, so tell
     // the main window the user has seen this one.
-    void sendPetCommand({ type: 'dismiss-task', sessionId: task.sessionId })
+    void sendPetCommand({ type: 'dismiss-task', sessionId: task.sessionId, ...(task.surfaceId ? { surfaceId: task.surfaceId } : {}) })
       .catch(error => {
         log.warn('Failed to acknowledge Agent companion task', {
           sessionId: task.sessionId,
@@ -1014,7 +1014,10 @@ export const AgentCompanionDesktopPet: React.FC = () => {
 
   const openTaskSession = async (task: AgentCompanionTaskStatus) => {
     try {
-      await emit('agent-companion://open-session', { sessionId: task.sessionId });
+      await emit('agent-companion://open-session', {
+        sessionId: task.sessionId,
+        ...(task.surfaceId ? { surfaceId: task.surfaceId, workspaceId: task.workspaceId } : {}),
+      });
       await api.invoke('show_main_window');
     } catch (error) {
       log.warn('Failed to open Agent companion task session', {
@@ -1126,7 +1129,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
                       </OverflowText>
                     </span>
                     <span className="openbitfun-agent-companion-window__bubble-status" data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="bubbleStatus">
-                      {statusLabel}
+                      {task.deviceName ? `${statusLabel} · ${task.deviceName}` : statusLabel}
                     </span>
                     {isSingleTask && task.latestOutput && (() => {
                       const typedOutput = typedOutputBySessionId[task.sessionId];

@@ -203,6 +203,12 @@ it('still reports a failed status read as unavailable and permits Stop', async (
   await act(async () => [...container.querySelectorAll('button')].find(b => b.textContent === 'computerControl.stop')!.click());
   expect(mocks.stop).toHaveBeenCalledWith(4);
 });
+it('stops asking a host that refuses device control', async () => {
+  mocks.status.mockRejectedValue(new Error("command 'computer_use_control_status' is not supported on CLI peer host: no automation runtime"));
+  await act(async () => root.render(<ComputerUseControlCard />));
+  await act(async () => vi.advanceTimersByTime(5000));
+  expect(mocks.status).toHaveBeenCalledOnce();
+});
 it('shows the preview by default and hides the card when control ends externally', async () => {
   mocks.status.mockResolvedValue(active('Window A'));
   mocks.preview.mockResolvedValue({ generation: 4, target: 'Window A', image_base64: 'AA==', mime_type: 'image/png',

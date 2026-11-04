@@ -22,7 +22,7 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', () => ({ remoteConn
   subscribeSession: fixture.subscribe, unsubscribeSession: fixture.unsubscribe, loadOlderSession: fixture.older,
 } }));
 
-import { RelaySessionHistory } from './RelaySessionHistory';
+import { prewarmRelaySessionHistory, RelaySessionHistory } from './RelaySessionHistory';
 
 describe('RelaySessionHistory', () => {
   beforeEach(() => { vi.clearAllMocks(); fixture.current = true; });
@@ -51,6 +51,37 @@ describe('RelaySessionHistory', () => {
     expect(fixture.older).toHaveBeenCalledOnce();
     history.close();
     expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
+    expect(fixture.record).toBeNull();
+  });
+
+  it('adopts a stream warmed before the device was rendered, with what it buffered', async () => {
+    let resolveSubscription!: (id: string) => void;
+    fixture.subscribe.mockImplementation(() => new Promise<string>(resolve => { resolveSubscription = resolve; }));
+    prewarmRelaySessionHistory('host', 'session');
+    // The host answers while the device switch is still running.
+    fixture.record?.({ sessionId: 'session', id: 'turn/turn' });
+    fixture.record?.({ sessionId: 'other', id: 'turn/other' });
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 1 });
+    const apply = vi.fn();
+    const onReady = vi.fn();
+    const history = new RelaySessionHistory('session', apply, onReady, vi.fn());
+    const opened = history.open();
+    resolveSubscription('warm-subscription');
+    await opened;
+    expect(fixture.subscribe).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith({ sessionId: 'session', id: 'turn/turn' });
+    expect(onReady).toHaveBeenCalledOnce();
+    history.close();
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('warm-subscription');
+  });
+
+  it('closes a warm stream nobody adopted', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValue('unused');
+    prewarmRelaySessionHistory('host', 'abandoned');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('unused');
     expect(fixture.record).toBeNull();
   });
 

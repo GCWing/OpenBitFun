@@ -37,7 +37,10 @@ vi.mock('@/app/stores/sceneStore', async () => {
   return { useSceneStore: create(() => ({ activeTabId: null as SceneTabId | null, openTabs: [] as SceneTab[] })) };
 });
 vi.mock('../../workspaceSessionView', () => ({
-  useWorkspaceSessionViewStore: (selector: (value: typeof state) => unknown) => selector(state),
+  useWorkspaceSessionViewStore: Object.assign(
+    (selector: (value: typeof state) => unknown) => selector(state),
+    { getState: () => state },
+  ),
 }));
 vi.mock('./WorkspaceItem', () => ({
   default: ({ workspace, isActive, isSelected, draggable, isDragging, onDragStart, onDragEnd, sessionsCollapsed, onSessionsCollapsedChange }: {

@@ -324,6 +324,21 @@ describe('resolveAgentTypeForSessionCreation', () => {
     await expect(resolveAgentTypeForSessionCreation('Standard', workspace)).resolves.toBe('Standard');
   });
 
+  it('issues the default-mode reads together and keeps the project mode when the global read fails', async () => {
+    const project = createDeferred<{ supported: boolean; defaults: { mode?: string } }>();
+    const reader = vi.fn(() => project.promise);
+    configApiMocks.getConfig.mockRejectedValue(new Error('preference unavailable'));
+    agentApiMocks.getAvailableModes.mockResolvedValue([{ id: 'Standard' }, { id: 'Ultimate' }]);
+    const resolved = resolveAgentTypeForSessionCreation(undefined, { id: 'project' } as any, reader);
+    await Promise.resolve();
+    expect(reader).toHaveBeenCalledTimes(1);
+    expect(configApiMocks.getConfig).toHaveBeenCalledTimes(1);
+    expect(agentApiMocks.getAvailableModes).toHaveBeenCalledTimes(1);
+    expect(projectDefaults.read).not.toHaveBeenCalled();
+    project.resolve({ supported: true, defaults: { mode: 'Ultimate' } });
+    await expect(resolved).resolves.toBe('Ultimate');
+  });
+
   it('does not override any explicit mode, including the Standard Harness id', async () => {
     await expect(resolveAgentTypeForSessionCreation('Cowork', null)).resolves.toBe('Cowork');
     await expect(resolveAgentTypeForSessionCreation('Standard', null)).resolves.toBe('Standard');

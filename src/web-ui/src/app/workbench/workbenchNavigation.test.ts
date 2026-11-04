@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneStore';
+import { registerSessionSceneNavigation, useSceneStore, resetSceneStoreForTest } from '../stores/sceneStore';
 import { getSessionSceneTabId } from '../components/SceneBar/types';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { sceneSelection } from './scenePaneModel';
@@ -21,7 +21,7 @@ beforeEach(() => {
   activateSurface('local');
   let tick = 1000;
   vi.spyOn(Date, 'now').mockImplementation(() => ++tick);
-  useSceneStore.getState().resetForPeerSwitch();
+  resetSceneStoreForTest();
   sessionPaneLayoutStore.setState(sessionPaneLayoutStore.getInitialState());
   resetSettingsDraftRegistryForTests();
   flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));

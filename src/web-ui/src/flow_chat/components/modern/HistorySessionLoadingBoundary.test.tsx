@@ -52,6 +52,9 @@ describe('history loading presentation handoff', () => {
     reducedMotion = false;
     hidden = false;
     action.mockReset();
+    // These loads last long enough to show the skeleton; see the quick-load case.
+    let clock = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => (clock += 1_000));
     media = Object.assign(new EventTarget(), {
       media: '(prefers-reduced-motion: reduce)',
     }) as MediaQueryList;
@@ -94,6 +97,18 @@ describe('history loading presentation handoff', () => {
     await act(async () => { element('.virtual-message-list').dataset.openViewportSettled = 'true'; });
     expect(phase()).toBe('exiting');
     expect(animations.length).toBeGreaterThan(0);
+  });
+
+  it('goes straight to the transcript when the load ends before the skeleton shows', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(5_000);
+    render();
+    render({ loading: false });
+    // No skeleton hand-over: one short fade of the content.
+    expect(phase()).toBe('revealing');
+    expect(animations).toHaveLength(1);
+    expect(animations[0].element.matches('.history-session-loading__content')).toBe(true);
+    await finish();
+    expect(phase()).toBe('idle');
   });
 
   it('preserves legacy appearance packages while keeping the old spinner invisible', () => {

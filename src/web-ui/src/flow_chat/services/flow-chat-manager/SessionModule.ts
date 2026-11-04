@@ -18,6 +18,7 @@ import { i18nService } from '@/infrastructure/i18n';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import {
   getActiveSurfaceScope,
+  isLocalSurface,
   isSurfaceChangedError,
   type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
@@ -373,6 +374,27 @@ export function preloadHistoricalSessionForOpen(
   });
 }
 
+/**
+ * Start reading a session the pointer rests on, before it is clicked: its tail
+ * (a few turns) is usually in memory by the time the click lands, so the open
+ * shows the transcript at once instead of a loading state. The same bounded
+ * hydrate the open would run; nothing is selected or activated.
+ */
+export function prewarmHistoricalSession(context: FlowChatContext, sessionId: string): void {
+  const scope = getActiveSurfaceScope();
+  // Another device's history is a live relay subscription, not a cheap read:
+  // hovering across rows must not open one per row.
+  if (!isLocalSurface(scope.surfaceId)) return;
+  if (Array.from(context.pendingHistoryLoads.keys()).some(key => pendingHistoryLoadSessionId(key, scope) === sessionId)) return;
+  const session = context.flowChatStore.getState().sessions.get(sessionId);
+  if (!session || session.externalHistory?.mode === 'follow') return;
+  if (!shouldHydrateHistoricalSessionBeforeSwitch(session)) return;
+  void hydrateHistoricalSession(context, sessionId, false).catch(error => {
+    if (isSurfaceChangedError(error)) return;
+    log.debug('Historical session prewarm failed', { sessionId, error });
+  });
+}
+
 const isAssistantWorkspace = (workspace?: WorkspaceInfo | null): boolean => {
   return workspace?.workspaceKind === WorkspaceKind.Assistant;
 };
@@ -388,9 +410,28 @@ const resolveSessionWorkspace = (config: SessionConfig): WorkspaceInfo => {
   return workspace;
 };
 
+export type ProjectDefaultsReader = () => ReturnType<typeof readProjectDefaults>;
+
+/**
+ * One creation reads the owning project's defaults once: the mode resolver and
+ * the session driver share the same in-flight read instead of issuing two
+ * host round trips (each one a relay round trip in Peer Device Mode).
+ */
+export const createProjectDefaultsReader = (projectId: string | undefined): ProjectDefaultsReader | undefined => {
+  if (!projectId) return undefined;
+  let read: ReturnType<typeof readProjectDefaults> | undefined;
+  return () => (read ??= readProjectDefaults(projectId));
+};
+
+const settledValue = <T>(result: PromiseSettledResult<T>): T => {
+  if (result.status === 'rejected') throw result.reason;
+  return result.value;
+};
+
 export const resolveAgentTypeForSessionCreation = async (
   requestedMode: string | undefined,
-  workspace: WorkspaceInfo | null
+  workspace: WorkspaceInfo | null,
+  readOwningProjectDefaults?: ProjectDefaultsReader,
 ): Promise<string> => {
   if (isAssistantWorkspace(workspace)) {
     return 'Claw';
@@ -407,21 +448,28 @@ export const resolveAgentTypeForSessionCreation = async (
   try {
     const projectId = workspace?.worktree && !workspace.worktree.isMain && workspace.workspaceKind !== WorkspaceKind.Remote
       ? workspace.worktree.mainWorkspaceId : workspace?.id;
-    const projectMode = projectId ? (await readProjectDefaults(projectId)).defaults.mode : undefined;
+    const readDefaults = readOwningProjectDefaults ?? createProjectDefaultsReader(projectId);
+    // The three reads are independent host requests. Issue them together so a
+    // peer-hosted creation pays one relay round trip instead of three; each
+    // result is still consulted only where the serial order would have read it.
+    const [projectResult, preferenceResult, modesResult] = await Promise.allSettled([
+      readDefaults ? readDefaults() : Promise.resolve(undefined),
+      configAPI.getConfig(CHAT_INPUT_MODE_PREFERENCE_CONFIG_PATH, {
+        skipRetryOnNotFound: true,
+      }) as Promise<AppFlowChatConfig | undefined>,
+      agentAPI.getAvailableModes({
+        workspaceId: workspace?.id,
+      }),
+    ]);
+    const projectMode = settledValue(projectResult)?.defaults.mode;
     const configuredDefaultMode = projectMode || resolveConfiguredChatInputDefaultModeId(
-      normalizeChatInputModePreference(
-        await configAPI.getConfig(CHAT_INPUT_MODE_PREFERENCE_CONFIG_PATH, {
-          skipRetryOnNotFound: true,
-        }) as AppFlowChatConfig | undefined,
-      ),
+      normalizeChatInputModePreference(settledValue(preferenceResult)),
     );
     if (!configuredDefaultMode) {
       return 'Standard';
     }
 
-    const availableModes = await agentAPI.getAvailableModes({
-      workspaceId: workspace?.id,
-    });
+    const availableModes = settledValue(modesResult);
     if (availableModes.some(mode => mode.id === configuredDefaultMode)) {
       return configuredDefaultMode;
     }
@@ -482,7 +530,8 @@ export async function createChatSession(
       workspace?.workspaceKind === WorkspaceKind.Remote
         ? workspace.sshHost?.trim() || undefined
         : undefined;
-    const agentType = await resolveAgentTypeForSessionCreation(mode, workspace);
+    const readOwningProjectDefaults = createProjectDefaultsReader(projectId);
+    const agentType = await resolveAgentTypeForSessionCreation(mode, workspace, readOwningProjectDefaults);
     surfaceScope.assertCurrent('resolve session creation mode');
     const workspaceCreationKey = workspace.id;
     const draftId = draft ? crypto.randomUUID() : undefined;
@@ -522,6 +571,7 @@ export async function createChatSession(
         workspaceId: workspace?.id,
         remoteConnectionId,
         remoteSshHost,
+        readProjectDefaults: readOwningProjectDefaults,
       });
       surfaceScope.assertCurrent('finish session creation');
       return sessionId;

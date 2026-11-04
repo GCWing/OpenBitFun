@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useSceneStore } from '../../stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '../../stores/sceneStore';
 import { resolveResourceWorkspace, useNavSceneStore } from '../../stores/navSceneStore';
 import { normalizeResourceLayout, useWorkspaceResourceState } from './workspaceResourceState';
 import { getSessionSceneTabId } from '../../components/SceneBar/types';
@@ -14,7 +14,7 @@ const sessionTarget = { surfaceId: 'local', workspaceKey: 'project', sessionId: 
 
 describe('workspace resource navigation', () => {
   beforeEach(() => {
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     useNavSceneStore.getState().closeNavScene();
   });
   it('opens resources without replacing the active conversation', () => {
@@ -94,7 +94,7 @@ describe('workspace resource navigation', () => {
     useNavSceneStore.getState().openWorkspaceResources('project');
     useSceneStore.getState().openScene('settings');
     expect(useNavSceneStore.getState().navSceneId).toBe('settings');
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     expect(useNavSceneStore.getState().showSceneNav).toBe(false);
     expect(useNavSceneStore.getState().resourceWorkspace).toBeNull();
   });

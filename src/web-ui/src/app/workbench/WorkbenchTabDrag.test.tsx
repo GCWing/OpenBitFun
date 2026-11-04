@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkbenchLayout from './WorkbenchLayout';
-import { useSceneStore } from '../stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '../stores/sceneStore';
 import { workbenchPaneLayoutStore } from './workbenchPaneLayoutStore';
 import { endSceneTabDrag } from './sceneTabTransfer';
 import { CanvasToolbarContribution } from '../components/panels/content-canvas/CanvasToolbar';
@@ -58,7 +58,7 @@ describe('workbench header drag event integration', () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 1201, left: 0 } as DOMRect);
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     workbenchPaneLayoutStore.setState(workbenchPaneLayoutStore.getInitialState());
     clearAgentCanvasForPeerSwitch();
     useContentResourceStore.setState({ resources: {} });

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { activateSurface, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
-import { registerSessionSceneNavigation, useSceneStore } from '@/app/stores/sceneStore';
+import { registerSessionSceneNavigation, useSceneStore, resetSceneStoreForTest } from '@/app/stores/sceneStore';
 import { useConversationDockStore } from '@/app/stores/conversationDockStore';
 import { useMiniAppStore } from './miniAppStore';
 import { beginMiniAppOperation, isMiniAppClosing, requestMiniAppClose, trackMiniAppStream } from './miniAppLifecycle';
@@ -22,7 +22,7 @@ describe('explicit MiniApp shutdown', () => {
     runtime.snapshot = null;
     runtime.detach.mockResolvedValue(false);
     runtime.stop.mockResolvedValue(undefined); runtime.cancel.mockResolvedValue({ cancelledRuns: 1 }); runtime.cancelStream.mockResolvedValue(undefined);
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     useMiniAppStore.setState({ ...useMiniAppStore.getInitialState(), apps: [app], runningWorkerIds: [app.id] });
     useMiniAppStore.getState().claimComposer(app.id, { token: entry.claimToken, sessionId: entry.sessionId });
     useConversationDockStore.setState(useConversationDockStore.getInitialState());
@@ -115,7 +115,7 @@ describe('explicit MiniApp shutdown', () => {
   });
 
   it('does not interpret surface teardown as closing an application', () => {
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     useMiniAppStore.getState().releaseComposer(app.id, entry.claimToken);
     expect(runtime.stop).not.toHaveBeenCalled();
     expect(runtime.cancel).not.toHaveBeenCalled();

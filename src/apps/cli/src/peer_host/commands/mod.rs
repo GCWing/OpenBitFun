@@ -179,6 +179,7 @@ pub(crate) fn dispatch<'a>(
         "ensure_coordinator_session" => Box::pin(session::ensure_coordinator_session(state, args)),
         "get_available_modes" => Box::pin(session::get_available_modes(state, args)),
         "get_session_stats" => Box::pin(session::get_session_stats(state, args)),
+        "get_session_usage_report" => Box::pin(session::get_session_usage_report(state, args)),
         "save_session_turn" => Box::pin(session::save_session_turn(state, args)),
 
         // Snapshot / rollback
@@ -362,6 +363,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_recent_workspaces",
     "get_session_files",
     "get_session_stats",
+    "get_session_usage_report",
     "get_session_thread_goal",
     "get_system_info",
     "get_token_usage_statistics",

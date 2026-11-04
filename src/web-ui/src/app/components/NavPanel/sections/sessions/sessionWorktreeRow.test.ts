@@ -12,6 +12,7 @@ function read(relativePath: string): string {
 
 const sessionsSection = read('./SessionsSection.tsx');
 const sessionsSectionStyles = read('./SessionsSection.scss');
+const sessionRowActions = read('./sessionRowActions.ts');
 
 describe('worktree isolated session row', () => {
   it('derives the worktree fact from the shared session ordering helper', () => {
@@ -81,17 +82,18 @@ describe('worktree isolated session row', () => {
   });
 
   it('activates an already open worktree workspace and opens it otherwise', () => {
-    expect(sessionsSection).toContain("isSamePath(workspace.rootPath ?? '', worktreePath)");
-    expect(sessionsSection).toContain('await setActiveWorkspace(opened.id);');
-    expect(sessionsSection).toContain('await openWorkspace(worktreePath);');
-    expect(sessionsSection).toContain('const { setActiveWorkspace, openWorkspace, openedWorkspacesList, currentWorkspace } = useWorkspaceContext();');
+    // The live row and device catalog rows share this action.
+    expect(sessionsSection).toContain('await openWorktreeWorkspaceRow(worktreePath, t);');
+    expect(sessionRowActions).toContain("isSamePath(workspace.rootPath ?? '', worktreePath)");
+    expect(sessionRowActions).toContain('await workspaceManager.setActiveWorkspace(opened.id);');
+    expect(sessionRowActions).toContain('await workspaceManager.openWorkspace(worktreePath);');
   });
 
   it('reports a failure to open instead of failing silently', () => {
-    expect(sessionsSection).toContain(
+    expect(sessionRowActions).toContain(
       "log.error('Failed to open the worktree directory as a workspace'",
     );
-    expect(sessionsSection).toContain(
+    expect(sessionRowActions).toContain(
       "notificationService.error(t('nav.sessions.openWorktreeWorkspaceFailed')",
     );
   });

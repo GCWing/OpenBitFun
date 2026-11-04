@@ -53,7 +53,9 @@ export function beginSessionUsagePanel(params: {
     window.dispatchEvent(new window.CustomEvent('expand-right-panel'));
   }
 
-  const update = (patch: { report?: SessionUsageReport; markdown?: string; error?: string }): boolean => {
+  const update = (patch: {
+    report?: SessionUsageReport; markdown?: string; error?: string; unsupported?: string;
+  }): boolean => {
     if (!surface.isCurrent()) return false;
     const replace = (previous: PanelContent): PanelContent | undefined => (
       previous.type === SESSION_USAGE_PANEL_TYPE && previous.data?.requestId === requestId
@@ -77,6 +79,8 @@ export function beginSessionUsagePanel(params: {
     isCurrent: surface.isCurrent,
     complete: (report: SessionUsageReport, markdown: string) => update({ report, markdown }),
     fail: (error: string) => update({ error }),
+    /** The executing host does not offer the report: a calm state, not a failure. */
+    unsupported: (message: string) => update({ unsupported: message }),
   };
 }
 

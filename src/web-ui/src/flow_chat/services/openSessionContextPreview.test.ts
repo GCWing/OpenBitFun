@@ -130,6 +130,14 @@ describe('system prompt preview tabs', () => {
     expect(apiMocks.getSessionUsageReport).not.toHaveBeenCalled();
   });
 
+  it('treats a peer host without the usage report as unavailable rather than a failure', async () => {
+    apiMocks.getSessionUsageReport.mockRejectedValue(new Error(
+      "command 'get_session_usage_report' is not supported on CLI peer host: the CLI peer host has no handler for this command",
+    ));
+    await expect(openSessionContextPreview(params)).resolves.toBe('unavailable');
+    expect(tabs()).toHaveLength(0);
+  });
+
   it('propagates host errors without creating an empty editor', async () => {
     apiMocks.getSessionUsageReport.mockRejectedValue(new Error('Host offline'));
     await expect(openSessionContextPreview(params)).rejects.toThrow('Host offline');

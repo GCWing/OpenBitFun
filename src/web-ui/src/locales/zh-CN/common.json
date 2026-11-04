@@ -64,6 +64,25 @@
     "remoteConnectRequiresWorkspace": "请先打开工作区再使用远程控制。"
   },
   "nav": {
+    "devices": {
+      "thisDevice": "本机",
+      "current": "当前窗口正在显示",
+      "expand": "展开 {{name}}",
+      "collapse": "收起 {{name}}",
+      "hostDesktop": "桌面版",
+      "hostCli": "CLI",
+      "platform": {
+        "mac": "Mac",
+        "windows": "Win",
+        "linux": "Linux"
+      },
+      "loadFailed": "无法读取该设备的工作区",
+      "sessionsLoadFailed": "无法读取会话",
+      "noSessions": "暂无会话",
+      "sessionUnavailable": "该设备上已找不到这个会话。",
+      "sessionActionFailed": "无法在另一台设备上完成此操作，请重试。",
+      "connecting": "正在连接 {{name}}…"
+    },
     "aria": {
       "navControl": "导航控制",
       "mainNav": "主导航"
@@ -830,7 +849,6 @@
     "currentHostHint": "文件和命令均位于当前工作主机。",
     "otherHostHint": "通过 SSH 连接远程主机或容器。原生 WSL 仅支持当前 Windows 工作主机。",
     "wslHint": "下一步选择当前 Windows 工作主机上的 Linux 发行版。",
-    "foldersLockedHint": "移除文件夹后可切换。",
     "connectionChoice": "连接配置",
     "availableOptions": "可用连接与环境",
     "refreshOptions": "刷新可用选项",
@@ -1748,7 +1766,6 @@
     "panelView": "面板视图"
   },
   "sceneBar": {
-    "recentSessions": "最近打开的会话",
     "tabsLabel": "场景标签页",
     "scrollPrevious": "向左滚动标签页",
     "scrollNext": "向右滚动标签页",
@@ -2326,8 +2343,19 @@
     "modifiedDragUnavailable": "共享预览暂不支持同时按住修饰键拖动。"
   },
   "newWorkspace": {
+    "localProjectTitle": "本机工程",
+    "localProjectDescription": "关联已有文件夹，或新建工程。",
+    "deviceProjectTitle": "其他设备上的工程",
+    "deviceProjectDescription": "在你的其他在线设备上创建。",
+    "createDeviceProject": "在其他设备上创建工程",
+    "chooseDevice": "选择设备",
+    "noOtherDevices": "暂无其他在线设备。在其他设备上登录同一账号并打开 OpenBitFun 后，即可在这里选择。",
+    "signInForDevices": "登录账号后，可在同账号的其他在线设备上创建工程。",
+    "createProjectOn": "在 {{name}} 上创建工程",
+    "deviceCurrent": "当前显示",
+    "connecting": "正在连接…",
+    "deviceError": "无法连接该设备，请稍后重试。",
     "title": "创建",
-    "description": "选择要创建的内容。",
     "assistantTitle": "个人助理",
     "assistantDescription": "与你长期协作，拥有独立记忆。",
     "projectTitle": "工程",
@@ -2338,6 +2366,7 @@
     "back": "返回选择"
   },
   "peerHost": {
+    "connectionInterrupted": "与设备的连接中断了，请重试。",
     "unavailable": "此功能在该设备上不可用。",
     "updateRequired": "该设备上的 OpenBitFun 版本不支持此功能。请尝试在该设备上更新 OpenBitFun。",
     "withDetail": "{{message}}（{{detail}}）"

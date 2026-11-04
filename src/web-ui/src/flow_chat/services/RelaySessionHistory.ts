@@ -33,6 +33,69 @@ export class RelayHistoryFirstPageOverdueError extends Error {
   }
 }
 
+/**
+ * A session stream opened before its device is rendered: a cross-device open
+ * starts it on click, so the host reads the session while the switch runs.
+ * Events are buffered until the session's history owner adopts the stream.
+ */
+interface WarmSessionStream {
+  subscription: Promise<string>;
+  events: Array<{ kind: 'record' | 'gap' | 'syncError' | 'ready' | 'interaction'; value: unknown }>;
+  dispose: () => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** A warm stream nobody adopted (the open failed or moved on) closes after this. */
+const WARM_STREAM_TTL_MS = 30_000;
+const warmStreams = new Map<string, WarmSessionStream>();
+const warmKey = (surfaceId: string, sessionId: string) => `${surfaceId}\u0000${sessionId}`;
+
+/** Start reading `sessionId` on `surfaceId` (a peer) before that device is rendered. */
+export function prewarmRelaySessionHistory(surfaceId: string, sessionId: string): void {
+  const key = warmKey(surfaceId, sessionId);
+  if (warmStreams.has(key)) return;
+  const events: WarmSessionStream['events'] = [];
+  const forThisSession = (value: unknown) => (value as { sessionId?: unknown } | null)?.sessionId === sessionId;
+  const disposers = [
+    remoteConnectAPI.onSessionRecord(value => { if (forThisSession(value)) events.push({ kind: 'record', value }); }),
+    remoteConnectAPI.onSessionGap(value => { if (forThisSession(value)) events.push({ kind: 'gap', value }); }),
+    remoteConnectAPI.onSessionSyncError(value => { if (forThisSession(value)) events.push({ kind: 'syncError', value }); }),
+    remoteConnectAPI.onSessionReady(value => { if (forThisSession(value)) events.push({ kind: 'ready', value }); }),
+    remoteConnectAPI.onSessionInteractionChanged(value => { if (forThisSession(value)) events.push({ kind: 'interaction', value }); }),
+  ];
+  const subscription = remoteConnectAPI.subscribeSession(surfaceId, sessionId);
+  const stream: WarmSessionStream = {
+    subscription,
+    events,
+    dispose: () => disposers.splice(0).forEach(dispose => dispose()),
+    timer: setTimeout(() => {
+      if (warmStreams.get(key) !== stream) return;
+      warmStreams.delete(key);
+      stream.dispose();
+      void subscription.then(id => remoteConnectAPI.unsubscribeSession(id)).catch(() => undefined);
+    }, WARM_STREAM_TTL_MS),
+  };
+  // A failed warm read is not an error: the owner opens its own stream.
+  void subscription.catch(error => {
+    if (warmStreams.get(key) !== stream) return;
+    warmStreams.delete(key);
+    clearTimeout(stream.timer);
+    stream.dispose();
+    log.debug('Session stream prewarm failed', { sessionId, error });
+  });
+  warmStreams.set(key, stream);
+}
+
+function takeWarmStream(surfaceId: string, sessionId: string): WarmSessionStream | undefined {
+  const key = warmKey(surfaceId, sessionId);
+  const stream = warmStreams.get(key);
+  if (!stream) return undefined;
+  warmStreams.delete(key);
+  clearTimeout(stream.timer);
+  stream.dispose();
+  return stream;
+}
+
 export interface RelayHistoryReady {
   sessionId: string;
   hasMore: boolean;
@@ -63,6 +126,8 @@ export class RelaySessionHistory {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly fail: (error: unknown) => void;
   private readonly resumeInteraction: (() => Promise<void>) | undefined;
+  private readonly warm: WarmSessionStream | undefined;
+  private readonly handlers: Partial<Record<WarmSessionStream['events'][number]['kind'], (value: any) => void>> = {};
 
   /**
    * `onRecord` must only reduce the record: the host sends each record of a page
@@ -83,8 +148,10 @@ export class RelaySessionHistory {
   ) {
     this.fail = error => { this.rejectReady(error); this.rejectPage?.(error); onError(error); };
     this.resumeInteraction = onResumed;
+    // Taken before this owner listens, so no event is both buffered and live.
+    this.warm = takeWarmStream(this.scope.surfaceId, sessionId);
     // Register before asking Rust to replay its cache or fetch the first page.
-    this.listeners.push(remoteConnectAPI.onSessionRecord(value => {
+    this.listeners.push(remoteConnectAPI.onSessionRecord(this.handlers.record = value => {
       if (!this.isCurrent()) return;
       const record = value as SessionRecord;
       if (record.sessionId !== this.sessionId) return;
@@ -97,18 +164,18 @@ export class RelaySessionHistory {
     // sends no tombstones for what it dropped (a rollback, undo, or history
     // rewrite). Records already received are rendered first; the replay that
     // follows, up to its ready event, is then the whole truth.
-    this.listeners.push(remoteConnectAPI.onSessionGap(gap => {
+    this.listeners.push(remoteConnectAPI.onSessionGap(this.handlers.gap = gap => {
       if (!this.isCurrent() || gap.sessionId !== this.sessionId || gap.resync !== true) return;
       this.flush();
       try { onResync?.(); } catch (error) { this.fail(error); }
     }));
-    this.listeners.push(remoteConnectAPI.onSessionSyncError(error => {
+    this.listeners.push(remoteConnectAPI.onSessionSyncError(this.handlers.syncError = error => {
       if (!this.isCurrent() || error.sessionId !== this.sessionId || error.targetDeviceId !== this.scope.surfaceId) return;
       // Records received before the failure stay rendered.
       this.flush();
       this.fail(new Error(error.message));
     }));
-    this.listeners.push(remoteConnectAPI.onSessionReady(ready => {
+    this.listeners.push(remoteConnectAPI.onSessionReady(this.handlers.ready = ready => {
       if (!this.isCurrent() || ready.sessionId !== this.sessionId) return;
       if (!this.flush()) return;
       const resumed = this.pageApplied === null;
@@ -120,7 +187,7 @@ export class RelaySessionHistory {
       this.resolveReady();
       this.pageApplied?.();
     }));
-    this.listeners.push(remoteConnectAPI.onSessionInteractionChanged(event => {
+    this.listeners.push(remoteConnectAPI.onSessionInteractionChanged(this.handlers.interaction = event => {
       if (!this.isCurrent() || event.sessionId !== this.sessionId || !onResumed) return;
       void onResumed().catch(error => log.warn('Session interaction mailbox refresh failed', {sessionId:this.sessionId,error}));
     }));
@@ -172,7 +239,12 @@ export class RelaySessionHistory {
     this.scope.assertCurrent('open relay session history');
     if (this.closed) throw new Error('Session subscription is closed');
     try {
-      const id = await remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId);
+      // A stream warmed by the click: what it buffered is applied first, in order.
+      const warm = this.warm;
+      if (warm) for (const event of warm.events.splice(0)) this.handlers[event.kind]?.(event.value);
+      const id = warm
+        ? await warm.subscription.catch(() => remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId))
+        : await remoteConnectAPI.subscribeSession(this.scope.surfaceId, this.sessionId);
       if (!this.isCurrent()) {
         await remoteConnectAPI.unsubscribeSession(id);
         this.scope.assertCurrent('finish opening relay session history');

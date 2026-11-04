@@ -520,7 +520,11 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const { requests: permissionRequests } = usePermissionRequests(activeSession?.sessionId);
   const visibleTurnInfo = useVisibleTurnInfo();
   const [queuedTurnNavigation, setQueuedTurnNavigation] = useState<QueuedTurnNavigation | null>(null);
-  const [pendingHistoryOpenSession, setPendingHistoryOpenSession] = useState<HistorySessionOpenIntentDetail | null>(null);
+  // A view mounted mid-open (for example by a device switch) adopts it.
+  const [pendingHistoryOpenSession, setPendingHistoryOpenSession] = useState<HistorySessionOpenIntentDetail | null>(() => {
+    const transition = getHistorySessionOpenTransitionSnapshot();
+    return transition ? { sessionId: transition.sessionId, sessionTitle: transition.sessionTitle, maxMs: transition.maxMs } : null;
+  });
   const [searchOpenRequest, setSearchOpenRequest] = useState(0);
   const backgroundCommandActivities = useBackgroundCommandActivityStore(state => state.activities);
   const [stoppingBackgroundCommandIds, setStoppingBackgroundCommandIds] = useState<Set<string>>(() => new Set());
@@ -885,6 +889,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       setPendingHistoryOpenSession({
         sessionId: detail.sessionId,
         sessionTitle: detail.sessionTitle,
+        maxMs: detail.maxMs,
       });
       startupTrace.markPhase('historical_session_open_intent_overlay', {
         sessionId: detail.sessionId,
@@ -917,7 +922,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         }
         return current;
       });
-    }, 4000);
+    }, pendingHistoryOpenSession.maxMs ?? 4000);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -933,9 +938,9 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       return;
     }
 
-    if (historyState === 'failed') {
-      clearHistorySessionOpenTransition(pendingHistoryOpenSession.sessionId);
-    }
+    // Settled either way: the open's transition ends now, not at its timeout
+    // (a cross-device open allows up to 20 s, and its readers defer work).
+    clearHistorySessionOpenTransition(pendingHistoryOpenSession.sessionId);
     setPendingHistoryOpenSession(null);
   }, [
     historyState,
@@ -1243,6 +1248,25 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const showHistoryLoadingLayer =
     !showHistoryOpenIntentOverlay && !showFailedHistoryPlaceholder
     && (showHistoryPlaceholder || activeHistoryRestore?.status === 'loading');
+  // Switching between sessions whose transcripts are already loaded settles
+  // the new one into place instead of cutting to it; a session still loading
+  // gets the loading boundary's own hand-over.
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const shownSessionIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const sessionId = activeSession?.sessionId ?? null;
+    const previous = shownSessionIdRef.current;
+    shownSessionIdRef.current = sessionId;
+    const element = messagesRef.current;
+    if (!element || !previous || !sessionId || previous === sessionId) return;
+    if (showHistoryLoadingLayer || showHistoryOpenIntentOverlay || virtualItems.length === 0) return;
+    if (typeof element.animate !== 'function'
+      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    element.animate(
+      [{ opacity: 0.35, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+    );
+  }, [activeSession?.sessionId, showHistoryLoadingLayer, showHistoryOpenIntentOverlay, virtualItems.length]);
   const historyLoadingIdentity = surfaceScope.key('history-loading', surfaceScope.epoch,
     showHistoryOpenIntentOverlay ? pendingHistoryOpenSession?.sessionId : activeSession?.sessionId);
   const isHistoryContentPresented = historyLoadingPresentation?.identity === historyLoadingIdentity && historyLoadingPresentation.ready;
@@ -2774,6 +2798,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         />
 
         <div
+          ref={messagesRef}
           className="modern-flowchat-container__messages"
           data-testid="flowchat-messages"
           data-openbitfun-component="modern-flow-chat"
