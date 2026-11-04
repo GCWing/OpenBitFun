@@ -12,6 +12,8 @@ import { getDeviceArtworkKind } from './deviceArtworkKind';
 import DeviceStatusControl from './DeviceStatusControl';
 
 const state = vi.hoisted(() => ({
+  relayCapabilities: vi.fn(async () => ['device_alias_v1']),
+  updateDevice: vi.fn(async () => undefined),
   overview: null as DeviceInterconnectionOverview | null,
   refresh: vi.fn().mockResolvedValue(undefined),
   switchToLocal: vi.fn().mockResolvedValue('activated'),
@@ -67,12 +69,14 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', async importOrigina
   remoteConnectAPI: {
     getDeviceInfo: state.getDeviceInfo,
     accountListDevices: state.accountListDevices,
+    accountRelayCapabilities: state.relayCapabilities,
+    accountUpdateDevice: state.updateDevice,
   },
 }));
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
   api: { listen: () => () => {} },
 }));
-const notifications = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn() }));
+const notifications = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('@/shared/notification-system', () => ({
   useNotification: () => notifications,
 }));
@@ -259,7 +263,8 @@ describe('device status card', () => {
     expect(element('nav-device-status-local').getAttribute('role')).toBe('img');
     expect(element('nav-device-status-local').getAttribute('aria-label')).toBe('deviceOverview.localDevice');
     expect(element('nav-device-status-local').querySelector('.lucide-house')).not.toBeNull();
-    expect(element('nav-device-status-local').closest('.openbitfun-device-overview__device-heading')).not.toBeNull();
+    // Where other devices have their action, not after the name.
+    expect(element('nav-device-status-local').closest('.openbitfun-device-overview__device-actions')).not.toBeNull();
     expect(card.querySelector('[data-openbitfun-component="status-pill"]')).toBeNull();
     expect(card.querySelector('.openbitfun-device-overview__carousel-controls')).toBeNull();
     expect(card.querySelector('[data-openbitfun-part="footer"]')).toBeNull();
@@ -395,6 +400,31 @@ describe('device status card', () => {
       expect(document.querySelector('[data-testid="nav-device-status-summary"]')).toBeNull();
     }
     expect(state.switchToDevice).not.toHaveBeenCalled();
+  });
+
+  it('renames the shown device in place through the Relay', async () => {
+    state.identity = { status: 'signed-in', me: { user: { accountId: 'acct' } } };
+    state.getDeviceInfo.mockResolvedValue({ device_id: 'local', device_name: 'This computer' });
+    state.accountListDevices.mockResolvedValue([{ device_id: 'local', device_name: 'This computer', online: true }]);
+    await act(async () => { render(); });
+    await act(async () => { element('nav-device-alias-edit').click(); });
+    const input = element('nav-device-alias-input') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Studio');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { element('nav-device-alias-save').click(); });
+    expect(state.updateDevice).toHaveBeenCalledWith('local', 'Studio');
+    expect(document.querySelector('[data-testid="nav-device-alias-input"]')).toBeNull();
+  });
+
+  it('offers no rename through a Relay without device aliases', async () => {
+    state.identity = { status: 'signed-in', me: { user: { accountId: 'acct' } } };
+    state.relayCapabilities.mockResolvedValueOnce([]);
+    state.getDeviceInfo.mockResolvedValue({ device_id: 'local', device_name: 'This computer' });
+    state.accountListDevices.mockResolvedValue([{ device_id: 'local', device_name: 'This computer', online: true }]);
+    await act(async () => { render(); });
+    expect(document.querySelector('[data-testid="nav-device-alias-edit"]')).toBeNull();
   });
 
   it('hides pagination and navigation after loading a single local device', async () => {

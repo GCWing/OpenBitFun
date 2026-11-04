@@ -1,7 +1,7 @@
-import { useDeviceDirectory, resolveDeviceName, isDeviceControllable, deviceClientVersion } from '@/infrastructure/account/deviceDirectory';
+import { useDeviceDirectory, resolveDeviceName, isDeviceControllable, deviceClientVersion, refreshDeviceDirectory } from '@/infrastructure/account/deviceDirectory';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, ScrollArea, type IconSize } from '@openbitfun/ui';
-import { ArrowRightLeft, ChevronLeft, ChevronRight, CircleAlert, House, MessageCircle, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, Input, ScrollArea, type IconSize } from '@openbitfun/ui';
+import { ArrowRightLeft, Check, ChevronLeft, ChevronRight, CircleAlert, House, MessageCircle, Pencil, X, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
@@ -102,7 +102,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
 }) => {
   useDeviceDirectory();
   const { t, formatNumber } = useI18n('common');
-  const { warning } = useNotification();
+  const { warning, error: notifyError } = useNotification();
   const peerContext = usePeerDeviceModeOptional();
   const identity = useAccountIdentity();
   const accountId = identity.status === 'signed-in' ? (identity.me?.user.accountId ?? identity.me?.user.githubId) : undefined;
@@ -362,6 +362,27 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
     return device.name;
   }, [t]);
   const displayedDevice = previewDevices[previewIndex] ?? overview.primaryDevice;
+  // The account device the card shows, when the directory lists it: only those
+  // can be renamed, and only through a Relay that supports device aliases.
+  const displayedAccountDevice = availableTargets?.devices.find(device => device.device_id === carouselDeviceIds[previewIndex]);
+  const aliasSupported = useRelayDeviceAliasSupport(open && Boolean(availableTargets));
+  const [aliasEdit, setAliasEdit] = useState<{ deviceId: string; draft: string; saving: boolean } | null>(null);
+  useEffect(() => { if (!open) setAliasEdit(null); }, [open]);
+  const editingAlias = aliasEdit && aliasEdit.deviceId === displayedAccountDevice?.device_id ? aliasEdit : null;
+  const saveAlias = async () => {
+    if (!editingAlias || editingAlias.saving) return;
+    const { deviceId, draft } = editingAlias;
+    setAliasEdit({ ...editingAlias, saving: true });
+    try {
+      await remoteConnectAPI.accountUpdateDevice(deviceId, draft.trim() || null);
+      await refreshDeviceDirectory();
+      setAliasEdit(current => current?.deviceId === deviceId ? null : current);
+    } catch (error) {
+      setAliasEdit(current => current?.deviceId === deviceId ? { ...current, saving: false } : current);
+      notifyError(error instanceof Error && /unsupported|not found|unknown command|404|405/i.test(error.message)
+        ? t('accountLogin.deviceAliasUnsupported') : error instanceof Error ? error.message : String(error));
+    }
+  };
   const displayedActive = !displayedDevice.local
     && displayedDevice.activities.includes('current-use') && overview.peerActive;
   const displayedIncompatible = previewIncompatible && !displayedActive;
@@ -555,9 +576,35 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                     <span className="openbitfun-device-overview__device-mark" aria-hidden="true">
                       <DeviceMark device={displayedDevice} size="md" />
                     </span>
-                    <OverflowText className="openbitfun-device-overview__device-name" title="" data-testid="nav-device-status-name">
-                      {displayedDevice.name}
-                    </OverflowText>
+                    {editingAlias ? (
+                      <span className="openbitfun-device-overview__alias-editor">
+                        <Input
+                          className="openbitfun-device-overview__alias-input"
+                          size="sm"
+                          value={editingAlias.draft}
+                          onChange={event => setAliasEdit({ ...editingAlias, draft: event.target.value })}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter') { event.preventDefault(); void saveAlias(); }
+                            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setAliasEdit(null); }
+                          }}
+                          placeholder={t('accountLogin.deviceAliasPlaceholder')}
+                          aria-label={t('accountLogin.deviceAlias')}
+                          autoFocus
+                          disabled={editingAlias.saving}
+                          data-testid="nav-device-alias-input"
+                        />
+                        <IconButton size="xs" variant="primary" icon={<Icon glyph={Check} size="xs" />}
+                          aria-label={t('accountLogin.saveDeviceAlias')} loading={editingAlias.saving}
+                          onClick={() => { void saveAlias(); }} data-testid="nav-device-alias-save" />
+                        <IconButton size="xs" variant="quiet" icon={<Icon glyph={X} size="xs" />}
+                          aria-label={t('accountLogin.cancel')} disabled={editingAlias.saving}
+                          onClick={() => setAliasEdit(null)} />
+                      </span>
+                    ) : (
+                      <OverflowText className="openbitfun-device-overview__device-name" title="" data-testid="nav-device-status-name">
+                        {displayedDevice.name}
+                      </OverflowText>
+                    )}
                     {displayedActive && (
                       <span
                         className="openbitfun-device-overview__usage-badge"
@@ -567,20 +614,33 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                         data-testid="nav-device-usage-status"
                       />
                     )}
-                    {!displayedHasAction && displayedDevice.local && (
-                      <span
-                        className="openbitfun-device-overview__local-mark"
-                        role="img"
-                        aria-label={t('deviceOverview.localDevice')}
-                        title={t('deviceOverview.localDevice')}
-                        data-testid="nav-device-status-local"
-                      >
-                        <Icon glyph={House} size="xs" />
-                      </span>
+                    {!editingAlias && aliasSupported && displayedAccountDevice && (
+                      <IconButton
+                        className="openbitfun-device-overview__alias-edit"
+                        size="xs"
+                        variant="quiet"
+                        icon={<Icon glyph={Pencil} size="xs" />}
+                        aria-label={t('accountLogin.editDeviceAlias')}
+                        data-testid="nav-device-alias-edit"
+                        onClick={() => setAliasEdit({
+                          deviceId: displayedAccountDevice.device_id, draft: displayedAccountDevice.device_alias ?? '', saving: false,
+                        })}
+                      />
                     )}
                   </div>
                 </div>
                 <div className="openbitfun-device-overview__device-actions" ref={actionsRef}>
+                  {/* This machine has no action: the same disc marks it as home. */}
+                  {!displayedHasAction && displayedDevice.local && (
+                    <span
+                      className="openbitfun-device-overview__local-mark"
+                      role="img"
+                      aria-label={t('deviceOverview.localDevice')}
+                      data-testid="nav-device-status-local"
+                    >
+                      <Icon glyph={House} size="md" />
+                    </span>
+                  )}
                   {displayedHasAction && (
                     <div className="openbitfun-device-overview__device-status"
                       role="group"
@@ -670,3 +730,17 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
 };
 
 export default DeviceStatusControl;
+
+/** Whether the Relay renames devices (`device_alias_v1`), asked when the card opens. */
+function useRelayDeviceAliasSupport(enabled: boolean): boolean {
+  const [supported, setSupported] = useState(false);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let current = true;
+    void remoteConnectAPI.accountRelayCapabilities()
+      .then(capabilities => { if (current) setSupported(capabilities.includes('device_alias_v1')); })
+      .catch(() => { if (current) setSupported(false); });
+    return () => { current = false; };
+  }, [enabled]);
+  return supported;
+}

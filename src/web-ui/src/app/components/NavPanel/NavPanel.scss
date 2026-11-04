@@ -2033,10 +2033,38 @@ $_section-header-height: 22px;
   }
 }
 
+// This machine's home mark sits where other devices have their action: the
+// same tinted glass disc, as a status rather than a button.
 .openbitfun-device-overview__local-mark {
   display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--openbitfun-control-height-md);
+  block-size: var(--openbitfun-control-height-md);
+  border-radius: var(--openbitfun-radius-pill);
+  background: color-mix(in srgb, var(--_device-overview-light) 16%, transparent);
+  box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--_device-overview-light) 30%, transparent);
+  color: color-mix(in srgb, var(--_device-overview-light) 72%, var(--openbitfun-color-content-primary));
+}
+
+// Renaming sits right after the name and stays quiet until hovered.
+.openbitfun-device-overview__alias-edit {
+  flex: 0 0 auto;
   color: var(--openbitfun-color-content-muted);
+}
+
+.openbitfun-device-overview__alias-editor {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  min-width: 0;
+}
+
+.openbitfun-device-overview__alias-input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .openbitfun-device-overview__device-name {
