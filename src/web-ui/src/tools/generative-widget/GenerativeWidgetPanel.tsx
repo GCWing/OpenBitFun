@@ -5,9 +5,7 @@ import {
 } from '@/flow_chat/utils/generativeWidgetProjection';
 import { useGenerativeWidgetProjection } from '@/flow_chat/hooks/useGenerativeWidgetProjection';
 import GenUIApplication from '@/tools/generative-ui/GenUIApplication';
-import GenUIPhoneSkeleton from '@/tools/generative-ui/GenUIPhoneSkeleton';
-import { useGenUIPhoneLoading } from '@/tools/generative-ui/useGenUIPhoneLoading';
-import { isGenUIAppEnvelope, type GenUIAppDefinition, type GenUIAppEnvelope, type GenUIAppState } from '@/tools/generative-ui/genUITypes';
+import { isGenUIAppEnvelope, type GenUIAppEnvelope, type GenUIAppState } from '@/tools/generative-ui/genUITypes';
 import type { GenUIVerification } from '@/tools/generative-ui/genUIVerification';
 import { GenUIVerificationPanel } from '@/tools/generative-ui/GenUIVerificationPanel';
 import { genUIContentKey } from '@/tools/generative-ui/genUIState';
@@ -43,7 +41,6 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
 }) => {
   const { t } = useI18n('flow-chat');
   const projection = useGenerativeWidgetProjection(origin);
-  const phoneLoading = useGenUIPhoneLoading(projection);
   const [reloading, setReloading] = useState(false);
   const [evidence, setEvidence] = useState<{ source: string; report: GenUIVerification }>();
   const [reloaded, setReloaded] = useState<{ source: string; state: GenUIAppState; revision: number; baseline: string }>();
@@ -72,9 +69,7 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
     });
     return mergeGenUIProviders(mcp, createGenUINativeProvider(asyncTarget), onTargetEvent);
   }, [asyncTarget, mcpCatalog.catalog, onTargetEvent]);
-  const appIdentity = app as unknown as Record<string, unknown> | undefined;
-  const deliveryMode: 'transient' | 'delivery' = projection?.deliveryMode
-    ?? ((typeof appIdentity?.libraryId === 'string' && appIdentity.libraryId.includes('.harmony.')) || (typeof appIdentity?.template === 'string' && appIdentity.template.includes('.harmony.')) ? 'delivery' : 'transient');
+  const deliveryMode: 'transient' | 'delivery' = projection?.deliveryMode ?? 'transient';
   const requiresDelivery = deliveryMode === 'delivery';
   const owner = useGenUIOwner(projection?.origin, app, projection?.ownerRevision);
   const canEdit = Boolean(requiresDelivery && projection?.origin && owner.enabled && !projection.readOnly && projection.status === 'completed' && !projection.isFailed && app && app.schemaVersion === 2 && owner.ready);
@@ -99,27 +94,10 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
   });
   const terminalStatus = t(`toolCards.generativeUI.state.${interactionState}`);
   const showToolbar = presentation === 'panel' || requiresDelivery;
-  // The phone skeleton is only the pre-source placeholder. Once the native
-  // OpenUI stream has supplied any source text, mount GenUIApplication so the
-  // parser can reveal completed statements while later statements arrive.
-  const streamedSource = (app as GenUIAppDefinition | undefined)?.source;
-  const hasStreamSource = Boolean(streamedSource && (
-    (streamedSource.kind === 'openui-lang' && streamedSource.content.trim().length > 0)
-    || (streamedSource.kind === 'html-document' && streamedSource.html.trim().length > 0)
-  ));
 
   // Keep the tool failure available to the model without surfacing a failed
   // candidate while it repairs the source. Owner/save errors remain visible.
   if (projection?.isFailed || projection?.status === 'rejected') return null;
-  if (phoneLoading.pending) return null;
-
-  if (phoneLoading.phone && !hasStreamSource) {
-    return <div className={`openbitfun-generative-widget-panel openbitfun-generative-widget-panel--${presentation}`}
-      data-openbitfun-component="generative-widget" data-openbitfun-part="app" data-openbitfun-state={interactionState}>
-      <GenUIPhoneSkeleton app={app} label={terminalStatus} />
-    </div>;
-  }
-
   if (app) {
     return (
       <div

@@ -54,7 +54,7 @@ export default function GenUILibrarySection() {
   const options = Object.entries(genUILibraryProfiles).map(([value, profile]) => ({ value, label: profile.label }));
   const known = ready && Object.prototype.hasOwnProperty.call(genUILibraryProfiles, loaded.value);
   if (ready && !known) options.push({ value: loaded.value, label: loaded.value });
-  const descriptions: Record<string, string> = { openui: t('genui.collections.openui'), openbitfun: t('genui.collections.openbitfun'), harmony: t('genui.collections.harmony') };
+  const descriptions: Record<string, string> = { openui: t('genui.collections.openui'), openbitfun: t('genui.collections.openbitfun') };
   const preview = useMemo(() => ready && known ? createGenUILibraryPreview(loaded.value, t) : null, [ready, known, loaded?.value, t]);
   const designSpec = known ? genUICatalog.designSpecs?.[genUILibraryProfiles[loaded.value].designSpec] : undefined;
   const activeProfile = known ? genUILibraryProfiles[loaded.value] : undefined;

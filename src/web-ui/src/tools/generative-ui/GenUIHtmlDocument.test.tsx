@@ -23,15 +23,14 @@ describe('GenUI HTML documents', () => {
     expect(result.document).toContain("Content-Security-Policy");
     expect(result.document).toContain("script-src 'none'");
     expect(result.diagnostics).toContain('Controlled script execution is disabled on this host');
-    expect(inspectGenUIHtmlSource({ kind: 'html-document', html: '<div data-gen-ui-host-part="status-bar">x</div>' }, genUICatalog.designSpecs?.['harmony.phone.v1'])).toContain('Generated document duplicates host-owned shell part: [data-gen-ui-host-part]');
   });
 
   it('only emits executable script and the bridge CSP when the owner enables it', () => {
     const source = { kind: 'html-document' as const, html: '<p>bridge</p>', script: 'window.openbitfunWidget.request("echo", {value: 1}); eval("blocked")' };
-    const disabled = sanitizeGenUIHtmlSource(source, genUICatalog.designSpecs?.['harmony.phone.v1']);
+    const disabled = sanitizeGenUIHtmlSource(source, genUICatalog.designSpecs?.['openbitfun.desktop.v1']);
     expect(disabled.document).toContain("script-src 'none'");
     expect(disabled.diagnostics).toContain('Controlled script execution is disabled on this host');
-    const enabled = sanitizeGenUIHtmlSource(source, genUICatalog.designSpecs?.['harmony.phone.v1'], '', true);
+    const enabled = sanitizeGenUIHtmlSource(source, genUICatalog.designSpecs?.['openbitfun.desktop.v1'], '', true);
     expect(enabled.document).toContain('openbitfunWidget');
     expect(enabled.document).toMatch(/script-src 'nonce-[0-9a-f]+'/);
     expect(enabled.document).toMatch(/<script nonce="[0-9a-f]+">/);
@@ -39,39 +38,8 @@ describe('GenUI HTML documents', () => {
     expect(enabled.diagnostics).not.toContain('Controlled script execution is disabled on this host');
   });
 
-  it('inherits the selected Harmony presentation when HTML omits root theme attributes', () => {
-    const result = sanitizeGenUIHtmlSource(
-      { kind: 'html-document', html: '<main class="page"><h1>Garden</h1></main>' },
-      genUICatalog.designSpecs?.['harmony.phone.v1'],
-      '',
-      false,
-      false,
-      false,
-      { theme: 'green', font: 'sans', scheme: 'light' },
-    );
-    expect(result.document).toContain('<html data-hm-theme="green" data-hm-font="sans" data-hm-scheme="light">');
-  });
 
-  it('maps Harmony object pictograms to pinned Fluent Emoji assets under a narrow image CSP', () => {
-    const result = sanitizeGenUIHtmlSource(
-      { kind: 'html-document', html: '<span class="hm-icon3d" data-emoji="🧥" aria-hidden="true"></span>' },
-      genUICatalog.designSpecs?.['harmony.phone.v1'],
-    );
-    expect(result.document).toContain('https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/assets/Coat/3D/coat_3d.png');
-    expect(result.document).toContain('img-src data: blob: https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/assets/');
-    expect(result.document).toContain('referrerpolicy="no-referrer"');
-    expect(result.document).toContain('connect-src \'none\'');
-  });
 
-  it('does not enable Harmony pictograms or external image sources for other profiles', () => {
-    const result = sanitizeGenUIHtmlSource(
-      { kind: 'html-document', html: '<span class="hm-icon3d" data-emoji="🧥" aria-hidden="true"></span>' },
-      genUICatalog.designSpecs?.['openbitfun.desktop.v1'],
-    );
-    expect(result.document).toContain('data-emoji="🧥"');
-    expect(result.document).toContain('img-src data: blob:;');
-    expect(result.document).not.toContain('cdn.jsdelivr.net');
-  });
 
   it('can opt HtmlView into a local inline animation script without opening a host bridge', () => {
     const source = sanitizeGenUIHtmlSource(
@@ -93,7 +61,7 @@ describe('GenUI HTML documents', () => {
   it('adds only a host-owned inspection probe when delivery checking is enabled', () => {
     const result = sanitizeGenUIHtmlSource(
       { kind: 'html-document', html: '<section><svg viewBox="0 0 10 10" /></section>', script: 'window.bad = true' },
-      genUICatalog.designSpecs?.['harmony.phone.v1'],
+      genUICatalog.designSpecs?.['openbitfun.desktop.v1'],
       '',
       false,
       true,

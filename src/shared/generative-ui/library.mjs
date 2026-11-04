@@ -191,11 +191,8 @@ const openuiLangReference = [
     const template = source.templates[profile.templates[0]];
     const library = libraries[template.library];
     const generated = openUILibraryPrompt(library, promptOptions);
-    // Harmony keeps the generated positional signatures and adds the
-    // reference project's visual contract. Other profiles retain their
-    // explicitly checked-in prompt verbatim for compatibility.
     const override = profilePromptOverrides[profileId];
-    return [profileId, profileId === 'harmony' && override ? `${generated}\n\n${override}` : (override ?? generated)];
+    return [profileId, override ?? generated];
   }));
   const libraryAdapters = Object.fromEntries(Object.entries(libraries).map(([id, library]) => [id, { ...structuredClone(library.metadata), id }]));
   return { contractVersion: 4, $defs: { state, htmlDocument, openuiDocument }, app, generation, generationInstructions, openuiLangReference, openuiPrompts, genuiSystemPrompts, libraries, libraryAdapters, templates: source.templates, legacyTemplateLibraries: source.legacyTemplateLibraries ?? {}, designSpecs: source.designSpecs ?? {}, profiles, rules: source.rules, htmlRuntime: source.htmlRuntime };

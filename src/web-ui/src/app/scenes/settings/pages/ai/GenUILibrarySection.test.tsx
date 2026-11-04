@@ -29,13 +29,8 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 it('selects a collection, previews its real components, and never saves demo edits', async () => {
   await mount();
   expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-openui');
-  await select('harmony');
-  expect(ports.save).toHaveBeenCalledExactlyOnceWith('ai.generative_ui_library', 'harmony');
-  expect(container.textContent).toContain('Harmony 手机');
-  expect(container.textContent).toContain('360 x 764');
-  expect(container.querySelector('[data-gen-ui-host-shell="phone"]')).not.toBeNull();
-  expect(container.querySelector('[data-gen-ui-host-part="status-bar"]')).not.toBeNull();
-  expect(container.querySelector('[data-gen-ui-viewport]')?.getAttribute('data-gen-ui-viewport-width')).toBe('360');
+  await select('openbitfun');
+  expect(ports.save).toHaveBeenCalledExactlyOnceWith('ai.generative_ui_library', 'openbitfun');
   await act(async () => {
     const input = container.querySelector<HTMLInputElement>('[data-gen-ui-app] input[aria-label]')!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Transient');
@@ -56,7 +51,7 @@ it('locks unavailable settings and preserves unknown future selections', async (
 });
 it('keeps the committed selection and exposes save failures', async () => {
   ports.save.mockRejectedValueOnce(new Error('Offline'));
-  await mount(); await select('harmony');
+  await mount(); await select('openbitfun');
   expect(container.textContent).toContain('Offline');
   expect(container.querySelector('select')?.value).toBe('openui');
   expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-openui');
@@ -65,24 +60,24 @@ it('discards stale reads after an acknowledged selection', async () => {
   await mount();
   const stale = deferred<string>(); ports.read.mockReturnValueOnce(stale.promise);
   await act(async () => ports.changed!());
-  await select('harmony');
+  await select('openbitfun');
   await act(async () => stale.resolve('openui'));
-  expect(container.querySelector('select')?.value).toBe('harmony');
+  expect(container.querySelector('select')?.value).toBe('openbitfun');
 });
 it('cannot replace a new device selection with an old device save', async () => {
   await mount();
   const pending = deferred<void>(); ports.save.mockReturnValueOnce(pending.promise);
-  await select('harmony');
-  ports.read.mockResolvedValue('harmony');
+  await select('openbitfun');
+  ports.read.mockResolvedValue('openbitfun');
   await act(async () => activateSurface('peer-test'));
   await act(async () => pending.resolve());
-  expect(container.querySelector('select')?.value).toBe('harmony');
-  expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-harmony');
+  expect(container.querySelector('select')?.value).toBe('openbitfun');
+  expect(container.querySelector('[data-gen-ui-app]')?.getAttribute('data-gen-ui-app')).toBe('library-preview-openbitfun');
 });
 it('cannot hydrate an old device read after a switch', async () => {
   const pending = deferred<string>(); ports.read.mockReturnValueOnce(pending.promise);
-  await mount(); ports.read.mockResolvedValue('harmony');
+  await mount(); ports.read.mockResolvedValue('openbitfun');
   await act(async () => activateSurface('peer-test'));
   await act(async () => pending.resolve('openbitfun'));
-  expect(container.querySelector('select')?.value).toBe('harmony');
+  expect(container.querySelector('select')?.value).toBe('openbitfun');
 });

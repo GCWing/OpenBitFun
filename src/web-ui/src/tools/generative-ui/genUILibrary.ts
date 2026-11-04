@@ -25,7 +25,7 @@ export interface GenUIComponentImplementation {
 }
 export interface GenUIRendererSource {
   /** Stable source family used for review and revision diagnostics. */
-  kind: 'openbitfun-host' | 'openui-react' | 'harmony-adapter';
+  kind: 'openbitfun-host' | 'openui-react';
   /** Package or repository path that supplies the renderer implementation. */
   source: string;
   /** Upstream/source revision, when the implementation is derived externally. */

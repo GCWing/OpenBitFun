@@ -485,10 +485,6 @@ mod tests {
                     }
                 }
             }
-            assert_eq!(
-                schema_text.contains("fixed 360 CSS-pixel-wide phone screen"),
-                id == "harmony"
-            );
             assert!(schema_text.contains(&format!("Selected adapter collection: {id}")));
             assert!(schema_text.contains(
                 catalog()["designSpecs"][profile["designSpec"].as_str().unwrap()]["label"]
@@ -514,43 +510,18 @@ mod tests {
     }
 
     #[test]
-    fn versioned_design_specs_bind_libraries_and_harmony_phone_contract() {
-        let harmony = design_spec_for_profile("harmony").unwrap();
+    fn versioned_design_specs_bind_openbitfun_libraries() {
+        let specification = design_spec_for_profile("openbitfun").unwrap();
         assert_eq!(
-            harmony,
-            serde_json::json!({"id":"harmony.phone.v1","revision":1})
+            specification,
+            serde_json::json!({"id":"openbitfun.desktop.v1","revision":1})
         );
-        let mut app = serde_json::json!({"template":"openbitfun.harmony.app","libraryId":"openbitfun.harmony.v1","libraryRevision":3,"designSpec":harmony});
+        let mut app = serde_json::json!({"template":"openbitfun.app","libraryId":"openbitfun.composable.v1","libraryRevision":2,"designSpec":specification});
         assert!(validate_design_spec(&app).is_ok());
-        app["libraryRevision"] = Value::from(2);
+        app["libraryRevision"] = Value::from(1);
         assert!(validate_design_spec(&app)
             .unwrap_err()
-            .contains("unavailable library revision for openbitfun.harmony.v1"));
-        app["libraryRevision"] = Value::from(3);
-        app["template"] = Value::String("openbitfun.app".into());
-        app["libraryId"] = Value::String("openbitfun.composable.v1".into());
-        app["libraryRevision"] = Value::from(2);
-        assert!(validate_design_spec(&app)
-            .unwrap_err()
-            .contains("does not allow component library"));
-        let spec = &catalog()["designSpecs"]["harmony.phone.v1"];
-        assert_eq!(
-            spec["viewport"],
-            serde_json::json!({"mode":"fixed","width":360,"height":764,"unit":"css-px"})
-        );
-        assert_eq!(spec["shell"]["statusBarHeight"], 36);
-        assert_eq!(spec["shell"]["contentInsets"]["left"], 16);
-        for check in [
-            "fixed-viewport",
-            "host-shell",
-            "content-boundary",
-            "no-horizontal-overflow",
-        ] {
-            assert!(spec["acceptance"]["checks"]
-                .as_array()
-                .unwrap()
-                .contains(&Value::String(check.into())));
-        }
+            .contains("unavailable library revision"));
     }
 
     #[test]
@@ -574,12 +545,12 @@ mod tests {
     fn html_documents_use_the_same_versioned_design_spec_contract() {
         let mut app = serde_json::json!({
             "schemaVersion": 2,
-            "id": "phone-html",
-            "title": "Phone HTML",
-            "template": "openbitfun.harmony.app",
-            "libraryId": "openbitfun.harmony.v1",
-            "libraryRevision": 3,
-            "designSpec": {"id": "harmony.phone.v1", "revision": 1},
+            "id": "desktop-html",
+            "title": "Desktop HTML",
+            "template": "openbitfun.app",
+            "libraryId": "openbitfun.composable.v1",
+            "libraryRevision": 2,
+            "designSpec": {"id": "openbitfun.desktop.v1", "revision": 1},
             "source": {"kind": "html-document", "html": "<section><svg viewBox=\"0 0 10 10\"></svg></section>", "css": "section { width: 100%; }"},
             "state": {}
         });
@@ -604,12 +575,12 @@ mod tests {
     fn openui_documents_use_the_bound_library() {
         let app = serde_json::json!({
             "schemaVersion": 2,
-            "id": "openui-phone",
-            "title": "OpenUI phone",
-            "template": "openbitfun.harmony.app",
-            "libraryId": "openbitfun.harmony.v1",
-            "libraryRevision": 3,
-            "designSpec": {"id": "harmony.phone.v1", "revision": 1},
+            "id": "openui-document",
+            "title": "OpenUI document",
+            "template": "openbitfun.app",
+            "libraryId": "openbitfun.composable.v1",
+            "libraryRevision": 2,
+            "designSpec": {"id": "openbitfun.desktop.v1", "revision": 1},
             "source": {"kind": "openui-lang", "content": "root = Col([Text(\"Hello\")])"},
             "state": {}
         });

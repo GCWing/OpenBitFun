@@ -29,7 +29,7 @@ describe('OpenUI source adapter', () => {
     const onAction = vi.fn();
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Col([label, button])\nlabel = Title("OpenUI")\nbutton = Button("Ping", @ToAssistant("Ping from OpenUI"))' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
       onAction={onAction}
     />));
 
@@ -77,37 +77,13 @@ describe('OpenUI source adapter', () => {
     expect(execCommand).toHaveBeenCalledWith('copy');
   });
 
-  it('keeps the generated library prompt example executable in the selected adapter', async () => {
-    const prompt = genUICatalog.genuiSystemPrompts?.harmony ?? '';
-    const content = prompt.split('## Examples\n')[1]?.split('\n## Important Rules')[0]?.trim().split('\n\n')[0];
-    expect(content).toBeTruthy();
-    expect(content).toContain('root = Col(');
-    await act(async () => root.render(<GenUIOpenUIDocument
-      source={{ kind: 'openui-lang', content: content! }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
-    />));
-    expect(container.textContent).toContain('Pasta night');
-  });
 
-  it('renders a Harmony object pictogram from the pinned Fluent Emoji asset map', async () => {
-    await act(async () => root.render(<GenUIOpenUIDocument
-      source={{ kind: 'openui-lang', content: 'root = Col([picture])\npicture = Icon3D("🧥")' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
-    />));
-    const picture = container.querySelector<HTMLElement>('.hm-icon3d');
-    expect(picture?.dataset.emoji).toBe('🧥');
-    expect(picture?.querySelector('img')?.getAttribute('src')).toContain('/assets/Coat/3D/coat_3d.png');
-    expect(picture?.querySelector('img')?.getAttribute('alt')).toBe('🧥');
-    await act(async () => picture?.querySelector('img')?.dispatchEvent(new Event('error')));
-    expect(picture?.querySelector('img')).toBeNull();
-    expect(picture?.textContent).toBe('🧥');
-  });
 
   it('runs only explicitly registered Query capabilities', async () => {
     const provider = vi.fn(async () => ({ value: 'from owner' }));
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Col([label])\nresult = Query("read_value", {}, {value: "fallback"})\nlabel = Text(result.value)' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
       toolProvider={{ read_value: provider }}
     />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
@@ -130,7 +106,7 @@ describe('OpenUI source adapter', () => {
     };
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Text(result.value)\nresult = Query("read_value", {}, {value: "fallback"})' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
       asyncProvider={asyncProvider}
       asyncPermissions={['data.read']}
       appId="async-app"
@@ -154,7 +130,7 @@ describe('OpenUI source adapter', () => {
     };
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Col([button, result])\n$value = "draft"\nresult = Mutation("save_value", {value: $value})\nbutton = Button("Save", @Run(result))' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
       asyncProvider={asyncProvider}
       asyncPermissions={['data.write']}
       onError={vi.fn()}
@@ -264,7 +240,7 @@ describe('OpenUI source adapter', () => {
   it('uses the selected product library for OpenUI functions', async () => {
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Col([total, sine])\ntotal = Text(@Sum([2, 3]))\nsine = Text(@Round(@Sin(1.5707963267948966), 2))' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
     />));
     expect(container.textContent).toContain('5');
     expect(container.textContent).toContain('1');
@@ -275,7 +251,7 @@ describe('OpenUI source adapter', () => {
     const onAction = vi.fn();
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Col([input, text])\ninput = Input($name, "Name", "text", @ToAssistant("Name changed"))\ntext = Text($name)' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
       initialState={{ $name: 'Initial' }}
       onStateUpdate={onStateUpdate}
       onAction={onAction}
@@ -300,7 +276,7 @@ describe('OpenUI source adapter', () => {
     const onStateUpdate = vi.fn();
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = Col([input, text])\ninput = Input($name, "Name", "text")\ntext = Text($name)' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
       initialState={{ name: 'Initial' }}
       isStreaming
       onStateUpdate={onStateUpdate}
@@ -411,7 +387,7 @@ describe('OpenUI source adapter', () => {
   it('renders SegmentedControl with owner state defaults', async () => {
     await act(async () => root.render(<GenUIOpenUIDocument
       source={{ kind: 'openui-lang', content: 'root = SegmentedControl($stage, [{"value":"探索","label":"探索"},{"value":"建设","label":"建设"}])' }}
-      library={genUIProduct.libraries['openbitfun.harmony.v1']}
+      library={genUIProduct.libraries['openbitfun.composable.v1']}
       initialState={{ stage: '探索' }}
     />));
     expect(container.textContent).toContain('探索');

@@ -189,7 +189,6 @@ export const Input = defineComponent({
           // Keep the visible label and the accessible name in sync. The
           // trusted OpenUI renderer is also exercised by the GenUI browser
           // fixture, where controls are addressed by their accessible name;
-          // Harmony's adapter already follows this contract for its inputs.
           aria-label={props.label || props.placeholder}
           onChange={(event) => {
             const text = event.target.value;

@@ -11,31 +11,6 @@
 .gen-ui-plot { margin: 0; min-width: 0; }
 .gen-ui-plot figcaption { margin-bottom: 12px; font-weight: var(--openbitfun-type-heading-section-font-weight); }
 .gen-ui-plot svg { display: block; max-width: 100%; height: auto; margin-inline: auto; }
-.gen-ui-plot .hm-plot-data { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.gen-ui-plot .hm-pl { font-family: inherit; font-size: var(--openbitfun-type-body-sm-font-size); }
-.gen-ui-plot .hm-pl-grid line { stroke: var(--openbitfun-color-border-default); }
-.gen-ui-plot .hm-pl-axes line { stroke: var(--openbitfun-color-content-secondary); }
-.gen-ui-plot text { fill: var(--openbitfun-color-content-primary); }
-.gen-ui-plot .hm-pl-s { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.gen-ui-plot .hm-pl-dash { stroke-dasharray: 6 4; }
-.gen-ui-plot .hm-pl-dot { stroke: var(--openbitfun-color-surface-panel); }
-.gen-ui-plot .hm-pl-s0 { stroke: var(--openbitfun-color-accent-default); }
-.gen-ui-plot .hm-pl-dot.hm-pl-s0 { fill: var(--openbitfun-color-accent-default); }
-.gen-ui-plot .hm-pl-s1 { stroke: var(--openbitfun-color-status-warning-content); }
-.gen-ui-plot .hm-pl-dot.hm-pl-s1 { fill: var(--openbitfun-color-status-warning-content); }
-.gen-ui-plot .hm-pl-s2 { stroke: var(--openbitfun-color-status-success-content); }
-.gen-ui-plot .hm-pl-dot.hm-pl-s2 { fill: var(--openbitfun-color-status-success-content); }
-.gen-ui-plot .hm-pl-s3 { stroke: var(--openbitfun-color-status-info-content); }
-.gen-ui-plot .hm-pl-dot.hm-pl-s3 { fill: var(--openbitfun-color-status-info-content); }
-.gen-ui-plot .hm-pl-s4 { stroke: var(--openbitfun-color-status-danger-content); }
-.gen-ui-plot .hm-pl-dot.hm-pl-s4 { fill: var(--openbitfun-color-status-danger-content); }
-.gen-ui-plot .hm-pl-s5 { stroke: var(--openbitfun-color-content-primary); }
-.gen-ui-plot .hm-pl-dot.hm-pl-s5 { fill: var(--openbitfun-color-content-primary); }
-.gen-ui-plot .hm-pl-rule { stroke: var(--openbitfun-color-content-secondary); fill: none; }
-.gen-ui-plot .hm-pl-mark { fill: var(--openbitfun-color-content-primary); }
-.gen-ui-application--harmony-genui .gen-ui-plot,
-.gen-ui-application--harmony-genui .gen-ui-steps { contain: layout paint; }
-
 /* Open Intelligent UI compatible primitives. The language contract owns
    composition; these styles provide the same quiet spacing and pill controls
    as the upstream Open Intelligent UI renderer. */

@@ -267,8 +267,7 @@
     "unknown": "当前版本不支持此组件集合，已保留原设置。请选择已安装的集合。",
     "collections": {
       "openui": "Open Intelligent UI：在 FlowChat 中流式显示 OpenUI Lang，并保留本地状态和动作。",
-      "openbitfun": "OpenBitFun：使用当前 OpenBitFun 组件库和桌面样式。",
-      "harmony": "Harmony 手机：固定手机视口、宿主状态栏和持久化交付验收。"
+      "openbitfun": "OpenBitFun：使用当前 OpenBitFun 组件库和桌面样式。"
     },
     "specification": "UI 规范",
     "viewport": "目标视口",

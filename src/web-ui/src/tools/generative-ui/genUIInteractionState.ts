@@ -4,7 +4,7 @@ import type { GenUIAppEnvelope } from './genUITypes';
 /**
  * User-visible GenUI lifecycle. This is deliberately separate from the
  * FlowChat tool status: OpenUI completes when its source stream completes;
- * only explicit Harmony delivery can wait for owner acceptance.
+ * delivery modes can wait for owner acceptance.
  */
 export type GenUIInteractionState =
   | 'starting'
@@ -31,7 +31,7 @@ export interface GenUIInteractionStateInput {
   dataPending?: boolean;
   /** Final tool evidence may arrive before the local verification panel. */
   deliveryAccepted?: boolean;
-  /** Whether this application opted into the durable Harmony delivery path. */
+  /** Whether this application uses durable delivery. */
   requiresDelivery?: boolean;
 }
 
@@ -66,12 +66,11 @@ export function resolveGenUIInteractionState(input: GenUIInteractionStateInput):
   if (!terminal) return 'interactive';
   // OpenUI answers are complete as soon as their source has finished
   // streaming. They deliberately have no owner/CAS/checker lifecycle to
-  // wait for. Only an explicit Harmony delivery can enter the pending and
-  // complete states below.
+  // wait for. Only explicit durable delivery can enter the pending and complete states below.
   if (!input.requiresDelivery) return 'interactive';
   if (input.deliveryAccepted || deliveryAccepted(input.verification)) return 'complete';
-  // A completed Harmony call has usable source, but delivery is still a
-  // background concern until persistence/checker/reopen evidence arrives.
+  // A completed call has usable source, but delivery is still a background
+  // concern until persistence/checker/reopen evidence arrives.
   if (input.verification?.persistence === 'saving' || !input.ownerReady) return 'delivery-pending';
   return 'interactive';
 }

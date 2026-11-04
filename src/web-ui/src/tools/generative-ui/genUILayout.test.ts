@@ -3,7 +3,11 @@ import { inspectGenUIHtmlFrame } from './genUILayout';
 import { genUICatalog } from './genUIContract';
 
 describe('GenUI HTML frame inspection', () => {
-  const specification = genUICatalog.designSpecs?.['harmony.phone.v1'];
+  const specification = {
+    viewport: { mode: 'fixed', width: 360, height: 764, unit: 'css-px' },
+    shell: { kind: 'phone', statusBarHeight: 36, contentInsets: { top: 0, right: 16, bottom: 0, left: 16 } },
+    acceptance: { checks: ['no-horizontal-overflow', 'content-boundary'] },
+  } as typeof genUICatalog.designSpecs[string];
   it('accepts visible content in the fixed screen viewport', () => {
     expect(inspectGenUIHtmlFrame({
       viewportWidth: 328,

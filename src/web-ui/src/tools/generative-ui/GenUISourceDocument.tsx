@@ -1,6 +1,6 @@
 import type { GenUIDesignSpec } from './genUIContract';
 import GenUIHtmlDocument from './GenUIHtmlDocument';
-import type { GenUIHarmonyPresentation, GenUIHtmlBridge } from './GenUIHtmlDocument';
+import type { GenUIHtmlBridge } from './GenUIHtmlDocument';
 import GenUIOpenUIDocument from './genUIOpenUI';
 import type { GenUIOpenUIActionEvent, GenUIOpenUIToolProvider } from './genUIOpenUI';
 import type { GenUILibrary } from './genUILibrary';
@@ -23,7 +23,6 @@ export default function GenUISourceDocument({
   sourceKey,
   htmlBridge,
   htmlScriptEnabled = false,
-  harmonyPresentation,
   initialState,
   isStreaming = false,
   readOnly = false,
@@ -46,7 +45,6 @@ export default function GenUISourceDocument({
   sourceKey?: string;
   htmlBridge?: GenUIHtmlBridge;
   htmlScriptEnabled?: boolean;
-  harmonyPresentation?: GenUIHarmonyPresentation;
   initialState?: GenUIAppState;
   isStreaming?: boolean;
   readOnly?: boolean;
@@ -64,7 +62,7 @@ export default function GenUISourceDocument({
   if (source.kind === 'html-document') {
     // Free documents require an owner bridge before any script can run. The
     // OpenUI HtmlView path has a separate local-animation policy below.
-    return <GenUIHtmlDocument source={source} specification={specification} designSpecId={designSpecId} appId={appId} sourceKey={sourceKey} bridge={htmlBridge} scriptEnabled={Boolean(htmlBridge && htmlScriptEnabled)} harmonyPresentation={harmonyPresentation} />;
+    return <GenUIHtmlDocument source={source} specification={specification} designSpecId={designSpecId} appId={appId} sourceKey={sourceKey} bridge={htmlBridge} scriptEnabled={Boolean(htmlBridge && htmlScriptEnabled)} />;
   }
   return <GenUIOpenUIDocument
     source={source}

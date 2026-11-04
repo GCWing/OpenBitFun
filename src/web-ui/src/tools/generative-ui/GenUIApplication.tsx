@@ -13,8 +13,6 @@ import { GenUIStream } from './genUIStream';
 import { genUIProduct, type GenUIProduct } from './genUIProduct';
 import type { GenUIAsyncRuntime, GenUIProviderInput, GenUITargetEvent } from './genUIAsyncCapabilities';
 import { createGenUIAsyncRuntime } from './genUIAsyncCapabilities';
-import { HARMONY_STYLE_RESOURCE_CSS } from './components/vendor/harmonyStyles';
-import { harmonyPresentation } from './harmonyPresentation';
 
 export interface GenUIApplicationProps {
   product?: GenUIProduct;
@@ -51,8 +49,6 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
   const designSpec = designSpecForApp(app, product.catalog);
   const library = libraryFor(app, product.catalog);
   const source = app.source;
-  const harmony = app.libraryId.startsWith('openbitfun.harmony');
-  const harmonyStyle = harmonyPresentation(app);
   // Keep one async controller for the mounted FlowChat application. The
   // source key still changes for admission and late-result isolation, but it
   // must not remount every map/image component as OpenUI receives fragments.
@@ -130,11 +126,10 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
     Promise.resolve(onStateChange(next)).then(() => { if (alive.current) setPersistence('saved'); }, error => { if (alive.current) { setPersistence('failed'); setSaveError(error instanceof Error ? error.message : String(error)); } });
   };
   if (!source) {
-    return <GenUIHostSurface specification={designSpec} harmony={harmony} harmonyTheme={harmonyStyle.theme} harmonyFont={harmonyStyle.font} harmonyScheme={harmonyStyle.scheme}><div className="gen-ui-application" data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-openbitfun-state="rejected">Semantic graph GenUI documents are no longer supported. Generate a complete OpenUI or HTML source document.</div></GenUIHostSurface>;
+    return <GenUIHostSurface specification={designSpec}><div className="gen-ui-application" data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-openbitfun-state="rejected">Semantic graph GenUI documents are no longer supported. Generate a complete OpenUI or HTML source document.</div></GenUIHostSurface>;
   }
-  return <GenUIHostSurface specification={designSpec} harmony={harmony} harmonyTheme={harmonyStyle.theme} harmonyFont={harmonyStyle.font} harmonyScheme={harmonyStyle.scheme}>
-    <div className={'gen-ui-application gen-ui-application--' + (product.adapters[app.libraryId]?.adapterKind ?? 'unknown') + (designSpec?.shell.kind === 'phone' ? ' gen-ui-application--phone' : '') + (source.kind === 'html-document' ? ' gen-ui-application--document' : '')} data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-gen-ui-app={app.id} data-gen-ui-library={app.libraryId} data-gen-ui-library-revision={app.libraryRevision} data-gen-ui-source-kind={source.kind} data-hm-theme={harmony ? harmonyStyle.theme : undefined} data-hm-font={harmony ? harmonyStyle.font : undefined} data-hm-scheme={harmony ? harmonyStyle.scheme : undefined} data-openbitfun-state={render === 'failed' || report.preflight === 'failed' ? 'rejected' : render === 'passed' ? 'rendered' : undefined} data-gen-ui-preflight={report.preflight} data-gen-ui-postcheck={report.render} data-gen-ui-save={persistence}>
-      {harmony ? <style data-gen-ui-harmony-style dangerouslySetInnerHTML={{ __html: HARMONY_STYLE_RESOURCE_CSS }} /> : null}
+  return <GenUIHostSurface specification={designSpec}>
+    <div className={'gen-ui-application gen-ui-application--' + (product.adapters[app.libraryId]?.adapterKind ?? 'unknown') + (designSpec?.shell.kind === 'phone' ? ' gen-ui-application--phone' : '') + (source.kind === 'html-document' ? ' gen-ui-application--document' : '')} data-openbitfun-component="gen-ui-application" data-openbitfun-part="root" data-gen-ui-app={app.id} data-gen-ui-library={app.libraryId} data-gen-ui-library-revision={app.libraryRevision} data-gen-ui-source-kind={source.kind} data-openbitfun-state={render === 'failed' || report.preflight === 'failed' ? 'rejected' : render === 'passed' ? 'rendered' : undefined} data-gen-ui-preflight={report.preflight} data-gen-ui-postcheck={report.render} data-gen-ui-save={persistence}>
       {renderErrors.length && !streaming ? <p className="gen-ui-application__error" role="alert">GenUI render error: {renderErrors.join('; ')}</p> : null}
       {library && <GenUISourceDocument source={source} library={product.libraries[app.libraryId]} specification={designSpec} designSpecId={app.designSpec?.id} appId={app.id} sourceKey={definitionKey} initialState={state} isStreaming={streaming} readOnly={locked} onStateUpdate={next => {
         const nextKey = genUIContentKey(next);
@@ -145,7 +140,7 @@ function Application({ product = genUIProduct, definition, initialState, readOnl
         lastStateKey.current = nextKey;
         setOpenUIError(''); setObserved(true); dirty.current = true;
         store.current.commit(next); setState(next); save(next);
-      }} onError={setOpenUIError} onAction={event => { setObserved(true); return onAction?.(event); }} toolProvider={toolProvider} asyncProvider={asyncProvider} asyncRuntime={asyncRuntime} asyncPermissions={asyncPermissions} asyncTarget={asyncTarget} asyncTargetId={asyncTargetId} onTargetEvent={onTargetEvent} htmlBridge={htmlBridge} htmlScriptEnabled={Boolean(!preview && !readOnly && !streaming)} harmonyPresentation={harmony ? harmonyStyle : undefined} />}
+      }} onError={setOpenUIError} onAction={event => { setObserved(true); return onAction?.(event); }} toolProvider={toolProvider} asyncProvider={asyncProvider} asyncRuntime={asyncRuntime} asyncPermissions={asyncPermissions} asyncTarget={asyncTarget} asyncTargetId={asyncTargetId} onTargetEvent={onTargetEvent} htmlBridge={htmlBridge} htmlScriptEnabled={Boolean(!preview && !readOnly && !streaming)} />}
     </div>
   </GenUIHostSurface>;
 }

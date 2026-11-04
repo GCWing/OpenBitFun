@@ -9941,14 +9941,12 @@
         "按组件库及其 UI 规范的设计规则、资源、视口和宿主外壳约束生成结果",
         "组件路径使用 OpenUI 描述和可信 renderer；自由路径保留 HTML/CSS/SVG",
         "支持生成、交互、保存和重开",
-        "实际挂载、交互、保存重开与需求审查通过后接受候选",
         "可注册自定义宿主组件"
       ],
       "highlightsEn": [
         "Constrain generated results with the selected library's UI rules, resources, viewport and host shell",
         "Use OpenUI descriptions and trusted renderers for components; retain HTML/CSS/SVG for free documents",
         "Support generation, interaction, save and reopen",
-        "Accept candidates after mounted interaction, durable reopen and requirement checks",
         "Register custom host components"
       ],
       "items": [
@@ -9963,19 +9961,16 @@
             ],
             "workflowZh": [
               "按所选 UI 规范选择 OpenUI 组件描述或 HTML/CSS/SVG 自由文档；规范身份随候选固定。",
-              "宿主在目标视口实际渲染并执行布局、外壳、保存重开和需求检查；失败诊断返回原生成流程。",
-              "候选与已接受版本分离，状态由会话所属宿主持久化，使用版本校验避免并发覆盖。"
+              "宿主按所选 UI 规范渲染 OpenUI 描述或 HTML/CSS/SVG 自由文档，并支持本地交互。"
             ],
             "workflowEn": [
               "Use OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification; pin that identity to the candidate.",
-              "Render in the target viewport and run shell, layout, save/reopen and requirement checks on every candidate; return diagnostics to generation on failure.",
-              "Separate candidates from accepted revisions and persist state on the session owner using version checks to prevent concurrent overwrite."
+              "Render OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification and support local interaction."
             ]
           },
           "evidence": [
             "source:src/crates/assembly/core/src/agentic/tools/implementations/generative_ui_tool.rs#GenerativeUI",
-            "source:src/web-ui/src/tools/generative-ui/GenUIApplication.tsx#GenUIApplication",
-            "source:src/web-ui/src/tools/generative-ui/genUIDelivery.tsx#verifyGenUICandidate"
+            "source:src/web-ui/src/tools/generative-ui/GenUIApplication.tsx#GenUIApplication"
           ]
         }
       ],

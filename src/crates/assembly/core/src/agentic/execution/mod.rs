@@ -10,8 +10,6 @@ mod context_budget;
 mod context_composition;
 pub mod edit_constraint_guard;
 pub mod execution_engine;
-#[cfg(feature = "tools-miniapp")]
-pub(crate) mod generative_ui_review;
 pub(crate) mod model_exchange_trace;
 pub mod model_pool;
 mod prompt_suggestion;

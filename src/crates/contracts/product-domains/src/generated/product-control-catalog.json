@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "d9509b2230b87eb48363b5d79dae72009f1e84d3007de98ee20e717ae609b0b8",
-  "ownerDigest": "d3fe9126806fe064f8a7ad70e6e9c72dad48eef1f45f314f537a9e48d3771908",
+  "digest": "09a0ad7ff1b5e8e9a53d7833f98d60a5e0defd9485bd3927a53219522a6e6b17",
+  "ownerDigest": "31d6371f7765bde7bee88e22a6a4f03c2c5370e138cf49975bdc88f3c5eeb052",
   "searchAcceptance": [
     {
       "id": "native-image-generation",
@@ -16920,7 +16920,6 @@
       "inputSchema": {
         "type": "string",
         "enum": [
-          "harmony",
           "openbitfun",
           "openui"
         ]
@@ -30483,7 +30482,6 @@
           "valueSchema": {
             "type": "string",
             "enum": [
-              "harmony",
               "openbitfun",
               "openui"
             ]
@@ -32669,14 +32667,12 @@
         "按组件库及其 UI 规范的设计规则、资源、视口和宿主外壳约束生成结果",
         "组件路径使用 OpenUI 描述和可信 renderer；自由路径保留 HTML/CSS/SVG",
         "支持生成、交互、保存和重开",
-        "实际挂载、交互、保存重开与需求审查通过后接受候选",
         "可注册自定义宿主组件"
       ],
       "highlightsEn": [
         "Constrain generated results with the selected library's UI rules, resources, viewport and host shell",
         "Use OpenUI descriptions and trusted renderers for components; retain HTML/CSS/SVG for free documents",
         "Support generation, interaction, save and reopen",
-        "Accept candidates after mounted interaction, durable reopen and requirement checks",
         "Register custom host components"
       ],
       "items": [
@@ -32691,13 +32687,11 @@
             ],
             "workflowZh": [
               "按所选 UI 规范选择 OpenUI 组件描述或 HTML/CSS/SVG 自由文档；规范身份随候选固定。",
-              "宿主在目标视口实际渲染并执行布局、外壳、保存重开和需求检查；失败诊断返回原生成流程。",
-              "候选与已接受版本分离，状态由会话所属宿主持久化，使用版本校验避免并发覆盖。"
+              "宿主按所选 UI 规范渲染 OpenUI 描述或 HTML/CSS/SVG 自由文档，并支持本地交互。"
             ],
             "workflowEn": [
               "Use OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification; pin that identity to the candidate.",
-              "Render in the target viewport and run shell, layout, save/reopen and requirement checks on every candidate; return diagnostics to generation on failure.",
-              "Separate candidates from accepted revisions and persist state on the session owner using version checks to prevent concurrent overwrite."
+              "Render OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification and support local interaction."
             ]
           }
         }
@@ -32748,12 +32742,10 @@
         "按组件库及其 UI 规范的设计规则、资源、视口和宿主外壳约束生成结果",
         "组件路径使用 OpenUI 描述和可信 renderer；自由路径保留 HTML/CSS/SVG",
         "支持生成、交互、保存和重开",
-        "实际挂载、交互、保存重开与需求审查通过后接受候选",
         "可注册自定义宿主组件",
         "Constrain generated results with the selected library's UI rules, resources, viewport and host shell",
         "Use OpenUI descriptions and trusted renderers for components; retain HTML/CSS/SVG for free documents",
         "Support generation, interaction, save and reopen",
-        "Accept candidates after mounted interaction, durable reopen and requirement checks",
         "Register custom host components",
         "生成可交互的 GenUI 应用并由宿主渲染",
         "Generate interactive GenUI applications rendered by the host",
@@ -32767,11 +32759,9 @@
         "Generate a daily plan with completion state",
         "GenerativeUI",
         "按所选 UI 规范选择 OpenUI 组件描述或 HTML/CSS/SVG 自由文档；规范身份随候选固定。",
-        "宿主在目标视口实际渲染并执行布局、外壳、保存重开和需求检查；失败诊断返回原生成流程。",
-        "候选与已接受版本分离，状态由会话所属宿主持久化，使用版本校验避免并发覆盖。",
+        "宿主按所选 UI 规范渲染 OpenUI 描述或 HTML/CSS/SVG 自由文档，并支持本地交互。",
         "Use OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification; pin that identity to the candidate.",
-        "Render in the target viewport and run shell, layout, save/reopen and requirement checks on every candidate; return diagnostics to generation on failure.",
-        "Separate candidates from accepted revisions and persist state on the session owner using version checks to prevent concurrent overwrite."
+        "Render OpenUI descriptions or free HTML/CSS/SVG under the selected UI specification and support local interaction."
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.generative-ui/"
     }
