@@ -24,7 +24,7 @@ import {
 import { useApp } from '@/app/hooks/useApp';
 import { fileTabManager } from '@/shared/services/FileTabManager';
 import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
-import { useSceneStore } from '@/app/stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '@/app/stores/sceneStore';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { resolveSessionSceneTarget } from '@/app/services/sessionSceneTarget';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
@@ -99,7 +99,7 @@ describe('canvas host panel ownership', () => {
     clearAgentCanvasForPeerSwitch();
     stores.forEach(store => store.getState().reset());
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     ['agent', 'project', 'git'].forEach(mode => drainPendingTabs(mode as 'agent' | 'project' | 'git'));
     appManager.updateLayout({

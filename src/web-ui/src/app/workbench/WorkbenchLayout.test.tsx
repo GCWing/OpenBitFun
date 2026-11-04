@@ -6,7 +6,7 @@ import SessionScene from '../scenes/session/SessionScene';
 import WorkbenchLayout from './WorkbenchLayout';
 import { sessionPaneLayoutStore } from '../scenes/session/sessionPaneLayoutStore';
 import SessionPanelSettingsSection from '../scenes/settings/pages/application/SessionPanelSettingsSection';
-import { useSceneStore } from '../stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '../stores/sceneStore';
 import { getSessionSceneTabId } from '../components/SceneBar/types';
 import { useWindowResizeLayout } from '../layout/windowResizeScheduler';
 
@@ -59,7 +59,7 @@ describe('workbench pane layout integration', () => {
   beforeEach(() => {
     mocks.terminalPosition = 'right';
     useWindowResizeLayout.setState(useWindowResizeLayout.getInitialState());
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
     sessionPaneLayoutStore.setState(sessionPaneLayoutStore.getInitialState());
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {

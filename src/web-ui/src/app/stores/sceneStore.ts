@@ -3,8 +3,11 @@
  *
  * Tab rules:
  *   - Every explicitly opened scene stays in openTabs until the user closes it.
- *     Session tabs reference one session per workspace; the shell-owned
- *     sessionSceneLifecycle retires their tabs when that resource disappears.
+ *     Each session tab references one session of one device; several
+ *     sessions of a workspace, and sessions of other devices, keep their own
+ *     tabs. The shell-owned sessionSceneLifecycle retires a tab when its
+ *     session disappears from the rendered device; tabs of other devices stay
+ *     until the user closes them, and activating one renders its device.
  *   - Pinned tabs stay ahead of regular tabs; closeability is an independent
  *     scene-definition capability.
  *   - The app starts with no tabs. SceneViewport owns the tabless welcome
@@ -90,9 +93,21 @@ function buildSceneTab(id: SceneTabId, now: number): SceneTab {
 }
 
 function rememberSession(tab: SceneTab, session: SessionSceneTarget): SceneTab {
-  const previous = tab.sessionHistory ?? (tab.session ? [tab.session.sessionId] : []);
-  return { ...tab, session, sessionHistory: [session.sessionId,
-    ...previous.filter(id => id !== session.sessionId)].slice(0, 5) };
+  return { ...tab, session, sessionHistory: [session.sessionId] };
+}
+
+/** Session tabs kept open; past this the least recently used idle ones close. */
+const MAX_SESSION_TABS = 12;
+
+/** Close the least recently used session tabs beyond the limit, never `keep` or a shown one. */
+function capSessionTabs(tabs: SceneTab[], keep: SceneTabId, shown: ReadonlySet<SceneTabId>): SceneTab[] {
+  const sessions = tabs.filter(tab => tab.session && !tab.pinned);
+  if (sessions.length <= MAX_SESSION_TABS) return tabs;
+  const closable = sessions.filter(tab => tab.id !== keep && !shown.has(tab.id) && !isHeldSessionTab(tab))
+    .sort((a, b) => a.lastUsed - b.lastUsed)
+    .slice(0, sessions.length - MAX_SESSION_TABS);
+  const closed = new Set(closable.map(tab => tab.id));
+  return tabs.filter(tab => !closed.has(tab.id));
 }
 
 /** Shell adapter: the tab owner never loads history or changes runtime state. */
@@ -300,7 +315,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   updateSessionScene: (target) => {
     const id = getSessionSceneTabId(target);
     const state = get();
-    if (!state.openTabs.some(tab => tab.id === id && tab.session?.sessionId !== target.sessionId)) return;
+    if (!state.openTabs.some(tab => tab.id === id && tab.session !== target
+      && (tab.session?.sessionId !== target.sessionId || tab.session.workspaceKey !== target.workspaceKey))) return;
     set({ openTabs: state.openTabs.map(tab => tab.id === id ? rememberSession(tab, target) : tab) });
   },
 
@@ -314,7 +330,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         tabs.set(tab.id, tab);
         continue;
       }
-      if (isHeldSessionTab(tab)) {
+      // Another device's sessions are not in this projection; its tabs stay.
+      if (isHeldSessionTab(tab) || (tab.session && tab.session.surfaceId !== getActiveSurfaceId())) {
         tabs.set(tab.id, tab);
         continue;
       }
@@ -336,9 +353,16 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       }
     }
     const nextTabs = [...tabs.values()];
-    if (nextTabs.length === state.openTabs.length && nextTabs.every((tab, i) => tab === state.openTabs[i])) return;
+    // Another device's session is shown only while its open renders that
+    // device; an open that failed or was superseded leaves the tab unselected.
+    const strandedId = [state.paneSelections.primary, state.paneSelections.secondary].map(selectedScene)
+      .find(id => {
+        const tab = id ? tabs.get(id) : undefined;
+        return Boolean(tab?.session && tab.session.surfaceId !== getActiveSurfaceId() && !isHeldSessionTab(tab));
+      }) ?? null;
+    if (!strandedId && nextTabs.length === state.openTabs.length && nextTabs.every((tab, i) => tab === state.openTabs[i])) return;
     const activeId = state.activeTabId && (remapped.get(state.activeTabId) ?? state.activeTabId);
-    const retainedActiveId = activeId && tabs.has(activeId) ? activeId : null;
+    const retainedActiveId = activeId && tabs.has(activeId) && activeId !== strandedId ? activeId : null;
     const mappedHistory = state.navHistory.map(id => remapped.get(id) ?? id);
     const navHistory = mappedHistory.filter(id => tabs.has(id));
     const retiredPendingTab = state.pendingTabId !== null
@@ -349,7 +373,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const id = selectedScene(state.paneSelections[pane]);
       if (!id) return state.paneSelections[pane];
       const nextId = remapped.get(id) ?? id;
-      return tabs.has(nextId) ? sceneSelection(nextId) : vacantSelection(pane, state.canvasPane);
+      return tabs.has(nextId) && nextId !== strandedId ? sceneSelection(nextId) : vacantSelection(pane, state.canvasPane);
     };
     const panes = reconcilePaneState({ ...state, openTabs: nextTabs,
       paneSelections: { primary: selection('primary'), secondary: selection('secondary') } });
@@ -360,8 +384,10 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         ? mappedHistory.slice(0, state.navCursor + 1).filter(id => tabs.has(id)).length - 1 : -1,
     });
     if (!retainedActiveId && state.activeTabId) {
-      const fallback = paneFallback(nextTabs, state.focusedPane)
-        ?? [...nextTabs].sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
+      // Never fall back onto another device's tab: that would render the device.
+      const local = nextTabs.filter(tab => !tab.session || tab.session.surfaceId === getActiveSurfaceId());
+      const fallback = paneFallback(local, state.focusedPane)
+        ?? [...local].sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
       if (fallback) get().activateScene(fallback);
     }
   },
@@ -450,10 +476,12 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     const id = getSessionSceneTabId(target);
     const previous = state.openTabs.find(tab => tab.id === id);
     const tab: SceneTab = {
-      ...previous, id, pane: 'primary', session: target, lastUsed: Date.now(),
-      sessionHistory: [target.sessionId, ...(previous?.sessionHistory ?? []).filter(sessionId => sessionId !== target.sessionId)],
+      ...previous, id, pane: 'primary', session: target, lastUsed: Date.now(), sessionHistory: [target.sessionId],
     };
-    const openTabs = [...state.openTabs.filter(candidate => candidate.id !== id), tab];
+    // An open tab keeps its place; a new one goes after the shown session tab.
+    const openTabs = previous
+      ? state.openTabs.map(candidate => candidate.id === id ? tab : candidate)
+      : insertAfterShown(state, tab);
     const panes = reconcilePaneState({ ...state, openTabs, focusedPane: 'primary',
       paneSelections: { ...state.paneSelections, primary: sceneSelection(id) } });
     set({ ...projectPaneState(panes), pendingTabId: null,
@@ -474,13 +502,23 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     const saved = restoreContent ? contentSurfaceTabs.get(getActiveSurfaceId()) : undefined;
     const restored = saved?.openTabs.filter(tab => tab.contentId && useContentResourceStore.getState().resources[tab.contentId])
       ?? buildDefaultTabs();
-    // A cross-device open keeps its session in front through the switch.
+    // Session tabs of every device survive the switch; a cross-device open
+    // keeps its session in front.
     const held = state.openTabs.find(isHeldSessionTab);
-    const tabs = held ? [...restored, held] : restored;
+    const sessionTabs = state.openTabs.filter(tab => tab.session);
+    const tabs = [...sessionTabs, ...restored.filter(tab => !tab.session && !sessionTabs.some(kept => kept.id === tab.id))];
+    // A kept session tab is shown again only through its own activation.
+    const base = saved ?? state;
+    const unselected = (pane: WorkbenchPane) => {
+      const id = selectedScene(base.paneSelections[pane]);
+      return id && tabs.some(tab => tab.id === id && tab.session) ? vacantSelection(pane, base.canvasPane) : base.paneSelections[pane];
+    };
+    const paneSelections = { primary: unselected('primary'), secondary: unselected('secondary') };
     const panes = held
-      ? reconcilePaneState({ ...(saved ?? state), openTabs: tabs, focusedPane: 'primary',
-        paneSelections: { ...(saved ?? state).paneSelections, primary: sceneSelection(held.id) } })
-      : saved ? reconcilePaneState({ ...saved, openTabs: tabs }) : createPaneState(tabs, tabs[0]?.id ?? null);
+      ? reconcilePaneState({ ...base, openTabs: tabs, focusedPane: 'primary',
+        paneSelections: { ...paneSelections, primary: sceneSelection(held.id) } })
+      : saved ? reconcilePaneState({ ...saved, openTabs: tabs, paneSelections })
+        : createPaneState(tabs, tabs.find(tab => !tab.session)?.id ?? null);
     const activeTabId = focusedScene(panes);
     set({ ...projectPaneState(panes), pendingTabId: null,
       navHistory: activeTabId ? [activeTabId] : [], navCursor: activeTabId ? 0 : -1,
@@ -488,6 +526,12 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     });
   },
 }));
+
+/** Tests only: drop every tab, including the session tabs a switch keeps. */
+export function resetSceneStoreForTest(): void {
+  useSceneStore.setState({ openTabs: [], paneSelections: { primary: { kind: 'empty' }, secondary: { kind: 'canvas' } } });
+  useSceneStore.getState().resetForPeerSwitch();
+}
 
 export function registerSessionSceneNavigation(adapter: SessionSceneNavigation): () => void {
   sessionNavigation = adapter;
@@ -593,7 +637,9 @@ function openSceneTarget(id: SceneTabId, session?: SessionSceneTarget, options?:
       ...(session && presentation ? { pane: tabPane(presentation) } : {}) };
     const source = existing ?? created;
     const tab = { ...(session ? rememberSession(source, session) : source), lastUsed: Date.now() };
-    const tabs = existing ? state.openTabs.map(candidate => candidate.id === id ? tab : candidate) : [...state.openTabs, tab];
+    const shown = new Set(workbenchPanes.map(pane => selectedScene(state.paneSelections[pane])).filter((value): value is SceneTabId => Boolean(value)));
+    const tabs = existing ? state.openTabs.map(candidate => candidate.id === id ? tab : candidate)
+      : session ? capSessionTabs(insertAfterShown(state, tab), id, shown) : [...state.openTabs, tab];
     let panes = selectSceneInPane({ ...state, openTabs: orderPinnedTabsFirst(tabs) }, id);
     if (options?.revealCanvas) panes = selectCanvasInPane(panes, false);
     if (options?.focus === false) panes = { ...panes, focusedPane: state.focusedPane };
@@ -604,6 +650,14 @@ function openSceneTarget(id: SceneTabId, session?: SessionSceneTarget, options?:
     if (navSceneId && options?.focus !== false) useNavSceneStore.getState().openNavScene(navSceneId);
     options?.onActivated?.();
   } });
+}
+
+/** A new session tab opens next to the session tab its pane shows, else last. */
+function insertAfterShown(state: ScenePaneState, tab: SceneTab): SceneTab[] {
+  const shownId = selectedScene(state.paneSelections[tab.pane ?? state.focusedPane]);
+  const index = shownId ? state.openTabs.findIndex(candidate => candidate.id === shownId && candidate.session) : -1;
+  if (index < 0) return [...state.openTabs, tab];
+  return [...state.openTabs.slice(0, index + 1), tab, ...state.openTabs.slice(index + 1)];
 }
 
 function navigateHistory(direction: -1 | 1): void {

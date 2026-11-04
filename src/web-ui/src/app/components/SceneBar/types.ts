@@ -51,8 +51,22 @@ export function getSceneViewId(id: SceneTabId): SceneTabId {
   return isSessionSceneId(id) ? 'session' : id;
 }
 
+/**
+ * One tab per session: several sessions of one workspace, and sessions of
+ * other devices, each keep their own tab.
+ */
 export function getSessionSceneTabId(target: SessionSceneTarget): SceneTabId {
-  return `session:${encodeURIComponent(JSON.stringify([target.surfaceId, target.workspaceKey]))}`;
+  return `session:${encodeURIComponent(JSON.stringify([target.surfaceId, target.workspaceKey, target.sessionId]))}`;
+}
+
+/** The workspace id a session tab's key names, when it names one. */
+export function sessionSceneWorkspaceId(target: SessionSceneTarget): string | undefined {
+  try {
+    const key = JSON.parse(target.workspaceKey) as unknown;
+    return Array.isArray(key) && key[0] === 'workspace' && typeof key[1] === 'string' ? key[1] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Static definition (from registry) for a scene tab type */

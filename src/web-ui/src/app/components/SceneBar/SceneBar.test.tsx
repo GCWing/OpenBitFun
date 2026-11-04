@@ -8,11 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InteractionMotion } from '@/shared/utils/motionPreference';
 import type { SceneTab, SceneTabId } from './types';
 import SceneBar from './SceneBar';
-import { useSceneStore } from '../../stores/sceneStore';
+import { useSceneStore, resetSceneStoreForTest } from '../../stores/sceneStore';
 import { useContentResourceStore } from '../../workbench/contentResourceStore';
 import { writeSessionTabDrag } from '../../workbench/canvasTabTransfer';
 import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '../panels/content-canvas/stores';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { useDeviceDirectory } from '@/infrastructure/account/deviceDirectory';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -98,7 +99,7 @@ describe('SceneBar overflow navigation', () => {
     sceneHarness.closeScene.mockReset();
     clearAgentCanvasForPeerSwitch();
     useContentResourceStore.setState({ resources: {} });
-    useSceneStore.getState().resetForPeerSwitch();
+    resetSceneStoreForTest();
   });
 
   afterEach(() => {
@@ -112,137 +113,18 @@ describe('SceneBar overflow navigation', () => {
     act(() => root.render(<SceneBar />));
   }
 
-  function withSessionHistory() {
+  it('activates a session tab on click and names the device of a tab from another device', () => {
     const tab = sceneHarness.state.openTabs[0];
-    tab.session = { surfaceId: 'local', workspaceKey: 'workspace-a', sessionId: 'six' };
-    tab.sessionHistory = ['six', 'five', 'four', 'three', 'two'];
-    return tab;
-  }
-
-  const visibleHistory = () => document.querySelector<HTMLElement>('[role="menu"]:not([aria-hidden="true"])');
-
-  it('switches on the first click and opens the five recent sessions only when the selected tab is clicked again', () => {
-    withSessionHistory();
+    tab.session = { surfaceId: 'peer-tab-device', workspaceKey: 'workspace-a', sessionId: 'remote' };
+    useDeviceDirectory.setState({ devices: [{ device_id: 'peer-tab-device', device_name: 'Studio' } as never], localId: 'me' });
     sceneHarness.state.activeTabId = 'git';
     renderSceneBar();
     const trigger = container.querySelector<HTMLButtonElement>('[role="tab"][data-openbitfun-value="session"]')!;
+    expect(container.querySelector('[data-openbitfun-part="tabDevice"]')?.textContent).toBe('Studio');
     act(() => trigger.click());
     expect(sceneHarness.activateScene).toHaveBeenCalledWith('session');
-    expect(visibleHistory()).toBeNull();
-    sceneHarness.state.activeTabId = 'session';
-    renderSceneBar();
-    act(() => trigger.click());
-    expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect([...visibleHistory()!.querySelectorAll('[role="menuitemradio"]')].map(item => item.textContent))
-      .toEqual(['six', 'five', 'four', 'three', 'two']);
-    expect(visibleHistory()!.querySelector('[aria-checked="true"]')?.textContent).toBe('six');
-    act(() => trigger.click());
-    expect(visibleHistory()).toBeNull();
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('selects a recent session through the guarded scene navigation and closes the list', () => {
-    const tab = withSessionHistory();
-    const open = vi.spyOn(useSceneStore.getState(), 'openSessionScene').mockImplementation(() => {});
-    useSceneStore.setState({ openTabs: [tab] });
-    renderSceneBar();
-    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
-    act(() => trigger.click());
-    act(() => visibleHistory()!.querySelector<HTMLButtonElement>('[data-menu-id="four"]')!.click());
-    expect(open).toHaveBeenCalledWith({ ...tab.session, sessionId: 'four' }, expect.anything());
-    const guard = open.mock.calls[0][1]!.isCurrent!;
-    expect(guard()).toBe(true);
-    useSceneStore.setState({ openTabs: [] });
-    expect(guard()).toBe(false);
-    expect(visibleHistory()).toBeNull();
-  });
-
-  it('starts the floating surface at the capsule bounds and keeps the original tab mounted', () => {
-    withSessionHistory();
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.getAttribute('role') === 'tab') return new DOMRect(100, 14, 148, 28);
-      if (this.getAttribute('role') === 'menu') return new DOMRect(100, 14, 220, 210);
-      return new DOMRect();
-    });
-    renderSceneBar();
-    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
-    act(() => trigger.click());
-    const menu = visibleHistory()!;
-    expect(menu.style.left).toBe('100px');
-    expect(menu.style.top).toBe('14px');
-    expect(menu.style.getPropertyValue('--_session-history-source-width')).toBe('148px');
-    expect(menu.style.getPropertyValue('--_session-history-source-height')).toBe('28px');
-    expect(container.querySelector('[role="tab"]')).toBe(trigger);
-  });
-
-  it('supports ArrowDown, Escape and outside dismissal, and closes history on device switches', () => {
-    withSessionHistory();
-    renderSceneBar();
-    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
-    act(() => {
-      trigger.focus();
-      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
-    });
-    expect(visibleHistory()).not.toBeNull();
-    expect(document.activeElement?.textContent).toBe('six');
-    act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
-    expect(visibleHistory()).toBeNull();
-    expect(document.activeElement).toBe(trigger);
-    act(() => trigger.click());
-    act(() => document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
-    expect(visibleHistory()).toBeNull();
-    act(() => trigger.click());
-    expect(visibleHistory()).not.toBeNull();
-    act(() => activateSurface('peer:history'));
-    expect(visibleHistory()).toBeNull();
-  });
-
-  it('does not open recent sessions while activation is pending or when the close action is clicked', () => {
-    withSessionHistory();
-    sceneHarness.state.pendingTabId = 'session';
-    renderSceneBar();
-    act(() => container.querySelector<HTMLButtonElement>('[role="tab"]')!.click());
-    expect(visibleHistory()).toBeNull();
-    sceneHarness.state.pendingTabId = null;
-    renderSceneBar();
-    act(() => container.querySelector<HTMLButtonElement>('[data-scene-bar-part="closeTab"]')!.click());
-    expect(sceneHarness.closeScene).toHaveBeenCalledWith('session');
-    expect(visibleHistory()).toBeNull();
-  });
-
-  it('focuses a background pane before offering its selected workspace history', () => {
-    withSessionHistory();
-    useSceneStore.setState({ focusedPane: 'secondary' });
-    renderSceneBar();
-    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
-    act(() => trigger.click());
-    expect(sceneHarness.activateScene).toHaveBeenCalledWith('session');
-    expect(visibleHistory()).toBeNull();
-    act(() => useSceneStore.setState({ focusedPane: 'primary' }));
-    act(() => trigger.click());
-    expect(visibleHistory()).not.toBeNull();
-  });
-
-  it.each([undefined, ['six']])('keeps a workspace with only its current session collapsed (history: %s)', history => {
-    const tab = withSessionHistory();
-    tab.sessionHistory = history;
-    renderSceneBar();
-    const trigger = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
-    act(() => trigger.click());
-    act(() => trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
-    expect(visibleHistory()).toBeNull();
     expect(trigger.hasAttribute('aria-haspopup')).toBe(false);
-    expect(trigger.hasAttribute('aria-expanded')).toBe(false);
-  });
-
-  it('collapses when reconciliation leaves only the current session in history', () => {
-    const tab = withSessionHistory();
-    renderSceneBar();
-    act(() => container.querySelector<HTMLButtonElement>('[role="tab"]')!.click());
-    expect(visibleHistory()).not.toBeNull();
-    tab.sessionHistory = ['six'];
-    renderSceneBar();
-    expect(visibleHistory()).toBeNull();
+    useDeviceDirectory.setState({ devices: [], localId: null });
   });
 
   function startSessionTabDrag() {

@@ -19,9 +19,6 @@
     flex: 0 0 auto;
     min-width: 0;
 
-    // Keep the tab's layout and hit target while its portalled surface expands.
-    &[data-session-history-open='true'] [role='tab'] { opacity: 0; }
-
     &[data-canvas-drop-position]::after {
       content: '';
       position: absolute;
@@ -34,6 +31,16 @@
 
     &[data-canvas-drop-position='before']::after { inset-inline-start: 0; }
     &[data-canvas-drop-position='after']::after { inset-inline-end: 0; }
+  }
+
+  // The device a session tab belongs to when it is not the rendered one.
+  &__tab-device {
+    max-inline-size: 8em;
+    overflow: hidden;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__tab-region {

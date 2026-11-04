@@ -5,7 +5,7 @@ import { getActiveSurfaceId, isSurfaceChangedError } from '@/infrastructure/peer
 import { createLogger } from '@/shared/utils/logger';
 import { useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneStore';
-import { isSessionSceneId, type SessionSceneTarget } from '../components/SceneBar/types';
+import { getSessionSceneTabId, isSessionSceneId, sessionSceneWorkspaceId, type SessionSceneTarget } from '../components/SceneBar/types';
 import { startSessionPaneLayoutSync } from '../scenes/session/sessionPaneLayoutSync';
 import { resolveSessionSceneTarget, resolveSessionSceneWorkspace } from './sessionSceneTarget';
 import { selectedSessionTab, tabPane } from '../workbench/scenePaneModel';
@@ -40,7 +40,15 @@ export function startSessionSceneLifecycle(): () => void {
       return workspace ? workspace.id === state.activeWorkspaceId : !state.currentWorkspace;
     },
     activate: async (target, isCurrent) => {
-      if (target.surfaceId !== getActiveSurfaceId() || !isCurrent()) return false;
+      if (!isCurrent()) return false;
+      if (target.surfaceId !== getActiveSurfaceId()) {
+        // Another device's tab: render that device and open the session there,
+        // the same open as its sidebar row. The open holds and selects the tab.
+        const { openAgentCompanionSession } = await import('./openAgentCompanionSession');
+        void openAgentCompanionSession(target.sessionId, target.surfaceId, sessionSceneWorkspaceId(target))
+          .catch(error => log.warn('Failed to open another device session tab', { surfaceId: target.surfaceId, error }));
+        return false;
+      }
       try {
         const { activateMainSession } = await import('@/flow_chat/services/sessionActivation');
         if (!isCurrent()) return false;
@@ -70,6 +78,12 @@ export function startSessionSceneLifecycle(): () => void {
         previousSelection = current();
         previousWorkspaces = new Map(workspaceManager.getState().openedWorkspaces);
         useSceneStore.getState().resetForPeerSwitch(true);
+        // The device's own active session comes back to its kept tab.
+        const scenes = useSceneStore.getState();
+        if (previousSelection && !scenes.activeTabId?.startsWith('session:') && !scenes.pendingTabId
+          && scenes.openTabs.some(tab => tab.id === getSessionSceneTabId(previousSelection!))) {
+          scenes.openSessionScene(previousSelection);
+        }
       }
       const closedWorkspace = event?.type === 'workspace:closed' || event?.type === 'workspace:removed'
         ? previousWorkspaces.get(event.workspaceId) : undefined;

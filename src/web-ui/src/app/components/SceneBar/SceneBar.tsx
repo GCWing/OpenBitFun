@@ -5,7 +5,7 @@
  * Session tabs show only the referenced session title.
  */
 
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { Pin, CircleAlert } from 'lucide-react';
 import { useSceneStore } from '../../stores/sceneStore';
 import { useContextMenuStore } from '@/shared/context-menu-system/store/ContextMenuStore';
@@ -14,7 +14,6 @@ import type { MenuItem } from '@/shared/context-menu-system/types/menu.types';
 
 import { Icon, TabGroup, type TabGroupItem } from '@openbitfun/ui';
 import { useSceneTabNavigation } from './useSceneTabNavigation';
-import { SessionTabHistoryMenu } from './SessionTabHistoryMenu';
 import { useSceneManager } from '../../hooks/useSceneManager';
 import { useSessionTabLabels } from '../../hooks/useSessionTabLabels';
 import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
@@ -22,7 +21,8 @@ import { isSceneTabClosable } from '../../scenes/registry';
 import { useContentResourceStore } from '../../workbench/contentResourceStore';
 import { dropSessionTabOnWorkbench, isSessionTabDrag, type WorkbenchTabDropTarget } from '../../workbench/canvasTabTransfer';
 import { useAgentCanvasStore } from '../panels/content-canvas/stores';
-import { onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, isLocalSurface, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { resolveDeviceNameFrom, useDeviceDirectory } from '@/infrastructure/account/deviceDirectory';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { dropSceneTab, isSceneTabDrag, writeSceneTabDrag, endSceneTabDrag } from '../../workbench/sceneTabTransfer';
 import type { WorkbenchPane } from '../../workbench/scenePaneModel';
@@ -38,8 +38,23 @@ function getSceneIdFromTabTarget(target: EventTarget | null): SceneTabId | undef
   return tab?.dataset.openbitfunValue as SceneTabId | undefined;
 }
 
-function hasSessionHistory(tab: SceneTab | undefined): boolean {
-  return Boolean(tab?.session && tab.sessionHistory?.some(id => id !== tab.session!.sessionId));
+/**
+ * Device names of session tabs on a device other than the rendered one, once
+ * the tabs span more than one device; a single-device window shows none.
+ */
+function useSessionTabDevices(tabs: readonly SceneTab[]): Record<string, string> {
+  const directory = useDeviceDirectory();
+  const activeSurfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
+  return useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const tab of tabs) {
+      const surfaceId = tab.session?.surfaceId;
+      if (!surfaceId || surfaceId === activeSurfaceId) continue;
+      const deviceId = isLocalSurface(surfaceId) ? directory.localId : surfaceId;
+      labels[tab.id] = deviceId ? resolveDeviceNameFrom(directory.devices, deviceId) : surfaceId;
+    }
+    return labels;
+  }, [activeSurfaceId, directory.devices, directory.localId, tabs]);
 }
 
 interface SceneBarProps {
@@ -63,18 +78,11 @@ const SceneBar: React.FC<SceneBarProps> = ({
     closeScene,
   } = useSceneManager(pane);
   const sessionLabels = useSessionTabLabels(openTabs);
-  const focusedPane = useSceneStore(state => state.focusedPane);
+  const deviceLabels = useSessionTabDevices(openTabs);
   const resources = useContentResourceStore(state => state.resources);
   const selectedTabId = pendingTabId ?? activeTabId;
   const { t } = useI18n('common');
   const { t: tComponents } = useI18n('components');
-  const [history, setHistory] = useState<{ tabId: SceneTabId; open: boolean } | null>(null);
-  const historyAnchorRef = useRef<HTMLElement | null>(null);
-  const historyTab = openTabs.find(tab => tab.id === history?.tabId);
-  const historyOpen = Boolean(history?.open && hasSessionHistory(historyTab) && historyTab
-    && historyTab.id === activeTabId && focusedPane === pane && !pendingTabId);
-  const closeHistory = useCallback(() => setHistory(previous => previous?.open
-    ? { ...previous, open: false } : previous), []);
   const [offeredSceneTab, setOfferedSceneTab] = useState(false);
   const [offeredCanvasTabId, setOfferedCanvasTabId] = useState<string | null>(null);
   const draggingCanvasTabId = useAgentCanvasStore(state => {
@@ -101,21 +109,8 @@ const SceneBar: React.FC<SceneBarProps> = ({
   });
 
   const handleTabValueChange = useCallback((value: string) => {
-    closeHistory();
     activateScene(value as SceneTabId);
-  }, [activateScene, closeHistory]);
-
-  useEffect(() => {
-    if (history?.open && !historyOpen) closeHistory();
-  }, [history?.open, historyOpen, closeHistory]);
-
-  const toggleHistory = (tabId: SceneTabId, anchor: HTMLElement) => {
-    if (tabId !== activeTabId || pendingTabId) return;
-    if (focusedPane !== pane) { activateScene(tabId); return; }
-    if (!hasSessionHistory(openTabs.find(tab => tab.id === tabId))) return;
-    historyAnchorRef.current = anchor;
-    setHistory(previous => ({ tabId, open: previous?.tabId !== tabId || !previous.open }));
-  };
+  }, [activateScene]);
 
   useEffect(() => {
     // The source has written its transfer format and committed its drag state
@@ -132,7 +127,7 @@ const SceneBar: React.FC<SceneBarProps> = ({
       setCanvasDrop(null);
     };
     const stopDragListener = observeTabDragLifecycle(offerDrop, clearDrop);
-    const stopSurfaceListener = onSurfaceActivated(() => { clearDrop(); setHistory(null); });
+    const stopSurfaceListener = onSurfaceActivated(clearDrop);
     return () => {
       stopDragListener();
       stopSurfaceListener();
@@ -178,7 +173,6 @@ const SceneBar: React.FC<SceneBarProps> = ({
   }, [closeScene, tabDefs]);
 
   const handleContextMenu = (event: React.MouseEvent, id: SceneTabId) => {
-    closeHistory();
     event.preventDefault();
     event.stopPropagation();
     const tab = openTabs.find(candidate => candidate.id === id);
@@ -225,17 +219,15 @@ const SceneBar: React.FC<SceneBarProps> = ({
     items.push({
       value: tab.id,
       label: displayLabel,
-      labelSuffix: sessionLabel?.number || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
+      labelSuffix: sessionLabel?.number || deviceLabels[tab.id] || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
         {sessionLabel?.number && <SessionTitleNumber number={sessionLabel.number} />}
+        {deviceLabels[tab.id] && <span className="openbitfun-scene-bar__tab-device"
+          data-openbitfun-component="scene-bar" data-openbitfun-part="tabDevice">{deviceLabels[tab.id]}</span>}
         {tab.pinned && <Pin size={12} aria-label={tComponents('tabs.unpin')} />}
         {tab.contentId && resources[tab.contentId]?.isDirty && <span aria-label={tComponents('tabs.unsaved')}>•</span>}
         {tab.contentId && resources[tab.contentId]?.fileMissing && <CircleAlert size={12} aria-label={tComponents('tabs.fileDeleted')} />}
       </> : undefined,
       labelTransitionKey: tab.session?.sessionId,
-      tabProps: hasSessionHistory(tab) ? {
-        'aria-haspopup': 'menu',
-        'aria-expanded': historyOpen && history?.tabId === tab.id,
-      } : undefined,
       // Keep the close hit target stationary between pointer down and up;
       // shrinking it can retarget the click at the button edge (issue #2210).
       endAction: closable ? (
@@ -325,22 +317,9 @@ const SceneBar: React.FC<SceneBarProps> = ({
             const title = resource?.target.kind === 'file' ? [resource.scope.surfaceId, resource.scope.remoteConnectionId, resource.target.path].filter(Boolean).join(' · ') : undefined;
             return <div className="openbitfun-scene-bar__item" draggable title={title}
               data-scene-tab-id={tabId}
-              data-session-history-open={historyOpen && history?.tabId === tabId ? 'true' : undefined}
               data-canvas-drop-position={activeCanvasDrop?.target?.tabId === tabId ? activeCanvasDrop.target.placement : undefined}
-              onClick={event => {
-                const trigger = (event.target as Element).closest<HTMLElement>('[role="tab"]');
-                if (trigger) toggleHistory(tabId, trigger);
-              }}
-              onKeyDown={event => {
-                if (event.key !== 'ArrowDown' || !hasSessionHistory(tab) || tabId !== activeTabId || pendingTabId) return;
-                const trigger = (event.target as Element).closest<HTMLElement>('[role="tab"]');
-                if (!trigger) return;
-                event.preventDefault();
-                event.stopPropagation();
-                if (!historyOpen) toggleHistory(tabId, trigger);
-              }}
               onContextMenu={event => handleContextMenu(event, tabId)}
-              onDragStart={event => { closeHistory(); writeSceneTabDrag(event.dataTransfer, tabId); if (tab?.session) beginConversationTransfer(event.dataTransfer, tab.session, tabId); }}
+              onDragStart={event => { writeSceneTabDrag(event.dataTransfer, tabId); if (tab?.session) beginConversationTransfer(event.dataTransfer, tab.session, tabId); }}
               onDragEnd={() => { endConversationTransfer(); endSceneTabDrag(); }}
             >{node}</div>;
           }}
@@ -371,12 +350,6 @@ const SceneBar: React.FC<SceneBarProps> = ({
           </button>
         )}
       </div>
-      {historyTab?.session && <SessionTabHistoryMenu
-        tab={historyTab}
-        anchorRef={historyAnchorRef}
-        open={historyOpen}
-        onClose={closeHistory}
-      />}
       {showDropHint && canAcceptTab && (
         <div className="openbitfun-scene-bar__drop-hint" role="status"
           data-openbitfun-component="scene-bar" data-openbitfun-part="dropHint">

@@ -206,13 +206,13 @@ also run the focused state contracts:
 pnpm --dir src/web-ui run test:run src/app/services/sessionSceneLifecycle.test.ts src/flow_chat/services/sessionActivation.test.ts src/flow_chat/services/storeSync.test.ts src/app/stores/sceneStore.test.ts
 ```
 
-For top workspace tab recent-session disclosure, selection and reconciliation:
+For top session tabs (one per session, kept per device), selection and reconciliation:
 
 ```bash
 pnpm --dir src/web-ui run test:run src/app/components/SceneBar/SceneBar.test.tsx src/app/stores/sceneStore.test.ts src/app/services/sessionSceneLifecycle.test.ts src/app/hooks/useSessionTabLabels.test.tsx src/shared/ui/MenuPopover.test.tsx src/shared/ui/MenuComposition.contract.test.ts
 ```
 
-These local DOM/store fixtures cover bounded history, legacy tabs and simulated
+These local DOM/store fixtures cover the session tab limit, other-device tabs and simulated
 SSH/Peer identities; they do not establish native rendering or live remote behavior.
 
 For composer mode restoration, passive synchronization, or explicit mode selection:
