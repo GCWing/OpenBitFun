@@ -4,6 +4,8 @@
 const CONTEXT_PICKER_OWNED_KEYS: ReadonlySet<string> = new Set([
   'ArrowUp',
   'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
   'Enter',
   'Tab',
 ]);

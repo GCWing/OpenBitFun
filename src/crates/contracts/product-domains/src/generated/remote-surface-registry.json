@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:7dadb93da46481aa",
+  "digest": "fnv1a64:ad57aa872484f2a8",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -49,6 +49,7 @@
       "workspace_html_preview_v1",
       "whole_session_copy_v1",
       "session_trajectory_v1",
+      "session_reference_browse_v1",
       "user_question_response",
       "user_question_interaction_v1",
       "ssh_none_auth_v1",
@@ -95,6 +96,7 @@
       "workspace_html_preview_v1",
       "whole_session_copy_v1",
       "session_trajectory_v1",
+      "session_reference_browse_v1",
       "user_question_response",
       "user_question_interaction_v1",
       "ssh_none_auth_v1"
