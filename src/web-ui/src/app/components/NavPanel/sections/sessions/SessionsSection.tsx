@@ -1989,7 +1989,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           );
         })}
 
-      {aggregateLoadStatus}
+      {/* A populated list refreshes silently: a loading row would push "show more" down and back. Failures still show. */}
+      {aggregateLoadState.isLoading ? null : aggregateLoadStatus}
 
       {!showAllWithoutLimit && expandToggleState.shouldRender && (
         <button data-overflow-trigger
