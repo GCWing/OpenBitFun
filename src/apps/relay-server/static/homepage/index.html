@@ -168,7 +168,7 @@
       <section class="hero">
         <img class="hero-logo" src="https://openbitfun.com/Logo-ICON.png" alt="OpenBitFun Logo" />
         <h1><span class="grad">OpenBitFun</span> Relay Server</h1>
-        <p class="hero-sub" data-i18n="desc">Relay service between desktop and mobile, enabling pairing and message forwarding.</p>
+        <p class="hero-sub" data-i18n="desc">Connect devices on the same OpenBitFun account. The official Relay needs no server deployment.</p>
         <div class="cta">
           <a class="btn btn-primary" href="https://openbitfun.com/" target="_blank" rel="noreferrer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -186,7 +186,7 @@
           <div class="flow-circle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
-          <span class="flow-label" data-i18n="flowDesktop">Desktop</span>
+          <span class="flow-label" data-i18n="flowDesktop">Desktop / CLI</span>
           <span class="flow-sublabel" data-i18n="flowDesktopSub">OpenBitFun Agent</span>
         </div>
         <div class="flow-arrow"><span class="flow-arrow-label">WebSocket</span></div>
@@ -195,7 +195,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
           </div>
           <span class="flow-label" data-i18n="flowRelay">Relay Server</span>
-          <span class="flow-sublabel" data-i18n="flowRelaySub">Pair and Forward</span>
+          <span class="flow-sublabel" data-i18n="flowRelaySub">Device messages</span>
         </div>
         <div class="flow-arrow"><span class="flow-arrow-label">HTTP</span></div>
         <div class="flow-node">
@@ -211,32 +211,32 @@
         <article class="feat">
           <div class="feat-head">
             <div class="feat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
-            <h3 data-i18n="f1t">Connect</h3>
+            <h3 data-i18n="f1t">Account access</h3>
           </div>
-          <p data-i18n="f1d">Handle pairing requests, create remote sessions.</p>
+          <p data-i18n="f1d">Sign in with the same account. An invitation alone does not grant access.</p>
         </article>
         <article class="feat">
           <div class="feat-head">
             <div class="feat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg></div>
-            <h3 data-i18n="f2t">Relay</h3>
+            <h3 data-i18n="f2t">Encrypted forwarding</h3>
           </div>
-          <p data-i18n="f2d">Bridge WebSocket and HTTP bidirectionally.</p>
+          <p data-i18n="f2d">Device-control payloads are encrypted end to end; routing metadata remains visible.</p>
         </article>
         <article class="feat">
           <div class="feat-head">
             <div class="feat-icon slate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></div>
-            <h3 data-i18n="f3t">Self-Host</h3>
+            <h3 data-i18n="f3t">Deployment</h3>
           </div>
-          <p data-i18n="f3d">Private deploy, custom domains and reverse proxy.</p>
+          <p data-i18n="f3d">Use the official service, or build matching clients for a private Relay.</p>
         </article>
       </div>
     </main>
 
-    <footer>OpenBitFun Relay Server · Self-Hosted Gateway for Remote Connect</footer>
+    <footer>OpenBitFun Relay Server · Remote Connect</footer>
   </div>
 
   <script>
-    var I={'en-US':{languageToggle:'Language: EN',status:'Service Running',desc:'Relay service between desktop and mobile, enabling pairing and message forwarding.',f1t:'Connect',f1d:'Handle pairing requests, create remote sessions.',f2t:'Relay',f2d:'Bridge WebSocket and HTTP bidirectionally.',f3t:'Self-Host',f3d:'Private deploy, custom domains and reverse proxy.',flowDesktop:'Desktop',flowDesktopSub:'OpenBitFun Agent',flowRelay:'Relay Server',flowRelaySub:'Pair and Forward',flowMobile:'Mobile',flowMobileSub:{$shared:'features.remoteControl'}}};
+    var I={"en-US":{"languageToggle":"Language: EN","status":"Service Running","desc":"Connect devices on the same OpenBitFun account. The official Relay needs no server deployment.","f1t":"Account access","f1d":"Sign in with the same account. An invitation alone does not grant access.","f2t":"Encrypted forwarding","f2d":"Device-control payloads are encrypted end to end; routing metadata remains visible.","f3t":"Deployment","f3d":"Use the official service, or build matching clients for a private Relay.","flowDesktop":"Desktop / CLI","flowDesktopSub":"OpenBitFun Agent","flowRelay":"Relay Server","flowRelaySub":"Device messages","flowMobile":"Mobile","flowMobileSub":{"$shared":"features.remoteControl"}}};
     var S={'en-US':{features:{remoteControl:'Remote Control'}}};
     var LOCALES=['en-US','zh-CN','zh-TW'];
     function resolveLocale(){var l=(navigator.language||'').toLowerCase();if(l==='zh-tw'||l.startsWith('zh-hant'))return'zh-TW';if(l.startsWith('zh'))return'zh-CN';return'en-US'}

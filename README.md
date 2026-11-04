@@ -57,6 +57,8 @@ OpenBitFun is a highly customizable, open-source agent workspace that keeps work
 
 **Your phone is a remote controller.** Send instructions, check progress, and respond to approval requests from your phone or browser. Tasks run on the selected host and keep going when you switch views or disconnect the controller.
 
+**The official Relay is ready to use; no server deployment is required.** Sign in on your devices with the same OpenBitFun account, using GitHub or an email verification code where supported. Same-network connections are also available. See the [connection FAQ](./src/apps/relay-server/FAQ.md) for login, internet access, and self-hosting requirements.
+
 **On mobile, switch between layouts for one, two, or three screens.** Focus on the conversation with a single screen, then unfold your phone to view conversations and files side by side. The interface adapts as the screen layout changes.
 
 ![Switching between connected computers and remotely controlling the selected device from a phone](./png/openbitfun-multi-device.png)
@@ -64,9 +66,11 @@ OpenBitFun is a highly customizable, open-source agent workspace that keeps work
 <details>
 <summary>Connection and deployment details</summary>
 
-Use SSH to work on a remote host, through a jump host, or inside a container, with files, commands, and agent execution in the target environment. The desktop app and CLI share core execution capabilities; mobile clients and messaging bots offer more ways to control tasks.
+Use SSH to work on a remote host, through a jump host, or inside a container. File access, terminals, and workspace commands target that environment; the Agent Runtime stays on the OpenBitFun host. The desktop app and CLI share core execution capabilities; mobile clients and messaging bots offer more ways to control tasks.
 
-Account login, synchronization, and control between devices on the same account run through a [Relay server you deploy](./src/apps/relay-server/README.md). See [Remote Connect](./docs/interactive-capabilities/capabilities/feature.remote-connect.md) and [remote workspaces](./docs/features/remote-workspaces.md) for connection options.
+Same-account device control uses the official Relay by default. Desktop can also run a local Relay for same-network mobile control. Both paths use the online OpenBitFun identity service for sign-in; LAN mode is not an offline-login option. A private Relay requires a matching client build: see the [deployment guide](./src/apps/relay-server/README.md#for-community-developers-and-forks).
+
+Device-to-device payloads are encrypted end to end with keys generated on the devices. Sessions and files are read from the owning online device on demand; the Relay still handles account, device, and routing metadata. This does not cover traffic to model providers, messaging bots, or published Pages. See the [privacy boundaries](./src/apps/relay-server/FAQ.md#what-can-the-services-see), [Remote Connect](./docs/interactive-capabilities/capabilities/feature.remote-connect.md), and [remote workspaces](./docs/features/remote-workspaces.md).
 
 </details>
 

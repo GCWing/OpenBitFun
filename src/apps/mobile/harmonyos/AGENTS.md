@@ -6,7 +6,7 @@ These rules apply to all changes under `src/apps/mobile/harmonyos`.
 
 Phone, tablet, and foldable entrypoints are remote controllers. They must not
 instantiate a local Agent Runtime, model provider, local chat command owner, or
-model configuration store. GitHub identity and the authenticated device directory
+model configuration store. OpenBitFun account identity and the authenticated device directory
 are the authority for selection and reconnect; QR data supplies only a device id.
 Keep old persisted records readable and retained without activating legacy room
 credentials or local execution. Compact and wide hosts enforce the same boundary.

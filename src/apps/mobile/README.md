@@ -6,10 +6,14 @@ This directory contains the native mobile product surfaces for OpenBitFun:
 - `ios/`: iOS application code and resources.
 - `harmonyos/`: HarmonyOS application code and resources.
 
-The mobile apps are remote controllers: GitHub login and the account device
+The mobile apps are remote controllers: OpenBitFun account sign-in and the device
 directory select a desktop or CLI host that owns configuration and Agent Runtime
 execution. Phones submit tasks and display results; they do not synchronize model
 configuration or execute agents locally.
+
+The official Relay needs no user deployment. Use the same login method and
+account on the phone and host; GitHub and email-code accounts are independent.
+See the [Relay FAQ](../relay-server/FAQ.md) for connection and privacy boundaries.
 
 Each platform directory owns its native UI, lifecycle, permissions, packaging,
 and platform adapters. Product logic and stable contracts should remain in the

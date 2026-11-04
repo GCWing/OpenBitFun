@@ -68,7 +68,8 @@ cargo run -p openbitfun-miniapp-market-server
 ```
 
 开发默认 secret 不能用于 release 或生产。GitHub OAuth 未配置时，健康响应中的
-`githubAuthConfigured` 为 `false`，登录功能不可用。
+`githubAuthConfigured` 为 `false`，仅 GitHub 登录不可用。邮箱验证码登录由
+`emailAuthConfigured` 单独报告，需配置 SMTP；详见[身份服务说明](../../crates/services/miniapp-market-service/README.md#邮箱验证码登录)。
 
 ## 环境变量
 
