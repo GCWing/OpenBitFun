@@ -18,6 +18,7 @@ import { i18nService } from '@/infrastructure/i18n';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import {
   getActiveSurfaceScope,
+  isLocalSurface,
   isSurfaceChangedError,
   type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
@@ -370,6 +371,27 @@ export function preloadHistoricalSessionForOpen(
       return;
     }
     log.debug('Historical session preload failed', { sessionId, error });
+  });
+}
+
+/**
+ * Start reading a session the pointer rests on, before it is clicked: its tail
+ * (a few turns) is usually in memory by the time the click lands, so the open
+ * shows the transcript at once instead of a loading state. The same bounded
+ * hydrate the open would run; nothing is selected or activated.
+ */
+export function prewarmHistoricalSession(context: FlowChatContext, sessionId: string): void {
+  const scope = getActiveSurfaceScope();
+  // Another device's history is a live relay subscription, not a cheap read:
+  // hovering across rows must not open one per row.
+  if (!isLocalSurface(scope.surfaceId)) return;
+  if (Array.from(context.pendingHistoryLoads.keys()).some(key => pendingHistoryLoadSessionId(key, scope) === sessionId)) return;
+  const session = context.flowChatStore.getState().sessions.get(sessionId);
+  if (!session || session.externalHistory?.mode === 'follow') return;
+  if (!shouldHydrateHistoricalSessionBeforeSwitch(session)) return;
+  void hydrateHistoricalSession(context, sessionId, false).catch(error => {
+    if (isSurfaceChangedError(error)) return;
+    log.debug('Historical session prewarm failed', { sessionId, error });
   });
 }
 

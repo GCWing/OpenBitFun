@@ -129,6 +129,23 @@ import './SessionsSection.scss';
 /** A limited flat list reads each workspace's newest rows in steps of this many. */
 const AGGREGATE_READ_BUCKET = 20;
 const log = createLogger('SessionsSection');
+/** How long the pointer rests on a session row before its history is read. */
+const SESSION_HOVER_PREWARM_MS = 120;
+let sessionHoverPrewarmTimer: ReturnType<typeof setTimeout> | null = null;
+
+function prewarmSessionOnHover(sessionId: string): void {
+  if (sessionHoverPrewarmTimer !== null) clearTimeout(sessionHoverPrewarmTimer);
+  sessionHoverPrewarmTimer = setTimeout(() => {
+    sessionHoverPrewarmTimer = null;
+    if (flowChatStore.getState().activeSessionId !== sessionId) flowChatManager.prewarmHistoricalSession(sessionId);
+  }, SESSION_HOVER_PREWARM_MS);
+}
+
+function cancelSessionHoverPrewarm(): void {
+  if (sessionHoverPrewarmTimer !== null) clearTimeout(sessionHoverPrewarmTimer);
+  sessionHoverPrewarmTimer = null;
+}
+
 const reportedDiscoveryNotificationKeys = new Set<string>();
 const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
 
@@ -1631,6 +1648,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
               data-session-level={String(level)}
               data-session-active={isRowActive ? 'true' : 'false'}
               onPointerDown={event => handleSessionOpenPointerDown(event, session)}
+              onPointerEnter={() => prewarmSessionOnHover(session.sessionId)}
+              onPointerLeave={cancelSessionHoverPrewarm}
               onClick={() => handleSwitch(session.sessionId)}
               onContextMenu={event => handleContextMenu(event, session.sessionId)}
             >

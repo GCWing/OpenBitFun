@@ -45,6 +45,7 @@ import {
   createChatSession as createChatSessionModule,
   hydrateSessionHistoryForDetail as hydrateSessionHistoryForDetailModule,
   preloadHistoricalSessionForOpen as preloadHistoricalSessionForOpenModule,
+  prewarmHistoricalSession as prewarmHistoricalSessionModule,
   switchChatSession as switchChatSessionModule,
   deleteChatSession as deleteChatSessionModule,
   archiveChatSession as archiveChatSessionModule,
@@ -681,6 +682,10 @@ export class FlowChatManager {
 
   async switchChatSession(sessionId: string, isStillRelevant?: () => boolean): Promise<void> {
     return switchChatSessionModule(this.context, sessionId, isStillRelevant);
+  }
+
+  prewarmHistoricalSession(sessionId: string): void {
+    prewarmHistoricalSessionModule(this.context, sessionId);
   }
 
   preloadHistoricalSessionForOpen(sessionId: string): void {
