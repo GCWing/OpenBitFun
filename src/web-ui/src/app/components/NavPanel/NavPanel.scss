@@ -2048,23 +2048,67 @@ $_section-header-height: 22px;
   color: color-mix(in srgb, var(--_device-overview-light) 72%, var(--openbitfun-color-content-primary));
 }
 
-// Renaming sits right after the name and stays quiet until hovered.
+// Renaming sits right after the name: a small quiet pencil that brightens
+// with the heading it edits.
 .openbitfun-device-overview__alias-edit {
+  --_icon-button-size: 20px;
+  --_icon-button-icon-size: 12px;
+  --_icon-button-content: var(--openbitfun-color-content-muted);
+  --_icon-button-background-hover: color-mix(in srgb, var(--_device-overview-light) 16%, transparent);
   flex: 0 0 auto;
-  color: var(--openbitfun-color-content-muted);
+  opacity: 0.7;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+  .openbitfun-device-overview__device-heading:hover &,
+  &:focus-visible { opacity: 1; }
 }
 
 .openbitfun-device-overview__alias-editor {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: var(--openbitfun-space-1);
   min-width: 0;
 }
 
+// Editing keeps the heading's type and place: no box, only an underline lit
+// by the card's state light.
 .openbitfun-device-overview__alias-input {
   flex: 1 1 auto;
   min-width: 0;
+  gap: var(--openbitfun-space-1);
+  padding-inline: 0;
+  border: 0;
+  border-block-end: var(--openbitfun-border-width-default) solid
+    color-mix(in srgb, var(--_device-overview-light) 35%, transparent);
+  border-radius: 0;
+
+  &,
+  &:hover,
+  &:focus-within { background: transparent; }
+
+  &:focus-within {
+    border-block-end-color: color-mix(in srgb, var(--_device-overview-light) 80%, transparent);
+  }
+
+  input {
+    font-family: var(--openbitfun-type-heading-card-font-family);
+    font-size: var(--openbitfun-type-heading-card-font-size);
+    font-weight: var(--openbitfun-type-heading-card-font-weight);
+    letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
+    caret-color: var(--_device-overview-light);
+  }
+
+  input::placeholder { color: var(--openbitfun-color-content-muted); }
+}
+
+.openbitfun-device-overview__alias-action {
+  --_icon-button-size: 20px;
+  --_icon-button-icon-size: 12px;
+  --_icon-button-content: var(--openbitfun-color-content-secondary);
+  --_icon-button-background-hover: color-mix(in srgb, var(--_device-overview-light) 18%, transparent);
+  border-radius: var(--openbitfun-radius-pill);
+
+  &:first-child { --_icon-button-content: color-mix(in srgb, var(--_device-overview-light) 72%, var(--openbitfun-color-content-primary)); }
 }
 
 .openbitfun-device-overview__device-name {

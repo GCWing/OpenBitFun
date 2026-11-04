@@ -578,6 +578,8 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                     </span>
                     {editingAlias ? (
                       <span className="openbitfun-device-overview__alias-editor">
+                        {/* The name itself becomes editable: same type, an underline
+                            in the card's light, actions inside the same line. */}
                         <Input
                           className="openbitfun-device-overview__alias-input"
                           size="sm"
@@ -587,18 +589,24 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                             if (event.key === 'Enter') { event.preventDefault(); void saveAlias(); }
                             if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setAliasEdit(null); }
                           }}
-                          placeholder={t('accountLogin.deviceAliasPlaceholder')}
+                          placeholder={displayedAccountDevice?.device_name ?? displayedDevice.name}
                           aria-label={t('accountLogin.deviceAlias')}
+                          title={t('accountLogin.deviceAliasPlaceholder')}
                           autoFocus
+                          onFocus={event => event.currentTarget.select()}
                           disabled={editingAlias.saving}
                           data-testid="nav-device-alias-input"
+                          trailing={<>
+                            <IconButton className="openbitfun-device-overview__alias-action" size="xs" variant="quiet"
+                              icon={<Icon glyph={Check} size="xs" />}
+                              aria-label={t('accountLogin.saveDeviceAlias')} loading={editingAlias.saving}
+                              onClick={() => { void saveAlias(); }} data-testid="nav-device-alias-save" />
+                            <IconButton className="openbitfun-device-overview__alias-action" size="xs" variant="quiet"
+                              icon={<Icon glyph={X} size="xs" />}
+                              aria-label={t('accountLogin.cancel')} disabled={editingAlias.saving}
+                              onClick={() => setAliasEdit(null)} />
+                          </>}
                         />
-                        <IconButton size="xs" variant="primary" icon={<Icon glyph={Check} size="xs" />}
-                          aria-label={t('accountLogin.saveDeviceAlias')} loading={editingAlias.saving}
-                          onClick={() => { void saveAlias(); }} data-testid="nav-device-alias-save" />
-                        <IconButton size="xs" variant="quiet" icon={<Icon glyph={X} size="xs" />}
-                          aria-label={t('accountLogin.cancel')} disabled={editingAlias.saving}
-                          onClick={() => setAliasEdit(null)} />
                       </span>
                     ) : (
                       <OverflowText className="openbitfun-device-overview__device-name" title="" data-testid="nav-device-status-name">
