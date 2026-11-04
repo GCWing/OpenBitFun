@@ -946,7 +946,21 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     const wokeFollowOutput = !compensated
       && shiftedPx > 0
       && viewportOwner.currentOwner() === 'follow-output';
-    if (wokeFollowOutput) scheduleFollowToLatest();
+    if (wokeFollowOutput) {
+      /*
+       * Hold the content still in this frame, before paint. Waking the loop
+       * alone leaves one painted frame at the old offset, where the history
+       * that just arrived pushes the reader's Turn down and the next frame
+       * snaps it back: the jolt a late older page caused at the tail. The
+       * write is made as follow-output, the owner that refused the shift, so
+       * the loop's own target stays authoritative afterwards.
+       */
+      if (viewportOwner.write({ owner: 'follow-output', topPx: fromPx + shiftedPx })) {
+        virtualizer.syncViewportOffset(scroller.scrollTop);
+        viewportAnchor.absorbViewportShift(shiftedPx);
+      }
+      scheduleFollowToLatest();
+    }
   }, [
     readContentEndScrollTop,
     scheduleFollowToLatest,
