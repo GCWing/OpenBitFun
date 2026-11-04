@@ -4,9 +4,61 @@ import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
 import { resolveSessionSceneWorkspace } from './sessionSceneTarget';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { getActiveSurfaceId, getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { resolveDeviceName } from '@/infrastructure/account/deviceDirectory';
+import { beginDeviceOpen, endDeviceOpen } from '@/infrastructure/peer-device/deviceOpenIntent';
+import { clearHistorySessionOpenTransition, dispatchHistorySessionOpenIntent } from '@/flow_chat/services/sessionOpenIntent';
+import { useSceneStore } from '../stores/sceneStore';
+import { sessionSceneWorkspaceKey } from './sessionSceneTarget';
 
-export async function openAgentCompanionSession(sessionId: string): Promise<boolean> {
+/**
+ * `surfaceId` names a device this window may not be rendering (a companion
+ * task from another device); that device is rendered first, exactly like
+ * opening the session from its sidebar section.
+ */
+export async function openAgentCompanionSession(
+  sessionId: string,
+  surfaceId?: string,
+  sourceWorkspaceId?: string,
+): Promise<boolean> {
+  if (surfaceId && surfaceId !== getActiveSurfaceId()) {
+    // Same presentation as a sidebar open: the session's tab and loading state
+    // are shown at once and held through the device switch.
+    const intent = beginDeviceOpen({ surfaceId, key: `session:${sessionId}`, sessionId });
+    try {
+      if (sourceWorkspaceId) {
+        useSceneStore.getState().holdSessionScene({
+          surfaceId, workspaceKey: sessionSceneWorkspaceKey(sourceWorkspaceId), sessionId,
+        });
+      }
+      dispatchHistorySessionOpenIntent(sessionId, undefined, 20_000);
+      const { peerDeviceSurfaceController } = await import('@/infrastructure/peer-device/peerDeviceSurfaceRuntime');
+      const outcome = isLocalSurface(surfaceId)
+        ? await peerDeviceSurfaceController.switchToLocal('agent_companion')
+        : await peerDeviceSurfaceController.switchToDevice(surfaceId, resolveDeviceName(surfaceId));
+      if (outcome !== 'activated') {
+        clearHistorySessionOpenTransition(sessionId);
+        return false;
+      }
+      return await openOnRenderedSurface(sessionId, surfaceId, sourceWorkspaceId);
+    } finally {
+      endDeviceOpen(intent);
+    }
+  }
+  return openOnRenderedSurface(sessionId, surfaceId, sourceWorkspaceId);
+}
+
+async function openOnRenderedSurface(
+  sessionId: string,
+  surfaceId?: string,
+  sourceWorkspaceId?: string,
+): Promise<boolean> {
   const flowChatStore = FlowChatStore.getInstance();
+  if (surfaceId && sourceWorkspaceId && !flowChatStore.getState().sessions.has(sessionId)) {
+    const scope = getActiveSurfaceScope();
+    await flowChatStore.ensurePersistedSessionMetadata(sessionId, sourceWorkspaceId);
+    scope.assertCurrent('open companion session on its device');
+  }
   const session = flowChatStore.getState().sessions.get(sessionId);
   if (!session) {
     return false;
