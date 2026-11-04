@@ -1473,7 +1473,7 @@ impl WorkspaceManager {
     fn find_next_workspace_id_after_close(&self, preferred_kind: &WorkspaceKind) -> Option<String> {
         // The opened list keeps the user's arrangement, so recency comes from
         // the recent lists: the most recently used opened workspace wins.
-        let by_recency = self
+        let mut by_recency = self
             .recent_workspaces
             .iter()
             .chain(self.recent_assistant_workspaces.iter())
