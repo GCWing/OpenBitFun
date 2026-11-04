@@ -723,8 +723,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   // A submission keeps the session started even if every surviving Turn is
   // later rolled back. Before that first submission, the composer intentionally
   // stays expanded instead of collapsing as the empty draft is measured.
-  const effectiveTargetSessionStarted = effectiveTargetSession ? hasSessionStarted(effectiveTargetSession) : false;
-  const isNewSessionComposer = !effectiveTargetSessionStarted;
+  const historySessionOpenTransition = useSyncExternalStore(
+    subscribeHistorySessionOpenTransition,
+    getHistorySessionOpenTransitionSnapshot,
+    getHistorySessionOpenTransitionSnapshot,
+  );
+  // A persisted session whose history is still loading has no turns yet, but
+  // it is not a new session: treating it as one drew the expanded new-session
+  // composer for the length of the load and then collapsed it (a height jump).
+  const effectiveTargetSessionStarted = effectiveTargetSession
+    ? hasSessionStarted(effectiveTargetSession) || effectiveTargetSession.isHistorical === true
+      || effectiveTargetSession.historyState === 'metadata-only' || effectiveTargetSession.historyState === 'hydrating'
+    : false;
+  // While a session is being opened the composer already belongs to it: keep
+  // the conversation layout instead of the new-session one, so its height and
+  // controls do not change when the session arrives.
+  const isNewSessionComposer = !effectiveTargetSessionStarted && historySessionOpenTransition === null;
   const dispatchObserverJob = dispatchJobStore(state => {
     const jobId = effectiveTargetSession?.config.dispatchJobId;
     return jobId ? state.jobs[jobId] : undefined;
@@ -738,11 +752,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     hostMasksDispatch: !!registration,
     displayAsChild: isBtwSession,
   });
-  const historySessionOpenTransition = useSyncExternalStore(
-    subscribeHistorySessionOpenTransition,
-    getHistorySessionOpenTransitionSnapshot,
-    getHistorySessionOpenTransitionSnapshot,
-  );
   const acpSessionForInput = useMemo(
     () => acpSessionRef(effectiveTargetSession),
     [effectiveTargetSession],
