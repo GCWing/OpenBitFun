@@ -350,6 +350,8 @@ function sameDispatchTargetIdentity(
 const METADATA_LIST_RECENT_DEDUPE_TTL_MS = 1000;
 const HISTORICAL_SESSION_INITIAL_REMOTE_TAIL_TURN_COUNT = 3;
 const HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT = 3;
+/** Turns a session keeps in memory when the history budget evicts it. */
+const RESIDENT_TAIL_TURN_COUNT = HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT;
 const HISTORICAL_SESSION_FULL_HISTORY_IDLE_TIMEOUT_MS = 1500;
 const HISTORICAL_SESSION_PREVIOUS_WINDOW_TURN_COUNT = 12;
 const PEER_SESSION_REFRESH_TAIL_TURN_COUNT = 3;
@@ -2477,6 +2479,36 @@ export class FlowChatStore {
             this.historyResidency.delete(id);
             const current = surface.state.sessions.get(sessionId);
             if (!current) return;
+            // First eviction keeps the session's latest turns: reopening it
+            // then shows them at once, exactly as a fresh tail restore would,
+            // and older turns page in through its catalog. Only a session
+            // already down to that tail (or without a catalog to page from)
+            // drops to metadata.
+            const view = surface.sessionHistoryViews.get(sessionId);
+            const total = projectedSessionTurnCount(current);
+            const tail = current.dialogTurns.filter(turn => !isProvisionalUsageReportTurn(turn))
+              .slice(-RESIDENT_TAIL_TURN_COUNT);
+            const hasMoreThanTail = current.dialogTurns.length > tail.length
+              || (view?.loadedRanges.some(range => range.turns.length > 0 && range.startOrdinal < total - tail.length) ?? false);
+            const catalog = view?.catalog ?? current.turnCatalog ?? null;
+            if (view && catalog && tail.length > 0 && total >= tail.length && hasMoreThanTail) {
+              surface.sessionHistoryViews.set(sessionId, {
+                catalog,
+                loadedRanges: [{
+                  startOrdinal: total - tail.length, endOrdinalExclusive: total, turns: tail,
+                  lastAccessedAt: Date.now(), source: 'initial-tail',
+                }],
+                activeRange: null,
+                pendingTargetOrdinal: null,
+                navigationGeneration: view.navigationGeneration,
+              });
+              surface.sessionHistoryTurnAccessTimes.delete(sessionId);
+              const sessions = new Map(surface.state.sessions);
+              sessions.set(sessionId, { ...current, dialogTurns: tail, isPartial: true, loadedTurnCount: tail.length });
+              surface.state = { ...surface.state, sessions };
+              if (surface.surfaceId === getActiveSurfaceId()) this.notifyListeners();
+              return;
+            }
             surface.sessionHistoryViews.delete(sessionId);
             surface.sessionHistoryTurnAccessTimes.delete(sessionId);
             const sessions = new Map(surface.state.sessions);

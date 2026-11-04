@@ -9292,6 +9292,25 @@ describe('FlowChatStore reconstructable history residency', () => {
     expect(flowChatStore.getSessionHistoryViewState(session.sessionId)).toBeUndefined();
   });
 
+  it('keeps the latest turns of a long session when first evicted, so it reopens without a read', () => {
+    const turns = (flowChatStore as any).convertToDialogTurns(Array.from({ length: 10 }, (_, index) => createPersistedTurn(index)));
+    const session = createSession({ sessionId: 'history-1', dialogTurns: turns,
+      historyState: 'ready', turnCatalog: createTurnCatalog(10), totalTurnCount: 10 });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: null }));
+    (flowChatStore as any).seedSessionHistoryLoadedRanges(session.sessionId);
+    (flowChatStore as any).updateHistoryResidency();
+    withHistoryBudgetPressure(() => resourceBudget.trim());
+    const warm = flowChatStore.getState().sessions.get(session.sessionId)!;
+    expect(warm.dialogTurns.map(turn => turn.id)).toEqual(turns.slice(-3).map((turn: DialogTurn) => turn.id));
+    expect(warm.historyState).toBe('ready');
+    expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.loadedRanges[0])
+      .toMatchObject({ startOrdinal: 7, endOrdinalExclusive: 10 });
+    // Under continued pressure the tail goes too.
+    (flowChatStore as any).updateHistoryResidency();
+    withHistoryBudgetPressure(() => resourceBudget.trim());
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.historyState).toBe('metadata-only');
+  });
+
   it('protects a visible child and never evicts a newly edited or streaming projection', () => {
     const turns = (flowChatStore as any).convertToDialogTurns([createPersistedTurn(0)]);
     const session = createSession({ sessionId: 'history-1', dialogTurns: turns, historyState: 'ready' });

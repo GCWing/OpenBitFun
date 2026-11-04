@@ -50,6 +50,12 @@ export async function activateMainSession(sessionId: string, options?: SessionAc
     && workspaceManager.getState().currentWorkspace) {
     throw new Error(i18nService.t('common:sceneBar.workspaceUnavailable'));
   }
+  if (workspaceId && workspaceManager.getState().activeWorkspaceId !== workspaceId) {
+    // Read the session's history while its workspace is being activated
+    // instead of after: the read addresses the session's own workspace, and
+    // the switch below adopts the read already in flight.
+    flowChatManager.prewarmHistoricalSession(sessionId);
+  }
   if (workspaceId) {
     // Workspace activation mutates the host as well as the frontend. Serialize
     // it so a slow A request cannot finish after a newer B request on the host.
