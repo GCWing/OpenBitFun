@@ -235,8 +235,14 @@
   &__bubbles {
     position: relative;
     flex-shrink: 0;
-    width: 180px;
-    max-width: 180px;
+    /* Bubbles stay 180px; the extra inline-end room holds their bottom-right
+       shadow, and the negative margin keeps the pet where it was. */
+    width: calc(180px + var(--_bubble-shadow-room));
+    max-width: calc(180px + var(--_bubble-shadow-room));
+    padding-inline-end: var(--_bubble-shadow-room);
+    margin-inline-end: calc(-1 * var(--_bubble-shadow-room));
+    --_bubble-shadow-room: 14px;
+    box-sizing: border-box;
     min-height: 0;
     max-height: 100vh;
     /* The slot clips (`overflow: hidden`), so the buffer has to sit inside it:
@@ -367,13 +373,12 @@
       transparent 68%
     );
     /* No border: the bubble is defined by its surface, the state light, the
-       theme's top highlight and a soft tinted drop shadow. The bubble is as
-       wide as its column, which clips sideways, so every outer light keeps a
-       zero horizontal reach (blur equals the negative spread): it fades out
-       below the bubble instead of being cut off at the column's edges. */
+       theme's top highlight and a soft tinted drop shadow cast down and to
+       the right at 45 degrees. Its reach stays inside the column: none to the
+       left, and the column's inline-end room covers the right. */
     --_bubble-edge:
       var(--openbitfun-shadow-inner-highlight),
-      0 12px 16px -16px color-mix(in srgb, var(--_bubble-light) 40%, transparent);
+      6px 6px 14px -8px color-mix(in srgb, var(--_bubble-light) 42%, transparent);
     padding: 9px 12px;
     border: none;
     border-radius: 14px 14px 4px 14px;
