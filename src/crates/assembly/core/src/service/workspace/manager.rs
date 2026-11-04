@@ -1496,9 +1496,17 @@ impl WorkspaceManager {
         self.opened_workspace_ids.first().cloned()
     }
 
-    /// Ensures a workspace stays in the opened list.
+    /// Ensures a workspace is in the opened list. A newly opened workspace goes
+    /// first; an already opened one keeps its place, so activating a workspace
+    /// never reorders the list users arrange (recency lives in the recent list).
     fn ensure_workspace_open(&mut self, workspace_id: &str) {
-        self.opened_workspace_ids.retain(|id| id != workspace_id);
+        if self
+            .opened_workspace_ids
+            .iter()
+            .any(|id| id == workspace_id)
+        {
+            return;
+        }
         self.opened_workspace_ids
             .insert(0, workspace_id.to_string());
     }
@@ -1691,6 +1699,16 @@ mod tests {
                 .remote_ssh_connection_id(),
             Some("ssh-second")
         );
+    }
+
+    #[test]
+    fn activating_an_opened_workspace_keeps_the_opened_order() {
+        let mut manager = super::WorkspaceManager::new(super::WorkspaceManagerConfig::default());
+        manager.opened_workspace_ids = vec!["a".into(), "b".into(), "c".into()];
+        manager.ensure_workspace_open("c");
+        assert_eq!(manager.opened_workspace_ids, vec!["a", "b", "c"]);
+        manager.ensure_workspace_open("d");
+        assert_eq!(manager.opened_workspace_ids, vec!["d", "a", "b", "c"]);
     }
 
     #[tokio::test]
