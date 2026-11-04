@@ -66,7 +66,6 @@ impl ExecutionEngine {
         system_prompt_message: Message,
         prepended_prompt_reminders: &PrependedPromptReminders,
         primary_supports_image_understanding: bool,
-        compression_contract_limit: usize,
         workspace: Option<&WorkspaceBinding>,
         workspace_services: Option<&crate::agentic::workspace::WorkspaceServices>,
         prefetch: Option<PrefetchedCompression>,
@@ -145,7 +144,7 @@ impl ExecutionEngine {
             // Execute compression
             let compression_contract = self
                 .session_manager
-                .compression_contract_for_session(session_id, compression_contract_limit);
+                .compression_contract_for_session(session_id, DEFAULT_COMPRESSION_CONTRACT_LIMIT);
             let model_exchange_trace_dir = self
                 .session_manager
                 .persistent_model_exchange_trace_dir(session_id)

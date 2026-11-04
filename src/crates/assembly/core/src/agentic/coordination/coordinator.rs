@@ -15,7 +15,6 @@ use super::{
 use crate::agentic::agents::{
     get_agent_registry, is_swarm_delegate_agent_type, ExternalSubagentModelBinding,
 };
-use crate::agentic::context_profile::ContextProfilePolicy;
 use crate::agentic::core::{
     InternalReminderKind, Message, MessageContent, MessageSemanticKind, ProcessingPhase, Session,
     SessionAgentRouteOwner, SessionConfig, SessionContinuationPolicy, SessionKind,
@@ -1443,7 +1442,6 @@ pub struct ConversationCoordinator {
     event_router: Arc<EventRouter>,
     subagent_concurrency_limiter: Arc<RwLock<Option<SubagentConcurrencyLimiter>>>,
     swarm_concurrency_limiter: Arc<RwLock<Option<SubagentConcurrencyLimiter>>>,
-    subagent_profile_concurrency_limiters: Arc<RwLock<HashMap<usize, SubagentConcurrencyLimiter>>>,
     /// Registry for dynamically adjusting subagent timeouts.
     subagent_timeout_registry: Arc<RwLock<HashMap<String, Arc<SubagentTimeoutHandle>>>>,
     /// Active subagent executions keyed by subagent session id.
@@ -2383,7 +2381,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             event_router,
             subagent_concurrency_limiter: Arc::new(RwLock::new(None)),
             swarm_concurrency_limiter: Arc::new(RwLock::new(None)),
-            subagent_profile_concurrency_limiters: Arc::new(RwLock::new(HashMap::new())),
             subagent_timeout_registry: Arc::new(RwLock::new(HashMap::new())),
             active_subagent_executions: Arc::new(DashMap::new()),
             background_subagent_tasks: Arc::new(DashMap::new()),
@@ -10613,32 +10610,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         limiter
     }
 
-    async fn get_subagent_profile_concurrency_limiter(
-        &self,
-        max_concurrency: usize,
-    ) -> SubagentConcurrencyLimiter {
-        let max_concurrency = normalize_subagent_max_concurrency(max_concurrency);
-
-        {
-            let limiter_guard = self.subagent_profile_concurrency_limiters.read().await;
-            if let Some(limiter) = limiter_guard.get(&max_concurrency) {
-                return limiter.clone();
-            }
-        }
-
-        let mut limiter_guard = self.subagent_profile_concurrency_limiters.write().await;
-        if let Some(limiter) = limiter_guard.get(&max_concurrency) {
-            return limiter.clone();
-        }
-
-        let limiter = SubagentConcurrencyLimiter {
-            semaphore: Arc::new(Semaphore::new(max_concurrency)),
-            max_concurrency,
-        };
-        limiter_guard.insert(max_concurrency, limiter.clone());
-        limiter
-    }
-
     async fn get_swarm_concurrency_limiter(&self) -> SubagentConcurrencyLimiter {
         let configured = match GlobalConfigManager::get_service().await {
             Ok(config_service) => match config_service
@@ -10755,7 +10726,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     async fn acquire_subagent_concurrency_permit(
         &self,
         agent_type: &str,
-        profile_concurrency_cap: usize,
         cancel_token: Option<&CancellationToken>,
         deadline: Option<Instant>,
     ) -> OpenBitFunResult<(
@@ -10778,19 +10748,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             ));
         }
 
-        let profile_limiter = self
-            .get_subagent_profile_concurrency_limiter(profile_concurrency_cap)
-            .await;
-        let profile_permit = self
-            .acquire_permit_from_limiter(
-                &profile_limiter,
-                agent_type,
-                cancel_token,
-                deadline,
-                "profile",
-            )
-            .await?;
-
         let global_limiter = self.get_subagent_concurrency_limiter().await;
         let global_permit = self
             .acquire_permit_from_limiter(
@@ -10804,55 +10761,11 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
         let wait_ms = started_waiting.elapsed().as_millis();
         debug!(
-            "Acquired subagent concurrency permits: agent_type={}, wait_ms={}, profile_max_concurrency={}, global_max_concurrency={}",
-            agent_type, wait_ms, profile_limiter.max_concurrency, global_limiter.max_concurrency
+            "Acquired subagent concurrency permit: agent_type={}, wait_ms={}, max_concurrency={}",
+            agent_type, wait_ms, global_limiter.max_concurrency
         );
 
-        Ok((
-            vec![
-                (profile_permit, profile_limiter),
-                (global_permit, global_limiter),
-            ],
-            wait_ms,
-        ))
-    }
-
-    fn context_profile_policy_for_subagent(
-        &self,
-        agent_type: &str,
-        session_config: &SessionConfig,
-        subagent_parent_info: Option<&SubagentParentInfo>,
-    ) -> ContextProfilePolicy {
-        if let Some(parent_info) = subagent_parent_info {
-            if let Some(parent_session) = self.session_manager.get_session(&parent_info.session_id)
-            {
-                let parent_is_review_subagent = get_agent_registry()
-                    .get_subagent_is_review(&parent_session.agent_type)
-                    .unwrap_or(false);
-                let is_review_subagent = get_agent_registry()
-                    .get_subagent_is_review(agent_type)
-                    .unwrap_or(false);
-                return ContextProfilePolicy::for_subagent_context_and_models(
-                    agent_type,
-                    is_review_subagent,
-                    session_config.model_id.as_deref(),
-                    Some(&parent_session.agent_type),
-                    parent_is_review_subagent,
-                    parent_session.config.model_id.as_deref(),
-                );
-            }
-        }
-
-        let is_review_subagent = get_agent_registry()
-            .get_subagent_is_review(agent_type)
-            .unwrap_or(false);
-        let model_id = session_config.model_id.as_deref().unwrap_or_default();
-        ContextProfilePolicy::for_agent_context_and_model(
-            agent_type,
-            is_review_subagent,
-            model_id,
-            model_id,
-        )
+        Ok((vec![(global_permit, global_limiter)], wait_ms))
     }
 
     async fn execute_hidden_subagent_internal(
@@ -10952,18 +10865,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .map(|info| info.tool_call_id.as_str())
             .unwrap_or("-");
 
-        let context_profile_policy = self.context_profile_policy_for_subagent(
-            &agent_type,
-            &session_config,
-            subagent_parent_info.as_ref(),
-        );
-        debug!(
-            "Subagent context profile policy selected: agent_type={}, profile={:?}, profile_concurrency_cap={}",
-            agent_type,
-            context_profile_policy.profile,
-            context_profile_policy.subagent_concurrency_cap
-        );
-
         // Check cancel token (before creating session)
         if let Some(token) = cancel_token {
             if token.is_cancelled() {
@@ -10983,12 +10884,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         // target hidden session may have been created by the scheduler before
         // this point so per-session queueing can use its real session_id.
         let (permits, wait_ms) = match self
-            .acquire_subagent_concurrency_permit(
-                &agent_type,
-                context_profile_policy.subagent_concurrency_cap,
-                cancel_token,
-                initial_deadline,
-            )
+            .acquire_subagent_concurrency_permit(&agent_type, cancel_token, initial_deadline)
             .await
         {
             Ok(value) => value,
@@ -18577,6 +18473,76 @@ pub(crate) mod tests {
             btw_session_memory_mode(true, true),
             SessionMemoryMode::Enabled
         );
+    }
+
+    #[tokio::test]
+    async fn subagent_concurrency_uses_global_capacity_for_all_ordinary_agent_types() {
+        use super::SubagentConcurrencyPermitGuard;
+        use tokio::time::Instant;
+
+        let (coordinator, _) = test_coordinator();
+        let limiter = coordinator.get_subagent_concurrency_limiter().await;
+        let capacity = limiter.max_concurrency;
+        let agent_types = [
+            "Explore",
+            "Cowork",
+            "ResearchSpecialist",
+            "ReviewSecurity",
+            "Standard",
+        ];
+        let mut guards = Vec::new();
+        for index in 0..capacity {
+            let agent_type = agent_types[index % agent_types.len()];
+            let (permits, _) = coordinator
+                .acquire_subagent_concurrency_permit(
+                    agent_type,
+                    None,
+                    Some(Instant::now() + Duration::from_secs(5)),
+                )
+                .await
+                .expect("ordinary agents should share all configured global slots");
+            assert_eq!(permits.len(), 1);
+            assert!(Arc::ptr_eq(&permits[0].1.semaphore, &limiter.semaphore));
+            guards.push(SubagentConcurrencyPermitGuard::new(
+                permits,
+                agent_type.to_string(),
+            ));
+        }
+        assert_eq!(limiter.semaphore.available_permits(), 0);
+
+        let timed_out = coordinator
+            .acquire_subagent_concurrency_permit("Explore", None, Some(Instant::now()))
+            .await;
+        assert!(matches!(
+            timed_out,
+            Err(crate::util::errors::OpenBitFunError::Timeout(_))
+        ));
+
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let cancelled_wait = coordinator
+            .acquire_subagent_concurrency_permit("ResearchSpecialist", Some(&cancelled), None)
+            .await;
+        assert!(matches!(
+            cancelled_wait,
+            Err(crate::util::errors::OpenBitFunError::Cancelled(_))
+        ));
+
+        guards.pop();
+        let (permits, _) = coordinator
+            .acquire_subagent_concurrency_permit(
+                "ResearchSpecialist",
+                None,
+                Some(Instant::now() + Duration::from_secs(5)),
+            )
+            .await
+            .expect("releasing a slot should admit a different ordinary agent type");
+        drop(SubagentConcurrencyPermitGuard::new(
+            permits,
+            "ResearchSpecialist".to_string(),
+        ));
+        drop(guards);
+        assert_eq!(limiter.semaphore.available_permits(), capacity);
     }
 
     #[tokio::test]

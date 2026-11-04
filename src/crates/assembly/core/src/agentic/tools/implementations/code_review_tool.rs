@@ -424,11 +424,6 @@ impl CodeReviewTool {
     }
 
     #[cfg(test)]
-    fn reliability_contract_limit(agent_type: Option<&str>, model_id: Option<&str>) -> usize {
-        deep_review_report::reliability_contract_limit(agent_type, model_id)
-    }
-
-    #[cfg(test)]
     fn should_report_compression_preserved(
         compression_count: usize,
         compression_contract: Option<&CompressionContract>,
@@ -1376,18 +1371,6 @@ mod tests {
                     "source": "runtime"
                 }
             ])
-        );
-    }
-
-    #[test]
-    fn deep_review_reliability_contract_limit_uses_context_profile_policy() {
-        assert_eq!(
-            CodeReviewTool::reliability_contract_limit(Some("DeepReview"), Some("gpt-5")),
-            8
-        );
-        assert_eq!(
-            CodeReviewTool::reliability_contract_limit(Some("DeepReview"), Some("gpt-5-mini")),
-            4
         );
     }
 

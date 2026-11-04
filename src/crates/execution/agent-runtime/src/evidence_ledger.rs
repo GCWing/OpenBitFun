@@ -8,6 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_PARTIAL_OUTPUT_BYTES: usize = 8_000;
 pub const EVIDENCE_LEDGER_SCHEMA_VERSION: u32 = 1;
+/// Per-category evidence bound shared by compression and reliability reporting.
+pub const DEFAULT_COMPRESSION_CONTRACT_LIMIT: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EvidenceLedgerTargetKind {
@@ -932,6 +934,34 @@ mod tests {
 
         assert_eq!(partial_output.len(), 7_999);
         assert!(partial_output.is_char_boundary(partial_output.len()));
+    }
+
+    #[test]
+    fn compression_contract_keeps_bounded_recent_evidence_without_pruning_the_ledger() {
+        let ledger = SessionEvidenceLedger::new();
+        for index in 0..12 {
+            ledger.append(
+                EvidenceLedgerEvent::new(
+                    "session-a",
+                    "turn-a",
+                    "ExecCommand",
+                    EvidenceLedgerTargetKind::Command,
+                    format!("cargo test test_{index}"),
+                    EvidenceLedgerEventStatus::Failed,
+                    format!("Test {index} failed"),
+                )
+                .with_touched_files(vec![format!("src/file_{index}.rs")]),
+            );
+        }
+        let contract: CompressionContract = ledger
+            .summary_for_session("session-a", super::DEFAULT_COMPRESSION_CONTRACT_LIMIT)
+            .into();
+        assert_eq!(contract.touched_files.len(), 8);
+        assert_eq!(contract.blocking_failures.len(), 8);
+        assert_eq!(contract.verification_commands.len(), 8);
+        assert_eq!(contract.touched_files.first().unwrap(), "src/file_11.rs");
+        assert_eq!(contract.touched_files.last().unwrap(), "src/file_4.rs");
+        assert_eq!(ledger.events_for_session("session-a").len(), 12);
     }
 
     #[test]

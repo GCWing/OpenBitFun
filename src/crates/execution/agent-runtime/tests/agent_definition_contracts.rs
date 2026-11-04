@@ -3,8 +3,6 @@
 
 #[path = "agent_definition_contracts/agent_registry_contracts.rs"]
 mod agent_registry_contracts;
-#[path = "agent_definition_contracts/context_profile.rs"]
-mod context_profile;
 #[path = "agent_definition_contracts/custom_agent_mode_contracts.rs"]
 mod custom_agent_mode_contracts;
 #[path = "agent_definition_contracts/custom_subagent_contracts.rs"]
