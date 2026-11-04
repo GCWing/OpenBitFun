@@ -72,6 +72,7 @@ import type {
   SessionContextUsage,
   SessionActivitySummary,
   SessionKind,
+  SessionLastTurn,
   SessionMetadata,
   SessionTurnCatalog,
 } from '@/shared/types/session-history';
@@ -2240,6 +2241,7 @@ function sessionFromPersistedMetadata(metadata: any, context: {
     btwThreads: [],
     btwOrigin: relationship.btwOrigin,
     hasUnreadCompletion: metadata.unreadCompletion,
+    unreadCompletionReceipt: persistedUnreadReceipt(metadata),
     needsUserAttention: metadata.needsUserAttention,
     deepReviewRunManifest: metadata.deepReviewRunManifest,
     reviewTargetEvidence: metadata.reviewTargetEvidence,
@@ -2248,6 +2250,12 @@ function sessionFromPersistedMetadata(metadata: any, context: {
 }
 
 const EMPTY_SESSION_MAP: ReadonlyMap<string, Session> = new Map();
+
+/** The host's record of an unread result, as its read receipt must name it. */
+function persistedUnreadReceipt(metadata: any): SessionLastTurn | undefined {
+  if (!metadata?.unreadCompletion) return undefined;
+  return metadata.customMetadata?.unreadCompletionTarget ?? metadata.lastTurn ?? undefined;
+}
 /** Placeholder until promotion reads the device's model configuration. */
 const DEFAULT_SEEDED_CONTEXT_TOKENS = 128128;
 
@@ -2284,7 +2292,7 @@ export class FlowChatStore {
   /** Requested intervals remain protected until every deduplicated caller processes the response. */
   private sessionTurnWindowProtections = new Map<string, SessionTurnWindowProtection>();
   private unsupportedRestoreCommands = new Set<string>();
-  private onPersistUnreadCompletion?: (sessionId: string, value: 'completed' | 'error' | 'interrupted' | undefined) => void;
+  private onPersistUnreadCompletion?: (sessionId: string, value: 'completed' | 'error' | 'interrupted' | undefined, receipt?: SessionLastTurn) => void;
 
   private constructor() {
     this.clearOldStorage();
@@ -4634,7 +4642,7 @@ export class FlowChatStore {
    * Called by FlowChatManager during initialization.
    */
   public registerPersistUnreadCompletionCallback(
-    callback: (sessionId: string, value: 'completed' | 'error' | 'interrupted' | undefined) => void
+    callback: (sessionId: string, value: 'completed' | 'error' | 'interrupted' | undefined, receipt?: SessionLastTurn) => void
   ): void {
     this.onPersistUnreadCompletion = callback;
   }
@@ -7380,15 +7388,20 @@ export class FlowChatStore {
     // Bind it to the host summary so a later status refresh cannot restore it.
     const summary = sessionActivityStore.get(sessionId)?.summary;
     const acknowledgedSummaryTurn = summary?.unreadTurn ?? summary?.lastTurn;
+    // The receipt names the host's record of the result; capture it before the
+    // unread fields are cleared, so the persisted acknowledgement can match.
+    let receipt: SessionLastTurn | undefined;
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session || !session.hasUnreadCompletion) return prev;
+      receipt = acknowledgedSummaryTurn ?? session.unreadCompletionReceipt;
 
       const updatedSession: Session = {
         ...session,
         hasUnreadCompletion: undefined,
         unreadCompletionTurnId: undefined,
         unreadCompletionGeneration: undefined,
+        unreadCompletionReceipt: undefined,
       };
 
       const newSessions = new Map(prev.sessions);
@@ -7403,7 +7416,7 @@ export class FlowChatStore {
         acknowledgedSummaryTurn.executionGeneration, acknowledgedSummaryTurn.recoveryPending);
       else if (turn) sessionActivityStore.acknowledge(sessionId, turn.id,
         turn.recovery?.executionGeneration ?? turn.recoveryEpoch, isTurnAwaitingRecovery(turn));
-      this.onPersistUnreadCompletion?.(sessionId, undefined);
+      this.onPersistUnreadCompletion?.(sessionId, undefined, receipt);
     }
   }
 
@@ -7435,6 +7448,7 @@ export class FlowChatStore {
       sessions.set(summary.sessionId, {
         ...session, hasUnreadCompletion: summary.unreadCompletion, unreadCompletionTurnId: turnId,
         unreadCompletionGeneration: generation,
+        unreadCompletionReceipt: summary.unreadCompletion ? unreadTurn : undefined,
       });
       return { ...prev, sessions };
     });
@@ -8057,6 +8071,7 @@ export class FlowChatStore {
             titleI18nKey: titleState.titleI18nKey, titleI18nParams: titleState.titleI18nParams,
             lastActiveAt: metadata.lastActiveAt, lastFinishedAt, persistedStatus: metadata.status,
             hasUnreadCompletion: metadata.unreadCompletion, needsUserAttention: metadata.needsUserAttention,
+            unreadCompletionReceipt: persistedUnreadReceipt(metadata),
           });
           changed = true;
           continue;
@@ -8539,6 +8554,7 @@ export class FlowChatStore {
               btwThreads: [],
               btwOrigin: relationship.btwOrigin,
               hasUnreadCompletion: metadata.unreadCompletion,
+              unreadCompletionReceipt: persistedUnreadReceipt(metadata),
               needsUserAttention: metadata.needsUserAttention,
               deepReviewRunManifest: metadata.deepReviewRunManifest,
               reviewTargetEvidence: metadata.reviewTargetEvidence,

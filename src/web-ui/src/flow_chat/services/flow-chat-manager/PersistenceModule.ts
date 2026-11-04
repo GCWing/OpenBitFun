@@ -1,3 +1,4 @@
+import type { SessionLastTurn } from '@/shared/types/session-history';
 import { requireSessionOwningWorkspaceId } from '../../utils/sessionOrdering';
 /**
  * Persistence module
@@ -557,6 +558,7 @@ export async function updateSessionMetadata(
   context: FlowChatContext,
   sessionId: string,
   fields?: UiSessionMetadataField[],
+  options?: { unreadReceipt?: SessionLastTurn },
 ): Promise<void> {
   const scope = getActiveSurfaceScope();
   try {
@@ -585,8 +587,14 @@ export async function updateSessionMetadata(
       const activity = sessionActivityStore.get(sessionId)?.summary;
       // lastTurn is a receipt guard in a UI patch, not a write to the host's
       // execution summary. A newer quiet run must not change its target.
-      const unreadTurn = activity?.unreadTurn;
-      if (unreadTurn) metadata.lastTurn = unreadTurn;
+      // The host accepts an acknowledgement only for its own record of the
+      // result, so that receipt wins over one rebuilt from (possibly unloaded)
+      // turns.
+      const receipt = options?.unreadReceipt ?? activity?.unreadTurn;
+      if (receipt) {
+        metadata.lastTurn = receipt;
+        metadata.customMetadata = { ...(metadata.customMetadata ?? {}), unreadCompletionTarget: receipt };
+      }
     }
 
     await sessionAPI.saveSessionMetadata(

@@ -814,7 +814,7 @@ describe('FlowChatStore metadata persistence callbacks', () => {
       expect(flowChatStore.getState().sessions.get(session.sessionId)).toMatchObject({
         hasUnreadCompletion: undefined, needsUserAttention: 'tool_confirm',
       });
-      expect(persist).toHaveBeenCalledWith(session.sessionId, undefined);
+      expect(persist).toHaveBeenCalledWith(session.sessionId, undefined, summary.lastTurn);
       expect(sessionActivityStore.get(session.sessionId)?.summary?.unreadCompletion).toBeUndefined();
 
       sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [summary]);
@@ -865,7 +865,7 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     flowChatStore.clearSessionUnreadCompletion(session.sessionId);
 
     expect(persist).toHaveBeenCalledTimes(1);
-    expect(persist).toHaveBeenCalledWith(session.sessionId, undefined);
+    expect(persist).toHaveBeenCalledWith(session.sessionId, undefined, undefined);
   });
 
   it('persists attention clear only when the session state changes', () => {
@@ -9383,5 +9383,24 @@ describe('background device session seeding', () => {
     flowChatStore.seedSurfaceSessions('peer-seed', page([metadata('s-1')]));
     flowChatStore.discardSeededSessions('peer-seed');
     expect(flowChatStore.getSurfaceSessions('peer-seed').size).toBe(0);
+  });
+});
+
+describe('read receipts of unloaded sessions', () => {
+  it('persists the host record of the result even when no turn was loaded', async () => {
+    workspaceFixtures.set('rr-ws', { id: 'rr-ws', rootPath: '/srv/rr', workspaceKind: 'normal' });
+    const target = { turnId: 'turn-9', turnIndex: 9, status: 'cancelled', executionGeneration: 2, recoveryPending: true };
+    await flowChatStore.adoptHostSessionMetadata('rr-ws', [{
+      sessionId: 'rr-1', sessionName: 'rr', agentType: 'agentic', modelName: 'm', createdAt: 1, lastActiveAt: 2,
+      turnCount: 9, messageCount: 9, toolCallCount: 0, status: 'active', tags: [], workspaceId: 'rr-ws',
+      unreadCompletion: 'interrupted', lastTurn: { turnId: 'turn-10', turnIndex: 10, status: 'completed' },
+      customMetadata: { unreadCompletionTarget: target },
+    } as never]);
+    const persisted: unknown[] = [];
+    flowChatStore.registerPersistUnreadCompletionCallback((...args) => { persisted.push(args); });
+    flowChatStore.clearSessionUnreadCompletion('rr-1');
+    expect(persisted).toEqual([['rr-1', undefined, target]]);
+    expect(flowChatStore.getState().sessions.get('rr-1')?.unreadCompletionReceipt).toBeUndefined();
+    workspaceFixtures.delete('rr-ws');
   });
 });

@@ -1,3 +1,4 @@
+import type { SessionLastTurn } from '@/shared/types/session-history';
 /**
  * Flow Chat type definitions
  * Supports mixed streaming output.
@@ -602,6 +603,13 @@ export interface Session {
   /** Result identity from a lightweight summary that may precede transcript hydration. */
   unreadCompletionTurnId?: string;
   unreadCompletionGeneration?: number;
+  /**
+   * The host's own record of the unread result (its `unreadCompletionTarget`
+   * or last turn). A read receipt must name this exact result or the host
+   * keeps the session unread, so it survives until the receipt is sent even
+   * when the transcript was never loaded.
+   */
+  unreadCompletionReceipt?: SessionLastTurn;
 
   /**
    * Set when a session requires user attention while not the active session.

@@ -282,6 +282,15 @@ export class DeviceWorkspaceCatalog {
    * the number of sessions acknowledged.
    */
   async markAllRead(surfaceId: DeviceSurfaceId): Promise<number> {
+    return this.acknowledgeSessions(surfaceId, null);
+  }
+
+  /** Mark one loaded session of a device read on its host (companion dismiss). */
+  async markSessionRead(surfaceId: DeviceSurfaceId, sessionId: string): Promise<boolean> {
+    return (await this.acknowledgeSessions(surfaceId, sessionId)) > 0;
+  }
+
+  private async acknowledgeSessions(surfaceId: DeviceSurfaceId, onlySessionId: string | null): Promise<number> {
     const entry = this.entries.get(surfaceId);
     if (!entry || entry.snapshot.status !== 'ready') return 0;
     const targets: Array<{ workspace: WorkspaceInfo; metadata: SessionMetadata }> = [];
@@ -289,8 +298,16 @@ export class DeviceWorkspaceCatalog {
       const page = entry.snapshot.sessions[workspace.id];
       if (!page) continue;
       for (const metadata of page.records) {
+        if (onlySessionId !== null && metadata.sessionId !== onlySessionId) continue;
         if (metadata.unreadCompletion || metadata.needsUserAttention || page.activities[metadata.sessionId]?.unreadCompletion) {
-          targets.push({ workspace, metadata });
+          // The receipt must name the host's own record of the unread result.
+          const receipt = page.activities[metadata.sessionId]?.unreadTurn
+            ?? (metadata.customMetadata as { unreadCompletionTarget?: unknown } | undefined)?.unreadCompletionTarget
+            ?? metadata.lastTurn;
+          targets.push({ workspace, metadata: receipt ? {
+            ...metadata, lastTurn: receipt as SessionMetadata['lastTurn'],
+            customMetadata: { ...(metadata.customMetadata ?? {}), unreadCompletionTarget: receipt },
+          } as SessionMetadata : metadata });
         }
       }
     }

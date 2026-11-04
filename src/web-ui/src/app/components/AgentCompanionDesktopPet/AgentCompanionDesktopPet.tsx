@@ -766,7 +766,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     }
     // Finished / failed / interrupted bubbles are pure "unread" notices, so tell
     // the main window the user has seen this one.
-    void sendPetCommand({ type: 'dismiss-task', sessionId: task.sessionId })
+    void sendPetCommand({ type: 'dismiss-task', sessionId: task.sessionId, ...(task.surfaceId ? { surfaceId: task.surfaceId } : {}) })
       .catch(error => {
         log.warn('Failed to acknowledge Agent companion task', {
           sessionId: task.sessionId,
