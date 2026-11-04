@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:7dadb93da46481aa",
+  "digest": "fnv1a64:8963c0162acc02cb",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -3375,8 +3375,7 @@
         "kind": "proxied"
       },
       "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
+        "kind": "handled"
       }
     },
     {

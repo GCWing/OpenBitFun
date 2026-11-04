@@ -247,6 +247,8 @@
       "tokenCapacity": "{{used}} / {{size}} Tokens",
       "loading": "Loading context usage…",
       "loadFailed": "Unable to load context usage. Close and reopen to try again.",
+      "unsupported": "Context usage is not available on this device.",
+      "updateRequired": "The OpenBitFun version on this device cannot show context usage yet. Update OpenBitFun on that device to see it.",
       "title": "Context composition",
       "label": "Context",
       "utilization": "Context usage",
