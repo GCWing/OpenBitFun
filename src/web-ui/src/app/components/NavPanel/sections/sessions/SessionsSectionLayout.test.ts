@@ -166,7 +166,7 @@ describe('SessionsSection layout styles', () => {
     expect(source).toMatch(/<OverflowText[^>]*className="openbitfun-nav-panel__inline-toggle-label"/);
     // The chip is decorative; the full sentence stays on the button's aria-label.
     expect(source).toContain('className="openbitfun-nav-panel__inline-toggle-count" aria-hidden');
-    expect(source).toContain("aria-label={isSessionCountComplete ? t('nav.sessions.showMore', {");
+    expect(source).toContain("ariaLabel: isSessionCountComplete ? t('nav.sessions.showMore', { count })");
     expect(source).toContain('aria-label={expandToggleLabels.ariaLabel}');
     expect(source).not.toContain('inline-toggle-dots');
   });

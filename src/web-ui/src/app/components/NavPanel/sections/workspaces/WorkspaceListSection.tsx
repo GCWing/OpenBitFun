@@ -6,6 +6,7 @@ import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { getActiveSurfaceId, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { notificationService } from '@/shared/notification-system';
 import WorkspaceItem from './WorkspaceItem';
+import { setWorkspaceSessionsCollapsed, useWorkspaceSessionsCollapsed } from './workspaceDisclosure';
 import { remoteWorkspaceBadges } from './remoteWorkspaceBadge';
 import SessionViewTransition from './SessionViewTransition';
 import SessionsSection, { type WorkspaceSessionScope } from '../sessions/SessionsSection';
@@ -22,6 +23,8 @@ import './WorkspaceListSection.scss';
 interface WorkspaceListSectionProps {
   variant: SessionNavigationScope;
   scrollRootRef?: React.RefObject<HTMLElement | null>;
+  /** Several devices share the sidebar: the flat list shows three rows per device. */
+  limitFlatRows?: boolean;
 }
 
 type WorkspaceDragPosition = 'before' | 'after';
@@ -43,7 +46,24 @@ const WORKSPACE_DROP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
  * never joins the workspace order (see `pinnedGroups`).
  */
 
-const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, scrollRootRef }) => {
+/** A workspace row whose project disclosure lives in the window-wide store. */
+const ProjectWorkspaceItem: React.FC<React.ComponentProps<typeof WorkspaceItem> & {
+  surfaceId: string;
+  isProject: boolean;
+}> = ({ surfaceId, isProject, ...props }) => {
+  const collapsed = useWorkspaceSessionsCollapsed(surfaceId, props.workspace.id);
+  return (
+    <WorkspaceItem
+      {...props}
+      sessionsCollapsed={isProject ? collapsed : undefined}
+      onSessionsCollapsedChange={isProject
+        ? value => setWorkspaceSessionsCollapsed(surfaceId, props.workspace.id, value)
+        : undefined}
+    />
+  );
+};
+
+const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, scrollRootRef, limitFlatRows = false }) => {
   const { t } = useI18n('common');
   const {
     openedWorkspacesList,
@@ -65,11 +85,6 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
     activeTab?.contentId ? state.resources[activeTab.contentId]?.scope : undefined
   ));
   const surfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
-  const collapseAllRequestId = useWorkspaceSessionViewStore(state => state.collapseAllRequestId);
-  const [projectDisclosure, setProjectDisclosure] = useState<{
-    requestId: number;
-    values: Record<string, boolean>;
-  }>({ requestId: collapseAllRequestId, values: {} });
 
   // Refs for values that must be read inside event handlers without stale closures
   const draggedWorkspaceIdRef = useRef<string | null>(null);
@@ -348,9 +363,6 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
    */
   const renderGroupRow = (group: WorkspaceBackedSessionGroup, pinned: boolean) => {
     const workspace = group.workspace;
-    const disclosureKey = JSON.stringify([surfaceId, workspace.id]);
-    const sessionsCollapsed = (projectDisclosure.requestId === collapseAllRequestId
-      ? projectDisclosure.values[disclosureKey] : undefined) ?? (collapseAllRequestId > 0);
     const isActive = isWorkspaceBackedSessionGroupActive(workspace, activeWorkspace);
     const isSelected = isWorkspaceBackedSessionGroupSelected(workspace, {
       activeTab, contentScope, surfaceId, activeWorkspaceId,
@@ -382,7 +394,9 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
         onDragLeave={draggable ? handleDragLeave(workspace.id) : undefined}
         onDrop={draggable ? (event) => { void handleDrop(workspace.id)(event); } : undefined}
       >
-        <WorkspaceItem
+        <ProjectWorkspaceItem
+          surfaceId={surfaceId}
+          isProject={group.kind === 'project'}
           workspace={workspace}
           remoteBadge={remoteBadges.get(workspace.id)}
           isActive={isActive}
@@ -392,16 +406,6 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
           isDragging={draggedWorkspaceId === workspace.id}
           onDragStart={draggable ? handleDragStart(workspace.id) : undefined}
           onDragEnd={draggable ? resetDragState : undefined}
-          sessionsCollapsed={group.kind === 'project' ? sessionsCollapsed : undefined}
-          onSessionsCollapsedChange={group.kind === 'project' ? collapsed => {
-            setProjectDisclosure(current => ({
-              requestId: collapseAllRequestId,
-              values: {
-                ...(current.requestId === collapseAllRequestId ? current.values : {}),
-                [disclosureKey]: collapsed,
-              },
-            }));
-          } : undefined}
         />
         {dropTarget?.workspaceId === workspace.id ? (
           <div data-openbitfun-component="workspace-list-section" data-openbitfun-part="dropLine" className="openbitfun-nav-panel__workspace-drop-line" aria-hidden="true" />
@@ -438,6 +442,7 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
                     workspaceScopes={workspaceScopes}
                     isVisible
                     layout="flat"
+                    limitFlatRows={limitFlatRows}
                     useWorkspaceViewPreferences
                   />
                 </div>

@@ -64,6 +64,24 @@
     "remoteConnectRequiresWorkspace": "Open a workspace before using remote control."
   },
   "nav": {
+    "devices": {
+      "thisDevice": "This device",
+      "current": "Shown in this window",
+      "expand": "Expand {{name}}",
+      "collapse": "Collapse {{name}}",
+      "hostDesktop": "Desktop",
+      "hostCli": "CLI",
+      "platform": {
+        "mac": "Mac",
+        "windows": "Win",
+        "linux": "Linux"
+      },
+      "loadFailed": "Couldn't load this device's workspaces",
+      "sessionsLoadFailed": "Couldn't load sessions",
+      "noSessions": "No sessions yet",
+      "sessionUnavailable": "This session is no longer on that device.",
+      "connecting": "Connecting to {{name}}…"
+    },
     "aria": {
       "navControl": "Navigation controls",
       "mainNav": "Main navigation"
@@ -2326,6 +2344,19 @@
     "modifiedDragUnavailable": "Dragging with modifier keys is not supported in this preview."
   },
   "newWorkspace": {
+    "localProjectTitle": "Project on this device",
+    "localProjectDescription": "Use existing folders on this device, or start a new project.",
+    "deviceProjectTitle": "Project on another device",
+    "deviceProjectDescription": "Create it on another online device signed in to your account. Everything works as it does here.",
+    "createDeviceProject": "Create a project on another device",
+    "chooseDevice": "Choose a device",
+    "chooseDeviceDescription": "The project is created and stored on the selected device.",
+    "noOtherDevices": "No other devices are online. Sign in to the same account in OpenBitFun on another device to choose it here.",
+    "signInForDevices": "Sign in to create projects on your other online devices.",
+    "createProjectOn": "Create a project on {{name}}",
+    "deviceCurrent": "Shown now",
+    "connecting": "Connecting…",
+    "deviceError": "Couldn't connect to this device. Try again later.",
     "title": "Create",
     "description": "Choose what you want to create.",
     "assistantTitle": "Personal assistant",

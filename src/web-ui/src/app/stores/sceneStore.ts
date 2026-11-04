@@ -41,6 +41,7 @@ import { useContentResourceStore } from '../workbench/contentResourceStore';
 import { requestContentClose } from '../workbench/contentResourceLifecycle';
 import { requestMiniAppClose } from '../scenes/miniapps/miniAppLifecycle';
 import { getActiveSurfaceId, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { getDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import {
   SCENE_TAB_REGISTRY,
   getSceneDef,
@@ -154,6 +155,20 @@ interface SceneState extends ScenePaneState {
   goForward:    () => void;
   /** Reset tabs/history when entering or exiting Peer Device Mode. */
   resetForPeerSwitch: (restoreContent?: boolean) => void;
+  /**
+   * Show a session of another device in the primary pane at once, before its
+   * device is rendered. The tab survives the switch and session reconciliation
+   * while the cross-device open that owns it runs (see `DeviceOpenIntent`), so
+   * the session's loading presentation stays on screen the whole time.
+   */
+  holdSessionScene: (target: SessionSceneTarget) => void;
+}
+
+/** The session tab a running cross-device open shows; never reconciled away. */
+function isHeldSessionTab(tab: SceneTab): boolean {
+  const intent = getDeviceOpenIntent();
+  return Boolean(intent?.sessionId && tab.session
+    && tab.session.sessionId === intent.sessionId && tab.session.surfaceId === intent.surfaceId);
 }
 
 function buildDefaultTabs(): SceneTab[] {
@@ -299,6 +314,10 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         tabs.set(tab.id, tab);
         continue;
       }
+      if (isHeldSessionTab(tab)) {
+        tabs.set(tab.id, tab);
+        continue;
+      }
       const target = tab.session && targets.get(tab.session.sessionId);
       if (!target) continue;
       const id = getSessionSceneTabId(target);
@@ -425,6 +444,24 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   goBack: () => navigateHistory(-1),
   goForward: () => navigateHistory(1),
 
+  holdSessionScene: (target) => {
+    navigationRequest++;
+    const state = get();
+    const id = getSessionSceneTabId(target);
+    const previous = state.openTabs.find(tab => tab.id === id);
+    const tab: SceneTab = {
+      ...previous, id, pane: 'primary', session: target, lastUsed: Date.now(),
+      sessionHistory: [target.sessionId, ...(previous?.sessionHistory ?? []).filter(sessionId => sessionId !== target.sessionId)],
+    };
+    const openTabs = [...state.openTabs.filter(candidate => candidate.id !== id), tab];
+    const panes = reconcilePaneState({ ...state, openTabs, focusedPane: 'primary',
+      paneSelections: { ...state.paneSelections, primary: sceneSelection(id) } });
+    set({ ...projectPaneState(panes), pendingTabId: null,
+      ...pushHistory(state.navHistory, state.navCursor, id),
+      navigationMotion: 'instant', navigationSequence: state.navigationSequence + 1,
+    });
+  },
+
   resetForPeerSwitch: (restoreContent = false) => {
     navigationRequest++;
     abandonSettingsDraftsForContextSwitch();
@@ -435,8 +472,15 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       ? useContentResourceStore.getState().resources[contentTabs[0].contentId]?.scope.surfaceId : undefined;
     if (origin) contentSurfaceTabs.set(origin, { ...projectPaneState(state), openTabs: contentTabs });
     const saved = restoreContent ? contentSurfaceTabs.get(getActiveSurfaceId()) : undefined;
-    const tabs = saved?.openTabs.filter(tab => tab.contentId && useContentResourceStore.getState().resources[tab.contentId]) ?? buildDefaultTabs();
-    const panes = saved ? reconcilePaneState({ ...saved, openTabs: tabs }) : createPaneState(tabs, tabs[0]?.id ?? null);
+    const restored = saved?.openTabs.filter(tab => tab.contentId && useContentResourceStore.getState().resources[tab.contentId])
+      ?? buildDefaultTabs();
+    // A cross-device open keeps its session in front through the switch.
+    const held = state.openTabs.find(isHeldSessionTab);
+    const tabs = held ? [...restored, held] : restored;
+    const panes = held
+      ? reconcilePaneState({ ...(saved ?? state), openTabs: tabs, focusedPane: 'primary',
+        paneSelections: { ...(saved ?? state).paneSelections, primary: sceneSelection(held.id) } })
+      : saved ? reconcilePaneState({ ...saved, openTabs: tabs }) : createPaneState(tabs, tabs[0]?.id ?? null);
     const activeTabId = focusedScene(panes);
     set({ ...projectPaneState(panes), pendingTabId: null,
       navHistory: activeTabId ? [activeTabId] : [], navCursor: activeTabId ? 0 : -1,

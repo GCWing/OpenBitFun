@@ -3,6 +3,7 @@ import { startAutoSync } from '@/flow_chat/services/storeSync';
 import { workspaceManager, type WorkspaceEvent } from '@/infrastructure/services/business/workspaceManager';
 import { getActiveSurfaceId, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
+import { useDeviceOpenIntent } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneStore';
 import { isSessionSceneId, type SessionSceneTarget } from '../components/SceneBar/types';
 import { startSessionPaneLayoutSync } from '../scenes/session/sessionPaneLayoutSync';
@@ -116,9 +117,14 @@ export function startSessionSceneLifecycle(): () => void {
   const unsubscribeSessions = flowChatStore.subscribe(() => reconcile());
   const unsubscribeScenes = useSceneStore.subscribe(() => reconcile());
   const unsubscribeWorkspaces = workspaceManager.addEventListener(reconcile);
+  // A held cross-device tab is released (or adopted) when its open settles.
+  const unsubscribeDeviceOpen = useDeviceOpenIntent.subscribe((state, previous) => {
+    if (previous.intent && !state.intent) reconcile();
+  });
   reconcile();
 
   return () => {
+    unsubscribeDeviceOpen();
     unsubscribeSessions();
     unsubscribeScenes();
     unsubscribeWorkspaces();

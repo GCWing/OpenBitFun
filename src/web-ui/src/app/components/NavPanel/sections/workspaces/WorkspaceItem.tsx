@@ -26,6 +26,7 @@ import { InputDialog } from '@/app/components/InputDialog';
 import { WorkspaceIcon } from '@/app/components/WorkspaceIcon/WorkspaceIcon';
 import { AssistantAvatar } from '@/app/components/AssistantAvatar';
 import { openLatestAssistantSession } from './openLatestAssistantSession';
+import { takeWorkspaceAction, usePendingWorkspaceAction } from './pendingWorkspaceAction';
 
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceId, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
@@ -153,6 +154,15 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   const [localSessionsCollapsed, setSessionsCollapsed] = useState(false);
   const sessionsCollapsed = controlledSessionsCollapsed ?? localSessionsCollapsed;
   const [assistantHistoryOpen, setAssistantHistoryOpen] = useState(false);
+  // An action started on this workspace's row of another device, before the
+  // device was rendered, runs here once.
+  const pendingAction = usePendingWorkspaceAction(state => state.action);
+  useEffect(() => {
+    if (!pendingAction) return;
+    const kind = takeWorkspaceAction(getActiveSurfaceId(), workspace.id);
+    if (kind === 'menu') { setMenuContextPoint(null); setMenuOpen(true); }
+    if (kind === 'assistant-history') setAssistantHistoryOpen(true);
+  }, [pendingAction, workspace.id]);
   const assistantHistoryId = useId();
   const openingAssistantRef = useRef(false);
   const collapseAllRequestId = useWorkspaceSessionViewStore(state => state.collapseAllRequestId);

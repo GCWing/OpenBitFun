@@ -64,6 +64,24 @@
     "remoteConnectRequiresWorkspace": "請先開啟工作區再使用遠端控制。"
   },
   "nav": {
+    "devices": {
+      "thisDevice": "本機",
+      "current": "目前視窗正在顯示",
+      "expand": "展開 {{name}}",
+      "collapse": "收合 {{name}}",
+      "hostDesktop": "桌面版",
+      "hostCli": "CLI",
+      "platform": {
+        "mac": "Mac",
+        "windows": "Win",
+        "linux": "Linux"
+      },
+      "loadFailed": "無法讀取該裝置的工作區",
+      "sessionsLoadFailed": "無法讀取會話",
+      "noSessions": "尚無會話",
+      "sessionUnavailable": "該裝置上已找不到這個會話。",
+      "connecting": "正在連線 {{name}}…"
+    },
     "aria": {
       "navControl": "導航控制",
       "mainNav": "主導航"
@@ -2326,6 +2344,19 @@
     "modifiedDragUnavailable": "共享預覽暫不支援同時按住修飾鍵拖曳。"
   },
   "newWorkspace": {
+    "localProjectTitle": "本機專案",
+    "localProjectDescription": "在這台裝置上關聯現有資料夾，或建立全新專案。",
+    "deviceProjectTitle": "其他裝置上的專案",
+    "deviceProjectDescription": "在同帳號的其他線上裝置上建立，操作與本機一致。",
+    "createDeviceProject": "在其他裝置上建立專案",
+    "chooseDevice": "選擇裝置",
+    "chooseDeviceDescription": "專案會建立並儲存在所選裝置上。",
+    "noOtherDevices": "暫無其他線上裝置。在其他裝置上登入同一帳號並開啟 OpenBitFun 後，即可在這裡選擇。",
+    "signInForDevices": "登入帳號後，可在同帳號的其他線上裝置上建立專案。",
+    "createProjectOn": "在 {{name}} 上建立專案",
+    "deviceCurrent": "目前顯示",
+    "connecting": "正在連線…",
+    "deviceError": "無法連線到該裝置，請稍後重試。",
     "title": "建立",
     "description": "選擇要建立的內容。",
     "assistantTitle": "個人助理",

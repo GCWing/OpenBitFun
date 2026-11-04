@@ -1,76 +1,33 @@
 import { describe, expect, it } from 'vitest';
-
 import {
   getSessionDisplayLimit,
   getSessionExpandToggleState,
+  nextSessionDisplayCount,
+  SESSIONS_INITIAL_COUNT,
 } from './sessionNavExpand';
 
-describe('getSessionDisplayLimit', () => {
-  it('keeps the grouped workspace list on its compact expansion levels', () => {
-    expect(getSessionDisplayLimit({
-      loadedTopLevelCount: 240,
-      expandLevel: 0,
-      level2DisplayCount: 200,
-      showAllWithoutLimit: false,
-    })).toBe(5);
-    expect(getSessionDisplayLimit({
-      loadedTopLevelCount: 240,
-      expandLevel: 1,
-      level2DisplayCount: 200,
-      showAllWithoutLimit: false,
-    })).toBe(10);
-    expect(getSessionDisplayLimit({
-      loadedTopLevelCount: 240,
-      expandLevel: 2,
-      level2DisplayCount: 200,
-      showAllWithoutLimit: false,
-    })).toBe(200);
+describe('session list expansion', () => {
+  it('shows three rows first and adds five per "show more"', () => {
+    expect(SESSIONS_INITIAL_COUNT).toBe(3);
+    expect(nextSessionDisplayCount(3, 20)).toBe(8);
+    expect(nextSessionDisplayCount(8, 20)).toBe(13);
+    expect(nextSessionDisplayCount(18, 20)).toBe(23);
   });
 
-  it('shows every loaded aggregate session without a 200-row display cap', () => {
-    expect(getSessionDisplayLimit({
-      loadedTopLevelCount: 1_250,
-      expandLevel: 0,
-      level2DisplayCount: 200,
-      showAllWithoutLimit: true,
-    })).toBe(1_250);
-  });
-});
-
-describe('getSessionExpandToggleState', () => {
-  it('hides the toggle when five or fewer top-level sessions are available', () => {
-    expect(getSessionExpandToggleState(1, 0)).toMatchObject({
-      collapsedRemainingCount: 0,
-      shouldRender: false,
-    });
-    expect(getSessionExpandToggleState(5, 0)).toMatchObject({
-      collapsedRemainingCount: 0,
-      shouldRender: false,
-    });
+  it('collapses once everything is shown', () => {
+    expect(getSessionExpandToggleState(20, 23)).toMatchObject({ action: 'show-less', remainingCount: 0 });
+    expect(nextSessionDisplayCount(23, 20)).toBe(3);
   });
 
-  it('shows the first expand step only when there are hidden top-level sessions', () => {
-    expect(getSessionExpandToggleState(6, 0)).toMatchObject({
-      action: 'show-more',
-      collapsedRemainingCount: 1,
-      shouldRender: true,
-    });
+  it('counts what is left and hides the toggle for short lists', () => {
+    expect(getSessionExpandToggleState(20, 3)).toMatchObject({ action: 'show-more', remainingCount: 17, shouldRender: true });
+    expect(getSessionExpandToggleState(3, 3).shouldRender).toBe(false);
+    expect(getSessionExpandToggleState(4, 3).shouldRender).toBe(true);
   });
 
-  it('switches to show-all and show-less using the remaining top-level count', () => {
-    expect(getSessionExpandToggleState(12, 1)).toMatchObject({
-      action: 'show-all',
-      expandedRemainingCount: 2,
-      shouldRender: true,
-    });
-    expect(getSessionExpandToggleState(6, 1)).toMatchObject({
-      action: 'show-less',
-      expandedRemainingCount: 0,
-      shouldRender: true,
-    });
-    expect(getSessionExpandToggleState(12, 2)).toMatchObject({
-      action: 'show-less',
-      shouldRender: true,
-    });
+  it('limits rows to the count unless the view shows everything', () => {
+    expect(getSessionDisplayLimit({ loadedTopLevelCount: 20, displayCount: 8, showAllWithoutLimit: false })).toBe(8);
+    expect(getSessionDisplayLimit({ loadedTopLevelCount: 2, displayCount: 8, showAllWithoutLimit: false })).toBe(2);
+    expect(getSessionDisplayLimit({ loadedTopLevelCount: 20, displayCount: 3, showAllWithoutLimit: true })).toBe(20);
   });
 });

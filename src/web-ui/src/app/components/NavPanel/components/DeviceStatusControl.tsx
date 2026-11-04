@@ -6,6 +6,8 @@ import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { beginDeviceOpen, endDeviceOpen } from '@/infrastructure/peer-device/deviceOpenIntent';
+import { LOCAL_SURFACE_ID, surfaceIdForDevice } from '@/infrastructure/peer-device/deviceSurface';
 import { useAccountIdentity } from '@/infrastructure/account-identity';
 import { remoteConnectAPI, type AccountDeviceInfo } from '@/infrastructure/api/service-api/RemoteConnectAPI';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
@@ -247,6 +249,11 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
       attachment.deviceId === target.device_id && attachment.health === 'ready'
     ));
     setSwitchingAction(target.device_id === availableTargets.localId || alreadyConnected ? 'switch' : 'connect');
+    // The workbench fades behind a curtain while it rebuilds for the target.
+    const intent = beginDeviceOpen({
+      surfaceId: target.device_id === availableTargets.localId ? LOCAL_SURFACE_ID : surfaceIdForDevice(target.device_id),
+      key: `switch:${target.device_id}`,
+    });
     try {
       if (target.device_id === availableTargets.localId) await peerContext.switchToLocal('manual');
       else await peerContext.switchToDevice(target.device_id, resolveDeviceName(target.device_id, target.device_alias ?? target.device_name ?? target.device_id));
@@ -254,6 +261,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
     } catch (error) {
       warning(error instanceof Error ? error.message : String(error));
     } finally {
+      endDeviceOpen(intent);
       switchingRef.current = false;
       setSwitchingAction(null);
     }

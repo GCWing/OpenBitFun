@@ -98,9 +98,12 @@ describe('unified project session creation', () => {
     expect(source('../../navigation/sidebarContributions.ts')).toContain("'todos', 'surface.todos.open'");
     expect(mainNav).not.toContain("new Set(['sessions'])");
     expect(mainNav).toContain('label={t(\'nav.items.sessions\')}');
-    const sessionLists = mainNav.match(/<WorkspaceListSection\b[^>]*\/>/g) ?? [];
-    expect(sessionLists).toHaveLength(1);
-    expect(sessionLists[0]).toMatch(/\svariant\s*=\s*["']all["']/);
+    // One session region; it is grouped by device when other hosts are online.
+    expect(mainNav.match(/<DeviceWorkspaceSections\b[^>]*\/>/g) ?? []).toHaveLength(1);
+    const deviceSections = source('./sections/devices/DeviceWorkspaceSections.tsx');
+    const sessionLists = deviceSections.match(/<WorkspaceListSection\b[^>]*\/>/g) ?? [];
+    expect(sessionLists.length).toBeGreaterThan(0);
+    for (const list of sessionLists) expect(list).toMatch(/\svariant\s*=\s*["']all["']/);
     expect(workspaceList).toContain('variant: SessionNavigationScope');
     expect(workspaceList).toContain("variant === 'all'");
     expect(workspaceList).toContain('openedWorkspacesList');
@@ -239,8 +242,10 @@ describe('unified project session creation', () => {
     expect(sessionsSection).toContain('const archivedCatalog = useArchivedSessionMetadata({');
     expect(archivedMetadata).toContain('flowChatStore.loadArchivedSessionMetadata(');
     expect(sessionsSection).toContain("layout === 'flat' ? ' is-flat-workspace-view'");
-    expect(sessionsSection).toContain("const showAllWithoutLimit = layout === 'flat'");
-    expect(sessionsSection).toContain('!showAllWithoutLimit && expandLevel === 2');
+    expect(sessionsSection).toContain("const isAggregateList = layout === 'flat'");
+    expect(sessionsSection).toContain('const showAllWithoutLimit = isAggregateList && !limitFlatRows');
+    // One toggle adds rows step by step; there is no separate load-more row.
+    expect(sessionsSection).not.toContain('nav-session-list-load-more');
     expect(sessionsSection).toContain('!showAllWithoutLimit && expandToggleState.shouldRender');
     expect(sessionsSection).toContain('openbitfun-nav-panel__inline-item-workspace-name');
   });

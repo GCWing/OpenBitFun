@@ -64,6 +64,24 @@
     "remoteConnectRequiresWorkspace": "请先打开工作区再使用远程控制。"
   },
   "nav": {
+    "devices": {
+      "thisDevice": "本机",
+      "current": "当前窗口正在显示",
+      "expand": "展开 {{name}}",
+      "collapse": "收起 {{name}}",
+      "hostDesktop": "桌面版",
+      "hostCli": "CLI",
+      "platform": {
+        "mac": "Mac",
+        "windows": "Win",
+        "linux": "Linux"
+      },
+      "loadFailed": "无法读取该设备的工作区",
+      "sessionsLoadFailed": "无法读取会话",
+      "noSessions": "暂无会话",
+      "sessionUnavailable": "该设备上已找不到这个会话。",
+      "connecting": "正在连接 {{name}}…"
+    },
     "aria": {
       "navControl": "导航控制",
       "mainNav": "主导航"
@@ -2326,6 +2344,19 @@
     "modifiedDragUnavailable": "共享预览暂不支持同时按住修饰键拖动。"
   },
   "newWorkspace": {
+    "localProjectTitle": "本机工程",
+    "localProjectDescription": "在这台设备上关联已有文件夹，或创建全新工程。",
+    "deviceProjectTitle": "其他设备上的工程",
+    "deviceProjectDescription": "在同账号的其他在线设备上创建，操作与本机一致。",
+    "createDeviceProject": "在其他设备上创建工程",
+    "chooseDevice": "选择设备",
+    "chooseDeviceDescription": "工程会创建并保存在所选设备上。",
+    "noOtherDevices": "暂无其他在线设备。在其他设备上登录同一账号并打开 OpenBitFun 后，即可在这里选择。",
+    "signInForDevices": "登录账号后，可在同账号的其他在线设备上创建工程。",
+    "createProjectOn": "在 {{name}} 上创建工程",
+    "deviceCurrent": "当前显示",
+    "connecting": "正在连接…",
+    "deviceError": "无法连接该设备，请稍后重试。",
     "title": "创建",
     "description": "选择要创建的内容。",
     "assistantTitle": "个人助理",

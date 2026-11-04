@@ -10,6 +10,7 @@
  */
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 
+import { DeviceSwitchCurtain } from './device-switch/DeviceSwitchCurtain';
 import React, {
   Suspense,
   useCallback,
@@ -218,6 +219,7 @@ const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering
           );
         })}
       </div>
+      <DeviceSwitchCurtain />
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { recordInteractionModality } from '@/shared/utils/motionPreference';
+import { beginDeviceOpen, endDeviceOpen } from '@/infrastructure/peer-device/deviceOpenIntent';
 import { registerSessionSceneNavigation, useSceneStore } from './sceneStore';
 import { getSessionSceneTabId } from '../components/SceneBar/types';
 import { useSettingsStore } from '../scenes/settings/settingsStore';
@@ -83,6 +84,23 @@ describe('sceneStore transition snapshots', () => {
     expect(useSceneStore.getState().openTabs[0].sessionHistory).toEqual(['next', 'current']);
     scenes.resetForPeerSwitch();
     expect(useSceneStore.getState().openTabs).toEqual([]);
+  });
+
+  it('holds a cross-device session tab through both switch resets and reconciliation until the open settles', () => {
+    const target = { surfaceId: 'peer-b', workspaceKey: '["workspace","w"]', sessionId: 'remote' };
+    const intent = beginDeviceOpen({ surfaceId: 'peer-b', key: 'session:remote', sessionId: 'remote' });
+    useSceneStore.getState().openScene('git');
+    useSceneStore.getState().holdSessionScene(target);
+    const heldId = useSceneStore.getState().activeTabId;
+    expect(useSceneStore.getState().openTabs.find(tab => tab.id === heldId)?.session).toEqual(target);
+    // The runtime reset, then the lifecycle's restoring reset on the new surface.
+    useSceneStore.getState().resetForPeerSwitch();
+    useSceneStore.getState().resetForPeerSwitch(true);
+    useSceneStore.getState().reconcileSessionScenes(new Map());
+    expect(useSceneStore.getState().activeTabId).toBe(heldId);
+    endDeviceOpen(intent);
+    useSceneStore.getState().reconcileSessionScenes(new Map());
+    expect(useSceneStore.getState().openTabs.some(tab => tab.id === heldId)).toBe(false);
   });
 
   it('does not add a failed session activation to the recent list', async () => {
