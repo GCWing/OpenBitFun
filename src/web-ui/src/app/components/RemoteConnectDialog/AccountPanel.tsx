@@ -868,14 +868,14 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
             <section className="account-panel__section" aria-labelledby="account-panel-account-title">
               {renderSectionHeading('account-panel-account-title', t('accountLogin.accountSectionTitle'))}
               <div className="account-panel__card account-panel__identity-line">
-                <Avatar key={username} size="md" src={identity.me?.user.avatarUrl} alt={username} aria-label={username}>
+                <Avatar key={username} className="account-panel__avatar" size="md" src={identity.me?.user.avatarUrl} alt={username} aria-label={username}>
                   {username.trim().charAt(0).toUpperCase() || <Icon name="user" />}
                 </Avatar>
                 <span className="account-panel__identity-copy">
                   <OverflowText className="account-panel__identity-name" title={username}>{username.trim()}</OverflowText>
                   <span className="account-panel__identity-label">{t('accountLogin.signedInAccount')}</span>
                 </span>
-                <Button variant="outline" size="sm" leadingIcon={<LogOut size={14} />} onClick={handleLogout} disabled={loading}>
+                <Button variant="secondary" size="sm" leadingIcon={<LogOut size={14} />} onClick={handleLogout} disabled={loading}>
                   {t('accountLogin.logout')}
                 </Button>
               </div>

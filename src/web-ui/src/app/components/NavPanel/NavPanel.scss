@@ -1880,8 +1880,9 @@ $_section-header-height: 22px;
   flex: 0 0 var(--openbitfun-control-height-sm);
   pointer-events: auto;
   color: var(--openbitfun-color-content-secondary);
-  background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 58%, transparent);
-  box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) var(--openbitfun-color-border-subtle);
+  // Soft glass with no outline: the card has one edge, its own.
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 7%, transparent);
+  backdrop-filter: var(--openbitfun-effect-blur-subtle);
   transition:
     color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
     background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
@@ -1893,7 +1894,7 @@ $_section-header-height: 22px;
 
   &:is(:hover, :focus-visible):not(:disabled) {
     color: var(--openbitfun-color-content-primary);
-    background: var(--openbitfun-color-surface-raised);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 13%, transparent);
   }
 
   &:disabled {
@@ -2043,8 +2044,7 @@ $_section-header-height: 22px;
   inline-size: var(--openbitfun-control-height-md);
   block-size: var(--openbitfun-control-height-md);
   border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(--_device-overview-light) 16%, transparent);
-  box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--_device-overview-light) 30%, transparent);
+  background: color-mix(in srgb, var(--_device-overview-light) 20%, transparent);
   color: color-mix(in srgb, var(--_device-overview-light) 72%, var(--openbitfun-color-content-primary));
 }
 
@@ -2155,18 +2155,13 @@ $_section-header-height: 22px;
   // The primary and fill variants paint an opaque base under their tint; the
   // glass tint must sit on the lit card instead.
   background: transparent;
-  transition: box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
   &:not(:disabled, [aria-disabled='true']) {
     --_icon-button-content: color-mix(in srgb, var(--_device-overview-action-tone) 72%, var(--openbitfun-color-content-primary));
-    --_icon-button-background: color-mix(in srgb, var(--_device-overview-action-tone) 16%, transparent);
-    --_icon-button-background-hover: color-mix(in srgb, var(--_device-overview-action-tone) 26%, transparent);
-    --_icon-button-background-active: color-mix(in srgb, var(--_device-overview-action-tone) 32%, transparent);
-    box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--_device-overview-action-tone) 30%, transparent);
-  }
-
-  &:not(:disabled, [aria-disabled='true']):is(:hover, :focus-visible) {
-    box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--_device-overview-action-tone) 48%, transparent);
+    --_icon-button-background: color-mix(in srgb, var(--_device-overview-action-tone) 20%, transparent);
+    --_icon-button-background-hover: color-mix(in srgb, var(--_device-overview-action-tone) 30%, transparent);
+    --_icon-button-background-active: color-mix(in srgb, var(--_device-overview-action-tone) 36%, transparent);
   }
 
   // Unavailable reads as unavailable: a quiet neutral disc, no state light.
@@ -2175,7 +2170,6 @@ $_section-header-height: 22px;
     --_icon-button-background: color-mix(in srgb, var(--openbitfun-color-content-primary) 5%, transparent);
     --_icon-button-background-hover: var(--_icon-button-background);
     --_icon-button-background-active: var(--_icon-button-background);
-    box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) var(--openbitfun-color-border-subtle);
     cursor: not-allowed;
   }
 

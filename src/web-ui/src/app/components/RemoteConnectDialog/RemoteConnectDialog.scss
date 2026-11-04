@@ -1,6 +1,19 @@
 @use './remote-connect-surface' as surface;
 
 .openbitfun-remote-connect-dialog {
+  // Lit like the device card it grows from: one soft light from the top,
+  // an echo in the far corner, and no inner outlines.
+  --_rc-dialog-light: var(--openbitfun-color-accent-default);
+  --_rc-dialog-light-strength: 9%;
+  background:
+    radial-gradient(70% 60% at 18% 0%, color-mix(in srgb, var(--_rc-dialog-light) var(--_rc-dialog-light-strength), transparent), transparent 72%),
+    radial-gradient(60% 50% at 100% 100%, color-mix(in srgb, var(--_rc-dialog-light) calc(var(--_rc-dialog-light-strength) / 2), transparent), transparent 70%),
+    var(--openbitfun-color-surface-raised);
+
+  :where([data-color-scheme='dark']) & {
+    --_rc-dialog-light-strength: 16%;
+  }
+
   block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
   min-block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
   max-block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
@@ -53,8 +66,8 @@
   flex-direction: column;
   gap: var(--openbitfun-space-5);
   padding: surface.$page-block-start var(--openbitfun-space-3) var(--openbitfun-space-4);
-  border-inline-end: surface.$divider;
-  background: var(--openbitfun-color-surface-panel);
+  // A quieter band of the same glass instead of a ruled column.
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 3%, transparent);
 }
 
 .openbitfun-remote-connect__sidebar-brand {
@@ -104,12 +117,12 @@
   transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
   &:hover {
-    background: var(--openbitfun-color-action-neutral-surface);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 6%, transparent);
     color: var(--openbitfun-color-content-primary);
   }
 
   &:active {
-    background: var(--openbitfun-color-action-neutral-surface-pressed);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 9%, transparent);
   }
 
   &:focus-visible {
@@ -117,10 +130,15 @@
     outline-offset: calc(0px - var(--openbitfun-focus-width));
   }
 
+  // The current page is lit, not boxed.
   &[aria-current] {
-    background: var(--openbitfun-color-action-neutral-surface);
+    background: color-mix(in srgb, var(--_rc-dialog-light) 16%, transparent);
     color: var(--openbitfun-color-content-primary);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
+
+    .openbitfun-remote-connect__navigation-icon {
+      color: color-mix(in srgb, var(--_rc-dialog-light) 70%, var(--openbitfun-color-content-primary));
+    }
   }
 }
 
@@ -300,7 +318,7 @@
   cursor: pointer;
 
   & + & {
-    @include surface.card-divider;
+    @include surface.card-divider(calc(36px + #{surface.$row-gap}));
   }
 
   &:hover:not(:disabled) .openbitfun-remote-connect__overview-action-chevron {
@@ -574,8 +592,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(--openbitfun-color-accent-default) 14%, transparent);
-  box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--openbitfun-color-accent-default) 26%, transparent);
+  background: color-mix(in srgb, var(--openbitfun-color-accent-default) 18%, transparent);
   color: color-mix(in srgb, var(--openbitfun-color-accent-default) 60%, var(--openbitfun-color-content-primary));
   font-family: var(--openbitfun-type-micro-font-family);
   font-size: var(--openbitfun-type-micro-font-size);
@@ -646,14 +663,14 @@
   align-items: center;
   justify-content: center;
   padding: 6px;
-  border: surface.$divider;
+  border: 0;
   border-radius: var(--openbitfun-radius-lg);
   background: var(--openbitfun-color-content-on-dark);
   cursor: pointer;
-  transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
   &:hover {
-    border-color: var(--openbitfun-color-border-default);
+    transform: scale(1.02);
   }
 
   &:focus-visible {
@@ -670,9 +687,8 @@
 .openbitfun-remote-connect__pairing-code {
   max-width: 100%;
   padding: var(--openbitfun-space-3) var(--openbitfun-space-5);
-  border: surface.$divider;
   border-radius: var(--openbitfun-radius-base);
-  background: var(--openbitfun-color-surface-canvas);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 6%, transparent);
   color: var(--openbitfun-color-content-primary);
   font-family: var(--openbitfun-type-code-md-font-family);
   font-size: var(--openbitfun-type-heading-dialog-font-size);
@@ -759,7 +775,6 @@
 .openbitfun-remote-connect__weixin-qr-svg-wrap {
   display: inline-flex;
   padding: 2px;
-  border: surface.$divider;
   border-radius: var(--openbitfun-radius-lg);
   background: var(--openbitfun-color-content-on-dark);
 

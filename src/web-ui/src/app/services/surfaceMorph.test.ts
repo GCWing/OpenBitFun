@@ -17,10 +17,21 @@ describe('surfaceMorph', () => {
     surface.appendChild(element({}));
     expect(morphFromOrigin('dialog', surface)).toBe(true);
     const [frames] = (surface.animate as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(frames[0].transform).toBe('translate(-90px, 300px) scale(0.3333333333333333, 0.6666666666666666)');
-    expect(frames[1].transform).toBe('none');
+    // A window of the origin's size, moved onto it, released to the surface's own.
+    expect(frames[0].transform).toBe('translate(-90px, 300px)');
+    expect(frames[0].clipPath).toBe('inset(0 600px 200px 0 round 0px)');
+    expect(frames[1].clipPath).toBe('inset(0 0 0 0 round 0px)');
     // Claimed: a second surface keeps its own entrance.
     expect(morphFromOrigin('dialog', element({ width: 10, height: 10 }))).toBe(false);
+  });
+
+  it('leaves a still copy of the origin until the surface claims it', () => {
+    const card = element({ left: 10, top: 400, width: 300, height: 400 });
+    document.body.appendChild(card);
+    rememberMorphOrigin('dialog', card);
+    card.remove();
+    expect(document.body.children).toHaveLength(1);
+    morphFromOrigin('dialog', element({ left: 100, top: 100, width: 900, height: 600 }));
   });
 
   it('ignores an origin left for another surface', () => {

@@ -66,6 +66,13 @@
     }
   }
 
+  // The account mark is lit like a device disc, without an outline.
+  &__avatar {
+    border: 0;
+    background: color-mix(in srgb, var(--openbitfun-color-accent-default) 18%, transparent);
+    color: color-mix(in srgb, var(--openbitfun-color-accent-default) 60%, var(--openbitfun-color-content-primary));
+  }
+
   &__identity-copy {
     @include surface.row-copy;
   }
@@ -147,7 +154,7 @@
     &.offline { --_account-light: var(--openbitfun-color-content-muted); }
 
     & + & {
-      @include surface.card-divider;
+      @include surface.card-divider(calc(36px + #{surface.$row-gap}));
     }
 
     &.selectable:has(> .account-panel__device-select:hover) {
@@ -258,7 +265,6 @@
 
     &[data-openbitfun-state='online']::before {
       background: var(--openbitfun-color-status-success-content);
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--openbitfun-color-status-success-content) 22%, transparent);
     }
   }
 

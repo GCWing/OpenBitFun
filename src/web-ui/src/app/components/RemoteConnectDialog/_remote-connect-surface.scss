@@ -60,13 +60,15 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   line-height: var(--openbitfun-type-body-sm-line-height);
 }
 
+// A card is a pane of frosted glass over the lit dialog, not a dark well:
+// no outline, only a faint lift.
 @mixin card {
   display: flex;
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-field-group-background);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
 }
 
 @mixin card-row {
@@ -77,8 +79,13 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   padding: $row-block $row-inline;
 }
 
-@mixin card-divider {
-  border-top: $divider;
+// Rows are separated by a hairline inset from the card's edges (and past a
+// row's icon by `$lead`), so a card reads as one surface, not a stack of boxes.
+@mixin card-divider($lead: 0px) {
+  background-image: linear-gradient(var(--openbitfun-color-border-subtle), var(--openbitfun-color-border-subtle));
+  background-position: top 0 right #{$row-inline};
+  background-repeat: no-repeat;
+  background-size: calc(100% - #{$row-inline} * 2 - #{$lead}) var(--openbitfun-border-width-default);
 }
 
 @mixin icon-slot {
@@ -117,12 +124,9 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   inline-size: $size;
   block-size: $size;
   border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(#{$light}) 14%, transparent);
-  box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(#{$light}) 26%, transparent);
+  background: color-mix(in srgb, var(#{$light}) 18%, transparent);
   color: color-mix(in srgb, var(#{$light}) 60%, var(--openbitfun-color-content-primary));
-  transition:
-    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 }
 
 // The card glows faintly from its top edge in its state light.
@@ -133,7 +137,7 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
       color-mix(in srgb, var(#{$light}) var(#{$light}-strength), transparent),
       transparent 70%
     ),
-    var(--openbitfun-color-field-group-background);
+    color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
 }
 
 @mixin row-copy {
@@ -177,7 +181,7 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   justify-content: flex-end;
   gap: var(--openbitfun-space-2);
   padding: var(--openbitfun-space-3) $row-inline;
-  border-top: $divider;
+  @include card-divider;
 }
 
 @mixin notice {
