@@ -299,8 +299,10 @@ workspace and session), so several sessions of one workspace and sessions of
 other devices each have their own tab; past 12 session tabs the least recently
 used idle one closes. Session tabs of every device survive a switch.
 Reconciliation retires only tabs of the rendered device whose session is gone.
-A tab of another device shows that device's name and is never selected without
-its device: activating it runs the same cross-device open as a sidebar row, a
+When the bar holds tabs of more than one device, it shows each device's tabs
+side by side and names the device once, ahead of its group (tabs without a
+session belong to the rendered device); a bar of one device names none. A tab
+of another device is never selected without its device: activating it runs the same cross-device open as a sidebar row, a
 pane never falls back onto it, and an open that fails or is superseded leaves
 it in the bar, unselected. Returning to a device reselects the kept tab of its
 active session.

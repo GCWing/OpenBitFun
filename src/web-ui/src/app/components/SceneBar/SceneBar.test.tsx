@@ -113,18 +113,44 @@ describe('SceneBar overflow navigation', () => {
     act(() => root.render(<SceneBar />));
   }
 
-  it('activates a session tab on click and names the device of a tab from another device', () => {
-    const tab = sceneHarness.state.openTabs[0];
-    tab.session = { surfaceId: 'peer-tab-device', workspaceKey: 'workspace-a', sessionId: 'remote' };
-    useDeviceDirectory.setState({ devices: [{ device_id: 'peer-tab-device', device_name: 'Studio' } as never], localId: 'me' });
+  it('activates a session tab on click', () => {
     sceneHarness.state.activeTabId = 'git';
     renderSceneBar();
     const trigger = container.querySelector<HTMLButtonElement>('[role="tab"][data-openbitfun-value="session"]')!;
-    expect(container.querySelector('[data-openbitfun-part="tabDevice"]')?.textContent).toBe('Studio');
     act(() => trigger.click());
     expect(sceneHarness.activateScene).toHaveBeenCalledWith('session');
     expect(trigger.hasAttribute('aria-haspopup')).toBe(false);
-    useDeviceDirectory.setState({ devices: [], localId: null });
+    expect(container.querySelector('[data-openbitfun-part="tabDevice"]')).toBeNull();
+  });
+
+  it('groups tabs by device and names each device once', () => {
+    const [session, settings, terminal] = sceneHarness.state.openTabs;
+    session.session = { surfaceId: 'peer-tab-device', workspaceKey: 'workspace-a', sessionId: 'remote' };
+    terminal.session = { surfaceId: 'peer-tab-device', workspaceKey: 'workspace-a', sessionId: 'remote-2' };
+    settings.session = { surfaceId: 'local', workspaceKey: 'workspace-b', sessionId: 'here' };
+    useDeviceDirectory.setState({
+      devices: [
+        { device_id: 'peer-tab-device', device_name: 'Studio' } as never,
+        { device_id: 'me', device_name: 'MacBook' } as never,
+      ],
+      localId: 'me',
+    });
+    try {
+      renderSceneBar();
+      const labels = Array.from(container.querySelectorAll('[data-openbitfun-part="tabDevice"]'));
+      expect(labels.map(label => label.textContent)).toEqual(['Studio', 'MacBook']);
+      expect(labels[1].hasAttribute('data-current')).toBe(true);
+      // Studio's tabs are adjacent; the scene tab joins the rendered device.
+      const order = Array.from(container.querySelectorAll('[role="tab"]'))
+        .map(tab => tab.getAttribute('data-openbitfun-value'));
+      expect(order).toEqual(['session', 'terminal', 'settings', 'git']);
+      const describedBy = (value: string) => container
+        .querySelector(`[role="tab"][data-openbitfun-value="${value}"]`)?.getAttribute('aria-describedby');
+      expect(describedBy('terminal')).toBe(labels[0].id);
+      expect(describedBy('git')).toBe(labels[1].id);
+    } finally {
+      useDeviceDirectory.setState({ devices: [], localId: null });
+    }
   });
 
   function startSessionTabDrag() {

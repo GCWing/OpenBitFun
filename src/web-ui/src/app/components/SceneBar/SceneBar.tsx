@@ -5,7 +5,7 @@
  * Session tabs show only the referenced session title.
  */
 
-import React, { useCallback, useState, useEffect, useMemo, useSyncExternalStore } from 'react';
+import React, { useCallback, useState, useEffect, useId, useMemo, useSyncExternalStore } from 'react';
 import { Pin, CircleAlert } from 'lucide-react';
 import { useSceneStore } from '../../stores/sceneStore';
 import { useContextMenuStore } from '@/shared/context-menu-system/store/ContextMenuStore';
@@ -38,22 +38,47 @@ function getSceneIdFromTabTarget(target: EventTarget | null): SceneTabId | undef
   return tab?.dataset.openbitfunValue as SceneTabId | undefined;
 }
 
+interface TabDeviceGroup {
+  /** Position among the groups; keys the group's label element. */
+  order: number;
+  name: string;
+  /** The rendered device: its scenes, not only its sessions, sit in this group. */
+  current: boolean;
+}
+
 /**
- * Device names of session tabs on a device other than the rendered one, once
- * the tabs span more than one device; a single-device window shows none.
+ * Tabs ordered so each device's tabs sit together, with the group each first
+ * tab opens. A tab without a session belongs to the rendered device. Groups
+ * keep the order their device first appears in, tabs keep theirs within it,
+ * and a window whose tabs share one device has no groups at all.
  */
-function useSessionTabDevices(tabs: readonly SceneTab[]): Record<string, string> {
+function useTabDeviceGroups(tabs: readonly SceneTab[]): {
+  tabs: readonly SceneTab[];
+  groupStarts: ReadonlyMap<SceneTabId, TabDeviceGroup>;
+} {
   const directory = useDeviceDirectory();
   const activeSurfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
   return useMemo(() => {
-    const labels: Record<string, string> = {};
+    const bySurface = new Map<string, SceneTab[]>();
     for (const tab of tabs) {
-      const surfaceId = tab.session?.surfaceId;
-      if (!surfaceId || surfaceId === activeSurfaceId) continue;
-      const deviceId = isLocalSurface(surfaceId) ? directory.localId : surfaceId;
-      labels[tab.id] = deviceId ? resolveDeviceNameFrom(directory.devices, deviceId) : surfaceId;
+      const surfaceId = tab.session?.surfaceId ?? activeSurfaceId;
+      const group = bySurface.get(surfaceId);
+      if (group) group.push(tab);
+      else bySurface.set(surfaceId, [tab]);
     }
-    return labels;
+    const groupStarts = new Map<SceneTabId, TabDeviceGroup>();
+    if (bySurface.size < 2) return { tabs, groupStarts };
+    const ordered: SceneTab[] = [];
+    for (const [surfaceId, group] of bySurface) {
+      const deviceId = isLocalSurface(surfaceId) ? directory.localId : surfaceId;
+      groupStarts.set(group[0].id, {
+        order: groupStarts.size,
+        name: deviceId ? resolveDeviceNameFrom(directory.devices, deviceId) : surfaceId,
+        current: surfaceId === activeSurfaceId,
+      });
+      ordered.push(...group);
+    }
+    return { tabs: ordered, groupStarts };
   }, [activeSurfaceId, directory.devices, directory.localId, tabs]);
 }
 
@@ -78,7 +103,8 @@ const SceneBar: React.FC<SceneBarProps> = ({
     closeScene,
   } = useSceneManager(pane);
   const sessionLabels = useSessionTabLabels(openTabs);
-  const deviceLabels = useSessionTabDevices(openTabs);
+  const { tabs: shownTabs, groupStarts } = useTabDeviceGroups(openTabs);
+  const groupLabelId = useId();
   const resources = useContentResourceStore(state => state.resources);
   const selectedTabId = pendingTabId ?? activeTabId;
   const { t } = useI18n('common');
@@ -105,7 +131,7 @@ const SceneBar: React.FC<SceneBarProps> = ({
   } = useSceneTabNavigation({
     activeTabId: selectedTabId,
     navigationMotion,
-    openTabIds: openTabs.map(tab => tab.id),
+    openTabIds: shownTabs.map(tab => tab.id),
   });
 
   const handleTabValueChange = useCallback((value: string) => {
@@ -141,7 +167,7 @@ const SceneBar: React.FC<SceneBarProps> = ({
       const rect = item.getBoundingClientRect();
       return { tabId, placement: event.clientX < rect.left + rect.width / 2 ? 'before' : 'after' };
     }
-    const last = openTabs[openTabs.length - 1];
+    const last = shownTabs[shownTabs.length - 1];
     return last ? { tabId: last.id, placement: 'after' } : undefined;
   };
 
@@ -206,7 +232,11 @@ const SceneBar: React.FC<SceneBarProps> = ({
     });
   };
 
-  const tabItems = openTabs.reduce<TabGroupItem[]>((items, tab) => {
+    // Each tab names its device through the label that opens its group.
+  let groupLabel: string | undefined;
+  const tabItems = shownTabs.reduce<TabGroupItem[]>((items, tab) => {
+    const group = groupStarts.get(tab.id);
+    if (group) groupLabel = `${groupLabelId}-${group.order}`;
     const def = tabDefs.find(candidate => candidate.id === tab.id);
     if (!def) return items;
 
@@ -219,13 +249,9 @@ const SceneBar: React.FC<SceneBarProps> = ({
     items.push({
       value: tab.id,
       label: displayLabel,
-      labelSuffix: sessionLabel?.number || deviceLabels[tab.id] || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
+      tabProps: groupLabel ? { 'aria-describedby': groupLabel } : undefined,
+      labelSuffix: sessionLabel?.number || tab.pinned || (tab.contentId && (resources[tab.contentId]?.isDirty || resources[tab.contentId]?.fileMissing)) ? <>
         {sessionLabel?.number && <SessionTitleNumber number={sessionLabel.number} />}
-        {deviceLabels[tab.id] && <span className="openbitfun-scene-bar__tab-device"
-          data-openbitfun-component="scene-bar" data-openbitfun-part="tabDevice">
-          {/* Scrolls with the title: the tab is the overflow trigger of both. */}
-          <OverflowText behavior="marquee" className="openbitfun-scene-bar__tab-device-name">{deviceLabels[tab.id]}</OverflowText>
-        </span>}
         {tab.pinned && <Pin size={12} aria-label={tComponents('tabs.unpin')} />}
         {tab.contentId && resources[tab.contentId]?.isDirty && <span aria-label={tComponents('tabs.unsaved')}>•</span>}
         {tab.contentId && resources[tab.contentId]?.fileMissing && <CircleAlert size={12} aria-label={tComponents('tabs.fileDeleted')} />}
@@ -318,7 +344,8 @@ const SceneBar: React.FC<SceneBarProps> = ({
             const tab = openTabs.find(candidate => candidate.id === tabId);
             const resource = tab?.contentId ? resources[tab.contentId] : undefined;
             const title = resource?.target.kind === 'file' ? [resource.scope.surfaceId, resource.scope.remoteConnectionId, resource.target.path].filter(Boolean).join(' · ') : undefined;
-            return <div className="openbitfun-scene-bar__item" draggable title={title}
+            const group = groupStarts.get(tabId);
+            const itemNode = <div className="openbitfun-scene-bar__item" draggable title={title}
               data-scene-tab-id={tabId}
               data-pending={pendingTabId === tabId || undefined}
               data-canvas-drop-position={activeCanvasDrop?.target?.tabId === tabId ? activeCanvasDrop.target.placement : undefined}
@@ -326,6 +353,19 @@ const SceneBar: React.FC<SceneBarProps> = ({
               onDragStart={event => { writeSceneTabDrag(event.dataTransfer, tabId); if (tab?.session) beginConversationTransfer(event.dataTransfer, tab.session, tabId); }}
               onDragEnd={() => { endConversationTransfer(); endSceneTabDrag(); }}
             >{node}</div>;
+            if (!group) return itemNode;
+            // Named once, ahead of the device's tabs; the tabs carry the name
+            // to assistive tech through aria-describedby.
+            return <>
+              <span className="openbitfun-scene-bar__device-group" role="presentation"
+                id={`${groupLabelId}-${group.order}`}
+                data-current={group.current || undefined}
+                data-first={group.order === 0 || undefined}
+                data-openbitfun-component="scene-bar" data-openbitfun-part="tabDevice">
+                <OverflowText className="openbitfun-scene-bar__device-group-name">{group.name}</OverflowText>
+              </span>
+              {itemNode}
+            </>;
           }}
           size="sm"
           value={selectedTabId ?? undefined}

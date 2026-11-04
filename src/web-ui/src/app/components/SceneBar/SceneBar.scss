@@ -39,27 +39,55 @@
     &[data-canvas-drop-position='after']::after { inset-inline-end: 0; }
   }
 
-  // The device a session tab belongs to when it is not the rendered one.
-  // The device a tab belongs to: a quiet, smaller line of metadata set off by
-  // a hairline divider, never a second title.
-  &__tab-device {
+  // When the tabs span several devices, each device's tabs sit together and
+  // the device is named once, ahead of them: quiet metadata in the bar's own
+  // line, never a tab or a chip. Groups after the first are set off by a short
+  // hairline, so the row reads as a few runs of tabs, not one long strip.
+  &__device-group {
+    position: relative;
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    margin-inline-start: var(--openbitfun-space-1);
-    padding-inline-start: var(--openbitfun-space-1);
-    border-inline-start: var(--openbitfun-border-width-default) solid
-      color-mix(in srgb, var(--openbitfun-color-content-muted) 45%, transparent);
+    max-inline-size: 9em;
+    block-size: var(--openbitfun-control-tab-group-item-height-sm);
+    padding-inline: var(--openbitfun-space-1);
     color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-label-selected-font-family);
     font-size: var(--openbitfun-type-micro-font-size);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
     line-height: 14px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: openbitfun-scene-device-group-in var(--openbitfun-motion-duration-normal)
+      var(--openbitfun-motion-easing-standard) both;
 
+    // The rendered device's group reads a step brighter than the others.
+    &[data-current] {
+      color: var(--openbitfun-color-content-secondary);
+    }
+
+    &:not([data-first]) {
+      margin-inline-start: var(--openbitfun-space-2);
+      padding-inline-start: calc(var(--openbitfun-space-2) + var(--openbitfun-border-width-default));
+
+      &::before {
+        content: '';
+        position: absolute;
+        inset-inline-start: 0;
+        inset-block: 50% auto;
+        block-size: 14px;
+        inline-size: var(--openbitfun-border-width-default);
+        border-radius: var(--openbitfun-radius-pill);
+        background: color-mix(in srgb, var(--openbitfun-color-content-muted) 35%, transparent);
+        transform: translateY(-50%);
+      }
+    }
   }
 
-  &__tab-device-name {
+  &__device-group-name {
     display: block;
     min-inline-size: 0;
-    max-inline-size: 6em;
   }
 
   &__tab-region {
@@ -236,6 +264,12 @@
   50% { opacity: 0.55; }
 }
 
+@keyframes openbitfun-scene-device-group-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .openbitfun-scene-bar__item[data-pending] [role='tab'] { animation: none; }
+  .openbitfun-scene-bar__item[data-pending] [role='tab'],
+  .openbitfun-scene-bar__device-group { animation: none; }
 }
