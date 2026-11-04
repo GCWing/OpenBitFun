@@ -80,13 +80,12 @@ describe('NewProjectDialog composition', () => {
     await act(async () => root.render(<NewProjectDialog isOpen defaultParentPath="/srv" onClose={close} onConfirm={confirm} {...extra} />));
   };
 
-  it('disables WSL before selection when the active host does not support it', async () => {
+  it('offers no WSL choice when the active host does not support it', async () => {
     wslSupport.supported = false;
     const onSelectRemoteHost = vi.fn();
     await render({ onPickRemoteFolder: vi.fn(), onSelectRemoteHost });
-    expect(sourceOption(1, 'wsl').disabled).toBe(true);
+    expect(sourceOption(1, 'wsl')).toBeNull();
     expect(document.body.textContent).not.toContain('ssh.remote.wslUnsupported');
-    act(() => sourceOption(1, 'wsl').click());
     expect(sourceOption(1, 'system').getAttribute('aria-checked')).toBe('true');
     expect(onSelectRemoteHost).not.toHaveBeenCalled();
   });
@@ -376,7 +375,7 @@ describe('NewProjectDialog composition', () => {
     expect(button('actions.add').disabled).toBe(true);
     act(() => document.querySelector<HTMLButtonElement>('[data-workspace-choice="fixture-ssh"] button[aria-pressed]')!.click());
     expect(sourceOption(1, 'container').getAttribute('aria-checked')).toBe('true');
-    expect(sourceOption(1, 'wsl').disabled).toBe(true);
+    expect(sourceOption(1, 'wsl')).toBeNull();
     expect(button('actions.add').disabled).toBe(true);
     act(() => document.querySelector<HTMLButtonElement>('[data-workspace-choice="fixture-remoteDocker"] button[aria-pressed]')!.click());
     expect(button('actions.add').disabled).toBe(false);

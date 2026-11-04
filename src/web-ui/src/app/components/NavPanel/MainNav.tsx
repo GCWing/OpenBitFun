@@ -30,7 +30,7 @@ import WorkspaceSessionGroupingToggle from './components/WorkspaceSessionGroupin
 import WorkspaceSessionFilterMenu from './components/WorkspaceSessionFilterMenu';
 import { useMiniAppNavigation } from '@/app/scenes/miniapps/miniAppNavigationStore';
 import DeviceWorkspaceSections from './sections/devices/DeviceWorkspaceSections';
-import { useSidebarDevices } from './sections/devices/useSidebarDevices';
+import { devicePlatform, useSidebarDevices } from './sections/devices/useSidebarDevices';
 import { activateDeviceSlot } from './sections/devices/openOnDevice';
 import { useDeviceDirectory } from '@/infrastructure/account/deviceDirectory';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
@@ -203,6 +203,7 @@ const MainNav: React.FC = () => {
         surfaceId: slot.surfaceId,
         name: slot.name,
         hostKind: slot.hostKind,
+        platform: devicePlatform(slot.os),
         rendered: slot.rendered,
         controllable: slot.controllable,
       }))

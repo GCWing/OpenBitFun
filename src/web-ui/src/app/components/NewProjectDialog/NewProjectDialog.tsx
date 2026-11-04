@@ -25,6 +25,8 @@ export interface NewProjectDeviceOption {
   surfaceId: string;
   name: string;
   hostKind: 'desktop' | 'cli' | null;
+  /** Platform of a client host, for its label. */
+  platform?: 'mac' | 'windows' | 'linux' | null;
   /** The window renders this device right now. */
   rendered: boolean;
   /** Relay-confirmed mutual control; an incompatible build is listed but disabled. */
@@ -438,7 +440,9 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
             {deviceOptions === undefined && <span className="new-project-dialog__source-status" role="status">{t('newWorkspace.signInForDevices')}</span>}
             {deviceOptions?.length === 0 && <span className="new-project-dialog__source-status" role="status">{t('newWorkspace.noOtherDevices')}</span>}
             {deviceOptions?.map((device, index) => {
-              const hostLabel = device.hostKind === 'cli' ? t('nav.devices.hostCli') : device.hostKind === 'desktop' ? t('nav.devices.hostDesktop') : null;
+              // The same tag the sidebar shows: CLI, or the client's platform.
+              const hostLabel = device.hostKind === 'cli' ? t('nav.devices.hostCli')
+                : device.platform ? t(`nav.devices.platform.${device.platform}`) : null;
               const connecting = selectingDevice === device.surfaceId;
               const meta = connecting ? t('newWorkspace.connecting')
                 : !device.controllable ? t('deviceOverview.deviceClientIncompatible')
