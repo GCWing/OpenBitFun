@@ -805,7 +805,6 @@ mod tests {
                 "ReadMCPResource",
                 "ListMCPPrompts",
                 "GetMCPPrompt",
-                "GenerativeUI",
                 "Worktree",
                 "ReviewPlatform",
                 "MiniAppBrowser",
@@ -853,7 +852,6 @@ mod tests {
                 "ReadMCPResource",
                 "ListMCPPrompts",
                 "GetMCPPrompt",
-                "GenerativeUI",
                 "Playbook",
             ],
             "readonly tool manifest must stay stable before moving registry ownership"

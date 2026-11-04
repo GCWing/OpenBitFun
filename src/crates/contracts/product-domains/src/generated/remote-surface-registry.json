@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:3f718d2d52abfef5",
+  "digest": "fnv1a64:247f10cffe22edb6",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -57,6 +57,7 @@
       "terminal_cursor_replay_v1"
     ],
     "desktop": [
+      "gen_ui_libraries_v1",
       "model_routing_v1",
       "model_pool_selection_v1",
       "background_result_delivery_v1",

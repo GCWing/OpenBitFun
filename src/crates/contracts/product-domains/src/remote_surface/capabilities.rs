@@ -231,6 +231,7 @@ impl PeerHostCapability {
 /// Desktop publishes everything except `TerminalCursorReplayV1`: it fans out
 /// `terminal_event`, and that key selects the other delivery path.
 const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
+    PeerHostCapability::GenUiLibrariesV1,
     PeerHostCapability::ModelRoutingV1,
     PeerHostCapability::ModelPoolSelectionV1,
     PeerHostCapability::BackgroundResultDeliveryV1,
