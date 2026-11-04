@@ -1577,7 +1577,9 @@ $_section-header-height: 22px;
   --_device-overview-inline-size: min(312px, calc(100vw - 16px));
   --_device-overview-stage-size: 120px;
   --_device-overview-inset: var(--openbitfun-space-4);
-  --_device-overview-light: var(--openbitfun-color-accent-default);
+  // Silver until a device is under control: this device and a device not yet
+  // connected share one neutral light; only a live connection turns green.
+  --_device-overview-light: var(--openbitfun-color-content-secondary);
   --_device-overview-light-strength: 16%;
   position: fixed;
   z-index: var(--openbitfun-layer-popover);
@@ -1604,10 +1606,6 @@ $_section-header-height: 22px;
 
   :where([data-color-scheme='dark']) & {
     --_device-overview-light-strength: 26%;
-  }
-
-  &[data-control-state='local'] {
-    --_device-overview-light: var(--openbitfun-color-accent-secondary);
   }
 
   &[data-control-state='active'] {

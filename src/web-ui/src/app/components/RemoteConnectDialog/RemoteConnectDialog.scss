@@ -2,16 +2,16 @@
 
 .openbitfun-remote-connect-dialog {
   // The device card's atmosphere: one soft light from above in a single
-  // hue, glass panes on it, round glass actions. No second colour.
-  --_rc-ambient: var(--openbitfun-color-accent-secondary);
-  --_rc-ambient-strength: 12%;
+  // silver, glass panes on it, round glass actions. No second colour.
+  --_rc-ambient: var(--openbitfun-color-content-secondary);
+  --_rc-ambient-strength: 9%;
   background:
     radial-gradient(80% 55% at 50% 0%, color-mix(in srgb, var(--_rc-ambient) var(--_rc-ambient-strength), transparent), transparent 75%),
     radial-gradient(60% 45% at 100% 100%, color-mix(in srgb, var(--_rc-ambient) calc(var(--_rc-ambient-strength) / 3), transparent), transparent 70%),
     var(--openbitfun-color-surface-raised);
 
   :where([data-color-scheme='dark']) & {
-    --_rc-ambient-strength: 22%;
+    --_rc-ambient-strength: 18%;
   }
 
   block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
