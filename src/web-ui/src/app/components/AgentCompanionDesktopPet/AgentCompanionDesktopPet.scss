@@ -235,13 +235,14 @@
   &__bubbles {
     position: relative;
     flex-shrink: 0;
-    /* Bubbles stay 180px; the extra inline-end room holds their bottom-right
-       shadow, and the negative margin keeps the pet where it was. */
+    /* Bubbles stay 180px; the inline-end room (open space before the pet)
+       holds their bottom-right shadow, and the negative margin keeps the pet
+       where it was. */
     width: calc(180px + var(--_bubble-shadow-room));
     max-width: calc(180px + var(--_bubble-shadow-room));
     padding-inline-end: var(--_bubble-shadow-room);
     margin-inline-end: calc(-1 * var(--_bubble-shadow-room));
-    --_bubble-shadow-room: 14px;
+    --_bubble-shadow-room: 28px;
     box-sizing: border-box;
     min-height: 0;
     max-height: 100vh;
@@ -378,7 +379,7 @@
        left, and the column's inline-end room covers the right. */
     --_bubble-edge:
       var(--openbitfun-shadow-inner-highlight),
-      6px 6px 14px -8px color-mix(in srgb, var(--_bubble-light) 42%, transparent);
+      10px 10px 24px -10px color-mix(in srgb, var(--_bubble-light) 40%, transparent);
     padding: 9px 12px;
     border: none;
     border-radius: 14px 14px 4px 14px;
