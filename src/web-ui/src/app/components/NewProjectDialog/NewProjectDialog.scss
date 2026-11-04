@@ -51,29 +51,114 @@
     overflow-y: auto;
   }
 
+  // Devices read as one list of quiet rows: the icon in a soft disc, the
+  // name, its host tag, and a chevron that leans in on hover.
+  &__device-card {
+    min-block-size: 0;
+    border-radius: var(--openbitfun-radius-lg);
+
+    &:hover {
+      outline-color: transparent;
+    }
+
+    [data-openbitfun-part='leading'] {
+      flex-basis: 32px;
+      inline-size: 32px;
+      block-size: 32px;
+      background: color-mix(in srgb, var(--openbitfun-color-content-primary) 8%, transparent);
+      color: var(--openbitfun-color-content-primary);
+    }
+  }
+
   &__device-trigger {
     justify-content: flex-start;
-    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-4) var(--openbitfun-space-3) var(--openbitfun-space-3);
     gap: var(--openbitfun-space-3);
   }
 
+  &__device-content {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: baseline;
+    gap: var(--openbitfun-space-2);
+    min-inline-size: 0;
+  }
+
   &__device-name {
+    min-inline-size: 0;
     color: var(--openbitfun-color-content-primary);
-    font-family: var(--openbitfun-type-body-sm-font-family);
-    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-family: var(--openbitfun-type-body-md-font-family);
+    font-size: var(--openbitfun-type-body-md-font-size);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
+    line-height: var(--openbitfun-type-body-md-line-height);
+  }
+
+  &__device-meta {
+    flex: 0 0 auto;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-body-sm-font-size);
     line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+
+  &__device-chevron {
+    align-self: center;
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    color: var(--openbitfun-color-content-muted);
+    transition:
+      color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  &__device-card:hover:not([data-disabled='true']) &__device-chevron {
+    color: var(--openbitfun-color-content-secondary);
+    transform: translateX(2px);
   }
 
   &__device-spinner {
     animation: new-project-dialog-spin 1s linear infinite;
   }
 
+  // Each choice is a pane with its icon in a soft disc; hover brightens the
+  // pane and its disc together and lifts the card a hair, never an outline.
   &__choice-card {
-    min-block-size: 160px;
+    min-block-size: 148px;
+    border-radius: var(--openbitfun-radius-xl);
+    transition:
+      background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
     &:hover {
       outline-color: transparent;
+    }
+
+    &:hover:not([data-disabled='true']) {
+      transform: translateY(-1px);
+    }
+
+    &:active:not([data-disabled='true']) {
+      transform: none;
+    }
+
+    [data-openbitfun-part='leading'] {
+      flex-basis: 40px;
+      inline-size: 40px;
+      block-size: 40px;
+      background: color-mix(in srgb, var(--openbitfun-color-content-primary) 8%, transparent);
+      color: var(--openbitfun-color-content-primary);
+      transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+    }
+
+    &:hover:not([data-disabled='true']) [data-openbitfun-part='leading'] {
+      background: color-mix(in srgb, var(--openbitfun-color-content-primary) 12%, transparent);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+
+      &:hover:not([data-disabled='true']) {
+        transform: none;
+      }
     }
   }
 
@@ -82,7 +167,7 @@
     align-items: flex-start;
     justify-content: flex-start;
     padding: var(--openbitfun-space-5);
-    gap: var(--openbitfun-space-3);
+    gap: var(--openbitfun-space-4);
   }
 
   &__choice-content {
@@ -102,7 +187,7 @@
   }
 
   &__choice-description {
-    color: var(--openbitfun-color-content-secondary);
+    color: var(--openbitfun-color-content-muted);
     font-family: var(--openbitfun-type-body-sm-font-family);
     font-size: var(--openbitfun-type-body-sm-font-size);
     font-weight: var(--openbitfun-type-body-sm-font-weight);
@@ -120,7 +205,7 @@
 
   &__folder {
     min-width: 0;
-    min-block-size: 160px;
+    min-block-size: 112px;
     justify-content: center;
     gap: var(--openbitfun-space-3);
   }

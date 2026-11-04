@@ -394,12 +394,10 @@ describe('NewProjectDialog composition', () => {
     await click('actions.add');
     expect(sourceOption(0, 'other').disabled).toBe(true);
     expect(sourceOption(1, 'container').disabled).toBe(true);
-    expect(document.body.textContent).toContain('workspaceSource.foldersLockedHint');
     act(() => document.querySelector<HTMLButtonElement>('button[aria-label="newProject.removeFolder"]')!.click());
     expect(sourceOption(0, 'other').disabled).toBe(false);
     expect(sourceOption(1, 'container').disabled).toBe(false);
     expect(sourceOption(1, 'container').getAttribute('aria-checked')).toBe('true');
-    expect(document.body.textContent).not.toContain('workspaceSource.foldersLockedHint');
   });
 
   it('names the executing peer host without changing folder routing to the controller', async () => {
@@ -549,7 +547,7 @@ describe('NewProjectDialog composition', () => {
       expect(document.body.textContent).toContain('newWorkspace.createProjectOn');
       enterName('Remote app');
       await add('/Users/me/app');
-      await click('newWorkspace.createProjectOn');
+      await click('newWorkspace.createProject');
       expect(confirm).toHaveBeenCalledWith({ name: 'Remote app', folders: [{ path: '/Users/me/app' }] });
     });
 

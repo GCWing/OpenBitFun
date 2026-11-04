@@ -1,6 +1,6 @@
 /** A named project groups one primary folder and its associated folders. */
 import {
-  ActionCard, Button, Card, CardBody, Dialog, DialogBody, DialogClose, DialogDescription, DialogFooter,
+  ActionCard, Button, Card, CardBody, Dialog, DialogBody, DialogClose, DialogFooter,
   DialogHeader, DialogHeading, DialogTitle, Icon, IconButton, Input, OverflowText, Tooltip,
 } from '@openbitfun/ui';
 import { FolderPlus, Loader2, Monitor, MonitorSmartphone, Server, SquareTerminal } from 'lucide-react';
@@ -385,8 +385,6 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
           <DialogTitle data-openbitfun-component="new-project-dialog" data-openbitfun-part="title">
             {dialogTitle}
           </DialogTitle>
-          {step === 'choice' && <DialogDescription>{t('newWorkspace.description')}</DialogDescription>}
-          {step === 'device' && <DialogDescription>{t('newWorkspace.chooseDeviceDescription')}</DialogDescription>}
         </DialogHeading>
         <DialogClose aria-label={t('actions.close')} disabled={busy} />
       </DialogHeader>
@@ -451,15 +449,16 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
                 <div role="listitem" key={device.surfaceId}>
                   <ActionCard ref={index === 0 ? deviceChoiceRef : undefined} size="sm" className="new-project-dialog__device-card"
                     triggerClassName="new-project-dialog__device-trigger"
-                    leading={<Icon glyph={connecting ? Loader2 : device.hostKind === 'cli' ? SquareTerminal : Monitor} size="md"
+                    leading={<Icon glyph={connecting ? Loader2 : device.hostKind === 'cli' ? SquareTerminal : Monitor} size="sm"
                       className={connecting ? 'new-project-dialog__device-spinner' : undefined} />}
                     aria-label={t('newWorkspace.createProjectOn', { name: device.name })} aria-busy={connecting}
                     disabled={busy || !device.controllable} onClick={() => { void handleChooseDevice(device); }}
                     data-testid="new-project-device-option" data-device-surface={device.surfaceId}
                     body={(
-                      <span className="new-project-dialog__choice-content">
+                      <span className="new-project-dialog__device-content">
                         <OverflowText className="new-project-dialog__device-name">{device.name}</OverflowText>
-                        {meta && <span className="new-project-dialog__choice-description" aria-live="polite">{meta}</span>}
+                        {meta && <span className="new-project-dialog__device-meta" aria-live="polite">{meta}</span>}
+                        <Icon name="chevron-right" size="sm" className="new-project-dialog__device-chevron" aria-hidden="true" />
                       </span>
                     )} />
                 </div>
@@ -506,7 +505,6 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
                       if (workspaceSourceCoordinates(value).location !== location) setSelectedHostOption(undefined);
                       setSource(value); setSelectedOption(undefined); setConnectedRemote(undefined); setError('');
                     }} />
-                  {hasFolders && <span className="new-project-dialog__hint">{t('workspaceSource.foldersLockedHint')}</span>}
                 </div>
               )}
               <section className="new-project-dialog__field" aria-labelledby={sourceLabelId} data-openbitfun-component="new-project-dialog" data-openbitfun-part="field">
@@ -551,7 +549,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
       </DialogBody>
       {step === 'device' && (
         <DialogFooter className="new-project-dialog__footer" data-openbitfun-component="new-project-dialog" data-openbitfun-part="footer">
-          <Button variant="fill" leadingIcon={<Icon name="arrow-left" size="sm" />} disabled={busy} onClick={() => changeStep('choice')}>
+          <Button variant="quiet" leadingIcon={<Icon name="arrow-left" size="sm" />} disabled={busy} onClick={() => changeStep('choice')}>
             {t('newWorkspace.back')}
           </Button>
         </DialogFooter>
@@ -559,7 +557,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
       {step === 'project' && (
         <DialogFooter className="new-project-dialog__footer" data-openbitfun-component="new-project-dialog" data-openbitfun-part="footer">
           {onCreateAssistant && (
-            <Button variant="fill" leadingIcon={<Icon name="arrow-left" size="sm" />} disabled={busy}
+            <Button variant="quiet" leadingIcon={<Icon name="arrow-left" size="sm" />} disabled={busy}
               onClick={() => changeStep(projectDevice ? 'device' : 'choice')}>
               {t('newWorkspace.back')}
             </Button>
@@ -567,7 +565,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
           <div className="new-project-dialog__primary-actions">
             {!onCreateAssistant && <Button variant="fill" onClick={onClose} disabled={busy}>{t('newProject.cancel')}</Button>}
             <Button type="submit" form={formId} variant="primary" disabled={busy || sourceOptions.loading || !sourceReady || (needsName && !name) || invalidDirectoryName} loading={isCreating}>
-              {isCreating ? t('newProject.creating') : onCreateAssistant ? projectTitle : t('newProject.create')}
+              {isCreating ? t('newProject.creating') : t(onCreateAssistant ? 'newWorkspace.createProject' : 'newProject.create')}
             </Button>
           </div>
         </DialogFooter>

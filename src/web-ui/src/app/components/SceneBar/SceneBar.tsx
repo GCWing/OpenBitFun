@@ -134,6 +134,20 @@ const SceneBar: React.FC<SceneBarProps> = ({
     openTabIds: shownTabs.map(tab => tab.id),
   });
 
+  /**
+   * A hovered tab grows to reveal its close action. Near the scroll end that
+   * growth lands past the visible edge, so bring the grown tab fully in view
+   * once it has grown (or at once when the growth is not animated).
+   */
+  const revealGrownTab = useCallback((item: HTMLElement) => {
+    const scroller = tabsRef.current;
+    if (!scroller || !item.matches(':hover')) return;
+    const overflow = item.getBoundingClientRect().right - scroller.getBoundingClientRect().right;
+    if (overflow <= 0) return;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    scroller.scrollBy({ left: Math.ceil(overflow) + 2, behavior: reduced ? 'auto' : 'smooth' });
+  }, [tabsRef]);
+
   const handleTabValueChange = useCallback((value: string) => {
     activateScene(value as SceneTabId);
   }, [activateScene]);
@@ -263,7 +277,6 @@ const SceneBar: React.FC<SceneBarProps> = ({
         <button
           type="button"
           aria-label={closeLabel}
-          title={closeLabel}
           data-motion="none"
           data-scene-bar-part="closeTab"
           data-scene-id={tab.id}
@@ -350,6 +363,13 @@ const SceneBar: React.FC<SceneBarProps> = ({
               data-pending={pendingTabId === tabId || undefined}
               data-canvas-drop-position={activeCanvasDrop?.target?.tabId === tabId ? activeCanvasDrop.target.placement : undefined}
               onContextMenu={event => handleContextMenu(event, tabId)}
+              onPointerEnter={event => {
+                const item = event.currentTarget;
+                requestAnimationFrame(() => revealGrownTab(item));
+              }}
+              onTransitionEnd={event => {
+                if (event.propertyName === 'padding-inline-end') revealGrownTab(event.currentTarget);
+              }}
               onDragStart={event => { writeSceneTabDrag(event.dataTransfer, tabId); if (tab?.session) beginConversationTransfer(event.dataTransfer, tab.session, tabId); }}
               onDragEnd={() => { endConversationTransfer(); endSceneTabDrag(); }}
             >{node}</div>;

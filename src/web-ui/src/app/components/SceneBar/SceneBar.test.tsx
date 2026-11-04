@@ -123,6 +123,28 @@ describe('SceneBar overflow navigation', () => {
     expect(container.querySelector('[data-openbitfun-part="tabDevice"]')).toBeNull();
   });
 
+  it('brings a grown last tab fully into view so its close action stays reachable', () => {
+    renderSceneBar();
+    const scroller = container.querySelector<HTMLElement>('[data-scene-bar-part="tabs"]')!;
+    const item = container.querySelector<HTMLElement>('[data-scene-tab-id="git"]')!;
+    const close = item.querySelector('[data-scene-bar-part="closeTab"]');
+    expect(close?.hasAttribute('title')).toBe(false);
+    scroller.scrollBy = vi.fn();
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ right: 400 } as DOMRect);
+    vi.spyOn(item, 'getBoundingClientRect').mockReturnValue({ right: 430 } as DOMRect);
+    const hovered = vi.spyOn(item, 'matches').mockReturnValue(false);
+    const grown = () => {
+      const event = new Event('transitionend', { bubbles: true });
+      Object.defineProperty(event, 'propertyName', { value: 'padding-inline-end' });
+      act(() => { item.firstElementChild!.dispatchEvent(event); });
+    };
+    grown();
+    expect(scroller.scrollBy).not.toHaveBeenCalled();
+    hovered.mockReturnValue(true);
+    grown();
+    expect(scroller.scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: 32 }));
+  });
+
   it('groups tabs by device and names each device once', () => {
     const [session, settings, terminal] = sceneHarness.state.openTabs;
     session.session = { surfaceId: 'peer-tab-device', workspaceKey: 'workspace-a', sessionId: 'remote' };
