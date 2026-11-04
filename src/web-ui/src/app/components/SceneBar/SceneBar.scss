@@ -242,6 +242,33 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  // A hovered tab grows by its close action. Reserve that growth once at the
+  // strip's end and let the last tab grow into it, so hovering the last tab
+  // never widens the strip: the scroll arrow stays hidden at the end instead
+  // of reappearing over the close button.
+  .openbitfun-scene-bar__tabs {
+    --_scene-bar-close-growth: calc(
+      max(
+        var(--openbitfun-control-tab-group-item-padding-inline-sm),
+        (var(--openbitfun-control-tab-group-item-height-sm) + var(--openbitfun-control-tab-group-item-action-size)) / 2
+          + var(--openbitfun-control-tab-group-item-gap-sm)
+      )
+      - var(--openbitfun-control-tab-group-item-padding-inline-sm)
+    );
+
+    padding-inline-end: calc(var(--openbitfun-border-width-default) + var(--_scene-bar-close-growth));
+  }
+
+  .openbitfun-scene-bar__item:last-child > [data-openbitfun-part='item'][data-has-end-action='true'] {
+    transition:
+      padding-inline-end var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      margin-inline-end var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &:is(:hover, :focus-visible, :has(:focus-visible)) {
+      margin-inline-end: calc(0px - var(--_scene-bar-close-growth));
+    }
+  }
+
   .openbitfun-scene-bar [data-scene-bar-part='closeTab']:hover:not(:disabled) {
     color: var(--openbitfun-color-status-danger-emphasis);
   }

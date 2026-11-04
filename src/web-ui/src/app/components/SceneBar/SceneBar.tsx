@@ -142,7 +142,10 @@ const SceneBar: React.FC<SceneBarProps> = ({
   const revealGrownTab = useCallback((item: HTMLElement) => {
     const scroller = tabsRef.current;
     if (!scroller || !item.matches(':hover')) return;
-    const overflow = item.getBoundingClientRect().right - scroller.getBoundingClientRect().right;
+    // The visible edge is the scroller's, or the forward arrow's when it shows.
+    const arrow = scroller.parentElement?.querySelector<HTMLElement>('[data-openbitfun-part="scrollNext"]:not(:disabled)');
+    const edge = Math.min(scroller.getBoundingClientRect().right, arrow?.getBoundingClientRect().left ?? Infinity);
+    const overflow = item.getBoundingClientRect().right - edge;
     if (overflow <= 0) return;
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     scroller.scrollBy({ left: Math.ceil(overflow) + 2, behavior: reduced ? 'auto' : 'smooth' });
