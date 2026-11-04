@@ -3,6 +3,7 @@
 import {
   getTransportAdapter,
   isPeerLocalOnlyCommand,
+  isExpectedTauriRequestError,
   ITransportAdapter,
   type TransportRequestTiming,
 } from '../adapters';
@@ -543,11 +544,16 @@ export class ApiClient implements IApiClient {
         throw this.createApiError('REQUEST_TIMEOUT', 'Request timeout', error);
       }
       const errorMessage = transportErrorMessage(error);
-      
-      
-      const isExpectedError = errorMessage.includes('not found') || 
+
+
+      const isExpectedError = errorMessage.includes('not found') ||
                              errorMessage.includes('Config path') ||
-                             errorMessage.includes('Configuration error');
+                             errorMessage.includes('Configuration error') ||
+                             // A host that by design cannot serve a poll (a
+                             // remote workspace without the external
+                             // compatibility service) is quiet control flow,
+                             // not a product failure.
+                             isExpectedTauriRequestError(config.command, config.args, error);
       const optionalConfigNotFound = isOptionalConfigNotFoundCommand(config, error);
       
       
