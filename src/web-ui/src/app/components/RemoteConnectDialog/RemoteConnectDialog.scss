@@ -1,18 +1,8 @@
 @use './remote-connect-surface' as surface;
 
 .openbitfun-remote-connect-dialog {
-  // Lit like the device card it grows from: one soft light from the top,
-  // an echo in the far corner, and no inner outlines.
-  --_rc-dialog-light: var(--openbitfun-color-accent-default);
-  --_rc-dialog-light-strength: 9%;
-  background:
-    radial-gradient(70% 60% at 18% 0%, color-mix(in srgb, var(--_rc-dialog-light) var(--_rc-dialog-light-strength), transparent), transparent 72%),
-    radial-gradient(60% 50% at 100% 100%, color-mix(in srgb, var(--_rc-dialog-light) calc(var(--_rc-dialog-light-strength) / 2), transparent), transparent 70%),
-    var(--openbitfun-color-surface-raised);
-
-  :where([data-color-scheme='dark']) & {
-    --_rc-dialog-light-strength: 16%;
-  }
+  // One quiet surface; the sidebar and cards are tints of it.
+  background: var(--openbitfun-color-surface-raised);
 
   block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
   min-block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
@@ -130,15 +120,10 @@
     outline-offset: calc(0px - var(--openbitfun-focus-width));
   }
 
-  // The current page is lit, not boxed.
   &[aria-current] {
-    background: color-mix(in srgb, var(--_rc-dialog-light) 16%, transparent);
+    background: color-mix(in srgb, var(--openbitfun-color-content-primary) 9%, transparent);
     color: var(--openbitfun-color-content-primary);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
-
-    .openbitfun-remote-connect__navigation-icon {
-      color: color-mix(in srgb, var(--_rc-dialog-light) 70%, var(--openbitfun-color-content-primary));
-    }
   }
 }
 
@@ -338,11 +323,11 @@
 }
 
 .openbitfun-remote-connect__overview-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--_rc-light) 8%, var(--openbitfun-color-action-neutral-surface));
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
 }
 
 .openbitfun-remote-connect__overview-action:hover:not(:disabled) .openbitfun-remote-connect__overview-action-icon {
-  background: color-mix(in srgb, var(--_rc-light) 22%, transparent);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 11%, transparent);
 }
 
 .openbitfun-remote-connect__overview-action-copy {
@@ -592,8 +577,8 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(--openbitfun-color-accent-default) 18%, transparent);
-  color: color-mix(in srgb, var(--openbitfun-color-accent-default) 60%, var(--openbitfun-color-content-primary));
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 8%, transparent);
+  color: var(--openbitfun-color-content-primary);
   font-family: var(--openbitfun-type-micro-font-family);
   font-size: var(--openbitfun-type-micro-font-size);
   font-weight: var(--openbitfun-type-label-selected-font-weight);
@@ -848,7 +833,6 @@
 }
 
 .openbitfun-remote-connect__client-icon {
-  --_rc-light: var(--openbitfun-color-status-success-content);
   @include surface.icon-disc(--_rc-light, 28px);
 }
 

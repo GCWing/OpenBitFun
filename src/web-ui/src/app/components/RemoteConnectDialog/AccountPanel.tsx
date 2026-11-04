@@ -875,7 +875,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                   <OverflowText className="account-panel__identity-name" title={username}>{username.trim()}</OverflowText>
                   <span className="account-panel__identity-label">{t('accountLogin.signedInAccount')}</span>
                 </span>
-                <Button variant="secondary" size="sm" leadingIcon={<LogOut size={14} />} onClick={handleLogout} disabled={loading}>
+                <Button variant="quiet" size="sm" leadingIcon={<LogOut size={14} />} onClick={handleLogout} disabled={loading}>
                   {t('accountLogin.logout')}
                 </Button>
               </div>
@@ -883,7 +883,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
             <section className="account-panel__section" aria-labelledby="account-panel-devices-title">
               {renderSectionHeading('account-panel-devices-title', t('accountLogin.linkedDevices'), (
                 relayFailure && failureBannerAction(relayFailure) ? null : (
-                  <Button variant="text" size="xs" leadingIcon={<Icon name="refresh" size="sm" />}
+                  <Button className="account-panel__refresh" variant="text" size="xs" leadingIcon={<Icon name="refresh" size="sm" />}
                     onClick={relayFailure ? handleRetryConnect : refreshDevices} disabled={loading}>
                     {t(relayFailure ? 'accountLogin.retryConnect' : 'accountLogin.refreshDevices')}
                   </Button>
@@ -1000,6 +1000,11 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                         ) : (
                           <span className="account-panel__device-name">
                             <OverflowText title={displayName}>{displayName}</OverflowText>
+                            {isLocal && (
+                              <span className="account-panel__device-home" role="img" aria-label={t('accountLogin.thisDevice')}>
+                                <House size={13} />
+                              </span>
+                            )}
                           </span>
                         )}
                         <span className="account-panel__device-meta">
@@ -1024,12 +1029,6 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                         delete beside it rendered two competing icon clusters. */}
                     {editingDeviceId !== d.device_id && (
                       <span className="account-panel__device-actions">
-                        {/* This machine: the device card's home disc. */}
-                        {isLocal && (
-                          <span className="account-panel__device-home" role="img" aria-label={t('accountLogin.thisDevice')}>
-                            <House size={14} />
-                          </span>
-                        )}
                         <IconButton
                           className="account-panel__device-action"
                           aria-label={t('accountLogin.editDeviceAlias')}

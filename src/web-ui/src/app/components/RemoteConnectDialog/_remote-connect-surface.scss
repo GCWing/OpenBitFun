@@ -98,24 +98,15 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   color: var(--openbitfun-color-content-secondary);
 }
 
-// The device card's language: every surface carries a state light
-// (`--_rc-light`). Neutral until a link is live, then it lights its disc,
-// dot and card.
+// One neutral material for every surface. Colour is kept for meaning only
+// (a state dot, a destructive word), never for decoration, so a page full of
+// rows still reads calm. `$light` names the private property a surface may
+// use for its own neutral accents (underlines, carets).
 @mixin state-light($light) {
-  #{$light}: var(--openbitfun-color-content-muted);
-  #{$light}-strength: 10%;
-
-  :where([data-color-scheme='dark']) & {
-    #{$light}-strength: 16%;
-  }
-
-  &[data-openbitfun-state~='connected'],
-  &[data-openbitfun-state~='authenticated'] {
-    #{$light}: var(--openbitfun-color-status-success-content);
-  }
+  #{$light}: var(--openbitfun-color-content-secondary);
 }
 
-// A row's icon in a tinted glass disc, lit by its state light.
+// A row's icon in a quiet neutral disc.
 @mixin icon-disc($light, $size: 36px) {
   display: inline-flex;
   flex-shrink: 0;
@@ -124,20 +115,13 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   inline-size: $size;
   block-size: $size;
   border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(#{$light}) 18%, transparent);
-  color: color-mix(in srgb, var(#{$light}) 60%, var(--openbitfun-color-content-primary));
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 7%, transparent);
+  color: var(--openbitfun-color-content-primary);
   transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 }
 
-// The card glows faintly from its top edge in its state light.
 @mixin lit-card($light) {
-  background:
-    radial-gradient(
-      110% 90% at 0% 0%,
-      color-mix(in srgb, var(#{$light}) var(#{$light}-strength), transparent),
-      transparent 70%
-    ),
-    color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
 }
 
 @mixin row-copy {

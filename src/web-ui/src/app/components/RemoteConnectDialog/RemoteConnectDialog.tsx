@@ -1063,7 +1063,7 @@ export const RemoteConnectDialog: React.FC<RemoteConnectDialogProps> = ({
             />
           </div>
           <div className="openbitfun-remote-connect__card-actions">
-            <Button variant="secondary" tone="danger" size="sm" onClick={handleDisconnectBot}>
+            <Button variant="quiet" tone="danger" size="sm" onClick={handleDisconnectBot}>
               {t('remoteConnect.disconnect')}
             </Button>
           </div>

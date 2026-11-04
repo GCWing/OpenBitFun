@@ -108,7 +108,7 @@ export function RemoteNetworkConnections({
       {error && <div className="openbitfun-remote-connect__card-section">{error}</div>}
       <div className="openbitfun-remote-connect__card-actions">
         {connected && (
-          <Button variant="secondary" tone="danger" size="sm" onClick={onDisconnect}>
+          <Button variant="quiet" tone="danger" size="sm" onClick={onDisconnect}>
             {t('remoteConnect.disconnect')}
           </Button>
         )}
