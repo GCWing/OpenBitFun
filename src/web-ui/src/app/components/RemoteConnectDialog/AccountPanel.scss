@@ -150,7 +150,7 @@
     &.offline .account-panel__device-glyph { color: var(--openbitfun-color-content-muted); }
 
     & + & {
-      @include surface.card-divider(calc(36px + #{surface.$row-gap}));
+      @include surface.card-divider(calc(40px + #{surface.$row-gap}));
     }
 
     &.selectable:has(> .account-panel__device-select:hover) {

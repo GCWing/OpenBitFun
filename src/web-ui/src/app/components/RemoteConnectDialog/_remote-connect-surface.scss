@@ -67,8 +67,9 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 4%, transparent);
+  border-radius: var(--openbitfun-radius-xl);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 5%, transparent);
+  backdrop-filter: var(--openbitfun-effect-blur-subtle);
 }
 
 @mixin card-row {
@@ -107,7 +108,7 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
 }
 
 // A row's icon in a quiet neutral disc.
-@mixin icon-disc($light, $size: 36px) {
+@mixin icon-disc($light, $size: 40px) {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -115,7 +116,7 @@ $divider: var(--openbitfun-border-width-default) solid var(--openbitfun-color-bo
   inline-size: $size;
   block-size: $size;
   border-radius: var(--openbitfun-radius-pill);
-  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 7%, transparent);
+  background: color-mix(in srgb, var(--openbitfun-color-content-primary) 9%, transparent);
   color: var(--openbitfun-color-content-primary);
   transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 }
