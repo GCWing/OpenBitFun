@@ -3,7 +3,7 @@ import { flowChatStore } from '../store/FlowChatStore';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { openContentInBestTarget } from '@/shared/services/workbenchContentService';
 import GenerativeWidgetPanel from '@/tools/generative-widget/GenerativeWidgetPanel';
-import { projectGenerativeWidgetTool } from '../utils/generativeWidgetProjection';
+import { findGenerativeWidgetProjection, projectGenerativeWidgetTool } from '../utils/generativeWidgetProjection';
 import type { FlowToolItem } from '../types/flow-chat';
 import './GenerativeWidgetInline.scss';
 
@@ -17,9 +17,12 @@ export interface GenerativeWidgetInlineProps {
  * Harmony delivery may hand off to the workbench for a larger view. */
 export const GenerativeWidgetInline: React.FC<GenerativeWidgetInlineProps> = ({ toolItem, sessionId, turnId }) => {
   const session = sessionId ? flowChatStore.getState().sessions.get(sessionId) : undefined;
-  const projection = session
-    ? projectGenerativeWidgetTool(session, toolItem, { turnId }, getActiveSurfaceId())
-    : null;
+  const projection = (() => {
+    if (!session) return null;
+    const direct = projectGenerativeWidgetTool(session, toolItem, { turnId }, getActiveSurfaceId());
+    if (!direct || (!direct.isFailed && direct.status !== 'cancelled')) return direct;
+    return findGenerativeWidgetProjection(flowChatStore.getState(), direct.origin, true) ?? direct;
+  })();
 
   const handleExpand = useCallback((value: Parameters<NonNullable<React.ComponentProps<typeof GenerativeWidgetPanel>['onExpand']>>[0]) => {
     const key = JSON.stringify([

@@ -192,7 +192,11 @@ export function projectGenerativeWidgetTool(
   let appCandidate = parseObject(result?.app ?? input?.app);
   const declaredTemplate = firstString(appCandidate?.template, projected._genUIStream?.template);
   const libraryId = firstString(appCandidate?.libraryId, projected._genUIStream?.libraryId)
-    ?? (declaredTemplate ? genUICatalog.templates[declaredTemplate]?.library : undefined);
+    ?? (declaredTemplate ? genUICatalog.templates[declaredTemplate]?.library : undefined)
+    // A retry can expose only the template metadata before the catalog entry
+    // arrives in the partial tool payload. Keep the profile identity stable so
+    // its delivery mode and loading surface do not disappear mid-retry.
+    ?? (declaredTemplate?.includes('.harmony.') ? 'openbitfun.harmony.v1' : undefined);
   const streamedOpenUI = !isComplete && projected._genUIStream?.content
     ? projected._genUIStream
     : undefined;
@@ -294,8 +298,25 @@ export function findGenerativeWidgetProjection(
   // Presentation may follow a failed candidate's retry in the same turn. An
   // accepted/saved app stays bound to its owner; persistence always uses exact
   // source identity, never this presentation-only opt-in.
-  if (!followRepairs || !original?.isFailed || !original.app || original.appState) return original;
-  const later = candidates.slice(candidates.indexOf(original) + 1).filter(candidate => candidate.origin.turnId === original.origin.turnId && candidate.app?.id === original.app!.id);
+  // A provider-level retry can supersede an invalid tool call before it ever
+  // receives a terminal result. In that case the original projection has no
+  // app and is marked `superseded`, but the replacement is still the visible
+  // GenUI answer. Treat that shell exactly like a failed candidate for
+  // presentation purposes; persistence remains bound to the exact origin.
+  const originalAttemptSuperseded = original
+    ? session.dialogTurns
+      .flatMap(turn => turn.modelRounds)
+      .flatMap(round => round.attempts ?? [])
+      .some(attempt => attempt.status === 'superseded' && attempt.items.some(item => item.id === original.origin.toolItemId))
+    : false;
+  const repairable = original?.isFailed || original?.status === 'cancelled' || originalAttemptSuperseded;
+  if (!original || !followRepairs || !repairable || original.appState) return original;
+  const originalAppId = original.app?.id;
+  const originalIndex = candidates.findIndex(candidate => candidate.origin.toolItemId === original.origin.toolItemId);
+  const later = candidates.slice(originalIndex >= 0 ? originalIndex + 1 : 0).filter(candidate => (
+    candidate.origin.turnId === original.origin.turnId
+      && (!originalAppId || candidate.app?.id === originalAppId)
+  ));
   // Stop at the first successful or running replacement. A later candidate
   // must not displace an accepted replacement's state merely because this
   // panel was originally opened from a failed call.

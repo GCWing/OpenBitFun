@@ -16,7 +16,24 @@ export function getModelRoundActiveItems(round: Pick<ModelRound, 'items' | 'atte
   const activeAttempt = round.attempts?.reduce<ModelRoundAttempt | undefined>((latest, attempt) => (
     !attempt.diagnostic && (!latest || attempt.index >= latest.index) ? attempt : latest
   ), undefined);
-  return activeAttempt?.items ?? (round.attempts?.length ? [] : round.items ?? []);
+  if (!activeAttempt) return round.attempts?.length ? [] : round.items ?? [];
+
+  // A provider retry may complete a tool call just before the Runtime emits
+  // the attempt diagnostic. The retry item then remains attached to the
+  // superseded attempt even though it is the only successful GenUI result.
+  // Keep successful GenUI tools in the visible projection so the generated
+  // application is not lost when the retry history is collapsed.
+  const visible = [...activeAttempt.items];
+  for (const attempt of round.attempts ?? []) {
+    if (attempt === activeAttempt) continue;
+    for (const item of attempt.items) {
+      if (item.type !== 'tool' || item.toolName !== 'GenerativeUI') continue;
+      const result = item.toolResult;
+      if (result?.success !== true || visible.some(current => current.id === item.id)) continue;
+      visible.push(item);
+    }
+  }
+  return visible;
 }
 
 export function hasModelRoundNarrative(round: Pick<ModelRound, 'items' | 'attempts'>): boolean {

@@ -116,6 +116,33 @@ describe('generative widget projection', () => {
     failed.status = 'completed'; failed.toolResult = { success: true, result: { app: examples.picker, app_state: { query: 'edited' } } };
     expect(findGenerativeWidgetProjection(state, original.origin, true)?.origin.toolCallId).toBe('call-1');
   });
+
+  it('follows a provider retry when the superseded shell has no terminal app', () => {
+    const superseded = tool({
+      status: 'superseded',
+      isParamsStreaming: true,
+      toolCall: { id: 'call-1', input: {} },
+      attemptId: 'turn-1:attempt:1',
+      attemptIndex: 1,
+      _genUIStream: undefined,
+    });
+    const repaired = tool({
+      id: 'tool-2',
+      status: 'completed',
+      isParamsStreaming: false,
+      toolCall: { id: 'call-2', input: { app: examples.picker } },
+      attemptId: 'turn-1:attempt:2',
+      attemptIndex: 2,
+      toolResult: { success: true, result: { app: examples.picker } },
+    });
+    const owner = session({ dialogTurns: [{ id: 'turn-1', modelRounds: [{ items: [superseded, repaired], attempts: [
+      { id: 'turn-1:attempt:1', index: 1, status: 'superseded', items: [superseded] },
+      { id: 'turn-1:attempt:2', index: 2, status: 'completed', items: [repaired] },
+    ] }] }] as any });
+    const original = projectGenerativeWidgetTool(owner, superseded, { turnId: 'turn-1' })!;
+    const state = { sessions: new Map([[owner.sessionId, owner]]) } as any;
+    expect(findGenerativeWidgetProjection(state, original.origin, true)?.origin.toolCallId).toBe('call-2');
+  });
   it('uses the terminal result as the source of truth over partial parameters', () => {
     const projection = projectGenerativeWidgetTool(
       session(),

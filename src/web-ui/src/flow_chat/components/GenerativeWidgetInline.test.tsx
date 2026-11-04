@@ -9,6 +9,7 @@ import type { GenerativeWidgetProjection } from '../utils/generativeWidgetProjec
 
 const openContentInBestTarget = vi.hoisted(() => vi.fn());
 const projectGenerativeWidgetTool = vi.hoisted(() => vi.fn());
+const findGenerativeWidgetProjection = vi.hoisted(() => vi.fn());
 
 vi.mock('../store/FlowChatStore', () => ({
   flowChatStore: {
@@ -22,6 +23,7 @@ vi.mock('@/infrastructure/peer-device/deviceSurface', () => ({
 
 vi.mock('../utils/generativeWidgetProjection', () => ({
   projectGenerativeWidgetTool,
+  findGenerativeWidgetProjection,
 }));
 
 vi.mock('@/shared/services/workbenchContentService', () => ({
@@ -98,6 +100,7 @@ describe('GenerativeWidgetInline', () => {
     act(() => root.unmount());
     container.remove();
     projectGenerativeWidgetTool.mockReset();
+    findGenerativeWidgetProjection.mockReset();
   });
 
   it('renders inline in FlowChat and expands through the workbench only on request', () => {
