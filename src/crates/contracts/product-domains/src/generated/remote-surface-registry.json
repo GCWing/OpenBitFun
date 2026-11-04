@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:2af59588f1408cda",
+  "digest": "fnv1a64:3f718d2d52abfef5",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -9,7 +9,6 @@
   ],
   "capabilities": {
     "ids": [
-      "gen_ui_owner_v1",
       "gen_ui_libraries_v1",
       "model_routing_v1",
       "model_pool_selection_v1",
@@ -2382,18 +2381,6 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the controller keeps this command; peer hosts refuse it before dispatch"
-      }
-    },
-    {
-      "id": "gen_ui_app",
-      "surface": "tauri_command",
-      "remoteWorkspace": "RemoteRouted",
-      "peer": {
-        "kind": "proxied"
-      },
-      "cliPeer": {
-        "kind": "unsupported",
-        "reason": "the CLI peer host has no handler for this command"
       }
     },
     {

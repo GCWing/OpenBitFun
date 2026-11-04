@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FlowToolItem } from '../types/flow-chat';
 import type { GenerativeWidgetProjection } from '../utils/generativeWidgetProjection';
 
-const openContentInBestTarget = vi.hoisted(() => vi.fn());
 const projectGenerativeWidgetTool = vi.hoisted(() => vi.fn());
 const findGenerativeWidgetProjection = vi.hoisted(() => vi.fn());
 
@@ -26,27 +25,8 @@ vi.mock('../utils/generativeWidgetProjection', () => ({
   findGenerativeWidgetProjection,
 }));
 
-vi.mock('@/shared/services/workbenchContentService', () => ({
-  openContentInBestTarget,
-}));
-
 vi.mock('@/tools/generative-widget/GenerativeWidgetPanel', () => ({
-  default: ({ onExpand, origin }: {
-    onExpand?: (value: { origin: unknown; app: unknown; appState?: unknown; widgetId: string }) => void;
-    origin: unknown;
-  }) => (
-    <div data-testid="inline-panel">
-      {onExpand ? <button
-        type="button"
-        onClick={() => onExpand?.({
-          origin,
-          app: { schemaVersion: 2, id: 'app-1', title: 'Inline app' },
-          appState: { selected: 'one' },
-          widgetId: 'widget-1',
-        })}
-      >Expand</button> : null}
-    </div>
-  ),
+  default: () => <div data-testid="inline-panel" />,
 }));
 
 import GenerativeWidgetInline from './GenerativeWidgetInline';
@@ -93,7 +73,6 @@ describe('GenerativeWidgetInline', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     projectGenerativeWidgetTool.mockReturnValue(projection);
-    openContentInBestTarget.mockReset();
   });
 
   afterEach(() => {
@@ -115,21 +94,18 @@ describe('GenerativeWidgetInline', () => {
     expect(container.querySelector('.flow-tool-card-wrapper')).toBeNull();
     expect(container.querySelector('[data-openbitfun-component="tool-card"]')).toBeNull();
 
-    expect(openContentInBestTarget).not.toHaveBeenCalled();
   });
 
-  it('offers workbench expansion only for an explicit Harmony delivery', () => {
+  it('keeps Harmony metadata in the inline surface without workbench expansion', () => {
     projectGenerativeWidgetTool.mockReturnValue({ ...projection, deliveryMode: 'delivery' });
     act(() => root.render(<GenerativeWidgetInline toolItem={item} sessionId="session-1" turnId="turn-1" />));
-    act(() => (container.querySelector('button') as HTMLButtonElement).click());
-    expect(openContentInBestTarget).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="inline-panel"]')).not.toBeNull();
   });
 
   it('removes failed candidates from the answer and lets the subsequent retry render', () => {
     projectGenerativeWidgetTool.mockReturnValue({ ...projection, isFailed: true, status: 'error' });
     act(() => root.render(<GenerativeWidgetInline toolItem={item} sessionId="session-1" turnId="turn-1" />));
     expect(container.innerHTML).toBe('');
-    expect(openContentInBestTarget).not.toHaveBeenCalled();
 
     projectGenerativeWidgetTool.mockReturnValue({ ...projection, isFailed: false, status: 'rejected' });
     act(() => root.render(<GenerativeWidgetInline toolItem={item} sessionId="session-1" turnId="turn-1" />));

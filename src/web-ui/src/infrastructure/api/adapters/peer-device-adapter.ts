@@ -329,7 +329,6 @@ export interface PeerDeviceTransportHooks {
   supportsSshNoneAuthV1?: boolean;
   supportsSshPortScopedIdentityV1?: boolean;
   supportsWholeSessionCopyV1?: boolean;
-  supportsGenUiOwnerV1?: boolean;
   supportsGenUiLibrariesV1?: boolean;
   supportsModelRoutingV1?: boolean;
   supportsModelPoolSelectionV1?: boolean;
@@ -475,7 +474,6 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsSshNoneAuthV1'
       | 'supportsSshPortScopedIdentityV1'
       | 'supportsWholeSessionCopyV1'
-      | 'supportsGenUiOwnerV1'
       | 'supportsGenUiLibrariesV1'
       | 'supportsModelRoutingV1'
       | 'supportsModelPoolSelectionV1'
@@ -576,10 +574,6 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       && this.hooks.supportsGenUiLibrariesV1 !== true) {
       throw new Error('This peer does not advertise gen_ui_libraries_v1; component library settings are unsupported');
     }
-    if (action === 'gen_ui_app' && this.hooks.supportsGenUiOwnerV1 !== true) {
-      throw new Error('This peer does not advertise GenUI owner v1; application state cannot be read or saved on this host');
-    }
-
     if (
       action === 'rollback_session_to_turn' &&
       this.hooks.supportsTargetedSessionRollback !== true

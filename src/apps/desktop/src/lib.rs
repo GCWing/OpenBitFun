@@ -1498,7 +1498,6 @@ pub async fn run() {
             openbitfun_control_host::mark_openbitfun_control_surface_ready,
             openbitfun_control_host::mark_openbitfun_control_surface_unready,
             openbitfun_control_host::product_control_invoke,
-            api::generative_ui_api::gen_ui_app,
             api::generative_ui_api::gen_ui_provider_call,
             openbitfun_control_host::report_openbitfun_control_result,
             miniapp_web_host::mark_miniapp_web_surface_ready,

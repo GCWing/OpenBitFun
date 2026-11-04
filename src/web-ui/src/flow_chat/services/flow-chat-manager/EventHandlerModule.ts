@@ -1998,7 +1998,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       const hadDeferredOldSave = context.deferredStorageIdentitySaves?.delete(deferredOldKey) === true;
       const hadDeferredNewSave = context.deferredStorageIdentitySaves?.delete(deferredNewKey) === true;
       if (hadDeferredOldSave || hadDeferredNewSave) {
-        void saveDialogTurnToDisk(context, sessionId, turnId);
+        void saveDialogTurnToDisk(context, sessionId, turnId).catch(error => log.warn('Deferred turn save failed', { sessionId, turnId, error }));
       }
     }
   }
@@ -2082,7 +2082,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     }));
     const deferredKey = `${sessionId}:${turnId}`;
     if (context.deferredStorageIdentitySaves?.delete(deferredKey)) {
-      void saveDialogTurnToDisk(context, sessionId, turnId);
+      void saveDialogTurnToDisk(context, sessionId, turnId).catch(error => log.warn('Deferred turn save failed', { sessionId, turnId, error }));
     }
   }
   reconcileBackgroundSubagentSession(sessionId);

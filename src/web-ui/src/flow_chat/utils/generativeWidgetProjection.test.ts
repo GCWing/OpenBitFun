@@ -44,7 +44,7 @@ describe('generative widget projection', () => {
       toolCall: { id: 'call', input: deferred ? { tool_name: 'GenerativeUI', args: {} } : {} },
       _genUIStream: { messageId: 'source', format: 'openui-lang', content: '', nextSeq: 1, libraryId: 'openbitfun.harmony.v1', libraryRevision: 3 },
     }));
-    expect(projection).toMatchObject({ deliveryMode: 'delivery', libraryId: 'openbitfun.harmony.v1', isStreaming: true, sourceAvailable: false });
+    expect(projection).toMatchObject({ deliveryMode: 'transient', libraryId: 'openbitfun.harmony.v1', isStreaming: true, sourceAvailable: false });
     expect(projection?.app).toBeUndefined();
   });
 
@@ -53,7 +53,7 @@ describe('generative widget projection', () => {
       toolCall: { id: 'call', input: {} },
       _genUIStream: { messageId: 'source', format: 'openui-lang', content: '', nextSeq: 1, template: 'openbitfun.harmony.app' },
     }));
-    expect(projection).toMatchObject({ deliveryMode: 'delivery', libraryId: 'openbitfun.harmony.v1', sourceAvailable: false });
+    expect(projection).toMatchObject({ deliveryMode: 'transient', libraryId: 'openbitfun.harmony.v1', sourceAvailable: false });
   });
 
   it.each([false, true])('projects a source document while parameters stream, deferred=%s', deferred => {
@@ -204,7 +204,7 @@ describe('generative widget projection', () => {
     expect(projection).toMatchObject({ deliveryMode: 'transient', interactionState: 'interactive' });
   });
 
-  it('marks only Harmony results as delivery oriented', () => {
+  it('keeps Harmony metadata transient without a delivery lifecycle', () => {
     const app = { ...examples.picker, template: 'openbitfun.harmony.app', libraryId: 'openbitfun.harmony.v1' };
     const projection = projectGenerativeWidgetTool(session(), tool({
       status: 'completed',
@@ -212,7 +212,7 @@ describe('generative widget projection', () => {
       toolResult: { success: true, result: { app, verification: { mode: 'delivery', persistence: 'saved', reopen: 'passed' } } },
     }), { turnId: 'turn-harmony' });
 
-    expect(projection).toMatchObject({ deliveryMode: 'delivery', interactionState: 'complete' });
+    expect(projection).toMatchObject({ deliveryMode: 'transient', interactionState: 'interactive' });
   });
 
   it('unwraps deferred GenerativeUI calls for both input and streamed parameters', () => {

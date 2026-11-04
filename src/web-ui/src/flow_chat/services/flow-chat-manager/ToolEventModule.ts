@@ -466,6 +466,32 @@ function handleGenUIStream(
     return;
   }
   const stream = current._genUIStream;
+  if (!toolEvent.reset && !stream && toolEvent.seq > 0) {
+    updateToolItem(store, sessionId, turnId, toolEvent.tool_id, {
+      _genUIStream: {
+        messageId: toolEvent.message_id,
+        format: toolEvent.format,
+        content: '',
+        nextSeq: 0,
+        pending: { [String(toolEvent.seq)]: {
+          text: toolEvent.text,
+          appId: toolEvent.app_id,
+          title: toolEvent.title,
+          template: toolEvent.template,
+          libraryId: toolEvent.library_id,
+          libraryRevision: toolEvent.library_revision,
+        } },
+        appId: toolEvent.app_id,
+        title: toolEvent.title,
+        template: toolEvent.template,
+        libraryId: toolEvent.library_id,
+        libraryRevision: toolEvent.library_revision,
+      },
+      status: 'streaming',
+      isParamsStreaming: true,
+    });
+    return;
+  }
   if (!toolEvent.reset && stream && stream.messageId !== toolEvent.message_id) {
     // A new source must explicitly reset the stream. This prevents a delayed
     // event from a cancelled/retried provider call from overwriting the live

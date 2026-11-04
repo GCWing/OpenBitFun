@@ -1777,7 +1777,15 @@ impl ExecutionEngine {
         // still runs a general agent whose outer response is a JSON tool call.
         // Include the profile in the cache key so changing the setting cannot
         // reuse a prompt generated for the previous component library.
-        let genui_prompt = Self::active_genui_system_prompt().await;
+        let genui_prompt = if current_agent
+            .default_tools()
+            .iter()
+            .any(|tool| tool == "GenerativeUI")
+        {
+            Self::active_genui_system_prompt().await
+        } else {
+            None
+        };
         let genui_scope = genui_prompt
             .as_ref()
             .map(|(profile, _)| format!("|genui-profile:{profile}"))
@@ -1853,6 +1861,13 @@ impl ExecutionEngine {
             .get_config::<String>(Some("ai.generative_ui_library"))
             .await
             .ok()?;
+        if !service
+            .get_config::<bool>(Some("ai.generative_ui_enabled"))
+            .await
+            .unwrap_or(false)
+        {
+            return None;
+        }
         let prompt =
             openbitfun_product_domains::generative_ui::system_prompt_for_profile(&profile)?;
         Some((profile, prompt))

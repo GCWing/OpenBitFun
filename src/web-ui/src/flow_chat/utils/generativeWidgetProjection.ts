@@ -29,9 +29,7 @@ export interface GenerativeWidgetProjection {
   title: string;
   app?: GenUIAppEnvelope;
   appState?: GenUIAppState;
-  ownerRevision?: string;
-  deliveryEvidence?: Record<string, unknown>;
-  /** OpenUI is transient by default; Harmony is the explicit delivery mode. */
+  /** GenUI remains a transient FlowChat result. */
   deliveryMode: 'transient' | 'delivery';
   /** Declared identity, available before source; excludes renderer defaults. */
   libraryId?: string;
@@ -51,8 +49,6 @@ type WidgetPayload = {
   title?: unknown;
   app?: unknown;
   app_state?: unknown;
-  owner_revision?: unknown;
-  verification?: unknown;
 };
 
 function recordPayload(raw: unknown): WidgetPayload | null {
@@ -102,14 +98,14 @@ function firstTemplateForLibrary(libraryId: string): string {
 
 function defaultDesignSpecForLibrary(libraryId: string): { id: string; revision: number } {
   if (libraryId.includes('harmony')) return { id: 'harmony.phone.v1', revision: 1 };
+  if (libraryId.startsWith('openui.')) return { id: 'openui.desktop.v1', revision: 1 };
   return { id: 'openbitfun.desktop.v1', revision: 1 };
 }
 
 function libraryRevisionFor(libraryId: string): number {
   const adapter = (genUICatalog.libraryAdapters as Record<string, { revision?: unknown }>)[libraryId];
   const revision = adapter?.revision;
-  if (!Number.isInteger(revision)) throw new Error(`Unknown GenUI library revision: ${libraryId}`);
-  return revision as number;
+  return Number.isInteger(revision) ? revision as number : 1;
 }
 
 function buildStreamingApp(
@@ -128,7 +124,7 @@ function buildStreamingApp(
   const app = candidate ?? {};
   const libraryId = typeof app.libraryId === 'string' && app.libraryId
     ? app.libraryId
-    : stream.libraryId ?? 'openbitfun.composable.v1';
+    : stream.libraryId ?? 'openui.v1';
   const content = stream.content;
   return {
     schemaVersion: 2,
@@ -212,16 +208,7 @@ export function projectGenerativeWidgetTool(
   const appState = appStateCandidate as GenUIAppState | undefined;
   const title = app?.title ?? firstString(result?.title, input?.title) ?? 'Generative UI';
   const widgetId = firstString(result?.widget_id, input?.widget_id, projected.toolCall?.id, projected.id) ?? projected.id;
-  const deliveryEvidence = parseObject(result?.verification);
-  // Loading presentation needs only the native stream's profile identity;
-  // it must not wait for a renderable source/envelope or parse partial source.
-  const appIdentity = appCandidate;
-  const deliveryMode: GenerativeWidgetProjection['deliveryMode'] = deliveryEvidence?.mode === 'delivery'
-    || (typeof appIdentity?.libraryId === 'string' && appIdentity.libraryId.includes('.harmony.'))
-    || (typeof appIdentity?.template === 'string' && appIdentity.template.includes('.harmony.'))
-    || (!isComplete && (projected._genUIStream?.libraryId?.includes('.harmony.') || projected._genUIStream?.template?.includes('.harmony.')))
-    ? 'delivery'
-    : 'transient';
+  const deliveryMode: GenerativeWidgetProjection['deliveryMode'] = 'transient';
   const readOnlyReason = resolveSessionDriverId(session.sessionId, session) === 'dispatch' ? 'GenUI state updates are unsupported for target-owned dispatch sessions' : undefined;
 
   return {
@@ -234,8 +221,6 @@ export function projectGenerativeWidgetTool(
     title,
     app,
     appState,
-    ownerRevision: typeof result?.owner_revision === 'string' ? result.owner_revision : undefined,
-    deliveryEvidence,
     deliveryMode,
     libraryId,
     status: projected.status,
@@ -256,8 +241,8 @@ export function projectGenerativeWidgetTool(
       isCancelled,
       isRejected,
       dataPending: false,
-      deliveryAccepted: Boolean(deliveryEvidence && deliveryEvidence.persistence === 'saved' && deliveryEvidence.reopen === 'passed'),
-      requiresDelivery: deliveryMode === 'delivery',
+      deliveryAccepted: false,
+      requiresDelivery: false,
       deliveryUnavailable: Boolean(readOnlyReason),
     }),
   };
@@ -288,7 +273,14 @@ export function findGenerativeWidgetProjection(
   if (origin.surfaceId !== getActiveSurfaceId()) return null;
   const session = state.sessions.get(origin.sessionId);
   if (!session) return null;
-  const candidates = collectGenerativeWidgetProjections(session, origin.surfaceId);
+  const targetTurn = origin.turnId
+    ? session.dialogTurns.find(turn => turn.id === origin.turnId)
+    : undefined;
+  const candidates = targetTurn
+    ? targetTurn.modelRounds.flatMap(round => round.items.flatMap(item => item.type === 'tool'
+      ? [projectGenerativeWidgetTool(session, item, { turnId: targetTurn.id }, origin.surfaceId)].filter((value): value is GenerativeWidgetProjection => Boolean(value))
+      : []))
+    : collectGenerativeWidgetProjections(session, origin.surfaceId);
   const original = candidates.find(candidate => {
     const source = candidate.origin;
     return (!origin.toolCallId || source.toolCallId === origin.toolCallId)

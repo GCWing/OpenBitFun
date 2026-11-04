@@ -261,6 +261,8 @@
   "genui": {
     "title": "Generative UI",
     "description": "Choose the component library used by new Generative UI applications. Existing applications keep their saved library and revision.",
+    "enable": "Enable Generative UI",
+    "enableDescription": "When enabled, supported agents receive the GenUI tool and authoring instructions. When disabled, normal development sessions do not include this context.",
     "collection": "Generative UI profile",
     "loading": "Loading component settings",
     "retry": "Retry",

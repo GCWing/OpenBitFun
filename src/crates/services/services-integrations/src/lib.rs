@@ -3,9 +3,6 @@
 //! Heavy external integrations live here behind feature groups so local checks
 //! can opt into only the integration family they need.
 
-#[cfg(feature = "generative-ui")]
-pub mod generative_ui;
-
 #[cfg(any(
     feature = "account-identity",
     feature = "mcp",

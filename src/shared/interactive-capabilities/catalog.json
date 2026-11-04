@@ -235,7 +235,6 @@
   ],
   "implementationOnlyCommands": {
     "generativeUiOwner": [
-      "gen_ui_app",
       "gen_ui_provider_call"
     ],
     "publicMarketImageCache": [

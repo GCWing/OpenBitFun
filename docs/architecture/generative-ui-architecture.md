@@ -182,16 +182,7 @@ OpenUI 文档还必须带回相同的 `sourceKind`。owner 会逐字段比较这
 
 架构验证须覆盖两种表达不同的组件应用、无模板自由组合、真实工具参数流的渐进渲染、规范随 owner 保存重开与设置切换后的身份继承、Harmony 固定手机视口和 host shell、违反规则时实际诊断/修正/复验、自由文档 JS 隔离、状态修订、候选失败时旧版本保留、版本冲突，以及上述四类远程场景。Mock/DOM 测试不能证明原生 WebView 沙箱、远程执行或 Detached Dispatch；对应报告必须明确实际覆盖的 host 和场景。
 
-当前本地交付证据（浏览器 fixture 使用真实 Chrome，owner/CAS 使用 Rust
-持久化测试）包括：`pnpm --dir src/web-ui exec tsc --noEmit`、source-only GenUI
-Vitest、`openbitfun-product-domains` GenUI 合同测试、
-`openbitfun-services-integrations` GenUI owner 测试、Core GenUI/tool
-测试，以及 `scripts/test-genui-browser.mjs`。浏览器 fixture 已实际检查
-OpenUI action、`$name` 状态回传、Harmony `360x764` 外壳/状态栏/内容边界、
-自由 HTML/SVG iframe、空白文档拒绝、受控 `htmlBridge`、设置切换、临时预览
-状态和原生/deferred 流式 DOM 增长；Harmony owner 的保存/重开由 Rust 测试
-单独覆盖。Remote Workspace、Remote Control、
-Peer Device 的 live host 与 Detached Dispatch 的目标端 checker 尚未在这套
-fixture 中冒充通过：Peer 缺少 `gen_ui_owner_v1`/`gen_ui_libraries_v1` 时会
-结构化返回 unsupported，Detached Dispatch 的 GenUI 状态保存/重开也保持
-明确 unsupported，直到目标端具备对应 owner 和 checker 证据。
+GenUI 当前作为 FlowChat 中的 transient 结果呈现，不提供 owner/CAS 保存、
+重开或交付验收。该范围内的测试应覆盖 OpenUI action、状态回传、受限渲染、
+设置切换与原生/deferred 流式 DOM 增长；远程与 Detached Dispatch 场景不应
+宣称支持持久化 GenUI 状态。

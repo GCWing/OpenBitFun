@@ -22,19 +22,6 @@ import { TauriTransportAdapter } from './tauri-adapter';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 describe('smart routing host capability', () => {
-  it('requires GenUI owner negotiation and never falls back to local storage', async () => {
-    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
-    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
-    const args = { request: { workspaceId: 'workspace', sessionId: 'session', appId: 'app' } };
-    await expect(adapter.request('gen_ui_app', args)).rejects.toThrow('GenUI owner v1');
-    expect(rpc).not.toHaveBeenCalled();
-    adapter.setHostCapabilities({ supportsGenUiOwnerV1: true });
-    await adapter.request('gen_ui_app', args);
-    expect(JSON.parse(rpc.mock.calls[0][1])).toMatchObject({ command: 'gen_ui_app', args });
-    adapter.setHostCapabilities({ supportsGenUiOwnerV1: false });
-    await expect(adapter.request('gen_ui_app', args)).rejects.toThrow('GenUI owner v1');
-    expect(rpc).toHaveBeenCalledTimes(1);
-  });
   it('negotiates library setting reads and writes without falling back to local config', async () => {
     const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: 'future.collection' }));
     const adapter = new PeerDeviceTransportAdapter('peer', rpc);

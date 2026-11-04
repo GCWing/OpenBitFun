@@ -165,7 +165,6 @@ mcp = [
     "url",
     "process-tree",
 ]
-generative-ui = ["openbitfun-services-core/json-io", "dep:openbitfun-product-domains", "uuid"]
 miniapp-storage = [
     "openbitfun-services-core/json-io",
     "dep:openbitfun-product-domains",

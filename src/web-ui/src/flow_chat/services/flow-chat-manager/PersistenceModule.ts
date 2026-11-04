@@ -70,8 +70,8 @@ async function runSerialDialogTurnSave(
   const existingTask = context.turnSaveInFlight.get(key);
   if (existingTask) {
     context.turnSavePending.add(key);
-    await existingTask.catch(error => { if (!strict) throw error; });
-    scope.assertCurrent();
+    await existingTask.catch(error => { if (strict) throw error; });
+    if (strict) scope.assertCurrent();
     if (strict) await runSerialDialogTurnSave(context, sessionId, turnId, true);
     return;
   }
@@ -80,7 +80,7 @@ async function runSerialDialogTurnSave(
     try {
       do {
         context.turnSavePending.delete(key);
-        scope.assertCurrent();
+        if (strict) scope.assertCurrent();
         await performSaveDialogTurnToDisk(context, sessionId, turnId, strict);
       } while (context.turnSavePending.has(key));
     } finally {

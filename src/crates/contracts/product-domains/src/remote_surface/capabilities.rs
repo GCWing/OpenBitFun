@@ -22,7 +22,6 @@ use super::PeerHostKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PeerHostCapability {
-    GenUiOwnerV1,
     GenUiLibrariesV1,
     ModelRoutingV1,
     ModelPoolSelectionV1,
@@ -123,7 +122,6 @@ pub enum PeerHostCapability {
 impl PeerHostCapability {
     /// Every capability id, in wire order.
     pub const ALL: &'static [PeerHostCapability] = &[
-        Self::GenUiOwnerV1,
         Self::GenUiLibrariesV1,
         Self::ModelRoutingV1,
         Self::ModelPoolSelectionV1,
@@ -175,7 +173,6 @@ impl PeerHostCapability {
     /// The key used in the `peer_mode_ping` `capabilities` object.
     pub const fn key(self) -> &'static str {
         match self {
-            Self::GenUiOwnerV1 => "gen_ui_owner_v1",
             Self::GenUiLibrariesV1 => "gen_ui_libraries_v1",
             Self::ModelRoutingV1 => "model_routing_v1",
             Self::ModelPoolSelectionV1 => "model_pool_selection_v1",

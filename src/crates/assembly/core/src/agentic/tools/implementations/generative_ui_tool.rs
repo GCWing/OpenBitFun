@@ -1,6 +1,5 @@
-//! GenerativeUI streams a component application into the owning FlowChat
-//! surface. Rendering is immediately previewable; delivery and persistence
-//! are verified by the owning host after the model stream finishes.
+//! GenerativeUI streams a component application into the current FlowChat
+//! surface. The result is transient and rendered directly in the answer.
 
 use crate::agentic::tools::framework::{
     Tool, ToolExposure, ToolResult, ToolUseContext, ValidationResult,
@@ -34,7 +33,7 @@ impl Tool for GenerativeUITool {
     }
     async fn description(&self) -> OpenBitFunResult<String> {
         Ok(
-            "Stream an OpenUI Lang answer using the selected component collection. The selected profile renders the source in FlowChat as it arrives, with local state and actions. Never generate TSX, React source or a per-app compilation artifact. Keep the same app ID when revising an application. Preserve requested features and user state when repairing errors. Query and Mutation calls are allowed only through explicitly registered host providers; never invent a network or storage fallback.".into()
+            "Stream an OpenUI Lang answer using the selected component collection. The selected profile renders the source in FlowChat as it arrives, with local state and actions. The result is transient in the current answer. Never generate TSX, React source or a per-app compilation artifact. Keep the same app ID when revising an application. Preserve requested features and user state when repairing errors. Query and Mutation calls are allowed only through explicitly registered host providers; never invent a network or storage fallback.".into()
         )
     }
     fn short_description(&self) -> String {
@@ -60,7 +59,7 @@ impl Tool for GenerativeUITool {
                 }
             }
         }
-        schema["description"] = json!("Stream an OpenUI Lang or HTML document in createSurface.source. Keep messages as a JSON array of message objects; never serialize the array into a string. OpenUI statements may render before the enclosing arguments close; updateDataModel is only for initial values. Source is the only accepted application representation and final delivery still requires validation. The active profile's official OpenUI authoring prompt is supplied as a scoped system instruction.");
+        schema["description"] = json!("Stream an OpenUI Lang or HTML document in createSurface.source. Keep messages as a JSON array of message objects; never serialize the array into a string. OpenUI statements may render before the enclosing arguments close; updateDataModel is only for initial values. Source is the only accepted application representation and the result is rendered transiently in the current FlowChat answer. The active profile's official OpenUI authoring prompt is supplied as a scoped system instruction.");
         schema
     }
     async fn input_schema_for_model(&self) -> Value {
@@ -79,12 +78,11 @@ impl Tool for GenerativeUITool {
     fn output_schema(&self) -> Value {
         json!({
             "type": "object", "additionalProperties": false,
-            "required": ["success", "widget_id", "title", "app", "verification"],
+            "required": ["success", "widget_id", "title", "app"],
             "properties": {
                 "success": {"type": "boolean"}, "widget_id": {"type": "string"},
                 "title": {"type": "string"}, "app": {"type": "object"},
-                "app_state": {"type": "object"}, "verification": {"type": "object"},
-                "owner_revision": {"type": "string"}
+                "app_state": {"type": "object"}
             }
         })
     }
@@ -103,7 +101,7 @@ impl Tool for GenerativeUITool {
         context: Option<&ToolUseContext>,
     ) -> ValidationResult {
         let mut result = openbitfun_product_domains::generative_ui_protocol::assemble(input);
-        if let (Some(context), Ok((app, _))) = (context, &result) {
+        if let (Some(_context), Ok((app, _))) = (context, &result) {
             let validation = async {
                 let profile = Self::selected_profile()
                     .await
@@ -182,17 +180,6 @@ impl Tool for GenerativeUITool {
             "widget_id": widget_id,
             "title": app["title"],
             "app": app,
-            "verification": {
-                "mode": "transient",
-                "persistence": "skipped",
-                "checks": "skipped",
-                "render": "streamed",
-                "reopen": "skipped",
-                "requirementCoverage": "skipped",
-                "visual": "skipped",
-                "sourceKind": app["source"]["kind"],
-                "profile": profile,
-            },
             "app_state": state
         });
         let message = self.render_result_for_assistant(&data);

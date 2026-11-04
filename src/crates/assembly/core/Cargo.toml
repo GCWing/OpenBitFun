@@ -385,7 +385,6 @@ tools-image-generation = [
     "openbitfun-ai-adapters/image-generation",
 ]
 tools-miniapp = [
-    "openbitfun-services-integrations/generative-ui",
     "dep:openbitfun-product-domains",
     "openbitfun-tool-packs/miniapp",
     "openbitfun-product-domains/appearance-market",

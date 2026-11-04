@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import {
   type GenerativeWidgetOrigin,
@@ -6,11 +6,6 @@ import {
 import { useGenerativeWidgetProjection } from '@/flow_chat/hooks/useGenerativeWidgetProjection';
 import GenUIApplication from '@/tools/generative-ui/GenUIApplication';
 import { isGenUIAppEnvelope, type GenUIAppEnvelope, type GenUIAppState } from '@/tools/generative-ui/genUITypes';
-import type { GenUIVerification } from '@/tools/generative-ui/genUIVerification';
-import { GenUIVerificationPanel } from '@/tools/generative-ui/GenUIVerificationPanel';
-import { genUIContentKey } from '@/tools/generative-ui/genUIState';
-import { requestGenUIRepair } from '@/tools/generative-ui/genUIRepair';
-import { useGenUIOwner } from '@/tools/generative-ui/useGenUIOwner';
 import { resolveGenUIInteractionState } from '@/tools/generative-ui/genUIInteractionState';
 import { useChatMcpCatalog } from '@/flow_chat/hooks/useChatMcpCatalog';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
@@ -41,9 +36,6 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
 }) => {
   const { t } = useI18n('flow-chat');
   const projection = useGenerativeWidgetProjection(origin);
-  const [reloading, setReloading] = useState(false);
-  const [evidence, setEvidence] = useState<{ source: string; report: GenUIVerification }>();
-  const [reloaded, setReloaded] = useState<{ source: string; state: GenUIAppState; revision: number; baseline: string }>();
   const app = origin ? projection?.app : (isGenUIAppEnvelope(suppliedApp) ? suppliedApp : undefined);
   const appState = origin ? projection?.appState : suppliedState;
   const session = origin ? flowChatStore.getState().sessions.get(origin.sessionId) : undefined;
@@ -69,16 +61,8 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
     });
     return mergeGenUIProviders(mcp, createGenUINativeProvider(asyncTarget), onTargetEvent);
   }, [asyncTarget, mcpCatalog.catalog, onTargetEvent]);
-  const deliveryMode: 'transient' | 'delivery' = projection?.deliveryMode ?? 'transient';
-  const requiresDelivery = deliveryMode === 'delivery';
-  const owner = useGenUIOwner(projection?.origin, app, projection?.ownerRevision);
-  const canEdit = Boolean(requiresDelivery && projection?.origin && owner.enabled && !projection.readOnly && projection.status === 'completed' && !projection.isFailed && app && app.schemaVersion === 2 && owner.ready);
-  const canInteract = Boolean(app && !projection?.readOnly && !projection?.isFailed && projection?.status !== 'cancelled' && projection?.status !== 'rejected' && !reloading);
-  const canPersist = requiresDelivery && canEdit && !projection?.isStreaming;
-  const sourceKey = JSON.stringify([projection?.origin ?? origin, app]);
-  const verification = evidence?.source === sourceKey ? evidence.report : undefined;
-  const loaded = reloaded?.source === sourceKey ? reloaded : undefined;
-  const loadedState = owner.enabled ? owner.state : appState;
+  const requiresDelivery = false;
+  const canInteract = Boolean(app && !projection?.readOnly && !projection?.isFailed && projection?.status !== 'cancelled' && projection?.status !== 'rejected');
   const interactionState = resolveGenUIInteractionState({
     app,
     toolStatus: projection?.status,
@@ -86,10 +70,9 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
     isFailed: projection?.isFailed,
     isCancelled: projection?.status === 'cancelled',
     isRejected: projection?.status === 'rejected',
-    verification,
-    ownerReady: !owner.enabled || owner.ready,
-    ownerError: projection?.readOnlyReason ?? owner.error,
-    deliveryAccepted: Boolean(projection?.deliveryEvidence && projection.deliveryEvidence.persistence === 'saved' && projection.deliveryEvidence.reopen === 'passed'),
+    ownerReady: true,
+    ownerError: projection?.readOnlyReason,
+    deliveryAccepted: false,
     requiresDelivery,
   });
   const terminalStatus = t(`toolCards.generativeUI.state.${interactionState}`);
@@ -109,7 +92,6 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
         {showToolbar ? <div className="openbitfun-generative-widget-panel__toolbar" data-openbitfun-component="generative-widget" data-openbitfun-part="toolbar">
           <span className="openbitfun-generative-widget-panel__title">{app.title}</span>
           <span className="openbitfun-generative-widget-panel__status" role="status" aria-live="polite">{terminalStatus}</span>
-          {presentation === 'panel' ? <span className="openbitfun-generative-widget-panel__readonly">{t(canEdit ? 'toolCards.generativeUI.hostedState' : 'toolCards.generativeUI.readOnly')}</span> : null}
           {presentation === 'inline' && projection?.origin && onExpand ? <button
             type="button"
             className="openbitfun-generative-widget-panel__expand"
@@ -118,33 +100,20 @@ export const GenerativeWidgetPanel: React.FC<GenerativeWidgetPanelProps> = ({
           >↗</button> : null}
         </div> : null}
         {projection?.readOnlyReason ? <p role="status">{projection.readOnlyReason}</p> : null}
-        {owner.error ? <p role="alert">{owner.error}</p> : null}
         <div className="openbitfun-generative-widget-panel__app" data-openbitfun-component="generative-widget" data-openbitfun-part="app">
           <GenUIApplication
-            key={JSON.stringify([projection?.origin ?? origin, app.id, loaded?.revision])}
+            key={JSON.stringify([projection?.origin ?? origin, app.id])}
             definition={app}
             streaming={projection?.isStreaming}
-            initialState={loadedState}
-            restoredFromStorage={requiresDelivery && owner.enabled && owner.ready}
+            initialState={appState}
+            restoredFromStorage={false}
             readOnly={!canInteract}
-            persistState={canPersist}
-            onVerification={requiresDelivery ? report => setEvidence({ source: sourceKey, report }) : undefined}
-            onStateChange={canPersist ? owner.save : undefined}
+            persistState={false}
             asyncProvider={mcpProvider}
             asyncTarget={asyncTarget}
             asyncTargetId={asyncTargetId}
             onTargetEvent={onTargetEvent}
           />
-          {requiresDelivery && verification?.definitionKey === genUIContentKey(app) ? <GenUIVerificationPanel report={verification}
-            delivery={projection?.deliveryEvidence}
-            onRepair={projection?.origin && !projection.isStreaming ? () => requestGenUIRepair(projection.origin, verification) : undefined}
-            onReload={canEdit && projection ? async () => {
-              setReloading(true);
-              try {
-                const state = await owner.reload();
-                setReloaded(current => ({ source: sourceKey, state, baseline: genUIContentKey(projection.appState), revision: (current?.revision ?? 0) + 1 }));
-              } finally { setReloading(false); }
-            } : undefined} /> : null}
         </div>
       </div>
     );

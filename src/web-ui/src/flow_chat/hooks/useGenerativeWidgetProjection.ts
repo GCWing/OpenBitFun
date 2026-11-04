@@ -12,32 +12,42 @@ export function useGenerativeWidgetProjection(
   const key = origin
     ? JSON.stringify([origin.surfaceId, origin.sessionId, origin.turnId ?? '', origin.toolCallId ?? '', origin.toolItemId ?? ''])
     : '';
-  const cacheRef = useRef<{ key: string; snapshotKey: string; snapshot: GenerativeWidgetProjection | null }>({
+  const cacheRef = useRef<{ key: string; session: unknown; turn: unknown; snapshot: GenerativeWidgetProjection | null }>({
     key,
-    snapshotKey: `${key}:empty`,
+    session: undefined,
+    turn: undefined,
     snapshot: null,
   });
   const getSnapshot = useCallback(() => {
     if (!origin) return null;
-    const next = findGenerativeWidgetProjection(flowChatStore.getState(), origin, true);
-    const nextKey = next
-      ? `${key}:${JSON.stringify(next.origin)}:${next.status}:${next.interactionState}:${next.deliveryMode}:${next.libraryId}:${next.isFailed}:${next.readOnly}:${next.readOnlyReason}:${next.ownerRevision}:${next.title}:${JSON.stringify(next.app ?? null)}:${JSON.stringify(next.appState ?? null)}:${JSON.stringify(next.deliveryEvidence ?? null)}`
-      : `${key}:missing`;
+    const state = flowChatStore.getState();
+    const session = state.sessions.get(origin.sessionId);
+    const turn = origin.turnId ? session?.dialogTurns.find(value => value.id === origin.turnId) : undefined;
     const cache = cacheRef.current;
     if (cache.key !== key) {
       cache.key = key;
-      cache.snapshotKey = `${key}:empty`;
+      cache.session = undefined;
+      cache.turn = undefined;
       cache.snapshot = null;
     }
-    if (nextKey !== cache.snapshotKey) {
-      cache.snapshot = next;
-      cache.snapshotKey = nextKey;
+    if (cache.session !== session || cache.turn !== turn) {
+      cache.session = session;
+      cache.turn = turn;
+      cache.snapshot = findGenerativeWidgetProjection(state, origin, true);
     }
     return cache.snapshot;
   }, [key, origin]);
   const subscribe = useCallback(
-    (callback: () => void) => origin ? flowChatStore.subscribe(() => callback()) : () => undefined,
-    [origin],
+    (callback: () => void) => origin ? flowChatStore.subscribeSelector(
+      state => {
+        const session = state.sessions.get(origin.sessionId);
+        const turn = origin.turnId ? session?.dialogTurns.find(value => value.id === origin.turnId) : undefined;
+        return { session, turn };
+      },
+      () => callback(),
+      { isEqual: (a, b) => a.session === b.session && a.turn === b.turn },
+    ) : () => undefined,
+    [origin?.sessionId, origin?.turnId],
   );
   return useSyncExternalStore(
     subscribe,

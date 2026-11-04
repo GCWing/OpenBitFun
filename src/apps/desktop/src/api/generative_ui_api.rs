@@ -1,6 +1,4 @@
 //! Source-bound application state; never accept controller filesystem paths.
-use openbitfun_core::agentic::WorkspaceBinding;
-use openbitfun_services_integrations::generative_ui::{GenUIStore, Revision};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -199,17 +197,23 @@ async fn open_image_search(query: &str) -> Vec<String> {
 }
 
 async fn native_image_search(query: &str) -> Result<Value, String> {
-    // Prefer the domestic endpoint so a mainland host does not wait for an
-    // unreachable overseas request. 360 and Baidu are best-effort search
-    // sources; the OpenUI-compatible Wikimedia sources remain a second choice
-    // for queries that domestic providers cannot answer.
-    let mut images = so_image_search(query).await;
-    if images.is_empty() {
-        images = baidu_image_search(query).await;
-    }
-    if images.is_empty() {
-        images = open_image_search(query).await;
-    }
+    // Query the domestic sources together. If neither returns anything, use
+    // the open fallback; the combined worst case stays below the frontend's
+    // 20-second invoke timeout.
+    let search = async {
+        let (so, baidu) = tokio::join!(so_image_search(query), baidu_image_search(query));
+        let mut images = so;
+        images.extend(baidu);
+        images.truncate(4);
+        if images.is_empty() {
+            open_image_search(query).await
+        } else {
+            images
+        }
+    };
+    let images = tokio::time::timeout(std::time::Duration::from_secs(16), search)
+        .await
+        .unwrap_or_default();
     Ok(serde_json::json!({ "images": images }))
 }
 
@@ -394,181 +398,10 @@ pub async fn gen_ui_provider_call(request: GenUIProviderRequest) -> Result<Value
         )),
     }
 }
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GenUIAppRequest {
-    workspace_id: String,
-    session_id: String,
-    app_id: String,
-    #[serde(default)]
-    revision: Option<String>,
-    #[serde(default)]
-    state: Option<Value>,
-    /// Optional identity echo from the active renderer. Older callers may omit
-    /// this field; when present the owner rejects a response from another
-    /// design specification instead of silently hydrating it.
-    #[serde(default)]
-    design_spec: Option<Value>,
-    #[serde(default)]
-    source_kind: Option<String>,
-    #[serde(default)]
-    library_id: Option<String>,
-    #[serde(default)]
-    library_revision: Option<i64>,
-}
-
-fn validate_owner_identity(
-    accepted: &Revision,
-    expected_library_id: Option<&str>,
-    expected_library_revision: Option<i64>,
-    expected_design_spec: Option<&Value>,
-    expected_source_kind: Option<&str>,
-) -> Result<(), String> {
-    if let Some(expected) = accepted.app["libraryId"].as_str() {
-        if expected_library_id != Some(expected)
-            || expected_library_revision != accepted.app["libraryRevision"].as_i64()
-        {
-            return Err("GenUI owner returned a different component library identity".into());
-        }
-    }
-    if let Some(expected) = expected_design_spec {
-        if accepted.app.get("designSpec") != Some(expected) {
-            return Err("GenUI owner returned a different UI specification identity".into());
-        }
-    }
-    if let Some(expected) = expected_source_kind {
-        if accepted.app["source"]["kind"].as_str() != Some(expected) {
-            return Err("GenUI owner returned a different source kind".into());
-        }
-    }
-    Ok(())
-}
-#[tauri::command]
-pub async fn gen_ui_app(request: GenUIAppRequest) -> Result<Option<Revision>, String> {
-    openbitfun_core_types::validate_session_id(&request.session_id)?;
-    let workspace = WorkspaceBinding::resolve(&request.workspace_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let coordinator = openbitfun_core::agentic::coordination::get_global_coordinator()
-        .ok_or("GenUI session owner is unavailable")?;
-    let metadata = coordinator
-        .get_session_manager()
-        .load_session_metadata(&workspace.session_storage_dir(), &request.session_id)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("GenUI owning session does not exist in the requested workspace")?;
-    if metadata
-        .workspace_id
-        .as_ref()
-        .is_some_and(|id| id != &request.workspace_id)
-    {
-        return Err("GenUI session belongs to a different workspace".into());
-    }
-    let store = GenUIStore::new(
-        workspace
-            .session_storage_dir()
-            .join(&request.session_id)
-            .join("artifacts")
-            .join("genui"),
-    );
-    match (request.state, request.revision) {
-        (None, None) => {
-            let accepted = store.accepted(&request.app_id).await?;
-            if let Some(accepted) = accepted.as_ref() {
-                validate_owner_identity(
-                    accepted,
-                    request.library_id.as_deref(),
-                    request.library_revision,
-                    request.design_spec.as_ref(),
-                    request.source_kind.as_deref(),
-                )?;
-            }
-            Ok(accepted)
-        }
-        (Some(state), Some(revision)) => {
-            let accepted = store
-                .accepted(&request.app_id)
-                .await?
-                .ok_or("No accepted GenUI revision exists on the owner")?;
-            validate_owner_identity(
-                &accepted,
-                request.library_id.as_deref(),
-                request.library_revision,
-                request.design_spec.as_ref(),
-                request.source_kind.as_deref(),
-            )?;
-            store
-                .save(&request.app_id, &revision, state)
-                .await
-                .map(Some)
-        }
-        _ => Err("Saving GenUI state requires state and its acknowledged owner revision".into()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    fn revision() -> Revision {
-        serde_json::from_value(json!({
-            "revision": "r1",
-            "app": {
-                "id": "app",
-                "template": "openbitfun.app",
-                "libraryId": "openbitfun.composable.v1",
-                "libraryRevision": 2,
-                "designSpec": {"id": "harmony.phone.v1", "revision": 1},
-                "source": {"kind": "html-document"}
-            },
-            "state": {},
-            "evidence": null
-        }))
-        .unwrap()
-    }
-
-    #[test]
-    fn owner_identity_echo_is_required_for_pinned_library_callers() {
-        assert!(validate_owner_identity(&revision(), None, None, None, None).is_err());
-        assert!(validate_owner_identity(
-            &revision(),
-            Some("openbitfun.composable.v1"),
-            Some(2),
-            None,
-            None
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn owner_identity_echo_rejects_cross_target_reads_and_saves() {
-        let accepted = revision();
-        assert!(validate_owner_identity(
-            &accepted,
-            Some("openbitfun.composable.v1"),
-            Some(2),
-            Some(&json!({"id":"openbitfun.desktop.v1","revision":1})),
-            Some("html-document"),
-        )
-        .is_err());
-        assert!(validate_owner_identity(
-            &accepted,
-            Some("openbitfun.composable.v1"),
-            Some(2),
-            Some(&json!({"id":"harmony.phone.v1","revision":1})),
-            Some("openui-lang"),
-        )
-        .is_err());
-        assert!(validate_owner_identity(
-            &accepted,
-            Some("openbitfun.composable.v1"),
-            Some(2),
-            Some(&json!({"id":"harmony.phone.v1","revision":1})),
-            Some("html-document"),
-        )
-        .is_ok());
-    }
 
     #[test]
     fn normalizes_domestic_image_search_payloads() {

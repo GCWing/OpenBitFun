@@ -281,7 +281,6 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("fork_session",                                               Routed,      Proxied,          CLI_NOT_IMPLEMENTED),
     op("frontend_update_candidate_failed",                           LocalOnly,   ControllerLocal,  REFUSED),
     op("frontend_update_candidate_ready",                            LocalOnly,   ControllerLocal,  REFUSED),
-    op("gen_ui_app",                                                   Routed,      Proxied,          CLI_NOT_IMPLEMENTED),
     op("gen_ui_provider_call",                                          Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("generate_commit_message",                                    Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("generate_insights",                                          Routed,      ControllerLocal,  REFUSED),
