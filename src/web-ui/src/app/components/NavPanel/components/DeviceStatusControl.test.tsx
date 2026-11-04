@@ -540,9 +540,9 @@ describe('device status card', () => {
     expect(element('nav-device-status-connect').dataset.openbitfunComponent).toBe('icon-button');
     expect(element('nav-device-status-connect').dataset.openbitfunShape).toBe('circle');
     expect(element('nav-device-status-connect').dataset.openbitfunVariant).toBe('primary');
-    expect(element('nav-device-status-connect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.connectAndUse$/);
-    // Connecting and switching to an attached device are told apart by glyph.
-    expect(element('nav-device-status-connect').querySelector('.lucide-link')).not.toBeNull();
+    expect(element('nav-device-status-connect').getAttribute('aria-label')).toMatch(/ · deviceOverview\.switchUse$/);
+    // Attached or not, every device offers the same switch action.
+    expect(element('nav-device-status-connect').querySelector('.lucide-arrow-right-left')).not.toBeNull();
     expect(element('nav-device-status-connect').textContent).toBe('');
     state.attachedHostKinds = { 'peer-2': 'cli' };
     render();

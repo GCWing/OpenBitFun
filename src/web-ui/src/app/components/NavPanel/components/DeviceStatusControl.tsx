@@ -1,7 +1,7 @@
 import { useDeviceDirectory, resolveDeviceName, isDeviceControllable, deviceClientVersion } from '@/infrastructure/account/deviceDirectory';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardHeader, Icon, IconButton, ScrollArea, type IconSize } from '@openbitfun/ui';
-import { ArrowRightLeft, ChevronLeft, ChevronRight, CircleAlert, House, Link, MessageCircle, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
+import { ArrowRightLeft, ChevronLeft, ChevronRight, CircleAlert, House, MessageCircle, Monitor, MonitorSmartphone, Smartphone, Undo2, Unplug } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
@@ -109,7 +109,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   const [switchTargets, setSwitchTargets] = useState<{
     accountId: string | number; localId: string; devices: AccountDeviceInfo[];
   } | null>(null);
-  const [switchingAction, setSwitchingAction] = useState<'connect' | 'switch' | 'disconnect' | null>(null);
+  const [switchingAction, setSwitchingAction] = useState<'switch' | 'disconnect' | null>(null);
   const switchingDevice = switchingAction !== null;
   const switchingRef = useRef(false);
   const activePeerId = peerContext?.peerMode.active ? peerContext.peerMode.deviceId : null;
@@ -245,10 +245,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
     // never a control target. This machine is never gated by its own flag.
     if (target.device_id !== availableTargets.localId && !isDeviceControllable(target)) return;
     switchingRef.current = true;
-    const alreadyConnected = peerContext.attachments.some(attachment => (
-      attachment.deviceId === target.device_id && attachment.health === 'ready'
-    ));
-    setSwitchingAction(target.device_id === availableTargets.localId || alreadyConnected ? 'switch' : 'connect');
+    setSwitchingAction('switch');
     // The workbench fades behind a curtain while it rebuilds for the target.
     const intent = beginDeviceOpen({
       surfaceId: target.device_id === availableTargets.localId ? LOCAL_SURFACE_ID : surfaceIdForDevice(target.device_id),
@@ -367,9 +364,6 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   const displayedDevice = previewDevices[previewIndex] ?? overview.primaryDevice;
   const displayedActive = !displayedDevice.local
     && displayedDevice.activities.includes('current-use') && overview.peerActive;
-  const displayedConnected = peerContext?.attachments.some(attachment => (
-    attachment.deviceId === carouselDeviceIds[previewIndex] && attachment.health === 'ready'
-  )) ?? false;
   const displayedIncompatible = previewIncompatible && !displayedActive;
   const displayedHasAction = displayedActive || isPreviewing || displayedIncompatible;
   const displayedControlState = displayedIncompatible ? 'incompatible'
@@ -378,13 +372,14 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
     ? previewIncompatibleNotice
     : displayedActive ? t('deviceOverview.disconnectActionHint')
       : displayedDevice.local ? t('deviceOverview.backToThisDevice')
-        : displayedConnected ? t('deviceOverview.switchUse') : t('deviceOverview.connectAndUse');
+        // Attaching is an implementation detail: every device offers the same action.
+        : t('deviceOverview.switchUse');
   const displayedIdleActionText = displayedIncompatible ? t('deviceOverview.unavailableAction')
     : displayedActive ? t('deviceOverview.disconnectAction')
       : displayedDevice.local ? t('deviceOverview.returnLocalAction')
-        : displayedConnected ? t('deviceOverview.switchUse') : t('deviceOverview.connectAndUse');
-  const displayedActionText = switchingAction === 'connect' ? t('deviceOverview.connectingAction')
-    : switchingAction === 'switch' ? t('deviceOverview.switchingAction')
+        // Attaching is an implementation detail: every device offers the same action.
+        : t('deviceOverview.switchUse');
+  const displayedActionText = switchingAction === 'switch' ? t('deviceOverview.switchingAction')
       : switchingAction === 'disconnect' ? t('deviceOverview.disconnectingAction')
         : displayedIdleActionText;
 
@@ -602,7 +597,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                           ? <Icon glyph={CircleAlert} size="md" />
                           : displayedActive ? <Icon glyph={Unplug} size="md" />
                             : displayedDevice.local ? <Icon glyph={Undo2} size="md" />
-                              : displayedConnected ? <Icon glyph={ArrowRightLeft} size="md" /> : <Icon glyph={Link} size="md" />}
+                              : <Icon glyph={ArrowRightLeft} size="md" />}
                         aria-label={`${displayedDevice.name} · ${displayedActionText}`}
                         title={switchingDevice ? displayedActionText : displayedActionLabel}
                         // An incompatible device stays focusable so its version notice
