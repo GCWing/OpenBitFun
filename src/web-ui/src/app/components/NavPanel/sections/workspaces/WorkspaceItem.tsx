@@ -16,6 +16,7 @@ import {
   DialogHeading,
   DialogTitle,
   OverflowText,
+  Spinner,
   StatusPill,
 } from '@openbitfun/ui';
 import React, { Suspense, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -83,6 +84,22 @@ const PortForwardDialog = lazyWithRecovery(() =>
 const AssistantSessionHistory = lazyWithRecovery(() => import('./AssistantSessionHistory'));
 const WorkspaceSessionBatchModal = lazyWithRecovery(() => import('./WorkspaceSessionBatchModal'));
 const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
+
+/** Fast creates finish inside this window and never flash a spinner. */
+const NEW_SESSION_PENDING_VISIBLE_DELAY_MS = 140;
+
+function useDelayedPendingIndicator(pending: boolean): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!pending) {
+      setVisible(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setVisible(true), NEW_SESSION_PENDING_VISIBLE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [pending]);
+  return pending && visible;
+}
 
 const MAX_WORKSPACE_NAME_CHARS = 80;
 
@@ -726,13 +743,16 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     }
   }, [t, workspace.rootPath]);
 
-  const creatingSessionRef = useRef(false);
+  // One new session per gesture: a second click while the first is being
+  // created would open a second draft. The pending state is rendered on the
+  // button (busy + disabled) so a slow create, e.g. over a peer relay, is
+  // visibly in progress instead of silently swallowing clicks.
+  const [creatingSession, setCreatingSession] = useState(false);
+  const showCreatingSessionIndicator = useDelayedPendingIndicator(creatingSession);
   const handleCreateSession = useCallback(async (mode?: 'Standard' | 'Cowork' | 'Claw') => {
     setMenuOpen(false);
-    // One new session per gesture: a second click while the first is
-    // being created would open a second draft.
-    if (creatingSessionRef.current) return;
-    creatingSessionRef.current = true;
+    if (creatingSession) return;
+    setCreatingSession(true);
     const resolvedMode = mode ?? (workspace.workspaceKind === WorkspaceKind.Assistant ? 'Claw' : undefined);
     try {
       const reusableId = findReusableEmptySessionId(workspace, resolvedMode);
@@ -757,9 +777,10 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         { duration: 4000 }
       );
     } finally {
-      creatingSessionRef.current = false;
+      setCreatingSession(false);
     }
   }, [
+    creatingSession,
     setActiveWorkspace,
     t,
     workspace,
@@ -839,7 +860,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         'openbitfun-nav-panel__assistant-item',
         isSelected && 'is-active',
         isDragging && 'is-dragging',
-        menuOpen && 'is-menu-open',
+        (menuOpen || creatingSession) && 'is-menu-open',
         isSingle && 'is-single',
       ].filter(Boolean).join(' ')}
       data-openbitfun-product-component="workspace-item"
@@ -935,13 +956,17 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 data-openbitfun-product-component="workspace-item"
                 data-openbitfun-product-part="action"
                 type="button"
-                className="openbitfun-nav-panel__assistant-item-menu-trigger"
+                className={`openbitfun-nav-panel__assistant-item-menu-trigger${showCreatingSessionIndicator ? ' is-pending' : ''}`}
                 onClick={() => { void handleCreateSession(); }}
+                disabled={creatingSession}
+                aria-busy={creatingSession || undefined}
                 aria-label={t('nav.workspaces.actions.newSession')}
                 data-testid="nav-workspace-new-session-btn"
                 data-workspace-id={workspace.id}
               >
-                <Icon glyph={MessageCirclePlus} size="xs" />
+                {showCreatingSessionIndicator
+                  ? <Spinner size="xs" />
+                  : <Icon glyph={MessageCirclePlus} size="xs" />}
               </button>
             </Tooltip>
 
@@ -1102,7 +1127,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       'openbitfun-nav-panel__workspace-item',
       isSelected && 'is-active',
       isDragging && 'is-dragging',
-      menuOpen && 'is-menu-open',
+      (menuOpen || creatingSession) && 'is-menu-open',
       sessionsCollapsed && 'is-sessions-collapsed',
       isSingle && 'is-single',
     ].filter(Boolean).join(' ')}
@@ -1383,13 +1408,17 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 data-openbitfun-product-component="workspace-item"
                 data-openbitfun-product-part="action"
                 type="button"
-                className="openbitfun-nav-panel__workspace-item-menu-trigger"
+                className={`openbitfun-nav-panel__workspace-item-menu-trigger${showCreatingSessionIndicator ? ' is-pending' : ''}`}
                 onClick={handleCreateProjectSession}
+                disabled={creatingSession}
+                aria-busy={creatingSession || undefined}
                 aria-label={t('nav.sessions.newSession')}
                 data-testid="nav-workspace-new-session-btn"
                 data-workspace-id={workspace.id}
               >
-                <Icon glyph={MessageCirclePlus} size="xs" />
+                {showCreatingSessionIndicator
+                  ? <Spinner size="xs" />
+                  : <Icon glyph={MessageCirclePlus} size="xs" />}
               </button>
             </Tooltip>
 

@@ -7,6 +7,23 @@ function source(relativePath: string): string {
 }
 
 describe('unified project session creation', () => {
+  it('shows a pending new-session button instead of silently swallowing clicks', () => {
+    const workspaceItem = source('./sections/workspaces/WorkspaceItem.tsx');
+    expect(workspaceItem).not.toContain('creatingSessionRef');
+    expect(workspaceItem).toContain('const [creatingSession, setCreatingSession] = useState(false);');
+    const buttons = workspaceItem.split('data-testid="nav-workspace-new-session-btn"');
+    expect(buttons).toHaveLength(3);
+    for (const before of buttons.slice(0, 2)) {
+      const button = before.slice(before.lastIndexOf('<button'));
+      expect(button).toContain('disabled={creatingSession}');
+      expect(button).toContain('aria-busy={creatingSession || undefined}');
+      expect(button).toContain("showCreatingSessionIndicator ? ' is-pending' : ''");
+    }
+    for (const after of buttons.slice(1)) {
+      expect(after.slice(0, after.indexOf('</button>'))).toContain('<Spinner size="xs" />');
+    }
+  });
+
   it('keeps New Session in workspace actions and opens the conversation dock before voice', () => {
     const mainNav = source('./MainNav.tsx');
     const workspaceBody = source('../../layout/WorkspaceBody.tsx');
