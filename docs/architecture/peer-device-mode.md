@@ -125,17 +125,29 @@ records and responses from a device that is no longer rendered. Desktop
 `RelaySessionHistory` owns the subscription across initial loading, realtime
 delivery and older-page prefetch.
 
-Desktop/Web FlowChat history publishes complete Turns. New host Turn roots
-carry optional `turnRecordIds` membership on the record envelope. The Rust
-subscriber joins byte/event-bounded pages until all listed members arrive;
-a terminal root alone is not proof, since live updates can move it ahead of
-unchanged items. Legacy hosts without membership remain readable: the controller
-finishes the available history read before publication, which can make their
-first open slower. Missing members, non-advancing pages and epoch changes fail
-without exposing a partial Turn. No persisted shape or command changed.
-`RelaySessionHistory` stages the resulting replay outside the store replica until
-ready; timers and direct live-control flushes cannot publish its intermediate
-records. Normal live updates retain their incremental behavior.
+Desktop/Web FlowChat history publishes complete Turns. The Rust subscriber offers
+`turn_history: {version: 1}` on `read_stream`; a response acknowledgement enables
+single-Turn snapshots. Hosts also advertise `host_stream_turn_history_v1`. The
+first read selects only the last Turn, independently of the ordering of live
+events. Large Turns travel in byte/event-bounded packets of one immutable snapshot;
+packet offsets and the older-Turn boundary are separate. The live cursor captured
+before source IO fences snapshot revisions, and normal live publication resumes
+after it. Snapshots are ephemeral, controller scoped, epoch fenced and byte bounded
+(one oversized Turn may exceed the budget); they add no persisted format or relay
+storage. Identity-only tombstone tracking preserves deletions without suppressing
+live publication to another controller.
+
+Hosts that omit the acknowledgement keep the record-page path: optional root
+`turnRecordIds` membership proves completeness across pages, including unchanged
+items older than a republished root. Older hosts without membership remain
+readable by finishing their available history before publication, so their first
+open can be slower. Missing records, non-advancing packets and epoch changes fail
+without exposing fragments. A terminal header alone never proves completeness.
+`RelaySessionHistory` stages controller-annotated `historyReplay` records outside
+the replica until ready. Live records remain incremental even while an older Turn
+is loading. After the last Turn is visibly presented, a visible view may prefetch
+one adjacent Turn; further reads follow reader demand. Switching back to a partial
+session does not automatically drain its history.
 
 Native mobile history keeps these record-page boundaries; a page is not a
 complete conversation turn. The initial replay and each older-history request

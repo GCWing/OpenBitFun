@@ -1050,6 +1050,24 @@ describe('SessionModule historical session coordination', () => {
     );
   });
 
+  it.each(['local', 'peer'])('retains a paged %s tail on reopen without downloading the whole conversation', async surface => {
+    activateSurface(surface);
+    const session = createSession({
+      isHistorical: false, historyState: 'ready', isPartial: true,
+      dialogTurns: [{ id: 'tail', userMessage: { id: 'user-tail', content: 'Latest', timestamp: 1 },
+        modelRounds: [{ items: [{ type: 'text', text: 'Answer' }] }], status: 'completed' } as any],
+      loadedTurnCount: 1, totalTurnCount: 100,
+    });
+    if (surface === 'local') session.turnCatalog = {
+      sessionId: session.sessionId, revision: 'catalog', totalTurnCount: 100, entries: [],
+    } as any;
+    const { context, flowChatStore } = createContext(session, { activeSessionId: 'other' });
+    await switchChatSession(context, session.sessionId);
+    expect(flowChatStore.switchSession).toHaveBeenCalledWith(session.sessionId);
+    expect(flowChatStore.ensureSessionFullHistory).not.toHaveBeenCalled();
+    expect(flowChatStore.loadSessionHistory).not.toHaveBeenCalled();
+  });
+
   it('touches only the latest active session during rapid switches', async () => {
     const firstSession = createSession({
       sessionId: 'history-1',

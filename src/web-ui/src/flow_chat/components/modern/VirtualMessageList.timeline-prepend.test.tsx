@@ -256,6 +256,9 @@ describe('completed history with the production timeline projection', () => {
       expect(row.getBoundingClientRect().top).toBeCloseTo(top, 1);
       resize(); tick();
       expect(row.getBoundingClientRect().top).toBeCloseTo(top, 1);
+      for (const previous of host.querySelectorAll<HTMLElement>('.virtual-item-wrapper:not([data-turn-id="latest"])')) {
+        expect(previous.getBoundingClientRect().bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().top + 8);
+      }
     }
     for (let frame = 0; frame < 30; frame++) {
       // Late measurements of newly inserted predecessors, including a card

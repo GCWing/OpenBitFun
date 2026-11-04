@@ -4793,10 +4793,10 @@ describe('FlowChatStore historical session hydration state', () => {
       expect(apiMocks.restoreSessionView).toHaveBeenNthCalledWith(
         1,
         'history-1',
-        'test-workspace-2',
+        fixtureWorkspaceId('D:/workspace/OpenBitFun'),
         expect.any(String),
         undefined,
-        3,
+        1,
       );
       expect(
         flowChatStore.getState().sessions.get('history-1')?.dialogTurns.map(turn => turn.userMessage.content)
@@ -4817,7 +4817,7 @@ describe('FlowChatStore historical session hydration state', () => {
       expect(apiMocks.restoreSessionView).toHaveBeenNthCalledWith(
         2,
         'history-1',
-        'test-workspace-2',
+        fixtureWorkspaceId('D:/workspace/OpenBitFun'),
         expect.stringContaining('full'),
         undefined,
         undefined,
@@ -5519,10 +5519,10 @@ describe('FlowChatStore historical session hydration state', () => {
     expect(apiMocks.restoreSessionView).toHaveBeenNthCalledWith(
       1,
       'history-remote',
-      'test-workspace-2',
+      fixtureWorkspaceId('D:/workspace/OpenBitFun'),
       expect.any(String),
       undefined,
-      3,
+      1,
     );
   });
 
@@ -6498,6 +6498,36 @@ describe('FlowChatStore historical session hydration state', () => {
       presentation?.range,
     );
     expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['local', 'ssh'])('opens %s history with one Turn and warms an adjacent range only after paint without replacing the tail', async location => {
+    const catalog = createTurnCatalog(100);
+    const session = createSession({ sessionId: 'history-1', isHistorical: true, historyState: 'metadata-only',
+      ...(location === 'ssh' ? { remoteConnectionId: 'ssh-host', remoteSshHost: 'host.example' } : {}),
+    });
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: { sessionId: 'history-1', sessionName: 'History', agentType: 'Standard', state: 'Idle', turnCount: 100, createdAt: 1 },
+      turns: [createPersistedTurn(99)], turnCatalog: catalog, contextRestoreState: 'pending',
+      isPartial: true, loadedTurnCount: 1, totalTurnCount: 100,
+    });
+    apiMocks.loadSessionTurnWindow.mockResolvedValueOnce({
+      status: 'ready', catalogRevision: catalog.revision, totalTurnCount: 100,
+      startOrdinal: 98, endOrdinalExclusive: 100, targetTurnId: 'turn-98',
+      turns: [98, 99].map(index => createPersistedTurn(index)),
+    });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    await flowChatStore.loadSessionHistory(session.sessionId);
+    expect(apiMocks.restoreSessionView).toHaveBeenCalledWith(session.sessionId, session.workspaceId, expect.any(String), undefined, 1);
+    expect(apiMocks.loadSessionTurnWindow).not.toHaveBeenCalled();
+    const tail = flowChatStore.getState().sessions.get(session.sessionId)!.dialogTurns;
+    expect(tail.map(turn => turn.id)).toEqual(['turn-99']);
+    flowChatStore.releaseSessionHistoryCompletionAfterInitialPaint(session.sessionId);
+    await flushAsyncWork();
+    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledTimes(1);
+    expect(apiMocks.loadSessionTurnWindow).toHaveBeenCalledWith(expect.objectContaining({ targetStorageTurnIndex: 98, before: 0, after: 1 }));
+    expect(flowChatStore.getState().sessions.get(session.sessionId)!.dialogTurns).toBe(tail);
+    expect(flowChatStore.getSessionHistoryViewState(session.sessionId)?.activeRange).toBeNull();
+    expect(flowChatStore.hasPendingSessionHistoryCompletion(session.sessionId)).toBe(false);
   });
 
 

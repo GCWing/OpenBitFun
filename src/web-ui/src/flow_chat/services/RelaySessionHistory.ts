@@ -95,6 +95,7 @@ export interface RelayHistoryReady {
   hasMore: boolean;
   oldestSeq: number;
   cursor: number;
+  historyBatches?: boolean;
 }
 
 /** One session subscription, shared by opening history and receiving live records. */
@@ -117,6 +118,7 @@ export class RelaySessionHistory {
   private pageApplied: (() => void) | null = null;
   private rejectPage: ((error: unknown) => void) | null = null;
   private visible = false;
+  private presented = false;
   private prefetchCredit = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   // History enters the replica only at ready. Otherwise direct runtime/mailbox
@@ -159,7 +161,8 @@ export class RelaySessionHistory {
       const record = value as SessionRecord;
       if (record.sessionId !== this.sessionId) return;
       try {
-        if (this.collectingHistory) {
+        if ((record as SessionRecord & { historyReplay?: boolean }).historyReplay === true
+          || (this.collectingHistory && this.ready?.historyBatches !== true)) {
           this.historyRecords.push(record);
           return;
         }
@@ -237,10 +240,17 @@ export class RelaySessionHistory {
     if (visible === this.visible) return;
     this.visible = visible;
     if (visible) { this.prefetchCredit = 1; this.scheduleHistoryPrefetch(); }
-    else if (this.historyTimer !== null) {
-      clearTimeout(this.historyTimer);
+    else {
+      this.presented = false;
+      if (this.historyTimer !== null) clearTimeout(this.historyTimer);
       this.historyTimer = null;
     }
+  }
+
+  /** The viewport's paint acknowledgement, not a timer or mounted lease. */
+  markPresented(): void {
+    this.presented = true;
+    this.scheduleHistoryPrefetch();
   }
 
   open(): Promise<void> {
@@ -306,11 +316,11 @@ export class RelaySessionHistory {
   // Warm one adjacent page after a visible open or reader request. Never drain
   // an entire remote transcript merely because its live subscription is open.
   private scheduleHistoryPrefetch(): void {
-    if (!this.isCurrent() || !this.visible || this.prefetchCredit === 0
+    if (!this.isCurrent() || !this.visible || !this.presented || this.prefetchCredit === 0
       || !this.ready?.hasMore || this.historyTimer !== null || !resourceBudget.canPrefetch()) return;
     this.historyTimer = setTimeout(() => {
       this.historyTimer = null;
-      if (!this.isCurrent() || !this.visible || !resourceBudget.canPrefetch()
+      if (!this.isCurrent() || !this.visible || !this.presented || !resourceBudget.canPrefetch()
         || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
       this.prefetchCredit = 0;
       void this.loadOlder(true).catch(error => {

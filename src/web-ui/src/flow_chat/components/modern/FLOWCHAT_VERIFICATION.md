@@ -45,7 +45,7 @@ each missing what the other had.
 | `../../tool-cards/useToolCardHeightContract.test.tsx` | tool cards reflow rather than compensate |
 | `flowChatHistoryBoundary.test.ts` | the screenful lead and physical boundary geometry |
 | `flowChatViewportGeometry.test.ts` | actual gutter centring, symmetric/omitted leading gutter and origin handoff without accumulated horizontal offset |
-| `../../services/RelaySessionHistory.test.ts`, `../../store/FlowChatStore.test.ts` | replay staging outside the replica, no timeout/visibility/direct-flush partial Turn publication, failed-read retention, retry and live-record batching |
+| `../../services/RelaySessionHistory.test.ts`, `../../store/FlowChatStore.test.ts`, `../../services/flow-chat-manager/SessionModule.test.ts` | local/SSH one-Turn restore, paint-gated adjacent prefetch without tail replacement, partial reopen without full-history drain, replay staging, live updates during older reads, failed-read retention and retry; transport fixtures, not live remote evidence |
 | `flowChatHistoryPager.test.ts` | request/layout ordering, coalesced demand, prefetch without physical arrival, stale tickets, exhaustion and retry eligibility |
 | `useFlowChatViewportOwner.test.tsx` | top/native coordinate conversion, older-range growth creates no reader demand, synchronous write/shift accounting preserves reader travel and actual clamping |
 | `flowChatLiveTailWindow.test.ts` | "does the transcript still reach the newest Turn" |
@@ -358,11 +358,14 @@ checks; mobile Remote Control uses its own message renderer.
 
 ### History paging
 
-1. Open a session long enough to be `isPartial` — the loaded tail is shorter
-   than the viewport, so it pages older Turns in on its own. No jump-to-latest
-   bar should appear, and streaming output should be followed. Then send a
-   message: it must appear immediately in the one-shot tail reveal, with the
-   history above neither moving nor reloading.
+1. On local and peer devices, open a long session whose last Turn is short.
+   Only that Turn starts at the top, with blank space below; background history
+   must not fill the blank. Repeat with a long last Turn: its end is visible.
+   After the first presentation, any adjacent prefetch adds content above without
+   remounting or moving the visible rows. Switch away and back: no full-history
+   drain or new placement. Test an older peer host separately for its compatible,
+   potentially slower record-page fallback. Then send a message: it appears in
+   the one-shot live-tail reveal without reloading the history above.
 2. Scroll up to a junction. **One** page loads, the Turn under the cursor stays
    where it is, and paging stops until the head is reached again. Then keep
    going: every junction must behave the same way all the way to the first

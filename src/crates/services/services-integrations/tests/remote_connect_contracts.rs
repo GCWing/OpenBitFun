@@ -53,7 +53,7 @@ use openbitfun_services_integrations::remote_connect::{
     REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1, REMOTE_CAPABILITY_DIALOG_STEER_V1,
     REMOTE_CAPABILITY_HARNESS_PROFILES_V1, REMOTE_CAPABILITY_HOST_STREAM_V1,
     REMOTE_CAPABILITY_PLAN_BUILD_V1, REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
-    REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
+    REMOTE_CAPABILITY_TURN_HISTORY_V1, REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -2371,6 +2371,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
             "user_question_interaction_v1",
             "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1,
+            REMOTE_CAPABILITY_TURN_HISTORY_V1,
             REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1
         ])
     );
@@ -2621,6 +2622,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
             "user_question_interaction_v1",
             "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1,
+            REMOTE_CAPABILITY_TURN_HISTORY_V1,
             REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1
         ])
     );

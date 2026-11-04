@@ -18,16 +18,21 @@ starts when the host accepts the draft.
 `SessionRecordReplica` applies both replayed pages and live canonical records
 using stable IDs, revisions and tombstones; every page comes from the online
 host, and a stream-epoch change (host restart) drops the replica before replay.
-The latest page paints first; older pages share one in-flight reader. A visible
-open or explicit reader request can warm one adjacent page while the document is
-visible and the shared resource budget permits it. This never recursively drains
+With negotiated Turn snapshots, only the last complete Turn paints first; older
+hosts retain the complete-record-page fallback. Older reads share one in-flight
+reader. The viewport must acknowledge visible presentation before a visible open
+can warm one adjacent Turn, while the document is visible and the shared resource
+budget permits it. Reader requests can renew that prefetch credit. Switching back
+to a partial session preserves its loaded content. This never recursively drains
 the transcript. Hiding a view pauses optional prefetch only; live records,
 reconnect and interaction-mailbox delivery keep their subscriptions.
 
-The host sends each record of a page as its own event. Records reduce into the
-replica as they arrive; rendering the changed turns is coalesced to one store
-update per frame, and a page in flight renders as one batch before its ready
-event. Rendering per record is quadratic in the items of a long turn and freezes the UI thread. Live
+The Rust subscriber emits each record as its own event. Controller-local
+`historyReplay` records stage outside the replica until ready; `historyBatches`
+on ready identifies that annotation contract. Older controller bridges retain
+the sequential replay fallback. Live records reduce as they arrive, including
+during an older snapshot read; rendering is coalesced to one store update per
+frame. Rendering per record is quadratic in the items of a long turn and freezes the UI thread. Live
 pages have no ready event, so the frame timer publishes them; it is a timer
 rather than an animation frame so hidden windows keep applying records. A running
 turn reaching a terminal status, a visibility change, and any direct turn, round

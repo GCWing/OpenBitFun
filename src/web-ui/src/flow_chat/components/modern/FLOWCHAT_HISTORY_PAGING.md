@@ -12,7 +12,7 @@ re-keyed or scrolled by this boundary.
 
 All abstract marks finish fading before the transcript's outer paint layer
 reveals. Its presentation callback releases the existing two-paint barrier for
-background history completion, so measurable but still hidden text does not
+background history reads, so measurable but still hidden text does not
 count as a painted conversation. Interaction and focus stay guarded through
 that handoff. Session and surface-activation identity changes cancel old work;
 failures, inactive scenes,
@@ -22,6 +22,28 @@ This is shared Web UI presentation and adds no persistence or transport shape.
 The old `historyOpenIntentSpinner` appearance part remains a hidden compatibility
 slot so installed appearance packages still validate; the new visual is exposed
 through `historySkeleton`.
+
+## Last-Turn opening
+
+Ordinary local and SSH restore requests ask for one Turn. The peer subscriber
+negotiates the same scope through the optional single-Turn snapshot protocol.
+The first presentation depends only on that Turn, never on filling an event page
+with older Turns. Bookmark restoration and explicit navigation still resolve
+their requested range before presentation.
+
+After visible presentation, local/SSH views may warm the preceding range in the
+existing window cache without replacing the rendered tail. Peer views may read
+one preceding complete Turn and add it above the native tail reservation. Further
+history follows reader demand; switching back to a partial, catalog-backed local
+or peer session does not trigger full-history completion. Legacy local hosts
+without window catalogs retain their full-history fallback.
+
+The native CSS shell below supplies the same opening layout at every content
+length: short last Turns start at the top with trailing blank space, long ones
+show their end, and older history stays above the reserved shell. Do not fill a
+short first screen with older history or classify Turns using measured heights.
+Source-read, hydrate and first-content-paint trace phases distinguish transport
+wait from presentation wait; fixture timings are not live-device performance.
 
 ## Inactive history residency
 
@@ -47,19 +69,23 @@ the cache without replacing a newer reader intent.
 
 ## Complete Turns are the history publication unit
 
-A history transport page is not a render transaction. The Rust controller joins
-bounded record pages until each Turn's root membership (`turnRecordIds`) is
-present, including unchanged items older than a republished terminal root.
-Only then does it emit the records followed by ready. Missing members, a stalled
-cursor or an epoch change fail the read without publishing fragments. The field
-is optional and lives on the wire root, never on persisted Turns or every child.
-For older hosts without membership evidence, the controller completes the
-available history read before publishing; their first open can take longer.
+A history transport packet is not a render transaction. A negotiated single-Turn
+snapshot carries its identity, total record count, packet offset, older-Turn
+boundary and live cursor. The Rust subscriber validates and joins its packets
+before emitting records followed by ready. It continues live catch-up during an
+older read; historical revisions cannot overwrite newer live revisions.
 
-`RelaySessionHistory` stages replay records outside the replica until ready.
+Hosts without the optional acknowledgement retain bounded record paging. The
+controller joins pages until each root's optional `turnRecordIds` membership is
+present, including unchanged items older than a republished terminal root. Missing
+members, a stalled cursor or an epoch change fail without publishing fragments.
+Hosts without membership evidence finish the available history before publication;
+their first open can take longer. None of these fields changes persisted Turns.
+
+`RelaySessionHistory` stages annotated replay records outside the replica until ready.
 There is no 250ms history flush: timers, document visibility, immediate terminal
 records, mailbox reads and direct runtime flushes cannot expose half a Turn.
-Live updates after a ready batch retain frame batching and immediate terminal
+Live updates, including during older reads, retain frame batching and immediate terminal
 settling. Already published history survives a failed read; retry replays the
 unpublished batch. Local restore/window APIs already return whole Turn bodies.
 

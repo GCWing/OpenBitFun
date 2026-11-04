@@ -417,6 +417,9 @@ describe('RelaySessionHistory', () => {
     expect(fixture.older).not.toHaveBeenCalled();
     history.setVisible(true);
     expect(fixture.older).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.older).not.toHaveBeenCalled();
+    history.markPresented();
     await vi.advanceTimersByTimeAsync(250);
     expect(fixture.older).toHaveBeenCalledOnce();
     history.setVisible(false);
@@ -425,6 +428,38 @@ describe('RelaySessionHistory', () => {
     expect(fixture.unsubscribe).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
     expect(fixture.older).toHaveBeenCalledOnce();
+    history.close();
+  });
+
+  it('keeps live output flowing while a negotiated older replay is still being fetched', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockImplementation(async () => {
+      fixture.record?.({ sessionId: 'session', id: 'turn/latest', historyReplay: true });
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150, historyBatches: true });
+      return 'subscription';
+    });
+    let finish!: () => void;
+    fixture.older.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    const apply = vi.fn();
+    const flush = vi.fn();
+    const history = new RelaySessionHistory('session', apply, vi.fn(), vi.fn(), undefined, flush);
+    await history.open();
+    apply.mockClear(); flush.mockClear();
+    const reading = history.loadOlder();
+    await Promise.resolve();
+    fixture.record?.({ sessionId: 'session', id: 'item/live' });
+    fixture.record?.({ sessionId: 'session', id: 'turn/older', historyReplay: true });
+    await vi.advanceTimersByTimeAsync(16);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenLastCalledWith({ sessionId: 'session', id: 'item/live' });
+    expect(flush).toHaveBeenCalledOnce();
+    fixture.record?.({ sessionId: 'session', id: 'item/older', historyReplay: true });
+    expect(apply).toHaveBeenCalledTimes(1);
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 151, historyBatches: true });
+    finish();
+    await reading;
+    expect(apply.mock.calls.map(([record]) => record.id)).toEqual(['item/live', 'turn/older', 'item/older']);
+    expect(flush).toHaveBeenCalledTimes(2);
     history.close();
   });
 

@@ -96,6 +96,10 @@ before reporting a defect as new.
 
 ## History Paging and the Anchor
 
+- Ordinary opens request only the last Turn on local, SSH and capable peer hosts.
+  Bookmark/search navigation retains its requested range. Optional adjacent
+  prefetch begins only after visible presentation and never recursively drains
+  history or fills a short last Turn's reserved blank space.
 - Deciding *that* a history boundary is worth asking about belongs to
   `flowChatHistoryBoundary.ts` and reads only a visible item range and the
   scroll distance to each end. `flowChatHistoryPager.ts` owns request eligibility;
