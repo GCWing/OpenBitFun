@@ -404,6 +404,25 @@ describe('WorkspaceManager assistant closing and reopening', () => {
     expect(manager.getState().assistantWorkspaces).toHaveLength(1);
   });
 
+  it('shows a switched workspace after the host switch alone, refreshing lists afterwards', async () => {
+    const first = { id: 'first', name: 'First', rootPath: '/test/first', workspaceKind: 'normal' };
+    const second = { id: 'second', name: 'Second', rootPath: '/test/second', workspaceKind: 'normal' };
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: first, openedWorkspaces: [first, second],
+      recentWorkspaces: [], assistantWorkspaces: [], primaryAssistantWorkspaceId: null,
+    });
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    let releaseLists!: (value: unknown) => void;
+    globalStateMocks.getOpenedWorkspaces.mockReturnValue(new Promise(resolve => { releaseLists = resolve; }));
+    globalStateMocks.setActiveWorkspace.mockResolvedValue(second);
+    await manager.setActiveWorkspace(second.id);
+    // Resolved while the list refresh is still in flight.
+    expect(manager.getState().activeWorkspaceId).toBe(second.id);
+    expect([...manager.getState().openedWorkspaces.keys()]).toEqual(['first', 'second']);
+    releaseLists([first, second]);
+  });
+
   it('waits for running sessions to be cancelled before closing and preserves the catalog', async () => {
     globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
       cleanupRemovedCount: 0, currentWorkspace: assistant, openedWorkspaces: [assistant],

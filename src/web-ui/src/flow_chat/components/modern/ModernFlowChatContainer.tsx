@@ -1248,6 +1248,25 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
   const showHistoryLoadingLayer =
     !showHistoryOpenIntentOverlay && !showFailedHistoryPlaceholder
     && (showHistoryPlaceholder || activeHistoryRestore?.status === 'loading');
+  // Switching between sessions whose transcripts are already loaded settles
+  // the new one into place instead of cutting to it; a session still loading
+  // gets the loading boundary's own hand-over.
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const shownSessionIdRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const sessionId = activeSession?.sessionId ?? null;
+    const previous = shownSessionIdRef.current;
+    shownSessionIdRef.current = sessionId;
+    const element = messagesRef.current;
+    if (!element || !previous || !sessionId || previous === sessionId) return;
+    if (showHistoryLoadingLayer || showHistoryOpenIntentOverlay || virtualItems.length === 0) return;
+    if (typeof element.animate !== 'function'
+      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    element.animate(
+      [{ opacity: 0.35, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+    );
+  }, [activeSession?.sessionId, showHistoryLoadingLayer, showHistoryOpenIntentOverlay, virtualItems.length]);
   const historyLoadingIdentity = surfaceScope.key('history-loading', surfaceScope.epoch,
     showHistoryOpenIntentOverlay ? pendingHistoryOpenSession?.sessionId : activeSession?.sessionId);
   const isHistoryContentPresented = historyLoadingPresentation?.identity === historyLoadingIdentity && historyLoadingPresentation.ready;
@@ -2779,6 +2798,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         />
 
         <div
+          ref={messagesRef}
           className="modern-flowchat-container__messages"
           data-testid="flowchat-messages"
           data-openbitfun-component="modern-flow-chat"

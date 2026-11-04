@@ -29,6 +29,8 @@ import { selectedScene, tabPane } from '../workbench/scenePaneModel';
 import { useSceneStore } from '../stores/sceneStore';
 import { useSessionPaneLayout } from './session/sessionPaneLayoutStore';
 import SettingsScene from './settings/SettingsScene';
+import { DEFAULT_SETTINGS_PAGE_ID, preloadSettingsPage } from './settings/settingsRegistry';
+import { backgroundTaskScheduler } from '@/shared/utils/backgroundTaskScheduler';
 import AssistantScene from './assistant/AssistantScene';
 import SessionScene from './session/SessionScene';
 import WelcomeScene from './welcome/WelcomeScene';
@@ -54,6 +56,47 @@ const ShellScene      = lazyWithRecovery(() => import('./shell/ShellScene'));
 const MiniAppScene    = lazyWithRecovery(() => import('./miniapps/MiniAppScene'));
 
 const SCENE_ENTRY_DURATION_MS = 480;
+
+/**
+ * Scenes a user opens first get their code ready while the app is idle, so
+ * opening one renders at once instead of fetching and parsing its chunk on the
+ * click. One at a time, at idle priority, after startup has settled.
+ */
+const WARM_SCENES: ReadonlyArray<() => Promise<unknown>> = [
+  () => preloadSettingsPage(DEFAULT_SETTINGS_PAGE_ID),
+  () => AgentsScene.preload(),
+  () => SkillsScene.preload(),
+  () => MiniAppGalleryScene.preload(),
+  () => PersonalOverviewScene.preload(),
+  () => ProjectResourcesScene.preload(),
+  () => TerminalScene.preload(),
+  () => GitScene.preload(),
+];
+const SCENE_WARMUP_DELAY_MS = 2_500;
+
+function useSceneWarmup(): void {
+  useEffect(() => {
+    if (import.meta.env.MODE === 'test') return undefined;
+    let cancelled = false;
+    const handles: Array<{ cancel: () => void }> = [];
+    const timer = window.setTimeout(() => {
+      let chain: Promise<unknown> = Promise.resolve();
+      for (const warm of WARM_SCENES) {
+        chain = chain.then(() => {
+          if (cancelled) return undefined;
+          const handle = backgroundTaskScheduler.schedule(() => warm(), { priority: 'low', idle: true });
+          handles.push(handle);
+          return handle.promise.catch(() => undefined);
+        });
+      }
+    }, SCENE_WARMUP_DELAY_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      handles.forEach(handle => handle.cancel());
+    };
+  }, []);
+}
 const EMPTY_SCENE_ID = '__empty-scene__' as const;
 type RenderedSceneId = SceneTabId | typeof EMPTY_SCENE_ID;
 
@@ -112,6 +155,7 @@ const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering
   const secondaryTransition = useSceneTransition(secondarySceneId, navigationMotion, navigationSequence);
   const pendingTransition = primaryTransition.pendingTransition;
   useDialogCompletionNotify();
+  useSceneWarmup();
   const renderedTabIds: RenderedSceneId[] = [...new Set(openTabs.map(tab => getSceneViewId(tab.id)))];
   for (const resource of Object.values(resources)) {
     const id: SceneTabId = `content:${resource.id}`;

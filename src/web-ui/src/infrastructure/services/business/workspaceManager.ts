@@ -1419,6 +1419,8 @@ class WorkspaceManager {
     }
   }
 
+  private activeWorkspaceSwitchSequence = 0;
+
   public async setActiveWorkspace(workspaceId: string): Promise<WorkspaceInfo> {
     const surface = this.captureSurface();
     try {
@@ -1439,23 +1441,37 @@ class WorkspaceManager {
         ? await globalStateAPI.openWorkspaceById(workspaceId)
         : await globalStateAPI.setActiveWorkspace(workspaceId);
       this.assertSurfaceUnchanged(surface, 'set active workspace');
-      const [recentWorkspaces, openedWorkspaces] = await Promise.all([
-        globalStateAPI.getRecentWorkspaces(),
-        globalStateAPI.getOpenedWorkspaces(),
-      ]);
-      this.assertSurfaceUnchanged(surface, 'set active workspace');
-      const orderedOpenedWorkspaces = this.preserveOpenedWorkspaceOrder(openedWorkspaces);
-
+      // The host has switched: show it now, from the lists this window holds.
+      // The recent and opened lists are refreshed afterwards, off the path the
+      // user waits on (opening a session in another workspace waits on this).
+      const knownOpened = this.getOpenedWorkspacesList();
+      const opened = knownOpened.some(candidate => candidate.id === workspace.id)
+        ? knownOpened : [workspace, ...knownOpened];
+      const switchSequence = ++this.activeWorkspaceSwitchSequence;
       this.updateWorkspaceState(
         workspace,
-        recentWorkspaces,
-        orderedOpenedWorkspaces,
+        this.state.recentWorkspaces,
+        this.preserveOpenedWorkspaceOrder(opened),
         false,
         null,
         { type: 'workspace:switched', workspace }
       );
-
       this.emit({ type: 'workspace:active-changed', workspace });
+      void Promise.all([
+        globalStateAPI.getRecentWorkspaces(),
+        globalStateAPI.getOpenedWorkspaces(),
+      ]).then(([recentWorkspaces, openedWorkspaces]) => {
+        // A newer switch (or another device) owns the state by now.
+        if (!this.isSurfaceUnchanged(surface) || switchSequence !== this.activeWorkspaceSwitchSequence) return;
+        this.updateWorkspaceState(
+          this.state.currentWorkspace,
+          recentWorkspaces,
+          this.preserveOpenedWorkspaceOrder(openedWorkspaces),
+          false,
+          null,
+          { type: 'workspace:recent-updated' },
+        );
+      }).catch(error => log.warn('Failed to refresh workspace lists after a switch', { workspaceId, error }));
       return workspace;
     } catch (error) {
       if (!this.isSurfaceUnchanged(surface)) {
